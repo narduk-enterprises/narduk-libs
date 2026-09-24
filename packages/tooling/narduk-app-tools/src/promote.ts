@@ -72,8 +72,21 @@ import { spawnSync } from 'node:child_process'
 
 import { fetchCloudflareEnvelope } from './cloudflare.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import {
+  currentDeployment,
+  soleDeployedVersionId,
+  type WorkerDeployment,
+} from './worker-deployment.js'
 
 import type { DeployEnv } from './deploy.js'
+
+export {
+  currentDeployment,
+  describeActiveWorkerResolution,
+  resolveActiveWorkerVersion,
+  soleDeployedVersionId,
+} from './worker-deployment.js'
+export type { ActiveWorkerVersionResolution, WorkerDeployment } from './worker-deployment.js'
 
 export type PromoteAction = 'versions-promote' | 'rollback'
 
@@ -96,16 +109,6 @@ export interface WorkerVersion {
     has_preview?: boolean
   }
   annotations?: Record<string, string>
-}
-
-/** A deployment as `wrangler deployments list --json` returns it. */
-export interface WorkerDeployment {
-  id: string
-  source?: string
-  strategy?: string
-  created_on?: string
-  annotations?: Record<string, string>
-  versions: Array<{ version_id: string; percentage: number }>
 }
 
 /**
@@ -673,28 +676,6 @@ export function versionBranch(version: WorkerVersion): string | null {
   if (!SHA_PATTERN.test(sha)) return null
   const branch = message.slice(VERSION_MESSAGE_PREFIX.length, separator).trim()
   return branch || null
-}
-
-/**
- * The live deployment. `wrangler deployments list --json` returns the 10 most
- * recent oldest-first (observed live against `buoys`, 2026-09-17), so the last
- * entry is the current one; `created_on` is used as the tiebreak rather than
- * trusting the order.
- */
-export function currentDeployment(
-  deployments: readonly WorkerDeployment[],
-): WorkerDeployment | null {
-  if (deployments.length === 0) return null
-  return [...deployments].sort((a, b) => (a.created_on ?? '').localeCompare(b.created_on ?? ''))[
-    deployments.length - 1
-  ]
-}
-
-/** The version id serving 100% of traffic, or null when traffic is split. */
-export function soleDeployedVersionId(deployment: WorkerDeployment | null): string | null {
-  if (!deployment) return null
-  const full = deployment.versions.filter((entry) => entry.percentage === 100)
-  return full.length === 1 && deployment.versions.length === 1 ? full[0].version_id : null
 }
 
 /**
