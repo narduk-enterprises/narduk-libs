@@ -46,11 +46,14 @@ continues independently of later main pushes; the release checks out that exact
 verified commit. Ordinary iterations still cancel superseded runs.
 
 Every CI job runs on `ubuntu-latest`, including the shared package callable,
-Python/Swift checks and browser/consumer gates. Forked PRs receive no registry
-secret: every workspace package dependency in this repository's lockfile is
-resolved locally, and `package-registry-auth: disabled` prevents the callable
-from generating a registry credential. The release job runs on `ubuntu-latest`
-after exact-SHA CI verification of a main commit. It stays out of the main-only
+Python/Swift checks and browser/consumer gates, except the Apple-only
+NardukAuthKit Swift job, which runs on GitHub-hosted `macos-26` when its
+sources, the root `Package.swift` or its CI wiring change
+(`.github/workflows/auth-kit-swift.yml`). Forked PRs receive no registry secret:
+every workspace package dependency in this repository's lockfile is resolved
+locally, and `package-registry-auth: disabled` prevents the callable from
+generating a registry credential. The release job runs on `ubuntu-latest` after
+exact-SHA CI verification of a main commit. It stays out of the main-only
 `npm-release` environment, which holds the estate App key and is used only by
 jobs that check out and install nothing (see
 [package-releases.md](package-releases.md)). The job-scoped `GITHUB_TOKEN`

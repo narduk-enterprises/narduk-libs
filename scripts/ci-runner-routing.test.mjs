@@ -6,15 +6,19 @@ const source = (name) =>
   readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8')
 const ci = source('ci.yml')
 const logging = source('logging-languages.yml')
+const authKit = source('auth-kit-swift.yml')
 const release = source('release.yml')
 
 test('every public CI and language job uses a hosted runner without package credentials', () => {
-  for (const workflow of [ci, logging]) {
+  for (const workflow of [ci, logging, authKit]) {
     assert.doesNotMatch(workflow, /self-hosted|BLACKSMITH_|secrets\.|GH_PACKAGES_READ/u)
     assert.doesNotMatch(workflow, /packages: (?:read|write)/u)
   }
   assert.equal((ci.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 6)
   assert.equal((logging.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 2)
+  // The Apple-only Swift client needs a GitHub-hosted macOS image, never a fleet Mac.
+  assert.equal((authKit.match(/^    runs-on: macos-\d+$/gmu) || []).length, 1)
+  assert.equal((authKit.match(/^    runs-on:/gmu) || []).length, 1)
   assert.match(ci, /runner: '"ubuntu-latest"'/u)
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)
