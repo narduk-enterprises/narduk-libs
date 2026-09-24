@@ -44,3 +44,8 @@ the standalone package allowed macOS 14 and iOS 17. NardukAuthKit needs Security
 and CryptoKit, so the manifest declares its targets only on an Apple host, and
 its own GitHub-hosted macOS job (`.github/workflows/auth-kit-swift.yml`) gates
 it instead of the Linux Swift job.
+
+The manifest declares Swift tools 6.2, not 6.3, because narduk-nvr builds on the
+fleet Apple runner's Xcode 26.0.1 (Swift 6.2), and SwiftPM refuses a newer tools
+version than the toolchain it runs. The macOS job repeats the version-tag
+consumer on that Xcode. NardukLogging's own gates still use Swift 6.3.3.

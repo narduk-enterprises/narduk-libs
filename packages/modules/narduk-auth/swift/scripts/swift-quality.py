@@ -91,7 +91,9 @@ def consumer() -> None:
         run("git", "tag", f"v{VERSION}", cwd=source)
         check = temporary / "consumer"
         (check / "Sources/Check").mkdir(parents=True)
-        (check / "Package.swift").write_text(f'''// swift-tools-version: 6.3
+        # Swift 6.2 is the fleet Apple runner's toolchain (Xcode 26.0.1), where
+        # narduk-nvr builds, so the consumer and the root manifest stay at 6.2.
+        (check / "Package.swift").write_text(f'''// swift-tools-version: 6.2
 import PackageDescription
 let package = Package(name: "Check", platforms: [.macOS(.v15)], dependencies: [
     .package(url: "{source.as_uri()}", exact: "{VERSION}")
@@ -116,6 +118,12 @@ def main() -> None:
             "NardukAuthKit needs an Apple host: it uses Security and CryptoKit"
         )
     run("swift", "--version")
+    if sys.argv[1:] == ["--consumer-only"]:
+        # Resolve the tag and build only NardukAuthKit, as an app consumer does.
+        consumer()
+        return
+    if sys.argv[1:]:
+        raise SystemExit("usage: swift-quality.py [--consumer-only]")
     lint()
     run("swift", "test", "--filter", "NardukAuthKitTests")
     # The package floor is iOS 18; prove the product compiles for a device.
