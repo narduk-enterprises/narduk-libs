@@ -222,9 +222,10 @@ const selectedId = ref<string | null>(null)
   the pointer with `data-mapkit-hovered`. Hover never adds or removes
   annotations.
 - **`leader`** (`{ anchor: HTMLElement | null }`) draws a line from the selected
-  pin to that element on every region change and emits `leader-offscreen` when
-  the pin leaves the frame. The same overlay is `MapKitLeaderOverlay` on
-  `./client`.
+  pin to that element on every region change and when `items` move the
+  selection. It emits `leader-offscreen` when the pin leaves the frame (not when
+  the line is hidden for a missing point or anchor). The same overlay is
+  `MapKitLeaderOverlay` on `./client`.
 - **`mapType`** accepts Apple's `'mutedStandard'` as well as this library's
   `'muted'` from 2.1.1, and both it and `colorScheme` are now written to a live
   map when the prop changes, not only in the constructor.

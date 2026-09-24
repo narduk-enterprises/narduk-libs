@@ -128,6 +128,26 @@ describe('MapKitLeaderOverlay (narduk-libs#517)', () => {
     expect(
       container.querySelector(`[${MAPKIT_LEADER_LINE_ATTRIBUTE}]`)?.hasAttribute('hidden'),
     ).toBe(true)
+    expect(
+      container
+        .querySelector(`[${MAPKIT_LEADER_ATTRIBUTE}]`)
+        ?.hasAttribute(MAPKIT_LEADER_OFFSCREEN_ATTRIBUTE),
+    ).toBe(false)
+  })
+
+  it('hides the line without claiming off-screen when the pin is in frame but the anchor is missing', () => {
+    const onOffscreen = vi.fn()
+    const { container } = harness({ onOffscreen })
+
+    expect(onOffscreen).toHaveBeenCalledWith(false)
+    expect(
+      container.querySelector(`[${MAPKIT_LEADER_LINE_ATTRIBUTE}]`)?.hasAttribute('hidden'),
+    ).toBe(true)
+    expect(
+      container
+        .querySelector(`[${MAPKIT_LEADER_ATTRIBUTE}]`)
+        ?.hasAttribute(MAPKIT_LEADER_OFFSCREEN_ATTRIBUTE),
+    ).toBe(false)
   })
 
   it('removes the svg on destroy', () => {

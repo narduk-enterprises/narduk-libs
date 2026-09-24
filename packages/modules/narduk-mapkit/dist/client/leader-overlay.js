@@ -2,9 +2,10 @@
  * A line from an annotation's screen point to an anchor element.
  *
  * Follows the point on every `refresh()` (the host calls that on region
- * change), draws in an SVG overlay, and reports when the point is off the
- * map frame. `<AppMapKit>` wires this from its `leader` prop; a consumer
- * that draws its own pins on `./client` calls the same class (narduk-libs#517).
+ * change and after the selected item moves), draws in an SVG overlay, and
+ * reports when the point is off the map frame. `<AppMapKit>` wires this from
+ * its `leader` prop; a consumer that draws its own pins on `./client` calls
+ * the same class (narduk-libs#517).
  */
 export const MAPKIT_LEADER_ATTRIBUTE = 'data-mapkit-leader';
 export const MAPKIT_LEADER_LINE_ATTRIBUTE = 'data-mapkit-leader-line';
@@ -45,7 +46,7 @@ export class MapKitLeaderOverlay {
     get offscreen() {
         return this.#offscreen;
     }
-    /** Re-read the point and the anchor. Call on every region change. */
+    /** Re-read the point and the anchor. Call on region change and after items move. */
     refresh() {
         if (this.#destroyed)
             return;
@@ -56,7 +57,7 @@ export class MapKitLeaderOverlay {
         this.#svg.setAttribute('height', String(height));
         const point = this.#options.getPoint();
         if (!point) {
-            this.#hide();
+            this.#hide(false);
             this.#report(false);
             return;
         }
@@ -64,7 +65,7 @@ export class MapKitLeaderOverlay {
         this.#report(offscreen);
         const anchor = this.#options.getAnchor();
         if (offscreen || !anchor) {
-            this.#hide();
+            this.#hide(offscreen);
             return;
         }
         const containerBox = this.#container.getBoundingClientRect();
@@ -82,9 +83,16 @@ export class MapKitLeaderOverlay {
         this.#destroyed = true;
         this.#svg.remove();
     }
-    #hide() {
+    /**
+     * Hide the line. `offscreen` is only the pin-left-the-frame case; a missing
+     * point or anchor hides the line without claiming the pin is off-screen.
+     */
+    #hide(offscreen) {
         this.#line.setAttribute('hidden', '');
-        this.#svg.setAttribute(MAPKIT_LEADER_OFFSCREEN_ATTRIBUTE, '');
+        if (offscreen)
+            this.#svg.setAttribute(MAPKIT_LEADER_OFFSCREEN_ATTRIBUTE, '');
+        else
+            this.#svg.removeAttribute(MAPKIT_LEADER_OFFSCREEN_ATTRIBUTE);
     }
     #report(offscreen) {
         if (this.#offscreenKnown && this.#offscreen === offscreen)

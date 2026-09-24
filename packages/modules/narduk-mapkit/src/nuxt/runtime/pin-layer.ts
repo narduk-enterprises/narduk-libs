@@ -98,15 +98,15 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   map: MapKitMapLike
   mapkit: MapKitNamespaceLike
   /**
-   * Called when a pin is activated by pointer or keyboard, with the toggled id
-   * and which of the two activated it.
-   */
-  /**
    * Called when the pointer enters or leaves a pin host. The layer does not
    * apply hover itself -- the host's `hoveredId` (or the app) writes it back
    * through `setHovered`, the same way `selectedId` works.
    */
   onHover?: (id: string | null) => void
+  /**
+   * Called when a pin is activated by pointer or keyboard, with the toggled id
+   * and which of the two activated it.
+   */
   onSelect?: (id: string | null, via: MapKitSelectVia) => void
   pinGeometry?: (item: T) => MapKitPinGeometry
 }

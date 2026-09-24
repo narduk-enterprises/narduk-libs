@@ -494,6 +494,10 @@ const AppMapKitImpl = defineComponent({
       const namespace = mapkit.value as unknown as MapKitNamespaceLike | null
       if (!map || !pinLayer || !namespace) return
       pinLayer.setItems(componentProps.items)
+      // Live polls (buoys) move the selected pin in place with preserveRegion
+      // and no region event; the leader must follow that the same way the
+      // callout host repositions on region-change-end (narduk-libs#517).
+      if (componentProps.leader) leaderOverlay?.refresh()
       if (componentProps.preserveRegion) return
       overviewRegion = computeOverview(namespace)
       if (overviewRegion) map.setRegionAnimated(overviewRegion, true)

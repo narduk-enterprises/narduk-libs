@@ -2,9 +2,10 @@
  * A line from an annotation's screen point to an anchor element.
  *
  * Follows the point on every `refresh()` (the host calls that on region
- * change), draws in an SVG overlay, and reports when the point is off the
- * map frame. `<AppMapKit>` wires this from its `leader` prop; a consumer
- * that draws its own pins on `./client` calls the same class (narduk-libs#517).
+ * change and after the selected item moves), draws in an SVG overlay, and
+ * reports when the point is off the map frame. `<AppMapKit>` wires this from
+ * its `leader` prop; a consumer that draws its own pins on `./client` calls
+ * the same class (narduk-libs#517).
  */
 export declare const MAPKIT_LEADER_ATTRIBUTE = "data-mapkit-leader";
 export declare const MAPKIT_LEADER_LINE_ATTRIBUTE = "data-mapkit-leader-line";
@@ -32,7 +33,7 @@ export declare class MapKitLeaderOverlay {
     #private;
     constructor(options: MapKitLeaderOverlayOptions);
     get offscreen(): boolean;
-    /** Re-read the point and the anchor. Call on every region change. */
+    /** Re-read the point and the anchor. Call on region change and after items move. */
     refresh(): void;
     destroy(): void;
 }
