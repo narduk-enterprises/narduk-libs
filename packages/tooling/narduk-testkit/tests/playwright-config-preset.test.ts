@@ -168,6 +168,7 @@ describe('createNardukPlaywrightPreset (#434)', () => {
       SETUP_PROJECT_NAME,
       PR_PROJECT_NAME,
       WEB_PROJECT_NAME,
+      'quarantine',
     ])
     expect(JSON.stringify(preset)).not.toContain('3000')
     expect(preset.projects[1]?.dependencies).toEqual([SETUP_PROJECT_NAME])
@@ -180,6 +181,7 @@ describe('createNardukPlaywrightPreset (#434)', () => {
       SETUP_PROJECT_NAME,
       PR_PROJECT_NAME,
       WEB_PROJECT_NAME,
+      'quarantine',
     ])
     expect(preset.projects.some((project) => project.name === CHROMIUM_PROJECT_ALIAS)).toBe(false)
   })

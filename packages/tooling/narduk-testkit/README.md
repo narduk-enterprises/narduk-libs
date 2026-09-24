@@ -546,6 +546,47 @@ off by default: a bare `playwright test` would otherwise run every `.web` /
 scan. When both are passed, undeclared files still under `testDir` fail config
 load.
 
+### Quarantine (`@quarantine`)
+
+A flake leaves the PR gate with a Playwright tag, not `test.skip` and not
+`test.fixme`. `pr` and `web` set `grepInvert: /@quarantine/`, so a tagged spec
+is not collected there. The `quarantine` project sets `grep: /@quarantine/` so
+the same spec still has a home (`--project=quarantine`).
+
+```ts
+import { test } from '@playwright/test'
+import { quarantineDetails } from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+test(
+  'flaky checkout',
+  quarantineDetails({ issue: 'app#12', date: '2026-09-24', owner: 'logan' }),
+  async ({ page }) => {
+    /* … */
+  },
+)
+```
+
+A quarantine with no issue is not a quarantine. The vitest guard is checked
+against what Playwright actually collected (`playwright test --list`), so an
+untagged file in `quarantine` or a tagged file still collected by `pr` fails the
+unit suite:
+
+```ts
+import { execFileSync } from 'node:child_process'
+
+import {
+  assertPlaywrightQuarantineCollection,
+  parsePlaywrightListOutput,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const listed = execFileSync('pnpm', ['exec', 'playwright', 'test', '--list'], {
+  encoding: 'utf8',
+})
+assertPlaywrightQuarantineCollection({
+  collected: parsePlaywrightListOutput(listed),
+})
+```
+
 ### Collection-time viewports
 
 Viewport slice lives on project metadata (`metadata.visualAuditViewports`).
