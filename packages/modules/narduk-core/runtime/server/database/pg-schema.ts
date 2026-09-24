@@ -67,6 +67,7 @@ export const apiKeys = pgTable(
     scopesJson: text('scopes_json').notNull().default('[]'),
     lastUsedAt: text('last_used_at'),
     expiresAt: integer('expires_at'),
+    revokedAt: text('revoked_at'),
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),

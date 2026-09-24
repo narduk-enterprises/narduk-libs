@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { digestJourney } from './digest.js'
 import type { Catalog, Journey, Mode, RunManifest } from './types.js'
 import { RUN_SCHEMA } from './types.js'
 
@@ -21,7 +22,12 @@ export function expectedStepIds(journey: Journey, scenarioId: string): string[] 
 }
 
 export interface VerifyOptions {
-  /** The digest of the catalog as it stands NOW. Promotion requires equality. */
+  /**
+   * The digest of the catalog as it stands NOW. Used only when the manifest
+   * has no `journeyDigest` (captures written before narduk-libs#66). A
+   * manifest that recorded a journey digest is compared to `digestJourney`
+   * of that journey instead, so adding a sibling does not stale it.
+   */
   currentDigest?: string
 }
 
@@ -132,7 +138,17 @@ export function verifyRun(
     }
   }
 
-  if (options.currentDigest !== undefined && options.currentDigest !== manifest.declarationDigest) {
+  if (manifest.journeyDigest !== undefined) {
+    if (manifest.journeyDigest !== digestJourney(journey)) {
+      issues.push(
+        'journey digest mismatch: this run executed a journey that has since changed ' +
+          '(an internally consistent stale run fails promotion)',
+      )
+    }
+  } else if (
+    options.currentDigest !== undefined &&
+    options.currentDigest !== manifest.declarationDigest
+  ) {
     issues.push(
       'declaration digest mismatch: this run executed a catalog that has since changed ' +
         '(an internally consistent stale run fails promotion)',

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 
-import { createApp, createRouter, toNodeListener } from 'h3'
+import { createApp, createError, createRouter, toNodeListener } from 'h3'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
 
@@ -575,6 +575,84 @@ describe('defineValidatedHandler', () => {
     })
   })
 
+  describe('authorize before the body read (narduk-libs#371)', () => {
+    it('rejects with the authorize status before an invalid body can become a 400', async () => {
+      const ran = { handler: false }
+      const handler = defineValidatedHandler({
+        authorize: () => {
+          throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+        },
+        body: z.object({ name: z.string() }),
+        handler: () => {
+          ran.handler = true
+          return { ok: true }
+        },
+      })
+
+      // Unparseable JSON makes `readJsonBody` throw 400. If authorize ran
+      // after the body read, this would be 400, not 401.
+      const result = await request(handler, GREET, {
+        body: '{ not json at all',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      })
+
+      expect(result.status).toBe(401)
+      expect(ran.handler).toBe(false)
+      expect(result.body).not.toContain('VALIDATION_FAILED')
+      expect(result.body).not.toContain('Body is not valid JSON')
+    })
+
+    it('hands authorize the parsed params and query, never a body', async () => {
+      const seen: Array<{ keys: string[]; params: unknown; query: unknown }> = []
+      const handler = defineValidatedHandler({
+        authorize: (context) => {
+          seen.push({
+            keys: Object.keys(context).sort(),
+            params: context.params,
+            query: context.query,
+          })
+        },
+        body: z.object({ name: z.string() }),
+        handler: ({ body }) => ({ greeted: body.name }),
+        params: z.object({ stationId: z.string().min(1) }),
+        query: z.object({ limit: z.coerce.number().int().min(1) }),
+      })
+
+      const result = await request(handler, '/api/stations/41008?limit=5', {
+        ...json({ name: 'buoy' }),
+        route: '/api/stations/:stationId',
+      })
+
+      expect(result.status).toBe(200)
+      expect(JSON.parse(result.body)).toEqual({ greeted: 'buoy' })
+      expect(seen).toEqual([
+        {
+          keys: ['event', 'params', 'query'],
+          params: { stationId: '41008' },
+          query: { limit: 5 },
+        },
+      ])
+    })
+
+    it('still validates params and query before authorize runs', async () => {
+      const ran = { authorize: false }
+      const handler = defineValidatedHandler({
+        authorize: () => {
+          ran.authorize = true
+        },
+        handler: () => ({ ok: true }),
+        query: z.object({ q: z.string().min(1) }),
+      })
+
+      const result = await request(handler, `${SEARCH}?q=`)
+
+      expect(result.status).toBe(400)
+      expect(ran.authorize).toBe(false)
+      expect(issuesOf(result)).toEqual([expect.objectContaining({ path: 'query.q' })])
+    })
+  })
+
   describe('composing with defineRateLimitedHandler', () => {
     function composed() {
       return defineRateLimitedHandler(
@@ -609,6 +687,22 @@ describe('defineValidatedHandler', () => {
   })
 
   describe('types', () => {
+    it('types authorize without a body', () => {
+      const handler = defineValidatedHandler({
+        authorize: (context) => {
+          expectTypeOf(context.event).toEqualTypeOf<H3Event>()
+          expectTypeOf(context.params).toEqualTypeOf<{ stationId: string }>()
+          expectTypeOf(context.query).toEqualTypeOf<{ limit: number; q: string }>()
+          expectTypeOf(context).not.toHaveProperty('body')
+        },
+        handler: () => ({ ok: true }),
+        params: z.object({ stationId: z.string() }),
+        query: searchQuery,
+      })
+
+      expect(handler).toBeTypeOf('function')
+    })
+
     it('infers every declared part into the handler and the route result', () => {
       const handler = defineValidatedHandler({
         body: z.object({ name: z.string() }),

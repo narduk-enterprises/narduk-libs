@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as YAML from 'yaml'
 import {
-  createCiRegistryAuthScript,
   createCiWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
@@ -38,7 +37,9 @@ describe('generated CI boundaries', () => {
     expect(runner.group).toBe('linux-ci')
     expect(browser.group).toBe('playwright-isolated')
     expect(browser.labels).toContain('proxmox-playwright-x64')
-    expect(workflow).toMatch(/nuxt-cloudflare.yml@[a-f0-9]{40}\n/u)
+    expect(workflow).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
+    expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+    expect(workflow).not.toMatch(/^ {4}secrets:/mu)
     expect(workflow).toContain('require-scripts: true')
     expect(workflow).toContain('run-tests: true')
     expect(workflow).toContain('run-e2e: true')
@@ -140,44 +141,26 @@ describe('generated CI boundaries', () => {
     for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
   })
 
-  it('private registry bootstrap runs before dependencies and refuses unsafe existing targets', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'narduk-private-ci-auth-'))
-    try {
+  it('does not emit a default CI token bootstrap', () => {
+    for (const visibility of ['private', 'public'] as const) {
       const generated = buildGeneratedFiles({
         appName: 'private-ci-auth',
-        targetDir: directory,
+        targetDir: '/tmp/private-ci-auth',
         noGit: true,
-        visibility: 'private',
+        visibility,
       })
-      const script = generated.find((file) => file.path === 'scripts/package-registry-auth.mjs')!
-      expect(script.contents).toBe(createCiRegistryAuthScript())
-      const executable = join(directory, 'bootstrap.mjs')
-      const target = join(directory, '.npmrc.auth')
-      await writeFile(executable, script.contents)
-      const run = (token: string) =>
-        spawnSync(process.execPath, [executable], {
-          cwd: directory,
-          encoding: 'utf8',
-          env: { ...process.env, NARDUK_PLATFORM_GH_PACKAGES_READ: token },
-        })
-      expect(run('').status).toBe(1)
-      expect(run('test-value\nextra-line').status).toBe(1)
-      expect(await readdir(directory)).toEqual(['bootstrap.mjs'])
-      const success = run('test-value')
-      expect(success.status, success.stderr).toBe(0)
-      expect(success.stdout + success.stderr).not.toContain('test-value')
-      expect((await stat(target)).mode & 0o777).toBe(0o600)
-      expect(await readFile(target, 'utf8')).toBe('//npm.pkg.github.com/:_authToken=test-value\n')
-      expect(run('replacement').status).toBe(1)
-      expect(await readFile(target, 'utf8')).toContain('test-value')
-      await rm(target)
-      const sentinel = join(directory, 'sentinel')
-      await writeFile(sentinel, 'untouched')
-      await symlink(sentinel, target)
-      expect(run('replacement').status).toBe(1)
-      expect(await readFile(sentinel, 'utf8')).toBe('untouched')
-    } finally {
-      await rm(directory, { recursive: true, force: true })
+      expect(generated.some((file) => file.path === 'scripts/package-registry-auth.mjs')).toBe(
+        false,
+      )
+      const ci = generated.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
+      const copilot =
+        generated.find((file) => file.path === '.github/workflows/copilot-setup-steps.yml')
+          ?.contents ?? ''
+      expect(ci).not.toContain('_authToken')
+      expect(ci).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+      expect(copilot).toContain('run: pnpm install --frozen-lockfile')
+      expect(copilot).not.toContain('_authToken')
+      expect(copilot).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     }
   })
 
@@ -200,8 +183,9 @@ describe('generated CI boundaries', () => {
         scripts: Record<string, string>
       }
       expect(root.scripts['cf:build']).toBe(
-        'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+        'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
       )
+      expect(root.scripts['cf:build']).not.toContain('gh-packages-run')
     },
   )
 
@@ -281,42 +265,12 @@ describe('generated CI boundaries', () => {
     }
   })
 
-  it('the emitted public install removes private auth on success and failure', async () => {
+  it('the emitted public install is a plain frozen lockfile install', () => {
     const workflow = createCiWorkflow('public')
-    const script = workflow
-      .split('        run: |\n')[1]!
-      .split('      - run:')[0]!
-      .split('\n')
-      .map((line) => line.slice(10))
-      .join('\n')
-    const directory = await mkdtemp(join(tmpdir(), 'narduk-generated-ci-auth-'))
-    try {
-      const executable = join(directory, 'pnpm')
-      await writeFile(
-        executable,
-        `#!/bin/bash\nset -euo pipefail\ntest -f "$NPM_CONFIG_USERCONFIG"\ntest "$NPM_CONFIG_GLOBALCONFIG" = /dev/null\ntest "$(cat "$NPM_CONFIG_USERCONFIG")" = '//npm.pkg.github.com/:_authToken=test-value'\nexit "$INSTALL_EXIT"\n`,
-      )
-      await chmod(executable, 0o755)
-      for (const status of [0, 7]) {
-        const result = spawnSync('bash', ['-c', script], {
-          encoding: 'utf8',
-          env: {
-            ...callerEnvWithoutNpmConfig(),
-            PATH: `${directory}:${process.env.PATH}`,
-            RUNNER_TEMP: directory,
-            GH_PACKAGES_READ: 'test-value',
-            INSTALL_EXIT: String(status),
-          },
-        })
-        expect(result.status, result.stderr).toBe(status)
-        expect((await readdir(directory)).filter((name) => name.startsWith('npmrc-auth.'))).toEqual(
-          [],
-        )
-        expect(result.stdout).not.toContain('test-value')
-        expect(result.stderr).not.toContain('test-value')
-      }
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
+    expect(workflow).toContain('run: pnpm install --frozen-lockfile')
+    expect(workflow).not.toContain('_authToken')
+    expect(workflow).not.toContain('npm.pkg.github.com')
+    expect(workflow).not.toContain('GH_PACKAGES_READ')
+    expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
   })
 })

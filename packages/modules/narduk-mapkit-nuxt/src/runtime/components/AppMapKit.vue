@@ -1,5 +1,5 @@
 <script lang="ts">
-/* narduk/file-size-budget is an app-config rule that narduk-libs's shared config does not define, so this is kept as documentation rather than as a directive (narduk-libs#138). Apple MapKit integration is a single orchestration primitive (SDK loader + map + pins + GeoJSON overlays + selection + dark mode + lifecycle); the global imperative SDK forces state + effects + template to stay co-located to avoid races. */
+/* narduk/file-size-budget is an app-config rule that narduk-libs's shared config does not define, so this is kept as documentation rather than as a directive (narduk-libs#138). Apple MapKit integration is a single orchestration primitive (SDK loader + map + pins + GeoJSON overlays + selection + dark mode + lifecycle); the global imperative SDK forces state + effects + template to stay co-located to avoid races. Dual-script SFC: this block only declares the ambient `mapkit` global; `import-x/first` on the following `<script setup>` is a false positive and stays off in the root eslint config (narduk-libs#138, working as intended). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mapkit is a global injected by Apple's CDN script, no type definitions available
 declare const mapkit: any
 </script>

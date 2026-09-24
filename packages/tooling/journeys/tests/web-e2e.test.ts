@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -143,7 +143,12 @@ describe('the web adapter, end to end', () => {
       expect(existsSync(join(directory, manifest.video?.file as string))).toBe(true)
       expect(manifest.profile.name).toBe('desktop')
 
-      const { catalog } = (await import(join(fixtureDir, 'catalog.mjs'))) as { catalog: Catalog }
+      // Native ESM, not Vitest's transformer: capture wrote journeyDigest from
+      // Function.prototype.toString of these same `do` bodies, and Vite
+      // rewriting them here would false-stale a run that is current (#66).
+      const { catalog } = (await import(pathToFileURL(join(fixtureDir, 'catalog.mjs')).href)) as {
+        catalog: Catalog
+      }
       const issues = verifyRun(catalog, manifest, directory, { currentDigest: digest })
       expect(issues).toEqual([])
 

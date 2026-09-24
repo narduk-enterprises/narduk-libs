@@ -1,0 +1,5 @@
+@media (width < 620px) {
+  .page {
+    margin: 0;
+  }
+}

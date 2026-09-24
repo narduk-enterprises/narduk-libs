@@ -1,4 +1,4 @@
-import { and, eq, gt } from 'drizzle-orm'
+import { and, eq, gt, isNull } from 'drizzle-orm'
 import { createError, deleteCookie, getCookie, getRequestHeader, setCookie } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
@@ -21,6 +21,7 @@ import { validateSealedSessionGrant } from './sessionGrant'
 import { getLayerUserSession } from './user-session'
 
 import type { User } from '#narduk-core/schema'
+import type { LayerDatabase } from './database'
 import type { H3Event } from 'h3'
 
 /**
@@ -157,7 +158,7 @@ export async function getSessionUser(event: H3Event): Promise<User | null> {
 
 /**
  * Authenticate via API key (Authorization: Bearer nk_...).
- * Returns the user + key metadata, or null if invalid/expired.
+ * Returns the user + key metadata, or null if invalid, revoked or expired.
  * Updates last_used_at on successful authentication.
  */
 export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedApiKey | null> {
@@ -173,6 +174,9 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
     db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).limit(1),
   )
   if (!key) return null
+
+  // A revoked key keeps its row (and its audit trail) but never authenticates.
+  if (key.revokedAt) return null
 
   // Check expiration
   if (key.expiresAt && key.expiresAt < nowSec()) return null
@@ -196,6 +200,41 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
     scopes: parseApiKeyScopes(key.scopesJson),
     user,
   }
+}
+
+export interface RevokeApiKeyOptions {
+  /** The revocation time; defaults to now. */
+  now?: Date
+  /** Revoke only when the key belongs to this user (a user-facing route). */
+  userId?: string
+}
+
+/**
+ * Revoke an API key by setting `revoked_at` (migration 0008), keeping the row
+ * so `last_used_at`, `key_prefix` and the scopes survive for audit
+ * (narduk-libs#806). `authenticateApiKey` and `authenticateD1ApiKey` refuse a
+ * revoked key.
+ *
+ * Returns `true` when this call revoked the key, and `false` when no live key
+ * matched: the id is unknown, belongs to another user (with `userId`), or was
+ * already revoked, whose original `revoked_at` is left as it was.
+ */
+export async function revokeApiKey(
+  db: LayerDatabase,
+  id: string,
+  options: RevokeApiKeyOptions = {},
+): Promise<boolean> {
+  const conditions = [eq(apiKeys.id, id), isNull(apiKeys.revokedAt)]
+  if (options.userId !== undefined) conditions.push(eq(apiKeys.userId, options.userId))
+
+  const revoked = await executeDatabaseQuery<Array<{ id: string }>>(
+    db
+      .update(apiKeys)
+      .set({ revokedAt: (options.now ?? new Date()).toISOString() })
+      .where(and(...conditions))
+      .returning({ id: apiKeys.id }),
+  )
+  return revoked.length > 0
 }
 
 /**

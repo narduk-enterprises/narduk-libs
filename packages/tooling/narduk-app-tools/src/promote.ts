@@ -72,8 +72,21 @@ import { spawnSync } from 'node:child_process'
 
 import { fetchCloudflareEnvelope } from './cloudflare.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import {
+  currentDeployment,
+  soleDeployedVersionId,
+  type WorkerDeployment,
+} from './worker-deployment.js'
 
 import type { DeployEnv } from './deploy.js'
+
+export {
+  currentDeployment,
+  describeActiveWorkerResolution,
+  resolveActiveWorkerVersion,
+  soleDeployedVersionId,
+} from './worker-deployment.js'
+export type { ActiveWorkerVersionResolution, WorkerDeployment } from './worker-deployment.js'
 
 export type PromoteAction = 'versions-promote' | 'rollback'
 
@@ -96,16 +109,6 @@ export interface WorkerVersion {
     has_preview?: boolean
   }
   annotations?: Record<string, string>
-}
-
-/** A deployment as `wrangler deployments list --json` returns it. */
-export interface WorkerDeployment {
-  id: string
-  source?: string
-  strategy?: string
-  created_on?: string
-  annotations?: Record<string, string>
-  versions: Array<{ version_id: string; percentage: number }>
 }
 
 /**
@@ -188,6 +191,11 @@ export const PROMOTE_EXIT = {
   stalePromote: 7,
   /** The target version was not built from the production branch. */
   branchMismatch: 8,
+  /**
+   * `--gate-verified` names a different commit from the one being promoted, or
+   * the promoted version cannot be tied to that commit. Nothing was attempted.
+   */
+  gateMismatch: 9,
 } as const
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on'])
@@ -215,8 +223,10 @@ export function isManualPromoteAllowed(env: DeployEnv = process.env): boolean {
  *
  * WHAT THIS DOES NOT PROVE: that `ci / Required` is green on this commit. That
  * is an assertion about GitHub's check state, and reading it needs a token this
- * command is deliberately never given. The workflow step ordering is what
- * supplies it; this guard proves only the execution context.
+ * command is deliberately never given. The workflow supplies it -- by step
+ * ordering, and explicitly through `--gate-verified <check>@<sha>`, which this
+ * command binds to the promoted commit (see `parseGateAttestation`); this
+ * guard proves only the execution context.
  */
 export function isActionsPromoteAllowed(env: DeployEnv = process.env): boolean {
   return (
@@ -294,6 +304,135 @@ export function getPromoteGuardMessage(action: PromoteAction): string {
     'Set NARDUK_ALLOW_MANUAL_PROMOTE=1 for deliberate recovery work; ' +
     'NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY does not grant it.'
   )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Gate attestation (narduk-libs#400)                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the workflow says it observed: the gate check `check` concluded green
+ * on the full commit `sha`.
+ *
+ * DECISION (narduk-libs#400, option 2 of three). The command still cannot read
+ * GitHub's check state -- narduk-app-tools is deliberately never given a
+ * GitHub token, and option 3 (read the conclusion with `GITHUB_TOKEN`) would add
+ * one to the process that holds the production promote credential. Option 1
+ * (trust the workflow's step ordering alone) left the attestation implicit, so
+ * nothing tied "the gate ran" to "this commit". `--gate-verified` makes it
+ * explicit, logged, and bound to a SHA: the promote refuses (exit
+ * `PROMOTE_EXIT.gateMismatch`) unless the attested SHA is the commit being
+ * promoted AND the version it resolves to carries that commit's tag. It is
+ * still an attestation, not a verification -- a workflow that lies is not
+ * caught -- but a workflow that promotes a different commit from the one its
+ * gate ran on now is.
+ *
+ * Rollout: the flag is optional, so existing app-owned promote workflows keep
+ * working. Without it the command promotes as before and prints a warning that
+ * the gate attestation is missing.
+ */
+export interface GateAttestation {
+  /** The check name as the workflow reported it, e.g. `ci / Required`. */
+  check: string
+  /** The full, lower-cased 40-hex commit the check ran on. */
+  sha: string
+}
+
+const FULL_SHA_PATTERN = /^[a-f\d]{40}$/u
+const MAX_GATE_CHECK_LENGTH = 200
+
+/**
+ * Parses `<check>@<sha>`. A check name may contain spaces and slashes
+ * (`ci / Required`) and in principle an `@`, a SHA never does, so the split is
+ * on the LAST `@`. The SHA must be the full 40 hex characters: a short SHA is a
+ * prefix of more than one commit, and the attestation must name exactly one.
+ * Control characters are refused because the check name is echoed into the log,
+ * where a newline could forge a line (or a GitHub Actions `::` command).
+ */
+export function parseGateAttestation(raw: string): GateAttestation {
+  const separator = raw.lastIndexOf('@')
+  if (separator < 0) {
+    throw new Error(
+      `--gate-verified must be <check>@<sha>, e.g. "ci / Required@<40-hex sha>", got ${JSON.stringify(raw)}`,
+    )
+  }
+  const check = raw.slice(0, separator).trim()
+  const sha = raw
+    .slice(separator + 1)
+    .trim()
+    .toLowerCase()
+  if (!check) {
+    throw new Error(`--gate-verified names no check before the @, got ${JSON.stringify(raw)}`)
+  }
+  if (check.length > MAX_GATE_CHECK_LENGTH) {
+    throw new Error(
+      `--gate-verified check name is longer than ${String(MAX_GATE_CHECK_LENGTH)} characters`,
+    )
+  }
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (/[\u0000-\u001f\u007f]/u.test(check)) {
+    throw new Error('--gate-verified check name must not contain control characters or newlines')
+  }
+  if (!FULL_SHA_PATTERN.test(sha)) {
+    throw new Error(
+      `--gate-verified must end in the full 40-character commit SHA the gate ran on, got ${JSON.stringify(sha)}`,
+    )
+  }
+  return { check, sha }
+}
+
+/** The warning a promote prints when the workflow passed no attestation. */
+export const GATE_ATTESTATION_MISSING_WARNING =
+  '[promote] warning: no --gate-verified attestation. This promote is not bound to a gate ' +
+  'result: nothing ties the commit being promoted to the one the gate check (ci / Required) ' +
+  'ran on, beyond the workflow step ordering. Pass --gate-verified ' +
+  '"ci / Required@${{ github.event.workflow_run.head_sha }}" from the promote workflow ' +
+  '(narduk-libs#400).'
+
+/**
+ * The binding check, run twice: before any Cloudflare read against the SHA the
+ * caller asked to promote (exact, full-SHA equality -- both come from the same
+ * workflow value), and after resolution against the version's own
+ * `workers/tag`, which is the only thing that ties a version to a commit and is
+ * all a `--version-id` promote has.
+ */
+export function checkGateAgainstSha(gate: GateAttestation, sha: string): string | null {
+  const promoted = sha.trim().toLowerCase()
+  if (promoted === gate.sha) return null
+  return (
+    `--gate-verified attests that ${gate.check} passed on ${gate.sha}, but this promote is for ` +
+    `${promoted}. The gate result is bound to one commit; promote that commit, or pass the ` +
+    'attestation for the commit being promoted. Nothing was attempted.'
+  )
+}
+
+export function checkGateAgainstVersion(
+  gate: GateAttestation,
+  versionId: string,
+  target: WorkerVersion | null,
+): string | null {
+  if (!target) {
+    return (
+      `--gate-verified attests ${gate.check} on ${gate.sha}, but version ${versionId} was not in ` +
+      'the searched listing, so its commit tag cannot be read and the attestation cannot be ' +
+      'bound to it. Raise --max-versions, or promote by --sha. Nothing was attempted.'
+    )
+  }
+  const tag = target.annotations?.[VERSION_TAG_ANNOTATION]
+  if (!tag) {
+    return (
+      `--gate-verified attests ${gate.check} on ${gate.sha}, but version ${versionId} carries ` +
+      `no ${VERSION_TAG_ANNOTATION}, so nothing ties it to that commit. Nothing was attempted.`
+    )
+  }
+  if (!shaMatchesTag(gate.sha, tag)) {
+    return (
+      `--gate-verified attests ${gate.check} on ${gate.sha}, but version ${versionId} was ` +
+      `built from ${tag}. Promoting it would ship a commit the gate did not pass. Nothing was ` +
+      'attempted.'
+    )
+  }
+  return null
 }
 
 /* -------------------------------------------------------------------------- */
@@ -676,28 +815,6 @@ export function versionBranch(version: WorkerVersion): string | null {
 }
 
 /**
- * The live deployment. `wrangler deployments list --json` returns the 10 most
- * recent oldest-first (observed live against `buoys`, 2026-09-17), so the last
- * entry is the current one; `created_on` is used as the tiebreak rather than
- * trusting the order.
- */
-export function currentDeployment(
-  deployments: readonly WorkerDeployment[],
-): WorkerDeployment | null {
-  if (deployments.length === 0) return null
-  return [...deployments].sort((a, b) => (a.created_on ?? '').localeCompare(b.created_on ?? ''))[
-    deployments.length - 1
-  ]
-}
-
-/** The version id serving 100% of traffic, or null when traffic is split. */
-export function soleDeployedVersionId(deployment: WorkerDeployment | null): string | null {
-  if (!deployment) return null
-  const full = deployment.versions.filter((entry) => entry.percentage === 100)
-  return full.length === 1 && deployment.versions.length === 1 ? full[0].version_id : null
-}
-
-/**
  * Whether this deployment was itself produced by a rollback.
  *
  * Three answers, not two. A deployment carrying no `annotations` object at all
@@ -786,6 +903,12 @@ export interface PromoteFlags {
   waitForVersionSeconds: number
   /** Seconds between those re-listings. */
   waitIntervalSeconds: number
+  /**
+   * The workflow's attestation that the gate check passed on a commit
+   * (`--gate-verified <check>@<sha>`, narduk-libs#400). `null` promotes as
+   * before, with a warning.
+   */
+  gateVerified: GateAttestation | null
   json: boolean
   dryRun: boolean
 }
@@ -834,6 +957,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     maxVersions: DEFAULT_VERSION_SEARCH_LIMIT,
     waitForVersionSeconds: 0,
     waitIntervalSeconds: 30,
+    gateVerified: null,
     json: false,
     dryRun: false,
   }
@@ -864,6 +988,8 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
         '--wait-interval',
         1,
       )
+    else if (arg === '--gate-verified')
+      flags.gateVerified = parseGateAttestation(requireValue(args, (index += 1), '--gate-verified'))
     else if (arg === '--any-branch') flags.anyBranch = true
     else if (arg === '--force') flags.force = true
     else if (arg === '--json') flags.json = true
@@ -927,6 +1053,8 @@ export type PromoteOutcome =
   | 'stale-promote'
   /** The target version was not built from the production branch. */
   | 'branch-mismatch'
+  /** `--gate-verified` does not name the commit being promoted. */
+  | 'gate-mismatch'
   /** Wrangler exited non-zero. `trafficMayHaveChanged` says whether traffic is at risk. */
   | 'wrangler-failed'
   | 'dry-run'
@@ -955,6 +1083,12 @@ export interface PromoteResult {
   trafficMayHaveChanged?: boolean
   /** Set when `--force` overrode the ordering guard, so the log carries it. */
   forced?: boolean
+  /**
+   * `versions-promote` only: the gate attestation the workflow passed with
+   * `--gate-verified`, or `null` when it passed none (narduk-libs#400). Absent
+   * on a rollback, which promotes no new commit.
+   */
+  gateVerified?: GateAttestation | null
   detail: string
   exitCode: number
 }
@@ -984,6 +1118,13 @@ export function formatPromoteResult(result: PromoteResult): string {
       `  traffic risk ${result.trafficMayHaveChanged ? 'YES -- a deploy was in flight' : 'no -- nothing was attempted'}`,
     )
   }
+  if (result.gateVerified !== undefined) {
+    lines.push(
+      result.gateVerified
+        ? `  gate       ${result.gateVerified.check} @ ${result.gateVerified.sha} (attested by the workflow)`
+        : '  gate       NOT ATTESTED -- no --gate-verified was passed',
+    )
+  }
   if (result.forced) {
     lines.push(
       '  !! FORCED   --force overrode the ordering guard: a version older than the one ' +
@@ -1010,6 +1151,11 @@ export interface PromoteContext {
   now?: () => number
   /** Injected in tests; a real timer otherwise. */
   sleep?: (milliseconds: number) => Promise<void>
+  /**
+   * Where the gate-attestation lines go. Injected in tests; stderr otherwise,
+   * so a `--json` stdout stays one parseable document.
+   */
+  log?: (line: string) => void
 }
 
 function resolveWorker(
@@ -1114,7 +1260,16 @@ export async function runVersionsPromote(
   flags: PromoteFlags,
   context: PromoteContext = {},
 ): Promise<PromoteResult> {
+  const result = await promoteVersion(flags, context)
+  return { ...result, gateVerified: flags.gateVerified }
+}
+
+async function promoteVersion(
+  flags: PromoteFlags,
+  context: PromoteContext,
+): Promise<PromoteResult> {
   const env = context.env ?? process.env
+  const log = context.log ?? ((line: string) => console.error(line))
   if (!isActionsPromoteAllowed(env) && !isManualPromoteAllowed(env)) {
     return guardRefusal('versions-promote', flags.workerName)
   }
@@ -1136,6 +1291,28 @@ export async function runVersionsPromote(
   const sha = flags.sha ?? defaultPromoteSha(env, flags.versionId !== null)
   if (!flags.versionId && !sha) {
     throw new Error('Pass --sha <commit> or --version-id <id> (GITHUB_SHA was not set)')
+  }
+
+  // narduk-libs#400: bind the gate result to the commit. The SHA half runs
+  // before any Cloudflare read, so a mismatched attestation costs nothing and
+  // touches nothing; the version half runs once the version is resolved.
+  const gate = flags.gateVerified
+  const gateRefusal = (detail: string, versionId: string | null = null): PromoteResult => ({
+    action: 'versions-promote',
+    outcome: 'gate-mismatch',
+    worker: workerName,
+    sha,
+    versionId,
+    previousVersionId: null,
+    percentage: null,
+    detail,
+    exitCode: PROMOTE_EXIT.gateMismatch,
+  })
+  if (!gate) {
+    log(GATE_ATTESTATION_MISSING_WARNING)
+  } else if (sha) {
+    const mismatch = checkGateAgainstSha(gate, sha)
+    if (mismatch) return gateRefusal(mismatch)
   }
 
   const deploymentsRead = await withWranglerFailure(
@@ -1246,6 +1423,22 @@ export async function runVersionsPromote(
   const liveVersion = previousVersionId
     ? (versions.find((version) => version.id === previousVersionId) ?? null)
     : null
+
+  if (gate) {
+    const mismatch = checkGateAgainstVersion(gate, versionId, target)
+    if (mismatch) {
+      return {
+        ...gateRefusal(mismatch, versionId),
+        previousVersionId,
+        searchedVersions,
+        versionSearch,
+      }
+    }
+    log(
+      `[promote] gate attestation: ${gate.check} passed on ${gate.sha} (asserted by the ` +
+        `workflow via --gate-verified; not read from GitHub), bound to version ${versionId}.`,
+    )
+  }
 
   const refuse = (
     outcome: 'stale-promote' | 'branch-mismatch',

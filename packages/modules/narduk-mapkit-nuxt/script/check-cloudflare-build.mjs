@@ -84,13 +84,7 @@ for (const path of builtFiles) {
   if (/child[_-]process/i.test(path)) forbiddenImports.push(path)
   if (!/\.(?:mjs|js)$/.test(path)) continue
   const source = await readFile(path, 'utf8')
-  if (
-    // The pattern is applied to a build artifact this script just produced, not
-    // to attacker-controlled input, and its `\s*` pair and `m` flag are left
-    // exactly as written upstream -- this fold rewrites no runtime expression.
-    // eslint-disable-next-line regexp/no-super-linear-backtracking, regexp/optimal-quantifier-concatenation, regexp/no-useless-flag -- narduk-libs#138
-    /(?:from\s*|import\s*\()\s*['"]node:[^'"]+|require\(\s*['"]node:[^'"]+/m.test(source)
-  ) {
+  if (/(?:from|import\s*\()\s*['"]node:[^'"]+|require\(\s*['"]node:[^'"]+/.test(source)) {
     forbiddenImports.push(path)
   }
 }

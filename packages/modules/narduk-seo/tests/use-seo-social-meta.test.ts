@@ -106,6 +106,14 @@ describe('useSeo social metadata', () => {
     expect(meta).not.toHaveProperty('ogImageWidth')
     expect(meta).not.toHaveProperty('ogImageHeight')
   })
+
+  it('emits the static image when the optional OG module is not installed (narduk-libs#170)', async () => {
+    const meta = await callUseSeo(BASE, { nardukSeoOgImageModule: false })
+
+    expect(meta.ogImage).toBe('https://example.com/og.png')
+    expect(meta.ogImageWidth).toBe('1200')
+    expect(meta.ogImageHeight).toBe('630')
+  })
 })
 
 describe('useSeo canonical resolution', () => {
