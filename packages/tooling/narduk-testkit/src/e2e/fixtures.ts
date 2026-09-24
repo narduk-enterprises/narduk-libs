@@ -1,29 +1,32 @@
 import { test as base, expect } from '@playwright/test'
 
+import {
+  attachHydrationMismatchReporter,
+  formatHydrationMismatchFailure,
+  isHydrationConsoleText,
+} from './hydration-mismatch.js'
+
 import type { Browser, Page } from '@playwright/test'
 
-const HYDRATION_PATTERNS = [
-  /hydration/i,
-  /mismatch/i,
-  /hydration node mismatch/i,
-  /data-server-rendered/i,
-]
+export {
+  VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE,
+  attachHydrationMismatchReporter,
+  installHydrationMismatchConsoleHook,
+} from './hydration-mismatch.js'
 
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use) => {
     const consoleLogs: string[] = []
 
-    page.on('console', (msg) => {
-      consoleLogs.push(msg.text())
-    })
+    // Serialise pathname + node inside the page as console.warn fires (#801).
+    // A later goto drops Playwright JSHandles; the string is already captured.
+    await attachHydrationMismatchReporter(page, consoleLogs)
 
     await use(page)
 
-    const hydrationErrors = consoleLogs.filter((log) =>
-      HYDRATION_PATTERNS.some((pattern) => pattern.test(log)),
-    )
+    const hydrationErrors = consoleLogs.filter(isHydrationConsoleText)
     if (hydrationErrors.length > 0) {
-      throw new Error(`Hydration errors detected in console:\n${hydrationErrors.join('\n')}`)
+      throw formatHydrationMismatchFailure(hydrationErrors)
     }
   },
 })

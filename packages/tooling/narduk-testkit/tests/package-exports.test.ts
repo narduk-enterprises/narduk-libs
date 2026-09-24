@@ -14,6 +14,23 @@ describe('narduk-testkit runner boundaries', () => {
     expect(rootSource).not.toContain("export * from './server/kit/")
   })
 
+  it('publishes hydration-mismatch for vite.define without pulling Playwright', () => {
+    const source = readFileSync(join(packageRoot, 'src/e2e/hydration-mismatch.ts'), 'utf8')
+    const fixtures = readFileSync(join(packageRoot, 'src/e2e/fixtures.ts'), 'utf8')
+
+    /*
+     * nuxt.config / vite.config must be able to spread the E2E-only Vue define
+     * without importing `e2e/fixtures`, which calls `test.extend` at module
+     * scope. The helper file is therefore a subpath with no Playwright import.
+     */
+    expect(source).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(fixtures).toContain("from './hydration-mismatch.js'")
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+    }
+    expect(Object.keys(packageJson.exports)).toContain('./e2e/hydration-mismatch')
+  })
+
   it('keeps the fixture server out of the root barrel', () => {
     const rootSource = readFileSync(join(packageRoot, 'src/index.ts'), 'utf8')
 
