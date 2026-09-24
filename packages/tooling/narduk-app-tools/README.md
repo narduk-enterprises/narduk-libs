@@ -133,8 +133,11 @@ CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \
   Credentials are Wrangler's own, exactly as `db migrate --remote` uses them.
 - **It writes the id into the wrangler config the manifest names**
   (`worker.wranglerConfig`, JSON/JSONC only) with a `jsonc-parser` edit, so
-  comments and formatting survive, and prints the id and the account. If the
-  file changed while Wrangler ran it writes nothing and prints the id to record.
+  comments and formatting survive, and prints the id and where the account came
+  from. An `account_id` from the wrangler config is printed; one from
+  `CLOUDFLARE_ACCOUNT_ID` is used but not echoed, so a value read from the
+  environment never lands in a terminal or CI log. If the file changed while
+  Wrangler ran it writes nothing and prints the id to record.
 - **It never deletes.** Removing a data store is an operator action.
 
 `--binding` is needed only when more than one top-level binding is a

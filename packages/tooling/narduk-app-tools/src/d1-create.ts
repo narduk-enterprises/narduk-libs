@@ -74,8 +74,16 @@ export interface D1CreatePlan {
   /** Index of the binding in the top-level `d1_databases` array. */
   index: number
   databaseName: string
+  /** The account Wrangler is pointed at. Passed to Wrangler, never printed. */
   accountId: string
   accountSource: 'wrangler config account_id' | 'CLOUDFLARE_ACCOUNT_ID'
+  /**
+   * The account id as the wrangler config states it, or null when it came from
+   * `CLOUDFLARE_ACCOUNT_ID`. Messages and results show only this one: an
+   * account id is not a credential, but a value read from the environment is
+   * not echoed to the terminal or into logs.
+   */
+  configAccountId: string | null
   /** The config text the plan was made from; the write refuses if it changed. */
   wranglerText: string
 }
@@ -93,7 +101,8 @@ export interface D1CreateResult {
   binding: string
   databaseName: string
   databaseId: string | null
-  accountId: string
+  /** The config's `account_id`, or null when the account came from `CLOUDFLARE_ACCOUNT_ID`. */
+  accountId: string | null
   accountSource: D1CreatePlan['accountSource']
   wranglerConfig: string
 }
@@ -267,7 +276,7 @@ export function planD1Create(options: D1CreateOptions): D1CreatePlan {
   if (configAccount && envAccount && configAccount !== envAccount) {
     throw new Error(
       `db create: refused -- ${wranglerRel} account_id ${configAccount} and ` +
-        `CLOUDFLARE_ACCOUNT_ID ${envAccount} disagree about which account the database belongs in`,
+        'CLOUDFLARE_ACCOUNT_ID disagree about which account the database belongs in',
     )
   }
   const accountId = configAccount ?? envAccount
@@ -288,6 +297,7 @@ export function planD1Create(options: D1CreateOptions): D1CreatePlan {
     databaseName,
     accountId,
     accountSource: configAccount ? 'wrangler config account_id' : 'CLOUDFLARE_ACCOUNT_ID',
+    configAccountId: configAccount ?? null,
     wranglerText,
   }
 }
@@ -328,9 +338,15 @@ export function withD1DatabaseId(text: string, index: number, id: string): strin
   return applyEdits(text, edits)
 }
 
+function describeAccount(plan: D1CreatePlan): string {
+  return plan.configAccountId
+    ? `account ${plan.configAccountId}`
+    : 'the account CLOUDFLARE_ACCOUNT_ID names'
+}
+
 function recoveryHint(plan: D1CreatePlan, id: string): string {
   return (
-    `The database ${plan.databaseName} (${id}) now exists in account ${plan.accountId}. ` +
+    `The database ${plan.databaseName} (${id}) now exists in ${describeAccount(plan)}. ` +
     `Set d1_databases[${plan.index}].database_id to ${id} in ${plan.wranglerConfig} by hand. ` +
     'Do not re-run db create: the database is not to be created twice.'
   )
@@ -344,7 +360,7 @@ export function runD1Create(
   const base = {
     binding: plan.binding,
     databaseName: plan.databaseName,
-    accountId: plan.accountId,
+    accountId: plan.configAccountId,
     accountSource: plan.accountSource,
     wranglerConfig: plan.wranglerConfig,
   }
@@ -358,7 +374,7 @@ export function runD1Create(
   } catch (error) {
     throw new Error(
       `db create: ${(error as Error).message}. Wrangler exited 0, so database ` +
-        `${plan.databaseName} may exist in account ${plan.accountId}: read its id with ` +
+        `${plan.databaseName} may exist in ${describeAccount(plan)}: read its id with ` +
         '`wrangler d1 info ' +
         plan.databaseName +
         '` and set it by hand. Do not re-run db create.\n--- wrangler output ---\n' +
@@ -387,19 +403,25 @@ export function runD1Create(
   return { status: 'created', databaseId: id, ...base }
 }
 
+function formatAccount(result: D1CreateResult): string {
+  return result.accountId
+    ? `${result.accountId} (from ${result.accountSource})`
+    : 'from CLOUDFLARE_ACCOUNT_ID (value not echoed)'
+}
+
 export function formatD1CreateResult(result: D1CreateResult): string {
   const lines =
     result.status === 'dry-run'
       ? [
           `[db create] dry run: would create D1 database ${result.databaseName}`,
-          `  account   ${result.accountId} (from ${result.accountSource})`,
+          `  account   ${formatAccount(result)}`,
           `  binding   ${result.binding}`,
           `  writes    database_id into ${result.wranglerConfig}`,
         ]
       : [
           `[db create] created D1 database ${result.databaseName}`,
           `  id        ${result.databaseId}`,
-          `  account   ${result.accountId} (from ${result.accountSource})`,
+          `  account   ${formatAccount(result)}`,
           `  binding   ${result.binding}`,
           `  written   database_id in ${result.wranglerConfig}`,
           '  The id is configuration, not a secret: commit the config change.',

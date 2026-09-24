@@ -118,7 +118,8 @@ describe('db create', () => {
       binding: 'DB',
       databaseName: 'harbor-notes-db',
       databaseId: NEW_ID,
-      accountId: ACCOUNT,
+      // An account named only by the environment is used, not echoed.
+      accountId: null,
       accountSource: 'CLOUDFLARE_ACCOUNT_ID',
       wranglerConfig: 'apps/web/wrangler.jsonc',
     })
@@ -197,10 +198,19 @@ describe('db create', () => {
     expect(planD1Create({ checkoutDir: withAccount, env: {} })).toMatchObject({
       accountId: ACCOUNT,
       accountSource: 'wrangler config account_id',
+      configAccountId: ACCOUNT,
     })
-    expect(() =>
-      planD1Create({ checkoutDir: withAccount, env: { CLOUDFLARE_ACCOUNT_ID: 'f'.repeat(32) } }),
-    ).toThrow(/disagree about which account/)
+    const other = 'f'.repeat(32)
+    let refusal = ''
+    try {
+      planD1Create({ checkoutDir: withAccount, env: { CLOUDFLARE_ACCOUNT_ID: other } })
+    } catch (error) {
+      refusal = (error as Error).message
+    }
+    expect(refusal).toMatch(/disagree about which account/)
+    // The config's id is named; the environment's value is not repeated back.
+    expect(refusal).toContain(ACCOUNT)
+    expect(refusal).not.toContain(other)
   })
 
   it('asks for --binding when more than one binding is a placeholder', () => {
@@ -251,7 +261,7 @@ describe('db create', () => {
     }
     expect(() => runD1Create({ checkoutDir: root, env }, executor)).toThrow(
       new RegExp(
-        `changed while wrangler ran.*harbor-notes-db \\(${NEW_ID}\\) now exists in account ${ACCOUNT}.*Do not re-run`,
+        `changed while wrangler ran.*harbor-notes-db \\(${NEW_ID}\\) now exists in the account CLOUDFLARE_ACCOUNT_ID names.*Do not re-run`,
       ),
     )
     expect(readFileSync(join(root, 'apps/web/wrangler.jsonc'), 'utf8')).not.toContain(NEW_ID)
@@ -349,8 +359,9 @@ describe('db create helpers', () => {
     } finally {
       vi.unstubAllEnvs()
     }
-    expect(log.mock.calls.flat().join('\n')).toContain(
-      'dry run: would create D1 database harbor-notes-db',
-    )
+    const printed = log.mock.calls.flat().join('\n')
+    expect(printed).toContain('dry run: would create D1 database harbor-notes-db')
+    expect(printed).toContain('account   from CLOUDFLARE_ACCOUNT_ID (value not echoed)')
+    expect(printed).not.toContain(ACCOUNT)
   })
 })
