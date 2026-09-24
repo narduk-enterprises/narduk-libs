@@ -50,7 +50,7 @@
  * The search field, and the refresh or close controls that borrow a chip's
  * shape. A search is a text control beside the row, not a member of it, and a
  * refresh is an action rather than a filter. `NeSearchInput` is the other half
- * of #261 and ships separately.
+ * of #261.
  */
 import UButton from '@nuxt/ui/components/Button.vue'
 import { computed, nextTick, ref } from 'vue'

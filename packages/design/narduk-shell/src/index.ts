@@ -87,6 +87,19 @@ export type {
 } from './runtime/components/ne-filter-bar-types'
 
 /**
+ * The search field's caller-built shapes and the debounce constant
+ * (narduk-libs#261). `NE_SEARCH_DEBOUNCE_MS` is a value on purpose: a page
+ * that wants the same window without importing the SFC should not have to
+ * hardcode 250. The types file is a plain module, so this does not put the
+ * component — or `@nuxt/ui` — in the barrel's value-import graph.
+ */
+export { NE_SEARCH_DEBOUNCE_MS } from './runtime/components/ne-search-input-types'
+export type {
+  NeSearchInputProps,
+  NeSearchInputSize,
+} from './runtime/components/ne-search-input-types'
+
+/**
  * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure
  * functions with no Vue or DOM import, so a server route can write the same
  * CSV `NeCsvDownload` does, and a page can read a wire sort without a regex.

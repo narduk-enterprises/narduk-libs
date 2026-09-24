@@ -81,6 +81,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
   shell('NeStatePanel', 'State panel', 'Loading, empty, error and gap states for a data region.'),
   shell('NePager', 'Pager', 'Page controls bound to useCollection() state.'),
   shell('NeFilterBar', 'Filter bar', 'Chips or tabs that pick one view of a list, with counts.'),
+  shell(
+    'NeSearchInput',
+    'Search input',
+    'Debounced search beside a collection; bind c.q with debounce 0.',
+  ),
   shell('NeForm', 'Form', 'A Nuxt UI form with the estate submit and error layout.'),
   shell('NeFormSection', 'Form section', 'A titled group of fields inside a form.'),
   shell(
