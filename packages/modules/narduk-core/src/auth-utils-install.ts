@@ -12,7 +12,10 @@
  *
  * `nardukCore.auth: false` skips the install entirely and does not seed an
  * empty session password (narduk-libs#169). That is the opt-out for a site
- * with no accounts; `loadStrategy: 'none'` is not a substitute.
+ * with no accounts; `loadStrategy: 'none'` is not a substitute. With auth off,
+ * core registers a signed-out `useUserSession` for its dashboard chrome, and
+ * refuses the build when narduk-auth is installed with nothing else providing
+ * `nuxt-auth-utils`.
  */
 
 export type NuxtAuthUtilsLoadStrategy = 'client-only' | 'none' | 'server-first'
@@ -29,11 +32,15 @@ export interface NuxtAuthUtilsInstallOptions {
   loadStrategy?: NuxtAuthUtilsLoadStrategy
 }
 
-const AUTH_PACKAGE_NAMES = new Set([
+const NARDUK_AUTH_PACKAGE_NAMES = new Set([
   '@narduk-enterprises/narduk-auth',
   '@narduk-enterprises/narduk-auth/nuxt',
-  'nuxt-auth-utils',
 ])
+
+const NUXT_AUTH_UTILS_PACKAGE_NAME = 'nuxt-auth-utils'
+
+/** `meta.name` that `nuxt-auth-utils` registers under (`_installedModules`). */
+const NUXT_AUTH_UTILS_META_NAME = 'auth-utils'
 
 function trimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -49,21 +56,33 @@ export function isAuthLoadStrategy(value: unknown): value is NuxtAuthUtilsLoadSt
   return value === 'client-only' || value === 'none' || value === 'server-first'
 }
 
-export function moduleDeclaresAuth(modules: unknown[] | undefined): boolean {
+function normalizedModuleNames(modules: unknown[] | undefined): string[] {
+  const names: string[] = []
   for (const entry of modules ?? []) {
     const name = moduleEntryName(entry)
-    if (!name) continue
-    const normalized = name.replaceAll('\\', '/')
-    if (AUTH_PACKAGE_NAMES.has(normalized)) return true
-    if (
-      normalized.endsWith('/narduk-auth') ||
-      normalized.endsWith('/narduk-auth/nuxt') ||
-      normalized.endsWith('/narduk-auth/src/module')
-    ) {
-      return true
-    }
+    if (name) names.push(name.replaceAll('\\', '/'))
   }
-  return false
+  return names
+}
+
+/** `@narduk-enterprises/narduk-auth` (or a workspace path to it) in `modules`. */
+export function moduleDeclaresNardukAuth(modules: unknown[] | undefined): boolean {
+  return normalizedModuleNames(modules).some(
+    (name) =>
+      NARDUK_AUTH_PACKAGE_NAMES.has(name) ||
+      name.endsWith('/narduk-auth') ||
+      name.endsWith('/narduk-auth/nuxt') ||
+      name.endsWith('/narduk-auth/src/module'),
+  )
+}
+
+/** `nuxt-auth-utils` listed in the app's own `modules`. */
+export function moduleDeclaresNuxtAuthUtils(modules: unknown[] | undefined): boolean {
+  return normalizedModuleNames(modules).includes(NUXT_AUTH_UTILS_PACKAGE_NAME)
+}
+
+export function moduleDeclaresAuth(modules: unknown[] | undefined): boolean {
+  return moduleDeclaresNardukAuth(modules) || moduleDeclaresNuxtAuthUtils(modules)
 }
 
 export function sessionPasswordConfigured(
@@ -122,4 +141,72 @@ export async function maybeInstallNuxtAuthUtils(
 ): Promise<void> {
   if (!shouldInstallNuxtAuthUtils(auth)) return
   await install('nuxt-auth-utils', resolveNuxtAuthUtilsInstallOptions(signals))
+}
+
+export interface AuthOptOutSignals {
+  /** `nardukCore.auth`; only an explicit `false` is the opt-out. */
+  auth: boolean | undefined
+  /** `nuxt.options._installedModules`, read once every module is installed. */
+  installedModules?: ReadonlyArray<{ meta?: { name?: unknown } }>
+  /** `nuxt.options.modules`. */
+  modules?: unknown[]
+  /** narduk-auth installed by any route (`usesNardukAuth(runtimeConfig)`). */
+  nardukAuthInstalled?: boolean
+}
+
+/**
+ * True when `nuxt-auth-utils` is installed by something other than core: the
+ * app's own `modules`, a layer, or another module's `installModule`.
+ */
+export function nuxtAuthUtilsInstalled(
+  signals: Pick<AuthOptOutSignals, 'installedModules' | 'modules'>,
+): boolean {
+  if (moduleDeclaresNuxtAuthUtils(signals.modules)) return true
+  return (signals.installedModules ?? []).some(
+    (entry) => entry?.meta?.name === NUXT_AUTH_UTILS_META_NAME,
+  )
+}
+
+/**
+ * The build-time message for `nardukCore.auth: false` in an app that cannot
+ * work without the session module, or `null`.
+ *
+ * narduk-auth signs users in through `nuxt-auth-utils` (`setUserSession`,
+ * `useUserSession`) and does not install it: it relies on core. So auth off
+ * plus narduk-auth, with nothing else installing `nuxt-auth-utils`, would build
+ * and then fail on the first sign-in. An app that lists `nuxt-auth-utils` in
+ * its own `modules` installs it itself, and that combination is allowed.
+ */
+export function findAuthOptOutConflict(signals: AuthOptOutSignals): string | null {
+  if (shouldInstallNuxtAuthUtils(signals.auth)) return null
+  const nardukAuth = signals.nardukAuthInstalled || moduleDeclaresNardukAuth(signals.modules)
+  if (!nardukAuth || nuxtAuthUtilsInstalled(signals)) return null
+  return (
+    '[narduk-core] nardukCore.auth: false conflicts with @narduk-enterprises/narduk-auth: ' +
+    'narduk-auth keeps its sessions in nuxt-auth-utils, which auth: false does not install. ' +
+    "Remove auth: false, remove narduk-auth, or add 'nuxt-auth-utils' to modules yourself."
+  )
+}
+
+export const USER_SESSION_IMPORT_NAME = 'useUserSession'
+
+/**
+ * Whether core should register its signed-out `useUserSession`
+ * (`runtime/app/session/useUserSessionStub.ts`). Only with `app` on (the
+ * dashboard components that call it are registered) and `auth: false`, and
+ * only when nothing else provides the name: an app that installs
+ * `nuxt-auth-utils` itself keeps the real composable.
+ */
+export function shouldRegisterUserSessionStub(
+  signals: Pick<AuthOptOutSignals, 'auth' | 'installedModules' | 'modules'> & {
+    app: boolean | undefined
+    /** Auto-imports registered so far (`imports:extend`). */
+    imports?: ReadonlyArray<{ as?: unknown; name?: unknown }>
+  },
+): boolean {
+  if (!signals.app || shouldInstallNuxtAuthUtils(signals.auth)) return false
+  if (nuxtAuthUtilsInstalled(signals)) return false
+  return !(signals.imports ?? []).some(
+    (entry) => (entry.as ?? entry.name) === USER_SESSION_IMPORT_NAME,
+  )
 }

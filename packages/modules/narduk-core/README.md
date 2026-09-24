@@ -87,6 +87,19 @@ export default defineNuxtConfig({
 `/api/_auth/session` is not registered (narduk-libs#169). An app-owned
 `runtimeConfig.session` is left alone.
 
+With `app` on, the dashboard layout's `LayerDashboardShell` and
+`LayerDashboardAccountMenu` still call `useUserSession`. Under `auth: false`
+core registers a signed-out `useUserSession` in its place: `loggedIn` is
+`false`, `user` and `session` are `null`, `ready` is `true`, and `fetch`,
+`clear` and `openInPopup` do nothing. It has the same return shape as
+`nuxt-auth-utils`' composable. An app that lists `nuxt-auth-utils` in its own
+`modules` keeps the real one.
+
+`auth: false` cannot be combined with `@narduk-enterprises/narduk-auth`: its
+sessions live in `nuxt-auth-utils`, which it relies on core to install. The
+build stops with a message naming the conflict, unless the app lists
+`nuxt-auth-utils` in `modules` itself.
+
 When auth stays on, the session plugin fetches `/api/_auth/session` during every
 SSR, and with no `NUXT_SESSION_PASSWORD` that request throws (narduk-libs#540).
 The install reuses the module's own `auth.loadStrategy` option:

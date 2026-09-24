@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  findAuthOptOutConflict,
   isAuthLoadStrategy,
   maybeInstallNuxtAuthUtils,
   moduleDeclaresAuth,
+  moduleDeclaresNardukAuth,
+  moduleDeclaresNuxtAuthUtils,
+  nuxtAuthUtilsInstalled,
   resolveNuxtAuthUtilsInstallOptions,
   sessionPasswordConfigured,
   sessionRuntimeConfigSeed,
   shouldInstallNuxtAuthUtils,
+  shouldRegisterUserSessionStub,
 } from '../src/auth-utils-install'
 
 describe('resolveNuxtAuthUtilsInstallOptions (narduk-libs#540)', () => {
@@ -185,5 +190,75 @@ describe('nardukCore.auth install gate (narduk-libs#169)', () => {
 
     await maybeInstallNuxtAuthUtils(undefined, install, { env: {}, modules: [] })
     expect(install).toHaveBeenCalledWith('nuxt-auth-utils', { loadStrategy: 'none' })
+  })
+})
+
+const NARDUK_AUTH = '@narduk-enterprises/narduk-auth'
+const NUXT_AUTH_UTILS = 'nuxt-auth-utils'
+
+describe('nardukCore.auth: false guards (narduk-libs#169)', () => {
+  it('tells narduk-auth and nuxt-auth-utils apart in modules', () => {
+    expect(moduleDeclaresNardukAuth([NARDUK_AUTH])).toBe(true)
+    expect(moduleDeclaresNardukAuth([['@narduk-enterprises/narduk-auth/nuxt', {}]])).toBe(true)
+    expect(moduleDeclaresNardukAuth(['../packages/modules/narduk-auth/src/module'])).toBe(true)
+    expect(moduleDeclaresNardukAuth([NUXT_AUTH_UTILS])).toBe(false)
+    expect(moduleDeclaresNuxtAuthUtils([NUXT_AUTH_UTILS])).toBe(true)
+    expect(moduleDeclaresNuxtAuthUtils([[NUXT_AUTH_UTILS, {}]])).toBe(true)
+    expect(moduleDeclaresNuxtAuthUtils([NARDUK_AUTH])).toBe(false)
+  })
+
+  it('sees nuxt-auth-utils in modules or among installed modules', () => {
+    expect(nuxtAuthUtilsInstalled({ modules: [NUXT_AUTH_UTILS] })).toBe(true)
+    expect(nuxtAuthUtilsInstalled({ installedModules: [{ meta: { name: 'auth-utils' } }] })).toBe(
+      true,
+    )
+    expect(nuxtAuthUtilsInstalled({ installedModules: [{ meta: { name: 'pinia' } }] })).toBe(false)
+    expect(nuxtAuthUtilsInstalled({})).toBe(false)
+  })
+
+  it('reports a conflict only for auth off plus narduk-auth without nuxt-auth-utils', () => {
+    const nardukAuth = [NARDUK_AUTH]
+    expect(findAuthOptOutConflict({ auth: false, modules: nardukAuth })).toMatch(
+      /nardukCore\.auth: false conflicts with @narduk-enterprises\/narduk-auth/,
+    )
+    expect(findAuthOptOutConflict({ auth: false, nardukAuthInstalled: true })).not.toBeNull()
+    expect(
+      findAuthOptOutConflict({ auth: false, modules: [...nardukAuth, NUXT_AUTH_UTILS] }),
+    ).toBeNull()
+    expect(
+      findAuthOptOutConflict({
+        auth: false,
+        installedModules: [{ meta: { name: 'auth-utils' } }],
+        modules: nardukAuth,
+      }),
+    ).toBeNull()
+    expect(findAuthOptOutConflict({ auth: undefined, modules: nardukAuth })).toBeNull()
+    expect(findAuthOptOutConflict({ auth: true, modules: nardukAuth })).toBeNull()
+    expect(findAuthOptOutConflict({ auth: false, modules: [NUXT_AUTH_UTILS] })).toBeNull()
+    expect(findAuthOptOutConflict({ auth: false, modules: [] })).toBeNull()
+  })
+
+  it('registers the signed-out useUserSession only with app on, auth off and no provider', () => {
+    expect(shouldRegisterUserSessionStub({ app: true, auth: false })).toBe(true)
+    expect(shouldRegisterUserSessionStub({ app: false, auth: false })).toBe(false)
+    expect(shouldRegisterUserSessionStub({ app: true, auth: true })).toBe(false)
+    expect(shouldRegisterUserSessionStub({ app: true, auth: undefined })).toBe(false)
+    expect(
+      shouldRegisterUserSessionStub({ app: true, auth: false, modules: [NUXT_AUTH_UTILS] }),
+    ).toBe(false)
+    expect(
+      shouldRegisterUserSessionStub({
+        app: true,
+        auth: false,
+        imports: [{ name: 'useUserSession' }],
+      }),
+    ).toBe(false)
+    expect(
+      shouldRegisterUserSessionStub({
+        app: true,
+        auth: false,
+        imports: [{ as: 'useUserSession', name: 'useSession' }],
+      }),
+    ).toBe(false)
   })
 })

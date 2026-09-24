@@ -22,6 +22,7 @@
     "runtime/internal/**/*.ts",
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/error-page.ts",
+    "runtime/app/session/useUserSessionStub.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/composables/usePreferences.ts",
     "runtime/app/composables/useSsrNow.ts",
@@ -101,6 +102,9 @@
     // source. Its `defineNuxtConfig` comes from its own Nuxt context, which
     // this project never generates.
     "tests/fixtures/**",
+    // Nuxt-context type proofs: `.nuxt/tsconfig.app.json` includes
+    // `tests/nuxt/**`, where `#auth-utils` and the other Nuxt aliases resolve.
+    "tests/nuxt/**",
     // Mount tests import SFCs. vue-tsc typechecks those components through
     // `.nuxt/tsconfig.app.json`; this project is TypeScript-only.
     "tests/app-image.test.ts",
