@@ -77,6 +77,28 @@ registerJourneys({
 })
 ```
 
+`base` and `world` may each be today's scalar or a function of `workerIndex`
+(`test.info().parallelIndex` / `TEST_PARALLEL_INDEX`). Resolve happens inside
+the registered `test()` body; the run manifest records the resolved `base`.
+
+```ts
+registerJourneys({
+  catalog,
+  base: (workerIndex) => `http://localhost:${3241 + workerIndex}`,
+  world: (workerIndex) => createWorld({ base: baseFor(workerIndex) }),
+  outRoot,
+  environment,
+  profileName,
+  declarationDigest,
+})
+```
+
+A Playwright worker pool (`workers > 1`) is refused unless **both** are
+functions. A scalar `base` or a scalar `world` would share one origin and one
+database across the pool — the wrong-but-green overwrite the contract exists
+to kill. `workers: 1` with today's scalars stays the correct setting for a
+single world.
+
 - `JOURNEYS_MODE=test npx playwright test` — every journey, every declared
   scenario, no artefacts, fail fast.
 - `JOURNEYS_MODE=capture npx playwright test` — first declared scenario,
