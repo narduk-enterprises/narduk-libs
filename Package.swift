@@ -23,3 +23,21 @@ let package = Package(
     ],
     swiftLanguageModes: [.v6]
 )
+
+// NardukAuthKit is the Apple client half of narduk-auth's native PKCE flow
+// (docs/architecture/swift-packages.md). It needs Security and CryptoKit, so it
+// exists only where the manifest is evaluated on an Apple host; the Linux
+// logging gate keeps building NardukLogging alone.
+#if canImport(Darwin)
+    package.products.append(.library(name: "NardukAuthKit", targets: ["NardukAuthKit"]))
+    package.targets += [
+        .target(
+            name: "NardukAuthKit",
+            path: "packages/modules/narduk-auth/swift/Sources/NardukAuthKit"
+        ),
+        .testTarget(
+            name: "NardukAuthKitTests", dependencies: ["NardukAuthKit"],
+            path: "packages/modules/narduk-auth/swift/Tests/NardukAuthKitTests"
+        ),
+    ]
+#endif
