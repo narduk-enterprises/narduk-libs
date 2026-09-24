@@ -54,6 +54,7 @@ function makeLayer(options: {
   focusable?: boolean
   itemKey: (item: Station, index: number) => string
   itemLabel?: (item: Station) => string
+  onHover?: (id: string | null) => void
   onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
   pinGeometry?: (item: Station) => { anchor?: 'center'; size?: { height: number; width: number } }
 }): MapKitPinLayer<Station> {
@@ -256,6 +257,28 @@ describe('the library-owned host (§c.2)', () => {
     layer.hostFor('station-1')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
     expect(onSelect).toHaveBeenCalledWith(null, 'pointer')
+  })
+
+  it('reports hover without rebuilding the host (narduk-libs#517)', () => {
+    const onHover = vi.fn()
+    const layer = layerFor({ onHover })
+    const items = [station(1), station(2)]
+    layer.setItems(items)
+    const host = layer.hostFor('station-1')!
+    harness.fake.inspect.reset()
+
+    host.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+    expect(onHover).toHaveBeenCalledWith('station-1')
+    layer.setHovered('station-1')
+
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(true)
+    expect(harness.fake.inspect.annotationsAdded).toBe(0)
+    expect(harness.fake.inspect.annotationsRemoved).toBe(0)
+
+    host.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    expect(onHover).toHaveBeenLastCalledWith(null)
+    layer.setHovered(null)
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(false)
   })
 
   it('refuses to render a pin with no accessible name', () => {

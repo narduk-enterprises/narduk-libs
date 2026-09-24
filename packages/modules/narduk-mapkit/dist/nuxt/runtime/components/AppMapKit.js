@@ -19,6 +19,7 @@
  * turns props into calls on those controllers and renders the slots.
  */
 import { Teleport, computed, defineComponent, h, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
+import { MapKitLeaderOverlay } from '../../../client/leader-overlay.js';
 import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js';
 import { MapKitCalloutHostLayer } from '../callout-host.js';
 import { useMapKitPreload } from '../preload.js';
@@ -62,6 +63,17 @@ const props = {
     dynamicCircleRadius: { default: false, type: Boolean },
     fallbackCenter: { default: undefined, type: Object },
     geojson: { default: null, type: Object },
+    /**
+     * The pin the pointer is over (`v-model:hovered-id`). The matching host
+     * carries `data-mapkit-hovered`. A hover never rebuilds annotations.
+     */
+    hoveredId: { default: null, type: String },
+    /**
+     * Draw a leader from the selected annotation to `anchor` on every region
+     * change. The overlay is a plain `./client` class so a consumer that draws
+     * its own pins can use the same one (narduk-libs#517).
+     */
+    leader: { default: null, type: Object },
     isRotationEnabled: { default: false, type: Boolean },
     isScrollEnabled: { default: true, type: Boolean },
     isZoomEnabled: { default: true, type: Boolean },
@@ -99,8 +111,9 @@ const props = {
      * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
      * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
      * handlers. `false` is for a decorative map: the host carries no role, no
-     * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
-     * longer contains focusable descendants (axe `aria-hidden-focus`) and
+     * tabindex, no `aria-pressed` and no click or keyboard listeners, so an
+     * `aria-hidden` map no longer contains focusable descendants (axe
+     * `aria-hidden-focus`) and
      * `itemLabel` stops being required.
      */
     pinsFocusable: { default: true, type: Boolean },
@@ -123,6 +136,7 @@ const AppMapKitImpl = defineComponent({
         'callout-close': (payload) => Boolean(payload),
         'callout-open': (payload) => Boolean(payload),
         'feature-select': (feature) => Boolean(feature),
+        'leader-offscreen': (offscreen) => typeof offscreen === 'boolean',
         'map-click': (coordinate) => Boolean(coordinate),
         /**
          * The map, and the namespace that built it (2.1.1, K-10).
@@ -134,6 +148,7 @@ const AppMapKitImpl = defineComponent({
         'map-ready': (map, mapkit) => Boolean(map) && Boolean(mapkit),
         'mapkit-error': (failure) => Boolean(failure),
         'region-change': (region) => Boolean(region),
+        'update:hoveredId': (id) => id === null || typeof id === 'string',
         'update:selectedId': (id) => id === null || typeof id === 'string',
     },
     slots: Object,
@@ -186,6 +201,7 @@ const AppMapKitImpl = defineComponent({
         const mapReady = ref(false);
         const wrapperRef = ref(null);
         let calloutLayer = null;
+        let leaderOverlay = null;
         let map = null;
         let overlayLayer = null;
         let overviewRegion = null;
@@ -275,6 +291,45 @@ const AppMapKitImpl = defineComponent({
             const geometry = componentProps.pinGeometry?.(item) ?? {};
             const offset = mapKitAnchorOffset(geometry);
             return { x: offset.x + (geometry.size?.width ?? 0) / 2, y: offset.y };
+        }
+        function leaderPoint() {
+            const id = componentProps.selectedId;
+            if (!id)
+                return null;
+            const item = pinLayer?.itemFor(id);
+            if (!item)
+                return null;
+            const projected = projectCoordinate({ lat: item.lat, lng: item.lng }, id);
+            if (!projected)
+                return null;
+            const canvas = containerRef.value;
+            const host = wrapperRef.value ?? canvas;
+            if (!canvas || !host || host === canvas)
+                return projected;
+            const canvasBox = canvas.getBoundingClientRect();
+            const hostBox = host.getBoundingClientRect();
+            return {
+                x: projected.x + canvasBox.left - hostBox.left,
+                y: projected.y + canvasBox.top - hostBox.top,
+            };
+        }
+        function syncLeader() {
+            const host = wrapperRef.value ?? containerRef.value;
+            if (!componentProps.leader || !host) {
+                leaderOverlay?.destroy();
+                leaderOverlay = null;
+                return;
+            }
+            if (!leaderOverlay) {
+                leaderOverlay = new MapKitLeaderOverlay({
+                    container: host,
+                    getAnchor: () => componentProps.leader?.anchor ?? null,
+                    getPoint: leaderPoint,
+                    onOffscreen: (offscreen) => emit('leader-offscreen', offscreen),
+                });
+                return;
+            }
+            leaderOverlay.refresh();
         }
         function openCallout(id) {
             const item = pinLayer?.itemFor(id);
@@ -404,6 +459,7 @@ const AppMapKitImpl = defineComponent({
                 focusable: componentProps.pinsFocusable,
                 map,
                 mapkit: namespace,
+                onHover: (id) => emit('update:hoveredId', id),
                 onSelect: select,
             });
             map.addEventListener('region-change-end', () => {
@@ -418,12 +474,16 @@ const AppMapKitImpl = defineComponent({
                 });
                 overlayLayer?.resizeCirclesToRegion(region.span.latitudeDelta);
                 calloutLayer?.reposition();
+                leaderOverlay?.refresh();
             });
             pinLayer.setItems(componentProps.items);
             applyOverlays();
             if (componentProps.selectedId !== null)
                 applySelection(componentProps.selectedId);
+            if (componentProps.hoveredId !== null)
+                pinLayer.setHovered(componentProps.hoveredId);
             mapReady.value = true;
+            syncLeader();
             // K-10: the namespace goes with the map. A value built from
             // `globalThis.mapkit` belongs to a different namespace and this map's own
             // instanceof checks reject it.
@@ -482,6 +542,7 @@ const AppMapKitImpl = defineComponent({
         });
         watch(() => componentProps.selectedId, (id) => {
             applySelection(id);
+            syncLeader();
             const namespace = mapkit.value;
             if (componentProps.suppressSelectionZoom || !map || !namespace)
                 return;
@@ -490,6 +551,12 @@ const AppMapKitImpl = defineComponent({
                 zoomToItem(namespace, item);
             else if (overviewRegion)
                 map.setRegionAnimated(overviewRegion, true);
+        });
+        watch(() => componentProps.hoveredId, (id) => {
+            pinLayer?.setHovered(id);
+        });
+        watch(() => [componentProps.leader, componentProps.leader?.anchor ?? null], () => {
+            syncLeader();
         });
         watch(() => [componentProps.geojson, componentProps.circles], () => {
             applyOverlays();
@@ -531,6 +598,8 @@ const AppMapKitImpl = defineComponent({
                 emit('mapkit-error', value);
         });
         onBeforeUnmount(() => {
+            leaderOverlay?.destroy();
+            leaderOverlay = null;
             calloutLayer?.destroy();
             calloutLayer = null;
             calloutEntries.value = [];
@@ -542,6 +611,8 @@ const AppMapKitImpl = defineComponent({
             map = null;
         });
         function retry() {
+            leaderOverlay?.destroy();
+            leaderOverlay = null;
             pinLayer?.destroy();
             pinLayer = null;
             overlayLayer?.destroy();

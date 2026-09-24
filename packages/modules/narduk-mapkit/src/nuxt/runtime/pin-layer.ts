@@ -101,6 +101,12 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
    * Called when a pin is activated by pointer or keyboard, with the toggled id
    * and which of the two activated it.
    */
+  /**
+   * Called when the pointer enters or leaves a pin host. The layer does not
+   * apply hover itself -- the host's `hoveredId` (or the app) writes it back
+   * through `setHovered`, the same way `selectedId` works.
+   */
+  onHover?: (id: string | null) => void
   onSelect?: (id: string | null, via: MapKitSelectVia) => void
   pinGeometry?: (item: T) => MapKitPinGeometry
 }
@@ -111,6 +117,7 @@ interface MapKitPinEntry<T> {
   geometrySignature: string
   host: HTMLElement
   item: T
+  key: string
   selected: boolean
 }
 
@@ -156,6 +163,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   readonly #options: MapKitPinLayerOptions<T>
   readonly #registry: MapKitAnnotationRegistry<MapKitAnnotationLike>
   #destroyed = false
+  #hoveredId: string | null = null
   #lastDiff: MapKitDiff = emptyDiff()
   #selectedId: string | null = null
 
@@ -172,6 +180,10 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
         },
       },
     })
+  }
+
+  get hoveredId(): string | null {
+    return this.#hoveredId
   }
 
   get selectedId(): string | null {
@@ -255,6 +267,10 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     // A key whose selection no longer exists leaves the layer unselected, so a
     // later re-selection of the same id is not swallowed as a no-op.
     if (this.#selectedId !== null && !this.#entries.has(this.#selectedId)) this.#selectedId = null
+    if (this.#hoveredId !== null && !this.#entries.has(this.#hoveredId)) {
+      this.#hoveredId = null
+      this.#options.onHover?.(null)
+    }
 
     // `recreated` means a changed signature reached a key with no update hook.
     // Every descriptor here supplies one, so this is a contract check, not a
@@ -290,6 +306,22 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     return diff
   }
 
+  /**
+   * Mark the hovered pin.
+   *
+   * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+   * moves, so a hover cannot recreate the host the pointer is on.
+   */
+  setHovered(id: string | null): void {
+    if (this.#destroyed) return
+    const next = id !== null && this.#entries.has(id) ? id : null
+    if (next === this.#hoveredId) return
+    const previous = this.#hoveredId
+    this.#hoveredId = next
+    if (previous !== null) this.#applyHover(previous, false)
+    if (next !== null) this.#applyHover(next, true)
+  }
+
   /** Remove every pin and make the layer inert. Idempotent. */
   destroy(): void {
     if (this.#destroyed) return
@@ -321,6 +353,18 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     if (this.#focusable) entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false')
     if (entry.selected) entry.host.setAttribute('data-mapkit-selected', '')
     else entry.host.removeAttribute('data-mapkit-selected')
+    this.#writeHover(entry.host, this.#hoveredId === entry.key)
+  }
+
+  #applyHover(key: string, hovered: boolean): void {
+    const host = this.#entries.get(key)?.host
+    if (!host) return
+    this.#writeHover(host, hovered)
+  }
+
+  #writeHover(host: HTMLElement, hovered: boolean): void {
+    if (hovered) host.setAttribute('data-mapkit-hovered', '')
+    else host.removeAttribute('data-mapkit-hovered')
   }
 
   /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
@@ -342,6 +386,14 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     const host = this.#document.createElement('div')
     host.setAttribute('data-map-pin', '')
     host.setAttribute('data-mapkit-pin', key)
+    if (this.#options.onHover) {
+      host.addEventListener('pointerenter', () => {
+        this.#options.onHover?.(key)
+      })
+      host.addEventListener('pointerleave', () => {
+        this.#options.onHover?.(null)
+      })
+    }
 
     if (!this.#focusable) {
       // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
@@ -388,6 +440,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       geometrySignature,
       host,
       item,
+      key,
       selected: this.#selectedId === key,
     }
     this.#renderGlyph(entry)
