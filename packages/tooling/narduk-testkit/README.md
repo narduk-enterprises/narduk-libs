@@ -44,6 +44,43 @@ event, which on a Nuxt page fires **before** hydration (#697). It keeps that
 behaviour so existing suites do not all change at once. `waitForPageLoad(page)`
 is the same wait under an accurate name.
 
+### Hydration mismatch failures
+
+The shared `page` fixture fails any test whose console logs a Vue hydration
+mismatch. Production Vue logs only `Hydration completed but contains mismatches`
+— no URL, no element — so a consumer CI line used to name nothing.
+
+The fixture installs an `addInitScript` that wraps `console.warn` and, as the
+warning fires, serialises `location.pathname`, the page URL, the mismatched
+node's `outerHTML`, and its parent (truncated). Those strings are appended to
+the warning so Playwright's `msg.text()` already carries them. A
+`page.on('console')` handler that `await`s `arg.evaluate` loses the handle as
+soon as the test navigates again, which is the back-to-back `goto` pattern that
+exposes these bugs.
+
+Production Vue strips the node arguments unless the E2E or CI preview artifact
+is built with `vite.define.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = 'true'`.
+That flag is never for the production deploy. Import the helper from the
+config-safe subpath — not from `e2e/fixtures`, which registers Playwright
+fixtures at module scope:
+
+```ts
+import { VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE } from '@narduk-enterprises/narduk-testkit/e2e/hydration-mismatch'
+
+export default defineNuxtConfig({
+  vite: {
+    define: {
+      ...(process.env.NARDUK_E2E === '1'
+        ? VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE
+        : {}),
+    },
+  },
+})
+```
+
+With the flag on, Vue prints the server node and the client expectation on the
+first mismatch; the fixture then names the page those arguments belonged to.
+
 Apps whose users endpoint is not the default `/api/admin/users` can configure
 the reusable API spec without copying it:
 

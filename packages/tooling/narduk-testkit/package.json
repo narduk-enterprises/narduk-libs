@@ -47,6 +47,10 @@
       "types": "./dist/e2e/fixture-server.d.ts",
       "import": "./dist/e2e/fixture-server.js"
     },
+    "./e2e/hydration-mismatch": {
+      "types": "./dist/e2e/hydration-mismatch.d.ts",
+      "import": "./dist/e2e/hydration-mismatch.js"
+    },
     "./playwright/accessibility": {
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
