@@ -1,0 +1,73 @@
+# One-shot: this run's ManagePullRequest identity is bound to PR #791, and
+# the integration token cannot createPullRequest. A push here asks Actions
+# (pull-requests: write) to open seo-og-image-optional-170 as a non-draft
+# PR. That branch is not modified.
+name: Open #170 pull request
+
+on:
+  push:
+    branches:
+      - chore/open-170-pr
+
+concurrency:
+  group: open-170-pr
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  open:
+    if: github.repository == 'narduk-enterprises/narduk-libs'
+    name: Open seo-og-image-optional-170
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Open non-draft PR and request review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: narduk-enterprises/narduk-libs
+          PR_TITLE: 'fix(narduk-seo): make nuxt-og-image an optional peer (#170)'
+          PR_BODY: |
+            ## Problem
+
+            `narduk-seo` hard-depended on `nuxt-og-image`, so every consumer paid for the renderer whether or not it used runtime OG.
+
+            The three `image-size` highs that originally filed #170 are **already gone** at the shipped `nuxt-og-image@6.8.0` (`image-size` is not in the lockfile; workspace `npm audit` is 0 high). This PR is the coupling half. The prerender `/_og/**` pin that 403'd unsigned `/_og/s/...` URLs is already gone on `main`.
+
+            ## Change
+
+            - Move `nuxt-og-image@6.8.0` from `dependencies` to an **optional peer** (`peerDependenciesMeta.optional`) plus a `devDependency` pin for this package's tests.
+            - If the peer is missing, skip `installModule`, register a no-op `defineOgImage`, and have `useSeo` emit the static image instead of calling a renderer that is not installed.
+            - `ogImage.zeroRuntime` still installs the module (build-time cards). `ogImage.enabled: false` does not.
+            - README documents the optional peer. No audit allowlist.
+
+            **Packument caveat** (package-delivery#7): GitHub Packages / `npm.nard.uk` drop `peerDependenciesMeta` from the abbreviated packument, so an optional peer can still install as required for consumers on those registries. The module skip is what keeps a consumer that does not have the package able to build. Whether the install tree is actually free of `nuxt-og-image` depends on the registry until the npmjs.org move.
+
+            Work branch: `seo-og-image-optional-170` at `d40b784e`. Edits are inside `packages/modules/narduk-seo/**` only. `narduk-analytics` and generator source were not edited.
+
+            ## Changeset
+
+            Patch on `@narduk-enterprises/narduk-seo` and `@narduk-enterprises/create-narduk-app` because `PACKAGE_VERSIONS` pins `narduk-seo`.
+
+            ## Merge
+
+            **Hold merge.** Do not merge until a follow-up says MERGE.
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head seo-og-image-optional-170 --state open --json url --jq '.[0].url // empty')"
+          if [ -n "${existing}" ]; then
+            url="${existing}"
+            echo "PR already open: ${url}"
+          else
+            url="$(gh pr create --base main --head seo-og-image-optional-170 --title "${PR_TITLE}" --body "${PR_BODY}")"
+            echo "Opened ${url}"
+          fi
+          gh pr edit "${url}" --add-label review-deep --add-label review-now
+          echo "Labeled review-deep and review-now on ${url}"
