@@ -234,4 +234,9 @@ export const CATALOG: Record<string, CatalogEntry> = {
     kind: 'contract',
     capabilities: ['status apps', 'build-time config'],
   },
+  '@narduk-enterprises/stylelint-config': {
+    kind: 'tooling',
+    capabilities: ['Stylelint', 'lint budgets', 'narduk-stylelint', 'design tokens', 'z-index'],
+    setup: { commands: ['narduk-stylelint'] },
+  },
 }

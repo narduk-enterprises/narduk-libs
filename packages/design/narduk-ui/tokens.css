@@ -193,25 +193,90 @@
 
   --ns-container: 1320px;
   --ns-gutter: 20px;
-  --ns-margin: 32px; /* >= 1080 */
-  --ns-margin-md: 24px; /* 620-1079 */
-  --ns-margin-sm: 16px; /* < 620 */
+  --ns-bp-sm: 40rem; /* Tailwind sm */
+  --ns-bp-lg: 64rem; /* Tailwind lg */
+  --ns-margin: 32px; /* >= 64rem */
+  --ns-margin-md: 24px; /* 40rem–64rem */
+  --ns-margin-sm: 16px; /* < 40rem */
   --ns-tap-min: 44px; /* tap targets never below this */
+
+  /* ---- stacking — 11 page layers, then named map-internal layers ----------
+   * Page chrome uses --ns-z-*. A map canvas is its own stacking context and
+   * uses the --ns-z-map-* names inside that context. Never a raw z-index.
+   */
+  --ns-z-base: 0;
+  --ns-z-content: 1;
+  --ns-z-raised: 2;
+  --ns-z-sticky: 3;
+  --ns-z-nav: 4;
+  --ns-z-dropdown: 5;
+  --ns-z-popover: 6;
+  --ns-z-overlay: 7;
+  --ns-z-modal: 8;
+  --ns-z-toast: 9;
+  --ns-z-max: 10;
+  --ns-z-map-tiles: 0;
+  --ns-z-map-features: 1;
+  --ns-z-map-labels: 2;
+  --ns-z-map-selection: 3;
+  --ns-z-map-controls: 4;
+
+  /* ---- --bs-* → --ns-* --------------------------------------------------
+   * Buoys' --bs token set duplicated these names. The values live on --ns-*;
+   * --bs-* is an alias so existing app CSS keeps resolving.
+   */
+  --bs-ink: var(--ns-ink);
+  --bs-ink-2: var(--ns-ink-2);
+  --bs-ink-3: var(--ns-ink-3);
+  --bs-text: var(--ns-text);
+  --bs-text-mute: var(--ns-text-mute);
+  --bs-line-strong: var(--ns-line-strong);
+  --bs-line: var(--ns-line);
+  --bs-line-soft: var(--ns-line-soft);
+  --bs-surface: var(--ns-surface);
+  --bs-sunk: var(--ns-sunk);
+  --bs-paper: var(--ns-paper);
+  --bs-accent: var(--ns-accent);
+  --bs-accent-deep: var(--ns-accent-deep);
+  --bs-accent-soft: var(--ns-accent-soft);
+  --bs-live: var(--ns-live);
+  --bs-aging: var(--ns-aging);
+  --bs-stale: var(--ns-stale);
+  --bs-void: var(--ns-void);
+  --bs-font-text: var(--ns-font-text);
+  --bs-font-mono: var(--ns-font-mono);
+  --bs-r-xs: var(--ns-r-xs);
+  --bs-r-sm: var(--ns-r-sm);
+  --bs-r-md: var(--ns-r-md);
+  --bs-r-lg: var(--ns-r-lg);
+  --bs-r-pill: var(--ns-r-pill);
+  --bs-space-1: var(--ns-space-1);
+  --bs-space-2: var(--ns-space-2);
+  --bs-space-3: var(--ns-space-3);
+  --bs-space-4: var(--ns-space-4);
+  --bs-space-6: var(--ns-space-6);
+  --bs-space-8: var(--ns-space-8);
+  --bs-space-12: var(--ns-space-12);
+  --bs-space-20: var(--ns-space-20);
+  --bs-container: var(--ns-container);
+  --bs-gutter: var(--ns-gutter);
+  --bs-margin: var(--ns-margin);
+  --bs-tap-min: var(--ns-tap-min);
 }
 
 /*
- * Breakpoints, for reference when authoring app CSS. The system uses four:
- *   < 620      4 col   single column, bottom sheet map, stacked readouts
- *   620-819    8 col   two-up cards, condensed table
- *   820-1079  12 col   sidebar appears, full table
- *   >= 1080   12 col   three-up cards, map + rail, 1320 container
+ * Breakpoints match Tailwind sm/lg (40rem / 64rem). One cutover, no compat
+ * flag: apps that authored against 620/820/1080 will see a small layout shift.
+ *   < 40rem     4 col   single column, bottom sheet map, stacked readouts
+ *   40rem–64rem 8–12    two-up cards, condensed table, sidebar appears
+ *   >= 64rem    12 col  three-up cards, map + rail, 1320 container
  */
-@media (width < 620px) {
+@media (width < 40rem) {
   :root {
     --ns-margin: var(--ns-margin-sm);
   }
 }
-@media (620px <= width < 1080px) {
+@media (40rem <= width < 64rem) {
   :root {
     --ns-margin: var(--ns-margin-md);
   }
