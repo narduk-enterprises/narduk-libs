@@ -17,9 +17,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  * own library packages (no CSS entry) produced.
  *
  * So the design-system pack ships them OFF, and `createAppLintConfig()` turns
- * them on only when BOTH the pack that registers the `better-tailwindcss`
- * plugin is selected AND the app's entry point exists on disk. These tests pin
- * every state, because a regression in any direction is severe:
+ * them on only when the pack that registers the `better-tailwindcss` plugin is
+ * selected AND the app declared Tailwind with `tailwindEntryPoint` AND that
+ * file exists on disk (narduk-libs#665). These tests pin every state, because
+ * a regression in any direction is severe:
  *
  * - enabling too eagerly floods a consumer with false unknown-class errors;
  * - disabling too eagerly loses the Tailwind token gate altogether;
@@ -144,12 +145,73 @@ describe('design-system pack on its own', () => {
   })
 })
 
+describe('createAppLintConfig does not infer Tailwind (#665)', () => {
+  it('adds no theme override when the conventional entry file exists but Tailwind was not declared', () => {
+    // operator-portal#431: design-system is on (default / strict packs),
+    // `app/assets/css/main.css` exists, and `tailwindcss` happens to resolve
+    // from a stale or transitive install. That must not switch the theme
+    // rules on. Tailwind is a declared capability: pass `tailwindEntryPoint`.
+    const composed = appConfig.createAppLintConfig({
+      withNuxt: captureWithNuxt,
+      capabilityPacks: ['design-system'],
+      appRootDir: appRootWithEntry,
+    })
+
+    expect(themeOverrideIn(composed)).toBeUndefined()
+  })
+
+  it('leaves every theme-resolving rule off even though tailwindcss is resolvable', () => {
+    const composed = appConfig.createAppLintConfig({
+      withNuxt: captureWithNuxt,
+      capabilityPacks: ['design-system'],
+      appRootDir: appRootWithEntry,
+    })
+
+    const effective = new Map<string, unknown>()
+    for (const entry of composed) {
+      for (const [ruleName, setting] of Object.entries(entry.rules ?? {})) {
+        effective.set(ruleName, setting)
+      }
+    }
+
+    for (const ruleName of THEME_RULE_NAMES) {
+      expect(effective.get(ruleName)).toBe('off')
+    }
+  })
+
+  it('does not report BEM classes when Tailwind was never declared', async () => {
+    const composed = appConfig.createAppLintConfig({
+      withNuxt: withNuxtLike,
+      capabilityPacks: ['design-system'],
+      appRootDir: appRootWithEntry,
+    })
+
+    const eslint = new ESLint({
+      baseConfig: composed as never,
+      cwd: appRootWithEntry,
+      overrideConfigFile: true,
+    })
+
+    const [result] = await eslint.lintText(
+      '<template>\n  <div class="op-header op-nav">x</div>\n</template>\n',
+      { filePath: join(appRootWithEntry, 'app/components/OpChrome.vue') },
+    )
+
+    expect(
+      result?.messages.filter(
+        (message) => message.ruleId === 'better-tailwindcss/no-unknown-classes',
+      ),
+    ).toEqual([])
+  })
+})
+
 describe('createAppLintConfig with an existing tailwind entry point', () => {
   it('appends the override with the resolved absolute entry point', () => {
     const composed = appConfig.createAppLintConfig({
       withNuxt: captureWithNuxt,
       capabilityPacks: ['design-system'],
       appRootDir: appRootWithEntry,
+      tailwindEntryPoint: 'app/assets/css/main.css',
     })
 
     const override = themeOverrideIn(composed)
@@ -167,6 +229,7 @@ describe('createAppLintConfig with an existing tailwind entry point', () => {
         withNuxt: captureWithNuxt,
         capabilityPacks: ['design-system'],
         appRootDir: appRootWithEntry,
+        tailwindEntryPoint: 'app/assets/css/main.css',
       }),
     )
 
@@ -182,6 +245,7 @@ describe('createAppLintConfig with an existing tailwind entry point', () => {
       withNuxt: captureWithNuxt,
       capabilityPacks: ['design-system'],
       appRootDir: appRootWithEntry,
+      tailwindEntryPoint: 'app/assets/css/main.css',
     })
 
     const packIndex = composed.findIndex((entry) => entry.name === PACK_ENTRY_NAME)
@@ -383,6 +447,7 @@ describe('how the design-system pack is named', () => {
       withNuxt: captureWithNuxt,
       capabilityPacks: ['designSystem'],
       appRootDir: appRootWithEntry,
+      tailwindEntryPoint: 'app/assets/css/main.css',
     })
 
     expect(themeOverrideIn(composed)).toBeDefined()
@@ -390,11 +455,12 @@ describe('how the design-system pack is named', () => {
 
   it('counts the default preset order when capabilityPacks is omitted', () => {
     // An omitted/empty array composes `defaultCapabilityPresetOrder`, which
-    // includes design-system — so the plugin *is* registered and the override
-    // belongs there.
+    // includes design-system — so the plugin *is* registered and a declared
+    // tailwindEntryPoint can attach the override.
     const composed = appConfig.createAppLintConfig({
       withNuxt: captureWithNuxt,
       appRootDir: appRootWithEntry,
+      tailwindEntryPoint: 'app/assets/css/main.css',
     })
 
     expect(themeOverrideIn(composed)).toBeDefined()
