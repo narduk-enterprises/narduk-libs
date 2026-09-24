@@ -78,6 +78,7 @@ describe('NeCardList server-rendered without a DOM', () => {
 
     expect(html).toContain('data-ne-state="empty"')
     expect(html).toContain('No rivers')
+    expect(html).toContain('data-ne-pager')
     expect(html).not.toContain('Des Plaines')
   })
 

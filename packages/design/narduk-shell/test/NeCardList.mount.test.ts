@@ -130,6 +130,46 @@ describe('NeCardList: the same collection the table draws', () => {
     expect(wrapper.get('[data-ne-state="error"]').text()).toContain('Rivers unavailable')
   })
 
+  it('keeps the pager when the panel is up: empty page > 1, or pageSizes', () => {
+    const pastTheEnd = render({
+      noun: 'rivers',
+      state: state({
+        hasPrevious: true,
+        items: [],
+        offset: 25,
+        page: 2,
+        pageCount: null,
+        total: null,
+      }),
+    })
+    expect(pastTheEnd.get('[data-ne-state="empty"]').text()).toBeTruthy()
+    expect(pastTheEnd.get('[data-ne-pager-summary]').text()).toContain('No rivers')
+    expect(pastTheEnd.get('[data-ne-pager-previous]').text()).toBeTruthy()
+
+    const withSizes = render({
+      noun: 'rivers',
+      pageSizes: [25, 50, 100],
+      state: state({ items: [], pageCount: 1, total: 0 }),
+    })
+    expect(withSizes.get('[data-ne-state="empty"]').text()).toBeTruthy()
+    expect(withSizes.get('[data-ne-pager-summary]').text()).toContain('No rivers')
+    expect(withSizes.get('[data-ne-pager-size]').text()).toBeTruthy()
+
+    const loading = render({
+      loadingTitle: 'Loading rivers',
+      state: state({ items: [], pending: true, total: null }),
+    })
+    expect(loading.get('[data-ne-state="loading"]').attributes('aria-busy')).toBe('true')
+    expect(loading.get('[data-ne-pager-summary]').text()).toBeTruthy()
+
+    const failed = render({
+      errorTitle: 'Rivers unavailable',
+      state: state({ error: new Error('boom'), items: [], total: null }),
+    })
+    expect(failed.get('[data-ne-state="error"]').text()).toContain('Rivers unavailable')
+    expect(failed.get('[data-ne-pager-summary]').text()).toBeTruthy()
+  })
+
   it('writes only the page back through v-model:state', async () => {
     const wrapper = render({
       state: state({

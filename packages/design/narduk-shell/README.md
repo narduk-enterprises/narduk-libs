@@ -1995,7 +1995,10 @@ The card reading of the same collection a table draws. Bind `v-model:state` or
 Empty, loading and error are the panel's contract, and only when there is
 nothing to show. A collection keeps the last good page on a later error or a
 refetch; drawing a panel over those cards would hide the rows the reader already
-has.
+has. The built-in pager sits beside the panel, not inside it: `NeStatePanel`
+only renders its default slot when there is no reading, so a pager in that slot
+would disappear on an empty first paint, a loading fetch with no rows yet, or an
+error with no cached page.
 
 `columns` picks the Tailwind `grid-cols-*` utility per breakpoint the same way
 `NeKpiBand` does. Every class this component could apply is a literal string in
@@ -2056,8 +2059,31 @@ The `#card` slot is the other form, when the card needs more than `item`:
 | `errorMessage`   | `string`                                                                    | `''`                        | Error-panel sentence. The collection's `error` is not stringified onto the page.                  |
 
 `v-model:state` is `NeCollectionState<T>`. Assigning to it applies `page` only
-when the parent is `useCollection`. `update:limit` is forwarded to
-`collection.setLimit` when `:collection` is bound.
+when the parent is `useCollection`. Page-size and “Show more” emit
+`update:limit` — the same event standalone `NePager` emits. Wire it to
+`useCollection().setLimit` when you bind `v-model:state` without `:collection`;
+otherwise the select and “Show more” silently no-op. When `:collection` is
+bound, the list forwards that event to `collection.setLimit` itself.
+
+```vue
+<NeCardList
+  v-model:state="c.state"
+  noun="rivers"
+  :page-sizes="[25, 50, 100]"
+  @update:limit="c.setLimit"
+>
+  <template #card="{ item }">
+    <NeCard :title="item.name" />
+  </template>
+</NeCardList>
+```
+
+#### Events
+
+| Event          | Payload                | Notes                                                                                                                                    |
+| -------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                                        |
+| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the list never writes `limit` through `state`. Same event as `NePager`. |
 
 #### Slots
 

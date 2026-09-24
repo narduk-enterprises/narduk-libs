@@ -7,7 +7,11 @@
  * snapshot `NePager` already takes, so one page toggles cards and table
  * without a second fetch. `NeStatePanel` and `NePager` are built in: empty,
  * loading and error are the panel's five-reading contract, and the only
- * thing the pager can write back is the page number.
+ * thing the pager can write back is the page number. The pager is a sibling
+ * of the panel, not its default slot — `NeStatePanel` only renders that
+ * slot when there is no reading, and a pager inside it would vanish on an
+ * empty first paint, a loading fetch with no rows yet, or an error with no
+ * cached page.
  *
  * `columns` picks the Tailwind `grid-cols-*` utility per breakpoint the
  * same way `NeKpiBand` does. The lookup is a closed, fully written-out
@@ -190,17 +194,17 @@ function grow(limit: number): void {
           </slot>
         </li>
       </ul>
-      <NePager
-        v-model:state="reading"
-        class="ne-card-list__pager mt-4"
-        :density="density"
-        :max-limit="maxLimit"
-        :mode="mode"
-        :noun="noun"
-        :page-sizes="pageSizes"
-        :to="to"
-        @update:limit="grow"
-      />
     </NeStatePanel>
+    <NePager
+      v-model:state="reading"
+      class="ne-card-list__pager mt-4"
+      :density="density"
+      :max-limit="maxLimit"
+      :mode="mode"
+      :noun="noun"
+      :page-sizes="pageSizes"
+      :to="to"
+      @update:limit="grow"
+    />
   </div>
 </template>
