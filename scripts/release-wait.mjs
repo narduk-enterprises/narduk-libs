@@ -91,6 +91,33 @@ export function parseVerifiedShaFromLog(text) {
   return /Verified full CI for ([0-9a-f]{40})/u.exec(text || '')?.[1] ?? null
 }
 
+// `gh run view --job` takes a numeric job id. A name 404s and must not be
+// cached as a verifiedSha miss: an in-progress verify-ci would poison the
+// later success. Cache null only for a terminal non-success conclusion.
+export function resolveVerifiedSha({ runId, jobs, readJobLog, cache }) {
+  if (cache.has(runId)) return cache.get(runId)
+  const verify = (jobs || []).find((job) => job.name === 'verify-ci')
+  if (!verify || verify.status !== 'completed') return null
+  if (verify.conclusion !== 'success') {
+    cache.set(runId, null)
+    return null
+  }
+  if (!Number.isSafeInteger(verify.id)) return null
+  const sha = parseVerifiedShaFromLog(readJobLog(verify.id))
+  if (sha) cache.set(runId, sha)
+  return sha
+}
+
+// Null means the comparison commit is not readable in this clone. An empty
+// array means the manifests were read and there is no publishable bump.
+export function targetsFromManifests({ parentManifests, mergeManifests, headSha, headManifests }) {
+  if (!parentManifests || !mergeManifests) return null
+  const fromMerge = releaseTargets(parentManifests, mergeManifests)
+  if (fromMerge.length > 0) return fromMerge
+  if (!headSha || !headManifests) return null
+  return releaseTargets(mergeManifests, headManifests)
+}
+
 export async function waitForRelease({
   mergeSha,
   intervalMs = defaultIntervalMs,
@@ -110,7 +137,7 @@ export async function waitForRelease({
   requireMergeSha(mergeSha)
   const started = now()
   let releaseRunId
-  let approved = false
+  const approvedIds = new Set()
 
   for (;;) {
     if (now() - started >= deadlineMs) {
@@ -132,19 +159,23 @@ export async function waitForRelease({
     releaseRunId = release.id
 
     const currentHeadSha = await readReleasePrHead()
-    if (!approved && currentHeadSha) {
-      const ids = approveableRunIds({ currentHeadSha, runs: await readHeldRuns() })
-      if (ids.length > 0) await approveRuns(ids)
-      approved = true
+    if (currentHeadSha) {
+      const ids = approveableRunIds({ currentHeadSha, runs: await readHeldRuns() }).filter(
+        (id) => !approvedIds.has(id),
+      )
+      if (ids.length > 0) {
+        await approveRuns(ids)
+        for (const id of ids) approvedIds.add(id)
+      }
     }
 
     const targets = await readTargets()
+    if (!Array.isArray(targets)) {
+      log('waiting for changeset-release/main to refresh')
+      await sleep(intervalMs)
+      continue
+    }
     if (targets.length === 0) {
-      if (!currentHeadSha) {
-        log('waiting for changeset-release/main to refresh')
-        await sleep(intervalMs)
-        continue
-      }
       return { releaseRunId, versions: [] }
     }
 
@@ -192,14 +223,32 @@ function gitShow(spec) {
   return JSON.parse(result.stdout)
 }
 
+function ensureCommit(sha) {
+  if (!/^[a-f0-9]{40}$/u.test(sha || '')) return false
+  const have = () =>
+    spawnSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: root }).status === 0
+  if (have()) return true
+  spawnSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', sha], {
+    cwd: root,
+    timeout: 60_000,
+  })
+  if (have()) return true
+  spawnSync('git', ['fetch', '--no-tags', 'origin', 'changeset-release/main'], {
+    cwd: root,
+    timeout: 60_000,
+  })
+  return have()
+}
+
 function manifestsAt(sha) {
+  if (!ensureCommit(sha)) return null
   const map = new Map()
   for (const { name, relativeDirectory } of loadWorkspace(root).packages) {
     const manifest = gitShow(`${sha}:${relativeDirectory}/package.json`)
     if (manifest?.name) map.set(manifest.name, manifest)
     else if (manifest) map.set(name, manifest)
   }
-  return map
+  return map.size === 0 ? null : map
 }
 
 function parentSha(sha) {
@@ -220,19 +269,16 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
   }
 
   async function readVerifiedSha(run) {
-    if (verifiedCache.has(run.id)) return verifiedCache.get(run.id)
     const jobs = api(`actions/runs/${run.id}/jobs?per_page=100`).jobs || []
-    const verify = jobs.find((job) => job.name === 'verify-ci')
-    if (!verify || verify.status !== 'completed' || verify.conclusion !== 'success') {
-      verifiedCache.set(run.id, null)
-      return null
-    }
-    const log = gh(['run', 'view', String(run.id), '--repo', repo, '--job', 'verify-ci', '--log'], {
-      reject: false,
+    return resolveVerifiedSha({
+      runId: run.id,
+      jobs,
+      cache: verifiedCache,
+      readJobLog: (jobId) =>
+        gh(['run', 'view', String(run.id), '--repo', repo, '--job', String(jobId), '--log'], {
+          reject: false,
+        }),
     })
-    const sha = parseVerifiedShaFromLog(log)
-    verifiedCache.set(run.id, sha)
-    return sha
   }
 
   async function readPrHead() {
@@ -255,10 +301,13 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
 
   async function targets() {
     const parent = parentSha(mergeSha)
-    const fromMerge = releaseTargets(manifestsAt(parent), manifestsAt(mergeSha))
-    if (fromMerge.length > 0) return fromMerge
-    const head = (await readPrHead()) || mergeSha
-    return releaseTargets(manifestsAt(mergeSha), manifestsAt(head))
+    const headSha = await readPrHead()
+    return targetsFromManifests({
+      parentManifests: manifestsAt(parent),
+      mergeManifests: manifestsAt(mergeSha),
+      headSha,
+      headManifests: headSha ? manifestsAt(headSha) : null,
+    })
   }
 
   return {
