@@ -83,7 +83,7 @@ describe('Workers reflect polyfill for passkey routes (narduk-libs#786)', () => 
     })
   })
 
-  it('installs getOwnMetadata so a Nitro bundle can keep the polyfill', async () => {
+  it('round-trips defineMetadata and getOwnMetadata on the in-tree polyfill', async () => {
     const { installReflectMetadataPolyfill } =
       await import('../server/lib/app-auth/reflect-metadata-polyfill')
     installReflectMetadataPolyfill()
