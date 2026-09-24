@@ -1032,7 +1032,9 @@ Two more, both carrying `data.code`:
 A declared `content-length` is rejected before a byte is parsed. A body sent
 chunked — no declared length — is measured after the read, so the ceiling bounds
 what reaches `JSON.parse` and the schema, which is the cost this wrapper owns;
-the request size itself is bounded by the platform.
+the request size itself is bounded by the platform. On Cloudflare, Nitro reads
+the whole body before this wrapper runs. See
+[Inbound request bodies](#inbound-request-bodies-what-the-worker-reads-before-a-route-runs).
 
 The 415 covers a body sent with **no `content-type` at all**, not only one sent
 with the wrong type. Declaring `application/json` is what forces a CORS
@@ -2216,6 +2218,59 @@ At the ceiling it throws `BoundedBodyTooLargeError`, which carries `maxBytes`.
 Pass `tooLarge: () => new MyError(...)` to throw your own error instead. Both
 functions are Nitro auto-imports, or import them from
 `@narduk-enterprises/narduk-core/server/utils/boundedBody`.
+
+## Inbound request bodies: what the Worker reads before a route runs
+
+This is a security note, not an API. On the `cloudflare-module` preset that
+narduk-core sets, Nitro reads the **whole** request body into memory before h3,
+any Nitro plugin or middleware, or any route handler runs. So no byte ceiling in
+this package, or in an app, can stop that first read (narduk-libs#458).
+
+The read is in nitropack 2.13.4, in
+`dist/presets/cloudflare/runtime/_module-handler.mjs`, in `fetchHandler`:
+
+```js
+if (requestHasBody(request)) {
+  body = Buffer.from(await request.arrayBuffer())
+}
+```
+
+`requestHasBody` looks only at the method (`POST`, `PUT` or `PATCH`), so neither
+a missing nor a large `content-length` skips the read. Nitro's first runtime
+hook, `request`, runs inside `nitroApp.localFetch`, which is reached only after
+that read. The only earlier code is the preset's own `fetch` step, which serves
+static assets and WebSocket upgrades, and nothing can add to it. Cloudflare's
+`request.arrayBuffer()` waits for the full body; it does not stream.
+
+**What bounds the read.** Only Cloudflare's edge. It refuses a request body over
+the plan's maximum (100 MB on Free and Pro, more on Business and Enterprise)
+before the Worker sees it. A Worker isolate has 128 MB of memory, so one body
+near the edge limit can cost most of an isolate before any route can refuse it.
+
+**What this package bounds.** Once the body is in memory, these ceilings limit
+what gets parsed. They do not stop the read above:
+
+- `defineValidatedHandler` answers 413 over `maxBodyBytes` (1 MiB by default).
+  It checks a declared length before parsing and measures a chunked body after
+  the read.
+- The CSP report route (`/api/_security/csp-report`) answers 413 over 64 KiB.
+
+**Why there is no Content-Length gate.** A check before the read would have to
+run in the Worker's `fetch` export. Nitro 2 has no hook there. The only way to
+add one is to replace the preset's entry with a wrapper that re-imports Nitro's
+internal runtime file, or to rewrite that file at build time. Either one breaks
+silently when the Nitro pin moves. It would also stop only a declared length: a
+chunked upload has no `content-length` and would be read in full anyway. So the
+cost of a wrapper outweighs what it would protect.
+
+**When to re-test.** Check this again whenever the `nitropack` pin in this
+package moves, and when the fleet moves to Nitro v3. On 2026-09-24, 2.13.4 was
+the newest nitropack 2.x on npm. In the Nitro v3 beta checked that day
+(`nitro@3.0.260903-beta`), the Cloudflare handler passes the `Request` itself to
+`nitroApp.fetch(request)` and does not buffer it. On v3, handlers can therefore
+stream the body and cancel it at a ceiling the way `readBoundedBody` does for
+responses. At that point, move the ceilings above from after the read to during
+it.
 
 ## Shared media components
 
