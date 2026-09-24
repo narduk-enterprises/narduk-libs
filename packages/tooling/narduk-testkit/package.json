@@ -55,6 +55,11 @@
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
     },
+    "./playwright/config": {
+      "types": "./dist/playwright/config.d.ts",
+      "import": "./dist/playwright/config.js",
+      "require": "./dist/playwright/config.js"
+    },
     "./playwright/dev-port": {
       "types": "./dist/playwright/dev-port.d.ts",
       "import": "./dist/playwright/dev-port.js",

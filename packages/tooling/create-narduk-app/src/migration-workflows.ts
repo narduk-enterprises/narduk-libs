@@ -13,9 +13,7 @@ function setup(): string {
           node-version-file: .node-version
           package-manager-cache: false
       - name: Install frozen trusted toolchain
-        env:
-          GH_PACKAGES_READ: \${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}
-        run: node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 `
 }
 
@@ -71,7 +69,7 @@ steps:
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
       VERIFIED_SHA: \${{ github.event.workflow_run.head_sha }}
-    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --dry-run --json
+    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
     working-directory: apps/web
   - name: Apply compatible D1 migrations and require no drift
     env:

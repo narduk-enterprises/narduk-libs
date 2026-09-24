@@ -121,11 +121,16 @@ const recoveredRetryNoticePattern =
 const thirdPartyBundlerNoticePatterns = [
   // [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment
   /^(?:\[warn\]|WARN)\s+\S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
-  // Nuxt 4.5.2's h3 compatibility barrel imports and re-exports H3Event.
-  // Rollup reports its unused external import after pruning that re-export;
-  // no app import or missing export is involved. Keep the notice visible in
-  // build output, but classify this exact upstream barrel/version as benign.
+  // Nuxt 4.5.2's h3 compatibility barrel imports and re-exports H3Error and
+  // H3Event. Rollup reports the unused external imports after pruning those
+  // re-exports; no app import or missing export is involved. With
+  // nuxt-og-image in the graph the leftover is usually H3Event alone; without
+  // it (narduk-seo optional peer, narduk-libs#170) both symbols stay unused
+  // (packed-consumer-smoke run 35956137259). Keep the notice visible in
+  // build output, but classify these exact upstream barrel/version lines as
+  // benign. Other unused symbols or other nitro-server versions still fail.
   /^(?:\[warn\]|WARN)\s+"H3Event" is imported from external module "file:\/\/[^"\n]*\/node_modules\/h3\/dist\/index\.mjs" but never used in "[^"\n]*\/node_modules\/\.pnpm\/@nuxt\+nitro-server@4\.5\.2(?:_[^"/]+)?\/node_modules\/@nuxt\/nitro-server\/dist\/h3\.mjs"\.$/u,
+  /^(?:\[warn\]|WARN)\s+"H3Error" and "H3Event" are imported from external module "file:\/\/[^"\n]*\/node_modules\/h3\/dist\/index\.mjs" but never used in "[^"\n]*\/node_modules\/\.pnpm\/@nuxt\+nitro-server@4\.5\.2(?:_[^"/]+)?\/node_modules\/@nuxt\/nitro-server\/dist\/h3\.mjs"\.$/u,
 ]
 
 // Rolldown emits this timing summary after successful bundle cleanup. It

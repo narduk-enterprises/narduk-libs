@@ -49,10 +49,10 @@ with its Hyperdrive binding afterwards.
 It supports `--force`, `--no-git`, and `--json`; it never mutates GitHub,
 Cloudflare, Doppler, or package registries. The JSON report is returned to the
 caller and is not persisted as scaffold metadata. Generated repositories commit
-a non-secret `.npmrc` carrying only the `@narduk-enterprises/*` registry route.
-Registry credentials are supplied through a temporary process-scoped userconfig.
-The onboarding skill owns the first authenticated install and commits the
-resulting frozen lockfile before CI is enabled.
+a non-secret `.npmrc` routing `@narduk-enterprises/*` to `https://npm.nard.uk`.
+Reads are anonymous; no GitHub Packages credential is required. The opt-in
+`scripts/gh-packages-run.mjs` helper remains for break-glass during a mirror
+outage. Onboarding commits the frozen lockfile before CI is enabled.
 
 Private generated apps use the pinned shared Nuxt CI workflow: lint, typecheck,
 build, formatting, knip and unit tests run on `linux-ci`; the initial single
@@ -63,9 +63,8 @@ grant it access to the shared workflows. Generated route names do not grant
 access, and the generator makes no GitHub or fleet API calls.
 
 Public generated apps run every quality check on GitHub-hosted Ubuntu. Action
-references are pinned, superseded runs cancel, jobs time out, and temporary
-registry auth is removed even if installation fails. Existing generated apps
-remain app-owned; generating a new version does not update them.
+references are pinned, superseded runs cancel, and jobs time out. Existing
+generated apps remain app-owned; generating a new version does not update them.
 
 Generated CI uses three Chromium shards and one worker per shard for both
 visibilities. Private apps call the pinned shared workflow with `linux-ci` and
@@ -211,18 +210,11 @@ pnpm dlx @narduk-enterprises/create-narduk-app upgrade . \
   --only .github/workflows/dependabot-merge.yml --write
 ```
 
-**npm.nard.uk caveat.** The generated `.github/dependabot.yml` carries a
-`registries:` block that reads GitHub Packages (`https://npm.pkg.github.com`)
-with the org-level Dependabot secret `NARDUK_PLATFORM_GH_PACKAGES_READ`. An app
-whose `.npmrc` routes the `@narduk-enterprises` scope to the
-`https://npm.nard.uk` mirror instead (lakestat-us, for example) is read there
-**anonymously** — no token, no `registries:` entry needed for it — so it must
-not get the GitHub Packages `registries:` block back. Adopting
-`.github/dependabot.yml` whole-file, unmodified, on such an app would silently
-re-point Dependabot's registry read at credentials and a registry the app does
-not use; disown the file (see "Opting a file out" above) or delete the
-`registries:` block and the npm update's `registries:` reference before adopting
-the rest.
+The generated `.github/dependabot.yml` has no `registries:` block. Dependabot
+reads `@narduk-enterprises/*` from the committed `.npmrc`
+(`https://npm.nard.uk`) anonymously. A `registries:` entry with `scope:` would
+discard that `.npmrc` and re-add GitHub Packages token auth
+(agent-infrastructure#1405). Do not add one back when adopting the file.
 
 ### How a narduk-app stays current
 
@@ -306,13 +298,15 @@ to `.node-version` plus one `--fix`.
 Passing `node-version-file` requires the shared workflow pin to be
 `6f56678ad7562234e465284e48f27008e0f32db7` (workflows#97) or later — a reusable
 workflow rejects an input it does not declare, so this is not an optional bump.
-That commit also adds an always-run required `caller-lint` job which actionlints
-the **calling** repository's own workflows and audits them for workflow-level
-concurrency, a top-level and per-job `permissions:` block, per-job
-`timeout-minutes`, and 40-character SHA pins. Every workflow this generator
-emits satisfies those rules, and `tests/toolchain-single-source.test.ts` re-runs
-the gate's own checks over the generated output so the templates cannot drift
-back.
+The generator pins `1513b2a2f4b147b2e625478e56eb9de0cc5d5399` (workflows#116) so
+a tokenless `https://npm.nard.uk` caller also gets the install and
+foundation-check mirror skips (#108 / #116). That pin still includes #97's
+always-run required `caller-lint` job which actionlints the **calling**
+repository's own workflows and audits them for workflow-level concurrency, a
+top-level and per-job `permissions:` block, per-job `timeout-minutes`, and
+40-character SHA pins. Every workflow this generator emits satisfies those
+rules, and `tests/toolchain-single-source.test.ts` re-runs the gate's own checks
+over the generated output so the templates cannot drift back.
 
 ## Buoys-shape parity
 
@@ -357,11 +351,23 @@ Scaffolds match the reference app shape Buoys is being brought to
   replicate Buoys' own app-specific routes, selectors, or its
   wrapper-script/analyzer CLI infrastructure — those stay app-owned.
 
-A freshly generated app is web-foundation conformant:
-`pnpm run foundation:check` reports `PASS` on an untouched scaffold, before or
-after its first build. That is what makes a green first CI run reachable at all
-— generated CI calls the shared workflow with `foundation-check: true`, which
-fails the build on a `FAIL` **or** an `UNKNOWN` result.
+A freshly generated app is web-foundation conformant once its database exists:
+`pnpm run foundation:check` reports `PASS`, before or after its first build,
+after one command. Generated CI calls the shared workflow with
+`foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN`
+result.
+
+That one command is `pnpm exec narduk-app db create`. The generator never calls
+Cloudflare, so the `DB` binding in `apps/web/wrangler.jsonc` carries the
+placeholder `database_id` `00000000-0000-0000-0000-000000000000`. Every build,
+dry-run and test accepts it, but no request that touches the database can
+succeed, so `foundation:check` sub-check 1.5 fails on it, deliberately, until
+the database is created (narduk-libs#662). `db create` creates `<app>-db` in the
+account named by `CLOUDFLARE_ACCOUNT_ID`, writes the returned id into
+`apps/web/wrangler.jsonc` with its comments intact, and prints the id and
+account. The generated `README.md`, `docs/workers-builds.md` and a comment above
+the binding all say so. A `--no-database` scaffold has no D1 binding and passes
+untouched.
 
 Earlier versions were not. The generator left `Config/cloudflare-app.json` to
 onboarding, so item 1.2 was a decided FAIL (`apps/web/wrangler.jsonc` exists but
@@ -374,12 +380,16 @@ identity, the Worker shape, the exposure class and the bindings mirror — and
 leaves the live Cloudflare facts (`product.repository`, the account id,
 `domains`, the `deployment` block) to onboarding, absent rather than fabricated.
 `packages/tooling/narduk-app-tools/tests/foundation/generated-app-conformance.test.ts`
-runs the real checker over real generator output and is what keeps this true.
+runs the real checker over real generator output and is what keeps this true:
+1.5 is the only thing an untouched scaffold fails, and after `db create` it
+passes.
 
 One check is deliberately outside the local chain. `foundation:check` reads the
-package registry, and without a credential it reports `UNKNOWN` and exits 2 — so
-chaining it into `quality:static` would put a red on a laptop that CI does not
-have. The generated README says which of the three gates is which.
+package registry over the network, so it stays out of `quality:static`. Default
+generated apps read `https://npm.nard.uk` anonymously and do not need a GitHub
+Packages credential. An app still routed at GitHub Packages reports `UNKNOWN`
+and exits 2 without one. The generated README says which of the three gates is
+which.
 
 ## Workers Builds and previews
 

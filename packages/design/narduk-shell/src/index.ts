@@ -117,6 +117,15 @@ export type {
 } from './runtime/components/ne-search-input-types'
 
 /**
+ * The unreported treatment's vocabulary (narduk-libs#602) — the text every
+ * figure component says, and the test it uses, when nothing produced a value —
+ * and NeMeter's shapes (narduk-libs#601). Both files are plain modules, so
+ * neither an SFC nor `@nuxt/ui` enters the barrel's value-import graph.
+ */
+export { isUnreported, NE_UNREPORTED_TEXT } from './runtime/utils/unreported'
+export type { NeMeterProps, NeMeterVariant } from './runtime/components/ne-meter-types'
+
+/**
  * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure
  * functions with no Vue or DOM import, so a server route can write the same
  * CSV `NeCsvDownload` does, and a page can read a wire sort without a regex.

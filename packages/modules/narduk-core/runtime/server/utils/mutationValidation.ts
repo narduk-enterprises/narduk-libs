@@ -1,5 +1,7 @@
 import { ZodError } from 'zod'
 
+import { createValidationFailedError } from './validatedHandler'
+
 function isHttpErrorLike(error: unknown): error is { statusCode: number } {
   return Boolean(
     error &&
@@ -9,13 +11,13 @@ function isHttpErrorLike(error: unknown): error is { statusCode: number } {
   )
 }
 
-function formatValidationError(error: ZodError): string {
-  return error.issues.map((issue) => issue.message).join(', ') || 'Invalid request body'
-}
-
 /**
  * Classify a caught error for mutation handlers. `http` means rethrow as-is;
  * `message` means the caller should `createError` with the given fields.
+ *
+ * A `ZodError` becomes the same 400 {@link createValidationFailedError} that
+ * `defineValidatedHandler` answers with, so caller key names never land in
+ * `statusMessage` (narduk-libs#371).
  */
 export function describeValidationFailure(
   error: unknown,
@@ -28,9 +30,8 @@ export function describeValidationFailure(
 
   if (error instanceof ZodError) {
     return {
-      kind: 'message',
-      statusCode: 400,
-      statusMessage: `Validation error: ${formatValidationError(error)}`,
+      error: createValidationFailedError('body', error.issues),
+      kind: 'http' as const,
     }
   }
 

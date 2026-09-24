@@ -47,6 +47,13 @@ export interface LiveResponse {
   bodyTruncated?: boolean
   /** Present when the request could not be completed at all. */
   error?: string
+  /**
+   * The transport's error code when there was one, e.g. `ENOTFOUND`. Native
+   * fetch reports every transport failure as `fetch failed` and puts the
+   * system error on `cause`; this is that code, so a caller can tell a name
+   * that did not resolve from a refused connection (narduk-libs#783).
+   */
+  errorCode?: string
 }
 
 export interface LiveProbeOptions {
@@ -68,16 +75,44 @@ export interface LiveProbeOptions {
    * carry these headers beyond the originally requested origin.
    */
   headers?: Record<string, string>
+  /**
+   * Native fetch redirect mode. Default `follow` (or same-origin manual hops
+   * when caller headers are present). `manual` returns the first 3xx so a
+   * caller can assert hop status and Location.
+   */
+  redirect?: 'follow' | 'manual'
 }
 
 export type LiveProbe = (url: string, options?: LiveProbeOptions) => Promise<LiveResponse>
+
+/** The slice of `fetch` the probe calls; injectable so a caller can choose how it connects. */
+export type FetchTransport = (url: string, init?: RequestInit) => Promise<Response>
+
+/** The first string `code` on an error or its `cause` chain (native fetch nests it). */
+export function transportErrorCode(error: unknown): string | undefined {
+  let current: unknown = error
+  for (let depth = 0; depth < 4 && current !== null && typeof current === 'object'; depth += 1) {
+    const { code, cause } = current as { code?: unknown; cause?: unknown }
+    if (typeof code === 'string') return code
+    current = cause
+  }
+  return undefined
+}
 
 export const DEFAULT_LIVE_TIMEOUT_MS = 15_000
 export const DEFAULT_MAX_BODY_BYTES = 1_048_576
 export const DEFAULT_LIVE_USER_AGENT = 'narduk-app-tools/live-probe'
 
-/** Build a probe bound to these defaults; per-call options still win. */
-export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
+/**
+ * Build a probe bound to these defaults; per-call options still win. `transport`
+ * defaults to the global fetch, read at call time.
+ */
+export function createLiveProbe(
+  defaults: LiveProbeOptions = {},
+  transport?: FetchTransport,
+): LiveProbe {
+  const send: FetchTransport = (target, init) =>
+    transport ? transport(target, init) : fetch(target, init)
   return async (url, options = {}) => {
     const timeoutMs = options.timeoutMs ?? defaults.timeoutMs ?? DEFAULT_LIVE_TIMEOUT_MS
     const maxBodyBytes = options.maxBodyBytes ?? defaults.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
@@ -94,17 +129,20 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
     Object.assign(headersSent, defaults.headers, options.headers)
     try {
       const originBound = Object.keys({ ...defaults.headers, ...options.headers }).length > 0
+      const redirectMode = options.redirect ?? defaults.redirect ?? 'follow'
+      const stayOnFirstHop = redirectMode === 'manual'
       const request: RequestInit = {
         method: 'GET',
-        redirect: originBound ? 'manual' : 'follow',
+        redirect: stayOnFirstHop || originBound ? 'manual' : 'follow',
         cache: noCache ? 'no-store' : 'default',
         headers: headersSent,
         signal: controller.signal,
       }
-      let response = await fetch(url, request)
+      let response = await send(url, request)
       let requestUrl = url
       let redirects = 0
       while (
+        !stayOnFirstHop &&
         originBound &&
         [301, 302, 303, 307, 308].includes(response.status) &&
         response.headers.has('location')
@@ -116,7 +154,7 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
           throw new Error('Live probe refused a cross-origin redirect with request headers')
         requestUrl = next.href
         redirects += 1
-        response = await fetch(requestUrl, request)
+        response = await send(requestUrl, request)
       }
       const headers: Record<string, string> = {}
       response.headers.forEach((value, name) => {
@@ -124,9 +162,14 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       })
       const buffer = await response.arrayBuffer().catch(() => new ArrayBuffer(0))
       const result: LiveResponse = { url, status: response.status, headers }
-      // Manual hops count too; URL normalisation alone is not a redirect.
-      if (response.url) result.finalUrl = response.url
-      if (response.redirected || redirects > 0) result.redirected = true
+      if (stayOnFirstHop && [301, 302, 303, 307, 308].includes(response.status)) {
+        result.redirected = true
+        if (headers.location) result.finalUrl = new URL(headers.location, url).href
+      } else {
+        // Manual hops count too; URL normalisation alone is not a redirect.
+        if (response.url) result.finalUrl = response.url
+        if (response.redirected || redirects > 0) result.redirected = true
+      }
       if (readBody) {
         const bytes = new Uint8Array(buffer)
         const truncated = bytes.byteLength > maxBodyBytes
@@ -135,7 +178,13 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       }
       return result
     } catch (error) {
-      return { url, error: error instanceof Error ? error.message : String(error) }
+      const result: LiveResponse = {
+        url,
+        error: error instanceof Error ? error.message : String(error),
+      }
+      const code = transportErrorCode(error)
+      if (code) result.errorCode = code
+      return result
     } finally {
       clearTimeout(timer)
     }

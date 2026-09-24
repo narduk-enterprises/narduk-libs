@@ -6,22 +6,27 @@ import { NODE_SOURCE_FILE } from './ownership.js'
 
 import type { AppVisibility } from './types.js'
 
-// workflows#97, the commit that ADDS the `node-version-file` caller input this
-// template now passes. The bump is not optional: a reusable workflow rejects an
-// input it does not declare, so a caller passing `node-version-file` to the
-// previous pin (#93, `4e99dafc`) fails at startup.
+// workflows#116, the first commit whose install AND foundation-check treat a
+// committed `.npmrc` route to `https://npm.nard.uk` as anonymous (install
+// skip: #108 / `eb7983fc`; foundation-check skip: this SHA). Tokenless
+// private callers need both: #97's Configure package registry auth still
+// classified every `@narduk-enterprises/*` app as private and exited 1
+// without `NARDUK_PLATFORM_GH_PACKAGES_READ` (narduk-libs#568).
 //
-// It also brings #94 (caller-defined E2E subset on pull requests -- additive
-// opt-in inputs, no caller change required) and #97's OWN second half: a new
-// always-run required `caller-lint` job that actionlints the CALLING repo's
-// workflows and audits them for workflow-level concurrency, a top-level and a
-// per-job `permissions:` block, per-job `timeout-minutes`, and 40-character SHA
-// pins. That gate is why this file now emits a job-level `permissions:` block on
-// every job it writes -- `tests/caller-lint-hygiene.test.ts` re-runs the audit's
-// own rules over the generated output so the templates cannot drift back.
+// Still carries #97's `node-version-file` input and the always-run required
+// `caller-lint` job (workflow-level concurrency, top-level and per-job
+// `permissions:`, per-job `timeout-minutes`, 40-character SHA pins). That
+// gate is why this file emits a job-level `permissions:` block on every job
+// it writes -- `tests/caller-lint-hygiene.test.ts` re-runs the audit's own
+// rules over the generated output so the templates cannot drift back.
 //
-// Deliberately NOT main's tip: #99 and #100 are separate decisions.
-const workflowSha = '6f56678ad7562234e465284e48f27008e0f32db7'
+// #99 and #100 sit between #97 and #116; there is no pin that only adds the
+// mirror skip. #99 is inert for generated apps (no `install-script`). #100
+// fails the build on fixable high/critical advisories.
+//
+// Still not main's tip. The development-mode validation caller stays on #141
+// below so ordinary CI does not also adopt every change between #116 and #141.
+const workflowSha = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
 
 // workflows#141 (merged as 67968e3): the first commit whose callable accepts an
 // explicit exact-candidate request pushed to `narduk-validation/<sha>/<id>`. Only
@@ -75,43 +80,14 @@ function setupSteps(): string[] {
     `          node-version-file: ${NODE_SOURCE_FILE}`,
     '          package-manager-cache: false',
     '      - name: Install workspace',
-    '        env:',
-    '          GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
-    '        run: |',
-    '          set -euo pipefail',
-    '          test -n "$GH_PACKAGES_READ"',
-    '          umask 077',
-    '          auth_file="$(mktemp "${RUNNER_TEMP}/npmrc-auth.XXXXXX")"',
-    '          trap \'rm -f "$auth_file"\' EXIT',
-    '          printf \'//npm.pkg.github.com/:_authToken=%s\\n\' "$GH_PACKAGES_READ" > "$auth_file"',
-    '          NPM_CONFIG_USERCONFIG="$auth_file" NPM_CONFIG_GLOBALCONFIG=/dev/null pnpm install --frozen-lockfile',
+    '        run: pnpm install --frozen-lockfile',
   ]
 }
 
-// The shared workflow invokes this before dependencies exist, then removes
-// its exact ignored output on every install outcome. Exclusive creation also
-// refuses stale files and symlinks instead of overwriting an unknown target.
-export function createCiRegistryAuthScript(): string {
-  return [
-    "import { writeFileSync } from 'node:fs'",
-    '',
-    'const token = process.env.NARDUK_PLATFORM_GH_PACKAGES_READ?.trim()',
-    'if (!token || /[\\r\\n]/u.test(token)) {',
-    "  throw new Error('Missing or invalid NARDUK_PLATFORM_GH_PACKAGES_READ')",
-    '}',
-    '',
-    "writeFileSync('.npmrc.auth', `//npm.pkg.github.com/:_authToken=${token}\\n`, {",
-    '  mode: 0o600,',
-    "  flag: 'wx',",
-    '})',
-    '',
-  ].join('\n')
-}
-
-// Standalone pre-install bootstrap. Workers Builds runs `pnpm run cf:build`
-// with SKIP_DEPENDENCY_INSTALL=1, so `narduk-app` is not on PATH yet. This
-// file is a committed copy of `narduk-app gh-packages-run`: temp userconfig
-// with wx / umask 077, never a tracked file, then the caller's command.
+// Opt-in break-glass helper. Default installs read `https://npm.nard.uk`
+// anonymously. This committed copy of `narduk-app gh-packages-run` is for an
+// operator who has repointed `.npmrc` at GitHub Packages during a mirror
+// outage. It is not referenced by generated scripts or CI.
 export function createGhPackagesRunScript(): string {
   return [
     "import { spawnSync } from 'node:child_process'",
@@ -172,19 +148,11 @@ export function createGhPackagesRunScript(): string {
 // GitHub Copilot's coding-agent environment runs this workflow once (on
 // `workflow_dispatch`, dispatched by Copilot itself, never by a caller here)
 // to prepare its own sandbox before it can see or run any other script.
-// Reuses setupSteps() -- the same install sequence the public path's
-// quality/browser jobs run on hosted GitHub runners -- because both need the
-// same thing: a hosted `ubuntu-latest` sandbox with no self-hosted-runner
-// access, installing from the standard NARDUK_PLATFORM_GH_PACKAGES_READ
-// Actions secret. Emitted for BOTH visibilities: even a public app's Worker
-// depends on private @narduk-enterprises/* packages, so Copilot needs
-// registry auth to install regardless of the app's own CI runner policy
-// (`runs-on: ubuntu-latest` here is a deliberate carve-out from "no
-// GitHub-hosted CI for real work" -- Copilot's own sandbox prep is not the
-// app's CI, the same reasoning that already applies to the reference app's
-// copilot-setup-steps.yml on a private, self-hosted-CI repo). Its own
-// `environment: copilot` job-level scope is unrelated to setupSteps()'s
-// secret access.
+// Reuses setupSteps() -- the same anonymous frozen install the public path's
+// quality/browser jobs run. `@narduk-enterprises/*` is read from
+// `https://npm.nard.uk` with no package secret. `runs-on: ubuntu-latest` is a
+// deliberate carve-out from "no GitHub-hosted CI for real work": Copilot's
+// sandbox prep is not the app's CI.
 export function createCopilotSetupWorkflow(): string {
   return [
     'name: Copilot Setup Steps',
@@ -222,7 +190,7 @@ export function createCopilotSetupWorkflow(): string {
 }
 
 /**
- * The shared-workflow inputs and secrets of the private CI caller. The explicit
+ * The shared-workflow inputs of the private CI caller. The explicit
  * validation caller reuses them verbatim so a release is validated by exactly the
  * suite ordinary CI runs, plus the exact-candidate guard.
  */
@@ -252,8 +220,7 @@ function privateCallerInputs(): string[] {
     // `foundation:shared-ui-pinned` and `manifests:validate`. The private
     // path calls the shared workflow instead, so each check has to be
     // named here or CI never runs it. They read manifests only, so they
-    // need no registry credential and are safe outside the token-scoped
-    // install step (narduk-libs#282 review).
+    // need no extra credential (narduk-libs#282 review).
     "      extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
     '      run-tests: true',
     '      test-script: test:unit',
@@ -268,8 +235,6 @@ function privateCallerInputs(): string[] {
     "      e2e-args: '--project=chromium --workers=1'",
     '      e2e-install-browsers: false',
     '      # The guest exports its immutable browser path; no caller override.',
-    '    secrets:',
-    '      NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
   ]
 }
 

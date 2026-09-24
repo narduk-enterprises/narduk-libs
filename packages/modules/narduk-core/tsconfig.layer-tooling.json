@@ -68,6 +68,7 @@
     "runtime/server/utils/publishedDataHandler.ts",
     "runtime/server/utils/rateLimitedHandler.ts",
     "runtime/server/utils/validatedHandler.ts",
+    "runtime/server/utils/mutationValidation.ts",
     "runtime/server/utils/kv.ts",
     "runtime/server/utils/kvCache.ts",
     "runtime/server/utils/listQuery.ts",

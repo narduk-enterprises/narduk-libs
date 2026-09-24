@@ -58,6 +58,7 @@ const SHELL_DEMOS = [
   'ne-card',
   'ne-card-list',
   'ne-detail-view',
+  'ne-meter',
   'ne-data-table',
   'ne-sort-header',
   'ne-csv-download',
@@ -184,6 +185,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
       'forms',
       'settings page',
       'KPI',
+      'meter',
       'status badge',
       'confirm dialog',
       'empty state',
@@ -236,5 +238,10 @@ export const CATALOG: Record<string, CatalogEntry> = {
   '@narduk-enterprises/status-runtime': {
     kind: 'contract',
     capabilities: ['status apps', 'build-time config'],
+  },
+  '@narduk-enterprises/stylelint-config': {
+    kind: 'tooling',
+    capabilities: ['Stylelint', 'lint budgets', 'narduk-stylelint', 'design tokens', 'z-index'],
+    setup: { commands: ['narduk-stylelint'] },
   },
 }

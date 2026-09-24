@@ -9,9 +9,14 @@
  *
  * `wrangler` is the app's dependency. This package resolves it from the app
  * cwd (optional peer) and fails with one line when it is missing.
+ *
+ * Service bindings to other Workers are dropped from the started config, one
+ * `[e2e-serve]` note each, because only this Worker is part of the run
+ * (narduk-libs#788). `--keep-service-bindings` passes the config through
+ * untouched for an app that runs the target Worker alongside.
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { access, readdir, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -23,6 +28,13 @@ import {
   filterWorkerdClientAbort,
   flushWorkerdClientAbortFilter,
 } from './filter-workerd-client-abort.js'
+import {
+  describeDroppedServiceBinding,
+  type E2eWranglerConfig,
+  stripExternalServiceBindings,
+  WRANGLER_INLINE_CONFIG_MIN_VERSION,
+  wranglerSupportsInlineConfig,
+} from './service-bindings.js'
 
 export const E2E_SERVE_NOTE_PREFIX = '[e2e-serve]'
 export const MISSING_WRANGLER_MESSAGE =
@@ -41,6 +53,8 @@ export interface E2eServeOptions {
   entrypoint: string
   config: string
   assets: string | null
+  /** Pass the Wrangler config through with every service binding (#788 opt-out). */
+  keepServiceBindings: boolean
 }
 
 type PlainTextBinding = { type: 'plain_text'; value: string }
@@ -51,8 +65,14 @@ type StartedWorker = {
 }
 
 type WranglerModule = {
+  /** Present in every supported wrangler; typed optional so a stub module still loads. */
+  unstable_readConfig?: (
+    args: Record<string, unknown>,
+    options?: { useRedirectIfAvailable?: boolean; hideWarnings?: boolean },
+  ) => E2eWranglerConfig
   unstable_startWorker: (options: {
-    config: string
+    /** A config path, or (wrangler >= 4.99.0) an already-read config object. */
+    config: string | E2eWranglerConfig
     entrypoint: string
     assets?: string
     bindings?: Record<string, PlainTextBinding>
@@ -74,6 +94,7 @@ export function parseE2eServeArgs(
   let configFlag: string | undefined
   let assetsFlag: string | undefined
   let cwdFlag: string | undefined
+  let keepServiceBindings = false
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -85,6 +106,8 @@ export function parseE2eServeArgs(
       assetsFlag = requireValue(args, (index += 1), '--assets')
     } else if (arg === '--cwd') {
       cwdFlag = requireValue(args, (index += 1), '--cwd')
+    } else if (arg === '--keep-service-bindings') {
+      keepServiceBindings = true
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown e2e-serve option: ${arg}`)
     } else if (port !== undefined) {
@@ -133,17 +156,78 @@ export function parseE2eServeArgs(
     entrypoint,
     config,
     assets,
+    keepServiceBindings,
   }
 }
 
 export async function importAppWrangler(cwd: string, appDir = cwd): Promise<WranglerModule> {
+  return (await loadAppWrangler(cwd, appDir)).wrangler
+}
+
+async function loadAppWrangler(
+  cwd: string,
+  appDir: string,
+): Promise<{ wrangler: WranglerModule; version: string | undefined }> {
   const roots = uniqueRoots(cwd, appDir)
   for (const root of roots) {
     const entry = resolveWranglerEntry(root)
     if (!entry) continue
-    return (await import(pathToFileURL(entry).href)) as WranglerModule
+    const wrangler = (await import(pathToFileURL(entry).href)) as WranglerModule
+    return { wrangler, version: readWranglerVersion(root) }
   }
   throw new Error(MISSING_WRANGLER_MESSAGE)
+}
+
+function readWranglerVersion(root: string): string | undefined {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(join(root, 'node_modules', 'wrangler', 'package.json'), 'utf8'),
+    ) as { version?: unknown }
+    return typeof manifest.version === 'string' ? manifest.version : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The `config` to hand `unstable_startWorker`: the config path unchanged, or
+ * the config wrangler itself reads from that path with the service bindings to
+ * Workers outside this run removed (narduk-libs#788).
+ */
+function resolveStartConfig(
+  wrangler: WranglerModule,
+  version: string | undefined,
+  options: E2eServeOptions,
+  note: (message: string) => void,
+): string | E2eWranglerConfig {
+  if (options.keepServiceBindings) {
+    note('keeping every service binding (--keep-service-bindings)')
+    return options.config
+  }
+  if (!wrangler.unstable_readConfig) return options.config
+
+  // The same read the dev ConfigController makes for a config path, so the
+  // selected environment (CLOUDFLARE_ENV) and a redirected config resolve the
+  // same way; its warnings print once, from the real start.
+  const read = wrangler.unstable_readConfig(
+    {
+      config: options.config,
+      script: options.entrypoint,
+      'legacy-env': true,
+      remote: false,
+    },
+    { useRedirectIfAvailable: true, hideWarnings: true },
+  )
+  const { config, dropped } = stripExternalServiceBindings(read)
+  if (dropped.length === 0) return options.config
+
+  for (const entry of dropped) note(describeDroppedServiceBinding(entry))
+  if (!wranglerSupportsInlineConfig(version)) {
+    throw new Error(
+      `wrangler ${version ?? '(unknown version)'} cannot start a Worker from an edited config, so e2e-serve cannot drop service binding(s) ${dropped.map((entry) => entry.binding).join(', ')}. Upgrade the app's wrangler to >=${WRANGLER_INLINE_CONFIG_MIN_VERSION}, or pass --keep-service-bindings and run the target Worker alongside.`,
+    )
+  }
+  return config
 }
 
 /** Only the app's own install. Do not walk out of `root` to a workspace wrangler. */
@@ -225,10 +309,11 @@ export async function runE2eServe(
       )
     }
 
-    const wrangler = await importAppWrangler(options.cwd, options.appDir)
+    const { wrangler, version } = await loadAppWrangler(options.cwd, options.appDir)
 
     note(`cwd=${options.cwd}`)
     note(`entrypoint=${options.entrypoint}`)
+    const config = resolveStartConfig(wrangler, version, options, note)
 
     const serverDir = dirname(options.entrypoint)
     try {
@@ -245,7 +330,7 @@ export async function runE2eServe(
     try {
       const bindings = bindingsFromEnv(env)
       const worker = await wrangler.unstable_startWorker({
-        config: options.config,
+        config,
         entrypoint: options.entrypoint,
         ...(options.assets ? { assets: options.assets } : {}),
         ...(bindings ? { bindings } : {}),

@@ -103,6 +103,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'A key-value panel with format, unit and an unavailable message.',
   ),
   shell(
+    'NeMeter',
+    'Meter',
+    'One value against a known ceiling; an unreported value is hatched, never empty.',
+  ),
+  shell(
     'NeDataTable',
     'Data table',
     'UTable with grouped units, tabular numerals, missing-last sorting and a phone column switch.',

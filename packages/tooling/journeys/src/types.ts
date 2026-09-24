@@ -76,6 +76,49 @@ export interface WebJourneyContext {
   base: string
   /** Click by accessible name or THROW naming what was missing. */
   must(name: string | RegExp, opts?: { role?: string; nth?: number }): Promise<void>
+  /**
+   * Wait until this exact text is visible on the page. A string is matched
+   * exactly — `see('VERIFIED')` does not pass on `PENDING VERIFICATION` — and
+   * the helper waits, it does not read once (narduk-libs#67). A match that is
+   * only in the DOM (hidden, `aria-hidden`, a template node) is not enough.
+   * Throws naming the text, the URL and the timeout. Prefer `hasControl` when
+   * the claim is about a control.
+   */
+  see(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Wait until a control with this accessible name is visible. Never body
+   * text: `hasControl('Cancel')` does not pass on a `Cancelled` label. A
+   * hidden match is not "offered".
+   */
+  hasControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Poll until no control with this accessible name remains. Never body text,
+   * and never `waitFor({ state: 'detached' })` — that resolves immediately
+   * against a locator matching nothing (narduk-libs#67). Succeeds immediately
+   * if the control was never in the tree; call `hasControl` first when you
+   * mean it disappeared after an action.
+   */
+  noControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Wait until a distinctive sentence that *was visible* on the page is no
+   * longer visible. Fails if the text was never seen: a hidden-only or
+   * zero-count first sample is not evidence it went away. Hidden template
+   * nodes do not count as seen (narduk-libs#67).
+   */
+  gone(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Fill a field (CSS selector or accessible label) and read the value back.
+   * A write that lands in the wrong box, or not at all, fails the step.
+   * Labels may contain `:` or brackets (`Email:`, `Quantity [kg]`); pass an
+   * explicit `input[…]` / `#id` / `.class` when you mean a selector.
+   */
+  fill(target: string, value: string, opts?: { timeout?: number; nth?: number }): Promise<void>
+  /** Set files on a file input. `page` stays the escape hatch for everything else. */
+  attach(
+    selector: string,
+    file: string | { name: string; mimeType: string; buffer: Uint8Array },
+    opts?: { timeout?: number },
+  ): Promise<void>
   goto(path: string): Promise<void>
   /** Capture: dwell. Test: no-op. */
   beat(ms: number): Promise<void>

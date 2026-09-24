@@ -59,6 +59,9 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeCard', filePath: './runtime/components/NeCard.vue' },
   { name: 'NeCardList', filePath: './runtime/components/NeCardList.vue' },
   { name: 'NeDetailView', filePath: './runtime/components/NeDetailView.vue' },
+  // narduk-libs#601 + #602: NeMeter, one value against a known ceiling, and
+  // the first component to render the unreported treatment (`--ne-hatch`).
+  { name: 'NeMeter', filePath: './runtime/components/NeMeter.vue' },
   // narduk-libs#528: the UTable data-table preset, its sort header and CSV.
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
