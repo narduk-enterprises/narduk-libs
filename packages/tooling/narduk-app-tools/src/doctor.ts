@@ -53,6 +53,48 @@ export function rateLimitNamespaceCheck(wranglerPath: string): DoctorCheck {
     : { detail: `${bindings.length} binding(s), every namespace_id distinct`, name, status: 'pass' }
 }
 
+/** The fields `create-narduk-app` emits so wrangler deploys Nitro's output as built. */
+const WORKER_NO_BUNDLE_FIELDS = ['no_bundle', 'find_additional_modules', 'base_dir'] as const
+
+/**
+ * A worker whose `main` is Nitro's `.output/server` must be deployed as built.
+ * Without `no_bundle`, `find_additional_modules` and `base_dir`, wrangler
+ * re-bundles it with esbuild and breaks the dynamic `import()` Nuxt uses for
+ * its server error component, so every 404 and 500 renders an empty shell.
+ * That reached production in six apps before anything checked (narduk-libs#245).
+ * It is a warning, not a failure, so a patch release does not turn an app's
+ * doctor red.
+ */
+export function workerBundlingCheck(wranglerPath: string): DoctorCheck {
+  const name = 'worker deploys Nitro output unbundled'
+  let config: Record<string, unknown>
+  try {
+    config = readJsonc<Record<string, unknown>>(wranglerPath)
+  } catch (error) {
+    return { detail: (error as Error).message, name, status: 'fail' }
+  }
+  const main = typeof config.main === 'string' ? config.main : ''
+  if (!/(?:^|\/)\.output\/server\//u.test(main)) {
+    return {
+      detail: `main is not Nitro output (${main || 'unset'}); nothing to check`,
+      name,
+      status: 'pass',
+    }
+  }
+  const missing = WORKER_NO_BUNDLE_FIELDS.filter((field) => !config[field])
+  if (missing.length === 0)
+    return { detail: WORKER_NO_BUNDLE_FIELDS.join(', '), name, status: 'pass' }
+  return {
+    detail:
+      `${wranglerPath} is missing ${missing.join(', ')}, so wrangler re-bundles the Nitro ` +
+      'output and server-rendered 404/500 pages come out empty. Fix: set "no_bundle": true, ' +
+      '"find_additional_modules": true, "base_dir": ".output/server" and an ESModule rule for ' +
+      '"**/*.mjs", as create-narduk-app generates.',
+    name,
+    status: 'warn',
+  }
+}
+
 export function runDoctor(rootDir = process.cwd()): DoctorReport {
   const requestedRoot = resolve(rootDir)
   const nestedRoot = resolve(requestedRoot, 'apps', 'web')
@@ -77,7 +119,8 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
           status: 'fail',
         },
   )
-  if (wranglerPath) checks.push(rateLimitNamespaceCheck(wranglerPath))
+  if (wranglerPath)
+    checks.push(rateLimitNamespaceCheck(wranglerPath), workerBundlingCheck(wranglerPath))
   checks.push(
     commandAvailable('node')
       ? { name: 'node', status: 'pass' }
