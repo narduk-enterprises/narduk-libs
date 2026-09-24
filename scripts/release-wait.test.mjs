@@ -6,6 +6,7 @@ import {
   approveableRunIds,
   commitFetchArgs,
   mirrorMissing,
+  mirrorPackumentTargets,
   missingPublishTags,
   parseVerifiedShaFromLog,
   readParentSha,
@@ -106,6 +107,21 @@ test('mirror wait requires versions|has(v) for every bumped version', () => {
     [{ name: '@narduk-enterprises/narduk-app-tools', version: '0.9.0' }],
   )
   assert.deepEqual(mirrorMissing([core], new Map([[core.name, { versions: { '2.2.2': {} } }]])), [])
+  assert.deepEqual(
+    mirrorMissing(
+      [core],
+      new Map([
+        [
+          core.name,
+          {
+            versions: { '2.2.3': {} },
+            'dist-tags': { latest: '2.2.3' },
+          },
+        ],
+      ]),
+    ),
+    [],
+  )
   assert.deepEqual(missingPublishTags([`${core.name}@${core.version}`], []), [
     `${core.name}@${core.version}`,
   ])
@@ -227,6 +243,26 @@ test('verify-ci logs are read by numeric job id and in-progress misses are not c
     null,
   )
   assert.equal(cache.get(2), null)
+})
+
+test('a successful verify-ci without a parsed SHA is cached so later polls skip the log', () => {
+  const cache = new Map()
+  const logs = []
+  const job = { name: 'verify-ci', id: 99, status: 'completed', conclusion: 'success' }
+  const readJobLog = (id) => {
+    logs.push(id)
+    return 'HTTP 404: Not Found'
+  }
+  assert.equal(resolveVerifiedSha({ runId: 3, jobs: [job], readJobLog, cache }), null)
+  assert.equal(resolveVerifiedSha({ runId: 3, jobs: [job], readJobLog, cache }), null)
+  assert.deepEqual(logs, [99])
+  assert.equal(cache.get(3), null)
+})
+
+test('unread mirror targets are an empty list, not iterable null', () => {
+  assert.deepEqual(mirrorPackumentTargets(null), [])
+  assert.deepEqual(mirrorPackumentTargets(undefined), [])
+  assert.deepEqual(mirrorPackumentTargets([core]), [core])
 })
 
 test('a PR head without readable manifests is unread, not a no-op', () => {
@@ -387,6 +423,30 @@ test('unread targets with a PR head keep waiting instead of reporting no publish
   })
   assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
   assert.ok(time.now() >= 2_000)
+})
+
+test('waitForRelease passes resolved targets into readMirror', async () => {
+  const seen = []
+  const result = await waitForRelease({
+    mergeSha,
+    intervalMs: 1_000,
+    deadlineMs: 20_000,
+    ...clock(),
+    readPushCi: async () => successfulPush(),
+    readReleaseRuns: async () => verifiedRelease(),
+    readReleasePrHead: async () => currentHead,
+    readHeldRuns: async () => [],
+    approveRuns: async () => {},
+    readTargets: async () => [core],
+    readTags: async () => [`${core.name}@${core.version}`],
+    readMirror: async (pending) => {
+      seen.push(pending)
+      return new Map([[core.name, { versions: { '2.2.2': {} } }]])
+    },
+    log: () => {},
+  })
+  assert.deepEqual(seen, [[core]])
+  assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
 })
 
 test('confirmed empty targets after a readable comparison are a no-op', async () => {

@@ -18,7 +18,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
-import { mirrorRegistry, packumentUrl, releaseTargets } from './prove-release-publication.mjs'
+import {
+  mirrorRegistry,
+  packumentUrl,
+  releaseTargets,
+  versionState,
+} from './prove-release-publication.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const defaultRepo = 'narduk-enterprises/narduk-libs'
@@ -81,10 +86,15 @@ export function missingPublishTags(expected, existing) {
 }
 
 export function mirrorMissing(targets, packuments) {
-  return targets.filter((target) => {
-    const versions = packuments.get(target.name)?.versions
-    return !versions || !Object.hasOwn(versions, target.version)
-  })
+  return targets.filter(
+    (target) => versionState(packuments.get(target.name), target.version) === 'missing',
+  )
+}
+
+// Null/unread pending must not be iterated. An empty list means no packuments
+// to fetch this poll; waitForRelease then sees every target still missing.
+export function mirrorPackumentTargets(pending) {
+  return Array.isArray(pending) ? pending : []
 }
 
 export function parseVerifiedShaFromLog(text) {
@@ -104,7 +114,7 @@ export function resolveVerifiedSha({ runId, jobs, readJobLog, cache }) {
   }
   if (!Number.isSafeInteger(verify.id)) return null
   const sha = parseVerifiedShaFromLog(readJobLog(verify.id))
-  if (sha) cache.set(runId, sha)
+  cache.set(runId, sha ?? null)
   return sha
 }
 
@@ -187,7 +197,7 @@ export async function waitForRelease({
       continue
     }
 
-    const missing = mirrorMissing(targets, await readMirror())
+    const missing = mirrorMissing(targets, await readMirror(targets))
     if (missing.length > 0) {
       log(`waiting for npm.nard.uk ${missing.map(publishTag).join(', ')}`)
       await sleep(intervalMs)
@@ -384,8 +394,10 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
         String(ref.ref || '').replace(/^refs\/tags\//u, ''),
       )
     },
-    async readMirror() {
-      const pending = await targets()
+    async readMirror(expectedTargets) {
+      const pending = mirrorPackumentTargets(
+        Array.isArray(expectedTargets) ? expectedTargets : await targets(),
+      )
       const packuments = new Map()
       for (const target of pending) {
         const response = await request(packumentUrl(mirrorRegistry, target.name), {
