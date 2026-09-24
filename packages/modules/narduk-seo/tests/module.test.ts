@@ -2,6 +2,16 @@ import { existsSync } from 'node:fs'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const nuxtOgImagePackage = vi.hoisted(() => ({ resolvable: true }))
+
+vi.mock('../shared/nuxtOgImagePackage', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  return {
+    ...actual,
+    canResolveNuxtOgImage: () => nuxtOgImagePackage.resolvable,
+  }
+})
+
 interface SetupModuleOptions {
   moduleOptions?: Record<string, unknown>
   nuxtOptions?: Record<string, unknown>
@@ -16,6 +26,7 @@ function cloneConfig(value: unknown): unknown {
 async function setupModule(options: SetupModuleOptions = {}) {
   const addComponent = vi.fn()
   const addComponentsDir = vi.fn()
+  const addImports = vi.fn()
   const addImportsDir = vi.fn()
   const addPlugin = vi.fn()
   const addServerHandler = vi.fn()
@@ -51,6 +62,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
     addComponentsDir,
+    addImports,
     addImportsDir,
     addPlugin,
     addServerHandler,
@@ -62,6 +74,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     extendPages,
     extendRouteRules,
     installModule,
+    useLogger: () => ({ warn: vi.fn() }),
   }))
 
   const mod = (await import('../src/module')).default as unknown as {
@@ -82,6 +95,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
   return {
     addComponent,
     addComponentsDir,
+    addImports,
     addImportsDir,
     addPlugin,
     addServerHandler,
@@ -116,6 +130,7 @@ const PRODUCTION_ROBOTS_DEFAULTS = {
 }
 
 afterEach(() => {
+  nuxtOgImagePackage.resolvable = true
   vi.resetModules()
   vi.clearAllMocks()
   vi.unstubAllEnvs()
@@ -139,6 +154,10 @@ describe('narduk-seo module', () => {
     expect(installModule).toHaveBeenCalledWith('nuxt-site-config')
     expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
     expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(true)
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
     expect(extendPages).toHaveBeenCalledTimes(1)
@@ -150,6 +169,57 @@ describe('narduk-seo module', () => {
     // rationale, which is how the contradiction survived from the initial import
     // to a production 403.
     expect(extendRouteRules).not.toHaveBeenCalledWith('/_og/**', { prerender: false })
+  })
+
+  it('does not install nuxt-og-image when runtime OG is disabled (narduk-libs#170)', async () => {
+    const { addImports, installModule, nuxt } = await setupModule({
+      nuxtOptions: { ogImage: { enabled: false } },
+    })
+
+    expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
+    expect(addImports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'defineOgImage',
+        from: expect.stringContaining('defineOgImageStub'),
+      }),
+    )
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(false)
+  })
+
+  it('still installs nuxt-og-image when zeroRuntime is set (narduk-libs#170)', async () => {
+    const { addImports, installModule, nuxt } = await setupModule({
+      nuxtOptions: { ogImage: { zeroRuntime: true } },
+    })
+
+    expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
+    expect(addImports).not.toHaveBeenCalled()
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(true)
+  })
+
+  it('skips nuxt-og-image when the optional peer is not installed (narduk-libs#170)', async () => {
+    nuxtOgImagePackage.resolvable = false
+
+    const { addImports, installModule, nuxt } = await setupModule()
+
+    expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expect(nuxt.options.ogImage).toMatchObject({ enabled: false })
+    expect(addImports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'defineOgImage',
+        from: expect.stringContaining('defineOgImageStub'),
+      }),
+    )
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(false)
   })
 
   it("adds the network row through narduk-core's footer, not a copy of it (narduk-libs#743)", async () => {

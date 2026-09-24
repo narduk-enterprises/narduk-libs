@@ -22,6 +22,12 @@ interface SeoPublicRuntimeConfig {
    * site host stays indexable.
    */
   nardukSeoHostAwareIndexing: boolean
+  /**
+   * True when this layer installed `nuxt-og-image`. False when the optional
+   * peer is omitted or `ogImage.enabled` is false (narduk-libs#170); `useSeo`
+   * then emits the static image instead of calling `defineOgImage`.
+   */
+  nardukSeoOgImageModule: boolean
   /** Enables the internal OG image preview lab in local and approved preview envs. */
   ogImagePreviewLab: boolean
   /**

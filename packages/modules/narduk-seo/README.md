@@ -22,10 +22,13 @@ auto-generates a fresh one per build, so every previously signed `/_og/` URL
 stops verifying -- a rolling Worker release serves two secrets at once and
 cached signed URLs 403 until regenerated. Signing is resolved at **build** time,
 so provision it as a Workers Builds **Build variable**, not as a runtime Worker
-secret. `nuxt dev` stays permissive. Set `ogImage.enabled: false` /
-`ogImage.zeroRuntime: true` instead if the app only uses the static
-`defaultOgImage`. The committed CI placeholder is rejected on builds the estate
-deploys -- Workers Builds (`WORKERS_CI`) and a local `wrangler deploy` behind
+secret. `nuxt dev` stays permissive. `nuxt-og-image` is an **optional peer**
+(narduk-libs#170) at `6.8.0`: omit it for a static `defaultOgImage` (and set
+`ogImage.enabled: false` or `ogImage.zeroRuntime: true`), or add it for runtime
+OG. If the package is not installed, this layer skips the renderer instead of
+failing the build, and `useSeo` falls back to the static image. The committed CI
+placeholder is rejected on builds the estate deploys -- Workers Builds
+(`WORKERS_CI`) and a local `wrangler deploy` behind
 `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds nothing deploys (`nuxt dev`, GitHub
 Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
