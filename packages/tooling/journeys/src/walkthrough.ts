@@ -45,8 +45,9 @@ interface PromotedRun {
 
 /**
  * The publishable narrative output (§2.6, §4.3): built only from PROMOTED,
- * passed, capture-mode runs whose declaration digest equals the catalog as it
- * stands now, and refusing to mix application revisions without an explicit
+ * passed, capture-mode runs whose journey digest equals that journey as it
+ * stands now (or, for older manifests, whose declaration digest equals the
+ * catalog), and refusing to mix application revisions without an explicit
  * override. A journey with no promoted capture is reported, never silently
  * absent.
  */

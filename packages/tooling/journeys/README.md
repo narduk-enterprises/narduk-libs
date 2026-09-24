@@ -80,7 +80,9 @@ registerJourneys({
 - `JOURNEYS_MODE=test npx playwright test` — every journey, every declared
   scenario, no artefacts, fail fast.
 - `JOURNEYS_MODE=capture npx playwright test` — first declared scenario,
-  per-step screenshots, per-journey video, a `run.json` per attempt.
+  per-step screenshots, per-journey video, a `run.json` per attempt. Each
+  attempt also records `journeyDigest` (`digestJourney` of that journey) so a
+  later sibling does not stale it.
 
 The `world` hooks are repo-owned: `prepare` loads a scenario behind the loader's
 own fail-closed gate and lease, and returns the generation token the runner
@@ -98,7 +100,11 @@ journeys rehearse --catalog journeys/catalog.mjs   # watermarked, declaration-on
 
 Verification derives its expectations from the declaration, never from the
 manifest under test. Promotion requires a passed run, hash-verified artefacts,
-and digest equality with the catalog as it stands now.
+and digest equality with the **journey** as it stands now. Adding another
+journey — or any other file under the catalog directory — does not move that
+digest, so a promoted capture of journey N stays current when journey N+1 lands
+(`digestJourney`; narduk-libs#66). Manifests written before that field existed
+still compare the catalog-wide `declarationDigest`.
 
 `--profile-<surface>` and `--env-<surface>` are what make one walkthrough carry
 both surfaces: a web journey runs against a deployment under a web capture

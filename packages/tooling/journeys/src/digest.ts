@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
+import type { Journey } from './types.js'
+
 /**
  * The declaration digest (spec 4.2): a hash of the catalog's SOURCE, because
  * the executable step bodies are part of the declaration - a prose-only
@@ -48,4 +50,70 @@ export function digestDirectory(root: string): string {
   }
   walk(root)
   return digestFiles(files)
+}
+
+/**
+ * Capture (Playwright) and verify (plain Node / Vitest) pretty-print the
+ * same function differently: ASI semicolons, indent, and object literals
+ * broken across lines. Collapse that so the digest is about the body, not
+ * the loader (narduk-libs#66).
+ */
+function normalizeFunctionSource(source: string): string {
+  return source.replaceAll(/\s+/g, ' ').replaceAll(';', '').trim()
+}
+
+function functionSource(value: unknown): string | null {
+  return typeof value === 'function' ? normalizeFunctionSource(value.toString()) : null
+}
+
+/**
+ * The digest of ONE journey's declared shape, including executable step
+ * bodies (`do` / `appliesIf` source, normalized so Playwright and Node
+ * agree). Sibling journeys and other files under the catalog directory are
+ * not part of this hash, so adding journey N+1 does not invalidate a
+ * promoted capture of journey N (narduk-libs#66).
+ *
+ * Shared helpers a step *calls* are the honest gap: a change inside an
+ * imported function does not move this digest unless the step's own source
+ * changes. Hashing the module graph would close that and re-introduce a
+ * file-layout dependency this form is designed not to have.
+ */
+export function digestJourney(journey: Journey): string {
+  const record: Record<string, unknown> = {
+    id: journey.id,
+    title: journey.title,
+    surface: journey.surface,
+    role: journey.role,
+    scenarios: [...journey.scenarios],
+    outcome: journey.outcome,
+    tags: journey.tags ?? null,
+    compromises: journey.compromises ?? null,
+    steps: journey.steps.map((step) => {
+      const entry: Record<string, unknown> = {
+        id: step.id,
+        say: step.say,
+        skipWhen: step.skipWhen ?? null,
+        capture: step.capture ?? null,
+      }
+      if ('do' in step) {
+        entry.do = functionSource(step.do)
+        entry.appliesIf = functionSource(step.appliesIf)
+      }
+      if ('press' in step) {
+        entry.press = step.press
+        entry.lands = step.lands
+      }
+      return entry
+    }),
+  }
+  if (journey.surface !== 'web') {
+    record.drive = journey.drive ?? 'xctest'
+    if (journey.drive === 'driven') {
+      record.launchArgs = journey.launchArgs
+      record.start = journey.start
+    } else {
+      record.binding = journey.binding
+    }
+  }
+  return digestFiles(new Map([[`journey:${journey.id}`, JSON.stringify(record)]]))
 }
