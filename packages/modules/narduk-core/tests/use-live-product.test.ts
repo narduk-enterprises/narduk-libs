@@ -221,6 +221,27 @@ describe('useLiveProduct: polling', () => {
     vi.advanceTimersByTime(MINUTE)
     expect(refresh).toHaveBeenCalledTimes(2)
   })
+
+  it('does not catch-up a mount that was paused by enabled:false', async () => {
+    const refresh = vi.fn(async () => {})
+    const enabled = ref(false)
+    mount(refresh, { enabled, intervalMs: MINUTE })
+    expect(refresh).not.toHaveBeenCalled()
+
+    setVisibility('hidden')
+    setVisibility('visible')
+    expect(refresh).not.toHaveBeenCalled()
+
+    enabled.value = true
+    await nextTick()
+    setVisibility('hidden')
+    vi.advanceTimersByTime(20_000)
+    setVisibility('visible')
+    expect(refresh).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(MINUTE)
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('useLiveProduct: refresh', () => {

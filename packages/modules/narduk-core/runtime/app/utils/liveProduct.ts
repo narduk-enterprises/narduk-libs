@@ -9,6 +9,7 @@ import {
   type Ref,
   shallowRef,
   toValue,
+  watch,
 } from 'vue'
 
 import { formatRelative } from '../composables/useFormat'
@@ -88,6 +89,7 @@ export function createLiveProduct(
   const inFlight = useInFlightTracker<null>()
   let lastStartedAt: number | null = null
   let armedAt: number | null = null
+  let pendingImmediate = false
 
   async function refresh(): Promise<void> {
     await inFlight.dedupe('refresh', async () => {
@@ -107,33 +109,56 @@ export function createLiveProduct(
   }
 
   const enabled = (): boolean => toValue(options.enabled ?? true)
+  const pollingActive = (): boolean => mounted.value && visible.value && enabled()
+
+  function armPollingClock(): void {
+    if (pollingActive() && lastStartedAt === null && armedAt === null) {
+      armedAt = Date.now()
+    }
+  }
 
   useIntervalRefresh(refresh, options.intervalMs, {
-    enabled: () => mounted.value && visible.value && enabled(),
+    enabled: pollingActive,
+  })
+
+  watch(enabled, (isEnabled) => {
+    if (!isEnabled) pendingImmediate = false
+    armPollingClock()
   })
 
   function onVisibility(): void {
     const isVisible = document.visibilityState !== 'hidden'
     if (isVisible === visible.value) return
     visible.value = isVisible
-    if (!isVisible || !enabled()) return
+    if (!isVisible) return
+    if (!enabled()) {
+      pendingImmediate = false
+      return
+    }
+    armPollingClock()
     const intervalMs = toValue(options.intervalMs)
     const origin = lastStartedAt ?? armedAt
-    const skippedImmediate = (options.immediate ?? true) && lastStartedAt === null
     const intervalElapsed =
       origin !== null &&
       Number.isFinite(intervalMs) &&
       intervalMs > 0 &&
       Date.now() - origin >= intervalMs
-    if (skippedImmediate || intervalElapsed) void refresh()
+    if (pendingImmediate || intervalElapsed) {
+      pendingImmediate = false
+      void refresh()
+    }
   }
 
   onMounted(() => {
     visible.value = document.visibilityState !== 'hidden'
     document.addEventListener('visibilitychange', onVisibility)
     mounted.value = true
-    armedAt = Date.now()
-    if ((options.immediate ?? true) && visible.value && enabled()) void refresh()
+    const wantImmediate = options.immediate ?? true
+    if (wantImmediate && enabled()) {
+      if (visible.value) void refresh()
+      else pendingImmediate = true
+    }
+    armPollingClock()
   })
 
   onBeforeUnmount(() => {
