@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useKV } from '../runtime/server/utils/kv'
 import { deleteKVCache, withKVCache } from '../runtime/server/utils/kvCache'
 
 import type { H3Event } from 'h3'
@@ -137,12 +138,48 @@ describe('KV cache helper', () => {
   })
 
   it('falls back to the producer when the binding is unavailable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const event = {
       context: { cloudflare: { env: {} } },
       method: 'GET',
       path: '/test',
     } as unknown as H3Event
 
-    await expect(withKVCache(event, 'missing:test', 60, async () => 'fresh')).resolves.toBe('fresh')
+    try {
+      await expect(withKVCache(event, 'missing:test', 60, async () => 'fresh')).resolves.toBe(
+        'fresh',
+      )
+      expect(warn).toHaveBeenCalledWith(
+        '[KVCache] GET error missing:test',
+        expect.objectContaining({
+          bindingName: 'KV',
+          error: expect.stringContaining('Error: KV binding "KV" not found'),
+        }),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('useKV', () => {
+  it('throws when the default KV binding is missing', () => {
+    const event = {
+      context: { cloudflare: { env: {} } },
+      method: 'GET',
+      path: '/test',
+    } as unknown as H3Event
+
+    expect(() => useKV(event)).toThrow(
+      expect.objectContaining({
+        statusCode: 500,
+        message: 'KV binding "KV" not found. Add it to wrangler.json.',
+      }),
+    )
+  })
+
+  it('returns the named binding when present', () => {
+    const { kv } = createKV()
+    expect(useKV(createEvent('CACHE', kv), 'CACHE')).toBe(kv)
   })
 })
