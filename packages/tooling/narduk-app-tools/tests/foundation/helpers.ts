@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -65,6 +65,34 @@ export function writeConformantBaseline(root: string): void {
   writeJson(root, 'renovate.json', {
     packageRules: [{ matchPackagePrefixes: ['@narduk-enterprises/'], groupName: 'estate' }],
   })
+}
+
+/** A Coolify/node-server app: no Workers manifest, no wrangler, node-server
+ * Nitro, and `Config/project-lifecycle.json` naming coolify as the only
+ * provider (narduk-libs#158). */
+export function writeCoolifyOnlyApp(root: string): void {
+  writeConformantBaseline(root)
+  rmSync(join(root, 'Config/cloudflare-app.json'), { force: true })
+  rmSync(join(root, 'wrangler.json'), { force: true })
+  writeJson(root, 'Config/coolify-app.json', {
+    schemaVersion: 1,
+    product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+    access: { exposureClass: 'public' },
+  })
+  writeJson(root, 'Config/project-lifecycle.json', {
+    schemaVersion: 1,
+    environments: [
+      {
+        name: 'production',
+        deploymentTargets: [{ provider: 'coolify', name: 'web' }],
+      },
+    ],
+  })
+  writeFile(
+    root,
+    'nuxt.config.ts',
+    'export default defineNuxtConfig({ nitro: { preset: "node-server" } })',
+  )
 }
 
 export function fakeReality(

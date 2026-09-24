@@ -843,11 +843,12 @@ corroborates an ambiguous 404 with a scope probe. Other scopes, such as
 `env.<name>`) that is still the scaffold placeholder
 `00000000-0000-0000-0000-000000000000` is a decided FAIL naming
 `narduk-app db create` and the raw `wrangler d1 create <name>` step. An app with
-no D1 binding is `not-applicable`. A fresh `create-narduk-app` scaffold with a
-database therefore fails 1.5, and only 1.5, until it is provisioned: the
-placeholder builds and deploys, but no request that touches the database can
-succeed (narduk-libs#662). A PASS reads the file only; it does not prove the
-database exists.
+no D1 binding is `not-applicable`, and so is an app whose only declared
+deployment target is not Cloudflare (narduk-libs#158), even with a leftover
+wrangler config. A fresh `create-narduk-app` scaffold with a database therefore
+fails 1.5, and only 1.5, until it is provisioned: the placeholder builds and
+deploys, but no request that touches the database can succeed (narduk-libs#662).
+A PASS reads the file only; it does not prove the database exists.
 
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
