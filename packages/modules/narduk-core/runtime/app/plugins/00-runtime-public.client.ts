@@ -1,11 +1,12 @@
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports'
 
 /**
- * Confirm the request-time overlay after hydration.
+ * Apply the full request-time overlay in the browser.
  *
- * SSR already applies `applyRuntimePublicOverlay` in the Nitro
- * `00-runtime-public` plugin so `__NUXT__` is not an empty bake. This fetch
- * keeps SPA navigations and a missed SSR apply on the same Worker bindings.
+ * SSR already writes the browser-only keys (analytics, SEO meta, geolocation)
+ * in the Nitro `00-runtime-public` plugin, so `__NUXT__` is not an empty bake.
+ * This fetch applies the rest of the overlay (deployment target, preview-safe
+ * mode, auth) and covers prerendered or cached HTML that never went through it.
  */
 export default defineNuxtPlugin({
   name: 'runtime-public',

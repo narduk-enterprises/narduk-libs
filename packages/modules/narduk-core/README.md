@@ -133,13 +133,25 @@ narduk-core owns the request-time contract:
 1. `resolveRuntimePublicOverlay(event)` reads live Worker bindings (short names
    such as `GA_MEASUREMENT_ID` / `POSTHOG_PUBLIC_KEY`, plus optional
    `NUXT_PUBLIC_*` aliases that Nuxt's own env overlay understands).
-2. `applyRuntimePublicOverlay(event)` copies that overlay onto
-   `useRuntimeConfig(event).public` for the current request.
-3. The `00-runtime-public` Nitro plugin runs that apply on every request
-   **before SSR**, so `__NUXT__` matches the Worker env.
-4. `GET /api/runtime/public` returns the same overlay. The client plugin
-   `runtime-public` still fetches it after hydration so SPA navigations stay
-   aligned.
+2. `applyRuntimePublicOverlay(event)` copies the browser-only part of that
+   overlay (`RUNTIME_PUBLIC_SSR_KEYS`: the analytics keys and PostHog flags,
+   `allowGeolocation`, `twitterSite`, `seoSearchActionUrlTemplate`) onto
+   `useRuntimeConfig(event).public`. Nitro hands every request its own clone of
+   that object, so nothing crosses requests in an isolate.
+3. The `00-runtime-public` Nitro plugin runs that apply on every page request
+   (everything outside `/api/` and `/_nuxt/`) **before SSR**, so `__NUXT__`
+   matches the Worker env, crawlers included.
+4. `GET /api/runtime/public` returns the whole overlay. The client plugin
+   `runtime-public` still fetches it before the app mounts and applies all of
+   it, including the keys SSR leaves alone.
+
+SSR deliberately leaves `previewSafeMode`, `deploymentTarget`, `appUrl` /
+`siteUrl` and the `auth*` / `supabase*` keys at their build values. Server code
+in the same request reads them from the same object: the production 5xx
+sanitizer keys off `previewSafeMode`, which the overlay turns on for a
+production version reached through its `workers.dev` alias, and narduk-auth
+reads the auth keys. The overlay never carries narduk-analytics'
+`analyticsPrivacy`, so a strict app stays strict.
 
 Preview aliases (`*.workers.dev` / `*.pages.dev` that are not the canonical
 host) still blank analytics via the overlay. An empty string after the overlay

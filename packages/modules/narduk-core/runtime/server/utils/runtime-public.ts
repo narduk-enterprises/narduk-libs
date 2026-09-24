@@ -268,23 +268,70 @@ export function resolveRuntimePublicOverlay(event: H3Event): RuntimePublicOverla
 }
 
 /**
- * Copy the request-time overlay onto `useRuntimeConfig(event).public`.
+ * The overlay keys the SSR plugin writes onto the request's
+ * `runtimeConfig.public`: values that only the browser consumes (analytics,
+ * SEO meta, the geolocation flag, whose request-time header already reads the
+ * same binding).
+ *
+ * Deliberately not the whole overlay. `useRuntimeConfig(event)` is also what
+ * server code in the same request reads, and some of it makes decisions on
+ * `public` keys the overlay derives differently from the build:
+ * `previewSafeMode` / `deploymentTarget` turn off the production 5xx sanitizer
+ * (`error-sanitizer.ts`) and follow the request host, so copying them would
+ * un-sanitize errors on a production version's `workers.dev` alias;
+ * `appUrl` / `siteUrl` feed auth origin checks and host-aware indexing; the
+ * `auth*` / `supabase*` / `appBackendPreset` keys are narduk-auth's server
+ * state. Those stay build/app-owned on the server, and the client plugin still
+ * applies the full overlay after its fetch.
+ */
+export const RUNTIME_PUBLIC_SSR_KEYS = [
+  'analyticsLoadStrategy',
+  'gaMeasurementId',
+  'posthogPublicKey',
+  'posthogHost',
+  'posthogDeadClicksEnabled',
+  'posthogExternalDependencyLoadingEnabled',
+  'posthogFeatureFlagsEnabled',
+  'posthogSessionReplayEnabled',
+  'posthogSurveysEnabled',
+  'allowGeolocation',
+  'twitterSite',
+  'seoSearchActionUrlTemplate',
+] as const satisfies ReadonlyArray<keyof RuntimePublicOverlay>
+
+export type RuntimePublicSsrOverlay = Pick<
+  RuntimePublicOverlay,
+  (typeof RUNTIME_PUBLIC_SSR_KEYS)[number]
+>
+
+/**
+ * Copy the browser-only part of the request-time overlay onto
+ * `useRuntimeConfig(event).public` so Nuxt serializes it into `__NUXT__`.
  *
  * Workers Builds does not export `wrangler.json` `vars` into `nuxt build`, so
  * baked `runtimeConfig.public` keys are often empty strings even when the
- * Worker already has the live bindings. Nuxt serializes that bake into
- * `__NUXT__` unless this overlay runs before SSR. `/api/runtime/public` and
- * the `00-runtime-public` Nitro plugin both use this so the HTML payload and
- * the JSON route stay on one contract.
+ * Worker already has the live bindings (buoys#133). The `00-runtime-public`
+ * Nitro plugin calls this before SSR, so the HTML payload carries the same
+ * values `/api/runtime/public` returns — including the preview-host blanking.
+ *
+ * Request-scoped: Nitro's `useRuntimeConfig(event)` returns a per-event clone
+ * (`event.context.nitro.runtimeConfig`), never the isolate-wide config object
+ * (which Nitro deep-freezes), so one request's host or bindings cannot leak
+ * into another request served by the same isolate.
  *
  * Apps should not read `wrangler.json` from `nuxt.config.ts` to paper over
  * the empty bake. Short Worker names (`GA_MEASUREMENT_ID`,
  * `POSTHOG_PUBLIC_KEY`) are enough; optional `NUXT_PUBLIC_*` aliases are
- * accepted for Nuxt's native env overlay.
+ * accepted too.
  */
-export function applyRuntimePublicOverlay(event: H3Event): RuntimePublicOverlay {
+export function applyRuntimePublicOverlay(event: H3Event): RuntimePublicSsrOverlay {
   const overlay = resolveRuntimePublicOverlay(event)
-  const config = useRuntimeConfig(event) as { public?: Record<string, unknown> }
-  config.public = Object.assign(config.public ?? {}, overlay)
-  return overlay
+  const applied = {} as Record<string, unknown>
+  for (const key of RUNTIME_PUBLIC_SSR_KEYS) applied[key] = overlay[key]
+
+  const config = useRuntimeConfig(event) as { public?: unknown }
+  if (config.public && typeof config.public === 'object') {
+    Object.assign(config.public, applied)
+  }
+  return applied as RuntimePublicSsrOverlay
 }

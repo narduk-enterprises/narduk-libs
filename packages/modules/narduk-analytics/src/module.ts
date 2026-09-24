@@ -256,10 +256,10 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         // vars into `nuxt build`; narduk-core's request-time overlay fills
         // these from Worker bindings (short names or NUXT_PUBLIC_* aliases)
         // before SSR serializes `__NUXT__`. Do not read wrangler.json here.
-        gaMeasurementId: readPublicEnv('NUXT_PUBLIC_GA_MEASUREMENT_ID', 'GA_MEASUREMENT_ID'),
-        posthogPublicKey: readPublicEnv('NUXT_PUBLIC_POSTHOG_PUBLIC_KEY', 'POSTHOG_PUBLIC_KEY'),
+        gaMeasurementId: readPublicEnv('GA_MEASUREMENT_ID', 'NUXT_PUBLIC_GA_MEASUREMENT_ID'),
+        posthogPublicKey: readPublicEnv('POSTHOG_PUBLIC_KEY', 'NUXT_PUBLIC_POSTHOG_PUBLIC_KEY'),
         posthogHost:
-          readPublicEnv('NUXT_PUBLIC_POSTHOG_HOST', 'POSTHOG_HOST') || 'https://us.i.posthog.com',
+          readPublicEnv('POSTHOG_HOST', 'NUXT_PUBLIC_POSTHOG_HOST') || 'https://us.i.posthog.com',
         posthogDeadClicksEnabled: readBooleanEnv('POSTHOG_DEAD_CLICKS_ENABLED'),
         posthogExternalDependencyLoadingEnabled: readBooleanEnv(
           'POSTHOG_EXTERNAL_DEPENDENCY_LOADING_ENABLED',

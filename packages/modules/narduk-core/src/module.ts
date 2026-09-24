@@ -783,14 +783,16 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           // Build-time seeds only. Workers Builds does not copy wrangler.json
           // vars into `nuxt build`, so these are often empty in CI; the
           // request-time overlay fills them from Worker bindings before SSR.
+          // Short name first, as the overlay reads them. Declaring the keys
+          // also gives Nuxt's native `NUXT_PUBLIC_*` env overlay a target.
           gaMeasurementId: (
+            process.env.GA_MEASUREMENT_ID?.trim() ||
             process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID ||
-            process.env.GA_MEASUREMENT_ID ||
             ''
           ).trim(),
           posthogPublicKey: (
+            process.env.POSTHOG_PUBLIC_KEY?.trim() ||
             process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY ||
-            process.env.POSTHOG_PUBLIC_KEY ||
             ''
           ).trim(),
         },

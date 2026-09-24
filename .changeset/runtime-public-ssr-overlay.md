@@ -6,23 +6,37 @@
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
-Apply Worker public bindings to Nuxt SSR `__NUXT__` so Workers Builds no longer
-bakes empty `gaMeasurementId` / `posthogPublicKey` when wrangler vars exist
-(buoys#133 / PR #136).
+Fill the SSR `__NUXT__` payload from Worker public bindings, so Workers Builds
+no longer ships an empty `gaMeasurementId` / `posthogPublicKey` when the Worker
+has the keys (buoys#133).
 
-Workers Builds does not inject `wrangler.json` `vars` into `nuxt build`. Nuxt's
-native request-time overlay only sees `NUXT_PUBLIC_*` names. Apps that wrote
-`process.env.GA_MEASUREMENT_ID || ''` therefore shipped an empty homepage
-payload while `/api/runtime/public` was correct.
+Workers Builds does not inject `wrangler.json` `vars` into `nuxt build`, and
+Nuxt's own request-time overlay only maps `NUXT_PUBLIC_*` names. Apps that
+wrote `process.env.GA_MEASUREMENT_ID || ''` shipped an empty page payload while
+`/api/runtime/public` was correct.
 
-**narduk-core** now runs `applyRuntimePublicOverlay` on every request before SSR
-(same overlay as `/api/runtime/public`). Short Worker names and optional
-`NUXT_PUBLIC_*` aliases both work. Preview hosts still blank analytics. Do not
-read `wrangler.json` from `nuxt.config.ts`.
+**narduk-core**: a new `00-runtime-public` Nitro plugin runs
+`applyRuntimePublicOverlay(event)` on every page request (not `/api/` or
+`/_nuxt/`) before SSR. It writes the browser-only overlay keys
+(`RUNTIME_PUBLIC_SSR_KEYS`: analytics keys and PostHog flags, `allowGeolocation`,
+`twitterSite`, `seoSearchActionUrlTemplate`) onto the request's own
+`runtimeConfig.public` clone. `previewSafeMode`, `deploymentTarget`, the URLs
+and the auth keys keep their build values on the server, because the 5xx
+sanitizer and narduk-auth read them from the same object; the client plugin
+still applies the full overlay. Preview hosts still blank analytics, and
+`analyticsPrivacy: 'strict'` is untouched. The overlay also accepts
+`NUXT_PUBLIC_GA_MEASUREMENT_ID` / `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` /
+`NUXT_PUBLIC_POSTHOG_HOST` after the short names, and the module seeds
+`gaMeasurementId` / `posthogPublicKey` so Nuxt's native `NUXT_PUBLIC_*` overlay
+has keys to fill.
+
+**narduk-analytics** seeds `posthogPublicKey` and accepts the same
+`NUXT_PUBLIC_*` aliases at build time. **narduk-platform** catalog notes,
+**narduk-app-tools** README and the **create-narduk-app** runbook document that
+`cf:runtime-var` is the contract and a `nuxt.config.ts` wrangler reader is not.
 
 **Upgrade (Buoys and any app with the same workaround):** bump
-`@narduk-enterprises/narduk-core` (and `narduk-analytics` if pinned). Then
-delete the app-local wrangler.json reader, drop duplicated
-`NUXT_PUBLIC_GA_MEASUREMENT_ID` / `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler
-copies, and leave those `runtimeConfig.public` keys unset or empty at build
-time. Keep the short names in wrangler `vars`.
+`@narduk-enterprises/narduk-core` (and `narduk-analytics` if pinned), delete
+the app-local `wrangler.json` reader, drop `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+`NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler copies kept only as Nuxt aliases, and
+keep the short names in wrangler `vars`.
