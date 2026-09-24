@@ -3,7 +3,6 @@ import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { createActionlintConfig, customRunnerLabels } from './actionlint-config.js'
 import {
-  createCiRegistryAuthScript,
   createCiWorkflow,
   createDependabotMergeWorkflow,
   createValidationWorkflow,
@@ -540,17 +539,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       path: '.npmrc',
-      // SCOPE ROUTING ONLY. The committed file carries no `_authToken` line at
-      // all -- not even an env reference. pnpm 10 warns 'Failed to replace env
-      // in config' whenever the variable is absent (every `pnpm install` that
-      // does not need the registry, which is most of them), and pnpm 11 drops
-      // env interpolation in .npmrc entirely. npm never implemented the
-      // `${VAR-default}` form either. Auth is supplied per process instead:
-      // locally by the `gh-packages-run` helper, in CI by the userconfig the
-      // generated workflow writes to the runner temp directory. See
-      // agent-infrastructure docs/agents/credentials.md, 'GitHub Packages
-      // read', and company-hq docs/SECRETS-MATRIX.md.
-      contents: text('@narduk-enterprises:registry=https://npm.pkg.github.com'),
+      // SCOPE ROUTING ONLY. D-PKG-6 reads `@narduk-enterprises/*` from the
+      // anonymous `https://npm.nard.uk` mirror. The committed file carries no
+      // `_authToken` line -- not even an env reference. pnpm 10 warns
+      // 'Failed to replace env in config' whenever the variable is absent,
+      // and pnpm 11 drops env interpolation in .npmrc entirely. Break-glass
+      // GitHub Packages auth stays in `scripts/gh-packages-run.mjs`, unused
+      // by the default install path. See company-hq D-PKG-6.
+      contents: text('@narduk-enterprises:registry=https://npm.nard.uk'),
     },
     {
       path: '.prettierignore',
@@ -604,9 +600,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         ]
       : []),
     {
-      // Both visibilities: even a public app's Worker depends on private
-      // @narduk-enterprises/* packages, so Copilot's sandbox needs registry
-      // auth to install regardless of which CI runner policy this app uses.
+      // Both visibilities: Copilot's sandbox installs the same frozen
+      // lockfile from `https://npm.nard.uk` with no package secret.
       path: '.github/workflows/copilot-setup-steps.yml',
       contents: createCopilotSetupWorkflow(),
     },
@@ -625,24 +620,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // `majors` is a deliberate person/agent PR. `open-pull-requests-limit`
       // is 2 -- one PR per lane. The `groups.*.patterns` shape is the
       // D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts (narduk-libs#233
-      // / PR #235); it does not care which group name carries the scope. The
-      // registries block reuses the same GitHub Packages registry URL as the
-      // committed .npmrc (`@narduk-enterprises:registry=...`). The token is
-      // read from the org-level DEPENDABOT secret
-      // NARDUK_PLATFORM_GH_PACKAGES_READ (verified present 2026-09-11) --
-      // Dependabot secrets are a separate store from Actions secrets; the
-      // Actions secret of the same name is what CI uses.
+      // / PR #235); it does not care which group name carries the scope.
+      // There is no `registries:` block: Dependabot reads the committed
+      // `.npmrc` (`https://npm.nard.uk`) anonymously. A `registries:` entry
+      // with `scope:` would discard that `.npmrc` and re-add token auth
+      // (agent-infrastructure#1405, narduk-libs#568).
       path: '.github/dependabot.yml',
-      // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-      // coding-standards/toolchain/dependabot.yml), not the older canonical
-      // template: `scope` is FUNCTIONALLY REQUIRED, not decorative --
-      // without it Dependabot's npm_and_yarn update aborts outright the
-      // moment the repo carries any @narduk-enterprises/* dependency, which
-      // every generated app does (coding-standards#9, A/B-proven across
-      // three repos 2026-09-10). `directory: "/"` (singular) also matches
-      // the reference app: Dependabot's npm ecosystem parses the whole pnpm
-      // workspace graph from the root manifest, so the array-of-directories
-      // form this template previously emitted was redundant, not additive.
+      // After D-PKG-6 there is no `registries:` / `scope:` block
+      // (narduk-libs#568): Dependabot follows the committed `.npmrc`. Item
+      // 5.2 is satisfied by the group patterns naming `@narduk-enterprises/*`.
+      // `directory: "/"` (singular) matches the reference app: Dependabot's
+      // npm ecosystem parses the whole pnpm workspace graph from the root
+      // manifest, so the array-of-directories form this template previously
+      // emitted was redundant, not additive.
       // Cooldown is disabled (default-days/semver-major-days: 0) and
       // @narduk-enterprises/* is listed only in the (inert while disabled)
       // `exclude` array -- company-hq#737, confirmed root cause: Dependabot's
@@ -652,17 +642,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // every run given how often @narduk-enterprises/* publishes.
       contents: text(
         'version: 2',
-        'registries:',
-        '  narduk-github-packages:',
-        '    type: npm-registry',
-        '    url: https://npm.pkg.github.com',
-        '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
-        "    scope: '@narduk-enterprises'",
         'updates:',
         "  - package-ecosystem: 'npm'",
         "    directory: '/'",
-        '    registries:',
-        '      - narduk-github-packages',
         '    schedule:',
         "      interval: 'weekly'",
         "      day: 'monday'",
@@ -714,15 +696,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
-      // Pre-install GitHub Packages auth for Workers Builds (`cf:build`)
-      // and any other caller that must run before `narduk-app` is on PATH.
-      // Private CI still uses `scripts/package-registry-auth.mjs` below.
+      // Opt-in break-glass only. Default `cf:build` and CI install
+      // anonymously from `https://npm.nard.uk` and do not call this script.
       path: 'scripts/gh-packages-run.mjs',
       contents: createGhPackagesRunScript(),
     },
-    ...(visibility === 'private'
-      ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
-      : []),
     {
       path: 'AGENTS.md',
       contents: text(
@@ -823,7 +801,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'CI judges a commit with three things. Run all three before calling a branch ready; none of them needs a value you have to know out of band.',
         '',
         '- `pnpm run quality:static` -- format, lint, knip, manifest cross-check, shared-UI pin, typecheck, `build:ci`, unit tests. Credential-free and offline. Public CI runs this script directly; private CI names the same checks individually.',
-        '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry, and without a credential it reports `UNKNOWN` and exits 2, which would be a local red CI does not have.',
+        '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry over the network. Default generated apps read `https://npm.nard.uk` anonymously and do not need a GitHub Packages credential.',
         '- `pnpm run quality` -- `quality:static` plus the Playwright browser tests, which both CI paths run as separate jobs.',
         '',
         'The build step is `build:ci`, the same script CI builds with: it injects test-only `NUXT_OG_IMAGE_SECRET` / `NUXT_SESSION_PASSWORD` placeholders and targets the deployable Worker shape. Plain `pnpm run build` is the real-secret path, used by `cf:build` and operator recovery; it throws on an empty OG secret by design.',
@@ -836,13 +814,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           : []),
         '`pnpm run dev` starts Nuxt directly and reads no secret store. When a capability needs registered credentials locally, run that command under the registered local credential route instead: `narduk-app dev --credentials nvault --project <project> --environment <environment> --config <config> -- nuxt dev --host 127.0.0.1`. Values stay process-local for that run and are never written to a file; do not commit real values to `.env` or `.dev.vars`.',
         '',
-        'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
+        'The committed `.npmrc` routes `@narduk-enterprises/*` to `https://npm.nard.uk`. Reads are anonymous. The file carries no credential and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever a variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
-        'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In private CI the pinned shared workflow invokes `scripts/package-registry-auth.mjs` before installation and removes its ignored `.npmrc.auth` output on every install outcome. Public CI uses a unique temporary userconfig under `$RUNNER_TEMP`. Both supply the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` through `NPM_CONFIG_USERCONFIG` only for installation. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
+        'Default installs (`pnpm install`, CI, Workers Builds `cf:build`) need no GitHub Packages token. `scripts/gh-packages-run.mjs` stays in the repo as an opt-in break-glass helper: temporarily point `.npmrc` at `https://npm.pkg.github.com` and run through that script with `GH_PACKAGES_READ` if the mirror is down. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
         '',
-        'Dependabot is a fourth consumer of `NARDUK_PLATFORM_GH_PACKAGES_READ`: it reads that name from the org Dependabot secret store (a separate store from Actions). If the org secret is scoped to selected repositories, grant this newly generated repo access or Dependabot silently fails to resolve the private `@narduk-enterprises/*` scope.',
+        'Dependabot reads the same anonymous mirror. The generated `dependabot.yml` has no `registries:` block and does not need `NARDUK_PLATFORM_GH_PACKAGES_READ`.',
         '',
-        'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
+        'Before the first push, onboarding runs pnpm install and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
         'Enable Workers Builds on protected `main`. Enable non-production branch builds and GitHub PR comments for trusted branches of public apps; the generated scripts alone do not create that connection. Version previews share Worker bindings, so private data and mutation-capable apps need isolated preview bindings before enabling them. Authenticated apps keep direct Worker and preview URLs disabled until equivalent protection is configured.',
         '',
@@ -982,27 +960,26 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Connect this repository to a Cloudflare Worker. These are provider settings, not settings Wrangler creates automatically -- an onboarding step, not something this generator can configure from a checkout alone.',
         '',
-        '| Setting                       | Value                                                 |',
-        '| ----------------------------- | ----------------------------------------------------- |',
-        '| Root directory                | `/`                                                   |',
-        '| Production branch             | `main`                                                |',
-        '| Build command                 | `pnpm run cf:build`                                   |',
-        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
-        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
-        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
-        '| Build cache                   | enabled                                               |',
+        '| Setting                       | Value                                             |',
+        '| ----------------------------- | ------------------------------------------------- |',
+        '| Root directory                | `/`                                               |',
+        '| Production branch             | `main`                                            |',
+        '| Build command                 | `pnpm run cf:build`                               |',
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                      |',
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                      |',
+        '| Non-production branch builds  | disabled until preview bindings exist (see below) |',
+        '| Build cache                   | enabled                                           |',
         '| `NODE_VERSION`                | `' +
           NODE_VERSION +
-          '`                                             |',
+          '`                                         |',
         '| `PNPM_VERSION`                | `' +
           PNPM_VERSION +
-          '`                                             |',
-        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
-        '| Build secret                  | `GH_PACKAGES_READ` (read-only private package access) |',
-        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)      |',
-        '| `NUXT_SESSION_PASSWORD`       | Build variable (Worker secrets are runtime-only)      |',
+          '`                                         |',
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                               |',
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)  |',
+        '| `NUXT_SESSION_PASSWORD`       | Build variable (Worker secrets are runtime-only)  |',
         '',
-        "The build command runs `scripts/gh-packages-run.mjs` to write a process-scoped GitHub Packages userconfig from `GH_PACKAGES_READ`, installs the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
+        "The build command installs the frozen workspace lockfile from `https://npm.nard.uk` (anonymous `@narduk-enterprises/*` reads) and then builds the Cloudflare module artifact. Skipping Cloudflare's initial install keeps that install on the frozen lockfile. No GitHub Packages build secret is required. If the mirror is unavailable, break-glass is `scripts/gh-packages-run.mjs` with `GH_PACKAGES_READ` after temporarily routing `.npmrc` at `https://npm.pkg.github.com`. Do not make that the default.",
         '',
         'Worker secrets are injected at runtime only and are not visible to `nuxt build`. Apps that enable runtime OG image generation (the `seo` capability default) must set `NUXT_OG_IMAGE_SECRET` as a Workers Builds _Build variable_ or the build throws. Set `NUXT_SESSION_PASSWORD` the same way. CI uses committed test-only placeholders; production must use the real Vault-issued values, never those placeholders.',
         '',

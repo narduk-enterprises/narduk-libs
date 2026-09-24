@@ -476,7 +476,8 @@ describe('upgrade CLI', () => {
       '--write',
     ])
     expect(result.code).toBe(0)
-    expect(await read(targetDir, '.github/dependabot.yml')).toContain('registries:')
+    expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
+    expect(await read(targetDir, '.github/dependabot.yml')).not.toContain('registries:')
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe('name: Stale\n')
   })
 

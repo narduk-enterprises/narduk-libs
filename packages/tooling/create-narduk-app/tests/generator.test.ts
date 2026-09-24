@@ -548,19 +548,19 @@ describe('create-narduk-app generation contract', () => {
     // ${VAR} and pnpm 11 removes .npmrc env interpolation outright, so the
     // file must carry no _authToken line at all -- not even an env reference.
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
-      '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
+      '@narduk-enterprises:registry=https://npm.nard.uk\n',
     )
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
       'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
     )
-    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).not.toContain(
+      'NARDUK_PLATFORM_GH_PACKAGES_READ',
     )
-    // One credential, two names: the org secret maps into the single process
-    // env name the committed .npmrc reads. No second alias, and no setup-node
-    // registry-url writing a competing userconfig .npmrc (company-hq#488).
+    // Default CI and validation callers pass no package-read secret.
+    // No setup-node registry-url writing a competing userconfig .npmrc
+    // (company-hq#488).
     // Development mode's explicit validation caller: a reserved-ref push is its
     // only trigger, so held automation stays quiet and the run still satisfies
     // the required check on the exact candidate (company-hq#781).
@@ -572,7 +572,7 @@ describe('create-narduk-app generation contract', () => {
       'narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@67968e304ba64e7733dc36d23d80eefda8d72e33',
     )
     expect(validation.jobs.ci.with['expected-candidate-sha']).toBe('${{ github.sha }}')
-    expect(validation.jobs.ci.secrets.NARDUK_PLATFORM_GH_PACKAGES_READ).toBeDefined()
+    expect(validation.jobs.ci.secrets).toBeUndefined()
     const generatedCi =
       files.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
     expect(generatedCi).not.toContain('NODE_AUTH_TOKEN')
@@ -682,14 +682,14 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toBeDefined()
       expect(runbook, label).toContain('## Cloudflare connection')
       expect(runbook, label).toContain(
-        '| Build command                 | `pnpm run cf:build`                                   |',
+        '| Build command                 | `pnpm run cf:build`                               |',
       )
       expect(runbook, label).toContain(
-        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                               |',
       )
       expect(runbook, label).toContain('`NUXT_OG_IMAGE_SECRET`')
       expect(runbook, label).toContain(
-        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)      |',
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)  |',
       )
       expect(runbook, label).toContain('`NUXT_SESSION_PASSWORD`')
       expect(runbook, label).toContain('scripts/gh-packages-run.mjs')
@@ -701,10 +701,10 @@ describe('create-narduk-app generation contract', () => {
       // a production command that deploys puts a `main` push straight into
       // production, which is the failure the standard exists to prevent.
       expect(runbook, label).toContain(
-        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                      |',
       )
       expect(runbook, label).toContain(
-        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                      |',
       )
       expect(runbook, label).toContain('## The deployment standard')
       expect(runbook, label).toContain('"standard": "narduk-v1"')
@@ -716,7 +716,7 @@ describe('create-narduk-app generation contract', () => {
       // every pull request write production data.
       expect(runbook, label).toContain('"nonProductionBranchBuilds": false')
       expect(runbook, label).toContain(
-        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
+        '| Non-production branch builds  | disabled until preview bindings exist (see below) |',
       )
       expect(runbook, label).toContain('"previewBindings"')
       expect(runbook, label).toContain('narduk-app foundation:check:deployment')
@@ -1163,7 +1163,7 @@ describe('create-narduk-app generation contract', () => {
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
     expect(rootPackage.scripts['cf:build']).toBe(
-      'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+      'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
     )
     expect(rootPackage.scripts['cf:deploy']).toBe('pnpm --filter web run cf:deploy')
     expect(rootPackage.scripts.deploy).toBe('pnpm --filter web run deploy')
@@ -1449,34 +1449,37 @@ describe('generated app typecheck and lint surfaces', () => {
       const ci = files.get('.github/workflows/ci.yml') ?? ''
       const readme = files.get('README.md') ?? ''
 
-      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.pkg.github.com\n')
+      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.nard.uk\n')
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
+      expect(npmrc, label).not.toContain('npm.pkg.github.com')
       expect(ci, label).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
-      expect(ci, label).toContain(
-        'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
-      )
-      // The retired Doppler/nvault fallback wording is gone; the README now
-      // documents the process-scoped path only.
+      expect(ci, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+      expect(ci, label).not.toContain('npm.pkg.github.com')
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
-      expect(readme, label).toContain('NPM_CONFIG_USERCONFIG')
+      expect(readme, label).toContain('https://npm.nard.uk')
       expect(readme, label).toContain('gh-packages-run')
-      expect(readme, label).toContain('org Dependabot secret store')
-      expect(readme, label).toContain('selected repositories')
+      expect(readme, label).toContain('no `registries:` block')
+      expect(files.has('scripts/package-registry-auth.mjs'), label).toBe(false)
+      expect(files.has('scripts/gh-packages-run.mjs'), label).toBe(true)
+      const root = JSON.parse(files.get('package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      expect(root.scripts['cf:build'], label).toBe(
+        'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+      )
+      expect(root.scripts['cf:build'], label).not.toContain('gh-packages-run')
     }
   })
 
   // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-  // gonogo#104 / narduk-libs#U2), not the older canonical template: `scope`
-  // is functionally required, not decorative -- without it Dependabot's
-  // npm_and_yarn update aborts outright the moment the repo carries any
-  // @narduk-enterprises/* dependency (coding-standards#9). Two npm groups,
-  // split by `update-types` into a `safe` (minor + patch) lane and a
-  // `majors` lane, replace the old single all-in `dependencies` group: a
-  // main-branch merge still can't trigger more than one PR per lane
-  // (foundation:check item 5.2's "grouping .github/dependabot.yml"
-  // acceptance shape, narduk-libs#233, is indifferent to which group name
-  // carries the scope).
+  // gonogo#104 / narduk-libs#U2). After D-PKG-6 there is no `registries:`
+  // block (narduk-libs#568). Two npm groups, split by `update-types` into a
+  // `safe` (minor + patch) lane and a `majors` lane, replace the old single
+  // all-in `dependencies` group: a main-branch merge still can't trigger
+  // more than one PR per lane (foundation:check item 5.2's "grouping
+  // .github/dependabot.yml" acceptance shape, narduk-libs#233, is
+  // indifferent to which group name carries the scope).
   it('emits a .github/dependabot.yml with two update-type-split npm groups and a github-actions ecosystem block', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
@@ -1484,19 +1487,17 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(dependabot, label).toContain("package-ecosystem: 'npm'")
       expect(dependabot, label).toContain("package-ecosystem: 'github-actions'")
-      expect(dependabot, label).toContain("scope: '@narduk-enterprises'")
+      expect(dependabot, label).not.toContain('scope:')
       expect(dependabot, label).toContain('safe:')
       expect(dependabot, label).toContain('majors:')
       expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
-      // Reuses the same registry URL as the committed .npmrc and the same
-      // org Actions secret name already used for install auth -- no new
-      // registry or credential name invented for Dependabot.
-      expect(dependabot, label).toContain('url: https://npm.pkg.github.com')
-      expect(dependabot, label).toContain('${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}')
+      expect(dependabot, label).not.toContain('registries:')
+      expect(dependabot, label).not.toContain('npm.pkg.github.com')
+      expect(dependabot, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(() => YAML.parse(dependabot), label).not.toThrow()
       const parsed = YAML.parse(dependabot) as {
         version: number
-        registries: Record<string, { type: string; url: string; scope: string }>
+        registries?: Record<string, unknown>
         updates: Array<{
           'package-ecosystem': string
           directory?: string
@@ -1506,11 +1507,11 @@ describe('generated app typecheck and lint surfaces', () => {
         }>
       }
       expect(parsed.version, label).toBe(2)
-      expect(parsed.registries['narduk-github-packages'].scope, label).toBe('@narduk-enterprises')
+      expect(parsed.registries, label).toBeUndefined()
       expect(parsed.updates, label).toHaveLength(2)
       const npmUpdate = parsed.updates.find((update) => update['package-ecosystem'] === 'npm')
       expect(npmUpdate?.directory, label).toBe('/')
-      expect(npmUpdate?.registries, label).toEqual(['narduk-github-packages'])
+      expect(npmUpdate?.registries, label).toBeUndefined()
       expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
       expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
       expect(npmUpdate?.groups.safe['update-types'], label).toEqual(['minor', 'patch'])

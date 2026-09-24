@@ -18,9 +18,9 @@
  *   the script name there is a `ci-workflow.ts` change handed to the
  *   integrator, and is NOT covered by this file.
  *
- * The command must stay credential-free for any of this to work: the generated
- * install step scopes the GitHub Packages token to `pnpm install` alone, so
- * nothing later in the job has an ambient token.
+ * The command must stay credential-free for any of this to work: default
+ * generated installs read `https://npm.nard.uk` anonymously, so nothing in
+ * the job has an ambient GitHub Packages token.
  */
 
 import { resolve } from 'node:path'

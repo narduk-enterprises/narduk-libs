@@ -260,11 +260,10 @@ export function createRootPackageManifest(
         'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
-      // authenticate and install before `narduk-app` / `nuxt` exist. The
-      // helper writes a temp userconfig (never a tracked file) and runs a
-      // frozen install; the web package's `cf:build` is the Nuxt compile.
-      'cf:build':
-        'node scripts/gh-packages-run.mjs -- pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+      // install before `narduk-app` / `nuxt` exist. The frozen install reads
+      // `@narduk-enterprises/*` from `https://npm.nard.uk` with no token.
+      // `scripts/gh-packages-run.mjs` remains opt-in break-glass.
+      'cf:build': 'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
       ...(databaseBackend === 'none'
