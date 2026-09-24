@@ -15,8 +15,8 @@ decommission is:
 
 (`narduk-enterprises/company-hq` →
 `untangle/narduk-template-decommission-ledger.md`, archived at the
-`archive/untangle-2026-09-23` tag after company-hq#799 deleted `untangle/`
-with no live relocation for this file)
+`archive/untangle-2026-09-23` tag after company-hq#799 deleted `untangle/` with
+no live relocation for this file)
 
 This path historically forked a full copy of the ledger. Dual SSOT caused agent
 drift (fundamentals program 2026-07-22). Keep this file as a short pointer only.
