@@ -1912,6 +1912,56 @@ describe('development-mode migrations are expand-only (12.9)', { timeout: 30_000
     expect(readActivation(REPO, h.state)!.migrationBaseline?.commit).toBe(beforeHold)
     await expect(migrate(h)).rejects.toThrow(/0009_drop\.sql:1 drops table t/u)
   })
+
+  it('judges pre-enrollment history for an expand-contract app (narduk-farm shape)', async () => {
+    const h = harness()
+    // narduk-farm's declaration: expand-contract, no contractMigrations waivers.
+    patchDeployment(h.root, (_development, deployment) => {
+      deployment.migrations = {
+        compatibility: 'expand-contract',
+        credential: 'cloudflare/prd/fixture-app-migrate',
+        databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+      }
+    })
+    // Merged under "CI after": foundation 12.9 FAILS this on main, but it
+    // landed before enrollment, so it sits inside the baseline.
+    writeFileSync(join(h.root, 'migrations', '0002_drop.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'unwaived drop')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    const baseline = git(h.root, 'rev-parse', 'HEAD')
+    await enter(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline?.commit).toBe(baseline)
+    writeFileSync(join(h.root, 'migrations', '0003_add.sql'), 'alter table t add column x;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'expand')
+    const ran: string[][] = []
+    await expect(
+      runDevelopmentExec(
+        {
+          operation: 'migration',
+          approvalRef: 'owner#m',
+          commit: git(h.root, 'rev-parse', 'HEAD'),
+          argv: ['apply'],
+        },
+        { ...h.context, exec: (argv) => (ran.push(argv), 0) },
+      ),
+    ).rejects.toThrow(
+      /0002_drop\.sql:1 drops table t\..*declares deployment\.migrations \(expand-contract\), so every file is judged/u,
+    )
+    expect(ran).toEqual([])
+    expect(readActivation(REPO, h.state)!.appliedMigrations).toEqual([])
+    // Reviewed and waived on the production branch: the baseline file is then
+    // applied as a contract migration, so rollback pages across it.
+    const digest = createHash('sha256').update('drop table t;\n').digest('hex')
+    patchDeployment(h.root, (_development, deployment) => {
+      ;(deployment.migrations as { contractMigrations?: unknown[] }).contractMigrations = [
+        { path: 'migrations/0002_drop.sql', sha256: digest, reason: 'no version reads t' },
+      ]
+    })
+    const { record } = await migrate(h)
+    expect(record.appliedMigrations.at(-1)?.compatibility).toBe('contract')
+  })
 })
 
 describe('background validation worker', () => {

@@ -247,25 +247,32 @@ narduk-app development exec --operation recovery --approval-ref <ref> -- <comman
   The promote path's expand-only rule (foundation sub-check 12.9) applies here
   too, before the command runs. A `.sql` file this run may apply that drops or
   renames a table, view or column refuses. A file is judged unless it is
-  recorded as applied here with the same bytes, or it was byte-identical on the
-  production branch as this checkout had fetched it before the hold took effect:
-  normal delivery shipped those through the promote path's own 12.9 check, so a
-  table rebuild in the app's history does not block later development
-  migrations. A fresh entry records that commit as `migrationBaseline` from
-  `origin/<productionBranch>` just before it holds anything (fetch before
-  entering; a stale ref only makes the check stricter). A file that lands on the
-  production branch while the hold is on skipped the held CI, so it is always
-  judged. An enrollment without a baseline judges every tracked file;
-  `development enter --refresh` recovers one only from this checkout's reflog of
-  `origin/<productionBranch>`, as fetched a whole second before the enrollment's
-  `enter-started` event, never from the current ref, so fetching now does not
-  help. If the reflog does not reach back that far, nothing is recorded. A
-  baseline is never moved once recorded. The one exception is a reviewed
-  contract migration: declared under `deployment.migrations.contractMigrations`
-  with its exact checksum **and** already landed byte-identical on
-  `origin/<productionBranch>`. Contract migrations are reviewed on the gated
-  path; development mode never introduces one. Each applied migration records
-  `compatibility` (`expand-only` or `contract`), which rollback reads.
+  recorded as applied here with the same bytes, or, only for an app that
+  declares no `deployment.migrations`, it was byte-identical on the production
+  branch as this checkout had fetched it before the hold took effect. Such an
+  app has 12.9 NA under normal delivery, so nothing ever judged its history, and
+  a table rebuild there does not block later development migrations. An app that
+  declares `deployment.migrations` (expand-contract, like narduk-farm) gets no
+  such exemption: foundation 12.9 already judges every file on every run, so a
+  green main has every drop or rename waived by checksum, and a pre-enrollment
+  drop without a waiver is one normal delivery failed, not one it shipped.
+  Development mode judges every file for it, refusing the unwaived one and
+  classifying a waived one as `contract`. A fresh entry records that commit as
+  `migrationBaseline` from `origin/<productionBranch>` just before it holds
+  anything (fetch before entering; a stale ref only makes the check stricter). A
+  file that lands on the production branch while the hold is on skipped the held
+  CI, so it is always judged. An enrollment without a baseline judges every
+  tracked file; `development enter --refresh` recovers one only from this
+  checkout's reflog of `origin/<productionBranch>`, as fetched a whole second
+  before the enrollment's `enter-started` event, never from the current ref, so
+  fetching now does not help. If the reflog does not reach back that far,
+  nothing is recorded. A baseline is never moved once recorded. The one
+  exception is a reviewed contract migration: declared under
+  `deployment.migrations.contractMigrations` with its exact checksum **and**
+  already landed byte-identical on `origin/<productionBranch>`. Contract
+  migrations are reviewed on the gated path; development mode never introduces
+  one. Each applied migration records `compatibility` (`expand-only` or
+  `contract`), which rollback reads.
 
 - **Secrets**: stage runtime secrets with the provider CLI under `secret-stage`.
   Receipts carry names only. A deploy whose declared `requiredRuntimeSecrets`

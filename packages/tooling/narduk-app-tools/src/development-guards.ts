@@ -218,8 +218,11 @@ export function assessDevelopmentMigrations(args: {
   applied: readonly AppliedMigration[]
   /**
    * Byte-identical on the production branch as fetched before the hold took
-   * effect: normal delivery shipped it through the promote path's own 12.9
-   * check. Anything that landed during the hold is judged here.
+   * effect. Pass it only for an app that declares no deployment.migrations,
+   * where foundation 12.9 is NA and normal delivery never judged these files;
+   * an expand-contract app omits it, so a pre-enrollment drop that 12.9 failed
+   * is still refused here and a waived one is still classified `contract`.
+   * Anything that landed during the hold is judged either way.
    */
   beforeEnrollment?: (path: string) => boolean
   read: (path: string) => string

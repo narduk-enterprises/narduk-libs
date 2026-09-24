@@ -763,14 +763,22 @@ function expandOnlyMigrations(
 ): 'expand-only' | 'contract' {
   const branch = project.deployment.productionBranch
   const baseline = record.migrationBaseline?.commit
+  // An app that declares deployment.migrations (expand-contract) has foundation
+  // 12.9 judge every file on every run, so a baseline file that is destructive
+  // and unwaived is one normal delivery FAILED (merged under "CI after" while
+  // main went red), not one it shipped. Only where 12.9 is NA (migrations
+  // undeclared) is the baseline a real exemption.
+  const expandContract = Boolean(project.deployment.migrations)
   const assessment = assessDevelopmentMigrations({
     files,
     applied: record.appliedMigrations,
-    beforeEnrollment: (path) => {
-      if (!baseline) return false
-      const here = blobAt(project.checkout, commit, path)
-      return Boolean(here) && here === blobAt(project.checkout, baseline, path)
-    },
+    beforeEnrollment: expandContract
+      ? undefined
+      : (path) => {
+          if (!baseline) return false
+          const here = blobAt(project.checkout, commit, path)
+          return Boolean(here) && here === blobAt(project.checkout, baseline, path)
+        },
     read: (path) => readFileSync(join(project.checkout, path), 'utf8'),
     waivers: project.deployment.migrations?.contractMigrations ?? [],
     landed: (path) => {
@@ -784,9 +792,11 @@ function expandOnlyMigrations(
   if (assessment.refusals.length)
     throw new Error(
       `Refusing the migration: ${assessment.refusals.join(' | ')}${
-        baseline
-          ? ''
-          : ` | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too. development enter --refresh recovers one only from this checkout's reflog of origin/${branch} before the enrollment began (fetching now does not help); otherwise declare the file under deployment.migrations.contractMigrations`
+        expandContract
+          ? ' | This app declares deployment.migrations (expand-contract), so every file is judged, including files already on the production branch before enrollment: a drop or rename there needs its contractMigrations waiver'
+          : baseline
+            ? ''
+            : ` | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too. development enter --refresh recovers one only from this checkout's reflog of origin/${branch} before the enrollment began (fetching now does not help); otherwise declare the file under deployment.migrations.contractMigrations`
       }`,
     )
   return assessment.contract.length ? 'contract' : 'expand-only'

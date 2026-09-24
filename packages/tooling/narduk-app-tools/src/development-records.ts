@@ -67,9 +67,11 @@ export interface ActivationRecord {
   appliedMigrations: AppliedMigration[]
   /**
    * The production-branch commit this checkout had fetched before the hold
-   * took effect. Migration files byte-identical there landed through normal
-   * delivery, whose promote path already applied the expand-only rule, so
-   * development mode does not re-judge them. `hold`: read on a fresh entry
+   * took effect. For an app that declares no deployment.migrations (12.9 NA),
+   * migration files byte-identical there landed through normal delivery and
+   * development mode does not judge them. An app that declares
+   * deployment.migrations ignores it: every file is judged, as foundation 12.9
+   * judges every file on every run. `hold`: read on a fresh entry
    * before anything was held. `reflog`: recovered by `enter --refresh` from the
    * checkout's reflog, as of a whole second before `enter-started`. Never the
    * ref as fetched during the hold, and never moved once recorded.
