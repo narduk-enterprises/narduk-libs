@@ -140,6 +140,87 @@ describe('server rendering without a DOM', () => {
     expect(html).toContain('narduk-line-point--isolated')
   })
 
+  it('server-renders the four farm shapes from narduk-charts#37', async () => {
+    const doy: Array<number | null> = Array.from({ length: 366 }, () => null)
+    doy[9] = 0.3
+    doy[39] = 0.6
+    doy[119] = 0.5
+    const cloudy: Array<number | null> = Array.from({ length: 366 }, () => null)
+    cloudy[24] = 0.4
+
+    const season = await render(NardukLineChart, {
+      labels: Array.from({ length: 366 }, (_, i) => String(i + 1)),
+      series: [
+        { name: '2024', data: doy, spanGaps: 40, color: 'var(--farm-accent)' },
+        {
+          name: '2024 cloudy',
+          data: cloudy,
+          mode: 'points',
+          marker: { filled: false },
+          opacity: 0.5,
+        },
+      ],
+      annotations: [
+        {
+          type: 'point',
+          xIndex: 39,
+          y: 0.6,
+          ring: true,
+          color: 'var(--farm-accent)',
+          label: 'Peak',
+        },
+      ],
+      yMin: 0.2,
+      yMax: 0.7,
+      yTickCount: 6,
+      chartTitle: 'Greenness by day of year',
+      showDataTable: true,
+    })
+    expect(season).toContain('narduk-line-path')
+    expect(season).toContain('narduk-line-point--hollow')
+    expect(season).toContain('narduk-ann-point--ring')
+    // Inline colour is in the server markup, not added after hydration.
+    expect(season).toContain('stroke:var(--farm-accent)')
+    expect(season).toContain('<table')
+
+    const small = await render(NardukLineChart, {
+      labels: ['2021', '2022', '2023'],
+      series: [{ name: 'Wheat', data: [60, 70, 65] }],
+      height: 80,
+      chrome: false,
+      showLegend: false,
+      chartTitle: 'Wheat',
+    })
+    expect(small).toContain('<svg')
+
+    const bar = await render(NardukBarChart, {
+      series: [{ name: 'Rain', data: [87] }],
+      labels: ['Rain'],
+      orientation: 'horizontal',
+      yMin: 0,
+      yMax: 150,
+      referenceLines: [{ value: 100 }],
+      showXAxis: false,
+      showYAxis: false,
+      showGrid: false,
+      showLegend: false,
+      padding: { top: 1, right: 0, bottom: 1, left: 0 },
+      height: 14,
+      chartTitle: 'Rainfall, 87% of normal',
+    })
+    expect(bar).toContain('narduk-ref-line')
+    expect(bar).not.toContain('narduk-axis')
+    expect(bar).toContain('Rainfall, 87% of normal')
+
+    const years = await render(NardukLineChart, {
+      labels: ['2019', '2020', '2021'],
+      series: [{ name: 'Yield', data: [62, null, 71], mode: 'points', showValues: true }],
+      chartTitle: 'Yield by year',
+    })
+    expect(years).toContain('narduk-line-value')
+    expect(years).toContain('71')
+  })
+
   it('does not touch a DOM global merely by importing the package', async () => {
     // The import at the top of this file already proves module scope is clean;
     // this asserts the same for a second render, after any lazy init.

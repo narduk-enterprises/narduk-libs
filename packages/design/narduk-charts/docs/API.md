@@ -31,8 +31,50 @@ Types ship from `dist/index.d.ts`. Import paths:
 | `NardukScatterChart`   | Numeric X/Y series                                                                                                                                                                                                                                                                                                                                                               |
 | `NardukHistogramChart` | `values` + `binCount` or explicit `bins`                                                                                                                                                                                                                                                                                                                                         |
 | `NardukCandleChart`    | OHLC `bars`, zoom/pan/box/pinch, volume + brush, `v-model:domain`, `yScale` / `priceDisplayMode`, crosshair + axis time tag, last-price line, close trace, session grid, OHLC HUD, `highlightFormingBar`, `drawings` + `drawingTool` + `update:drawings`, `reachedStart` left-edge load-more, `overlay` slot + `getCandlePlotMetrics()`                                          |
-| `NardukChartStack`     | Layout wrapper with `v-model:domain` slot props for linked panes                                                                                                                                                                                                                                                                                                                 |
+| `NardukChartStack`     | Layout wrapper with `v-model:domain` slot props for linked panes. For small multiples on independent scales, repeat `NardukLineChart` (`chrome: false`, `showLegend: false`) in your own grid instead                                                                                                                                                                            |
 | `NardukBrandBackdrop`  | Optional full-bleed SVG hero/marketing layer (grid + polylines + candle hints); reads `--color-chart-*` tokens, no bitmaps                                                                                                                                                                                                                                                       |
+
+## Sparse series, markers and thin bars (2.6.0)
+
+All opt-in; nothing changes for a chart that sets none of them
+(narduk-charts#37).
+
+**`NardukLineChart` — per series (`ChartSeries`):**
+
+- `spanGaps: true | number` — join values across `null`s. A number bridges only
+  when the two values are at most that many label slots apart, so a 366-slot
+  day-of-year series with `spanGaps: 40` never draws a line across a gap longer
+  than 40 days. Measured in plotted slots (after `maxRenderPoints` decimation).
+- `mode: 'points'` — a marker per value, no line or area.
+- `marker: { radius?, filled? }` — `filled: false` draws a ring in the series
+  colour over the plot background (`--color-chart-plot-tint`: white in the light
+  theme).
+- `opacity` — 0–1 for everything the series draws.
+- `showValues` + `formatValue(value, index)` — always-visible value text above
+  each point (drawn outside the plot clip).
+
+**`NardukLineChart` — chart props and annotations:**
+
+- `xTickIndices: number[]` — label exactly these category indices (e.g. month
+  starts). A tick closer than `xAxisMinLabelPx` (default `36` here) to the
+  previous kept one is skipped, so text keeps its real size on a narrow chart.
+- `point` annotation `ring: true` — a ringed marker (`color` ring over the plot
+  background) for a single value such as a season peak.
+- Round Y steps need no new prop: pin the ends and set the count, e.g.
+  `yMin: 0.2, yMax: 0.8, yTickCount: 7` for 0.1 steps (`(max − min) / step + 1`,
+  up to 12).
+
+**`NardukBarChart`:** `yMin` / `yMax` (value-axis pins, used exactly),
+`showXAxis`, `showYAxis`, `showGrid`, `showLegend` (all default `true`) and
+`padding`. With `orientation="horizontal"`, a `referenceLines` entry is a
+vertical tick across the bar and a `yBands` entry spanning the domain is its
+track — together a thin "% of normal" bar.
+
+**Colours as CSS custom properties.** Any `color` may be `var(--your-token)`.
+Series lines, fills and filled markers paint through the `fill` / `stroke`
+attribute (resolved by Chromium and WebKit); a hollow marker's or ring's colour
+goes on `style`, because the stylesheet sets `stroke` on markers and a
+stylesheet rule outranks an attribute.
 
 ## Events (high level)
 

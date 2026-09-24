@@ -16,6 +16,7 @@ import ChartTooltip from './ChartTooltip.vue'
 import type {
   BarClickPayload,
   ChartLineAnnotation,
+  ChartPadding,
   ChartReferenceLine,
   ChartSeries,
   ChartTheme,
@@ -69,10 +70,20 @@ const props = withDefaults(
      * **Keyboard (horizontal):** ArrowUp/ArrowDown change category; ArrowLeft/ArrowRight change series within the category.
      */
     orientation?: 'vertical' | 'horizontal'
+    /** Override chart padding, e.g. for a thin inline bar with no axes. */
+    padding?: Partial<ChartPadding>
     referenceLines?: ChartReferenceLine[]
     respectReducedMotion?: boolean
     series: ChartSeries[]
     showDataTable?: boolean
+    /** Draw the value gridlines. Default `true`. */
+    showGrid?: boolean
+    /** Render the legend. Default `true`. */
+    showLegend?: boolean
+    /** Draw the bottom axis line and its labels (values when horizontal). Default `true`. */
+    showXAxis?: boolean
+    /** Draw the left axis line and its labels (categories when horizontal). Default `true`. */
+    showYAxis?: boolean
     stacked?: boolean
     /** When `stacked`, rescale each category to 100%. */
     stackedPercent?: boolean
@@ -80,6 +91,14 @@ const props = withDefaults(
     theme?: ChartTheme
     width?: number
     yBands?: ChartYBand[]
+    /** Pin the value-axis ceiling. Same contract as `yMin`. */
+    yMax?: number
+    /**
+     * Pin the value-axis domain. Either end may be given on its own; the value
+     * is used exactly (same contract as `NardukLineChart`'s `yMin` / `yMax`), so
+     * a "% of normal" bar can run 0–150 whatever its value.
+     */
+    yMin?: number
     yScale?: ChartYScaleMode
   }>(),
   {
@@ -93,6 +112,10 @@ const props = withDefaults(
     showDataTable: false,
     legendGroupLabel: 'Data series',
     orientation: 'vertical',
+    showXAxis: true,
+    showYAxis: true,
+    showLegend: true,
+    showGrid: true,
   },
 )
 
@@ -238,8 +261,8 @@ function onBarKeydown(e: KeyboardEvent, bi: number) {
 }
 const barPaddingOverrides = computed(() => {
   const right = (props.referenceLines ?? []).some(r => r.label) ? 34 : 24
-  if (isHorizontal.value) return { right, left: estimatedCategoryLabelWidth.value }
-  return { right }
+  const base = isHorizontal.value ? { right, left: estimatedCategoryLabelWidth.value } : { right }
+  return { ...base, ...props.padding }
 })
 const { chartWidth, chartHeight, padding, plotWidth, plotHeight, isDark, effectiveAnimate } =
   useChart(containerRef, props, barPaddingOverrides)
@@ -316,6 +339,8 @@ const yMap = computed(() => {
 
   return createYAxisMap(props.yScale, forMap, [...refVals, ...bandEdges], valueAxisSpan.value, {
     symlogLinthresh: props.symlogLinthresh,
+    domainMin: props.yMin,
+    domainMax: props.yMax,
   })
 })
 
@@ -781,7 +806,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         </g>
 
         <!-- Grid lines -->
-        <g v-if="!isHorizontal" class="narduk-grid">
+        <g v-if="showGrid && !isHorizontal" class="narduk-grid">
           <line
             v-for="(t, ti) in yMap.ticks"
             :key="'g-' + ti"
@@ -791,7 +816,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
             :y2="yPos(t.value)"
           />
         </g>
-        <g v-else class="narduk-grid">
+        <g v-else-if="showGrid" class="narduk-grid">
           <line
             v-for="(t, ti) in yMap.ticks"
             :key="'gh-' + ti"
@@ -859,7 +884,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
 
         <template v-if="!isHorizontal">
           <!-- Y axis (numeric) -->
-          <g class="narduk-axis">
+          <g v-if="showYAxis" class="narduk-axis">
             <line
               :x1="padding.left"
               :y1="padding.top"
@@ -879,7 +904,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
           </g>
 
           <!-- X axis (categories) -->
-          <g class="narduk-axis">
+          <g v-if="showXAxis" class="narduk-axis">
             <line
               :x1="padding.left"
               :y1="chartHeight - padding.bottom"
@@ -900,7 +925,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         </template>
         <template v-else>
           <!-- Y axis spine + category labels -->
-          <g class="narduk-axis">
+          <g v-if="showYAxis" class="narduk-axis">
             <line
               :x1="padding.left"
               :y1="padding.top"
@@ -919,7 +944,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
             </text>
           </g>
           <!-- X axis (numeric) -->
-          <g class="narduk-axis">
+          <g v-if="showXAxis" class="narduk-axis">
             <line
               :x1="padding.left"
               :y1="chartHeight - padding.bottom"
@@ -1003,7 +1028,12 @@ function horizontalBarRoundedPath(bar: BarRect): string {
       </svg>
 
       <template v-if="!isEmpty">
-        <ChartLegend :items="legendItems" :group-label="legendGroupLabel" @toggle="toggleSeries">
+        <ChartLegend
+          v-if="showLegend"
+          :items="legendItems"
+          :group-label="legendGroupLabel"
+          @toggle="toggleSeries"
+        >
           <template v-if="$slots['legend-item']" #item="slotProps">
             <slot name="legend-item" v-bind="slotProps" />
           </template>

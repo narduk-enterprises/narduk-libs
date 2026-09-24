@@ -87,23 +87,31 @@ export function straightPath(points: Array<[number, number]>): string {
 
 /**
  * Split a series into continuous segments wherever values are `null` or `NaN`.
+ *
+ * `maxGap` (optional) joins two measured values across the missing entries
+ * between them when their index distance is at most `maxGap` — so `maxGap: 40`
+ * on a day-of-year series bridges a 30-day gap between satellite passes but
+ * leaves a 60-day one open. `Infinity` bridges every gap. Omitted (or below 1),
+ * every missing entry breaks the line, which is the default.
  */
 export function segmentLinePoints(
   data: Array<number | null>,
   toPoint: (index: number, value: number) => [number, number],
+  maxGap?: number,
 ): Array<Array<[number, number]>> {
+  const bridge = maxGap !== undefined && maxGap >= 1 ? maxGap : 0
   const segments: Array<Array<[number, number]>> = []
   let cur: Array<[number, number]> = []
+  let lastIndex = -1
   for (let i = 0; i < data.length; i++) {
     const v = data[i]
-    if (v == null || Number.isNaN(v)) {
-      if (cur.length) {
-        segments.push(cur)
-        cur = []
-      }
-    } else {
-      cur.push(toPoint(i, v))
+    if (v == null || Number.isNaN(v)) continue
+    if (cur.length && i - lastIndex > 1 && i - lastIndex > bridge) {
+      segments.push(cur)
+      cur = []
     }
+    cur.push(toPoint(i, v))
+    lastIndex = i
   }
   if (cur.length) segments.push(cur)
   return segments

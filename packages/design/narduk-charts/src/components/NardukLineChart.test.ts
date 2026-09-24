@@ -711,3 +711,267 @@ describe('NardukLineChart xWindow', () => {
     expect(w.findAll('.narduk-line-path').some(p => (p.attributes('d') ?? '') !== '')).toBe(true)
   })
 })
+
+describe('NardukLineChart sparse seasonal series (narduk-charts#37)', () => {
+  /** A 366-slot day-of-year series with passes on days 10, 40, 100 and 110. */
+  function doySeries(points: Record<number, number>): Array<number | null> {
+    const data: Array<number | null> = Array.from({ length: 366 }, () => null)
+    for (const [day, v] of Object.entries(points)) data[Number(day) - 1] = v
+    return data
+  }
+  const labels = Array.from({ length: 366 }, (_, i) => String(i + 1))
+  const base = { labels, width: 600, height: 200, animate: false }
+  const drawn = (w: ReturnType<typeof mount>) =>
+    w.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== '')
+
+  it('spanGaps: number joins passes up to that many slots apart and never bridges a longer gap', () => {
+    const data = doySeries({ 10: 0.3, 40: 0.5, 100: 0.7, 110: 0.6 })
+    const w = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: '2024', data, spanGaps: 40 }] },
+    })
+    // 10 -> 40 (30 days) joins; 40 -> 100 (60 days) breaks; 100 -> 110 joins.
+    expect(drawn(w)).toHaveLength(2)
+    expect(w.findAll('.narduk-line-point--isolated')).toHaveLength(0)
+  })
+
+  it('spanGaps: true bridges every gap; the default bridges none', () => {
+    const data = doySeries({ 10: 0.3, 40: 0.5, 100: 0.7 })
+    const all = mount(NardukLineChart, {
+      props: { ...base, series: [{ name: 's', data, spanGaps: true }] },
+    })
+    expect(drawn(all)).toHaveLength(1)
+    const none = mount(NardukLineChart, { props: { ...base, series: [{ name: 's', data }] } })
+    expect(drawn(none)).toHaveLength(0)
+    expect(none.findAll('.narduk-line-point--isolated')).toHaveLength(3)
+  })
+
+  it("mode: 'points' draws one marker per value and no line or area", () => {
+    const data = doySeries({ 10: 0.3, 11: 0.35, 12: 0.4 })
+    const w = mount(NardukLineChart, {
+      props: {
+        ...base,
+        showArea: true,
+        series: [{ name: 'cloudy', data, mode: 'points' as const }],
+      },
+    })
+    expect(drawn(w)).toHaveLength(0)
+    expect(
+      w.findAll('.narduk-area-path').filter(p => (p.attributes('d') ?? '') !== ''),
+    ).toHaveLength(0)
+    const pts = w
+      .findAll('circle.narduk-line-point')
+      .filter(c => (c.element as SVGElement).style.display !== 'none')
+    expect(pts).toHaveLength(3)
+  })
+
+  it('marker: hollow ring in the series colour on style, radius and series opacity', () => {
+    const data = doySeries({ 10: 0.3, 50: 0.4 })
+    const w = mount(NardukLineChart, {
+      props: {
+        ...base,
+        series: [
+          {
+            name: 'cloudy',
+            data,
+            mode: 'points' as const,
+            color: 'var(--farm-accent)',
+            marker: { radius: 2.5, filled: false },
+            opacity: 0.5,
+          },
+        ],
+      },
+    })
+    const pt = w
+      .findAll('circle.narduk-line-point')
+      .find(c => (c.element as SVGElement).style.display !== 'none')!
+    expect(pt.classes()).toContain('narduk-line-point--hollow')
+    expect(pt.attributes('r')).toBe('2.5')
+    // The ring colour must be inline style: the stylesheet's `stroke` on
+    // `.narduk-line-point` outranks a presentation attribute.
+    expect((pt.element as SVGElement).style.stroke).toBe('var(--farm-accent)')
+    expect(pt.attributes('fill')).toContain('--color-chart-plot-tint')
+    expect(pt.element.closest('g[opacity]')?.getAttribute('opacity')).toBe('0.5')
+  })
+
+  it('a filled marker keeps the series colour, including a CSS custom property', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        ...base,
+        series: [
+          {
+            name: 'clear',
+            data: doySeries({ 10: 0.3, 20: 0.4 }),
+            color: 'var(--farm-accent)',
+            spanGaps: 40,
+          },
+        ],
+        showPoints: true,
+      },
+    })
+    expect(drawn(w)[0]!.attributes('stroke')).toBe('var(--farm-accent)')
+    const pt = w
+      .findAll('circle.narduk-line-point')
+      .find(c => (c.element as SVGElement).style.display !== 'none')!
+    expect(pt.attributes('fill')).toBe('var(--farm-accent)')
+    expect(pt.classes()).not.toContain('narduk-line-point--hollow')
+  })
+
+  it('ring point annotation: plot-background fill with the colour as an inline stroke', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        ...base,
+        series: [{ name: '2024', data: doySeries({ 10: 0.3, 40: 0.8 }), spanGaps: 40 }],
+        annotations: [
+          {
+            type: 'point' as const,
+            xIndex: 39,
+            y: 0.8,
+            color: 'var(--farm-accent)',
+            ring: true,
+            label: 'Peak 0.80',
+          },
+        ],
+      },
+    })
+    const ring = w.find('circle.narduk-ann-point')
+    expect(ring.classes()).toContain('narduk-ann-point--ring')
+    expect(ring.attributes('fill')).toContain('--color-chart-plot-tint')
+    expect((ring.element as SVGElement).style.stroke).toBe('var(--farm-accent)')
+    // The label is drawn text, not a hover tooltip.
+    expect(w.find('.narduk-ann-points').text()).toContain('Peak 0.80')
+  })
+
+  it('pins plus yTickCount express round 0.1 / 0.2 steps clamped to 0–1', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        ...base,
+        series: [{ name: 's', data: doySeries({ 10: 0.25, 40: 0.71 }), spanGaps: 40 }],
+        // Span 0.46 <= 0.5 -> step 0.1 on [0.2, 0.8]: (0.8 - 0.2) / 0.1 + 1 = 7 ticks.
+        yMin: 0.2,
+        yMax: 0.8,
+        yTickCount: 7,
+      },
+    })
+    const ticks = w
+      .findAll('.narduk-axis')[0]!
+      .findAll('text')
+      .map(t => t.text())
+    expect(ticks).toEqual(['0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8'])
+
+    const wide = mount(NardukLineChart, {
+      props: {
+        ...base,
+        series: [{ name: 's', data: doySeries({ 10: 0.05, 40: 0.9 }), spanGaps: 40 }],
+        yMin: 0,
+        yMax: 1,
+        yTickCount: 6,
+      },
+    })
+    expect(
+      wide
+        .findAll('.narduk-axis')[0]!
+        .findAll('text')
+        .map(t => t.text()),
+    ).toEqual(['0', '0.2', '0.4', '0.6', '0.8', '1'])
+  })
+})
+
+describe('NardukLineChart year-dot timeline (showValues)', () => {
+  const labels = ['2019', '2020', '2021', '2022', '2023']
+  const series = [
+    {
+      name: 'Yield',
+      data: [62, null, 71.4, 58, null],
+      mode: 'points' as const,
+      showValues: true,
+      formatValue: (v: number) => `${v.toFixed(1)} bu`,
+    },
+  ]
+
+  it('draws one dot and one always-visible label per year with a value, and nothing for a gap', () => {
+    const w = mount(NardukLineChart, {
+      props: { series, labels, width: 400, height: 120, animate: false, showDataTable: true },
+    })
+    const dots = w
+      .findAll('circle.narduk-line-point')
+      .filter(c => (c.element as SVGElement).style.display !== 'none')
+    expect(dots).toHaveLength(3)
+    const text = w.findAll('.narduk-line-value').map(t => t.text())
+    expect(text).toEqual(['62.0 bu', '71.4 bu', '58.0 bu'])
+    expect(
+      w.findAll('.narduk-line-path').filter(p => (p.attributes('d') ?? '') !== ''),
+    ).toHaveLength(0)
+    // The gap years stay on the axis and in the data table.
+    expect(w.text()).toContain('2020')
+    expect(w.find('table').text()).toContain('2023')
+  })
+
+  it('places each label above its own dot', () => {
+    const w = mount(NardukLineChart, {
+      props: { series, labels, width: 400, height: 120, animate: false },
+    })
+    const dot = w
+      .findAll('circle.narduk-line-point')
+      .find(c => (c.element as SVGElement).style.display !== 'none')!
+    const label = w.find('.narduk-line-value')
+    expect(Number(label.attributes('x'))).toBeCloseTo(Number(dot.attributes('cx')))
+    expect(Number(label.attributes('y'))).toBeLessThan(Number(dot.attributes('cy')))
+  })
+})
+
+describe('NardukLineChart xTickIndices', () => {
+  it('labels exactly the given category indices, e.g. month starts on a day-of-year axis', () => {
+    const monthStarts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+    const names = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ]
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [
+          { name: 's', data: Array.from({ length: 366 }, (_, i) => (i % 30 === 0 ? 0.5 : null)) },
+        ],
+        labels: Array.from({ length: 366 }, (_, i) => String(i + 1)),
+        width: 600,
+        height: 200,
+        animate: false,
+        showYAxis: false,
+        xTickIndices: monthStarts.map(d => d - 1).concat([999, -1]),
+        formatXLabel: (label: string) => names[monthStarts.indexOf(Number(label))] ?? label,
+      },
+    })
+    const xLabels = w.findAll('.narduk-axis text').map(t => t.text())
+    expect(xLabels).toEqual(names)
+  })
+
+  it('skips ticks that would collide on a narrow chart instead of shrinking the text', () => {
+    const monthStarts = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [
+          { name: 's', data: Array.from({ length: 366 }, (_, i) => (i % 30 === 0 ? 0.5 : null)) },
+        ],
+        labels: Array.from({ length: 366 }, (_, i) => String(i + 1)),
+        width: 300,
+        height: 200,
+        animate: false,
+        showYAxis: false,
+        xTickIndices: monthStarts,
+      },
+    })
+    const xs = w.findAll('.narduk-axis text').map(t => Number(t.attributes('x')))
+    expect(xs.length).toBeGreaterThan(1)
+    expect(xs.length).toBeLessThan(12)
+    for (let k = 1; k < xs.length; k++) expect(xs[k]! - xs[k - 1]!).toBeGreaterThanOrEqual(36)
+  })
+})

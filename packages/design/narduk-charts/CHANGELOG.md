@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.6.0
+
+Published on 2026-09-23 from the retired standalone
+`narduk-enterprises/narduk-charts` repository (its PR #38, for narduk-charts#37
+and narduk-farm#358), after the source had moved into narduk-libs at 2.5.6. That
+artifact was built from the standalone line (2.5.0 plus these options), so it
+does not contain narduk-libs' 2.5.1–2.5.6 changes. narduk-libs now carries the
+same options on top of 2.5.6 and continues from 2.6.0; the next release from
+here is the first to ship both.
+
+Shapes Acre Oracle (narduk-farm) drew as hand-rolled SVG — a sparse day-of-year
+greenness line, per-crop small multiples, a thin "% of normal" bar and a
+year-dot timeline — now draw with the library. Everything is additive and
+opt-in.
+
+### Minor Changes
+
+- **`NardukLineChart` per-series `spanGaps`** (`true | number`). A number joins
+  two values across `null`s only when they are at most that many label slots
+  apart, so a satellite-pass series never draws a line across a long cloudy gap.
+  `segmentLinePoints` gains the matching optional `maxGap` argument.
+- **`NardukLineChart` per-series `mode: 'points'`, `marker: { radius, filled }`
+  and `opacity`**, for observations that must not read as a trend (e.g.
+  half-opacity hollow rings for cloudy passes). A hollow marker's ring colour is
+  applied through `style`, because the stylesheet's marker `stroke` outranks a
+  presentation attribute.
+- **`NardukLineChart` per-series `showValues` / `formatValue`** — always-visible
+  value labels above each point, drawn outside the plot clip.
+- **`NardukLineChart` `xTickIndices`** — label exact category indices (month
+  starts on a 366-slot axis), thinned by `xAxisMinLabelPx` (default `36`) so
+  labels never overlap on a narrow chart.
+- **`point` annotation `ring: true`** — a ringed marker over the plot
+  background, for a single value such as a season peak.
+- **`NardukBarChart` `yMin` / `yMax`, `showXAxis`, `showYAxis`, `showGrid`,
+  `showLegend` and `padding`**, mirroring `NardukLineChart`, so a horizontal bar
+  can be a thin inline mark with a reference tick.
+- Histoire story **Farm shapes (narduk-charts#37)**, unit tests for each option,
+  and SSR coverage of all four shapes in `src/ssr.test.ts`.
+
 ## 2.5.6
 
 ### Patch Changes

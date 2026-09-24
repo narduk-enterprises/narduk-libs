@@ -6,27 +6,32 @@ documentation.
 
 ## Development
 
+This package lives in
+[narduk-libs](https://github.com/narduk-enterprises/narduk-libs) at
+`packages/design/narduk-charts`. From the repository root:
+
 ```bash
-npm install
-npm run typecheck
-npm run test
-npm run build
-npm run test:e2e
-npm run size
+pnpm install
+CI=true pnpm --filter @narduk-enterprises/narduk-charts run quality
+pnpm --filter @narduk-enterprises/narduk-charts run build
+pnpm --filter @narduk-enterprises/narduk-charts run test:e2e
+pnpm --filter @narduk-enterprises/narduk-charts run size
 ```
 
-- **Histoire:** `npm run dev` (alias of `npm run story:dev`)
-- **E2E / screenshots:** `npm run test:e2e` (update baselines:
-  `npm run test:e2e:update` on your OS)
+`quality` runs the format check, lint (with its `lint-budget.json`), typecheck
+and unit tests; `CI=true` keeps `narduk-lint` from rewriting the budget file.
 
-Install used `--legacy-peer-deps` if npm reports peer conflicts with Histoire.
+- **Histoire:** `pnpm --filter @narduk-enterprises/narduk-charts run dev` (alias
+  of `story:dev`)
+- **E2E / screenshots:** `test:e2e` (update baselines with `test:e2e:update` on
+  your OS)
 
 ## Pull requests
 
 - Keep changes focused; match existing style (Vue 3 Composition API,
   TypeScript).
-- Run `npm run typecheck`, `npm run test`, `npm run build`, `npm run test:e2e`,
-  and `npm run size` before opening a PR.
+- Run the commands above before opening a PR, and follow the repository's
+  `AGENTS.md` for the repo-wide gates (`pnpm run preflight`).
 
 ## Deprecations
 
@@ -36,6 +41,7 @@ Install used `--legacy-peer-deps` if npm reports peer conflicts with Histoire.
 
 ## Versioning
 
-Releases follow [Semantic Versioning](https://semver.org/). Update
-`CHANGELOG.md` under `[Unreleased]` for user-visible changes, then roll them
-into a version section on release.
+Releases follow [Semantic Versioning](https://semver.org/). Record each
+user-visible change as a Changeset in the repository root's `.changeset/`; the
+release PR bumps `package.json` and writes `CHANGELOG.md`. See
+[docs/RELEASE.md](./docs/RELEASE.md).
