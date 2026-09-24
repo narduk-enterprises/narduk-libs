@@ -196,6 +196,25 @@ function isPackageValidationOnly(relativePath) {
   return false
 }
 
+/**
+ * Packages that read other workspace packages' files rather than importing
+ * them. A package lists package-relative paths in its manifest as
+ * `nardukWorkspaceInputs` (libs-explorer reads every manifest and README to
+ * build its catalog); a change to one of those paths in any other workspace
+ * package selects the reader, the same as a dependency change would, without
+ * a fake runtime dependency. Adding a package counts: its new `package.json`
+ * is such a path. Removing one needs no rule, because a path under a package
+ * that no longer exists is unclassified and already forces a full run.
+ */
+function workspaceInputReaders(packages, owner, relativePath) {
+  return packages.filter(
+    ({ name, manifest }) =>
+      name !== owner.name &&
+      Array.isArray(manifest.nardukWorkspaceInputs) &&
+      manifest.nardukWorkspaceInputs.includes(relativePath),
+  )
+}
+
 function transitiveDependents(changedNames, dependents) {
   const affected = new Set(changedNames)
   const pending = [...changedNames]
@@ -232,6 +251,13 @@ export function computeAffectedSet({
       changedNames.add(workspacePackage.name)
       const relativePath = path.slice(workspacePackage.relativeDirectory.length + 1)
       if (!isPackageValidationOnly(relativePath)) consumerChangedNames.add(workspacePackage.name)
+      for (const reader of workspaceInputReaders(
+        workspace.packages,
+        workspacePackage,
+        relativePath,
+      )) {
+        changedNames.add(reader.name)
+      }
       continue
     }
 
