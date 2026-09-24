@@ -730,6 +730,10 @@ describe('create-narduk-app generation contract', () => {
       // never saw. The runbook must show the triggering commit and must not
       // hand anyone `$GITHUB_SHA` to copy.
       expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
+      // narduk-libs#400: the promote binds the gate result to the same commit
+      // it promotes -- the workflow_run head SHA, never GITHUB_SHA.
+      expect(runbook, label).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
+      expect(runbook, label).not.toContain('Required@$GITHUB_SHA')
       expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')

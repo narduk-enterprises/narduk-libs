@@ -139,8 +139,9 @@ The app's promote workflow must follow these steps in one serialized job:
    apps do not run this check in CI, so the promote job must run it itself on
    the exact SHA it migrates.
 3. With the existing promote credential, run
-   `narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --dry-run --json`.
-   A missing upload or stale version fails before changing the database.
+   `narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json`.
+   A missing upload, a stale version, or a gate attestation for a different
+   commit (exit 9, narduk-libs#400) fails before changing the database.
 4. Inject the **separate D1-only migrate persona** for this step only, then run:
    ```sh
    narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"

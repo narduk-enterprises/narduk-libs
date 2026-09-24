@@ -225,7 +225,8 @@ narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
   [--max-versions <n>] [--wait-for-version <seconds>] \
-  [--wait-interval <seconds>] [--dry-run] [--json]
+  [--wait-interval <seconds>] [--gate-verified "<check>@<sha>"] \
+  [--dry-run] [--json]
 ```
 
 Resolves the version whose `workers/tag` matches the commit (prefix-compared in
@@ -273,11 +274,45 @@ env:
   VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
 steps:
   - run:
-      narduk-app deploy versions-promote --sha "$VERIFIED_SHA"
-      --production-branch main --json
+      narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified
+      "ci / Required@$VERIFIED_SHA" --production-branch main --json
   - run:
       narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"
 ```
+
+**`--gate-verified <check>@<sha>` binds the gate result to the commit.** The
+command proves its execution context but cannot read whether `ci / Required` is
+green on the commit it promotes: narduk-app-tools is deliberately never given a
+GitHub token. Of the three options in narduk-libs#400 — (1) rely on the
+workflow's step ordering alone, (2) have the workflow pass what it observed as
+an explicit attestation, (3) read the check conclusion with `GITHUB_TOKEN`,
+which would put a GitHub credential in the process holding the promote
+credential — **option 2 was chosen**. The workflow passes the gate check's name
+and the full SHA it ran on (`workflow_run.head_sha`), and the promote refuses
+with `gate-mismatch` (exit 9), before touching anything, unless
+
+- the attested SHA is exactly the commit being promoted (`--sha`, or its
+  `GITHUB_SHA` default) — a full 40-character SHA, compared in full; and
+- the resolved version's `workers/tag` is that commit. A `--version-id` promote
+  is bound this way only, so a version with no tag, or one outside the searched
+  window, is refused rather than assumed to match.
+
+The value is split on its **last** `@`, so a check name may contain spaces,
+slashes and even `@`; control characters are refused because the name is logged.
+On success the promote logs the check and SHA it was given, and the result
+carries them as `gateVerified`. This is still an attestation, not a
+verification: it does not catch a workflow that lies, but it does catch one that
+promotes a different commit from the one its gate ran on, and it leaves the
+claim in the log. Keep the promote job conditioned on the `workflow_run`
+conclusion being `success`.
+
+The flag is optional so that existing app-owned promote workflows keep working.
+Without it the promote behaves as before and prints a warning (stderr, so
+`--json` stays parseable) that no gate attestation was passed, and the result
+carries `gateVerified: null`. `promote.yml` is app-owned — the generator only
+documents it — so each app adds the flag to its own workflow; the generated
+`docs/workers-builds.md` and `docs/deployment/promote-d1.steps.yml` templates
+already pass it.
 
 It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
 reusing that would force every promotion through
@@ -324,6 +359,7 @@ from a `pull_request` run.
 | 5    | `wrangler-failed` — see `trafficMayHaveChanged`                 |
 | 7    | `stale-promote` — the target is older than the live version     |
 | 8    | `branch-mismatch` — not a production-branch build               |
+| 9    | `gate-mismatch` — `--gate-verified` names another commit        |
 
 The 1/2-versus-5 split is the one a promote job branches on. 1 and 2 mean
 production is untouched; 5 means wrangler died, and `trafficMayHaveChanged` says
