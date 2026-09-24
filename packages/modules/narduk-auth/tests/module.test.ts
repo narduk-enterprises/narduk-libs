@@ -44,8 +44,11 @@ describe('narduk-auth module', () => {
     expect(nuxt.options.runtimeConfig.nardukSessionGrantRequired).toBe(true)
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-auth')
     expect((nuxt.options.nitro as { moduleSideEffects?: string[] }).moduleSideEffects).toEqual(
-      expect.arrayContaining(['reflect-metadata', 'reflect-metadata-polyfill']),
+      expect.arrayContaining(['reflect-metadata']),
     )
+    expect(
+      (nuxt.options.nitro as { moduleSideEffects?: string[] }).moduleSideEffects,
+    ).not.toContain('reflect-metadata-polyfill')
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
     expect(addTemplate).toHaveBeenCalledWith({

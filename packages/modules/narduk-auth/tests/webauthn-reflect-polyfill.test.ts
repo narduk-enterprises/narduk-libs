@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -116,6 +116,25 @@ describe('Workers reflect polyfill for passkey routes (narduk-libs#786)', () => 
       const source = stripComments(readFileSync(join(packageRoot, relativePath), 'utf8'))
       expect(source).toContain("from './webauthn-server'")
       expect(source).not.toMatch(/from ['"]@simplewebauthn\/server(?:\/helpers)?['"]/u)
+    }
+
+    const serverRoot = join(packageRoot, 'server')
+    const gate = join(serverRoot, 'lib/app-auth/webauthn-server.ts')
+    const fromPattern = /from ['"]@simplewebauthn\/server(?:\/helpers)?['"]/gu
+    for (const entry of readdirSync(serverRoot, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.ts')) continue
+      const absolute = join(entry.parentPath, entry.name)
+      if (absolute === gate) continue
+      const source = stripComments(readFileSync(absolute, 'utf8'))
+      for (const match of source.matchAll(fromPattern)) {
+        const before = source.slice(0, match.index)
+        const importStart = before.lastIndexOf('import')
+        const clause = importStart === -1 ? '' : before.slice(importStart + 'import'.length).trim()
+        expect(
+          clause.startsWith('type'),
+          `${relative(packageRoot, absolute)} must not value-import @simplewebauthn/server`,
+        ).toBe(true)
+      }
     }
   })
 
