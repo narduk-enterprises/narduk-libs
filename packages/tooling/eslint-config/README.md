@@ -347,13 +347,16 @@ leading-slash path-gate bug is fixed once in a shared, tested gate.
 Tailwind theme. Without a resolvable entry stylesheet they do not degrade
 quietly — the plugin reports a `No tailwind css entry point found` banner per
 class. So the `design-system` pack ships all three **off**, and
-`createAppLintConfig` enables them only when the entry point exists on disk:
+`createAppLintConfig` enables them only when the app **declares** Tailwind by
+passing `tailwindEntryPoint` and that file exists (narduk-libs#665). A
+conventional `app/assets/css/main.css`, or `tailwindcss` happening to resolve
+from a stale or transitive install, is not a declaration:
 
 ```js
 createAppLintConfig({
   withNuxt,
   capabilityPacks: ['design-system'],
-  // Default; set it if the app's Tailwind entry stylesheet lives elsewhere.
+  // Required to opt in. Omit it on a non-Tailwind app.
   tailwindEntryPoint: 'app/assets/css/main.css',
 })
 ```
@@ -363,12 +366,13 @@ only one that registers the `better-tailwindcss` plugin, and ESLint does not
 tolerate an enabled rule whose plugin is absent — it throws
 `Could not find plugin "better-tailwindcss" in configuration` while normalising
 the config and lints nothing at all. So the theme override attaches only when
-the pack is selected (`'designSystem'` counts) _and_ the entry point exists. An
-app that selects no `design-system` gets no override whatever sits at
-`app/assets/css/main.css`, and passing `tailwindEntryPoint` without the pack
-throws a named configuration error at compose time rather than at plugin
-resolution. `capabilityPacks` left empty selects the default preset order, which
-does include `design-system`.
+the pack is selected (`'designSystem'` counts) _and_ `tailwindEntryPoint` is set
+_and_ that file exists. An app that selects `design-system` but never passes
+`tailwindEntryPoint` gets no override, even when the conventional stylesheet is
+on disk. Passing `tailwindEntryPoint` without the pack throws a named
+configuration error at compose time rather than at plugin resolution.
+`capabilityPacks` left empty selects the default preset order, which does
+include `design-system`; that still does not infer Tailwind.
 
 A standalone consumer composing by hand opts in explicitly:
 

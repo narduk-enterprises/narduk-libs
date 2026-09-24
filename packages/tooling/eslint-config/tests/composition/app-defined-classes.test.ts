@@ -151,6 +151,7 @@ describe('no-unknown-classes in a composed app config', () => {
       ],
       capabilityPacks: ['design-system'],
       appRootDir: appRoot,
+      tailwindEntryPoint: 'app/assets/css/main.css',
     })
 
   it('passes the app-defined classes to the rule as one exact-match ignore', () => {

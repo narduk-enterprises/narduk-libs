@@ -632,7 +632,8 @@ const DESIGN_SYSTEM_PACK = 'design-system'
  * `createAppLintConfig` falls back to when the app names none. Mirrors the
  * pack's own placeholder in configs/design-system.mjs.
  */
-const DEFAULT_TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
+/** Conventional Nuxt UI 4 / narduk-template Tailwind entry stylesheet. */
+export const DEFAULT_TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
 
 /**
  * Did the app select the pack that registers `better-tailwindcss`?
@@ -646,8 +647,8 @@ function selectsDesignSystemPack(capabilityPacks) {
 }
 
 /**
- * Enable the three theme-resolving better-tailwindcss rules only when BOTH
- * halves of the configuration are actually present:
+ * Enable the three theme-resolving better-tailwindcss rules only when ALL of
+ * these are actually present:
  *
  * 1. **The app selected `design-system`.** It is the only pack that registers
  *    the `better-tailwindcss` plugin (configs/design-system.mjs), and enabling a
@@ -660,7 +661,12 @@ function selectsDesignSystemPack(capabilityPacks) {
  *    migration. (Only an *enabled* rule resolves its plugin; ESLint skips
  *    validation at severity 0, which is why the content preset's
  *    `better-tailwindcss/no-restricted-classes: 'off'` needs no such gate.)
- * 2. **The entry point exists on disk.** Without it the rules do not degrade
+ * 2. **The app declared Tailwind** by passing `tailwindEntryPoint` (narduk-libs#665).
+ *    Inferring from a conventional `app/assets/css/main.css` — or from whether
+ *    `tailwindcss` happens to resolve — is how a stale or transitive install
+ *    switched the rules on in a non-Tailwind app (operator-portal#431). An
+ *    omitted value means the app did not ask for Tailwind linting.
+ * 3. **That entry point exists on disk.** Without it the rules do not degrade
  *    quietly; the plugin's shared context reports a misconfiguration banner per
  *    class (see configs/design-system.mjs).
  *
@@ -681,10 +687,13 @@ function selectsDesignSystemPack(capabilityPacks) {
  */
 function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntryPoint }) {
   const entryPointWasProvided = tailwindEntryPoint !== undefined
-  const entryPoint = entryPointWasProvided ? tailwindEntryPoint : DEFAULT_TAILWIND_ENTRY_POINT
-  // A usable entry point is a non-empty string; null, '' and non-strings have
-  // always meant "no theme override" and still do.
-  const hasUsableEntryPoint = typeof entryPoint === 'string' && entryPoint.length > 0
+  // A usable entry point is a non-empty string the app named. An omitted value
+  // is "Tailwind was not declared" (narduk-libs#665); null, '' and non-strings
+  // have always meant "no theme override" and still do. Do not fall back to
+  // DEFAULT_TAILWIND_ENTRY_POINT — that inferred Tailwind from a conventional
+  // path and from whatever `tailwindcss` the module graph happened to contain.
+  const hasUsableEntryPoint =
+    typeof tailwindEntryPoint === 'string' && tailwindEntryPoint.length > 0
 
   if (!selectsDesignSystemPack(capabilityPacks)) {
     // Only a value that asked for theme linting is a contradiction. An explicit
@@ -704,7 +713,7 @@ function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntry
   if (!hasUsableEntryPoint) {
     return []
   }
-  const resolved = join(appRootDir ?? '.', entryPoint)
+  const resolved = join(appRootDir ?? '.', tailwindEntryPoint)
   if (!existsSync(resolved)) {
     return []
   }
@@ -1010,8 +1019,10 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {string[]}                              [options.allowedBrandIconFiles] accepted, inert in v2
  * @param {string[]}                              [options.utilityComposableFiles]
  * @param {string}                                [options.appRootDir]
- * @param {string}                                [options.tailwindEntryPoint]  defaults to
- *   `app/assets/css/main.css`; requires the `design-system` capability pack
+ * @param {string}                                [options.tailwindEntryPoint]  opt in to the
+ *   theme-resolving better-tailwindcss rules; requires the `design-system`
+ *   capability pack. Omitted means those rules stay off, even if
+ *   `app/assets/css/main.css` exists or `tailwindcss` happens to resolve.
  */
 export function createAppLintConfig({
   withNuxt,
@@ -1027,13 +1038,12 @@ export function createAppLintConfig({
   allowedBrandIconFiles = [],
   utilityComposableFiles = [],
   appRootDir = inferAppRootDirFromStack(),
-  // Deliberately left without a destructuring default. The factory has to tell
-  // "the app said nothing about Tailwind" apart from "the app asked for Tailwind
-  // linting", and only an absent value proves the former — the two get different
-  // treatment when `design-system` is missing (silence vs. a named error).
-  // Comparing a supplied value against DEFAULT_TAILWIND_ENTRY_POINT would
-  // conflate them: an app that spells the default path out loud is still asking.
-  // The default is applied inside buildTailwindThemeOverride, after that check.
+  // Deliberately left without a destructuring default. An omitted value means
+  // the app did not declare Tailwind (narduk-libs#665). A supplied path is the
+  // opt-in. Comparing a supplied value against DEFAULT_TAILWIND_ENTRY_POINT
+  // would conflate them: spelling the conventional path out loud is still
+  // asking. The factory also has to tell "said nothing" apart from "asked"
+  // when `design-system` is missing (silence vs. a named error).
   tailwindEntryPoint,
 } = {}) {
   if (typeof withNuxt !== 'function') {
