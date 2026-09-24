@@ -19,6 +19,7 @@ export function useRuntimeConfig() {
   return {
     public: {
       nardukSeoHostAwareIndexing: false,
+      nardukSeoOgImageModule: true,
       siteUrl: '',
     },
   }

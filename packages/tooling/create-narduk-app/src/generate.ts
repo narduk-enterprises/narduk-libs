@@ -475,6 +475,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // scaffold references it yet and knip would otherwise flag it unused,
     // the same reasoning as the mapkit peer package above.
     ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
+    // narduk-seo installModule('nuxt-og-image') when the peer is present.
+    // The generated app never imports the package by name, so knip would
+    // otherwise flag the #170/#316 pin as unused.
+    ...(capabilities.includes('seo') ? ['nuxt-og-image'] : []),
     // Reached through `runtimeConfig.nardukLogging` in nuxt.config.ts and
     // narduk-core's compatibility bridge (see the generated docs/logging.md),
     // never through a named import -- so knip cannot trace it and reported
