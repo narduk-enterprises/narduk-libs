@@ -317,7 +317,7 @@ function ensureBuiltBin(): string {
 
 function writeFixtureWorker(
   root: string,
-  extras: { services?: { binding: string; service: string }[] } = {},
+  extras: { services?: Array<{ binding: string; service: string }> } = {},
 ): void {
   writeJson(root, 'package.json', {
     name: 'e2e-serve-fixture',
