@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-testkit",
-  "version": "1.5.0",
+  "version": "1.7.1",
   "private": false,
   "type": "module",
   "description": "Dev-only Vitest, Playwright, and UI-quality test helpers for Narduk apps.",
@@ -18,6 +18,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./d1": {
+      "types": "./dist/d1.d.ts",
+      "import": "./dist/d1.js"
     },
     "./e2e/fixtures": {
       "types": "./dist/e2e/fixtures.d.ts",
@@ -43,9 +47,18 @@
       "types": "./dist/e2e/fixture-server.d.ts",
       "import": "./dist/e2e/fixture-server.js"
     },
+    "./e2e/hydration-mismatch": {
+      "types": "./dist/e2e/hydration-mismatch.d.ts",
+      "import": "./dist/e2e/hydration-mismatch.js"
+    },
     "./playwright/accessibility": {
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
+    },
+    "./playwright/config": {
+      "types": "./dist/playwright/config.d.ts",
+      "import": "./dist/playwright/config.js",
+      "require": "./dist/playwright/config.js"
     },
     "./playwright/dev-port": {
       "types": "./dist/playwright/dev-port.d.ts",
@@ -107,12 +120,13 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint src tests bin --max-warnings 0",
+    "lint": "narduk-lint src tests bin",
     "typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.handlers.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "prettier": "pnpm run format:check",
-    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "sharp": "^0.35.4"
@@ -126,6 +140,9 @@
     },
     "h3": {
       "optional": true
+    },
+    "miniflare": {
+      "optional": true
     }
   },
   "peerDependencies": {
@@ -133,6 +150,7 @@
     "@cloudflare/workers-types": ">=4.20260511.1",
     "@playwright/test": ">=1.50.0",
     "h3": "^1.15.11",
+    "miniflare": ">=4.20260701.0",
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
@@ -144,6 +162,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
+    "miniflare": "5.20260921.0-alpha",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "4.1.11"
@@ -152,6 +171,6 @@
     "node": ">=22.22.0"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

@@ -268,9 +268,10 @@ export interface MapKitCalloutStyle {
  * hands to `render()`.
  *
  * The listener parameter is `any` for the same reason it is in the pointer
- * probe and the fullscreen controller: `lib.dom`'s `addEventListener` takes an
- * `EventListenerOrEventListenerObject`, and only `any` stays assignable in
- * both directions so that passing a real `HTMLElement` still typechecks.
+ * probe and the fullscreen controller (narduk-libs#138, working as intended):
+ * `lib.dom`'s `addEventListener` takes an `EventListenerOrEventListenerObject`,
+ * and only `any` stays assignable in both directions so that passing a real
+ * `HTMLElement` still typechecks.
  */
 export interface MapKitCalloutElement {
   appendChild: (child: any) => any

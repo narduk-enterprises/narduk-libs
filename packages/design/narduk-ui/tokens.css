@@ -1,20 +1,32 @@
 /*
  * Narduk Status Design System v1.0 — token layer
  *
- * Source of truth: this coded library (company-hq D-WEBFOUND-2 Q3).
- * The design-system-build gallery renders these tokens and Vue components
- * one way into NE Base previews. Canvas exports are downstream references.
+ * Source of truth for the SHARED system: this coded library (company-hq
+ * D-WEBFOUND-2 Q3). The design-system-build gallery renders these tokens and
+ * Vue components one way into NE Base previews.
  *
- * Rules carried over from the handoff, in order of importance:
- *   1. Ink, surface, signal, type, depth and geometry are SHARED. Never override per app.
- *   2. The only per-app override is the accent triplet at the bottom of this file.
+ * Apps are designed independently (Logan, 2026-09-19). An app with its own
+ * design canvas -- LakeStat's "Waterline", for instance -- is designed from
+ * that canvas, and this file is the shared default it starts from, not a cage.
+ * Override whatever that design calls for.
+ *
+ * Rules, in order of importance:
+ *   1. Every token here is a shared DEFAULT. An app may override any of them
+ *      for its own design; doing so is a design decision, not a violation.
+ *      Ink and surface overrides still owe the contrast floor stated on the
+ *      ink block below; the app that changes them owns that proof. Retiring
+ *      the cage does not retire AA (narduk-shell README, operator-portal#238).
+ *   2. The accent triplet at the bottom is the smallest useful override: set
+ *      it alone and the app reads as one family with the rest of the estate.
  *   3. Every measured number is mono and tabular.
  *   4. Missing data gets --ns-hatch plus a reason line. Never zero-filled, never interpolated.
  *   5. Accent is for interaction, data ink and the brand mark. Never for status.
+ *      This one is not governance: an accent that also encodes staleness makes
+ *      brand and meaning unreadable against each other. It survives a re-skin.
  */
 
 :root {
-  /* ---- ink & surface — shared, never overridden per app -------------------
+  /* ---- ink & surface — shared defaults, overridable per app ---------------
    * Contrast floor: every ink below clears WCAG AA (4.5:1) on paper, surface
    * and sunk. --ns-text-mute is the lightest ink permitted on text of any
    * size (5.19:1 on surface, 4.58:1 on sunk). Anything lighter is decorative.
@@ -33,12 +45,28 @@
   --ns-sunk: #eef1f3; /* wells, inputs, missing */
   --ns-paper: #f4f6f7; /* page ground */
 
+  /* Channel triplets for --ns-ink and --ns-surface. Every alpha composite in
+   * this file and in the instruments is built from these, so an ink or surface
+   * override moves the hairlines, wells, hatches and shadows with it instead
+   * of leaving them pinned to the default. Override these in the same rule you
+   * override --ns-ink / --ns-surface: they are two halves of one value, and
+   * setting only the hex leaves the machined chrome behind. Space-separated
+   * channels, no commas -- they are spliced into rgb(... / alpha).
+   */
+  --ns-ink-rgb: 14 20 24;
+  --ns-surface-rgb: 255 255 255;
+
   /* Neutral base for shared previews and consumers without a product scope. */
   --ns-accent: var(--ns-ink-3);
   --ns-accent-deep: var(--ns-ink-2);
   --ns-accent-soft: var(--ns-sunk);
 
-  /* ---- signal — shared across all five, never restyled per app ------------
+  /* ---- signal — the shared four; an app's own design may restyle them ------
+   * Restyling these is a real decision, not a free one: the four states mean
+   * the same thing in every product, so a reader moving between them relearns
+   * the palette. Worth it when an app's own design calls for it, and the
+   * semantics below must survive the change.
+   *
    * Live   observation inside the source's own publishing interval
    * Aging  past interval but inside 3x; still shown, flagged
    * Stale  beyond 3x interval; value shown with the age, never hidden
@@ -58,13 +86,17 @@
 
   --ns-void: #5e6870;
   --ns-void-bg: #eceff1;
-  --ns-void-ring: rgb(14 20 24 / 0.1);
+  --ns-void-ring: rgb(var(--ns-ink-rgb) / 0.1);
 
   /* The missing-data material. 45 degree hatch at 6px on a sunk surface. */
-  --ns-hatch: repeating-linear-gradient(135deg, rgb(14 20 24 / 0.07) 0 3px, transparent 3px 6px);
+  --ns-hatch: repeating-linear-gradient(
+    135deg,
+    rgb(var(--ns-ink-rgb) / 0.07) 0 3px,
+    transparent 3px 6px
+  );
   --ns-hatch-soft: repeating-linear-gradient(
     135deg,
-    rgb(14 20 24 / 0.035) 0 3px,
+    rgb(var(--ns-ink-rgb) / 0.035) 0 3px,
     transparent 3px 6px
   );
 
@@ -111,20 +143,33 @@
   /* ---- depth ------------------------------------------------------------
    * Five surfaces used strictly by role, plus two machined materials:
    * the recessed well and the dark bezel.
+   *
+   * The three colours the composites below need and the ink/line ramps above
+   * do not supply. They are declared here rather than inlined so that an app
+   * restyling depth has something to set: a hex buried inside a shadow list
+   * is not overridable at all.
    */
+  --ns-edge-raised: #d5dce1; /* e2's top hairline */
+  --ns-edge-float: #cfd7dd; /* e3's top hairline */
+  --ns-bezel-top: #253039; /* bezel gradient's light stop; --ns-ink is the dark one */
+
   --ns-e0: inset 0 0 0 1px var(--ns-line);
-  --ns-e1: inset 0 0 0 1px var(--ns-line), inset 0 1px 0 #fff, 0 1px 2px rgb(14 20 24 / 0.05);
+  --ns-e1:
+    inset 0 0 0 1px var(--ns-line), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 1px 2px rgb(var(--ns-ink-rgb) / 0.05);
   --ns-e2:
-    inset 0 0 0 1px #d5dce1, inset 0 1px 0 #fff, 0 1px 2px rgb(14 20 24 / 0.05),
-    0 10px 20px -12px rgb(14 20 24 / 0.22);
+    inset 0 0 0 1px var(--ns-edge-raised), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 1px 2px rgb(var(--ns-ink-rgb) / 0.05), 0 10px 20px -12px rgb(var(--ns-ink-rgb) / 0.22);
   --ns-e3:
-    inset 0 0 0 1px #cfd7dd, inset 0 1px 0 #fff, 0 2px 6px rgb(14 20 24 / 0.08),
-    0 28px 56px -28px rgb(14 20 24 / 0.34);
-  --ns-well: inset 0 1px 3px rgb(14 20 24 / 0.13), inset 0 0 0 1px rgb(14 20 24 / 0.07);
+    inset 0 0 0 1px var(--ns-edge-float), inset 0 1px 0 rgb(var(--ns-surface-rgb)),
+    0 2px 6px rgb(var(--ns-ink-rgb) / 0.08), 0 28px 56px -28px rgb(var(--ns-ink-rgb) / 0.34);
+  --ns-well:
+    inset 0 1px 3px rgb(var(--ns-ink-rgb) / 0.13), inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   --ns-bezel:
-    inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 12px 26px -16px rgb(14 20 24 / 0.7);
-  --ns-bezel-fill: linear-gradient(180deg, #253039, #0e1418);
+    inset 0 1px 0 rgb(var(--ns-surface-rgb) / 0.14),
+    inset 0 0 0 1px rgb(var(--ns-surface-rgb) / 0.08),
+    0 12px 26px -16px rgb(var(--ns-ink-rgb) / 0.7);
+  --ns-bezel-fill: linear-gradient(180deg, var(--ns-bezel-top), var(--ns-ink));
 
   /* ---- geometry ---------------------------------------------------------
    * Tighter than the previous estate. Chips and pills stay 999; everything
@@ -148,33 +193,102 @@
 
   --ns-container: 1320px;
   --ns-gutter: 20px;
-  --ns-margin: 32px; /* >= 1080 */
-  --ns-margin-md: 24px; /* 620-1079 */
-  --ns-margin-sm: 16px; /* < 620 */
+  --ns-bp-sm: 40rem; /* Tailwind sm */
+  --ns-bp-lg: 64rem; /* Tailwind lg */
+  --ns-margin: 32px; /* >= 64rem */
+  --ns-margin-md: 24px; /* 40rem–64rem */
+  --ns-margin-sm: 16px; /* < 40rem */
   --ns-tap-min: 44px; /* tap targets never below this */
+
+  /* ---- stacking — 11 page layers, then named map-internal layers ----------
+   * Page chrome uses --ns-z-*. A map canvas is its own stacking context and
+   * uses the --ns-z-map-* names inside that context. Never a raw z-index.
+   */
+  --ns-z-base: 0;
+  --ns-z-content: 1;
+  --ns-z-raised: 2;
+  --ns-z-sticky: 3;
+  --ns-z-nav: 4;
+  --ns-z-dropdown: 5;
+  --ns-z-popover: 6;
+  --ns-z-overlay: 7;
+  --ns-z-modal: 8;
+  --ns-z-toast: 9;
+  --ns-z-max: 10;
+  --ns-z-map-tiles: 0;
+  --ns-z-map-features: 1;
+  --ns-z-map-labels: 2;
+  --ns-z-map-selection: 3;
+  --ns-z-map-controls: 4;
+
+  /* ---- --bs-* → --ns-* --------------------------------------------------
+   * Buoys' --bs token set duplicated these names. The values live on --ns-*;
+   * --bs-* is an alias so existing app CSS keeps resolving.
+   */
+  --bs-ink: var(--ns-ink);
+  --bs-ink-2: var(--ns-ink-2);
+  --bs-ink-3: var(--ns-ink-3);
+  --bs-text: var(--ns-text);
+  --bs-text-mute: var(--ns-text-mute);
+  --bs-line-strong: var(--ns-line-strong);
+  --bs-line: var(--ns-line);
+  --bs-line-soft: var(--ns-line-soft);
+  --bs-surface: var(--ns-surface);
+  --bs-sunk: var(--ns-sunk);
+  --bs-paper: var(--ns-paper);
+  --bs-accent: var(--ns-accent);
+  --bs-accent-deep: var(--ns-accent-deep);
+  --bs-accent-soft: var(--ns-accent-soft);
+  --bs-live: var(--ns-live);
+  --bs-aging: var(--ns-aging);
+  --bs-stale: var(--ns-stale);
+  --bs-void: var(--ns-void);
+  --bs-font-text: var(--ns-font-text);
+  --bs-font-mono: var(--ns-font-mono);
+  --bs-r-xs: var(--ns-r-xs);
+  --bs-r-sm: var(--ns-r-sm);
+  --bs-r-md: var(--ns-r-md);
+  --bs-r-lg: var(--ns-r-lg);
+  --bs-r-pill: var(--ns-r-pill);
+  --bs-space-1: var(--ns-space-1);
+  --bs-space-2: var(--ns-space-2);
+  --bs-space-3: var(--ns-space-3);
+  --bs-space-4: var(--ns-space-4);
+  --bs-space-6: var(--ns-space-6);
+  --bs-space-8: var(--ns-space-8);
+  --bs-space-12: var(--ns-space-12);
+  --bs-space-20: var(--ns-space-20);
+  --bs-container: var(--ns-container);
+  --bs-gutter: var(--ns-gutter);
+  --bs-margin: var(--ns-margin);
+  --bs-tap-min: var(--ns-tap-min);
 }
 
 /*
- * Breakpoints, for reference when authoring app CSS. The system uses four:
- *   < 620      4 col   single column, bottom sheet map, stacked readouts
- *   620-819    8 col   two-up cards, condensed table
- *   820-1079  12 col   sidebar appears, full table
- *   >= 1080   12 col   three-up cards, map + rail, 1320 container
+ * Breakpoints match Tailwind sm/lg (40rem / 64rem). One cutover, no compat
+ * flag: apps that authored against 620/820/1080 will see a small layout shift.
+ *   < 40rem     4 col   single column, bottom sheet map, stacked readouts
+ *   40rem–64rem 8–12    two-up cards, condensed table, sidebar appears
+ *   >= 64rem    12 col  three-up cards, map + rail, 1320 container
  */
-@media (width < 620px) {
+@media (width < 40rem) {
   :root {
     --ns-margin: var(--ns-margin-sm);
   }
 }
-@media (620px <= width < 1080px) {
+@media (40rem <= width < 64rem) {
   :root {
     --ns-margin: var(--ns-margin-md);
   }
 }
 
-/* ---- the only per-app override — three values ---------------------------
- * Every accent sits at oklch L~0.47 C~0.075. Only hue changes, so the five
- * products read as one family. Set data-app on <html> or the app root.
+/* ---- the family accents — three values per app --------------------------
+ * Every accent sits at oklch L~0.47 C~0.075. Only hue changes, so products
+ * that take the shared defaults read as one family. Set data-app on <html>
+ * or the app root.
+ *
+ * This is the smallest override that still looks deliberate, not the only one
+ * allowed: an app designed from its own canvas sets whatever its design needs.
  */
 [data-app="lakestat"] {
   --ns-accent: #2f6b8f;
@@ -282,12 +396,12 @@
 .ns-missing {
   background-color: var(--ns-sunk);
   background-image: var(--ns-hatch);
-  box-shadow: inset 0 0 0 1px rgb(14 20 24 / 0.07);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   color: var(--ns-void);
 }
 .ns-missing-soft {
   background-color: var(--ns-sunk);
   background-image: var(--ns-hatch-soft);
-  box-shadow: inset 0 0 0 1px rgb(14 20 24 / 0.07);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.07);
   color: var(--ns-void);
 }

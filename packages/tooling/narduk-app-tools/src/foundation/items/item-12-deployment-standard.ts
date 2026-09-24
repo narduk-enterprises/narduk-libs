@@ -32,8 +32,23 @@
  * non-production branch build of an app whose committed wrangler config binds
  * production D1/KV/R2 writes to production data from every PR branch. That is
  * not advice; the gate refuses it.
+ *
+ * **How 12.4 reaches PASS with branch builds on** (narduk-libs#473). A
+ * `previewBindings` entry that names its preview resource (KV `id`, D1
+ * `database_id` + `database_name`, R2 `bucket_name`) is consumed: `narduk-app
+ * deploy versions-upload` on a non-production branch uploads with
+ * `.wrangler.deploy.preview.json`, every binding rebound. 12.4 runs the same
+ * planner (`planPreviewConfig`) against the app's own config, so its PASS
+ * describes the config the build would upload, not the declaration. A bare
+ * binding name is still only a declaration (narduk-libs#451 defect 4): the
+ * build cannot rebind it and uploads production bindings, so that path stays
+ * UNKNOWN ("declared, not enforced"). A green sub-check must never stand for an
+ * isolation that does not exist.
  */
 
+import { posix } from 'node:path'
+
+import { flattenWranglerDeployConfig } from '../../deploy.js'
 import {
   DEPLOYMENT_STANDARD,
   PREVIEW_BINDING_KINDS,
@@ -41,11 +56,36 @@ import {
   BUILD_VERSION_HEADER,
   previewBindingName,
   readDeploymentBlock,
+  type DeploymentBlock,
   type DeploymentBlockOutcome,
   type PreviewBindingKind,
 } from '../../deployment-config.js'
+import {
+  describePreviewPlan,
+  planPreviewConfig,
+  PREVIEW_CONFIG_FILENAME,
+  type PreviewConfigPlan,
+} from '../../preview-config.js'
+import {
+  contractEvidenceIssues,
+  contractOwnedBindings,
+  ownershipCoverageIssues,
+  type DatabaseOwnershipEntry,
+} from '../../database-ownership.js'
+import {
+  findDestructiveStatements,
+  type DestructiveStatement,
+} from '../../migration-compatibility.js'
+import {
+  checksumMigrationSql,
+  isAppSource,
+  MIGRATION_FILENAME,
+  parseMigrationConfig,
+} from '../../migrations.js'
 import { check } from '../schema.js'
 import {
+  allDeps,
+  collectPackages,
   findWranglerConfig,
   findWranglerConfigs,
   isRecord,
@@ -77,6 +117,12 @@ export const TIER_ONE_LIMITATIONS: readonly string[] = [
     'account serves the same hostname.',
   'A dashboard-edited deploy command is invisible here and is the exact failure that would ' +
     'silently undo the standard. Catching it needs the live read (design §2.2 tier 2).',
+  'deployment.previewBindings isolates a preview only when every entry names its preview ' +
+    'resource: narduk-app deploy versions-upload then uploads a non-production branch with ' +
+    `${PREVIEW_CONFIG_FILENAME}, and 12.4 checks that exact config. A bare binding name is a ` +
+    'declaration the build cannot act on, so the preview keeps production bindings and 12.4 ' +
+    'reports UNKNOWN (narduk-libs#451, #473). A repository read cannot prove the preview ' +
+    'resources exist on Cloudflare.',
 ]
 
 /** The wrangler keys that declare each preview-sensitive binding kind. */
@@ -283,6 +329,98 @@ export function declaredExposure(cloudflareApp: unknown): Partial<Record<Exposur
   return out
 }
 
+/* -------------------------------------------------------------------------- */
+/* Workers Cache (12.7, narduk-libs#435)                                        */
+/* -------------------------------------------------------------------------- */
+
+export const NARDUK_CORE_PACKAGE = '@narduk-enterprises/narduk-core'
+
+/**
+ * The first narduk-core that keeps every response Workers Cache must not store
+ * out of it: thrown 4xx/5xx/429 are `private, no-store` (#429, 2.2.3),
+ * preference-shaped responses are (#427/#386), SSR HTML under a nonce CSP is
+ * (#435, 2.2.4), a route with no posture is private (2.5.0), and a thrown error
+ * answered as JSON is too (#493, 2.10.1). Below this, `"cache": { "enabled":
+ * true }` stores Nitro's `no-cache` API errors, and older still replays one
+ * visitor's CSP nonce to everyone.
+ */
+export const EDGE_CACHE_MIN_NARDUK_CORE = '2.10.1'
+
+/** One scope of one wrangler config that turns Workers Cache on. */
+export interface EdgeCacheSwitch {
+  rel: string
+  scope: string
+}
+
+export function edgeCacheScopesFromJson(config: unknown): string[] {
+  const out: string[] = []
+  for (const [prefix, scope] of wranglerScopes(config)) {
+    const cache = scope.cache
+    if (isRecord(cache) && cache.enabled === true) {
+      out.push(prefix === '' ? '(top level)' : prefix)
+    }
+  }
+  return out
+}
+
+/** `[cache]` / `[env.<name>.cache]` tables with `enabled = true`. */
+export function edgeCacheScopesFromToml(text: string): string[] {
+  const out: string[] = []
+  let table = ''
+  for (const line of text.split(/\r?\n/u)) {
+    const header = /^\s*\[\[?([^\]]+)\]\]?\s*$/u.exec(line)
+    if (header) {
+      table = header[1].trim()
+      continue
+    }
+    if (!/^\s*enabled\s*=\s*true\b/u.test(line)) continue
+    if (table === 'cache') out.push('(top level)')
+    else if (/^env\.[^.]+\.cache$/u.test(table)) out.push(table.slice(0, -'.cache'.length))
+  }
+  return out
+}
+
+export function edgeCacheSwitches(repo: AppRepo, rels: readonly string[]): EdgeCacheSwitch[] {
+  const out: EdgeCacheSwitch[] = []
+  for (const rel of rels) {
+    const text = repo.read(rel)
+    if (text === null) continue
+    const scopes = rel.endsWith('.toml')
+      ? edgeCacheScopesFromToml(text)
+      : edgeCacheScopesFromJson(parseJson(text))
+    for (const scope of scopes) out.push({ rel, scope })
+  }
+  return out
+}
+
+/** Where narduk-core is declared, and with what spec. First package.json wins. */
+export function declaredNardukCore(repo: AppRepo): { rel: string; spec: string } | null {
+  for (const { rel, pkg } of collectPackages(repo)) {
+    const spec = allDeps(pkg)[NARDUK_CORE_PACKAGE]
+    if (spec) return { rel, spec }
+  }
+  return null
+}
+
+/**
+ * The lowest version a dependency spec can resolve to, or null when the spec
+ * does not name one (`workspace:*`, a git URL, a tag). Item 2.2 already holds
+ * estate packages to exact pins, so in practice this is the pin itself.
+ */
+export function specFloor(spec: string): [number, number, number] | null {
+  const match = /^\s*(?:[=^~]|>=)?v?(\d+)\.(\d+)\.(\d+)/u.exec(spec)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function atLeast(version: [number, number, number], minimum: string): boolean {
+  const floor = minimum.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if (version[index] !== floor[index]) return version[index] > floor[index]
+  }
+  return true
+}
+
 export interface DeploymentScan {
   configFile: typeof CLOUDFLARE_APP_FILE
   /** The app's own wrangler config -- the one everything descriptive names. */
@@ -297,6 +435,12 @@ export interface DeploymentScan {
   /** Production bindings `previewBindings` does not replace. Empty unless the
    * block is valid AND non-production branch builds are on. */
   uncovered: BindingsByKind
+  /** `previewBindings` entries that name no production binding of their kind
+   * -- a typo, or a binding since removed. Same condition as `uncovered`. */
+  stale: BindingsByKind
+  /** What a non-production branch build would upload. Null unless the block is
+   * valid AND non-production branch builds are on. */
+  preview: PreviewScan | null
   /** Every `account_id` declaration in the checkout, with its file. */
   accounts: DeclaredAccount[]
   /** The distinct account ids among them. */
@@ -305,6 +449,147 @@ export interface DeploymentScan {
   exposureFlags: DeclaredFlag[]
   /** `worker.workersDev` / `worker.previewUrls` from Config/cloudflare-app.json. */
   declaredExposure: Partial<Record<ExposureFlag, boolean>>
+  /** Every wrangler scope that sets `cache.enabled: true` (12.7). */
+  edgeCache: EdgeCacheSwitch[]
+  /** The app's narduk-core dependency, if it declares one (12.7). */
+  nardukCore: { rel: string; spec: string } | null
+  migrationSources?: Array<{ binding: string; path: string; exists: boolean }>
+  /** `deployment.databaseOwnership`, when the block is valid and declares it. */
+  databaseOwnership?: DatabaseOwnershipEntry[] | null
+  /** Contract-owned entries naming a file or verify script that is not there. */
+  ownershipEvidence?: string[]
+  /** What 12.9 reads: the app-owned migration SQL the declared manifests name. */
+  migrationCompatibility?: MigrationCompatibilityScan | null
+}
+
+export interface MigrationFileScan {
+  /** Checkout-relative path. */
+  rel: string
+  /** The checksum the migration ledger records for this file. */
+  sha256: string
+  destructive: DestructiveStatement[]
+}
+
+export interface MigrationCompatibilityScan {
+  /** Every app-owned migration file, once, in path order. */
+  files: MigrationFileScan[]
+  /** Package-owned sources, `binding: source`. Their SQL ships in a package
+   * and is not this checkout's to review. */
+  packageSources: string[]
+  /** Manifests or directories this read could not follow, with why. */
+  unreadable: string[]
+}
+
+export interface PreviewScan {
+  /** Why the build's generator cannot cover this checkout's bindings. When any
+   * exist, `plan` is null: a partial answer would read as a whole one. */
+  blockers: string[]
+  plan: PreviewConfigPlan | null
+}
+
+/**
+ * Plans the preview config exactly as `narduk-app deploy versions-upload` does:
+ * the app's own JSON/JSONC config, flattened the way the build flattens it, with
+ * every scope of that config counted as production for the reuse check.
+ */
+export function scanPreview(
+  repo: AppRepo,
+  wranglerRel: string | null,
+  wranglerRels: readonly string[],
+  previewBindings: DeploymentBlock['previewBindings'],
+): PreviewScan {
+  const blockers: string[] = []
+  if (!wranglerRel) {
+    blockers.push('the app has no wrangler config of its own for narduk-app deploy to rewrite')
+  } else if (wranglerRel.endsWith('.toml')) {
+    blockers.push(
+      `${wranglerRel} is TOML, and narduk-app deploy reads wrangler.json or wrangler.jsonc only`,
+    )
+  }
+  for (const rel of wranglerRels) {
+    if (rel === wranglerRel) continue
+    const bound = productionBindings(repo, rel)
+    const names = PREVIEW_BINDING_KINDS.flatMap((kind) => bound[kind].map((b) => `${kind}:${b}`))
+    if (names.length > 0) {
+      blockers.push(
+        `${rel} binds ${names.join(', ')}, and the preview generator rewrites only the app's own ` +
+          `config${wranglerRel ? ` (${wranglerRel})` : ''}`,
+      )
+    }
+  }
+  if (blockers.length > 0 || !wranglerRel) return { blockers, plan: null }
+  const raw = parseJson(repo.read(wranglerRel))
+  if (!isRecord(raw)) {
+    return { blockers: [`${wranglerRel} could not be parsed`], plan: null }
+  }
+  const deployConfig = flattenWranglerDeployConfig(raw) as Record<string, unknown>
+  return { blockers, plan: planPreviewConfig(deployConfig, previewBindings, [raw]) }
+}
+
+/** A checkout-relative path, normalised, or null when it leaves the checkout. */
+function checkoutRel(path: string): string | null {
+  if (posix.isAbsolute(path)) return null
+  const normalised = posix.normalize(path)
+  return normalised === '..' || normalised.startsWith('../') ? null : normalised
+}
+
+/**
+ * Reads every app-owned migration the declared source manifests name, the way
+ * `discoverMigrations` finds them, and classifies each statement (12.9).
+ */
+export function scanMigrationCompatibility(
+  repo: AppRepo,
+  databases: ReadonlyArray<{ binding: string; sources: string }>,
+): MigrationCompatibilityScan {
+  const files = new Map<string, MigrationFileScan>()
+  const packageSources: string[] = []
+  const unreadable: string[] = []
+  for (const database of databases) {
+    const manifestRel = checkoutRel(database.sources)
+    const text = manifestRel === null ? null : repo.read(manifestRel)
+    if (manifestRel === null || text === null) {
+      unreadable.push(`${database.binding}: ${database.sources} is not a file in this checkout`)
+      continue
+    }
+    let sources
+    try {
+      sources = parseMigrationConfig(parseJson(text)).sources
+    } catch (error) {
+      unreadable.push(`${database.binding}: ${manifestRel}: ${(error as Error).message}`)
+      continue
+    }
+    for (const source of sources) {
+      if (!isAppSource(source.source)) {
+        packageSources.push(`${database.binding}: ${source.source}`)
+        continue
+      }
+      const directory = checkoutRel(posix.join(posix.dirname(manifestRel), source.path))
+      if (directory === null) {
+        unreadable.push(
+          `${database.binding}: source ${source.source} directory ${source.path} leaves the checkout`,
+        )
+        continue
+      }
+      // A missing directory holds no migrations: nothing to classify. The
+      // runner refuses it at migrate time; this rule has nothing to say.
+      if (!repo.exists(directory)) continue
+      for (const rel of repo.walk(directory, ['.sql'], 0)) {
+        if (files.has(rel) || !MIGRATION_FILENAME.test(posix.basename(rel))) continue
+        const sql = repo.read(rel)
+        if (sql === null) continue
+        files.set(rel, {
+          rel,
+          sha256: checksumMigrationSql(sql),
+          destructive: findDestructiveStatements(sql),
+        })
+      }
+    }
+  }
+  return {
+    files: [...files.values()].sort((left, right) => left.rel.localeCompare(right.rel)),
+    packageSources,
+    unreadable,
+  }
 }
 
 export function scanDeployment(repo: AppRepo): DeploymentScan {
@@ -319,11 +604,17 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
   }
   for (const kind of PREVIEW_BINDING_KINDS) production[kind] = sortedUnique(production[kind])
   const uncovered = emptyBindings()
+  const stale = emptyBindings()
+  let preview: PreviewScan | null = null
   if (outcome.kind === 'valid' && outcome.block.nonProductionBranchBuilds) {
     for (const kind of PREVIEW_BINDING_KINDS) {
-      const covered = new Set(outcome.block.previewBindings[kind].map(previewBindingName))
+      const declared = outcome.block.previewBindings[kind].map(previewBindingName)
+      const covered = new Set(declared)
+      const bound = new Set(production[kind])
       uncovered[kind] = production[kind].filter((name) => !covered.has(name))
+      stale[kind] = sortedUnique(declared.filter((name) => !bound.has(name)))
     }
+    preview = scanPreview(repo, wranglerRel, wranglerRels, outcome.block.previewBindings)
   }
   const accounts = declaredAccounts(repo, wranglerRels)
   return {
@@ -333,10 +624,35 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     outcome,
     production,
     uncovered,
+    stale,
+    preview,
     accounts,
     accountIds: sortedUnique(accounts.map((entry) => entry.accountId)),
     exposureFlags: declaredExposureFlags(repo, wranglerRel),
     declaredExposure: declaredExposure(cloudflareApp),
+    edgeCache: edgeCacheSwitches(repo, wranglerRels),
+    nardukCore: declaredNardukCore(repo),
+    migrationSources:
+      outcome.kind === 'valid'
+        ? (outcome.block.migrations?.databases ?? []).map((entry) => ({
+            binding: entry.binding,
+            path: entry.sources,
+            exists: repo.read(entry.sources) !== null,
+          }))
+        : [],
+    migrationCompatibility:
+      outcome.kind === 'valid' && outcome.block.migrations
+        ? scanMigrationCompatibility(repo, outcome.block.migrations.databases)
+        : null,
+    databaseOwnership: outcome.kind === 'valid' ? (outcome.block.databaseOwnership ?? null) : null,
+    ownershipEvidence:
+      outcome.kind === 'valid' && outcome.block.databaseOwnership
+        ? contractEvidenceIssues({
+            entries: outcome.block.databaseOwnership,
+            read: (rel) => repo.read(rel),
+            packageJsonRels: collectPackages(repo).map((found) => found.rel),
+          })
+        : [],
   }
 }
 
@@ -519,7 +835,11 @@ function evaluate123(scan: DeploymentScan): FoundationSubCheck {
       '12.3',
       name,
       STATUS_PASS,
-      `${BUILD_VERSION_HEADER}, health ${liveProof.healthPath}, smoke ${liveProof.smokePath}, ` +
+      `${BUILD_VERSION_HEADER}, health ${liveProof.healthPath}` +
+        (liveProof.healthAuth === 'authenticated'
+          ? ' (authenticated, not asserted anonymously)'
+          : '') +
+        `, smoke ${liveProof.smokePath}, ` +
         `up to ${liveProof.attempts} attempts ${liveProof.intervalSeconds}s apart`,
       scan.configFile,
     )
@@ -571,22 +891,101 @@ function evaluate124(scan: DeploymentScan): FoundationSubCheck {
           `configuration but not the state behind it, and preview_database_id / preview_id / ` +
           `preview_bucket_name apply to "wrangler dev" only -- they do nothing for a Workers ` +
           `Builds preview. As declared, every PR branch of this app would read and write ` +
-          `production data. Create a preview resource per binding, list it under ` +
-          `deployment.previewBindings, or set nonProductionBranchBuilds to false.`,
+          `production data. Create a preview resource per binding and name it under ` +
+          `deployment.previewBindings (KV "id", D1 "database_id" and "database_name", R2 ` +
+          `"bucket_name"), or set nonProductionBranchBuilds to false.`,
         scan.wranglerRel ?? undefined,
       )
     }
+    const stale = PREVIEW_BINDING_KINDS.flatMap((kind) =>
+      scan.stale[kind].map((binding) => `${kind}:${binding}`),
+    )
+    if (stale.length > 0) {
+      return check(
+        '12.4',
+        name,
+        STATUS_FAIL,
+        `deployment.previewBindings names ${stale.join(', ')}, which no wrangler config in ` +
+          `${scanned} binds under that kind. A preview entry must carry the exact name of the ` +
+          `production binding it replaces; a name that matches nothing replaces nothing, and ` +
+          `usually means a typo or a binding since removed.`,
+        scan.configFile,
+      )
+    }
     const covered = PREVIEW_BINDING_KINDS.flatMap((kind) => scan.production[kind])
+    if (covered.length === 0) {
+      // Nothing to isolate: the verdict rests on the wrangler configs alone.
+      return check(
+        '12.4',
+        name,
+        STATUS_PASS,
+        `nonProductionBranchBuilds is true and ${scanned} declare(s) no D1, KV or R2 ` +
+          `binding, so a preview has no production state to reach`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
+    const preview = scan.preview
+    if (!preview || preview.blockers.length > 0 || !preview.plan) {
+      return check(
+        '12.4',
+        name,
+        STATUS_UNKNOWN,
+        `nonProductionBranchBuilds is true and deployment.previewBindings covers every ` +
+          `production D1/KV/R2 binding by name, but narduk-app deploy cannot generate a preview ` +
+          `config for all of them: ${(preview?.blockers ?? ['no preview scan']).join('; ')}. ` +
+          `Those bindings are declared, not enforced: a branch build still reaches the ` +
+          `production resource.`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
+    const { plan } = preview
+    if (plan.status === 'unsafe' || plan.status === 'uncovered') {
+      return check(
+        '12.4',
+        name,
+        STATUS_FAIL,
+        `nonProductionBranchBuilds is true and ${describePreviewPlan(plan)}. A preview bound ` +
+          `to that resource reads and writes production data, so narduk-app deploy refuses to ` +
+          `rebind it and uploads the production config instead. Point each entry at a resource ` +
+          `created for previews.`,
+        scan.configFile,
+      )
+    }
+    if (plan.status === 'declared-only') {
+      // narduk-libs#451 defect 4: a bare name is a declaration the build cannot
+      // act on, so the runtime is identical to declaring nothing.
+      return check(
+        '12.4',
+        name,
+        STATUS_UNKNOWN,
+        `nonProductionBranchBuilds is true and ${describePreviewPlan(plan)}, so narduk-app ` +
+          `deploy cannot build ${PREVIEW_CONFIG_FILENAME} and a branch build uploads with ` +
+          `.wrangler.deploy.production.json -- every binding still resolves to the production ` +
+          `resource. This sub-check therefore reports "declared, not enforced": it is ` +
+          `unproven, not safe. Add each preview resource to its entry, or set ` +
+          `nonProductionBranchBuilds to false.`,
+        scan.configFile,
+      )
+    }
+    if (plan.status === 'no-bindings') {
+      return check(
+        '12.4',
+        name,
+        STATUS_PASS,
+        `nonProductionBranchBuilds is true and the config a branch build uploads (` +
+          `${scan.wranglerRel ?? 'the app config'}, flattened) binds no D1, KV or R2 binding`,
+        scan.wranglerRel ?? undefined,
+      )
+    }
     return check(
       '12.4',
       name,
       STATUS_PASS,
-      covered.length === 0
-        ? `nonProductionBranchBuilds is true and ${scanned} declare(s) no D1, KV or R2 ` +
-            `binding, so a preview has no production state to reach`
-        : `every one of the ${covered.length} production D1/KV/R2 binding(s) across ${scanned} ` +
-            `has a preview replacement declared`,
-      scan.wranglerRel ?? undefined,
+      `nonProductionBranchBuilds is true and narduk-app deploy versions-upload uploads a ` +
+        `non-production branch with ${PREVIEW_CONFIG_FILENAME}, which rebinds all ` +
+        `${plan.rebound.length} D1/KV/R2 binding(s) to resources that are not production ones: ` +
+        `${plan.rebound.join(', ')}`,
+      scan.configFile,
     )
   })
 }
@@ -757,6 +1156,293 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
   })
 }
 
+/**
+ * 12.7 -- Workers Cache is on only against a narduk-core that keeps
+ * uncacheable responses out of it (narduk-libs#435).
+ *
+ * Not gated on a valid `deployment` block, and not softened by rollout mode:
+ * like 12.4, the failure is live data crossing between visitors -- a stored
+ * `no-cache` error page, or one visitor's CSP nonce replayed to everyone --
+ * not a missing declaration. What it cannot see: whether the running Worker
+ * actually HITs. That is `narduk-app verify --live --edge-cache-path`.
+ */
+function evaluate127(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'Workers Cache enabled only on a narduk-core with the no-store guards'
+  if (scan.edgeCache.length === 0) {
+    return check(
+      '12.7',
+      name,
+      STATUS_NA,
+      'no wrangler config sets "cache": { "enabled": true }, so Cloudflare runs the Worker on ' +
+        'every request and setCacheProfile edge headers (CDN-Cache-Control, Cache-Tag) are inert',
+      scan.wranglerRel ?? undefined,
+    )
+  }
+  const where = scan.edgeCache.map((entry) => `${entry.rel} ${entry.scope}`).join(', ')
+  const core = scan.nardukCore
+  if (!core) {
+    return check(
+      '12.7',
+      name,
+      STATUS_UNKNOWN,
+      `Workers Cache is on (${where}) but no package.json declares ${NARDUK_CORE_PACKAGE}, so ` +
+        `nothing proves thrown errors and nonce-CSP HTML ship private, no-store`,
+      scan.edgeCache[0].rel,
+    )
+  }
+  const floor = specFloor(core.spec)
+  if (!floor) {
+    return check(
+      '12.7',
+      name,
+      STATUS_UNKNOWN,
+      `Workers Cache is on (${where}) and ${core.rel} declares ${NARDUK_CORE_PACKAGE} as ` +
+        `${JSON.stringify(core.spec)}, which names no version to compare with ` +
+        `${EDGE_CACHE_MIN_NARDUK_CORE}`,
+      core.rel,
+    )
+  }
+  if (!atLeast(floor, EDGE_CACHE_MIN_NARDUK_CORE)) {
+    return check(
+      '12.7',
+      name,
+      STATUS_FAIL,
+      `Workers Cache is on (${where}) but ${core.rel} resolves ${NARDUK_CORE_PACKAGE} ` +
+        `${core.spec}, older than ${EDGE_CACHE_MIN_NARDUK_CORE}. That core lets Cloudflare store ` +
+        `thrown 4xx/5xx/429 (Nitro's no-cache, narduk-libs#429, and on JSON routes #493) and ` +
+        `nonce-CSP SSR HTML (narduk-libs#435). Upgrade narduk-core or turn the cache block off.`,
+      core.rel,
+    )
+  }
+  return check(
+    '12.7',
+    name,
+    STATUS_PASS,
+    `Workers Cache is on (${where}) with ${NARDUK_CORE_PACKAGE} ${core.spec} >= ` +
+      `${EDGE_CACHE_MIN_NARDUK_CORE}. A route of the app's own that writes a response without ` +
+      `Cache-Control is still stored (a 200 for 2 hours, by Cloudflare's heuristic), so every ` +
+      `route needs a posture (docs/workers-cache.md). This is a repository read: prove a real ` +
+      `HIT with ` +
+      `narduk-app verify --live <production-url> --edge-cache-path <live-route>`,
+    scan.edgeCache[0].rel,
+  )
+}
+
+function evaluate128(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'D1 deployment migration ownership is declared'
+  return onlyWhenValid('12.8', name, scan, () => {
+    if (scan.production.d1.length === 0)
+      return check('12.8', name, STATUS_NA, 'No D1 bindings declared')
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    const { migrations, promotion, databaseOwnership } = scan.outcome.block
+    const ownership = databaseOwnership ?? null
+    const sources = scan.migrationSources ?? []
+    // The same rule `planDeploymentMigrations` refuses on, so a green 12.8 and
+    // a runnable migration plan can never disagree about who owns a schema.
+    const coverage = ownershipCoverageIssues({
+      bindings: scan.production.d1,
+      ownership,
+      migrated: sources.map((source) => source.binding),
+      hasMigrationsBlock: Boolean(migrations),
+    })
+    if (coverage.length > 0) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        `Every D1 binding needs exactly one schema owner: a deployment.migrations entry with ` +
+          `expand-contract compatibility and a source manifest, or a deployment.databaseOwnership ` +
+          `entry declaring it contract-owned. ${coverage.join('; ')}`,
+        scan.configFile,
+      )
+    }
+    const evidence = scan.ownershipEvidence ?? []
+    if (evidence.length > 0) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        `A contract-owned database is only declared if its contract and its verification ` +
+          `command exist: ${evidence.join('; ')}`,
+        scan.configFile,
+      )
+    }
+    if (
+      migrations &&
+      (!migrations.credential.startsWith('cloudflare/') ||
+        migrations.credential === promotion.credential)
+    ) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        'Migration and promotion must name different Cloudflare credential selectors',
+        scan.configFile,
+      )
+    }
+    if (sources.some((source) => !source.exists)) {
+      return check(
+        '12.8',
+        name,
+        STATUS_FAIL,
+        `Every migration-owned D1 binding requires an existing source manifest; missing: ` +
+          `${sources
+            .filter((source) => !source.exists)
+            .map((source) => `${source.binding} -> ${source.path}`)
+            .join(', ')}`,
+        scan.configFile,
+      )
+    }
+    const contract = ownership ? [...contractOwnedBindings(ownership)] : []
+    const contractNote =
+      contract.length > 0
+        ? ` ${contract.join(', ')} is contract-owned and is never migrated: the migration runner ` +
+          `refuses it even when asked directly, and its schema is proved by the declared ` +
+          `verification command, not by this ledger.`
+        : ''
+    return check(
+      '12.8',
+      name,
+      STATUS_PASS,
+      `D1 schema ownership declared for every binding.${contractNote} Remote parity is NOT ` +
+        `proven here: run db migrate-deployment --target production --check before promotion; ` +
+        `preview readiness requires its own target check.`,
+      scan.configFile,
+    )
+  })
+}
+
+/** How many offending statements a verdict lists before summarising the rest. */
+const LISTED_STATEMENTS = 10
+
+const DESTRUCTIVE_WORDING: Record<DestructiveStatement['kind'], string> = {
+  'drop-table': 'drops table',
+  'drop-view': 'drops view',
+  'drop-column': 'drops a column of',
+  'rename-table': 'renames table',
+  'rename-column': 'renames a column of',
+}
+
+/** 12.9 -- declared expand-contract migrations are expand-only (#399). */
+function evaluate129(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'D1 migrations are expand-only, or a reviewed contract migration'
+  return onlyWhenValid('12.9', name, scan, () => {
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    const migrations = scan.outcome.block.migrations
+    const read = scan.migrationCompatibility
+    if (!migrations || !read) {
+      return check('12.9', name, STATUS_NA, 'No deployment.migrations declared', scan.configFile)
+    }
+    if (read.unreadable.length > 0) {
+      return check(
+        '12.9',
+        name,
+        STATUS_UNKNOWN,
+        `Could not read every declared migration source, so the rule is unchecked: ` +
+          `${read.unreadable.join('; ')}`,
+        scan.configFile,
+      )
+    }
+    const byRel = new Map(read.files.map((file) => [file.rel, file]))
+    const waived = new Set<string>()
+    const stale: string[] = []
+    for (const waiver of migrations.contractMigrations ?? []) {
+      const rel = checkoutRel(waiver.path)
+      const file = rel === null ? undefined : byRel.get(rel)
+      if (!file) {
+        stale.push(`${waiver.path} is not an app migration file any declared source names`)
+      } else if (file.sha256 !== waiver.sha256) {
+        stale.push(
+          `${waiver.path} no longer has the reviewed checksum (now ${file.sha256}); applied ` +
+            `migration SQL is immutable, so review the change and pin the new checksum`,
+        )
+      } else if (file.destructive.length === 0) {
+        stale.push(`${waiver.path} drops and renames nothing, so it needs no waiver`)
+      } else {
+        waived.add(file.rel)
+      }
+    }
+    const offending = read.files.filter(
+      (file) => file.destructive.length > 0 && !waived.has(file.rel),
+    )
+    if (offending.length > 0 || stale.length > 0) {
+      const statements = offending.flatMap((file) =>
+        file.destructive.map(
+          (found) => `${file.rel}:${found.line} ${DESTRUCTIVE_WORDING[found.kind]} ${found.object}`,
+        ),
+      )
+      const listed = statements.slice(0, LISTED_STATEMENTS)
+      if (statements.length > listed.length) {
+        listed.push(`and ${statements.length - listed.length} more`)
+      }
+      const parts: string[] = []
+      if (offending.length > 0) {
+        const waivers = offending.map((file) => ({
+          path: file.rel,
+          sha256: file.sha256,
+          reason: '<why no serving or rollback-target version still reads it>',
+        }))
+        parts.push(
+          `deployment.migrations declares expand-contract, but these statements remove or ` +
+            `rename what the serving Worker or a rollback target may still read: ` +
+            `${listed.join('; ')}. \`narduk-app deploy rollback\` restores code, never a ` +
+            `schema. Expand instead (add, backfill, switch code), or, once no version inside ` +
+            `the rollback window reads it, declare the file a reviewed contract migration under ` +
+            `deployment.migrations.contractMigrations: ${JSON.stringify(waivers)}`,
+        )
+      }
+      if (stale.length > 0)
+        parts.push(`Contract-migration waivers that cover nothing: ${stale.join('; ')}`)
+      return check('12.9', name, STATUS_FAIL, parts.join(' '), scan.configFile)
+    }
+    const waivedNote =
+      waived.size > 0
+        ? ` ${waived.size} reviewed contract migration(s) are waived by checksum.`
+        : ''
+    const packageNote =
+      read.packageSources.length > 0
+        ? ` Package-owned sources are not read here (${read.packageSources.join(', ')}).`
+        : ''
+    return check(
+      '12.9',
+      name,
+      STATUS_PASS,
+      `${read.files.length} app migration file(s) drop and rename nothing.${waivedNote}` +
+        `${packageNote} This is a statement classifier: a data rewrite or a new constraint ` +
+        `the previous code cannot satisfy is not detected.`,
+      scan.configFile,
+    )
+  })
+}
+
+/** 12.10 -- the declared rollback mode is one something honours (#399). */
+function evaluate1210(scan: DeploymentScan): FoundationSubCheck {
+  const name = 'declared rollback mode is the one that runs'
+  return onlyWhenValid('12.10', name, scan, () => {
+    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
+    if (scan.outcome.block.rollback.mode === 'auto') {
+      return check(
+        '12.10',
+        name,
+        STATUS_FAIL,
+        `deployment.rollback.mode is "auto", but nothing reads it: no tool rolls back on its ` +
+          `own. A rollback happens only when a person, or a step the app wrote into its own ` +
+          `promote job, runs \`narduk-app deploy rollback\`; a failed migration triggers ` +
+          `nothing, and no database is ever restored. Set "mode": "manual".`,
+        scan.configFile,
+      )
+    }
+    return check(
+      '12.10',
+      name,
+      STATUS_PASS,
+      "Rollback is manual: `narduk-app deploy rollback` runs only when a person or the app's " +
+        'own promote step invokes it, and it never restores a database.',
+      scan.configFile,
+    )
+  })
+}
+
 export function evaluateItem12(scan: DeploymentScan, strict = false): FoundationSubCheck[] {
   return [
     evaluate120(scan, strict),
@@ -766,5 +1452,9 @@ export function evaluateItem12(scan: DeploymentScan, strict = false): Foundation
     evaluate124(scan),
     evaluate125(scan),
     evaluate126(scan),
+    evaluate127(scan),
+    evaluate128(scan),
+    evaluate129(scan),
+    evaluate1210(scan),
   ]
 }

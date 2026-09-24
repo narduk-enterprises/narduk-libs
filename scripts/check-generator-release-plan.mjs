@@ -39,6 +39,9 @@ function parseArguments(argv) {
   const options = { base: undefined, head: 'HEAD', json: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
+    // `pnpm run release-plan:check -- --base origin/main` forwards the bare
+    // separator; treat it as the no-op it is rather than an unknown flag.
+    if (argument === '--') continue
     if (argument === '--json') {
       options.json = true
       continue
@@ -101,6 +104,41 @@ function changesetsBaseBranch() {
   return config.baseBranch || 'main'
 }
 
+// Which ref the branch is diffed against (#619). The default used to be the
+// local Changesets base branch, and a local `main` is only as fresh as its
+// last pull: in a stale worktree every commit that landed on the real `main`
+// since then reads as part of this branch, and the guard demands Changesets
+// for packages the branch never touched. The remote-tracking ref is the
+// default now. A local branch is still used when nothing else exists -- and
+// whenever it is used, the note says so, so a wrong baseline shows up in the
+// message instead of only in the shape of the answer.
+export function resolveComparisonBase({ explicit, baseBranch, refExists }) {
+  if (explicit) {
+    const local = refExists(`refs/heads/${explicit}`) && !refExists(`refs/remotes/${explicit}`)
+    return {
+      base: explicit,
+      note: local
+        ? `Comparing against '${explicit}' (--base), a LOCAL branch; if it is behind its remote, packages changed upstream are reported as this branch's.`
+        : `Comparing against '${explicit}' (--base).`,
+    }
+  }
+  const remoteBase = `origin/${baseBranch}`
+  if (refExists(`refs/remotes/${remoteBase}`)) {
+    return { base: remoteBase, note: `Comparing against '${remoteBase}'.` }
+  }
+  return {
+    base: baseBranch,
+    note: `Comparing against '${baseBranch}', a LOCAL branch, because '${remoteBase}' does not exist; if it is behind its remote, packages changed upstream are reported as this branch's.`,
+  }
+}
+
+function refExists(ref) {
+  return (
+    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { allowFailure: true }) !==
+    undefined
+  )
+}
+
 function git(args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
   if (result.error) throw result.error
@@ -119,7 +157,11 @@ export function readManifestAtRevision(revision, path) {
 
 function main() {
   const options = parseArguments(process.argv.slice(2))
-  const base = options.base ?? changesetsBaseBranch()
+  const { base, note: baseNote } = resolveComparisonBase({
+    explicit: options.base,
+    baseBranch: changesetsBaseBranch(),
+    refExists,
+  })
   const workspace = loadWorkspace(root)
   const pinnedLocalPackages = generatorPinnedPackages(workspace)
 
@@ -137,7 +179,7 @@ function main() {
     const resolvedBase = git(['merge-base', base, options.head], { allowFailure: true })
     if (resolvedBase === undefined) {
       throw new Error(
-        `Cannot compare ${options.head} against '${base}'. Create the Changesets base branch locally (git branch --force ${base} origin/${base}) and check out full history.`,
+        `Cannot compare ${options.head} against '${base}'. Fetch it (git fetch origin ${changesetsBaseBranch()}) or pass --base <ref>, and check out full history.`,
       )
     }
     const mergeBase = resolvedBase.trim()
@@ -161,6 +203,7 @@ function main() {
         relativeDirectory,
         private: manifest.private === true,
         frozen: frozenNames.has(name),
+        files: manifest.files,
       })),
       changedFiles,
       readManifests: (relativeDirectory) => ({
@@ -203,6 +246,7 @@ function main() {
       )
     }
 
+    process.stdout.write(`${baseNote} Merge base ${mergeBase.slice(0, 12)}.\n`)
     for (const verdict of [guardVerdict, pinVerdict]) {
       if (verdict.ok) process.stdout.write(verdict.text)
       else process.stderr.write(verdict.text)

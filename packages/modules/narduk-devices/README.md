@@ -206,6 +206,21 @@ could not be honoured
 - `approval_required` covers a missing, wrong or expired approval token;
   `unauthorized_user` covers a valid approval presented by a different actor or
   for a different org/resource than it was issued for.
+- `issueApprovalToken` authorises before it describes: a caller naming another
+  org or resource gets `forbidden` whatever state the claim session is in, and
+  only the owning org hears `conflict`, `revoked` or `expired`. Reporting the
+  state first told any authenticated caller that holds a claim session id
+  whether another tenant's session was claimed, revoked or expired
+  (narduk-libs#243). An id that does not exist is still `not_found`.
+- `completeClaim` authorises before it describes too, and before it counts. A
+  caller naming another org or resource gets `unauthorized_user` whatever state
+  the claim session is in — `already_completed`, `revoked`, `expired` and
+  `hardware_mismatch` are answers only the owning org hears — and its refusals
+  are counted against its own account and IP, never against the owner's claim
+  token. Settled inside the approval check, as it was through 0.5.0, the state
+  leaked exactly as it did on `issueApprovalToken`, and five refusals from a
+  foreign org locked the owner out of their own ceremony for the cooldown
+  (narduk-libs#533). An id that does not exist is still `not_found`.
 - `revokeClaimToken` revokes the token and any pending session on it.
 
 ### Lockouts
@@ -224,9 +239,13 @@ pins the numbers:
 A lockout starts at the failure that crosses a threshold and a `rate_limited`
 refusal is not itself a failure. Subjects: `startClaim` counts the **presented**
 token's digest plus `remote.accountKey` / `remote.ip`; `completeClaim` counts
-the token, `approvedByUserId` as the account, and `remote.ip`; `openSession`
-counts the device plus `remote.*`. The attempt row is written and the window
-counted in one transaction, so no concurrent failure goes uncounted.
+`approvedByUserId` as the account and `remote.ip` always, and the claim token
+**only once the caller's org and resource match the token's** — a completion
+names a session id rather than presenting the token, so charging an
+out-of-tenancy caller to that token let one tenant lock out another
+(narduk-libs#533); `openSession` counts the device plus `remote.*`. The attempt
+row is written and the window counted in one transaction, so no concurrent
+failure goes uncounted.
 
 **Account and IP subjects are namespaced by operation.** The stored subject is
 `<purpose>:<accountKey|ip>` — `claim:` for `startClaim` and both completion
@@ -256,6 +275,20 @@ one; what changed is that they are counted, audited and eventually refused
 instead of free and untraced. Uniformity was considered and rejected — always
 `rate_limited` breaks the `not_found` contract consumers branch on, always
 `not_found` hands the oracle straight back (third review LOW-5).
+
+**The exported gate reports every crossing.**
+`createLockoutGate(db, now, nextId)` (`server/utils/devices-lockout`) is the
+counter the library itself uses, for a consumer building its own limiter.
+`record(subjects, outcome)` returns one `LockoutThreshold` per subject whose
+failure this attempt crossed a threshold —
+`{ subject, failures, cooldownSeconds, escalates }`, in subject order, empty for
+a success — for the flat token/device rule as well as the escalating account/IP
+one. That return is the signal to audit the attempt that locked a subject out:
+one row per lockout, without re-deriving the rule in the app. Before
+narduk-libs#238 only escalating crossings were returned, so a limiter built on
+the flat rule never heard about its own lockouts; filter on `escalates` to keep
+the old set. The library's own `security.lockout` rows are unchanged: written
+for the escalating crossings only.
 
 **Every HTTP route must pass `remote`.** `remote` is optional only so a non-HTTP
 caller (a queue consumer, a test) can omit it. Without it the presented token's
@@ -317,6 +350,56 @@ Two ways to close that:
 A binding mismatch is `hardware_mismatch`; a proof that does not verify is
 `unauthorized_user`. Both count against the lockout.
 
+#### A device that signs its own handoff body
+
+`CanonicalCompletionRequest` binds `installationId`, which the cloud mints, so a
+device cannot sign it, and it carries no domain separator. A consumer whose
+device signs its own domain-separated handoff body passes that body as a
+`ContextBoundCompletionProof` instead (narduk-libs#237). The layout is mybo.at's
+`mybo/claim-handoff/v1`: the signature covers the UTF-8 of
+`context + "\n" + canonicalRequest`, and `canonicalRequest` is the canonical
+JSON of exactly six keys: `claimSessionId`, `devicePublicKey`,
+`hardwareFingerprint`, `idempotencyKey`, `nonce` and `signedAt`.
+
+```ts
+const devices = createDevices(db, {
+  // The one context a context-bound proof may carry. Unset, every such proof
+  // is refused `invalid`.
+  completionProofContext: 'mybo/claim-handoff/v1',
+})
+
+const result = await devices.completeClaimWithRecordedApproval({
+  claimSessionId: body.claimSessionId,
+  devicePublicKey: body.devicePublicKey,
+  hardwareFingerprint: body.hardwareFingerprint,
+  idempotencyKey: body.idempotencyKey,
+  installationId: crypto.randomUUID(), // minted per attempt, never signed
+  deviceProof: {
+    context: 'mybo/claim-handoff/v1',
+    canonicalRequest: canonicalJson(claimHandoffSigningValue(body)), // the signed string
+    signature: body.signature.sig, // base64url Ed25519
+  },
+  reissueOnIdempotentReplay: true,
+  remote: { ip },
+})
+// A served re-issue carries `installationId`: return that, not the one minted
+// for this attempt, which the device row never recorded.
+```
+
+The library fails closed on every part of it. The context must equal
+`completionProofContext` exactly, and the signature is verified over the
+configured context, never the presented one, so a signature the device key made
+for another protocol cannot be replayed here. `canonicalRequest` must already be
+canonical, with exactly the six keys and nothing else, so a reordered, spaced,
+extended or duplicate-keyed body is refused rather than normalised. Each signed
+field must equal resolved state: the claim session, the key it recorded, and the
+fingerprint and idempotency key of the call. `signedAt` must be inside the skew
+window. The nonce is burned in the same per-session scope as the library's own
+proof, so a captured proof is spent once served. The binding compares run in
+constant time over SHA-256 digests. `installationId` is deliberately unbound.
+The context must match `DEVICE_PROOF_CONTEXT_PATTERN` and must not name
+`narduk-devices`, or `createDevices` throws.
+
 `approval_required` covers "not approved yet" and "the approval expired";
 `unauthorized_user` covers an approval recorded for a different org or resource
 than the claim token names.
@@ -349,7 +432,9 @@ gate it:
    above cannot get destructive replay without asking for it.
 2. **Prove the device.** On `completeClaimWithRecordedApproval`,
    `reissueOnIdempotentReplay: true` without `deviceProof` throws
-   `DevicesError('invalid')` — it is not silently downgraded. On
+   `DevicesError('invalid')` — it is not silently downgraded. Either proof shape
+   qualifies: the library's `DeviceCompletionProof`, or a
+   `ContextBoundCompletionProof` over the device's own handoff body. On
    `completeClaim`, the raw approval token is already that proof.
 3. **A refusal is a failed authentication — a refusal, and nothing else.** A
    replay that fails the binding check records an attempt, counts against the
@@ -438,6 +523,7 @@ accepted.
 | The client presents                | Resolve with                                       |
 | ---------------------------------- | -------------------------------------------------- |
 | a session token from `openSession` | `getSessionByToken(sessionToken)`                  |
+| …and you also need the tenant      | `getSessionByTokenWithDevice(sessionToken)`        |
 | a raw credential secret, no id     | `getCredentialBySecret(secret, options)`           |
 | a credential id and its secret     | `verifyCredentialSecret({ credentialId, secret })` |
 
@@ -508,13 +594,21 @@ has no IP, say so with `{ unattributed: true }` (third review MEDIUM-5).
 
 `devices_replay_entries` and `devices_auth_attempts` grow with traffic, so
 `openSession` and `startClaim` each run a bounded opportunistic prune first: one
-`DELETE` of replay entries already past their expiry, one of auth attempts older
-than the widest lockout window (an hour), both index-backed predicates rather
-than a `LIMIT` (D1's SQLite is built without
-`SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads is ever
-removed. The opportunistic call swallows its own errors — housekeeping must not
-fail an authentication — so a consumer that wants the counts, or a cron sweep,
-calls `pruneExpired({ before })` and gets
+`DELETE` of replay entries already past their expiry, one of spent scoped nonces
+past theirs, one of auth attempts older than the widest lockout window (an
+hour), all index-backed predicates rather than a `LIMIT` (D1's SQLite is built
+without `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`). Nothing a live lockout check reads
+is ever removed.
+
+The opportunistic prune runs at most once per interval per database object: the
+shorter of `challengeTtlSeconds` and the shortest lockout window, so five
+minutes by default (#227). `startClaim` is polled while an owner approves, and
+without the throttle every poll cost three `DELETE`s that removed nothing. The
+throttle is keyed on the `db` you pass, so build the service per request if you
+like, but over one shared database object; a fresh drizzle wrapper per request
+gets no throttle. The opportunistic call swallows its own errors — housekeeping
+must not fail an authentication — so a consumer that wants the counts, or a cron
+sweep, calls `pruneExpired({ before })` and gets
 `{ authAttempts, replayEntries, scopedNonces }` back.
 
 ### Sessions
@@ -609,18 +703,28 @@ does not authenticate anything.
   credential and session) and `rotateCredential({ deviceId, credentialClass })`
   (new version, bumps the generation, ends that class's sessions, returns the
   new secret once) are idempotent where a repeat is harmless.
+- `revokeDevice` and `rotateCredential` are all-or-nothing: every row they
+  write, audit row included, goes in one D1 batch / better-sqlite3 transaction.
+  Written one statement at a time, a failure part-way left a revoked device
+  whose credentials still resolved through `getCredentialBySecret` — which reads
+  the credential row, not the device — or a rotation that had killed the old
+  secret with that class's sessions still open (narduk-libs#231). The device
+  write, the new credential and the audit row are gated on the device still
+  being `claimed`, so a revocation that lost a race writes nothing and a
+  rotation racing one issues nothing (`revoked`).
 - `verifyCredentialSecret({ credentialId, secret })` is the bearer check for
   routes that take the `ingest` secret directly.
 
 ### Database typing
 
 The service accepts the D1-shaped drizzle database (`LayerDatabase` in
-narduk-core). Atomic claim redemption (`startClaim`) and completion
-(`completeClaim`) use Drizzle's D1 `batch()`; direct better-sqlite3 consumers
-use their driver's synchronous transaction. Pass the real database object,
-including its batch/client capability, rather than a wrapper exposing only
-query-builder methods; unsupported adapters fail with `invalid` before touching
-the claim. The lockout counter prefers the same transaction and degrades to two
+narduk-core). Atomic claim redemption (`startClaim`), completion
+(`completeClaim`), `revokeDevice` and `rotateCredential` use Drizzle's D1
+`batch()`; direct better-sqlite3 consumers use their driver's synchronous
+transaction. Pass the real database object, including its batch/client
+capability, rather than a wrapper exposing only query-builder methods;
+unsupported adapters fail with `invalid` before touching the claim or the
+device. The lockout counter prefers the same transaction and degrades to two
 sequential statements on an adapter without one, so authentication never fails
 for want of a batch. Tests run the shipped migration against real in-memory
 SQLite and against Miniflare's D1.
@@ -636,6 +740,9 @@ export default defineEventHandler(async (event) => {
     credentialClass: 'ingest',
   })
   // session.deviceId, session.credentialId, session.revocationGeneration …
+  // …and the tenant, from the same read:
+  // session.device.orgId, session.device.resourceKind / resourceId,
+  // session.device.installationId
 })
 ```
 
@@ -646,20 +753,47 @@ session and 403 `{ errorCode: 'entitlement_denied' }` when the session's class
 is not the one the route requires. `readBearerSessionToken(event)` is the header
 read on its own. Never log the bearer.
 
+**One statement, tenant included.** A session row says which device opened it,
+but not which org, resource or installation that device belongs to — those are
+device columns. A consumer that had to answer "which tenant is this request
+for?" therefore resolved the bearer and then re-read the device: two D1 round
+trips on the hottest authenticated path this package has (narduk-libs#225). The
+guard now resolves both in one joined query and returns
+`DeviceSessionWithDevice`, so `session.device` is already there. The session's
+own fields are unchanged and the device is nested rather than merged, because
+both rows carry `id`, `createdAt`, `revokedAt` and `revocationGeneration`.
+
+`tests/devices-guard-statements.test.ts` pins this on the real D1 driver: one
+statement for the guard end to end, exactly two for the read-then-re-read shape
+it replaces, and `n` statements for `n` requests rather than `2n`. It also
+asserts the join reaches both rows by index, so the single statement stays a
+single indexed seek however many devices and sessions the deployment holds.
+
+The join is inner: a session whose device row is gone resolves to `null` rather
+than to a session with no tenant. Device status and revocation generation are
+not re-tested there, because `revokeDevice` and `rotateCredential` revoke the
+device's sessions in the same batch that bumps the generation — a live session
+already implies a device that was not revoked out from under it.
+
 ## Wire mapping to the mybo-at-v2 contracts
 
-| `@mybo/contracts`                                          | This package                                                                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `ClaimStartRequest`                                        | `startClaim(input)`; add `remote` from the request                                                             |
-| `ClaimStartResponse.claimSessionId`                        | `claimSessionId` — `null` when no session exists (`invalid_token`, `expired`, `revoked`, `rate_limited`)       |
-| `ClaimStartStatus` / `ClaimCompleteStatus`                 | `CLAIM_START_STATUSES` / `CLAIM_COMPLETE_STATUSES`, member for member                                          |
-| `ClaimCompleteRequest.vesselId`                            | `resource: { kind: 'vessel', id: vesselId }`; `approvedByUserId` is the authenticated user                     |
-| `ClaimCompleteResponse.edgeDeviceId`                       | `deviceId`                                                                                                     |
-| `IssuedCredential`                                         | `credentials[]` (`credentialClass`, `credentialId`, `fingerprint`, `secret`, `expiresAt?`; `version` is extra) |
-| `CLAIM_LOCKOUT_POLICY`                                     | `DEVICES_LOCKOUT_POLICY`                                                                                       |
-| `CredentialClass`                                          | `CREDENTIAL_CLASSES`                                                                                           |
-| `SessionRevokeMessage.revocationGeneration`                | `Device.revocationGeneration`, snapshotted into each session                                                   |
-| `edgeCredential` security scheme (`Authorization: Bearer`) | `requireDeviceSession(event, { devices, credentialClass })`; the bearer is `openSession`'s `sessionToken`      |
+| `@mybo/contracts`                                          | This package                                                                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `ClaimStartRequest`                                        | `startClaim(input)`; add `remote` from the request                                                                         |
+| `ClaimStartResponse.claimSessionId`                        | `claimSessionId` — `null` when no session exists (`invalid_token`, `expired`, `revoked`, `rate_limited`)                   |
+| `ClaimStartStatus` / `ClaimCompleteStatus`                 | `CLAIM_START_STATUSES` / `CLAIM_COMPLETE_STATUSES`, member for member                                                      |
+| `ClaimCompleteRequest.vesselId`                            | `resource: { kind: 'vessel', id: vesselId }`; `approvedByUserId` is the authenticated user                                 |
+| `ClaimCompleteResponse.edgeDeviceId`                       | `deviceId`                                                                                                                 |
+| `IssuedCredential`                                         | `toWireCredential(issued)` over `credentials[]` (`credentialClass`, `credentialId`, `fingerprint`, `secret`, `expiresAt?`) |
+| `CLAIM_LOCKOUT_POLICY`                                     | `DEVICES_LOCKOUT_POLICY`                                                                                                   |
+| `CredentialClass`                                          | `CREDENTIAL_CLASSES`                                                                                                       |
+| `SessionRevokeMessage.revocationGeneration`                | `Device.revocationGeneration`, snapshotted into each session                                                               |
+| `edgeCredential` security scheme (`Authorization: Bearer`) | `requireDeviceSession(event, { devices, credentialClass })`; the bearer is `openSession`'s `sessionToken`                  |
+
+`toWireCredential` is exported beside `IssuedCredential` from
+`@narduk-enterprises/narduk-devices/shared/types/devices`. `version` stays on
+the library type — it is part of the signed session request and makes a rotation
+observable — and the mapper is the one place that strips it for the wire.
 
 The `userApprovalToken` the contract carries is minted by `issueApprovalToken`
 from the owner/admin's fresh session, after the consumer has checked the role

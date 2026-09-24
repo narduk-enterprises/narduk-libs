@@ -51,9 +51,11 @@ function layerFor(options: Partial<Parameters<typeof makeLayer>[0]> = {}): MapKi
 
 function makeLayer(options: {
   createPinElement?: (item: Station, isSelected: boolean) => { element: HTMLElement }
+  focusable?: boolean
   itemKey: (item: Station, index: number) => string
   itemLabel?: (item: Station) => string
-  onSelect?: (id: string | null) => void
+  onHover?: (id: string | null) => void
+  onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
   pinGeometry?: (item: Station) => { anchor?: 'center'; size?: { height: number; width: number } }
 }): MapKitPinLayer<Station> {
   return new MapKitPinLayer<Station>({
@@ -229,7 +231,7 @@ describe('the library-owned host (§c.2)', () => {
     expect(host?.getAttribute('data-mapkit-pin')).toBe('station-1')
   })
 
-  it('activates on Enter and on Space, not only on click', () => {
+  it('activates on Enter and on Space, not only on click, and says which', () => {
     const onSelect = vi.fn()
     const layer = layerFor({ onSelect })
     layer.setItems([station(1)])
@@ -239,7 +241,11 @@ describe('the library-owned host (§c.2)', () => {
     host.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ' ' }))
     host.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-    expect(onSelect.mock.calls).toStrictEqual([['station-1'], ['station-1'], ['station-1']])
+    expect(onSelect.mock.calls).toStrictEqual([
+      ['station-1', 'keyboard'],
+      ['station-1', 'keyboard'],
+      ['station-1', 'pointer'],
+    ])
   })
 
   it('toggles the selection off when the selected pin is activated again', () => {
@@ -250,13 +256,82 @@ describe('the library-owned host (§c.2)', () => {
 
     layer.hostFor('station-1')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-    expect(onSelect).toHaveBeenCalledWith(null)
+    expect(onSelect).toHaveBeenCalledWith(null, 'pointer')
+  })
+
+  it('reports hover without rebuilding the host (narduk-libs#517)', () => {
+    const onHover = vi.fn()
+    const layer = layerFor({ onHover })
+    const items = [station(1), station(2)]
+    layer.setItems(items)
+    const host = layer.hostFor('station-1')!
+    harness.fake.inspect.reset()
+
+    host.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+    expect(onHover).toHaveBeenCalledWith('station-1')
+    layer.setHovered('station-1')
+
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(true)
+    expect(harness.fake.inspect.annotationsAdded).toBe(0)
+    expect(harness.fake.inspect.annotationsRemoved).toBe(0)
+
+    host.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    expect(onHover).toHaveBeenLastCalledWith(null)
+    layer.setHovered(null)
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(false)
   })
 
   it('refuses to render a pin with no accessible name', () => {
     const layer = makeLayer({ itemKey: defaultMapKitItemKey })
 
     expect(() => layer.setItems([station(1)])).toThrow('itemLabel is required')
+  })
+
+  it('refuses BEFORE it touches the registry, so no half-built layer survives', () => {
+    // 2.1.0 threw from inside the per-item loop, after the first pins were
+    // already on the map, which is why a failure left a partly-rendered map.
+    const layer = makeLayer({ itemKey: defaultMapKitItemKey })
+
+    expect(() => layer.setItems([station(1), station(2)])).toThrow('itemLabel is required')
+    expect(layer.size).toBe(0)
+    expect(harness.fake.inspect.annotationsAdded).toBe(0)
+  })
+})
+
+describe('a decorative, non-interactive pin layer (K-8)', () => {
+  it('builds a host with no role, tabindex, label or listeners', () => {
+    const onSelect = vi.fn()
+    const layer = makeLayer({ focusable: false, itemKey: defaultMapKitItemKey, onSelect })
+    layer.setItems([station(1)])
+    const host = layer.hostFor('station-1')!
+
+    // An `aria-hidden` map may not contain focusable descendants (axe
+    // `aria-hidden-focus`), and 2.1.0 gave every pin a tabindex unconditionally.
+    expect(host.getAttribute('role')).toBeNull()
+    expect(host.getAttribute('tabindex')).toBeNull()
+    expect(host.getAttribute('aria-label')).toBeNull()
+    expect(host.getAttribute('aria-pressed')).toBeNull()
+    expect(host.getAttribute('data-mapkit-pin')).toBe('station-1')
+
+    host.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    host.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('stops requiring itemLabel, because there is nothing to name', () => {
+    const layer = makeLayer({ focusable: false, itemKey: defaultMapKitItemKey })
+
+    expect(() => layer.setItems([station(1)])).not.toThrow()
+    expect(layer.size).toBe(1)
+  })
+
+  it('leaves aria-pressed off the selected host too', () => {
+    const layer = makeLayer({ focusable: false, itemKey: defaultMapKitItemKey })
+    layer.setItems([station(1), station(2)])
+
+    layer.setSelected('station-2')
+
+    expect(layer.hostFor('station-2')?.getAttribute('aria-pressed')).toBeNull()
   })
 })
 

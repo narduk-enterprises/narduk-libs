@@ -1,5 +1,216 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.3.22
+
+### Patch Changes
+
+- Updated dependencies [dfa8d39]
+  - @narduk-enterprises/narduk-core@2.13.1
+
+## 0.3.21
+
+### Patch Changes
+
+- Updated dependencies [e8a373e]
+- Updated dependencies [12f3294]
+- Updated dependencies [e87803e]
+  - @narduk-enterprises/narduk-core@2.13.0
+
+## 0.3.20
+
+### Patch Changes
+
+- Updated dependencies [551e39a]
+  - @narduk-enterprises/narduk-core@2.12.0
+
+## 0.3.19
+
+### Patch Changes
+
+- Updated dependencies [5747011]
+- Updated dependencies [02b6c1a]
+- Updated dependencies [b0dca25]
+- Updated dependencies [45ea540]
+- Updated dependencies [f395bd6]
+  - @narduk-enterprises/narduk-core@2.11.0
+
+## 0.3.18
+
+### Patch Changes
+
+- Updated dependencies [0da668a]
+- Updated dependencies [5ac629e]
+- Updated dependencies [1759259]
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-core@2.10.1
+  - @narduk-enterprises/narduk-platform@2.1.1
+
+## 0.3.17
+
+### Patch Changes
+
+- 056105e: Bump `@nuxt/ui` from `4.8.1` to `4.11.1` everywhere the layer pins
+  it: the `narduk-core` dependency, the `narduk-shell` peer and dev pins, the
+  `narduk-ai` and `design-system-build` dev pins, and the `create-narduk-app`
+  generator manifest (following the same coordinated-pin pattern as 8f693b1).
+
+  A consumer app already on `@nuxt/ui@4.11.1` (buoys#287) failed
+  `nuxt typecheck` against narduk-core's `AppTabs.vue`:
+
+  ```
+  error TS2345: Argument of type '{ ... items: TabsItem[] | undefined; ... }' is
+  not assignable to parameter of type '... items?: TabsItem[] | undefined; ...'.
+    Type 'import(".../@nuxt+ui@4.8.1/.../Tabs.d.vue").TabsItem[] | undefined' is
+    not assignable to type 'import(".../@nuxt+ui@4.11.1/.../Tabs.d.vue").TabsItem[]
+    | undefined'.
+  ```
+
+  Two different `@nuxt/ui` installs (narduk-core's pinned `4.8.1` and the app's
+  own `4.11.1`) produced structurally distinct `TabsItem`/`AvatarProps` types
+  that TypeScript will not unify, even though both come from the same package
+  name. Matching narduk-core's declared version to the app's removes the
+  duplicate-copy mismatch.
+
+  `nuxt typecheck` passes clean in narduk-core against `4.11.1` with no source
+  changes; no other breaking change between `4.8.1` and `4.11.1` touched
+  anything in this workspace.
+
+  Consumer migration: an app that declares `@nuxt/ui` itself must move its own
+  pin to `4.11.1` in the same change that takes this release. `narduk-shell`'s
+  peer is exact, so any other version is a peer conflict, and `narduk-core`
+  carries `@nuxt/ui` as a dependency, so a different app-level pin resolves a
+  second copy -- the duplicate-copy failure this release removes.
+
+  Refs narduk-enterprises/buoys#287.
+
+- Updated dependencies [056105e]
+  - @narduk-enterprises/narduk-core@2.10.0
+
+## 0.3.16
+
+### Patch Changes
+
+- Updated dependencies [671fbf3]
+  - @narduk-enterprises/narduk-core@2.9.0
+
+## 0.3.15
+
+### Patch Changes
+
+- Updated dependencies [df7568d]
+  - @narduk-enterprises/narduk-core@2.8.1
+
+## 0.3.14
+
+### Patch Changes
+
+- Updated dependencies [cecc72a]
+- Updated dependencies [62b7b79]
+- Updated dependencies [62b7b79]
+- Updated dependencies [c574403]
+- Updated dependencies [2671ccd]
+- Updated dependencies [b672613]
+  - @narduk-enterprises/narduk-core@2.8.0
+
+## 0.3.13
+
+### Patch Changes
+
+- Updated dependencies [693f7d3]
+  - @narduk-enterprises/narduk-core@2.7.0
+
+## 0.3.12
+
+### Patch Changes
+
+- Updated dependencies [fa2f123]
+  - @narduk-enterprises/narduk-core@2.6.4
+
+## 0.3.11
+
+### Patch Changes
+
+- Updated dependencies [ecc731b]
+  - @narduk-enterprises/narduk-core@2.6.3
+
+## 0.3.10
+
+### Patch Changes
+
+- Updated dependencies [81051b0]
+  - @narduk-enterprises/narduk-core@2.6.2
+
+## 0.3.9
+
+### Patch Changes
+
+- Updated dependencies [448e86f]
+- Updated dependencies [7142305]
+  - @narduk-enterprises/narduk-core@2.6.1
+
+## 0.3.8
+
+### Patch Changes
+
+- Updated dependencies [4599aa7]
+- Updated dependencies [4ba5d02]
+  - @narduk-enterprises/narduk-core@2.6.0
+
+## 0.3.7
+
+### Patch Changes
+
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [92835a1]
+  - @narduk-enterprises/narduk-core@2.5.0
+
+## 0.3.6
+
+### Patch Changes
+
+- Updated dependencies [bb37590]
+- Updated dependencies [bb37590]
+  - @narduk-enterprises/narduk-core@2.4.0
+
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies [8da7e33]
+- Updated dependencies [05b3ef9]
+  - @narduk-enterprises/narduk-core@2.3.0
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [fe58c5f]
+  - @narduk-enterprises/narduk-core@2.2.4
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [7ae9278]
+  - @narduk-enterprises/narduk-core@2.2.3
+
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [766ce96]
+  - @narduk-enterprises/narduk-core@2.2.2
+
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [fa41027]
+- Updated dependencies [fa41027]
+  - @narduk-enterprises/narduk-core@2.2.1
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-app",
-  "version": "1.20.1",
+  "version": "1.20.2",
   "private": false,
   "type": "module",
   "description": "Runtime app helpers for Narduk Cloudflare and Nuxt apps.",
@@ -40,12 +40,13 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "prettier": "pnpm run format:check",
-    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "h3": "^1.15.11"
@@ -69,6 +70,6 @@
     }
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

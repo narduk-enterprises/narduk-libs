@@ -25,8 +25,8 @@
  *                  miserable to debug and buys nothing.
  */
 import { defineEventHandler, setResponseHeaders } from 'h3'
-import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { coreRuntimeConfig } from '../utils/runtime-config'
 import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
 
 import type { SecurityHeadersMode } from '../../shared/security-headers'
@@ -50,6 +50,12 @@ const BASELINE_CONNECT_SRC = [
   'https://*.google-analytics.com',
   'https://*.analytics.google.com',
   'https://*.googletagmanager.com',
+  // GA4's Google-signals feature sends a second page_view beacon straight to
+  // https://www.google.com/g/collect (not a *.google-analytics.com host).
+  // A property with Google signals off never sends this beacon and does not
+  // need this host (issue #472; shared/security-headers.ts BASELINE_ALLOWLIST
+  // carries the matching entry and the full doc citation).
+  'https://www.google.com',
   DEFAULT_POSTHOG_HOST,
   'https://us-assets.i.posthog.com',
   'https://*.apple-mapkit.com',
@@ -95,7 +101,7 @@ function resolvePresetMode(config: object): SecurityHeadersMode {
 }
 
 export default defineEventHandler((event) => {
-  const config = useRuntimeConfig(event)
+  const config = coreRuntimeConfig(event)
   const isDev = import.meta.dev
   const presetMode = resolvePresetMode(config)
   const appVersion = config.public.appVersion
@@ -173,6 +179,9 @@ export default defineEventHandler((event) => {
       "object-src 'none'",
       finalScriptSrc,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      // The `https:` wildcard already covers GA4's Google-signals image
+      // beacon at https://www.google.com (issue #472), so this directive
+      // needs no explicit host addition to match BASELINE_CONNECT_SRC above.
       "img-src 'self' data: https:",
       "font-src 'self' https://fonts.gstatic.com",
       finalConnectSrc,

@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-timeseries",
-  "version": "0.2.2",
+  "version": "0.3.2",
   "private": false,
   "type": "module",
   "description": "A TelemetryHistoryStore boundary for Narduk products: a TimescaleDB + PostGIS adapter with bounded batched writes, rollup and track queries, tier-parameterized retention, and a read-only Influx adapter for dual-run parity.",
@@ -51,12 +51,12 @@
     "pretypecheck": "pnpm run deps:build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "prelint": "pnpm run deps:build",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "lint:strict": "eslint src tests --max-warnings 0",
     "pretest:unit": "pnpm run deps:build",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "check:package": "pnpm run build && publint --strict && pnpm pack --dry-run",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
@@ -76,6 +76,6 @@
     "vitest": "4.1.11"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

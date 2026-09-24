@@ -1,5 +1,209 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.25.0
+
+### Minor Changes
+
+- 1b14eaf: Add `nardukAnalytics.privacy: 'strict'` for apps whose pages hold
+  private records. PostHog then runs with no autocapture, rage clicks, dead
+  clicks, heatmaps, session replay, surveys, `/flags` request or remote
+  extensions, and a final `before_send` hook reduces every URL, pathname and
+  referrer property — including `$set`, `$set_once` and nested web-vitals
+  payloads — to the matched route pattern, drops page titles and element text,
+  and reports exception messages only in narduk-core's redacted form. GA4
+  receives route patterns as `page_path`, `page_location` and `page_title`, with
+  Google signals and ad personalisation off. The option is build-time and wins
+  over an app's own `runtimeConfig.public.analyticsPrivacy`; the runtime-public
+  overlay never carries it, so a Worker variable cannot switch a strict app back
+  to standard. Standard apps see no change.
+
+## 1.24.0
+
+### Minor Changes
+
+- 3f8eac8: The `/api/admin/**` GA, Search Console, Indexing and PostHog routes
+  register only when the app has a database: an app declaring
+  `nardukCore.databaseBackend: 'none'` (or `NUXT_DATABASE_BACKEND=none`) no
+  longer ships routes `requireAdmin` could only ever refuse.
+  `nardukAnalytics.admin` overrides either way (#524).
+
+## 1.23.1
+
+### Patch Changes
+
+- 5747011: narduk-analytics turns `narduk/prefer-shared-collection` off for its
+  admin panels (narduk-libs#744). The rule is app-tier, and a module sits below
+  narduk-shell, so the panels keep plain `<UTable>`s. Only the package's lint
+  configuration changed; the published output is the same.
+
+## 1.23.0
+
+### Minor Changes
+
+- 5ac629e: The build now fails when narduk-core is registered with `app: false`
+  while narduk-analytics' client half is on (narduk-libs#663). narduk-core
+  registers the runtime-public overlay only when its `app` option is on, so that
+  shape passed the "is narduk-core installed" guard and ran the analytics client
+  plugins with no PostHog key, GA id or deployment target. The result was no
+  analytics and no signal. The guard reads the `nardukCore` key and inline
+  `[narduk-core, options]` module tuples. To fix a failing build, turn
+  `nardukCore.app` back on, or set `nardukAnalytics.app: false` to keep only the
+  server routes.
+
+## 1.22.1
+
+### Patch Changes
+
+- e61a56d: `meta.compatibility.nuxt` now says `>=4.0.0`, matching the `nuxt`
+  peer range these modules already declare (#444). Before, the module metadata
+  still claimed `>=3.16.0`, so a Nuxt 3 app got no compatibility warning from
+  Nuxt and failed later instead. Nuxt 4 apps see no change.
+
+## 1.22.0
+
+### Minor Changes
+
+- c7a6b59: Declare `narduk-core` as a peer range instead of an exact-pinned
+  dependency.
+
+  Both packages carried `@narduk-enterprises/narduk-core` as `workspace:*` in
+  `dependencies`, which publishes as an exact pin. An app upgrading narduk-core
+  therefore kept a second, older copy alive underneath these two — and
+  narduk-core is a Nuxt module that appends global CSS to `nuxt.options.css`, so
+  which copy's stylesheet wins comes down to module resolution order rather than
+  anything the app declares.
+
+  `narduk-core` now sits in `peerDependencies` at `>=2.6.3 <3.0.0` with a
+  `workspace:*` `devDependencies` entry for these packages' own builds and
+  tests, matching `narduk-uploads`. The consuming app owns the single resolved
+  version.
+
+  Released as a minor rather than a patch because it changes the published
+  manifest shape: an app that reached narduk-core only transitively through
+  these packages must now resolve it itself. Every generated app already
+  declares narduk-core directly — it is the first entry in the generator's Nuxt
+  `modules` list — and pnpm and npm both auto-install a missing peer, so no
+  estate app is expected to need a change.
+
+### Patch Changes
+
+- 07bde95: Stop the published server sources from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-analytics` ships raw `.ts`, so a consumer compiles `server/**` inside
+  its own Nitro type program — where the runtime-config augmentation this module
+  registers does not take effect. Every `runtimeConfig` key is `unknown` there,
+  and a truthiness guard narrows `unknown` to `{}`, so `config.ownerTagSecret`
+  flowing into a `string` failed in every consumer while this package's own
+  `nuxt typecheck` stayed green.
+
+  Server code now reads config through a package-owned
+  `analyticsRuntimeConfig(event)` accessor whose `AnalyticsServerRuntimeConfig`
+  type promises only what `src/module.ts` actually defaults, so the same types
+  hold in this workspace and in a consumer. A new
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `server/**` against a deliberately unaugmented ambient
+  context so the gap cannot reopen silently.
+
+## 1.21.13
+
+### Patch Changes
+
+- Updated dependencies [693f7d3]
+  - @narduk-enterprises/narduk-core@2.7.0
+
+## 1.21.12
+
+### Patch Changes
+
+- Updated dependencies [fa2f123]
+  - @narduk-enterprises/narduk-core@2.6.4
+
+## 1.21.11
+
+### Patch Changes
+
+- Updated dependencies [ecc731b]
+  - @narduk-enterprises/narduk-core@2.6.3
+
+## 1.21.10
+
+### Patch Changes
+
+- Updated dependencies [81051b0]
+  - @narduk-enterprises/narduk-core@2.6.2
+
+## 1.21.9
+
+### Patch Changes
+
+- Updated dependencies [448e86f]
+- Updated dependencies [7142305]
+  - @narduk-enterprises/narduk-core@2.6.1
+
+## 1.21.8
+
+### Patch Changes
+
+- Updated dependencies [4599aa7]
+- Updated dependencies [4ba5d02]
+  - @narduk-enterprises/narduk-core@2.6.0
+
+## 1.21.7
+
+### Patch Changes
+
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [92835a1]
+  - @narduk-enterprises/narduk-core@2.5.0
+
+## 1.21.6
+
+### Patch Changes
+
+- Updated dependencies [bb37590]
+- Updated dependencies [bb37590]
+  - @narduk-enterprises/narduk-core@2.4.0
+
+## 1.21.5
+
+### Patch Changes
+
+- Updated dependencies [8da7e33]
+- Updated dependencies [05b3ef9]
+  - @narduk-enterprises/narduk-core@2.3.0
+
+## 1.21.4
+
+### Patch Changes
+
+- Updated dependencies [fe58c5f]
+  - @narduk-enterprises/narduk-core@2.2.4
+
+## 1.21.3
+
+### Patch Changes
+
+- Updated dependencies [7ae9278]
+  - @narduk-enterprises/narduk-core@2.2.3
+
+## 1.21.2
+
+### Patch Changes
+
+- Updated dependencies [766ce96]
+  - @narduk-enterprises/narduk-core@2.2.2
+
+## 1.21.1
+
+### Patch Changes
+
+- Updated dependencies [fa41027]
+- Updated dependencies [fa41027]
+  - @narduk-enterprises/narduk-core@2.2.1
+
 ## 1.21.0
 
 ### Minor Changes

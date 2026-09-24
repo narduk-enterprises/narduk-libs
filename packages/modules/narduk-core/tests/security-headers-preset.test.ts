@@ -56,10 +56,30 @@ describe('strict policy', () => {
     expect(directive('style-src')).toContain("'unsafe-inline'")
   })
 
-  it('adds the form-action and upgrade-insecure-requests the legacy policy lacked', () => {
+  it('adds the form-action the legacy policy lacked', () => {
     const csp = resolveSecurityHeaders(true).csp
     expect(csp['form-action']).toEqual(["'self'"])
-    expect(csp['upgrade-insecure-requests']).toBe(true)
+  })
+
+  it('disables upgrade-insecure-requests in report-only and keeps it when enforcing', () => {
+    const reportOnly = resolveSecurityHeaders({ enabled: true })
+    const reportOnlyHeaders = buildNuxtSecurityConfig(reportOnly).headers
+      .contentSecurityPolicy as Record<string, unknown>
+    expect(reportOnly.mode).toBe('report-only')
+    // Explicitly `false`, never absent: nuxt-security's default CSP turns this
+    // directive on, and defu only overrides keys we actually declare. The
+    // report-only merge in `nuxt-security-contract.test.ts` is what proves the
+    // distinction end to end -- this assertion alone cannot see the default.
+    expect(Object.hasOwn(reportOnly.csp, 'upgrade-insecure-requests')).toBe(true)
+    expect(reportOnly.csp['upgrade-insecure-requests']).toBe(false)
+    expect(reportOnlyHeaders['upgrade-insecure-requests']).toBe(false)
+
+    const enforced = resolveSecurityHeaders({ enabled: true, enforce: true })
+    const enforcedHeaders = buildNuxtSecurityConfig(enforced).headers
+      .contentSecurityPolicy as Record<string, unknown>
+    expect(enforced.mode).toBe('enforce')
+    expect(enforced.csp['upgrade-insecure-requests']).toBe(true)
+    expect(enforcedHeaders['upgrade-insecure-requests']).toBe(true)
   })
 
   it('defaults frame-ancestors to none and mirrors it into X-Frame-Options', () => {
@@ -133,6 +153,124 @@ describe('allowlist surface', () => {
     const connect = resolved.csp['connect-src'] as string[]
     expect(connect.filter((source) => source === 'https://us.i.posthog.com')).toHaveLength(1)
     expect(connect.filter((source) => source === 'https://x.example')).toHaveLength(1)
+  })
+})
+
+describe("baseline: 'self' (issue #560)", () => {
+  // An app that reaches no third party could not previously enforce the strict
+  // nonce policy without WIDENING its CSP, because `allow` only adds to the
+  // estate baseline. operator-portal is the consumer: taking 'unsafe-inline'
+  // off script-src would have cost it eight third-party origins on
+  // connect-src, which is the directive that governs exfiltration.
+
+  it("defaults to the estate baseline, so an upgrade narrows nobody's policy", () => {
+    expect(resolveSecurityHeaders({ enabled: true }).baseline).toBe('estate')
+    expect(resolveSecurityHeaders(true).baseline).toBe('estate')
+    expect(directive('connect-src')).toEqual(
+      expect.arrayContaining([...BASELINE_ALLOWLIST.connect]),
+    )
+  })
+
+  it("admits no third-party origin on any directive when set to 'self'", () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    expect(resolved.baseline).toBe('self')
+    for (const [key, directiveName] of [
+      ['connect', 'connect-src'],
+      ['font', 'font-src'],
+      ['frame', 'frame-src'],
+      ['img', 'img-src'],
+      ['media', 'media-src'],
+      ['script', 'script-src'],
+      ['style', 'style-src'],
+      ['worker', 'worker-src'],
+    ] as const) {
+      const sources = resolved.csp[directiveName] as string[]
+      for (const origin of BASELINE_ALLOWLIST[key]) {
+        expect(sources, `${directiveName} must not inherit ${origin}`).not.toContain(origin)
+      }
+    }
+  })
+
+  it('drops the scheme sources too, which is the part an adopter trips over', () => {
+    // BASELINE_ALLOWLIST is not purely third-party hosts: img carries `data:`
+    // (the Nuxt image pipeline) and worker carries `blob:` (map and chart
+    // libraries). 'self' inherits nothing, so these go with the hosts. Pinned
+    // because an app that flips `enforce` without noticing loses working
+    // images or workers at runtime, not at build time.
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    expect(resolved.csp['img-src']).not.toContain('data:')
+    expect(resolved.csp['worker-src']).not.toContain('blob:')
+
+    const named = resolveSecurityHeaders({
+      enabled: true,
+      baseline: 'self',
+      allow: { img: ['data:'], worker: ['blob:'] },
+    })
+    expect(named.csp['img-src']).toEqual(["'self'", 'data:'])
+    expect(named.csp['worker-src']).toEqual(["'self'", 'blob:'])
+  })
+
+  it("reduces each directive to 'self' plus the app's own allow", () => {
+    const resolved = resolveSecurityHeaders({
+      enabled: true,
+      baseline: 'self',
+      allow: { connect: ['https://api.nard.uk'] },
+    })
+    expect(resolved.csp['connect-src']).toEqual(["'self'", 'https://api.nard.uk'])
+    expect(resolved.csp['img-src']).toEqual(["'self'"])
+    expect(resolved.csp['font-src']).toEqual(["'self'"])
+  })
+
+  it('keeps every concession the nonce policy depends on', () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    const script = resolved.csp['script-src'] as string[]
+    expect(script).toEqual(["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"])
+    // style-src's unsafe-inline is Vue's scoped-style runtime, not a baseline
+    // origin, so dropping the baseline must not drop it.
+    expect(resolved.csp['style-src']).toEqual(["'self'", "'unsafe-inline'"])
+    expect(resolved.csp['object-src']).toEqual(["'none'"])
+    expect(resolved.csp['frame-ancestors']).toEqual(["'none'"])
+    expect(resolved.csp['form-action']).toEqual(["'self'"])
+  })
+
+  it("still honours an app's legacy CSP_*_SRC values, which are its own, not the estate's", () => {
+    const resolved = resolveSecurityHeaders(
+      { enabled: true, baseline: 'self' },
+      { cspConnectSrc: 'https://legacy.example' },
+    )
+    expect(resolved.csp['connect-src']).toEqual(["'self'", 'https://legacy.example'])
+  })
+
+  it('is the strictly narrower policy: every self source is also an estate source', () => {
+    const estate = resolveSecurityHeaders({ enabled: true })
+    const self = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    for (const name of Object.keys(self.csp)) {
+      const selfSources = self.csp[name]
+      if (!Array.isArray(selfSources)) continue
+      expect(estate.csp[name], `${name} must be a superset`).toEqual(
+        expect.arrayContaining(selfSources),
+      )
+    }
+  })
+})
+
+describe('GA4 Google-signals beacon (issue #472)', () => {
+  // Pins the exact GA host set so a later edit to either directive shows up
+  // in review, per the issue's own request.
+  const gaHosts = (sources: readonly string[]) =>
+    sources.filter((source) => source.includes('google') || source.includes('doubleclick'))
+
+  it('allows the Google-signals page_view beacon on connect-src', () => {
+    expect(gaHosts(BASELINE_ALLOWLIST.connect)).toEqual([
+      'https://*.google-analytics.com',
+      'https://*.analytics.google.com',
+      'https://*.googletagmanager.com',
+      'https://www.google.com',
+    ])
+  })
+
+  it('allows the Google-signals image-beacon fallback on img-src', () => {
+    expect(gaHosts(BASELINE_ALLOWLIST.img)).toEqual(['https://www.google.com'])
   })
 })
 
@@ -275,5 +413,22 @@ describe('nuxt-security configuration', () => {
     ).headers.permissionsPolicy as Record<string, unknown>
     expect(policy.geolocation).toEqual(['self'])
     expect(policy.camera).toEqual([])
+  })
+
+  // narduk-libs#385: the env var used to reach only the legacy middleware.
+  it('grants geolocation from NUXT_PUBLIC_ALLOW_GEOLOCATION when the preset is on', () => {
+    const policyFor = (
+      options: Parameters<typeof resolveSecurityHeaders>[0],
+      allowGeolocation: boolean,
+    ) =>
+      buildNuxtSecurityConfig(resolveSecurityHeaders(options, { allowGeolocation })).headers
+        .permissionsPolicy as Record<string, unknown>
+    expect(policyFor(true, true).geolocation).toEqual(['self'])
+    expect(policyFor(true, true).camera).toEqual([])
+    expect(policyFor(true, false).geolocation).toEqual([])
+    // An explicit app setting wins over the env var, in both directions.
+    expect(
+      policyFor({ enabled: true, permissionsPolicy: { geolocation: [] } }, true).geolocation,
+    ).toEqual([])
   })
 })

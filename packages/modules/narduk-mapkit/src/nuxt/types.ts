@@ -16,8 +16,13 @@ export interface MapKitRateLimitOptions {
 export interface ModuleOptions {
   /** Register `<AppMapKit>`. */
   component: boolean
-  /** Register `useMapKit()`. */
+  /** Register `useMapKit()`, `useMapKitView()` and `useMapKitFullscreen()`. */
   composables: boolean
+  /**
+   * Add the stylesheet for the `./marks` DOM marks (`MAPKIT_MARKS_CSS`) to the
+   * app. Off by default: only an app that draws marks with `./marks` needs it.
+   */
+  marks: boolean
   /**
    * App-wide default for the `libraries` prop. MapKit JS 6's `mapkit.core.js`
    * is a stub, so without `'map'` there is no `mapkit.Map` at all -- which is
@@ -32,11 +37,21 @@ export interface ModuleOptions {
   /** Passed to Apple's loader. */
   language?: string
   /**
-   * Fixed-window ceiling applied to the token route per routed origin. An app
-   * that mounts narduk-core's own rate limiter on
+   * Opt-in list of hosts the token route mints for; any other routed host is
+   * refused 403 before the limiter and before signing. Omitted, every routed
+   * host is accepted, which is right on Cloudflare Workers. Set it when the app
+   * runs on a Node listener that accepts arbitrary `Host` headers. Entries are
+   * `host[:port]`, or `*.example.com` for any subdomain (narduk-libs#437).
+   */
+  allowedHosts?: string[]
+  /**
+   * Opt-in fixed-window ceiling on the token route, per routed origin. Omitted
+   * (the default), the route applies NO rate limit: MapKit tokens are cheap,
+   * same-origin and short-lived, and a default ceiling kept tripping real users
+   * (narduk-libs#485). An app that mounts its own limiter on
    * `event.context.nardukMapKit.rateLimit` takes precedence over this.
    */
-  rateLimit: MapKitRateLimitOptions
+  rateLimit?: MapKitRateLimitOptions
   /**
    * Emit `renderHTMLAttributes()` during SSR so `mapkit.core.js` downloads
    * before hydration. Emitted WITHOUT a token: a token in the tag is MapKit's
@@ -88,8 +103,17 @@ export interface MapKitCircle {
   radius: number
 }
 
-/** v6 exposes these as top-level enums; `mapkit.Map.MapTypes` is gone. */
-export type MapKitMapType = 'hybrid' | 'muted' | 'satellite' | 'standard'
+/**
+ * The basemap the map draws.
+ *
+ * `'muted'` is this library's own spelling and is translated for MapKit by
+ * `runtime/basemap.ts`; MapKit JS 6's own value is `'mutedStandard'`, which
+ * 2.1.1 accepts as well so an app may name Apple's value directly (K-3). The
+ * other three are Apple's values verbatim. v6 exposes these as the top-level
+ * `mapkit.MapType` enum; `mapkit.Map.MapTypes` still exists but Apple
+ * deprecates it in favour of `mapkit.MapType`.
+ */
+export type MapKitMapType = 'hybrid' | 'muted' | 'mutedStandard' | 'satellite' | 'standard'
 
 export type MapKitColorScheme = 'auto' | 'dark' | 'light'
 

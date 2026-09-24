@@ -495,4 +495,30 @@ describe('the Intl cache', () => {
       counter.restore()
     }
   })
+
+  it('bounds the unit-support cache too, unlike its sibling before this fix (#287)', () => {
+    // 300 well-formed but bogus unit strings: Intl rejects every one with a
+    // RangeError, and isIntlUnit remembers the verdict for each -- nothing
+    // capped that memory before this fix.
+    const bogusUnit = (index: number) => `bogus-unit-${index}`
+    const probe = 'foot'
+    const counter = countConstructions('NumberFormat')
+    try {
+      formatQuantity(1, { ...en, unit: probe })
+      counter.reset()
+      formatQuantity(1, { ...en, unit: probe })
+      expect(counter.calls).toBe(0)
+
+      // The cap clears rather than evicting one entry, so the probe above's
+      // remembered verdict is gone afterwards and its next call re-derives it.
+      for (let index = 0; index < 300; index++) {
+        formatQuantity(1, { ...en, unit: bogusUnit(index) })
+      }
+      counter.reset()
+      formatQuantity(1, { ...en, unit: probe })
+      expect(counter.calls).toBeGreaterThan(0)
+    } finally {
+      counter.restore()
+    }
+  })
 })

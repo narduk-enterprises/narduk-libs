@@ -3,7 +3,27 @@ import ui from '@nuxt/ui/vite'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  define: {
+    // Nuxt replaces this at build time. Tests are a plain Vite graph, so the
+    // click path behind `import.meta.client` (NeCsvDownload) needs a value.
+    'import.meta.client': 'true',
+    'import.meta.server': 'false',
+  },
   plugins: [
+    {
+      name: 'import-meta-client',
+      enforce: 'post',
+      transform(code: string, id: string) {
+        if (id.includes('node_modules')) return
+        if (!code.includes('import.meta.client') && !code.includes('import.meta.server')) return
+        return {
+          code: code
+            .replaceAll('import.meta.client', 'true')
+            .replaceAll('import.meta.server', 'false'),
+          map: null,
+        }
+      },
+    },
     vue(),
     // The suite's components import Nuxt UI's own single-file components
     // directly (`@nuxt/ui/components/Modal.vue`), and those files import the

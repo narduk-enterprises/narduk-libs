@@ -76,6 +76,11 @@ export interface ToolchainSite {
   derives: boolean
   /** Set when `--fix` can rewrite this line's literal to the source value. */
   fixable: boolean
+  /** False when nothing at this site can read the source: a shared callable
+   * whose only Node input is `node-version` (#544). Its literal is still a
+   * mirror that must agree, but "use node-version-file" is not an edit the
+   * caller can make. Absent means true. */
+  derivable?: boolean
 }
 
 /* -------------------------------------------------------------------------- */
@@ -205,12 +210,82 @@ function workersBuildsSite(
   return null
 }
 
-/** Whether a workflow's shared-callable job passes `node-version-file`. */
 const CALLER_NODE_VERSION_FILE = /^\s*node-version-file:\s*['"]?([^'"\s#]+)/mu
 const CALLER_NODE_VERSION = /^\s*node-version:\s*['"]?([^'"\s#]+)/mu
-const USES_SHARED_CALLABLE = /narduk-enterprises\/workflows\/\.github\/workflows\/[\w.-]+\.yml@/u
+const USES_SHARED_CALLABLE =
+  /uses:\s*['"]?narduk-enterprises\/workflows\/\.github\/workflows\/([\w.-]+)\.yml@/u
 const USES_SETUP_NODE = /uses:\s*actions\/setup-node@/u
 const USES_PNPM_ACTION_SETUP = /uses:\s*pnpm\/action-setup@/u
+
+/**
+ * What each `narduk-enterprises/workflows` callable accepts for Node, read
+ * from `on.workflow_call.inputs` at workflows `main` 67968e30 (#544):
+ *
+ * - `node-version-file` as well as `node-version`: the caller can and must read
+ *   the source.
+ * - `node-version` only: a caller can restate a literal, which must then agree
+ *   with the source, but has no way to derive it. Parity is
+ *   narduk-enterprises/workflows#135; move a callable to the first set when it
+ *   gains the input.
+ * - no Node input at all (`cursor-review`, `code-review`, `closing-syntax-check`,
+ *   `apple`, `python-data`): the job is not a Node site.
+ *
+ * A callable in none of these sets is judged by what the caller writes: a
+ * `node-version-file` derives, a `node-version` literal restates, and nothing
+ * at all is nothing -- an unknown callable is never told to take an input it
+ * may not declare, which GitHub rejects.
+ */
+const CALLABLES_WITH_NODE_VERSION_FILE = new Set(['nuxt-cloudflare'])
+const CALLABLES_WITH_NODE_VERSION_ONLY = new Set([
+  'docs-governance',
+  'node-library',
+  'reusable-browser-tests',
+  'reusable-node-ci',
+])
+
+interface WorkflowJob {
+  /** The job's lines, verbatim. */
+  lines: string[]
+  /** 0-indexed line of the job's first line within the file. */
+  offset: number
+}
+
+/**
+ * The file's jobs, one block each. Evaluating per job rather than per file
+ * matters: a `node-version-file` in one job used to satisfy every other Node
+ * site in the same file (#544). A file with no recognizable `jobs:` map is one
+ * block, which is what the whole-file reading did.
+ */
+function workflowJobs(text: string): WorkflowJob[] {
+  const lines = text.split('\n')
+  const jobsLine = lines.findIndex((line) => /^jobs:\s*(?:#.*)?$/u.test(line))
+  if (jobsLine === -1) return [{ lines, offset: 0 }]
+  const jobs: WorkflowJob[] = []
+  let indent: string | null = null
+  let current: WorkflowJob | null = null
+  for (let index = jobsLine + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (/^\s*(?:#.*)?$/u.test(line)) {
+      current?.lines.push(line)
+      continue
+    }
+    const leading = /^(\s*)/u.exec(line)?.[1] ?? ''
+    if (leading.length === 0) break
+    indent ??= leading
+    if (leading === indent && /^\s*['"]?[\w-]+['"]?:/u.test(line)) {
+      current = { lines: [line], offset: index }
+      jobs.push(current)
+      continue
+    }
+    current?.lines.push(line)
+  }
+  return jobs.length > 0 ? jobs : [{ lines, offset: 0 }]
+}
+
+function lineInJob(job: WorkflowJob, pattern: RegExp): number | null {
+  const line = lineMatching(job.lines.join('\n'), pattern)
+  return line === null ? null : line + job.offset
+}
 
 function workflowNodeSites(repo: AppRepo): ToolchainSite[] {
   const sites: ToolchainSite[] = []
@@ -218,37 +293,44 @@ function workflowNodeSites(repo: AppRepo): ToolchainSite[] {
     const rel = `.github/workflows/${name}`
     const text = repo.read(rel)
     if (!text) continue
-    const callsShared = USES_SHARED_CALLABLE.test(text)
-    const usesSetupNode = USES_SETUP_NODE.test(text)
-    if (!callsShared && !usesSetupNode) continue
-    const locator = callsShared ? 'shared-workflow caller' : 'actions/setup-node step'
-    const file = CALLER_NODE_VERSION_FILE.exec(text)
-    if (file) {
+    for (const job of workflowJobs(text)) {
+      const body = job.lines.join('\n')
+      const callable = USES_SHARED_CALLABLE.exec(body)?.[1]
+      if (!callable && !USES_SETUP_NODE.test(body)) continue
+      const file = CALLER_NODE_VERSION_FILE.exec(body)
+      const literal = CALLER_NODE_VERSION.exec(body)
+      const locator = callable ? `${callable}.yml caller` : 'actions/setup-node step'
+      const versionOnly = callable !== undefined && CALLABLES_WITH_NODE_VERSION_ONLY.has(callable)
+      // Only a `node-version-file` callable can be faulted for passing nothing;
+      // any other caller that passes nothing declares nothing.
+      if (callable && !CALLABLES_WITH_NODE_VERSION_FILE.has(callable) && !file && !literal) continue
+      if (file) {
+        sites.push({
+          file: rel,
+          locator: `${locator} node-version-file`,
+          toolchain: 'node',
+          value: file[1],
+          line: lineInJob(job, CALLER_NODE_VERSION_FILE),
+          isSource: false,
+          derives: true,
+          fixable: false,
+        })
+        continue
+      }
       sites.push({
         file: rel,
-        locator: `${locator} node-version-file`,
+        locator: `${locator} node-version`,
         toolchain: 'node',
-        value: file[1],
-        line: lineMatching(text, CALLER_NODE_VERSION_FILE),
+        value: literal ? literal[1] : null,
+        line: literal ? lineInJob(job, CALLER_NODE_VERSION) : null,
         isSource: false,
-        derives: true,
+        derives: false,
+        // A structural edit (`node-version:` -> `node-version-file:`), not a value
+        // swap: `--fix` deliberately stays out of an app's workflow shape.
         fixable: false,
+        ...(versionOnly ? { derivable: false } : {}),
       })
-      continue
     }
-    const literal = CALLER_NODE_VERSION.exec(text)
-    sites.push({
-      file: rel,
-      locator: `${locator} node-version`,
-      toolchain: 'node',
-      value: literal ? literal[1] : null,
-      line: literal ? lineMatching(text, CALLER_NODE_VERSION) : null,
-      isSource: false,
-      derives: false,
-      // A structural edit (`node-version:` -> `node-version-file:`), not a value
-      // swap: `--fix` deliberately stays out of an app's workflow shape.
-      fixable: false,
-    })
   }
   return sites
 }
@@ -502,7 +584,24 @@ function evaluate113(scan: ToolchainScan): FoundationSubCheck {
   if (sites.length === 0) {
     return check('11.3', name, STATUS_NA, 'no workflow sets up Node')
   }
-  const restating = sites.filter((site) => !site.derives)
+  // A `node-version`-only callable cannot read the source; 11.1 still holds its
+  // literal to the source value, and workflows#135 is the fix (#544).
+  const underivable = sites.filter((site) => site.derivable === false)
+  const underivableNote =
+    underivable.length > 0
+      ? `; not derivable until narduk-enterprises/workflows#135 (checked by 11.1 instead): ${underivable.map(describe).join(', ')}`
+      : ''
+  const derivable = sites.filter((site) => site.derivable !== false)
+  if (derivable.length === 0) {
+    return check(
+      '11.3',
+      name,
+      STATUS_NA,
+      `no workflow Node site can read ${NODE_SOURCE_FILE}${underivableNote}`,
+      underivable.map((site) => site.file).join(', '),
+    )
+  }
+  const restating = derivable.filter((site) => !site.derives)
   if (restating.length > 0) {
     return check(
       '11.3',
@@ -518,7 +617,7 @@ function evaluate113(scan: ToolchainScan): FoundationSubCheck {
       restating.map((site) => site.file).join(', '),
     )
   }
-  const pointingElsewhere = sites.filter((site) => site.value !== NODE_SOURCE_FILE)
+  const pointingElsewhere = derivable.filter((site) => site.value !== NODE_SOURCE_FILE)
   if (pointingElsewhere.length > 0) {
     return check(
       '11.3',
@@ -534,8 +633,8 @@ function evaluate113(scan: ToolchainScan): FoundationSubCheck {
     '11.3',
     name,
     STATUS_PASS,
-    `${sites.length} workflow step(s) resolve Node via node-version-file: ${NODE_SOURCE_FILE}`,
-    sites.map((site) => site.file).join(', '),
+    `${derivable.length} workflow step(s) resolve Node via node-version-file: ${NODE_SOURCE_FILE}${underivableNote}`,
+    derivable.map((site) => site.file).join(', '),
   )
 }
 
@@ -659,6 +758,6 @@ export function siteStatus(site: ToolchainSite, scan: ToolchainScan): Foundation
   if (site.value === null) return STATUS_NA
   const expected = site.toolchain === 'node' ? scan.sources.node.value : scan.sources.pnpm.value
   if (expected === null) return STATUS_UNKNOWN
-  if (site.file.startsWith('.github/workflows/')) return STATUS_FAIL
+  if (site.file.startsWith('.github/workflows/') && site.derivable !== false) return STATUS_FAIL
   return site.value === expected ? STATUS_PASS : STATUS_FAIL
 }

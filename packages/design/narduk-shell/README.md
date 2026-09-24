@@ -39,7 +39,9 @@ ships `NeConfirmDialog` and `useConfirm()`; item 7
 ships `NeStatePanel`; item 11
 ([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258))
 ships `NePager` and `useCollection()`, the suite's single-flight paged-list
-state machine; item 5
+state machine; item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261))
+ships `NeFilterBar` and `NeSearchInput`; item 5
 ([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252))
 fills the `./format` subpath with the shared `Intl` formatters, which is the
 last of the three reserved subpaths to stop being a placeholder; item 19
@@ -47,7 +49,16 @@ last of the three reserved subpaths to stop being a placeholder; item 19
 ships `NeForm`, `NeFormSection` and `NeSettingsPage`, and deprecates
 narduk-core's `AppSettingsProfile` in favour of `NeSettingsPage`; item 15
 ([narduk-libs#262](https://github.com/narduk-enterprises/narduk-libs/issues/262))
-ships `NeKpiTile` and `NeKpiBand`. Components read Nuxt UI semantic tokens and
+ships `NeKpiTile` and `NeKpiBand`;
+[narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)
+ships `NeDataTable`, `NeSortHeader` and `NeCsvDownload` — the `UTable` preset
+with column groups, the promoted sort header, and CSV of the rows in view — and
+extends `NePager` with a page-size select and a “Show more” mode;
+[narduk-libs#601](https://github.com/narduk-enterprises/narduk-libs/issues/601)
+ships `NeMeter`, and
+[narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602)
+adds the `--ne-hatch` unreported treatment that `NeMeter` and `NeKpiTile` render
+for a figure with no producer. Components read Nuxt UI semantic tokens and
 `UBadge` colour/variant props, and do not hardcode a colour, radius, shadow or
 font. Each later item adds its own component, README section, tests and NE Base
 card.
@@ -68,7 +79,7 @@ export default defineNuxtConfig({
 })
 ```
 
-Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` at exactly `4.8.1` — the
+Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` at exactly `4.11.1` — the
 version `@narduk-enterprises/narduk-core` pins, so an app on the Narduk core
 layer already has the right one.
 
@@ -263,7 +274,11 @@ a component is covered the moment it is registered and cannot be silently left
 out. It reads the template, the script and any style block (comments removed)
 and rejects a hex, `rgb()`/`hsl()`/`oklch()` literal, a raw `font-family` /
 `box-shadow` / `border-radius` declaration, and Tailwind's named radius and
-shadow steps.
+shadow steps. "Raw" is exact: a declaration whose whole value is one token read
+— `font-family: var(--ne-font-mono)`, `border-radius: var(--ne-radius-tag)` —
+passes, and anything else in the value, a `var()` fallback included, fails. That
+narrowing arrived with `NeMeter`, the first component with a `<style scoped>`
+block of its own.
 
 Tailwind's **type scale is not** a hardcoded value: under Tailwind v4 `text-sm`
 compiles to `font-size: var(--text-sm)` and `font-medium` to
@@ -339,50 +354,52 @@ blocks, so nothing resolves by accident.
 
 <!-- ne-token-table:start -->
 
-| Token                   | Purpose                                                                          | Light                                                                    | Dark                                                               |
-| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `--ne-ground`           | Page ground behind every panel. Painted by the app on `body`.                    | `#f4f6f7`                                                                | `#0c1216`                                                          |
-| `--ne-surface`          | Base panel and card surface.                                                     | `#ffffff`                                                                | `#141c22`                                                          |
-| `--ne-surface-muted`    | Muted fill: table headers, quiet sections.                                       | `#f4f6f7`                                                                | `#0f171c`                                                          |
-| `--ne-surface-elevated` | Raised fill: inputs, menus, popovers.                                            | `#eef1f3`                                                                | `#1c252d`                                                          |
-| `--ne-surface-accented` | Strongest neutral fill: hover, active, wells.                                    | `#e3e8eb`                                                                | `#26313a`                                                          |
-| `--ne-surface-inverted` | Inverted chip and tooltip fill.                                                  | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-ink`              | Headings and the strongest ink.                                                  | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-ink-body`         | Body text.                                                                       | `#18212a`                                                                | `#dde5ea`                                                          |
-| `--ne-ink-secondary`    | Strong secondary text.                                                           | `#3c4a54`                                                                | `#b1bec8`                                                          |
-| `--ne-ink-muted`        | Labels and metadata. The lightest ink allowed on text.                           | `#5a6570`                                                                | `#9aa8b3`                                                          |
-| `--ne-ink-dimmed`       | Placeholders and disabled chrome. Never body text.                               | `#8b949d`                                                                | `#6d7b85`                                                          |
-| `--ne-ink-inverted`     | Ink on an inverted surface.                                                      | `#ffffff`                                                                | `#0c1216`                                                          |
-| `--ne-hairline`         | Card and panel hairline.                                                         | `#dde3e7`                                                                | `#243039`                                                          |
-| `--ne-divider`          | Row rules and soft dividers.                                                     | `#eaeef1`                                                                | `#1b242b`                                                          |
-| `--ne-line-strong`      | Control borders and focus rings.                                                 | `#c9d1d7`                                                                | `#33424d`                                                          |
-| `--ne-line-inverted`    | Border on an inverted surface.                                                   | `#0e1418`                                                                | `#f3f7f9`                                                          |
-| `--ne-accent`           | Brand hook. Interaction, links, data ink, the brand mark.                        | `#2f6b8f`                                                                | `#63a6cd`                                                          |
-| `--ne-accent-soft`      | Accent tint for fills and selected rows.                                         | `#e6eef3`                                                                | `#17303f`                                                          |
-| `--ne-accent-ink`       | Ink on an accent fill.                                                           | `#ffffff`                                                                | `#0c1216`                                                          |
-| `--ne-structure`        | Brand hook. Structural chrome: rails, headers, bezels.                           | `#18212a`                                                                | `#0c1216`                                                          |
-| `--ne-structure-ink`    | Ink on structural chrome.                                                        | `#ffffff`                                                                | `#f3f7f9`                                                          |
-| `--ne-radius-base`      | Radius unit. Bridged to `--ui-radius`, so Nuxt UI's radius ramp derives from it. | `0.375rem`                                                               | `0.375rem`                                                         |
-| `--ne-radius-control`   | Control radius. Equals Tailwind `rounded-md`.                                    | `calc(var(--ne-radius-base) * 1.5)`                                      | `calc(var(--ne-radius-base) * 1.5)`                                |
-| `--ne-radius-panel`     | Panel and card radius. Equals Tailwind `rounded-lg`.                             | `calc(var(--ne-radius-base) * 2)`                                        | `calc(var(--ne-radius-base) * 2)`                                  |
-| `--ne-radius-tag`       | Tag, chip and pill radius.                                                       | `9999px`                                                                 | `9999px`                                                           |
-| `--ne-shadow-1`         | Resting panel depth.                                                             | `0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04)`         | `0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05)`    |
-| `--ne-shadow-2`         | Raised and overlay depth.                                                        | `0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28)` | `0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75)` |
-| `--ne-shadow-control`   | Inset control depth.                                                             | `inset 0 1px 2px rgb(14 20 24 / 0.08)`                                   | `inset 0 1px 2px rgb(0 0 0 / 0.45)`                                |
-| `--ne-font-sans`        | Language. Instrument Sans, not bundled.                                          | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                 | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`           |
-| `--ne-font-mono`        | Every measured number. IBM Plex Mono, not bundled.                               | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                        | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                  |
-| `--ne-text-display`     | Display size.                                                                    | `38px`                                                                   | `38px`                                                             |
-| `--ne-text-title`       | Page title size.                                                                 | `28px`                                                                   | `28px`                                                             |
-| `--ne-text-heading`     | Section heading size.                                                            | `22px`                                                                   | `22px`                                                             |
-| `--ne-text-body`        | Body size.                                                                       | `15px`                                                                   | `15px`                                                             |
-| `--ne-text-small`       | Secondary and dense-table size.                                                  | `13px`                                                                   | `13px`                                                             |
-| `--ne-text-label`       | Uppercase mono label size.                                                       | `11px`                                                                   | `11px`                                                             |
-| `--ne-leading-tight`    | Line height for display, title and heading.                                      | `1.1`                                                                    | `1.1`                                                              |
-| `--ne-leading-body`     | Line height for prose.                                                           | `1.55`                                                                   | `1.55`                                                             |
-| `--ne-tracking-tight`   | Tracking for display, title and heading.                                         | `-0.03em`                                                                | `-0.03em`                                                          |
-| `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                 | `0.12em`                                                           |
-| `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                 | `1320px`                                                           |
-| `--ne-header-height`    | App header height.                                                               | `4rem`                                                                   | `4rem`                                                             |
+| Token                   | Purpose                                                                          | Light                                                                                 | Dark                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `--ne-ground`           | Page ground behind every panel. Painted by the app on `body`.                    | `#f4f6f7`                                                                             | `#0c1216`                                                                             |
+| `--ne-surface`          | Base panel and card surface.                                                     | `#ffffff`                                                                             | `#141c22`                                                                             |
+| `--ne-surface-muted`    | Muted fill: table headers, quiet sections.                                       | `#f4f6f7`                                                                             | `#0f171c`                                                                             |
+| `--ne-surface-elevated` | Raised fill: inputs, menus, popovers.                                            | `#eef1f3`                                                                             | `#1c252d`                                                                             |
+| `--ne-surface-accented` | Strongest neutral fill: hover, active, wells.                                    | `#e3e8eb`                                                                             | `#26313a`                                                                             |
+| `--ne-surface-inverted` | Inverted chip and tooltip fill.                                                  | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-ink`              | Headings and the strongest ink.                                                  | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-ink-body`         | Body text.                                                                       | `#18212a`                                                                             | `#dde5ea`                                                                             |
+| `--ne-ink-secondary`    | Strong secondary text.                                                           | `#3c4a54`                                                                             | `#b1bec8`                                                                             |
+| `--ne-ink-muted`        | Labels and metadata. The lightest ink allowed on text.                           | `#5a6570`                                                                             | `#9aa8b3`                                                                             |
+| `--ne-ink-dimmed`       | Placeholders and disabled chrome. Never body text.                               | `#8b949d`                                                                             | `#6d7b85`                                                                             |
+| `--ne-ink-inverted`     | Ink on an inverted surface.                                                      | `#ffffff`                                                                             | `#0c1216`                                                                             |
+| `--ne-hairline`         | Card and panel hairline.                                                         | `#dde3e7`                                                                             | `#243039`                                                                             |
+| `--ne-divider`          | Row rules and soft dividers.                                                     | `#eaeef1`                                                                             | `#1b242b`                                                                             |
+| `--ne-line-strong`      | Control borders and focus rings.                                                 | `#c9d1d7`                                                                             | `#33424d`                                                                             |
+| `--ne-line-inverted`    | Border on an inverted surface.                                                   | `#0e1418`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-hatch`            | Unreported material for a small slot: a meter track, a chip.                     | `repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px)`  | `repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px)`  |
+| `--ne-hatch-soft`       | Unreported material for a large area with its own em-dash.                       | `repeating-linear-gradient(135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px)` | `repeating-linear-gradient(135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px)` |
+| `--ne-accent`           | Brand hook. Interaction, links, data ink, the brand mark.                        | `#2f6b8f`                                                                             | `#63a6cd`                                                                             |
+| `--ne-accent-soft`      | Accent tint for fills and selected rows.                                         | `#e6eef3`                                                                             | `#17303f`                                                                             |
+| `--ne-accent-ink`       | Ink on an accent fill.                                                           | `#ffffff`                                                                             | `#0c1216`                                                                             |
+| `--ne-structure`        | Brand hook. Structural chrome: rails, headers, bezels.                           | `#18212a`                                                                             | `#0c1216`                                                                             |
+| `--ne-structure-ink`    | Ink on structural chrome.                                                        | `#ffffff`                                                                             | `#f3f7f9`                                                                             |
+| `--ne-radius-base`      | Radius unit. Bridged to `--ui-radius`, so Nuxt UI's radius ramp derives from it. | `0.375rem`                                                                            | `0.375rem`                                                                            |
+| `--ne-radius-control`   | Control radius. Equals Tailwind `rounded-md`.                                    | `calc(var(--ne-radius-base) * 1.5)`                                                   | `calc(var(--ne-radius-base) * 1.5)`                                                   |
+| `--ne-radius-panel`     | Panel and card radius. Equals Tailwind `rounded-lg`.                             | `calc(var(--ne-radius-base) * 2)`                                                     | `calc(var(--ne-radius-base) * 2)`                                                     |
+| `--ne-radius-tag`       | Tag, chip and pill radius.                                                       | `9999px`                                                                              | `9999px`                                                                              |
+| `--ne-shadow-1`         | Resting panel depth.                                                             | `0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04)`                      | `0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05)`                       |
+| `--ne-shadow-2`         | Raised and overlay depth.                                                        | `0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28)`              | `0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75)`                    |
+| `--ne-shadow-control`   | Inset control depth.                                                             | `inset 0 1px 2px rgb(14 20 24 / 0.08)`                                                | `inset 0 1px 2px rgb(0 0 0 / 0.45)`                                                   |
+| `--ne-font-sans`        | Language. Instrument Sans, not bundled.                                          | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                              | `'Instrument Sans', 'Helvetica Neue', Arial, sans-serif`                              |
+| `--ne-font-mono`        | Every measured number. IBM Plex Mono, not bundled.                               | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                                     | `'IBM Plex Mono', ui-monospace, Menlo, monospace`                                     |
+| `--ne-text-display`     | Display size.                                                                    | `38px`                                                                                | `38px`                                                                                |
+| `--ne-text-title`       | Page title size.                                                                 | `28px`                                                                                | `28px`                                                                                |
+| `--ne-text-heading`     | Section heading size.                                                            | `22px`                                                                                | `22px`                                                                                |
+| `--ne-text-body`        | Body size.                                                                       | `15px`                                                                                | `15px`                                                                                |
+| `--ne-text-small`       | Secondary and dense-table size.                                                  | `13px`                                                                                | `13px`                                                                                |
+| `--ne-text-label`       | Uppercase mono label size.                                                       | `11px`                                                                                | `11px`                                                                                |
+| `--ne-leading-tight`    | Line height for display, title and heading.                                      | `1.1`                                                                                 | `1.1`                                                                                 |
+| `--ne-leading-body`     | Line height for prose.                                                           | `1.55`                                                                                | `1.55`                                                                                |
+| `--ne-tracking-tight`   | Tracking for display, title and heading.                                         | `-0.03em`                                                                             | `-0.03em`                                                                             |
+| `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                              | `0.12em`                                                                              |
+| `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                              | `1320px`                                                                              |
+| `--ne-header-height`    | App header height.                                                               | `4rem`                                                                                | `4rem`                                                                                |
 
 <!-- ne-token-table:end -->
 
@@ -408,6 +425,92 @@ required 4.5:1 — on the rendered `/login` card subtitle and footer. The test
 reproduces that pair, asserts it fails, and asserts the shipped `--ne-ink-muted`
 clears 4.5:1 on every surface in both schemes, so the same values cannot come
 back as a default.
+
+### The unreported treatment
+
+[narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602).
+A figure can be in one of three states, and each needs a different look:
+
+| State          | What it means                                  | What it looks like                                           |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| **Zero**       | Something measured, and the answer was `0`.    | An empty track; the digit `0`.                               |
+| **Stale**      | Something measured, a while ago.               | The last figure and its age (`narduk-ui`'s freshness chips). |
+| **Unreported** | Nothing produced a figure. There is no answer. | The hatch; an em-dash; named "not reported".                 |
+
+The rule for the third: **an unreported figure gets geometry with texture and no
+magnitude.** A hatch of 1px diagonals has no length to compare, so it says
+"there is a slot here and nothing filled it". An empty bar says "the answer is
+zero", which for a figure nobody measured is false. `narduk-ui`'s `NsLevelWell`
+had this rule first ("missing wells are hatched with an em-dash, never rendered
+empty"); this is the same rule on the NE token layer.
+
+It comes in two shapes, and the second is the one to reach for:
+
+1. **Components take `null` and render it themselves.** `NeMeter` and
+   `NeKpiTile` accept a `null` (or `undefined`, or a non-finite number) value
+   and draw the treatment on their own, so a call site cannot forget it — pass
+   the `null` straight from the API rather than defaulting it to `0`.
+2. **A token and a CSS contract**, for a figure in your own markup:
+
+```css
+/* The slot keeps its reported size — a row must not reflow when data arrives. */
+.my-figure[data-state='unreported'] {
+  background-color: var(--ne-surface);
+  background-image: var(--ne-hatch); /* or --ne-hatch-soft for a large area */
+  color: var(--ne-ink-muted);
+}
+```
+
+```vue
+<script setup lang="ts">
+import {
+  isUnreported,
+  NE_UNREPORTED_TEXT,
+} from '@narduk-enterprises/narduk-shell'
+import { formatNumber } from '@narduk-enterprises/narduk-shell/format'
+
+const props = defineProps<{ value: number | null }>()
+const missing = computed(() => isUnreported(props.value))
+</script>
+
+<template>
+  <span
+    class="my-figure"
+    :data-state="missing ? 'unreported' : undefined"
+    :role="missing ? 'img' : undefined"
+    :aria-label="missing ? NE_UNREPORTED_TEXT : undefined"
+    >{{ formatNumber(value) }}</span
+  >
+</template>
+```
+
+The contract, in full:
+
+- **Decide it with `isUnreported(value)`**: `null`, `undefined` or a non-finite
+  number (a `NaN` is no more a measurement than a `null` is). A string is a
+  caller's own formatted figure and never counts. Exported from the package
+  root, and the test `NeMeter` and `NeKpiTile` use.
+
+- **Paint the hatch with `background-image`**, over the slot's own surface
+  colour, at the slot's reported size. `--ne-hatch` (drawn in `--ne-ink-dimmed`)
+  is for a small slot where the texture is the whole signal — a meter track, a
+  chip. `--ne-hatch-soft` (drawn in `--ne-line-strong`) is for a large area that
+  carries its own em-dash on top — a tile's value, a chart well.
+- **Print an em-dash, never `0` and never blank.** `formatNumber(null)` already
+  returns `—`.
+- **Name it.** The accessible text is `NE_UNREPORTED_TEXT` (`'Not reported'`,
+  exported from the package root), prefixed with the figure's label where there
+  is one. Never expose an unreported figure as `aria-valuenow="0"`: `NeMeter`
+  switches from `role="meter"` to `role="img"` rather than invent a value.
+- **Mark it** with `data-state="unreported"`, which is what the suite's own
+  components set and what a test or a stylesheet can select on.
+
+Both tokens derive from existing ink and line tokens, so they follow the scheme
+and any override of those tokens with no colour of their own;
+`test/theme.test.ts` asserts that they stay 1px diagonals and carry no colour
+literal. `NeFilterBar` meets the same rule a different way: an uncounted control
+renders no count element at all (see
+[A count is your figure, rendered](#a-count-is-your-figure-rendered)).
 
 ## Components
 
@@ -940,8 +1043,10 @@ The foot of a paged list, and the state machine behind it. Backlog item 11
 
 `useCollection()` is the component here; `NePager` is the small part you can
 see. The composable owns the concurrency rules that every list in the estate got
-wrong separately, and the pager is deliberately incapable of breaking them — it
-can write back a page number and nothing else.
+wrong separately, and the pager is deliberately incapable of breaking them —
+assigning `v-model:state` applies `page` and nothing else. Page-size and “Show
+more” emit `update:limit` for `useCollection().setLimit`, which resets to page 1
+by its own rule.
 
 The wire shape is not this package's to invent: the query and response are
 `@narduk-enterprises/narduk-platform/list-query`, served by `parseListQuery` +
@@ -976,7 +1081,12 @@ const c = useCollection<Runner>({
 </script>
 
 <template>
-  <UInput v-model="c.q" placeholder="Search runners" />
+  <NeSearchInput
+    v-model="c.q"
+    :debounce="0"
+    label="Search runners"
+    placeholder="Search runners"
+  />
   <NeStatePanel
     :state="c.pending && c.items.length === 0 ? 'loading' : undefined"
   >
@@ -987,7 +1097,9 @@ const c = useCollection<Runner>({
   <NePager
     v-model:state="c.state"
     noun="runners"
+    :page-sizes="[25, 50, 100]"
     :to="(page) => ({ query: { ...$route.query, page } })"
+    @update:limit="c.setLimit"
   />
 </template>
 ```
@@ -1040,6 +1152,10 @@ outside a router; that is why `vue-router` is a declared peer.
 | `showControls` | `boolean`                            | `true`      | First/last controls on the counted shape.                                                                      |
 | `showSummary`  | `boolean`                            | `true`      | Turn off to render your own.                                                                                   |
 | `to`           | `(page: number) => RouteLocationRaw` | —           | Renders every control as a real `<a href>`.                                                                    |
+| `pageSizes`    | `readonly number[]`                  | —           | Options for a “25 per page” select. Omit for no select. Changing the size emits `update:limit`.                |
+| `mode`         | `'pages' \| 'more' \| 'auto'`        | `'pages'`   | `'more'` is a “Show 25 more” button that grows the limit. `'auto'` is numbered pages from `sm` up, both below. |
+| `moreStep`     | `number`                             | first limit | How many rows “Show more” adds. Defaults to the limit the pager first saw.                                     |
+| `maxLimit`     | `number`                             | —           | The route’s page-size ceiling. At the ceiling, “Show more” gives way to numbered pages.                        |
 
 #### NePager slots and events
 
@@ -1047,9 +1163,10 @@ outside a router; that is why `vue-router` is a declared peer.
 | --------- | -------------------- | ----------------------------------------------- |
 | `summary` | `{ state, summary }` | Replaces the sentence, keeping the live region. |
 
-| Event          | Payload                | Notes                                                                             |
-| -------------- | ---------------------- | --------------------------------------------------------------------------------- |
-| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes. |
+| Event          | Payload                | Notes                                                                                                            |
+| -------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                |
+| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the pager never writes `limit` through `state`. |
 
 #### Two shapes, because `total` is optional
 
@@ -1071,6 +1188,21 @@ Nothing is disabled while a request is in flight: disabling a link takes
 middle-click and "open in new tab" away from a reader for 200 ms. The summary
 carries `aria-busy` instead.
 
+#### Page size and “Show more”
+
+[narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528).
+Both the “25 per page” select and the phone “Show 25 more” button change the
+**limit**, which this pager’s model deliberately cannot write. They emit
+`update:limit` for `useCollection().setLimit` — which resets to page 1 by its
+own rule, so a grown page is rows 1–50 in one request and the list keeps its
+scroll.
+
+`'more'` only offers itself on page one with more to come and headroom under
+`maxLimit`; anywhere else the numbered pages show, because a button that cannot
+do what it says is worse than a page link. `'auto'` renders both, split by
+breakpoint classes (`sm:hidden` / `max-sm:hidden`), so the server needs no
+viewport.
+
 #### Offset mode only, deliberately
 
 The contract also has a cursor form. `useCollection` implements the offset form
@@ -1090,6 +1222,556 @@ import type {
   NeCollectionState,
   NePagerProps,
 } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeFilterBar
+
+The filter row above a collection. Backlog item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261)),
+promoted from operator-portal's `FilterBar.vue`, where nine pages had each
+hand-assembled the row with its own pressed logic, its own count and its own
+disabled treatment. The pressed-chip count inversion was carried nine times and
+fixed nine times.
+
+`NeSearchInput` is the other half of item 14: a search is a text control
+**beside** the row, not a member of it, and the two have no shared state. Bind
+the field to `useCollection()`'s `c.q` with `:debounce="0"` — that composable
+already applies the 250 ms window.
+
+#### Three kinds, one DOM shape
+
+A wrapping row of buttons in the order you pass them — nothing sorted, nothing
+hidden. They differ in what they mean, and the ARIA follows the meaning:
+
+| `kind`   | Row role  | Control state                | For                                             |
+| -------- | --------- | ---------------------------- | ----------------------------------------------- |
+| `chips`  | `group`   | `aria-pressed`               | Toggling a filter on and off.                   |
+| `facets` | `group`   | `aria-pressed`               | Choosing a scope. Same mechanics, quieter fill. |
+| `tabs`   | `tablist` | `aria-selected` + `tabindex` | Switching views. Full APG keyboard model.       |
+
+`tabs` is a real tablist: arrows move and wrap, `Home` and `End` jump to the
+ends, and exactly **one** tab sits in the page's tab order at a time (the
+selected one, or the first when nothing is selected). Your panels name the tab
+that controls them through `idPrefix` — `<prefix>-tab-<key>` and
+`<prefix>-panel-<key>`.
+
+A **disabled tab is not a destination**: arrows, `Home` and `End` all walk past
+it to the next enabled one. APG omits disabled tabs from the roving model, and
+the reason is mechanical here — selection never moves onto a disabled item, so
+focusing one would leave `aria-selected` behind on the tab the user came from,
+and the next `Tab` would exit the list from a control the tablist does not
+consider current. A row whose tabs are all disabled keeps focus and selection
+where they are.
+
+The `tablist` role sits on the **control row**, not on the outer wrapper: a
+tablist's required owned elements are tabs, and `note` is a caption while the
+`after` slot is an action. Both render as siblings of the tablist. If you are
+asserting the role in a test, the selector is `[data-ne-filter-controls]`;
+`[data-ne-filter-bar]` is the outer row and carries `data-ne-filter-kind`.
+
+#### A filter with no producer stays in the row
+
+`item.disabled` renders `aria-disabled` and keeps the control **visible**. This
+is the component's one real opinion, and it is why the disabled state is part of
+the API rather than something a caller does with a `v-if`:
+
+> Dropping a filter whose rows do not exist yet makes the product look finished
+> and be silently narrower than it claims. The control stays, the row's `note`
+> says when it lands, and nobody has to work out whether a filter is missing or
+> merely unbuilt.
+
+It is `aria-disabled`, never the `disabled` attribute. A disabled button leaves
+the tab order, and a keyboard user then cannot reach it to read the reason in
+its `title`.
+
+That reachability holds for `chips` and `facets`. Under `tabs` it does **not**:
+APG skips disabled tabs in the roving model, as above, so no arrow key ever
+lands on one and `title` is mouse-only there. A disabled tab is therefore given
+`aria-describedby` pointing at the row's `note`, which a screen reader reads in
+browse mode whether or not focus can arrive — so **write a `note` on a tabs row
+that has disabled tabs**, or their reason reaches nobody.
+
+#### A count is your figure, rendered
+
+`item.count` is displayed and never derived — the component cannot know what a
+control filters, and a count computed here would eventually disagree with the
+group heading computed where the rows are.
+
+**Omit the count rather than passing `0` for "not counted".** `0` is a
+measurement; an absent count is not. A control rendering `0` for "we did not
+count" is the same lie a hatched bar exists to avoid, and the row renders no
+count element at all when you leave it out.
+
+#### Props
+
+| Prop         | Type                            | Default    | Notes                                                           |
+| ------------ | ------------------------------- | ---------- | --------------------------------------------------------------- |
+| `items`      | `NeFilterBarItem[]`             | —          | Rendered in the order given.                                    |
+| `label`      | `string`                        | —          | Required. The row's accessible name.                            |
+| `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                 |
+| `modelValue` | `string \| null`                | `null`     | The selected key. `null` is "nothing selected".                 |
+| `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.         |
+| `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row. |
+| `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.         |
+
+`NeFilterBarItem`: `key`, `label`, and optional `count`, `disabled`, `title`,
+`testid`, `attrs`. An `undefined` value in `attrs` is dropped rather than
+rendered as the string `"undefined"`.
+
+#### Events and slots
+
+`update:modelValue` emits the chosen `key`. The component never moves the
+selection itself — the caller owns it, which is what makes `v-model` and a
+URL-synced selection the same code path. Slot `after` appends to the row.
+
+#### Types
+
+```ts
+import type {
+  NeFilterBarItem,
+  NeFilterBarKind,
+  NeFilterBarProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const state = ref<string | null>('open')
+</script>
+
+<template>
+  <NeFilterBar
+    v-model="state"
+    label="State"
+    :items="[
+      { key: 'all', label: 'All', count: 24 },
+      { key: 'open', label: 'Open', count: 7 },
+      { key: 'draft', label: 'Draft' },
+      {
+        key: 'owner',
+        label: 'By owner',
+        disabled: true,
+        title: 'Lands with the owner ledger',
+      },
+    ]"
+    note="By owner lands with the owner ledger"
+  />
+</template>
+```
+
+### NeSearchInput
+
+The search field beside a collection. Backlog item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261)),
+built fresh — operator-portal's chips half had no search of its own, and no
+stonx filter bar debounces or syncs today. It wraps Nuxt UI's `UInput`.
+
+`v-model` is the **applied** term, not the keystroke. The box updates as you
+type; the model updates after `debounce` ms (250, the same window
+`useCollection` uses for `q`). A page that is not on `useCollection` still gets
+one request per settled query rather than one per keystroke.
+
+Bind `v-model="c.q"` with `:debounce="0"`. `c.q` is the keystroke value — the
+collection applies it after its own 250 ms — so a second debounce here would
+make "GTM1500" wait half a second twice.
+
+The trailing clear is the item's **reset**: it empties the box and the model in
+the same tick. A reset that waited out the debounce would keep the previous term
+live after the reader asked it to stop. The optional summary (`showSummary`) is
+the **active-filter** readout — a live region that names the applied term, which
+can lag the box while the debounce is open.
+
+Length is the list-query contract's length
+(`LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH`, 200) so a `q` that cannot travel is
+never typed.
+
+#### Props
+
+| Prop          | Type                                   | Default              | Notes                                                       |
+| ------------- | -------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| `label`       | `string`                               | —                    | Required. The field's accessible name.                      |
+| `modelValue`  | `string`                               | `''`                 | The applied term. `''` is "no search".                      |
+| `debounce`    | `number`                               | `250`                | `0` emits on every keystroke — the `useCollection` binding. |
+| `placeholder` | `string`                               | —                    | Hint while empty. Not the accessible name.                  |
+| `pending`     | `boolean`                              | `false`              | Forwards to `UInput`'s `loading` and sets `aria-busy`.      |
+| `disabled`    | `boolean`                              | `false`              | Hides the clear control too.                                |
+| `showSummary` | `boolean`                              | `false`              | Live region naming the applied term.                        |
+| `maxLength`   | `number`                               | contract default 200 | Hard ceiling on what can be typed.                          |
+| `size`        | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'` | `'sm'`               | Sits next to `NeFilterBar`'s `xs` chips.                    |
+| `name`        | `string`                               | —                    | Native `name`, for a field that submits with a form.        |
+
+`update:modelValue` emits the applied string. The component never writes a URL
+or resets a page — those are `useCollection`.
+
+#### Types
+
+```ts
+import {
+  NE_SEARCH_DEBOUNCE_MS,
+  type NeSearchInputProps,
+  type NeSearchInputSize,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const q = ref('')
+const state = ref<string | null>('open')
+</script>
+
+<template>
+  <NeSearchInput
+    v-model="q"
+    :debounce="250"
+    label="Search runners"
+    placeholder="Search runners"
+  />
+  <NeFilterBar
+    v-model="state"
+    label="State"
+    :items="[
+      { key: 'all', label: 'All', count: 24 },
+      { key: 'open', label: 'Open', count: 7 },
+    ]"
+  />
+</template>
+```
+
+With `useCollection`:
+
+```vue
+<NeSearchInput
+  v-model="c.q"
+  :debounce="0"
+  label="Search runners"
+  placeholder="Search runners"
+  :pending="c.pending"
+/>
+```
+
+### NeDataTable
+
+The estate’s data-table preset on Nuxt UI’s `UTable`
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
+The eslint pack already forces `UTable`; this is the reading every history and
+list table in the estate re-derived by hand: a sticky header, column groups with
+their unit drawn once, right-aligned tabular numerals, one missing-value style,
+day (group) rows, a sticky first column, a phone column-set switch, the “no
+value, sorted last” break row, and a loading reading that keeps the rows on
+screen.
+
+**It never reorders rows.** Sorting belongs to whoever owns the set — the
+server, through `useCollection().setSort`. The table draws the arrow,
+`aria-sort` and the column tint for `sort`, emits `update:sort` on a header
+click, and renders `rows` in the order they arrived. A table that sorted the 25
+rows it holds is exactly the “Wind ↓ sorts one page” bug the buoys round-2 board
+opens with.
+
+Group and break rows are extra entries in the data handed to `UTable`: their
+first cell spans every column and the remaining cells are `hidden`, so the
+markup stays one `<tr>` per line and TanStack still owns the body.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const columns = [
+  { key: 'time', label: 'Time', sticky: true },
+  {
+    key: 'wind',
+    label: 'avg',
+    group: 'wind',
+    numeric: true,
+    emphasis: true,
+    sortKey: 'wind',
+    firstDirection: 'desc',
+  },
+  { key: 'gust', label: 'gust', group: 'wind', numeric: true },
+  { key: 'pressure', label: 'sea level', group: 'pressure', numeric: true },
+]
+const groups = [
+  { id: 'wind', label: 'Wind', unit: 'kt' },
+  { id: 'pressure', label: 'Pressure', unit: 'inHg' },
+]
+</script>
+
+<template>
+  <NeDataTable
+    :columns="columns"
+    :groups="groups"
+    :rows="c.items"
+    :group-by="(row) => row.day"
+    :sort="c.sort"
+    :loading="c.pending"
+    v-model:column-set="columnSet"
+    @update:sort="c.setSort"
+  />
+</template>
+```
+
+#### Props
+
+| Prop               | Type                      | Default     | Notes                                                                                                            |
+| ------------------ | ------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| `columns`          | `NeDataColumn<T>[]`       | —           | Required. See the column contract below.                                                                         |
+| `rows`             | `T[]`                     | —           | Required. Drawn in this order.                                                                                   |
+| `groups`           | `NeDataColumnGroup[]`     | `[]`        | Header row above grouped columns. Each group’s `unit` is drawn once.                                             |
+| `rowKey`           | `(row, index) => string`  | index       | Stable row identity.                                                                                             |
+| `groupBy`          | `(row) => string \| null` | —           | Opens a group (day) row whenever the key changes. Rows must already be in order.                                 |
+| `groupLabel`       | `(key, rows) => string`   | the key     | The group row’s text. The `group` slot overrides it.                                                             |
+| `sort`             | `string \| null`          | `null`      | Wire form (`'wind:desc'`). Drives the arrow, `aria-sort` and the column tint.                                    |
+| `missingLast`      | `boolean`                 | `true`      | Draws a break row before the first row with no value in the sorted column.                                       |
+| `missingCount`     | `number \| null`          | page count  | The whole set’s count of rows with no value, for the break row’s text.                                           |
+| `missingLabel`     | `string`                  | —           | Replaces the break row’s text entirely.                                                                          |
+| `loading`          | `boolean`                 | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                    |
+| `dropEmptyColumns` | `boolean`                 | `false`     | Drops a non-sticky column whose every row is missing.                                                            |
+| `columnSet`        | `string \| null`          | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                     |
+| `phoneColumnSets`  | `boolean`                 | 2+ groups   | The phone column-set switch. Defaults to on when there are two or more groups.                                   |
+| `stickyHeader`     | `boolean \| 'page'`       | `true`      | `true`: sticks inside the table’s scroll box. `'page'`: sticks under the site header. `false`: no sticky header. |
+| `empty`            | `string`                  | `'No rows'` | Text for a table with no rows.                                                                                   |
+| `caption`          | `string`                  | —           | Screen-reader caption.                                                                                           |
+
+#### Column contract (`NeDataColumn`)
+
+| Field            | Type                        | Notes                                                                                      |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| `key`            | `string`                    | Column id, and the property read when `value` is not given.                                |
+| `label`          | `string`                    | Header text.                                                                               |
+| `unit`           | `string`                    | Drawn in the header under the label; cells then carry numbers only.                        |
+| `group`          | `string`                    | A `NeDataColumnGroup.id`. Ungrouped columns sit outside every group.                       |
+| `numeric`        | `boolean`                   | Right-aligned, tabular, monospaced numerals (`font-mono tabular-nums`).                    |
+| `emphasis`       | `boolean`                   | The group’s headline value, drawn at `font-medium`.                                        |
+| `sticky`         | `boolean`                   | Pinned to the left edge, and never hidden by the phone column-set switch.                  |
+| `width`          | `string`                    | Any CSS length, set on the header cell. See “Overflow and column widths” below.            |
+| `value`          | `(row) => unknown`          | How to read the cell. Defaults to `row[key]`.                                              |
+| `format`         | `(value, row) => string`    | How to print a present value. Missing values never reach it.                               |
+| `sortKey`        | `string`                    | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself. |
+| `firstDirection` | `'asc' \| 'desc'`           | First-click direction for `sortKey`. Defaults to `'asc'`.                                  |
+| `csv`            | `false \| (row) => unknown` | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.  |
+| `csvLabel`       | `string`                    | CSV header text. Defaults to `label (unit)`.                                               |
+| `csvOnly`        | `boolean`                   | In the CSV only — e.g. the SI twin of a displayed column.                                  |
+
+`0` and `false` are values. `null`, `undefined`, `''` and a non-finite number
+are missing: an em dash in `text-dimmed` with “No value” for a screen reader,
+never `0`.
+
+#### Slots and events
+
+| Slot         | Props                    | Notes                           |
+| ------------ | ------------------------ | ------------------------------- |
+| `group`      | `{ key, rows }`          | Replaces the group row’s label. |
+| `break`      | `{ column, count }`      | Replaces the break row’s text.  |
+| `<key>-cell` | `{ column, row, value }` | Custom cell for that column.    |
+
+The slots are declared (`NeDataTableSlots<T>`), so `vue-tsc` and
+`nuxt typecheck` accept a `<key>-cell` template and type its `row` as the
+table's row type — no local typed wrapper needed:
+
+```vue
+<NeDataTable :columns="columns" :rows="stations">
+  <template #status-cell="{ row }">
+    <NeStatusBadge :tone="row.online ? 'ok' : 'error'" :label="row.online ? 'Online' : 'Offline'" />
+  </template>
+</NeDataTable>
+```
+
+| Event              | Payload  | Notes                                                   |
+| ------------------ | -------- | ------------------------------------------------------- |
+| `update:sort`      | `string` | Next wire sort (`'wind:desc'`). Hand it to `c.setSort`. |
+| `update:columnSet` | `string` | The phone switch picked a different group.              |
+
+#### Phone column sets
+
+On a narrow viewport the table cannot show every group beside the sticky
+columns. With two or more groups a `UTabs` switch (`data-ne-column-sets`) picks
+which group shows; sticky and ungrouped columns stay. The hidden groups carry
+`max-sm:hidden`, so the server renders every column and CSS hides the rest — no
+viewport is consulted. `stickyHeader="page"` pairs with this: the box no longer
+scrolls sideways.
+
+#### Overflow and column widths
+
+The table owns its sideways overflow
+([narduk-libs#684](https://github.com/narduk-enterprises/narduk-libs/issues/684),
+proven in operator-portal’s `CollectionTable`). `UTable`’s root is the table’s
+scroll box (`data-ne-data-table-scroll`, `overflow-auto`), and both it and the
+outer `[data-ne-data-table]` carry `min-w-0 max-w-full`. One long unbreakable
+string — a hostname, a SHA — scrolls the box, never the page, including when the
+table sits in a flex or grid parent that would otherwise grow to fit it.
+
+A column may declare a `width` (`'6rem'`, `'120px'`); leave the column that
+should take the slack width-less. A cell ignores `min-width`, so fixed-width
+columns would hand a width-less one only what they leave over (146–191 px on a
+1024 px iPad in operator-portal, rows wrapped thousands of pixels tall). The
+floor is therefore on the **table**, not the cell: once any shown column
+declares a width, the scroll box gets
+`--ne-data-table-min: calc(<each width, or 200px for a width-less column> + …)`
+inline and the `<table>` takes `min-width: max(100%, var(--ne-data-table-min))`.
+Every width-less column is floored, not only the first, and the box scrolls
+sideways when the container is narrower.
+
+- No floor when no column declares a width (nothing squeezes a column, and a
+  table written before `width` renders exactly as it did), and none when every
+  column declares one (the widths already are the floor).
+- The floor applies from `sm` up. Below `sm` the phone column-set switch hides
+  groups the sum still counts, so the table stays `min-w-full` there and a phone
+  is never forced to scroll by the floor alone.
+- `stickyHeader="page"` gives up the scroll box — a scroll box would pin the
+  header to itself instead of the page — and with it the floor, which is only
+  safe inside one. Pair it with the phone column-set switch, and keep its cells
+  short.
+
+#### Loading
+
+`loading` keeps the current rows, dims the body (`opacity-50`) and draws a 2 px
+bar on the header (`after:h-0.5`). The wrapper carries `aria-busy="true"`.
+Nothing is replaced with a skeleton, so the table does not jump.
+
+#### Types
+
+```ts
+import type {
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableCellSlotProps,
+  NeDataTableProps,
+  NeDataTableSlots,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeSortHeader
+
+A sortable column header
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)),
+promoted from stonx’s `SortableTableHeader.vue`. First click picks the useful
+way — readings strongest first (`firstDirection="desc"`), names A–Z (`'asc'`).
+The second click flips it. There is no third, “unsorted” click; a Reset control
+outside the table does that.
+
+Two call shapes:
+
+- **Server mode.** `sortKey` + `sort` (wire form, `'wind:desc'`) emit
+  `update:sort`, which is what `useCollection().setSort` takes. The header never
+  reorders rows; the server does. This is what `NeDataTable` uses.
+- **Client mode.** A TanStack `column` from a plain `UTable` `#<id>-header`
+  slot, exactly the stonx call shape, so those sites move over unchanged.
+
+`aria-sort` belongs on the `<th>`, not on the button inside it. `UTable` gives a
+header slot no way to set attributes on its cell, so the header writes
+`aria-sort` onto its closest `<th>` after mount and removes it when the column
+stops being sorted. At rest a column carries no `aria-sort` at all. The column
+tint is the table’s business: `NeDataTable` draws `bg-elevated/50` down the
+sorted column.
+
+#### Example
+
+```vue
+<NeSortHeader
+  label="Wind"
+  unit="kt"
+  sort-key="wind"
+  first-direction="desc"
+  align="end"
+  :sort="c.sort"
+  @update:sort="c.setSort"
+/>
+```
+
+#### Props
+
+| Prop             | Type               | Default   | Notes                                                                |
+| ---------------- | ------------------ | --------- | -------------------------------------------------------------------- |
+| `label`          | `string`           | —         | Required. The header text.                                           |
+| `unit`           | `string`           | —         | Shown once, muted, beside the label: `kt`, `°F`.                     |
+| `firstDirection` | `'asc' \| 'desc'`  | `'asc'`   | Which way the first click sorts.                                     |
+| `align`          | `'start' \| 'end'` | `'start'` | `'end'` for a numeric column, so the arrow sits against the numbers. |
+| `sortKey`        | `string`           | —         | Server mode: the key this header sorts by.                           |
+| `sort`           | `string \| null`   | `null`    | Server mode: the current sort in wire form (`useCollection().sort`). |
+| `column`         | `NeSortableColumn` | —         | Client mode: a TanStack column from a `UTable` header slot.          |
+
+#### Events
+
+| Event         | Payload  | Notes                                                                                          |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `update:sort` | `string` | Server mode only. `'<sortKey>:<asc\|desc>'`. Client mode calls `column.toggleSorting` instead. |
+
+`parseSort` is a package-root export: `'wind:desc'` → `{ key, direction }`,
+anything else → `null`. Use it when a page reads a wire sort without a regex.
+
+#### Types
+
+```ts
+import { parseSort } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeSortDirection,
+  NeSortHeaderProps,
+  NeSortableColumn,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCsvDownload
+
+“CSV” for exactly the rows in view
+([narduk-libs#528](https://github.com/narduk-enterprises/narduk-libs/issues/528)).
+Hand it the same `columns` and `rows` the `NeDataTable` beside it draws and it
+writes those rows, in that order — not the whole history, not the next page.
+Columns with `csv: false` stay out; `csvOnly` columns (an SI twin of a displayed
+column, say) go in. Values are written raw through each column’s `csv` accessor
+or `value`, never through `format`, so a spreadsheet gets numbers rather than
+“12 kt”. Missing values are empty cells, never `0`.
+
+`preamble` lines go above the header — the place for an attribution line. The
+text itself is `toCsv()`, exported from the package root, so a server route can
+produce the identical file. The button is inert on the server: it only builds
+the file when it is clicked, in the browser.
+
+#### Example
+
+```vue
+<NeCsvDownload
+  :columns="columns"
+  :rows="c.items"
+  :preamble="['Source: NOAA NDBC']"
+  filename="history"
+/>
+```
+
+```ts
+import { toCsv } from '@narduk-enterprises/narduk-shell'
+
+const csv = toCsv(columns, rows, ['Source: NOAA NDBC'])
+```
+
+#### Props
+
+| Prop       | Type                   | Default        | Notes                                        |
+| ---------- | ---------------------- | -------------- | -------------------------------------------- |
+| `columns`  | `NeDataColumn<T>[]`    | —              | Required. Same contract as `NeDataTable`.    |
+| `rows`     | `T[]`                  | —              | Required. Exactly these rows, in this order. |
+| `filename` | `string`               | `'export.csv'` | `.csv` is appended when missing.             |
+| `preamble` | `readonly string[]`    | `[]`           | Lines written above the header.              |
+| `label`    | `string`               | `'CSV'`        | The button’s text.                           |
+| `size`     | `'xs' \| 'sm' \| 'md'` | `'sm'`         | Nuxt UI button size.                         |
+
+#### Events
+
+| Event      | Payload                   | Notes                                       |
+| ---------- | ------------------------- | ------------------------------------------- |
+| `download` | `[csv: string, filename]` | Fired with the same text the file contains. |
+
+Formula-leading text (`=`, `+`, `-`, `@`) is prefixed so a spreadsheet does not
+run it; numeric cells are written as numbers, so a negative reading is never
+prefixed.
+
+#### Types
+
+```ts
+import { toCsv } from '@narduk-enterprises/narduk-shell'
+import type { NeCsvDownloadProps } from '@narduk-enterprises/narduk-shell'
 ```
 
 ### NeForm
@@ -1298,15 +1980,15 @@ lets the server and the browser render the same digits on the first paint.
 
 #### Props
 
-| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                |
-| -------------- | --------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                   |
-| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` render `formatNumber`'s empty placeholder (`—`). |
-| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                         |
-| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.             |
-| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                         |
-| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                           |
-| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                 |
+| Prop           | Type                                    | Default     | What it does                                                                                                                                                                                                                                                                                      |
+| -------------- | --------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`        | `string`                                | —           | The metric's name, shown above the value.                                                                                                                                                                                                                                                         |
+| `value`        | `number \| string \| null \| undefined` | —           | A `number` is formatted with `formatNumber`; a `string` is a caller-formatted value (`formatMoney`, `formatPercent`, …) rendered as-is; `null`/`undefined` (or a non-finite number) render the [unreported treatment](#the-unreported-treatment): `—` on `--ne-hatch-soft`, named "Not reported". |
+| `valueOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `value` is a `number`. Ignored for a string value.                                                                                                                                                                                                               |
+| `delta`        | `number \| string \| null`              | `undefined` | Change since a prior period. A `number` gets `signDisplay: 'always'` and a ▲/▼ direction glyph; a `string` renders as-is with no glyph. Omit entirely when there is nothing to compare against.                                                                                                   |
+| `deltaOptions` | `NeNumberOptions`                       | `undefined` | Forwarded to `formatNumber` when `delta` is a `number`. Ignored for a string delta.                                                                                                                                                                                                               |
+| `detail`       | `string`                                | `''`        | Caption next to the delta, e.g. `"vs last week"`.                                                                                                                                                                                                                                                 |
+| `tone`         | `NeStatusTone`                          | `undefined` | Colours the delta only. Never changes what the delta says, and says nothing about `value` itself. Defaults to `text-muted`.                                                                                                                                                                       |
 
 Tone → colour, the same vocabulary `NeStatusBadge` uses:
 
@@ -1336,6 +2018,12 @@ mercy of how the template compiler treats the whitespace between the two, and
 the sign alone already carries the direction with no glyph at all.
 `test/NeKpiTile.mount.test.ts` proves the delta text is identical across every
 tone.
+
+An unreported value — `null`, `undefined` or a non-finite number — is an em-dash
+inside `role="img"` named "Not reported", on the soft hatch, with
+`data-state="unreported"` on the value's `<dd>`. A reported `0` stays a plain
+`0`. Pass the API's `null` through rather than defaulting it to `0`; see
+[The unreported treatment](#the-unreported-treatment).
 
 `NeNumberOptions` is the `./format` subpath's own type
 (`import type { NeNumberOptions } from '@narduk-enterprises/narduk-shell/format'`).
@@ -1372,6 +2060,313 @@ CSS.
 | Slot      | When it renders                                    |
 | --------- | -------------------------------------------------- |
 | `default` | The tiles (or anything else) laid out in the grid. |
+
+### NeCard
+
+One entity card wrapping Nuxt UI's `UCard`. Backlog item 17
+([narduk-libs#264](https://github.com/narduk-enterprises/narduk-libs/issues/264)).
+Media, title, badge, stat rows, actions. Numbers go through the `./format`
+subpath (`formatNumber`, or `formatQuantity` when a `unit` is set), never
+`toLocaleString`. A missing stat is the formatter empty placeholder (`—`),
+not 0.
+
+The badge is `NeStatusBadge`: a string is a neutral chip, `{ label, tone }` is
+what `defineStatusMap` already returns. Colour is never the only signal — the
+badge's accessible name includes the tone.
+
+#### Example
+
+```vue
+<NeCard
+  title="Des Plaines at Riverside"
+  :badge="{ label: 'Action', tone: 'warn' }"
+  :stats="[
+    { label: 'Stage', unit: 'foot', value: 5.2 },
+    { label: 'Flow', unit: 'cfs', value: 1234 },
+  ]"
+>
+  <template #actions>
+    <UButton label="Open" />
+  </template>
+</NeCard>
+```
+
+#### Props
+
+| Prop       | Type                                              | Default | Notes                                                                                |
+| ---------- | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `title`    | `string`                                          | `''`    | The card's name. The `#title` slot overrides it.                                     |
+| `badge`    | `string \| { label: string; tone: NeStatusTone }` | —       | Status chip opposite the title. A string is a neutral label.                         |
+| `media`    | `string`                                          | `''`    | Image URL. Prefer the `#media` slot for anything else.                               |
+| `mediaAlt` | `string`                                          | `''`    | Accessible name of `media`. Falls back to `title`.                                   |
+| `stats`    | `readonly NeCardStat[]`                           | `[]`    | Measured rows. A `number` is formatted; a `string` is rendered as-is; `null` is `—`. |
+
+#### Slots
+
+| Slot      | When it renders                                 |
+| --------- | ----------------------------------------------- |
+| `title`   | Replaces the title text.                        |
+| `badge`   | Replaces the badge chip.                        |
+| `media`   | Replaces the `<img>` when `media` is not a URL. |
+| `default` | Body under the stats.                           |
+| `actions` | Trailing controls, in `UCard`'s footer.         |
+
+#### Types
+
+```ts
+import type {
+  NeCardBadge,
+  NeCardProps,
+  NeCardStat,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCardList
+
+The card reading of the same collection a table draws. Bind `v-model:state` or
+`:collection` — both are the `useCollection()` snapshot `NePager` already takes
+— so one page toggles cards and table without a second fetch. `NeStatePanel` and
+`NePager` are built in.
+
+Empty, loading and error are the panel's contract, and only when there is
+nothing to show. A collection keeps the last good page on a later error or a
+refetch; drawing a panel over those cards would hide the rows the reader already
+has. The built-in pager sits beside the panel, not inside it: `NeStatePanel`
+only renders its default slot when there is no reading, so a pager in that slot
+would disappear on an empty first paint, a loading fetch with no rows yet, or an
+error with no cached page.
+
+`columns` picks the Tailwind `grid-cols-*` utility per breakpoint the same way
+`NeKpiBand` does. Every class this component could apply is a literal string in
+`src/runtime/components/NeCardList.vue`, not a computed `` `grid-cols-${n}` ``.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const c = useCollection({ fetch })
+const mode = ref<'cards' | 'table'>('cards')
+</script>
+
+<template>
+  <NeCardList
+    v-if="mode === 'cards'"
+    :collection="c"
+    :card="RiverCard"
+    :columns="{ base: 1, md: 2, xl: 3 }"
+    noun="rivers"
+  />
+  <template v-else>
+    <NeDataTable :columns="columns" :rows="c.items" />
+    <NePager v-model:state="c.state" noun="rivers" />
+  </template>
+</template>
+```
+
+The `#card` slot is the other form, when the card needs more than `item`:
+
+```vue
+<NeCardList :collection="c" noun="rivers">
+  <template #card="{ item }">
+    <NeCard :title="item.name" :stats="[{ label: 'Stage', unit: 'foot', value: item.stage }]" />
+  </template>
+</NeCardList>
+```
+
+#### Props
+
+| Prop             | Type                                                                        | Default                     | Notes                                                                                             |
+| ---------------- | --------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `collection`     | `NeCollection<T>`                                                           | —                           | The live `useCollection()` return. Wins over `v-model:state` when both are given.                 |
+| `card`           | `Component`                                                                 | —                           | Per-item component. Receives the row as `item`. Prefer `#card` when more than one prop is needed. |
+| `columns`        | `Partial<Record<'base' \| 'sm' \| 'md' \| 'lg' \| 'xl', 1\|2\|3\|4\|5\|6>>` | `{ base: 1, md: 2, xl: 3 }` | Columns per breakpoint.                                                                           |
+| `noun`           | `string`                                                                    | `'results'`                 | Plural noun for the built-in pager summary.                                                       |
+| `density`        | `'default' \| 'dense'`                                                      | `'default'`                 | Forwards to `NePager`.                                                                            |
+| `mode`           | `'pages' \| 'more' \| 'auto'`                                               | `'pages'`                   | Forwards to `NePager`.                                                                            |
+| `pageSizes`      | `readonly number[]`                                                         | —                           | Forwards to `NePager`.                                                                            |
+| `maxLimit`       | `number`                                                                    | —                           | Forwards to `NePager`.                                                                            |
+| `to`             | `(page: number) => RouteLocationRaw`                                        | —                           | Forwards to `NePager`. Real hrefs.                                                                |
+| `rowKey`         | `(item: T, index: number) => string`                                        | index                       | Stable identity for each card.                                                                    |
+| `emptyTitle`     | `string`                                                                    | `''`                        | Empty-panel headline.                                                                             |
+| `emptyMessage`   | `string`                                                                    | `''`                        | Empty-panel sentence.                                                                             |
+| `loadingTitle`   | `string`                                                                    | `''`                        | Loading-panel headline.                                                                           |
+| `loadingMessage` | `string`                                                                    | `''`                        | Loading-panel sentence.                                                                           |
+| `errorTitle`     | `string`                                                                    | `''`                        | Error-panel headline.                                                                             |
+| `errorMessage`   | `string`                                                                    | `''`                        | Error-panel sentence. The collection's `error` is not stringified onto the page.                  |
+
+`v-model:state` is `NeCollectionState<T>`. Assigning to it applies `page` only
+when the parent is `useCollection`. Page-size and “Show more” emit
+`update:limit` — the same event standalone `NePager` emits. Wire it to
+`useCollection().setLimit` when you bind `v-model:state` without `:collection`;
+otherwise the select and “Show more” silently no-op. When `:collection` is
+bound, the list forwards that event to `collection.setLimit` itself.
+
+```vue
+<NeCardList
+  v-model:state="c.state"
+  noun="rivers"
+  :page-sizes="[25, 50, 100]"
+  @update:limit="c.setLimit"
+>
+  <template #card="{ item }">
+    <NeCard :title="item.name" />
+  </template>
+</NeCardList>
+```
+
+#### Events
+
+| Event          | Payload                | Notes                                                                                                                                    |
+| -------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `update:state` | `NeCollectionState<T>` | The current state with a new `page`. Emitted only when the page actually changes.                                                        |
+| `update:limit` | `number`               | A new page size. The page-size select and “Show more” emit this; the list never writes `limit` through `state`. Same event as `NePager`. |
+
+#### Slots
+
+| Slot   | When it renders                                                                  |
+| ------ | -------------------------------------------------------------------------------- |
+| `card` | One card. Slot props: `{ item, index }`. Preferred over `:card` for composition. |
+
+#### Types
+
+```ts
+import type {
+  NeCardListBreakpoint,
+  NeCardListColumnCount,
+  NeCardListProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeDetailView
+
+A key-value panel: label, value, `format`, `unit`, and an unavailable sentence
+for a missing reading. Backlog item 17
+([narduk-libs#264](https://github.com/narduk-enterprises/narduk-libs/issues/264)).
+
+Numbers and dates go through `./format`. A `date` / `datetime` row without an
+explicit zone (row or panel) is treated as unavailable rather than rendered in
+the host time zone — that is the hydration class item 5 exists to remove.
+`relative` is not a format here: it needs a caller-supplied `now`. Format that
+string at the call site and pass it as a pre-formatted value.
+
+#### Example
+
+```vue
+<NeDetailView
+  :items="[{ label: 'Stage', value: stage, format: 'quantity', unit: 'ft' }]"
+  unavailable-message="No reading"
+/>
+```
+
+#### Props
+
+| Prop                 | Type                      | Default                           | Notes                                                                                             |
+| -------------------- | ------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `items`              | `readonly NeDetailItem[]` | —                                 | Required. Each row is a label, a value, and optional `format` / `unit` / `currency` / `timeZone`. |
+| `unavailableMessage` | `string`                  | formatter empty placeholder (`—`) | What a missing reading prints.                                                                    |
+| `timeZone`           | `string`                  | —                                 | IANA zone for every `date` / `datetime` row that does not set its own.                            |
+
+#### `NeDetailItem`
+
+| Field      | Type                                      | Notes                                                                                               |
+| ---------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `label`    | `string`                                  | Required. Always visible, so the row never depends on colour.                                       |
+| `value`    | `NeDateInput \| number \| string \| null` | `null` / `undefined` / a non-finite number render the unavailable message.                          |
+| `format`   | `NeDetailFormat`                          | `'number' \| 'compact' \| 'percent' \| 'money' \| 'quantity' \| 'date' \| 'datetime' \| 'duration'` |
+| `unit`     | `string`                                  | Required for `format: 'quantity'`.                                                                  |
+| `currency` | `string`                                  | Required for `format: 'money'`.                                                                     |
+| `timeZone` | `string`                                  | Per-row override of the panel `timeZone`.                                                           |
+| `empty`    | `string`                                  | Per-row override of `unavailableMessage`.                                                           |
+
+#### Types
+
+```ts
+import type {
+  NeDetailFormat,
+  NeDetailItem,
+  NeDetailViewProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeMeter
+
+One value against a known ceiling
+([narduk-libs#601](https://github.com/narduk-enterprises/narduk-libs/issues/601)):
+a filled track with the figure beside it — a rate-limit budget, a quota,
+headroom against a plan. The figure reads `4,200 / 5,000`, formatted through
+`./format`'s `formatNumber`, so the server and the browser print the same digits
+on the first paint.
+
+A value with no producer is **not** an empty bar. `:value="null"` (or
+`undefined`, an omitted `value`, or a non-finite number) renders the
+[unreported treatment](#the-unreported-treatment): the `--ne-hatch` track with
+no fill, `— / 5,000` as the figure, and an accessible name ending "not
+reported". A reported `0` is an empty track and the digit `0`; the two never
+look alike.
+
+It is a plain element with a scoped stylesheet of token reads, not a wrapped
+Nuxt UI primitive. `UProgress` is the nearest one and fits neither half: it is a
+`progressbar` (a task heading for completion), not a `meter` (a quantity inside
+a known range), and its `null` value is the animated indeterminate state —
+"working on it" — which is exactly the reading an unreported figure must not
+give. The prior art is `narduk-ui`'s `NsRangeBar` and `NsLevelWell`; they read
+the `--ns-*` layer and are not aliased here.
+
+#### Example
+
+```vue
+<NeMeter :value="4200" :max="5000" label="Core REST" />
+<NeMeter :value="headroom" :max="budget" variant="inline" />
+<!-- Nothing reported yet: hatched, em-dash, "Search: not reported". -->
+<NeMeter :value="null" :max="30" label="Search" />
+```
+
+#### Props
+
+| Prop      | Type                  | Default   | What it does                                                                                                                                                                 |
+| --------- | --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value`   | `number \| null`      | `null`    | The measured quantity. `null`/`undefined`/non-finite renders the unreported treatment. The fill is clamped to `[0, max]`; the figure always shows the real, unclamped value. |
+| `max`     | `number`              | —         | The ceiling. Zero or less (or not finite) is a ceiling with no room: a reported `0` renders empty, anything above it renders full, and nothing divides by zero.              |
+| `label`   | `string`              | `''`      | Shown beside the track and used as the accessible name. Without one, the meter is named by its own reading (`4,200 of 5,000`).                                               |
+| `variant` | `'block' \| 'inline'` | `'block'` | `block`: label and figure on one line, the track full-width under them. `inline`: label, track and figure in one row, for a table cell or a list row.                        |
+
+#### Slots
+
+None. The figure is always `formatNumber(value) / formatNumber(max)`; a meter
+that needs a different unit is a follow-up prop, not a slot.
+
+#### Events
+
+None. A meter reports; it is not a control.
+
+#### Accessibility
+
+A reported meter is `role="meter"` with `aria-valuemin="0"`, `aria-valuemax`,
+`aria-valuenow` (the clamped value) and `aria-valuetext` (`"5,400 of 5,000"` —
+the real reading, so an overrun is not announced as exactly full). An unreported
+one has no value to give — ARIA requires `aria-valuenow` on a `meter`, and `0`
+would be the lie this component exists to avoid — so it is `role="img"` named
+`"<label>: not reported"` (or `NE_UNREPORTED_TEXT`, `"Not reported"`, with no
+label). Both roles have presentational children, so the visible label and figure
+are not read a second time. The root carries `data-state="reported"` or
+`"unreported"`.
+
+The track keeps the same footprint in both states, so a list of meters does not
+reflow as figures arrive. Under forced colours the track keeps an outline and
+the fill paints in `Highlight`.
+
+#### Types
+
+```ts
+import {
+  isUnreported,
+  NE_UNREPORTED_TEXT,
+} from '@narduk-enterprises/narduk-shell'
+import type {
+  NeMeterProps,
+  NeMeterVariant,
+} from '@narduk-enterprises/narduk-shell'
+```
 
 ## Formatters (`./format`)
 
@@ -1444,6 +2439,7 @@ surface check a bundler.
 | Date style       | `'medium'` (`Mar 8, 2026`); time style `'short'` (`3:30 AM`)           |
 | Unit display     | `'narrow'` for durations (`1h 30m`), `'short'` for quantities (`5 ft`) |
 | `Intl` instances | memoised per kind, keyed by locale plus the full sorted option set     |
+| Unit support     | feature-tested once per distinct `unit` string, then memoised          |
 
 The memo cache is capped at 256 entries per kind and clears wholesale on
 overflow. The cap is there because an option set can be derived from data
@@ -1451,6 +2447,10 @@ overflow. The cap is there because an option set can be derived from data
 the cache could grow with the working set rather than with the code; real call
 sites re-populate a handful of entries immediately, and an adversarial one pays
 a rebuild instead of growing without bound.
+
+The unit-support cache carries the same cap and clear-on-overflow behaviour, for
+the same reason: `formatQuantity`'s `unit` values come off live feeds such as
+USGS (`cfs`, `ft3/s`), not a fixed code-defined set (narduk-libs#287).
 
 ### `formatDate`
 

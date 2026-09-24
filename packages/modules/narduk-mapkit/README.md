@@ -7,8 +7,11 @@ public, independently versioned packages through GitHub Packages:
   geometry, temporal, vector-overlay, and Apple Maps Server API helpers, plus
   the `./nuxt` entry: a Nuxt 4 module registering `<AppMapKit>`, `useMapKit()`,
   and the same-host token route.
-- `@narduk-enterprises/narduk-mapkit-nuxt` — the 2.0.x adapter, for apps that
-  have not moved to the `./nuxt` entry.
+- `@narduk-enterprises/narduk-mapkit-nuxt` — the 2.0.x adapter, **frozen**: it
+  receives no further releases (`docs/api-2.1.md` § a). It exists for apps that
+  have not moved to the `./nuxt` entry. A new app uses
+  `@narduk-enterprises/narduk-mapkit/nuxt` and does not install it
+  (narduk-libs#696).
 
 This package centralizes the mapping code Narduk apps keep repeating: MapKit JS
 token routes, browser bootstrapping, coordinate and region math, GeoJSON and
@@ -77,17 +80,29 @@ Configure the scoped registry with a GitHub token that has `read:packages`:
 pnpm add @narduk-enterprises/narduk-mapkit
 ```
 
-Nuxt apps install both immutable releases:
-
-```sh
-pnpm add @narduk-enterprises/narduk-mapkit @narduk-enterprises/narduk-mapkit-nuxt
-```
+Nuxt apps register the package's own `./nuxt` entry; there is no second package
+to install:
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['@narduk-enterprises/narduk-mapkit-nuxt'],
+  modules: ['@narduk-enterprises/narduk-mapkit/nuxt'],
 })
 ```
+
+An app still on the frozen 2.0.x adapter
+(`modules: ['@narduk-enterprises/narduk-mapkit-nuxt']`) moves by editing
+`nuxt.config.ts`; no version bump hands it the new module. The two surfaces are
+not identical, so check what the app uses before moving:
+
+| Only in the frozen adapter                                              | Only in `narduk-mapkit/nuxt` |
+| ----------------------------------------------------------------------- | ---------------------------- |
+| `<AppMapKitCallout>`, `useMapKitCallouts` (use the `#callout` slot)     | `useMapKitFullscreen`        |
+| `useMapKitVectorTiles`, `useMapkitToken`                                | `useMapKitView`              |
+| `callouts*`, `fullscreenControl`, `fullscreenMode`, `centerLabel` props |                              |
+
+The 3.0.0 plan
+([`docs/plans/mapkit-consolidation-plan.md`](../../../docs/plans/mapkit-consolidation-plan.md))
+names both packages, so an app on either line meets the same break.
 
 Do not use mutable Git branches, absolute tarball paths, or vendored source in
 production consumers. Publish immutable SemVer packages and pin or range those
@@ -110,16 +125,17 @@ export default defineNuxtConfig({
 })
 ```
 
-| Option           | Default                              | What it does                                                      |
-| ---------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `component`      | `true`                               | Register `<AppMapKit>`.                                           |
-| `composables`    | `true`                               | Register `useMapKit()`.                                           |
-| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.  |
-| `language`       | _unset_                              | Passed to Apple's loader.                                         |
-| `rateLimit`      | `{ limit: 30, windowSeconds: 60 }`   | Fixed-window ceiling on the token route, per routed origin.       |
-| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.   |
-| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.    |
-| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup. |
+| Option           | Default                              | What it does                                                       |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `component`      | `true`                               | Register `<AppMapKit>`.                                            |
+| `composables`    | `true`                               | Register `useMapKit()`.                                            |
+| `marks`          | `false`                              | Add the `./marks` stylesheet (`MAPKIT_MARKS_CSS`).                 |
+| `libraries`      | `['map', 'annotations', 'overlays']` | App-wide default for the `libraries` prop. An empty list throws.   |
+| `language`       | _unset_                              | Passed to Apple's loader.                                          |
+| `rateLimit`      | _unset_ (no limit)                   | Opt-in fixed-window ceiling on the token route, per routed origin. |
+| `ssrPreload`     | `true`                               | Emit `renderHTMLAttributes()` during SSR — **without** a token.    |
+| `tokenRoute`     | `true`                               | Register the token route. `false` when the app serves its own.     |
+| `tokenRoutePath` | `'/api/mapkit-token'`                | Relative only. An absolute or `//`-prefixed path throws at setup.  |
 
 `libraries` is **configurable, not hard-coded**. MapKit JS 6 ships
 `mapkit.core.js` as a stub, so an app that only draws annotations can drop
@@ -136,6 +152,16 @@ ever carries a value. Missing signing material returns `503` with
 `{"error": "unconfigured"}`; a request that is not same-origin returns `403`.
 
 ### `<AppMapKit>`
+
+> **`window.mapkit` is NOT the namespace your map belongs to.** MapKit JS 6
+> resolves `mapkit.load(libraries)` to a scoped namespace object that is not
+> `window.mapkit`, and an `Annotation`, `Coordinate`, `CoordinateRegion`,
+> `MapRect` or `MapType` built from the global one is refused by your own map:
+> `Map.addAnnotations expected an annotation at index 0, but got [object EventTarget]`.
+> Build every MapKit value from the namespace the component hands you --
+> `@map-ready`'s second argument, the template ref's `getMapKit()`, or
+> `useMapKit().mapkit` -- and never from `globalThis.mapkit`. Measured live
+> against MapKit JS 6.0.128 on 2026-09-17; the fake models the split from 2.1.1.
 
 The component fills its parent, so the parent must establish an explicit height.
 
@@ -179,10 +205,51 @@ const selectedId = ref<string | null>(null)
   callout can only hold DOM handed to it as an element, which is why a
   `NuxtLink` inside one never routes.
 - **`retry()`** is on the exposed API, alongside `closeCallout`,
-  `getDiagnostics`, `getMap`, `openCallout`, `scrollIntoView`, `select`,
-  `setRegion`, and `zoomToFit`. A MapKit failure clears the cached
+  `getDiagnostics`, `getMap`, `getMapKit`, `openCallout`, `scrollIntoView`,
+  `select`, `setRegion`, and `zoomToFit`. A MapKit failure clears the cached
   initialization, so recovery is the caller's call — `#error` receives
   `{ failure, retry }`.
+- **`getMapKit()`** (2.1.1) returns the scoped namespace above, or `undefined`
+  before the map is ready. `@map-ready` hands over the same object as its second
+  argument; the argument was added rather than replacing the payload, so every
+  existing handler keeps working.
+- **`pinsFocusable`** (2.1.1) defaults to `true`. Set it `false` for a map whose
+  pins are a data layer the app selects from a list beside it: the hosts become
+  decorative — no `role`, `tabindex`, `aria-label`, `aria-pressed`, or click /
+  keyboard listeners — and `itemLabel` stops being required. A screen reader
+  should not announce N buttons that do nothing.
+- **`hoveredId`** (`v-model:hovered-id`, narduk-libs#517) marks the pin under
+  the pointer with `data-mapkit-hovered`. Hover never adds or removes
+  annotations.
+- **`leader`** (`{ anchor: HTMLElement | null }`) draws a line from the selected
+  pin to that element on every region change and when `items` move the
+  selection. It emits `leader-offscreen` when the pin leaves the frame (not when
+  the line is hidden for a missing point or anchor). The same overlay is
+  `MapKitLeaderOverlay` on `./client`.
+- **`mapType`** accepts Apple's `'mutedStandard'` as well as this library's
+  `'muted'` from 2.1.1, and both it and `colorScheme` are now written to a live
+  map when the prop changes, not only in the constructor.
+
+#### Styling
+
+2.1.1 ships the host chrome the component's DOM contract always implied. The
+module writes one stylesheet and **unshifts** it onto `nuxt.options.css`, so it
+loads before the app's own:
+
+| Selector             | What it establishes                                          |
+| -------------------- | ------------------------------------------------------------ |
+| `.mapkit-wrapper`    | `position: relative`, `overflow: hidden`, `block-size: 100%` |
+| `.mapkit-canvas`     | fills the wrapper — MapKit needs a sized element             |
+| `.mapkit-status`     | overlays the canvas, centred, `pointer-events: none`         |
+| `.mapkit-status > *` | takes pointer events back, so a retry button is clickable    |
+| `.mapkit-fallback`   | fills the wrapper and scrolls — the `#fallback` slot's host  |
+| `.mapkit-leader`     | SVG overlay for the selected-pin leader; no pointer events   |
+
+It is **layout only** — no colour, font, radius, or shadow — and every selector
+is a single class with no `!important`, so any rule of your own wins on source
+order without needing a prefix. Set `component: false` and no stylesheet is
+registered. The string is also exported as `MAPKIT_COMPONENT_CSS` from `/nuxt`
+for an app that would rather inject it itself.
 
 Three defaults flip in 2.1.0, each measured across the existing consumers:
 `preserveRegion` and `suppressSelectionZoom` are now `true`, and
@@ -191,7 +258,10 @@ Three defaults flip in 2.1.0, each measured across the existing consumers:
 The SSR preload is emitted **by the component** through `useHead`, not by the
 module into the app head, so a page that renders no map makes no request to
 `cdn.apple-mapkit.com` at all. It carries no token: a token in the tag is
-MapKit's static, non-refreshable path.
+MapKit's static, non-refreshable path. It is emitted during the server render
+only: on the client, Apple's loader adopts the server's tag, or injects the one
+tag on a client-side navigation, so a page has exactly one `mapkit.core.js`
+(2.1.3, narduk-libs#469).
 
 `@narduk-enterprises/narduk-mapkit-nuxt` stays at 2.0.x and is not part of this
 release; it remains the adapter for apps that have not moved to the `./nuxt`
@@ -255,11 +325,19 @@ turns into a `403` rather than a token for the host in that line. **On a Node
 listener a forged `Host:` header on an ordinary request target still names the
 origin claim**: nothing at this layer can tell a routed `Host` from a forged
 one, so a Node deployment must refuse unknown hosts itself (a vhost filter, or a
-proxy that only forwards the hostnames it serves) before this route is exposed.
+proxy that only forwards the hostnames it serves) before this route is exposed,
+or set `allowedHosts`. With `allowedHosts` set (on `MapKitServerConfig`, or the
+`nardukMapKit.allowedHosts` module option), a routed host outside the list is
+refused `403 not-same-origin` before the limiter and before signing. Entries are
+`host[:port]`, compared case-insensitively, or `*.example.com` for any subdomain
+but not the apex; an env-supplied string is read as a comma-separated list.
+Unset, every routed host is accepted, which is correct on Cloudflare Workers.
 
 The `/node` entry point is the only surface that reads `process.env` or uses the
-optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
-configuration in Web-standard runtimes.
+optional Doppler CLI fallback. That fallback is legacy: Narduk's Doppler
+projects are retired except the `ne` root store, so supply the values through
+`process.env` (for example under `nvault run --`). Use `/server` or `/worker`
+with explicit configuration in Web-standard runtimes.
 
 ### Cloudflare Workers
 
@@ -278,11 +356,43 @@ export default {
 }
 ```
 
-Narduk projects should source these values through Doppler, for example:
+Neither `mapKitTokenResponseFromEnv` nor the Nuxt module's route applies a rate
+limit by default (narduk-libs#485): MapKit tokens are same-origin and
+short-lived, and a default ceiling kept refusing real users. An app that wants
+one opts in -- the Nuxt module through its `rateLimit` option (or a limiter
+mounted on `event.context.nardukMapKit.rateLimit`, which wins), a Worker caller
+by passing §e.4's limiter from the same entry point:
+
+```ts
+import {
+  createMapKitFixedWindowRateLimit,
+  mapKitTokenResponseFromEnv,
+} from '@narduk-enterprises/narduk-mapkit/worker'
+
+// One limiter per isolate, built once -- not per request.
+const rateLimit = createMapKitFixedWindowRateLimit({
+  // Default key is the routed origin, which makes the ceiling site-wide.
+  key: ({ request, self }) => request.headers.get('cf-connecting-ip') ?? self,
+  limit: 30,
+  windowSeconds: 60,
+})
+
+mapKitTokenResponseFromEnv(request, env, {}, { rateLimit })
+```
+
+The limiter is in-process: each warm isolate keeps its own windows, so it bounds
+one isolate's signing work rather than a deployment's. Put a Cloudflare rate
+limiting rule or narduk-core's limiter in front of it when real abuse exposure
+matters.
+
+Narduk projects source these values from nvault (the shared signing persona is
+`apple/prd/mapkit-signing`), for example:
 
 ```sh
-doppler run -- pnpm dev
+nvault run -p apple -e prd -c mapkit-signing -- pnpm dev
 ```
+
+Doppler is retired for this: do not use `doppler run`.
 
 Cloudflare Workers should receive the same names through Worker secrets or
 bindings. Recognized runtime names:
@@ -291,10 +401,14 @@ bindings. Recognized runtime names:
 - `APPLE_TEAM_ID`
 - `APPLE_KEY_ID`
 
-`MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN`, and `APPLE_MAPKIT_TOKEN` are still
-read for 2.0.x compatibility and then ignored: the route mints per routed
-origin, and a static portal token can only ever work on one host. Their presence
-is reported through the route's log hook as a deprecation.
+`MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN`, and `APPLE_MAPKIT_TOKEN` are accepted
+for 2.0.x compatibility and do nothing; do not set them. In particular,
+`MAPKIT_ALLOWED_ORIGINS` is not an allowlist: the route answers same-origin
+requests only (`isMapKitRequestSameOrigin`), whatever the variable holds, and it
+mints per routed origin. A static portal token can only ever work on one host.
+When any of them is set, every `log` hook entry lists the ignored config key
+(`allowedOrigins` or `staticToken`) in `deprecatedKeys`, so an app that wants a
+warning reads it there.
 
 `APPLE_PRIVATE_KEY` must be PKCS#8 PEM with `BEGIN PRIVATE KEY`. Escaped
 newlines are accepted.
@@ -430,6 +544,199 @@ void crossfadeMapKitOverlayOpacity({
   targetOpacity: 0.82,
 }).finished
 ```
+
+## Vector Tiles
+
+MapKit JS draws raster tiles only, so a dense vector network -- millions of line
+features -- has to be painted before MapKit sees it.
+`createVectorTileOverlaySource` turns an archive of vector tiles into the
+`imageForTile` function the async overlay and the layer registry already accept.
+
+The decode step is injected, for three reasons: this entry stays free of
+protobuf dependencies, an app can run the decoder in a worker so the main thread
+never parses a tile, and a test can paint fixture geometry without building one.
+
+```ts
+import {
+  createMapKitAsyncTileOverlay,
+  createPmTilesFetchSource,
+  createPmTilesTileSource,
+  createVectorTileOverlaySource,
+} from '@narduk-enterprises/narduk-mapkit/client'
+import { PMTiles } from 'pmtiles'
+
+const archive = new PMTiles(
+  createPmTilesFetchSource({
+    url: 'https://data.example/river-network.pmtiles',
+  }),
+)
+const tiles = createPmTilesTileSource({ reader: archive })
+
+const network = createVectorTileOverlaySource({
+  createCanvas: (width, height) => new OffscreenCanvas(width, height),
+  decode: (bytes, tile) => decodeInWorker(bytes, tile),
+  style: (properties, zoom) => {
+    if (Number(properties.so) < 5 && zoom < 8) return null
+    return { color: palette[status[Number(properties.ri)]], width: 1.2 }
+  },
+  tileBytes: (z, x, y) => tiles.getTile(z, x, y),
+})
+
+map.addTileOverlay(
+  createMapKitAsyncTileOverlay(window.mapkit, network.imageForTile),
+)
+```
+
+A missing tile, an empty tile, a declined style and a failed decode all resolve
+to `null`, so the overlay draws nothing there rather than covering the basemap
+with an empty square. Failures reach `onError` instead of rejecting.
+
+Decoded tiles are cached, so `setStyle()` repaints from memory:
+
+```ts
+network.setStyle(nextLensStyle)
+overlay.reload() // MapKit re-requests the visible tiles; no refetch, no re-decode
+```
+
+That is what makes a lens change cheap. The cache is an LRU (`cacheSize`,
+default 256 tiles); `clearCache()` drops it when the archive itself changes.
+
+`createPmTilesFetchSource` is the range-request `Source` for the `pmtiles`
+reader, taking the `fetch` it uses so a test needs no network. The `pmtiles`
+package is the caller's dependency, not this package's.
+
+### Decoding a tile
+
+The decoder itself lives in a separate entry, `./vector-tiles`, because it is
+the only part of this package that depends on protobuf. `./client` -- which
+every map consumer imports -- never reaches it, so an app that has no vector
+layer never bundles a parser. A test walks the import graph and fails if that
+line is ever crossed.
+
+```ts
+import { createMvtDecoder } from '@narduk-enterprises/narduk-mapkit/vector-tiles'
+
+const decode = createMvtDecoder({
+  layers: ['reaches'],
+  properties: ['ri', 'so'], // drop `name` from the cached tiles; fetch it on click
+})
+```
+
+`layers` and `properties` are worth setting on a dense archive. Geometry is
+already flat buffers; properties are not, so a string on each of a few thousand
+features per tile is what actually grows the cache.
+
+Empty bytes, a tile whose layers the filter excludes, and a layer with no
+features all decode to `null` -- nothing to draw, and not reported. A body that
+is not a vector tile at all (an HTML error page served with a 200, a truncated
+read) throws, so it reaches `onError` and gets counted rather than quietly
+painting blank country over the basemap.
+
+### Decoding off the main thread
+
+Decoding is protobuf parsing plus a zigzag-delta walk over every point: tens of
+milliseconds per tile on a national network, and MapKit asks for a screenful at
+once. `serveVectorTileDecoder` hosts the decoder in a worker and
+`createWorkerDecoder` talks to it, correlating replies by id so one worker
+serves every tile in flight.
+
+The worker script is the app's, not this package's -- that is the only
+arrangement Vite, webpack and Nuxt all agree on:
+
+```ts
+// app/workers/river-network.ts
+import {
+  createMvtDecoder,
+  serveVectorTileDecoder,
+} from '@narduk-enterprises/narduk-mapkit/vector-tiles'
+
+serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'] }))
+```
+
+```ts
+// on the main thread
+import { createWorkerDecoder } from '@narduk-enterprises/narduk-mapkit/client'
+
+const decoder = createWorkerDecoder({
+  worker: new Worker(new URL('./workers/river-network.ts', import.meta.url), {
+    type: 'module',
+  }),
+})
+
+const network = createVectorTileOverlaySource({
+  decode: decoder.decode,
+  ...rest,
+})
+```
+
+Tile bytes are transferred to the worker and the decoded buffers transferred
+back, so nothing is copied either way; pass `transfer: false` if the caller
+needs to keep its own array. A worker that dies mid-decode never answers, so a
+reply deadline (`timeoutMs`, default 15s) fails that one tile instead of leaving
+it pending for the life of the map. `dispose()` fails everything in flight and
+stops listening.
+
+### Hit testing
+
+A painted tile is pixels, so MapKit cannot say which river a tap landed on.
+`source.hitTest()` answers that from the decoded tiles the cache already holds:
+it projects the coordinate into tile space, walks the geometry, and returns the
+nearest feature within the tolerance, with the properties that came out of the
+archive.
+
+```ts
+map.addEventListener('single-tap', (event) => {
+  const point = map.convertPointOnPageToCoordinate(event.pointOnPage)
+  const hit = network.hitTest({
+    coordinate: { latitude: point.latitude, longitude: point.longitude },
+    zoom: Math.round(zoomForRegion(map.region)),
+  })
+  if (hit) selectReach(hit.properties.ri, hit.distancePx)
+})
+```
+
+It is synchronous and never fetches. A tap has to be answered in the gesture,
+and the only tiles that can be searched in that time are the ones already
+decoded -- which, for a tap on a river the user can see, is exactly the tile
+under their finger. A tap on an undrawn tile misses.
+
+`tolerancePx` is a screen radius, not a tile distance: the default of 8px is
+about a fingertip, and the returned `distancePx` is in the same units, so a
+caller can prefer a closer feature across two sources. Distance is measured to
+the nearest point on a segment rather than to a vertex, so a tap in the middle
+of a long straight reach hits it.
+
+The probe also reaches into neighbouring tiles when it falls within the
+tolerance of an edge, wrapping at the antimeridian and stopping at the poles.
+Without that, a river drawn a pixel inside the next tile would be untappable
+along every tile boundary on the map -- a grid of dead lines the user cannot
+see.
+
+### What a decoded tile costs
+
+A decoded tile is columnar: one `Int16Array` of interleaved `x, y` pairs, plus
+two `Uint32Array` indexes describing where each feature and line begins.
+
+That is not a micro-optimisation. A tile of flowlines carries on the order of
+10^5 points; one `{ x, y }` object per point costs roughly 40 bytes once V8 has
+its header and pointer, so the default 256-tile cache would retain about a
+gigabyte -- past what mobile Safari gives a tab before discarding it. The same
+points cost 4 bytes each here.
+
+`source.cacheBytes` reports what the cache is holding, so an app can set
+`cacheSize` against a real budget rather than a guess. Geometry and indexes are
+exact; properties are estimated, since only the engine knows an object's real
+footprint -- but they are counted, because a `name` string on each of a few
+thousand features per tile is the part that actually grows a dense archive.
+Build a tile by hand with `buildDecodedVectorTile`, read one back with
+`vectorTileFeatureCount` and the index arrays, and measure one with
+`decodedVectorTileBytes`.
+
+Requests for an address already in flight join that read rather than starting a
+second one -- MapKit re-asks for the same tile on every render pass, so without
+that the archive is fetched twice and the tile decoded twice for one tile drawn.
+`clearCache()` also discards whatever is in the air, so a read started against
+the archive being replaced cannot land in the cleared cache.
 
 ## Layer Registry
 
@@ -803,6 +1110,87 @@ Behavior worth knowing before wiring a UI to it:
   controller throws rather than letting the registry reject the swap
   mid-animation.
 
+## Point-Map Marks
+
+`@narduk-enterprises/narduk-mapkit/marks` is the kit a map-first app draws its
+points with. It was lifted unchanged from buoys (narduk-libs#517), which is the
+reference consumer. Nothing in it knows about Vue, Nuxt, or any domain: the
+caller supplies projected pixel positions, radii, colours, and every word of
+copy, and reads back layout.
+
+| Module      | What it does                                                                                                                                                                                                                                                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `declutter` | `declutter()` places same-layer circles largest-first on a uniform spatial grid and folds anything a placed circle overlaps into its `absorbed` list; a primary layer absorbs an overlapping secondary layer; background context marks are thinned clear. Deterministic: exact ties break by ascending id. `pickPeaks()` and `majority()` pick what a crowded cell shows. |
+| `labels`    | `placeLabels()` places name pills beside placed discs without collisions.                                                                                                                                                                                                                                                                                                 |
+| `layer`     | `createMarkLayer(map, runtime)` reconciles a keyed list of `MarkSpec`s onto MapKit annotations through `MapKitAnnotationRegistry`.                                                                                                                                                                                                                                        |
+| `marks`     | `createPinMark()`, `createSelectedMark()`, `createBackgroundMark()` build the annotation DOM: a zero-size anchor with a sized disc, optional glyph, stack rim, and name pill.                                                                                                                                                                                             |
+| `camera`    | `projectToFrame()`, `frameToCoordinate()`, `padRect()`/`unpadRect()`, `rectForBox()`, `rectRevealing()`, `zoomRect()`, and `tierForSpan()` for map-rect math against the visible frame.                                                                                                                                                                                   |
+| `overflow`  | `overflowEdges()` reports which frame edges hidden marks lie beyond.                                                                                                                                                                                                                                                                                                      |
+| `overview`  | `mapOverviewCamera()` frames the interquartile core of a point set and falls back to `NORTH_AMERICA_OVERVIEW` when the core spans more than a third of the planet.                                                                                                                                                                                                        |
+| `runtime`   | Structural `Mk*` types plus `asMkMap()` and `asMkRuntime()` to narrow what `<AppMapKit>` hands over. Pass the scoped namespace from `useMapKit().mapkit.value`, never `window.mapkit` (K-10).                                                                                                                                                                             |
+
+Style the marks with the module's `marks: true` option in Nuxt, or put
+`MAPKIT_MARKS_CSS` on the page yourself. Every rule reads a `--mk-*` custom
+property (`--mk-ink`, `--mk-ink-2`, `--mk-ink-3`, `--mk-void`, `--mk-surface`,
+`--mk-focus`, `--mk-font-sans`, `--mk-font-mono`, `--mk-leader`) with a neutral
+fallback, so a host themes marks by setting those on any ancestor of the map.
+
+### `useMapKitView()` in Nuxt
+
+`useMapKitView()` is the Vue side of the marks: it owns the map behind a
+map-first page's `<AppMapKit>` (camera, frame, zoom tier, padding, basemap, the
+mark layer and fullscreen). It is auto-imported with `useMapKit()` under the
+module's `composables` option, and was lifted from buoys along with `./marks`.
+
+```vue
+<script setup lang="ts">
+const surface = useTemplateRef<HTMLElement>('surface')
+const view = useMapKitView({
+  basemap: () => 'MutedStandard',
+  insets: () => ({ top: 24, right: 416, bottom: 24, left: 24 }), // chrome over the map
+  padding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), // where Apple's logo sits
+  specs: () => markSpecs.value, // MarkSpec[] built with createPinMark()
+  surface: () => surface.value,
+})
+</script>
+
+<template>
+  <div ref="surface">
+    <AppMapKit :items="[]" @map-ready="view.onMapReady" />
+  </div>
+</template>
+```
+
+- **`items` stays empty.** The view draws through `createMarkLayer()`, so the
+  component's own pin layer has nothing to diff.
+- **The runtime comes from `map-ready`'s second argument**, the scoped namespace
+  (K-10), never `window.mapkit`.
+- **`mapReady` waits for a laid-out host.** MapKit can fire `map-ready` before
+  its element has a size; the view retries across frames, then re-applies the
+  region so custom annotations line up with the canvas.
+- **Built-in controls are off.** The page draws its own zoom, layers and scale.
+- **Camera moves are whole-frame.** `fitBox()`, `reveal()` and `zoomBy()` keep
+  targets clear of `insets`, and changing `padding` holds the camera still.
+- `useMapKitFullscreen({ surface, onLayout })` is the same fullscreen toggle as
+  a standalone composable.
+
+Both are also exported from `@narduk-enterprises/narduk-mapkit/nuxt/composables`
+for callers auto-import never reaches -- a unit test under plain vitest, an app
+with `imports.autoImport` off, or any module that wants the function rather than
+the ambient name:
+
+```ts
+import {
+  useMapKitFullscreen,
+  useMapKitView,
+} from '@narduk-enterprises/narduk-mapkit/nuxt/composables'
+```
+
+`useMapKit()` is not on that subpath. It reads the module's runtime options
+through `#imports`, which only resolves inside a Nuxt build; these two need only
+Vue, because the view takes its MapKit namespace from `map-ready` (K-10) rather
+than from the kit handle.
+
 ## Pointer Probe
 
 `attachMapKitPointerProbe` is the pointer plumbing behind a map readout. One
@@ -1027,6 +1415,38 @@ The component presents its own wrapper, refreshes MapKit geometry on every
 change, and exposes `enterFullscreen()`, `exitFullscreen()`, and
 `toggleFullscreen()` through its template ref.
 
+## Reveal beside and the leader overlay
+
+`rectBeside(rect, frame, point, anchor, options)` is pure camera math on
+`./client`, next to `refreshMapKitMapLayout`. It returns the visible map rect
+that places a coordinate beside a DOM rect: a gap (default 24px), a vertical
+target (default the rect's centre), and one extra zoom step when
+`clustered: true`. Frame and anchor are in the map's CSS pixels; `point` is the
+coordinate's current position in that same frame.
+
+```ts
+import { rectBeside } from '@narduk-enterprises/narduk-mapkit/client'
+
+const next = rectBeside(map.visibleMapRect, frame, pinPoint, cardRect, {
+  clustered: pin.memberCount > 1,
+  gap: 24,
+  verticalTarget: cardRect.y + 48,
+})
+map.setVisibleMapRectAnimated(
+  new mapkit.MapRect(
+    next.origin.x,
+    next.origin.y,
+    next.size.width,
+    next.size.height,
+  ),
+  true,
+)
+```
+
+`MapKitLeaderOverlay` draws the line from that pin to the card (or a notch /
+caret element) and reports when the pin is off screen. `<AppMapKit>` accepts the
+same overlay as the `leader` prop.
+
 ## Callouts
 
 `createMapKitCalloutController()` anchors app-owned content to map coordinates.
@@ -1175,6 +1595,35 @@ fake that silently no-ops is how a test goes green for code that would fail
 against Apple, so the fake is loud by construction. If you hit that error and
 the member matters, model it here rather than working around it in the app.
 
+The same rule covers a member the fake **does** model but nothing has set:
+reading `map.mapType` on a map built without one throws, because Apple documents
+no default and a guess is how a fake teaches a test the wrong thing. Where real
+MapKit's behaviour is genuinely unknown the fake records instead of inventing --
+see `degenerateCameraInputs` below.
+
+**The scoped namespace (2.1.1).** `handle.mapkit` is the namespace `install()`
+publishes as `globalThis.mapkit`; `handle.load()` resolves to a **different**
+one, exactly as MapKit JS 6 does. Each namespace's `maps` lists only its own,
+and a map refuses an annotation, region or `MapRect` built from the other with
+Apple's own message. Drive the component through `load()` -- as production does
+-- and build the values you hand it from what `load()` resolved, not from
+`handle.mapkit`. 2.1.0's fake returned one object for both, which is how 62
+green end-to-end tests shipped a blank map.
+
+**`init()` is a page singleton (K-7).** A second `mapkit.init()` after a
+_failed_ token exchange runs a new exchange, which is how `<AppMapKit>`'s
+`retry()` is tested. Any other second call -- while the first exchange is
+pending, or after it succeeded -- is an idempotent no-op: no new token is
+requested, the first call's options stand, and the call is logged as `init` with
+detail `ignored`. A page that mounts several maps therefore needs no double-init
+shim (narduk-libs#522).
+
+**The rect camera (K-5).** `map.visibleMapRect`,
+`map.setVisibleMapRectAnimated()`, `mapkit.MapRect` / `MapPoint` / `MapSize` and
+`mapkit.Map.MapTypes` are modelled alongside the region camera. The rect is the
+Web-Mercator unit rect of the region the fake projects pins with, so a
+coordinate lands on the same pixel whichever camera a page drives.
+
 ### In vitest (happy-dom or jsdom)
 
 ```ts
@@ -1182,14 +1631,16 @@ the member matters, model it here rather than working around it in the app.
 import { installFakeMapKit } from '@narduk-enterprises/narduk-mapkit/testing'
 
 // Publishes `globalThis.mapkit`, so code under test sees the real global name.
-// Prefer `fake.mapkit` in the test body itself: it is fully typed.
 const fake = installFakeMapKit({ auth: { mode: 'accept' } })
 fake.mapkit.init({ authorizationCallback: (done) => done('test.token') })
 
+// The namespace a real app gets back. NOT `fake.mapkit` -- see above.
+const mapkit = await fake.load({ libraries: ['map', 'annotations'] })
+
 const host = document.body.appendChild(document.createElement('div'))
-const map = new fake.mapkit.Map(host)
+const map = new mapkit.Map(host)
 map.addAnnotation(
-  new fake.mapkit.MarkerAnnotation(new fake.mapkit.Coordinate(30.2, -88.1), {
+  new mapkit.MarkerAnnotation(new mapkit.Coordinate(30.2, -88.1), {
     title: 'Buoy',
   }),
 )
@@ -1197,6 +1648,10 @@ map.addAnnotation(
 expect(fake.inspect.annotationsAdded).toBe(1)
 fake.uninstall()
 ```
+
+Handing that map a `new fake.mapkit.MarkerAnnotation(...)` instead throws
+`Map.addAnnotations expected an annotation at index 0, but got [object EventTarget]`
+-- the real message, from the real defect.
 
 ### In Playwright
 
@@ -1239,11 +1694,21 @@ production code can reach for it by accident.
 | `bootstrapAttempts`                | Every bootstrap attempt, with the token index it used                        |
 | `configurationChanges` / `errors`  | Statuses dispatched, oldest first                                            |
 | `advanceClock(ms)` / `now`         | The fake access-key clock. No real timer is ever involved                    |
+| `degenerateCameraInputs`           | Rect/padding camera writes with no positive extent or no room left           |
 
 The per-annotation counts are the point. They let a test assert a budget rather
 than an outcome -- "updating 1 of 600 pins touched 1 annotation, not 600" is a
 regression test for the reconciliation defect the annotation registry exists to
 prevent, and it is not expressible against a fake that only reports final state.
+
+`degenerateCameraInputs` (2.1.1) exists for the same reason in the other
+direction. A `MapRect` with a non-positive `width`/`height`, or `padding` whose
+insets leave no room in the container, is an input Apple documents no behaviour
+for. Buoys saw a real map zoom out to a continent on the phone when its
+selection maths produced one, but one observation of one input is not a rule --
+so the fake **applies the write and records it** rather than clamping, throwing,
+or pretending to know. `expect(fake.inspect.degenerateCameraInputs).toEqual([])`
+is the assertion that would have caught it.
 
 ### Scriptable authorization
 
@@ -1288,6 +1753,11 @@ tiles, and real animation timing. Every one of them throws
 registries and the Narduk map component need; the admission bar for adding to it
 is two live applications or a defect fix.
 
+It also does not model per-namespace class identity. Foreign values are refused
+by a brand check, so a cross-namespace `instanceof` still passes in the fake
+where real MapKit's would fail. Nothing in this library branches on
+`instanceof`; a consumer that does is outside what the fake covers.
+
 ## Examples
 
 The `examples/` directory contains copyable integration patterns:
@@ -1304,31 +1774,36 @@ The `examples/` directory contains copyable integration patterns:
 - `fullscreen.ts`
 - `pin-scaling.ts`
 - `annotation-callouts.ts`
+- `vector-tile-network.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
 
 ## API Surface
 
-| Export                                         | Purpose                                                                                                                                                                                                                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-mapkit/apple-maps` | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/server`     | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                      |
-| `@narduk-enterprises/narduk-mapkit/worker`     | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                           |
-| `@narduk-enterprises/narduk-mapkit/node`       | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/client`     | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling |
-| `@narduk-enterprises/narduk-mapkit/geometry`   | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/playback`   | Route progress, line slicing, duration formatting                                                                                                                                                                                                                 |
-| `@narduk-enterprises/narduk-mapkit/testing`    | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                               |
-| `@narduk-enterprises/narduk-mapkit/token`      | Low-level JWT signing and decoding                                                                                                                                                                                                                                |
-| `@narduk-enterprises/narduk-mapkit-nuxt`       | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                        |
+| Export                                               | Purpose                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                                                        |
+| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                                                    |
+| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                                                         |
+| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                                                        |
+| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling, `rectBeside`, leader overlay |
+| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                                                        |
+| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                                                 |
+| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                                               |
+| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                                                             |
+| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                              |
+| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                      |
+| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                         |
 
 ## Maintainer Migration Notes
 
 The repository keeps internal migration notes under `docs/`, but those notes are
 not part of the published package artifact. The short version:
 
-1. Move token routes to `server` helpers.
+1. Move token routes to `server` helpers. Drop `MAPKIT_ALLOWED_ORIGINS`,
+   `MAPKIT_TOKEN` and `APPLE_MAPKIT_TOKEN`: 2.1+ accepts and ignores them, and
+   the route is same-origin-only regardless of any allowlist.
 2. Move local script loaders to `initializeMapKit()` and pass `libraries`.
 3. Move bounds, GeoJSON, and drawable framing to `geometry` and `client` region
    helpers.
@@ -1352,7 +1827,9 @@ the source of truth for that origin. `allowedOrigins` and
 route logs their presence as deprecated. Token issuance is GET-only. Apps own
 provider-specific rate limiting and pass a `rateLimit` hook to the handler — the
 hook is part of the handler, not a path-matched middleware, so no URL spelling
-can route around it.
+can route around it. `createMapKitFixedWindowRateLimit` (exported from `/server`
+and `/worker`) is the in-process limiter the Nuxt module applies when an app
+sets its `rateLimit` option; with the option unset the route has no limit.
 
 Report vulnerabilities through the process in `SECURITY.md`, not public issues.
 
@@ -1364,10 +1841,10 @@ pnpm run quality
 ```
 
 Do not add `.env` files. For local secret-backed flows, run commands through
-Doppler:
+nvault (Doppler is retired except the `ne` root store):
 
 ```sh
-doppler run -- pnpm run quality
+nvault run -p apple -e prd -c mapkit-signing -- pnpm run quality
 ```
 
 `pnpm run quality` validates core and Nuxt types, tests, production builds,

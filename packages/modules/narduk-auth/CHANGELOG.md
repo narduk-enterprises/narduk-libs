@@ -1,5 +1,214 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.29.4
+
+### Patch Changes
+
+- Updated dependencies [dfa8d39]
+  - @narduk-enterprises/narduk-core@2.13.1
+
+## 1.29.3
+
+### Patch Changes
+
+- Updated dependencies [e8a373e]
+- Updated dependencies [12f3294]
+- Updated dependencies [e87803e]
+  - @narduk-enterprises/narduk-core@2.13.0
+
+## 1.29.2
+
+### Patch Changes
+
+- Updated dependencies [551e39a]
+  - @narduk-enterprises/narduk-core@2.12.0
+
+## 1.29.1
+
+### Patch Changes
+
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+- Updated dependencies [5747011]
+- Updated dependencies [02b6c1a]
+- Updated dependencies [b0dca25]
+- Updated dependencies [45ea540]
+- Updated dependencies [f395bd6]
+  - @narduk-enterprises/narduk-core@2.11.0
+  - @narduk-enterprises/narduk-app@1.20.2
+
+## 1.29.0
+
+### Minor Changes
+
+- a7e08a4: Apps can brand the password setup and reset emails through the
+  `narduk-auth:email` Nitro hook. A template that throws or drops the link falls
+  back to the default email. `sendAuthEmail` sends an app's own account email,
+  such as an invitation, from the configured sender.
+  `registerLocalUserWithProvenEmail` and `confirmSessionEmailWithProof` create
+  or confirm an account for an address the app has just proven by redeeming a
+  single-use token it emailed there, so an invited person sets a password and is
+  in without a second confirmation email.
+
+### Patch Changes
+
+- Updated dependencies [0da668a]
+- Updated dependencies [5ac629e]
+- Updated dependencies [1759259]
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-core@2.10.1
+  - @narduk-enterprises/narduk-app@1.20.2
+  - @narduk-enterprises/narduk-platform@2.1.1
+
+## 1.28.17
+
+### Patch Changes
+
+- e61a56d: `meta.compatibility.nuxt` now says `>=4.0.0`, matching the `nuxt`
+  peer range these modules already declare (#444). Before, the module metadata
+  still claimed `>=3.16.0`, so a Nuxt 3 app got no compatibility warning from
+  Nuxt and failed later instead. Nuxt 4 apps see no change.
+- Updated dependencies [056105e]
+  - @narduk-enterprises/narduk-core@2.10.0
+
+## 1.28.16
+
+### Patch Changes
+
+- Updated dependencies [671fbf3]
+  - @narduk-enterprises/narduk-core@2.9.0
+  - @narduk-enterprises/narduk-app@1.20.1
+
+## 1.28.15
+
+### Patch Changes
+
+- Updated dependencies [df7568d]
+  - @narduk-enterprises/narduk-core@2.8.1
+
+## 1.28.14
+
+### Patch Changes
+
+- Updated dependencies [cecc72a]
+- Updated dependencies [62b7b79]
+- Updated dependencies [62b7b79]
+- Updated dependencies [c574403]
+- Updated dependencies [2671ccd]
+- Updated dependencies [b672613]
+  - @narduk-enterprises/narduk-core@2.8.0
+
+## 1.28.13
+
+### Patch Changes
+
+- Updated dependencies [693f7d3]
+  - @narduk-enterprises/narduk-core@2.7.0
+
+## 1.28.12
+
+### Patch Changes
+
+- Updated dependencies [fa2f123]
+  - @narduk-enterprises/narduk-core@2.6.4
+
+## 1.28.11
+
+### Patch Changes
+
+- Updated dependencies [ecc731b]
+  - @narduk-enterprises/narduk-core@2.6.3
+
+## 1.28.10
+
+### Patch Changes
+
+- Updated dependencies [81051b0]
+  - @narduk-enterprises/narduk-core@2.6.2
+
+## 1.28.9
+
+### Patch Changes
+
+- Updated dependencies [448e86f]
+- Updated dependencies [7142305]
+  - @narduk-enterprises/narduk-core@2.6.1
+
+## 1.28.8
+
+### Patch Changes
+
+- Updated dependencies [4599aa7]
+- Updated dependencies [4ba5d02]
+  - @narduk-enterprises/narduk-core@2.6.0
+
+## 1.28.7
+
+### Patch Changes
+
+- 92835a1: Fixes for the new error-severity lint rules. `LayerAppFooter`
+  (narduk-core, narduk-seo) no longer reads `new Date()` during render for the
+  copyright year; it reads one SSR-hydrated timestamp (`useSsrNow` in
+  narduk-core, `useState` in narduk-seo), so server and client agree.
+  `GET /api/auth/api-keys` (narduk-auth) is ordered newest first in SQL and
+  limited to 100 keys, since nothing caps how many keys a user may create.
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [92835a1]
+  - @narduk-enterprises/narduk-core@2.5.0
+  - @narduk-enterprises/narduk-app@1.20.1
+
+## 1.28.6
+
+### Patch Changes
+
+- Updated dependencies [bb37590]
+- Updated dependencies [bb37590]
+  - @narduk-enterprises/narduk-core@2.4.0
+
+## 1.28.5
+
+### Patch Changes
+
+- Updated dependencies [8da7e33]
+- Updated dependencies [05b3ef9]
+  - @narduk-enterprises/narduk-core@2.3.0
+
+## 1.28.4
+
+### Patch Changes
+
+- Updated dependencies [fe58c5f]
+  - @narduk-enterprises/narduk-core@2.2.4
+
+## 1.28.3
+
+### Patch Changes
+
+- Updated dependencies [7ae9278]
+  - @narduk-enterprises/narduk-core@2.2.3
+
+## 1.28.2
+
+### Patch Changes
+
+- Updated dependencies [766ce96]
+  - @narduk-enterprises/narduk-core@2.2.2
+
+## 1.28.1
+
+### Patch Changes
+
+- Updated dependencies [fa41027]
+- Updated dependencies [fa41027]
+  - @narduk-enterprises/narduk-core@2.2.1
+
 ## 1.28.0
 
 ### Minor Changes

@@ -74,9 +74,32 @@ export interface SecurityHeadersHstsOptions {
   preload?: boolean
 }
 
+/**
+ * Which third-party origins an app inherits before its own `allow` is applied.
+ *
+ * `'estate'` (the default) merges `BASELINE_ALLOWLIST`, so an app that installs
+ * narduk-analytics or narduk-mapkit does not restate their hosts. `'self'`
+ * merges nothing: the policy is seeded from `'self'` and whatever the app names
+ * in `allow`.
+ *
+ * `'self'` exists because the estate baseline is a floor, not a ceiling, and a
+ * floor is the wrong shape for an app that reaches no third party at all. Such
+ * an app could not previously enforce the strict nonce policy without WIDENING
+ * its CSP -- `allow` only adds. operator-portal is the case that surfaced it
+ * (narduk-libs#560): a `'self'`-only authenticated console, where taking
+ * `'unsafe-inline'` off `script-src` would have cost eight third-party origins
+ * on `connect-src`, which is the directive that governs exfiltration.
+ */
+export type SecurityHeadersBaseline = 'estate' | 'self'
+
 export interface SecurityHeadersOptions {
-  /** Extra origins per directive, merged onto the estate baseline. */
+  /** Extra origins per directive, merged onto whichever baseline is selected. */
   allow?: SecurityHeadersAllowlist
+  /**
+   * Which third-party origins to inherit. Default `'estate'`, so an upgrade
+   * never narrows an existing app's policy without it asking.
+   */
+  baseline?: SecurityHeadersBaseline
   /** Serve the strict nonce policy. Off by default: an upgrade must not change
    * an app's headers without the app asking for it. */
   enabled?: boolean
@@ -110,6 +133,7 @@ export interface SecurityHeadersOptions {
 }
 
 export interface ResolvedSecurityHeaders {
+  baseline: SecurityHeadersBaseline
   csp: Record<string, string[] | string | boolean>
   frameAncestors: string[]
   hsts: Required<SecurityHeadersHstsOptions> | false
@@ -148,13 +172,23 @@ export const BASELINE_ALLOWLIST: Required<SecurityHeadersAllowlist> = {
     'https://*.google-analytics.com',
     'https://*.analytics.google.com',
     'https://*.googletagmanager.com',
+    // GA4's Google-signals feature sends a second page_view beacon straight
+    // to https://www.google.com/g/collect (not a *.google-analytics.com
+    // host), and falls back to an <img> beacon at the same origin when
+    // fetch/sendBeacon is unavailable. A property with Google signals off
+    // never sends this beacon and does not need this host (issue #472;
+    // https://developers.google.com/tag-platform/security/guides/csp,
+    // 2026-07-30 revision, read 2026-09-18).
+    'https://www.google.com',
     'https://us.i.posthog.com',
     'https://us-assets.i.posthog.com',
     'https://*.apple-mapkit.com',
     'https://*.apple.com',
   ],
   // MapKit serves raster tiles and the Nuxt image pipeline serves data: URIs.
-  img: ['data:', 'https://*.apple-mapkit.com'],
+  // https://www.google.com is GA4's Google-signals image-beacon fallback --
+  // see the connect-src comment above.
+  img: ['data:', 'https://*.apple-mapkit.com', 'https://www.google.com'],
   font: ['https://fonts.gstatic.com'],
   style: ['https://fonts.googleapis.com'],
   frame: [],
@@ -213,10 +247,11 @@ function sourcesFor(
   key: keyof SecurityHeadersAllowlist,
   allow: SecurityHeadersAllowlist | undefined,
   strictDynamic: boolean,
+  baseline: SecurityHeadersBaseline,
 ): string[] {
   return dedupe([
     ...directiveSeed(key, strictDynamic),
-    ...BASELINE_ALLOWLIST[key],
+    ...(baseline === 'self' ? [] : BASELINE_ALLOWLIST[key]),
     ...(allow?.[key] ?? []),
   ])
 }
@@ -236,6 +271,13 @@ export function parseLegacyCspSources(value: unknown): string[] {
 }
 
 export interface LegacyCspEnvironment {
+  /**
+   * `NUXT_PUBLIC_ALLOW_GEOLOCATION`. Before narduk-libs#385 only the legacy
+   * middleware read it, so an app with the preset on set it, saw
+   * `allowGeolocation: true` in its public config, and still sent
+   * `geolocation=()`. An explicit `permissionsPolicy.geolocation` wins over it.
+   */
+  allowGeolocation?: boolean
   cspConnectSrc?: unknown
   cspFrameSrc?: unknown
   cspMediaSrc?: unknown
@@ -290,6 +332,7 @@ export function resolveSecurityHeaders(
   const allow = mergeLegacyAllowlist(settings.allow, legacy)
   const frameAncestors = dedupe([...(settings.frameAncestors ?? ["'none'"])])
   const strictDynamic = settings.strictDynamic ?? true
+  const baseline: SecurityHeadersBaseline = settings.baseline ?? 'estate'
   const reportRoute =
     settings.reportRoute === false ? false : (settings.reportRoute ?? DEFAULT_REPORT_ROUTE)
 
@@ -302,10 +345,23 @@ export function resolveSecurityHeaders(
     // an app that never posts cross-origin loses nothing by declaring it.
     'form-action': ["'self'"],
     'frame-ancestors': frameAncestors,
-    'upgrade-insecure-requests': true,
   }
+  // Browsers ignore upgrade-insecure-requests in a report-only policy and
+  // Chromium logs a console error on every page. Keep it on the enforcing
+  // header only.
+  //
+  // This must be an explicit `false`, not an absent key. nuxt-security merges
+  // our options OVER its own defaults (`defuReplaceArray(userOptions,
+  // defaultSecurityConfig(...))` in `dist/module.mjs`), and its default CSP
+  // sets `'upgrade-insecure-requests': true`. defu fills in any key we leave
+  // undefined, so omitting the directive reinstates it at full strength --
+  // which is how LakeStat shipped a report-only policy carrying it and logged
+  // a console error on every document load. `false` survives the merge, and
+  // nuxt-security's serializer drops a false directive
+  // (`.filter(([, value]) => value !== false)` in `dist/utils/headers.mjs`).
+  csp['upgrade-insecure-requests'] = mode === 'enforce'
   for (const key of Object.keys(DIRECTIVE_OF) as Array<keyof SecurityHeadersAllowlist>) {
-    csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic)
+    csp[DIRECTIVE_OF[key]] = sourcesFor(key, allow, strictDynamic, baseline)
   }
   if (reportRoute) {
     // `report-uri` is deprecated but is the only form Safari implements, and
@@ -315,11 +371,16 @@ export function resolveSecurityHeaders(
   }
 
   return {
+    baseline,
     mode,
     csp,
     frameAncestors,
     hsts: resolveHsts(settings.hsts),
-    permissionsPolicy: { ...BASELINE_PERMISSIONS_POLICY, ...(settings.permissionsPolicy ?? {}) },
+    permissionsPolicy: {
+      ...BASELINE_PERMISSIONS_POLICY,
+      ...(legacy.allowGeolocation ? { geolocation: ['self'] } : {}),
+      ...(settings.permissionsPolicy ?? {}),
+    },
     referrerPolicy: settings.referrerPolicy ?? 'strict-origin-when-cross-origin',
     reportRoute,
     strictDynamic,

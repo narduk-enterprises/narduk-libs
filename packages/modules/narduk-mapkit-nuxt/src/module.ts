@@ -81,6 +81,10 @@ export default defineNuxtModule<NardukMapKitNuxtModuleOptions>({
           from: resolver.resolve('./runtime/composables/useMapKitCallouts'),
         },
         {
+          name: 'useMapKitVectorTiles',
+          from: resolver.resolve('./runtime/composables/useMapKitVectorTiles'),
+        },
+        {
           name: 'useMapkitToken',
           from: resolver.resolve('./runtime/composables/useMapkitToken'),
         },

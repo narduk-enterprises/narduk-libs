@@ -75,6 +75,7 @@ export class MapKitPinLayer {
     #options;
     #registry;
     #destroyed = false;
+    #hoveredId = null;
     #lastDiff = emptyDiff();
     #selectedId = null;
     constructor(options) {
@@ -90,6 +91,9 @@ export class MapKitPinLayer {
                 },
             },
         });
+    }
+    get hoveredId() {
+        return this.#hoveredId;
     }
     get selectedId() {
         return this.#selectedId;
@@ -125,6 +129,9 @@ export class MapKitPinLayer {
     setItems(items) {
         if (this.#destroyed)
             return emptyDiff();
+        // K-9: raised before anything is reconciled, so a missing `itemLabel`
+        // cannot leave the registry and `#entries` disagreeing about what exists.
+        this.#assertLabelling(items);
         const diff = emptyDiff();
         const keyFor = this.#options.itemKey;
         const descriptors = items.map((item, index) => {
@@ -162,6 +169,10 @@ export class MapKitPinLayer {
         // later re-selection of the same id is not swallowed as a no-op.
         if (this.#selectedId !== null && !this.#entries.has(this.#selectedId))
             this.#selectedId = null;
+        if (this.#hoveredId !== null && !this.#entries.has(this.#hoveredId)) {
+            this.#hoveredId = null;
+            this.#options.onHover?.(null);
+        }
         // `recreated` means a changed signature reached a key with no update hook.
         // Every descriptor here supplies one, so this is a contract check, not a
         // branch anyone is expected to hit.
@@ -195,6 +206,25 @@ export class MapKitPinLayer {
         this.#lastDiff = diff;
         return diff;
     }
+    /**
+     * Mark the hovered pin.
+     *
+     * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+     * moves, so a hover cannot recreate the host the pointer is on.
+     */
+    setHovered(id) {
+        if (this.#destroyed)
+            return;
+        const next = id !== null && this.#entries.has(id) ? id : null;
+        if (next === this.#hoveredId)
+            return;
+        const previous = this.#hoveredId;
+        this.#hoveredId = next;
+        if (previous !== null)
+            this.#applyHover(previous, false);
+        if (next !== null)
+            this.#applyHover(next, true);
+    }
     /** Remove every pin and make the layer inert. Idempotent. */
     destroy() {
         if (this.#destroyed)
@@ -224,38 +254,75 @@ export class MapKitPinLayer {
             entry.cleanup = rendered.cleanup;
             entry.host.append(rendered.element);
         }
-        entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false');
+        if (this.#focusable)
+            entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false');
         if (entry.selected)
             entry.host.setAttribute('data-mapkit-selected', '');
         else
             entry.host.removeAttribute('data-mapkit-selected');
+        this.#writeHover(entry.host, this.#hoveredId === entry.key);
+    }
+    #applyHover(key, hovered) {
+        const host = this.#entries.get(key)?.host;
+        if (!host)
+            return;
+        this.#writeHover(host, hovered);
+    }
+    #writeHover(host, hovered) {
+        if (hovered)
+            host.setAttribute('data-mapkit-hovered', '');
+        else
+            host.removeAttribute('data-mapkit-hovered');
+    }
+    /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
+    get #focusable() {
+        return this.#options.focusable ?? true;
+    }
+    #assertLabelling(items) {
+        if (items.length === 0 || !this.#focusable || this.#options.itemLabel)
+            return;
+        throw new Error('<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
+            'accessible name of the pin, and a pin without one is unreachable by screen reader. ' +
+            'Pass itemLabel, or build the layer with focusable: false for pins that are not ' +
+            'interactive controls.');
     }
     #buildHost(key, item) {
         const host = this.#document.createElement('div');
-        host.setAttribute('role', 'button');
-        host.setAttribute('tabindex', '0');
         host.setAttribute('data-map-pin', '');
         host.setAttribute('data-mapkit-pin', key);
-        host.style.cursor = 'pointer';
-        const label = this.#options.itemLabel?.(item);
-        if (label === undefined) {
-            throw new Error('<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
-                'accessible name of the pin, and a pin without one is unreachable by screen reader.');
+        if (this.#options.onHover) {
+            host.addEventListener('pointerenter', () => {
+                this.#options.onHover?.(key);
+            });
+            host.addEventListener('pointerleave', () => {
+                this.#options.onHover?.(null);
+            });
         }
-        host.setAttribute('aria-label', label);
-        const activate = () => {
-            this.#options.onSelect?.(this.#selectedId === key ? null : key);
+        if (!this.#focusable) {
+            // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
+            // roleless element is what axe reports as `aria-allowed-attr`. The label
+            // is dropped with the role: `aria-label` on an element with no role names
+            // nothing, and assistive technology ignores it.
+            return host;
+        }
+        host.setAttribute('role', 'button');
+        host.setAttribute('tabindex', '0');
+        host.style.cursor = 'pointer';
+        // `#assertLabelling` has already refused a focusable layer without one.
+        host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '');
+        const activate = (via) => {
+            this.#options.onSelect?.(this.#selectedId === key ? null : key, via);
         };
         host.addEventListener('click', (event) => {
             event.stopPropagation();
-            activate();
+            activate('pointer');
         });
         host.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar')
                 return;
             event.preventDefault();
             event.stopPropagation();
-            activate();
+            activate('keyboard');
         });
         return host;
     }
@@ -268,6 +335,7 @@ export class MapKitPinLayer {
             geometrySignature,
             host,
             item,
+            key,
             selected: this.#selectedId === key,
         };
         this.#renderGlyph(entry);
@@ -315,7 +383,7 @@ export class MapKitPinLayer {
         // glyph is re-rendered -- in place, inside the same host.
         if (previous !== item) {
             const label = this.#options.itemLabel?.(item);
-            if (label !== undefined)
+            if (label !== undefined && this.#focusable)
                 entry.host.setAttribute('aria-label', label);
             this.#renderGlyph(entry);
             if (!diff.restyled.includes(key))

@@ -22,14 +22,47 @@ auto-generates a fresh one per build, so every previously signed `/_og/` URL
 stops verifying -- a rolling Worker release serves two secrets at once and
 cached signed URLs 403 until regenerated. Signing is resolved at **build** time,
 so provision it as a Workers Builds **Build variable**, not as a runtime Worker
-secret. `nuxt dev` stays permissive. Set `ogImage.enabled: false` /
-`ogImage.zeroRuntime: true` instead if the app only uses the static
-`defaultOgImage`. The committed CI placeholder is rejected on builds the estate
-deploys -- Workers Builds (`WORKERS_CI`) and a local `wrangler deploy` behind
+secret. `nuxt dev` stays permissive. `nuxt-og-image` is an **optional peer**
+(narduk-libs#170) at `6.8.0`: omit the peer only for a static `defaultOgImage`
+by setting `ogImage.enabled: false`. Add `nuxt-og-image@6.8.0` when you need
+runtime OG or build-time prerender cards (`ogImage.zeroRuntime: true` still
+installs the module; it only disables the request-time renderer). If the package
+is not installed, this layer skips the renderer instead of failing the build,
+and `useSeo` falls back to the static image. That skip is silent on the
+default/static path and when the app set only `ogImage.zeroRuntime: true`; a
+warning fires only when the app set `ogImage.enabled: true` and the peer is
+missing. The committed CI placeholder is rejected on builds the estate deploys
+-- Workers Builds (`WORKERS_CI`) and a local `wrangler deploy` behind
 `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds nothing deploys (`nuxt dev`, GitHub
 Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
 `ogImage.security.secret: false` -- that is the setting that actually disables
 signing and leaves `/_og/` an unauthenticated renderer.
+
+**A prerendered page bakes its OG card at build time** (narduk-libs#170).
+`nuxt-og-image` picks how to address an image while the page renders: during a
+prerender it emits an _unsigned_ `/_og/s/...` URL and relies on the prerender
+crawler to write that image out as a file. This layer therefore leaves `/_og/**`
+prerenderable. It used to pin `{ prerender: false }`, which stopped the file
+being produced and left the unsigned URL to be served at runtime, where the
+handler rejects it as soon as a signing secret is configured:
+
+```
+GET /_og/s/o_esbm28.png
+-> 403 [Nuxt OG Image] Missing URL signature.
+```
+
+SSR pages are unaffected either way -- they take the signed `/_og/d/...` branch,
+which verifies at request time.
+
+Three consequences of baking, worth knowing before you prerender a large route
+set. **Output**: one image file per prerendered page that renders a card, added
+to the app's static assets, where it counts against the Workers per-file size
+and total file-count ceilings like any other asset. **Build time**: it grows
+with the number of prerendered pages that render a card, because each one is
+rendered during the build rather than on first request -- the honest trade for
+not rendering them at runtime. **Freshness**: unchanged. A baked card is exactly
+as stale as the page it was built from, so a route whose card must track data
+that moves between deploys should not be prerendered in the first place.
 
 Every app also needs a real static default image. Set
 `nardukSeo.defaultOgImage: { url: '/og.png', alt: 'Your app description' }` to
@@ -89,6 +122,75 @@ robots.txt crawling, and disables sitemap generation. A deployment that
 intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.
+
+## Host-aware indexing
+
+A production build that sets `nardukSeo: { hostAwareIndexing: true }` (or
+`NARDUK_SEO_HOST_AWARE_INDEXING=true`) serves `noindex, nofollow` as a response
+header and robots meta on any request host other than the canonical site host,
+such as a route-free `workers.dev` preview alias of the same Worker version. The
+canonical host stays indexable.
+
+The primitives behind that guard are exported from
+`@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`:
+`normalizeIndexingHost`, `isNonCanonicalIndexingHost` and
+`hostAwareNoindexRule`. They are not auto-imported.
+
+An app that computes its own robots directive per host uses
+`canonicalRobotsPolicy` from the same entry point. It replaces an app-local
+`robotsForHostname` with a hardcoded `CANONICAL_HOSTNAME` (narduk-libs#836):
+
+```ts
+import { canonicalRobotsPolicy } from '@narduk-enterprises/narduk-seo/shared/hostAwareIndexing'
+
+canonicalRobotsPolicy('example.com', 'example.com')
+// 'index, follow, max-image-preview:large'
+canonicalRobotsPolicy('abc.workers.dev', 'https://example.com')
+// 'noindex, nofollow'
+canonicalRobotsPolicy('example.com', 'example.com', { indexable: false })
+// 'noindex, nofollow'
+```
+
+The canonical argument is a hostname or a site URL. Both hosts go through
+`normalizeIndexingHost`, so scheme, path, port and case are ignored. `www.` and
+a trailing dot are not stripped, so `www.example.com` is a different host.
+Options:
+
+| Option                         | Default                                    | Meaning                                                                                                |
+| ------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `indexable`                    | `true`                                     | Route-level indexability. `false` returns the noindex directive even on the canonical host.            |
+| `additionalCanonicalHostnames` | `[]`                                       | Other hosts that serve the canonical site, such as a `www.` alias. Preview hosts do not belong here.   |
+| `canonicalRobots`              | `'index, follow, max-image-preview:large'` | Directive for an indexable route on a canonical host. The default is exported as `hostAwareIndexRule`. |
+| `nonCanonicalRobots`           | `'noindex, nofollow'`                      | Directive for every other case, including `indexable: false`. The default is `hostAwareNoindexRule`.   |
+
+A request host that does not normalize (empty or unparseable) is non-canonical.
+A canonical hostname that does not normalize fails open and returns the
+canonical directive, as the module guard does, so a misconfigured canonical host
+cannot noindex production.
+
+## Canonical URLs: pass a path, never an absolute
+
+`useSeo` resolves the canonical and `og:url` itself, from `canonicalUrl` when
+you give one and from `route.path` when you do not. **Give it a relative path.**
+
+```ts
+useSeo({ title, description }) // canonical = this route
+useSeo({ title, description, canonicalUrl: `/lakes/${state}/${lake}` })
+```
+
+Do not build an absolute URL in the app. An absolute is accepted only when its
+origin equals the site origin, and an app that composes one from
+`runtimeConfig.public.siteUrl` gets `http://localhost:3000/...` in any
+deployment where `SITE_URL` is unset — a cross-origin value, refused. The page
+then falls back to its own route, which is almost certainly what you meant, and
+development logs a warning naming both sides. Earlier releases fell back to the
+site root instead, which meant one unset variable made every page on a site
+declare the root as its own canonical: valid, plausible, and wrong everywhere at
+once (narduk-libs#590).
+
+Protocol-relative values, backslash smuggling, and userinfo are refused the same
+way, and the site root is still the last resort when neither the given value nor
+the route is usable.
 
 ## security.txt (RFC 9116)
 
@@ -232,6 +334,9 @@ Available as auto-imported helpers in app `<script setup>`:
 - `useLocalBusinessSchema(...)` — LocalBusiness JSON-LD.
 - `useProductSchema(...)` — Product JSON-LD.
 - `useItemListSchema(items, options?)` — ItemList JSON-LD for catalog pages.
+- `useDatasetSchema(input)` — Dataset JSON-LD for pages that publish a data
+  series: `variableMeasured`, `temporalCoverage`, `distribution`, `license` and
+  `creator`. Feeds Google Dataset Search and AI-discovery surfaces.
 - `useSoftwareApplicationSchema(input)` — SoftwareApplication JSON-LD with
   optional `isPartOf` linkback to the catalog hub.
 - `useWebSiteSchema(input?)` — WebSite JSON-LD with optional `SearchAction`
@@ -277,8 +382,9 @@ after SSR.
   / `description` / `url` from `useSiteConfig()` and `runtimeConfig.public`
   (`appUrl` fallback), so the home page can be a one-liner. Optional
   `SearchAction` is taken from `NUXT_PUBLIC_SEO_SEARCH_ACTION_URL_TEMPLATE` when
-  set in Doppler (e.g. `https://example.com/search/?q={search_term_string}`), or
-  from overrides when you need a path the env cannot express.
+  set in the app's environment, e.g. its nvault config or Worker vars
+  (`https://example.com/search/?q={search_term_string}`), or from overrides when
+  you need a path the env cannot express.
 - **`resolveSiteOriginForSchemaInput` —** Shared helper to normalize `url` for
   JSON-LD (site config first, then `public.appUrl`).
 - **`useSeo` emits Open Graph only —** No `twitter:*` meta at all. X reads

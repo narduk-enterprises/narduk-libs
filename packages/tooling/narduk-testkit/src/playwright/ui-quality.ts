@@ -347,6 +347,44 @@ function topFrameUrl(stack: string | undefined): string | null {
   return /\bhttps?:\/\/[^\s)]+/.exec(stack)?.[0] ?? null
 }
 
+/**
+ * Ignore this console text only when a failed HTTP response URL also matches
+ * `url`. Omit `url` to ignore by text alone, the same as a bare `RegExp`.
+ */
+export interface ConsoleIssueIgnore {
+  text: RegExp
+  url?: RegExp
+}
+
+export type ConsoleIgnorePattern = RegExp | ConsoleIssueIgnore
+
+function matchesIgnoredPattern(
+  text: string,
+  pattern: ConsoleIgnorePattern,
+  failedResponseUrls: string[],
+) {
+  if (pattern instanceof RegExp) {
+    return pattern.test(text)
+  }
+
+  if (!pattern.text.test(text)) {
+    return false
+  }
+
+  const urlPattern = pattern.url
+  if (!urlPattern) {
+    return true
+  }
+
+  const index = failedResponseUrls.findIndex((url) => urlPattern.test(url))
+  if (index === -1) {
+    return false
+  }
+
+  failedResponseUrls.splice(index, 1)
+  return true
+}
+
 export interface ConsoleTrackerOptions {
   /**
    * Extra optional-telemetry hosts for this app, as a bare hostname (`p.nard.uk`) or as the
@@ -354,10 +392,15 @@ export interface ConsoleTrackerOptions {
    */
   extraTelemetryHosts?: string[]
   /**
-   * Console text this suite has already decided is not a defect. Passing a bare `RegExp[]` as
-   * the second argument is the same thing and stays supported.
+   * Console text this suite has already decided is not a defect. A bare `RegExp` still
+   * ignores by text. An object rule with `url` ignores only when that text is also
+   * correlated with a recorded 4xx/5xx response URL — Chromium often attributes the
+   * console line to the document, so the failed request URL is the one that matters.
+   * Each match consumes one failed URL, so a later first-party failure with the same
+   * console text is still reported. Passing a bare `RegExp[]` as the second argument
+   * is the same thing and stays supported.
    */
-  ignoredPatterns?: RegExp[]
+  ignoredPatterns?: ConsoleIgnorePattern[]
   /**
    * `'live'` (the default) lets optional telemetry reach the network, which is what a suite
    * running against a real browser on a normal network has always done.
@@ -396,7 +439,7 @@ export interface ConsoleTracker {
 
 export function createConsoleTracker(
   page: Page,
-  options: ConsoleTrackerOptions | RegExp[] = {},
+  options: ConsoleTrackerOptions | ConsoleIgnorePattern[] = {},
 ): ConsoleTracker {
   const resolved: ConsoleTrackerOptions = Array.isArray(options)
     ? { ignoredPatterns: options }
@@ -411,13 +454,24 @@ export function createConsoleTracker(
   }
 
   const issues: string[] = []
+  const failedResponseUrls: string[] = []
+
+  page.on('response', (response) => {
+    const status = response.status()
+    if (status < 400 || status > 599) return
+
+    failedResponseUrls.push(response.url())
+  })
 
   page.on('console', (message) => {
     const type = message.type()
     const text = message.text()
 
     if (type !== 'error' && type !== 'warning') return
-    if (ignoredPatterns.some((pattern) => pattern.test(text))) return
+    const ignored = ignoredPatterns.some((pattern) =>
+      matchesIgnoredPattern(text, pattern, failedResponseUrls),
+    )
+    if (ignored) return
     if (stubTelemetry && isTelemetryUrl(message.location()?.url)) return
 
     issues.push(`[console:${type}] ${text}`)

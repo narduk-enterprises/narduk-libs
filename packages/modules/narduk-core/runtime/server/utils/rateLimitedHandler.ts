@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, setResponseHeader } from 'h3'
 
+import { applyNoStoreToEvent } from '../../shared/utils/shared-cache'
 import { buildRateLimitHeaders } from '../rate-limit/headers'
 import {
   isRateLimitExemptPath,
@@ -117,6 +118,126 @@ function logDenial(
   }
 }
 
+/** What {@link consumeRateLimit} decided for one request. */
+export interface RateLimitCheck {
+  /** Whether the request is within its allowance. */
+  allowed: boolean
+  /** Which layer denied it. Absent when allowed. */
+  enforcedBy?: 'binding' | 'window'
+  /** The policy after `runtimeConfig.nardukRateLimit` overrides. */
+  policy: ResolvedRateLimitPolicy
+  /**
+   * The counted verdict, including `retryAfterSeconds` on a denial. Absent when
+   * nothing was counted: the policy is disabled or the path is exempt.
+   */
+  verdict?: RateLimitVerdict
+}
+
+async function checkRateLimit(
+  event: H3Event,
+  options: RateLimitRouteOptions,
+  declared: ResolvedRateLimitPolicy,
+  store: RateLimitWindowStore,
+  clock: () => number,
+  path: string = event.path ?? '/',
+): Promise<RateLimitCheck> {
+  const config = readRateLimitConfig(event)
+  const policy = config ? resolveRoutePolicy(options, config) : declared
+
+  if (!policy.enabled) return { allowed: true, policy }
+  if (isRateLimitExemptPath(path, resolveExemptPaths(config))) return { allowed: true, policy }
+
+  const identity = getClientIp(event)
+  const counterKey = rateLimitCounterKey(policy, identity, path)
+
+  // The window is consumed even when the binding denies, so one request is
+  // one count in both layers and the published `RateLimit-Remaining` stays
+  // consistent with what the next request will actually be allowed.
+  const windowVerdict = store.consume(
+    counterKey,
+    policy.limit,
+    policy.windowSeconds * 1000,
+    clock(),
+  )
+
+  let allowed = windowVerdict.allowed
+  let enforcedBy: 'binding' | 'window' = 'window'
+
+  const binding = readBinding(event, policy)
+  if (binding) {
+    try {
+      const { success } = await binding.limit({ key: counterKey })
+      if (!success && allowed) {
+        allowed = false
+        enforcedBy = 'binding'
+      }
+    } catch {
+      // A binding that errors must not take the route down with it; the
+      // in-isolate window has already produced a verdict to fall back on.
+    }
+  }
+
+  if (allowed) return { allowed, policy, verdict: windowVerdict }
+
+  const verdict: RateLimitVerdict = {
+    allowed: false,
+    limit: policy.limit,
+    // The binding exposes no counter, so on its denial the honest
+    // published remaining is zero and the honest wait is the full window.
+    remaining: 0,
+    resetSeconds: windowVerdict.resetSeconds,
+    retryAfterSeconds: windowVerdict.retryAfterSeconds ?? policy.windowSeconds,
+  }
+
+  // Re-assert the correlation id: a denial is answered by an error response
+  // rather than by the route's return, and a client reporting a throttle is
+  // only actionable if its id matches the server's record.
+  ensureRequestId(event)
+  logDenial(event, policy, verdict, enforcedBy)
+  return { allowed, enforcedBy, policy, verdict }
+}
+
+/**
+ * Count one request against a rate-limit policy and return the verdict,
+ * without throwing and without touching the response.
+ *
+ * This is {@link defineRateLimitedHandler}'s own decision step, so the two
+ * cannot drift: the same counter key, the same shared window store, the same
+ * Cloudflare binding and the same `runtimeConfig.nardukRateLimit` overrides,
+ * and a denial is logged the same way. Use it where there is no handler to
+ * wrap, typically a request hook on a route a module registers (narduk-libs#413):
+ *
+ * ```ts
+ * // server/middleware/mapkit-token-rate-limit.ts
+ * export default defineEventHandler((event) => {
+ *   if (event.path !== '/api/mapkit-token') return
+ *   event.context.nardukMapKit = {
+ *     rateLimit: async () => {
+ *       const { allowed, verdict } = await consumeRateLimit(event, { key: 'mapkit-token', limit: 60 })
+ *       return allowed ? { allowed } : { allowed, retryAfterSeconds: verdict?.retryAfterSeconds }
+ *     },
+ *   }
+ * })
+ * ```
+ *
+ * Every call counts, so call it once per request. The caller owns the
+ * response: no `RateLimit-*` headers are set and nothing is thrown.
+ */
+export async function consumeRateLimit(
+  event: H3Event,
+  options: RateLimitedHandlerOptions,
+  path?: string,
+): Promise<RateLimitCheck> {
+  return checkRateLimit(
+    event,
+    options,
+    resolveRoutePolicy(options, undefined),
+    options.store ?? sharedRateLimitWindowStore,
+    options.now ?? (() => Date.now()),
+    path,
+  )
+}
+
 /** Options accepted by {@link defineRateLimitedHandler}, plus test seams. */
 export interface RateLimitedHandlerOptions extends RateLimitRouteOptions {
   /** Injected clock, for deterministic tests. Defaults to `Date.now`. */
@@ -179,11 +300,30 @@ export function defineRateLimitedHandler<
   Request extends EventHandlerRequest = EventHandlerRequest,
   Response = unknown,
 >(
+  handler: EventHandler<Request, Promise<Response>>,
+  options: RateLimitedHandlerOptions,
+): EventHandler<Request, Promise<Response>>
+export function defineRateLimitedHandler<
+  Request extends EventHandlerRequest = EventHandlerRequest,
+  Response = unknown,
+>(
+  // eslint-disable-next-line @typescript-eslint/unified-signatures -- one union signature would infer `Response` as `Promise<T>` again; the separate async overload is the fix (narduk-libs#653)
   handler: EventHandler<Request, Response>,
   options: RateLimitedHandlerOptions,
-  // This wrapper is always async — it may await the Cloudflare binding before
-  // it reaches the route — so `Response` sits inside a `Promise` in h3's
-  // un-awaited return slot. Nitro unwraps it when deriving the route's type.
+): EventHandler<Request, Promise<Response>>
+// This wrapper is always async — it may await the Cloudflare binding before it
+// reaches the route — so `Response` sits inside a `Promise` in h3's un-awaited
+// return slot, and Nitro unwraps it when deriving the route's type. An async
+// handler already returns a `Promise`; the first overload keeps that one
+// `Promise` deep instead of nesting it, which is what the runtime does anyway
+// because the wrapper awaits the handler (narduk-libs#653). It must stay first,
+// or the general overload swallows every async handler.
+export function defineRateLimitedHandler<
+  Request extends EventHandlerRequest = EventHandlerRequest,
+  Response = unknown,
+>(
+  handler: EventHandler<Request, Response>,
+  options: RateLimitedHandlerOptions,
 ): EventHandler<Request, Promise<Response>> {
   // Thrown at module evaluation rather than on the first request: a missing key
   // is a wiring mistake, and a route that fails to build is far easier to find
@@ -200,69 +340,29 @@ export function defineRateLimitedHandler<
   const run = async (event: H3Event<Request>): Promise<Response> => handler(event)
 
   const limited = async (event: H3Event<Request>): Promise<Response> => {
-    const config = readRateLimitConfig(event)
-    const policy = config ? resolveRoutePolicy(options, config) : declared
-
-    if (!policy.enabled) return run(event)
-
-    const path = event.path ?? '/'
-    if (isRateLimitExemptPath(path, resolveExemptPaths(config))) return run(event)
-
-    const identity = getClientIp(event)
-    const counterKey = rateLimitCounterKey(policy, identity, path)
-
-    // The window is consumed even when the binding denies, so one request is
-    // one count in both layers and the published `RateLimit-Remaining` stays
-    // consistent with what the next request will actually be allowed.
-    const windowVerdict = store.consume(
-      counterKey,
-      policy.limit,
-      policy.windowSeconds * 1000,
-      clock(),
-    )
-
-    let allowed = windowVerdict.allowed
-    let enforcedBy: 'binding' | 'window' = 'window'
-
-    const binding = readBinding(event, policy)
-    if (binding) {
-      try {
-        const { success } = await binding.limit({ key: counterKey })
-        if (!success && allowed) {
-          allowed = false
-          enforcedBy = 'binding'
-        }
-      } catch {
-        // A binding that errors must not take the route down with it; the
-        // in-isolate window has already produced a verdict to fall back on.
-      }
-    }
-
-    const verdict: RateLimitVerdict = allowed
-      ? windowVerdict
-      : {
-          allowed: false,
-          limit: policy.limit,
-          // The binding exposes no counter, so on its denial the honest
-          // published remaining is zero and the honest wait is the full window.
-          remaining: 0,
-          resetSeconds: windowVerdict.resetSeconds,
-          retryAfterSeconds: windowVerdict.retryAfterSeconds ?? policy.windowSeconds,
-        }
+    const check = await checkRateLimit(event, options, declared, store, clock)
+    if (!check.verdict) return run(event)
 
     for (const [name, value] of Object.entries(
-      buildRateLimitHeaders(policy.headers, policy.key, policy.windowSeconds, verdict),
+      buildRateLimitHeaders(
+        check.policy.headers,
+        check.policy.key,
+        check.policy.windowSeconds,
+        check.verdict,
+      ),
     )) {
       setResponseHeader(event, name, value)
     }
 
-    if (allowed) return run(event)
+    if (check.allowed) return run(event)
 
-    // Re-assert the correlation id: the 429 is produced by Nitro's error
-    // handler rather than by this handler's return, and a client reporting a
-    // throttle is only actionable if its id matches the server's record.
-    ensureRequestId(event)
-    logDenial(event, policy, verdict, enforcedBy)
+    // A 429 must never be storable at a shared cache (narduk-libs#429): the
+    // `error-cache` Nitro plugin covers every thrown error as a backstop, but
+    // this route already knows it is about to throw, so it sets the posture
+    // itself rather than relying only on the backstop. `Retry-After` and the
+    // `RateLimit-*` family set above are not in the shared-cache strip list,
+    // so they survive.
+    applyNoStoreToEvent(event)
 
     throw createError({
       statusCode: 429,

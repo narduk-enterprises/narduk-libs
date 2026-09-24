@@ -16,6 +16,7 @@ import {
   unifiedDiff,
   upgradeNardukApp,
 } from '../src/index.js'
+import { findTopLevelValue, scanJsonc, stripJsonc } from '../src/jsonc.js'
 import type { UpgradeReport } from '../src/index.js'
 
 const tempDirectories: string[] = []
@@ -68,6 +69,35 @@ describe('upgrade ownership contract', () => {
     expect(report.changes).toHaveLength(MANAGED_TARGETS.length)
     expect(report.changes.every((change) => change.status === 'clean')).toBe(true)
     expect(report.changes.every((change) => change.diff === '')).toBe(true)
+  })
+
+  // narduk-libs#384. The generator scaffolds `nardukSeo.aiCrawlers` and,
+  // with a contact, `nardukSeo.securityTxt` -- but the AI-crawler policy and
+  // the security contact are exactly the kind of thing an app changes after
+  // generation, and re-imposing either would be the continuing sync
+  // relationship this generator refuses. `apps/web/nuxt.config.ts` is not a
+  // managed target, so this is asserting an existing boundary still holds now
+  // that the generator writes policy into that file.
+  it('never re-imposes a scaffolded crawler policy or security contact', async () => {
+    const targetDir = await scaffold()
+    const generated = await read(targetDir, 'apps/web/nuxt.config.ts')
+    expect(generated, 'the fixture scaffolds the policy this test protects').toContain(
+      "aiCrawlers: 'allow',",
+    )
+
+    await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) =>
+      contents.replace(
+        "aiCrawlers: 'allow',",
+        "aiCrawlers: 'disallow',\n    securityTxt: { contact: 'mailto:app-owned@example.test' },",
+      ),
+    )
+    const edited = await read(targetDir, 'apps/web/nuxt.config.ts')
+
+    const report = await upgradeNardukApp({ targetDir })
+
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(edited)
+    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('missing-from-report')
+    expect(report.driftCount).toBe(0)
   })
 
   it('refreshes managed units and leaves app-owned content untouched', async () => {
@@ -127,7 +157,7 @@ describe('upgrade ownership contract', () => {
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
-      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
+      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
     )
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
       pristine.copilot,
@@ -188,6 +218,41 @@ describe('upgrade ownership contract', () => {
     expect(JSON.stringify(after)).toBe(JSON.stringify(before))
   })
 
+  it('keeps an app-authored manifests:validate body: the name is the contract (#468)', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents
+        .replace(
+          /"manifests:validate": "[^"]*"/u,
+          '"manifests:validate": "pnpm run contract:check"',
+        )
+        .replace(/"build:ci": "[^"]*"/u, '"build:ci": "pnpm run build"'),
+    )
+    const before = await read(targetDir, 'package.json')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    const after = JSON.parse(await read(targetDir, 'package.json'))
+
+    expect(after.scripts['manifests:validate']).toBe('pnpm run contract:check')
+    // A body-owned key beside it is still restored, so the manifest was edited.
+    expect(after.scripts['build:ci']).not.toBe('pnpm run build')
+    expect(report.changes.find((entry) => entry.path === 'package.json')?.detail).not.toContain(
+      'manifests:validate',
+    )
+    expect(await read(targetDir, 'package.json')).not.toBe(before)
+  })
+
+  it('treats an empty manifests:validate body as missing and fills it', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents.replace(/"manifests:validate": "[^"]*"/u, '"manifests:validate": " "'),
+    )
+
+    await upgradeNardukApp({ targetDir, write: true })
+    const after = JSON.parse(await read(targetDir, 'package.json'))
+    expect(after.scripts['manifests:validate']).toBe('pnpm --filter web run manifests:validate')
+  })
+
   it('restores a Prettier-wrapped script entry to the generated manifest byte for byte', async () => {
     const targetDir = await scaffold()
     const pristine = await read(targetDir, 'package.json')
@@ -216,6 +281,270 @@ describe('upgrade ownership contract', () => {
     expect(change?.status).toBe('unresolved')
     expect(change?.applied).toBe(false)
     expect(await read(targetDir, 'package.json')).toBe(inline)
+  })
+})
+
+function parseJsonc(text: string): Record<string, unknown> {
+  return JSON.parse(stripJsonc(text)) as Record<string, unknown>
+}
+
+const WRANGLER = 'apps/web/wrangler.jsonc'
+const TEMPLATE_CACHE_LINE = /\n {2}"cache": \{ "enabled": true \},\n/u
+
+/** Removes the template's `cache` line: an app generated before #658. */
+function withoutCache(contents: string): string {
+  expect(contents, 'the template still emits the cache line').toMatch(TEMPLATE_CACHE_LINE)
+  return contents.replace(TEMPLATE_CACHE_LINE, '\n')
+}
+
+/** `contents` with `line` inserted just above its final closing brace. */
+function insertBeforeClosingBrace(contents: string, line: string): string {
+  const at = contents.lastIndexOf('\n}') + 1
+  return contents.slice(0, at) + line + contents.slice(at)
+}
+
+/** A route whose pattern ends in `/*`, above the template's `**\/*.mjs` glob. */
+function withEdgeRoute(contents: string): string {
+  return contents.replace(
+    '  "main": ',
+    '  "routes": [{ "pattern": "edge.example.com/*", "zone_name": "example.com" }],\n  "main": ',
+  )
+}
+
+describe('upgrade Workers Cache key (narduk-libs#672)', () => {
+  it('adds cache.enabled to an existing wrangler.jsonc and leaves bindings alone', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'apps/web/wrangler.jsonc', (contents) =>
+      contents
+        .replace(/\n {2}"cache": \{ "enabled": true \},\n/u, '\n')
+        .replace(
+          '"compatibility_flags": ["nodejs_compat"],',
+          '"compatibility_flags": ["nodejs_compat"],\n  "account_id": "app-owned-account",',
+        ),
+    )
+    const before = parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc'))
+    expect(before.cache, 'the fixture is a pre-#658 app').toBeUndefined()
+    expect(before.account_id).toBe('app-owned-account')
+    const d1 = before.d1_databases
+
+    const dryRun = await upgradeNardukApp({ targetDir })
+    expect(statusOf(dryRun, 'apps/web/wrangler.jsonc')).toBe('drift')
+    expect(parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc')).cache).toBeUndefined()
+
+    const applied = await upgradeNardukApp({ targetDir, write: true })
+    expect(
+      applied.changes.find((change) => change.path === 'apps/web/wrangler.jsonc')?.applied,
+    ).toBe(true)
+    const after = parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc'))
+    expect(after.cache).toEqual({ enabled: true })
+    expect(after.account_id).toBe('app-owned-account')
+    expect(after.d1_databases).toEqual(d1)
+    expect(after.name).toBe(before.name)
+    expect(await read(targetDir, 'apps/web/wrangler.jsonc')).toContain('app-owned-account')
+  })
+
+  it('does not flip an explicit cache.enabled false', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'apps/web/wrangler.jsonc', (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": { "enabled": false }'),
+    )
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('clean')
+    expect(parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc')).cache).toEqual({
+      enabled: false,
+    })
+  })
+
+  it('honours a narduk:unmanaged header on wrangler.jsonc', async () => {
+    const targetDir = await scaffold()
+    await edit(
+      targetDir,
+      'apps/web/wrangler.jsonc',
+      (contents) =>
+        '// narduk:unmanaged\n' +
+        contents.replace(/\n {2}"cache": \{ "enabled": true \},\n/u, '\n'),
+    )
+    const before = await read(targetDir, 'apps/web/wrangler.jsonc')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('unmanaged')
+    expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, 'apps/web/wrangler.jsonc')).toBe(before)
+  })
+
+  it('does not create a missing wrangler.jsonc', async () => {
+    const targetDir = await scaffold()
+    await rm(join(targetDir, 'apps/web/wrangler.jsonc'))
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('absent')
+    expect(report.driftCount).toBe(0)
+    await expect(read(targetDir, 'apps/web/wrangler.jsonc')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+
+  it('is not fooled by /* in a route pattern above the **/* glob', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) => withEdgeRoute(withoutCache(contents)))
+    const before = await read(targetDir, WRANGLER)
+    expect(parseJsonc(before).routes).toEqual([
+      { pattern: 'edge.example.com/*', zone_name: 'example.com' },
+    ])
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      insertBeforeClosingBrace(before, '  "cache": { "enabled": true },\n'),
+    )
+  })
+
+  it('leaves an explicit cache.enabled false alone beside a /* route pattern', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      withEdgeRoute(
+        contents.replace('"cache": { "enabled": true }', '"cache": { "enabled": false }'),
+      ),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('clean')
+    expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, WRANGLER)).toBe(before)
+  })
+
+  it('treats // inside a string value as string content', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      withoutCache(contents).replace(
+        '"main": "./.output/server/index.mjs"',
+        '"main": "./.output//server/index.mjs"',
+      ),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    const after = await read(targetDir, WRANGLER)
+    expect(after).toBe(insertBeforeClosingBrace(before, '  "cache": { "enabled": true },\n'))
+    expect(parseJsonc(after).main).toBe('./.output//server/index.mjs')
+  })
+
+  it('puts the separating comma before a trailing // comment on the last property', async () => {
+    const targetDir = await scaffold()
+    await writeFile(
+      join(targetDir, WRANGLER),
+      [
+        '{',
+        '  "name": "upgrade-fixture",',
+        '  "main": "./.output/server/index.mjs", // built by nuxi',
+        '  "compatibility_date": "2026-06-01" // pinned, see README',
+        '}',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      [
+        '{',
+        '  "name": "upgrade-fixture",',
+        '  "main": "./.output/server/index.mjs", // built by nuxi',
+        '  "compatibility_date": "2026-06-01", // pinned, see README',
+        '  "cache": { "enabled": true }',
+        '}',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('adds a top-level cache beside a nested env.<name>.cache it leaves alone', async () => {
+    const targetDir = await scaffold()
+    const nested = [
+      '{',
+      '  "name": "upgrade-fixture",',
+      '  "env": {',
+      '    "production": {',
+      '      "cache": { "enabled": false },',
+      '    },',
+      '  },',
+      '}',
+      '',
+    ].join('\n')
+    await writeFile(join(targetDir, WRANGLER), nested, 'utf8')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    const after = await read(targetDir, WRANGLER)
+    expect(after).toBe(insertBeforeClosingBrace(nested, '  "cache": { "enabled": true },\n'))
+    expect(parseJsonc(after)).toEqual({
+      cache: { enabled: true },
+      env: { production: { cache: { enabled: false } } },
+      name: 'upgrade-fixture',
+    })
+  })
+
+  it('replaces only the value of a top-level cache that sets no enabled flag', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": {}'),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('drift')
+    expect(await read(targetDir, WRANGLER)).toBe(
+      before.replace('"cache": {}', '"cache": { "enabled": true }'),
+    )
+  })
+
+  it('refuses rather than drop a sibling key of cache.enabled', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, WRANGLER, (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": { "cross_version_cache": true }'),
+    )
+    const before = await read(targetDir, WRANGLER)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, WRANGLER)).toBe('unresolved')
+    expect(await read(targetDir, WRANGLER)).toBe(before)
+  })
+})
+
+describe('JSONC scanner (narduk-libs#672)', () => {
+  it('strips comments and trailing commas only outside strings', () => {
+    const source = [
+      '{',
+      '  // a comment with a "quote" and narduk-core\'s apostrophe',
+      '  "routes": [{ "pattern": "edge.example.com/*" }], /* block */',
+      '  "globs": ["**/*.mjs"],',
+      '  "url": "https://example.com//x", // trailing',
+      '  "escaped": "a\\"//b,]",',
+      '}',
+    ].join('\n')
+    expect(JSON.parse(stripJsonc(source))).toEqual({
+      escaped: 'a"//b,]',
+      globs: ['**/*.mjs'],
+      routes: [{ pattern: 'edge.example.com/*' }],
+      url: 'https://example.com//x',
+    })
+  })
+
+  it('reports an unterminated string or block comment as incomplete', () => {
+    expect(scanJsonc('{ "a": "b }').complete).toBe(false)
+    expect(scanJsonc('{ /* open }').complete).toBe(false)
+    expect(scanJsonc('{ "a": "/*" }').complete).toBe(true)
+  })
+
+  it('finds only the top-level key', () => {
+    const source = '{ "env": { "p": { "cache": 1 } }, "name": "cache", "cache": [2] }'
+    const found = findTopLevelValue(scanJsonc(source).tokens, 'cache')
+    expect(found && source.slice(found.start, found.end)).toBe('[2]')
+    expect(findTopLevelValue(scanJsonc('{ "env": { "cache": 1 } }').tokens, 'cache')).toBeNull()
   })
 })
 
@@ -316,6 +645,33 @@ describe('upgrade profile inference', () => {
     expect(profile.inferred).toContain('databaseBackend')
   })
 
+  // narduk-libs#825: the seo capability also pins the third-party
+  // nuxt-og-image peer. An app with no `narduk.capabilities` block is read
+  // from its dependencies, and nuxt-og-image alone must not read as seo.
+  it('infers seo from narduk-seo, not from the nuxt-og-image pin', async () => {
+    const targetDir = await scaffold({ capabilities: 'analytics' })
+    const dropDescriptor = (contents: string, extra: Record<string, string> = {}) => {
+      const manifest = JSON.parse(contents) as {
+        dependencies?: Record<string, string>
+        narduk?: unknown
+      }
+      delete manifest.narduk
+      manifest.dependencies = { ...manifest.dependencies, ...extra }
+      return JSON.stringify(manifest, null, 2) + '\n'
+    }
+    await edit(targetDir, 'package.json', (contents) => dropDescriptor(contents))
+    await edit(targetDir, 'apps/web/package.json', (contents) =>
+      dropDescriptor(contents, { 'nuxt-og-image': '6.8.0' }),
+    )
+
+    expect((await inferUpgradeProfile(targetDir)).capabilities).toEqual(['analytics'])
+
+    await edit(targetDir, 'apps/web/package.json', (contents) =>
+      dropDescriptor(contents, { '@narduk-enterprises/narduk-seo': '2.6.0' }),
+    )
+    expect((await inferUpgradeProfile(targetDir)).capabilities).toEqual(['seo', 'analytics'])
+  })
+
   it('detects a database-free app from its nuxt config', async () => {
     const targetDir = await scaffold({ capabilities: 'seo', databaseBackend: 'none' })
     const profile = await inferUpgradeProfile(targetDir)
@@ -412,7 +768,8 @@ describe('upgrade CLI', () => {
       '--write',
     ])
     expect(result.code).toBe(0)
-    expect(await read(targetDir, '.github/dependabot.yml')).toContain('registries:')
+    expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
+    expect(await read(targetDir, '.github/dependabot.yml')).not.toContain('registries:')
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe('name: Stale\n')
   })
 

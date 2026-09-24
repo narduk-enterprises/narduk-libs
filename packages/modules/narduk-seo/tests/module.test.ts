@@ -1,4 +1,16 @@
+import { existsSync } from 'node:fs'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const nuxtOgImagePackage = vi.hoisted(() => ({ resolvable: true }))
+
+vi.mock('../shared/nuxtOgImagePackage', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  return {
+    ...actual,
+    canResolveNuxtOgImage: () => nuxtOgImagePackage.resolvable,
+  }
+})
 
 interface SetupModuleOptions {
   moduleOptions?: Record<string, unknown>
@@ -12,7 +24,9 @@ function cloneConfig(value: unknown): unknown {
 }
 
 async function setupModule(options: SetupModuleOptions = {}) {
+  const addComponent = vi.fn()
   const addComponentsDir = vi.fn()
+  const addImports = vi.fn()
   const addImportsDir = vi.fn()
   const addPlugin = vi.fn()
   const addServerHandler = vi.fn()
@@ -44,9 +58,12 @@ async function setupModule(options: SetupModuleOptions = {}) {
       sitemap: cloneConfig(nuxt.options.sitemap),
     })
   })
+  const loggerWarn = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
+    addComponent,
     addComponentsDir,
+    addImports,
     addImportsDir,
     addPlugin,
     addServerHandler,
@@ -58,6 +75,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     extendPages,
     extendRouteRules,
     installModule,
+    useLogger: () => ({ warn: loggerWarn }),
   }))
 
   const mod = (await import('../src/module')).default as unknown as {
@@ -76,6 +94,9 @@ async function setupModule(options: SetupModuleOptions = {}) {
   )
 
   return {
+    addComponent,
+    addComponentsDir,
+    addImports,
     addImportsDir,
     addPlugin,
     addServerHandler,
@@ -84,6 +105,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     extendRouteRules,
     installSnapshots,
     installModule,
+    loggerWarn,
     nuxt,
   }
 }
@@ -110,6 +132,7 @@ const PRODUCTION_ROBOTS_DEFAULTS = {
 }
 
 afterEach(() => {
+  nuxtOgImagePackage.resolvable = true
   vi.resetModules()
   vi.clearAllMocks()
   vi.unstubAllEnvs()
@@ -133,10 +156,130 @@ describe('narduk-seo module', () => {
     expect(installModule).toHaveBeenCalledWith('nuxt-site-config')
     expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
     expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(true)
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
     expect(extendPages).toHaveBeenCalledTimes(1)
-    expect(extendRouteRules).toHaveBeenCalledWith('/_og/**', { prerender: false })
+    // narduk-libs#170: `/_og/**` must stay prerenderable. `nuxt-og-image` emits
+    // an unsigned `/_og/s/...` URL while a page is prerendered and relies on the
+    // crawler to bake that image to a file; pinning `prerender: false` here left
+    // the unsigned URL to 403 at runtime under a signing secret. This assertion
+    // is inverted from the original on purpose -- the pin it replaced carried no
+    // rationale, which is how the contradiction survived from the initial import
+    // to a production 403.
+    expect(extendRouteRules).not.toHaveBeenCalledWith('/_og/**', { prerender: false })
+  })
+
+  it('does not install nuxt-og-image when runtime OG is disabled (narduk-libs#170)', async () => {
+    const { addImports, installModule, nuxt } = await setupModule({
+      nuxtOptions: { ogImage: { enabled: false } },
+    })
+
+    expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
+    expect(addImports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'defineOgImage',
+        from: expect.stringContaining('defineOgImageStub'),
+      }),
+    )
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(false)
+  })
+
+  it('still installs nuxt-og-image when zeroRuntime is set (narduk-libs#170)', async () => {
+    const { addImports, installModule, nuxt } = await setupModule({
+      nuxtOptions: { ogImage: { zeroRuntime: true } },
+    })
+
+    expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
+    expect(addImports).not.toHaveBeenCalled()
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(true)
+  })
+
+  async function expectSilentMissingPeerSkip(nuxtOptions?: Record<string, unknown>) {
+    nuxtOgImagePackage.resolvable = false
+
+    const { addImports, installModule, loggerWarn, nuxt } = await setupModule(
+      nuxtOptions ? { nuxtOptions } : {},
+    )
+
+    expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expect(addImports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'defineOgImage',
+        from: expect.stringContaining('defineOgImageStub'),
+      }),
+    )
+    expect(
+      (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
+        ?.nardukSeoOgImageModule,
+    ).toBe(false)
+    // packed-consumer-smoke treats Nuxt `[warn]` as a typecheck/build failure.
+    expect(loggerWarn).not.toHaveBeenCalled()
+    return { nuxt }
+  }
+
+  it('skips nuxt-og-image when the optional peer is not installed (narduk-libs#170)', async () => {
+    const { nuxt } = await expectSilentMissingPeerSkip()
+    expect(nuxt.options.ogImage).toMatchObject({ enabled: false })
+  })
+
+  it('warns only when runtime OG is explicitly requested without the peer (narduk-libs#170)', async () => {
+    nuxtOgImagePackage.resolvable = false
+
+    const { loggerWarn } = await setupModule({
+      nuxtOptions: { ogImage: { enabled: true } },
+    })
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringMatching(/optional nuxt-og-image@6\.8\.0 peer/u),
+    )
+  })
+
+  it('stays silent when zeroRuntime is set and the peer is missing (narduk-libs#170)', async () => {
+    // `zeroRuntime` is not a runtime-OG request, so this skip stays silent
+    // the same way the default generated app does.
+    const { nuxt } = await expectSilentMissingPeerSkip({ ogImage: { zeroRuntime: true } })
+    expect(nuxt.options.ogImage).toMatchObject({ enabled: false, zeroRuntime: true })
+  })
+
+  it("adds the network row through narduk-core's footer, not a copy of it (narduk-libs#743)", async () => {
+    const { addComponent, addComponentsDir, nuxt } = await setupModule({
+      nuxtOptions: { appConfig: { nardukCore: { footer: { after: ['AppOwnRow'] } } } },
+    })
+
+    expect(addComponent).toHaveBeenCalledWith({
+      name: 'LayerNetworkFooter',
+      filePath: expect.stringContaining('/app/components/shared/LayerNetworkFooter.vue'),
+      global: true,
+    })
+    // The scanned directory must not register the same file a second time.
+    expect(addComponentsDir).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.stringMatching(/\/app\/components$/),
+        ignore: ['shared/LayerNetworkFooter.vue'],
+      }),
+    )
+    // An app's own rows stay, and ours is appended once.
+    expect(
+      (nuxt.options as { appConfig?: { nardukCore?: { footer?: { after?: unknown } } } }).appConfig
+        ?.nardukCore?.footer?.after,
+    ).toEqual(['AppOwnRow', 'LayerNetworkFooter'])
+  })
+
+  it('ships no copy of narduk-core components', () => {
+    expect(existsSync(new URL('../app/components/app/LayerAppFooter.vue', import.meta.url))).toBe(
+      false,
+    )
   })
 
   it('suppresses every automatic twitter:* meta tag (narduk-libs#349)', async () => {
@@ -399,7 +542,8 @@ describe('narduk-seo module', () => {
       ...PRODUCTION_ROBOTS_DEFAULTS,
       groups: [
         { userAgent: ['CCBot'], disallow: ['/'] },
-        { userAgent: ['GPTBot'], allow: ['/'] },
+        // A named group replaces `*` for GPTBot (RFC 9309), so it restates the disallows.
+        { userAgent: ['GPTBot'], allow: ['/'], disallow: PRODUCTION_ROBOTS_DEFAULTS.disallow },
       ],
     })
   })

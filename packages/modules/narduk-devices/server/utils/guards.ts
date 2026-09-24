@@ -1,6 +1,6 @@
 import { createError, getHeader } from 'h3'
 
-import type { CredentialClass, DeviceSession } from '../../shared/types/devices'
+import type { CredentialClass, DeviceSessionWithDevice } from '../../shared/types/devices'
 import type { DevicesService } from './devices'
 import type { H3Event } from 'h3'
 
@@ -11,8 +11,12 @@ export const DEVICES_DENIED_ERROR_CODE = 'entitlement_denied'
  * The devices surface a guard needs. Narrower than `DevicesService` on
  * purpose: a guard resolves a session and mutates nothing. The resolution is by
  * digest — the bearer is a secret, not the session row id.
+ *
+ * The resolution is the joined one, so the guard hands back the tenant with
+ * the session and a route never re-reads the device to learn which org it is
+ * serving (narduk-libs#225).
  */
-export type DeviceSessionResolver = Pick<DevicesService, 'getSessionByToken'>
+export type DeviceSessionResolver = Pick<DevicesService, 'getSessionByTokenWithDevice'>
 
 export interface RequireDeviceSessionOptions {
   /** The class this route requires; an `ingest` session never passes a `command` route. */
@@ -62,10 +66,10 @@ export function readBearerSessionToken(event: H3Event): string | null {
 export async function requireDeviceSession(
   event: H3Event,
   options: RequireDeviceSessionOptions,
-): Promise<DeviceSession> {
+): Promise<DeviceSessionWithDevice> {
   const sessionToken = (options.resolveSessionToken ?? readBearerSessionToken)(event)
   if (!sessionToken) throw unauthorized()
-  const session = await options.devices.getSessionByToken(sessionToken)
+  const session = await options.devices.getSessionByTokenWithDevice(sessionToken)
   if (!session) throw unauthorized()
   if (session.credentialClass !== options.credentialClass) throw denied()
   return session

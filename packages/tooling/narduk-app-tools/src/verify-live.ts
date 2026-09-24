@@ -10,9 +10,11 @@
  *   1. `x-build-version` is the commit that was promoted. Compared as a hex
  *      prefix in both directions: narduk-core publishes `GITHUB_SHA.slice(0,12)`
  *      or a 12-character git SHA (`packages/modules/narduk-core/src/module.ts`),
- *      while `git rev-parse --short` emits 7 and `GITHUB_SHA` is 40. Verified
- *      live 2026-09-17: `curl -sSI https://buoystat.us/` ->
- *      `x-build-version: f736b07d7f49`.
+ *      while `git rev-parse --short` emits 7 and `GITHUB_SHA` is 40. Exact-SHA
+ *      proof reads this header from the health route when one is enabled: a
+ *      prerendered smoke path (generated SEO apps set `routeRules['/'].prerender`)
+ *      is a static asset and has no Worker header (narduk-libs#781). `--no-health`
+ *      falls back to the smoke path, then `/`.
  *   2. `/api/health` is healthy per the narduk-core health contract:
  *      `{ success, data: { status, timestamp, database, missingAuthTables, checks } }`
  *      (`packages/modules/narduk-core/runtime/server/api/health.get.ts`).
@@ -54,7 +56,15 @@
  *     own configuration matches what the repository declares.
  */
 
-import { createLiveProbe, type LiveProbe, type LiveResponse } from './live-probe.js'
+import {
+  createDnsDiagnoser,
+  createResolverProbe,
+  PUBLIC_RESOLVERS,
+  VERIFY_RESOLVER_MODES,
+  type PublicResolve,
+  type VerifyResolverMode,
+} from './live-dns.js'
+import type { LiveProbe, LiveResponse } from './live-probe.js'
 
 /** Distinct per failure class, so a promote job can branch without parsing text. */
 export const VERIFY_EXIT = {
@@ -71,9 +81,25 @@ export const VERIFY_EXIT = {
   smokeFailed: 5,
   /** The request was answered by a different origin than the one under proof. */
   offOrigin: 6,
+  /**
+   * An `--edge-cache-path` never HIT the Workers Cache, or an
+   * `--edge-uncached-path` did (narduk-libs#435).
+   */
+  edgeCacheFailed: 7,
 } as const
 
-export type VerifyAssertionId = 'origin' | 'build-version' | 'health' | 'smoke'
+export type VerifyAssertionId =
+  | 'origin'
+  | 'build-version'
+  | 'health'
+  | 'smoke'
+  | 'edge-cache'
+  | 'edge-uncached'
+  /**
+   * The system resolver had no address for the host but public DNS did: a stale
+   * local negative answer, always `unknown` and exit 2 (narduk-libs#783).
+   */
+  | 'dns'
 export type VerifyAssertionStatus = 'pass' | 'fail' | 'unknown' | 'skipped'
 
 export interface VerifyAssertion {
@@ -96,8 +122,11 @@ export interface VerifyReport {
   generated: string
   baseUrl: string
   expectedSha: string | null
+  expectedBuildId?: string | null
   attemptsUsed: number
   attemptsAllowed: number
+  /** Present only when the probes went through `--resolver public`. */
+  resolver?: 'public'
   assertions: VerifyAssertion[]
   result: 'PASS' | 'FAIL'
   exitCode: number
@@ -106,6 +135,8 @@ export interface VerifyReport {
 export interface VerifyFlags {
   baseUrl: string
   expectSha: string | null
+  /** Local snapshots have identities distinct from their base commit. Exact match only. */
+  expectBuildId?: string | null
   buildVersionHeader: string
   healthPath: string | null
   smokePath: string | null
@@ -113,11 +144,30 @@ export interface VerifyFlags {
   attempts: number
   intervalSeconds: number
   timeoutMs: number
+  /** Overall proof budget, including requests and retry delays. */
+  deadlineMs?: number
   allowDegraded: boolean
   /** Add a per-run query parameter so no cache key can be shared with a browser's. */
   cacheBust: boolean
+  /** Routes whose second GET must be an edge cache HIT (a `live`/`slow` profile). */
+  edgeCachePaths: string[]
+  /** Routes that must never HIT (`none`, a thrown error, a preference-shaped response). */
+  edgeUncachedPaths: string[]
   json: boolean
   jsonPath: string | null
+  /**
+   * Environment variable NAMES holding a Cloudflare Access service token, for
+   * a host whose every path (health included) sits behind Access. Names, not
+   * values: a secret on argv lands in process listings and CI logs.
+   */
+  accessClientIdEnv: string | null
+  accessClientSecretEnv: string | null
+  /**
+   * `system` (default) resolves the host like any other process. `public` dials
+   * an address from 1.1.1.1 / 8.8.8.8 instead, keeping the hostname for SNI and
+   * `Host` -- for a workstation holding a stale negative DNS answer.
+   */
+  resolver?: VerifyResolverMode
 }
 
 export const DEFAULT_VERIFY_FLAGS = {
@@ -128,6 +178,7 @@ export const DEFAULT_VERIFY_FLAGS = {
   attempts: 6,
   intervalSeconds: 10,
   timeoutMs: 15_000,
+  deadlineMs: 180_000,
 } as const
 
 const SHA_PATTERN = /^[a-f\d]{7,64}$/iu
@@ -155,6 +206,39 @@ function assertHttpUrl(value: string, flag: string): void {
   }
 }
 
+const ENV_NAME_PATTERN = /^[A-Z_][A-Z\d_]*$/u
+
+function requireEnvName(value: string, flag: string): string {
+  if (!ENV_NAME_PATTERN.test(value)) {
+    throw new Error(
+      `${flag} takes an environment variable NAME (e.g. CF_ACCESS_CLIENT_ID), not a value`,
+    )
+  }
+  return value
+}
+
+/**
+ * The Cloudflare Access service-token headers, read from the environment
+ * variables the flags name. Fails closed on an unset, empty or whitespace-only
+ * variable, and the error names the variable, never its value.
+ */
+export function resolveAccessHeaders(
+  flags: Pick<VerifyFlags, 'accessClientIdEnv' | 'accessClientSecretEnv'>,
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string> | undefined {
+  if (flags.accessClientIdEnv === null || flags.accessClientSecretEnv === null) return undefined
+  const id = env[flags.accessClientIdEnv]
+  const secret = env[flags.accessClientSecretEnv]
+  for (const [name, value] of [
+    [flags.accessClientIdEnv, id],
+    [flags.accessClientSecretEnv, secret],
+  ] as const) {
+    if (!value?.trim())
+      throw new Error(`verify --live: environment variable ${name} is unset or empty`)
+  }
+  return { 'cf-access-client-id': id!, 'cf-access-client-secret': secret! }
+}
+
 /**
  * Accepts both spellings the design and the brief use: `verify --live <url>`
  * and `verify --live --base-url <url>`. `--live` is the mode, not the value,
@@ -165,6 +249,7 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   let baseUrl: string | null = null
   const flags: Omit<VerifyFlags, 'baseUrl'> = {
     expectSha: null,
+    expectBuildId: null,
     buildVersionHeader: DEFAULT_VERIFY_FLAGS.buildVersionHeader,
     healthPath: DEFAULT_VERIFY_FLAGS.healthPath,
     smokePath: DEFAULT_VERIFY_FLAGS.smokePath,
@@ -172,10 +257,16 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     attempts: DEFAULT_VERIFY_FLAGS.attempts,
     intervalSeconds: DEFAULT_VERIFY_FLAGS.intervalSeconds,
     timeoutMs: DEFAULT_VERIFY_FLAGS.timeoutMs,
+    deadlineMs: DEFAULT_VERIFY_FLAGS.deadlineMs,
     allowDegraded: false,
     cacheBust: true,
+    edgeCachePaths: [],
+    edgeUncachedPaths: [],
     json: false,
     jsonPath: null,
+    accessClientIdEnv: null,
+    accessClientSecretEnv: null,
+    resolver: 'system',
   }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -189,6 +280,8 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
     } else if (arg === '--base-url') baseUrl = requireValue(args, (index += 1), '--base-url')
     else if (arg === '--expect-sha')
       flags.expectSha = requireValue(args, (index += 1), '--expect-sha')
+    else if (arg === '--expect-build-id')
+      flags.expectBuildId = requireValue(args, (index += 1), '--expect-build-id')
     else if (arg === '--build-version-header')
       flags.buildVersionHeader = requireValue(
         args,
@@ -222,9 +315,34 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
         requireValue(args, (index += 1), '--timeout-ms'),
         '--timeout-ms',
       )
+    else if (arg === '--deadline-ms')
+      flags.deadlineMs = requirePositiveInteger(
+        requireValue(args, (index += 1), '--deadline-ms'),
+        '--deadline-ms',
+      )
     else if (arg === '--allow-degraded') flags.allowDegraded = true
     else if (arg === '--no-cache-bust') flags.cacheBust = false
-    else if (arg === '--json') {
+    else if (arg === '--edge-cache-path')
+      flags.edgeCachePaths.push(requireValue(args, (index += 1), '--edge-cache-path'))
+    else if (arg === '--edge-uncached-path')
+      flags.edgeUncachedPaths.push(requireValue(args, (index += 1), '--edge-uncached-path'))
+    else if (arg === '--access-client-id-env')
+      flags.accessClientIdEnv = requireEnvName(
+        requireValue(args, (index += 1), '--access-client-id-env'),
+        '--access-client-id-env',
+      )
+    else if (arg === '--access-client-secret-env')
+      flags.accessClientSecretEnv = requireEnvName(
+        requireValue(args, (index += 1), '--access-client-secret-env'),
+        '--access-client-secret-env',
+      )
+    else if (arg === '--resolver') {
+      const value = requireValue(args, (index += 1), '--resolver')
+      if (!VERIFY_RESOLVER_MODES.includes(value as VerifyResolverMode)) {
+        throw new Error(`--resolver must be system or public, got ${JSON.stringify(value)}`)
+      }
+      flags.resolver = value as VerifyResolverMode
+    } else if (arg === '--json') {
       const next = args[index + 1]
       if (next && !next.startsWith('--')) {
         flags.jsonPath = next
@@ -237,10 +355,28 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   if (!live) throw new Error('Usage: narduk-app verify --live <url> [options]')
   if (!baseUrl) throw new Error('verify --live needs a base URL: --live <url> or --base-url <url>')
   assertHttpUrl(baseUrl, '--base-url')
+  if ((flags.accessClientIdEnv === null) !== (flags.accessClientSecretEnv === null)) {
+    throw new Error(
+      '--access-client-id-env and --access-client-secret-env go together; a service token is both halves',
+    )
+  }
   if (flags.expectSha && !SHA_PATTERN.test(flags.expectSha)) {
     throw new Error(`--expect-sha must be a hex commit SHA, got ${JSON.stringify(flags.expectSha)}`)
   }
-  if (flags.healthPath === null && flags.smokePath === null && !flags.expectSha) {
+  if (flags.expectSha && flags.expectBuildId) {
+    throw new Error('--expect-sha and --expect-build-id are mutually exclusive')
+  }
+  if (flags.expectBuildId && !/^[A-Za-z0-9][\w.-]{0,199}$/u.test(flags.expectBuildId)) {
+    throw new Error('--expect-build-id must be a nonempty identifier of at most 200 characters')
+  }
+  if (
+    flags.healthPath === null &&
+    flags.smokePath === null &&
+    !flags.expectSha &&
+    !flags.expectBuildId &&
+    flags.edgeCachePaths.length === 0 &&
+    flags.edgeUncachedPaths.length === 0
+  ) {
     throw new Error('verify --live needs at least one assertion; nothing was enabled')
   }
   return { ...flags, baseUrl }
@@ -379,6 +515,7 @@ export function assessBuildVersion(
   response: LiveResponse,
   expectedSha: string,
   header: string,
+  comparison: 'sha-prefix' | 'exact' = 'sha-prefix',
 ): VerifyAssertion {
   const base = { id: 'build-version' as const, exitCode: VERIFY_EXIT.buildVersionMismatch }
   if (response.error !== undefined || response.status === undefined) {
@@ -398,7 +535,9 @@ export function assessBuildVersion(
       evidence: { httpStatus: response.status },
     }
   }
-  return buildVersionMatches(expectedSha, actual)
+  return (
+    comparison === 'exact' ? expectedSha === actual : buildVersionMatches(expectedSha, actual)
+  )
     ? {
         ...base,
         status: 'pass',
@@ -449,6 +588,132 @@ export function assessSmoke(response: LiveResponse, expectContentType: string): 
 }
 
 /**
+ * `Cf-Cache-Status` values that mean the response came out of the cache rather
+ * than from the Worker. `HIT` is the ordinary one; `STALE`, `UPDATING` and
+ * `REVALIDATED` are stored responses served under `stale-while-revalidate` or a
+ * conditional revalidation, which are just as much proof that the edge stores
+ * the route. Everything else (`MISS`, `EXPIRED`, `BYPASS`, `DYNAMIC`, absent)
+ * means the Worker answered.
+ *
+ * @see https://developers.cloudflare.com/workers/cache/debugging/
+ */
+export const STORED_CACHE_STATUSES = new Set(['HIT', 'STALE', 'UPDATING', 'REVALIDATED'])
+
+function cacheStatusOf(response: LiveResponse): string | undefined {
+  return response.headers?.['cf-cache-status']?.trim().toUpperCase()
+}
+
+function unreadable(
+  id: 'edge-cache' | 'edge-uncached',
+  response: LiveResponse,
+): VerifyAssertion | null {
+  if (response.error === undefined && response.status !== undefined) return null
+  return {
+    id,
+    status: 'unknown',
+    detail: `Could not read ${response.url}: ${response.error ?? 'no response'}`,
+    exitCode: VERIFY_EXIT.unreachable,
+  }
+}
+
+/**
+ * Two GETs of one URL, the second of which must come from the Workers Cache.
+ *
+ * A `private`/`no-store` answer is `unknown`, not `fail`: that is what a
+ * preview-safe hostname (`*.workers.dev`, where narduk-core forces every
+ * profile to `none`) or a suppression guard legitimately serves, and it means
+ * the proof has to run against the production hostname instead.
+ */
+export function assessEdgeCache(first: LiveResponse, second: LiveResponse): VerifyAssertion {
+  const base = { id: 'edge-cache' as const, exitCode: VERIFY_EXIT.edgeCacheFailed }
+  const failed = unreadable('edge-cache', first) ?? unreadable('edge-cache', second)
+  if (failed) return failed
+  const statuses = [cacheStatusOf(first), cacheStatusOf(second)]
+  const cacheControl = second.headers?.['cache-control'] ?? ''
+  const evidence = {
+    httpStatus: second.status,
+    cfCacheStatus: statuses.map((status) => status ?? null),
+    cacheControl: cacheControl || null,
+    cdnCacheControl: second.headers?.['cdn-cache-control'] ?? null,
+  }
+  if (second.status === undefined || second.status < 200 || second.status > 299) {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `${second.url} answered ${String(second.status)}; only a 2xx can prove a HIT`,
+      evidence,
+    }
+  }
+  if (/\b(?:private|no-store)\b/iu.test(cacheControl)) {
+    return {
+      ...base,
+      status: 'unknown',
+      detail:
+        `${second.url} is Cache-Control: ${cacheControl}, so this origin cannot prove a HIT here ` +
+        '-- preview-safe mode (a *.workers.dev or preview hostname) or a setCacheProfile guard ' +
+        'forced it private. Run the edge proof against the production hostname.',
+      evidence,
+    }
+  }
+  if (statuses[1] && STORED_CACHE_STATUSES.has(statuses[1])) {
+    return {
+      ...base,
+      status: 'pass',
+      detail: `${second.url} second GET served from the edge cache (Cf-Cache-Status: ${statuses[1]})`,
+      evidence,
+    }
+  }
+  if (!statuses[0] && !statuses[1]) {
+    return {
+      ...base,
+      status: 'fail',
+      detail:
+        `${second.url} carries no Cf-Cache-Status, so the Worker ran both times: Workers Cache is ` +
+        'not on. Add "cache": { "enabled": true } to the wrangler config (Wrangler >= 4.69.0).',
+      evidence,
+    }
+  }
+  return {
+    ...base,
+    status: 'fail',
+    detail:
+      `${second.url} second GET was Cf-Cache-Status: ${statuses[1] ?? '(absent)'}, not a HIT. ` +
+      'Workers Cache is answering but did not store this response.',
+    evidence,
+  }
+}
+
+/** Two GETs of one URL, neither of which may come from the cache. */
+export function assessEdgeUncached(first: LiveResponse, second: LiveResponse): VerifyAssertion {
+  const base = { id: 'edge-uncached' as const, exitCode: VERIFY_EXIT.edgeCacheFailed }
+  const failed = unreadable('edge-uncached', first) ?? unreadable('edge-uncached', second)
+  if (failed) return failed
+  const statuses = [cacheStatusOf(first), cacheStatusOf(second)]
+  const evidence = {
+    httpStatus: second.status,
+    cfCacheStatus: statuses.map((status) => status ?? null),
+    cacheControl: second.headers?.['cache-control'] ?? null,
+  }
+  const stored = statuses.find((status) => status && STORED_CACHE_STATUSES.has(status))
+  if (stored) {
+    return {
+      ...base,
+      status: 'fail',
+      detail:
+        `${second.url} was served from the edge cache (Cf-Cache-Status: ${stored}); this route ` +
+        'must never be stored -- one visitor’s response is being replayed to others.',
+      evidence,
+    }
+  }
+  return {
+    ...base,
+    status: 'pass',
+    detail: `${second.url} not served from cache (Cf-Cache-Status: ${statuses[1] ?? '(absent)'})`,
+    evidence,
+  }
+}
+
+/**
  * Did the request stay on the origin we were asked about?
  *
  * Redirects are followed -- an apex that 308s to `www`, or `/` to `/en`, is
@@ -495,7 +760,13 @@ export function assessOrigin(response: LiveResponse, baseUrl: string): VerifyAss
 export function resolveExitCode(assertions: readonly VerifyAssertion[]): number {
   const offOrigin = assertions.find((entry) => entry.id === 'origin' && entry.status === 'fail')
   if (offOrigin) return VERIFY_EXIT.offOrigin
-  const order: VerifyAssertionId[] = ['build-version', 'health', 'smoke']
+  const order: VerifyAssertionId[] = [
+    'build-version',
+    'health',
+    'smoke',
+    'edge-cache',
+    'edge-uncached',
+  ]
   const unreachable = assertions.find((assertion) => assertion.exitCode === VERIFY_EXIT.unreachable)
   if (unreachable && unreachable.status !== 'pass') return VERIFY_EXIT.unreachable
   for (const id of order) {
@@ -509,12 +780,21 @@ export function resolveExitCode(assertions: readonly VerifyAssertion[]): number 
 
 export interface VerifyContext {
   probe?: LiveProbe
+  /** Monotonic clock; injected with sleep in deadline tests. */
+  now?: () => number
   /** Injected in tests so a retry loop costs no wall time. */
   sleep?: (ms: number) => Promise<void>
   generated?: string
   onAttempt?: (attempt: VerifyAttempt) => void
   /** Injected in tests so the cache-busting URL is deterministic. */
   cacheBustToken?: (attempt: number) => string
+  /** Where the Access service-token variables are read from; process.env by default. */
+  env?: Record<string, string | undefined>
+  /**
+   * Public-DNS lookup for the stale-negative-cache diagnosis and for
+   * `--resolver public`; `node:dns` pinned to 1.1.1.1 / 8.8.8.8 by default.
+   */
+  resolvePublic?: PublicResolve
 }
 
 /** The query parameter name the cache buster uses. */
@@ -533,35 +813,94 @@ export function cacheBustedUrl(url: string, token: string, enabled: boolean): st
   return parsed.toString()
 }
 
+/** Route that carries `x-build-version` for exact-SHA / build-id proof. */
+export function identityProofPath(
+  flags: Pick<VerifyFlags, 'expectSha' | 'expectBuildId' | 'healthPath' | 'smokePath'>,
+): string | null {
+  if (!flags.expectSha && !flags.expectBuildId) return null
+  return flags.healthPath ?? flags.smokePath ?? '/'
+}
+
 async function runOnce(
   flags: VerifyFlags,
-  probe: LiveProbe,
+  rawProbe: LiveProbe,
   token: string,
+  headers: Record<string, string> | undefined,
 ): Promise<VerifyAssertion[]> {
+  const probe: LiveProbe = headers
+    ? (url, options = {}) => rawProbe(url, { ...options, headers })
+    : rawProbe
   const assertions: VerifyAssertion[] = []
   const base = new URL(flags.baseUrl)
   const bust = (url: string): string => cacheBustedUrl(url, token, flags.cacheBust)
-  // The build-version header and the smoke route are read from ONE request:
-  // `x-build-version` is on every response, so probing the smoke path twice
-  // would only double the load on a deployment that is already under proof.
-  if (flags.expectSha || flags.smokePath) {
-    const url = bust(new URL(flags.smokePath ?? '/', base).toString())
-    const response = await probe(url, { timeoutMs: flags.timeoutMs })
-    const origin = assessOrigin(response, flags.baseUrl)
-    if (origin) assertions.push(origin)
-    if (flags.expectSha) {
-      assertions.push(assessBuildVersion(response, flags.expectSha, flags.buildVersionHeader))
-    }
-    if (flags.smokePath) {
-      assertions.push(assessSmoke(response, flags.expectContentType))
-    }
+  const identity = identityProofPath(flags)
+  let smokeResponse: LiveResponse | undefined
+  let healthResponse: LiveResponse | undefined
+  let extraIdentity: LiveResponse | undefined
+  if (flags.smokePath) {
+    smokeResponse = await probe(bust(new URL(flags.smokePath, base).toString()), {
+      timeoutMs: flags.timeoutMs,
+    })
   }
   if (flags.healthPath) {
-    const url = bust(new URL(flags.healthPath, base).toString())
-    const response = await probe(url, { readBody: true, timeoutMs: flags.timeoutMs })
-    const origin = assessOrigin(response, flags.baseUrl)
+    healthResponse = await probe(bust(new URL(flags.healthPath, base).toString()), {
+      readBody: true,
+      timeoutMs: flags.timeoutMs,
+    })
+  }
+  if (identity && identity !== flags.smokePath && identity !== flags.healthPath) {
+    extraIdentity = await probe(bust(new URL(identity, base).toString()), {
+      timeoutMs: flags.timeoutMs,
+    })
+  }
+  const identityResponse =
+    identity === flags.healthPath
+      ? healthResponse
+      : identity === flags.smokePath
+        ? smokeResponse
+        : extraIdentity
+  const originSource = smokeResponse ?? healthResponse ?? extraIdentity
+  if (originSource) {
+    const origin = assessOrigin(originSource, flags.baseUrl)
+    if (origin) assertions.push(origin)
+  }
+  if (flags.expectSha && identityResponse) {
+    assertions.push(assessBuildVersion(identityResponse, flags.expectSha, flags.buildVersionHeader))
+  }
+  if (flags.expectBuildId && identityResponse) {
+    assertions.push(
+      assessBuildVersion(identityResponse, flags.expectBuildId, flags.buildVersionHeader, 'exact'),
+    )
+  }
+  if (flags.smokePath && smokeResponse) {
+    assertions.push(assessSmoke(smokeResponse, flags.expectContentType))
+  }
+  if (flags.healthPath && healthResponse) {
+    const origin = assessOrigin(healthResponse, flags.baseUrl)
     if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
-    assertions.push(assessHealth(response, { allowDegraded: flags.allowDegraded }))
+    assertions.push(assessHealth(healthResponse, { allowDegraded: flags.allowDegraded }))
+  }
+  // The edge proof must look like a visitor: no no-cache request headers, and
+  // the same URL twice. With the cache buster on, that URL is fresh for this
+  // attempt, so the first GET cannot already be warm and a HIT on the second
+  // is this run's own store, not a previous release's.
+  const twice = async (path: string): Promise<[LiveResponse, LiveResponse]> => {
+    const url = bust(new URL(path, base).toString())
+    const first = await probe(url, { noCache: false, timeoutMs: flags.timeoutMs })
+    const second = await probe(url, { noCache: false, timeoutMs: flags.timeoutMs })
+    return [first, second]
+  }
+  for (const path of flags.edgeCachePaths) {
+    const [first, second] = await twice(path)
+    const origin = assessOrigin(second, flags.baseUrl)
+    if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
+    assertions.push(assessEdgeCache(first, second))
+  }
+  for (const path of flags.edgeUncachedPaths) {
+    const [first, second] = await twice(path)
+    const origin = assessOrigin(second, flags.baseUrl)
+    if (origin && !assertions.some((entry) => entry.id === 'origin')) assertions.push(origin)
+    assertions.push(assessEdgeUncached(first, second))
   }
   return assertions
 }
@@ -570,7 +909,34 @@ export async function runVerifyLive(
   flags: VerifyFlags,
   context: VerifyContext = {},
 ): Promise<VerifyReport> {
-  const probe = context.probe ?? createLiveProbe({ timeoutMs: flags.timeoutMs })
+  if (flags.expectSha && flags.expectBuildId) {
+    throw new Error('--expect-sha and --expect-build-id are mutually exclusive')
+  }
+  const now = context.now ?? (() => performance.now())
+  const deadline = now() + (flags.deadlineMs ?? DEFAULT_VERIFY_FLAGS.deadlineMs)
+  const resolverMode = flags.resolver ?? 'system'
+  const dns = createDnsDiagnoser({
+    mode: resolverMode,
+    exitCode: VERIFY_EXIT.unreachable,
+    resolvePublic: context.resolvePublic,
+  })
+  const rawProbe = dns.wrap(
+    context.probe ??
+      createResolverProbe(resolverMode, {
+        timeoutMs: flags.timeoutMs,
+        resolvePublic: context.resolvePublic,
+      }),
+  )
+  const probe: LiveProbe = async (url, options = {}) => {
+    const remaining = Math.floor(deadline - now())
+    if (remaining <= 0) return { url, error: 'Overall live-proof deadline exceeded' }
+    const response = await rawProbe(url, {
+      ...options,
+      timeoutMs: Math.min(options.timeoutMs ?? flags.timeoutMs, remaining),
+    })
+    return now() > deadline ? { url, error: 'Overall live-proof deadline exceeded' } : response
+  }
+  const accessHeaders = resolveAccessHeaders(flags, context.env)
   const sleep = context.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
   let assertions: VerifyAssertion[] = []
   let attempt = 0
@@ -581,11 +947,16 @@ export async function runVerifyLive(
       `${Date.now().toString(36)}-${String(n)}-${Math.random().toString(36).slice(2, 8)}`)
   while (attempt < flags.attempts) {
     attempt += 1
-    assertions = await runOnce(flags, probe, token(attempt))
+    assertions = dns.annotate(await runOnce(flags, probe, token(attempt), accessHeaders))
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
     if (exitCode === VERIFY_EXIT.pass) break
-    if (attempt < flags.attempts) await sleep(flags.intervalSeconds * 1000)
+    if (attempt < flags.attempts) {
+      const remaining = deadline - now()
+      if (remaining <= 0) break
+      await sleep(Math.min(flags.intervalSeconds * 1000, remaining))
+      if (now() >= deadline) break
+    }
   }
   return {
     schemaVersion: 1,
@@ -593,8 +964,10 @@ export async function runVerifyLive(
     generated: context.generated ?? new Date().toISOString(),
     baseUrl: flags.baseUrl,
     expectedSha: flags.expectSha,
+    expectedBuildId: flags.expectBuildId ?? null,
     attemptsUsed: attempt,
     attemptsAllowed: flags.attempts,
+    ...(resolverMode === 'public' ? { resolver: 'public' as const } : {}),
     assertions,
     result: exitCode === VERIFY_EXIT.pass ? 'PASS' : 'FAIL',
     exitCode,
@@ -604,10 +977,13 @@ export async function runVerifyLive(
 export function formatVerifyReport(report: VerifyReport): string {
   const lines = [
     `narduk-app verify --live ${report.baseUrl}`,
-    `  expected   ${report.expectedSha ?? '(no --expect-sha)'}`,
+    `  expected   ${report.expectedBuildId ?? report.expectedSha ?? '(no build identity assertion)'}`,
     `  attempts   ${String(report.attemptsUsed)} of ${String(report.attemptsAllowed)}`,
-    '',
   ]
+  if (report.resolver === 'public') {
+    lines.push(`  resolver   public (${PUBLIC_RESOLVERS.join(', ')}), SNI and Host kept`)
+  }
+  lines.push('')
   for (const assertion of report.assertions) {
     const mark =
       assertion.status === 'pass'

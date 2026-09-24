@@ -4,6 +4,9 @@ import {
   readRuntimeString,
   trimRuntimeString,
 } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
+import { createError } from 'h3'
+
+import { analyticsRuntimeConfig, type AnalyticsServerRuntimeConfig } from './runtimeConfig'
 
 /**
  * IndexNow Programmatic Ping Utility.
@@ -39,7 +42,7 @@ const MAX_URLS_PER_BATCH = 10_000
  * verification or submission when another configured key exists.
  */
 export function resolveIndexNowKeyFromRuntimeConfig(
-  config: ReturnType<typeof useRuntimeConfig>,
+  config: AnalyticsServerRuntimeConfig,
   event?: H3Event,
 ): string {
   const fallback =
@@ -61,6 +64,31 @@ export function resolveIndexNowKeyFromRuntimeConfig(
   }
 
   return fallback
+}
+
+export function indexNowUrlBelongsToHost(url: string, siteHost: string): boolean {
+  const expected = siteHost.trim().toLowerCase()
+  if (!expected) return false
+  try {
+    const parsed = new URL(url)
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.host.toLowerCase() === expected
+    )
+  } catch {
+    return false
+  }
+}
+
+export function assertIndexNowUrlsBelongToHost(urls: readonly string[], siteHost: string): void {
+  const rejected = urls.filter((url) => !indexNowUrlBelongsToHost(url, siteHost))
+  if (rejected.length === 0) return
+
+  throw createError({
+    statusCode: 400,
+    statusMessage: 'IndexNow URLs must be on this site host',
+    data: { state: 'host_mismatch', host: siteHost, rejected },
+  })
 }
 
 export interface IndexNowResult {
@@ -85,7 +113,7 @@ export async function notifyIndexNow(
   urls: string[],
   siteHost?: string,
 ): Promise<IndexNowResult> {
-  const config = useRuntimeConfig(event)
+  const config = analyticsRuntimeConfig(event)
   const key = resolveIndexNowKeyFromRuntimeConfig(config, event)
 
   if (!key) {

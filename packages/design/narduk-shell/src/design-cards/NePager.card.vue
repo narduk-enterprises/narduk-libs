@@ -40,6 +40,7 @@ const state = (over: Partial<NeCollectionState<unknown>>): NeCollectionState<unk
 const counted = state({})
 const dense = state({})
 const uncounted = state({ pageCount: null, total: null })
+const firstPage = state({ hasPrevious: false, offset: 0, page: 1, pageCount: 11, total: 264 })
 const empty = state({
   hasNext: false,
   hasPrevious: false,
@@ -70,6 +71,12 @@ const empty = state({
     </div>
     <div class="preview-row">
       <NePager :state="empty" noun="runners" />
+    </div>
+    <div class="preview-row">
+      <NePager :state="firstPage" noun="stations" :page-sizes="[25, 50, 100]" />
+    </div>
+    <div class="preview-row">
+      <NePager :state="firstPage" noun="stations" mode="more" :max-limit="100" />
     </div>
   </section>
 </template>

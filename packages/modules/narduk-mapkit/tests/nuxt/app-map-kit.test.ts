@@ -11,11 +11,16 @@
  */
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 
 import { resetMapKitClientStateForTests } from '../../src/client/index.js'
 import AppMapKit from '../../src/nuxt/runtime/components/AppMapKit.js'
-import { resetMapKitComposableStateForTests } from '../../src/nuxt/runtime/composables/useMapKit.js'
+import { mapKitColorModeInjectionKey } from '../../src/nuxt/runtime/injection-keys.js'
+
+import {
+  resetMapKitComposableStateForTests,
+  useMapKit,
+} from '../../src/nuxt/runtime/composables/useMapKit.js'
 import { createFakeMapKit } from '../../src/testing/index.js'
 
 import { headEntries, resetNuxtImportsStub, setTestRuntimeConfig } from './nuxt-imports.js'
@@ -33,6 +38,7 @@ interface MapKitExpose {
   closeCallout: (id?: string) => void
   getDiagnostics: () => { annotations: number; lastDiff: MapKitDiff }
   getMap: () => unknown
+  getMapKit: () => unknown
   openCallout: (id: string) => void
   retry: () => void
   scrollIntoView: () => void
@@ -134,6 +140,21 @@ describe('<AppMapKit> lifecycle (§c.7)', () => {
     expect(wrapper.get('.mapkit-wrapper').attributes('data-mapkit-state')).toBe('ready')
   })
 
+  it('builds the map when it mounts after MapKit JS is already ready (K-11)', async () => {
+    const { ready } = useMapKit()
+    await vi.waitFor(() => {
+      expect(ready.value).toBe(true)
+    })
+
+    const wrapper = mount(AppMapKit, { attachTo: document.body, props: BASE_PROPS })
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+    expect(fake.inspect.maps).toHaveLength(1)
+    expect(wrapper.emitted('map-ready')).toHaveLength(1)
+  })
+
   it('is a labelled landmark', async () => {
     const wrapper = await mountMap({ ariaLabel: 'Station map' })
 
@@ -175,35 +196,15 @@ describe('libraries is real configuration (§b, §c.1)', () => {
   })
 })
 
-describe('the SSR preload tag (§c.7, §f)', () => {
-  it('emits Apple renderHTMLAttributes WITHOUT a token', async () => {
-    setTestRuntimeConfig({ public: { nardukMapKit: { libraries: ['map', 'annotations'] } } })
-
-    await mountMap()
-
-    expect(headEntries).toHaveLength(1)
-    const script = headEntries[0]?.script?.[0]
-    expect(script).toBeDefined()
-    // A token in the tag is MapKit's static, non-refreshable path, and a portal
-    // token that works on a preview host has no origin restriction at all.
-    expect(Object.keys(script!)).not.toContain('token')
-    expect(JSON.stringify(script)).not.toContain('token')
-    expect(String(script!['data-libraries'])).toContain('annotations')
-  })
-
-  it('emits nothing at all when the module turned the preload off', async () => {
-    setTestRuntimeConfig({ public: { nardukMapKit: { ssrPreload: false } } })
-
-    await mountMap()
-
-    expect(headEntries).toStrictEqual([])
-  })
-
-  it('carries the CSP nonce onto the tag and the map container', async () => {
+// The SSR preload tag (§c.7, §f) is asserted where it is emitted, on the
+// server: tests/nuxt/preload-ssr.test.ts. On the client `<AppMapKit>` asks the
+// head for nothing (narduk-libs#469, tests/nuxt/preload-hydration.test.ts).
+describe('the CSP nonce on the client (§c.7)', () => {
+  it('carries the nonce onto the map container, and emits no head tag', async () => {
     const wrapper = await mountMap({ nonce: 'nonce-123' })
 
-    expect(headEntries[0]?.script?.[0]?.['nonce']).toBe('nonce-123')
     expect(wrapper.get('.mapkit-canvas').attributes('nonce')).toBe('nonce-123')
+    expect(headEntries).toStrictEqual([])
   })
 })
 
@@ -405,6 +406,173 @@ describe('the #callout slot (§c.4)', () => {
   })
 })
 
+describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
+  const CalloutCard = defineComponent({
+    props: { label: { required: true, type: String } },
+    setup: (props) => () =>
+      h('div', [
+        h('span', props.label),
+        h('a', { class: 'callout-link', href: '/details' }, 'View details'),
+      ]),
+  })
+  const slots = {
+    callout: (scope: { item: Station }) => h(CalloutCard, { label: scope.item.label }),
+  }
+
+  async function selectFrom(
+    wrapper: Awaited<ReturnType<typeof mountMap>>,
+    event: Event,
+  ): Promise<HTMLElement> {
+    const pin = document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement
+    pin.focus()
+    pin.dispatchEvent(event)
+    // The app owns the selection: apply what the component asked for.
+    const [[id]] = wrapper.emitted('update:selectedId') as [[string]]
+    await wrapper.setProps({ selectedId: id })
+    await nextTick()
+    await nextTick()
+    return pin
+  }
+
+  it('moves focus to the first focusable element in the callout', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+
+    await selectFrom(wrapper, new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+
+    const link = document.querySelector('[data-mapkit-callout="station-2"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+  })
+
+  it('leaves focus on the pin after a pointer selection', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+
+    const pin = await selectFrom(wrapper, new MouseEvent('click', { bubbles: true }))
+
+    expect(document.querySelector('[data-mapkit-callout="station-2"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
+  })
+
+  it('focuses the callout when a re-added pin is reselected under a kept selection', async () => {
+    const wrapper = await mountMap({ items: STATIONS, selectedId: 'station-2' }, slots)
+    // The pin leaves and comes back while the app keeps its selection, so the
+    // layer forgets it and the next activation asks for the same id again.
+    await wrapper.setProps({ items: STATIONS.filter((s) => s.id !== 'station-2') })
+    await wrapper.setProps({ items: STATIONS })
+    await nextTick()
+
+    const pin = document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement
+    pin.focus()
+    pin.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+    const link = document.querySelector('[data-mapkit-callout="station-2"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+  })
+
+  it("leaves focus on the pin when calloutFocus is 'never'", async () => {
+    const wrapper = await mountMap({ calloutFocus: 'never', items: STATIONS }, slots)
+
+    const pin = await selectFrom(
+      wrapper,
+      new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }),
+    )
+
+    expect(document.querySelector('[data-mapkit-callout="station-2"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
+  })
+})
+
+describe('hoveredId and the leader overlay (narduk-libs#517)', () => {
+  function leaderAnchor(): HTMLElement {
+    const anchor = document.createElement('div')
+    document.body.append(anchor)
+    anchor.getBoundingClientRect = () =>
+      ({
+        bottom: 120,
+        height: 80,
+        left: 700,
+        right: 900,
+        top: 40,
+        width: 200,
+        x: 700,
+        y: 40,
+      }) as DOMRect
+    return anchor
+  }
+
+  function sizeLeaderHost(host: HTMLElement): void {
+    Object.defineProperty(host, 'clientWidth', { configurable: true, value: 1000 })
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 800 })
+    host.getBoundingClientRect = () =>
+      ({
+        bottom: 800,
+        height: 800,
+        left: 0,
+        right: 1000,
+        top: 0,
+        width: 1000,
+        x: 0,
+        y: 0,
+      }) as DOMRect
+  }
+
+  it('marks the hovered pin when the app applies update:hoveredId', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    fake.inspect.reset()
+
+    host.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+    expect(wrapper.emitted('update:hoveredId')).toStrictEqual([['station-1']])
+
+    await wrapper.setProps({ hoveredId: 'station-1' })
+
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(true)
+    expect(fake.inspect.annotationsAdded).toBe(0)
+    expect(fake.inspect.annotationsRemoved).toBe(0)
+  })
+
+  it('draws a leader from the selected pin to the anchor', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = wrapper.get('.mapkit-wrapper').element as HTMLElement
+    sizeLeaderHost(host)
+
+    await wrapper.setProps({ leader: { anchor: leaderAnchor() }, selectedId: 'station-1' })
+    await nextTick()
+
+    const line = host.querySelector('[data-mapkit-leader-line]')
+    expect(line).not.toBeNull()
+    expect(line?.hasAttribute('hidden')).toBe(false)
+    expect(wrapper.emitted('leader-offscreen')?.at(-1)).toStrictEqual([false])
+  })
+
+  it('refreshes the leader when items move the selected pin', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = wrapper.get('.mapkit-wrapper').element as HTMLElement
+    sizeLeaderHost(host)
+
+    await wrapper.setProps({ leader: { anchor: leaderAnchor() }, selectedId: 'station-1' })
+    await nextTick()
+
+    const line = host.querySelector('[data-mapkit-leader-line]')
+    const before = line?.getAttribute('x1')
+    expect(before).not.toBeNull()
+
+    const pin = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    pin.style.left = `${Number.parseFloat(pin.style.left || '0') + 80}px`
+
+    await wrapper.setProps({
+      items: [{ ...STATIONS[0]!, lat: STATIONS[0]!.lat + 0.2 }, ...STATIONS.slice(1)],
+    })
+    await nextTick()
+
+    expect(line?.getAttribute('x1')).not.toBe(before)
+  })
+})
+
 describe('failure and retry (§c.4, §c.6)', () => {
   it('reports the structured failure and offers a retry instead of the raw error', async () => {
     useFake({ auth: { mode: 'error', status: 'Unauthorized' } })
@@ -420,6 +588,19 @@ describe('failure and retry (§c.4, §c.6)', () => {
     expect(alert.text()).not.toContain('test.jwt.value')
     const failure = wrapper.emitted('mapkit-error')?.[0]?.[0] as { status: string }
     expect(failure.status).toBe('Unauthorized')
+  })
+
+  it('classes the default error content so a host can style it (#614)', async () => {
+    useFake({ auth: { mode: 'error', status: 'Unauthorized' } })
+
+    const wrapper = mount(AppMapKit, { attachTo: document.body, props: BASE_PROPS })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    })
+
+    expect(wrapper.get('.mk-status-title').text()).toBe('Map unavailable')
+    expect(wrapper.get('.mk-status-code').text()).toBe('Unauthorized')
+    expect(wrapper.get('button.mk-status-retry').attributes('type')).toBe('button')
   })
 
   it('hands #error the failure and the retry', async () => {
@@ -465,6 +646,7 @@ describe('the expose (§c.6)', () => {
       'closeCallout',
       'getDiagnostics',
       'getMap',
+      'getMapKit',
       'openCallout',
       'retry',
       'scrollIntoView',
@@ -493,5 +675,168 @@ describe('the expose (§c.6)', () => {
     api(wrapper).select('station-2')
 
     expect(wrapper.emitted('update:selectedId')).toStrictEqual([['station-2']])
+  })
+})
+
+describe('the basemap follows its props on a live map (K-4)', () => {
+  it('re-applies mapType when the prop changes, not only at construction', async () => {
+    const wrapper = await mountMap({ items: STATIONS, mapType: 'standard' })
+    const map = api(wrapper).getMap() as { colorScheme: string; mapType: string }
+    expect(map.mapType).toBe('standard')
+
+    await wrapper.setProps({ mapType: 'satellite' })
+    await nextTick()
+
+    // 2.1.0 passed mapType to the mapkit.Map constructor and never wrote it
+    // again, so this stayed 'standard' for the life of the map.
+    expect(map.mapType).toBe('satellite')
+  })
+
+  it('re-applies colorScheme when the prop changes', async () => {
+    const wrapper = await mountMap({ colorScheme: 'light', items: STATIONS })
+    const map = api(wrapper).getMap() as { colorScheme: string; mapType: string }
+
+    await wrapper.setProps({ colorScheme: 'dark' })
+    await nextTick()
+
+    expect(map.colorScheme).toBe('dark')
+  })
+
+  it("hands MapKit Apple's spelling for this library's 'muted' (K-3)", async () => {
+    const wrapper = await mountMap({ items: STATIONS, mapType: 'muted' })
+
+    // 'muted' is not a MapKit JS value; `mapkit.MapType.MutedStandard` is.
+    expect((api(wrapper).getMap() as { mapType: string }).mapType).toBe('mutedStandard')
+  })
+
+  it('follows an injected colour-mode source under colorScheme="auto"', async () => {
+    const colorMode = ref('light')
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      global: { provide: { [mapKitColorModeInjectionKey as symbol]: colorMode } },
+      props: { ...BASE_PROPS, colorScheme: 'auto', items: STATIONS },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+    const map = api(wrapper).getMap() as { colorScheme: string }
+    expect(map.colorScheme).toBe('light')
+
+    colorMode.value = 'dark'
+    await nextTick()
+
+    expect(map.colorScheme).toBe('dark')
+  })
+})
+
+describe('map-ready hands over the namespace that built the map (K-10)', () => {
+  it('emits the scoped namespace beside the map, never globalThis.mapkit', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+
+    const payload = wrapper.emitted('map-ready')?.[0] as [unknown, unknown]
+    expect(payload).toHaveLength(2)
+    expect(payload[0]).toBe(api(wrapper).getMap())
+    // The live defect: an Annotation built from `window.mapkit` belongs to a
+    // different namespace and the map's own checks reject it.
+    expect(payload[1]).not.toBe(fake.mapkit)
+    expect(payload[1]).toBe(await fake.load({ libraries: ['map'] }))
+  })
+
+  it('exposes the same namespace through getMapKit()', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+
+    const payload = wrapper.emitted('map-ready')?.[0] as [unknown, unknown]
+    expect(api(wrapper).getMapKit()).toBe(payload[1])
+  })
+
+  it('builds annotations the map accepts, which a global-namespace one is not', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const map = api(wrapper).getMap() as {
+      addAnnotations: (annotations: unknown[]) => unknown
+      annotations: unknown[]
+    }
+    expect(map.annotations).toHaveLength(3)
+
+    const foreign = new fake.mapkit.MarkerAnnotation({ latitude: 30, longitude: -88 })
+    expect(() => map.addAnnotations([foreign])).toThrow(
+      'Map.addAnnotations expected an annotation at index 0, but got',
+    )
+
+    const own = new (api(wrapper).getMapKit() as typeof fake.mapkit).MarkerAnnotation({
+      latitude: 30,
+      longitude: -88,
+    })
+    expect(() => map.addAnnotations([own])).not.toThrow()
+  })
+})
+
+describe('pins that are not controls (K-8)', () => {
+  it('drops the role, tabindex and listeners when pinsFocusable is false', async () => {
+    const wrapper = await mountMap({ items: STATIONS, pinsFocusable: false })
+
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    expect(host.getAttribute('role')).toBeNull()
+    expect(host.getAttribute('tabindex')).toBeNull()
+    expect(host.getAttribute('aria-label')).toBeNull()
+
+    host.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+  })
+
+  it('stops requiring itemLabel for a decorative map', async () => {
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      props: { createPinElement: pinElement, items: STATIONS, pinsFocusable: false },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+
+    expect(document.querySelectorAll('[data-mapkit-pin]')).toHaveLength(3)
+  })
+
+  it('keeps 2.1.0’s interactive host as the default', async () => {
+    await mountMap({ items: STATIONS })
+
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    expect(host.getAttribute('role')).toBe('button')
+    expect(host.getAttribute('tabindex')).toBe('0')
+  })
+})
+
+describe('a pin with no accessible name fails at mount (K-9)', () => {
+  it('throws from setup, naming the component and both ways out', () => {
+    // 2.1.0 threw from inside the pin layer, asynchronously, after the map had
+    // half-built itself -- so an app saw a broken map and a stack with no
+    // component in it.
+    expect(() =>
+      mount(AppMapKit, {
+        attachTo: document.body,
+        props: { createPinElement: pinElement, items: STATIONS },
+      }),
+    ).toThrow('<AppMapKit>: the itemLabel prop is required whenever items is non-empty')
+  })
+
+  it('throws when items become non-empty later', async () => {
+    const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
+      props: { createPinElement: pinElement, items: [] },
+    })
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+
+    await expect(wrapper.setProps({ items: STATIONS })).rejects.toThrow(
+      'the itemLabel prop is required',
+    )
+  })
+
+  it('says nothing about an empty items list', () => {
+    expect(() =>
+      mount(AppMapKit, {
+        attachTo: document.body,
+        props: { createPinElement: pinElement, items: [] },
+      }),
+    ).not.toThrow()
   })
 })

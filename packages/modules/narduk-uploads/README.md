@@ -17,8 +17,18 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
 - `POST /api/upload` accepts authenticated multipart image uploads
   (`image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`). Requests
   without a finite `Content-Length` are rejected with 411 before the body is
-  read. Declared length above 100 MB is 413. The Node request stream is also
-  hard-stopped at that byte cap so a lying header cannot buffer past it.
+  read. Declared length above 100 MB is 413. The 100 MB cap is then enforced
+  again while the body is read, before the multipart parse: a web
+  `ReadableStream` is counted through a reader and aborted with 413 the moment
+  it passes the cap (the source is cancelled, so a Worker stops reading), and a
+  body the runtime already materialised is measured and refused the same way. A
+  live Node request stream is hard-stopped by destroying it. A lying
+  `Content-Length` therefore cannot buffer past the cap on any of the three
+  paths. The part's declared type is a client header, so each file is also
+  identified from its magic bytes (`sniffUploadImageType`). A file that is not
+  one of the five allow-listed rasters is refused with 415 and nothing in the
+  request is stored. The stored content type and key extension come from the
+  bytes, never from the label.
 - `GET /images/uploads/*` streams those objects from R2 when the stored content
   type is on the same allow-list (parameters stripped, lowercased). Other types
   — including missing metadata, SVG, HTML, and JavaScript — return 415.

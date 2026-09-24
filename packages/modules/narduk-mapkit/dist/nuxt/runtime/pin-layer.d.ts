@@ -16,6 +16,8 @@ export interface MapKitPinElement {
     cleanup?: () => void;
     element: HTMLElement;
 }
+/** How a pin selection was made. */
+export type MapKitSelectVia = 'keyboard' | 'pointer';
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
     clusteringIdentifier?: string;
@@ -23,14 +25,38 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     createPinElement?: (item: T, isSelected: boolean) => MapKitPinElement;
     /** Injected so a plain-TS test can run against any document. */
     document?: Document;
+    /**
+     * Whether the library-owned host is an interactive control. Default `true`.
+     *
+     * 2.1.0 had no way to say otherwise (2.1.1, K-8): every host carried
+     * `role="button"` and `tabindex="0"`, so a decorative map marked
+     * `aria-hidden="true"` was full of focusable descendants -- axe's
+     * `aria-hidden-focus` -- and the only way out was `inert` on the consumer's
+     * side. `false` builds a plain host: no role, no tabindex, no `aria-pressed`,
+     * no click or key listener, and no required `itemLabel`.
+     */
+    focusable?: boolean;
     /** Stable identity per item. Must be non-blank and unique. */
     itemKey: (item: T, index: number) => string;
-    /** Accessible name of the library-owned host. Required whenever `items` is non-empty. */
+    /**
+     * Accessible name of the library-owned host. Required whenever `items` is
+     * non-empty AND the host is focusable; a non-interactive host has no
+     * accessible name to carry.
+     */
     itemLabel?: (item: T) => string;
     map: MapKitMapLike;
     mapkit: MapKitNamespaceLike;
-    /** Called when a pin is activated by pointer or keyboard, with the toggled id. */
-    onSelect?: (id: string | null) => void;
+    /**
+     * Called when the pointer enters or leaves a pin host. The layer does not
+     * apply hover itself -- the host's `hoveredId` (or the app) writes it back
+     * through `setHovered`, the same way `selectedId` works.
+     */
+    onHover?: (id: string | null) => void;
+    /**
+     * Called when a pin is activated by pointer or keyboard, with the toggled id
+     * and which of the two activated it.
+     */
+    onSelect?: (id: string | null, via: MapKitSelectVia) => void;
     pinGeometry?: (item: T) => MapKitPinGeometry;
 }
 /** `item.id` is the default key, so the common case needs no `itemKey` prop. */
@@ -38,6 +64,7 @@ export declare function defaultMapKitItemKey(item: unknown, index: number): stri
 export declare class MapKitPinLayer<T extends MapKitPinItem> {
     #private;
     constructor(options: MapKitPinLayerOptions<T>);
+    get hoveredId(): string | null;
     get selectedId(): string | null;
     get size(): number;
     /** `getDiagnostics()` on the component's expose (§c.6). */
@@ -66,6 +93,13 @@ export declare class MapKitPinLayer<T extends MapKitPinItem> {
      * re-rendered inside hosts that are not replaced, so focus survives.
      */
     setSelected(id: string | null): MapKitDiff;
+    /**
+     * Mark the hovered pin.
+     *
+     * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+     * moves, so a hover cannot recreate the host the pointer is on.
+     */
+    setHovered(id: string | null): void;
     /** Remove every pin and make the layer inert. Idempotent. */
     destroy(): void;
 }

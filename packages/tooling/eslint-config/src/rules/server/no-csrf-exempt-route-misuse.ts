@@ -1,8 +1,9 @@
 /**
  * Rule: no-csrf-exempt-route-misuse
  *
- * Routes under `server/api/webhooks|cron|callbacks/**` bypass the CSRF
- * middleware entirely. If they read a request body they must authenticate the
+ * Routes under `server/api/webhooks|cron|callbacks/**`, and the routes an app
+ * declares in `nardukCore.csrf.exemptPaths` (the `exemptPaths` option), bypass
+ * the CSRF middleware entirely. If they read a request body they must authenticate the
  * caller some other way — a shared secret or a signature header.
  *
  * v1 was satisfied by the mere **presence** of a `getHeader` call anywhere in
@@ -37,6 +38,12 @@ interface Options {
   secretHeaders?: string[]
   /** Regex sources matched against a header name, in addition to the list. */
   secretHeaderPatterns?: string[]
+  /**
+   * The app's declared `nardukCore.csrf.exemptPaths`. Pass the same constant
+   * `nuxt.config` declares, so the lint rules and the CSRF middleware exempt the
+   * same routes (narduk-libs#510).
+   */
+  exemptPaths?: string[]
 }
 
 const DEFAULT_SECRET_HEADER_PATTERNS = [
@@ -84,6 +91,7 @@ export default {
         properties: {
           secretHeaders: { type: 'array', items: { type: 'string' }, uniqueItems: true },
           secretHeaderPatterns: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+          exemptPaths: { type: 'array', items: { type: 'string' }, uniqueItems: true },
         },
         additionalProperties: false,
       },
@@ -100,10 +108,10 @@ export default {
     const filename = context.filename ?? (context as any).getFilename?.() ?? ''
     if (!filename || isExemptTestPath(filename)) return {}
 
-    const pathInfo = analyzeServerRoutePath(filename)
+    const options = (context.options[0] ?? {}) as Options
+    const pathInfo = analyzeServerRoutePath(filename, options.exemptPaths ?? [])
     if (!pathInfo.isServerRoute || !pathInfo.isCsrfExempt) return {}
 
-    const options = (context.options[0] ?? {}) as Options
     const secretHeaders = new Set((options.secretHeaders ?? []).map((name) => name.toLowerCase()))
     const patterns = (options.secretHeaderPatterns ?? DEFAULT_SECRET_HEADER_PATTERNS).map(
       (source) => new RegExp(source, 'i'),

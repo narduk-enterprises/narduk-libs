@@ -63,9 +63,13 @@ function assertThresholdSeconds(name: string, label: string, value: number | und
  *
  * - Fresh enough: `result: 'pass'`, and `detail` still carries `observedAt` and
  *   `ageSeconds` so a dashboard can plot age while everything is fine.
+ * - Older than the optional `noticeAfter`: `result: 'fail'` with
+ *   `notice: true`, and the report's `status` is unchanged. Nothing pages.
  * - Older than `warnAfter`: `result: 'fail'` with `required: false`, so the
- *   report is `degraded` and `/api/health` still answers HTTP 200. A stale feed
- *   does not take the app down.
+ *   report is `degraded` and `/api/health` still answers HTTP 200. That is not
+ *   harmless: a monitor matching `"status":"ok"` -- the estate uptime detector
+ *   -- reads `degraded` as down and pages as hard as it does for `error`
+ *   (narduk-libs#414). Set `warnAfter` to the age that deserves a page.
  * - Older than `failAfter`: `result: 'fail'` with `required: true`, so the
  *   report is `error` and `/api/health` answers HTTP 503. Without `failAfter` a
  *   freshness check can never reach that state.
@@ -74,7 +78,7 @@ function assertThresholdSeconds(name: string, label: string, value: number | und
  *   thresholds allow, with a `detail.reason` saying which. It never passes for
  *   want of evidence. The underlying error goes to the server log only.
  *
- * Seconds, everywhere: `warnAfter` and `failAfter` are seconds, while a numeric
+ * Seconds, everywhere: `noticeAfter`, `warnAfter` and `failAfter` are seconds, while a numeric
  * `at` is epoch milliseconds (the units `Date.now()` uses).
  *
  * @example
@@ -101,7 +105,16 @@ export function registerFreshnessCheck(definition: FreshnessCheckDefinition): ()
   if (definition === null || typeof definition !== 'object') {
     throw new TypeError('[narduk-core] registerFreshnessCheck expects a check definition object.')
   }
-  const { failAfter, name, now = Date.now, read, source, timeoutMs, warnAfter } = definition
+  const {
+    failAfter,
+    name,
+    noticeAfter,
+    now = Date.now,
+    read,
+    source,
+    timeoutMs,
+    warnAfter,
+  } = definition
   // `name` and `timeoutMs` are validated by registerHealthCheck below; the
   // label here only has to be safe to interpolate into these messages.
   const label = typeof name === 'string' ? name : JSON.stringify(name)
@@ -131,7 +144,17 @@ export function registerFreshnessCheck(definition: FreshnessCheckDefinition): ()
     }
   }
 
+  if (noticeAfter !== undefined) {
+    assertThresholdSeconds(label, 'noticeAfter', noticeAfter)
+    if (noticeAfter > warnAfter) {
+      throw new TypeError(
+        `[narduk-core] Freshness check '${label}' noticeAfter (${noticeAfter}s) must be at most warnAfter (${warnAfter}s).`,
+      )
+    }
+  }
+
   const thresholds: FreshnessThresholds = {
+    ...(noticeAfter === undefined ? {} : { noticeAfter }),
     warnAfter,
     ...(failAfter === undefined ? {} : { failAfter }),
   }

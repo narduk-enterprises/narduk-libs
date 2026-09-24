@@ -5,14 +5,13 @@ import { fileURLToPath } from 'node:url'
 
 import { batchPackages, packageGates, packageJobs } from './ci-package-plan.mjs'
 import { consumerDependencyNames, consumerSmokeGenerator } from './consumer-smoke-fixture.mjs'
+import {
+  consumerScopeModes,
+  dependencySections,
+  resolveConsumerScope,
+} from './packed-consumer-scope.mjs'
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const dependencySections = [
-  'dependencies',
-  'devDependencies',
-  'peerDependencies',
-  'optionalDependencies',
-]
 
 function toPosix(value) {
   return value.split(sep).join('/')
@@ -197,6 +196,25 @@ function isPackageValidationOnly(relativePath) {
   return false
 }
 
+/**
+ * Packages that read other workspace packages' files rather than importing
+ * them. A package lists package-relative paths in its manifest as
+ * `nardukWorkspaceInputs` (libs-explorer reads every manifest and README to
+ * build its catalog); a change to one of those paths in any other workspace
+ * package selects the reader, the same as a dependency change would, without
+ * a fake runtime dependency. Adding a package counts: its new `package.json`
+ * is such a path. Removing one needs no rule, because a path under a package
+ * that no longer exists is unclassified and already forces a full run.
+ */
+function workspaceInputReaders(packages, owner, relativePath) {
+  return packages.filter(
+    ({ name, manifest }) =>
+      name !== owner.name &&
+      Array.isArray(manifest.nardukWorkspaceInputs) &&
+      manifest.nardukWorkspaceInputs.includes(relativePath),
+  )
+}
+
 function transitiveDependents(changedNames, dependents) {
   const affected = new Set(changedNames)
   const pending = [...changedNames]
@@ -217,6 +235,7 @@ export function computeAffectedSet({
   changedFiles,
   forceAll = false,
   batchCount = 8,
+  consumerScopeMode = 'full',
 }) {
   const workspace = loadWorkspace(root)
   const normalizedFiles = [...new Set(changedFiles.map((path) => toPosix(path)))].sort()
@@ -232,6 +251,13 @@ export function computeAffectedSet({
       changedNames.add(workspacePackage.name)
       const relativePath = path.slice(workspacePackage.relativeDirectory.length + 1)
       if (!isPackageValidationOnly(relativePath)) consumerChangedNames.add(workspacePackage.name)
+      for (const reader of workspaceInputReaders(
+        workspace.packages,
+        workspacePackage,
+        relativePath,
+      )) {
+        changedNames.add(reader.name)
+      }
       continue
     }
 
@@ -292,6 +318,19 @@ export function computeAffectedSet({
     .map(({ name }) => name)
     .filter((name) => !affectedNames.has(name))
 
+  // Which publishable packages the packed-consumer proof must actually pack.
+  // The rule lives in packed-consumer-scope.mjs and only ever narrows a run
+  // already known to be dependency-local; where it is applied (pull requests
+  // only, never a push to main) is decided in ci.yml.
+  const { consumerScope, consumerScopeReason } = resolveConsumerScope({
+    mode: consumerScopeMode,
+    packedConsumer,
+    generatedConsumer,
+    fullRun,
+    workspace,
+    consumerAffectedNames,
+  })
+
   return {
     matrix,
     packageJobs: packageJobs(matrix),
@@ -315,6 +354,9 @@ export function computeAffectedSet({
     packedConsumer,
     generatedConsumer,
     consumerInputs,
+    consumerScopeMode,
+    consumerScope,
+    consumerScopeReason,
   }
 }
 
@@ -362,6 +404,11 @@ export function renderSummary(result) {
     '',
     `**Packed artifacts:** ${result.packedConsumer ? 'required' : 'not applicable'}`,
     `**Generated app proof:** ${result.generatedConsumer ? 'required' : 'not applicable'}`,
+    `**Packed-consumer scope:** ${result.consumerScopeReason}`,
+    '',
+    '### Packages the packed-consumer proof packs',
+    '',
+    markdownList(result.consumerScope, 'None'),
     '',
     '### Generated app inputs (including build dependencies)',
     '',
@@ -380,6 +427,7 @@ function parseArguments(argv) {
     summary: undefined,
     jsonOutput: undefined,
     batchCount: 8,
+    consumerScopeMode: 'full',
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -398,6 +446,7 @@ function parseArguments(argv) {
         '--summary',
         '--json-output',
         '--batch-count',
+        '--consumer-scope-mode',
       ].includes(argument)
     ) {
       if (!next) throw new Error(`${argument} requires a value.`)
@@ -409,6 +458,7 @@ function parseArguments(argv) {
         '--summary': 'summary',
         '--json-output': 'jsonOutput',
         '--batch-count': 'batchCount',
+        '--consumer-scope-mode': 'consumerScopeMode',
       }[argument]
       options[key] =
         argument === '--root' ? resolve(next) : argument === '--batch-count' ? Number(next) : next
@@ -416,6 +466,11 @@ function parseArguments(argv) {
       continue
     }
     throw new Error(`Unknown argument: ${argument}`)
+  }
+  if (!consumerScopeModes.includes(options.consumerScopeMode)) {
+    throw new Error(
+      `--consumer-scope-mode must be one of ${consumerScopeModes.join(', ')}; received ${options.consumerScopeMode}.`,
+    )
   }
   return options
 }
@@ -434,6 +489,7 @@ function main() {
     changedFiles,
     forceAll: options.forceAll,
     batchCount: options.batchCount,
+    consumerScopeMode: options.consumerScopeMode,
   })
 
   if (options.githubOutput) {
@@ -446,6 +502,7 @@ function main() {
         `browser-packages=${JSON.stringify(result.browserPackages)}`,
         `packed-consumer=${result.packedConsumer}`,
         `generated-consumer=${result.generatedConsumer}`,
+        `consumer-scope=${result.consumerScope.join(',')}`,
         `full-run=${result.fullRun}`,
         `affected-count=${result.affectedNames.length}`,
         '',

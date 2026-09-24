@@ -1,6 +1,6 @@
-import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 
-import { narrowerRole, roleRank, type TenancyRole } from '../../shared/utils/roles'
+import { narrowerRole, roleAtLeast, roleRank, type TenancyRole } from '../../shared/utils/roles'
 import {
   tenancyAuditEvents,
   tenancyInvites,
@@ -106,6 +106,151 @@ function defaultTokenGenerator(): string {
   return toHex(globalThis.crypto.getRandomValues(new Uint8Array(32)))
 }
 
+/**
+ * The explicit actor for a mutation no user made, such as seeding, a
+ * migration or platform tooling. Every mutation that takes `actorUserId`
+ * requires either a user id or this marker, so a system call is always a
+ * deliberate choice in the code and never the accident of a missing field
+ * (narduk-libs#213). A system call is not ranked and is audited with a null
+ * actor.
+ *
+ * It is a symbol, so no request body, query string or user id can ever equal
+ * it. `Symbol.for` keeps it the same value if a bundle carries two copies of
+ * this module.
+ */
+export const TENANCY_SYSTEM_ACTOR: unique symbol = Symbol.for(
+  '@narduk-enterprises/narduk-tenancy/system-actor',
+)
+
+/** Who is making a mutation: a user id, or `TENANCY_SYSTEM_ACTOR`. */
+export type TenancyActorId = string | typeof TENANCY_SYSTEM_ACTOR
+
+/**
+ * The acting user's id, or `undefined` for `TENANCY_SYSTEM_ACTOR`. Anything
+ * else, a missing field or `null` included, is refused `invalid` rather than
+ * read as a system call.
+ */
+function actingUserId(actorUserId: unknown): string | undefined {
+  if (actorUserId === TENANCY_SYSTEM_ACTOR) return undefined
+  if (typeof actorUserId === 'string' && actorUserId.trim().length > 0) return actorUserId
+  throw new TenancyError(
+    'invalid',
+    'actorUserId is required: pass the acting user id, or TENANCY_SYSTEM_ACTOR for a system call.',
+  )
+}
+
+/** An identified caller, with the org role the rank rule judges them by. */
+interface TenancyActor {
+  role: TenancyRole
+  userId: string
+}
+
+/**
+ * The rank rule (narduk-libs#213). An identified actor may grant a role, or
+ * act on a member who holds one, only at or below their own org role. Nothing
+ * outranks an owner, so only an owner can make, demote, remove or narrow an
+ * owner, and nobody can raise their own role.
+ *
+ * It is a floor, not a hierarchy. Whether an admin may manage another admin is
+ * the consumer's policy, and consumers answer it differently, so a route that
+ * wants "strictly below" says so itself. What no consumer may allow, a missing
+ * route check included, is a change above the actor's own standing.
+ *
+ * A system call names no actor, so there is nothing to rank.
+ */
+function requireRank(actor: TenancyActor | undefined, role: TenancyRole): void {
+  if (!actor || roleAtLeast(actor.role, role)) return
+  throw new TenancyError(
+    'forbidden',
+    `User ${actor.userId} (${actor.role}) may not grant, or act on a member who holds, ${role}.`,
+  )
+}
+
+/**
+ * The rank check's inputs, asserted again inside the membership write, the
+ * same way the last-owner rule is: the member still holds the role the check
+ * read, and an identified actor still holds theirs. Otherwise a promotion or
+ * demotion landing between the check and the write would let an out-of-rank
+ * change through, such as an admin demoting somebody who had just been made an
+ * owner.
+ */
+function stillInRank(
+  membership: TenancyMembership,
+  actor: TenancyActor | undefined,
+): SQL | undefined {
+  return and(
+    eq(tenancyMemberships.role, membership.role),
+    actorStillInRank(membership.orgId, actor),
+  )
+}
+
+/**
+ * An identified actor still holds exactly the role the rank check read.
+ *
+ * The same assertion `stillInRank` makes, addressed by org and user rather
+ * than by the membership row being written, so a write to the overrides or
+ * invites table can carry it too (narduk-libs#537). A system call names no
+ * actor and adds no predicate.
+ */
+function actorStillInRank(orgId: string, actor: TenancyActor | undefined): SQL | undefined {
+  if (!actor) return undefined
+  return sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS acting
+    WHERE acting.org_id = ${orgId}
+      AND acting.user_id = ${actor.userId}
+      AND acting.role = ${actor.role}
+  )`
+}
+
+/**
+ * The member the rank check read still stands exactly as it read them: at that
+ * role, or — for `addMember`, and for an override whose member was already
+ * gone — still not a member at all. A membership appearing in the window is as
+ * much a change as one moving, because the check that ranked nothing ranked it
+ * against nobody.
+ */
+function memberStillAsRead(orgId: string, userId: string, role: TenancyRole | null): SQL {
+  if (role === null) {
+    return sql`NOT EXISTS (
+      SELECT 1 FROM tenancy_memberships AS target
+      WHERE target.org_id = ${orgId}
+        AND target.user_id = ${userId}
+    )`
+  }
+  return sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS target
+    WHERE target.org_id = ${orgId}
+      AND target.user_id = ${userId}
+      AND target.role = ${role}
+  )`
+}
+
+/**
+ * Why a write guarded by the in-write rank predicate matched no row.
+ *
+ * Always `conflict`. Everything the guard asserts was already true when the
+ * service read it — a missing org, a missing member and an out-of-rank actor
+ * each have their own answer from that read — so the only way the predicate
+ * fails is that one of them moved inside the window, which is a race the
+ * caller retries rather than a state it can be told about (narduk-libs#537).
+ */
+function rankWriteConflict(orgId: string): TenancyError {
+  return new TenancyError(
+    'conflict',
+    `A role in org ${orgId} changed while this change was being made.`,
+  )
+}
+
+/** A literal column for an `INSERT … SELECT`, aliased to the column it fills. */
+function sqlText(value: string, column: string) {
+  return sql<string>`${value}`.as(column)
+}
+
+/** As `sqlText`, for the millisecond-epoch integer columns. */
+function sqlNumber(value: number, column: string) {
+  return sql<number>`${value}`.as(column)
+}
+
 export interface CreateOrgInput {
   createdByUserId: string
   name: string
@@ -113,7 +258,13 @@ export interface CreateOrgInput {
 }
 
 export interface MemberInput {
-  actorUserId?: string | null
+  /**
+   * The caller, required. A user id is ranked against that user's org role
+   * (narduk-libs#213): the change is refused `forbidden` if it reaches above
+   * it, or if they are not a member at all. `TENANCY_SYSTEM_ACTOR` marks a
+   * system call, such as seeding or platform tooling, which is never ranked.
+   */
+  actorUserId: TenancyActorId
   orgId: string
   userId: string
 }
@@ -141,6 +292,7 @@ export interface CreateInviteInput {
   email: string
   /** Absolute millisecond epoch expiry. Takes precedence over `ttlMs`. */
   expiresAt?: number
+  /** Always ranked: an inviter may invite at or below their own org role. */
   invitedByUserId: string
   orgId: string
   resource?: TenancyResourceRef
@@ -199,9 +351,9 @@ export interface TenancyService {
   listOrgsForUser: (userId: string) => Promise<TenancyOrg[]>
   removeMember: (input: MemberInput) => Promise<void>
   resolveRole: (input: ResolveRoleInput) => Promise<TenancyRoleResolution>
-  revokeInvite: (input: { actorUserId?: string | null; inviteId: string }) => Promise<TenancyInvite>
+  revokeInvite: (input: { actorUserId: TenancyActorId; inviteId: string }) => Promise<TenancyInvite>
   revokeSupportGrant: (input: {
-    actorUserId?: string | null
+    actorUserId: TenancyActorId
     grantId: string
   }) => Promise<TenancySupportGrant>
   setMemberRole: (input: AddMemberInput) => Promise<TenancyMembership>
@@ -282,7 +434,62 @@ export function createTenancy(
     return membership
   }
 
-  async function insertMembership(input: AddMemberInput): Promise<TenancyMembership> {
+  /**
+   * An identified actor and their org role. The rank rule judges an actor by
+   * their standing in the org, never by a role a resource override narrowed,
+   * so somebody who is not a member holds no rank at all. They are refused
+   * before anything about the org's members is read, so the answer tells a
+   * stranger nothing about who belongs to it.
+   */
+  async function requireActor(orgId: string, userId: string): Promise<TenancyActor> {
+    const membership = await findMembership(orgId, userId)
+    if (!membership) {
+      throw new TenancyError('forbidden', `User ${userId} is not a member of org ${orgId}.`)
+    }
+    return { userId, role: membership.role }
+  }
+
+  /**
+   * As `requireActor`, but `TENANCY_SYSTEM_ACTOR` gets `undefined`. A missing
+   * actor is refused, never taken for a system call.
+   */
+  async function resolveActor(
+    orgId: string,
+    actorUserId: TenancyActorId,
+  ): Promise<TenancyActor | undefined> {
+    const userId = actingUserId(actorUserId)
+    return userId === undefined ? undefined : requireActor(orgId, userId)
+  }
+
+  /**
+   * Why a membership write guarded by `stillInRank` matched no row. The
+   * member left (`not_found`). A role the rank check read moved before the
+   * write (`conflict`), so the caller retries and the check runs against the
+   * new state. Or the write would have left the org without an owner.
+   */
+  async function membershipWriteRefusal(
+    membership: TenancyMembership,
+    actor: TenancyActor | undefined,
+  ): Promise<TenancyError> {
+    const { orgId, userId } = membership
+    const current = await findMembership(orgId, userId)
+    if (!current) {
+      return new TenancyError('not_found', `User ${userId} is not a member of org ${orgId}.`)
+    }
+    const acting = actor ? await findMembership(orgId, actor.userId) : undefined
+    if (current.role !== membership.role || (actor && acting?.role !== actor.role)) {
+      return new TenancyError(
+        'conflict',
+        `A role in org ${orgId} changed while this change was being made.`,
+      )
+    }
+    return new TenancyError('last_owner', `Org ${orgId} must keep at least one owner.`)
+  }
+
+  async function insertMembership(
+    input: AddMemberInput,
+    actor: TenancyActor | undefined,
+  ): Promise<TenancyMembership> {
     const timestamp = now()
     const membership: TenancyMembership = {
       id: nextId(),
@@ -292,10 +499,40 @@ export function createTenancy(
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-    await db.insert(tenancyMemberships).values(membership).run()
+    // The rank inputs asserted inside the INSERT, the way `setMemberRole`
+    // asserts them inside its UPDATE (narduk-libs#537). The org still exists,
+    // the actor still holds the role the check read, and the user is still not
+    // a member. A demotion, or a concurrent add, landing in that window writes
+    // nothing rather than admitting one change against roles as they were.
+    const inserted = first(
+      await db
+        .insert(tenancyMemberships)
+        .select(
+          db
+            .select({
+              id: sqlText(membership.id, 'id'),
+              orgId: sqlText(membership.orgId, 'org_id'),
+              userId: sqlText(membership.userId, 'user_id'),
+              role: sqlText(membership.role, 'role'),
+              createdAt: sqlNumber(timestamp, 'created_at'),
+              updatedAt: sqlNumber(timestamp, 'updated_at'),
+            })
+            .from(tenancyOrgs)
+            .where(
+              and(
+                eq(tenancyOrgs.id, input.orgId),
+                actorStillInRank(input.orgId, actor),
+                memberStillAsRead(input.orgId, input.userId, null),
+              ),
+            ),
+        )
+        .returning({ id: tenancyMemberships.id })
+        .all(),
+    )
+    if (!inserted) throw rankWriteConflict(input.orgId)
     await audit({
       orgId: input.orgId,
-      actorUserId: input.actorUserId,
+      actorUserId: actor?.userId,
       action: 'membership.add',
       subjectKind: 'membership',
       subjectId: membership.id,
@@ -307,7 +544,7 @@ export function createTenancy(
   async function updateMembershipRole(
     membership: TenancyMembership,
     role: TenancyRole,
-    actorUserId?: string | null,
+    actor: TenancyActor | undefined,
   ): Promise<TenancyMembership> {
     const updated = first(
       await db
@@ -316,19 +553,17 @@ export function createTenancy(
         .where(
           and(
             eq(tenancyMemberships.id, membership.id),
+            stillInRank(membership, actor),
             role === 'owner' ? undefined : preservesAnOwner(membership.orgId, membership.userId),
           ),
         )
         .returning()
         .all(),
     )
-    if (!updated) {
-      await requireMembership(membership.orgId, membership.userId)
-      throw new TenancyError('last_owner', `Org ${membership.orgId} must keep at least one owner.`)
-    }
+    if (!updated) throw await membershipWriteRefusal(membership, actor)
     await audit({
       orgId: membership.orgId,
-      actorUserId,
+      actorUserId: actor?.userId,
       action: 'membership.change',
       subjectKind: 'membership',
       subjectId: membership.id,
@@ -362,6 +597,7 @@ export function createTenancy(
   async function upsertOverride(
     input: ResourceRoleOverrideInput,
     membership: TenancyMembership,
+    actor: TenancyActor | undefined,
   ): Promise<TenancyResourceRoleOverride> {
     // Narrow-only: an override may lower a member's role on one resource and
     // may repeat it, but it may never be an escalation path.
@@ -387,19 +623,49 @@ export function createTenancy(
           updatedAt: timestamp,
         }
 
-    if (existing) {
-      await db
-        .update(tenancyResourceRoleOverrides)
-        .set({ role: input.role, updatedAt: timestamp })
-        .where(eq(tenancyResourceRoleOverrides.id, existing.id))
-        .run()
-    } else {
-      await db.insert(tenancyResourceRoleOverrides).values(override).run()
-    }
+    // Both branches carry the rank inputs into the write itself: the actor
+    // still holds the role the check read, and the member still holds the org
+    // role the override is capped by (narduk-libs#537). An admin whose target
+    // is promoted to owner in that window narrows nobody.
+    const guard = and(
+      actorStillInRank(input.orgId, actor),
+      memberStillAsRead(input.orgId, input.userId, membership.role),
+    )
+    const written = existing
+      ? first(
+          await db
+            .update(tenancyResourceRoleOverrides)
+            .set({ role: input.role, updatedAt: timestamp })
+            .where(and(eq(tenancyResourceRoleOverrides.id, existing.id), guard))
+            .returning({ id: tenancyResourceRoleOverrides.id })
+            .all(),
+        )
+      : first(
+          await db
+            .insert(tenancyResourceRoleOverrides)
+            .select(
+              db
+                .select({
+                  id: sqlText(override.id, 'id'),
+                  orgId: sqlText(override.orgId, 'org_id'),
+                  resourceKind: sqlText(override.resourceKind, 'resource_kind'),
+                  resourceId: sqlText(override.resourceId, 'resource_id'),
+                  userId: sqlText(override.userId, 'user_id'),
+                  role: sqlText(override.role, 'role'),
+                  createdAt: sqlNumber(timestamp, 'created_at'),
+                  updatedAt: sqlNumber(timestamp, 'updated_at'),
+                })
+                .from(tenancyOrgs)
+                .where(and(eq(tenancyOrgs.id, input.orgId), guard)),
+            )
+            .returning({ id: tenancyResourceRoleOverrides.id })
+            .all(),
+        )
+    if (!written) throw rankWriteConflict(input.orgId)
 
     await audit({
       orgId: input.orgId,
-      actorUserId: input.actorUserId,
+      actorUserId: actor?.userId,
       action: 'override.set',
       subjectKind: 'resource_role_override',
       subjectId: override.id,
@@ -575,6 +841,8 @@ export function createTenancy(
     },
 
     async addMember(input) {
+      const actor = await resolveActor(input.orgId, input.actorUserId)
+      requireRank(actor, input.role)
       await requireOrg(input.orgId)
       const existing = await findMembership(input.orgId, input.userId)
       if (existing) {
@@ -583,17 +851,25 @@ export function createTenancy(
           `User ${input.userId} is already a member of org ${input.orgId}.`,
         )
       }
-      return insertMembership(input)
+      return insertMembership(input, actor)
     },
 
     async setMemberRole(input) {
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
+      // The member as they stand and the role they would get, both in rank:
+      // otherwise an admin could demote an owner, or make one. Checked before
+      // the no-op, so an out-of-rank caller learns nothing from the answer.
+      requireRank(actor, membership.role)
+      requireRank(actor, input.role)
       if (membership.role === input.role) return membership
-      return updateMembershipRole(membership, input.role, input.actorUserId)
+      return updateMembershipRole(membership, input.role, actor)
     },
 
     async removeMember(input) {
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
+      requireRank(actor, membership.role)
 
       // A membership is the only thing an override can narrow, so the two are
       // removed together rather than leaving orphan override rows behind.
@@ -613,16 +889,14 @@ export function createTenancy(
           .where(
             and(
               eq(tenancyMemberships.id, membership.id),
+              stillInRank(membership, actor),
               preservesAnOwner(input.orgId, input.userId),
             ),
           )
           .returning()
           .all(),
       )
-      if (!removed) {
-        await requireMembership(input.orgId, input.userId)
-        throw new TenancyError('last_owner', `Org ${input.orgId} must keep at least one owner.`)
-      }
+      if (!removed) throw await membershipWriteRefusal(membership, actor)
       await db
         .delete(tenancyResourceRoleOverrides)
         .where(
@@ -634,7 +908,7 @@ export function createTenancy(
         .run()
       await audit({
         orgId: input.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId: actor?.userId,
         action: 'membership.remove',
         subjectKind: 'membership',
         subjectId: membership.id,
@@ -647,11 +921,17 @@ export function createTenancy(
     },
 
     async setResourceRoleOverride(input) {
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const membership = await requireMembership(input.orgId, input.userId)
-      return upsertOverride(input, membership)
+      // Narrowing cannot raise anybody, but it reduces whoever it names, and
+      // an admin reducing an owner on a resource is the same trespass as
+      // demoting them. The override itself is capped by the member's org role.
+      requireRank(actor, membership.role)
+      return upsertOverride(input, membership, actor)
     },
 
     async clearResourceRoleOverride(input) {
+      const actor = await resolveActor(input.orgId, input.actorUserId)
       const override = await findOverride(input.orgId, input.userId, input.resource)
       if (!override) {
         throw new TenancyError(
@@ -659,13 +939,35 @@ export function createTenancy(
           `No override for ${input.resource.kind}:${input.resource.id} and user ${input.userId}.`,
         )
       }
-      await db
-        .delete(tenancyResourceRoleOverrides)
-        .where(eq(tenancyResourceRoleOverrides.id, override.id))
-        .run()
+      // Lifting a narrowing hands the member their org role back on the
+      // resource, so it answers to the same rank as narrowing them did. An
+      // override whose membership is gone grants nothing and ranks nothing —
+      // but a membership *appearing* in the window would be handed a role this
+      // check never ranked, so the DELETE asserts the member stands exactly as
+      // it was read, present or absent (narduk-libs#537). A system call ranks
+      // nobody, so it asserts nothing about the member and cannot conflict on
+      // one moving.
+      const membership = actor ? await findMembership(input.orgId, input.userId) : undefined
+      if (actor && membership) requireRank(actor, membership.role)
+      const cleared = first(
+        await db
+          .delete(tenancyResourceRoleOverrides)
+          .where(
+            and(
+              eq(tenancyResourceRoleOverrides.id, override.id),
+              actorStillInRank(input.orgId, actor),
+              actor
+                ? memberStillAsRead(input.orgId, input.userId, membership?.role ?? null)
+                : undefined,
+            ),
+          )
+          .returning({ id: tenancyResourceRoleOverrides.id })
+          .all(),
+      )
+      if (!cleared) throw rankWriteConflict(input.orgId)
       await audit({
         orgId: input.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId: actor?.userId,
         action: 'override.clear',
         subjectKind: 'resource_role_override',
         subjectId: override.id,
@@ -698,6 +1000,10 @@ export function createTenancy(
     },
 
     async createInvite(input) {
+      const invitedByUserId = requireText(input.invitedByUserId, 'invitedByUserId')
+      // Accepting grants the invite's role, so issuing it is granting it.
+      const inviter = await requireActor(input.orgId, invitedByUserId)
+      requireRank(inviter, input.role)
       await requireOrg(input.orgId)
       const email = requireText(input.email, 'email').toLowerCase()
       if (!isEmailAddress(email)) {
@@ -718,14 +1024,49 @@ export function createTenancy(
         resourceKind: input.resource?.kind ?? null,
         resourceId: input.resource?.id ?? null,
         tokenHash: await sha256Hex(token),
-        invitedByUserId: requireText(input.invitedByUserId, 'invitedByUserId'),
+        invitedByUserId,
         expiresAt,
         acceptedAt: null,
         acceptedByUserId: null,
         revokedAt: null,
         createdAt: issuedAt,
       }
-      await db.insert(tenancyInvites).values(invite).run()
+      // Issuing an invitation is granting its role, so the inviter's rank is
+      // asserted inside the INSERT as well as before it (narduk-libs#537). An
+      // inviter demoted or removed in that window issues nothing — the same
+      // rule `acceptInvite` already applies to the claim.
+      const issued = first(
+        await db
+          .insert(tenancyInvites)
+          .select(
+            db
+              .select({
+                id: sqlText(invite.id, 'id'),
+                orgId: sqlText(invite.orgId, 'org_id'),
+                email: sqlText(invite.email, 'email'),
+                role: sqlText(invite.role, 'role'),
+                resourceKind: sql<string | null>`${invite.resourceKind}`.as('resource_kind'),
+                resourceId: sql<string | null>`${invite.resourceId}`.as('resource_id'),
+                tokenHash: sqlText(invite.tokenHash, 'token_hash'),
+                invitedByUserId: sqlText(invite.invitedByUserId, 'invited_by_user_id'),
+                expiresAt: sqlNumber(expiresAt, 'expires_at'),
+                acceptedAt: sql<number | null>`NULL`.as('accepted_at'),
+                acceptedByUserId: sql<string | null>`NULL`.as('accepted_by_user_id'),
+                revokedAt: sql<number | null>`NULL`.as('revoked_at'),
+                createdAt: sqlNumber(issuedAt, 'created_at'),
+              })
+              .from(tenancyOrgs)
+              .where(
+                and(
+                  eq(tenancyOrgs.id, input.orgId),
+                  actorStillInRank(input.orgId, { role: inviter.role, userId: invitedByUserId }),
+                ),
+              ),
+          )
+          .returning({ id: tenancyInvites.id })
+          .all(),
+      )
+      if (!issued) throw rankWriteConflict(input.orgId)
       await audit({
         orgId: input.orgId,
         actorUserId: invite.invitedByUserId,
@@ -768,6 +1109,18 @@ export function createTenancy(
         throw new TenancyError('expired', `Invite ${invite.id} expired.`)
       }
 
+      // Accepting grants the invite's role, and the inviter is who granted it,
+      // so the inviter must still stand at or above it. An invite does not
+      // outlive its inviter's demotion or departure (narduk-libs#213). The
+      // claim asserts the same again inside its write.
+      const inviter = await findMembership(invite.orgId, invite.invitedByUserId)
+      if (!inviter || !roleAtLeast(inviter.role, invite.role)) {
+        throw new TenancyError(
+          'forbidden',
+          `Invite ${invite.id} was issued by a user who no longer holds ${invite.role} or above in org ${invite.orgId}.`,
+        )
+      }
+
       const claimed = await claimInviteMembership(db, invite, userId, acceptedAt, nextId)
       const accepted = await findInviteByToken(input.token)
       if (!accepted || accepted.acceptedByUserId !== userId) {
@@ -777,6 +1130,7 @@ export function createTenancy(
     },
 
     async revokeInvite(input) {
+      const actorUserId = actingUserId(input.actorUserId)
       const invite = first(
         await db
           .select()
@@ -817,7 +1171,7 @@ export function createTenancy(
       }
       await audit({
         orgId: invite.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId,
         action: 'invite.revoke',
         subjectKind: 'invite',
         subjectId: invite.id,
@@ -880,6 +1234,7 @@ export function createTenancy(
     },
 
     async revokeSupportGrant(input) {
+      const actorUserId = actingUserId(input.actorUserId)
       const grant = first(
         await db
           .select()
@@ -901,7 +1256,7 @@ export function createTenancy(
         .run()
       await audit({
         orgId: grant.orgId,
-        actorUserId: input.actorUserId,
+        actorUserId,
         action: 'support_grant.revoke',
         subjectKind: 'support_grant',
         subjectId: grant.id,

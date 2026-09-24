@@ -119,6 +119,13 @@ interface CorePublicRuntimeConfig {
   cspWorkerSrc: string
   cspMediaSrc: string
   enforceCanonicalHost: boolean
+  /**
+   * Hosts the canonical-host middleware redirects to `appUrl`, comma-separated
+   * or a list. When set, only these hosts redirect and every other host --
+   * `*.workers.dev` previews included -- is served where it was asked
+   * (narduk-libs#515). Env: `CANONICAL_REDIRECT_HOSTS`.
+   */
+  canonicalRedirectHosts?: string | string[]
   /** Set at build time for "latest build" checks (e.g. CI or curl script). */
   buildVersion: string
   /** ISO string set at build time. */

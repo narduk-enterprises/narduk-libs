@@ -1,13 +1,19 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { createActionlintConfig, customRunnerLabels } from './actionlint-config.js'
 import {
-  createCiRegistryAuthScript,
   createCiWorkflow,
+  createDependabotMergeWorkflow,
+  createValidationWorkflow,
   createCopilotSetupWorkflow,
+  createGhPackagesRunScript,
+  LINUX_CI_RUNNER_LABELS,
 } from './ci-workflow.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
+import { createMigrationWorkflowFiles, LINUX_DEPLOY_RUNNER_LABELS } from './migration-workflows.js'
+import { rateLimitNamespacePrefix } from './rate-limit-namespace.js'
 
 import {
   createMigrationSourcesManifest,
@@ -69,7 +75,7 @@ export function defaultDeploymentBlockFor(appName: string): Record<string, unkno
       attempts: 6,
       intervalSeconds: 10,
     },
-    rollback: { mode: 'auto', alert: 'resend' },
+    rollback: { mode: 'manual', alert: 'resend' },
     staging: { enabled: false },
     previewBindings: { d1: [], kv: [], r2: [] },
   }
@@ -155,6 +161,47 @@ function normalizeDatabaseBackend(
   return value
 }
 
+/**
+ * The security contact the generated `nardukSeo.securityTxt` publishes.
+ *
+ * There is no default and no fallback address, which is Logan's decision
+ * (2026-09-20) and matches narduk-seo's own rule that the module never invents
+ * a reporting address. An app that passes nothing gets no `security.txt`
+ * rather than one naming a mailbox nobody agreed to answer.
+ *
+ * The accepted shapes mirror narduk-seo's `normalizeContact`, which is the
+ * real validator. They are checked again here so a bad value fails at
+ * `create-narduk-app` time rather than on the new app's first build, where the
+ * error arrives detached from the flag that caused it. If narduk-seo widens
+ * what it accepts, this rejects something valid -- the failure direction that
+ * tells someone, rather than the one that publishes a malformed contact.
+ */
+function normalizeSecurityContact(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const contact = value.trim()
+  if (!contact) {
+    throw new CreateNardukAppError(
+      'securityContact cannot be empty. Omit it to scaffold an app with no security.txt.',
+    )
+  }
+  // RFC 9116 fields are one per line, so a break would let the value inject a
+  // second field into the published body.
+  if (/[\r\n]/u.test(contact)) {
+    throw new CreateNardukAppError('securityContact must not contain line breaks.')
+  }
+  const isUri = /^(?:mailto|https|tel):/iu.test(contact)
+  const isBareAddress = contact.includes('@') && !contact.includes('://')
+  if (!isUri && !isBareAddress) {
+    throw new CreateNardukAppError(
+      'securityContact must be a mailto:, https: or tel: URI, or a bare email address. ' +
+        'Received ' +
+        JSON.stringify(contact) +
+        '.',
+    )
+  }
+  return contact
+}
+
 function normalizePort(value: number | undefined): number {
   const port = value ?? 3000
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -197,6 +244,33 @@ function tsString(value: string): string {
   const jsonValue = JSON.stringify(value).replaceAll('<', '\\u003C')
   if (singleQuotes > doubleQuotes) return jsonValue
   return `'${jsonValue.slice(1, -1).replaceAll('\\"', '"').replaceAll("'", "\\'")}'`
+}
+
+/** The `printWidth` the generated `prettier.config.mjs` sets, named once so
+ * the emitters that have to mirror Prettier's own wrapping decisions cannot
+ * drift from the config this generator ships beside them. */
+const PRETTIER_PRINT_WIDTH = 100
+
+/**
+ * `const <name> = <literal>`, wrapped the way Prettier wraps it.
+ *
+ * Prettier keeps a string-literal right-hand side on the declaration line
+ * while the whole line fits inside `printWidth`, and otherwise breaks after
+ * the `=` and indents the literal by two. It never splits the literal itself,
+ * so the broken form can still be wider than `printWidth` -- that is still
+ * Prettier's output, and `format:check` compares against exactly it.
+ *
+ * Emitting the single-line form unconditionally meant any caller free text
+ * long enough to cross the width shipped pre-broken: `format:check` is the
+ * FIRST step of the generated `quality:static`, so a long `--description`,
+ * `--display-name` or `--site-url` made a brand-new app fail its own gate on
+ * generator-owned files before anything else ran (narduk-libs#617). The
+ * failure was a function of caller input length, not of the template, which
+ * is why short fixtures never caught it.
+ */
+function constDeclaration(name: string, literal: string): string {
+  const singleLine = `const ${name} = ${literal}`
+  return singleLine.length <= PRETTIER_PRINT_WIDTH ? singleLine : `const ${name} =\n  ${literal}`
 }
 
 function markdownProductSpec(spec: ProductSpec | undefined): string {
@@ -281,7 +355,7 @@ function moduleList(capabilities: readonly Capability[]): string {
 function knipIgnoreDependenciesLine(dependencies: readonly string[]): string {
   const items = dependencies.map((dependency) => JSON.stringify(dependency))
   const inline = `  "ignoreDependencies": [${items.join(', ')}]`
-  if (inline.length <= 100) return inline
+  if (inline.length <= PRETTIER_PRINT_WIDTH) return inline
   return [
     '  "ignoreDependencies": [',
     ...items.map((item, index) => `    ${item}${index < items.length - 1 ? ',' : ''}`),
@@ -298,6 +372,7 @@ interface NormalizedCreateOptions {
   displayName: string
   localPort: number
   productSpec?: ProductSpec
+  securityContact?: string
   siteUrl: string
   visibility: AppVisibility
 }
@@ -326,6 +401,18 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
   const displayName = options.displayName?.trim() || titleCase(appName)
   const description = options.description?.trim() || DEFAULT_DESCRIPTION
   const productSpec = normalizeProductSpec(options)
+  const securityContact = normalizeSecurityContact(options.securityContact)
+  // `nardukSeo` only exists as a config key when @nuxtjs/seo is installed, and
+  // that is the `seo` capability. Emitting the block without it fails the new
+  // app's `nuxt typecheck` with TS2353 -- the same trap `site` fell into
+  // (narduk-libs#172) -- so this is refused here, where the flag is still in
+  // view, rather than in a generated app that has no idea where it came from.
+  if (securityContact && !capabilities.includes('seo')) {
+    throw new CreateNardukAppError(
+      'securityContact needs the seo capability: nardukSeo is not a config key without it. ' +
+        'Add seo to --capabilities, or drop --security-contact.',
+    )
+  }
 
   if (!displayName) throw new CreateNardukAppError('displayName cannot be empty.')
   if (!description) throw new CreateNardukAppError('description cannot be empty.')
@@ -339,6 +426,7 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
     exposure,
     localPort,
     productSpec,
+    securityContact,
     siteUrl,
     visibility,
   }
@@ -354,6 +442,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     exposure,
     localPort,
     productSpec,
+    securityContact,
     siteUrl,
     visibility,
   } = options
@@ -386,6 +475,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // scaffold references it yet and knip would otherwise flag it unused,
     // the same reasoning as the mapkit peer package above.
     ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
+    // narduk-seo installModule('nuxt-og-image') when the peer is present.
+    // The generated app never imports the package by name, so knip would
+    // otherwise flag the #170/#316 pin as unused.
+    ...(capabilities.includes('seo') ? ['nuxt-og-image'] : []),
+    // Reached through `runtimeConfig.nardukLogging` in nuxt.config.ts and
+    // narduk-core's compatibility bridge (see the generated docs/logging.md),
+    // never through a named import -- so knip cannot trace it and reported
+    // the deliberate pin as an unused dependency (narduk-libs#617).
+    '@narduk-enterprises/narduk-logging',
+    // Backs the `narduk-lint` binary and apps/web/eslint.config.mjs, which
+    // extends @narduk-enterprises/eslint-config rather than importing eslint
+    // itself. Removing it breaks `pnpm run lint`.
+    'eslint',
     'vue-tsc',
   ]
 
@@ -404,12 +506,24 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'node_modules',
         '.nuxt',
         '.output',
-        '.narduk/recovery',
+        // Unanchored (no embedded slash before the trailing one), so it matches at any
+        // depth -- including `apps/web/.narduk/recovery/`, where `narduk-app` actually
+        // writes recovery artifacts. A pattern with an embedded slash like the prior
+        // `.narduk/recovery` anchors to the repo root and never matches there
+        // (narduk-libs#624).
+        '.narduk/',
         '.npmrc.auth',
         '.wrangler',
         '.wrangler.deploy.production.json',
+        '.wrangler.deploy.preview.json',
         '.data',
         'coverage',
+        // Where `@narduk-enterprises/narduk-testkit` writes visual-audit artifacts
+        // (narduk-libs#630); distinct from `.output` (Nitro's build output) above.
+        'output',
+        // Where the root `foundation:check` script writes foundation-check.json,
+        // kept at a fixed path so a failed run can be read (narduk-libs#652).
+        '/foundation-check/',
         'playwright-report',
         'blob-report',
         'all-blob-reports',
@@ -417,21 +531,26 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '.env',
         '.env.*',
         '!.env.example',
+        // Wrangler local secrets. `.dev.vars` matches any directory; the
+        // `**/` form and `.dev.vars.*` cover nested copies and suffixed
+        // variants the same way `.env.*` does. `!.dev.vars.example` keeps a
+        // committed template commitable, matching `!.env.example`.
+        '.dev.vars',
+        '**/.dev.vars',
+        '.dev.vars.*',
+        '!.dev.vars.example',
       ),
     },
     {
       path: '.npmrc',
-      // SCOPE ROUTING ONLY. The committed file carries no `_authToken` line at
-      // all -- not even an env reference. pnpm 10 warns 'Failed to replace env
-      // in config' whenever the variable is absent (every `pnpm install` that
-      // does not need the registry, which is most of them), and pnpm 11 drops
-      // env interpolation in .npmrc entirely. npm never implemented the
-      // `${VAR-default}` form either. Auth is supplied per process instead:
-      // locally by the `gh-packages-run` helper, in CI by the userconfig the
-      // generated workflow writes to the runner temp directory. See
-      // agent-infrastructure docs/agents/credentials.md, 'GitHub Packages
-      // read', and company-hq docs/SECRETS-MATRIX.md.
-      contents: text('@narduk-enterprises:registry=https://npm.pkg.github.com'),
+      // SCOPE ROUTING ONLY. D-PKG-6 reads `@narduk-enterprises/*` from the
+      // anonymous `https://npm.nard.uk` mirror. The committed file carries no
+      // `_authToken` line -- not even an env reference. pnpm 10 warns
+      // 'Failed to replace env in config' whenever the variable is absent,
+      // and pnpm 11 drops env interpolation in .npmrc entirely. Break-glass
+      // GitHub Packages auth stays in `scripts/gh-packages-run.mjs`, unused
+      // by the default install path. See company-hq D-PKG-6.
+      contents: text('@narduk-enterprises:registry=https://npm.nard.uk'),
     },
     {
       path: '.prettierignore',
@@ -441,6 +560,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '.output',
         '.wrangler',
         '.wrangler.deploy.production.json',
+        '.wrangler.deploy.preview.json',
         'coverage',
         'playwright-report',
         'blob-report',
@@ -449,39 +569,74 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'test-results',
       ),
     },
+    ...(databaseBackend === 'd1' ? createMigrationWorkflowFiles(visibility) : []),
     {
       path: '.github/workflows/ci.yml',
       contents: createCiWorkflow(visibility),
     },
     {
-      // Both visibilities: even a public app's Worker depends on private
-      // @narduk-enterprises/* packages, so Copilot's sandbox needs registry
-      // auth to install regardless of which CI runner policy this app uses.
+      // Merges the safe (minor + patch) Dependabot lane below once CI is
+      // green on its exact head; the majors and github-actions lanes stay
+      // manual. Both visibilities: a public app still needs the safe lane
+      // merged, just from a GitHub-hosted runner (D-VIS-1).
+      path: '.github/workflows/dependabot-merge.yml',
+      contents: createDependabotMergeWorkflow(visibility),
+    },
+    ...(visibility === 'private'
+      ? [
+          {
+            path: '.github/workflows/validate.yml',
+            contents: createValidationWorkflow(visibility)!,
+          },
+          {
+            // caller-lint runs actionlint, which rejects a self-hosted label it
+            // was not told about: dependabot-merge.yml names `proxmox` and
+            // `linux-ci`, and preview-d1.yml (a template for .github/workflows)
+            // names `proxmox-deploy`. A public app names none (narduk-libs#778).
+            path: '.github/actionlint.yaml',
+            contents: createActionlintConfig(
+              customRunnerLabels([
+                LINUX_CI_RUNNER_LABELS,
+                ...(databaseBackend === 'd1' ? [LINUX_DEPLOY_RUNNER_LABELS] : []),
+              ]),
+            ),
+          },
+        ]
+      : []),
+    {
+      // Both visibilities: Copilot's sandbox installs the same frozen
+      // lockfile from `https://npm.nard.uk` with no package secret.
       path: '.github/workflows/copilot-setup-steps.yml',
       contents: createCopilotSetupWorkflow(),
     },
     {
-      // components-library-plan.md #2 item 6 (narduk-libs#253): one
-      // Dependabot group for @narduk-enterprises/* so a fleet-wide bump
-      // lands as one PR per app, not one per package. The `groups.*.patterns`
-      // shape is the D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts
-      // (narduk-libs#233 / PR #235). The registries block reuses the same
-      // GitHub Packages registry URL as the committed .npmrc
-      // (`@narduk-enterprises:registry=...`). The token is read from the
-      // org-level DEPENDABOT secret NARDUK_PLATFORM_GH_PACKAGES_READ (verified
-      // present 2026-09-11) -- Dependabot secrets are a separate store from
-      // Actions secrets; the Actions secret of the same name is what CI uses.
+      // Two npm lanes, not one (narduk-libs#U2 / gonogo#104, the reference
+      // shape). A single all-in `dependencies` group used to stack: every
+      // app that adopted the old canonical shape (limit 10, ~10 groups)
+      // ended up with ~10 open PRs that all edited pnpm-lock.yaml, so
+      // merging one conflicted the rest and Dependabot rebased the whole
+      // stack on every merge. Collapsing to one combined group was not the
+      // fix either -- a single breaking major (typescript 5->6, vitest 4->5,
+      // riverstatus#215) holds every harmless patch bump red behind it. So
+      // `safe` (minor + patch) and `majors` (major) are split by
+      // `update-types` over the same packages: `safe` merges itself once CI
+      // is green on its exact head (.github/workflows/dependabot-merge.yml),
+      // `majors` is a deliberate person/agent PR. `open-pull-requests-limit`
+      // is 2 -- one PR per lane. The `groups.*.patterns` shape is the
+      // D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts (narduk-libs#233
+      // / PR #235); it does not care which group name carries the scope.
+      // There is no `registries:` block: Dependabot reads the committed
+      // `.npmrc` (`https://npm.nard.uk`) anonymously. A `registries:` entry
+      // with `scope:` would discard that `.npmrc` and re-add token auth
+      // (agent-infrastructure#1405, narduk-libs#568).
       path: '.github/dependabot.yml',
-      // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-      // coding-standards/toolchain/dependabot.yml), not the older canonical
-      // template: `scope` is FUNCTIONALLY REQUIRED, not decorative --
-      // without it Dependabot's npm_and_yarn update aborts outright the
-      // moment the repo carries any @narduk-enterprises/* dependency, which
-      // every generated app does (coding-standards#9, A/B-proven across
-      // three repos 2026-09-10). `directory: "/"` (singular) also matches
-      // the reference app: Dependabot's npm ecosystem parses the whole pnpm
-      // workspace graph from the root manifest, so the array-of-directories
-      // form this template previously emitted was redundant, not additive.
+      // After D-PKG-6 there is no `registries:` / `scope:` block
+      // (narduk-libs#568): Dependabot follows the committed `.npmrc`. Item
+      // 5.2 is satisfied by the group patterns naming `@narduk-enterprises/*`.
+      // `directory: "/"` (singular) matches the reference app: Dependabot's
+      // npm ecosystem parses the whole pnpm workspace graph from the root
+      // manifest, so the array-of-directories form this template previously
+      // emitted was redundant, not additive.
       // Cooldown is disabled (default-days/semver-major-days: 0) and
       // @narduk-enterprises/* is listed only in the (inert while disabled)
       // `exclude` array -- company-hq#737, confirmed root cause: Dependabot's
@@ -491,17 +646,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // every run given how often @narduk-enterprises/* publishes.
       contents: text(
         'version: 2',
-        'registries:',
-        '  narduk-github-packages:',
-        '    type: npm-registry',
-        '    url: https://npm.pkg.github.com',
-        '    token: ${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}',
-        "    scope: '@narduk-enterprises'",
         'updates:',
         "  - package-ecosystem: 'npm'",
         "    directory: '/'",
-        '    registries:',
-        '      - narduk-github-packages',
         '    schedule:',
         "      interval: 'weekly'",
         "      day: 'monday'",
@@ -509,7 +656,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      timezone: 'America/Chicago'",
         '    labels:',
         "      - 'dependencies'",
-        '    open-pull-requests-limit: 1',
+        '    open-pull-requests-limit: 2',
         '    cooldown:',
         '      default-days: 0',
         '      semver-major-days: 0',
@@ -523,10 +670,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      - dependency-name: '@playwright/test'",
         "        versions: ['>1.61.1']",
         '    groups:',
-        '      dependencies:',
+        '      safe:',
         '        patterns:',
         "          - '*'",
         "          - '@narduk-enterprises/*' # explicit scope required by foundation item 5.2",
+        '        update-types:',
+        "          - 'minor'",
+        "          - 'patch'",
+        '      majors:',
+        '        patterns:',
+        "          - '*'",
+        "          - '@narduk-enterprises/*'",
+        '        update-types:',
+        "          - 'major'",
         "  - package-ecosystem: 'github-actions'",
         "    directory: '/'",
         '    schedule:',
@@ -543,9 +699,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "          - '*'",
       ),
     },
-    ...(visibility === 'private'
-      ? [{ path: 'scripts/package-registry-auth.mjs', contents: createCiRegistryAuthScript() }]
-      : []),
+    {
+      // Opt-in break-glass only. Default `cf:build` and CI install
+      // anonymously from `https://npm.nard.uk` and do not call this script.
+      path: 'scripts/gh-packages-run.mjs',
+      contents: createGhPackagesRunScript(),
+    },
     {
       path: 'AGENTS.md',
       contents: text(
@@ -641,18 +800,48 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run og:generate (first setup; commit apps/web/public/og.png)',
         '- pnpm run og:check:live (after deployment)',
         '',
+        '### Which gate is which',
+        '',
+        'CI judges a commit with three things. Run all three before calling a branch ready; none of them needs a value you have to know out of band.',
+        '',
+        '- `pnpm run quality:static` -- format, lint, knip, manifest cross-check, shared-UI pin, typecheck, `build:ci`, unit tests. Credential-free and offline. Public CI runs this script directly; private CI names the same checks individually.',
+        '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry over the network. Default generated apps read `https://npm.nard.uk` anonymously and do not need a GitHub Packages credential.',
+        '- `pnpm run quality` -- `quality:static` plus the Playwright browser tests, which both CI paths run as separate jobs.',
+        '',
+        ...(hasDatabase
+          ? [
+              '> **Create the database before the first push.** `apps/web/wrangler.jsonc` binds `DB` to the placeholder `database_id` `00000000-0000-0000-0000-000000000000`, because the generator does not call Cloudflare. Every build, dry-run and test accepts it, but no request that touches the database can succeed, so `foundation:check` fails sub-check 1.5 -- and with it CI -- until the database exists. From the repository root, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set for the account this app deploys to, run `pnpm exec narduk-app db create`. It creates `' +
+                appName +
+                '-db` (the name comes from `Config/cloudflare-app.json`), writes the returned id into `apps/web/wrangler.jsonc` with its comments intact, and prints the id and account. Commit that change: the id is configuration, not a secret. It refuses to run once the id is real and never deletes anything. `--dry-run` shows what it would do.',
+              '',
+            ]
+          : []),
+        'The build step is `build:ci`, the same script CI builds with: it injects test-only `NUXT_OG_IMAGE_SECRET` / `NUXT_SESSION_PASSWORD` placeholders and targets the deployable Worker shape. Plain `pnpm run build` is the real-secret path, used by `cf:build` and operator recovery; it throws on an empty OG secret by design.',
+        '',
+        ...(visibility === 'private'
+          ? [
+              '> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. A repository that has not been added to the selected-repository runner groups has no runner to pick those jobs up, so they sit in `queued` with no log. The hosted `Runner group onboarding` job still starts on GitHub-hosted Ubuntu and annotates the run when sibling jobs stay queued. The route names in `.github/workflows/ci.yml` do not grant membership. Onboard this repository into both fleet runner groups, and grant it access to the shared workflows, before pushing. If a run is already stuck queued, that is the cause: cancel it and re-run after onboarding.',
+              '',
+            ]
+          : []),
         '`pnpm run dev` starts Nuxt directly and reads no secret store. When a capability needs registered credentials locally, run that command under the registered local credential route instead: `narduk-app dev --credentials nvault --project <project> --environment <environment> --config <config> -- nuxt dev --host 127.0.0.1`. Values stay process-local for that run and are never written to a file; do not commit real values to `.env` or `.dev.vars`.',
         '',
-        'The committed `.npmrc` only routes `@narduk-enterprises/*` to GitHub Packages. It carries no credential value and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever the variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
+        'The committed `.npmrc` routes `@narduk-enterprises/*` to `https://npm.nard.uk`. Reads are anonymous. The file carries no credential and no environment reference: pnpm 10 warns `Failed to replace env in config` whenever a variable is absent, and pnpm 11 does not interpolate environment variables in `.npmrc` at all.',
         '',
-        'Registry authentication is process-scoped instead. Locally, run installs through the `gh-packages-run` helper, which supplies a package-read token to that one process. In private CI the pinned shared workflow invokes `scripts/package-registry-auth.mjs` before installation and removes its ignored `.npmrc.auth` output on every install outcome. Public CI uses a unique temporary userconfig under `$RUNNER_TEMP`. Both supply the org Actions secret `NARDUK_PLATFORM_GH_PACKAGES_READ` through `NPM_CONFIG_USERCONFIG` only for installation. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
+        'Default installs (`pnpm install`, CI, Workers Builds `cf:build`) need no GitHub Packages token. `scripts/gh-packages-run.mjs` stays in the repo as an opt-in break-glass helper: temporarily point `.npmrc` at `https://npm.pkg.github.com` and run through that script with `GH_PACKAGES_READ` if the mirror is down. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
         '',
-        'Dependabot is a fourth consumer of `NARDUK_PLATFORM_GH_PACKAGES_READ`: it reads that name from the org Dependabot secret store (a separate store from Actions). If the org secret is scoped to selected repositories, grant this newly generated repo access or Dependabot silently fails to resolve the private `@narduk-enterprises/*` scope.',
+        'Dependabot reads the same anonymous mirror. The generated `dependabot.yml` has no `registries:` block and does not need `NARDUK_PLATFORM_GH_PACKAGES_READ`.',
         '',
-        'Before the first push, the onboarding skill configures package authentication, runs pnpm install, and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
+        'Before the first push, onboarding runs pnpm install and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
         'Enable Workers Builds on protected `main`. Enable non-production branch builds and GitHub PR comments for trusted branches of public apps; the generated scripts alone do not create that connection. Version previews share Worker bindings, so private data and mutation-capable apps need isolated preview bindings before enabling them. Authenticated apps keep direct Worker and preview URLs disabled until equivalent protection is configured.',
         '',
+        ...(visibility === 'private'
+          ? [
+              'Development mode (`pnpm run deploy:dev`) is an owner-enrolled alternative for apps still being built; it is off until enrolled. See the Development mode section of [docs/workers-builds.md](docs/workers-builds.md).',
+              '',
+            ]
+          : []),
         'Cloudflare Workers Builds uses `pnpm run cf:build` as its build command, `pnpm run cf:deploy` for the production deploy command, and `pnpm run cf:deploy:preview` for non-production branches. Local `pnpm run deploy` remains recovery-only; `pnpm run deploy:dry-run` is credential-free.',
         '',
         'The app is configured for local Nuxt development on port ' +
@@ -678,6 +867,23 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         'The branded error page and client/server exception capture come from narduk-core. This app owns no error.vue and no error listeners: pinning narduk-core is the whole of the adoption.',
         '',
         'See [docs/error-page.md](docs/error-page.md) for what the page shows, where exceptions are reported, and how to override the page if this app ever needs its own.',
+        // Only for the seo capability: without it there is no `nardukSeo` key
+        // to point at, and the section would describe config this app cannot
+        // write (narduk-libs#384).
+        ...(capabilities.includes('seo')
+          ? [
+              '',
+              '## Security contact and crawler policy',
+              '',
+              "Both live in `nardukSeo` in `apps/web/nuxt.config.ts`, served by narduk-seo. `aiCrawlers` decides which AI crawlers may read this app: `'allow'` (the default this app was scaffolded with) writes no robots.txt groups, `'disallow'` refuses every crawler narduk-seo tracks, and `{ allow, disallow }` names them individually.",
+              '',
+              securityContact
+                ? 'This app publishes `/.well-known/security.txt` from `nardukSeo.securityTxt.contact`, scaffolded as `' +
+                  securityContact +
+                  '`. Change it there; nothing else in this repository holds a copy. narduk-seo computes the published `Expires` field at **build** time as today plus `securityTxt.expiresDays` (default 365, and 365 is also the maximum), so a deployment that is not rebuilt within a year serves a security.txt that researchers are entitled to read as stale — a redeploy refreshes it. Prefer a role address over a person, for the same reason: the contact wants to outlive whoever set it up.'
+                : "This app serves **no** `security.txt`: it was scaffolded without `--security-contact`, and neither narduk-seo nor the generator invents a reporting address. To publish one, add `securityTxt: { contact: 'mailto:…' }` to `nardukSeo`. Prefer a role address over a person — a contact nobody answers is worse than none, which is why there is no default.",
+            ]
+          : []),
       ),
     },
     {
@@ -766,37 +972,40 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Connect this repository to a Cloudflare Worker. These are provider settings, not settings Wrangler creates automatically -- an onboarding step, not something this generator can configure from a checkout alone.',
         '',
-        '| Setting                       | Value                                                 |',
-        '| ----------------------------- | ----------------------------------------------------- |',
-        '| Root directory                | `/`                                                   |',
-        '| Production branch             | `main`                                                |',
-        '| Build command                 | `pnpm run cf:build`                                   |',
-        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
-        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
-        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
-        '| Build cache                   | enabled                                               |',
+        '| Setting                       | Value                                             |',
+        '| ----------------------------- | ------------------------------------------------- |',
+        '| Root directory                | `/`                                               |',
+        '| Production branch             | `main`                                            |',
+        '| Build command                 | `pnpm run cf:build`                               |',
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                      |',
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                      |',
+        '| Non-production branch builds  | disabled until preview bindings exist (see below) |',
+        '| Build cache                   | enabled                                           |',
         '| `NODE_VERSION`                | `' +
           NODE_VERSION +
-          '`                                             |',
+          '`                                         |',
         '| `PNPM_VERSION`                | `' +
           PNPM_VERSION +
-          '`                                             |',
-        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                                   |',
-        '| Build secret                  | `GH_PACKAGES_READ` (read-only private package access) |',
+          '`                                         |',
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                               |',
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)  |',
+        '| `NUXT_SESSION_PASSWORD`       | Build variable (Worker secrets are runtime-only)  |',
         '',
-        "The build command authenticates before installing the frozen workspace lockfile, then builds the Cloudflare module artifact. Skipping Cloudflare's initial install avoids a private-package failure before authentication can run. Build secrets are separate from runtime Worker secrets. `NARDUK_PLATFORM_GH_PACKAGES_READ` remains the org Actions secret name; Workers Builds receives `GH_PACKAGES_READ`.",
+        "The build command installs the frozen workspace lockfile from `https://npm.nard.uk` (anonymous `@narduk-enterprises/*` reads) and then builds the Cloudflare module artifact. Skipping Cloudflare's initial install keeps that install on the frozen lockfile. No GitHub Packages build secret is required. If the mirror is unavailable, break-glass is `scripts/gh-packages-run.mjs` with `GH_PACKAGES_READ` after temporarily routing `.npmrc` at `https://npm.pkg.github.com`. Do not make that the default.",
         '',
-        '## Public runtime keys vs wrangler vars',
-        '',
-        "Workers Builds does **not** export `wrangler.jsonc` `vars` into the `nuxt build` process environment. `process.env.GA_MEASUREMENT_ID || ''` (and the same pattern for `POSTHOG_PUBLIC_KEY` or `NUXT_PUBLIC_ALLOW_GEOLOCATION`) therefore bakes an empty string into `__NUXT__` even when the deployed Worker already has the keys. That is how a production homepage can look intentionally dark while `GET /api/runtime/public` is populated (buoys#133).",
-        '',
-        "Keep public keys in wrangler `vars` under their short Worker names. `@narduk-enterprises/narduk-core` applies those bindings to `runtimeConfig.public` on every request before SSR. Do **not** read `wrangler.jsonc` from `nuxt.config.ts` to paper over the empty bake — that workaround is tracked for removal once the published core overlay is in the app. Optional `NUXT_PUBLIC_*` aliases are accepted but not required. An empty string after the overlay means the Worker does not have the key; turn collection off with `analyticsLoadStrategy: 'off'` or by removing the var.",
+        'Worker secrets are injected at runtime only and are not visible to `nuxt build`. Apps that enable runtime OG image generation (the `seo` capability default) must set `NUXT_OG_IMAGE_SECRET` as a Workers Builds _Build variable_ or the build throws. Set `NUXT_SESSION_PASSWORD` the same way. CI uses committed test-only placeholders; production must use the real Vault-issued values, never those placeholders.',
         '',
         'Both deploy commands are the same command on purpose. `cf:deploy:preview` runs `narduk-app deploy versions-upload`, which uploads a version and changes no traffic; the name is historical. Setting the _production_ deploy command to anything that deploys would put a `main` push straight into production and defeat the standard. The separate `cf:deploy` script stays for authorized recovery only.',
         '',
+        '## Public runtime keys vs wrangler vars',
+        '',
+        "Worker `vars` are runtime-only too: Workers Builds does **not** export `wrangler.jsonc` `vars` into the `nuxt build` process environment. `process.env.GA_MEASUREMENT_ID || ''` (and the same pattern for `POSTHOG_PUBLIC_KEY` or `NUXT_PUBLIC_ALLOW_GEOLOCATION`) therefore bakes an empty string into the build, and Nuxt serializes it into the page's `__NUXT__` payload even when the deployed Worker has the keys. The page looks intentionally dark while `GET /api/runtime/public` is populated.",
+        '',
+        "Keep public keys in wrangler `vars` under their short Worker names. `@narduk-enterprises/narduk-core` writes the analytics, SEO-meta and geolocation keys from those bindings into `runtimeConfig.public` on every page request before SSR, and blanks analytics on preview hosts. Do **not** read `wrangler.jsonc` from `nuxt.config.ts` to paper over the empty bake. Optional `NUXT_PUBLIC_*` aliases are accepted but not required. An empty string after the overlay means the Worker does not have the key; turn collection off with `analyticsLoadStrategy: 'off'` or by removing the var.",
+        '',
         '## The deployment standard',
         '',
-        'This app declares its half of the standard in `Config/cloudflare-app.json`. That file is created during onboarding -- this generator does not write it, because the rest of it records live Cloudflare facts a checkout cannot know. Add this block to it verbatim, then run `pnpm run foundation:deployment`:',
+        'This app declares its half of the standard in `Config/cloudflare-app.json`. The generator writes the part a checkout can know -- product identity, the Worker shape, the exposure class, and the bindings mirror. Onboarding adds the live facts it deliberately left out: `product.repository`, the Cloudflare account id, `domains`, and the `deployment` block below. Add that block to the existing file verbatim, then run `pnpm run foundation:deployment`:',
         '',
         '```jsonc',
         ...deploymentBlockLines(appName),
@@ -804,15 +1013,76 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',
         '',
+        '## Development mode',
+        '',
+        ...(visibility === 'private'
+          ? [
+              "While an app is being built, one approved workstation can own its enrolled Cloudflare target and deploy straight from its checkout -- uncommitted edits included -- with `pnpm run deploy:dev`. Entering holds the automation that would otherwise overwrite that target (this repository's push/merge workflows and the Workers Builds triggers) and records exactly what it held; exiting restores it, after `.github/workflows/validate.yml` has validated the exact release commit. Ordinary pushes run no CI while the app is in development mode. Full validation happens only when you ask for it with `narduk-app development validate`, and on exit.",
+              '',
+              'Development mode is off until an owner enrolls the app. Enrollment needs live facts this generator does not have -- the account id, the approved hostname, deployment and build-control credential selectors, and every workflow classified -- so the `deployment.development` capability is added to `Config/cloudflare-app.json` during enrollment, not here. `pnpm run deploy:dev` refuses on a workstation without an activation record. Read the [development mode runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/development-mode.md) before enrolling, and use the normal promotion path above whenever the app is not enrolled.',
+            ]
+          : [
+              'Development mode needs a private explicit-validation caller, which a public repository cannot call, so this app always uses the normal promotion path above. `pnpm run deploy:dev` refuses without an activation record.',
+            ]),
+        '',
+        ...(databaseBackend === 'd1'
+          ? [
+              '## Create the D1 database',
+              '',
+              'The generator writes the `DB` binding with the placeholder `database_id` `00000000-0000-0000-0000-000000000000`; it never calls Cloudflare. Create the database once, before the first push, from the repository root:',
+              '',
+              '```sh',
+              'CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \\',
+              '  pnpm exec narduk-app db create',
+              '```',
+              '',
+              '`db create` takes the database name from `Config/cloudflare-app.json` (`' +
+                appName +
+                '-db`), never from an argument, runs `wrangler d1 create`, writes the returned id into `apps/web/wrangler.jsonc` without touching its comments, and prints the id and the account. It refuses when the id is already real, so it cannot create a second database for an app that has one, and it never deletes. Without it, the equivalent is `wrangler d1 create ' +
+                appName +
+                '-db` under the same credentials, then setting `d1_databases[0].database_id` in `apps/web/wrangler.jsonc` to the id it prints. `foundation:check` sub-check 1.5 fails while the placeholder remains.',
+              '',
+              '## D1 migrations are a promotion gate',
+              '',
+              'Declare `deployment.migrations` before adopting narduk-v1: compatibility `expand-contract`, a separate `cloudflare/prd/' +
+                appName +
+                '-migrate` credential, and `databases: [{ binding: "DB", sources: "apps/web/migrations.sources.json" }]`. Use the actual Wrangler binding name. Every D1 binding needs exactly one source manifest; add preview database IDs under `previewBindings.d1` before enabling branch builds.',
+              '',
+              'Merge `docs/deployment/promote-d1.steps.yml` into the app-owned promote job before versions-promote. Merge `ci-d1-bundle.job.yml` into CI and activate `preview-d1.yml` after preview onboarding. These are inert, one-shot onboarding templates: generating them does not install credentials or activate remote writes. Read the narduk-app-tools D1 deployment migrations runbook before enabling them.',
+              '',
+              'For existing D1 schemas, use the shared narduk-app-tools [reviewed baseline process](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/migration-baselines.md). Capture a frozen schema/ledger artifact, review and prove it, then register untracked schema metadata explicitly before enabling automatic promotion. Never reconstruct a historical fixture by replaying all currently installed migrations.',
+              '',
+              'Automatic production order: exact successful CI SHA → expand-only check (12.9 must pass) → eligible uploaded version → migrate with D1-only credential → read-only drift check → promote with separate credential → live proof. Any migration error blocks promotion. `deployment.rollback.mode` is `manual`: nothing rolls back on its own. The only automated trigger is the rollback step this app writes into its own promote job, after a completed promotion fails its live proof; a failed migration triggers nothing, and Worker rollback never restores a database.',
+              '',
+              'Migration SQL must keep the currently serving Worker and supported rollback versions working: expand first, backfill compatibly, switch code, then contract in a later separately reviewed change after the rollback window closes. Filenames and applied SQL are immutable. The drift gate checks history/checksums; it cannot prove application compatibility. `foundation:check:deployment` sub-check 12.9 fails a migration that drops or renames a table, view or column unless `deployment.migrations.contractMigrations` declares it reviewed, pinned by checksum.',
+              '',
+              'A singleton lock in each database serializes cooperating runners across repositories and binding aliases. Remote failure or uncertain completion retains the lock for investigation. Retire legacy writers before claiming serialization. Preview bundles contain SQL/data only, run with trusted default-branch tooling, and target the declared preview databases. PR jobs never receive D1 credentials. Conflicting shared-preview histories are refused.',
+              '',
+            ]
+          : []),
         '## Promotion, live proof and rollback',
         '',
-        'The promote job resolves the version Workers Builds uploaded for the merged commit, deploys it at 100%, and then proves it:',
+        'The promote job runs on `workflow_run` after the gate check goes green, resolves the version Workers Builds uploaded for **the commit that run verified**, deploys it at 100%, and then proves it:',
         '',
-        '```sh',
-        'narduk-app deploy versions-promote --sha "$GITHUB_SHA" --json',
-        'narduk-app verify --live https://<hostname> --expect-sha "$GITHUB_SHA"',
-        'narduk-app deploy rollback --to "<previousVersionId>"   # only if the proof fails',
+        '```yaml',
+        '# .github/workflows/promote.yml (excerpt)',
+        'env:',
+        '  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}',
+        'steps:',
+        '  - id: promote',
+        '    run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --json',
+        '  - id: live-proof',
+        '    run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
+        '  # Roll back only after a completed promotion followed by failed live proof.',
+        "  - if: failure() && steps.promote.outcome == 'success' && steps.live-proof.outcome == 'failure'",
+        '    run: narduk-app deploy rollback --to "<previousVersionId>"',
         '```',
+        '',
+        'Use `github.event.workflow_run.head_sha`, never `$GITHUB_SHA`. Under `on: workflow_run` `GITHUB_SHA` is the default branch head at trigger time, not the commit whose run completed, so a commit that never passed the gate check can reach production through it. `versions-promote` refuses to default `--sha` to `GITHUB_SHA` under that event for the same reason.',
+        '',
+        '`--gate-verified "ci / Required@$VERIFIED_SHA"` is the workflow\'s attestation that the gate check passed on that exact commit (narduk-libs#400). `versions-promote` never reads GitHub -- it holds no GitHub token -- so it binds the attestation instead: it refuses with exit 9, before touching anything, when the attested SHA is not the commit being promoted or the resolved version does not carry that commit\'s tag, and it logs the check and SHA it was given. Without the flag it still promotes, with a warning that no gate attestation was passed. Keep the job gated on the `workflow_run` conclusion being `success`; the attestation names what that gate observed, it does not replace it.',
+        '',
+        'The `--sha` lookup walks the Cloudflare Versions API up to `--max-versions` (default 500), not the ten `wrangler versions list` shows, so branch uploads landing between the merge build and this job cannot hide the version. A lookup that finds nothing exits 3: the promote job is **red**, never skipped, because production is still serving the previous release.',
         '',
         'The commit-to-version link is made at upload time, not discovered: inside a Workers Build, `narduk-app deploy versions-upload` stamps the build commit as the version tag, and `versions-promote` reads it back. `versions-promote` refuses to run outside GitHub Actions unless `NARDUK_ALLOW_MANUAL_PROMOTE=1` is set for a recovery.',
         '',
@@ -827,14 +1097,17 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '## Recovery and live proof',
         '',
-        'From a clean, validated revision, install with `gh-packages-run pnpm install --frozen-lockfile`, then run `pnpm run build:ci`. Deploy with the registered recovery credential once onboarding creates it:',
+        'Use the app-local `pnpm run deploy:hotfix` command only for an authorized production incident when normal delivery cannot restore service in time. The [local break-glass runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/local-hotfix.md) owns eligibility, credential readiness, the production hold, failure recovery and reconciliation.',
+        '',
+        'The root `hotfix:check` script runs the app checks; `hotfix:build` builds the production Worker using only its explicitly injected app build secrets, never the test placeholders from `build:ci`. A real hotfix checks out the exact clean local commit in a temporary clone, installs offline from the frozen lockfile/cache, checks/builds without the recovery token, uploads and promotes the exact version, and proves the live SHA, health and smoke route. It never applies database migrations.',
         '',
         '```sh',
-        'nvault run -p cloudflare -e prd -c ' + appName + '-deploy -- \\',
-        '  env NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 pnpm run deploy',
+        'pnpm run deploy:hotfix --incident INC-123 --reason "Normal delivery unavailable" --operator "Incident operator" --sha "$(git rev-parse HEAD)" --confirm-worker ' +
+          appName +
+          ' --base-url https://<production-hostname> --dry-run',
         '```',
         '',
-        'The lower-level deploy command preserves existing runtime vars and secrets. Cloudflare owns Worker-version rollback.',
+        'TODO(onboarding): register and prove the app recovery credential route, warm the package cache, and rehearse against a disposable Worker. For a real incident, hold all production writers, run under the registered nvault selector with `--automation-paused --yes` instead of `--dry-run`, retain the receipt and merge the patch back through normal CI before restoring automation. The flags record operator intent; they do not pause workflows or grant approval.',
         '',
         '## Provider evidence',
         '',
@@ -995,8 +1268,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: capabilities.includes('seo')
         ? text(
             '<script setup lang="ts">',
-            'const displayName = ' + tsString(displayName),
-            'const description = ' + tsString(description),
+            constDeclaration('displayName', tsString(displayName)),
+            constDeclaration('description', tsString(description)),
             '',
             'useSeo({',
             '  title: displayName,',
@@ -1024,8 +1297,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           )
         : text(
             '<script setup lang="ts">',
-            'const displayName = ' + tsString(displayName),
-            'const description = ' + tsString(description),
+            constDeclaration('displayName', tsString(displayName)),
+            constDeclaration('description', tsString(description)),
             '</script>',
             '',
             '<template>',
@@ -1101,6 +1374,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // narduk-lint's warning budget (see @narduk-enterprises/eslint-config's
+      // README, "Warning budgets"). A new app starts with no warnings, so the
+      // budget starts empty. `strict` (eslint-config 2.2.0+, #673) makes a
+      // warning in a rule with no entry fail instead of being recorded as that
+      // rule's budget; `narduk-lint --accept-new-rules` adopts one on purpose.
+      path: 'apps/web/lint-budget.json',
+      contents: text('{', '  "strict": true,', '  "rules": {}', '}'),
+    },
+    {
       path: 'eslint.config.mjs',
       contents: text(
         "import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'",
@@ -1124,9 +1406,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "import { fileURLToPath } from 'node:url'",
         '',
         'const localPort = ' + localPort,
-        'const siteUrl = ' + tsString(siteUrl),
-        'const appName = ' + tsString(displayName),
-        'const appDescription = ' + tsString(description),
+        constDeclaration('siteUrl', tsString(siteUrl)),
+        constDeclaration('appName', tsString(displayName)),
+        constDeclaration('appDescription', tsString(description)),
         'const buildBranch = process.env.WORKERS_CI_BRANCH',
         "const isBranchPreview = Boolean(buildBranch && buildBranch !== 'main')",
         'const deploymentTarget =',
@@ -1159,6 +1441,27 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           ? [
               '  nardukSeo: {',
               "    defaultOgImage: { url: '/og.png', alt: appName + ' — ' + appDescription },",
+              // Which AI crawlers may read this app (narduk-libs#384). 'allow'
+              // is narduk-seo's own default and emits no robots.txt groups;
+              // it is written out anyway so the knob is visible in the app
+              // that owns the policy, rather than a default nobody knows is
+              // being taken. 'disallow' refuses every crawler in
+              // narduk-seo's AI_CRAWLERS list, and { allow, disallow } names
+              // them individually.
+              "    aiCrawlers: 'allow',",
+              // security.txt is published only when a contact exists. The
+              // generator has no default address and never invents one
+              // (--security-contact), which is why this block is absent
+              // rather than empty in an app that passed nothing: narduk-seo
+              // treats a securityTxt with no usable contact as a build error,
+              // and an invented address is worse than no file.
+              ...(securityContact
+                ? [
+                    '    securityTxt: {',
+                    '      contact: ' + tsString(securityContact) + ',',
+                    '    },',
+                  ]
+                : []),
               '  },',
             ]
           : [
@@ -1208,7 +1511,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      format: process.env.NODE_ENV === 'development' ? 'pretty' : 'json',",
         '      requestLogging: true,',
         '    },',
-        "    xaiApiKey: process.env.XAI_API_KEY || '',",
+        // No `xaiApiKey` here. It is @narduk-enterprises/narduk-ai's own
+        // runtimeConfig key, declared by that module with `defu` and a
+        // validator -- so emitting it in the app leaked an AI-specific key
+        // into every scaffold (capabilities [auth, seo, analytics, uploads]
+        // got one too), and for an app that DOES select `ai` the app-side
+        // `|| ''` won the defu merge and silently replaced the module's
+        // validated value with an empty string.
         '    public: {',
         '      appDescription,',
         '      deploymentTarget,',
@@ -1337,10 +1646,58 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  "compatibility_date": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
         '  "compatibility_flags": ["nodejs_compat"],',
         '  "observability": { "enabled": true },',
+        // Workers Cache, on by default (narduk-libs#435). Without it Cloudflare
+        // invokes the Worker on every request and `setCacheProfile`'s
+        // CDN-Cache-Control / Cache-Tag are inert -- an app advertising an edge
+        // TTL it does not have, which is what Buoys shipped.
+        //
+        // Safe to default on only because the narduk-core this generator pins
+        // keeps uncacheable responses out of a shared cache: thrown 4xx/5xx/429
+        // are `private, no-store` (narduk-libs#429), nonce-CSP SSR HTML is too,
+        // and a response that picks no profile at all gets `private` rather than
+        // Cloudflare's heuristic 2-hour store. `foundation:check` item 12.7 fails
+        // this block against a narduk-core older than that, so an app that
+        // downgrades core is told rather than silently storing error pages.
+        //
+        // Requires Wrangler >= 4.69.0; PACKAGE_VERSIONS pins 4.136.3.
+        // `cross_version_cache` is deliberately absent: a deployment partitions
+        // the cache by Worker version by default, and sharing across versions
+        // wants an app-specific reason.
+        '  // Workers Cache: without this the Worker runs on every request and',
+        "  // narduk-core's CDN-Cache-Control / Cache-Tag never bind. A route",
+        '  // still needs setCacheProfile to be stored; one that sets nothing is',
+        '  // private by default. This file cannot prove the edge actually',
+        '  // stores anything -- for that, run (narduk-libs#435):',
+        '  //   narduk-app verify --live <production-url> --edge-cache-path <route>',
+        '  "cache": { "enabled": true },',
         '  "workers_dev": ' + (exposure === 'public') + ',',
         '  "preview_urls": ' + (exposure === 'public') + ',',
+        // No `ratelimits` binding is emitted: narduk-core's limiter runs on its
+        // in-isolate window without one, and the binding is an upgrade, never
+        // a prerequisite. What IS emitted is this app's own namespace prefix
+        // (narduk-libs#433), because `namespace_id` is unique per Cloudflare
+        // account and the next binding would otherwise be pasted from another
+        // app. `narduk-app doctor` refuses scaffold and reused ids.
+        '  // Rate limits: add a Cloudflare binding per RL_<limit> when a route',
+        '  // needs one. namespace_id is unique per ACCOUNT, not per Worker, so',
+        "  // never copy one from another app: this app's prefix is " +
+          rateLimitNamespacePrefix(appName) +
+          ',',
+        "  // then the limit padded to three digits (narduk-core's rateLimitNamespaceId).",
+        '  //   "ratelimits": [{ "name": "RL_120", "namespace_id": "' +
+          rateLimitNamespacePrefix(appName) +
+          '120", "simple": { "limit": 120, "period": 60 } }]',
         ...(hasDatabase
           ? [
+              // The generator must not call Cloudflare, so the id is a
+              // placeholder every build and dry-run accepts. foundation:check
+              // sub-check 1.5 fails on it, and `narduk-app db create` is the
+              // one step that replaces it (narduk-libs#662).
+              '  // DB: database_id is a placeholder until the database exists. Run',
+              '  //   pnpm exec narduk-app db create',
+              '  // from the repository root (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID',
+              '  // set) to create it and write the real id here. foundation:check fails',
+              '  // until then.',
               '  "d1_databases": [',
               '    {',
               '      "binding": "DB",',
@@ -1356,16 +1713,76 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // The app's own half of the deployment standard, in the shape every
+      // onboarded estate app already uses. Only facts a checkout can know
+      // are written: the product identity, the Worker shape this generator
+      // just emitted into wrangler.jsonc, the exposure class chosen at
+      // generation time, and the bindings mirror.
+      //
+      // Onboarding still owns everything live -- `product.repository`, the
+      // Cloudflare account id, `domains`, and the `deployment` block -- and
+      // those are deliberately ABSENT rather than fabricated, which is the
+      // same rule wrangler.jsonc's missing `account_id` follows.
+      //
+      // Why the generator writes this file at all (narduk-libs#617): CI runs
+      // the shared workflow with `foundation-check: true`, which fails the
+      // build on a FAIL or UNKNOWN result. Without this file item 1.2 is a
+      // decided FAIL ("wrangler.jsonc exists but Config/cloudflare-app.json
+      // does not") and 1.4/3.1/3.2 are UNKNOWN, so the FIRST CI run of every
+      // new app was red by construction and nothing inside the app could fix
+      // it. Recording the app's own half here is what makes a fresh scaffold
+      // reachable-green; it also turns `manifests:validate` into a real
+      // cross-check from the first commit instead of a no-op.
+      path: 'Config/cloudflare-app.json',
+      contents: text(
+        '{',
+        '  "schemaVersion": 1,',
+        '  "product": {',
+        '    "name": ' + JSON.stringify(displayName) + ',',
+        '    "target": "workers",',
+        '    "framework": "nuxt",',
+        '    "visibility": ' + JSON.stringify(visibility),
+        '  },',
+        '  "worker": {',
+        '    "name": ' + JSON.stringify(appName) + ',',
+        '    "wranglerConfig": "apps/web/wrangler.jsonc",',
+        '    "compatibilityDate": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
+        '    "compatibilityFlags": ["nodejs_compat"],',
+        // The spelling nuxt.config declares. foundation:check normalizes `-`
+        // and `_` (narduk-libs#350), so a build writing "cloudflare-module"
+        // into .output/nitro.json agrees with this line.
+        '    "nitroPreset": "cloudflare_module",',
+        '    "workersDev": ' + (exposure === 'public') + ',',
+        '    "previewUrls": ' + (exposure === 'public'),
+        '  },',
+        '  "access": {',
+        '    "exposureClass": ' +
+          JSON.stringify(exposure === 'public' ? 'public' : 'authenticated-public'),
+        '  },',
+        // Mirrors apps/web/wrangler.jsonc exactly -- the same pairing
+        // apps/web/scripts/validate-manifests.mjs enforces on every build,
+        // and the mirror foundation:check item 1.2 reads.
+        '  "bindings": {',
+        '    "d1": ' + (hasDatabase ? '[{ "binding": "DB" }]' : '[]') + ',',
+        '    "kv": [],',
+        '    "r2": ' +
+          (capabilities.includes('uploads') ? '[{ "binding": "UPLOADS" }]' : '[]') +
+          ',',
+        '    "queues": [],',
+        '    "cron": []',
+        '  }',
+        '}',
+      ),
+    },
+    {
       path: 'apps/web/scripts/validate-manifests.mjs',
-      // foundation:check item 1.3 requires only that a `manifests:validate`
-      // script exist and succeed; it says nothing about the live cross-check
-      // already agreeing on a checkout this generator itself just produced.
-      // ../../Config/cloudflare-app.json is populated by onboarding, AFTER
-      // this generator runs (see README's Config/ charter) -- a checkout
-      // fresh from `create-narduk-app` has no such file yet, so unlike the
-      // reference app's own script (which assumes the file exists) this one
-      // no-ops with an explanatory message when it is absent, and only runs
-      // the real binding cross-check once onboarding creates it.
+      // The generator now writes ../../Config/cloudflare-app.json with a
+      // bindings mirror that matches the wrangler.jsonc beside it, so this
+      // cross-check does real work from the first commit. The ENOENT branch
+      // stays for an app generated before that change, and for one whose
+      // file has been removed: this script is a build gate, not the place to
+      // discover a missing declaration -- foundation:check item 1.2 reports
+      // that, with the remediation attached.
       contents: text(
         "import { readFile } from 'node:fs/promises'",
         '',
@@ -1432,17 +1849,23 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       contents: text(
         "import { expect, test } from './fixtures'",
         '',
+        // The display name is bound to a const rather than interpolated into
+        // the assertion: a long one pushed the call past printWidth, and
+        // Prettier's own layout for THAT is a broken `expect(` argument list
+        // -- a shape this generator would have to re-implement to stay
+        // format:check-clean. A const is stable at any length, and
+        // constDeclaration already mirrors the one break Prettier makes.
+        constDeclaration('heading', tsString(displayName)),
+        '',
         "test('home page renders', async ({ page }) => {",
         "  await page.goto('/')",
-        "  await expect(page.getByRole('heading', { name: " +
-          tsString(displayName) +
-          ' })).toBeVisible()',
+        "  await expect(page.getByRole('heading', { name: heading })).toBeVisible()",
         '})',
       ),
     },
     {
       // A thin re-export, not a copy: narduk-testkit is the single source of
-      // truth for these fixtures (waitForBaseUrlReady, waitForHydration,
+      // truth for these fixtures (waitForBaseUrlReady, waitForVueHydrated,
       // warmUpApp), and importing from './fixtures' rather than the package
       // directly everywhere means a future fixture addition only has to
       // touch this one file. Matches the reference app's own fixtures.ts.
@@ -1452,7 +1875,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  expect,',
         '  test,',
         '  waitForBaseUrlReady,',
-        '  waitForHydration,',
+        '  waitForVueHydrated,',
         '  warmUpApp,',
         "} from '@narduk-enterprises/narduk-testkit/e2e/fixtures'",
       ),
@@ -1532,7 +1955,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  writeUiQualityManifest,',
         "} from '@narduk-enterprises/narduk-testkit/playwright/ui-quality'",
         '',
-        "import { expect, test, waitForBaseUrlReady, waitForHydration, warmUpApp } from './fixtures'",
+        "import { expect, test, waitForBaseUrlReady, waitForVueHydrated, warmUpApp } from './fixtures'",
         '',
         "const SCREENSHOT_ROOT = path.resolve(process.cwd(), 'output/playwright/visual-audit')",
         'const SCREENSHOT_SCOPE = ' + tsString(appName + '-visual-audit') + '',
@@ -1582,7 +2005,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '      for (const route of routes) {',
         "        const response = await page.goto(route.path, { waitUntil: 'domcontentloaded' })",
         '        expect(response?.ok(), `Expected ${route.path} to return an OK response`).toBeTruthy()',
-        '        await waitForHydration(page)',
+        '        await waitForVueHydrated(page)',
         "        await expect(page.locator('main')).toBeVisible()",
         '        captures.push(',
         '          await captureFullPageAudit(',
@@ -1797,7 +2220,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  semi: false,',
         '  singleQuote: true,',
         "  trailingComma: 'all',",
-        '  printWidth: 100,',
+        '  printWidth: ' + PRETTIER_PRINT_WIDTH + ',',
         "  endOfLine: 'lf',",
         '}',
       ),

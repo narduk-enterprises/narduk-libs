@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.5
+
+### Patch Changes
+
+- b8ed0c2: Point the package README's "Repo" row and `package.json`'s
+  `homepage`/`bugs.url` at this repository (`packages/modules/geogrid-web`)
+  instead of the standalone `narduk-enterprises/GeoGridWeb` repository. That
+  repo is a superseded duplicate pending retirement, not the source; this
+  package's `repository` field already pointed here (operator-portal#510).
+
+## 0.5.4
+
+### Patch Changes
+
+- b672613: Turn an open "revisit this" `eslint-disable` comment in
+  `tests/temporal.test.ts` into a permanent, documented decision not to redesign
+  the parameterized mutator test's typing — the alternative is per-mutation type
+  duplication for no runtime benefit (narduk-libs#144).
+
+  Test-only change; the package's published `dist/` output is unaffected.
+
 ## 0.5.3 — 2026-08-31
 
 ### Added
@@ -7,9 +28,9 @@
 - Temporal RGB decoding now accepts the exact, fail-closed
   `base-observed-confidence-v2-area-anchor` descriptor while preserving the
   published v1 contract. At z7 and below, Canvas2D and WebGL2 reduce observed
-  RGB and confidence over half-open CSS-pixel source buckets, then attenuate
-  the `0.20` overview anchor by real observed support. V1 and v2 above z7 keep
-  their existing nearest-gated 2x2 sampling behavior.
+  RGB and confidence over half-open CSS-pixel source buckets, then attenuate the
+  `0.20` overview anchor by real observed support. V1 and v2 above z7 keep their
+  existing nearest-gated 2x2 sampling behavior.
 
 ### Notes for callers
 
@@ -21,8 +42,8 @@
 
 ### Fixed
 
-- Precolored temporal RGB retains its mask-aware 2×2 color kernel, but now
-  gates final alpha by the legacy nearest-validity cell before applying a
+- Precolored temporal RGB retains its mask-aware 2×2 color kernel, but now gates
+  final alpha by the legacy nearest-validity cell before applying a
   valid-side-only support feather. Real neighboring samples can improve color
   inside an already-visible cell; they cannot make a formerly transparent cell
   visible. This is an intentional RGB render change. Regenerate the matching
@@ -33,37 +54,37 @@
 
 ### Fixed
 
-- Temporal decoding and both render backends now use the water-quality
-  product's canonical z9 observation weight of `0.40`. This completes the
-  coordinated visual-contract change begun by the producer; other weight
-  profiles still fail closed and legacy scalar/RGB paths remain unchanged.
+- Temporal decoding and both render backends now use the water-quality product's
+  canonical z9 observation weight of `0.40`. This completes the coordinated
+  visual-contract change begun by the producer; other weight profiles still fail
+  closed and legacy scalar/RGB paths remain unchanged.
 
 ## 0.5.0 — 2026-08-30
 
 ### Added
 
-- Temporal RGB manifests can opt into the additive
-  `base-observed-confidence-v1` composition contract: base RGB, observed RGB,
-  one observed-confidence plane, and distinct base/observed validity masks.
-  Legacy scalar (`1` plane / `1` mask) and legacy RGB (`3` planes / `1` mask)
-  decode and render through their existing paths unchanged.
-- Scale-aware RGB uses an exact continuous zoom curve: `0` through z7, `0.25`
-  at z8, `0.60` at z9, and `1` at z10 and above, linearly interpolated between
-  anchors. An explicit finite host zoom wins; when zoom is absent, both
-  backends derive it from CSS width and viewport longitude span. Invalid input
-  fails safely to base-only.
+- Temporal RGB manifests can opt into the additive `base-observed-confidence-v1`
+  composition contract: base RGB, observed RGB, one observed-confidence plane,
+  and distinct base/observed validity masks. Legacy scalar (`1` plane / `1`
+  mask) and legacy RGB (`3` planes / `1` mask) decode and render through their
+  existing paths unchanged.
+- Scale-aware RGB uses an exact continuous zoom curve: `0` through z7, `0.25` at
+  z8, `0.60` at z9, and `1` at z10 and above, linearly interpolated between
+  anchors. An explicit finite host zoom wins; when zoom is absent, both backends
+  derive it from CSS width and viewport longitude span. Invalid input fails
+  safely to base-only.
 - WebGL2 packs each composed date into two nearest-filtered RGBA8 textures,
-  including an uninterpolated validity byte (`bit 0 = base`, `bit 1 =
-  observed`). Two dates plus the coastline stencil require five fragment
-  texture units, within WebGL2's minimum of sixteen. Canvas2D runs the same CPU
-  reference math for the additive path.
+  including an uninterpolated validity byte (`bit 0 = base`,
+  `bit 1 = observed`). Two dates plus the coastline stencil require five
+  fragment texture units, within WebGL2's minimum of sixteen. Canvas2D runs the
+  same CPU reference math for the additive path.
 
 ### Changed
 
 - Base/observed composition and lower/upper temporal playback now blend in
   linear-sRGB for opted-in frames, then encode to display-sRGB once. Each
-  component retains its own mask; one real side is never mixed with black and
-  a gap in both masks remains transparent.
+  component retains its own mask; one real side is never mixed with black and a
+  gap in both masks remains transparent.
 - Temporal decoding now validates the fixed plane/mask mapping, mirrored chunk
   layout, runtime manifest envelope, integer geometry, compressed and decoded
   size caps, and stops inflation as soon as bytes exceed the declared layout.
@@ -98,8 +119,8 @@
 - RGB temporal decoding now aliases the scalar-compatibility `values` plane to
   `channels[0]` instead of retaining a duplicate red plane. Decoded pixels,
   masks, channel order, and renderer behavior are unchanged; retained RGB frame
-  storage drops from five to four bytes per pixel. Decoded sample planes are
-  now documented as immutable, matching the renderer cache contract already in
+  storage drops from five to four bytes per pixel. Decoded sample planes are now
+  documented as immutable, matching the renderer cache contract already in
   force.
 
 ## 0.4.0 — 2026-08-28
@@ -121,7 +142,7 @@ what it rendered in 0.3.0.
   tile; `referenceRenderGridTile(...)` does it on the CPU and returns raw RGBA.
   Also exported from the package root.
 - **Structural fit with narduk-mapkit, with zero new package edges.** The
-  returned function *is* `MapKitTileOverlayImageSource<OffscreenCanvas>`
+  returned function _is_ `MapKitTileOverlayImageSource<OffscreenCanvas>`
   structurally, by agreement rather than by import — neither package depends on
   the other. `tests/tile-image-source.test.ts` restates narduk-mapkit's type
   verbatim and assigns to it, so a signature change on either side fails this
@@ -131,9 +152,10 @@ what it rendered in 0.3.0.
   `Sources/GeoGridRender/GridTileMath.swift` and pinned to
   `tests/fixtures/tile-math-parity-v1.json` — 107 lon/lat/bounds values produced
   by calling GeoGridKit itself through
-  `tests/fixtures/generate_tile_math_parity.sh`. Asserting a port against its own
-  arithmetic proves nothing; a tile whose pixel centers land half a pixel off the
-  Swift renderer's is two clients disagreeing about where the coastline is.
+  `tests/fixtures/generate_tile_math_parity.sh`. Asserting a port against its
+  own arithmetic proves nothing; a tile whose pixel centers land half a pixel
+  off the Swift renderer's is two clients disagreeing about where the coastline
+  is.
 - **`GridTileRenderer`** — a shared WebGL2 context, FBO and texture cache. One
   renderer for a whole layer, because a browser caps live contexts near sixteen
   and one grid should upload once rather than once per tile. Falls back to the
@@ -160,7 +182,8 @@ what it rendered in 0.3.0.
     **centers** fall in the viewport∩grid intersection.
   - `paddedRange` — padding in the normalized space of the layer's own scale, so
     a 5% pad on a log layer widens by 5% of the decade span.
-  - `stretchDisplayRange` — the dispatch, returning `{ range, tier, sampleCount }`.
+  - `stretchDisplayRange` — the dispatch, returning
+    `{ range, tier, sampleCount }`.
 - **`GridStretchController`, wired into `GridOverlay`.** New overlay API:
   `setStretch`, `currentStretch`, `currentDisplayRange`, `onDisplayRangeChange`,
   `setPlaying`. It recomputes on viewport idle behind a **250 ms** debounce,
@@ -169,9 +192,9 @@ what it rendered in 0.3.0.
   applied on pause.
 - **`tests/fixtures/grid-stretch-parity-v1.json`** and its generator. The
   percentile cases come from numpy, and the **first eight are byte-identical to
-  the fixture GeoGridKit's own `StretchTests` reads** — same generator code, same
-  seed, same draw order — so the two languages are pinned to literally the same
-  numbers rather than to two samples of the same idea.
+  the fixture GeoGridKit's own `StretchTests` reads** — same generator code,
+  same seed, same draw order — so the two languages are pinned to literally the
+  same numbers rather than to two samples of the same idea.
 
 ### Changed
 
@@ -183,9 +206,9 @@ what it rendered in 0.3.0.
   This is also what makes the two features in this release compose for free:
   `displayRange` landed in that one shader, so the tile baker got the stretch
   without a second implementation to keep in step.
-- `script/check_package_exports.mjs` now also fails on the *reverse* drift: a
-  `src/<dir>/index.ts` with no matching subpath in the export map. The export map
-  is the one place a subpath's absence is invisible from inside the repo.
+- `script/check_package_exports.mjs` now also fails on the _reverse_ drift: a
+  `src/<dir>/index.ts` with no matching subpath in the export map. The export
+  map is the one place a subpath's absence is invisible from inside the repo.
 - The WebGL2 scalar shader normalizes over a new `displayRange` uniform;
   `valueRange` keeps its one job, decoding an `encoded-u16` sample. Both are
   guarded, and they collapse onto the same numbers on an unstretched layer.
@@ -228,10 +251,10 @@ what it rendered in 0.3.0.
 
 ### Notes for callers
 
-- **A tile carries its opacity in its pixels.** The overlay puts
-  `style.opacity` on the canvas element as CSS; a tile has no element, so it is
-  composed into the alpha. A host that also sets its own layer opacity squares
-  it — leave the host at `1`, or pass `opacity: 1` and let the host own it.
+- **A tile carries its opacity in its pixels.** The overlay puts `style.opacity`
+  on the canvas element as CSS; a tile has no element, so it is composed into
+  the alpha. A host that also sets its own layer opacity squares it — leave the
+  host at `1`, or pass `opacity: 1` and let the host own it.
 - **`null` is reserved for "the grid for this tile could not be obtained".** An
   empty tile — all nodata, or entirely outside the grid — is a fully transparent
   canvas. A host reads the first non-null image as the layer becoming ready
@@ -252,7 +275,7 @@ what it rendered in 0.3.0.
   8192px rather than attempting the bake.
 - **A tile bakes through `style.displayRange` too.** Hand the same style to
   `createGridTileImageSource` that you hand the overlay and the two agree; the
-  stretch is not an overlay-only feature. What the tile path does *not* have is
+  stretch is not an overlay-only feature. What the tile path does _not_ have is
   `GridStretchController` — a tile source has no viewport and no idle event, so
   a caller wanting a computed stretch on tiles reads
   `overlay.currentDisplayRange()` (or calls `stretchDisplayRange` itself) and
@@ -262,7 +285,7 @@ what it rendered in 0.3.0.
   `setFrame` / `renderAt` renders exactly as before and drives no stretch.
 - The WebGL2 path has no Node coverage — there is no GL context in this
   environment and this package takes on no dependency to invent one. What is
-  asserted is the shader's *structure*: that it normalizes over `displayRange`,
+  asserted is the shader's _structure_: that it normalizes over `displayRange`,
   decodes over `valueRange`, and guards both the way the CPU reference does.
   Pixel parity against a real GPU remains the browser leg's job.
 - One deliberate divergence from the Swift sampler, in the web client's favor:
@@ -276,16 +299,16 @@ what it rendered in 0.3.0.
 The client-side scalar render path: plain `/grid` Float32 grids now render on
 web through the same value-space math GeoGridKit's Metal renderer uses.
 
-Existing callers keep compiling and keep working. The temporal player's *pixels*
+Existing callers keep compiling and keep working. The temporal player's _pixels_
 change, deliberately — see **Changed** below before assuming a regression.
 
 ### Added
 
 - **`float32` frames render.** One `GridFrame` model
-  (`{ key, width, height, renderMode, valueKind, values, mask, channels? }`)
-  now serves both dialects: `encoded-u16` for the temporal raster and `float32`
-  for `/grid`. The backends accept either a `GridFrame` or a
-  `TemporalRasterFrame`; `gridFrameFromTemporal` is a rename, not a copy.
+  (`{ key, width, height, renderMode, valueKind, values, mask, channels? }`) now
+  serves both dialects: `encoded-u16` for the temporal raster and `float32` for
+  `/grid`. The backends accept either a `GridFrame` or a `TemporalRasterFrame`;
+  `gridFrameFromTemporal` is a rename, not a copy.
 - **`overlay.setScalarFrame(dataset, planeIndex?, options?)`** — the float32
   front door. Defaults its extent to `gridBounds(header)` and its cache identity
   to a content fingerprint of the plane.
@@ -303,13 +326,14 @@ change, deliberately — see **Changed** below before assuming a regression.
   coverage at all, because every path into it required a browser. Canvas2D calls
   `referenceScalarPixel` itself, so the fallback and the reference cannot drift.
 - **`GridBBoxAnchor`.** `/grid` extents span cell **centers** (`header.bbox`
-  equals `gridBounds(header)`, which the decoder's own tests assert, and which is
-  how GeoGridKit maps them); temporal manifests span cell **edges**. The two
-  differ by half a cell, so the anchor is now explicit — defaulted per value kind,
-  overridable per render — rather than assumed.
+  equals `gridBounds(header)`, which the decoder's own tests assert, and which
+  is how GeoGridKit maps them); temporal manifests span cell **edges**. The two
+  differ by half a cell, so the anchor is now explicit — defaulted per value
+  kind, overridable per render — rather than assumed.
 - `style.rampStops` accepts canonical normalized-position stops directly.
-- `texelPositionFromUv`, `coastalFeather`, `sampleLutLinear`, `resolveRampStops`,
-  `styleLut`, `styleScale`, `RAMP_LUT_COUNT`, and the `core/frame.ts` adapters.
+- `texelPositionFromUv`, `coastalFeather`, `sampleLutLinear`,
+  `resolveRampStops`, `styleLut`, `styleScale`, `RAMP_LUT_COUNT`, and the
+  `core/frame.ts` adapters.
 
 ### Changed
 
@@ -323,11 +347,11 @@ change, deliberately — see **Changed** below before assuming a regression.
   Measured on a synthetic 96×96 kd490-like scene with a sharp front and a ragged
   coastline (script in the PR):
 
-  | | linear layer | log layer |
-  |--|--|--|
-  | pixels differing | 69.4% | 92.3% |
-  | mean channel delta | 3.24 | 32.49 |
-  | partially-transparent pixels | 101 → 0 | 101 → 0 |
+  |                              | linear layer | log layer |
+  | ---------------------------- | ------------ | --------- |
+  | pixels differing             | 69.4%        | 92.3%     |
+  | mean channel delta           | 3.24         | 32.49     |
+  | partially-transparent pixels | 101 → 0      | 101 → 0   |
 
   The linear column is the kernel change alone, because on a linear layer the
   old and new ramp interpolations are algebraically identical. The log column
@@ -351,21 +375,21 @@ change, deliberately — see **Changed** below before assuming a regression.
   `coastal` carries GeoGridKit's own `smoothstep(0, 0.55, …)` instead.
 - **Canvas2D rasterizes in screen space when magnified** past ~1.5 CSS pixels
   per grid cell. It used to color cells and let `drawImage` scale the result,
-  which interpolates between *colors* — and a ramp is not a linear function of
+  which interpolates between _colors_ — and a ramp is not a linear function of
   value, so the midpoint between a blue cell and a red one came out muddy purple
   where the ramp puts bright green. Below the threshold the cheap path stands.
 - **`frameContentKey` no longer collides, for two independent reasons.** Both
   mattered, and only one of them was about floats:
-  1. *Truncation.* The integer mixer folds values in with `| 0`, which discards
+  1. _Truncation._ The integer mixer folds values in with `| 0`, which discards
      a KD490 grid's entire fractional part and maps `NaN` — most of a gulf grid,
      over land — onto `0`. Float planes now hash by their IEEE bits.
-  2. *Sampling density.* The hash walked a stride of `n / 64`, inspecting about
+  2. _Sampling density._ The hash walked a stride of `n / 64`, inspecting about
      65 of a 512×512 grid's 262,144 cells. Two grids differing in **52,416**
      cells were verified to fingerprint identically. It now reads every element.
 
   The second is the more dangerous of the two: a temporal frame is keyed by its
   date and the hash only guards against a re-decode, but a `/grid` frame has no
-  date, so the hash *is* the identity and a collision means the GPU keeps
+  date, so the hash _is_ the identity and a collision means the GPU keeps
   drawing the previous dataset.
 
   Reading every element costs ~5 ms on a 512×512 plane, which is free once per
@@ -375,11 +399,12 @@ change, deliberately — see **Changed** below before assuming a regression.
   documented as the route for a publisher-supplied identity (ETag, `releaseId`).
   Integer planes of 64 elements or fewer hash exactly as before, and the
   temporal dialect's keys are pinned to a literal in a test.
+
 - **An unusable value range draws nothing instead of throwing or inverting.**
   `normalizeValue` raises on `lo >= hi`, matching the server — right for a pure
   function, fatal in a render loop, where the exception escapes through
   `requestAnimationFrame` and takes the frame with it. Both CPU paths now guard
-  first. The GPU had the opposite bug: it tested only `x == y`, so an *inverted*
+  first. The GPU had the opposite bug: it tested only `x == y`, so an _inverted_
   range fell through and rendered the ramp backwards. Both guards are written
   `!(lo < hi)` so that a `NaN` bound is refused too, and so that a corrupt range
   produces the same nothing on both backends rather than one painting and one
@@ -398,9 +423,9 @@ change, deliberately — see **Changed** below before assuming a regression.
   Unchanged in effect — the `rgb` pass keeps the hardware `LINEAR` magnification
   it has had since 0.1.1, and every scalar plane stays `NEAREST` because
   `texelFetch` ignores filter state — but stated explicitly, because `LINEAR` on
-  an `R16UI`/`R8UI` texture makes it *incomplete* and it samples black.
+  an `R16UI`/`R8UI` texture makes it _incomplete_ and it samples black.
 - `GridStyle.ramp` and `GridOverlayStyleInput.ramp` are optional now that
-  `rampStops` exists. Code that *passes* `ramp` is unaffected; code that *reads*
+  `rampStops` exists. Code that _passes_ `ramp` is unaffected; code that _reads_
   `style.ramp` must handle `undefined`.
 
 ### Deferred
@@ -421,7 +446,7 @@ change, deliberately — see **Changed** below before assuming a regression.
   that, and the alternative is guessing which is authoritative);
   `getAttribLocation` runs per draw (one cached call per program would save
   microseconds against a full-screen pass); `styleKey` fingerprints the stop
-  *count* rather than the stops (every `setStyle` already invalidates the raster
+  _count_ rather than the stops (every `setStyle` already invalidates the raster
   wholesale, so the key only has to separate frames within one style); and the
   resolved ramp is recomputed rather than memoized (it is a handful of stops).
 
@@ -435,15 +460,16 @@ behavior changes.
 
 - **`normalizeValue`'s degenerate-range guard now matches the server exactly.**
   It was `if (!(lo < hi)) throw`, which diverges from narduk-data
-  `shared/colorramp.py`'s `if lo >= hi: raise` on a `NaN` bound: `!(lo < hi)`
-  is `true` for `NaN` (threw) while `lo >= hi` is `false` for `NaN` (the server
+  `shared/colorramp.py`'s `if lo >= hi: raise` on a `NaN` bound: `!(lo < hi)` is
+  `true` for `NaN` (threw) while `lo >= hi` is `false` for `NaN` (the server
   clamps instead of raising). The guard is now the literal `if (lo >= hi)`.
   Fixing the guard alone surfaced a second, narrower divergence: with a `NaN`
   bound let through, the final `Math.min(1, Math.max(0, raw))` clamp answers
   `NaN` where the server's `min(1.0, max(0.0, raw))` answers `0.0` — Python's
-  builtin `max`/`min` keep their first argument on a `NaN` comparison, `Math.max`/
-  `Math.min` do not. `normalizeValue` now reproduces that order-sensitive
-  clamp so a degenerate `NaN` bound is byte-exact with the server end to end.
+  builtin `max`/`min` keep their first argument on a `NaN` comparison,
+  `Math.max`/ `Math.min` do not. `normalizeValue` now reproduces that
+  order-sensitive clamp so a degenerate `NaN` bound is byte-exact with the
+  server end to end.
 - **`generate_ramp_parity.py`'s `wire_stop_case` now calls the real
   `earth_data_pipeline.catalog.ramp_stop_value`** instead of re-deriving its
   formula inline, restoring this file's own "nothing here re-implements ramp
@@ -462,17 +488,16 @@ behavior changes.
 
 ### Added
 
-- A test pinning `decodeGridBinary`'s `planeCount` default: a header that
-  omits `planeCount` entirely now has an explicit assertion that it decodes as
-  `1`, matching `parseHeader`'s `raw.planeCount ?? 1`.
+- A test pinning `decodeGridBinary`'s `planeCount` default: a header that omits
+  `planeCount` entirely now has an explicit assertion that it decodes as `1`,
+  matching `parseHeader`'s `raw.planeCount ?? 1`.
 - A direct test for `denormalizePosition` against the `wireStopCases` fixture.
-  Its docstring already claimed this coverage ("that round trip is pinned by
-  the wireStopCases fixture"), but no test called the function — every
-  existing `wireStopCases` consumer exercises the opposite direction
+  Its docstring already claimed this coverage ("that round trip is pinned by the
+  wireStopCases fixture"), but no test called the function — every existing
+  `wireStopCases` consumer exercises the opposite direction
   (`normalizeWireStops`).
 - A test for `normalizeValue`'s `NaN`-range-bound behavior, with the expected
   value captured by running narduk-data's own `shared/colorramp.py`.
-
 
 ## 0.2.0 — 2026-08-28
 
@@ -487,12 +512,13 @@ removed; 0.1.2 code keeps compiling and behaving as it did.
   published tile was colored with. Exports `normalizeValue`,
   `denormalizePosition`, `normalizeWireStops`, `sampleRamp01`,
   `sampleRampValue`, `rampLut`, and `roundHalfToEven`.
-- **`normalizeWireStops`** converts catalog wire stops (raw data values) into the
-  normalized-position model — the same conversion GeoGridKit's `CatalogClient`
-  performs, and the exact inverse of the pipeline's `catalog.py::ramp_stop_value`.
-  Sampling a catalog ramp without it puts every color in the wrong place. Alpha
-  is preserved, which GeoGridKit's RGB-only `ColorStop` cannot do.
-- **`ramp-parity-v1.json`** — a fixture generated by *running* the server engine
+- **`normalizeWireStops`** converts catalog wire stops (raw data values) into
+  the normalized-position model — the same conversion GeoGridKit's
+  `CatalogClient` performs, and the exact inverse of the pipeline's
+  `catalog.py::ramp_stop_value`. Sampling a catalog ramp without it puts every
+  color in the wrong place. Alpha is preserved, which GeoGridKit's RGB-only
+  `ColorStop` cannot do.
+- **`ramp-parity-v1.json`** — a fixture generated by _running_ the server engine
   (generator checked in beside it), asserting the TypeScript engine byte-exact
   across mid-segment samples, both clamp directions, `NaN`, non-positive values
   on a log scale, a ramp whose first stop is transparent, a ramp whose last stop
@@ -543,8 +569,10 @@ Post-review hardening (round 1).
 
 ### Fixed
 
-- Pre-inflate size check so oversized frame dimensions cannot allocate past `maxDecompressedBytes`
-- RGB planes included in `frameContentKey` so G/B-only updates bust GPU/CPU caches
+- Pre-inflate size check so oversized frame dimensions cannot allocate past
+  `maxDecompressedBytes`
+- RGB planes included in `frameContentKey` so G/B-only updates bust GPU/CPU
+  caches
 - Partial WebGL texture upload failures free already-created textures
 
 ## 0.1.1 — 2026-07-21
@@ -553,27 +581,36 @@ Production-hardening pass after multi-agent review.
 
 ### Fixed
 
-- WebGL plane/mask uploads set `UNPACK_ALIGNMENT=1` so odd widths and non-multiple-of-4 R8 rows no longer skew textures
-- Scalar temporal blend mixes in **encoded** space on WebGL (matches Canvas2D and log-scale wire quantization)
-- Canvas2D coastline stencil zeros alpha outside the stencil geo bbox (matches WebGL)
-- Failed/skipped WebGL `render` clears a previously drawn frame instead of leaving stale pixels
+- WebGL plane/mask uploads set `UNPACK_ALIGNMENT=1` so odd widths and
+  non-multiple-of-4 R8 rows no longer skew textures
+- Scalar temporal blend mixes in **encoded** space on WebGL (matches Canvas2D
+  and log-scale wire quantization)
+- Canvas2D coastline stencil zeros alpha outside the stencil geo bbox (matches
+  WebGL)
+- Failed/skipped WebGL `render` clears a previously drawn frame instead of
+  leaving stale pixels
 - GPU/CPU caches key by frame content fingerprint, not date alone
 - Scalar `dtype: 'uint8'` rejected at decode (unsupported combination)
-- Decode fails closed on oversized headers, dimensions, frame counts, and decompressed payloads
+- Decode fails closed on oversized headers, dimensions, frame counts, and
+  decompressed payloads
 - `GridOverlay.destroy()` drops `lastRender` so frame buffers are not retained
 
 ### Known remaining limitations
 
 - Dateline-crossing bboxes unsupported
-- No tiled `renderTile` baker / float `.bin` grid-tile wire format (GeoGridKit contract 1)
+- No tiled `renderTile` baker / float `.bin` grid-tile wire format (GeoGridKit
+  contract 1)
 - WebGPU not implemented
 - No `webglcontextlost` recovery (host must recreate the overlay)
-- Color stops use **display units** (earthdata chart compatibility), not GeoGridKit normalized 0…1 locations
-- RGB WebGL still uses hardware LINEAR on value planes (mask-aware neighborhood sampling is scalar-only)
+- Color stops use **display units** (earthdata chart compatibility), not
+  GeoGridKit normalized 0…1 locations
+- RGB WebGL still uses hardware LINEAR on value planes (mask-aware neighborhood
+  sampling is scalar-only)
 
 ## 0.1.0 — 2026-07-21
 
-Initial extract from `earthdata-viewer` temporal playback (`temporalRaster`, `temporalWebGL`, `temporalCanvas`).
+Initial extract from `earthdata-viewer` temporal playback (`temporalRaster`,
+`temporalWebGL`, `temporalCanvas`).
 
 ### Added
 

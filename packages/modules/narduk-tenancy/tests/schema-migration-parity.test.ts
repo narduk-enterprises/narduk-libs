@@ -1,15 +1,11 @@
-import { readFileSync } from 'node:fs'
-
 import { describe, expect, it } from 'vitest'
 
 import * as schema from '../server/database/tenancy-schema'
 import { TENANCY_ROLES } from '../shared/utils/roles'
 
-import { createTestHarness, MIGRATION_PATH } from './support/database'
+import { createTestHarness, MIGRATION_SQL } from './support/database'
 
-const migration = readFileSync(MIGRATION_PATH, 'utf8')
-const statements = migration
-  .split('\n')
+const statements = MIGRATION_SQL.split('\n')
   .filter((line) => !line.trimStart().startsWith('--'))
   .join('\n')
 
@@ -68,7 +64,7 @@ describe('tenancy schema/migration parity', () => {
 
   it('applies cleanly twice against real SQLite', () => {
     const { sqlite } = createTestHarness()
-    expect(() => sqlite.exec(migration)).not.toThrow()
+    expect(() => sqlite.exec(MIGRATION_SQL)).not.toThrow()
 
     const tables = sqlite
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'tenancy_%'")

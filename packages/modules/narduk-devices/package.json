@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-devices",
-  "version": "0.3.0",
+  "version": "0.6.1",
   "private": false,
   "type": "module",
   "description": "Generic device identity, claim ceremony, class-separated credentials, signed device sessions, and lockouts for Narduk Nuxt apps on D1.",
@@ -49,10 +49,10 @@
     "prelint": "pnpm run nuxt:prepare",
     "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
     "typecheck": "nuxt typecheck",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
@@ -84,6 +84,6 @@
     "nuxt": ">=4.0.0"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

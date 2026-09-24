@@ -110,6 +110,34 @@ a 500. At most 32 marked phases are rendered and the whole header stays under 2
 KB, whichever bound is reached first; elapsed time keeps accumulating into
 `total` regardless.
 
+#### Statement and round-trip counts
+
+Every `RequestTiming` owns a `QueryCounter` (`timing.counter`; on h3,
+`useRequestCounter(event)` returns the same object). The counter is
+driver-agnostic: the wrapper around a data binding calls
+`recordRoundTrip(statements = 1)` once per call into the binding, passing the
+number of statements that call executed — `1` for one query or a D1
+`first`/`all`/`run`/`raw`, `statements.length` for a D1 `batch`. Statements and
+round trips are separate counts because they have separate fixes: batching eight
+reads moves round trips and leaves statements where they were. Recording never
+throws; a malformed count is floored to a non-negative integer.
+
+Once anything has been counted, and only when phases are exposed, each marked
+phase without an explicit description renders its own delta and `total` renders
+the request's cumulative counts, separated by `/` rather than a comma
+(`Server-Timing` is itself a comma-separated list):
+
+```
+auth;dur=0;desc="0 stmt / 0 rt", scope;dur=17;desc="1 stmt / 1 rt",
+board;dur=274;desc="18 stmt / 11 rt", total;dur=305;desc="20 stmt / 13 rt"
+```
+
+The "Request completed" and "Slow route" records carry `statements` and
+`roundTrips` whenever something was counted, whether or not phases are exposed;
+a request that counted nothing logs exactly the fields it always did. No
+`timing-allow-origin` is ever set, so a cross-origin page's Resource Timing API
+never sees these values.
+
 `RequestLoggingOptions.slowRouteThresholdMs` (and `LogRequestOptions` on
 `./worker`'s `logRequest`) is unset by default — no line is ever emitted. Set it
 to get one structured `warn` "Slow route" log line per request whose total
@@ -185,6 +213,15 @@ arrays, objects, and `.private(value)`. `asSwiftLog()` exposes an isolated
 swift-log logger; metadata using `LogPrivacy.private` is removed before output.
 Opaque object descriptions are omitted. Swift values and state are Sendable,
 with shared state protected by `Synchronization.Mutex`.
+
+Go uses `narduklogging.NewHandler(w, Options{Service, Environment})` or
+`NewLogger`. The handler implements `slog.Handler` and writes one schema JSON
+record per line. It never calls `slog.SetDefault`. `slog.Level` maps onto the
+schema enum (`<debug` → `trace`, `debug`, `info`, `warn`, `error`, `error+4` →
+`fatal`). Root attributes named `requestId`, `operationId`, `method`, `path`,
+`traceId`, `spanId`, `source`, and `error` lift to the canonical top-level
+fields; everything else is the sanitized `data` object. OTLP export and
+framework bridges stay out of this adapter.
 
 ## Canonical JSON
 

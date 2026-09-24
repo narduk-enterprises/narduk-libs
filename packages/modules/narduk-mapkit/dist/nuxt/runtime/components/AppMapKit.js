@@ -18,7 +18,9 @@
  * TypeScript and the seam has to hold without Vue (narduk-libs#422). This file
  * turns props into calls on those controllers and renders the slots.
  */
-import { Teleport, computed, defineComponent, h, inject, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
+import { Teleport, computed, defineComponent, h, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch, } from 'vue';
+import { MapKitLeaderOverlay } from '../../../client/leader-overlay.js';
+import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js';
 import { MapKitCalloutHostLayer } from '../callout-host.js';
 import { useMapKitPreload } from '../preload.js';
 import { MapKitOverlayLayer } from '../overlay-layer.js';
@@ -27,9 +29,22 @@ import { MapKitPinLayer, defaultMapKitItemKey } from '../pin-layer.js';
 import { mapKitBoundingRegion, mapKitGeometryPoints } from '../region.js';
 import { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from '../injection-keys.js';
 import { useMapKit } from '../composables/useMapKit.js';
+const CALLOUT_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+    'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const props = {
     ariaLabel: { default: 'Map', type: String },
     boundingPadding: { default: 0.05, type: Number },
+    /**
+     * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+     * moves it to the first focusable element in the `#callout` slot once the
+     * callout renders, so a keyboard or screen-reader user can reach its action.
+     * A pointer selection always leaves focus where it is. `'never'` opts out.
+     */
+    calloutFocus: {
+        default: 'keyboard',
+        type: String,
+        validator: (value) => value === 'keyboard' || value === 'never',
+    },
     /** Open the callout for the selected item. Off hands control to `openCallout`. */
     calloutFollowSelection: { default: true, type: Boolean },
     circleScaleFactor: { default: 0.004, type: Number },
@@ -48,6 +63,17 @@ const props = {
     dynamicCircleRadius: { default: false, type: Boolean },
     fallbackCenter: { default: undefined, type: Object },
     geojson: { default: null, type: Object },
+    /**
+     * The pin the pointer is over (`v-model:hovered-id`). The matching host
+     * carries `data-mapkit-hovered`. A hover never rebuilds annotations.
+     */
+    hoveredId: { default: null, type: String },
+    /**
+     * Draw a leader from the selected annotation to `anchor` on every region
+     * change. The overlay is a plain `./client` class so a consumer that draws
+     * its own pins can use the same one (narduk-libs#517).
+     */
+    leader: { default: null, type: Object },
     isRotationEnabled: { default: false, type: Boolean },
     isScrollEnabled: { default: true, type: Boolean },
     isZoomEnabled: { default: true, type: Boolean },
@@ -79,6 +105,18 @@ const props = {
         default: undefined,
         type: Function,
     },
+    /**
+     * Whether a pin is an interactive control (2.1.1, K-8).
+     *
+     * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
+     * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
+     * handlers. `false` is for a decorative map: the host carries no role, no
+     * tabindex, no `aria-pressed` and no click or keyboard listeners, so an
+     * `aria-hidden` map no longer contains focusable descendants (axe
+     * `aria-hidden-focus`) and
+     * `itemLabel` stops being required.
+     */
+    pinsFocusable: { default: true, type: Boolean },
     /** 7 of 7 consumers set this, so 2.1.0 flips the default. */
     preserveRegion: { default: true, type: Boolean },
     selectedId: { default: null, type: String },
@@ -98,14 +136,44 @@ const AppMapKitImpl = defineComponent({
         'callout-close': (payload) => Boolean(payload),
         'callout-open': (payload) => Boolean(payload),
         'feature-select': (feature) => Boolean(feature),
+        'leader-offscreen': (offscreen) => typeof offscreen === 'boolean',
         'map-click': (coordinate) => Boolean(coordinate),
-        'map-ready': (map) => Boolean(map),
+        /**
+         * The map, and the namespace that built it (2.1.1, K-10).
+         *
+         * The second argument is `useMapKit().mapkit`, NOT `globalThis.mapkit`:
+         * MapKit JS 6 resolves `mapkit.load(libraries)` to a scoped namespace, and a
+         * value built from the global one fails this map's own instanceof checks.
+         */
+        'map-ready': (map, mapkit) => Boolean(map) && Boolean(mapkit),
         'mapkit-error': (failure) => Boolean(failure),
         'region-change': (region) => Boolean(region),
+        'update:hoveredId': (id) => id === null || typeof id === 'string',
         'update:selectedId': (id) => id === null || typeof id === 'string',
     },
     slots: Object,
     setup(componentProps, { emit, expose, slots }) {
+        /**
+         * K-9. 2.1.0 threw from inside the pin layer on the first non-empty
+         * `items`, which meant the error arrived only once MapKit had loaded, a
+         * token had been exchanged and a map existed -- i.e. in production, on a
+         * page whose map had already half-built itself.
+         *
+         * The type system cannot carry this: making `itemLabel` required when
+         * `items` is would mean a union `$props`, which no gate in this package can
+         * prove safe under `vue-tsc`. So the throw stays, raised first thing in
+         * `setup` -- before a script is injected or a token is fetched, naming the
+         * component and both ways out.
+         */
+        function assertPinLabelling(items) {
+            if (items.length === 0 || !componentProps.pinsFocusable || componentProps.itemLabel)
+                return;
+            throw new Error('<AppMapKit>: the itemLabel prop is required whenever items is non-empty -- it is the ' +
+                'accessible name of the library-owned pin host, and a pin without one is unreachable ' +
+                'by screen reader. Pass itemLabel, or set :pins-focusable="false" for a decorative ' +
+                'map whose pins are not interactive controls.');
+        }
+        assertPinLabelling(componentProps.items);
         const injectedNonce = inject(mapKitNonceInjectionKey, null);
         const colorMode = inject(mapKitColorModeInjectionKey, null);
         const mapKitOptions = {};
@@ -133,6 +201,7 @@ const AppMapKitImpl = defineComponent({
         const mapReady = ref(false);
         const wrapperRef = ref(null);
         let calloutLayer = null;
+        let leaderOverlay = null;
         let map = null;
         let overlayLayer = null;
         let overviewRegion = null;
@@ -223,6 +292,45 @@ const AppMapKitImpl = defineComponent({
             const offset = mapKitAnchorOffset(geometry);
             return { x: offset.x + (geometry.size?.width ?? 0) / 2, y: offset.y };
         }
+        function leaderPoint() {
+            const id = componentProps.selectedId;
+            if (!id)
+                return null;
+            const item = pinLayer?.itemFor(id);
+            if (!item)
+                return null;
+            const projected = projectCoordinate({ lat: item.lat, lng: item.lng }, id);
+            if (!projected)
+                return null;
+            const canvas = containerRef.value;
+            const host = wrapperRef.value ?? canvas;
+            if (!canvas || !host || host === canvas)
+                return projected;
+            const canvasBox = canvas.getBoundingClientRect();
+            const hostBox = host.getBoundingClientRect();
+            return {
+                x: projected.x + canvasBox.left - hostBox.left,
+                y: projected.y + canvasBox.top - hostBox.top,
+            };
+        }
+        function syncLeader() {
+            const host = wrapperRef.value ?? containerRef.value;
+            if (!componentProps.leader || !host) {
+                leaderOverlay?.destroy();
+                leaderOverlay = null;
+                return;
+            }
+            if (!leaderOverlay) {
+                leaderOverlay = new MapKitLeaderOverlay({
+                    container: host,
+                    getAnchor: () => componentProps.leader?.anchor ?? null,
+                    getPoint: leaderPoint,
+                    onOffscreen: (offscreen) => emit('leader-offscreen', offscreen),
+                });
+                return;
+            }
+            leaderOverlay.refresh();
+        }
         function openCallout(id) {
             const item = pinLayer?.itemFor(id);
             const container = containerRef.value;
@@ -253,20 +361,48 @@ const AppMapKitImpl = defineComponent({
                     emit('callout-close', { id: target, item });
             }
         }
-        function select(id) {
-            if (id === componentProps.selectedId)
+        // The id whose callout should take focus once it renders: set by a keyboard
+        // selection, consumed by the next `applySelection` (narduk-libs#746).
+        let focusCalloutFor = null;
+        function select(id, via = 'pointer') {
+            focusCalloutFor =
+                via === 'keyboard' && id !== null && componentProps.calloutFocus === 'keyboard' ? id : null;
+            if (id !== componentProps.selectedId) {
+                emit('update:selectedId', id);
                 return;
-            emit('update:selectedId', id);
+            }
+            // No emit means no `applySelection`: a pin re-added under a selection the
+            // app kept still gets its selected state, callout and focus back.
+            if (focusCalloutFor !== null)
+                applySelection(focusCalloutFor);
+        }
+        function focusCallout(id, retry = true) {
+            if (componentProps.selectedId !== id)
+                return;
+            const host = calloutLayer?.entries().find((entry) => entry.id === id)?.host;
+            const target = host?.querySelector(CALLOUT_FOCUSABLE);
+            if (target) {
+                target.focus({ preventScroll: true });
+                return;
+            }
+            // Slot content that renders a frame late still gets focus, once.
+            if (retry && host)
+                requestAnimationFrame(() => focusCallout(id, false));
         }
         function applySelection(id) {
             if (!pinLayer)
                 return;
             pinLayer.setSelected(id);
+            const focusFor = focusCalloutFor;
+            focusCalloutFor = null;
             if (!componentProps.calloutFollowSelection)
                 return;
             closeCallout();
-            if (id !== null)
-                openCallout(id);
+            if (id === null)
+                return;
+            openCallout(id);
+            if (focusFor === id)
+                void nextTick(() => focusCallout(id));
         }
         function zoomToItem(namespace, item) {
             map?.setRegionAnimated(toRegion(namespace, { lat: item.lat, lng: item.lng }, componentProps.zoomSpan), true);
@@ -276,6 +412,11 @@ const AppMapKitImpl = defineComponent({
             if (!map || !pinLayer || !namespace)
                 return;
             pinLayer.setItems(componentProps.items);
+            // Live polls (buoys) move the selected pin in place with preserveRegion
+            // and no region event; the leader must follow that the same way the
+            // callout host repositions on region-change-end (narduk-libs#517).
+            if (componentProps.leader)
+                leaderOverlay?.refresh();
             if (componentProps.preserveRegion)
                 return;
             overviewRegion = computeOverview(namespace);
@@ -293,7 +434,8 @@ const AppMapKitImpl = defineComponent({
                 isRotationEnabled: componentProps.isRotationEnabled,
                 isScrollEnabled: componentProps.isScrollEnabled,
                 isZoomEnabled: componentProps.isZoomEnabled,
-                mapType: componentProps.mapType,
+                // K-3: `'muted'` is this library's spelling; MapKit's is `'mutedStandard'`.
+                mapType: resolveMapKitMapType(componentProps.mapType),
                 showsPointsOfInterest: componentProps.showsPointsOfInterest,
             };
             if (overviewRegion)
@@ -319,8 +461,10 @@ const AppMapKitImpl = defineComponent({
                 // pinGeometry-only setProps would otherwise restyle nothing.
                 itemKey: (item, index) => componentProps.itemKey(item, index),
                 pinGeometry: (item) => componentProps.pinGeometry?.(item) ?? {},
+                focusable: componentProps.pinsFocusable,
                 map,
                 mapkit: namespace,
+                onHover: (id) => emit('update:hoveredId', id),
                 onSelect: select,
             });
             map.addEventListener('region-change-end', () => {
@@ -335,13 +479,20 @@ const AppMapKitImpl = defineComponent({
                 });
                 overlayLayer?.resizeCirclesToRegion(region.span.latitudeDelta);
                 calloutLayer?.reposition();
+                leaderOverlay?.refresh();
             });
             pinLayer.setItems(componentProps.items);
             applyOverlays();
             if (componentProps.selectedId !== null)
                 applySelection(componentProps.selectedId);
+            if (componentProps.hoveredId !== null)
+                pinLayer.setHovered(componentProps.hoveredId);
             mapReady.value = true;
-            emit('map-ready', map);
+            syncLeader();
+            // K-10: the namespace goes with the map. A value built from
+            // `globalThis.mapkit` belongs to a different namespace and this map's own
+            // instanceof checks reject it.
+            emit('map-ready', map, namespace);
         }
         function applyOverlays() {
             const hasOverlayWork = (componentProps.geojson?.features.length ?? 0) > 0 || componentProps.circles.length > 0;
@@ -367,8 +518,16 @@ const AppMapKitImpl = defineComponent({
                 return componentProps.colorScheme;
             return colorMode?.value === 'dark' ? 'dark' : 'light';
         }
-        watch(() => ready.value, (value) => {
-            if (value) {
+        /**
+         * K-11. Watching only `ready` with `immediate: true` runs the first
+         * callback inside `setup()`, before the canvas ref is assigned. When
+         * MapKit JS is already loaded (every `<AppMapKit>` after the first on a
+         * page session) that call finds no container and `ready` never edges
+         * again, so the host stays `loading` with no map. Watch both so init
+         * runs when the later of the two arrives.
+         */
+        watch([() => ready.value, containerRef], ([isReady, container]) => {
+            if (isReady && container) {
                 try {
                     initMap();
                 }
@@ -379,6 +538,7 @@ const AppMapKitImpl = defineComponent({
         }, { flush: 'post', immediate: true });
         watch(() => componentProps.items, () => {
             try {
+                assertPinLabelling(componentProps.items);
                 applyItems();
             }
             catch (cause) {
@@ -387,6 +547,7 @@ const AppMapKitImpl = defineComponent({
         });
         watch(() => componentProps.selectedId, (id) => {
             applySelection(id);
+            syncLeader();
             const namespace = mapkit.value;
             if (componentProps.suppressSelectionZoom || !map || !namespace)
                 return;
@@ -395,6 +556,12 @@ const AppMapKitImpl = defineComponent({
                 zoomToItem(namespace, item);
             else if (overviewRegion)
                 map.setRegionAnimated(overviewRegion, true);
+        });
+        watch(() => componentProps.hoveredId, (id) => {
+            pinLayer?.setHovered(id);
+        });
+        watch(() => [componentProps.leader, componentProps.leader?.anchor ?? null], () => {
+            syncLeader();
         });
         watch(() => [componentProps.geojson, componentProps.circles], () => {
             applyOverlays();
@@ -412,11 +579,32 @@ const AppMapKitImpl = defineComponent({
                 report(cause);
             }
         });
+        /**
+         * K-4. 2.1.0 applied `mapType` and `colorScheme` in the `mapkit.Map`
+         * constructor and never again, so switching either prop on a mounted map
+         * did nothing at all. The injected colour-mode source is watched with them:
+         * without it `colorScheme: 'auto'` is only auto once, at construction.
+         */
+        watch(() => [componentProps.mapType, componentProps.colorScheme, colorMode?.value ?? null], () => {
+            if (!map)
+                return;
+            try {
+                applyMapKitBasemap(map, {
+                    colorScheme: resolveColorScheme(),
+                    mapType: componentProps.mapType,
+                });
+            }
+            catch (cause) {
+                report(cause);
+            }
+        });
         watch(() => failure.value, (value) => {
             if (value)
                 emit('mapkit-error', value);
         });
         onBeforeUnmount(() => {
+            leaderOverlay?.destroy();
+            leaderOverlay = null;
             calloutLayer?.destroy();
             calloutLayer = null;
             calloutEntries.value = [];
@@ -428,6 +616,8 @@ const AppMapKitImpl = defineComponent({
             map = null;
         });
         function retry() {
+            leaderOverlay?.destroy();
+            leaderOverlay = null;
             pinLayer?.destroy();
             pinLayer = null;
             overlayLayer?.destroy();
@@ -447,6 +637,11 @@ const AppMapKitImpl = defineComponent({
                 lastDiff: { added: [], moved: [], removed: [], restyled: [] },
             },
             getMap: () => map,
+            /**
+             * The namespace that built this map (2.1.1, K-10), for an app that has to
+             * construct MapKit values itself. NEVER `globalThis.mapkit`.
+             */
+            getMapKit: () => mapkit.value,
             openCallout,
             retry,
             scrollIntoView: () => {
@@ -481,10 +676,10 @@ const AppMapKitImpl = defineComponent({
             const children = [];
             if (failure.value) {
                 children.push(h('div', { class: 'mapkit-status', role: 'alert' }, slots.error?.({ failure: failure.value, retry }) ?? [
-                    h('strong', 'Map unavailable'),
+                    h('strong', { class: 'mk-status-title' }, 'Map unavailable'),
                     // Never the raw error: the code and a retry, per §c.4.
-                    h('span', failure.value.status),
-                    h('button', { onClick: retry, type: 'button' }, 'Try again'),
+                    h('span', { class: 'mk-status-code' }, failure.value.status),
+                    h('button', { class: 'mk-status-retry', onClick: retry, type: 'button' }, 'Try again'),
                 ]));
             }
             else if (!ready.value) {
@@ -529,9 +724,23 @@ const AppMapKitImpl = defineComponent({
 });
 /**
  * Exported with a generic construct signature so an app's own item type flows
- * through `items`, `itemKey`, `createPinElement`, `pinGeometry` and the
- * `#callout` slot. The runtime props above cannot carry a type parameter, so the
- * generic surface is applied here, once.
+ * through `items`, `itemKey`, `itemLabel`, `createPinElement`, `pinGeometry` and
+ * the `#callout` slot scope. The runtime props above cannot carry a type
+ * parameter, so the generic surface is applied here, once.
+ *
+ * 2.1.0 re-typed `items` alone, which under `strictFunctionTypes` left every
+ * callback rejecting the app's item type -- parameters are contravariant, so
+ * `(item: Station) => string` is not assignable to `(item: MapKitPinItem) =>
+ * string`. `tests/nuxt/app-map-kit-generic.test.ts` is the compile-time gate; a
+ * runtime test cannot see this at all.
+ *
+ * The generic construct signature is the ONLY one (narduk-libs#573): keeping
+ * `typeof AppMapKitImpl`'s own non-generic signature beside it made vue-tsc
+ * intersect both props types in an SFC template, so a callback narrowed to the
+ * app's item type failed TS2322 there even though `AppMapKit<Station>` checked.
+ * The `props` parameter is what a template instantiates `T` from; the `Omit`
+ * keeps the component's static members and drops its construct signature.
+ * `tests/nuxt/template/` is the vue-tsc gate for the template path.
  */
 export default AppMapKitImpl;
 //# sourceMappingURL=AppMapKit.js.map

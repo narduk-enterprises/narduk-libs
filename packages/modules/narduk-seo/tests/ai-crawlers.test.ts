@@ -106,4 +106,24 @@ describe('mergeAiCrawlerRobotsGroups', () => {
       ],
     })
   })
+
+  it("keeps the wildcard group's disallows in a group that names a crawler to allow it", () => {
+    // A crawler reads only the group naming it (RFC 9309), so an allow group
+    // without them would open /admin/ to GPTBot alone (narduk-libs#384).
+    expect(
+      mergeAiCrawlerRobotsGroups(productionRobots, { allow: ['GPTBot'], disallow: ['CCBot'] }),
+    ).toEqual({
+      ...productionRobots,
+      groups: [
+        { userAgent: ['CCBot'], disallow: ['/'] },
+        { userAgent: ['GPTBot'], allow: ['/'], disallow: ['/admin/'] },
+      ],
+    })
+  })
+
+  it('adds no disallow to an allow group when the wildcard group has none', () => {
+    expect(mergeAiCrawlerRobotsGroups({}, { allow: ['GPTBot'] })).toEqual({
+      groups: [{ userAgent: ['GPTBot'], allow: ['/'] }],
+    })
+  })
 })

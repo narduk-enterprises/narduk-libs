@@ -7,7 +7,7 @@ import {
 import { createError, getRequestURL } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { useLogger } from '#layer/server/utils/logger'
+import { renderAuthEmail, sendAuthEmail } from '../../utils/auth-email'
 
 import {
   buildLocalEmailMessage,
@@ -95,39 +95,19 @@ export async function sendLocalEmailLink(
     purpose: LocalEmailLinkPurpose
   },
 ): Promise<boolean> {
-  const message = buildLocalEmailMessage({
+  const message = await renderAuthEmail(event, {
     actionUrl: params.actionUrl,
     appName: settings.appName,
+    appUrl: settings.appUrl,
+    email: params.email,
+    message: buildLocalEmailMessage({
+      actionUrl: params.actionUrl,
+      appName: settings.appName,
+      purpose: params.purpose,
+      ttlMinutes: settings.tokenTtlMinutes,
+    }),
     purpose: params.purpose,
     ttlMinutes: settings.tokenTtlMinutes,
   })
-
-  try {
-    const response = await globalThis.fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${settings.resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: settings.from,
-        to: [params.email],
-        subject: message.subject,
-        text: message.text,
-        html: message.html,
-      }),
-    })
-
-    if (response.ok) return true
-    useLogger(event).child('AppAuth').error('Local auth email provider rejected request', {
-      provider: 'resend',
-      statusCode: response.status,
-    })
-  } catch {
-    useLogger(event).child('AppAuth').error('Local auth email provider request failed', {
-      provider: 'resend',
-    })
-  }
-
-  return false
+  return sendAuthEmail(event, settings, { message, to: params.email })
 }

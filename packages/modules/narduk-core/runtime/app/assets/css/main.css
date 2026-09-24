@@ -3,6 +3,13 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
 
+/*
+ * Tailwind skips node_modules when it detects sources, so the utilities used
+ * only by core's own components (LayerAppHeader's `md:flex` nav, for one) were
+ * never generated in a consuming app. Scan runtime/app explicitly.
+ */
+@source '../../';
+
 :root {
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -26,15 +33,39 @@
   --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-body {
-  @apply antialiased text-default bg-default scheme-light dark:scheme-dark;
-  font-family: var(--font-sans);
+/*
+ * Element-level defaults live in `@layer base` because an UNLAYERED rule here
+ * outranks every rule a consuming app writes: unlayered styles beat all
+ * layered styles regardless of source order, and this file is appended to
+ * `nuxt.options.css` after the app's own entries. So `body { @apply ... }`
+ * outside a layer repainted the page for any app that themed its own
+ * background, ink or type.
+ *
+ * Measured on lakestat-us before this change: the app's own unlayered
+ * `body { color: var(--gs-ink); background: var(--gs-page) }` lost to this
+ * rule, and the page computed `#fff` / slate-700 / Inter instead of the
+ * app's palette. Nuxt UI already ships the same body declarations inside
+ * `@layer base`; this rule only ever added `font-family` on top of them.
+ */
+@layer base {
+  body {
+    @apply antialiased text-default bg-default scheme-light dark:scheme-dark;
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+  }
 }
 
-h1,
-h2,
-h3,
-h4,
+/*
+ * `.font-display` stays unlayered. It is a class an app opts into by name
+ * rather than a default it inherits, so it keeps exactly the strength it has
+ * always had; only the element selectors above were outranking app themes.
+ */
 .font-display {
   font-family: var(--font-display);
 }

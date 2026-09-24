@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
 import {
   CONFORMANT_REALITY,
+  itemStatus,
   makeTempRepo,
   subCheckStatus,
   writeConformantBaseline,
+  writeCoolifyOnlyApp,
   writeFile,
   writeJson,
 } from './helpers.js'
@@ -63,6 +65,36 @@ describe('item 1 -- scaffold parity', () => {
 
     rmSync(`${root}/nuxt.config.ts`, { force: true })
     expect(subCheckStatus(await run(root), '1.1')).toBe('unknown')
+  })
+
+  it('1.1 accepts the hyphenated spelling a completed build writes (narduk-libs#350)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/Config/cloudflare-app.json`, { force: true })
+    // What Nitro itself writes after `nuxt build --preset=cloudflare_module`:
+    // the canonical name is hyphenated, and `.output/nitro.json` is the
+    // strongest of the three live-build signals, so it decides 1.1.
+    writeJson(root, 'apps/web/.output/nitro.json', { preset: 'cloudflare-module' })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('pass')
+
+    // The separator is the only thing normalized -- a genuinely different
+    // preset in the same file still fails.
+    writeJson(root, 'apps/web/.output/nitro.json', { preset: 'cloudflare-pages' })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('fail')
+  })
+
+  it('1.1 accepts either spelling declared in Config/cloudflare-app.json', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'cloudflare-module' },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+    })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('pass')
   })
 
   it('1.2 fails when a declared binding is not mirrored, and passes once it is', async () => {
@@ -128,5 +160,68 @@ describe('item 1 -- scaffold parity', () => {
 
     writeJson(root, 'wrangler.json', { workers_dev: false, preview_urls: false })
     expect(subCheckStatus(await run(root), '1.4')).toBe('pass')
+  })
+
+  it('1.1/1.2/1.4/1.5 are not-applicable for a Coolify-only app (narduk-libs#158)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.1')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.2')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.3')).toBe('pass')
+    expect(subCheckStatus(artefact, '1.4')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.5')).toBe('not-applicable')
+    expect(itemStatus(artefact, 1)).toBe('pass')
+  })
+
+  it('1.5 is not-applicable for a Coolify-only app with a leftover placeholder D1 binding', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    writeJson(root, 'wrangler.json', {
+      d1_databases: [
+        {
+          binding: 'DB',
+          database_name: 'fixture-app-db',
+          database_id: '00000000-0000-0000-0000-000000000000',
+        },
+      ],
+    })
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.5')).toBe('not-applicable')
+    expect(itemStatus(artefact, 1)).toBe('pass')
+  })
+
+  it('1.1 still fails node-server when lifecycle also names cloudflare', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    writeJson(root, 'Config/project-lifecycle.json', {
+      schemaVersion: 1,
+      environments: [
+        {
+          name: 'production',
+          deploymentTargets: [{ provider: 'coolify' }, { provider: 'cloudflare' }],
+        },
+      ],
+    })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('fail')
+  })
+
+  it('1.1 is not-applicable for a Worker that declares nitroPreset none', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'wrangler.json', { d1_databases: [{ binding: 'DB', database_name: 'x' }] })
+    writeJson(root, 'Config/cloudflare-app.json', {
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'none' },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [], d1: [{ binding: 'DB' }] },
+    })
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '1.1')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.2')).toBe('pass')
   })
 })

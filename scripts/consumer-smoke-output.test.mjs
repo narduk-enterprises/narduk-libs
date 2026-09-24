@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { collectWarningFindings, isNetworkLatencyOnlyWarning } from './consumer-smoke-output.mjs'
+import {
+  collectRecoveredRetryNotices,
+  collectWarningFindings,
+  isNetworkLatencyOnlyWarning,
+  isRecoveredRetryNotice,
+} from './consumer-smoke-output.mjs'
 
 // pnpm renders a global warning as a WARN badge wrapped in U+2009 THIN SPACE
 // inside an ANSI background colour. Building the badge from code points keeps
@@ -135,6 +140,17 @@ test('the unused H3Event re-export in the Nuxt 4.5.2 compatibility barrel is ben
   assert.deepEqual(collectWarningFindings(nuxtH3BarrelNotice.replace('WARN ', '[warn]')), [])
 })
 
+const nuxtH3BarrelBothUnusedNotice =
+  '[warn] "H3Error" and "H3Event" are imported from external module "file:///tmp/consumer/node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs" but never used in "../../node_modules/.pnpm/@nuxt+nitro-server@4.5.2_peerhash/node_modules/@nuxt/nitro-server/dist/h3.mjs".'
+
+test('the unused H3Error and H3Event re-exports in the Nuxt 4.5.2 barrel are benign', () => {
+  assert.deepEqual(collectWarningFindings(nuxtH3BarrelBothUnusedNotice), [])
+  assert.deepEqual(
+    collectWarningFindings(nuxtH3BarrelBothUnusedNotice.replace('[warn]', 'WARN ')),
+    [],
+  )
+})
+
 test('unused app imports, other symbols, other versions and actual errors still fail', () => {
   for (const line of [
     nuxtH3BarrelNotice.replace(
@@ -159,5 +175,71 @@ test('a successful Rolldown plugin timing summary is informational', () => {
     `${timing} Build failed.`,
   ]) {
     assert.deepEqual(collectWarningFindings(line), [line])
+  }
+  // The later Rolldown wording, verbatim from narduk-libs#753's red run.
+  const reworded =
+    '[warn] [PLUGIN_TIMINGS] JavaScript callbacks ran for 4.3s of this 4.4s build (96%).'
+  assert.deepEqual(collectWarningFindings(reworded), [])
+  assert.deepEqual(collectWarningFindings(reworded.replace('JavaScript callbacks', 'Callbacks')), [
+    reworded.replace('JavaScript callbacks', 'Callbacks'),
+  ])
+})
+
+test("narduk-core's build banner is not a finding; any other forwarded console.warn is", () => {
+  // The exact lines from narduk-libs#699's local release:consumer-smoke run.
+  const banner =
+    '[WebServer] [warn] [console.warn] [build] Narduk Libs Release Smoke v0.1.0 · 0.1.0 · deployed Sep 21, 2026, 10:35 AM UTC'
+  assert.deepEqual(collectWarningFindings(banner), [])
+  assert.deepEqual(collectWarningFindings(`${banner} (x2)`), [])
+  for (const line of [
+    '[WebServer] [warn] [console.warn] [Vue warn]: Failed to resolve component: NeTable',
+    '[WebServer] [warn] [console.warn] [build] chunk size limit exceeded',
+    banner.replace('[console.warn]', '[console.error]'),
+    `${banner} · hydration mismatch`,
+  ]) {
+    assert.deepEqual(collectWarningFindings(line), [line])
+  }
+})
+
+// The exact line that turned the required packed-consumer-smoke context red on
+// narduk-libs#643 (run 35545349563) after a complete install -- narduk-libs#650.
+const observedRetry = warn(
+  'GET https://registry.npmjs.org/eslint error (ECONNRESET). Will retry in 10 seconds. 2 retries left.',
+)
+
+test('a pnpm retry notice from a successful install does not fail the gate', () => {
+  assert.equal(isRecoveredRetryNotice(observedRetry.trim()), true)
+  assert.deepEqual(collectWarningFindings(`${observedRetry}\nDone in 23.9s\n`), [])
+  assert.deepEqual(collectWarningFindings(styledWarn(observedRetry.slice(7))), [])
+  for (const code of ['ETIMEDOUT', 'EAI_AGAIN', 'ERR_SOCKET_TIMEOUT', '503', '429', '408']) {
+    const line = warn(
+      `GET https://registry.npmjs.org/vue error (${code}). Will retry in 1 minute 5 seconds. 1 retries left.`,
+    )
+    assert.deepEqual(collectWarningFindings(line), [], code)
+  }
+})
+
+test('a filtered retry notice is reported, not dropped', () => {
+  const output = `${observedRetry}\n${warn('Issues with peer dependencies found')}\n`
+  assert.deepEqual(collectRecoveredRetryNotices(output), [observedRetry.trim()])
+  assert.deepEqual(collectWarningFindings(output), [
+    warn('Issues with peer dependencies found').trim(),
+  ])
+})
+
+test('retries that are not transient, or that carry more text, still fail the gate', () => {
+  for (const line of [
+    warn(
+      'GET https://registry.npmjs.org/@narduk-enterprises%2fnarduk-core error (404). Will retry in 10 seconds. 2 retries left.',
+    ),
+    warn(
+      'GET https://registry.npmjs.org/vue error (401). Will retry in 10 seconds. 2 retries left.',
+    ),
+    warn(
+      'GET https://registry.npmjs.org/vue error (ECONNRESET). Will retry in 10 seconds. 2 retries left. Then gave up.',
+    ),
+    'ERROR  GET https://registry.npmjs.org/vue error (ECONNRESET). Will retry in 10 seconds. 2 retries left.',
+  ]) {
+    assert.equal(collectWarningFindings(line).length, 1, line)
   }
 })

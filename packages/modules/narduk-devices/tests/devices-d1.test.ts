@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/d1'
-import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { createD1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
 import { createDevices } from '../server/utils/devices'
 import { DEVICES_INTERNAL_NONCE_PREFIX } from '../shared/types/devices'
 
@@ -9,31 +9,28 @@ import {
   ALGORITHM,
   createDeviceKey,
   FINGERPRINT,
-  MIGRATION_STATEMENTS,
+  MIGRATION_DIR,
   ORG,
   VESSEL,
 } from './support/database'
 
+import type { D1Binding, D1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
+
 let nonceCounter = 0
 
 describe('D1 integration', () => {
-  const runtime = new Miniflare({
-    modules: true,
-    script: 'export default { fetch() { return new Response("devices test"); } }',
-    compatibilityDate: '2026-07-01',
-    d1Databases: ['DB'],
-  })
-  let binding: Awaited<ReturnType<Miniflare['getD1Database']>>
+  let d1: D1QueryHarness
+  let binding: D1Binding
 
   beforeAll(async () => {
-    binding = await runtime.getD1Database('DB')
-    // Every shipped migration, not just 0001: a new table or index has to
-    // survive the D1 driver, not only better-sqlite3.
-    await binding.batch(MIGRATION_STATEMENTS.map((statement) => binding.prepare(statement)))
+    // Every shipped migration, discovered from the directory, not just 0001: a
+    // new table or index has to survive the D1 driver, not only better-sqlite3.
+    d1 = await createD1QueryHarness({ migrations: MIGRATION_DIR })
+    binding = d1.raw
   })
 
   afterAll(async () => {
-    await runtime.dispose()
+    await d1.dispose()
   })
 
   it('claims a device atomically and opens a signed session on the real D1 driver', async () => {
@@ -232,5 +229,185 @@ describe('D1 integration', () => {
         (row) => row.scope === `${DEVICES_INTERNAL_NONCE_PREFIX}claim-completion:${claimSessionId}`,
       ),
     ).toHaveLength(2)
+  }, 30_000)
+
+  /**
+   * narduk-libs#231: `revokeDevice` and `rotateCredential` are one D1 batch
+   * each now, and on D1 it is the batch — not a transaction this package opens
+   * — that makes them all-or-nothing. This pins that on the real driver: a
+   * statement failing last in either batch rolls back every one before it,
+   * and the `INSERT … SELECT` audit rows store `details_json` byte-for-byte as
+   * `JSON.stringify` wrote it before the batch existed.
+   */
+  it('revokes and rotates all-or-nothing on the real D1 driver', async () => {
+    let clock = Date.now()
+    const devices = createDevices(drizzle(binding), { now: () => clock })
+    const key = createDeviceKey()
+    const minted = await devices.createClaimToken({
+      orgId: ORG,
+      resource: VESSEL,
+      createdByUserId: 'owner-1',
+    })
+    const started = await devices.startClaim({
+      claimToken: minted.token,
+      hardwareFingerprint: FINGERPRINT,
+      hardwareFingerprintAlgorithm: ALGORITHM,
+      devicePublicKey: key.publicKey,
+      softwareVersion: '1.0.0',
+      idempotencyKey: 'd1-revoke-start',
+    })
+    const claimSessionId = started.claimSessionId ?? ''
+    const approval = await devices.issueApprovalToken({
+      claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      hardwareFingerprint: FINGERPRINT,
+      approvedByUserId: 'owner-1',
+    })
+    const completed = await devices.completeClaim({
+      claimSessionId,
+      orgId: ORG,
+      resource: VESSEL,
+      installationId: 'inst-revoke',
+      hardwareFingerprint: FINGERPRINT,
+      userApprovalToken: approval.token,
+      approvedByUserId: 'owner-1',
+      idempotencyKey: 'd1-revoke-complete',
+    })
+    const deviceId = completed.deviceId ?? ''
+    const credentialOf = (credentialClass: 'command' | 'ingest') => {
+      const credential = completed.credentials.find((c) => c.credentialClass === credentialClass)
+      if (!credential) throw new Error(`No ${credentialClass} credential was issued.`)
+      return credential
+    }
+    const command = credentialOf('command')
+    const ingest = credentialOf('ingest')
+    const open = async (credentialClass: 'command' | 'ingest', credentialId: string) => {
+      const challenge = await devices.issueChallenge({ deviceId })
+      const request = {
+        method: 'POST',
+        route: '/api/edge/v1/session/open',
+        resource: VESSEL,
+        installationId: 'inst-revoke',
+        deviceId,
+        credentialClass,
+        credentialId,
+        credentialVersion: 1,
+        challengeId: challenge.challengeId,
+        nonce: challenge.nonce,
+        timestamp: clock,
+        requestHash: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      }
+      return devices.openSession({
+        credentialClass,
+        credentialId,
+        deviceId,
+        signature: key.sign(request),
+        canonicalRequest: request,
+      })
+    }
+    const commandSession = await open('command', command.credentialId)
+    const ingestSession = await open('ingest', ingest.credentialId)
+
+    const rows = async (query: string) => (await binding.prepare(query).all()).results
+    const state = async () => ({
+      devices: await rows(
+        'SELECT id, status, revoked_at, revocation_generation FROM devices_devices ORDER BY id',
+      ),
+      credentials: await rows(
+        'SELECT id, credential_class, version, revoked_at FROM devices_credentials ORDER BY id',
+      ),
+      sessions: await rows('SELECT id, revoked_at FROM devices_sessions ORDER BY id'),
+      audit: await rows('SELECT id, action, details_json FROM devices_audit_events ORDER BY id'),
+    })
+    const auditOf = async (action: string, subjectId: string) =>
+      (
+        await binding
+          .prepare(
+            'SELECT actor_user_id, subject_kind, details_json, created_at FROM devices_audit_events WHERE action = ? AND subject_id = ?',
+          )
+          .bind(action, subjectId)
+          .all()
+      ).results
+
+    // The generation bump is the last statement of both batches, so failing
+    // it leaves every earlier statement written and waiting on the rollback.
+    await binding
+      .prepare(
+        "CREATE TRIGGER induced_fault BEFORE UPDATE ON devices_devices BEGIN SELECT RAISE(ABORT, 'induced fault'); END",
+      )
+      .run()
+    const before = await state()
+    await expect(
+      devices.rotateCredential({ deviceId, credentialClass: 'command', actorUserId: 'owner-1' }),
+    ).rejects.toThrow(/induced fault/u)
+    expect(await state()).toEqual(before)
+    await expect(devices.revokeDevice({ deviceId, actorUserId: 'owner-1' })).rejects.toThrow(
+      /induced fault/u,
+    )
+    expect(await state()).toEqual(before)
+    // Still claimed, so still resolving is the consistent state.
+    for (const credential of [command, ingest]) {
+      expect(
+        await devices.getCredentialBySecret(credential.secret, { unattributed: true }),
+      ).not.toBeNull()
+    }
+    expect(await devices.getSession(commandSession.sessionId)).not.toBeNull()
+    await binding.prepare('DROP TRIGGER induced_fault').run()
+
+    clock += 1000
+    const rotatedAt = clock
+    const reason = 'scheduled "rotation" \\ path/Ω\n\t\u0001 \uD800'
+    const rotated = await devices.rotateCredential({
+      deviceId,
+      credentialClass: 'command',
+      actorUserId: 'owner-1',
+      reason,
+    })
+    expect(await auditOf('credential.rotate', rotated.credentialId)).toEqual([
+      {
+        actor_user_id: 'owner-1',
+        subject_kind: 'credential',
+        details_json: JSON.stringify({
+          deviceId,
+          credentialClass: 'command',
+          version: 2,
+          revocationGeneration: 1,
+          revokedSessions: 1,
+          reason,
+        }),
+        created_at: rotatedAt,
+      },
+    ])
+    expect(await devices.getCredentialBySecret(command.secret, { unattributed: true })).toBeNull()
+    expect(
+      await devices.getCredentialBySecret(rotated.secret, { unattributed: true }),
+    ).toMatchObject({ id: rotated.credentialId, version: 2 })
+    expect(await devices.getSession(commandSession.sessionId)).toBeNull()
+    expect(await devices.getSession(ingestSession.sessionId)).not.toBeNull()
+
+    clock += 1000
+    const revokedAt = clock
+    expect(await devices.revokeDevice({ deviceId })).toMatchObject({
+      status: 'revoked',
+      revokedAt,
+      revocationGeneration: 2,
+    })
+    expect(await auditOf('device.revoke', deviceId)).toEqual([
+      {
+        actor_user_id: null,
+        subject_kind: 'device',
+        details_json: JSON.stringify({
+          reason: null,
+          revocationGeneration: 2,
+          revokedSessions: 1,
+        }),
+        created_at: revokedAt,
+      },
+    ])
+    for (const secret of [command.secret, ingest.secret, rotated.secret]) {
+      expect(await devices.getCredentialBySecret(secret, { unattributed: true })).toBeNull()
+    }
+    expect(await devices.getSession(ingestSession.sessionId)).toBeNull()
   }, 30_000)
 })

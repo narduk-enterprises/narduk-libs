@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-seo",
-  "version": "2.4.0",
+  "version": "2.6.0",
   "private": false,
   "type": "module",
   "description": "SEO, structured data, sitemap, robots, and OpenGraph Nuxt module for Narduk Cloudflare apps.",
@@ -75,10 +75,10 @@
     "typecheck": "nuxt typecheck",
     "prelint": "pnpm run nuxt:prepare",
     "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
@@ -86,7 +86,6 @@
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
   },
   "dependencies": {
-    "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/kit": "^4.0.0",
     "@nuxtjs/robots": "6.2.3",
     "@nuxtjs/sitemap": "8.5.1",
@@ -95,7 +94,6 @@
     "h3": "^1.15.11",
     "defu": "^6.1.7",
     "nuxt-link-checker": "5.3.0",
-    "nuxt-og-image": "6.8.0",
     "nuxt-schema-org": "6.3.2",
     "nuxt-seo-utils": "8.5.1",
     "nuxt-site-config": "4.2.3",
@@ -105,6 +103,7 @@
   },
   "devDependencies": {
     "@narduk-enterprises/eslint-config": "workspace:*",
+    "@narduk-enterprises/narduk-core": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.2.1",
@@ -114,6 +113,7 @@
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
     "nuxt": "^4.5.2",
+    "nuxt-og-image": "6.8.0",
     "playwright": "1.61.1",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.1",
@@ -122,7 +122,14 @@
     "vue-tsc": "^3.2.5"
   },
   "peerDependencies": {
-    "nuxt": ">=4.0.0"
+    "@narduk-enterprises/narduk-core": ">=2.11.0 <3.0.0",
+    "nuxt": ">=4.0.0",
+    "nuxt-og-image": "6.8.0"
+  },
+  "peerDependenciesMeta": {
+    "nuxt-og-image": {
+      "optional": true
+    }
   },
   "overrides": {
     "@cloudflare/unenv-preset": "2.12.1",
@@ -130,6 +137,6 @@
     "vite": "npm:rolldown-vite@7.3.1"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

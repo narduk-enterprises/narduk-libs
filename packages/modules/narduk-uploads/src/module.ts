@@ -35,7 +35,7 @@ export default defineNuxtModule<NardukUploadsModuleOptions>({
   meta: {
     name: '@narduk-enterprises/narduk-uploads',
     configKey: 'nardukUploads',
-    compatibility: { nuxt: '>=3.16.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
   defaults: {
     imports: true,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { CLAIM_TOKEN_DEFAULT_TTL_SECONDS } from '../server/utils/devices'
+import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
 import {
   ALGORITHM,
@@ -529,5 +530,252 @@ describe('claim completion', () => {
         }),
       ),
     ).toBe('revoked')
+  })
+
+  /**
+   * narduk-libs#243: whether the caller may be told anything about a session
+   * is decided before anything about the session is told. A foreign org — or
+   * the owning org naming another resource — used to hear `conflict`,
+   * `revoked` or `expired` for a session that is not theirs, and `forbidden`
+   * only for a pending one, so the state leaked across the tenant boundary.
+   */
+  it('answers a foreign org or resource forbidden whatever state the session is in', async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+
+    // Expired twice over: lazily (still pending, past its expiry) and
+    // persisted (completion already stamped `expired`).
+    const lazilyExpired = await startPendingClaim(harness)
+    const persistedExpired = await approved(harness)
+    clock.advance(CLAIM_TOKEN_DEFAULT_TTL_SECONDS * 1000)
+    expect(await devices.completeClaim(persistedExpired.complete)).toMatchObject({
+      status: 'expired',
+    })
+    const pending = await startPendingClaim(harness)
+    const claimed = await claimDevice(harness)
+    const revoked = await startPendingClaim(harness)
+    await devices.revokeClaimToken({ claimTokenId: revoked.minted.tokenId })
+
+    const sessions = {
+      pending: pending.claimSessionId,
+      claimed: claimed.claimSessionId,
+      revoked: revoked.claimSessionId,
+      lazilyExpired: lazilyExpired.claimSessionId,
+      persistedExpired: persistedExpired.complete.claimSessionId,
+    }
+    interface Caller {
+      orgId: string
+      resourceId: string
+    }
+    const approve = (claimSessionId: string, caller: Caller) =>
+      devices.issueApprovalToken({
+        claimSessionId,
+        orgId: caller.orgId,
+        resource: { kind: VESSEL.kind, id: caller.resourceId },
+        hardwareFingerprint: FINGERPRINT,
+        approvedByUserId: 'approver-2',
+      })
+    const refusals = async (ids: Record<string, string>, caller: Caller) => {
+      const answered: Record<string, string> = {}
+      for (const [state, id] of Object.entries(ids)) {
+        answered[state] = await codeOf(approve(id, caller))
+      }
+      return answered
+    }
+    const everyStateForbidden = {
+      pending: 'forbidden',
+      claimed: 'forbidden',
+      revoked: 'forbidden',
+      lazilyExpired: 'forbidden',
+      persistedExpired: 'forbidden',
+    }
+
+    expect(await refusals(sessions, { orgId: 'org-2', resourceId: VESSEL.id })).toEqual(
+      everyStateForbidden,
+    )
+    expect(await refusals(sessions, { orgId: ORG, resourceId: 'vessel-2' })).toEqual(
+      everyStateForbidden,
+    )
+    // A session that does not exist is still `not_found`: nothing to authorise against.
+    expect(await codeOf(approve('missing', { orgId: 'org-2', resourceId: VESSEL.id }))).toBe(
+      'not_found',
+    )
+
+    // No refused caller wrote an approval, or an audit row, on any session.
+    const approvedBy = () =>
+      harness.sqlite
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM devices_claim_sessions WHERE approval_user_id = 'approver-2') AS sessions,
+             (SELECT COUNT(*) FROM devices_audit_events
+                WHERE action = 'claim.approve' AND actor_user_id = 'approver-2') AS audits`,
+        )
+        .get()
+    expect(approvedBy()).toEqual({ sessions: 0, audits: 0 })
+
+    // The owning org, naming the right resource, still hears the real state.
+    const { pending: pendingId, ...settled } = sessions
+    expect(await refusals(settled, { orgId: ORG, resourceId: VESSEL.id })).toEqual({
+      claimed: 'conflict',
+      revoked: 'revoked',
+      lazilyExpired: 'expired',
+      persistedExpired: 'expired',
+    })
+    await expect(approve(pendingId, { orgId: ORG, resourceId: VESSEL.id })).resolves.toMatchObject({
+      token: expect.any(String),
+    })
+    expect(approvedBy()).toEqual({ sessions: 1, audits: 1 })
+  })
+
+  /**
+   * narduk-libs#533, the state oracle. `completeClaim` settled the caller's
+   * org and resource inside `authorize`, which runs *after* the replay branch
+   * and `completionBlocker` have already answered from the session's state. A
+   * foreign org heard `already_completed`, `revoked`, `expired` or
+   * `hardware_mismatch` for a session that was not theirs, and
+   * `unauthorized_user` only for a pending one — the same tenant-boundary leak
+   * #243 closed on `issueApprovalToken`, left behind on the completion path.
+   */
+  it('answers a foreign org or resource unauthorized_user whatever state the session is in', async () => {
+    const harness = createTestHarness()
+    const { devices, clock } = harness
+
+    // Expired twice over, and created before the jump so the sessions below
+    // are still live afterwards: lazily (still pending, past its expiry) and
+    // persisted (a completion already stamped it `expired`).
+    const lazilyExpired = await approved(harness)
+    const persistedExpired = await approved(harness)
+    clock.advance(CLAIM_TOKEN_DEFAULT_TTL_SECONDS * 1000)
+    expect(await devices.completeClaim(persistedExpired.complete)).toMatchObject({
+      status: 'expired',
+    })
+    const pending = await approved(harness)
+    const claimed = await approved(harness)
+    expect(await devices.completeClaim(claimed.complete)).toMatchObject({ status: 'completed' })
+    const revoked = await approved(harness)
+    await devices.revokeClaimToken({ claimTokenId: revoked.pending.minted.tokenId })
+
+    const sessions = { pending, claimed, revoked, lazilyExpired, persistedExpired }
+    interface Caller {
+      orgId: string
+      resourceId: string
+    }
+    const attempt = (
+      source: { complete: (typeof pending)['complete'] },
+      caller: Caller,
+      overrides: { hardwareFingerprint?: string } = {},
+    ) =>
+      devices.completeClaim({
+        ...source.complete,
+        orgId: caller.orgId,
+        resource: { kind: VESSEL.kind, id: caller.resourceId },
+        // A stranger does not know the approver either; its own id is what
+        // its attempts are counted against.
+        approvedByUserId: 'stranger-1',
+        idempotencyKey: `intruder-${source.complete.claimSessionId}`,
+        ...overrides,
+      })
+    const answers = async (caller: Caller) => {
+      const answered: Record<string, string> = {}
+      for (const [state, source] of Object.entries(sessions)) {
+        answered[state] = (await attempt(source, caller)).status
+      }
+      return answered
+    }
+    const everyStateUnauthorized = {
+      pending: 'unauthorized_user',
+      claimed: 'unauthorized_user',
+      revoked: 'unauthorized_user',
+      lazilyExpired: 'unauthorized_user',
+      persistedExpired: 'unauthorized_user',
+    }
+
+    expect(await answers({ orgId: 'org-2', resourceId: VESSEL.id })).toEqual(everyStateUnauthorized)
+    expect(await answers({ orgId: ORG, resourceId: 'vessel-2' })).toEqual(everyStateUnauthorized)
+    // Nor is the hardware fingerprint probeable from outside the org: a
+    // foreign caller naming the wrong one hears the authorisation answer, not
+    // `hardware_mismatch`.
+    expect(
+      await attempt(
+        pending,
+        { orgId: 'org-2', resourceId: VESSEL.id },
+        {
+          hardwareFingerprint: 'sha256:other',
+        },
+      ),
+    ).toMatchObject({ status: 'unauthorized_user' })
+    // A session id that does not exist is still `not_found`: there is nothing
+    // to authorise against, exactly as #243 left `issueApprovalToken`.
+    expect(
+      await codeOf(
+        devices.completeClaim({ ...pending.complete, orgId: 'org-2', claimSessionId: 'missing' }),
+      ),
+    ).toBe('not_found')
+
+    // No refused caller completed anything, and the owning org still hears
+    // every real state.
+    expect(
+      harness.sqlite
+        .prepare('SELECT COUNT(*) AS claimed FROM devices_devices WHERE org_id != ?')
+        .get(ORG),
+    ).toEqual({ claimed: 0 })
+    expect(await devices.completeClaim(revoked.complete)).toMatchObject({ status: 'revoked' })
+    expect(await devices.completeClaim(lazilyExpired.complete)).toMatchObject({ status: 'expired' })
+    expect(await devices.completeClaim(claimed.complete)).toMatchObject({
+      status: 'already_completed',
+    })
+    expect(await devices.completeClaim(pending.complete)).toMatchObject({ status: 'completed' })
+  })
+
+  /**
+   * narduk-libs#533, the cross-tenant lockout. The subject list was built
+   * before the caller's org was ever compared, so a foreign org's refusals
+   * were counted against `{ kind: 'token', subject: token.tokenHash }` — the
+   * *owner's* claim token. Five of them locked the owner out of their own
+   * ceremony for 900 s, which is one tenant denying service to another.
+   */
+  it("does not count a foreign org's failures against the owner's claim token", async () => {
+    const harness = createTestHarness()
+    const { devices, sqlite } = harness
+    const owner = await approved(harness)
+    const { token_hash: tokenHash } = sqlite
+      .prepare('SELECT token_hash FROM devices_claim_tokens WHERE id = ?')
+      .get(owner.pending.minted.tokenId) as { token_hash: string }
+
+    const { failures } = DEVICES_LOCKOUT_POLICY.perTokenOrDevice
+    for (let attempt = 0; attempt < failures; attempt += 1) {
+      expect(
+        await devices.completeClaim({
+          ...owner.complete,
+          orgId: 'org-2',
+          approvedByUserId: 'stranger-1',
+          idempotencyKey: `intruder-${String(attempt)}`,
+          remote: { ip: '203.0.113.9' },
+        }),
+      ).toMatchObject({ status: 'unauthorized_user' })
+    }
+
+    // Not one of them named the owner's token.
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS counted FROM devices_auth_attempts
+             WHERE outcome = 'failure' AND subject_kind = 'token' AND subject = ?`,
+        )
+        .get(tokenHash),
+    ).toEqual({ counted: 0 })
+    // They are still counted — against the stranger's own account and IP, one
+    // row each. A refused cross-org attempt is bounded, just not by the owner.
+    expect(
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS counted FROM devices_auth_attempts
+             WHERE outcome = 'failure' AND subject_kind IN ('account', 'ip')`,
+        )
+        .get(),
+    ).toEqual({ counted: failures * 2 })
+
+    // The owner walks through their own ceremony untouched.
+    expect(await devices.completeClaim(owner.complete)).toMatchObject({ status: 'completed' })
   })
 })

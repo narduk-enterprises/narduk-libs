@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { TENANCY_SYSTEM_ACTOR } from '../server/utils/tenancy'
+
 import { createTestHarness } from './support/database'
 
 afterEach(() => vi.restoreAllMocks())
@@ -10,13 +12,23 @@ describe('concurrent membership changes', () => {
     async (operation) => {
       const { tenancy } = createTestHarness()
       const org = await tenancy.createOrg({ slug: 'nvr', name: 'NVR', createdByUserId: 'owner-a' })
-      await tenancy.addMember({ orgId: org.id, userId: 'owner-b', role: 'owner' })
+      await tenancy.addMember({
+        actorUserId: TENANCY_SYSTEM_ACTOR,
+        orgId: org.id,
+        userId: 'owner-b',
+        role: 'owner',
+      })
 
       const results = await Promise.allSettled(
         ['owner-a', 'owner-b'].map((userId) =>
           operation === 'demote'
-            ? tenancy.setMemberRole({ orgId: org.id, userId, role: 'admin' })
-            : tenancy.removeMember({ orgId: org.id, userId }),
+            ? tenancy.setMemberRole({
+                actorUserId: TENANCY_SYSTEM_ACTOR,
+                orgId: org.id,
+                userId,
+                role: 'admin',
+              })
+            : tenancy.removeMember({ actorUserId: TENANCY_SYSTEM_ACTOR, orgId: org.id, userId }),
         ),
       )
 

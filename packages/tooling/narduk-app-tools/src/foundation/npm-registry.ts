@@ -108,6 +108,84 @@ function isRetryableStatus(status: number): boolean {
  */
 export const SCOPE_PROBE_PACKAGE = '@narduk-enterprises/narduk-core'
 
+/** The one scope whose route the project `.npmrc` may move (company-hq
+ * D-PKG-6: npm.nard.uk mirrors `@narduk-enterprises` only). Every other scope,
+ * `@narduk-geo` included, stays on GitHub Packages. */
+export const ENTERPRISES_SCOPE = '@narduk-enterprises'
+
+export const GITHUB_PACKAGES_REGISTRY = 'https://npm.pkg.github.com'
+const GITHUB_PACKAGES_HOST = 'npm.pkg.github.com'
+
+/** Where `@narduk-enterprises` packuments are read from (narduk-libs#498).
+ *
+ * - `github-packages`: today's behaviour -- `npm.pkg.github.com`, a Bearer
+ *   token, and scope-probe corroboration of an ambiguous 404.
+ * - `anonymous`: any other registry the project routes the scope to (the
+ *   npm.nard.uk mirror in practice). Read with NO `Authorization` header: the
+ *   estate token is only ever sent to GitHub Packages, and this reader never
+ *   reads `_authToken` lines or `~/.npmrc`, so a lookalike or custom route
+ *   gets an anonymous read, never a credential. */
+export type ScopeRoute = { kind: 'github-packages' } | { kind: 'anonymous'; base: string }
+
+const GITHUB_PACKAGES_ROUTE: ScopeRoute = { kind: 'github-packages' }
+
+/** The exact line rule narduk-enterprises/workflows#108 uses in
+ * `nuxt-cloudflare.yml` (`/^[ \t]*@narduk-enterprises:registry[ \t]*=[ \t]*"?([^"\s]*)"?[ \t]*$/gm`):
+ * an uncommented `@narduk-enterprises:registry=` line, optional whitespace
+ * around `=`, optional double quotes, and the LAST such line wins (a later
+ * line repointing the scope is the break-glass back to GitHub Packages).
+ * Split into a key match and a value match here so neither regex can
+ * backtrack super-linearly. */
+const SCOPE_ROUTE_KEY_RE = /^[ \t]*@narduk-enterprises:registry[ \t]*=(.*)$/
+const SCOPE_ROUTE_VALUE_RE = /^"?([^"\s]*)"?$/
+
+function scopeRouteValues(npmrc: string): string[] {
+  const values: string[] = []
+  for (const line of npmrc.split('\n')) {
+    const key = SCOPE_ROUTE_KEY_RE.exec(line.replace(/\r$/, ''))
+    if (!key) continue
+    const value = SCOPE_ROUTE_VALUE_RE.exec((key[1] ?? '').trim())
+    if (value) values.push(value[1] ?? '')
+  }
+  return values
+}
+
+/** Classify the project's `@narduk-enterprises` route from `.npmrc` text.
+ * No file, no route line, an empty or unparseable value, or a non-http(s)
+ * value all mean the GitHub Packages default -- the pre-#498 behaviour. */
+export function parseScopeRoute(npmrc: string | undefined): ScopeRoute {
+  if (!npmrc) return GITHUB_PACKAGES_ROUTE
+  const last = scopeRouteValues(npmrc).at(-1)
+  if (!last) return GITHUB_PACKAGES_ROUTE
+  let url: URL
+  try {
+    url = new URL(last)
+  } catch {
+    return GITHUB_PACKAGES_ROUTE
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return GITHUB_PACKAGES_ROUTE
+  if (url.hostname === GITHUB_PACKAGES_HOST) return GITHUB_PACKAGES_ROUTE
+  return { kind: 'anonymous', base: last.replace(/\/+$/, '') }
+}
+
+/** Read the route from `<repoRoot>/.npmrc` -- the project file only, and only
+ * its registry lines. */
+export function readScopeRoute(repoRoot: string): ScopeRoute {
+  const path = join(repoRoot, '.npmrc')
+  if (!existsSync(path)) return GITHUB_PACKAGES_ROUTE
+  try {
+    return parseScopeRoute(readFileSync(path, 'utf8'))
+  } catch {
+    return GITHUB_PACKAGES_ROUTE
+  }
+}
+
+/** A scoped name the way npm registries (and the npm.nard.uk mirror) expect
+ * it in a packument path: `@scope%2fname`. */
+export function encodePackumentName(pkgName: string): string {
+  return pkgName.replace('/', '%2f')
+}
+
 type PackumentResponse =
   { kind: 'ok'; body: unknown } | { kind: 'not-found' } | { kind: 'unreadable' }
 
@@ -127,13 +205,48 @@ export class FilesystemRegistryReality implements RegistryReality {
   private readonly maxRetries: number
   private readonly authToken: string | undefined
   private readonly scopeProbePackage: string
+  private readonly scopeRoute: ScopeRoute
   /** Memoized so the corroboration probe costs at most one extra request per
    * reader, however many packages 404. */
   private scopeReadable: Promise<boolean> | undefined
 
+  /**
+   * Credential names this reader will use, in order. All four carry the same
+   * GitHub Packages read token in practice; they differ only in who exported it.
+   *
+   * `GH_PACKAGES_READ` is the estate's own name for it and is last because the
+   * other three are what CI already sets -- appending rather than prepending
+   * keeps a working CI path byte-identical. It is here because it is the ONLY
+   * name the sanctioned local route uses: `gh-packages-run` puts the value in
+   * the child environment as `GH_PACKAGES_READ` and writes a 0600 process-scoped
+   * userconfig that references it BY NAME, which is what `pnpm install` needs
+   * and which this reader deliberately cannot see -- it reads no `.npmrc` and no
+   * `_authToken` line, so that a custom scope route gets an anonymous read
+   * rather than a credential. The token was therefore present in the environment
+   * during `gh-packages-run pnpm run foundation:check` and invisible to the one
+   * component that needed it, and item 2.3 collapsed to `unknown` -> a blocking
+   * `UNKNOWN` exit (narduk-farm#148).
+   *
+   * This has already cost one incident. workflows#79 renamed that step's
+   * exported credential from `NODE_AUTH_TOKEN` to `GH_PACKAGES_READ` and
+   * silently broke package-token-mode `foundation-check` for every v1 adopter
+   * refreshing past afbaa6051e, reproduced deterministically in buoys#39.
+   * workflows#85 restored CI with an alias and named the real fix in its own
+   * comment: "Export both names, same value, until narduk-app-tools reads
+   * GH_PACKAGES_READ instead." This is that. The alias can retire once every
+   * caller is past this release; it is harmless until then because both names
+   * hold the same value.
+   */
+
   constructor(
     repoRoot: string,
-    options: { fetchTimeoutMs?: number; scopeProbePackage?: string; maxRetries?: number } = {},
+    options: {
+      fetchTimeoutMs?: number
+      scopeProbePackage?: string
+      maxRetries?: number
+      /** Overrides the route read from `<repoRoot>/.npmrc`. */
+      scopeRoute?: ScopeRoute
+    } = {},
   ) {
     this.roots = [
       repoRoot,
@@ -146,8 +259,13 @@ export class FilesystemRegistryReality implements RegistryReality {
       options.fetchTimeoutMs ?? envFetchTimeoutOverrideMs() ?? DEFAULT_FETCH_TIMEOUT_MS
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
     this.scopeProbePackage = options.scopeProbePackage ?? SCOPE_PROBE_PACKAGE
+    this.scopeRoute = options.scopeRoute ?? readScopeRoute(repoRoot)
     this.authToken =
-      process.env.NODE_AUTH_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? undefined
+      process.env.NODE_AUTH_TOKEN ??
+      process.env.GH_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      process.env.GH_PACKAGES_READ ??
+      undefined
   }
 
   resolveInstalled(pkgName: string, pinnedSpec: string | undefined): ResolvedVersion | null {
@@ -171,6 +289,12 @@ export class FilesystemRegistryReality implements RegistryReality {
     return null
   }
 
+  /** The route a given package is read from. Only `@narduk-enterprises/*`
+   * follows the project route; every other scope stays on GitHub Packages. */
+  private routeFor(pkgName: string): ScopeRoute {
+    return pkgName.startsWith(`${ENTERPRISES_SCOPE}/`) ? this.scopeRoute : GITHUB_PACKAGES_ROUTE
+  }
+
   /** One HTTP attempt. `retryable-error` covers everything the caller's
    * bounded retry loop may re-attempt: a timeout/abort, a network error, a
    * malformed body, or a 5xx. A 404 and any other non-ok status are decided
@@ -178,10 +302,17 @@ export class FilesystemRegistryReality implements RegistryReality {
   private async fetchPackumentAttempt(pkgName: string): Promise<PackumentAttemptResult> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
+    const route = this.routeFor(pkgName)
+    const url =
+      route.kind === 'github-packages'
+        ? `${GITHUB_PACKAGES_REGISTRY}/${pkgName}`
+        : `${route.base}/${encodePackumentName(pkgName)}`
     try {
-      const response = await fetch(`https://npm.pkg.github.com/${pkgName}`, {
+      const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${this.authToken}`,
+          ...(route.kind === 'github-packages'
+            ? { Authorization: `Bearer ${this.authToken}` }
+            : {}),
           // Ask for the abbreviated packument (smaller on registries that
           // honour it, per narduk-libs#341's proposed change) with the full
           // shape as a fallback. VERIFIED LIVE 2026-09-16 against
@@ -243,10 +374,15 @@ export class FilesystemRegistryReality implements RegistryReality {
   }
 
   async publicationOf(pkgName: string): Promise<RegistryPublication> {
-    if (!this.authToken) return { status: 'unreadable' }
+    const onGithubPackages = this.routeFor(pkgName).kind === 'github-packages'
+    if (onGithubPackages && !this.authToken) return { status: 'unreadable' }
     const response = await this.fetchPackument(pkgName)
     if (response.kind === 'unreadable') return { status: 'unreadable' }
     if (response.kind === 'not-found') {
+      // The 404 ambiguity is a GitHub Packages quirk (it hides packages a
+      // token cannot see). An anonymous registry has no entitlement to hide
+      // behind, so its 404 is a decided "not published".
+      if (!onGithubPackages) return { status: 'unpublished' }
       return (await this.corroborateScopeReadable(pkgName))
         ? { status: 'unpublished' }
         : { status: 'unreadable' }

@@ -19,13 +19,13 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join, win32 } from 'node:path'
+import { basename, dirname, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments'
 import vitest from '@vitest/eslint-plugin'
 import eslintConfigPrettier from 'eslint-config-prettier'
-import importX from 'eslint-plugin-import-x'
+import importX, { createNodeResolver } from 'eslint-plugin-import-x'
 import noOnlyTests from 'eslint-plugin-no-only-tests'
 import promise from 'eslint-plugin-promise'
 import regexp from 'eslint-plugin-regexp'
@@ -36,6 +36,7 @@ import tseslint from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
 import a11yConfigs from './configs/a11y.mjs'
+import { appDefinedClassesPattern } from './configs/app-defined-classes.mjs'
 import authConfigs from './configs/auth.mjs'
 import cloudflareConfigs from './configs/cloudflare.mjs'
 import complexityConfigs from './configs/complexity.mjs'
@@ -139,9 +140,13 @@ const parserConfigs = [
   },
 ]
 
-// ─── Shared community layer ─────────────────────────────────────────────────
+// ─── Shared tail ────────────────────────────────────────────────────────────
+//
+// Two arrays so `communityLayer: false` can skip the plugin finding wave
+// without dropping Nuxt ignores or the typescript/console housekeeping
+// (narduk-libs#167, review on #813).
 
-const sharedTailConfigs = [
+const sharedBaselineTailConfigs = [
   {
     name: 'narduk/ignores',
     ignores: ['.agents/**', '.nuxt/**', '.output/**', 'dist/**', 'node_modules/**', '**/*.d.ts'],
@@ -157,42 +162,23 @@ const sharedTailConfigs = [
   },
 
   {
-    name: 'narduk/vue-house-style',
-    files: ['**/*.vue'],
-    plugins: { vue: vuePlugin },
-    rules: {
-      'vue/component-name-in-template-casing': [
-        'warn',
-        'PascalCase',
-        { registeredComponentsOnly: false },
-      ],
-      'vue/prefer-define-options': 'warn',
-      'vue/prefer-import-from-vue': 'warn',
-      'vue/block-order': ['warn', { order: ['script', 'template', 'style'] }],
-      'vue/attributes-order': 'off',
-      'vue/no-multiple-template-root': 'off',
-      'vue/no-v-for-template-key': 'off',
-      'vue/no-v-html': 'warn',
-      'vue/define-macros-order': 'warn',
-      'vue/define-props-declaration': ['warn', 'type-based'],
-      'vue/define-emits-declaration': ['warn', 'type-based'],
-      'vue/no-ref-as-operand': 'warn',
-      'vue/no-watch-after-await': 'warn',
-      // Replaces v1's narduk/no-unknown-nuxt-ui-component. Fail-closed here;
-      // createAppLintConfig() replaces it with the app's real component graph.
-      'vue/no-undef-components': [
-        'warn',
-        { ignorePatterns: NUXT_BUILT_IN_COMPONENT_IGNORE_PATTERNS },
-      ],
-      'vue/no-undef-properties': 'warn',
-    },
-  },
-
-  {
     name: 'narduk/console-hygiene',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
+    ignores: ['**/server/**'],
     rules: {
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+    },
+  },
+  {
+    // Server code logs through the structured logger (`useLogger(event)`), so
+    // every console method warns there, `warn`/`error` included (2026-09-18).
+    // It lives in this tail rather than the `server` pack because this tail is
+    // composed after every pack: a pack-level entry would be overridden by
+    // `narduk/console-hygiene` above for the same files.
+    name: 'narduk/console-hygiene-server',
+    files: ['**/server/**/*.{ts,mts,js,mjs}'],
+    rules: {
+      'no-console': 'warn',
     },
   },
   {
@@ -246,6 +232,40 @@ const sharedTailConfigs = [
       'narduk/require-use-prefix-for-composables': 'off',
     },
   },
+]
+
+const sharedCommunityPluginTailConfigs = [
+  {
+    name: 'narduk/vue-house-style',
+    files: ['**/*.vue'],
+    plugins: { vue: vuePlugin },
+    rules: {
+      'vue/component-name-in-template-casing': [
+        'warn',
+        'PascalCase',
+        { registeredComponentsOnly: false },
+      ],
+      'vue/prefer-define-options': 'warn',
+      'vue/prefer-import-from-vue': 'warn',
+      'vue/block-order': ['warn', { order: ['script', 'template', 'style'] }],
+      'vue/attributes-order': 'off',
+      'vue/no-multiple-template-root': 'off',
+      'vue/no-v-for-template-key': 'off',
+      'vue/no-v-html': 'warn',
+      'vue/define-macros-order': 'warn',
+      'vue/define-props-declaration': ['warn', 'type-based'],
+      'vue/define-emits-declaration': ['warn', 'type-based'],
+      'vue/no-ref-as-operand': 'warn',
+      'vue/no-watch-after-await': 'warn',
+      // Replaces v1's narduk/no-unknown-nuxt-ui-component. Fail-closed here;
+      // createAppLintConfig() replaces it with the app's real component graph.
+      'vue/no-undef-components': [
+        'warn',
+        { ignorePatterns: NUXT_BUILT_IN_COMPONENT_IGNORE_PATTERNS },
+      ],
+      'vue/no-undef-properties': 'warn',
+    },
+  },
 
   {
     // import-x/no-unresolved stays off on purpose: Nuxt auto-imports and its
@@ -254,11 +274,17 @@ const sharedTailConfigs = [
     //
     // `import-x/core-modules: ['vue']` was v1's separate
     // `eslint-nuxt-flat-fragments` export; it is inlined here in v2.
+    //
+    // `import-x/resolver-next` pins the plugin's own Node resolver. With no
+    // resolver set, import-x falls back to its legacy `node` probe, which
+    // crashes `import-x/no-cycle` on a `vitest.config.ts` ("node with invalid
+    // interface loaded as resolver", narduk-libs#562).
     name: 'narduk/imports',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
     plugins: { 'import-x': importX },
     settings: {
       'import-x/core-modules': ['vue'],
+      'import-x/resolver-next': [createNodeResolver()],
     },
     rules: {
       'import-x/no-duplicates': 'error',
@@ -318,7 +344,10 @@ const sharedTailConfigs = [
   },
 
   {
+    // Unused disable directives are reported (warn, budgeted by narduk-lint)
+    // and every disable must say why (`-- reason`).
     name: 'narduk/eslint-directive-hygiene',
+    linterOptions: { reportUnusedDisableDirectives: 'warn' },
     plugins: { '@eslint-community/eslint-comments': eslintComments },
     rules: {
       '@eslint-community/eslint-comments/no-unused-disable': 'error',
@@ -447,13 +476,96 @@ function requestedCapabilityPackNames(presetNames) {
 }
 
 /**
+ * @typedef {object} ComposeSharedConfigsOptions
+ * @property {string | Array<string | string[]>} [packs]
+ * @property {boolean} [communityLayer]
+ */
+
+/**
+ * True for the single-options-object form of `composeSharedConfigs`. A pack-name
+ * string or a pack-name array stays on the existing varargs path, so today's
+ * callers do not change meaning (narduk-libs#167).
+ *
+ * @param {unknown} value
+ * @returns {value is ComposeSharedConfigsOptions}
+ */
+function isComposeSharedConfigsOptions(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    ('packs' in value || 'communityLayer' in value)
+  )
+}
+
+/**
+ * @param {unknown} packs
+ * @returns {Array<string | string[]>}
+ */
+function normalizeComposePacks(packs) {
+  if (packs === undefined || packs === null) {
+    return []
+  }
+
+  if (typeof packs === 'string') {
+    return [packs]
+  }
+
+  if (Array.isArray(packs)) {
+    return packs
+  }
+
+  throw new TypeError(
+    `composeSharedConfigs packs must be a string or an array of pack names, got ${typeof packs}`,
+  )
+}
+
+/**
+ * @param {unknown[]} args
+ * @returns {{ presetNames: Array<string | string[]>, communityLayer: boolean }}
+ */
+function parseComposeSharedConfigsArgs(args) {
+  if (args.length === 1 && isComposeSharedConfigsOptions(args[0])) {
+    const options = args[0]
+
+    if (options.communityLayer !== undefined && typeof options.communityLayer !== 'boolean') {
+      throw new TypeError('composeSharedConfigs communityLayer must be a boolean')
+    }
+
+    return {
+      presetNames: normalizeComposePacks(options.packs),
+      communityLayer: options.communityLayer !== false,
+    }
+  }
+
+  if (args.some((arg) => isComposeSharedConfigsOptions(arg))) {
+    throw new TypeError(
+      'composeSharedConfigs accepts pack names, or a single { packs, communityLayer } object, not both',
+    )
+  }
+
+  return {
+    presetNames: /** @type {Array<string | string[]>} */ (args),
+    communityLayer: true,
+  }
+}
+
+/**
  * Compose the shared parser and community layers with one or more capability
  * packs. Prettier's disable config is always last.
  *
- * @param {...(string | string[])} presetNames
+ * Pack-name arguments keep today's composition, including the community plugin
+ * tail (`import-x`, `unicorn`, `promise`, `security`, `regexp`,
+ * `eslint-comments`, `vitest`, Vue house style). Pass
+ * `{ packs, communityLayer: false }` to take those packs without that wave.
+ * Parser layer, Prettier, and the baseline tail (`narduk/ignores`,
+ * typescript-eslint project rules, console hygiene) stay (narduk-libs#167).
+ *
+ * @param {...(string | string[] | ComposeSharedConfigsOptions)} args
  * @returns {import('eslint').Linter.Config[]}
  */
-export function composeSharedConfigs(...presetNames) {
+export function composeSharedConfigs(...args) {
+  const { presetNames, communityLayer } = parseComposeSharedConfigsArgs(args)
   const requestedPresetNames = requestedCapabilityPackNames(presetNames)
 
   const selectedCapabilityConfigs = requestedPresetNames.flatMap((presetName) => {
@@ -474,7 +586,8 @@ export function composeSharedConfigs(...presetNames) {
   return [
     ...parserConfigs,
     ...selectedCapabilityConfigs,
-    ...sharedTailConfigs,
+    ...sharedBaselineTailConfigs,
+    ...(communityLayer ? sharedCommunityPluginTailConfigs : []),
     prettierDisableConfig,
   ]
 }
@@ -519,7 +632,8 @@ const DESIGN_SYSTEM_PACK = 'design-system'
  * `createAppLintConfig` falls back to when the app names none. Mirrors the
  * pack's own placeholder in configs/design-system.mjs.
  */
-const DEFAULT_TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
+/** Conventional Nuxt UI 4 / narduk-template Tailwind entry stylesheet. */
+export const DEFAULT_TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
 
 /**
  * Did the app select the pack that registers `better-tailwindcss`?
@@ -533,8 +647,8 @@ function selectsDesignSystemPack(capabilityPacks) {
 }
 
 /**
- * Enable the three theme-resolving better-tailwindcss rules only when BOTH
- * halves of the configuration are actually present:
+ * Enable the three theme-resolving better-tailwindcss rules only when ALL of
+ * these are actually present:
  *
  * 1. **The app selected `design-system`.** It is the only pack that registers
  *    the `better-tailwindcss` plugin (configs/design-system.mjs), and enabling a
@@ -547,7 +661,12 @@ function selectsDesignSystemPack(capabilityPacks) {
  *    migration. (Only an *enabled* rule resolves its plugin; ESLint skips
  *    validation at severity 0, which is why the content preset's
  *    `better-tailwindcss/no-restricted-classes: 'off'` needs no such gate.)
- * 2. **The entry point exists on disk.** Without it the rules do not degrade
+ * 2. **The app declared Tailwind** by passing `tailwindEntryPoint` (narduk-libs#665).
+ *    Inferring from a conventional `app/assets/css/main.css` — or from whether
+ *    `tailwindcss` happens to resolve — is how a stale or transitive install
+ *    switched the rules on in a non-Tailwind app (operator-portal#431). An
+ *    omitted value means the app did not ask for Tailwind linting.
+ * 3. **That entry point exists on disk.** Without it the rules do not degrade
  *    quietly; the plugin's shared context reports a misconfiguration banner per
  *    class (see configs/design-system.mjs).
  *
@@ -568,10 +687,13 @@ function selectsDesignSystemPack(capabilityPacks) {
  */
 function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntryPoint }) {
   const entryPointWasProvided = tailwindEntryPoint !== undefined
-  const entryPoint = entryPointWasProvided ? tailwindEntryPoint : DEFAULT_TAILWIND_ENTRY_POINT
-  // A usable entry point is a non-empty string; null, '' and non-strings have
-  // always meant "no theme override" and still do.
-  const hasUsableEntryPoint = typeof entryPoint === 'string' && entryPoint.length > 0
+  // A usable entry point is a non-empty string the app named. An omitted value
+  // is "Tailwind was not declared" (narduk-libs#665); null, '' and non-strings
+  // have always meant "no theme override" and still do. Do not fall back to
+  // DEFAULT_TAILWIND_ENTRY_POINT — that inferred Tailwind from a conventional
+  // path and from whatever `tailwindcss` the module graph happened to contain.
+  const hasUsableEntryPoint =
+    typeof tailwindEntryPoint === 'string' && tailwindEntryPoint.length > 0
 
   if (!selectsDesignSystemPack(capabilityPacks)) {
     // Only a value that asked for theme linting is a contradiction. An explicit
@@ -591,10 +713,16 @@ function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntry
   if (!hasUsableEntryPoint) {
     return []
   }
-  const resolved = join(appRootDir ?? '.', entryPoint)
+  const resolved = join(appRootDir ?? '.', tailwindEntryPoint)
   if (!existsSync(resolved)) {
     return []
   }
+  // Classes the app defines as bare selectors or in SFC <style> blocks are
+  // invisible to the plugin's theme lookup (narduk-libs#55).
+  const appDefinedClasses = appDefinedClassesPattern({
+    appRootDir: resolve(appRootDir ?? '.'),
+    entryPoint: resolve(resolved),
+  })
   return [
     {
       name: 'narduk/design-system-tailwind-theme',
@@ -603,7 +731,9 @@ function buildTailwindThemeOverride({ appRootDir, capabilityPacks, tailwindEntry
         'better-tailwindcss': { entryPoint: resolved },
       },
       rules: {
-        'better-tailwindcss/no-unknown-classes': 'error',
+        'better-tailwindcss/no-unknown-classes': appDefinedClasses
+          ? ['error', { ignore: [appDefinedClasses] }]
+          : 'error',
         'better-tailwindcss/no-deprecated-classes': 'error',
         'better-tailwindcss/enforce-canonical-classes': 'warn',
       },
@@ -691,8 +821,14 @@ export function inferAppRootDirFromStack(stack = new Error().stack) {
   return undefined
 }
 
+/** Pack entries that carry type-aware parser wiring for createAppLintConfig to patch. */
+const PROJECT_SERVICE_CONFIG_NAMES = new Set([
+  'narduk/correctness-type-aware',
+  'narduk/server-type-aware',
+])
+
 function patchCorrectnessProjectServiceConfig(config, appRootDir) {
-  if (!appRootDir || config?.name !== 'narduk/correctness-type-aware') {
+  if (!appRootDir || !PROJECT_SERVICE_CONFIG_NAMES.has(config?.name)) {
     return config
   }
 
@@ -871,6 +1007,8 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {object}                                options
  * @param {Function}                              options.withNuxt              app-local `withNuxt()` wrapper
  * @param {string[]}                              [options.capabilityPacks]
+ * @param {boolean}                               [options.communityLayer=true] set false to omit the
+ *   community plugin tail; baseline ignores and housekeeping stay on
  * @param {'required'|'internal-only'|'disabled'} [options.seoMode]             accepted, inert in v2
  * @param {string[]}                              [options.internalOnlyPageGlobs] accepted, inert in v2
  * @param {string[]}                              [options.contentRelaxedFiles]
@@ -881,12 +1019,15 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {string[]}                              [options.allowedBrandIconFiles] accepted, inert in v2
  * @param {string[]}                              [options.utilityComposableFiles]
  * @param {string}                                [options.appRootDir]
- * @param {string}                                [options.tailwindEntryPoint]  defaults to
- *   `app/assets/css/main.css`; requires the `design-system` capability pack
+ * @param {string}                                [options.tailwindEntryPoint]  opt in to the
+ *   theme-resolving better-tailwindcss rules; requires the `design-system`
+ *   capability pack. Omitted means those rules stay off, even if
+ *   `app/assets/css/main.css` exists or `tailwindcss` happens to resolve.
  */
 export function createAppLintConfig({
   withNuxt,
   capabilityPacks = [],
+  communityLayer = true,
   seoMode = 'required',
   internalOnlyPageGlobs = [],
   contentRelaxedFiles = [],
@@ -897,24 +1038,30 @@ export function createAppLintConfig({
   allowedBrandIconFiles = [],
   utilityComposableFiles = [],
   appRootDir = inferAppRootDirFromStack(),
-  // Deliberately left without a destructuring default. The factory has to tell
-  // "the app said nothing about Tailwind" apart from "the app asked for Tailwind
-  // linting", and only an absent value proves the former — the two get different
-  // treatment when `design-system` is missing (silence vs. a named error).
-  // Comparing a supplied value against DEFAULT_TAILWIND_ENTRY_POINT would
-  // conflate them: an app that spells the default path out loud is still asking.
-  // The default is applied inside buildTailwindThemeOverride, after that check.
+  // Deliberately left without a destructuring default. An omitted value means
+  // the app did not declare Tailwind (narduk-libs#665). A supplied path is the
+  // opt-in. Comparing a supplied value against DEFAULT_TAILWIND_ENTRY_POINT
+  // would conflate them: spelling the conventional path out loud is still
+  // asking. The factory also has to tell "said nothing" apart from "asked"
+  // when `design-system` is missing (silence vs. a named error).
   tailwindEntryPoint,
 } = {}) {
   if (typeof withNuxt !== 'function') {
     throw new TypeError('createAppLintConfig requires the app-local withNuxt() wrapper')
   }
 
+  if (typeof communityLayer !== 'boolean') {
+    throw new TypeError('createAppLintConfig communityLayer must be a boolean')
+  }
+
   void seoMode
   void internalOnlyPageGlobs
   void allowedBrandIconFiles
 
-  const sharedConfigsForApp = composeSharedConfigs(...capabilityPacks)
+  const sharedConfigsForApp = composeSharedConfigs({
+    packs: capabilityPacks,
+    communityLayer,
+  })
   const sanitizedSharedConfigs = sharedConfigsForApp
     .map(stripNuxtManagedPlugins)
     .map((config) => patchCorrectnessProjectServiceConfig(config, appRootDir))
@@ -936,7 +1083,7 @@ export function createAppLintConfig({
     appTypeOverrides = buildContentPresetOverrides({ trustedHtmlFiles })
   }
 
-  return withNuxt(
+  const composed = withNuxt(
     ...sanitizedSharedConfigs,
     ...buildContentRelaxedOverrides(contentRelaxedFiles),
     // v1's additionalNuxtUiComponents fed narduk/no-unknown-nuxt-ui-component;
@@ -951,6 +1098,19 @@ export function createAppLintConfig({
     ...appTypeOverrides,
     ...extraOverrides,
   )
+
+  // Type-aware rules read the TypeScript program the parser built, so the
+  // rule implementations must come from the same typescript-eslint install as
+  // `tseslint.parser` above. withNuxt() registers @nuxt/eslint-config's own
+  // copy of the plugin, which can be bound to a different `typescript`: in
+  // narduk-libs, TS 5.9's `TypeFlags` were read against a TS 6 program and
+  // no-misused-promises crashed (`tsutils.unionConstituents is not a
+  // function or its return value is not iterable`). Swap in the plugin that
+  // pairs with the parser. The composer API is optional so a plain-array
+  // withNuxt (tests, older wrappers) still works.
+  return typeof composed?.replacePlugin === 'function'
+    ? composed.replacePlugin('@typescript-eslint', tseslint.plugin)
+    : composed
 }
 
 export const createAppEslintConfig = createAppLintConfig

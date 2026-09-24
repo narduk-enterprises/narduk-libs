@@ -22,18 +22,17 @@
  * - Auth provider routes (`/api/_auth/`)
  * - Opt-in Nuxt Content internal queries (`/__nuxt_content/`)
  * - The configured CSP report sink (`nardukSecurityHeaders.reportRoute`)
+ * - App-declared exemptions (`nardukCore.csrf.exemptPaths`, runtime key
+ *   `nardukCsrf.exemptPaths`) for credential-free device routes — see
+ *   `../../shared/csrf-exempt-paths.ts` for the grammar
  * - API key bearer auth (`Authorization: Bearer nk_...`)
  */
 import { createError, defineEventHandler, getHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { isCsrfExemptPath, resolveCsrfExemptPaths } from '../../shared/csrf-exempt-paths'
 import { DEFAULT_REPORT_ROUTE } from '../../shared/security-headers'
 import { useLogger } from '../utils/logger'
-
-function requestPathname(path: string): string {
-  const query = path.indexOf('?')
-  return query === -1 ? path : path.slice(0, query)
-}
 
 /**
  * Browser CSP reports are unauthenticated POSTs with no `X-Requested-With`.
@@ -73,8 +72,14 @@ export default defineEventHandler((event) => {
     return
   }
 
-  const reportRoute = configuredCspReportRoute(useRuntimeConfig(event))
-  if (reportRoute && requestPathname(path) === reportRoute) return
+  // The CSP report sink and the app's declared device routes share one matcher,
+  // so the report route tolerates the same trailing-slash and query spellings
+  // the router dispatches to it (narduk-libs#415) and nothing wider.
+  const config = useRuntimeConfig(event)
+  const reportRoute = configuredCspReportRoute(config)
+  if (reportRoute && isCsrfExemptPath(path, [reportRoute])) return
+  const declared = (config as { nardukCsrf?: { exemptPaths?: unknown } }).nardukCsrf?.exemptPaths
+  if (isCsrfExemptPath(path, resolveCsrfExemptPaths(declared))) return
 
   // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable
   const authHeader = getHeader(event, 'authorization')

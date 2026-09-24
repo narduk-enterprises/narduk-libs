@@ -34,20 +34,10 @@ export const MIGRATION_PATHS: string[] = readdirSync(MIGRATION_DIR)
 
 export const MIGRATION_SQL = MIGRATION_PATHS.map((path) => readFileSync(path, 'utf8')).join('\n')
 
-/**
- * Every published migration as executable statements, in order, with comments
- * stripped — what a runner that cannot execute a whole file at once needs (the
- * D1-shaped `binding.batch`). Derived from `MIGRATION_PATHS` for the same
- * reason: naming one file let `0002` ship without the D1 driver ever executing
- * it (narduk-libs#228 review M6).
- */
-export const MIGRATION_STATEMENTS: string[] = MIGRATION_PATHS.flatMap((path) =>
-  readFileSync(path, 'utf8')
-    .replaceAll(/--[^\n]*/gu, '')
-    .split(';')
-    .map((value) => value.trim())
-    .filter(Boolean),
-)
+// The D1-driver suite (devices-d1.test.ts) applies MIGRATION_DIR through
+// narduk-testkit's D1 query harness, which discovers every numbered file the
+// same way — naming one file let `0002` ship without the D1 driver ever
+// executing it (narduk-libs#228 review M6).
 
 export interface TestClock {
   advance: (milliseconds: number) => void

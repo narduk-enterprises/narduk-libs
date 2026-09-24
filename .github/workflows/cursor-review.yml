@@ -1,0 +1,57 @@
+# On-demand PR reviews: review-now uses Composer 2.5 standard, without daily
+# or per-PR round caps. Explicit requests bypass the automatic diff floors.
+# review-deep explicitly requests Grok 4.6 xhigh; both request labels are
+# consumed before launch so deep mode cannot leak into later normal requests.
+# Blocking findings still post REQUEST_CHANGES; this is not a required CI job.
+# enforcement: named; mechanism: workflows#139 review_request and reviewer tests; runs at: review invocation and shared CI; rejects: explicit requests gated by quota or stale deep labels upgrading ordinary requests
+# Pull-request reviewer (agent-infrastructure#1564). Lives in its own workflow,
+# not ci.yml, on purpose: this repository is PUBLIC and ci.yml's contract test
+# (scripts/ci-runner-routing.test.mjs) forbids any `secrets.` reference there so
+# fork CI can never depend on a credential. The Cursor API key is a repository
+# secret a fork PR never receives, so on a fork head this job only skips.
+#
+# One Cursor Cloud agent (composer-2.5, `fast: false` -- the same first-party
+# pool as grok-4.6 at about a third the cost; `review-deep` buys grok-4.6 at
+# effort xhigh and bypasses all four spend limits) reviews every same-repo,
+# non-draft PR head with this repo plus agent-infrastructure and company-hq
+# attached, and the callable posts a real GitHub review from this run. Any
+# blocking finding is REQUEST_CHANGES, which the branch ruleset honours; the
+# ruleset also requires review-thread resolution. Never part of `ci / Required`.
+name: Cursor review
+
+# No `synchronize`: a push does not re-review. A lane that wants the new head
+# reviewed adds the `review-now` label, which the callable clears again so the
+# next add is a fresh event. `labeled` was absent before, which is why
+# `review-now` was inert in this repository (workflows#130).
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled]
+
+# This group MIRRORS the callable's job `if:`, including `review-deep`. A
+# run-level cancel happens before any job condition is evaluated, so an event
+# the callable would skip -- a stray `labeled`, a draft, a `no-ai-review` pull
+# request -- must not share a bucket with a live review, or it cancels the
+# waiter and is then skipped without cancelling the Cursor agent behind it.
+concurrency:
+  group: cursor-review-caller-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}-${{ (github.event.pull_request.draft == false && !contains(github.event.pull_request.labels.*.name, 'no-ai-review') && (github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'ready_for_review' || (github.event.action == 'labeled' && contains(fromJSON('["review-now","review-p0","review-p1","review-deep"]'), github.event.label.name)))) && 'review' || 'other' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cursor-review:
+    uses: narduk-enterprises/workflows/.github/workflows/cursor-review.yml@2de521b1460baf390af7288122700fe7fa86112d # workflows#139; on-demand reviews
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      enabled: true
+      model: composer-2.5
+      effort: ""
+      fast: false
+      max-rounds: 0
+      daily-cap: 0
+      runner: '"ubuntu-latest"'
+    secrets:
+      CURSOR_CLOUD_AGENTS_API_KEY: ${{ secrets.CURSOR_CLOUD_AGENTS_API_KEY }}

@@ -60,13 +60,24 @@ export function useSeo(options: SeoOptions) {
     typeof siteConfig.url === 'string' && siteConfig.url ? siteConfig.url : fallbackSiteUrl
   const siteName =
     typeof siteConfig.name === 'string' && siteConfig.name ? siteConfig.name : fallbackSiteName
-  const resolvedCanonicalUrl = resolveSafeCanonicalUrl(canonicalUrl ?? route.path, siteUrl)
+  // `route.path` is both the default and the fallback: when an explicit
+  // `canonicalUrl` is refused, the page's own route is a better answer than the
+  // site root, which would be wrong on every page at once.
+  const resolvedCanonicalUrl = resolveSafeCanonicalUrl(
+    canonicalUrl ?? route.path,
+    siteUrl,
+    route.path,
+  )
   const resolveTitle = () => toValue(title)
   const resolveDescription = () => toValue(description)
+  // narduk-libs#170: when the optional nuxt-og-image peer is omitted, the
+  // module sets this false and `useSeo` must emit the static image instead of
+  // calling a renderer that is not installed.
+  const hasOgImageModule = runtimeConfig.public.nardukSeoOgImageModule !== false
   // noindex is not a privacy classification: public unlisted pages can explicitly
   // request a preview. Preserve the existing opt-out for private/noindex callers.
   const shouldDefineDynamicOgImage =
-    ogImage !== false && (!hasNoindexRobots(robots) || Boolean(ogImage))
+    hasOgImageModule && ogImage !== false && (!hasNoindexRobots(robots) || Boolean(ogImage))
   const dynamicOgImage = shouldDefineDynamicOgImage
     ? resolveSeoOgImageDefinition({
         title: resolveTitle(),

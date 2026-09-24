@@ -16,10 +16,12 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
+import { assertCsrfExemptPaths } from '../runtime/shared/csrf-exempt-paths'
 import {
   type DatabaseBackend,
   findDatabaseBackendConflict,
   resolveDatabaseBackendSelection,
+  usesNardukAuth,
 } from '../runtime/shared/database-backend'
 import {
   buildNuxtSecurityConfig,
@@ -31,6 +33,24 @@ import {
   applyCoreViteBuildWarningPolicy,
   createCoreViteBuildLogger,
 } from '../runtime/shared/vite-build-warnings'
+
+import { includeAppTypesDir } from './app-types-dir'
+import {
+  findAuthOptOutConflict,
+  maybeInstallNuxtAuthUtils,
+  sessionRuntimeConfigSeed,
+  shouldRegisterUserSessionStub,
+  USER_SESSION_IMPORT_NAME,
+} from './auth-utils-install'
+import { resolveBuildVersion } from './build-version'
+import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
+import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
+import { registerNuxtUiSources } from './nuxt-ui-sources'
+import {
+  APP_RUNTIME_NUXT_IMPORTS,
+  APP_RUNTIME_VUE_IMPORTS,
+  selectMissingRuntimeImports,
+} from './runtime-import-bridge'
 
 import type { NuxtModule } from '@nuxt/schema'
 
@@ -69,9 +89,13 @@ interface NuxtAppTemplateState {
 type OpenApiProductionMode = false | 'runtime' | 'prerender'
 
 interface MutableNuxtOptionsRecord {
+  _installedModules?: Array<{ meta?: { name?: unknown } }>
   alias: Record<string, string>
   app: Record<string, unknown>
   appConfig?: Record<string, unknown>
+  auth?: {
+    loadStrategy?: unknown
+  }
   build: {
     transpile: string[]
   }
@@ -81,6 +105,7 @@ interface MutableNuxtOptionsRecord {
   devServer?: Record<string, unknown>
   future?: Record<string, unknown>
   icon?: unknown
+  modules?: unknown[]
   nitro?: Record<string, unknown>
   runtimeConfig: Record<string, unknown>
   ui?: unknown
@@ -91,7 +116,24 @@ interface MutableNuxtOptionsRecord {
 
 export interface NardukCoreModuleOptions {
   app?: boolean
+  /**
+   * Install `nuxt-auth-utils` and seed `runtimeConfig.session.password`.
+   * Default `true` keeps today's install for existing apps. `false` skips
+   * the module and does not seed an empty session password, so a site with
+   * no accounts does not serve `/api/_auth/session` (narduk-libs#169).
+   */
+  auth?: boolean
   coreModules?: boolean
+  /**
+   * CSRF middleware options. `exemptPaths` declares credential-free routes —
+   * a device leg that calls before it has any account, session or cookie —
+   * that need no `X-Requested-With`. Exact paths, or a prefix ending in `/*`;
+   * see `../runtime/shared/csrf-exempt-paths.ts` for the grammar. An invalid
+   * or over-broad entry fails the build.
+   */
+  csrf?: {
+    exemptPaths?: string[]
+  }
   /**
    * The app's SQL backend. `'none'` declares an app without a database, so
    * `/api/health` reports `database: 'not_applicable'`. Omitted, the build
@@ -138,6 +180,55 @@ function addFallbackLayout(
 }
 
 /**
+ * With `nardukCore.auth: false` nothing registers `useUserSession`, but the
+ * dashboard layout's shell and account menu call it and the import bridge
+ * injects it from `#imports`. Register a signed-out stub under that name,
+ * unless the app installs `nuxt-auth-utils` itself (narduk-libs#169).
+ * `imports:extend` first fires at `modules:done`, so every module's install is
+ * visible when the handler decides.
+ */
+function addSignedOutUserSession(
+  nuxt: {
+    hook: (
+      name: 'imports:extend',
+      handler: (imports: Array<{ as?: string; from: string; name: string }>) => void,
+    ) => void
+    options: unknown
+  },
+  options: Pick<NardukCoreModuleOptions, 'app' | 'auth'>,
+  stubPath: string,
+): void {
+  if (options.auth !== false) return
+  const nuxtOptions = nuxt.options as MutableNuxtOptionsRecord
+  nuxt.hook('imports:extend', (imports) => {
+    if (
+      shouldRegisterUserSessionStub({
+        app: options.app,
+        auth: options.auth,
+        imports,
+        installedModules: nuxtOptions._installedModules,
+        modules: nuxtOptions.modules,
+      })
+    ) {
+      imports.push({ from: stubPath, name: USER_SESSION_IMPORT_NAME })
+    }
+  })
+}
+
+/** narduk-auth relies on core installing `nuxt-auth-utils` (narduk-libs#169). */
+function findNardukAuthConflict(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  auth: boolean | undefined,
+): string | null {
+  return findAuthOptOutConflict({
+    auth,
+    installedModules: nuxtOptions._installedModules,
+    modules: nuxtOptions.modules,
+    nardukAuthInstalled: usesNardukAuth(nuxtOptions.runtimeConfig),
+  })
+}
+
+/**
  * Nuxt's own `resolveApp()` assigns `app.errorComponent` before it calls the
  * `app:resolve` hook: an `app/error.*` from the project or any layer if one
  * exists, and otherwise Nuxt's built-in `<appDir>/components/nuxt-error-page.vue`
@@ -179,33 +270,6 @@ function allowNitroEsbuildForNardukPackages(nuxtOptions: MutableNuxtOptionsRecor
   nitro.esbuild ??= {}
   nitro.esbuild.options ??= {}
   nitro.esbuild.options.exclude = /node_modules\/(?!.*@narduk-enterprises(?:\+|\/)narduk-)/
-}
-
-function identifierReferencePattern(name: string): string {
-  return `(?<![\\w$])${name}(?![\\w$])`
-}
-
-function hasIdentifier(code: string, name: string): boolean {
-  return new RegExp(identifierReferencePattern(name)).test(code)
-}
-
-function hasImportOrDeclaration(code: string, name: string): boolean {
-  const identifier = identifierReferencePattern(name)
-
-  return (
-    new RegExp(
-      `import\\s+(?:type\\s+)?(?:\\{[^}]*${identifier}[^}]*\\}|\\*\\s+as\\s+${identifier}|${identifier})`,
-      'm',
-    ).test(code) ||
-    new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${name}(?![\\w$])`).test(code) ||
-    new RegExp(
-      `\\b(?:export\\s+)?(?:const|let|var|class|interface|type)\\s+${name}(?![\\w$])`,
-    ).test(code)
-  )
-}
-
-function selectMissingRuntimeImports(code: string, names: string[]): string[] {
-  return names.filter((name) => hasIdentifier(code, name) && !hasImportOrDeclaration(code, name))
 }
 
 function isNardukPackageServerRuntimeFile(id: string): boolean {
@@ -269,61 +333,6 @@ function addNardukAppRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord):
     return
   }
 
-  const vueImports = [
-    'computed',
-    'nextTick',
-    'onMounted',
-    'onUnmounted',
-    'reactive',
-    'ref',
-    'shallowRef',
-    'toRefs',
-    'toValue',
-    'unref',
-    'watch',
-    'watchEffect',
-  ]
-  const nuxtImports = [
-    'clearError',
-    'createError',
-    'defineNuxtPlugin',
-    'defineNuxtRouteMiddleware',
-    'defineOgImage',
-    'definePageMeta',
-    'formatBuildTimeLocal',
-    'navigateTo',
-    'reloadNuxtApp',
-    'useAdminOgImagePreviews',
-    'useAppConfig',
-    'useAppFetch',
-    'useAsyncData',
-    'useAuth',
-    'useAuthRuntimePublic',
-    'useColorModeToggle',
-    'useCookie',
-    'useCsrfFetch',
-    'useFetch',
-    'useHead',
-    'useItemListSchema',
-    'useManagedSupabaseClient',
-    'useNardukNetworkDirectory',
-    'useNotifications',
-    'useNuxtApp',
-    'useOgImageData',
-    'useRequestURL',
-    'useRoute',
-    'useRouter',
-    'useRuntimeConfig',
-    'useSeo',
-    'useSeoMeta',
-    'useSiteConfig',
-    'useState',
-    'useToast',
-    'useUserSession',
-    'useWebPageSchema',
-    'useWebSiteSchema',
-  ]
-
   vite.plugins.push({
     name: 'narduk-app-runtime-import-bridge',
     enforce: 'pre',
@@ -331,8 +340,8 @@ function addNardukAppRuntimeImportBridge(nuxtOptions: MutableNuxtOptionsRecord):
       if (!isNardukPackageAppRuntimeFile(id)) return null
 
       const importGroups: Array<[string[], string]> = [
-        [selectMissingRuntimeImports(code, vueImports), 'vue'],
-        [selectMissingRuntimeImports(code, nuxtImports), '#imports'],
+        [selectMissingRuntimeImports(code, APP_RUNTIME_VUE_IMPORTS), 'vue'],
+        [selectMissingRuntimeImports(code, APP_RUNTIME_NUXT_IMPORTS), '#imports'],
       ]
 
       const imports = importGroups
@@ -529,6 +538,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
     },
     defaults: {
       app: true,
+      auth: true,
       coreModules: true,
       image: true,
       server: true,
@@ -549,12 +559,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         })
       const appVersion =
         process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
-      const buildVersion =
-        process.env.BUILD_VERSION ||
-        process.env.GITHUB_SHA?.slice(0, 12) ||
-        process.env.CF_PAGES_COMMIT_SHA?.slice(0, 12) ||
-        readGitSha() ||
-        appVersion
+      const buildVersion = resolveBuildVersion(process.env, readGitSha, appVersion)
       const buildTime = process.env.BUILD_TIME || new Date().toISOString()
       const openApiProduction: OpenApiProductionMode = (() => {
         switch (process.env.NUXT_OPENAPI_PRODUCTION) {
@@ -602,11 +607,15 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
       // collection contract before that installation so the icon server bundles
       // Lucide instead of attempting runtime API fallback.
+      const lateIconSeed = iconSeedArrivedLate(
+        nuxtOptions as Parameters<typeof iconSeedArrivedLate>[0],
+      )
+      if (lateIconSeed) console.warn(lateIconSeed)
       nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
         provider: 'server',
         fallbackToApi: false,
         clientBundle: {
-          icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+          icons: [...CORE_CLIENT_BUNDLE_ICONS],
         },
         serverBundle: {
           collections: ['lucide'],
@@ -624,7 +633,17 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           await installModule('@nuxt/image')
         }
         await installModule('@nuxt/eslint')
-        await installModule('nuxt-auth-utils')
+        // Session fetch is opt-in: `loadStrategy: 'none'` skips the
+        // nuxt-auth-utils session plugin so a no-auth app never calls
+        // `/api/_auth/session` during SSR (narduk-libs#540). `auth: false`
+        // skips the install entirely so the session route is not registered
+        // (narduk-libs#169).
+        await maybeInstallNuxtAuthUtils(options.auth, installModule, {
+          configuredLoadStrategy: nuxtOptions.auth?.loadStrategy,
+          env: process.env,
+          modules: nuxtOptions.modules,
+          runtimeConfig: existingRuntimeConfig,
+        })
         dedupeIconServerCollectionsModule(null, { options: nuxtOptions })
       }
 
@@ -641,6 +660,11 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
         addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
+        addSignedOutUserSession(
+          nuxt,
+          options,
+          resolver.resolve('../runtime/app/session/useUserSessionStub'),
+        )
         addFallbackErrorPage(nuxt, resolver.resolve('../runtime/app/error.vue'))
         addFallbackLayout(
           nuxt,
@@ -665,6 +689,11 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
             ),
           )
         }
+
+        // main.css already `@source`s runtime/app for Tailwind. Nuxt UI's
+        // componentDetection still never scans a module, so name the U*
+        // components core renders, error.vue's UButton among them (#700).
+        registerNuxtUiSources(nuxt, { components: CORE_NUXT_UI_COMPONENTS })
       }
 
       if (options.server) {
@@ -681,6 +710,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         cspMediaSrc: process.env.CSP_MEDIA_SRC,
         cspScriptSrc: process.env.CSP_SCRIPT_SRC,
         cspWorkerSrc: process.env.CSP_WORKER_SRC,
+        allowGeolocation,
       })
       if (securityHeaders.mode !== 'off') {
         if (securityHeaders.reportRoute) {
@@ -733,9 +763,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         },
         cronSecret: process.env.CRON_SECRET || '',
         logLevel: process.env.LOG_LEVEL || 'warn',
-        session: {
-          password: process.env.NUXT_SESSION_PASSWORD || '',
-        },
+        ...sessionRuntimeConfigSeed(options.auth, process.env),
         // Read by `runtime/server/middleware/securityHeaders.ts` to decide which
         // headers it still owns, and by the app-tools live probe.
         nardukSecurityHeaders: {
@@ -768,6 +796,17 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         },
       })
 
+      // CSRF exemptions are assigned, never merged with defu: defu concatenates
+      // arrays, which would silently keep an entry the app meant to replace.
+      const existingCsrf = nuxtOptions.runtimeConfig.nardukCsrf as
+        { exemptPaths?: unknown } | undefined
+      nuxtOptions.runtimeConfig.nardukCsrf = {
+        ...existingCsrf,
+        exemptPaths: assertCsrfExemptPaths(
+          options.csrf?.exemptPaths ?? existingCsrf?.exemptPaths ?? [],
+        ),
+      }
+
       // The resolved selection overwrites any earlier value so the schema alias,
       // the server runtime and /api/health all agree on one backend.
       nuxtOptions.runtimeConfig.databaseBackend = databaseBackend
@@ -776,7 +815,9 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       // Other modules (narduk-auth) finish configuring after this setup runs, so
       // the conflict check waits until every module is installed.
       nuxt.hook('modules:done', () => {
-        const conflict = findDatabaseBackendConflict(nuxtOptions.runtimeConfig)
+        const conflict =
+          findDatabaseBackendConflict(nuxtOptions.runtimeConfig) ??
+          findNardukAuthConflict(nuxtOptions, options.auth)
         if (conflict) {
           throw new Error(conflict)
         }
@@ -793,6 +834,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
         preference: colorModePreference,
         fallback: 'dark',
+        // Tailwind v4 / Nuxt UI 4 key dark styles on `.dark`. The color-mode
+        // default suffix is `-mode`, which writes `class="dark-mode"` and
+        // leaves every dark token inert. An app can still override this.
+        classSuffix: '',
       })
       nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
         customLogger: createCoreViteBuildLogger(),
@@ -857,6 +902,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxt.hook('prepare:types', (prepareOptions) => {
         registerTypeReference(prepareOptions, coreRuntimeConfigTypesPath)
       })
+      includeAppTypesDir(nuxt)
       nuxt.hook('imports:extend', (imports) => {
         for (let i = imports.length - 1; i >= 0; i--) {
           const entry = imports[i]
@@ -885,8 +931,14 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       ;(nuxt.hook as (name: string, handler: (nitro: NitroErrorHandlerHost) => void) => void)(
         'nitro:init',
         (nitro) => {
+          // Then the JSON no-store handler (narduk-libs#493): Nuxt hands a
+          // JSON error to Nitro's builtin, which answers `no-cache`.
+          // Resulting chain: sanitizer, json-error-no-store, Nuxt, builtin.
           nitro.options.errorHandler = prependNitroErrorHandler(
-            nitro.options.errorHandler,
+            prependNitroErrorHandler(
+              nitro.options.errorHandler,
+              resolver.resolve('../runtime/server/json-error-no-store'),
+            ),
             resolver.resolve('../runtime/server/error-sanitizer'),
           )
         },

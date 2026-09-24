@@ -136,12 +136,14 @@ test('the shipped consumer step runs the selected proof and propagates failures'
       '#!/bin/sh\nprintf "%s\\n" "$@"\nexit "${CANARY_EXIT:-0}"\n',
       { mode: 0o755 },
     )
-    const run = (selection, code = '0') =>
+    const scope = '@narduk-enterprises/narduk-core,@narduk-enterprises/narduk-mapkit'
+    const run = (selection, code = '0', consumerScope = scope) =>
       spawnSync('bash', ['-e', '-o', 'pipefail', '-c', shell], {
         env: {
           ...process.env,
           PATH: `${directory}:${process.env.PATH}`,
           GENERATED_CONSUMER: selection,
+          CONSUMER_SCOPE: consumerScope,
           CANARY_EXIT: code,
         },
         encoding: 'utf8',
@@ -153,6 +155,11 @@ test('the shipped consumer step runs the selected proof and propagates failures'
     assert.equal(run('false', '47').status, 47)
     assert.notEqual(run('').status, 0)
     assert.notEqual(run('unknown').status, 0)
+    // The planner's scope reaches the pack, on both selections -- the build
+    // step is given the identical list, so this packs what that built.
+    for (const selection of ['true', 'false']) {
+      assert.match(run(selection).stdout, new RegExp(`--packages\\n${scope}`, 'u'))
+    }
     assert.match(
       workflow,
       /name: Retain the exact installed consumer proof\n        if: needs\.affected\.outputs\.generated-consumer == 'true'/,

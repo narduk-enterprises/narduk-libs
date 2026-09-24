@@ -436,3 +436,68 @@ test('private previews skip consumer proof but private build inputs retain it', 
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('a workspace-input reader follows manifest and README changes, including an added package', () => {
+  const root = createWorkspace([
+    { directory: 'base' },
+    { directory: 'tool', manifest: { scripts: { 'test:e2e': 'playwright test' } } },
+    {
+      directory: 'explorer',
+      manifest: {
+        private: true,
+        nardukWorkspaceInputs: ['package.json', 'README.md'],
+        scripts: { 'test:e2e': 'playwright test' },
+      },
+    },
+  ])
+  try {
+    for (const path of ['packages/base/package.json', 'packages/base/README.md']) {
+      const result = computeAffectedSet({ root, changedFiles: [path] })
+      assert.deepEqual(names(result), ['base', 'explorer'], path)
+      assert.deepEqual(result.browserPackages, [`${scope}explorer`], path)
+      assert.equal(result.fullRun, false, path)
+    }
+    // Other files in a package are not inputs: no reader is selected.
+    assert.deepEqual(
+      names(computeAffectedSet({ root, changedFiles: ['packages/base/src/index.ts'] })),
+      ['base'],
+    )
+    // A nested README is not the package README.
+    assert.deepEqual(
+      names(computeAffectedSet({ root, changedFiles: ['packages/tool/docs/README.md'] })),
+      ['tool'],
+    )
+    // The reader's own manifest is simply the reader changing.
+    assert.deepEqual(
+      names(computeAffectedSet({ root, changedFiles: ['packages/explorer/package.json'] })),
+      ['explorer'],
+    )
+    // An added package: its new manifest is in the workspace and selects the reader.
+    mkdirSync(join(root, 'packages', 'added'))
+    writeJson(join(root, 'packages', 'added', 'package.json'), {
+      name: `${scope}added`,
+      version: '0.1.0',
+    })
+    assert.deepEqual(
+      names(computeAffectedSet({ root, changedFiles: ['packages/added/package.json'] })),
+      ['added', 'explorer'],
+    )
+    // A removed package's paths are unclassified: a full run, reader included.
+    const removed = computeAffectedSet({ root, changedFiles: ['packages/gone/package.json'] })
+    assert.equal(removed.fullRun, true)
+    assert.ok(names(removed).includes('explorer'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the live explorer declares its workspace inputs and is selected by a package README', () => {
+  const explorer = loadWorkspace(repoRoot).byName.get(`${scope}libs-explorer`)
+  assert.deepEqual(explorer.manifest.nardukWorkspaceInputs, ['package.json', 'README.md'])
+  const result = computeAffectedSet({
+    root: repoRoot,
+    changedFiles: ['packages/modules/narduk-seo/README.md'],
+  })
+  assert.ok(result.affectedNames.includes(`${scope}libs-explorer`))
+  assert.ok(result.browserPackages.includes(`${scope}libs-explorer`))
+})

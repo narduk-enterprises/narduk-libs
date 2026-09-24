@@ -44,6 +44,10 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeStatePanel', filePath: './runtime/components/NeStatePanel.vue' },
   // Item 11 (narduk-libs#258): NePager.
   { name: 'NePager', filePath: './runtime/components/NePager.vue' },
+  // Item 14 (narduk-libs#261): NeFilterBar + NeSearchInput. The search field
+  // belongs beside the row, not in it — a search is a text control, not a chip.
+  { name: 'NeFilterBar', filePath: './runtime/components/NeFilterBar.vue' },
+  { name: 'NeSearchInput', filePath: './runtime/components/NeSearchInput.vue' },
   // Item 19 (narduk-libs#266): NeForm, NeFormSection, NeSettingsPage.
   { name: 'NeForm', filePath: './runtime/components/NeForm.vue' },
   { name: 'NeFormSection', filePath: './runtime/components/NeFormSection.vue' },
@@ -51,4 +55,15 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // Item 15 (narduk-libs#262): NeKpiTile + NeKpiBand.
   { name: 'NeKpiTile', filePath: './runtime/components/NeKpiTile.vue' },
   { name: 'NeKpiBand', filePath: './runtime/components/NeKpiBand.vue' },
+  // Item 17 (narduk-libs#264): NeCard, NeCardList, NeDetailView.
+  { name: 'NeCard', filePath: './runtime/components/NeCard.vue' },
+  { name: 'NeCardList', filePath: './runtime/components/NeCardList.vue' },
+  { name: 'NeDetailView', filePath: './runtime/components/NeDetailView.vue' },
+  // narduk-libs#601 + #602: NeMeter, one value against a known ceiling, and
+  // the first component to render the unreported treatment (`--ne-hatch`).
+  { name: 'NeMeter', filePath: './runtime/components/NeMeter.vue' },
+  // narduk-libs#528: the UTable data-table preset, its sort header and CSV.
+  { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
+  { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
+  { name: 'NeCsvDownload', filePath: './runtime/components/NeCsvDownload.vue' },
 ]

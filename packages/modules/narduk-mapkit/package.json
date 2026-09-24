@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-mapkit",
-  "version": "2.1.0",
+  "version": "2.9.0",
   "type": "module",
   "description": "Framework-agnostic Apple MapKit JS token, geometry, runtime, and playback helpers.",
   "repository": {
@@ -8,9 +8,9 @@
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
     "directory": "packages/modules/narduk-mapkit"
   },
-  "homepage": "https://github.com/narduk-enterprises/narduk-mapkit#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-mapkit#readme",
   "bugs": {
-    "url": "https://github.com/narduk-enterprises/narduk-mapkit/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
   },
   "license": "MIT",
   "keywords": [
@@ -48,6 +48,10 @@
       "types": "./dist/geometry/index.d.ts",
       "import": "./dist/geometry/index.js"
     },
+    "./marks": {
+      "types": "./dist/marks/index.d.ts",
+      "import": "./dist/marks/index.js"
+    },
     "./playback": {
       "types": "./dist/playback.d.ts",
       "import": "./dist/playback.js"
@@ -72,9 +76,17 @@
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js"
     },
+    "./vector-tiles": {
+      "types": "./dist/vector-tiles/index.d.ts",
+      "import": "./dist/vector-tiles/index.js"
+    },
     "./nuxt": {
       "types": "./dist/nuxt/index.d.ts",
       "import": "./dist/nuxt/index.js"
+    },
+    "./nuxt/composables": {
+      "types": "./dist/nuxt/runtime/composables/index.d.ts",
+      "import": "./dist/nuxt/runtime/composables/index.js"
     }
   },
   "scripts": {
@@ -83,17 +95,20 @@
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && vue-tsc --noEmit --project tests/nuxt/template/tsconfig.json",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
-  "//dependencies": "@apple/mapkit-loader became a real dependency in 2.1.0 (narduk-libs#421 section d): ./client loads MapKit JS v6 through Apple's own loader, and Apple's types arrive with it -- @types/apple-mapkit is a runtime dependency OF the loader, so a consumer resolves the published .d.ts without installing anything extra. ./server, ./node, ./worker and ./token never reach it: the loader is behind a dynamic import inside initializeMapKit(). @nuxt/kit and h3 join them for the ./nuxt entry (narduk-libs#422 section b): the module is defineNuxtModule and the token route is an h3 event handler. Neither is reachable from ., ./client, ./geometry, ./playback, ./server, ./node, ./worker, ./token or ./testing -- tests/testing/package-boundary.test.ts walks that graph.",
+  "//dependencies": "@apple/mapkit-loader became a real dependency in 2.1.0 (narduk-libs#421 section d): ./client loads MapKit JS v6 through Apple's own loader, and Apple's types arrive with it -- @types/apple-mapkit is a runtime dependency OF the loader, so a consumer resolves the published .d.ts without installing anything extra. ./server, ./node, ./worker and ./token never reach it: the loader is behind a dynamic import inside initializeMapKit(). @nuxt/kit and h3 join them for the ./nuxt entry (narduk-libs#422 section b): the module is defineNuxtModule and the token route is an h3 event handler. Neither is reachable from ., ./client, ./geometry, ./playback, ./server, ./node, ./worker, ./token or ./testing -- tests/testing/package-boundary.test.ts walks that graph. @mapbox/vector-tile and pbf arrived in 2.6.0 for ./vector-tiles, the one entry that decodes a tile: ./client owns the overlay, the painter and the worker protocol and stays protobuf-free, so a map consumer that injects its decoder never bundles a parser -- tests/vector-tiles/dependency-boundary.test.ts is what holds that line.",
   "dependencies": {
     "@apple/mapkit-loader": "^1.0.0",
+    "@mapbox/vector-tile": "^3.0.0",
     "@nuxt/kit": "^4.4.8",
-    "h3": "^1.15.11"
+    "h3": "^1.15.11",
+    "pbf": "^5.1.2"
   },
   "//devDependencies": "@types/apple-mapkit stays declared here as well because pnpm's isolated node_modules does not expose a transitive dependency to this package's own typecheck. The ./testing fake declares its own public types structurally, so the published .d.ts resolves without Apple's types installed; the link back to the real surface is tests/testing/apple-types.test.ts, which compares the fake member by member against apple-mapkit/mapkit and fails typecheck on drift. happy-dom is pinned to the exact version already resolved in this workspace's lockfile (see the narduk-mapkit-nuxt package.json note) -- a caret range makes pnpm re-resolve the shared entry for every other package (narduk-libs#124).",
   "devDependencies": {
@@ -104,8 +119,10 @@
     "happy-dom": "20.10.6",
     "publint": "^0.3.21",
     "typescript": "^5.9.3",
+    "unhead": "3.4.1",
     "vitest": "^4.1.11",
-    "vue": "^3.5.39"
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.3.6"
   },
   "engines": {
     "node": ">=20"

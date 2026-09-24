@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-app-tools",
-  "version": "0.7.0",
+  "version": "0.21.1",
   "private": false,
   "type": "module",
   "description": "Focused app-local development, migration, deployment, and asset tools.",
@@ -38,10 +38,11 @@
     "build": "tsc --project tsconfig.build.json",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test:unit": "vitest run --coverage --config vitest.config.ts"
+    "test:unit": "vitest run --coverage --config vitest.config.ts",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1",
@@ -69,6 +70,6 @@
     }
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

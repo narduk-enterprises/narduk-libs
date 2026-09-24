@@ -1,4 +1,4 @@
 export default defineNuxtConfig({
   srcDir: 'runtime',
-  modules: ['./src/module'],
+  modules: ['./src/module-entry'],
 })

@@ -73,9 +73,10 @@ function routedOrigin(event) {
     });
 }
 /**
- * One limiter per server instance, built on first use from the module's option.
- * An app that mounts narduk-core's own limiter on the event context wins over
- * it; this only stops an unconfigured route from signing without a ceiling.
+ * One limiter per server instance, built on first use from the module's
+ * `rateLimit` option -- and only when the app set one: unconfigured, the route
+ * applies no limit (narduk-libs#485). A limiter the app mounts on
+ * `event.context.nardukMapKit.rateLimit` wins over it.
  */
 let fallbackRateLimit = null;
 /**
@@ -106,7 +107,12 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig(event);
     const sources = [readCloudflareEnv(event), readProcessEnv()];
     const rateLimit = resolveRateLimit(event, config);
+    // `nardukMapKit.allowedHosts` (narduk-libs#437); an env override arrives as a
+    // comma-separated string, which the handler reads as a list.
+    const allowedHosts = config['nardukMapKit']
+        ?.allowedHosts;
     return await mapKitTokenResponse(requestFromEvent(event), {
+        ...(allowedHosts === undefined ? {} : { allowedHosts }),
         doppler: false,
         keyId: readRuntimeString(sources, ['APPLE_KEY_ID'], config['appleKeyId']),
         privateKey: readRuntimeString(sources, ['APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY'], config['applePrivateKey'] || config['appleSecretKey']),

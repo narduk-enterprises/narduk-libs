@@ -3,22 +3,24 @@
  *
  * What is counted: every SQL statement the route prepares against a real
  * Miniflare D1 database created from narduk-core's own `system_prompts`
- * migration. The binding drizzle receives records each `prepare()`, so the
- * count is of statements the ORM actually emits — not of helper calls. The
- * route does not count rows, so its ceiling is one statement per page.
+ * migration by narduk-testkit's D1 query harness. The binding drizzle receives
+ * records each `prepare()`, so the count is of statements the ORM actually
+ * emits — not of helper calls. The route does not count rows, so its ceiling is
+ * one statement per page.
  */
-import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { drizzle } from 'drizzle-orm/d1'
 import { createApp, defineEventHandler, toWebHandler } from 'h3'
-import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createD1QueryHarness, expectStatementBudget } from '../../../tooling/narduk-testkit/src/d1'
+
+import type { D1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
 import type { H3Event } from 'h3'
 
 const harness = vi.hoisted(() => ({
   database: null as unknown,
-  statements: [] as string[],
 }))
 
 vi.mock('@narduk-enterprises/narduk-core/server/utils/database', () => ({
@@ -46,31 +48,9 @@ vi.mock('@narduk-enterprises/narduk-core/server/utils/rateLimit', () => ({
 vi.mock('nitropack/runtime', () => ({ useRuntimeConfig: () => ({}) }))
 
 const PROMPT_COUNT = 9
-
-type D1 = Awaited<ReturnType<Miniflare['getD1Database']>>
-
-function readMigration(name: string): string[] {
-  const sql = readFileSync(new URL(`../../narduk-core/runtime/drizzle/${name}`, import.meta.url), {
-    encoding: 'utf8',
-  })
-
-  return sql
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter(Boolean)
-}
-
-/** Records the SQL drizzle prepares, then hands the real statement back. */
-function countingBinding(binding: D1): D1 {
-  return {
-    ...binding,
-    batch: (statements: unknown[]) => (binding.batch as (input: unknown[]) => unknown)(statements),
-    prepare: (sql: string) => {
-      harness.statements.push(sql)
-      return binding.prepare(sql)
-    },
-  } as unknown as D1
-}
+const MIGRATION = fileURLToPath(
+  new URL('../../narduk-core/runtime/drizzle/0005_system_prompts.sql', import.meta.url),
+)
 
 async function call(url: string) {
   const handler = (await import('../server/api/admin/system-prompts/index.get')).default
@@ -82,18 +62,11 @@ async function call(url: string) {
 }
 
 describe('GET /api/admin/system-prompts holds a one-statement-per-page ceiling', () => {
-  const runtime = new Miniflare({
-    compatibilityDate: '2026-07-01',
-    d1Databases: ['DB'],
-    modules: true,
-    script: 'export default { fetch() { return new Response("ok") } }',
-  })
+  let d1: D1QueryHarness
 
   beforeAll(async () => {
-    const binding = await runtime.getD1Database('DB')
-    await binding.batch(
-      readMigration('0005_system_prompts.sql').map((statement) => binding.prepare(statement)),
-    )
+    d1 = await createD1QueryHarness({ migrations: [MIGRATION] })
+    const binding = d1.raw
     await binding.batch(
       Array.from({ length: PROMPT_COUNT }, (_row, index) =>
         binding
@@ -109,23 +82,25 @@ describe('GET /api/admin/system-prompts holds a one-statement-per-page ceiling',
       ),
     )
 
-    harness.database = drizzle(countingBinding(binding))
+    harness.database = drizzle(d1.db)
   })
 
-  afterAll(() => runtime.dispose())
+  afterAll(() => d1.dispose())
 
   beforeEach(() => {
-    harness.statements.length = 0
+    d1.reset()
   })
 
   it('serves any page in exactly one statement, with total null', async () => {
     for (const query of ['/', '/?limit=3', '/?limit=3&offset=6', '/?sort=updatedAt:desc']) {
-      harness.statements.length = 0
-      const { body, status } = await call(query)
+      const {
+        result: { body, status },
+        statements,
+      } = await expectStatementBudget(d1, () => call(query), { max: 1 })
 
       expect(status).toBe(200)
       expect(body.total).toBeNull()
-      expect(harness.statements).toHaveLength(1)
+      expect(statements).toHaveLength(1)
     }
   })
 

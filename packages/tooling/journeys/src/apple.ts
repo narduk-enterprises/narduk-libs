@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { digestJourney } from './digest.js'
 import { sha256File, videoSeconds } from './media.js'
 import type {
   AppleDrivenStep,
@@ -62,9 +63,19 @@ export interface AppleWorldHooks {
   /** What the app itself reports as its revision. Recorded in run.json. */
   appRevision(): string | Promise<string>
   /**
+   * OPTIONAL: make the world before the app launches into it. A server-backed
+   * handset world has real work between "a simulator is booted" and "a walk may
+   * start" — load the scenario, apply the configuration the walk needs, sync the
+   * media its screens render (narduk-libs#75). Runs once per journey and
+   * scenario, before the launch; a throw fails the session, naming both.
+   */
+  prepare?(context: { control: SimulatorControl; scenarioId: string }): void | Promise<void>
+  /**
    * OPTIONAL confirmation BY NAME, the web loader's guarantee: an app that can
    * report which fixture world it loaded returns that id here and the runner
-   * asserts it matches what it asked for.
+   * asserts it matches what it asked for. The declared `start` landing is
+   * checked as well: a name says which world loaded, and the landing says it
+   * rendered what the journey starts from.
    *
    * Its absence is recorded, not papered over. Without it the run's only
    * confirmation is that the launched world renders the journey's declared
@@ -77,6 +88,15 @@ export interface AppleWorldHooks {
     injector: AppleInjector
     scenarioId: string
   }): string | Promise<string>
+  /**
+   * OPTIONAL: the world's own generation token, the Apple analogue of the web
+   * loader's `generation()`. The app's pid catches the binary being replaced
+   * under a take and cannot see the DATA moving under one; a server-backed
+   * world returns something that changes when it is reseeded. Read after the
+   * world is confirmed and again at the end, beside the pid; a change fails the
+   * run.
+   */
+  generation?(context: { control: SimulatorControl; scenarioId: string }): string | Promise<string>
 }
 
 export interface AppleRunOptions {
@@ -271,11 +291,49 @@ async function awaitLanding(
   return verdict
 }
 
+/**
+ * The ONE control carrying this identifier, on the screen as it is now. No
+ * match and an ambiguous match both throw, naming what WAS on screen: that list
+ * is what turns a drifted beat into a two-minute fix.
+ */
+function locateElement(injector: AppleInjector, id: string): { x: number; y: number } {
+  if (!injector.elements) {
+    throw new Error(
+      `injector "${injector.name}" cannot locate a control by identifier, so "${id}" cannot be pressed`,
+    )
+  }
+  const elements = injector.elements()
+  const matches = elements.filter((element) => element.id === id)
+  if (matches.length === 1) return matches[0] as { x: number; y: number }
+  const onScreen = [...new Set(elements.map((element) => element.id))].sort()
+  const listed = onScreen.length > 0 ? onScreen.map(quote).join(', ') : 'none'
+  if (matches.length === 0) {
+    throw new Error(`no control "${id}" on screen; identifiers on screen: ${listed}`)
+  }
+  throw new Error(
+    `${String(matches.length)} controls carry "${id}", and a press by identifier must name exactly one`,
+  )
+}
+
 function performGesture(injector: AppleInjector, gesture: AppleGesture): void {
   switch (gesture.kind) {
     case 'tap':
       injector.tap(gesture.x, gesture.y)
       return
+    case 'element': {
+      const point = locateElement(injector, gesture.id)
+      injector.tap(point.x, point.y)
+      return
+    }
+    case 'key': {
+      if (!injector.key) {
+        throw new Error(`injector "${injector.name}" cannot press keys, so "${gesture.key}" cannot`)
+      }
+      for (let pressed = 0; pressed < (gesture.repeat ?? 1); pressed += 1) {
+        injector.key(gesture.key)
+      }
+      return
+    }
     case 'swipe':
       injector.swipe(gesture.from, gesture.to, gesture.duration)
       return
@@ -284,6 +342,10 @@ function performGesture(injector: AppleInjector, gesture: AppleGesture): void {
       return
     case 'wait':
       return
+    default:
+      // A kind nobody implemented would otherwise perform nothing and pass on a
+      // landing that was already true (narduk-libs#75).
+      throw new Error(`unknown gesture kind "${String((gesture as { kind: unknown }).kind)}"`)
   }
 }
 
@@ -405,15 +467,25 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
   })
   mkdirSync(join(paths.attemptDirectory, 'steps'), { recursive: true })
 
-  // 1 · the world, by launch argument (requirement 1).
+  // 1 · the world: made where it has to be, then selected by launch argument
+  //     (requirement 1).
+  if (options.world.prepare) {
+    try {
+      await options.world.prepare({ control, scenarioId })
+    } catch (error) {
+      throw new Error(
+        `${journey.id}: world.prepare("${scenarioId}") failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      )
+    }
+  }
   const scenarioArgs = await options.world.launchArgs(scenarioId)
   const launchArgs = [...scenarioArgs, ...journey.launchArgs]
   control.terminate(options.bundleId)
   control.launch(options.bundleId, launchArgs)
 
-  // The generation token: the pid this journey ran against. Re-read at the end,
-  // a changed one means the app was replaced under the journey and everything
-  // after that point is evidence of nothing (§4.2, §5).
   const deadline = now() + args.settleTimeoutMs
   let pid = control.pid(options.bundleId)
   while (pid === null && now() < deadline) {
@@ -426,30 +498,38 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
         `${String(args.settleTimeoutMs)}ms of launch (${launchArgs.join(' ')})`,
     )
   }
-  const generation = `pid:${String(pid)}`
+  // The generation token: the pid this journey ran against, plus the world's
+  // own token where it has one. Re-read at the end, a changed one means the app
+  // or its data was replaced under the journey and everything after that point
+  // is evidence of nothing (§4.2, §5).
+  const readGeneration = async (appPid: number | null): Promise<string> => {
+    const worldGeneration = options.world.generation
+      ? ` world:${await options.world.generation({ control, scenarioId })}`
+      : ''
+    return `pid:${String(appPid ?? 'gone')}${worldGeneration}`
+  }
 
-  // 2 · confirm the world, by name where the app can, by its declared start
-  //     landing otherwise — and say in the manifest which one this was.
-  let confirmed: boolean
-  let preparedBy: string
-  let startVerdict: LandingVerdict | null = null
+  // 2 · confirm the world: by name where the app can, and always by its
+  //     declared start landing — and say in the manifest which one this was.
+  //     Taking the name never costs the landing (narduk-libs#75).
+  const worldProblems: string[] = []
   if (options.world.confirm) {
     const reported = await options.world.confirm({ control, injector, scenarioId })
-    confirmed = reported === scenarioId
-    preparedBy = 'fresh-launch:named'
-  } else {
-    startVerdict = await awaitLanding(injector, journey.start, {
-      timeoutMs: args.settleTimeoutMs,
-      sleep,
-      now,
-    })
-    confirmed = startVerdict.landed
-    preparedBy = 'fresh-launch:start-landing'
+    if (reported !== scenarioId) worldProblems.push(`the world reports "${reported}"`)
   }
-  if (!confirmed && startVerdict) {
+  const preparedBy = options.world.confirm ? 'fresh-launch:named' : 'fresh-launch:start-landing'
+  const startVerdict = await awaitLanding(injector, journey.start, {
+    timeoutMs: args.settleTimeoutMs,
+    sleep,
+    now,
+  })
+  if (!startVerdict.landed) {
+    worldProblems.push(startVerdict.message ?? 'the start landing did not hold')
     writeFileSync(join(paths.attemptDirectory, 'failure-tree.txt'), startVerdict.tree)
     control.screenshot(join(paths.attemptDirectory, 'failure.png'))
   }
+  const confirmed = worldProblems.length === 0
+  const generation = await readGeneration(pid)
 
   // 3 · roll the camera (capture only). Pacing is the only thing mode changes.
   const recording =
@@ -461,9 +541,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
   const steps: RunStep[] = []
   let failure: string | null = confirmed
     ? null
-    : `the launched world is not the one "${scenarioId}" declares: ${
-        startVerdict?.message ?? 'the world did not confirm the scenario'
-      }`
+    : `the launched world is not the one "${scenarioId}" declares: ${worldProblems.join('; ')}`
   let ordinal = 0
 
   if (!failure) {
@@ -525,7 +603,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
     }
   }
 
-  const generationAfter = `pid:${String(control.pid(options.bundleId) ?? 'gone')}`
+  const generationAfter = await readGeneration(control.pid(options.bundleId))
   let video: RunManifest['video']
   if (recording) {
     await sleep(1_200)
@@ -549,6 +627,7 @@ async function runOneJourney(args: OneJourneyArgs): Promise<AppleJourneyResult> 
     base: `simulator://${control.udid}/${options.bundleId}`,
     commit: args.commit,
     declarationDigest: options.declarationDigest,
+    journeyDigest: digestJourney(journey),
     appRevision: await options.world.appRevision(),
     profile: {
       name: options.profileName,
@@ -612,12 +691,18 @@ function describeGesture(gesture: AppleGesture): string {
   switch (gesture.kind) {
     case 'tap':
       return `tap ${String(gesture.x)},${String(gesture.y)}`
+    case 'element':
+      return `press #${gesture.id}`
+    case 'key':
+      return `key ${gesture.key}${(gesture.repeat ?? 1) > 1 ? ` ×${String(gesture.repeat)}` : ''}`
     case 'swipe':
       return `swipe ${String(gesture.from.x)},${String(gesture.from.y)} → ${String(gesture.to.x)},${String(gesture.to.y)}`
     case 'type':
       return `type "${gesture.text}"`
     case 'wait':
       return 'wait'
+    default:
+      return `unknown "${String((gesture as { kind: unknown }).kind)}"`
   }
 }
 

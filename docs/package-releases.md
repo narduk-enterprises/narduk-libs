@@ -36,6 +36,11 @@ runbook and evidence exemplar.
    propagation, resolves every publishable manifest at its exact version, and
    performs both an initial and frozen external consumer install. A release is
    not complete until this proof passes.
+6. After the release PR merges, the **Release publication proof** workflow
+   (`.github/workflows/release-proof.yml`) proves that every version the merge
+   commit bumped is served by GitHub Packages and by `npm.nard.uk`, and
+   re-dispatches whatever did not arrive. See
+   [Release publication proof](#release-publication-proof).
 
 The Changesets run that only opens a release PR skips the registry proof.
 Superseded preparation commits leave the current version PR alone. An already
@@ -44,7 +49,12 @@ previous verification failure cannot turn green merely because publication is
 now a no-op.
 
 Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
-`packages: write` inside the main-only `npm-release` environment. GitHub
+`packages: write`, after `verify-ci` pins the run to a CI-verified commit on
+main. The publishing job does not use the main-only `npm-release` environment:
+that environment holds the estate App key, and GitHub gives environment secrets
+to every job that uses the environment. Only install-free jobs use it
+(`notify-mirror` in `release.yml`, `mirror-redispatch` in `release-proof.yml`),
+so the key never shares a runner with dependency install scripts. GitHub
 Packages must grant this repository Actions access to every existing package,
 including packages not automatically linked to this repository. Before writing
 registry auth, the job checks that its token can read metadata for every current
@@ -130,7 +140,11 @@ cannot be reused as browser or D1 evidence.
 
 `pnpm run release-plan:check` decides this in the `contracts` gate. It compares
 each changed workspace package against the Changesets base branch and applies
-two plain rules.
+two plain rules. The comparison ref defaults to the remote-tracking
+`origin/<baseBranch>`, not the local branch, and the first output line names it
+(#619): a stale local `main` makes every commit that landed upstream read as the
+branch's own. `--base <ref>` overrides it, and
+`pnpm run release-plan:check -- --base <ref>` works.
 
 **A devDependency-only change never needs a Changeset.** If the only thing that
 moved inside a package directory is `devDependencies`, or a `scripts` entry that
@@ -183,6 +197,37 @@ default.
 The check is skipped on `changeset-release/*` branches, whose version commits
 legitimately rewrite every manifest with the Changesets already consumed.
 
+## Consuming a fix that is merged but not yet published
+
+An app that needs a library fix sees a gap between the fix merging here and a
+version containing it existing on the registry. It closes when the
+`chore: release packages` PR (branch `changeset-release/main`) merges and
+publishes (narduk-libs#589).
+
+- **What triggers the release PR.** The Release workflow opens or updates it on
+  every merge to `main` that carries a Changeset. Nothing batches it on a
+  cadence: it sits open, collecting every pending Changeset, until someone
+  merges it.
+- **Who merges it.** If a campaign orchestrator is running in this repository,
+  it owns release merges; ask it rather than merging. Otherwise the lane blocked
+  on the fix may merge it through the same gate as any PR (`verify-pr-gate.py`
+  GREEN on its current head, after
+  [Approving `chore: release packages` PR runs](#approving-chore-release-packages-pr-runs)
+  has landed required checks on that head — normally via `release-pr-ci`
+  dispatch, with manual approve only if that job warns). The PR publishes every
+  pending package, not only yours, so read its package list before merging, and
+  treat the [Release publication proof](#release-publication-proof) as the end
+  of the job, not the merge.
+- **Pinning ahead of publication.** Do not push an app PR that pins a version
+  which does not exist yet. Its install fails for a reason that is not the PR's
+  fault, and the red check looks the same as a real failure. Keep the pin local,
+  or open the app PR as a draft that says which version it waits for, and push
+  the pin once `npm view <package>@<version>` resolves on `npm.nard.uk`.
+- **Never work around it in the app.** Copying the fix into the app, patching
+  `node_modules` or vendoring the source is exactly the fork this repository
+  exists to prevent, and it is the hardest to find later. Wait for the release.
+  If the wait itself is the blocker, say so to whoever owns release merges.
+
 ## Failed or partial publish
 
 - Do not change, delete, or reuse a version that may have reached the registry.
@@ -193,6 +238,122 @@ legitimately rewrite every manifest with the Changesets already consumed.
   temporary authenticated npm config. Do not place tokens in the repository.
 - If package manifests had to change, create a new Changeset and publish higher
   versions instead of attempting to replace an artifact.
+
+### Release publication proof
+
+Every push to `main` that changes a package manifest starts the **Release
+publication proof** workflow. It lists the publishable versions that exact
+commit bumped (a commit that bumps none finishes in seconds), then:
+
+1. polls GitHub Packages with the job token for up to 75 minutes. After 20
+   minutes, if push CI for the commit succeeded and no Release run is queued,
+   waiting or running, it re-dispatches `release.yml` once with `verified-sha`
+   set to the commit. It never dispatches into a busy `narduk-libs-release`
+   group, because a new queued run replaces the pending one there. It fails at
+   once, naming the CI run, when push CI for the commit concluded red. A missing
+   version whose package already has a newer `latest` is _superseded_: it is
+   reported as a warning and never republished (step 4 below). When a plain
+   missing version sits beside a superseded one, the proof fails instead of
+   dispatching, because `release.yml` refuses to move `latest` backwards;
+2. polls `npm.nard.uk` anonymously for 15 minutes, re-dispatches the
+   package-delivery "Sync to R2" once through the same downscoped
+   `narduk-lane-automation` token as `notify-mirror`, and polls another 20
+   minutes.
+
+A red proof names each missing `name@version` in an `::error` annotation and in
+the run summary; a green one is the publication evidence for that release. To
+prove an older commit, run it by hand from `main`:
+`gh workflow run release-proof.yml --repo narduk-enterprises/narduk-libs -f sha=<commit>`.
+
+### A publish looks skipped or missing
+
+Release runs only start from `main` CI completions (`branches: [main]` on the
+`workflow_run` trigger), but a run can still read "skipped" or "cancelled"
+without a publish being lost. Work through these steps in order and stop at the
+first one that explains the gap:
+
+0. Read the **Release publication proof** run for the release-PR merge commit.
+   Green means both registries serve every bumped version; red names what is
+   missing and why.
+1. Find the Release run whose `verify-ci` `VERIFIED_SHA` is the release-PR merge
+   commit. Read its "Prepare or publish" and "Verify immutable published package
+   versions" steps; grep the step log for `Publishing "` rather than dumping
+   full logs. A merge commit whose own `.changeset/` is empty publishes even
+   when `main` has already moved on.
+2. Treat that verify step as the GitHub Packages proof. The `gh` CLI token lacks
+   `read:packages` and gets a 403 from the packages API.
+3. Check the mirror:
+   `curl -s "https://npm.nard.uk/@narduk-enterprises%2f<pkg>" | jq '.versions|has("<ver>")'`.
+   `npm.nard.uk` is a mirror synced by `narduk-enterprises/package-delivery`
+   "Sync to R2", whose cron can run hours apart. If GitHub Packages has the
+   version and the mirror does not, dispatch the sync with
+   `gh workflow run sync.yml --repo narduk-enterprises/package-delivery`. Do not
+   republish.
+4. Only if a version truly was not published, recover just the packages that no
+   newer open or merged release PR will ship. If a newer release PR supersedes a
+   package, ship that newer version instead and record the skipped run ID on
+   that release PR.
+5. Only then use the `verified-sha` escape hatch described in
+   [When a Changeset is required](#when-a-changeset-is-required).
+
+Worked example, 2026-09-18: release PR #477 merged as `f862443a`. Release run
+35365638662 showed "skipped", but a PR-branch CI completion had triggered it.
+The push CI for `f862443a` (35365631679) triggered Release run 35366115556,
+which published narduk-core 2.2.2, narduk-app-tools 0.9.0 and create-narduk-app
+0.9.4 at 16:05Z, after `main` had already moved to `7ae9278c` (#476). The next
+run (35366209232) queued FIFO in the `narduk-libs-release` concurrency group
+rather than being replaced. #476 carried a pending Changeset, so that run opened
+release PR #479 (narduk-core 2.2.3). The manual `verified-sha` dispatch
+35366749247 only re-verified versions that were already published. The versions
+looked missing because the mirror had last synced at 15:48Z. A manual Sync to R2
+run (35367304736, package-delivery#4) made them appear. Step 4 is Logan's rule
+from that day: "There was a later release that has both fixes in it".
+
+Prevention:
+
+- Merge the release PR last, or wait for its publish run to finish before
+  merging anything else to `main`. A later run still works; this only keeps the
+  evidence unambiguous.
+- `release.yml`'s `notify-mirror` job dispatches the mirror sync after every
+  real publish (#481), and the publication proof re-dispatches it once more if
+  the mirror still lags.
+
+### Approving `chore: release packages` PR runs
+
+The Release workflow's `release-pr-ci` job starts CI on `changeset-release/main`
+after changesets/action reports a release PR number. It runs
+`gh workflow run ci.yml --ref changeset-release/main` with the job-scoped
+`GITHUB_TOKEN` (`actions: write` only; no secret, no environment, no checkout).
+`workflow_dispatch` is GitHub's documented exception to `GITHUB_TOKEN` loop
+prevention. A dispatch plans `--all`, and the required `ci / Required` and
+`verify` checks land on the release PR's head commit.
+
+That job is `continue-on-error`. If the dispatch fails, the run posts a warning
+and the situation is the same as before the job existed: GitHub has already
+created the PR's `pull_request` CI run and may be holding it as
+`action_required` until someone approves it, which leaves `verify-pr-gate.py`
+with no result on the current head. Approve only the held run for the release
+PR's current head — do not approve a stale held run when `release-pr-ci` has
+already started CI on that head:
+
+```bash
+head=$(gh pr view changeset-release/main --repo narduk-enterprises/narduk-libs \
+  --json headRefOid --jq .headRefOid)
+gh run list --repo narduk-enterprises/narduk-libs --branch changeset-release/main \
+  --status action_required --json databaseId,headSha \
+  --jq ".[] | select(.headSha == \"$head\") | .databaseId" |
+  xargs -I{} gh api -X POST repos/narduk-enterprises/narduk-libs/actions/runs/{}/approve
+```
+
+Do not approve every held run on the branch. Each regenerated release PR leaves
+its superseded heads' runs in `action_required`, and they share the PR's CI
+concurrency group. On 2026-09-22 an unfiltered approve released 20 runs, 19 of
+them stale. They took the group and cancelled the current head's run, which then
+had to be re-run.
+
+The designed path is the `release-pr-ci` dispatch, not authoring the release PR
+with a GitHub App token. Widening that App's grant on this repository remains
+Logan's decision and is tracked on #198.
 
 ## Bad release rollback
 

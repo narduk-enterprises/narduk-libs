@@ -1,13 +1,17 @@
 import { createServer } from 'node:http'
 
 import { createApp, defineEventHandler, toNodeListener } from 'h3'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createRateLimitWindowStore } from '../runtime/server/rate-limit/window'
-import { defineRateLimitedHandler } from '../runtime/server/utils/rateLimitedHandler'
+import { setCacheProfile } from '../runtime/server/utils/cacheProfile'
+import {
+  consumeRateLimit,
+  defineRateLimitedHandler,
+} from '../runtime/server/utils/rateLimitedHandler'
 
 import type { RateLimitRuntimeConfig } from '../runtime/server/rate-limit/policy'
-import type { EventHandler, H3Event } from 'h3'
+import type { EventHandler, EventHandlerRequest, H3Event } from 'h3'
 
 /**
  * The handler reads its defaults from Nitro's runtime config, which only exists
@@ -18,6 +22,12 @@ const { runtime } = vi.hoisted(() => ({
   runtime: { value: {} as Record<string, unknown> },
 }))
 vi.mock('nitropack/runtime', () => ({ useRuntimeConfig: () => runtime.value }))
+// setCacheProfile (used below to prove the 429 wins over an earlier 'live'
+// call) reads this for its preview-safe-mode guard; it is unrelated to rate
+// limiting, so it is stubbed the same way tests/cache-profile.test.ts does.
+vi.mock('../runtime/server/utils/runtime-public', () => ({
+  resolveRuntimePublicOverlay: () => ({ previewSafeMode: false }),
+}))
 
 const ROUTE = '/api/x'
 const CLIENT_IP = '203.0.113.9'
@@ -138,6 +148,51 @@ describe('defineRateLimitedHandler', () => {
     const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE])
 
     expect(denied!.headers.get('x-request-id')).toMatch(/\S/)
+  })
+
+  /**
+   * narduk-libs#429: a 429 must never be storable at a shared cache. Asserted
+   * against exact header values, never `not.toContain('public')` — that
+   * assertion also passes for `no-cache`, which Cloudflare stores.
+   */
+  it('answers the 429 with exactly private, no-store and nothing cacheable', async () => {
+    const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE])
+
+    expect(denied!.status).toBe(429)
+    expect(denied!.headers.get('cache-control')).toBe('private, no-store')
+    expect(denied!.headers.get('cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('cloudflare-cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('surrogate-control')).toBeNull()
+    expect(denied!.headers.get('cache-tag')).toBeNull()
+    // Retry-After and the RateLimit-* family are not shared-cache headers and
+    // must survive the strip.
+    expect(denied!.headers.get(RETRY_AFTER_HEADER)).toBe('60')
+  })
+
+  it('overrides a live cache profile the route already set before the deny', async () => {
+    const [, , denied] = await request(limited(), [ROUTE, ROUTE, ROUTE], (event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+    })
+
+    expect(denied!.status).toBe(429)
+    expect(denied!.headers.get('cache-control')).toBe('private, no-store')
+    expect(denied!.headers.get('cdn-cache-control')).toBeNull()
+    expect(denied!.headers.get('cache-tag')).toBeNull()
+  })
+
+  it('does not touch the cache posture of a successful, unthrottled response', async () => {
+    const [first] = await request(limited(), [ROUTE], (event) => {
+      setCacheProfile(event, 'live', { tags: ['stations'] })
+    })
+
+    expect(first!.status).toBe(200)
+    expect(first!.headers.get('cache-control')).toBe(
+      'public, max-age=60, stale-while-revalidate=900',
+    )
+    expect(first!.headers.get('cdn-cache-control')).toBe(
+      'public, max-age=300, stale-while-revalidate=900',
+    )
+    expect(first!.headers.get('cache-tag')).toBe('stations')
   })
 
   it('does not send Retry-After while the caller still has quota', async () => {
@@ -321,5 +376,212 @@ describe('defineRateLimitedHandler with the Cloudflare binding', () => {
 
     expect(results[0]!.status).toBe(200)
     expect(limit).not.toHaveBeenCalled()
+  })
+})
+
+/** Drive a handler over a real socket with a caller-chosen client address per request. */
+async function requestAs(
+  handler: EventHandler,
+  calls: Array<{ ip: string; path: string }>,
+  decorate?: (event: H3Event) => void,
+): Promise<number[]> {
+  const app = createApp().use(
+    '/',
+    defineEventHandler(async (event) => {
+      decorate?.(event)
+      return handler(event)
+    }),
+    { match: () => true },
+  )
+  const server = createServer(toNodeListener(app))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
+  try {
+    const statuses: number[] = []
+    for (const call of calls) {
+      const response = await fetch(`http://127.0.0.1:${address.port}${call.path}`, {
+        headers: { 'cf-connecting-ip': call.ip },
+      })
+      await response.text()
+      statuses.push(response.status)
+    }
+    return statuses
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+}
+
+describe('defineRateLimitedHandler — IPv6 /64 buckets (narduk-libs#430)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  it('counts two addresses in one /64 against one allowance', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1 }), [
+      { ip: '2001:db8:1:2::1', path: ROUTE },
+      { ip: '2001:db8:1:2::2', path: ROUTE },
+    ])
+
+    expect(statuses).toEqual([200, 429])
+  })
+
+  it('gives a different /64 its own allowance', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1 }), [
+      { ip: '2001:db8:1:2::1', path: ROUTE },
+      { ip: '2001:db8:1:3::1', path: ROUTE },
+    ])
+
+    expect(statuses).toEqual([200, 200])
+  })
+
+  it('keys the Cloudflare binding on the /64 too', async () => {
+    const limit = vi.fn().mockResolvedValue({ success: true })
+    await requestAs(
+      limited({ key: 'test', limit: 5, windowSeconds: 60 }),
+      [{ ip: '2001:db8:1:2::abcd', path: ROUTE }],
+      (event) => {
+        ;(event.context as Record<string, unknown>).cloudflare = { env: { RL_5: { limit } } }
+      },
+    )
+
+    expect(limit).toHaveBeenCalledWith({ key: 'test:2001:db8:1:2::/64' })
+  })
+})
+
+describe('defineRateLimitedHandler — path variants share a bucket (narduk-libs#433)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  const variants = [
+    '/api/mapkit-token/',
+    '/api/mapkit-token?x=1',
+    '/api/mapkit-token/?x=1',
+    '/api/mapkit-%74oken',
+  ]
+
+  it.each(['ip', 'ip-path'] as const)(
+    'a %s-scoped route answers 429 on every variant once the bare path is spent',
+    async (scope) => {
+      const handler = limited({ key: 'test', limit: 1, scope })
+      const statuses = await requestAs(handler, [
+        { ip: CLIENT_IP, path: '/api/mapkit-token' },
+        ...variants.map((path) => ({ ip: CLIENT_IP, path })),
+      ])
+
+      expect(statuses).toEqual([200, 429, 429, 429, 429])
+    },
+  )
+
+  it('still enforces the in-isolate window when no RL_* binding is declared', async () => {
+    const statuses = await requestAs(limited({ key: 'test', limit: 1, windowSeconds: 60 }), [
+      { ip: CLIENT_IP, path: ROUTE },
+      { ip: CLIENT_IP, path: `${ROUTE}/` },
+    ])
+
+    expect(statuses).toEqual([200, 429])
+  })
+})
+
+describe('defineRateLimitedHandler types (narduk-libs#653)', () => {
+  const options = { key: 'types', limit: 1 }
+  type Handler<Response> = EventHandler<EventHandlerRequest, Response>
+
+  it('keeps an async handler one Promise deep', () => {
+    const wrapped = defineRateLimitedHandler(async () => ({ ok: true }), options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<{ ok: boolean }>>>()
+  })
+
+  it('wraps a synchronous handler in one Promise', () => {
+    const wrapped = defineRateLimitedHandler(() => ({ ok: true }), options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<{ ok: boolean }>>>()
+  })
+
+  it('keeps an async handler with a union response one Promise deep', () => {
+    const wrapped = defineRateLimitedHandler(
+      async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true }),
+      options,
+    )
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<
+      Handler<Promise<{ ok: true } | { ok: false; reason: string }>>
+    >()
+  })
+
+  it('accepts an h3 handler built with defineEventHandler', () => {
+    const inner = defineEventHandler(async () => 42)
+    const wrapped = defineRateLimitedHandler(inner, options)
+    expect(wrapped).toBeTypeOf('function')
+    expectTypeOf(wrapped).toEqualTypeOf<Handler<Promise<number>>>()
+  })
+})
+
+describe('consumeRateLimit (narduk-libs#413)', () => {
+  beforeEach(() => {
+    runtime.value = {}
+  })
+
+  it('returns a verdict instead of throwing, and leaves the response alone', async () => {
+    const store = createRateLimitWindowStore()
+    const hook = defineEventHandler(async (event) => {
+      const { allowed, enforcedBy, verdict } = await consumeRateLimit(event, {
+        key: 'hook',
+        limit: 2,
+        store,
+      })
+      return { allowed, enforcedBy, retryAfterSeconds: verdict?.retryAfterSeconds }
+    })
+
+    const results = await request(hook, [ROUTE, ROUTE, ROUTE])
+
+    expect(results.map((result) => result.status)).toEqual([200, 200, 200])
+    expect(JSON.parse(results[0]!.body)).toEqual({ allowed: true })
+    expect(JSON.parse(results[2]!.body)).toEqual({
+      allowed: false,
+      enforcedBy: 'window',
+      retryAfterSeconds: 60,
+    })
+    expect(results[2]!.headers.get(LIMIT_HEADER)).toBeNull()
+    expect(results[2]!.headers.get(RETRY_AFTER_HEADER)).toBeNull()
+  })
+
+  it('shares one allowance with a wrapped handler on the same key and store', async () => {
+    const store = createRateLimitWindowStore()
+    const options = { key: 'shared', limit: 2, store }
+    const wrapped = defineRateLimitedHandler(() => ({ ok: true }), options)
+    let hookVerdict: boolean | undefined
+    const both = defineEventHandler(async (event) => {
+      if (event.path.endsWith('hook')) {
+        hookVerdict = (await consumeRateLimit(event, options, ROUTE)).allowed
+        return { hookVerdict }
+      }
+      return wrapped(event)
+    })
+
+    const [, , wrappedAfter] = await request(both, [ROUTE, `${ROUTE}?hook`, ROUTE])
+
+    expect(hookVerdict).toBe(true)
+    expect(wrappedAfter!.status).toBe(429)
+  })
+
+  it('counts nothing when runtime config disables the policy', async () => {
+    setConfig({ enabled: false })
+    const store = createRateLimitWindowStore()
+    const hook = defineEventHandler(async (event) => {
+      const check = await consumeRateLimit(event, { key: 'off', limit: 1, store })
+      return { allowed: check.allowed, counted: check.verdict !== undefined }
+    })
+
+    const results = await request(hook, [ROUTE, ROUTE])
+
+    expect(results.map((result) => JSON.parse(result.body))).toEqual([
+      { allowed: true, counted: false },
+      { allowed: true, counted: false },
+    ])
   })
 })

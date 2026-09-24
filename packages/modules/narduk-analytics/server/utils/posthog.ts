@@ -1,8 +1,12 @@
-import { readRuntimeString } from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
+import {
+  hostnameFromUrl,
+  readRuntimeString,
+} from '@narduk-enterprises/narduk-core/server/utils/runtime-env'
 import { createError } from 'h3'
 
 import { resolvePosthogApiHost, resolvePosthogDomain } from './siteConfig'
 
+import type { AnalyticsServerRuntimeConfig } from './runtimeConfig'
 import type { H3Event } from 'h3'
 
 export const POSTHOG_DEFAULT_PERIOD = '30d'
@@ -35,10 +39,7 @@ function escapeHogLiteral(value: string) {
   return value.replaceAll("'", "''")
 }
 
-export function resolvePosthogProjectConfig(
-  config: ReturnType<typeof useRuntimeConfig>,
-  event?: H3Event,
-) {
+export function resolvePosthogProjectConfig(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
   const apiKey = event
     ? readRuntimeString(event, 'POSTHOG_PERSONAL_API_KEY', {
         config,
@@ -54,12 +55,17 @@ export function resolvePosthogProjectConfig(
   const apiHost = normalizeApiHost(resolvePosthogApiHost(config, event))
   const domain = resolvePosthogDomain(config, event)
 
-  if (!apiKey) {
-    throw createError({ statusCode: 500, statusMessage: 'POSTHOG_PERSONAL_API_KEY not configured' })
-  }
+  const missing = [
+    !apiKey ? 'POSTHOG_PERSONAL_API_KEY' : '',
+    !projectId ? 'POSTHOG_PROJECT_ID' : '',
+  ].filter((name) => name.length > 0)
 
-  if (!projectId) {
-    throw createError({ statusCode: 500, statusMessage: 'POSTHOG_PROJECT_ID not configured' })
+  if (missing.length > 0) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: `${missing.join(', ')} not configured`,
+      data: { state: 'not_configured', missing },
+    })
   }
 
   return {
@@ -123,4 +129,78 @@ export async function posthogRecordingsFetch<T>(
       params,
     },
   )) as T
+}
+
+export function normalizePosthogDomainHost(domain: string): string {
+  return hostnameFromUrl(domain).toLowerCase()
+}
+
+/**
+ * Host match for a recording `start_url` against `POSTHOG_DOMAIN`.
+ * Exact hostname or a subdomain of the configured domain. A substring
+ * match would let `evil-farm.example` through for `farm.example`.
+ */
+export function recordingStartUrlMatchesDomain(startUrl: string, domain: string): boolean {
+  const expected = normalizePosthogDomainHost(domain)
+  const host = hostnameFromUrl(startUrl).toLowerCase()
+  if (!expected || !host) return false
+  return host === expected || host.endsWith(`.${expected}`)
+}
+
+/**
+ * Drop recordings whose `start_url` host is another app. Shared PostHog
+ * project 325202 lists every estate app unless this filter runs.
+ */
+export function selectRecordingsForDomain<T extends { start_url?: string }>(
+  recordings: readonly T[],
+  domain: string,
+): T[] {
+  return recordings.filter((recording) =>
+    recordingStartUrlMatchesDomain(recording.start_url ?? '', domain),
+  )
+}
+
+export function buildPosthogRecordingsCacheKey(
+  projectId: string,
+  domain: string,
+  limit: number,
+): string {
+  return `posthog:recordings:${projectId}:${domain}:${limit}`
+}
+
+/**
+ * List-query params for `/session_recordings/`. `events` asks PostHog for
+ * this domain the same way the other admin routes filter `$current_url`.
+ * Local `selectRecordingsForDomain` is still the return-path guarantee.
+ */
+export function buildPosthogRecordingsListParams(
+  domain: string,
+  limit: number,
+): Record<string, string> {
+  const params: Record<string, string> = {
+    limit: String(limit),
+    order: '-start_time',
+  }
+  const normalized = domain.trim()
+  if (!normalized) {
+    return params
+  }
+
+  params.events = JSON.stringify([
+    {
+      id: '$pageview',
+      type: 'events',
+      order: 0,
+      name: '$pageview',
+      properties: [
+        {
+          key: '$current_url',
+          value: normalized,
+          operator: 'icontains',
+          type: 'event',
+        },
+      ],
+    },
+  ])
+  return params
 }

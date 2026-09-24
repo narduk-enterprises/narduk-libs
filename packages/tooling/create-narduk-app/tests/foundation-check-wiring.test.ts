@@ -18,10 +18,12 @@
  *   the script name there is a `ci-workflow.ts` change handed to the
  *   integrator, and is NOT covered by this file.
  *
- * The command must stay credential-free for any of this to work: the generated
- * install step scopes the GitHub Packages token to `pnpm install` alone, so
- * nothing later in the job has an ambient token.
+ * The command must stay credential-free for any of this to work: default
+ * generated installs read `https://npm.nard.uk` anonymously, so nothing in
+ * the job has an ambient GitHub Packages token.
  */
+
+import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -53,7 +55,7 @@ describe('generated apps run foundation:check:shared-ui-pinned', () => {
   it('the web package invokes the command against the whole checkout', () => {
     const { web } = manifests(['auth'])
     expect(web.scripts['foundation:shared-ui-pinned']).toBe(
-      'narduk-app foundation:check:shared-ui-pinned --checkout ..',
+      'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
     )
   })
 
@@ -87,7 +89,30 @@ describe('generated apps run foundation:check:shared-ui-pinned', () => {
   it('runs before the expensive phases so a bad pin fails fast', () => {
     const segments = manifests(['seo']).root.scripts['quality:static'].split(' && ')
     expect(segments.indexOf('pnpm run foundation:shared-ui-pinned')).toBeLessThan(
-      segments.indexOf('pnpm run build'),
+      segments.indexOf('pnpm run build:ci'),
     )
+  })
+})
+
+describe('every foundation check the web package runs reads the repository root', () => {
+  // pnpm runs apps/web scripts with the cwd at apps/web. `--checkout ..` was
+  // apps/, where item 12 found no Config/ and reported N/A with exit 0
+  // (narduk-libs#679).
+  it.each([
+    { label: 'every capability', capabilities: [...SUPPORTED_CAPABILITIES] },
+    { label: 'no capability', capabilities: [] as Capability[] },
+  ])('$label', ({ capabilities }) => {
+    const { web } = manifests(capabilities)
+    const checkouts = Object.entries(web.scripts).flatMap(([name, script]) =>
+      [...script.matchAll(/--checkout\s+(\S+)/g)].map((match) => ({ name, checkout: match[1] })),
+    )
+
+    expect(checkouts.map(({ name }) => name).sort()).toEqual([
+      'foundation:deployment',
+      'foundation:shared-ui-pinned',
+    ])
+    for (const { name, checkout } of checkouts) {
+      expect(resolve('/repo/apps/web', checkout ?? ''), name).toBe('/repo')
+    }
   })
 })

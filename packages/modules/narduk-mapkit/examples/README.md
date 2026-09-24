@@ -26,6 +26,8 @@ These examples are small integration patterns, not standalone apps.
   culling over a keyed annotation set.
 - `annotation-callouts.ts`: Anchored callouts for keyed markers, with in-place
   updates and a render/cleanup contract.
+- `vector-tile-network.ts`: A PMTiles vector network painted through a worker
+  decoder, and a tap answered from the decoded tiles.
 
 Copy the pattern that matches your runtime, then keep app-specific data
 fetching, styles, and marker HTML in the app.

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,7 @@ import {
   readWranglerScriptName,
   resolveAppDir,
   resolveWranglerConfigPath,
+  runDeploy,
   writeFlattenedWranglerDeployConfig,
 } from '../src/deploy.js'
 import {
@@ -23,6 +24,7 @@ import {
   isNonLocalHttpsUrl,
   normalizeDeployHostname,
   parseDeployLocalArgs,
+  readDeployLocalSecrets,
 } from '../src/deploy-local.js'
 import { parsePerformanceBudgetArgs } from '../src/performance.js'
 
@@ -91,7 +93,31 @@ describe('app-local command planning', () => {
       }),
     ).toBe(true)
     expect(isWorkersBuildDeployAllowed({ CI: 'true', WORKERS_CI: '1' })).toBe(false)
-    expect(() => parseDeployArgs(['--minify'])).toThrow('deploy <deploy|versions-upload>')
+    expect(() => parseDeployArgs(['--minify'])).toThrow(
+      'deploy <deploy|versions-upload|triggers-deploy>',
+    )
+    expect(parseDeployArgs(['triggers-deploy'])).toEqual({
+      action: 'triggers-deploy',
+      passthroughArgs: [],
+    })
+    expect(
+      buildWranglerCommandArgs({
+        action: 'triggers-deploy',
+        appDir: '/tmp/app',
+        hasGeneratedConfig: true,
+        hasOutputEntrypoint: true,
+        passthroughArgs: [],
+        sourceConfigPath: '/tmp/app/.wrangler.deploy.production.json',
+      }),
+    ).toEqual([
+      'exec',
+      'wrangler',
+      '--config',
+      '/tmp/app/.wrangler.deploy.production.json',
+      'triggers',
+      'deploy',
+      '--env=',
+    ])
     expect(
       buildWranglerCommandArgs({
         action: 'deploy',
@@ -177,6 +203,42 @@ describe('app-local command planning', () => {
       skipMigrate: true,
       yes: true,
     })
+  })
+
+  it('reads deploy-local build secrets from the environment, never Doppler', () => {
+    expect(readDeployLocalSecrets({ A: ' one ', B: 'two' }, ['A', 'B'])).toEqual({
+      A: 'one',
+      B: 'two',
+    })
+    expect(() => readDeployLocalSecrets({ A: 'one', B: '  ' }, ['A', 'B', 'C'])).toThrow(
+      'deploy-local needs B, C in its environment.',
+    )
+    expect(() => readDeployLocalSecrets({}, ['A'])).toThrow('nvault run -p <app>')
+  })
+
+  it('preserves hotfix runtime vars in generated configuration without changing source', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-config-'))
+    tempDirs.push(root)
+    const path = join(root, 'wrangler.jsonc')
+    const source = JSON.stringify({ name: 'example', keep_vars: false, vars: { MODE: 'prod' } })
+    writeFileSync(path, source)
+    const ordinary = writeFlattenedWranglerDeployConfig(path)
+    expect(JSON.parse(readFileSync(ordinary, 'utf8')).keep_vars).toBe(false)
+    const hotfix = writeFlattenedWranglerDeployConfig(path, { keepVars: true })
+    expect(JSON.parse(readFileSync(hotfix, 'utf8'))).toMatchObject({
+      keep_vars: true,
+      vars: { MODE: 'prod' },
+      main: '.output/server/index.mjs',
+    })
+    expect(readFileSync(path, 'utf8')).toBe(source)
+  })
+
+  it('refuses to silently ignore the keep-vars contract without a source config', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-no-config-'))
+    tempDirs.push(root)
+    expect(() => runDeploy(['versions-upload', '--dry-run'], root, {}, { keepVars: true })).toThrow(
+      'requires a source Wrangler config and built output',
+    )
   })
 
   it('rejects local deploy probe targets', () => {

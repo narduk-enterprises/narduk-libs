@@ -89,7 +89,16 @@ describe('narduk-core module', () => {
       provider: 'server',
       fallbackToApi: false,
       clientBundle: {
-        icons: ['lucide:menu', 'lucide:monitor', 'lucide:moon', 'lucide:sun', 'lucide:x'],
+        icons: [
+          'lucide:check',
+          'lucide:copy',
+          'lucide:link',
+          'lucide:menu',
+          'lucide:monitor',
+          'lucide:moon',
+          'lucide:sun',
+          'lucide:x',
+        ],
       },
       serverBundle: {
         collections: ['lucide'],
@@ -321,5 +330,146 @@ describe('narduk-core databaseBackend declaration', () => {
       if (previousPosthogAlias === undefined) delete process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY
       else process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = previousPosthogAlias
     }
+  })
+})
+
+describe('narduk-core colorMode defaults', () => {
+  async function loadCoreModule(colorMode: Record<string, unknown> = {}) {
+    vi.resetModules()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponentsDir: vi.fn(),
+      addImportsDir: vi.fn(),
+      addPlugin: vi.fn(),
+      addServerScanDir: vi.fn(),
+      addTemplate: vi.fn((template: { src: string }) => ({
+        filename: template.src.split('/').pop(),
+      })),
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+      installModule: vi.fn(),
+    }))
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    const nuxt = {
+      options: {
+        alias: {},
+        app: {},
+        appConfig: {},
+        build: { transpile: [] },
+        colorMode,
+        css: [],
+        devServer: {},
+        future: {},
+        icon: {},
+        nitro: {},
+        runtimeConfig: {},
+        ui: {},
+        vite: {},
+      },
+      hook() {},
+    }
+    await mod.setup({ app: false, coreModules: false, server: false }, nuxt)
+    return nuxt
+  }
+
+  it('sets classSuffix to empty so Tailwind v4 / Nuxt UI 4 match .dark', async () => {
+    const nuxt = await loadCoreModule()
+
+    expect(nuxt.options.colorMode).toEqual(
+      expect.objectContaining({
+        preference: 'system',
+        fallback: 'dark',
+        classSuffix: '',
+      }),
+    )
+  })
+
+  it('lets an app override classSuffix through the same defu defaults', async () => {
+    const nuxt = await loadCoreModule({ classSuffix: '-mode' })
+
+    expect(nuxt.options.colorMode).toEqual(
+      expect.objectContaining({
+        classSuffix: '-mode',
+        preference: 'system',
+        fallback: 'dark',
+      }),
+    )
+  })
+})
+
+describe('narduk-core csrf.exemptPaths (narduk-libs#239)', () => {
+  async function loadCoreModule() {
+    vi.resetModules()
+    vi.doMock('@nuxt/kit', () => ({
+      addComponentsDir: vi.fn(),
+      addImportsDir: vi.fn(),
+      addPlugin: vi.fn(),
+      addServerScanDir: vi.fn(),
+      addTemplate: vi.fn((template: { src: string }) => ({
+        filename: template.src.split('/').pop(),
+      })),
+      createResolver: (url: string) => ({
+        resolve: (path: string) => new URL(path, url).pathname,
+      }),
+      defineNuxtModule: (definition: unknown) => definition,
+      installModule: vi.fn(),
+    }))
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    const nuxt = {
+      options: {
+        alias: {} as Record<string, string>,
+        app: {},
+        appConfig: {},
+        build: { transpile: [] },
+        colorMode: {},
+        css: [],
+        devServer: {},
+        future: {},
+        icon: {},
+        nitro: {},
+        runtimeConfig: {} as Record<string, unknown>,
+        ui: {},
+        vite: {},
+      },
+      hook: vi.fn(),
+    }
+    const setup = (options: Record<string, unknown> = {}) =>
+      mod.setup({ app: false, coreModules: false, server: false, ...options }, nuxt)
+    return { nuxt, setup }
+  }
+
+  it('seeds an empty exemption list so a runtime env override has a parent', async () => {
+    const { nuxt, setup } = await loadCoreModule()
+    await setup()
+    expect(nuxt.options.runtimeConfig).toMatchObject({ nardukCsrf: { exemptPaths: [] } })
+  })
+
+  it('writes declared exemptions to runtimeConfig', async () => {
+    const { nuxt, setup } = await loadCoreModule()
+    await setup({ csrf: { exemptPaths: ['/api/edge/v1/claim/start', '/api/devices/*'] } })
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      nardukCsrf: { exemptPaths: ['/api/edge/v1/claim/start', '/api/devices/*'] },
+    })
+  })
+
+  it('does not concatenate a module option onto an app runtimeConfig list', async () => {
+    const { nuxt, setup } = await loadCoreModule()
+    nuxt.options.runtimeConfig.nardukCsrf = { exemptPaths: ['/api/old/path'] }
+    await setup({ csrf: { exemptPaths: ['/api/edge/v1/claim/start'] } })
+    expect(
+      (nuxt.options.runtimeConfig.nardukCsrf as { exemptPaths: string[] }).exemptPaths,
+    ).toEqual(['/api/edge/v1/claim/start'])
+  })
+
+  it.each([['/'], ['/api/*'], ['/api/edge?x=1']])('fails the build on %j', async (entry) => {
+    const { setup } = await loadCoreModule()
+    await expect(setup({ csrf: { exemptPaths: [entry] } })).rejects.toThrow(
+      'nardukCore.csrf.exemptPaths',
+    )
   })
 })

@@ -23,7 +23,11 @@ export interface D1ApiKeyMetadata {
   userId: string
 }
 
-export type D1ApiKeyAuthFailureReason = 'expired' | 'invalid' | 'missing_scope'
+/**
+ * Why a key was refused. `revoked` (narduk-libs#806) is a key whose row is
+ * kept for audit but whose `revoked_at` is set; it is checked before expiry.
+ */
+export type D1ApiKeyAuthFailureReason = 'expired' | 'invalid' | 'missing_scope' | 'revoked'
 
 export type D1ApiKeyAuthResult =
   | {
@@ -42,6 +46,7 @@ interface ApiKeyRow {
   email: string
   expires_at: number | null
   is_admin: number | null
+  revoked_at: string | null
   scopes_json: string | null
   user_id: string
   user_name: string | null
@@ -69,6 +74,7 @@ export async function authenticateD1ApiKey(
         api_keys.id AS api_key_id,
         api_keys.name AS api_key_name,
         api_keys.expires_at AS expires_at,
+        api_keys.revoked_at AS revoked_at,
         api_keys.scopes_json AS scopes_json,
         users.id AS user_id,
         users.email AS email,
@@ -84,6 +90,10 @@ export async function authenticateD1ApiKey(
 
   if (!row) {
     return { ok: false, reason: 'invalid' }
+  }
+
+  if (row.revoked_at) {
+    return { ok: false, reason: 'revoked' }
   }
 
   const currentTime = options.nowSeconds?.() ?? nowSeconds()

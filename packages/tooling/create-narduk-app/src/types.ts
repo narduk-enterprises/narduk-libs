@@ -1,7 +1,7 @@
 import type { Writable } from 'node:stream'
 
 export const GENERATOR_NAME = '@narduk-enterprises/create-narduk-app'
-export const GENERATOR_VERSION = '0.9.0'
+export const GENERATOR_VERSION = '0.13.4'
 
 export const SUPPORTED_CAPABILITIES = [
   'auth',
@@ -53,6 +53,16 @@ export interface CreateNardukAppOptions {
   noGit?: boolean
   product?: ProductSpec
   productSpec?: ProductSpec
+  /**
+   * The security contact `nardukSeo.securityTxt` publishes, as a `mailto:`,
+   * `https:` or `tel:` URI (a bare address is read as `mailto:`).
+   *
+   * There is deliberately no default. narduk-seo never invents a reporting
+   * address, and a generator that supplied one would publish a contact nobody
+   * had agreed to answer. An app that passes nothing gets no `security.txt`
+   * rather than a fake one (narduk-libs#384).
+   */
+  securityContact?: string
   siteUrl?: string
   spec?: ProductSpec
   targetDir: string

@@ -76,6 +76,49 @@ export interface WebJourneyContext {
   base: string
   /** Click by accessible name or THROW naming what was missing. */
   must(name: string | RegExp, opts?: { role?: string; nth?: number }): Promise<void>
+  /**
+   * Wait until this exact text is visible on the page. A string is matched
+   * exactly — `see('VERIFIED')` does not pass on `PENDING VERIFICATION` — and
+   * the helper waits, it does not read once (narduk-libs#67). A match that is
+   * only in the DOM (hidden, `aria-hidden`, a template node) is not enough.
+   * Throws naming the text, the URL and the timeout. Prefer `hasControl` when
+   * the claim is about a control.
+   */
+  see(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Wait until a control with this accessible name is visible. Never body
+   * text: `hasControl('Cancel')` does not pass on a `Cancelled` label. A
+   * hidden match is not "offered".
+   */
+  hasControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Poll until no control with this accessible name remains. Never body text,
+   * and never `waitFor({ state: 'detached' })` — that resolves immediately
+   * against a locator matching nothing (narduk-libs#67). Succeeds immediately
+   * if the control was never in the tree; call `hasControl` first when you
+   * mean it disappeared after an action.
+   */
+  noControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Wait until a distinctive sentence that *was visible* on the page is no
+   * longer visible. Fails if the text was never seen: a hidden-only or
+   * zero-count first sample is not evidence it went away. Hidden template
+   * nodes do not count as seen (narduk-libs#67).
+   */
+  gone(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Fill a field (CSS selector or accessible label) and read the value back.
+   * A write that lands in the wrong box, or not at all, fails the step.
+   * Labels may contain `:` or brackets (`Email:`, `Quantity [kg]`); pass an
+   * explicit `input[…]` / `#id` / `.class` when you mean a selector.
+   */
+  fill(target: string, value: string, opts?: { timeout?: number; nth?: number }): Promise<void>
+  /** Set files on a file input. `page` stays the escape hatch for everything else. */
+  attach(
+    selector: string,
+    file: string | { name: string; mimeType: string; buffer: Uint8Array },
+    opts?: { timeout?: number },
+  ): Promise<void>
   goto(path: string): Promise<void>
   /** Capture: dwell. Test: no-op. */
   beat(ms: number): Promise<void>
@@ -168,13 +211,41 @@ export interface XcTestAppleJourney extends JourneyBase {
 }
 
 /**
- * One gesture, in DEVICE POINTS. The adapter never invents a coordinate: a
- * point comes from a screenshot of the exact screen the previous beat landed
- * on, and `lands` is what stops a drifted one from quietly shifting every beat
- * after it (narduk-libs#70, requirement 5).
+ * The hardware-keyboard keys a beat may press. Each is a key a typed run cannot
+ * reach with text: `backspace` clears a pre-filled field (typing appends to it),
+ * `tab` reaches a field another element's frame occludes, and `return` commits
+ * a decimal pad that has no Done (narduk-libs#75).
+ */
+export const APPLE_KEYS = [
+  'return',
+  'tab',
+  'backspace',
+  'delete',
+  'escape',
+  'space',
+  'up',
+  'down',
+  'left',
+  'right',
+] as const
+export type AppleKey = (typeof APPLE_KEYS)[number]
+
+/**
+ * One gesture. A coordinate is in DEVICE POINTS, and the adapter never invents
+ * one: a point comes from a screenshot of the exact screen the previous beat
+ * landed on, and `lands` is what stops a drifted one from quietly shifting every
+ * beat after it (narduk-libs#70, requirement 5). Prefer `element` wherever the
+ * control carries an accessibility identifier: it is resolved on the screen the
+ * press happens on, so a layout change cannot move it (narduk-libs#75).
  */
 export type AppleGesture =
   | { kind: 'tap'; x: number; y: number }
+  /**
+   * Tap the centre of the ONE control whose accessibility identifier is `id`,
+   * read from the hierarchy immediately before the press. No match, or more
+   * than one, fails the beat and names the identifiers that were on screen.
+   */
+  | { kind: 'element'; id: string }
   | {
       kind: 'swipe'
       from: { x: number; y: number }
@@ -183,6 +254,8 @@ export type AppleGesture =
       duration?: number
     }
   | { kind: 'type'; text: string }
+  /** Press a hardware-keyboard key, `repeat` times (default 1). */
+  | { kind: 'key'; key: AppleKey; repeat?: number }
   /** No gesture: dwell on what the previous beat produced (an animation, a toast). */
   | { kind: 'wait' }
 
@@ -377,6 +450,14 @@ export interface RunManifest {
   base: string
   commit: string
   declarationDigest: string
+  /**
+   * Digest of this journey's declared shape (see `digestJourney`). When
+   * present, verify/promote/walkthrough use it — not the catalog-wide
+   * `declarationDigest` — so adding a sibling journey does not stale this
+   * run (narduk-libs#66). Absent on manifests written before that field
+   * existed; those still compare `declarationDigest` to the catalog digest.
+   */
+  journeyDigest?: string
   appRevision: string
   profile: { name: string } & Record<string, unknown>
   startedAt: string

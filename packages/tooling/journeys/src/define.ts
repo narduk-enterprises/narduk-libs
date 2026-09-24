@@ -12,6 +12,7 @@ import type {
   Story,
   XcTestAppleJourney,
 } from './types.js'
+import { APPLE_KEYS } from './types.js'
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -174,6 +175,17 @@ function validateLanding(
   }
 }
 
+/** Every gesture kind the adapter performs; a Record, so a new kind cannot be forgotten here. */
+const GESTURE_KIND_SET: Record<AppleGesture['kind'], true> = {
+  tap: true,
+  element: true,
+  swipe: true,
+  type: true,
+  key: true,
+  wait: true,
+}
+const GESTURE_KINDS = Object.keys(GESTURE_KIND_SET)
+
 /**
  * A driven Apple journey's own gate: every beat has a gesture and a landing,
  * and a coordinate that cannot be on the declared handset is rejected here
@@ -220,6 +232,25 @@ function validateDrivenJourney(
     }
     if (gesture.kind === 'type' && !gesture.text) {
       note(`${stepWhere}: types nothing`)
+    }
+    if (gesture.kind === 'element' && !gesture.id) {
+      note(`${stepWhere}: presses an element with no identifier`)
+    }
+    if (gesture.kind === 'key') {
+      if (!(APPLE_KEYS as readonly string[]).includes(gesture.key)) {
+        note(`${stepWhere}: key "${String(gesture.key)}" is not one of ${APPLE_KEYS.join(', ')}`)
+      }
+      if (
+        gesture.repeat !== undefined &&
+        (!Number.isInteger(gesture.repeat) || gesture.repeat < 1)
+      ) {
+        note(`${stepWhere}: key repeat must be a positive integer`)
+      }
+    }
+    if (!GESTURE_KINDS.includes(gesture.kind)) {
+      // Refused here, not at the press: the adapter would throw, but only once
+      // a capture reached this beat (narduk-libs#75).
+      note(`${stepWhere}: unknown gesture kind "${String(gesture.kind)}"`)
     }
   }
 }

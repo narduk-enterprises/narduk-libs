@@ -1,5 +1,234 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.6.0
+
+### Minor Changes
+
+- d8aec20: narduk-seo no longer ships its own copy of `LayerAppFooter`
+  (narduk-libs#743). It registers `LayerNetworkFooter` globally and adds it to
+  `appConfig.nardukCore.footer.after`, so narduk-core's footer renders the
+  network row. The footer an app sees is unchanged. This needs narduk-core
+  2.11.0 or later, and the peer range now says so.
+
+## 2.5.3
+
+### Patch Changes
+
+- bad1b0d: `LayerAppFooter.vue` now carries a justified inline disable for the
+  new `narduk/no-shadowed-shared-component` rule. The component is a deliberate
+  fork of narduk-core's footer, kept only to render `<LayerNetworkFooter />`,
+  and narduk-libs#743 replaces it with a core slot. Runtime behaviour is
+  unchanged.
+
+## 2.5.2
+
+### Patch Changes
+
+- c99908b: A `nardukSeo.aiCrawlers` group that names crawlers to **allow** now
+  repeats the wildcard group's `disallow` paths, including narduk-seo's
+  non-public routes. A crawler obeys only the most specific group naming it (RFC
+  9309), so `{ allow: ['GPTBot'] }` used to emit `User-agent: GPTBot` /
+  `Allow: /` and open every path the `*` group disallows to GPTBot alone.
+  `'allow'`, `'disallow'`, and `disallow` lists are unchanged.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 2.5.1
+
+### Patch Changes
+
+- e61a56d: `meta.compatibility.nuxt` now says `>=4.0.0`, matching the `nuxt`
+  peer range these modules already declare (#444). Before, the module metadata
+  still claimed `>=3.16.0`, so a Nuxt 3 app got no compatibility warning from
+  Nuxt and failed later instead. Nuxt 4 apps see no change.
+
+## 2.5.0
+
+### Minor Changes
+
+- c7a6b59: Declare `narduk-core` as a peer range instead of an exact-pinned
+  dependency.
+
+  Both packages carried `@narduk-enterprises/narduk-core` as `workspace:*` in
+  `dependencies`, which publishes as an exact pin. An app upgrading narduk-core
+  therefore kept a second, older copy alive underneath these two — and
+  narduk-core is a Nuxt module that appends global CSS to `nuxt.options.css`, so
+  which copy's stylesheet wins comes down to module resolution order rather than
+  anything the app declares.
+
+  `narduk-core` now sits in `peerDependencies` at `>=2.6.3 <3.0.0` with a
+  `workspace:*` `devDependencies` entry for these packages' own builds and
+  tests, matching `narduk-uploads`. The consuming app owns the single resolved
+  version.
+
+  Released as a minor rather than a patch because it changes the published
+  manifest shape: an app that reached narduk-core only transitively through
+  these packages must now resolve it itself. Every generated app already
+  declares narduk-core directly — it is the first entry in the generator's Nuxt
+  `modules` list — and pnpm and npm both auto-install a missing peer, so no
+  estate app is expected to need a change.
+
+- 1dbf07f: Add `useDatasetSchema` for schema.org `Dataset` JSON-LD.
+
+  Pages that publish a data series — a buoy station, a gauge, a catalog of
+  readings — had no way to describe it as a dataset, so Google Dataset Search
+  and the AI-discovery surfaces that read the same markup saw only a `WebPage`.
+
+  `useDatasetSchema({ name, variableMeasured, temporalCoverage, distribution, license, creator, ... })`
+  emits a `Dataset` node in the established shape of the other schema helpers in
+  this package: auto-imported, `MaybeRefOrGetter` input, and every optional
+  field omitted rather than emitted empty.
+
+  `variableMeasured` takes either a bare string or
+  `{ name, unitText, unitCode, minValue, maxValue, description }` and becomes
+  `PropertyValue` nodes; `distribution` becomes `DataDownload` nodes and drops
+  entries with no `contentUrl`; `creator` defaults to an `Organization` and
+  accepts `Person`; and `includedInDataCatalogUrl` becomes a `DataCatalog` node.
+
+- 0f43a24: Stop pinning `/_og/**` to `prerender: false`, so OG images for
+  prerendered pages are actually generated (narduk-libs#170).
+
+  `nuxt-og-image` emits an _unsigned_ `/_og/s/...` URL while a page is
+  prerendered and relies on the prerender crawler to bake that image to a file.
+  The pin stopped the file being produced, so the unsigned URL fell through to
+  the runtime handler, which rejects it with `403 Missing URL signature` as soon
+  as a signing secret is configured -- which every deployed build requires. SSR
+  pages were never affected; they take the signed `/_og/d/...` branch.
+
+  **This changes your build output.** Each prerendered page that renders a card
+  now writes one image file into the app's static assets, counting against the
+  Workers per-file size and total file-count ceilings, and build time grows with
+  the number of such pages. A baked card is exactly as stale as the page it was
+  built from, so a card that must track data moving between deploys does not
+  belong on a prerendered route. Apps that ship only a static `defaultOgImage`
+  are unaffected; set `ogImage.zeroRuntime: true` or `ogImage.enabled: false` as
+  before.
+
+## 2.4.14
+
+### Patch Changes
+
+- Updated dependencies [693f7d3]
+  - @narduk-enterprises/narduk-core@2.7.0
+
+## 2.4.13
+
+### Patch Changes
+
+- Updated dependencies [fa2f123]
+  - @narduk-enterprises/narduk-core@2.6.4
+
+## 2.4.12
+
+### Patch Changes
+
+- Updated dependencies [ecc731b]
+  - @narduk-enterprises/narduk-core@2.6.3
+
+## 2.4.11
+
+### Patch Changes
+
+- 6d44a92: Fall back to the page's own route when a canonical is refused,
+  instead of to the site root. `resolveSafeCanonicalUrl` still refuses
+  protocol-relative values, backslash smuggling and cross-origin absolutes —
+  that part was right — but it answered the site root, so an app handing
+  `useSeo` a `http://localhost:3000/...` absolute (what
+  `runtimeConfig.public.siteUrl` resolves to wherever `SITE_URL` is unset) made
+  every page on the site declare the root as its own `canonical` and `og:url`.
+  Valid, plausible, and wrong everywhere at once; it shipped to production in
+  LakeStat and was caught only by a live preview check. The route is the one
+  thing the refused value and the page agreed on, so it is the fallback; the
+  site root remains the last resort. In development a refusal now warns and
+  names both sides.
+
+## 2.4.10
+
+### Patch Changes
+
+- Updated dependencies [81051b0]
+  - @narduk-enterprises/narduk-core@2.6.2
+
+## 2.4.9
+
+### Patch Changes
+
+- Updated dependencies [448e86f]
+- Updated dependencies [7142305]
+  - @narduk-enterprises/narduk-core@2.6.1
+
+## 2.4.8
+
+### Patch Changes
+
+- Updated dependencies [4599aa7]
+- Updated dependencies [4ba5d02]
+  - @narduk-enterprises/narduk-core@2.6.0
+
+## 2.4.7
+
+### Patch Changes
+
+- 92835a1: Fixes for the new error-severity lint rules. `LayerAppFooter`
+  (narduk-core, narduk-seo) no longer reads `new Date()` during render for the
+  copyright year; it reads one SSR-hydrated timestamp (`useSsrNow` in
+  narduk-core, `useState` in narduk-seo), so server and client agree.
+  `GET /api/auth/api-keys` (narduk-auth) is ordered newest first in SQL and
+  limited to 100 keys, since nothing caps how many keys a user may create.
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [8d35cb8]
+- Updated dependencies [92835a1]
+  - @narduk-enterprises/narduk-core@2.5.0
+
+## 2.4.6
+
+### Patch Changes
+
+- Updated dependencies [bb37590]
+- Updated dependencies [bb37590]
+  - @narduk-enterprises/narduk-core@2.4.0
+
+## 2.4.5
+
+### Patch Changes
+
+- Updated dependencies [8da7e33]
+- Updated dependencies [05b3ef9]
+  - @narduk-enterprises/narduk-core@2.3.0
+
+## 2.4.4
+
+### Patch Changes
+
+- Updated dependencies [fe58c5f]
+  - @narduk-enterprises/narduk-core@2.2.4
+
+## 2.4.3
+
+### Patch Changes
+
+- Updated dependencies [7ae9278]
+  - @narduk-enterprises/narduk-core@2.2.3
+
+## 2.4.2
+
+### Patch Changes
+
+- Updated dependencies [766ce96]
+  - @narduk-enterprises/narduk-core@2.2.2
+
+## 2.4.1
+
+### Patch Changes
+
+- Updated dependencies [fa41027]
+- Updated dependencies [fa41027]
+  - @narduk-enterprises/narduk-core@2.2.1
+
 ## 2.4.0
 
 ### Minor Changes

@@ -28,6 +28,8 @@
 import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
 import vue from 'eslint-plugin-vue'
 
+import narduk from '../dist/index.js'
+
 /** Nuxt UI 4 / narduk-template default Tailwind entry stylesheet. */
 const TAILWIND_ENTRY_POINT = 'app/assets/css/main.css'
 
@@ -85,7 +87,10 @@ const RESTRICTED_ELEMENTS = [
   },
   { element: 'form', message: 'Use <UForm> instead of a native <form>.' },
   { element: 'label', message: 'Use <UFormField> instead of a native <label>.' },
-  { element: 'table', message: 'Use <UTable> instead of a native <table>.' },
+  {
+    element: 'table',
+    message: 'Use <NeDataTable> from @narduk-enterprises/narduk-shell instead of a native <table>.',
+  },
   {
     element: ['details', 'summary'],
     message: 'Use <UCollapsible> or <UAccordion> instead of native <details>/<summary>.',
@@ -113,6 +118,20 @@ const designSystemConfigs = [
     plugins: { vue },
     rules: {
       'vue/no-restricted-html-elements': ['error', ...RESTRICTED_ELEMENTS],
+    },
+  },
+
+  {
+    // Component suite enforcement (narduk-libs#260, components-library-plan.md
+    // §2 item 13). Warn first: the pilots adopt from warnings, and the
+    // foundation checks `no-local-copy` and `list-routes-use-contract` are the
+    // repository-level half of the same rule.
+    name: 'narduk/design-system-shared-components',
+    files: ['**/*.vue'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-shadowed-shared-component': 'warn',
+      'narduk/prefer-shared-collection': 'warn',
     },
   },
 
@@ -148,8 +167,9 @@ const designSystemConfigs = [
       // context emits a "No tailwind css entry point found at `…`. Option
       // `entryPoint` may be misconfigured" report per class (proven on the
       // workspace's own library packages, which have no CSS entry).
-      // createAppLintConfig enables them when the app's entry point exists on
-      // disk; standalone consumers opt in via
+      // createAppLintConfig enables them when the app declares
+      // `tailwindEntryPoint` and that file exists (narduk-libs#665);
+      // standalone consumers opt in via
       // settings['better-tailwindcss'].entryPoint plus these rules.
       // Replaces narduk/no-invalid-nuxt-ui-token.
       'better-tailwindcss/no-unknown-classes': 'off',

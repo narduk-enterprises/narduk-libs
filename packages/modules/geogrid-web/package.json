@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/geogrid-web",
-  "version": "0.5.3",
+  "version": "0.5.5",
   "type": "module",
   "description": "Web twin of GeoGridKit: gridded geo-data overlay and Web-Mercator tile render (WebGL2 + CPU fallback).",
   "repository": {
@@ -8,9 +8,9 @@
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
     "directory": "packages/modules/geogrid-web"
   },
-  "homepage": "https://github.com/narduk-enterprises/GeoGridWeb#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/geogrid-web#readme",
   "bugs": {
-    "url": "https://github.com/narduk-enterprises/GeoGridWeb/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
   },
   "license": "MIT",
   "keywords": [
@@ -62,11 +62,12 @@
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",

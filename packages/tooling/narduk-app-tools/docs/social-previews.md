@@ -50,11 +50,21 @@ export default defineNuxtConfig({
 })
 ```
 
-The fallback is emitted on every page, at low head priority, including pages
-that never call `useSeo` and pages marked `noindex`. Page metadata and generated
-images override it. Adding the SEO module alone does **not** create a static
-image or configure this fallback; existing consumers must supply the real asset
-and option. The option is additive and unset for older consumers.
+The fallback is emitted on every page, at low head priority, so it is always
+present until something overrides it. What overrides it follows whether the page
+calls `useSeo`, not whether the page is indexed: `noindex` governs indexing, not
+preview generation, and a `noindex` page is still shareable in a message. A page
+keeps the static fallback (and should be inventoried `kind: "default"`) only
+when it (a) never calls `useSeo` at all — redirect shells, the 404, framework
+routes — or (b) explicitly opts out with `useSeo({ ogImage: false })`. A page
+that calls `useSeo()` with `robots: 'noindex'` and no explicit `ogImage` object
+_also_ keeps the static fallback by default, because automatic per-page
+generation skips `noindex` callers unless they explicitly ask for one; passing
+an explicit `ogImage` object requests a real preview while remaining `noindex`
+(see "Route-specific images" below). Every other `useSeo` call gets its own
+generated image. Adding the SEO module alone does **not** create a static image
+or configure this fallback; existing consumers must supply the real asset and
+option. The option is additive and unset for older consumers.
 
 The generator also wires server-visible defaults for core-only apps. In other
 frameworks, emit equivalent OG title, description, type, URL, image, alt text
@@ -152,7 +162,11 @@ Store `Config/social-previews.json` relative to the web app root:
 `source` is relative to `pagesDir`. Every `.vue` file needs exactly one row; new
 unclassified pages, stale sources, duplicate samples, missing images, and
 invalid configuration fail. Private rows need a reason and are never fetched.
-Parameterized dynamic routes need at least two distinct real examples. A
+Parameterized dynamic routes need at least two distinct real examples, because
+two samples are what prove the preview varies with the parameter. A route family
+that genuinely has one instance today — one published state, one live tenant —
+gives one sample plus a `reason` saying so; invented paths prove nothing, and
+the row is expected to gain its second sample when the data does. A
 parameterized generic shell needs a reason for `kind: "default"`. Single fixed
 routes can use one dynamic example; the image still must differ from the
 default.
@@ -183,6 +197,36 @@ pnpm exec narduk-app og:check --live --json
 From a generated monorepo root the CLI detects `apps/web`. From another layout,
 pass `--root` explicitly. Keep the canonical origin in this JSON and Nuxt config
 consistent. HTTP is permitted only for explicit loopback development probes.
+
+### Checking a preview locally
+
+`og:check --live --base-url <url>` deliberately separates the **target** (where
+pages are fetched, e.g. a local dev server) from the **canonical origin**
+(`siteUrl` in `Config/social-previews.json`), and asserts each sampled page's
+`og:url` is that page on the canonical origin. That is the right contract: a
+Cloudflare preview renders the canonical `og:url` because nothing overrides it
+there, and the check would otherwise pass on a preview quietly advertising its
+own `*.workers.dev` origin to crawlers.
+
+It is not obvious from a plain `nuxt dev`, though, because `useSeo` reads the
+site origin from `useSiteConfig()` (`@nuxt/site-config`), not from this JSON
+file. Force it to the canonical origin with `NUXT_PUBLIC_SITE_URL` (or
+`NUXT_SITE_URL`) — `nuxt-site-config`'s own environment override, and the
+highest-priority source in its config stack:
+
+```sh
+NUXT_PUBLIC_SITE_URL=https://example.com pnpm --filter web run dev
+pnpm exec narduk-app og:check --live --base-url http://127.0.0.1:3000
+```
+
+A bare `SITE_URL` env var does **not** do this for a generated app: nothing in
+the generator or `@nuxt/site-config` reads it, so it has no effect on `og:url`
+here (a _generated_ app's `site.url` and `runtimeConfig.public.appUrl` are both
+build-time literals). `SITE_URL` is a real, separate convention elsewhere in
+narduk-libs — narduk-core's host-canonicalization and redirect handling read it
+— and an app that has wired its own `nuxt.config.ts` to also read
+`process.env.SITE_URL` for `site.url` can keep using that; just confirm your
+app's own config actually does that before assuming it.
 
 The live check requests HTML without cookies or authorization under Twitterbot
 and Applebot user agents. It checks the initial head, exactly one of each

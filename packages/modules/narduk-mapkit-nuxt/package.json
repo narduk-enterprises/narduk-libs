@@ -9,9 +9,9 @@
     "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
     "directory": "packages/modules/narduk-mapkit-nuxt"
   },
-  "homepage": "https://github.com/narduk-enterprises/narduk-mapkit#readme",
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/modules/narduk-mapkit-nuxt#readme",
   "bugs": {
-    "url": "https://github.com/narduk-enterprises/narduk-mapkit/issues"
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
   },
   "exports": {
     ".": {
@@ -37,7 +37,7 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "prebuild": "nuxt-module-build prepare",
     "prelint": "pnpm run dev:prepare",
     "prepack": "nuxt-module-build prepare && nuxt-module-build build",
@@ -47,7 +47,8 @@
     "test:build": "pnpm run dev:prepare && nuxt build playground",
     "test:cloudflare": "node script/check-cloudflare-build.mjs",
     "test:unit": "vitest run",
-    "typecheck": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "@narduk-enterprises/narduk-mapkit": "workspace:*",

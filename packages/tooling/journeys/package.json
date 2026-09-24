@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/journeys",
-  "version": "0.3.1",
+  "version": "0.4.3",
   "private": false,
   "type": "module",
   "description": "Journey runner contract: repositories declare journeys and scenarios; the tool turns them into tests, screenshots, video and a walkthrough.",
@@ -42,14 +42,15 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint src tests bin --max-warnings 0",
+    "lint": "narduk-lint src tests bin",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "prettier": "pnpm run format:check",
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test": "pnpm run test:unit && pnpm run test:e2e"
+    "test": "pnpm run test:unit && pnpm run test:e2e",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.50.0"
@@ -70,6 +71,6 @@
     "vitest": "4.1.11"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

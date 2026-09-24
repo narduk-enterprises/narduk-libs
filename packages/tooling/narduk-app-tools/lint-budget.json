@@ -1,0 +1,7 @@
+{
+  "strict": true,
+  "rules": {
+    "@typescript-eslint/array-type": 2,
+    "@typescript-eslint/switch-exhaustiveness-check": 1
+  }
+}

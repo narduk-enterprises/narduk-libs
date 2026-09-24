@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+@import '@narduk-enterprises/narduk-ui/tokens.css';
+
+/* The Ne* components and their design cards live outside this app's root. */
+@source '../../../narduk-shell/src';
+
+body {
+  background: var(--ne-ground);
+}
+
+/*
+ * The package-owned design cards were written for the static NE Base gallery
+ * (design-system-build/app/assets/gallery.css). These rules give them the same
+ * frame inside the Explorer.
+ */
+.preview-card {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ne-radius-panel);
+  background: var(--ui-bg);
+  padding: 1.5rem;
+}
+.preview-card h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.preview-card > p {
+  color: var(--ui-text-muted);
+  margin-bottom: 1rem;
+}
+.preview-row,
+.preview-grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.preview-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}

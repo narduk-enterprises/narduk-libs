@@ -3,9 +3,12 @@ import { dirname, resolve } from 'node:path'
 
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
+import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
+import type { JsoncToken } from './jsonc.js'
 import { packageNamesForCapability } from './manifest.js'
 import {
   CI_CALLER_PIN_PATTERN,
+  CREATE_ONLY_SCRIPT_KEYS,
   isDisowned,
   MANAGED_SCRIPT_KEYS,
   MANAGED_TARGETS,
@@ -113,8 +116,13 @@ function capabilitiesFromDependencies(manifest: Record<string, unknown> | null):
     ...Object.keys((manifest?.dependencies as Record<string, string>) ?? {}),
     ...Object.keys((manifest?.devDependencies as Record<string, string>) ?? {}),
   ])
+  // Only our own packages identify a capability. The seo list also pins the
+  // third-party nuxt-og-image peer (narduk-libs#825), and an app that installs
+  // that package without narduk-seo is not an seo app.
   return SUPPORTED_CAPABILITIES.filter((capability) =>
-    packageNamesForCapability(capability).some((name) => installed.has(name)),
+    packageNamesForCapability(capability).some(
+      (name) => name.startsWith('@narduk-enterprises/') && installed.has(name),
+    ),
   )
 }
 
@@ -520,6 +528,159 @@ function applyScriptKeys(
   return { contents: next.join('\n'), unresolved }
 }
 
+function cacheEnabledFlag(config: Record<string, unknown>): boolean | undefined {
+  const cache = config.cache
+  if (!cache || typeof cache !== 'object' || Array.isArray(cache)) return undefined
+  const enabled = (cache as Record<string, unknown>).enabled
+  if (enabled === true) return true
+  if (enabled === false) return false
+  return undefined
+}
+
+/**
+ * The config with `cache.enabled` removed -- and `cache` itself when nothing
+ * else is in it -- so a before/after comparison proves the edit wrote that
+ * one key and nothing else, a sibling such as `cache.cross_version_cache`
+ * included.
+ */
+function withoutCacheEnabled(config: Record<string, unknown>): string {
+  const copy: Record<string, unknown> = { ...config }
+  const cache = copy.cache
+  if (cache && typeof cache === 'object' && !Array.isArray(cache)) {
+    const rest: Record<string, unknown> = { ...(cache as Record<string, unknown>) }
+    delete rest.enabled
+    if (Object.keys(rest).length > 0) copy.cache = rest
+    else delete copy.cache
+  } else {
+    delete copy.cache
+  }
+  return JSON.stringify(copy)
+}
+
+const WORKERS_CACHE_VALUE = '{ "enabled": true }'
+
+function lineStartOf(text: string, offset: number): number {
+  return text.lastIndexOf('\n', offset - 1) + 1
+}
+
+/**
+ * Inserts or replaces the top-level `cache` property in place. A stringify
+ * round trip would drop comments and reorder bindings, which are app-owned
+ * (narduk-libs#672). Offsets come from a string-aware scan, so a `/*` or
+ * `//` inside a string value is never mistaken for a comment, and a comma
+ * added after the last property lands before any trailing `// comment`.
+ */
+function applyWorkersCacheKey(source: string): { contents: string; unresolved: boolean } {
+  const { tokens } = scanJsonc(source)
+  const existing = findTopLevelValue(tokens, 'cache')
+  if (existing) {
+    return {
+      contents: source.slice(0, existing.start) + WORKERS_CACHE_VALUE + source.slice(existing.end),
+      unresolved: false,
+    }
+  }
+  const open = tokens[0]
+  const close = tokens.at(-1)
+  const last = tokens.at(-2)
+  if (open?.text !== '{' || close?.text !== '}' || !last) {
+    return { contents: source, unresolved: true }
+  }
+  // The new property goes on its own line just above the closing brace, so
+  // that brace must be alone on its line.
+  const closeLine = lineStartOf(source, close.start)
+  if (closeLine <= open.start || source.slice(closeLine, close.start).trim() !== '') {
+    return { contents: source, unresolved: true }
+  }
+  const first = tokens[1] as JsoncToken
+  const firstLine = lineStartOf(source, first.start)
+  const indent =
+    first !== close && firstLine > open.start
+      ? leadingIndent(source.slice(firstLine, first.start))
+      : leadingIndent(source.slice(closeLine)) + '  '
+  // Match the file's style: a trailing comma on the new property only when
+  // the old last property had one.
+  const trailingComma = last.text === ','
+  const needsSeparator = !trailingComma && last !== open
+  const property = indent + '"cache": ' + WORKERS_CACHE_VALUE + (trailingComma ? ',' : '') + '\n'
+  const contents =
+    source.slice(0, last.end) +
+    (needsSeparator ? ',' : '') +
+    source.slice(last.end, closeLine) +
+    property +
+    source.slice(closeLine)
+  return { contents, unresolved: false }
+}
+
+function resolveJsoncKeys(
+  current: string | null,
+  desired: string,
+  target: ManagedTarget,
+): Resolution {
+  if (current === null) {
+    return {
+      detail:
+        'File is absent. Upgrade edits named JSONC keys; it does not create a wrangler config.',
+      status: 'absent',
+    }
+  }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
+  }
+  const currentConfig = parseJsoncObject(current)
+  const desiredConfig = parseJsoncObject(desired)
+  if (!currentConfig || !desiredConfig) {
+    return { detail: 'Wrangler config is not valid JSONC; left untouched.', status: 'unresolved' }
+  }
+  if (!(target.jsonKeys ?? []).includes('cache')) {
+    return { detail: 'Managed target declares no JSONC keys.', status: 'unresolved' }
+  }
+  const desiredCache = desiredConfig.cache
+  if (
+    !desiredCache ||
+    typeof desiredCache !== 'object' ||
+    Array.isArray(desiredCache) ||
+    (desiredCache as Record<string, unknown>).enabled !== true
+  ) {
+    return {
+      detail: 'The generator template no longer enables Workers Cache.',
+      status: 'unresolved',
+    }
+  }
+  const flag = cacheEnabledFlag(currentConfig)
+  if (flag === true) {
+    return { detail: 'Workers Cache is enabled.', status: 'clean' }
+  }
+  if (flag === false) {
+    return { detail: 'App set cache.enabled false; left untouched.', status: 'clean' }
+  }
+  const applied = applyWorkersCacheKey(current)
+  if (applied.unresolved) {
+    return {
+      detail: 'Could not insert cache.enabled without reformatting wrangler.jsonc; left untouched.',
+      status: 'unresolved',
+    }
+  }
+  const verified = parseJsoncObject(applied.contents)
+  if (
+    !verified ||
+    cacheEnabledFlag(verified) !== true ||
+    withoutCacheEnabled(verified) !== withoutCacheEnabled(currentConfig)
+  ) {
+    return {
+      detail: 'Refusing to write: the edit would have changed app-owned wrangler content.',
+      status: 'unresolved',
+    }
+  }
+  return {
+    detail: 'Adds cache.enabled; every other key is untouched.',
+    next: applied.contents,
+    status: 'drift',
+  }
+}
+
 function resolveKeys(current: string | null, desired: string): Resolution {
   if (current === null) {
     return {
@@ -540,7 +701,9 @@ function resolveKeys(current: string | null, desired: string): Resolution {
     // A key the generator does not emit for this profile -- the migrate
     // scripts of a database-less app -- is not managed, and is never removed.
     if (typeof value !== 'string') continue
-    if (currentScripts[key] !== value) updates.set(key, value)
+    const present = currentScripts[key]
+    if (CREATE_ONLY_SCRIPT_KEYS.has(key) && typeof present === 'string' && present.trim()) continue
+    if (present !== value) updates.set(key, value)
   }
   if (updates.size === 0) {
     return { detail: 'Contract scripts match the generator template.', status: 'clean' }
@@ -596,6 +759,8 @@ function resolveManagedTarget(
       return resolveRegion(current, desired, target.region)
     case 'keys':
       return resolveKeys(current, desired)
+    case 'jsonc-keys':
+      return resolveJsoncKeys(current, desired, target)
   }
 }
 

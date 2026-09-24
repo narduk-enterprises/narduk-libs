@@ -24,6 +24,58 @@ const SEPARATOR = ', '
  */
 const UNSAFE_DESCRIPTION = /[^\x20-\x7e]|["\\,]/g
 
+/** A request's database (or any backend) cost, as two independent counts. */
+export interface QueryCounts {
+  /** Calls into the binding or connection. A batch of eight statements is one round trip. */
+  readonly roundTrips: number
+  /** Statements executed. A statement prepared once and bound twice counts twice. */
+  readonly statements: number
+}
+
+/**
+ * Renders counts for a `Server-Timing` `desc`. The separator is ` / `, never a comma:
+ * `Server-Timing` is itself a comma-separated list, and a comma inside `desc` is safe only for a
+ * parser that honours the quoting.
+ */
+export function formatQueryCounts(counts: QueryCounts): string {
+  return `${String(counts.statements)} stmt / ${String(counts.roundTrips)} rt`
+}
+
+/**
+ * A per-request statement / round-trip counter (narduk-libs#325).
+ *
+ * Driver-agnostic on purpose: this package knows nothing about D1, Postgres or HTTP. The wrapper
+ * around a data binding calls `recordRoundTrip(n)` once per call into the binding, passing the
+ * number of statements that call executed -- `1` for `first`/`all`/`run`/`raw` on a D1 prepared
+ * statement or one Postgres query, `statements.length` for a D1 `batch`. Two counters, not one:
+ * batching moves round trips and leaves statements where they were, and deleting a query does
+ * the opposite, so an instrument reporting only one makes half of any optimisation
+ * unfalsifiable.
+ *
+ * Recording never throws. A malformed count (negative, fractional, `NaN`) is floored to a
+ * non-negative integer and the round trip still counts: an instrument must not be able to fail
+ * the request it is measuring.
+ */
+export class QueryCounter {
+  private roundTripCount = 0
+  private statementCount = 0
+
+  /** Records one call into the binding that executed `statements` statements (default 1). */
+  recordRoundTrip(statements = 1): void {
+    this.roundTripCount += 1
+    this.statementCount += Number.isFinite(statements) ? Math.max(0, Math.floor(statements)) : 0
+  }
+
+  counts(): QueryCounts {
+    return { roundTrips: this.roundTripCount, statements: this.statementCount }
+  }
+
+  /** True once anything has been recorded; until then no count is rendered or logged. */
+  used(): boolean {
+    return this.roundTripCount > 0
+  }
+}
+
 export interface RequestTimingOptions {
   /**
    * Emit each named phase (and its optional description) in the rendered header. Off by
@@ -38,12 +90,21 @@ export interface RequestTimingOptions {
   start?: number
   /** Injectable clock for deterministic tests. Defaults to `performance.now`. */
   clock?: () => number
+  /**
+   * The request's statement / round-trip counter. Omitted, the timer creates its own; either
+   * way it is `timing.counter`. Once anything is recorded, each exposed phase without an explicit
+   * description renders its own delta (`desc="1 stmt / 1 rt"`) and `total` renders the request's
+   * cumulative counts.
+   */
+  counter?: QueryCounter
 }
 
 interface Phase {
   readonly name: string
   readonly durationMs: number
   readonly description?: string
+  /** The counter's delta across this phase. */
+  readonly counts: QueryCounts
 }
 
 function assertName(name: string): void {
@@ -77,10 +138,13 @@ function entry(name: string, durationMs: number, description?: string): string {
  * package README's "Timing inside a Worker" note before trusting a CPU-bound phase's duration.
  */
 export class RequestTiming {
+  /** The request's statement / round-trip counter. See `QueryCounter`. */
+  readonly counter: QueryCounter
   private readonly clock: () => number
   private readonly exposePhases: boolean
   private readonly start: number
   private last: number
+  private lastCounts: QueryCounts = { roundTrips: 0, statements: 0 }
   private readonly phases: Phase[] = []
 
   constructor(options: RequestTimingOptions = {}) {
@@ -88,6 +152,7 @@ export class RequestTiming {
     this.exposePhases = options.exposePhases ?? false
     this.start = options.start ?? this.clock()
     this.last = this.start
+    this.counter = options.counter ?? new QueryCounter()
   }
 
   mark(name: string, description?: string): void {
@@ -95,8 +160,15 @@ export class RequestTiming {
     const now = this.clock()
     const durationMs = Math.max(0, now - this.last)
     this.last = now
+    const counts = this.counter.counts()
+    const delta = {
+      roundTrips: counts.roundTrips - this.lastCounts.roundTrips,
+      statements: counts.statements - this.lastCounts.statements,
+    }
+    this.lastCounts = counts
     if (this.phases.length >= MAX_PHASES) return
     this.phases.push({
+      counts: delta,
       name,
       durationMs,
       ...(description ? { description: sanitizeDescription(description) } : {}),
@@ -125,12 +197,21 @@ export class RequestTiming {
 
   /** Renders the current phases (if `exposePhases`) plus `total` as a `Server-Timing` value. */
   header(): string {
-    const total = entry('total', this.totalMs())
-    if (!this.exposePhases) return total
+    if (!this.exposePhases) return entry('total', this.totalMs())
+    // Counts render only once something was counted, so a timer nobody wired a counter into
+    // keeps exactly the header it always had.
+    const counted = this.counter.used()
+    const total = entry(
+      'total',
+      this.totalMs(),
+      counted ? formatQueryCounts(this.counter.counts()) : undefined,
+    )
     const rendered: string[] = []
     let remaining = MAX_HEADER_BYTES - total.length
     for (const phase of this.phases) {
-      const part = entry(phase.name, phase.durationMs, phase.description)
+      const description =
+        phase.description ?? (counted ? formatQueryCounts(phase.counts) : undefined)
+      const part = entry(phase.name, phase.durationMs, description)
       const cost = part.length + SEPARATOR.length
       if (cost > remaining) break
       remaining -= cost
@@ -139,4 +220,12 @@ export class RequestTiming {
     rendered.push(total)
     return rendered.join(SEPARATOR)
   }
+}
+
+/**
+ * The counts to put on a request's completion record, or nothing when the request counted
+ * nothing -- so a route with no instrumented binding logs exactly the fields it always did.
+ */
+export function queryCountFields(timing: RequestTiming): Partial<QueryCounts> {
+  return timing.counter.used() ? timing.counter.counts() : {}
 }

@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-shell",
-  "version": "0.3.2",
+  "version": "0.6.1",
   "private": false,
   "type": "module",
   "description": "Home of the app-tier Ne* component suite. A Nuxt module that registers every shared component with an explicit addComponent, wrapping Nuxt UI rather than reimplementing it.",
@@ -43,10 +43,11 @@
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format": "prettier --write --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "typecheck": "vue-tsc --noEmit --project tsconfig.json"
+    "typecheck": "vue-tsc --noEmit --project tsconfig.json",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "@narduk-enterprises/narduk-platform": "workspace:*",
@@ -56,7 +57,7 @@
   "//devDependencies": "@vitejs/plugin-vue, @vue/test-utils, @vue/server-renderer and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
     "@nuxt/schema": "^4.5.2",
-    "@nuxt/ui": "4.8.1",
+    "@nuxt/ui": "4.11.1",
     "@types/node": "^22.19.19",
     "@vitejs/plugin-vue": "6.0.7",
     "@vue/server-renderer": "3.5.39",
@@ -73,12 +74,12 @@
     "vue-tsc": "^3.2.5"
   },
   "peerDependencies": {
-    "@nuxt/ui": "4.8.1",
+    "@nuxt/ui": "4.11.1",
     "nuxt": ">=4.0.0",
     "vue": ">=3.5.0",
     "vue-router": "^5.3.1"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

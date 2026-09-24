@@ -29,9 +29,11 @@ call) and a `Server-Timing` response header. The inbound header is validated,
 not trusted — any client can choose the ID its own request arrives with, so it
 correlates requests, it never identifies a caller. The header is `total`-only by
 default; opt in per route to expose named phases, and set a threshold to get a
-"Slow route" warn log for requests over budget. A response a shared cache may
-replay (`public`, `s-maxage`, `immutable`) is left unstamped, because a cached
-correlation ID would be served to every later client. See
+"Slow route" warn log for requests over budget. A driver-agnostic `QueryCounter`
+(`useRequestCounter(event).recordRoundTrip(n)`) adds per-phase statement and
+round-trip counts to the header and the completion record. A response a shared
+cache may replay (`public`, `s-maxage`, `immutable`) is left unstamped, because
+a cached correlation ID would be served to every later client. See
 [`docs/api.md`](docs/api.md#server-timing-and-slow-route-logging).
 
 **Timing inside a Worker:** `Date.now()` and `performance.now()` only advance
@@ -50,11 +52,13 @@ measures wall time waiting on something external.
 | Swift 6.3+                | SwiftPM `NardukLogging`, swift-log            | OSLog or structured streams; optional app endpoint                        |
 | Apple OS minimums         | macOS 15, iOS/tvOS 18, watchOS 11, visionOS 2 | Strict concurrency, typed private metadata                                |
 | Shell tools               | Python distribution's `narduk-log`            | One JSON record on stderr                                                 |
+| Go 1.22+                  | `go/`, `log/slog`                             | One schema JSON record per line; never installs a process default         |
 
 The JavaScript root has no Nuxt, H3, Node, or browser-global requirement.
 Optional framework/exporter dependencies stay behind their entry points. Swift's
 stream and core code also build on Linux; OSLog is available only on Apple
-platforms. Local development uses Python 3.14.7 and Xcode 26.6 / Swift 6.3.3.
+platforms. Local development uses Python 3.14.7, Xcode 26.6 / Swift 6.3.3, and
+Go 1.22.
 
 - [Quickstarts and copyable examples](docs/quickstarts.md)
 - [API, configuration, and record contract](docs/api.md)
@@ -73,5 +77,6 @@ From the repository root, run `pnpm run quality`. Focused TypeScript checks are
 `pnpm --filter @narduk-enterprises/narduk-logging run quality`. Python uses
 `uv run python scripts/quality.py` from `python/`; Swift uses
 `python3 packages/modules/narduk-logging/scripts/swift-quality.py` from the
-root. Release checks additionally install all three packaged artifacts outside
-this workspace.
+root; Go uses `python3 packages/modules/narduk-logging/scripts/go-quality.py`
+from the root. Release checks additionally install the packaged artifacts
+outside this workspace.

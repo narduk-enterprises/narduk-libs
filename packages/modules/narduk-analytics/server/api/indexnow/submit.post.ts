@@ -8,7 +8,11 @@ import {
   withOptionalValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
-import { resolveIndexNowKeyFromRuntimeConfig } from '#narduk-analytics-server/utils/indexNow'
+import {
+  assertIndexNowUrlsBelongToHost,
+  resolveIndexNowKeyFromRuntimeConfig,
+} from '#narduk-analytics-server/utils/indexNow'
+import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
 const bodySchema = z.object({
   urls: z.array(z.string().url()).optional().default([]),
@@ -29,7 +33,7 @@ const bodySchema = z.object({
  *
  * Usage after deploy:
  *   curl -X POST https://your-site.com/api/indexnow/submit \
- *     -H "Content-Type: application/json" \
+ *     -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" \
  *     -d '{"urls": ["https://your-site.com/", "https://your-site.com/about"]}'
  */
 export default definePublicMutation(
@@ -40,7 +44,7 @@ export default definePublicMutation(
   async ({ event, body }) => {
     const input = requireMutationBody(body)
     const log = useLogger(event).child('IndexNow')
-    const config = useRuntimeConfig(event)
+    const config = analyticsRuntimeConfig(event)
     const key = resolveIndexNowKeyFromRuntimeConfig(config, event)
     const siteUrl = readRuntimeString(event, 'SITE_URL', {
       config,
@@ -63,6 +67,7 @@ export default definePublicMutation(
     }
 
     const host = new URL(siteUrl).host
+    assertIndexNowUrlsBelongToHost(urls, host)
     const keyLocation = `${siteUrl.replace(/\/$/, '')}/${key}.txt`
 
     // IndexNow batch API — submit to Bing (which shares with all IndexNow engines)

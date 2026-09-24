@@ -93,6 +93,23 @@ Summaries use a fixed `Request completed` message with `data.status` and
 6. Close the new sink, restore the old SwiftPM pin/configuration and app-owned
    logging adapter, and disable the new client endpoint for rollback.
 
+## Go slog text handlers and edge binaries
+
+1. Require
+   `github.com/narduk-enterprises/narduk-libs/packages/modules/narduk-logging/go`
+   from this repository and pin the revision the app already vendors other
+   narduk-libs Go modules at.
+2. Replace `slog.NewTextHandler` (or `slog.NewJSONHandler`) with
+   `narduklogging.NewHandler` / `NewLogger`. Pass explicit service and
+   environment. Do not call `slog.SetDefault` to adopt one binary's logger.
+3. Emit one synthetic event with a credential-shaped field and a reserved
+   `requestId` / `path`. Confirm the line is schema JSON, the secret is
+   `[REDACTED]`, and `path` has no query.
+4. Point the host collector at the same stderr/file the other runtimes use. This
+   adapter does not open an OTLP connection.
+5. Remove the previous text/JSON handler once the schema line is verified.
+6. Restore the prior handler and module pin to roll back.
+
 ## New apps
 
 `create-narduk-app` emits pinned dependencies, explicit service identity, an

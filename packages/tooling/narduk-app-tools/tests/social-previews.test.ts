@@ -148,6 +148,21 @@ describe('social preview inventory and default images', () => {
         routes: [{ source: 'items/[id].vue', kind: 'dynamic', paths: ['/items/red'] }],
       }),
     ).toThrow(/two examples/u)
+    // One sample is allowed only with a stated reason: a route family that
+    // genuinely has a single instance today cannot invent a second real path.
+    expect(
+      socialPreviewSchema.parse({
+        ...config,
+        routes: [
+          {
+            source: 'items/[id].vue',
+            kind: 'dynamic',
+            paths: ['/items/red'],
+            reason: 'Only one item is published in the current release.',
+          },
+        ],
+      }).routes,
+    ).toHaveLength(1)
     expect(() =>
       socialPreviewSchema.parse({ ...config, routes: [{ source: 'index.vue', kind: 'private' }] }),
     ).toThrow()
@@ -353,6 +368,22 @@ describe('crawler-visible delivery', () => {
     const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
     expect(report.ok).toBe(false)
     expect(report.errors.join(' ')).toContain(error)
+  })
+
+  it('names both URLs and hints NUXT_PUBLIC_SITE_URL when a local dev server renders its own origin (#587)', async () => {
+    // The exact symptom #587 reports: a local `nuxt dev` renders `og:url` on
+    // its own origin (the `--base-url` target) instead of the canonical
+    // `siteUrl`, and the old fixed-string error gave no hint why.
+    await serve((path) =>
+      path.endsWith('.png') ? undefined : { body: html(path).replace(config.siteUrl, origin) },
+    )
+    const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
+    expect(report.ok).toBe(false)
+    const message = report.errors.join(' ')
+    expect(message).toContain(`og:url is ${origin}/`)
+    expect(message).toContain(`expected ${config.siteUrl}/`)
+    expect(message).toContain('(siteUrl)')
+    expect(message).toContain(`NUXT_PUBLIC_SITE_URL=${config.siteUrl}`)
   })
 
   it('rejects identical pixels behind different dynamic URLs', async () => {

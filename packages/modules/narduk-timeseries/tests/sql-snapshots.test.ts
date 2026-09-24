@@ -16,7 +16,9 @@ import {
 } from '../src/timescale/query.js'
 import { buildRetentionStatements } from '../src/timescale/retention.js'
 import { buildSeriesResolveStatement } from '../src/timescale/series.js'
+import { ROLLUP_BUCKET_MS } from '../src/timescale/tables.js'
 import { buildNumericWriteStatements, buildTrackWriteStatements } from '../src/timescale/write.js'
+import { ROLLUP_BUCKETS } from '../src/types.js'
 
 const VESSEL = '11111111-1111-4111-8111-111111111111'
 const OTHER_VESSEL = '22222222-2222-4222-8222-222222222222'
@@ -158,13 +160,13 @@ describe('rollup query', () => {
              last_value AS last
         FROM telemetry_numeric_1h
        WHERE vessel_id = $1::uuid
-         AND series_id = ANY($2::bigint[])
+         AND series_id = ANY(string_to_array($2::text, ',')::bigint[])
          AND bucket >= $3::timestamptz
          AND bucket <  $4::timestamptz
        ORDER BY bucket ASC, series_id ASC
        LIMIT $5"
     `)
-    expect(built.params).toEqual([VESSEL, [1, 2, 3], RANGE.start, RANGE.end, 1001])
+    expect(built.params).toEqual([VESSEL, '1,2,3', RANGE.start, RANGE.end, 1001])
   })
 
   it('selects the table from a frozen map and fails closed', () => {
@@ -293,7 +295,7 @@ describe('retention plan', () => {
     expect(statements.some((statement) => statement.rollup === '1d')).toBe(false)
     // The Free raw sweep exists only because round 20 chose both a 7-day global
     // raw window (1A) and a 24-hour Free raw window (2B).
-    expect(statements[5]!.params).toEqual([[VESSEL], new Date('2026-09-11T03:15:00.000Z')])
+    expect(statements[5]!.params).toEqual([VESSEL, new Date('2026-09-11T03:15:00.000Z')])
   })
 
   it('builds the explicit backfill refresh a late batch needs', () => {
@@ -349,5 +351,120 @@ describe('retention plan', () => {
         range: RANGE,
       }),
     ).toThrow(/REFRESH_WINDOW_TOO_WIDE/u)
+  })
+
+  it('snaps each refresh window outward onto the level bucket', () => {
+    // A ten-minute store-and-forward batch is narrower than a 15m, 1h or 1d
+    // bucket. Splitting at the caller's offsets would emit those levels a
+    // window Timescale has historically refused ("refresh window too small").
+    const range = {
+      end: new Date('2026-09-12T12:17:33.000Z'),
+      start: new Date('2026-09-12T12:07:33.000Z'),
+    }
+    const statements = refreshRollupsStatements({ range })
+    expect(statements.map((statement) => statement.bucket)).toEqual([...ROLLUP_BUCKETS])
+    expect(statements.map((statement) => statement.range)).toEqual([
+      {
+        end: new Date('2026-09-12T12:18:00.000Z'),
+        start: new Date('2026-09-12T12:07:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-12T12:30:00.000Z'),
+        start: new Date('2026-09-12T12:00:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-12T13:00:00.000Z'),
+        start: new Date('2026-09-12T12:00:00.000Z'),
+      },
+      {
+        end: new Date('2026-09-13T00:00:00.000Z'),
+        start: new Date('2026-09-12T00:00:00.000Z'),
+      },
+    ])
+    for (const statement of statements) {
+      const bucketMs = ROLLUP_BUCKET_MS[statement.bucket]
+      const startMs = statement.range.start.getTime()
+      const endMs = statement.range.end.getTime()
+      expect(startMs % bucketMs).toBe(0)
+      expect(endMs % bucketMs).toBe(0)
+      expect(endMs - startMs).toBeGreaterThanOrEqual(bucketMs)
+      expect(startMs).toBeLessThanOrEqual(range.start.getTime())
+      expect(endMs).toBeGreaterThanOrEqual(range.end.getTime())
+    }
+  })
+
+  it('folds a sub-bucket remainder into the previous refresh window', () => {
+    const start = new Date('2026-01-01T00:00:00.000Z')
+    const range = {
+      end: new Date(start.getTime() + 70_000),
+      start,
+    }
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      maxWindowMs: 90_000,
+      range,
+    })
+    // 90s is not a 1m multiple, so the walk floors to 1m. The 70s request
+    // snaps to two minutes; both windows are aligned and cover every minute.
+    expect(statements.map((statement) => statement.range)).toEqual([
+      { end: new Date('2026-01-01T00:01:00.000Z'), start },
+      {
+        end: new Date('2026-01-01T00:02:00.000Z'),
+        start: new Date('2026-01-01T00:01:00.000Z'),
+      },
+    ])
+  })
+
+  it('covers every 1m bucket when maxWindowMs is not a bucket multiple', () => {
+    const start = new Date('2026-01-01T00:00:00.000Z')
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      maxWindowMs: 90_000,
+      range: { end: new Date('2026-01-01T00:05:00.000Z'), start },
+    })
+    expect(statements).toHaveLength(5)
+    for (const [index, statement] of statements.entries()) {
+      expect(statement.range.start).toEqual(
+        new Date(start.getTime() + index * ROLLUP_BUCKET_MS['1m']),
+      )
+      expect(statement.range.end).toEqual(
+        new Date(start.getTime() + (index + 1) * ROLLUP_BUCKET_MS['1m']),
+      )
+    }
+  })
+
+  it('keeps an unaligned 14-day 1m backfill inside the ceiling and abutting', () => {
+    const range = {
+      end: new Date('2026-01-15T12:07:33.000Z'),
+      start: new Date('2026-01-01T12:07:33.000Z'),
+    }
+    const statements = refreshRollupsStatements({
+      buckets: ['1m'],
+      range,
+    })
+    expect(statements[0]!.range.start).toEqual(new Date('2026-01-01T12:07:00.000Z'))
+    expect(statements.at(-1)!.range.end).toEqual(new Date('2026-01-15T12:08:00.000Z'))
+    for (const statement of statements) {
+      const width = statement.range.end.getTime() - statement.range.start.getTime()
+      expect(width).toBeLessThanOrEqual(REFRESH_MAX_WINDOW_MS['1m'])
+      expect(width).toBeGreaterThanOrEqual(ROLLUP_BUCKET_MS['1m'])
+      expect(statement.range.start.getTime() % ROLLUP_BUCKET_MS['1m']).toBe(0)
+      expect(statement.range.end.getTime() % ROLLUP_BUCKET_MS['1m']).toBe(0)
+    }
+    for (let index = 1; index < statements.length; index += 1) {
+      expect(statements[index]!.range.start).toEqual(statements[index - 1]!.range.end)
+    }
+  })
+
+  it('rejects an empty buckets list and a non-positive maxWindowMs before the loop', () => {
+    expect(() => refreshRollupsStatements({ buckets: [], range: RANGE })).toThrow(
+      /buckets must name at least one rollup level/u,
+    )
+    expect(() => refreshRollupsStatements({ buckets: [], maxWindowMs: -1, range: RANGE })).toThrow(
+      /maxWindowMs must be a positive number of milliseconds/u,
+    )
+    expect(() =>
+      refreshRollupsStatements({ buckets: ['1m'], maxWindowMs: 0, range: RANGE }),
+    ).toThrow(/maxWindowMs must be a positive number of milliseconds/u)
   })
 })

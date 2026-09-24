@@ -33,9 +33,20 @@ import type {
   FakeMapKitInitializationOptions,
   FakeMapKitLoadOptions,
   FakeMapKitMap,
+  FakeMapKitColorSchemeEnum,
+  FakeMapKitFeatureVisibilityEnum,
+  FakeMapKitMapConstructor,
+  FakeMapKitMapOptions,
+  FakeMapKitMapTypeEnum,
   FakeMapKitMarkerAnnotation,
   FakeMapKitNamespace,
   FakeMapKitShowItemsOptions,
+  FakeMapPoint,
+  FakeMapPointData,
+  FakeMapRect,
+  FakeMapRectData,
+  FakeMapSize,
+  FakeMapSizeData,
   FakePadding,
   FakePaddingData,
   FakeSize,
@@ -103,6 +114,34 @@ type _coordinateRegion = Expect<Extends<Apple.CoordinateRegion, FakeCoordinateRe
 type _paddingData = Expect<Equal<FakePaddingData, Apple.PaddingData>>
 type _padding = Expect<Extends<Apple.Padding, FakePadding>>
 type _size = Expect<Equal<FakeSize, Apple.Size>>
+
+// ------------------------------------------------------- the MapRect world --
+// 2.1.1 models Apple's map-unit geometry (K-5). `*Data` are Apple's plain-object
+// alternatives, accepted anywhere the class is.
+
+type _mapPoint = Expect<Extends<Apple.MapPoint, FakeMapPoint>>
+type _mapPointData = Expect<Equal<FakeMapPointData, Apple.MapPointData>>
+type _mapSize = Expect<Extends<Apple.MapSize, FakeMapSize>>
+type _mapSizeData = Expect<Equal<FakeMapSizeData, Apple.MapSizeData>>
+type _mapRect = Expect<Extends<Apple.MapRect, FakeMapRect>>
+type _mapRectData = Expect<Equal<FakeMapRectData, Apple.MapRectData>>
+
+// ------------------------------------------------------------------- enums --
+// Apple keeps `MapType` and `ColorScheme` as non-exported const objects, so they
+// are read off the namespace getters that publish them.
+
+type _mapTypeEnum = Expect<Extends<Apple.MapKit['MapType'], FakeMapKitMapTypeEnum>>
+type _colorSchemeEnum = Expect<Extends<Apple.MapKit['ColorScheme'], FakeMapKitColorSchemeEnum>>
+type _featureVisibilityEnum = Expect<
+  Extends<Apple.MapKit['FeatureVisibility'], FakeMapKitFeatureVisibilityEnum>
+>
+// The deprecated aliases Apple still ships on the Map constructor.
+type _deprecatedMapTypes = Expect<
+  Extends<Apple.MapKit['Map']['MapTypes'], FakeMapKitMapConstructor['MapTypes']>
+>
+type _deprecatedColorSchemes = Expect<
+  Extends<Apple.MapKit['Map']['ColorSchemes'], FakeMapKitMapConstructor['ColorSchemes']>
+>
 
 // --------------------------------------------------------------- annotation --
 // `map` is excluded: Apple's `Map` carries `showItems`, whose real return type
@@ -241,6 +280,30 @@ type _mapSetRegionAnimatedReturn = Expect<
     ReturnType<FakeMapKitMap['setRegionAnimated']>
   >
 >
+// The basemap, control and camera members 2.1.1 added (K-4, K-5).
+type _mapMapType = Expect<Extends<Apple.Map['mapType'], FakeMapKitMap['mapType']>>
+type _mapColorScheme = Expect<Extends<Apple.Map['colorScheme'], FakeMapKitMap['colorScheme']>>
+type _mapShowsScale = Expect<Extends<Apple.Map['showsScale'], FakeMapKitMap['showsScale']>>
+type _mapShowsZoomControl = Expect<
+  Extends<Apple.Map['showsZoomControl'], FakeMapKitMap['showsZoomControl']>
+>
+type _mapPadding = Expect<Extends<Apple.Map['padding'], FakeMapKitMap['padding']>>
+type _mapVisibleMapRect = Expect<
+  Extends<Apple.Map['visibleMapRect'], FakeMapKitMap['visibleMapRect']>
+>
+type _mapSetVisibleMapRect = Expect<
+  Extends<
+    Parameters<FakeMapKitMap['setVisibleMapRectAnimated']>,
+    Parameters<Apple.Map['setVisibleMapRectAnimated']>
+  >
+>
+type _mapSetVisibleMapRectReturn = Expect<
+  Equal<
+    Fakeify<ReturnType<Apple.Map['setVisibleMapRectAnimated']>>,
+    ReturnType<FakeMapKitMap['setVisibleMapRectAnimated']>
+  >
+>
+type _mapOptionKeys = Expect<Extends<keyof FakeMapKitMapOptions, keyof Apple.MapConstructorOptions>>
 type _mapDestroy = Expect<
   Equal<ReturnType<Apple.Map['destroy']>, ReturnType<FakeMapKitMap['destroy']>>
 >
@@ -313,6 +376,28 @@ type _namespaceRegionCtor = Expect<
     ConstructorParameters<Apple.MapKit['CoordinateRegion']>
   >
 >
+type _namespacePointCtor = Expect<
+  Extends<
+    ConstructorParameters<FakeMapKitNamespace['MapPoint']>,
+    ConstructorParameters<Apple.MapKit['MapPoint']>
+  >
+>
+type _namespaceSizeCtor = Expect<
+  Extends<
+    ConstructorParameters<FakeMapKitNamespace['MapSize']>,
+    ConstructorParameters<Apple.MapKit['MapSize']>
+  >
+>
+type _namespaceRectCtor = Expect<
+  Extends<
+    ConstructorParameters<FakeMapKitNamespace['MapRect']>,
+    ConstructorParameters<Apple.MapKit['MapRect']>
+  >
+>
+// `Padding` is deliberately NOT compared on its constructor parameters: Apple
+// overloads it (`()`, `(PaddingData)`, `(top, right, bottom, left)`) and
+// `ConstructorParameters` resolves to the last overload, while the fake models
+// the data-object form alone and throws for the numeric ones.
 
 describe('apple type conformance', () => {
   it('is enforced at compile time, not here', () => {

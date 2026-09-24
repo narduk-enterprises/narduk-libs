@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { CHALLENGE_DEFAULT_TTL_SECONDS } from '../server/utils/devices'
+import {
+  CHALLENGE_DEFAULT_TTL_SECONDS,
+  createDevices,
+  OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS,
+} from '../server/utils/devices'
 import { DEVICES_LOCKOUT_MAX_WINDOW_SECONDS } from '../server/utils/devices-lockout'
 import { DEVICES_LOCKOUT_POLICY } from '../shared/utils/lockout-policy'
 
@@ -164,5 +168,102 @@ describe('opportunistic pruning', () => {
     // Gone, so the scope is free again — which is why the TTL has to outlive
     // the exchange the nonce protects.
     expect(await devices.consumeNonce({ ...nonce, expiresAt: clock.now() + 60_000 })).toBe(true)
+  })
+})
+
+/**
+ * `startClaim` is polled while an owner approves: an edge re-posts it every
+ * 5 s for up to 15 min. Each poll ran every prune DELETE, almost always
+ * removing nothing (narduk-libs#227). The DELETE count must follow elapsed
+ * time, not the number of polls or the rows retained.
+ */
+describe('opportunistic prune throttle', () => {
+  const POLL_MS = 5000
+  const INTERVAL_MS = CHALLENGE_DEFAULT_TTL_SECONDS * 1000
+
+  async function pollClaim(polls: number, retainedAttempts: number) {
+    const harness = createTestHarness()
+    const { devices, clock, sqlite } = harness
+    const insert = sqlite.prepare(
+      `INSERT INTO devices_auth_attempts (id, subject_kind, subject, outcome, at)
+       VALUES (?, 'ip', ?, 'failure', ?)`,
+    )
+    for (let row = 0; row < retainedAttempts; row += 1) {
+      insert.run(`retained-${row}`, `ip-${row}`, clock.now())
+    }
+    const minted = await devices.createClaimToken({
+      orgId: ORG,
+      resource: VESSEL,
+      createdByUserId: 'owner-1',
+    })
+    const key = createDeviceKey()
+    const prepare = vi.spyOn(sqlite, 'prepare')
+    for (let poll = 0; poll < polls; poll += 1) {
+      const started = await devices.startClaim({
+        claimToken: minted.token,
+        hardwareFingerprint: FINGERPRINT,
+        hardwareFingerprintAlgorithm: ALGORITHM,
+        devicePublicKey: key.publicKey,
+        softwareVersion: '1.0.0',
+        idempotencyKey: 'poll',
+      })
+      expect(started.status).toBe('pending_user_approval')
+      clock.advance(POLL_MS)
+    }
+    const deletes = prepare.mock.calls.filter(([sql]) => /^delete from/iu.test(String(sql))).length
+    prepare.mockRestore()
+    return { deletes, elapsedMs: polls * POLL_MS }
+  }
+
+  it('bounds prune DELETEs by elapsed time, whatever the poll count or retained rows', async () => {
+    const results = []
+    for (const polls of [12, 180]) {
+      for (const retained of [0, 500]) {
+        results.push({ polls, retained, ...(await pollClaim(polls, retained)) })
+      }
+    }
+    for (const { deletes, elapsedMs } of results) {
+      // Three DELETEs per prune, at most one prune per interval started.
+      expect(deletes).toBeLessThanOrEqual(3 * Math.ceil(elapsedMs / INTERVAL_MS))
+    }
+    // 180 polls is 15 minutes: three prunes, not 180.
+    expect(results.filter((r) => r.polls === 180).map((r) => r.deletes)).toEqual([9, 9])
+    expect(results.filter((r) => r.polls === 12).map((r) => r.deletes)).toEqual([3, 3])
+  })
+
+  it('uses the shorter of the challenge TTL and the shortest lockout window', async () => {
+    expect(OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS).toBe(
+      DEVICES_LOCKOUT_POLICY.perTokenOrDevice.windowSeconds,
+    )
+    const harness = createTestHarness({ challengeTtlSeconds: 30 })
+    const { devices, clock, sqlite } = harness
+    const prepare = vi.spyOn(sqlite, 'prepare')
+    const deletes = () =>
+      prepare.mock.calls.filter(([sql]) => /^delete from/iu.test(String(sql))).length
+    const claimed = await claimDevice(harness)
+    const afterClaim = deletes()
+    await devices.openSession((await signedOpen(harness, claimed, 'command')).input)
+    expect(deletes()).toBe(afterClaim)
+    clock.advance(30_000)
+    await devices.openSession((await signedOpen(harness, claimed, 'command')).input)
+    expect(deletes()).toBe(afterClaim + 3)
+    prepare.mockRestore()
+  })
+
+  it('shares the throttle between services over one database', async () => {
+    const harness = createTestHarness()
+    const { db, sqlite, clock } = harness
+    const prepare = vi.spyOn(sqlite, 'prepare')
+    const deletes = () =>
+      prepare.mock.calls.filter(([sql]) => /^delete from/iu.test(String(sql))).length
+    for (let request = 0; request < 5; request += 1) {
+      // A consumer building the service per request.
+      const perRequest = createDevices(db, { now: clock.now })
+      await perRequest.pruneExpired()
+      await expect(perRequest.openSession({} as never)).rejects.toThrow()
+    }
+    // Five explicit prunes always run; the five opportunistic ones share one.
+    expect(deletes()).toBe(5 * 3 + 3)
+    prepare.mockRestore()
   })
 })

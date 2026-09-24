@@ -25,7 +25,95 @@ The core security headers keep browser geolocation disabled by default. Apps
 that intentionally need user-location prompts can set
 `NUXT_PUBLIC_ALLOW_GEOLOCATION=true` to emit
 `Permissions-Policy: geolocation=(self)` while leaving camera and microphone
-blocked.
+blocked. With the `security.headers` preset on, the variable is read at build
+time. An explicit `security.headers.permissionsPolicy.geolocation` wins over it.
+
+`useCurrentLocation()` is the consent-first way to read that location, for "near
+me" features. It exposes `status`, `permission`, `coords`, `locate()` and
+`refreshPermission()`.
+
+- **Nothing is read until the app calls `locate()` from a user gesture.** Each
+  call is one `getCurrentPosition`. It never watches or polls, and it never
+  sends a coordinate anywhere.
+- **Server rendering is a no-op.** On mount, the composable asks the Permissions
+  API what the answer already is. That never prompts.
+- **Four failure outcomes stay separate:**
+  - `denied`: the person said no.
+  - `blocked`: the page's own Permissions-Policy forbids geolocation, so the fix
+    is the setting above. Chromium reports this as a denial, and the composable
+    tells the two apart.
+  - `unavailable`: no position could be had.
+  - `timeout`: no position arrived in time.
+
+It is not named `useGeolocation`, because VueUse's composable of that name
+watches continuously.
+
+narduk-core enables Nuxt UI color mode and defaults `@nuxtjs/color-mode` to
+`preference: system` (or `NUXT_COLOR_MODE_PREFERENCE`), `fallback: 'dark'`, and
+`classSuffix: ''`. The empty suffix is required so the document class is `dark`,
+which is what Tailwind v4 and Nuxt UI 4 key on. Apps with no dark styling will
+start rendering Nuxt UI chrome dark for dark-preference users on adoption; an
+app that wants light-only sets
+`colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
+still override `classSuffix`.
+
+narduk-core seeds a local-only `@nuxt/icon` contract before it installs
+`@nuxt/ui`: `provider: 'server'`, `fallbackToApi: false`, the Lucide collection
+bundled on the server, and the icons core's own components render bundled on the
+client. `@nuxt/icon` reads that contract once, when it installs. So **list
+`@narduk-enterprises/narduk-core` before `@nuxt/icon`** in `modules`, as
+generated apps do. An app that lists `@nuxt/icon` first keeps the Iconify API
+fallback, and an enforcing CSP then refuses the first unbundled icon's fetch
+from `api.iconify.design`. The build warns in that case, unless the app sets
+`icon.fallbackToApi: false` itself (narduk-libs#467).
+
+## Session module (`nuxt-auth-utils`)
+
+`coreModules` still installs
+[`nuxt-auth-utils`](https://github.com/atinux/nuxt-auth-utils) by default so
+dashboard chrome can keep `useUserSession`. A site with no accounts can opt out:
+
+```ts
+export default defineNuxtConfig({
+  nardukCore: {
+    auth: false,
+  },
+})
+```
+
+`nardukCore.auth` defaults to `true`. `false` skips
+`installModule('nuxt-auth-utils')` and does not seed
+`runtimeConfig.session.password` from `NUXT_SESSION_PASSWORD || ''`, so
+`/api/_auth/session` is not registered (narduk-libs#169). An app-owned
+`runtimeConfig.session` is left alone.
+
+With `app` on, the dashboard layout's `LayerDashboardShell` and
+`LayerDashboardAccountMenu` still call `useUserSession`. Under `auth: false`
+core registers a signed-out `useUserSession` in its place: `loggedIn` is
+`false`, `user` and `session` are `null`, `ready` is `true`, and `fetch`,
+`clear` and `openInPopup` do nothing. It has the same return shape as
+`nuxt-auth-utils`' composable. An app that lists `nuxt-auth-utils` in its own
+`modules` keeps the real one.
+
+`auth: false` cannot be combined with `@narduk-enterprises/narduk-auth`: its
+sessions live in `nuxt-auth-utils`, which it relies on core to install. The
+build stops with a message naming the conflict, unless the app lists
+`nuxt-auth-utils` in `modules` itself.
+
+When auth stays on, the session plugin fetches `/api/_auth/session` during every
+SSR, and with no `NUXT_SESSION_PASSWORD` that request throws (narduk-libs#540).
+The install reuses the module's own `auth.loadStrategy` option:
+
+- **`'none'`** when the app has not configured auth, so SSR makes no session
+  call and logs no error. A published-data app (Buoys) is this case.
+- **The default (`'server-first'`)** when an existing signal says the app uses
+  auth: `NUXT_SESSION_PASSWORD` or `SESSION_PASSWORD` is non-empty at build
+  time, `runtimeConfig.session.password` is already set, or the app lists
+  `@narduk-enterprises/narduk-auth` or `nuxt-auth-utils` in `modules`.
+- **Unchanged** when the app already set `auth.loadStrategy`.
+
+`loadStrategy: 'none'` is not a substitute for `nardukCore.auth: false`: the
+session module is still installed and still serves the session route.
 
 ## Public runtime overlay (Workers Builds)
 
@@ -120,11 +208,11 @@ export default defineNuxtConfig({
 
 ### Three modes, and why the default is "change nothing"
 
-| `security.headers`                 | What is served                                                                                                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| omitted or `false`                 | Exactly today's headers. Upgrading narduk-core changes nothing.                                                                                                                                           |
-| `{ enabled: true }`                | The legacy enforcing CSP **keeps being served**, and the strict nonce policy is served beside it as `Content-Security-Policy-Report-Only`. Every other header comes from nuxt-security, and HSTS appears. |
-| `{ enabled: true, enforce: true }` | The strict nonce policy becomes the enforcing `Content-Security-Policy` and the legacy one is retired.                                                                                                    |
+| `security.headers`                 | What is served                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted or `false`                 | Exactly today's headers. Upgrading narduk-core changes nothing.                                                                                                                                                                                                                       |
+| `{ enabled: true }`                | The legacy enforcing CSP **keeps being served**, and the strict nonce policy is served beside it as `Content-Security-Policy-Report-Only` (without `upgrade-insecure-requests`, which browsers ignore in report-only). Every other header comes from nuxt-security, and HSTS appears. |
+| `{ enabled: true, enforce: true }` | The strict nonce policy becomes the enforcing `Content-Security-Policy` and the legacy one is retired.                                                                                                                                                                                |
 
 Both literal readings of "opt-in, report-only first" would have been regressions
 here. Making the headers opt-in would strip headers from every app that has them
@@ -143,7 +231,10 @@ on the `-Report-Only` one, so the soak cannot break a page.
    and, for an inline violation, a sample of the offending source, and shipping
    that to a third-party collector is a data-egress decision nobody made. Change
    the path with `reportRoute`, or set `reportRoute: false` to serve no route
-   and emit no `report-uri`.
+   and emit no `report-uri`. The route reads only `application/csp-report` and
+   `application/reports+json` bodies (anything else is answered 204 unread) and
+   allows each client 60 reports a minute under the rate-limit key `csp-report`,
+   which `runtimeConfig.nardukRateLimit.routes` can raise.
 3. **Fix what it found**, usually by adding the origin to `allow`. A week of
    real traffic across the routes that matter is a reasonable soak; a quiet
    route proves nothing about a busy one.
@@ -157,21 +248,50 @@ unknown.
 
 ### Options
 
-| Option              | Default                                                                        | Notes                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`           | `false`                                                                        | Serve the strict policy at all.                                                                                                                            |
-| `enforce`           | `false`                                                                        | Promote it from report-only to enforcing.                                                                                                                  |
-| `allow`             | baseline only                                                                  | Extra origins per directive: `script`, `connect`, `img`, `font`, `style`, `frame`, `worker`, `media`. Merged onto the estate baseline, never replacing it. |
-| `strictDynamic`     | `true`                                                                         | Keep `'strict-dynamic'` in `script-src`. See the warning below.                                                                                            |
-| `hsts`              | 180 days, `includeSubdomains`, no preload                                      | `false` disables it. `preload` is never defaulted on, because submitting to the preload list is irreversible in practice.                                  |
-| `frameAncestors`    | `["'none'"]`                                                                   | Also drives the `X-Frame-Options` fallback, which can only express `DENY` and `SAMEORIGIN`.                                                                |
-| `referrerPolicy`    | `strict-origin-when-cross-origin`                                              |                                                                                                                                                            |
-| `permissionsPolicy` | camera, microphone, geolocation, payment, usb and `interest-cohort` all denied | Merged onto the baseline, so granting one does not restate the rest.                                                                                       |
-| `reportRoute`       | `/api/_security/csp-report`                                                    | `false` serves no route and emits no `report-uri`.                                                                                                         |
+| Option              | Default                                                                        | Notes                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`           | `false`                                                                        | Serve the strict policy at all.                                                                                                                                               |
+| `enforce`           | `false`                                                                        | Promote it from report-only to enforcing.                                                                                                                                     |
+| `allow`             | baseline only                                                                  | Extra origins per directive: `script`, `connect`, `img`, `font`, `style`, `frame`, `worker`, `media`. Merged onto the selected baseline, never replacing it.                  |
+| `baseline`          | `'estate'`                                                                     | `'self'` skips the whole estate allowlist — third-party hosts **and** `data:` on `img-src`, `blob:` on `worker-src`. Each directive becomes `'self'` plus this app's `allow`. |
+| `strictDynamic`     | `true`                                                                         | Keep `'strict-dynamic'` in `script-src`. See the warning below.                                                                                                               |
+| `hsts`              | 180 days, `includeSubdomains`, no preload                                      | `false` disables it. `preload` is never defaulted on, because submitting to the preload list is irreversible in practice.                                                     |
+| `frameAncestors`    | `["'none'"]`                                                                   | Also drives the `X-Frame-Options` fallback, which can only express `DENY` and `SAMEORIGIN`.                                                                                   |
+| `referrerPolicy`    | `strict-origin-when-cross-origin`                                              |                                                                                                                                                                               |
+| `permissionsPolicy` | camera, microphone, geolocation, payment, usb and `interest-cohort` all denied | Merged onto the baseline, so granting one does not restate the rest.                                                                                                          |
+| `reportRoute`       | `/api/_security/csp-report`                                                    | `false` serves no route and emits no `report-uri`.                                                                                                                            |
 
 An app that already sets `CSP_SCRIPT_SRC`, `CSP_CONNECT_SRC`, `CSP_FRAME_SRC`,
 `CSP_WORKER_SRC` or `CSP_MEDIA_SRC` keeps those origins: they are folded into
 the preset's allowlist, so turning the preset on does not quietly drop them.
+They are the app's own origins, so `baseline: 'self'` keeps them too.
+
+#### `baseline: 'self'`
+
+The estate baseline is a floor, and a floor is the wrong shape for an app that
+reaches no third party. Because `allow` can only add, such an app could not
+enforce the strict nonce policy without **widening** its CSP: it would trade
+`script-src 'unsafe-inline'` for the eleven origins in `BASELINE_ALLOWLIST`,
+eight of them on `connect-src` — the directive that governs where a page may
+send data.
+
+```ts
+nardukCore: {
+  security: {
+    headers: { enabled: true, enforce: true, baseline: 'self' },
+  },
+}
+```
+
+Everything else is unchanged: the nonce, `'strict-dynamic'`, HSTS,
+`frame-ancestors`, `form-action`, `object-src 'none'`, the report route, and
+style-src's `'unsafe-inline'` (which is Vue's scoped-style runtime, not a
+baseline origin). The resulting policy is a strict subset of the `'estate'` one
+— a test pins that.
+
+Reach for it only when the app genuinely contacts nothing third-party. An app
+that installs narduk-analytics or narduk-mapkit wants the default, or it will be
+restating those modules' hosts in `allow` by hand.
 
 > [!WARNING] `'strict-dynamic'` makes a conforming browser **ignore every host**
 > in `script-src`, `'self'` included, and trust only scripts created by already-
@@ -198,6 +318,21 @@ full Nitro build and a browser binary — so run it by hand when the preset, the
 Nuxt major, or the nuxt-security version moves.
 `tests/nuxt-security-contract.test.ts` is the cheap tripwire that runs in CI
 instead.
+
+## Adding a row to the footer
+
+`LayerAppFooter` renders an `after` slot below its content. By default the slot
+renders every global component named in `appConfig.nardukCore.footer.after`, in
+order. A module adds its own row by registering a global component and appending
+its name there, instead of shipping a copy of the footer (narduk-libs#743). An
+app can pass its own `#after` slot to replace the listed rows.
+
+```ts
+// app.config.ts
+export default defineAppConfig({
+  nardukCore: { footer: { after: ['MyFooterRow'] } },
+})
+```
 
 ## Error page and exception capture
 
@@ -244,6 +379,23 @@ it, re-export it:
 <script setup lang="ts">
 export { default } from '@narduk-enterprises/narduk-core/app/error-page'
 </script>
+```
+
+The `./app/error-page` export carries a `types` condition (narduk-libs#521): the
+page is typed as a component taking `error: NuxtError`, so an app that imports
+it into its own `app/error.vue` needs no `@ts-expect-error`:
+
+```vue
+<script setup lang="ts">
+import EstateErrorPage from '@narduk-enterprises/narduk-core/app/error-page'
+import type { NuxtError } from '#app'
+
+defineProps<{ error: NuxtError }>()
+</script>
+
+<template>
+  <EstateErrorPage :error="error" />
+</template>
 ```
 
 ### Exception capture
@@ -294,6 +446,27 @@ not escalated.
 Operational guide:
 [an error page is showing / exceptions are spiking](../../../docs/operations/error-page-and-exceptions.md).
 
+## Tailwind sources and Nuxt UI component detection
+
+Nuxt UI adds an `@source` and scans for `U*` components only in Nuxt _layers_.
+narduk-core is a module installed under `node_modules`, so it registers its own
+files (narduk-libs#700):
+
+- `main.css` carries `@source '../../'`, so the utilities core's `runtime/app`
+  files use (the error page's `text-7xl` and `min-h-screen`, the header's
+  `md:flex`) are generated in an app that never names them.
+- When an app turns on `ui.experimental.componentDetection`, core adds the Nuxt
+  UI components its own files render (`src/nuxt-ui-components.ts`; `UButton` on
+  the error page, the `UDashboard*` set for the `dashboard` layout) to the
+  detection list. `true` becomes that list, which Nuxt UI still treats as
+  "detect, and always include these". An app lists only its own components.
+
+Another module does the same with `registerNuxtUiSources` from
+`@narduk-enterprises/narduk-core/nuxt-ui-sources`. Given `sources` (absolute
+directories) and `components`, it prepends an `@source` per directory to Nuxt
+UI's `ui.css` and extends the detection list, once every module is installed.
+narduk-auth uses it for its `app/` directory.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
@@ -315,6 +488,16 @@ non-canonical hostname to the canonical origin with a `308`. The 308 is sent
 to `runtimeConfig.public.appUrl`, and disables itself when that origin is not
 `https:` or is localhost. It reads the `host` header only — never
 `x-forwarded-host`, which a client can set to bypass the redirect.
+
+`ENFORCE_CANONICAL_HOST` redirects **every** non-canonical host, which includes
+`*.workers.dev` previews and the production `workers.dev` alias a live proof
+curls for a 200. To redirect only duplicate hosts such as `www`, name them
+instead: `CANONICAL_REDIRECT_HOSTS=www.example.com` (env, comma-separated) or
+`runtimeConfig.public.canonicalRedirectHosts` (a string or a list). A named list
+turns the redirect on without `ENFORCE_CANONICAL_HOST`, and when set it is the
+whole rule: only the named hosts redirect, every other host is served where it
+was asked, and a `*.workers.dev` entry is ignored (narduk-libs#515). The
+navigation-only rule below applies either way.
 
 **It redirects top-level document navigations only.** Canonicalisation is worth
 something on a navigation: search engines, bookmarks, and an auth cookie that
@@ -376,6 +559,13 @@ that sets neither still gets D1, but it has not declared it, and
 rather than as an error. An unknown option value fails the build; an unknown
 `NUXT_DATABASE_BACKEND` value is ignored with a warning.
 
+On D1, `useDatabase(event)` and `createAppDatabase` accessors count every call
+into the binding on narduk-logging's request counter (narduk-libs#511): one
+round trip per `first` / `all` / `run` / `raw` on a prepared statement, and one
+round trip carrying every statement for a `batch`. The counts reach the
+`Server-Timing` header (when phases are exposed) and the "Request completed" log
+record. Counting never fails a query.
+
 With `'none'`:
 
 - `useDatabase(event)` and accessors made by `createAppDatabase` throw an HTTP
@@ -384,6 +574,32 @@ With `'none'`:
 - `/api/health` reports `database: "not_applicable"` and probes nothing.
 - The build fails if `@narduk-enterprises/narduk-auth` is installed, because
   sign-in stores users, sessions and API keys in the app database.
+
+### Atomic batches on D1 and better-sqlite3
+
+`runAtomicBatch(db, statements)` (auto-imported in server code, or
+`@narduk-enterprises/narduk-core/server/utils/atomic-batch`) runs a group of
+writes as one transaction on either driver an app's database runs on, so the
+same code works in the Worker and under vitest against the merged migrations:
+D1's `db.batch(statements)`, or every statement's `.all()` inside
+better-sqlite3's `db.$client.transaction`. Any other database is refused rather
+than run statement by statement, because a half-applied batch is the failure it
+exists to prevent.
+
+Under better-sqlite3 every statement must return rows, so give writes a
+`.returning(...)`; otherwise the driver throws "This statement does not return
+data" (narduk-libs#201).
+
+```ts
+await runAtomicBatch(db, [
+  db.insert(frames).values(frame).returning({ id: frames.id }),
+  db
+    .insert(latest)
+    .values(row)
+    .onConflictDoUpdate({ target: latest.vesselId, set: row })
+    .returning(),
+])
+```
 
 ## Health endpoint
 
@@ -428,6 +644,9 @@ response is never cached (`Cache-Control: no-store`).
 | `ok`       | 200  | Every check passed or was skipped |
 | `degraded` | 200  | An optional check failed          |
 | `error`    | 503  | A required check failed           |
+
+A failure reported at `notice` severity (below) is published with `notice: true`
+and does not move `status`.
 
 `database` summarizes the built-in probe:
 
@@ -482,8 +701,12 @@ export default defineNitroPlugin(() => {
   [freshness checks](#reporting-data-freshness) below.
 - `timeoutMs`: defaults to 3000 and may be at most 30000. A check that runs out
   of time fails, and its `signal` is aborted.
-- `run`: resolve to pass; throw or return `{ ok: false }` to fail. Checks run
-  concurrently with each other and with the database probe.
+- `run`: resolve to pass; throw or return `{ ok: false }` to fail. Return
+  `{ ok: false, severity: 'notice' }` to publish a failure that is worth showing
+  but not worth a page: the entry says `result: 'fail'` with `notice: true` and
+  its `detail`, and the report's `status` stays where the other checks put it
+  (narduk-libs#414). Checks run concurrently with each other and with the
+  database probe.
 - `detail`: an optional JSON object published with the result. It is left out,
   with `detailOmitted` saying why, when it is not a plain object, cannot be
   serialized, is larger than 1 KiB, or has a `status` or `database` key at any
@@ -551,20 +774,26 @@ Each registration adds one entry to `checks`:
   computed fields.
 - `warnAfter` / `failAfter`: ages in **seconds**, at most one year. `failAfter`
   must be at least `warnAfter` and may be omitted.
+- `noticeAfter`: optional, in seconds, at most `warnAfter`. The first band of a
+  producer's fresh / aging / stale policy: past it the entry fails as a notice
+  and nothing pages.
 - `now`: an epoch-millisecond clock, for tests. Defaults to `Date.now`.
 
-| Data age            | `result` | `required`  | Report     | HTTP |
-| ------------------- | -------- | ----------- | ---------- | ---- |
-| at most `warnAfter` | `pass`   | as declared | unchanged  | 200  |
-| past `warnAfter`    | `fail`   | `false`     | `degraded` | 200  |
-| past `failAfter`    | `fail`   | `true`      | `error`    | 503  |
+| Data age                               | `result`                | `required`  | Report     | HTTP |
+| -------------------------------------- | ----------------------- | ----------- | ---------- | ---- |
+| at most `noticeAfter` (or `warnAfter`) | `pass`                  | as declared | unchanged  | 200  |
+| past `noticeAfter`                     | `fail` + `notice: true` | `false`     | unchanged  | 200  |
+| past `warnAfter`                       | `fail`                  | `false`     | `degraded` | 200  |
+| past `failAfter`                       | `fail`                  | `true`      | `error`    | 503  |
 
-A stale feed therefore degrades the app; it takes it down only once `failAfter`
-is crossed, and a check registered without `failAfter` can never get there.
-`observedAt` and `ageSeconds` are published while the check is passing too, so a
-dashboard can plot age before anything is wrong. A timestamp in the future is
-never stale — a producer clock ahead of the Worker shows up as a negative
-`ageSeconds`.
+A stale feed therefore makes the report `degraded` and answers 503 only once
+`failAfter` is crossed; a check registered without `failAfter` can never get
+there. `degraded` still pages a monitor that matches `"status":"ok"` (see
+below), so `warnAfter` is the age that deserves a page and `noticeAfter` the one
+that only deserves a mark on a dashboard. `observedAt` and `ageSeconds` are
+published while the check is passing too, so a dashboard can plot age before
+anything is wrong. A timestamp in the future is never stale — a producer clock
+ahead of the Worker shows up as a negative `ageSeconds`.
 
 A freshness check **fails closed**. No timestamp, an unparseable one, a `read`
 that throws, and a `read` that runs out of time all fail at the strongest
@@ -572,10 +801,11 @@ severity the thresholds allow, never pass, and say which in `detail.reason`
 (`missing-timestamp`, `invalid-timestamp`, `unreadable`, or `stale`). The cause
 of a thrown read goes to the server log only.
 
-Under the hood a check that can fail at two severities returns
-`{ ok: false, severity: 'degraded' }` from `run`, which publishes that entry's
-`required` as `false`. A check declared `required: false` can never escalate
-itself to `error`, so the rollup keeps reading a single field.
+Under the hood a check that can fail at more than one severity returns
+`{ ok: false, severity: 'degraded' }` (or `'notice'`) from `run`, which
+publishes that entry's `required` as `false`, and `notice: true` for a notice. A
+check declared `required: false` can never escalate itself to `error`, so the
+rollup keeps reading a single field.
 
 ### Monitoring the endpoint
 
@@ -583,6 +813,53 @@ Prefer the HTTP status where a monitor supports it. A monitor that matches a
 substring can rely on `"status":"ok"`: `status`, `timestamp` and `database` are
 the first fields of `data`, well inside the first 4096 bytes, and no check
 detail can contain a `status` or `database` key.
+
+## CSRF protection
+
+The server middleware refuses a `POST`/`PUT`/`PATCH`/`DELETE` that carries no
+`X-Requested-With` header with a 403. Browsers do not let a cross-site page set
+a custom header, so this stops form-based CSRF; the layer's client fetch plugin,
+`useAppFetch()` and `useCsrfFetch()` add the header for the app's own calls. It
+is skipped for `/api/webhooks/`, `/api/cron/`, `/api/callbacks/`, `/api/_auth/`,
+`/__nuxt_content/`, `/api/owner-tag`, `Authorization: Bearer nk_…` API keys, and
+the `security.headers` CSP report route (browsers deliver reports without the
+header).
+
+### Declaring a credential-free route
+
+A route that carries **no ambient credential** — a device that calls before it
+has any account, session or cookie — gains nothing from the check and cannot
+satisfy it. Declare it in the module options rather than faking the header in an
+app middleware:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: {
+    csrf: {
+      exemptPaths: [
+        '/api/edge/v1/claim/start', // exact path
+        '/api/edge/v1/claim/handoff',
+        '/api/devices/*', // prefix
+      ],
+    },
+  },
+})
+```
+
+An entry is an exact path or a prefix ending in `/*`. The query string is
+ignored and one trailing slash is tolerated; a request spelled with a percent
+escape, an empty segment or a dot segment is never exempt. An entry covering the
+whole site or the whole `/api` tree, a prefix with fewer than two segments, or
+one containing a query, fragment, escape or wildcard elsewhere **fails the
+build**. The runtime key is `runtimeConfig.nardukCsrf.exemptPaths`, and the
+middleware re-checks it on every request, so an env override cannot widen the
+exemption past that grammar.
+
+> [!WARNING] Exempting a route a signed-in browser also calls re-opens CSRF on
+> it. Keep the session-bearing leg out of the list — in the example,
+> `/api/edge/v1/claim/complete` rides the user's session and stays protected. An
+> exempt route that reads a body must authenticate its caller another way.
 
 ## Per-route rate limits: `defineRateLimitedHandler`
 
@@ -636,17 +913,35 @@ since 2025-09-19; needs Wrangler >= 4.36.0) and name it `RL_<limit>` to match
 the convention this package already uses, or pass `binding` explicitly:
 
 ```jsonc
-// wrangler.json
+// wrangler.json — Worker "riverstatus"
 {
   "ratelimits": [
     {
       "name": "RL_120",
-      "namespace_id": "1001",
+      // rateLimitNamespaceId('riverstatus', 120): prefix 32195 + limit 120
+      "namespace_id": "32195120",
       "simple": { "limit": 120, "period": 60 },
     },
   ],
 }
 ```
+
+**`namespace_id` is unique per Cloudflare account, not per Worker.** Two
+bindings with the same id share counters across every Worker on the account, so
+never paste an id from an example or another app — the scaffold copies `1001`,
+`50110`, `50121` and `50300` are already in use. Derive it from the Worker
+`name` instead:
+
+1. FNV-1a 32-bit over the UTF-8 Worker name, reduced to a five-digit prefix in
+   `10000`–`49999`;
+2. the binding's per-minute `limit`, padded to three digits, appended with no
+   separator (so `RL_60` → `…060` and `RL_600` → `…600` cannot collide).
+
+`rateLimitNamespaceId(workerName, limit)` from
+`@narduk-enterprises/narduk-core/shared/rate-limit-namespace` computes it, and
+`RATE_LIMIT_SCAFFOLD_NAMESPACE_IDS` lists the ids a check should refuse. Write
+the prefix beside the bindings so the next binding the app adds follows it. An
+app already on its own unique scheme (Buoys' `2869300` / `2869120`) keeps it.
 
 Cloudflare's `period` accepts only `10` or `60` seconds, so a route with any
 other `windowSeconds` is enforced by the in-isolate window alone and looks for
@@ -681,6 +976,55 @@ record, and exactly one structured `warn` through
 `@narduk-enterprises/narduk-logging` carrying `rateLimitKey`, `limit`,
 `windowSeconds`, `scope`, `enforcedBy` and the **matched route template** — not
 the raw path, which carries caller-chosen identifiers and query values.
+
+### A route you cannot wrap: `consumeRateLimit`
+
+Some routes belong to a module rather than the app: `narduk-mapkit`'s
+`/api/mapkit-token`, for example, registered with `addServerHandler`. There is
+no handler to wrap, and copying the route into the app would fork a
+credential-minting endpoint. `consumeRateLimit(event, options, path?)` is the
+wrapper's own decision step, exported (narduk-libs#413). It uses the same
+counter key, window store, binding and `runtimeConfig.nardukRateLimit`
+overrides, and logs a denial the same way, but it returns the verdict instead of
+throwing and sets no headers:
+
+```ts
+// server/middleware/mapkit-token-rate-limit.ts
+export default defineEventHandler((event) => {
+  if (event.path !== '/api/mapkit-token') return
+  event.context.nardukMapKit = {
+    rateLimit: async () => {
+      const { allowed, verdict } = await consumeRateLimit(event, {
+        key: 'mapkit-token',
+        limit: 60,
+      })
+      return allowed
+        ? { allowed }
+        : { allowed, retryAfterSeconds: verdict?.retryAfterSeconds }
+    },
+  }
+})
+```
+
+Every call counts, so call it once per request. `verdict` is absent when nothing
+was counted, because the policy is disabled or the path is exempt.
+
+### What a caller is counted as
+
+The `'ip'` and `'ip-path'` scopes key on the `cf-connecting-ip` address, with
+one change: **an IPv6 caller is counted by its `/64`**. An IPv6 host is normally
+handed a whole `/64`, and privacy extensions rotate the low half on their own,
+so a full-address key would give one client a fresh window per address. IPv4 is
+counted by the full address. Only the counter collapses — `getClientIp` still
+returns the full address for audit rows and approximate location.
+`enforceRateLimit` / `enforceRateLimitPolicy` count IPv6 the same way.
+
+The limiter runs inside the handler, so no spelling the router dispatches to the
+route escapes it: `/path/`, `/path?x=1` and a percent-encoded `/pa%74h` all
+count in the bucket of `/path`, in the `'ip-path'` scope too. Do not put a
+path-equality middleware in front of a route and call it a limiter — h3 keeps
+the trailing slash on `event.path`, so `/path/` skips the middleware and still
+reaches the route. Wrap the handler.
 
 ### Exemptions
 
@@ -788,7 +1132,9 @@ Two more, both carrying `data.code`:
 A declared `content-length` is rejected before a byte is parsed. A body sent
 chunked — no declared length — is measured after the read, so the ceiling bounds
 what reaches `JSON.parse` and the schema, which is the cost this wrapper owns;
-the request size itself is bounded by the platform.
+the request size itself is bounded by the platform. On Cloudflare, Nitro reads
+the whole body before this wrapper runs. See
+[Inbound request bodies](#inbound-request-bodies-what-the-worker-reads-before-a-route-runs).
 
 The 415 covers a body sent with **no `content-type` at all**, not only one sent
 with the wrong type. Declaring `application/json` is what forces a CORS
@@ -926,6 +1272,38 @@ type StationQuery = z.input<typeof contract.query>
 That needs nothing from this package. Generating a typed `$fetch` client across
 the whole API surface is a larger piece of work and is deliberately not here.
 
+## Published-data routes: `definePublishedDataHandler`
+
+A public read whose success is cacheable and whose failure is not
+(narduk-libs#514). It replaces `defineEventHandler` at the route:
+
+```ts
+// server/api/stations/index.get.ts
+export default definePublishedDataHandler(
+  async (event) => listStations(getQuery(event)),
+  {
+    profile: 'live',
+    tags: ['published-data'],
+    fallbackMessage: 'Station data is temporarily unavailable.',
+  },
+)
+```
+
+- **The cache profile is applied after success only.** A route that calls
+  `setCacheProfile` first advertises a 400 or 404 as publicly cacheable for the
+  profile's TTL. Here an error never gets a cacheable posture, and the
+  `error-cache` plugin makes it `private, no-store`. `setCacheProfile`'s own
+  guards still apply to the success path.
+- **An internal failure is a sanitized 503.** Anything thrown without a
+  `statusCode` (a failed fetch, a schema error whose message dumps every field)
+  is logged through the request logger and answered with `fallbackMessage`. A
+  deliberate `createError({ statusCode: 404 })` passes through unchanged.
+- **Rate limiting is opt-in.** Pass `rateLimit` (the
+  [`defineRateLimitedHandler`](#per-route-rate-limits-defineratelimitedhandler)
+  options) to put a limit in front of the read; without it none is applied. On a
+  shared-cacheable route pass `headers: 'none'` with it, because the
+  `RateLimit-*` family is per caller.
+
 ## Edge cache: setCacheProfile
 
 `setCacheProfile` owns every `Cache-Control` string a route would otherwise
@@ -983,7 +1361,11 @@ when you are debugging a response.
 
 Workers run _before_ the cache, so a response a Worker generates is not stored
 by the zone cache at all. These headers bind only once the app opts into Workers
-Cache in its Wrangler config (Wrangler >= 4.69.0):
+Cache in its Wrangler config (Wrangler >= 4.69.0). This is the narduk-app
+standard mechanism, verified against
+[Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/)
+on 2026-09-18 (narduk-libs#435); a zone Cache Rule is not used because the
+Worker-owned switch is versioned with the code and needs no dashboard state:
 
 ```jsonc
 {
@@ -992,13 +1374,42 @@ Cache in its Wrangler config (Wrangler >= 4.69.0):
 ```
 
 Until an app adds that, `setCacheProfile` still produces a correct browser
-`Cache-Control` and the edge headers are inert. Adding it is a one-line change
-and the profiles are already correct when you do.
+`Cache-Control` and the edge headers are inert. Turning it on in an existing app
+is a per-app change with its own preconditions, proof and rollback:
+[narduk-app-tools `docs/workers-cache.md`](../../tooling/narduk-app-tools/docs/workers-cache.md).
+
+**It is not a one-line change.** With the switch on, Cloudflare checks the cache
+_before_ invoking the Worker and stores what the Worker returns according to its
+headers — and a response with **no** `Cache-Control` (and no `Expires`) is still
+stored by RFC 9111 heuristic freshness: a 200 for 2 hours, a 404 for 3 minutes
+([Cache-Control semantics](https://developers.cloudflare.com/workers/cache/configuration/#cache-control-semantics)).
+Before turning it on, every route needs an explicit posture — a profile, or
+`setCacheProfile(event, 'none')` for anything per-user. The cache bypasses
+itself only for a response with `Set-Cookie`, or a request with `Authorization`
+unless the response says `public`.
+
+Preconditions, checked by `narduk-app foundation:check:deployment` sub-check
+12.7:
+
+- narduk-core **>= 2.10.1**: thrown 4xx/5xx/429 are `private, no-store`
+  (narduk-libs#429), including when answered as JSON (#493), preference-shaped
+  responses are (#427), SSR HTML under a nonce CSP is (#435), and a response
+  with no posture is private. An older core with the switch on fails 12.7.
+- The per-request header strip below (#412, #418) becomes load-bearing the same
+  day: a stored response would otherwise carry one caller's quota and
+  correlation id to everyone.
+
+Proving it: a HIT is `Cf-Cache-Status: HIT` on the second GET of a `live` /
+`slow` route.
+`narduk-app verify --live <production-url> --edge-cache-path /api/<route> --edge-uncached-path /`
+makes both requests and also proves a route that must never be stored does not
+HIT. A preview-safe hostname (`*.workers.dev`, a version preview) forces every
+profile to `none`, so a HIT can only be proven against the production hostname.
 
 By default Workers Cache partitions its cache by Worker version, so **a
 deployment already starts from a cold cache** — a release is visible immediately
 with nothing to purge. That default only changes if an app sets
-`cache.cross_version_cache: true`.
+`cache.cross_version_cache: true`, which narduk apps leave off.
 
 ### Cache-Tag
 
@@ -1027,10 +1438,90 @@ and no `Cache-Tag`, when any of these hold:
 | `set-cookie`        | a `Set-Cookie` is already on the response                      |
 | `vary-wildcard`     | `Vary: *`, which Cloudflare treats as uncacheable anyway       |
 | `preview-safe-mode` | `previewSafeMode` — a preview must not populate a shared cache |
+| `nonce-csp-html`    | an SSR page render on an app serving the nonce CSP             |
 
 None of these are overridable by configuration. The returned
 `CacheProfileResult` carries `suppressedBy` so a caller or a test can see which
 guard fired rather than discovering a missing header later.
+
+### Per-request headers never ride on a shared-cacheable response
+
+A shared cache stores one caller's response and replays it to everyone. So when
+`setCacheProfile` emits a shared-cacheable profile (`live`, `slow`, `static`, or
+any inline profile that is not `private` / `noStore`) it removes the headers
+that describe that one caller (narduk-libs#412, #418):
+
+- the `RateLimit-*` quota — `RateLimit`, `RateLimit-Policy`, `RateLimit-Limit`,
+  `RateLimit-Remaining`, `RateLimit-Reset` — and `Retry-After`;
+- `x-request-id` and `Server-Timing`.
+
+`defineRateLimitedHandler` and the request logger write those before the handler
+picks its profile, so the default order is covered by `setCacheProfile` itself;
+a route no longer needs `headers: 'none'` to be safe. The `shared-cache-headers`
+Nitro plugin covers the reverse order — anything written _after_ the profile,
+including a returned web `Response` carrying its own `Cache-Control: public` —
+so the order of operations does not matter. `none`, `private` profiles, and
+error responses (a 429 keeps its `Retry-After` and quota) are never touched.
+
+### A response with no posture is private by default
+
+A route that never picks a profile used to leave with no `Cache-Control` at all,
+which lets a shared cache apply its own default. A narduk-core Nitro plugin
+(`default-private-cache`, narduk-libs#435 step 1) writes
+`Cache-Control: private` on any response that leaves with no cache posture — SSR
+pages, API JSON, a returned `Response` without its own header.
+
+Any explicit posture wins and is left exactly as set: `Cache-Control`,
+`CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`, `Surrogate-Control` or
+`Expires`, whether it came from `setCacheProfile`, `setResponseHeader`, Nitro
+`routeRules` headers or cached handlers, or the returned `Response` itself.
+Build assets under `app.buildAssetsDir` (`/_nuxt/`) are left alone, and thrown
+errors keep the `private, no-store` below. A route that should be edge-cacheable
+says so with `setCacheProfile`.
+
+### Thrown errors are no-store by default
+
+The `error-status` guard above only fires when a route _calls_ `setCacheProfile`
+after the response status is already >= 400. A route that
+`throw createError({ statusCode: 404 })` — or a 429 from
+`defineRateLimitedHandler` — never calls `setCacheProfile` at all, so Nitro's
+own error page ships its default `Cache-Control: no-cache` instead, which
+Cloudflare Workers Cache **stores and revalidates** once an app turns on
+`"cache": { "enabled": true }` (narduk-libs#429).
+
+A narduk-core Nitro plugin (`error-cache`) closes that gap: every response whose
+status is >= 400 is forced to `private, no-store` with the same shared-cache
+headers stripped as the `error-status` guard removes, even when the route
+already called `setCacheProfile(event, 'live')` before throwing — the plugin
+re-checks the final status after the throw, not the status at the time
+`setCacheProfile` ran. `defineRateLimitedHandler` also sets the posture itself
+immediately before its 429 throw, as a belt-and-suspenders — the plugin is the
+backstop either way. `Retry-After` and the `RateLimit-*` family are not
+shared-cache headers and are never touched.
+
+A thrown error answered as **JSON** needs a second piece (narduk-libs#493). For
+an `/api/*` or `.json` path, `Accept: application/json`, a CORS fetch, or curl,
+Nuxt's error handler hands the error back to Nitro, and Nitro's own handler
+sends the response itself: `no-cache` on every 404, and the plugin's hook never
+runs. So narduk-core also prepends a Nitro error handler (`json-error-no-store`)
+that answers those errors itself, with Nitro's own status and body and
+`private, no-store`. HTML errors still go through Nuxt's error page and the
+plugin. `nuxt dev` is left alone.
+
+This is a safe precondition for edge-caching error-adjacent routes: do not
+enable Workers Cache in a consuming app until it is running a narduk-core
+release that includes this plugin.
+
+### Nonce-CSP HTML is never edge-cached
+
+On an app with `nardukCore.security.headers` on (`enforce`, and `report-only`,
+which stamps the same nonce), SSR HTML always ships `private, no-store` with the
+shared-cache headers stripped: nuxt-security mints the nonce per request into
+both the HTML and the CSP header, so a stored page would replay one visitor's
+nonce to everyone. `setCacheProfile` refuses it (`nonce-csp-html`) and the
+`nonce-csp-cache` plugin backstops the final `text/html` response. Use
+nonce-free JSON endpoints for edge caching — they keep their profile. Rationale:
+narduk-libs#435.
 
 ### Tuning without touching a route
 
@@ -1075,8 +1566,9 @@ Note what that means before adding a freshness check to an app already enrolled
 in an uptime detector: a monitor matching `"status":"ok"` alerts on `degraded`
 as well as on `error`, because the substring is simply absent. That is often the
 point — a stale feed should be noticed — but it makes `warnAfter` an alerting
-threshold, not just a dashboard one. Pick it accordingly, or move the monitor to
-the HTTP status so only `failAfter` pages.
+threshold, not just a dashboard one. Pick it accordingly, put the
+not-worth-a-page band in `noticeAfter`, or move the monitor to the HTTP status
+so only `failAfter` pages.
 
 Negative, fractional and non-numeric overrides are ignored rather than emitted.
 An inline profile is the app's own configuration already, so it is used
@@ -1160,6 +1652,14 @@ Both composables are auto-imported by this module. The pure functions import
 explicitly from `@narduk-enterprises/narduk-core/shared/utils/units`, and a
 Nitro route reads the same preferences with `readPreferences(event)` from
 `@narduk-enterprises/narduk-core/server/utils/preferences`.
+
+The same module exports the raw conversions both ways: SI to display
+(`celsiusToFahrenheit`, `metresToFeet`, `metresPerSecondToKnots`, ...) and each
+inverse (`fahrenheitToCelsius`, `feetToMetres`, `knotsToMetresPerSecond`, ...),
+with exact factors. It also exports `compassPoint16(degrees)`, which names the
+nearest of `NE_COMPASS_POINTS_16` for any finite bearing, negative or above 360,
+and returns `undefined` for absent input. Great-circle distance is
+`haversineDistanceMetres` in `@narduk-enterprises/narduk-mapkit/geometry`.
 
 ### The cookie
 
@@ -1343,6 +1843,131 @@ reader. This module is the preference layer: unit conversion plus the store that
 decides which units. An app can use either or both; nothing here duplicates a
 `narduk-shell` export, and this package does not depend on `narduk-shell`.
 
+## Render-safe clock: `useSsrNow`
+
+`Date.now()` read during render is a hydration bug. The server and the browser
+read it at different instants, so a relative age ("33 min ago") can straddle a
+minute boundary and Vue reports a hydration mismatch. `useSsrNow` gives a
+component one "now" that both renders agree on:
+
+```ts
+// Auto-imported in apps that enable narduk-core's app features.
+const now = useSsrNow('station-page', { tickMs: 60_000 })
+const age = computed(() => formatAge(now.value - observedAt))
+```
+
+- **Server:** reads `Date.now()` once into `useState('narduk:now:<key>')`.
+- **Hydration:** the client renders from that same payload value, so the markup
+  matches.
+- **After mount:** switches to the browser clock (one update on mount, which
+  also refreshes a value carried over from an earlier page on client-side
+  navigation), then re-reads it every `tickMs` if given. The interval is cleared
+  on unmount.
+
+It returns a readonly `Ref<number>`. Call it from component `setup()`; it
+registers `onMounted`/`onBeforeUnmount`. Components that pass the same `key`
+share one value. Omit `tickMs` (or pass a non-positive value) for a single
+update on mount.
+
+`tests/use-ssr-now.test.ts` proves the contract with `renderToString` and a real
+`createSSRApp().mount()` hydrate across a minute boundary, and includes a
+control that reproduces the mismatch when the client reads its own clock. The
+`narduk/no-render-clock` lint rule points at this composable.
+
+## Live data: `useLiveProduct`
+
+The recommended replacement for a bare `useIntervalRefresh` whenever what it
+refreshes is user-visible live content (narduk-libs#374). It takes any refresh
+callback -- `refresh` from `useFetch`/`useAsyncData`, a store action -- and
+fetches nothing itself:
+
+```ts
+// Auto-imported in apps that enable narduk-core's app features.
+const { data, refresh } = await useFetch('/api/buoys/status')
+const live = useLiveProduct(refresh, {
+  intervalMs: 60_000,
+  updatedAt: () => data.value?.observedAt, // optional: the product's own freshness
+})
+// live.updatedAgo -> "3 minutes ago"; live.pending, live.error, live.refresh()
+```
+
+- **Hidden tab:** polling pauses while the page is hidden. On return, if a poll
+  fell due meanwhile, it refreshes at once and re-arms the interval.
+- **Coalesced:** overlapping refreshes -- a click during a tick -- share the run
+  already in flight. `refresh()` never rejects; a failure lands in `error` and
+  the next success clears it.
+- **Hydration-safe:** nothing runs until mount, so `pending` cannot flip before
+  the hydrating render. `updatedAgo` is `formatRelative` read against
+  `useSsrNow` (key `clockKey`, default `'live-product'`, re-read every
+  `labelTickMs`, default 30 s), never against `new Date()`, which the server and
+  the browser read at different instants. It is `null` until there is something
+  to date: `updatedAt` when given, else the last successful refresh.
+
+`enabled` (reactive) pauses polling without disabling `refresh()`, and
+`immediate: false` skips the refresh on mount. Call it from component `setup()`.
+`tests/use-live-product.test.ts` proves it through real SSR and hydration on
+fake timers.
+
+## Core D1 migrations
+
+The numbered files in `runtime/drizzle/` are applied by `narduk-app db migrate`
+(see narduk-app-tools' "Migration config"), which lists this directory as the
+`@narduk-enterprises/narduk-core` source and records each file in its ledger.
+Upgrading narduk-core and running the app's migrate script (locally and in its
+deploy path) applies any new file; nothing is applied at runtime.
+
+| File                          | Adds                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| `0006_user_id_indexes.sql`    | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
+| `0007_api_key_hash_index.sql` | unique `api_keys_key_hash_idx` (see below)                    |
+| `0008_api_key_revoked_at.sql` | nullable `api_keys.revoked_at` (see below)                    |
+
+`0006` indexes the `user_id` foreign-key columns. `api_keys.user_id` is the only
+predicate of narduk-auth's `GET /api/auth/api-keys`, which scanned the whole
+table before it. `sessions.user_id` is not a query predicate, but it is the
+child column of `users ON DELETE CASCADE`, so each user delete scanned
+`sessions`. `CREATE INDEX` holds D1 writes while it builds; both tables are
+small in current apps. `tests/user-id-indexes-d1.test.ts` applies every core
+migration on Miniflare D1 and checks both lookups with `EXPLAIN QUERY PLAN`. The
+Postgres schema (`pg-schema.ts`) declares the same indexes; core ships no
+Postgres migrations, so a Postgres app adds them with its own DDL.
+
+`0007` indexes `api_keys.key_hash`, the lookup of every API-key authentication
+(`authenticateApiKey`, `authenticateD1ApiKey`). Without it each authentication
+scanned `api_keys`, including one presenting a well-formed but fabricated key
+(#168). The index is `UNIQUE` because the column is the SHA-256 of a random
+32-byte token. `tests/api-key-hash-index-d1.test.ts` checks both lookups the
+same way.
+
+`0008` adds `api_keys.revoked_at` (ISO text, null while the key is live), so a
+key is withdrawn without deleting its row: `last_used_at`, `key_prefix` and the
+scopes are the audit trail a suspected leak needs (#806).
+`revokeApiKey(db, id, { userId?, now? })` sets it and returns `true`, or `false`
+when no live key matched (unknown id, another user's key when `userId` is given,
+or already revoked, whose first `revoked_at` is kept). `authenticateApiKey`
+returns `null` for a revoked key, and `authenticateD1ApiKey` answers
+`{ ok: false, reason: 'revoked' }`, checked before expiry. narduk-auth's
+`DELETE /api/auth/api-keys/:id` revokes this way, and its list omits revoked
+keys. Both authenticate functions read the column, so apply `0008` before
+deploying a Worker built with this version. A Postgres app adds the column with
+its own DDL: `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+`tests/api-key-revocation-d1.test.ts` covers it on Miniflare D1.
+
+## Type declarations in `types/`
+
+Nuxt's generated tsconfigs (`.nuxt/tsconfig.app.json`, `.server.json`,
+`.shared.json`, `.node.json`) include `app/`, `server/`, `shared/**/*.d.ts` and
+the root `*.d.ts`, but not `types/`. A `nuxt/schema` augmentation placed in
+`types/` was therefore in no program at all. Because `RuntimeConfig` is an open
+record, every key it claimed to type stayed `unknown`, and a truthiness guard on
+one always took the branch. Nothing reported it.
+
+narduk-core adds `types/**/*.d.ts` (relative to the app root) to all four
+generated configs, so a declaration there types what it says (narduk-libs#669).
+`shared/types/` works as well and needs nothing from core. An augmentation that
+was silently inert before can now surface type errors it was hiding. That is the
+point, but expect it on the first typecheck after upgrading.
+
 ## Database alias contract
 
 Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
@@ -1490,11 +2115,25 @@ the Nitro auto-import inside an app that has the layer installed.
 
 ### What it does
 
-- **The manifest names the artifact** — the artifact URL is always built from
-  `manifest.artifact.path` inside `releases/<releaseId>/`, so a renamed artifact
-  keeps working. `product.artifactPath` is an optional assertion: set it and a
-  manifest naming anything else is refused. A path that is not a single safe
-  segment is refused before any request.
+- **The manifest names the artifact** — unless `entryPath` is set, the artifact
+  URL is built from `manifest.artifact.path` inside `releases/<releaseId>/`, so
+  a renamed artifact keeps working. `product.artifactPath` is an optional
+  assertion: set it and a manifest naming anything else is refused. A path that
+  is not a single safe segment is refused before any request.
+- **Secondary entries** — a release can also list artifacts beside the primary
+  one in `manifest.artifacts[]`, such as per-lake history at
+  `consumer/lakes/texas/canyon-lake/history-1y.json`. Set `product.entryPath` to
+  read one of them: the artifact URL is then built from that path, with each
+  segment encoded, instead of from `manifest.artifact.path`. It gets the same
+  timeout, retry, single-flight, memo, stale-if-error and freshness handling as
+  the primary artifact, and is checked against **its own** listed SHA-256. The
+  path may have several segments, and each one must be a plain name, so `..`, a
+  leading `/` and empty segments are refused before any request. A release that
+  lists no such entry fails with `reason: 'missing'`. It is never answered with
+  the primary artifact, so a consumer can return "not published" (404), which is
+  not an outage. A custom `manifestSchema` must keep `artifacts[]` in its parsed
+  output, since entries are looked up there. Each `entryPath` is its own cache
+  entry, so size `maxEntries` to the working set you expect to serve.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
   (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
   read only; it is never given to the shared upstream read, so one client
@@ -1508,6 +2147,12 @@ the Nitro auto-import inside an app that has the layer installed.
   already in flight instead of each issuing their own. The cache key includes
   every ceiling, validator and hook that decides whether a value is valid, so a
   stricter caller is never answered from a permissive caller's entry.
+- **Revalidation downloads only what moved** — once `ttlMs` (default 60000)
+  lapses the manifest is re-read. When it still names the same release and the
+  artifact checksum already held, the cached value is kept, including its object
+  identity, and only its age resets. A caller can therefore memoize work derived
+  from `result.data`, such as an index, for as long as the release lasts. A new
+  release or a different checksum downloads the artifact again.
 - **Stale-if-error, with a cooldown** — opt in with `maxStaleMs` (default 0,
   fail closed). Inside the window an upstream failure is answered from the last
   good value with `source: 'stale-if-error'`; outside it the failure is raised.
@@ -1542,14 +2187,16 @@ the Nitro auto-import inside an app that has the layer installed.
   plugs in without this module generating ids. `accept`, `user-agent` and
   `x-request-id` are managed and cannot be overridden; `authorization`, `cookie`
   and `proxy-authorization` are dropped rather than forwarded; every URL is
-  pinned to the configured origin and a redirect is an error. Single-flight
-  means the joined callers are answered by a request carrying the first caller's
-  id.
+  pinned to the configured origin and a redirect is an error (sent as
+  `redirect: 'manual'`, which the Workers runtime accepts; a 3xx is never
+  followed). Single-flight means the joined callers are answered by a request
+  carrying the first caller's id.
 
 Failures are a `NardukDataError` carrying `reason` (`aborted` | `checksum` |
-`http` | `network` | `rejected` | `schema` | `timeout` | `too-large`), `status`
-and `url`. A schema failure is an error state, not a silent pass-through, and an
-empty-but-valid artifact stays distinct from a missing or stale one.
+`http` | `missing` | `network` | `rejected` | `schema` | `timeout` |
+`too-large`), `status` and `url`. A schema failure is an error state, not a
+silent pass-through, and an empty-but-valid artifact stays distinct from a
+missing or stale one.
 
 `schema` and `manifestSchema` are any validator with a zod-shaped `safeParse`,
 so an app's existing zod schemas plug in and this package adds no validator
@@ -1664,6 +2311,145 @@ const data = listPublishedStations(product, result.data)
 
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
+
+## Size-capped upstream reads: `readBoundedBody`
+
+The published-data client (`fetchNardukDataJson`) reads artifact bytes through
+`readBoundedBody`, and an app that reads any other upstream API can use it too.
+(The app-owned `readBoundedBody` in the "before" example above was that app's
+own helper, not this one.) It checks a declared `content-length`, then streams
+the body and cancels the download once it passes `maxBytes`, so an upstream that
+omits or understates its length cannot fill isolate memory. `response.text()`
+followed by a length check buffers the whole body first, so it does not protect
+anything.
+
+```ts
+const issues = await readBoundedJson<Issue[]>(response, 256 * 1024, {
+  label: 'GitHub issues',
+})
+```
+
+At the ceiling it throws `BoundedBodyTooLargeError`, which carries `maxBytes`.
+Pass `tooLarge: () => new MyError(...)` to throw your own error instead. Both
+functions are Nitro auto-imports, or import them from
+`@narduk-enterprises/narduk-core/server/utils/boundedBody`.
+
+## Inbound request bodies: what the Worker reads before a route runs
+
+This is a security note, not an API. On the `cloudflare-module` preset that
+narduk-core sets, Nitro reads the **whole** request body into memory before h3,
+any Nitro plugin or middleware, or any route handler runs. So no byte ceiling in
+this package, or in an app, can stop that first read (narduk-libs#458).
+
+The read is in nitropack 2.13.4, in
+`dist/presets/cloudflare/runtime/_module-handler.mjs`, in `fetchHandler`:
+
+```js
+if (requestHasBody(request)) {
+  body = Buffer.from(await request.arrayBuffer())
+}
+```
+
+`requestHasBody` looks only at the method (`POST`, `PUT` or `PATCH`), so neither
+a missing nor a large `content-length` skips the read. Nitro's first runtime
+hook, `request`, runs inside `nitroApp.localFetch`, which is reached only after
+that read. The only earlier code is the preset's own `fetch` step, which serves
+static assets and WebSocket upgrades, and nothing can add to it. Cloudflare's
+`request.arrayBuffer()` waits for the full body; it does not stream.
+
+**What bounds the read.** Only Cloudflare's edge. It refuses a request body over
+the plan's maximum (100 MB on Free and Pro, more on Business and Enterprise)
+before the Worker sees it. A Worker isolate has 128 MB of memory, so one body
+near the edge limit can cost most of an isolate before any route can refuse it.
+
+**What this package bounds.** Once the body is in memory, these ceilings limit
+what gets parsed. They do not stop the read above:
+
+- `defineValidatedHandler` answers 413 over `maxBodyBytes` (1 MiB by default).
+  It checks a declared length before parsing and measures a chunked body after
+  the read.
+- The CSP report route (`/api/_security/csp-report`) answers 413 over 64 KiB.
+
+**Why there is no Content-Length gate.** A check before the read would have to
+run in the Worker's `fetch` export. Nitro 2 has no hook there. The only way to
+add one is to replace the preset's entry with a wrapper that re-imports Nitro's
+internal runtime file, or to rewrite that file at build time. Either one breaks
+silently when the Nitro pin moves. It would also stop only a declared length: a
+chunked upload has no `content-length` and would be read in full anyway. So the
+cost of a wrapper outweighs what it would protect.
+
+**When to re-test.** Check this again whenever the `nitropack` pin in this
+package moves, and when the fleet moves to Nitro v3. On 2026-09-24, 2.13.4 was
+the newest nitropack 2.x on npm. In the Nitro v3 beta checked that day
+(`nitro@3.0.260903-beta`), the Cloudflare handler passes the `Request` itself to
+`nitroApp.fetch(request)` and does not buffer it. On v3, handlers can therefore
+stream the body and cancel it at a ceiling the way `readBoundedBody` does for
+responses. At that point, move the ceilings above from after the read to during
+it.
+
+## Shared media components
+
+Auto-registered from `runtime/app/components/shared/` (`addComponentsDir` with
+`pathPrefix: false`), so an app that enables the module's `app` option gets
+`AppLightbox`, `AppImage`, and `AppSnapStrip` without importing them.
+
+### `AppLightbox`
+
+Fullscreen image/video viewer. Escape closes it; without rails, ArrowLeft /
+ArrowRight and the chevrons step the gallery. `v-model` is open/closed.
+
+Optional `rails` (0–2 labelled thumbnail rows under the picture) each own a
+keyboard axis: the first rail uses ArrowLeft / ArrowRight, the second uses
+ArrowUp / ArrowDown. Choosing a thumb updates the main picture and emits
+`select` with `{ railIndex, itemIndex }`. Rails are focusable, use the rail
+label as `aria-label`, and mark the current thumb with `aria-current`. Omit
+`rails` and existing keyboard / swipe behaviour is unchanged.
+
+The named `side` slot receives `{ item, index }` for the current picture. It
+renders beside the picture from the `md` breakpoint up, and below it on narrow
+screens.
+
+```vue
+<AppLightbox
+  v-model="open"
+  :items="pictures"
+  :rails="rails"
+  @select="onRailSelect"
+>
+  <template #side="{ item, index }">
+    <p>{{ item.caption }} · {{ index + 1 }}</p>
+  </template>
+</AppLightbox>
+```
+
+### `AppImage`
+
+Wraps a remote `<img>`. A `USkeleton` covers the frame while it loads; a failed
+load shows a hatched blank (`repeating-linear-gradient`) plus `failedText`
+(default "Image unavailable"). Forwards `src`, `alt`, `width`, `height`,
+`loading`, and `decoding`; emits `load` / `error`. Setup never reads `window`.
+The skeleton shimmer is CSS and silent under `prefers-reduced-motion`.
+
+```vue
+<AppImage src="/stations/41002.jpg" alt="Buoy cam" failed-text="Cam offline" />
+```
+
+### `AppSnapStrip`
+
+Horizontal CSS scroll-snap strip. Each default-slot child is one snap point.
+`itemsPerView` defaults to 2 (the phone reading). The position readout uses an
+en dash (`1–2 of 6`) from the children currently intersecting the scroller.
+IntersectionObserver runs on the client only; SSR prints the first-page estimate
+(`1 of N` or `1–2 of N`) without crashing. Previous / Next buttons page by the
+visible width.
+
+```vue
+<AppSnapStrip :items-per-view="2">
+  <figure v-for="picture in pictures" :key="picture.id">
+    <AppImage :src="picture.src" :alt="picture.alt" />
+  </figure>
+</AppSnapStrip>
+```
 
 ## Deprecated components
 

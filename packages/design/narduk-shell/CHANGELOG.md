@@ -1,5 +1,106 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-platform@2.1.1
+
+## 0.6.0
+
+### Minor Changes
+
+- 056105e: Bump `@nuxt/ui` from `4.8.1` to `4.11.1` everywhere the layer pins
+  it: the `narduk-core` dependency, the `narduk-shell` peer and dev pins, the
+  `narduk-ai` and `design-system-build` dev pins, and the `create-narduk-app`
+  generator manifest (following the same coordinated-pin pattern as 8f693b1).
+
+  A consumer app already on `@nuxt/ui@4.11.1` (buoys#287) failed
+  `nuxt typecheck` against narduk-core's `AppTabs.vue`:
+
+  ```
+  error TS2345: Argument of type '{ ... items: TabsItem[] | undefined; ... }' is
+  not assignable to parameter of type '... items?: TabsItem[] | undefined; ...'.
+    Type 'import(".../@nuxt+ui@4.8.1/.../Tabs.d.vue").TabsItem[] | undefined' is
+    not assignable to type 'import(".../@nuxt+ui@4.11.1/.../Tabs.d.vue").TabsItem[]
+    | undefined'.
+  ```
+
+  Two different `@nuxt/ui` installs (narduk-core's pinned `4.8.1` and the app's
+  own `4.11.1`) produced structurally distinct `TabsItem`/`AvatarProps` types
+  that TypeScript will not unify, even though both come from the same package
+  name. Matching narduk-core's declared version to the app's removes the
+  duplicate-copy mismatch.
+
+  `nuxt typecheck` passes clean in narduk-core against `4.11.1` with no source
+  changes; no other breaking change between `4.8.1` and `4.11.1` touched
+  anything in this workspace.
+
+  Consumer migration: an app that declares `@nuxt/ui` itself must move its own
+  pin to `4.11.1` in the same change that takes this release. `narduk-shell`'s
+  peer is exact, so any other version is a peer conflict, and `narduk-core`
+  carries `@nuxt/ui` as a dependency, so a different app-level pin resolves a
+  second copy -- the duplicate-copy failure this release removes.
+
+  Refs narduk-enterprises/buoys#287.
+
+## 0.5.1
+
+### Patch Changes
+
+- 810a0dc: Fix `useCollection({ syncQuery: true })`'s route-sync path skipping
+  the `pageCount` clamp `setPage()` applies. A stale or hand-edited URL — a Back
+  into an older history entry, say — could send an offset the client already
+  knows is out of range. Both paths now share one `clampToKnownPageCount()`
+  helper (#288).
+
+  Pure bug fix, no public API change.
+
+- 810a0dc: Bound `format.ts`'s `unitSupport` cache (behind `formatQuantity`),
+  unlike the `caches` map it sits beside. `unit` values come off live feeds such
+  as USGS (`cfs`, `ft3/s`) rather than a fixed code-defined set, so a feed
+  emitting many distinct or malformed unit strings grew the map without bound
+  for the life of a Worker isolate. It now shares the same `MAX_CACHE_ENTRIES`
+  cap and clear-on-overflow as its sibling (#287).
+
+  Pure bug fix, no public API change.
+
+## 0.5.0
+
+### Minor Changes
+
+- 159e762: Add `NeFilterBar`: the filter row above a collection (item 14, #261),
+  promoted from operator-portal's `FilterBar.vue`. Three kinds share one DOM
+  shape and differ in meaning — `chips` and `facets` carry `aria-pressed`,
+  `tabs` is a real `tablist` with the APG keyboard model (arrows wrap, Home and
+  End jump, exactly one tab in the page's tab order).
+
+  A control whose producer does not exist yet stays in the row as
+  `aria-disabled` rather than being dropped, with the row's `note` saying when
+  it lands — removing it would make a product look finished and be silently
+  narrower than it claims. It is `aria-disabled` and not the `disabled`
+  attribute, so a keyboard user can still reach the reason in its `title`.
+
+  Counts are the caller's figures, rendered and never derived; an omitted count
+  renders no element at all, because `0` is a measurement and "not counted" is
+  not.
+
+  `NeSearchInput`, the other half of #261, is not in this change.
+
+## 0.4.0
+
+### Minor Changes
+
+- c1c8b42: Add the narduk-shell data-table family — `NeDataTable` (UTable preset
+  with column groups, units, tabular numerals, the missing dash, day/group rows,
+  a pinned first column, the phone column-set switch, the break row, and
+  loading), `NeSortHeader`, `NeCsvDownload`, plus `toCsv` / `parseSort` from the
+  package root — and extend `NePager` with `pageSizes`, `mode` (`pages` | `more`
+  | `auto`), `moreStep`, `maxLimit` and `update:limit`. narduk-timeseries gains
+  `bucketReadings` (1h / 3h / 1d min/avg/max; missing is `null`, not `0`).
+  create-narduk-app is patched because it pins narduk-shell (narduk-libs#528).
+
 ## 0.3.2
 
 ### Patch Changes

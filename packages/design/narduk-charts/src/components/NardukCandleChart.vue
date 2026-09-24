@@ -204,18 +204,16 @@ watch(
   { immediate: true },
 )
 
-// eslint-disable-next-line narduk/prefer-shallow-watch -- narduk-libs#131, not fixed in this fold-move PR
 watch(
-  () => props.domain,
+  () => (props.domain ? ([props.domain.start, props.domain.end] as const) : null),
   d => {
     if (!d || sortedBars.value.length === 0) return
     const bars = sortedBars.value
-    let a = candleIndexAtTime(bars, d.start)
-    let b = candleIndexAtTime(bars, d.end)
+    let a = candleIndexAtTime(bars, d[0])
+    let b = candleIndexAtTime(bars, d[1])
     if (b < a) [a, b] = [b, a]
     clampViewWindow(a, b)
   },
-  { deep: true },
 )
 
 /** Left-edge load-more: how close (in bar indices) the view must get to index 0 to fire `reachedStart`. */
@@ -1492,7 +1490,7 @@ function onMouseMove(event: MouseEvent) {
 function onMouseLeave() {
   activeIndex.value = null
   pointerCrosshair.value = null
-  // eslint-disable-next-line narduk/no-ssr-dom-access -- narduk-libs#131, not fixed in this fold-move PR: guarded by a pointer/focus handler that only runs client-side in practice
+  if (typeof document === 'undefined') return
   if (document.activeElement !== svgRef.value) {
     hideTooltip()
     kbFocusIndex.value = null
@@ -1543,7 +1541,7 @@ const svgAriaLabelledby = computed(() => {
   return parts.join(' ')
 })
 
-// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131, not fixed in this fold-move PR: snapshot seed from another ref's current value at declaration time
+// eslint-disable-next-line vue/no-ref-object-reactivity-loss -- narduk-libs#131: one-time paint seed; onMounted owns the flag after setup
 const animated = ref(!runAnimation.value)
 
 onMounted(() => {

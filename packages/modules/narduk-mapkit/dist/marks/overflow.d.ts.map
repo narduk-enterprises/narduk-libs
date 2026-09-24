@@ -1,0 +1,1 @@
+{"version":3,"file":"overflow.d.ts","sourceRoot":"","sources":["../../src/marks/overflow.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAKH,MAAM,WAAW,aAAa;IAC5B,GAAG,EAAE,OAAO,CAAA;IACZ,KAAK,EAAE,OAAO,CAAA;CACf;AAED;;;;;GAKG;AACH,wBAAgB,aAAa,CAC3B,WAAW,EAAE,MAAM,EACnB,OAAO,EAAE,MAAM,EACf,OAAO,EAAE,MAAM,EACf,IAAI,SAAmB,GACtB,aAAa,CAMf"}

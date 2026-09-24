@@ -11,8 +11,10 @@
  * What it proves that no unit test can: that the migrations actually apply in
  * order against a real Timescale (continuous aggregates, columnstore policies
  * and PostGIS types are all server-side behaviour a fake cannot check), that
- * the builders' SQL parses and means what it says, and that a rollup read comes
- * back with the values the raw writes imply.
+ * the builders' SQL parses and means what it says, that a rollup read comes
+ * back with the values the raw writes imply, and that a library-emitted
+ * refresh CALL for every rollup level is legal against a range narrower than
+ * the 1d bucket (narduk-libs#293).
  *
  * It deliberately does NOT run against a shared database: it creates its own
  * schema, and every statement is scoped to a generated vessel id.
@@ -31,6 +33,9 @@ import { loadMigrationsFromDirectory } from '@narduk-enterprises/narduk-postgres
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createTimescaleHistoryStore, timescaleMigrationsUrl } from '../src/timescale/index.js'
+import { refreshRollupsStatements } from '../src/timescale/query.js'
+import { ROLLUP_BUCKET_MS } from '../src/timescale/tables.js'
+import { ROLLUP_BUCKETS } from '../src/types.js'
 
 const dsn = process.env.NARDUK_TIMESERIES_LIVE_DSN
 const SKIP_REASON =
@@ -194,7 +199,16 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     const result = await store.applyRetention({
       globalRawWindowMs: 7 * 86_400_000,
       globalRollupWindowMs: { '1m': 30 * 86_400_000 },
-      tiers: {},
+      // A tier with a vessel, so the per-vessel DELETEs -- the statements that
+      // bind a vessel list (narduk-libs#311) -- actually reach the server.
+      tiers: {
+        free: {
+          rawWindowMs: 86_400_000,
+          rollupWindowMs: { '1m': 7 * 86_400_000 },
+          trackWindowMs: 7 * 86_400_000,
+          vesselIds: [vesselId, randomUUID()],
+        },
+      },
     })
 
     expect(result.coalesced).toBe(false)
@@ -234,6 +248,28 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     expect(last).toBeCloseTo(27.9 + 499 / 100_000, 5)
     for (let index = 1; index < result.rows.length; index += 1) {
       expect(result.rows[index]!.ts.getTime()).toBeGreaterThan(result.rows[index - 1]!.ts.getTime())
+    }
+  }, 120_000)
+
+  it('executes a library-emitted refresh for every level on a range narrower than 1d', async () => {
+    // narduk-libs#293 M1: the unit suite proves alignment; this is the live
+    // proof that each emitted CALL is a legal refresh_continuous_aggregate
+    // window. Gated on NARDUK_TIMESERIES_LIVE_DSN -- do not invent a pass
+    // when the Timescale fixture is absent.
+    const migrations = await loadMigrationsFromDirectory(timescaleMigrationsUrl)
+    await applyMigrations(client, migrations)
+
+    const range = {
+      end: new Date('2026-09-12T12:17:33.000Z'),
+      start: new Date('2026-09-12T12:07:33.000Z'),
+    }
+    const statements = refreshRollupsStatements({ range })
+    expect(statements.map((statement) => statement.bucket)).toEqual([...ROLLUP_BUCKETS])
+    expect(range.end.getTime() - range.start.getTime()).toBeLessThan(ROLLUP_BUCKET_MS['1d'])
+    for (const statement of statements) {
+      const width = statement.range.end.getTime() - statement.range.start.getTime()
+      expect(width).toBeGreaterThanOrEqual(ROLLUP_BUCKET_MS[statement.bucket])
+      await client.query(statement.text, statement.params)
     }
   }, 120_000)
 })

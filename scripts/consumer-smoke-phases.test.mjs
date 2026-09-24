@@ -5,6 +5,7 @@ import {
   CONSUMER_SMOKE_TEST_SESSION_PASSWORD,
   consumerSmokePhases,
   consumerSmokeTestEnv,
+  isGeneratedBuildPhase,
   mapPackages,
   qualityPhases,
 } from './consumer-smoke-phases.mjs'
@@ -117,4 +118,50 @@ test('failure stops scheduling and waits for in-flight packing before cleanup', 
   )
   assert.deepEqual(started, [1, 2])
   assert.equal(finished, true)
+})
+
+test('recognises the build phase under either name the generated gate has used', () => {
+  // `quality:static` called `build` before narduk-libs#617 and calls `build:ci`
+  // after it. release-packages.mjs asserts the font provider fixture activated
+  // during whichever one runs; a literal script name there stopped asserting
+  // anything the moment the generated chain moved.
+  assert.equal(isGeneratedBuildPhase('build'), true)
+  assert.equal(isGeneratedBuildPhase('build:ci'), true)
+  // Different commands, not the app's build.
+  for (const phase of ['build:analyze', 'build:ci:fast', 'prebuild', 'typecheck', 'rebuild']) {
+    assert.equal(isGeneratedBuildPhase(phase), false, phase)
+  }
+})
+
+test('a generated quality chain always yields exactly one build phase to smoke', () => {
+  // Both shapes the generated `quality:static` has had. If a future chain
+  // stops producing a build phase, release-packages.mjs now fails outright
+  // rather than skipping the fixture proof in silence.
+  for (const buildScript of ['build', 'build:ci']) {
+    const scripts = {
+      quality: 'pnpm run quality:static && pnpm run test:e2e',
+      'quality:static': [
+        'pnpm run format:check',
+        'pnpm run foundation:shared-ui-pinned',
+        'pnpm run lint',
+        'pnpm run knip',
+        'pnpm run manifests:validate',
+        'pnpm run typecheck',
+        `pnpm run ${buildScript}`,
+        'pnpm run test:unit',
+      ].join(' && '),
+      'format:check': 'prettier --check .',
+      'foundation:shared-ui-pinned': 'pnpm --filter web run foundation:shared-ui-pinned',
+      lint: 'narduk-lint',
+      knip: 'knip',
+      'manifests:validate': 'node scripts/validate-manifests.mjs',
+      typecheck: 'pnpm --filter web run typecheck',
+      build: 'pnpm --filter web run build',
+      'build:ci': 'pnpm --filter web run build:ci',
+      'test:unit': 'vitest run',
+      'test:e2e': 'playwright test',
+    }
+    const builds = consumerSmokePhases(scripts).filter(isGeneratedBuildPhase)
+    assert.deepEqual(builds, [buildScript])
+  }
 })

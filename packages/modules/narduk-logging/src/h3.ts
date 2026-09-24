@@ -9,13 +9,13 @@ import {
 } from 'h3'
 import { createLogger } from './logger.js'
 import { REQUEST_ID_HEADER, requestId } from './worker.js'
-import { RequestTiming } from './timing.js'
+import { queryCountFields, RequestTiming } from './timing.js'
 import { isSharedCacheable, mergeServerTiming } from './response-headers.js'
 import { receiveClientLogs } from './ingestion.js'
 import type { H3Event } from 'h3'
 import type { Logger, LoggerOptions } from './types.js'
 import type { ClientIngestionOptions } from './ingestion.js'
-import type { RequestTimingOptions } from './timing.js'
+import type { QueryCounter, RequestTimingOptions } from './timing.js'
 
 const INSTALLED = Symbol.for('@narduk/logging/nitro-installed')
 const STATE_KEY = '_nardukLoggingState'
@@ -107,6 +107,21 @@ export function useRequestTiming(event: H3Event, options?: RequestTimingOptions)
     })
   }
   return current.timing
+}
+
+/**
+ * The request's statement / round-trip counter -- the hook a database wrapper calls
+ * (narduk-libs#325). It is `useRequestTiming(event).counter`, so the counts land in the
+ * `Server-Timing` header (when phases are exposed) and on the "Request completed" record, without
+ * the wrapper ever touching the timer:
+ *
+ * ```ts
+ * useRequestCounter(event).recordRoundTrip()                    // one query
+ * useRequestCounter(event).recordRoundTrip(statements.length)   // one D1 batch
+ * ```
+ */
+export function useRequestCounter(event: H3Event): QueryCounter {
+  return useRequestTiming(event).counter
 }
 
 /** The matched route avoids recording user-controlled path identifiers or query parameters. */
@@ -204,11 +219,12 @@ export function installNitroLogging(
     if ((config.requestLogging === false || skipped(event, config)) && status < 500) return
     const log = useLogger(event, config).withContext({ path: requestRoute(event) })
     if (config.slowRouteThresholdMs !== undefined && durationMs > config.slowRouteThresholdMs) {
-      log.warn('Slow route', { status, durationMs })
+      log.warn('Slow route', { status, durationMs, ...queryCountFields(timing) })
     }
     log[status >= 500 ? 'error' : 'info']('Request completed', {
       status,
       durationMs,
+      ...queryCountFields(timing),
       ...(error === undefined ? {} : { error }),
     })
   }
@@ -269,4 +285,4 @@ export function defineClientLogHandler(options: DiagnosticsHandlerOptions) {
 
 export { REQUEST_ID_HEADER, requestIdHeaders } from './worker.js'
 export type { Logger, LoggerOptions } from './types.js'
-export type { RequestTiming, RequestTimingOptions } from './timing.js'
+export type { QueryCounter, QueryCounts, RequestTiming, RequestTimingOptions } from './timing.js'

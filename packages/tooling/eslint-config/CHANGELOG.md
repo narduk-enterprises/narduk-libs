@@ -1,5 +1,83 @@
 # @narduk-enterprises/eslint-config
 
+## 2.3.0
+
+### Minor Changes
+
+- 85cd719: `narduk/no-csrf-exempt-route-misuse` and
+  `narduk/require-csrf-header-on-mutations` take an `exemptPaths` option: the
+  app's `nardukCore.csrf.exemptPaths`. A route it covers is CSRF-exempt to both
+  rules, so it must verify a credential header rather than the browser CSRF
+  header (#510).
+- bad1b0d: Two rules keep apps on the shared components (narduk-libs#260).
+  `narduk/no-shadowed-shared-component` reports an app-local `.vue` component
+  whose file name, or the name Nuxt registers from its path, matches one that
+  narduk-shell, narduk-core, narduk-auth, narduk-ui or narduk-charts publishes.
+  `narduk/prefer-shared-collection` reports `<UTable>` outside narduk-shell's
+  `NeDataTable`. Both are on at `warn` in the design-system pack. The component
+  list lives in `src/rules/utils/shared-components.ts`, and a test fails when it
+  differs from the components the packages actually ship.
+
+### Patch Changes
+
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
+## 2.2.1
+
+### Patch Changes
+
+- 24805a6: `better-tailwindcss/no-unknown-classes` no longer reports classes the
+  app defines itself (#55). `createAppLintConfig` collects class selectors from
+  the Tailwind entry stylesheet and the `.css` files it imports, including
+  `@narduk-enterprises/narduk-ui/tokens.css`, and from every Vue SFC `<style>`
+  block under `appRootDir`. It passes them to the rule as one exact-match
+  `ignore`. A typo, or a Tailwind variant on an app-defined class, is still
+  reported.
+
+## 2.2.0
+
+### Minor Changes
+
+- 8943c9e: `narduk-lint` can now fail a warning in a rule that has no budget
+  entry. A `lint-budget.json` carrying `"strict": true` gates every rule: a new
+  rule's warnings exit non-zero, naming the rule and its locations, instead of
+  being recorded as the rule's budget and passing (#673). Adopt a new rule's
+  current count deliberately with `narduk-lint --accept-new-rules`, which
+  refuses to run in CI or with `--no-write`. A budget file without `strict`
+  keeps the old record-and-pass behaviour and now says so on every run.
+  narduk-timeseries fixes the one warning that behaviour had let through.
+
+## 2.1.0
+
+### Minor Changes
+
+- 92835a1: Add `narduk-lint`, an ESLint runner that holds warnings to a
+  checked-in `lint-budget.json` instead of `--max-warnings 0`: errors fail, a
+  rule over its budget fails, an unbudgeted rule passes, local runs only ratchet
+  budgets down, and CI never writes. Add `narduk/no-render-clock`,
+  `narduk/no-secret-in-public-runtime-config`, `narduk/require-fetch-timeout`
+  and `narduk/prefer-db-batch`; turn on type-aware promise rules (errors in
+  `server/**`, warnings elsewhere), `await-thenable`,
+  `switch-exhaustiveness-check`, `sonarjs/sql-queries`, server `no-console` and
+  unused-directive reporting; widen `require-limit-on-drizzle-list-queries` to
+  `.where(eq(<non-key column>))` with a `// narduk-bounded: <reason>` escape.
+  `createAppLintConfig()` now uses the `@typescript-eslint` plugin paired with
+  its own parser.
+
+  **This release turns consumer lint red on purpose.** The new error-severity
+  rules (server `no-floating-promises` / `no-misused-promises`,
+  `no-render-clock`, `no-secret-in-public-runtime-config`, and the wider
+  `require-limit-on-drizzle-list-queries`) report real defects, and an app that
+  has them fails lint after the bump. That is intended: warnings are budgeted,
+  the super offenders go red and get fixed. See the README, "Upgrading to the
+  budget release".
+
 ## 2.0.3
 
 ### Patch Changes

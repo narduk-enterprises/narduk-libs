@@ -24,6 +24,7 @@ import {
 } from '../../src/foundation/evaluate-deployment.js'
 import { parseDeploymentCheckArgs } from '../../src/commands/deployment-check.js'
 import { AppRepo } from '../../src/foundation/source.js'
+import { checksumMigrationSql } from '../../src/migrations.js'
 import type { FoundationStatus, FoundationSubCheck } from '../../src/foundation/types.js'
 import { makeTempRepo, writeFile, writeJson } from './helpers.js'
 
@@ -116,6 +117,25 @@ describe('the deployment block schema', () => {
     if (outcome.kind !== 'valid') throw new Error(`expected valid, got ${outcome.kind}`)
     expect(outcome.block.staging.enabled).toBe(false)
     expect(outcome.block.previewBindings).toEqual({ d1: [], kv: [], r2: [] })
+  })
+
+  it('refuses a binding with two preview entries rather than shadowing one', () => {
+    const outcome = readDeploymentBlock({
+      deployment: block({
+        previewBindings: {
+          d1: [],
+          kv: [
+            { binding: 'KV', id: 'a'.repeat(32) },
+            { binding: 'KV', id: 'b'.repeat(32) },
+          ],
+          r2: [],
+        },
+      }),
+    })
+    if (outcome.kind !== 'invalid') throw new Error(`expected invalid, got ${outcome.kind}`)
+    expect(outcome.issues.map((issue) => issue.message).join('\n')).toContain(
+      'KV appears more than once',
+    )
   })
 
   it('reports an absent block rather than inventing one', () => {
@@ -260,6 +280,41 @@ describe('item 12 standard conformance', () => {
     expect(detailOf(root, '12.3')).toContain('x-build-version')
   })
 
+  it('passes 12.3 for an authenticated health route and says it is not asserted anonymously (#585)', () => {
+    const root = baseline({
+      deployment: block({
+        liveProof: {
+          buildVersionHeader: 'x-build-version',
+          healthAuth: 'authenticated',
+          healthPath: '/api/health',
+          smokePath: '/login',
+          attempts: 6,
+          intervalSeconds: 10,
+        },
+      }),
+    })
+    expect(statusOf(root, '12.3')).toBe('pass')
+    expect(detailOf(root, '12.3')).toContain(
+      '/api/health (authenticated, not asserted anonymously)',
+    )
+  })
+
+  it('rejects a healthAuth value outside anonymous|authenticated', () => {
+    const root = baseline({
+      deployment: block({
+        liveProof: {
+          buildVersionHeader: 'x-build-version',
+          healthAuth: 'session',
+          healthPath: '/api/health',
+          smokePath: '/',
+          attempts: 6,
+          intervalSeconds: 10,
+        },
+      }),
+    })
+    expect(statusOf(root, '12.3')).not.toBe('pass')
+  })
+
   it('fails two different account ids across environments', () => {
     const root = baseline()
     writeJson(root, 'wrangler.json', {
@@ -283,7 +338,19 @@ describe('item 12 standard conformance', () => {
 
 describe('item 12.4 -- the preview-binding refusal', () => {
   function withD1(deployment: Record<string, unknown>): string {
-    const root = baseline({ deployment })
+    const root = baseline({
+      deployment: {
+        ...deployment,
+        migrations: {
+          compatibility: 'expand-contract',
+          credential: 'cloudflare/prd/fixture-migrate',
+          databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+        },
+      },
+    })
+    writeJson(root, 'migrations.sources.json', {
+      sources: [{ source: 'app', path: 'sql', sourceVersion: '1' }],
+    })
     writeJson(root, 'wrangler.json', {
       name: 'fixture',
       d1_databases: [{ binding: 'DB', database_name: 'fixture-db', database_id: 'prod' }],
@@ -322,15 +389,175 @@ describe('item 12.4 -- the preview-binding refusal', () => {
     expect(detailOf(root, '12.4')).not.toContain('d1:DB')
   })
 
-  it('allows branch builds once every production binding has a replacement', () => {
+  // narduk-libs#451 defect 4: bare-name coverage used to report PASS, which
+  // read as preview isolation. The build cannot rebind a bare name, so the
+  // runtime is identical to declaring nothing -- the honest verdict is UNKNOWN.
+  it('does not claim isolation from a declaration the build cannot act on', () => {
     const root = withD1(
       block({
         nonProductionBranchBuilds: true,
         previewBindings: { d1: ['DB'], kv: ['CACHE'], r2: [] },
       }),
     )
-    expect(statusOf(root, '12.4')).toBe('pass')
-    expect(run(root).exitCode).toBe(0)
+    expect(statusOf(root, '12.4')).toBe('unknown')
+    expect(statusOf(root, '12.4')).not.toBe('pass')
+    expect(detailOf(root, '12.4')).toContain('declared, not enforced')
+    expect(detailOf(root, '12.4')).toContain('.wrangler.deploy.production.json')
+    const artefact = run(root)
+    expect(artefact.result).toBe('UNKNOWN')
+    expect(artefact.exitCode).toBe(2)
+    expect(artefact.limitations.join(' ')).toContain('A bare binding name is a declaration')
+    expect(artefact.previewConfig).toEqual({
+      status: 'declared-only',
+      file: null,
+      rebound: [],
+      blockers: [],
+    })
+  })
+
+  // narduk-libs#473: with the preview resource named, the build uploads a
+  // rebound config, and 12.4 checks that config rather than the declaration.
+  describe('with the preview config generated (narduk-libs#473)', () => {
+    const PREVIEW_DB = {
+      binding: 'DB',
+      database_id: 'preview',
+      database_name: 'fixture-db-preview',
+    }
+    const PREVIEW_CACHE = { binding: 'CACHE', id: 'preview-kv' }
+
+    it('passes when every binding is rebound to a preview resource', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: [PREVIEW_CACHE], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('pass')
+      expect(detailOf(root, '12.4')).toContain('.wrangler.deploy.preview.json')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE -> preview-kv')
+      const artefact = run(root)
+      expect(artefact.exitCode).toBe(0)
+      expect(artefact.previewConfig).toEqual({
+        status: 'ready',
+        file: '.wrangler.deploy.preview.json',
+        rebound: ['d1:DB -> preview', 'kv:CACHE -> preview-kv'],
+        blockers: [],
+      })
+      expect(formatDeploymentSummary(artefact)).toContain(
+        'preview    ready; branch builds upload .wrangler.deploy.preview.json',
+      )
+    })
+
+    it('passes a Buoys-shaped app: two KV bindings in apps/web/wrangler.json', () => {
+      const root = baseline({
+        deployment: block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [],
+            kv: [
+              { binding: 'KV', id: '1'.repeat(32) },
+              { binding: 'OG_IMAGE_CACHE', id: '2'.repeat(32) },
+            ],
+            r2: [],
+          },
+        }),
+      })
+      rmSync(`${root}/wrangler.json`)
+      writeJson(root, 'apps/web/wrangler.json', {
+        name: 'buoys',
+        kv_namespaces: [
+          { binding: 'KV', id: 'b591b4b6ea1a4684900df2e24b19f551' },
+          { binding: 'OG_IMAGE_CACHE', id: '03f10f45af19485286d57a095729932c' },
+        ],
+      })
+      expect(statusOf(root, '12.4')).toBe('pass')
+      expect(run(root).exitCode).toBe(0)
+    })
+
+    it('fails when a preview id is a production id', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: [{ binding: 'CACHE', id: 'prod-kv' }], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE id=prod-kv')
+      expect(run(root).exitCode).toBe(1)
+    })
+
+    it('fails when a preview entry names a binding no config declares', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [PREVIEW_DB],
+            kv: [PREVIEW_CACHE, { binding: 'CAHCE', id: 'preview-kv-2' }],
+            r2: [],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('kv:CAHCE')
+    })
+
+    it('fails when a preview entry names the binding under the wrong kind', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [PREVIEW_DB],
+            kv: [PREVIEW_CACHE],
+            r2: [{ binding: 'DB', bucket_name: 'b' }],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('fail')
+      expect(detailOf(root, '12.4')).toContain('r2:DB')
+    })
+
+    it('stays undecided when one entry is still a bare name', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [PREVIEW_DB], kv: ['CACHE'], r2: [] },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+      expect(detailOf(root, '12.4')).toContain('kv:CACHE')
+    })
+
+    it('stays undecided when a D1 entry carries its id but not its name', () => {
+      const root = withD1(
+        block({
+          nonProductionBranchBuilds: true,
+          previewBindings: {
+            d1: [{ binding: 'DB', database_id: 'preview' }],
+            kv: [PREVIEW_CACHE],
+            r2: [],
+          },
+        }),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+    })
+
+    it('stays undecided for a TOML app config the build cannot rewrite', () => {
+      const root = baseline({
+        deployment: block({
+          nonProductionBranchBuilds: true,
+          previewBindings: { d1: [], kv: [PREVIEW_CACHE], r2: [] },
+        }),
+      })
+      rmSync(`${root}/wrangler.json`)
+      writeFile(
+        root,
+        'wrangler.toml',
+        ['name = "fixture"', '[[kv_namespaces]]', 'binding = "CACHE"', 'id = "prod-kv"'].join('\n'),
+      )
+      expect(statusOf(root, '12.4')).toBe('unknown')
+      expect(detailOf(root, '12.4')).toContain('TOML')
+      expect(run(root).previewConfig?.status).toBe('blocked')
+    })
   })
 
   it('allows branch builds for an app with no D1, KV or R2 at all', () => {
@@ -689,7 +916,7 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
     expect(detailOf(root, '12.4')).toContain('services/farmdata-refresh/wrangler.toml')
   })
 
-  it('12.4 passes once that second Worker binding has a preview replacement', () => {
+  it('12.4 stays undecided once that second Worker binding has a declared replacement', () => {
     const root = repoWith({
       deployment: block({
         nonProductionBranchBuilds: true,
@@ -704,6 +931,256 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
         ].join('\n'),
       },
     })
-    expect(statusOf(root, '12.4')).toBe('pass')
+    expect(statusOf(root, '12.4')).toBe('unknown')
+    expect(detailOf(root, '12.4')).toContain('declared, not enforced')
+  })
+})
+
+/**
+ * narduk-libs#435: `"cache": { "enabled": true }` makes Cloudflare store Worker
+ * responses. That is safe only on a narduk-core that already keeps thrown
+ * errors (#429), preference-shaped responses (#427) and nonce-CSP HTML out of
+ * the cache, so 12.7 refuses the switch against an older core -- in rollout
+ * mode too, because the failure is live cross-visitor data, not a missing
+ * declaration.
+ */
+describe('12.7 -- Workers Cache only on a narduk-core with the no-store guards', () => {
+  const CORE = '@narduk-enterprises/narduk-core'
+
+  function app(options: {
+    cache?: unknown
+    core?: string | null
+    deployment?: Record<string, unknown> | null
+    toml?: string
+  }): string {
+    const root = baseline({ deployment: options.deployment })
+    const deps = options.core === null ? {} : { [CORE]: options.core ?? '2.10.1' }
+    writeJson(root, 'package.json', { name: 'fixture-app', dependencies: deps })
+    if (options.toml !== undefined) {
+      rmSync(`${root}/wrangler.json`)
+      writeFile(root, 'wrangler.toml', options.toml)
+    } else {
+      writeJson(root, 'wrangler.json', {
+        name: 'fixture',
+        workers_dev: false,
+        ...(options.cache === undefined ? {} : { cache: options.cache }),
+      })
+    }
+    return root
+  }
+
+  it('is not-applicable while Workers Cache is off', () => {
+    expect(statusOf(app({}), '12.7')).toBe('not-applicable')
+    expect(statusOf(app({ cache: { enabled: false } }), '12.7')).toBe('not-applicable')
+    expect(detailOf(app({}), '12.7')).toContain('inert')
+  })
+
+  it('passes Workers Cache on an exact-pinned core that has the guards', () => {
+    const root = app({ cache: { enabled: true }, core: '2.10.1' })
+    expect(statusOf(root, '12.7')).toBe('pass')
+    expect(detailOf(root, '12.7')).toContain('verify --live')
+  })
+
+  it('passes a caret range whose floor has the guards', () => {
+    expect(statusOf(app({ cache: { enabled: true }, core: '^2.10.1' }), '12.7')).toBe('pass')
+    expect(statusOf(app({ cache: { enabled: true }, core: '3.0.0' }), '12.7')).toBe('pass')
+  })
+
+  // 2.2.4 through 2.10.0 keep nonce-CSP HTML out but store a thrown JSON 404
+  // as Nitro's `no-cache` (narduk-libs#493). 2.10.0 was released minutes before
+  // the fix merged, so the fix is 2.10.1.
+  it.each([
+    '2.10.0',
+    '^2.10.0',
+    '2.9.0',
+    '^2.9.0',
+    '2.5.0',
+    '2.2.4',
+    '2.2.3',
+    '^2.2.3',
+    '2.1.0',
+    '1.25.0',
+  ])('fails Workers Cache on narduk-core %s, which stores thrown errors', (core) => {
+    const root = app({ cache: { enabled: true }, core })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(detailOf(root, '12.7')).toContain('2.10.1')
+  })
+
+  it('fails even in rollout mode on an app that has not adopted the block', () => {
+    const root = app({ cache: { enabled: true }, core: '2.2.3', deployment: null })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('reads an env-scoped switch too', () => {
+    const root = app({ cache: { enabled: false }, core: '2.2.3' })
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      workers_dev: false,
+      env: { production: { cache: { enabled: true } } },
+    })
+    expect(statusOf(root, '12.7')).toBe('fail')
+    expect(detailOf(root, '12.7')).toContain('env.production')
+  })
+
+  it('reads a TOML [cache] table', () => {
+    const root = app({ core: '2.2.3', toml: 'name = "fixture"\n\n[cache]\nenabled = true\n' })
+    expect(statusOf(root, '12.7')).toBe('fail')
+  })
+
+  it('is unknown when the resolved narduk-core cannot be read', () => {
+    expect(statusOf(app({ cache: { enabled: true }, core: null }), '12.7')).toBe('unknown')
+    expect(statusOf(app({ cache: { enabled: true }, core: 'workspace:*' }), '12.7')).toBe('unknown')
+  })
+})
+
+describe('12.8 D1 migration declaration', () => {
+  it('requires source coverage and a separate persona for an adopted D1 app', () => {
+    const root = baseline()
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      d1_databases: [{ binding: 'DB', database_id: 'd1-id', database_name: 'fixture-db' }],
+    })
+    expect(statusOf(root, '12.8')).toBe('fail')
+    const manifest = JSON.parse(readFileSync(`${root}/${CLOUDFLARE_APP_FILE}`, 'utf8'))
+    manifest.deployment.migrations = {
+      compatibility: 'expand-contract',
+      credential: 'cloudflare/prd/fixture-migrate',
+      databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+    }
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    expect(statusOf(root, '12.8')).toBe('fail')
+    writeJson(root, 'migrations.sources.json', { sources: [{ source: 'app', path: 'drizzle' }] })
+    expect(statusOf(root, '12.8')).toBe('pass')
+    manifest.deployment.migrations.credential = manifest.deployment.promotion.credential
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    expect(statusOf(root, '12.8')).toBe('fail')
+  })
+  it('does not impose migration infrastructure on an app with no D1', () => {
+    expect(statusOf(baseline(), '12.8')).toBe('not-applicable')
+  })
+})
+
+describe('12.9 expand-only D1 migrations', () => {
+  /** An adopted D1 app whose `app` source is `migrations/`, holding `files`. */
+  function d1App(files: Record<string, string>, contractMigrations?: unknown[]): string {
+    const root = baseline()
+    writeJson(root, 'wrangler.json', {
+      name: 'fixture',
+      workers_dev: false,
+      d1_databases: [{ binding: 'DB', database_id: 'd1-id', database_name: 'fixture-db' }],
+    })
+    const manifest = JSON.parse(readFileSync(`${root}/${CLOUDFLARE_APP_FILE}`, 'utf8'))
+    manifest.deployment.migrations = {
+      compatibility: 'expand-contract',
+      credential: 'cloudflare/prd/fixture-migrate',
+      databases: [{ binding: 'DB', sources: 'migrations.sources.json' }],
+      ...(contractMigrations ? { contractMigrations } : {}),
+    }
+    writeJson(root, CLOUDFLARE_APP_FILE, manifest)
+    writeJson(root, 'migrations.sources.json', {
+      sources: [
+        { source: 'narduk-auth', path: 'node_modules/@narduk-enterprises/narduk-auth/migrations' },
+        { source: 'app', path: 'migrations' },
+      ],
+    })
+    for (const [name, sql] of Object.entries(files)) writeFile(root, `migrations/${name}`, sql)
+    return root
+  }
+
+  const EXPAND = 'CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n'
+  const CONTRACT =
+    'ALTER TABLE users ADD COLUMN email TEXT;\nALTER TABLE users DROP COLUMN legacy;\n'
+  const CONTRACT_SHA = checksumMigrationSql(CONTRACT)
+
+  it('is not applicable without deployment.migrations', () => {
+    expect(statusOf(baseline(), '12.9')).toBe('not-applicable')
+  })
+
+  it('passes expand-only app migrations and names the package sources it does not read', () => {
+    const root = d1App({ '0001_init.sql': EXPAND })
+    expect(statusOf(root, '12.9')).toBe('pass')
+    expect(detailOf(root, '12.9')).toContain('1 app migration file(s)')
+    expect(detailOf(root, '12.9')).toContain('DB: narduk-auth')
+  })
+
+  it('fails a drop, naming file, line and object, and prints the waiver to add', () => {
+    const root = d1App({ '0001_init.sql': EXPAND, '0002_contract.sql': CONTRACT })
+    expect(statusOf(root, '12.9')).toBe('fail')
+    const detail = detailOf(root, '12.9')
+    expect(detail).toContain('migrations/0002_contract.sql:2 drops a column of users')
+    expect(detail).toContain(`"sha256":"${CONTRACT_SHA}"`)
+    expect(detail).not.toContain('0001_init.sql')
+    expect(run(root).exitCode).toBe(1)
+  })
+
+  it('passes a reviewed contract migration pinned by checksum', () => {
+    const root = d1App({ '0002_contract.sql': CONTRACT }, [
+      {
+        path: 'migrations/0002_contract.sql',
+        sha256: CONTRACT_SHA,
+        reason: 'legacy was last read by v1.4, which left the rollback window on 2026-09-01',
+      },
+    ])
+    expect(statusOf(root, '12.9')).toBe('pass')
+    expect(detailOf(root, '12.9')).toContain('1 reviewed contract migration(s)')
+  })
+
+  it('fails a waiver whose file changed, is missing, or needs no waiver', () => {
+    const waiver = (path: string, sha256 = CONTRACT_SHA) => ({ path, sha256, reason: 'reviewed' })
+    const edited = d1App({ '0002_contract.sql': `${CONTRACT}-- edited\n` }, [
+      waiver('migrations/0002_contract.sql'),
+    ])
+    expect(statusOf(edited, '12.9')).toBe('fail')
+    expect(detailOf(edited, '12.9')).toContain('no longer has the reviewed checksum')
+
+    const missing = d1App({ '0001_init.sql': EXPAND }, [waiver('migrations/0009_gone.sql')])
+    expect(statusOf(missing, '12.9')).toBe('fail')
+
+    const needless = d1App({ '0001_init.sql': EXPAND }, [
+      waiver('migrations/0001_init.sql', checksumMigrationSql(EXPAND)),
+    ])
+    expect(statusOf(needless, '12.9')).toBe('fail')
+    expect(detailOf(needless, '12.9')).toContain('needs no waiver')
+  })
+
+  it('refuses the printed placeholder as a reason', () => {
+    const root = d1App({ '0002_contract.sql': CONTRACT }, [
+      {
+        path: 'migrations/0002_contract.sql',
+        sha256: CONTRACT_SHA,
+        reason: '<why no serving or rollback-target version still reads it>',
+      },
+    ])
+    expect(statusOf(root, '12.0')).toBe('fail')
+  })
+
+  it('is unknown, not green, when a source manifest cannot be parsed', () => {
+    const root = d1App({ '0001_init.sql': EXPAND })
+    writeFile(root, 'migrations.sources.json', '{ "sources": [] }')
+    expect(statusOf(root, '12.9')).toBe('unknown')
+  })
+
+  it('refuses a source directory outside the checkout', () => {
+    const root = d1App({})
+    writeJson(root, 'migrations.sources.json', {
+      sources: [{ source: 'app', path: '../elsewhere' }],
+    })
+    expect(statusOf(root, '12.9')).toBe('unknown')
+  })
+})
+
+describe('12.10 rollback mode', () => {
+  it('generates manual and passes it', () => {
+    expect(defaultDeploymentBlock({ appSlug: 'fixture' })).toMatchObject({
+      rollback: { mode: 'manual' },
+    })
+    expect(statusOf(baseline(), '12.10')).toBe('pass')
+  })
+
+  it('fails "auto", which nothing reads', () => {
+    const root = baseline({ deployment: block({ rollback: { mode: 'auto', alert: 'resend' } }) })
+    expect(statusOf(root, '12.10')).toBe('fail')
+    expect(detailOf(root, '12.10')).toContain('Set "mode": "manual"')
   })
 })

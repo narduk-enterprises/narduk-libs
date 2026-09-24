@@ -2,7 +2,12 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { resolveWranglerConfigPath } from './deploy.js'
+import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import {
+  RATE_LIMIT_NAMESPACE_FIX,
+  rateLimitBindings,
+  rateLimitNamespaceIssues,
+} from './rate-limit-namespaces.js'
 
 export interface DoctorCheck {
   detail?: string
@@ -31,6 +36,23 @@ function readPackage(rootDir: string): { scripts?: Record<string, string> } | nu
   }
 }
 
+/** `ratelimits[].namespace_id` is account-wide; refuse scaffold and reused ids (#433). */
+export function rateLimitNamespaceCheck(wranglerPath: string): DoctorCheck {
+  const name = 'rate-limit namespace ids'
+  let config: unknown
+  try {
+    config = readJsonc<unknown>(wranglerPath)
+  } catch (error) {
+    return { detail: (error as Error).message, name, status: 'fail' }
+  }
+  const bindings = rateLimitBindings(config)
+  if (bindings.length === 0) return { detail: 'no ratelimits bindings', name, status: 'pass' }
+  const issues = rateLimitNamespaceIssues(config)
+  return issues.length > 0
+    ? { detail: `${issues.join('; ')}. Fix: ${RATE_LIMIT_NAMESPACE_FIX}.`, name, status: 'fail' }
+    : { detail: `${bindings.length} binding(s), every namespace_id distinct`, name, status: 'pass' }
+}
+
 export function runDoctor(rootDir = process.cwd()): DoctorReport {
   const requestedRoot = resolve(rootDir)
   const nestedRoot = resolve(requestedRoot, 'apps', 'web')
@@ -55,6 +77,7 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
           status: 'fail',
         },
   )
+  if (wranglerPath) checks.push(rateLimitNamespaceCheck(wranglerPath))
   checks.push(
     commandAvailable('node')
       ? { name: 'node', status: 'pass' }
@@ -75,9 +98,9 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
         },
   )
   checks.push(
-    commandAvailable('doppler')
-      ? { name: 'doppler', status: 'pass' }
-      : { detail: 'doppler is not available on PATH', name: 'doppler', status: 'warn' },
+    commandAvailable('nvault', ['version'])
+      ? { name: 'nvault', status: 'pass' }
+      : { detail: 'nvault is not available on PATH', name: 'nvault', status: 'warn' },
   )
   const scripts = packageJson?.scripts ?? {}
   for (const name of ['cf:build', 'db:migrate:remote']) {

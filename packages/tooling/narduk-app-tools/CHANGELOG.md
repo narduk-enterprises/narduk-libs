@@ -1,5 +1,637 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.21.1
+
+### Patch Changes
+
+- 1716307: Exclude the private Libs Explorer from the shared capability catalog
+  so foundation coverage does not treat the showcase as an app-adoptable
+  package.
+
+## 0.21.0
+
+### Minor Changes
+
+- 1bca010: `deployment.liveProof.healthAuth: "anonymous" | "authenticated"`
+  (default `anonymous`). An authenticated health route stays declared,
+  `deploy hotfix` and `development deploy` skip the anonymous health assertion,
+  item 12.3 says so, and the adoption live read reports requirement 12 unknown
+  instead of failing a 401 (#585).
+- bad1b0d: Two foundation checks for the components-library plan
+  (narduk-libs#260). `narduk-app foundation:check:no-local-copy` (item 13) fails
+  when an app depends on a shared UI package and keeps its own copy of one of
+  its components. `narduk-app foundation:check:list-routes` (item 14) fails when
+  a GET server route reads pagination from its query without narduk-core's
+  `parseListQuery`. Each writes its own JSON artefact and uses the usual exit
+  codes: 0 pass, 1 fail, 2 unknown. The README documents both.
+- ff26c60: `narduk-app doctor` warns when a worker whose `main` is Nitro's
+  `.output/server` lacks `no_bundle`, `find_additional_modules` or `base_dir`.
+  Without them, wrangler re-bundles the build and every server-rendered 404/500
+  comes out empty (#245).
+  `deploy versions-promote --wait-for-version <seconds> [--wait-interval <seconds>]`
+  re-lists while the commit's version is absent, so a Workers Build that
+  finishes after CI no longer turns an unbroken merge into exit 3 (#695). The
+  default is 0, which keeps today's single look.
+- e6c9263: `.github/dependabot.yml`'s npm update now splits into two groups by
+  `update-types` over the same packages: `safe` (minor + patch) and `majors`
+  (major), `open-pull-requests-limit: 2`. A new generated
+  `.github/workflows/dependabot-merge.yml` merges the `safe` lane once CI is
+  green on its exact PR head; `majors` and the `github-actions` lane stay a
+  deliberate person/agent PR. This replaces the old single all-in `dependencies`
+  group (gonogo#104, the reference shape): apps on the old canonical shape
+  (`open-pull-requests-limit: 10`, ~10 groups) stacked roughly ten open PRs that
+  all edited `pnpm-lock.yaml`, so merging any one conflicted the rest, and a
+  single combined group let one breaking major hold every harmless patch bump
+  red behind it (riverstatus#215).
+
+  `create-narduk-app upgrade` delivers `.github/workflows/dependabot-merge.yml`
+  to existing apps as a new whole-file managed target alongside the refreshed
+  `.github/dependabot.yml`.
+
+  `narduk-app-tools`' `foundation:check` gains an advisory-only print (not a
+  `FoundationSubCheck`, since this framework has no warning tier) that flags a
+  `.github/dependabot.yml` npm update reproducing the old stacking shape:
+  `open-pull-requests-limit` above 2, or npm groups not split by `update-types`
+  into a safe and a majors lane. It never affects the check's `score`, `result`,
+  or `exitCode`.
+
+### Patch Changes
+
+- 8ec9bb9: Tooling carpool: the migration runner refuses a contract-owned D1
+  database named by its `database_name` as well as its id (#637); foundation
+  item 5.2 accepts the canonical Dependabot recipe, an npm update routed through
+  a registry scoped to `@narduk-enterprises` (#241); a failed schema-adoption
+  probe names the adoption, says the migration has no receipt yet, and says how
+  to record it or correct the evidence (#600).
+- 6255d0c: Give the development build workspace a repository of its own, so an
+  app's existing repository-shaped checks (`git rev-parse --show-toplevel`,
+  `git ls-files -co --exclude-standard`, `git status`) run against the captured
+  source instead of refusing the deploy with "fatal: not a git repository". The
+  workspace repository is local-only, excludes the publisher's git identity,
+  signing, hooks and init templates, and is kept between deploys so each
+  iteration costs one incremental commit.
+
+## 0.20.0
+
+### Minor Changes
+
+- 1759259: Foundation check 12.7 now needs narduk-core **2.10.1** or later
+  before an app turns on Workers Cache, up from 2.2.4. Cores from 2.2.4 to
+  2.10.0 still let Cloudflare store a thrown JSON 404 as Nitro's `no-cache`
+  (narduk-libs#493). An app with the switch on and an older core now fails 12.7;
+  upgrade narduk-core or remove the `cache` block.
+
+  New `docs/workers-cache.md`: the standard for turning Workers Cache on in an
+  existing app (narduk-libs#435), with its preconditions, the wrangler change,
+  the `verify --live --edge-cache-path` proof, purging and rollback.
+
+## 0.19.1
+
+### Patch Changes
+
+- e61a56d: `narduk-app doctor` now refuses a rate-limit `namespace_id` that is
+  not a positive decimal integer, such as `"abc"`, `"0x1F"`, `"0120"`, `-5` or
+  `1.5` (#509). Scaffold ids and ids declared twice were already refused,
+  including across `env.*` overlays.
+
+## 0.19.0
+
+### Minor Changes
+
+- 0e1a1ee: `foundation:check:deployment` enforces the expand-only half of
+  `deployment.migrations.compatibility: "expand-contract"` (#399). New sub-check
+  12.9 fails an app-owned D1 migration that drops or renames a table, view or
+  column, because `narduk-app deploy rollback` restores code, never a schema. A
+  deliberate contract migration is declared under
+  `deployment.migrations.contractMigrations` (`path`, `sha256`, `reason`),
+  pinned to the checksum the migration ledger records, and the failure prints
+  that entry. An app with such a migration in its history adopts the rule by
+  listing it once.
+
+  `deployment.rollback.mode` now defaults to `manual` in new apps. Nothing ever
+  read `"auto"`, so a generated app was declaring an automatic safety net it did
+  not have. New sub-check 12.10 fails `"auto"`; the value still parses, so older
+  manifests do not stop the tools. The generated deployment doc now says what
+  actually triggers a rollback: only the app's own promote step, after a
+  completed promotion fails its live proof. A failed migration triggers nothing.
+
+- 2a35b4e: `foundation:check:coverage` gives each shared capability one of three
+  states: `absent`, `adopted` or `forked` (#620). A capability is `forked` when
+  an app pins the package and also carries its own copy of the package's
+  internals. It is reported with its files and line count, and it no longer
+  counts as adopted. Item 9.1 names it but does not fail, because some forks are
+  deliberate and tracked.
+
+  The signal is opt-in per capability, through `forkStems` in the generated
+  catalog. Today only `narduk-mapkit` declares one (`mapkit`). A file counts
+  when a directory segment of its path, or its own name, equals the stem, and it
+  imports no package named for that stem.
+
+  Inventory rows gain `state` and `fork`. `adopted` is now true only for
+  `state: "adopted"`.
+
+- ca8f56f: Generated apps run `foundation:check:deployment` and
+  `foundation:check:shared-ui-pinned` with `--checkout ../..`, the repository
+  root. They used to pass `--checkout ..` from `apps/web`, which is `apps/`, and
+  item 12 read that as "no deployment block, not applicable" with exit 0 (#679).
+
+  The foundation checks now exit 1 when `--checkout` has no `package.json`,
+  naming the directory and the fix, so the old path cannot pass quietly. This
+  covers `foundation:check` and its `:shared-ui-pinned`, `:toolchain`,
+  `:deployment` and `:coverage` variants. **An app scaffolded before this fix
+  must change `--checkout ..` to `--checkout ../..` in `apps/web/package.json`**
+  before it takes this version.
+
+### Patch Changes
+
+- bbe7a1a: Document a post-merge deploy assertion for apps whose Workers Build
+  deploys directly: a job that runs
+  `narduk-app verify --live --expect-sha "$GITHUB_SHA"` over a build-length wait
+  and names the Workers Build on failure (narduk-libs#597).
+- c67b585: The generated `docs/deployment/promote-d1.steps.yml` now starts with
+  two credential-free steps. They run `foundation:check:deployment` on the exact
+  SHA being promoted, and refuse to migrate unless sub-check 12.9 passes. Only
+  12.9 is judged, so another sub-check's UNKNOWN does not block a promotion.
+  Worker rollback restores code, never a schema, so automating rollback beside
+  the migrate step is safe only with this check in front of it (#399). The
+  deployment-migrations runbook specifies the same ordering. It also names the
+  check as a precondition for any promote workflow that runs
+  `narduk-app deploy rollback` automatically.
+
+  Existing apps copied the template once. To adopt, paste the two new steps
+  above the dry-run step.
+
+## 0.18.0
+
+### Minor Changes
+
+- e42c8c9: `narduk-app doctor` checks Cloudflare rate-limit namespace ids
+  (#433). A `ratelimits` binding, top level or under `env.*`, fails if it uses a
+  scaffold id (`1001`, `50110`, `50121`, `50300`), if its id is declared more
+  than once, or if it has no `namespace_id`. `namespace_id` is unique per
+  account, so any of those shares counters with another Worker or environment.
+  An app with its own unique ids passes.
+
+  `create-narduk-app` writes the new app's own namespace prefix into
+  `wrangler.jsonc`, derived from the Worker name by narduk-core's scheme, beside
+  a commented example binding. It still emits no binding, because the limiter
+  needs none.
+
+### Patch Changes
+
+- 3dce8b4: Foundation item 11.3 no longer fails a job that calls a shared
+  workflow with no Node input, such as `cursor-review.yml`. It no longer tells a
+  caller of a `node-version`-only callable to use `node-version-file`, an input
+  that callable does not declare; 11.1 still holds that caller's literal to
+  `.node-version`. Workflows are also evaluated per job, so one job's
+  `node-version-file` no longer satisfies another job in the same file.
+
+## 0.17.0
+
+### Minor Changes
+
+- 7aeacad: Add owner-enrolled development mode (company-hq#781).
+  `narduk-app development` gains `deploy`, `status`, `enter`, `pin`/`unpin`,
+  `exec`, `validate`, `handoff`, `resolve` and `exit`. The optional
+  `deployment.development` capability declares targets. A host-private
+  activation record grants custody. Deploys capture the checkout, dirty edits
+  included, and gate, build, upload, promote and prove the exact build ID under
+  a target lock shared with hotfixes. Entry holds classified workflows and
+  Workers Builds triggers and restores them exactly on exit, after the merged
+  release commit passes explicit validation. Existing apps are unchanged until
+  an owner enrolls them. See `docs/development-mode.md`.
+
+  create-narduk-app now emits a `deploy:dev` script, a private-app explicit
+  validation caller (`.github/workflows/validate.yml`, `narduk-validation/**`
+  pushes only) and a Development mode section in `docs/workers-builds.md`. It
+  never declares the capability.
+
+## 0.16.0
+
+### Minor Changes
+
+- 7b99efb: `doctor --adoption --live` and `foundation:check:security-headers`
+  now probe the paths the app declares in `deployment.liveProof`, instead of a
+  hard-coded `/`, `/api/health` and `x-build-version`.
+
+  Requirement 5 reads the build stamp from `liveProof.smokePath` under the
+  header `liveProof.buildVersionHeader`, requirement 12 reads
+  `liveProof.healthPath`, and requirement 8 points its header probe at the
+  declared smoke path. With no `--path`, `resolveProbeUrls` now reads the base
+  URL exactly as given rather than resolving `/` against it, so a
+  `--base-url https://app.example/login` probes `/login`.
+
+  `foundation:check:deployment` item 12.3 already requires those fields, so the
+  declaration always existed and the tools simply did not read it. On an
+  authenticated app -- one whose root correctly refuses an anonymous request --
+  that reported a working delivery path as undecided (R5) and a working health
+  contract as failing (R12), and rewarded an app that left its health route open
+  to anonymous callers over one that did not. A required `unknown` blocks
+  declaration, so this was not a cosmetic verdict.
+
+  The old values remain the fallback for an app that declares no `liveProof`
+  block, so an app declaring the defaults is unaffected. `DeploymentArtefact`
+  gains `declaration.liveProof`, and `AdoptionLiveReading` gains `smokeUrl`,
+  `healthUrl` and `buildVersionHeader` so a report names the routes it actually
+  read.
+
+- de5abe4: Add an explicit local incident hotfix command with a clean commit
+  snapshot, offline frozen install, required app checks, isolated build
+  credentials, confirmed production target, version promotion, live proof and a
+  durable failure receipt. Ship the operator runbook and generator scripts.
+  Existing deployment commands remain compatible.
+
+  Prevent the shared live probe from forwarding caller-provided request headers,
+  including Cloudflare Access credentials, through cross-origin redirects.
+
+### Patch Changes
+
+- c7a2aaf: Read `GH_PACKAGES_READ` as a registry credential, so
+  `foundation:check` is decided on the sanctioned local route.
+
+  Item 2.3 needs a live packument read to place `narduk-core` in its N-1 window.
+  `NpmRegistryReality` takes its token from the environment and deliberately
+  from nowhere else — it reads no `.npmrc` and no `_authToken` line, so that a
+  project routing the scope elsewhere gets an anonymous read rather than a
+  credential. It looked for `NODE_AUTH_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN`.
+
+  `gh-packages-run` — the only sanctioned local route, and the one the estate
+  READMEs name — supplies the value as `GH_PACKAGES_READ` and writes a 0600
+  process-scoped userconfig referencing it by name, which is what `pnpm install`
+  needs and which this reader cannot see by design. So the credential was
+  present in the environment during `gh-packages-run pnpm run foundation:check`
+  and invisible to the component that needed it: item 2.3 collapsed to
+  `unknown`, and `UNKNOWN` is a blocking exit. There was no documented local
+  invocation that produced a decided result (narduk-farm#148).
+
+  `GH_PACKAGES_READ` is now last in that chain. Last rather than first keeps the
+  CI path byte-identical: `nuxt-cloudflare.yml` already aliases the two names to
+  the same value, and its own comment named this change as the fix — _"Export
+  both names, same value, until narduk-app-tools reads GH_PACKAGES_READ
+  instead."_ That alias exists because workflows#79 renamed the exported
+  credential and silently broke package-token-mode `foundation-check` for every
+  v1 adopter past `afbaa6051e` (buoys#39). It can retire once callers are past
+  this release.
+
+  No new destination for the token: it is still sent only to
+  `npm.pkg.github.com`, and a mirrored or lookalike scope route still gets an
+  anonymous read.
+
+- 3e38fc5: `og:check`'s canonical-origin mismatch error now names both the
+  actual and expected `og:url`, and hints `NUXT_PUBLIC_SITE_URL` for a local
+  `--base-url` run instead of leaving "og:url does not identify the sampled page
+  on the canonical origin" with no clue why (#587). Also documents when a page
+  keeps the static `defaultOgImage` fallback versus getting its own generated
+  image — the rule follows whether `useSeo` is called (and how), not whether the
+  page is indexed.
+
+  Pure diagnostics/docs fix, no public API change.
+
+- 88f8ae7: `parseWranglerVersionsJson` (used by `promote`'s
+  `deployments list`/`versions list` reads) now anchors to the LAST line that
+  starts with `[` or `{` at column 0, instead of the first bracket anywhere in
+  the captured stdout. A warning printed earlier in the same `pnpm exec` chain
+  (for example, an `engines` mismatch:
+  `WARN Unsupported engine: wanted: {"node":"24.21.0"}`) could contain a bracket
+  mid-line; the old heuristic parsed that fragment instead of wrangler's real,
+  later JSON document and reported a confusing "wrangler-failed" outcome that
+  named nothing real (#470). The parse-failure message also now includes the
+  first 200 characters of the captured stdout, so contamination like this names
+  itself instead of being invisible.
+- 9452204: Document verified persona injection for local hotfix credentials
+  whose registered nVault key names differ from Wrangler's environment variable
+  names.
+
+  Preserve runtime variables through generated Wrangler configuration so local
+  hotfix uploads support Wrangler 4.90.1, whose versions-upload command does not
+  yet accept the equivalent CLI flag.
+
+## 0.15.0
+
+### Minor Changes
+
+- eb07a18: Declare who owns each D1 schema: `deployment.databaseOwnership`
+
+  `deployment.migrations` had to cover **every** D1 binding exactly once, which
+  is right for a database whose schema is its migration history and wrong for
+  one whose schema is owned by a contract and applied by a refresh job. The only
+  way such an app could declare migrations for the rest of its estate was to
+  manufacture a migration baseline for a database nobody migrates -- a false
+  claim that the ledger describes that schema.
+
+  `Config/cloudflare-app.json`'s deployment block now accepts an optional
+  `databaseOwnership` array giving every binding exactly one owner: `migrations`
+  (resolving to an entry in `deployment.migrations.databases`) or `contract`
+  (naming the schema contract file and the package script that proves it).
+  Absent, nothing changes -- an app that migrates everything keeps working with
+  no config edit.
+
+  The load-bearing part is at the runner, not the validator:
+  `migrationDatabase()` is the single function every migration path uses to
+  reach D1, and it refuses a contract-owned binding before any provider call.
+  `db migrate --database READ_MODEL`, `db status`, `db migrate-deployment`,
+  baseline capture and baseline registration are all refused, as is a wrangler
+  config pointing another binding name at the contract-owned database id. The
+  contract-owned database is also absent from the minimal wrangler config the
+  deployment runner is handed.
+
+  `foundation:check:deployment` sub-check 12.8 now applies the same coverage
+  rule from the same implementation -- a contract-owned binding passes without a
+  source manifest, while an uncovered or doubly-owned binding still fails -- and
+  `doctor --adoption` requirement 6 reads that sub-check.
+
+## 0.14.0
+
+### Minor Changes
+
+- 76e8727: feat(narduk-app-tools): `doctor --adoption` reports the fifteen
+  adoption requirements
+
+  The narduk-app adoption standard (company-hq#746) asks fifteen questions of an
+  app. Six CLI commands already answered twelve of the web-foundation contract's
+  items, but nothing assembled them into the thing a sign-off actually needs:
+  one artefact, per requirement, that says what was checked, what the verdict
+  is, what the evidence was, and **who decides the part no command can**.
+
+  `narduk-app doctor --adoption` is that artefact. It composes the existing
+  checks rather than reimplementing them — `foundation:check`,
+  `:shared-ui-pinned`, `:coverage`, `:security-headers`, `:toolchain`,
+  `:deployment` — and adds the two evaluators nothing owned:
+
+  **Requirement 2, package currency.** Every consumed estate package must be
+  exact-pinned at the latest published stable release, every manifest that pins
+  it must agree, and the installed version must be the declared one. Four
+  failures hide behind "the dependencies are fine": a range spec, two manifests
+  in one workspace pinning different versions (the normal shape of a generated
+  app, with the app's own dependencies in `apps/web`, and the normal way the two
+  fall out of step), a pin behind the registry, and a pin that matches the
+  registry while `node_modules` holds something else.
+  `foundation:check:shared-ui-pinned` already refuses a non-exact pin, but only
+  for the shared-UI packages and only on exactness; currency is a different
+  claim over a wider set.
+
+  **Requirement 9, MapKit provenance.** "The app installed a package called
+  mapkit" is not "the app consumes the maintained one", and four stale shapes
+  look identical from a dependency list: a standalone-era package name, a
+  vendored copy a lockfile resolves happily, a `file:`/tarball specifier, and
+  the frozen `narduk-mapkit-nuxt` adapter pinned at 2.0.x — which leaves a Nuxt
+  app on a supported package and an unsupported entry at once.
+
+  **What it refuses to claim.** Every requirement carries the tier it was
+  actually decided at: `enforced`, `partially-enforced`, or `manual`. A `manual`
+  requirement reports `unknown`, names its owner, and appears in `manualReview`;
+  there is no flag that turns one into a pass. The top-level `result` is the
+  verdict over the machine-decidable requirements only, so a PASS can never be
+  read as proving more than was checked. Requirement 9 never says the map works
+  — that is real-SDK browser evidence, and inferring it from a dependency line
+  would be the false capability claim the standard forbids.
+
+  Item 12 reports `not-applicable` for two different facts, and this report
+  keeps them apart: an app with no `deployment` block is `unknown` (rollout
+  mode's N/A is right for a rollout gate and wrong for a declaration — nobody
+  wrote the delivery path down), while an app declaring a different standard is
+  the `deviation` verdict.
+
+  **The seven-item artefact is untouched.** `foundation:check` emits exactly the
+  document its consumers already parse, bare `doctor` keeps its output and exit
+  code, and this is a separate artefact with its own tool name and schema.
+
+  Exit codes follow the existing convention — `0` PASS, `1` FAIL, `2` UNKNOWN,
+  the last including every run given no `--live`, since three requirements are
+  questions only a deployed origin can answer — and add `3` DEVIATION. An app
+  declaring a different deployment standard is not failing the standard, but it
+  has not adopted it either; exiting `0` would let an automation reading the
+  exit code as "adopted narduk-v1" read a declared departure as adoption.
+
+### Patch Changes
+
+- d3f91b4: fix(narduk-app-tools): item 1.1 treats `-` and `_` as the same preset
+  separator
+
+  Nitro does, and the two spellings reach this check from different places: an
+  app's `nuxt.config` literal and its `Config/cloudflare-app.json` both say
+  `cloudflare_module`, while a completed build writes the canonical
+  `cloudflare-module` into `.output/nitro.json`. Item 1.1 compared the raw
+  string, so the live-build fallback — the path that exists precisely for an app
+  not yet onboarded into the deployment standard — failed every app it was meant
+  to serve, and only after a build had run (narduk-libs#350).
+
+  The comparison now normalises the separator on both sides. Nothing else moves:
+  a genuinely wrong preset (`cloudflare-pages`) still fails, and the FAIL detail
+  now says the separator is already normalised so the next reader does not
+  re-diagnose this.
+
+## 0.13.1
+
+### Patch Changes
+
+- 2e5959d: The runner-ledger guard now reads statements, not comments.
+  `buildMigrationBatchSql` and the migration-bundle check tested the raw SQL for
+  `_narduk_migration`, so a migration that merely _documented_ the bookkeeping
+  tables — explaining which ones it deliberately does not drop — was refused
+  with "Migration SQL may not alter the runner ledger or lock". That blocked
+  every deploy of an app whose drop migration carried such a comment
+  (riverstatus#182).
+
+  Comments are stripped before the test; quoted text is preserved, so
+  `DELETE FROM "_narduk_migrations"` is still refused, and a `--` inside a
+  string literal no longer blinds the guard to the rest of the line.
+
+## 0.13.0
+
+### Minor Changes
+
+- 52ab505: Add a reviewed D1 baseline process: immutable schema/ledger capture,
+  full-schema comparison, explicit metadata-only registration for untracked
+  schemas, and a shared disposable-local cutover proof. Preserve historical
+  fixtures across package upgrades and stop rechecking superseded legacy schema
+  probes after stable checksum adoption. Document app-owned review, data-proof
+  limits and migration-before-promotion onboarding.
+
+## 0.12.0
+
+### Minor Changes
+
+- 3a10f40: Gate narduk-v1 promotion and shared previews on compatible D1
+  migrations. Add explicit deployment target selection, read-only
+  checksum/history status, a per-database migration lock with conservative
+  failure recovery, SQL-only preview bundles, foundation coverage checks, and
+  one-shot workflow onboarding templates.
+- 33ce0e7: Accept a parameterized social-preview route with one sample when it
+  states a `reason`. Two samples are what prove a dynamic preview varies with
+  its parameter, but a route family that genuinely has one instance today — one
+  published state, one live tenant — cannot supply a second real path, and an
+  invented one proves nothing. Routes with no reason still require two.
+
+### Patch Changes
+
+- 8cd6999: Refuse an existing D1 application schema with no recorded migration
+  history, even when a source manifest contains no SQL. Require reviewed
+  baseline evidence instead of reporting an untracked read model current or
+  replaying its schema.
+
+## 0.11.0
+
+### Minor Changes
+
+- 80dde89: `narduk-app verify --live` can prove a host behind Cloudflare Access:
+  `--access-client-id-env` / `--access-client-secret-env` name the environment
+  variables holding a service token, sent as `CF-Access-Client-Id` /
+  `CF-Access-Client-Secret` on every probe and never printed (#569).
+
+## 0.10.1
+
+### Patch Changes
+
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
+## 0.10.0
+
+### Minor Changes
+
+- 05b3ef9: Prove and gate Workers Cache (narduk-libs#435).
+
+  - `narduk-app verify --live` gains repeatable `--edge-cache-path <p>` and
+    `--edge-uncached-path <p>`. Each route is fetched twice from the same fresh
+    URL without no-cache request headers; an edge-cache path needs
+    `Cf-Cache-Status: HIT` (or `STALE` / `UPDATING` / `REVALIDATED`) on the
+    second GET, an uncached path must never be served from cache. A
+    `private, no-store` answer (a preview-safe hostname) reports "cannot prove a
+    HIT here". New exit code 7.
+  - `foundation:check:deployment` gains sub-check 12.7: a wrangler config (any
+    scope, JSON or TOML) that sets `"cache": { "enabled": true }` fails against
+    a `@narduk-enterprises/narduk-core` older than 2.2.4 — the first core that
+    keeps thrown errors, preference-shaped responses and nonce-CSP HTML out of
+    the cache. It fails in rollout mode too; with the switch off it is
+    not-applicable.
+
+### Patch Changes
+
+- c16bdfd: `foundation:check` now reads the registry for sub-check 2.3 from the
+  project's own `@narduk-enterprises` scope route (narduk-libs#498). The reader
+  takes the last `@narduk-enterprises:registry=` line in the checkout's
+  `.npmrc`, the same rule as the shared CI workflows. A repo that routes the
+  scope to the `https://npm.nard.uk` mirror, or to any other registry that is
+  not GitHub Packages, is read anonymously. The reader sends no `Authorization`
+  header there, so it needs no `NODE_AUTH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`.
+  Repos with no route line, or a route to `npm.pkg.github.com`, keep the
+  existing GitHub Packages Bearer read and its scope-probe 404 corroboration.
+  Other scopes such as `@narduk-geo` stay on GitHub Packages.
+
+  `create-narduk-app` takes a patch so generated apps pin the fixed
+  `narduk-app-tools`.
+
+## 0.9.1
+
+### Patch Changes
+
+- ad7a156: Ignore generated Wrangler `.dev.vars` secrets, and make `cf:build`
+  authenticate before it installs.
+
+  The scaffolded `.gitignore` now lists `.dev.vars` / `**/.dev.vars` /
+  `.dev.vars.*` with a `!.dev.vars.example` carve-out, matching the existing
+  `.env` pattern. Root `cf:build` runs a committed `scripts/gh-packages-run.mjs`
+  (process-scoped temp userconfig from `GH_PACKAGES_READ`, then
+  `pnpm install --frozen-lockfile`) so a Workers Builds dashboard that sets
+  `SKIP_DEPENDENCY_INSTALL=1` actually has `node_modules` and registry auth
+  before `nuxt build`. `narduk-app gh-packages-run` is the same helper for
+  post-install callers.
+
+## 0.9.0
+
+### Minor Changes
+
+- 86bdb58: Make `deployment.previewBindings` real, so item 12.4 can pass with
+  non-production branch builds on (narduk-libs#473, deployment-standard design
+  §3.3 option A).
+
+  **The build now isolates a preview.** A `previewBindings` entry may name its
+  preview resource with wrangler's own fields: `id` for KV, `database_id` and
+  `database_name` for D1, `bucket_name` for R2. On a Workers Build whose
+  `WORKERS_CI_BRANCH` is not `productionBranch`,
+  `narduk-app deploy versions-upload` writes `.wrangler.deploy.preview.json`
+  with every D1, KV and R2 binding rebound, and uploads with it. The rebinding
+  is all or nothing. When any binding lacks its preview resource, or names a
+  production one, the build keeps `.wrangler.deploy.production.json` exactly as
+  before and prints a `WARNING`. `deploy`, the production branch, runs outside
+  Workers Builds, an explicit `--env` target and apps without a valid
+  `narduk-v1` block are unchanged.
+
+  **12.4 checks the config the build would upload.** It runs the same planner
+  against the app's own wrangler config.
+
+  - It reports `pass` when every binding is rebound to a resource that is not a
+    production one.
+  - It reports `fail` when a preview entry names no binding of its kind, or when
+    a preview id, name or bucket is a production one in any scope.
+  - It stays `unknown` for bare names, a D1 entry missing its id or name, a TOML
+    app config, or bindings in a second Worker's config.
+
+  The artefact gains `previewConfig`, and the summary prints a `preview` line.
+
+  A binding listed twice in one `previewBindings` kind now makes the block
+  invalid. Before this change, the second entry was silently shadowed by the
+  first.
+
+  `create-narduk-app` adds `.wrangler.deploy.preview.json` to the generated
+  `.gitignore` and `.prettierignore`.
+
+## 0.8.0
+
+### Minor Changes
+
+- cbee698: Fix the three narduk-app-tools defects the estate's first `narduk-v1`
+  adoption found (narduk-libs#451).
+
+  **`versions-promote --sha` no longer misses a version below the ten-version
+  window.** `wrangler versions list` returns "the 10 most recent Versions of
+  your Worker" and takes no paging flag, so with non-production branch builds
+  on, ten branch uploads landing between a merge build and its promote job
+  buried the version to promote and production stayed on the old release. The
+  lookup now walks Cloudflare's own Versions endpoint with `per_page`/`page` up
+  to a bound -- the new `--max-versions` flag, default 500 -- and never
+  paginates unbounded. One constant `per_page` runs the whole walk, because V4
+  computes the offset as `(page - 1) * per_page` and a shrinking last page would
+  re-read rows already seen instead of reaching the tail; the walk ends only on
+  the bound, an empty page, or an end-of-collection the response's own
+  `result_info` proves, so an endpoint that clamps `per_page` cannot make a
+  short first page look like the end of the history. It needs an account id and
+  `CLOUDFLARE_API_TOKEN`; without both it falls back to `wrangler versions list`
+  and reports `versionSearch.source: "wrangler"` so a miss in ten is never
+  mistaken for a miss in five hundred. A miss still exits 3, never 0 -- a
+  promote that promoted nothing must be a red job -- and the detail now names
+  the SHA, the count searched, the bound, and whether the search reached the end
+  of the history (the build never uploaded this commit) or stopped at the bound
+  (raise `--max-versions`, or use `--version-id`).
+
+  **`--sha` no longer defaults to `GITHUB_SHA` under `on: workflow_run`.** There
+  `GITHUB_SHA` is the default branch's head at trigger time, not the commit
+  whose run completed, so the default could promote a commit the gate check
+  never passed. The command refuses with an exit-2 usage error naming
+  `${{ github.event.workflow_run.head_sha }}`. Every other event is unchanged,
+  and `--version-id` is unaffected.
+
+  **Foundation item 12.4 no longer reports PASS for `previewBindings`
+  coverage.** Nothing in this release consumes that field -- `narduk-app deploy`
+  generates only `.wrangler.deploy.production.json` and a branch build uploads
+  with it -- so an app listing every binding name gets the identical runtime to
+  one listing none. Full coverage now reports `unknown` ("declared, not
+  enforced", exit 2) rather than a green check standing for a preview isolation
+  that does not exist. `pass` is reserved for `nonProductionBranchBuilds: false`
+  and for an app with no D1/KV/R2 binding, and the limitation is stated in every
+  run's `limitations`.
+
+  **Operator note.** Three behaviours change, all deliberately: `--max-versions`
+  is new (minor); a `workflow_run` promote with no explicit `--sha` now exits 2
+  instead of promoting the wrong commit; and an adopted app whose only preview
+  isolation is a `previewBindings` declaration now exits 2 on
+  `foundation:check:deployment` instead of 0. No estate app is on `narduk-v1`
+  today -- every one of them is `malformed` or `absent` on item 12 -- so no
+  green check turns red from that last change.
+
 ## 0.7.0
 
 ### Minor Changes

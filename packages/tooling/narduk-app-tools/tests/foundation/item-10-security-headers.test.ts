@@ -286,6 +286,16 @@ describe('multi-route probes', () => {
 
   it('resolves paths against the base URL, defaulting to the root', () => {
     expect(resolveProbeUrls('https://app.example', [])).toEqual(['https://app.example/'])
+    // With no paths the base URL is read AS GIVEN. Resolving '/' against it
+    // discarded the path the caller asked for, so `--base-url .../login`
+    // probed the root -- on an authenticated app, the one route that refuses
+    // the request (narduk-libs#632, absorbing #638).
+    expect(resolveProbeUrls('https://app.example/login', [])).toEqual(['https://app.example/login'])
+    // An explicit path still resolves against the origin, so it means the
+    // same route whatever path the base URL carried.
+    expect(resolveProbeUrls('https://app.example/login', ['/map'])).toEqual([
+      'https://app.example/map',
+    ])
     expect(resolveProbeUrls('https://app.example', ['/', '/stations/41008', '/map'])).toEqual([
       'https://app.example/',
       'https://app.example/stations/41008',

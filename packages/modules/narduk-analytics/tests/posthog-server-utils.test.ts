@@ -1,11 +1,31 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
   buildPosthogCurrentUrlClause,
+  buildPosthogRecordingsCacheKey,
+  buildPosthogRecordingsListParams,
   posthogQueryFetch,
   resolvePosthogPeriod,
   resolvePosthogProjectConfig,
+  selectRecordingsForDomain,
 } from '../server/utils/posthog'
+
+const recordingsRouteSource = readFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'server/admin/api/admin/posthog/recordings.get.ts',
+  ),
+  'utf8',
+)
+
+const OUR_DOMAIN = 'farm.example'
+const OTHER_DOMAIN = 'buoys.example'
+const OUR_START_URL = 'https://farm.example/dash'
 
 describe('resolvePosthogProjectConfig', () => {
   it('resolves apiKey/projectId/apiHost/domain from config without an event', () => {
@@ -27,7 +47,7 @@ describe('resolvePosthogProjectConfig', () => {
     })
   })
 
-  it('throws when the personal API key is missing', () => {
+  it('answers 503 not_configured when the personal API key is missing', () => {
     const config = {
       posthogApiKey: '',
       posthogProjectId: '123',
@@ -36,10 +56,18 @@ describe('resolvePosthogProjectConfig', () => {
       public: {},
     } as unknown as Parameters<typeof resolvePosthogProjectConfig>[0]
 
-    expect(() => resolvePosthogProjectConfig(config)).toThrow(/POSTHOG_PERSONAL_API_KEY/)
+    try {
+      resolvePosthogProjectConfig(config)
+      throw new Error('expected not_configured')
+    } catch (error: unknown) {
+      expect(error).toMatchObject({
+        statusCode: 503,
+        data: { state: 'not_configured', missing: ['POSTHOG_PERSONAL_API_KEY'] },
+      })
+    }
   })
 
-  it('throws when the project id is missing', () => {
+  it('answers 503 not_configured when the project id is missing', () => {
     const config = {
       posthogApiKey: 'phc_key',
       posthogProjectId: '',
@@ -48,7 +76,15 @@ describe('resolvePosthogProjectConfig', () => {
       public: {},
     } as unknown as Parameters<typeof resolvePosthogProjectConfig>[0]
 
-    expect(() => resolvePosthogProjectConfig(config)).toThrow(/POSTHOG_PROJECT_ID/)
+    try {
+      resolvePosthogProjectConfig(config)
+      throw new Error('expected not_configured')
+    } catch (error: unknown) {
+      expect(error).toMatchObject({
+        statusCode: 503,
+        data: { state: 'not_configured', missing: ['POSTHOG_PROJECT_ID'] },
+      })
+    }
   })
 })
 
@@ -77,6 +113,76 @@ describe('buildPosthogCurrentUrlClause', () => {
 
   it('returns an empty string for a blank domain', () => {
     expect(buildPosthogCurrentUrlClause('  ')).toBe('')
+  })
+})
+
+describe('selectRecordingsForDomain', () => {
+  it('does not return a recording whose host is a different app', () => {
+    const recordings = [
+      { id: 'ours', start_url: OUR_START_URL },
+      { id: 'theirs', start_url: 'https://buoys.example/status' },
+    ]
+
+    expect(selectRecordingsForDomain(recordings, OUR_DOMAIN).map((row) => row.id)).toEqual(['ours'])
+  })
+
+  it('rejects a substring lookalike host and a blank start_url', () => {
+    const recordings = [
+      { id: 'lookalike', start_url: 'https://evil-farm.example/dash' },
+      { id: 'blank', start_url: '' },
+      { id: 'sub', start_url: 'https://www.farm.example/dash' },
+    ]
+
+    expect(selectRecordingsForDomain(recordings, OUR_DOMAIN).map((row) => row.id)).toEqual(['sub'])
+  })
+
+  it('returns nothing when POSTHOG_DOMAIN is blank (fail closed)', () => {
+    expect(selectRecordingsForDomain([{ id: 'ours', start_url: OUR_START_URL }], '  ')).toEqual([])
+  })
+})
+
+describe('buildPosthogRecordingsCacheKey', () => {
+  it('includes the domain so two apps on one isolate cannot share a listing', () => {
+    expect(buildPosthogRecordingsCacheKey('325202', OUR_DOMAIN, 15)).toBe(
+      `posthog:recordings:325202:${OUR_DOMAIN}:15`,
+    )
+    expect(buildPosthogRecordingsCacheKey('325202', OUR_DOMAIN, 15)).not.toBe(
+      buildPosthogRecordingsCacheKey('325202', OTHER_DOMAIN, 15),
+    )
+  })
+})
+
+describe('buildPosthogRecordingsListParams', () => {
+  it('asks PostHog for $current_url on this domain', () => {
+    const params = buildPosthogRecordingsListParams(OUR_DOMAIN, 50)
+    expect(params).toMatchObject({ limit: '50', order: '-start_time' })
+    expect(JSON.parse(params.events ?? '[]')).toEqual([
+      {
+        id: '$pageview',
+        type: 'events',
+        order: 0,
+        name: '$pageview',
+        properties: [
+          {
+            key: '$current_url',
+            value: OUR_DOMAIN,
+            operator: 'icontains',
+            type: 'event',
+          },
+        ],
+      },
+    ])
+  })
+})
+
+describe('recordings admin route', () => {
+  it('scopes the handler through the domain helpers', () => {
+    expect(recordingsRouteSource).toContain('selectRecordingsForDomain')
+    expect(recordingsRouteSource).toContain('buildPosthogRecordingsCacheKey')
+    expect(recordingsRouteSource).toContain('buildPosthogRecordingsListParams')
+    expect(recordingsRouteSource).not.toMatch(
+      /posthog:recordings:\$\{project\.projectId\}:\$\{query\.limit\}/u,
+    )
   })
 })
 

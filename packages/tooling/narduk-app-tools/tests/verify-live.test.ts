@@ -7,7 +7,9 @@ import {
   buildVersionMatches,
   cacheBustedUrl,
   formatVerifyReport,
+  identityProofPath,
   parseVerifyArgs,
+  resolveAccessHeaders,
   resolveExitCode,
   runVerifyLive,
   VERIFY_EXIT,
@@ -55,6 +57,108 @@ function scriptedProbe(script: Scripted): { probe: LiveProbe; requests: string[]
 }
 
 const noSleep = async (): Promise<void> => {}
+
+describe('local build identity and overall proof deadline', () => {
+  it('compares the complete build ID without SHA prefix or case normalization', async () => {
+    const buildId = 'dev-20260922-AbC123'
+    const parsed = parseVerifyArgs([
+      '--live',
+      'https://a.test',
+      '--expect-build-id',
+      buildId,
+      '--no-health',
+      '--no-smoke',
+      '--attempts',
+      '1',
+    ])
+    for (const actual of [buildId, buildId.toLowerCase(), 'dev-20260922', `${buildId}-other`]) {
+      const report = await runVerifyLive(parsed, {
+        probe: async (url) => ({
+          url,
+          status: 200,
+          headers: { 'x-build-version': actual },
+        }),
+      })
+      expect(report.result).toBe(actual === buildId ? 'PASS' : 'FAIL')
+      expect(report.expectedBuildId).toBe(buildId)
+      expect(report.expectedSha).toBeNull()
+    }
+    expect(() =>
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        buildId,
+        '--expect-sha',
+        SHA,
+      ]),
+    ).toThrow('mutually exclusive')
+  })
+
+  it('limits request time and retry sleep to the remaining overall budget', async () => {
+    let elapsed = 0
+    const timeouts: number[] = []
+    const sleeps: number[] = []
+    const report = await runVerifyLive(
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        'dev-example',
+        '--no-health',
+        '--no-smoke',
+        '--deadline-ms',
+        '25',
+        '--timeout-ms',
+        '100',
+        '--interval-seconds',
+        '10',
+      ]),
+      {
+        now: () => elapsed,
+        probe: async (url, options) => {
+          timeouts.push(options!.timeoutMs!)
+          elapsed += 10
+          return { url, status: 200, headers: { 'x-build-version': 'old' } }
+        },
+        sleep: async (ms) => {
+          sleeps.push(ms)
+          elapsed += ms
+        },
+      },
+    )
+    expect(report.result).toBe('FAIL')
+    expect(report.attemptsUsed).toBe(1)
+    expect(timeouts).toEqual([25])
+    expect(sleeps).toEqual([15])
+    expect(elapsed).toBe(25)
+  })
+
+  it('does not accept a matching identity returned after the deadline', async () => {
+    let elapsed = 0
+    const report = await runVerifyLive(
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--expect-build-id',
+        'dev-example',
+        '--no-health',
+        '--no-smoke',
+        '--deadline-ms',
+        '5',
+      ]),
+      {
+        now: () => elapsed,
+        probe: async (url) => {
+          elapsed = 6
+          return { url, status: 200, headers: { 'x-build-version': 'dev-example' } }
+        },
+      },
+    )
+    expect(report.result).toBe('FAIL')
+    expect(report.exitCode).toBe(VERIFY_EXIT.unreachable)
+  })
+})
 
 function flags(extra: string[] = []): ReturnType<typeof parseVerifyArgs> {
   return parseVerifyArgs(['--live', 'https://buoystat.us', '--expect-sha', SHA, ...extra])
@@ -117,7 +221,7 @@ describe('verify --live outcomes', () => {
   const okHealth: LiveResponse = {
     url: '',
     status: 200,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
     body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
   }
 
@@ -131,13 +235,45 @@ describe('verify --live outcomes', () => {
     expect(formatVerifyReport(report)).toContain('RESULT: PASS')
   })
 
-  it('retries a propagation delay and then passes', async () => {
-    const stale: LiveResponse = {
+  it('reads x-build-version from health when the smoke path is a prerendered static asset', async () => {
+    // create-narduk-app SEO apps prerender `/`; Cloudflare serves it as an
+    // asset with no Worker header. Health stays on the Worker (narduk-libs#781).
+    const prerenderedHome: LiveResponse = {
       url: '',
       status: 200,
-      headers: { 'x-build-version': 'aaaaaaaaaaaa', 'content-type': 'text/html' },
+      headers: { 'content-type': 'text/html;charset=utf-8' },
     }
-    const { probe } = scriptedProbe({ '/': [stale, stale, okHead], '/api/health': okHealth })
+    const workerHealth: LiveResponse = {
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': SHORT },
+    }
+    const { probe } = scriptedProbe({ '/': prerenderedHome, '/api/health': workerHealth })
+    const report = await runVerifyLive(flags(['--attempts', '1']), { probe, sleep: noSleep })
+    expect(report.result).toBe('PASS')
+    expect(report.exitCode).toBe(VERIFY_EXIT.pass)
+    expect(report.assertions.find((assertion) => assertion.id === 'build-version')).toMatchObject({
+      status: 'pass',
+    })
+    expect(report.assertions.find((assertion) => assertion.id === 'smoke')?.status).toBe('pass')
+  })
+
+  it('falls back to the smoke path for x-build-version when health is disabled', async () => {
+    const { probe } = scriptedProbe({ '/': okHead })
+    const report = await runVerifyLive(flags(['--no-health', '--attempts', '1']), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.result).toBe('PASS')
+    expect(identityProofPath(flags(['--no-health']))).toBe('/')
+    expect(identityProofPath(flags())).toBe('/api/health')
+  })
+
+  it('retries a propagation delay and then passes', async () => {
+    const stale: LiveResponse = {
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': 'aaaaaaaaaaaa' },
+    }
+    const { probe } = scriptedProbe({ '/': okHead, '/api/health': [stale, stale, okHealth] })
     const report = await runVerifyLive(flags(['--attempts', '4']), { probe, sleep: noSleep })
     expect(report.result).toBe('PASS')
     expect(report.attemptsUsed).toBe(3)
@@ -145,11 +281,10 @@ describe('verify --live outcomes', () => {
 
   it('exits 3 on a build version that never becomes the expected one', async () => {
     const stale: LiveResponse = {
-      url: '',
-      status: 200,
-      headers: { 'x-build-version': 'aaaaaaaaaaaa', 'content-type': 'text/html' },
+      ...okHealth,
+      headers: { ...okHealth.headers, 'x-build-version': 'aaaaaaaaaaaa' },
     }
-    const { probe } = scriptedProbe({ '/': stale, '/api/health': okHealth })
+    const { probe } = scriptedProbe({ '/': okHead, '/api/health': stale })
     const report = await runVerifyLive(flags(['--attempts', '2']), { probe, sleep: noSleep })
     expect(report.exitCode).toBe(VERIFY_EXIT.buildVersionMismatch)
     expect(report.attemptsUsed).toBe(2)
@@ -168,7 +303,7 @@ describe('verify --live outcomes', () => {
     const unhealthy: LiveResponse = {
       url: '',
       status: 503,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
       body: healthBody('error', [{ name: 'database', required: true, result: 'fail' }]),
     }
     const { probe } = scriptedProbe({ '/': okHead, '/api/health': unhealthy })
@@ -306,7 +441,7 @@ describe('exit code severity order', () => {
 const HEALTHY: LiveResponse = {
   url: '',
   status: 200,
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
   body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
 }
 
@@ -332,19 +467,15 @@ describe('B3 -- the live proof must not be satisfiable by a cached response', ()
 
   it('gives every attempt its own cache key, so a stale first answer cannot be replayed', async () => {
     const { probe, requests } = scriptedProbe({
-      '/': [
-        {
-          url: '',
-          status: 200,
-          headers: { 'x-build-version': 'deadbee', 'content-type': 'text/html' },
-        },
-        {
-          url: '',
-          status: 200,
-          headers: { 'x-build-version': SHORT, 'content-type': 'text/html' },
-        },
+      '/': {
+        url: '',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      },
+      '/api/health': [
+        { ...HEALTHY, headers: { ...HEALTHY.headers, 'x-build-version': 'deadbee' } },
+        HEALTHY,
       ],
-      '/api/health': HEALTHY,
     })
     const report = await runVerifyLive(flags(['--attempts', '2']), {
       probe,
@@ -457,5 +588,236 @@ describe('S4 -- --allow-degraded never excuses a broken database', () => {
 
   it('fails a degraded app without the flag regardless of the database', () => {
     expect(assessHealth(degradedWithDatabase('ok'), { allowDegraded: false }).status).toBe('fail')
+  })
+})
+
+/**
+ * narduk-libs#435: `setCacheProfile` edge headers are inert unless Workers
+ * Cache is on, so the live proof can be asked to show a real HIT on a
+ * `live`/`slow` route, and a real non-HIT on a route that must never be stored.
+ */
+describe('verify --live edge-cache proof', () => {
+  const API = '/api/stations'
+  const PAGE = '/'
+  const PUBLIC_HEADERS = {
+    'content-type': 'application/json',
+    'cache-control': 'public, max-age=60, stale-while-revalidate=900',
+    'cdn-cache-control': 'public, max-age=300, stale-while-revalidate=900',
+  }
+  const response = (headers: Record<string, string>): LiveResponse => ({
+    url: '',
+    status: 200,
+    headers,
+  })
+  const miss = response({ ...PUBLIC_HEADERS, 'cf-cache-status': 'MISS' })
+  const hit = response({ ...PUBLIC_HEADERS, 'cf-cache-status': 'HIT' })
+  const noStatus = response(PUBLIC_HEADERS)
+  const previewSafe = response({
+    'content-type': 'application/json',
+    'cache-control': 'private, no-store',
+  })
+  const bypass = response({
+    'content-type': 'text/html',
+    'cache-control': 'private, no-store',
+    'cf-cache-status': 'BYPASS',
+  })
+
+  function edgeFlags(extra: string[]): ReturnType<typeof parseVerifyArgs> {
+    return parseVerifyArgs([
+      '--live',
+      'https://buoystat.us',
+      '--no-health',
+      '--no-smoke',
+      '--attempts',
+      '1',
+      ...extra,
+    ])
+  }
+
+  it('parses repeatable --edge-cache-path and --edge-uncached-path', () => {
+    const parsed = edgeFlags([
+      '--edge-cache-path',
+      API,
+      '--edge-cache-path',
+      '/api/x',
+      '--edge-uncached-path',
+      PAGE,
+    ])
+    expect(parsed.edgeCachePaths).toEqual([API, '/api/x'])
+    expect(parsed.edgeUncachedPaths).toEqual([PAGE])
+    expect(parseVerifyArgs(['--live', 'https://a.test']).edgeCachePaths).toEqual([])
+  })
+
+  it('counts an edge-cache path as an assertion on its own', () => {
+    expect(() =>
+      parseVerifyArgs([
+        '--live',
+        'https://a.test',
+        '--no-health',
+        '--no-smoke',
+        '--edge-cache-path',
+        API,
+      ]),
+    ).not.toThrow()
+  })
+
+  it('passes when the second GET of a cacheable route is a HIT', async () => {
+    const { probe, requests } = scriptedProbe({ [API]: [miss, hit] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+      cacheBustToken: () => 'tok',
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.pass)
+    expect(report.assertions).toMatchObject([{ id: 'edge-cache', status: 'pass' }])
+    // Both GETs use the same fresh URL, so the first cannot already be warm.
+    expect(requests).toEqual([
+      'https://buoystat.us/api/stations?_nardukProof=tok',
+      'https://buoystat.us/api/stations?_nardukProof=tok',
+    ])
+  })
+
+  it('fails when the second GET is still a MISS', async () => {
+    const { probe } = scriptedProbe({ [API]: [miss, miss] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0]).toMatchObject({ id: 'edge-cache', status: 'fail' })
+  })
+
+  it('names Workers Cache when there is no Cf-Cache-Status at all', async () => {
+    const { probe } = scriptedProbe({ [API]: [noStatus, noStatus] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0].detail).toContain('"cache": { "enabled": true }')
+  })
+
+  it('reports "cannot prove a HIT here" on a private/no-store answer (preview-safe mode)', async () => {
+    const { probe } = scriptedProbe({ [API]: [previewSafe, previewSafe] })
+    const report = await runVerifyLive(edgeFlags(['--edge-cache-path', API]), {
+      probe,
+      sleep: noSleep,
+    })
+    expect(report.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(report.assertions[0]).toMatchObject({ id: 'edge-cache', status: 'unknown' })
+    expect(report.assertions[0].detail).toContain('cannot prove a HIT here')
+  })
+
+  it('passes an uncached route that never HITs, and fails one that does', async () => {
+    const good = scriptedProbe({ [PAGE]: [bypass, bypass] })
+    const passReport = await runVerifyLive(edgeFlags(['--edge-uncached-path', PAGE]), {
+      probe: good.probe,
+      sleep: noSleep,
+    })
+    expect(passReport.assertions).toMatchObject([{ id: 'edge-uncached', status: 'pass' }])
+
+    const bad = scriptedProbe({ [PAGE]: [miss, hit] })
+    const failReport = await runVerifyLive(edgeFlags(['--edge-uncached-path', PAGE]), {
+      probe: bad.probe,
+      sleep: noSleep,
+    })
+    expect(failReport.exitCode).toBe(VERIFY_EXIT.edgeCacheFailed)
+    expect(failReport.assertions[0]).toMatchObject({ id: 'edge-uncached', status: 'fail' })
+  })
+
+  it('reads the edge proof without the no-cache request headers', async () => {
+    const seen: Array<boolean | undefined> = []
+    const probe: LiveProbe = async (url, options) => {
+      seen.push(options?.noCache)
+      return { ...(seen.length === 1 ? miss : hit), url }
+    }
+    await runVerifyLive(edgeFlags(['--edge-cache-path', API]), { probe, sleep: noSleep })
+    expect(seen).toEqual([false, false])
+  })
+})
+
+describe('verify --live behind Cloudflare Access', () => {
+  const ACCESS = [
+    '--access-client-id-env',
+    'CF_ACCESS_ID',
+    '--access-client-secret-env',
+    'CF_ACCESS_SECRET',
+  ]
+
+  it('takes variable names, both halves or neither', () => {
+    expect(flags(ACCESS).accessClientIdEnv).toBe('CF_ACCESS_ID')
+    expect(flags().accessClientIdEnv).toBeNull()
+    expect(() => flags(['--access-client-id-env', 'CF_ACCESS_ID'])).toThrow(/go together/)
+    expect(() =>
+      flags(['--access-client-id-env', 'abc.123-value', '--access-client-secret-env', 'S']),
+    ).toThrow(/variable NAME/)
+  })
+
+  it('sends the service token on every probe, read from the environment', async () => {
+    const seen: Array<Record<string, string> | undefined> = []
+    const { probe: scripted } = scriptedProbe({
+      '/': {
+        url: '',
+        status: 200,
+        headers: { 'x-build-version': SHORT, 'content-type': 'text/html' },
+      },
+      '/api/health': {
+        url: '',
+        status: 200,
+        headers: { 'content-type': 'application/json', 'x-build-version': SHORT },
+        body: healthBody('ok', [{ name: 'publication', required: true, result: 'pass' }]),
+      },
+    })
+    const probe: LiveProbe = async (url, options) => {
+      seen.push(options?.headers)
+      return scripted(url, options)
+    }
+    const report = await runVerifyLive(flags([...ACCESS, '--attempts', '1']), {
+      probe,
+      sleep: noSleep,
+      env: { CF_ACCESS_ID: 'id.access', CF_ACCESS_SECRET: 'not-printed' },
+    })
+    expect(report.result).toBe('PASS')
+    expect(seen).toHaveLength(2)
+    for (const headers of seen) {
+      expect(headers).toEqual({
+        'cf-access-client-id': 'id.access',
+        'cf-access-client-secret': 'not-printed',
+      })
+    }
+    expect(JSON.stringify(report)).not.toContain('not-printed')
+    expect(formatVerifyReport(report)).not.toContain('not-printed')
+  })
+
+  it('fails closed on an unset variable and names it, not its value', () => {
+    expect(() => resolveAccessHeaders(flags(ACCESS), { CF_ACCESS_ID: 'id.access' })).toThrow(
+      'environment variable CF_ACCESS_SECRET is unset or empty',
+    )
+    expect(resolveAccessHeaders(flags(), {})).toBeUndefined()
+  })
+
+  it('treats a whitespace-only variable as empty', () => {
+    expect(() =>
+      resolveAccessHeaders(flags(ACCESS), { CF_ACCESS_ID: 'id.access', CF_ACCESS_SECRET: ' \t\n' }),
+    ).toThrow('environment variable CF_ACCESS_SECRET is unset or empty')
+  })
+
+  it('adds the headers to the real probe request', async () => {
+    const { createServer } = await import('node:http')
+    let received: Record<string, unknown> = {}
+    const server = createServer((request, response) => {
+      received = request.headers
+      response.end('ok')
+    })
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    const { port } = server.address() as { port: number }
+    try {
+      await createLiveProbe()(`http://127.0.0.1:${String(port)}/`, {
+        headers: { 'cf-access-client-id': 'id.access' },
+      })
+    } finally {
+      server.close()
+    }
+    expect(received['cf-access-client-id']).toBe('id.access')
   })
 })

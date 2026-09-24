@@ -1,6 +1,17 @@
 import { isJwtExpired } from '../token/jwt.js'
 
 export interface MapKitServerConfig {
+  /**
+   * Opt-in list of hosts the token route may mint for, compared with the
+   * routed origin's `host` (hostname, plus `:port` when it is not the scheme
+   * default), case-insensitively. `*.example.com` matches any subdomain of
+   * `example.com`, not the apex. A routed host outside the list is refused 403
+   * `not-same-origin` before the rate limiter and before signing. Unset or
+   * empty, every routed host is accepted -- correct on Cloudflare Workers,
+   * where the edge binds `Host` to the routed hostname. Set it on a Node
+   * listener that accepts arbitrary `Host` headers (narduk-libs#437).
+   */
+  allowedHosts?: readonly string[] | string
   allowedOrigins?: readonly string[] | string
   cache?: false | MapKitTokenCacheConfig
   /** Node-only fallback settings. Worker-safe entry points intentionally ignore this field. */

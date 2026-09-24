@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-charts",
-  "version": "2.5.3",
+  "version": "2.5.6",
   "description": "NardukCharts — Vue 3 SVG charting for dashboards and trading-grade market UIs (TypeScript, themable, accessible). Package: @narduk-enterprises/narduk-charts.",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",
@@ -37,6 +37,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/studies.js"
     },
+    "./spark": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/spark.js"
+    },
     "./style.css": "./dist/narduk-charts.css"
   },
   "sideEffects": [
@@ -47,11 +51,11 @@
   ],
   "scripts": {
     "dev": "histoire dev",
-    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts && rm -f dist/entry-*.css",
-    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts",
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && NC_ENTRY=spark vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts && rm -f dist/entry-*.css",
+    "build:only": "vite build && NC_ENTRY=line vite build --config vite.entries.config.ts && NC_ENTRY=bar vite build --config vite.entries.config.ts && NC_ENTRY=pie vite build --config vite.entries.config.ts && NC_ENTRY=candle vite build --config vite.entries.config.ts && NC_ENTRY=studies vite build --config vite.entries.config.ts && NC_ENTRY=spark vite build --config vite.entries.config.ts && cp dist/index.d.ts dist/index.d.cts",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -61,7 +65,8 @@
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:update": "playwright test --project=chromium --update-snapshots",
     "size": "size-limit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "peerDependencies": {
     "vue": "^3.3.0"

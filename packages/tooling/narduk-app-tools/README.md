@@ -52,14 +52,28 @@ selector. Doppler `ne/*` root provisioners remain a separately approved
 provider-root exception and are **not** an application development credential
 source.
 
-`narduk-app deploy-local` is a different command and still reads Doppler
-`narduk/tokens` for its recovery deploy; it is unchanged here.
+For incident patches from a workstation, use `narduk-app deploy-hotfix` and the
+[local break-glass runbook](docs/local-hotfix.md). It uses injected recovery
+credentials, a clean commit snapshot, required local checks, version promotion
+and live proof. Legacy `deploy-local` is not the new hotfix procedure; it no
+longer reads Doppler `narduk/tokens` (Doppler is retired except `ne`) and takes
+its build secrets from the environment, so run it under the app's nvault config
+(`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`).
+
+For an app still being built, an owner can enroll it in **development mode**:
+one approved workstation deploys its checkout, uncommitted edits included, with
+`narduk-app development deploy` (`pnpm run deploy:dev`), while push/merge
+automation and Workers Builds triggers are held and later restored exactly. Each
+deploy also reconciles the Worker's script-level crons and routes from the
+artifact; version promotion does not. Full validation runs on request and on
+exit. Nothing enrolls automatically. See the
+[development mode runbook](docs/development-mode.md).
 
 ## Prebuilt-Worker e2e (`narduk-app e2e-serve`)
 
 ```sh
 narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
-  [--assets <dir>] [--cwd <dir>]
+  [--assets <dir>] [--cwd <dir>] [--keep-service-bindings]
 ```
 
 Serves an already-built Worker for Playwright when the shared `nuxt-cloudflare`
@@ -79,6 +93,14 @@ app cwd and, if needed, `apps/web`. Missing wrangler fails with one line:
 
 `wrangler is not installed in this app. Add it as a dependency and retry.`
 
+Only the one Worker runs, so a `services` binding to any other Worker is dropped
+from the started config and named on stderr
+(`[e2e-serve] dropping service binding ENGINE → loadtest-dev-engine (not part of the E2E run)`);
+the app sees that binding as missing. A binding back to the Worker itself is
+kept. Nothing is written to the app tree. `--keep-service-bindings` passes the
+config through untouched for an app that runs the target Worker alongside.
+Dropping needs the app's wrangler at 4.99.0 or later.
+
 Real worker errors pass through. The only filtered stderr is workerd's
 client-abort block
 (`kj::getCaughtExceptionAsKj() … disconnected: ::write(…): Broken pipe` or
@@ -86,6 +108,44 @@ client-abort block
 following `ECONNREFUSED` is the real crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 See [the e2e-serve guide](docs/e2e-serve.md).
+
+## Creating the D1 database (`narduk-app db create`)
+
+`create-narduk-app` binds `DB` to the placeholder `database_id`
+`00000000-0000-0000-0000-000000000000`: the generator never calls Cloudflare, so
+the real id cannot exist yet. Every build, `wrangler deploy --dry-run` and test
+accepts that placeholder, and `foundation:check` sub-check 1.5 fails on it
+(narduk-libs#662). One command clears it, run once from the repository root:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \
+  pnpm exec narduk-app db create [--binding <NAME>] [--dry-run] [--json]
+```
+
+- **It refuses when the id is already real.** Only a binding still carrying the
+  placeholder is created, so it cannot make a second database for an app that
+  has one. A re-run after success exits `1` without calling Wrangler.
+- **The name comes from `Config/cloudflare-app.json`, never an argument.** The
+  manifest's `bindings.d1[]` entry may set `database_name`; otherwise the name
+  is `<worker.name>-<binding>` (`<app>-db` for `DB`), Wrangler's own
+  auto-provisioning convention and the name the generator writes. The wrangler
+  config must already say the same, or the command refuses.
+- **The account is explicit.** `account_id` in the wrangler config or
+  `CLOUDFLARE_ACCOUNT_ID`; neither, or two that disagree, is a refusal.
+  Credentials are Wrangler's own, exactly as `db migrate --remote` uses them.
+- **It writes the id into the wrangler config the manifest names**
+  (`worker.wranglerConfig`, JSON/JSONC only) with a `jsonc-parser` edit, so
+  comments and formatting survive, and prints the id and where the account came
+  from. An `account_id` from the wrangler config is printed; one from
+  `CLOUDFLARE_ACCOUNT_ID` is used but not echoed, so a value read from the
+  environment never lands in a terminal or CI log. If the file changed while
+  Wrangler ran it writes nothing and prints the id to record.
+- **It never deletes.** Removing a data store is an operator action.
+
+`--binding` is needed only when more than one top-level binding is a
+placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
+under the same credentials, then setting that binding's `database_id` to the id
+it prints.
 
 ## Migration config
 
@@ -137,20 +197,21 @@ App Worker configuration may use `wrangler.jsonc` (preferred) or legacy
 `pnpm exec wrangler`. Dry runs are allowed without credentials or the local
 deployment override. Production and preview deploys are allowed in Cloudflare
 Workers Builds only when its injected `CI`, `WORKERS_CI`, build UUID, commit
-SHA, and branch variables form a complete attestation.
+SHA, and branch variables form a complete attestation. A real local deploy
+requires the explicit `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` recovery opt-in;
+unrelated environment flags never bypass that guard. A package-manager
+passthrough separator is normalized before invoking Wrangler so it cannot
+neutralize `--dry-run`.
 
-Workers Builds does **not** copy those wrangler `vars` into the `nuxt build`
-process environment. Public keys such as `GA_MEASUREMENT_ID` and
-`POSTHOG_PUBLIC_KEY` must be read at request time.
-`@narduk-enterprises/narduk-core` applies them to `runtimeConfig.public` before
-SSR so `__NUXT__` is not an empty bake while `/api/runtime/public` looks healthy
-(buoys#133). Apps must not read `wrangler.json` from `nuxt.config.ts` to paper
-over that gap. The same class of bug is a build-time
-`NUXT_PUBLIC_ALLOW_GEOLOCATION` default used for Permissions-Policy; prefer the
-core request-time header path. A real local deploy requires the explicit
-`NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1` recovery opt-in; unrelated environment
-flags never bypass that guard. A package-manager passthrough separator is
-normalized before invoking Wrangler so it cannot neutralize `--dry-run`.
+Workers Builds does **not** copy the Worker's wrangler `vars` into the
+`nuxt build` process environment. Public keys such as `GA_MEASUREMENT_ID` and
+`POSTHOG_PUBLIC_KEY` must be read at request time:
+`@narduk-enterprises/narduk-core` writes them into `runtimeConfig.public` before
+SSR, so `__NUXT__` is not an empty bake while `/api/runtime/public` looks
+healthy (buoys#133). Apps must not read `wrangler.json` from `nuxt.config.ts` to
+paper over that gap. A build-time `NUXT_PUBLIC_ALLOW_GEOLOCATION` default used
+for Permissions-Policy is the same class of bug; prefer narduk-core's
+request-time header path.
 
 Generated Workers Builds scripts pass `--workers-build-only` to the remote
 migration command. That attestation is checked before D1 recovery capture or
@@ -164,6 +225,25 @@ The command never writes secret files. Registry auth writes the requested
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
 
+## Automatic D1 migration gate
+
+The narduk-v1 production and shared-preview workflow integration, D1-only
+persona, read-only drift checks, database locks, expand/contract review and
+recovery steps are in [D1 deployment migrations](docs/deployment-migrations.md).
+
+`db migrate-deployment --target production --sha <verified-sha>` migrates before
+promotion; `--check` is read-only and fails on pending or divergent history.
+`db bundle --output <file>` packages SQL/data for trusted preview tooling
+without giving D1 credentials to PR code. Existing apps must adopt the workflow
+steps; installing the package alone does not activate migration writes.
+
+An app whose D1 estate is mixed -- some databases migrated, one whose schema is
+owned by a contract and a refresh job -- declares `deployment.databaseOwnership`
+instead of manufacturing a migration baseline for the database nobody migrates.
+Every binding gets exactly one owner, and the migration runner refuses a
+contract-owned database even when an operator names it directly. See
+[Declare who owns each schema](docs/deployment-migrations.md#declare-who-owns-each-schema-databaseownership).
+
 ## Promotion, rollback and live proof
 
 The Narduk deployment standard is **Cloudflare builds, GitHub promotes**:
@@ -171,6 +251,10 @@ Workers Builds runs `wrangler versions upload` on every branch, so a push
 produces a version that serves no traffic, and a GitHub Actions job deploys that
 exact version at 100% only once the gate check is green on that exact main SHA
 (company-hq#745, deployment-standard design §1.5).
+
+An app whose Workers Build still deploys directly has no promote run to turn red
+when a build fails; it adds the
+[post-merge deploy assertion](docs/deploy-assertion.md) (narduk-libs#597).
 
 ### How a commit is linked to a version
 
@@ -198,13 +282,95 @@ hold, and `narduk-app deploy versions-upload` now sets it automatically from
 narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
+  [--max-versions <n>] [--wait-for-version <seconds>] \
+  [--wait-interval <seconds>] [--gate-verified "<check>@<sha>"] \
   [--dry-run] [--json]
 ```
 
 Resolves the version whose `workers/tag` matches the commit (prefix-compared in
 both directions, because 7-, 12- and 40-character spellings of one SHA all
-occur) and deploys it at 100%. `--sha` defaults to `GITHUB_SHA`; the Worker name
-and account id default to the committed Wrangler config.
+occur) and deploys it at 100%. The Worker name and account id default to the
+committed Wrangler config.
+
+**The lookup is bounded, not capped at ten.** `wrangler versions list` prints
+"the 10 most recent Versions of your Worker" and takes no paging flag, so with
+non-production branch builds on, ten branch uploads landing between a merge
+build and its promote job used to bury the version and leave production
+un-updated. The lookup now walks Cloudflare's Versions endpoint with
+`per_page`/`page` up to `--max-versions` (default 500) and never paginates
+unbounded. That path needs an account id and `CLOUDFLARE_API_TOKEN`; without
+both it falls back to `wrangler versions list` and says
+`versionSearch.source: "wrangler"` in the result, because a miss in ten means
+something different from a miss in five hundred.
+
+**A promote that promotes nothing is exit 3, never 0.** The `version-not-found`
+detail names the SHA, how many versions were read, the bound, and whether the
+search reached the end of the Worker's history (no build ever uploaded this
+commit) or stopped at the bound (raise `--max-versions`, or use `--version-id`).
+Wire the step so that exit is a **red** job, never a skip.
+
+**The build and the promote are not ordered.** Under narduk-v1 the Workers Build
+uploads the version, while `workflow_run` on the gate starts the promote, and
+nothing sequences the two. When the build finishes after CI, an unbroken merge
+exits 3 and production stays on the previous release: Buoys hit this on
+2026-09-22 with a 51-second gap (narduk-libs#695).
+`--wait-for-version <seconds>` (0..3600, default 0 = look once) re-lists every
+`--wait-interval` seconds (default 30) while the SHA is simply absent, and
+promotes as soon as it appears. Only absence waits. An ambiguous match, a branch
+refusal or an ordering refusal is about the commit, not about timing, so each
+still answers on the first listing. On expiry the exit is still 3, and the
+detail adds how long it waited and how many listings it read.
+
+**`--sha` under `workflow_run`.** It defaults to `GITHUB_SHA` on every event but
+one. Under `on: workflow_run`, `GITHUB_SHA` is the default branch's head at
+trigger time rather than the commit whose run completed, so the command
+**refuses** to default there (exit 2) instead of promoting a commit the gate
+check never passed. Pass the triggering commit explicitly:
+
+```yaml
+env:
+  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+steps:
+  - run:
+      narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified
+      "ci / Required@$VERIFIED_SHA" --production-branch main --json
+  - run:
+      narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"
+```
+
+**`--gate-verified <check>@<sha>` binds the gate result to the commit.** The
+command proves its execution context but cannot read whether `ci / Required` is
+green on the commit it promotes: narduk-app-tools is deliberately never given a
+GitHub token. Of the three options in narduk-libs#400 — (1) rely on the
+workflow's step ordering alone, (2) have the workflow pass what it observed as
+an explicit attestation, (3) read the check conclusion with `GITHUB_TOKEN`,
+which would put a GitHub credential in the process holding the promote
+credential — **option 2 was chosen**. The workflow passes the gate check's name
+and the full SHA it ran on (`workflow_run.head_sha`), and the promote refuses
+with `gate-mismatch` (exit 9), before touching anything, unless
+
+- the attested SHA is exactly the commit being promoted (`--sha`, or its
+  `GITHUB_SHA` default) — a full 40-character SHA, compared in full; and
+- the resolved version's `workers/tag` is that commit. A `--version-id` promote
+  is bound this way only, so a version with no tag, or one outside the searched
+  window, is refused rather than assumed to match.
+
+The value is split on its **last** `@`, so a check name may contain spaces,
+slashes and even `@`; control characters are refused because the name is logged.
+On success the promote logs the check and SHA it was given, and the result
+carries them as `gateVerified`. This is still an attestation, not a
+verification: it does not catch a workflow that lies, but it does catch one that
+promotes a different commit from the one its gate ran on, and it leaves the
+claim in the log. Keep the promote job conditioned on the `workflow_run`
+conclusion being `success`.
+
+The flag is optional so that existing app-owned promote workflows keep working.
+Without it the promote behaves as before and prints a warning (stderr, so
+`--json` stays parseable) that no gate attestation was passed, and the result
+carries `gateVerified: null`. `promote.yml` is app-owned — the generator only
+documents it — so each app adds the flag to its own workflow; the generated
+`docs/workers-builds.md` and `docs/deployment/promote-d1.steps.yml` templates
+already pass it.
 
 It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
 reusing that would force every promotion through
@@ -251,6 +417,7 @@ from a `pull_request` run.
 | 5    | `wrangler-failed` — see `trafficMayHaveChanged`                 |
 | 7    | `stale-promote` — the target is older than the live version     |
 | 8    | `branch-mismatch` — not a production-branch build               |
+| 9    | `gate-mismatch` — `--gate-verified` names another commit        |
 
 The 1/2-versus-5 split is the one a promote job branches on. 1 and 2 mean
 production is untouched; 5 means wrangler died, and `trafficMayHaveChanged` says
@@ -284,7 +451,9 @@ the rollback itself.
 ```sh
 narduk-app verify --live <url> [--expect-sha <sha>] [--health-path <p>] \
   [--smoke-path <p>] [--expect-content-type <t>] [--attempts <n>] \
-  [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] [--json [path]]
+  [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] \
+  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] \
+  [--resolver system|public] [--json [path]]
 ```
 
 Three assertions against a running deployment, so the preview gate, the promote
@@ -292,16 +461,18 @@ job's post-deploy proof and a human debugging an incident all run one code path
 (design §6.2):
 
 1. `x-build-version` is the expected commit (prefix compare; narduk-core
-   publishes 12 characters).
+   publishes 12 characters). Exact-SHA / build-id proof reads this header from
+   the health route when one is enabled. A prerendered smoke path (generated SEO
+   apps prerender `/`) is a static asset and has no Worker header. `--no-health`
+   falls back to the smoke path.
 2. `/api/health` is healthy per the narduk-core health contract —
    `{ success, data: { status, checks } }`, with every `required: true` check
    passing.
 3. One app-declared smoke route answers 2xx with the expected content type.
 
-The build-version and smoke assertions share one request. Defaults match design
-§2.1 `liveProof`: `/api/health`, `/`, 6 attempts, 10 s apart, 15 s timeout.
-Retries cover the whole pass, because a promotion has to propagate and a cold
-isolate is roughly 10× slower than a warm one.
+Defaults match design §2.1 `liveProof`: `/api/health`, `/`, 6 attempts, 10 s
+apart, 15 s timeout. Retries cover the whole pass, because a promotion has to
+propagate and a cold isolate is roughly 10× slower than a warm one.
 
 `degraded` fails by default. Design §6.2 asks for both `data.status == "ok"` and
 "every required check passing", and those two disagree exactly in the degraded
@@ -312,6 +483,53 @@ narduk-core reports a missing D1 binding as `required: false` on an app that
 never declared `databaseBackend`, so a release whose `DB` binding was dropped
 summarises to `degraded`. A `database` of `not_available`, `schema_error` or
 `error` fails the proof whatever the flag says.
+
+#### Behind Cloudflare Access
+
+A host whose every path, `/api/health` included, sits behind Cloudflare Access
+answers 401 before the Worker runs, so the proof would never see the build. Name
+the environment variables that hold an Access service token and every probe
+carries `CF-Access-Client-Id` / `CF-Access-Client-Secret`:
+
+```sh
+CF_ACCESS_CLIENT_ID=... CF_ACCESS_CLIENT_SECRET=... \
+  narduk-app verify --live https://ops.example.com --expect-sha "$VERIFIED_SHA" \
+  --access-client-id-env CF_ACCESS_CLIENT_ID --access-client-secret-env CF_ACCESS_CLIENT_SECRET
+```
+
+The flags take variable NAMES, never values, so a secret stays off argv; both
+halves are required together; an unset or empty variable fails the run before
+any request, naming the variable and not its value. Neither value appears in the
+report or the JSON. This proves the right build is live to a holder of the
+token; that anonymous visitors are still refused is a separate proof.
+
+#### A stale local DNS answer (`--resolver public`)
+
+After a DNS change, a workstation's resolver can keep a negative (NXDOMAIN)
+answer for a hostname that is already live, and every probe then fails "could
+not resolve host" exactly like a dead deployment (narduk-libs#783). So when the
+system lookup fails with `ENOTFOUND` or `EAI_AGAIN`, the proof asks 1.1.1.1 and
+8.8.8.8 directly (`node:dns` `Resolver`, bypassing the local cache). If they
+answer, the report carries its own assertion:
+
+```text
+[UNKN] dns: local resolver has a stale negative answer for loadtest.dev: the system
+lookup failed with ENOTFOUND, but public DNS (1.1.1.1, 8.8.8.8) resolves it to ...
+```
+
+with the hostname, the local error and the public addresses in its `evidence`.
+It is still exit 2 — this process could not read the deployment, so nothing was
+proven — but a job can tell it from a dead deployment by the `dns` assertion id.
+When public DNS has no address either, or cannot be asked, the ordinary
+unreachable verdict says so instead.
+
+Two ways out: flush the local cache (macOS:
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`), or rerun with
+`--resolver public`. That dials an address the public resolvers returned while
+keeping the real hostname in the URL, so TLS SNI, the certificate check and the
+`Host` header are unchanged — `curl --resolve` done for you — and the report
+records `resolver: "public"`. It is for a human at a workstation; CI keeps the
+default `--resolver system`, which proves what visitors' resolvers see.
 
 #### What this proves, and what it does not
 
@@ -349,6 +567,51 @@ Cloudflare's configuration matches what the repository declares (that is
 | 4    | `/api/health` not healthy                          |
 | 5    | smoke route wrong status or content type           |
 | 6    | a redirect left the origin under proof             |
+| 7    | an edge-cache assertion failed (see below)         |
+
+#### Edge cache proof (`--edge-cache-path`, `--edge-uncached-path`)
+
+`setCacheProfile` headers are inert until Workers Cache is on, and a repository
+read (12.7) cannot tell whether Cloudflare actually stores a route
+(narduk-libs#435). Both flags repeat, and each named route is fetched **twice**
+from the same URL, without the no-cache request headers the other assertions
+send, so the requests look like a visitor's. With the cache buster on (the
+default) that URL is new for each attempt, so the first GET cannot already be
+warm and a HIT on the second is this run's own store, not a previous release's.
+
+- `--edge-cache-path <p>` (a `live` / `slow` / `static` route): the second
+  response's `Cf-Cache-Status` must be `HIT` (or `STALE`, `UPDATING`,
+  `REVALIDATED`, which are stored responses too). No `Cf-Cache-Status` at all
+  means Workers Cache is not on. A `private` / `no-store` answer is `unknown`
+  ("cannot prove a HIT here"): that is what a preview-safe `*.workers.dev` or
+  preview hostname serves, so run the edge proof against the production
+  hostname.
+- `--edge-uncached-path <p>` (a `none` route, an SSR page on a nonce-CSP app, a
+  preference-shaped response, a route that 404s): neither response may come from
+  the cache.
+
+```sh
+narduk-app verify --live https://buoystat.us --no-health --no-smoke \
+  --edge-cache-path /api/stations --edge-uncached-path /
+```
+
+## Rate-limit namespace ids (`narduk-app doctor`)
+
+Cloudflare's `ratelimits[].namespace_id` is unique per **account**, not per
+Worker: two bindings with one id share counters across every Worker on the
+account, and one id reused by two environments couples preview to production.
+`narduk-app doctor` reads the app's wrangler config, top level and every
+`env.*`, and fails:
+
+- a scaffold id pasted from an example (`1001`, `50110`, `50121`, `50300`);
+- an id declared more than once;
+- a binding with no `namespace_id`.
+
+It does not require a particular scheme, so an app already on its own unique ids
+(Buoys' `2869300` / `2869120`) passes. New ids should come from narduk-core's
+`rateLimitNamespaceId(workerName, limit)`. `create-narduk-app` writes each new
+app's prefix into its `wrangler.jsonc` beside a commented example binding
+(narduk-libs#433).
 
 ## The deployment standard block
 
@@ -380,11 +643,20 @@ entering `foundation-check.json`, which is the ratified 7-item contract.
     "attempts": 6,
     "intervalSeconds": 10
   },
-  "rollback": { "mode": "auto", "alert": "resend" },
+  "rollback": { "mode": "manual", "alert": "resend" },
   "staging": { "enabled": false },
   "previewBindings": { "d1": [], "kv": [], "r2": [] }
 }
 ```
+
+`liveProof.healthAuth` is `"anonymous"` (the default) or `"authenticated"`.
+Declare `"authenticated"` when `healthPath` sits behind the app's auth and
+refuses an anonymous request: the path stays required, because the route exists,
+but `deploy hotfix` and `development deploy` pass `--no-health` instead of
+asserting it, item 12.3 says so in its detail, and `doctor --adoption --live`
+reports requirement 12 as unknown, with the reason, rather than failing on the
+401 the app is right to send (#585). An app whose promote workflow passes
+`--no-health` should declare it here, so the manifest and the workflow agree.
 
 `staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
 block that omits them still validates. `previewChecks` is accepted and optional
@@ -443,8 +715,49 @@ nothing for a Workers Builds preview. So an app that sets
 `nonProductionBranchBuilds: true` while its wrangler config binds production D1,
 KV or R2 would read and write production data from every pull request branch.
 The check refuses that combination unless `previewBindings` names a replacement
-for each of those bindings. Entries may be a bare binding name or an object
-carrying the preview resource's own ids.
+for each of those bindings.
+
+**Naming the preview resource is what isolates a preview** (narduk-libs#473,
+design §3.3 option A). The design and its limits are in
+[docs/preview-isolation.md](docs/preview-isolation.md). Give each entry the
+preview resource's id, using wrangler's own field names:
+
+```jsonc
+"previewBindings": {
+  "d1": [{ "binding": "DB", "database_id": "<preview uuid>", "database_name": "app-preview" }],
+  "kv": [{ "binding": "KV", "id": "<preview namespace id>" }],
+  "r2": [{ "binding": "UPLOADS", "bucket_name": "app-uploads-preview" }]
+}
+```
+
+`narduk-app deploy versions-upload` then checks `WORKERS_CI_BRANCH`. On any
+branch other than `productionBranch`, it writes `.wrangler.deploy.preview.json`,
+with every D1, KV and R2 binding rebound, and uploads with that file. The
+production branch, `deploy`, a run outside Workers Builds, an explicit `--env`
+target and an app without a valid `narduk-v1` block keep
+`.wrangler.deploy.production.json`, as before.
+
+The rebinding is all or nothing. If any binding lacks its preview resource, or
+names a production one, the build keeps the production config and prints a
+`WARNING` naming the binding. A half-rebound preview would read preview data and
+write production caches under the same keys.
+
+12.4 runs the same planner against the app's own config, so its verdict
+describes the config a branch build would upload:
+
+| `previewBindings` against the wrangler config                                        | 12.4                                 |
+| ------------------------------------------------------------------------------------ | ------------------------------------ |
+| every binding rebound to a resource that is not a production one                     | `pass`                               |
+| a production binding with no entry                                                   | `fail`                               |
+| an entry naming no binding of its kind (a typo or a removed binding)                 | `fail`                               |
+| a preview id, name or bucket that is a production one, in any scope                  | `fail`                               |
+| an entry that is a bare name, or a D1 entry missing its id or name                   | `unknown` ("declared, not enforced") |
+| bindings in a TOML config, or in a second Worker's config the build does not rewrite | `unknown`                            |
+
+The artefact's `previewConfig` records the plan, and the printed summary shows
+it on its `preview` line. A repository read still cannot prove the preview
+resources exist on Cloudflare, or that the Workers Builds non-production command
+really runs `narduk-app deploy versions-upload`. Those are the tier-2 live read.
 
 **Every wrangler config counts, not just the app's own.** A repo with a second
 Worker under `services/*` or beside the app is the exact shape the two committed
@@ -461,6 +774,41 @@ every environment scope -- **including by silence**, since Cloudflare defaults
 both to `true`. An app that records `workersDev: false` and never says so in
 wrangler ships a live `*.workers.dev` hostname it believes it does not have.
 Wrangler reads the config, not the declaration.
+
+**Workers Cache only on a core that keeps errors out of it.** Check 12.7
+(narduk-libs#435) looks for `"cache": { "enabled": true }` in every wrangler
+config and scope (JSON, JSONC, TOML `[cache]` / `[env.<name>.cache]`). With the
+switch off it is `not-applicable`: `setCacheProfile`'s edge headers are inert.
+With it on, the app's `@narduk-enterprises/narduk-core` must be at least
+**2.10.1**, the first release that pins thrown 4xx/5xx/429 (narduk-libs#429),
+including those answered as JSON (#493), preference-shaped responses (#427) and
+nonce-CSP SSR HTML (#435) to `private, no-store`. An older core is a `fail`
+**even in rollout mode and even without a `deployment` block** -- the failure is
+one visitor's response being replayed to others, not a missing declaration. A
+spec that names no version (`workspace:*`, a git URL) is `unknown`. 12.7 cannot
+see whether the running Worker actually HITs; `verify --live --edge-cache-path`
+does. Turning the switch on in an existing app, with its preconditions, proof,
+purge and rollback, is [docs/workers-cache.md](./docs/workers-cache.md).
+
+**D1 migrations are expand-only unless reviewed.** Check 12.9 (narduk-libs#399)
+reads every app-owned migration the `deployment.migrations` source manifests
+name and fails any `DROP TABLE`, `DROP VIEW`, `ALTER TABLE ... DROP [COLUMN]` or
+`ALTER TABLE ... RENAME` -- `narduk-app deploy rollback` restores code, never a
+schema, so a Worker rolled back past a contract migration talks to a database
+that no longer has what it reads. A file that drops or renames only what it
+created itself (a table rebuild's scratch table) passes. A deliberate contract
+migration is declared under `deployment.migrations.contractMigrations` as
+`{ "path", "sha256", "reason" }`, pinned to the checksum the migration ledger
+records, and the failure prints that entry for you; a waiver whose file changed,
+vanished or drops nothing fails too. Package-owned sources are not read. The
+classifier cannot see a data rewrite or a new constraint the old code violates.
+
+**The declared rollback mode is the one that runs.** Nothing reads
+`rollback.mode`: no tool rolls back on its own. Rollback happens only when a
+person, or a step the app wrote into its own promote job, runs
+`narduk-app deploy rollback`; a failed migration triggers nothing and no
+database is ever restored. So the generated default is `manual`, and check 12.10
+fails `"auto"`, which still parses so an older manifest does not stop the tools.
 
 **What a green verdict does not mean.** This is a repository read with no
 credential. It cannot see the deploy commands actually configured on the Workers
@@ -481,6 +829,38 @@ warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
 `tool: '@narduk-enterprises/narduk-app-tools'`, and is the exact shape
 company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
 for the weekly fleet rollup.
+
+**`--checkout` must be an app checkout.** `foundation:check`, and its
+`:shared-ui-pinned`, `:toolchain`, `:deployment` and `:coverage` variants, exit
+`1` before evaluating anything when the directory has no `package.json`. From
+`apps/web`, the repository root is `--checkout ../..`. `--checkout ..` is
+`apps/`, and item 12 used to read that as an app with no deployment block:
+`not-applicable`, exit `0` (narduk-libs#679). Apps scaffolded before the
+generator fix carry `--checkout ..` in `apps/web/package.json`. Change it to
+`../..`.
+
+**Registry reads follow the project's scope route.** Sub-check 2.3 needs the
+highest published `narduk-core` major. The reader takes the last
+`@narduk-enterprises:registry=` line in the checkout's own `.npmrc` (the same
+rule as the shared CI workflows). A route to any registry other than GitHub
+Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
+`Authorization` header and no token needed. With no such line, or a route to
+`npm.pkg.github.com`, the reader uses GitHub Packages with `NODE_AUTH_TOKEN`
+(then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
+corroborates an ambiguous 404 with a scope probe. Other scopes, such as
+`@narduk-geo`, always stay on GitHub Packages.
+
+**Sub-check 1.5 fails a D1 binding that names no real database.** Any
+`d1_databases[].database_id` in the app's wrangler config (top level or any
+`env.<name>`) that is still the scaffold placeholder
+`00000000-0000-0000-0000-000000000000` is a decided FAIL naming
+`narduk-app db create` and the raw `wrangler d1 create <name>` step. An app with
+no D1 binding is `not-applicable`, and so is an app whose only declared
+deployment target is not Cloudflare (narduk-libs#158), even with a leftover
+wrangler config. A fresh `create-narduk-app` scaffold with a database therefore
+fails 1.5, and only 1.5, until it is provisioned: the placeholder builds and
+deploys, but no request that touches the database can succeed (narduk-libs#662).
+A PASS reads the file only; it does not prove the database exists.
 
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
@@ -512,6 +892,26 @@ either.
 Repeat `--path` to probe several routes; each gets its own `10.N.M` sub-checks,
 and a single route keeps the plain `10.M` ids. Probes are sequential against one
 origin, because a burst looks like an attack to a WAF.
+
+**With no `--path`, the probe reads `--base-url` exactly as given** -- a
+`--base-url https://app.example/login` probes `/login`, not `/`. It used to
+resolve `/` against the base URL, which silently discarded the path the caller
+asked for; on an authenticated app that root is the one route that refuses the
+request, so the check reported the headers of a route nobody asked about
+([#632](https://github.com/narduk-enterprises/narduk-libs/issues/632)). An
+explicit `--path` still resolves against the origin, so `/map` means the same
+route whatever path the base URL carried.
+
+`doctor --adoption --live` reaches the same evaluator, and defaults its probe to
+the app's declared `deployment.liveProof.smokePath` rather than to `/`, for the
+same reason. It reads `liveProof.healthPath` and `liveProof.buildVersionHeader`
+too -- the fields `foundation:check:deployment` item 12.3 already requires -- so
+requirements 5, 8 and 12 are decided against the routes the app says it serves.
+With `liveProof.healthAuth: "authenticated"` it does not fetch `healthPath`
+anonymously at all: requirement 12 is reported unknown, with that reason, rather
+than failed on the 401 the app is right to send (#585). The hard-coded `/`,
+`/api/health` and `x-build-version` remain the fallback for an app that declares
+no `liveProof` block.
 
 What it decides, per route:
 
@@ -587,6 +987,60 @@ apps are `not-applicable` in full.
 | 8.1 / 8.2 / 8.3 | depended on, but the pin is a range or a `workspace:` / `file:` specifier                 | `fail`, names the package and the fix                                             |
 | 8.1 / 8.2 / 8.3 | depended on and pinned to an exact version (`1.2.3` or `1.2.3-alpha.1`)                   | `pass`, annotated with the latest published version when the registry is readable |
 
+### No local copy of a shared component (`foundation:check:no-local-copy`)
+
+`narduk-app foundation:check:no-local-copy [--checkout <dir>] [--json [path]]`
+-- item 13, components-library plan
+([narduk-libs#260](https://github.com/narduk-enterprises/narduk-libs/issues/260);
+numbered 13 because 9-12 were taken first). This is the repository half of the
+`narduk/no-shadowed-shared-component` lint rule in
+`@narduk-enterprises/eslint-config`. The evaluator is
+`src/foundation/items/item-13-no-local-copy.ts`. It has its own JSON artefact
+(`tool: '@narduk-enterprises/narduk-app-tools/no-local-copy'`) for the same
+reason as item 8, and the same exit codes: `0` PASS, `1` FAIL, `2` UNKNOWN.
+
+The component list is `src/foundation/shared-components.ts`. Its test fails if
+it differs from the eslint-config registry, so the lint rule and this check
+always name the same components. A name matches on the file name or on the name
+Nuxt registers from the path (`components/ne/DataTable.vue` is `NeDataTable`).
+
+| Sub-check    | Condition                                                                  | Verdict                                                 |
+| ------------ | -------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 13.1 only    | no UI surface (same rule as item 8)                                        | `not-applicable` (whole check)                          |
+| 13.1 to 13.5 | the owning package is a dependency, and a local component carries its name | `fail`, naming each file                                |
+| 13.1 to 13.5 | the owning package is a dependency, and nothing matches                    | `pass`                                                  |
+| 13.1 to 13.5 | the owning package is not a dependency                                     | `not-applicable`; any same-named files are still listed |
+
+The sub-checks are one per owner: narduk-shell, narduk-core, narduk-auth,
+narduk-ui and narduk-charts.
+
+### List routes use the query contract (`foundation:check:list-routes`)
+
+`narduk-app foundation:check:list-routes [--checkout <dir>] [--json [path]]` --
+item 14, the same plan and issue. A server list route parses its query with
+narduk-core's `parseListQuery`
+([narduk-libs#257](https://github.com/narduk-enterprises/narduk-libs/issues/257)):
+limit clamped, sort from an allowlist, unknown keys rejected. The evaluator is
+`src/foundation/items/item-14-list-routes-use-contract.ts`. Its artefact is
+`tool: '@narduk-enterprises/narduk-app-tools/list-routes-use-contract'`.
+
+A list route is found from its source. It is a file under `server/api/` or
+`server/routes/` at any monorepo prefix that answers GET (a `.get.` file or no
+method suffix) and either calls `parseListQuery(`, or reads its query
+(`getQuery(` / `getValidatedQuery(`) and names a pagination key: `limit`,
+`offset`, `cursor`, `pageSize` or `perPage`. A key counts as an object key not
+given a number literal, a string, or a property read that is not a call. So a
+Drizzle `.limit(10)` or a fixed `{ limit: 1 }` alone does not make a route a
+list route. It is a heuristic, and a false positive is a reason to fix the
+heuristic, not to reword the route.
+
+| Sub-check | Condition                                          | Verdict                   |
+| --------- | -------------------------------------------------- | ------------------------- |
+| 14.1      | no `server/api` or `server/routes` handlers        | `not-applicable`          |
+| 14.1      | handlers exist, none is a list route               | `pass`                    |
+| 14.1      | every list route calls `parseListQuery(`           | `pass`                    |
+| 14.1      | a list route reads pagination without the contract | `fail`, naming each route |
+
 ### Shared-capability coverage (`foundation:check:coverage`)
 
 `narduk-app foundation:check:coverage [--checkout <dir>] [--json [path]]` --
@@ -607,9 +1061,18 @@ It reports two things.
 its version, the manifest it came from and the dependency block it sat in -- one
 row per `(package, manifest, block)`, across the root manifest and the workspace
 manifests at the same monorepo-candidate paths item 1 already reads. Beside it,
-the catalog of shared capabilities the estate publishes, each marked adopted or
-not. **The catalog is derived, never hand-typed**:
-`scripts/generate-capability-catalog.mjs` reads narduk-libs'
+the catalog of shared capabilities the estate publishes, each in one of three
+states. `absent` means no manifest pins the package. `adopted` means it is
+pinned and the app carries no copy of its internals. `forked` means it is pinned
+**and** the app carries its own copy (narduk-libs#620). A fork keeps the
+dependency, so a pin-only reading would call it adopted. A capability opts in
+with `forkStems`, set in the generator's `FORK_STEMS` (today only
+`narduk-mapkit`: `mapkit`). An app-local file counts toward a fork when a
+directory segment of its path, or its own name, equals a stem, and it imports no
+package named for that stem. A `forked` row carries its files and line count.
+9.1 names it and never counts it as adopted, but it is not a failure, because
+some forks are deliberate and tracked. **The catalog is derived, never
+hand-typed**: `scripts/generate-capability-catalog.mjs` reads narduk-libs'
 `pnpm-workspace.yaml` (the four families, D-WEBFOUND-2 Q2 (a)) and writes
 `src/foundation/capability-catalog.ts`; `--check` fails when the committed file
 falls out of step with the workspace, and `pnpm run scripts:test` runs that
@@ -766,6 +1229,8 @@ guess.
 | 11.3        | A workflow pins a Node literal — **even one that currently agrees**                      | `fail`; a second declaration is the thing being removed                                                                              |
 | 11.3        | A `node-version-file` points at something other than `.node-version`                     | `fail`                                                                                                                               |
 | 11.3        | No workflow sets up Node                                                                 | `not-applicable`                                                                                                                     |
+| 11.3        | A job calls a shared workflow with no Node input (`cursor-review`, `code-review`, …)     | not a Node site; it is not judged                                                                                                    |
+| 11.3        | A job passes `node-version` to a callable that accepts no `node-version-file`            | not a failure (workflows#135); 11.1 still requires the literal to agree                                                              |
 | 11.4        | A `pnpm/action-setup` step declares a `version:` input                                   | `fail` — drop it and let the action read `packageManager`                                                                            |
 | 11.4        | No workflow installs pnpm with `pnpm/action-setup`                                       | `not-applicable`                                                                                                                     |
 | 11.5        | A `docs/workers-builds.md` `NODE_VERSION` / `PNPM_VERSION` row disagrees with its source | `fail` — these record the Cloudflare dashboard build environment, which no checkout can read, so update the dashboard alongside them |
@@ -775,3 +1240,9 @@ The `--json` artefact carries a first-class `sites` block — every declaration
 site with its file, line, value, role (`source` / `derives` / `mirror`) and
 verdict — so the estate roster reads the table as data rather than parsing
 sub-check prose, and a `fixes` block recording what `--fix` rewrote.
+
+For existing D1 schemas, use the
+[reviewed baseline and frozen cutover proof](docs/migration-baselines.md):
+`narduk-app db baseline capture|sql|check|register|prove`. Registration is a
+one-time reviewed metadata operation, separate from automatic deployment
+migrations.

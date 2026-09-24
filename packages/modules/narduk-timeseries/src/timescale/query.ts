@@ -215,7 +215,10 @@ export function buildRollupQuery(
     // fit: the adapter reports `truncated` on the extra row and drops it.
     params: [
       query.vesselId,
-      query.seriesIds,
+      // One comma-joined text parameter, never a bare array: an unprepared
+      // (Hyperdrive, prepare: false) connection sends a JS array as untyped
+      // text and Postgres answers 22P02 (narduk-libs#311, #304).
+      query.seriesIds.join(','),
       resolvedPlan.range.start,
       resolvedPlan.range.end,
       maxRows + 1,
@@ -231,7 +234,7 @@ export function buildRollupQuery(
       `       last_value AS last`,
       `  FROM ${table}`,
       ` WHERE vessel_id = $1::uuid`,
-      `   AND series_id = ANY($2::bigint[])`,
+      `   AND series_id = ANY(string_to_array($2::text, ',')::bigint[])`,
       `   AND bucket >= $3::timestamptz`,
       `   AND bucket <  $4::timestamptz`,
       ` ORDER BY bucket ASC, series_id ASC`,
@@ -301,6 +304,15 @@ export interface RefreshRollupsInput {
  * `splitRangeIntoWindows` bounds an Influx read, so a ten-year backfill is a
  * long list of bounded statements rather than one statement that never returns.
  *
+ * **Each window is bucket-aligned.** A ten-minute store-and-forward batch is
+ * narrower than a 15m, 1h or 1d bucket. TimescaleDB has historically refused
+ * a refresh window that does not cover a bucket ("refresh window too small").
+ * The requested range is snapped outward onto `ROLLUP_BUCKET_MS[level]` first,
+ * then walked in whole-bucket steps no wider than `maxWindowMs` so neighbours
+ * abut, every overlapping bucket is covered, and no CALL exceeds the level
+ * ceiling. A leftover narrower than one bucket is folded into the previous
+ * window (narduk-libs#293).
+ *
  * `refresh_continuous_aggregate` is a procedure, so each is a `CALL`, and it
  * cannot run inside a transaction block -- run them one at a time, not inside
  * `executor.transaction()`.
@@ -312,11 +324,23 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
   // unknown level fails before any statement is built rather than half way
   // through the list.
   for (const bucket of buckets) rollupTable(bucket)
-  if (input.maxWindowMs !== undefined && !Number.isFinite(input.maxWindowMs)) {
+  // maxWindowMs used to be checked inside the per-bucket loop, so
+  // `buckets: []` returned [] without ever seeing a non-positive value.
+  if (
+    input.maxWindowMs !== undefined &&
+    (!Number.isFinite(input.maxWindowMs) || input.maxWindowMs <= 0)
+  ) {
     throw new NardukTimeseriesError(
       'RANGE_INVALID',
       'maxWindowMs must be a positive number of milliseconds.',
       { maxWindowMs: input.maxWindowMs },
+    )
+  }
+  if (buckets.length === 0) {
+    throw new NardukTimeseriesError(
+      'RANGE_INVALID',
+      'buckets must name at least one rollup level.',
+      { buckets },
     )
   }
 
@@ -327,13 +351,6 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
   for (const bucket of ROLLUP_BUCKETS.filter((level) => buckets.includes(level))) {
     const ceiling = REFRESH_MAX_WINDOW_MS[bucket]
     const requested = input.maxWindowMs ?? ceiling
-    if (requested <= 0) {
-      throw new NardukTimeseriesError(
-        'RANGE_INVALID',
-        'maxWindowMs must be a positive number of milliseconds.',
-        { maxWindowMs: requested },
-      )
-    }
     if (requested > ceiling) {
       throw new NardukTimeseriesError(
         'REFRESH_WINDOW_TOO_WIDE',
@@ -343,12 +360,7 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
     }
 
     const view = rollupTable(bucket)
-    const endMs = input.range.end.getTime()
-    for (let cursor = input.range.start.getTime(); cursor < endMs; cursor += requested) {
-      const window: TimeRange = {
-        end: new Date(Math.min(cursor + requested, endMs)),
-        start: new Date(cursor),
-      }
+    for (const window of splitRefreshWindows(input.range, ROLLUP_BUCKET_MS[bucket], requested)) {
       statements.push({
         bucket,
         params: [window.start, window.end],
@@ -358,6 +370,44 @@ export function refreshRollupsStatements(input: RefreshRollupsInput): RefreshRol
     }
   }
   return statements
+}
+
+function alignDown(ms: number, bucketMs: number): number {
+  return Math.floor(ms / bucketMs) * bucketMs
+}
+
+function alignUp(ms: number, bucketMs: number): number {
+  return Math.ceil(ms / bucketMs) * bucketMs
+}
+
+/**
+ * Snap `range` outward onto `bucketMs`, then walk whole-bucket steps no
+ * wider than `maxWindowMs`. A raw step that is not a multiple of the bucket
+ * would hand Timescale windows whose inscribed complete-bucket range skips
+ * a bucket between neighbours (narduk-libs#293 / PR 550).
+ *
+ * A leftover narrower than one bucket is folded into the previous window so
+ * the last CALL is never a sliver Timescale can refuse.
+ */
+function splitRefreshWindows(range: TimeRange, bucketMs: number, maxWindowMs: number): TimeRange[] {
+  const rangeStart = alignDown(range.start.getTime(), bucketMs)
+  const rangeEnd = alignUp(range.end.getTime(), bucketMs)
+  const stepMs = Math.max(bucketMs, Math.floor(maxWindowMs / bucketMs) * bucketMs)
+  const raw: Array<{ end: number; start: number }> = []
+  for (let cursor = rangeStart; cursor < rangeEnd; cursor += stepMs) {
+    raw.push({ end: Math.min(cursor + stepMs, rangeEnd), start: cursor })
+  }
+  if (raw.length >= 2) {
+    const last = raw[raw.length - 1]!
+    if (last.end - last.start < bucketMs) {
+      raw[raw.length - 2]!.end = last.end
+      raw.pop()
+    }
+  }
+  return raw.map((window) => ({
+    end: new Date(window.end),
+    start: new Date(window.start),
+  }))
 }
 
 export interface TrackPlan {

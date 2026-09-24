@@ -4,9 +4,20 @@ import { buildWranglerCommandArgs, resolveVersionTagArgs } from '../src/deploy.j
 import {
   checkPromoteContext,
   formatPromoteResult,
+  checkGateAgainstSha,
+  checkGateAgainstVersion,
   compareVersionRecency,
+  GATE_ATTESTATION_MISSING_WARNING,
+  parseGateAttestation,
   createWranglerCli,
   currentDeployment,
+  DEFAULT_VERSION_SEARCH_LIMIT,
+  defaultPromoteSha,
+  describeVersionSearch,
+  listWorkerVersionsViaApi,
+  resolveVersionsApiAuth,
+  VERSION_PAGE_SIZE,
+  WRANGLER_VERSION_LIST_CAP,
   getPromoteGuardMessage,
   isActionsPromoteAllowed,
   isManualPromoteAllowed,
@@ -28,6 +39,7 @@ import {
   type SpawnWrangler,
   type WorkerDeployment,
   type WorkerVersion,
+  type VersionListing,
   type WranglerVersionsClient,
 } from '../src/promote.js'
 import { main } from '../src/cli.js'
@@ -88,7 +100,12 @@ function stubClient(
   return {
     calls,
     client: {
-      listVersions: async () => versions,
+      listVersions: async (limit) => ({
+        versions: versions.slice(0, limit),
+        complete: true,
+        limit,
+        source: 'api',
+      }),
       listDeployments: async () => deployments,
       deployVersion: async (versionId, percentage, message) => {
         calls.deployed.push({ versionId, percentage, message })
@@ -106,7 +123,17 @@ function context(
   env: Record<string, string | undefined> = ACTIONS_ENV,
 ): { context: PromoteContext; calls: StubCalls } {
   const { client, calls } = stubClient(versions, deployments)
-  return { calls, context: { client, env, resolveWorkerName: () => 'buoys', appDir: '/tmp/app' } }
+  return {
+    calls,
+    context: {
+      client,
+      env,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+      // Keep the gate-attestation warning (#400) out of the test output.
+      log: () => {},
+    },
+  }
 }
 
 describe('promote guard', () => {
@@ -181,7 +208,7 @@ describe('sha to version resolution', () => {
     expect(result.outcome).toBe('version-not-found')
     expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
     expect(result.searchedVersions).toBe(10)
-    expect(result.detail).toContain('at most 10 versions')
+    expect(result.detail).toContain('10 version(s) searched')
     expect(calls.deployed).toEqual([])
   })
 
@@ -261,6 +288,25 @@ describe('deployment reading', () => {
       'returned no JSON',
     )
   })
+
+  it(
+    'anchors to the last line that starts a JSON document at column 0, not the first bracket ' +
+      'anywhere in a noisy stream (#470)',
+    () => {
+      // A pnpm/engines warning printed to stdout before wrangler's own output can contain a
+      // bracket mid-line (here, inside the warning's own JSON-ish detail). The old heuristic
+      // took the first '[' or '{' anywhere in the stream and so parsed only
+      // `{"node":"24.21.0"}`, throwing on the trailing text -- exactly narduk-libs#470's
+      // reproduction. The real document is the last line that starts with a bracket.
+      const stdout =
+        '../..                    |  WARN  Unsupported engine: wanted: {"node":"24.21.0"} ' +
+        '(current: {"node":"24.18.0"})\n' +
+        '[{"id":"d1"}]\n'
+      expect(parseWranglerVersionsJson<Array<{ id: string }>>(stdout, 'deployments list')).toEqual([
+        { id: 'd1' },
+      ])
+    },
+  )
 })
 
 describe('rollback', () => {
@@ -565,6 +611,17 @@ describe('B2 -- every documented exit code is reachable', () => {
       context([numbered('v1', SHA_NEW, 2)], []).context,
     )
     expect(ok.exitCode).toBe(PROMOTE_EXIT.ok)
+
+    const gateMismatch = await runVersionsPromote(
+      parseVersionsPromoteArgs([
+        '--sha',
+        SHA,
+        '--gate-verified',
+        `ci / Required@${'e'.repeat(40)}`,
+      ]),
+      context([numbered('v1', SHA, 2)], []).context,
+    )
+    expect(gateMismatch.exitCode).toBe(PROMOTE_EXIT.gateMismatch)
   })
 })
 
@@ -768,7 +825,9 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
       env: {},
       spawn,
     })
-    const versions = await cli.listVersions()
+    const listing = await cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    const versions = listing.versions
+    expect(listing.source).toBe('wrangler')
     expect(calls[0].args).toEqual([
       'exec',
       'wrangler',
@@ -826,13 +885,13 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
       env: {},
       spawn: () => ({ status: 1, signal: null, stdout: '' }),
     })
-    await expect(cli.listVersions()).rejects.toThrow('exited 1')
+    await expect(cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)).rejects.toThrow('exited 1')
     const killed = createWranglerCli({
       workerName: 'buoys',
       env: {},
       spawn: () => ({ status: null, signal: 'SIGKILL', stdout: '' }),
     })
-    await expect(killed.listVersions()).rejects.toThrow('SIGKILL')
+    await expect(killed.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)).rejects.toThrow('SIGKILL')
   })
 
   it('does not overwrite an account id the environment already carries', async () => {
@@ -845,5 +904,765 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
     })
     await cli.listDeployments()
     expect(calls[0].accountId).toBe('from-env')
+  })
+})
+
+/**
+ * narduk-libs#451 defect 1: the `--sha` lookup used to see only the page
+ * `wrangler versions list` prints -- ten versions -- so ten branch uploads
+ * between a merge upload and its promote job left production un-updated.
+ */
+describe('bounded version search (#451 defect 1)', () => {
+  /** A Cloudflare Versions list response page. */
+  function page(items: WorkerVersion[]): Response {
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: true, errors: [], messages: [], result: { items } }),
+    } as unknown as Response
+  }
+
+  /** A history whose tagged version sits `depth` versions below the newest. */
+  function history(depth: number, tag: string): WorkerVersion[] {
+    return Array.from({ length: depth + 40 }, (_, index) =>
+      version(
+        `v-${String(index)}`,
+        index === depth ? tag : `beef${String(index).padStart(3, '0')}`,
+        {
+          number: 10_000 - index,
+        },
+      ),
+    )
+  }
+
+  function pagingFetch(all: WorkerVersion[]): {
+    fetchImpl: typeof fetch
+    urls: string[]
+  } {
+    const urls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      urls.push(url)
+      const perPage = Number(new URL(url).searchParams.get('per_page'))
+      const pageNumber = Number(new URL(url).searchParams.get('page'))
+      return page(all.slice((pageNumber - 1) * perPage, pageNumber * perPage))
+    }) as unknown as typeof fetch
+    return { fetchImpl, urls }
+  }
+
+  const API_ENV = { ...ACTIONS_ENV, CLOUDFLARE_API_TOKEN: 'token-1' }
+
+  it('finds a version far below the ten wrangler can show, and promotes it', async () => {
+    const all = history(147, SHA)
+    const { fetchImpl, urls } = pagingFetch(all)
+    const client = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: API_ENV,
+      fetchImpl,
+      spawn: () => {
+        throw new Error('the API path must not shell out to wrangler for a listing')
+      },
+    })
+    const listing = await client.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(listing.source).toBe('api')
+    expect(listing.versions.length).toBe(all.length)
+    expect(listing.complete).toBe(true)
+    // The version that matters is deeper than anything `wrangler versions list`
+    // would have returned -- that is the whole defect.
+    expect(147).toBeGreaterThan(WRANGLER_VERSION_LIST_CAP)
+    const match = resolveVersionForSha(listing.versions, SHA)
+    expect(match.kind).toBe('found')
+    // page 1 asks for the full page size; the walk stops on the short page.
+    expect(urls[0]).toContain(`per_page=${String(VERSION_PAGE_SIZE)}`)
+    expect(urls[0]).toContain('page=1')
+    expect(urls[1]).toContain('page=2')
+  })
+
+  it('never paginates past the bound, and reports the bound it used', async () => {
+    const all = history(400, SHA)
+    const { fetchImpl, urls } = pagingFetch(all)
+    const client = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: API_ENV,
+      fetchImpl,
+    })
+    const listing = await client.listVersions(120)
+    expect(listing.versions.length).toBe(120)
+    expect(listing.limit).toBe(120)
+    expect(listing.complete).toBe(false)
+    expect(urls.length).toBe(2)
+    // Every page asks for the SAME per_page; shrinking it on the last page
+    // would move the server-side offset and re-read page 1 (#457 diff-read).
+    expect(urls[1]).toContain(`per_page=${String(VERSION_PAGE_SIZE)}`)
+    expect(urls.every((url) => url.includes(`per_page=${String(VERSION_PAGE_SIZE)}`))).toBe(true)
+  })
+
+  it('promotes nothing with exit 3 -- never 0 -- and names the sha and the count', async () => {
+    const versions = [version('v-live', 'aaaaaaa', { number: 2 })]
+    const { context: ctx } = context(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const result = await runVersionsPromote({ ...parseVersionsPromoteArgs(['--sha', SHA]) }, ctx)
+    expect(result.outcome).toBe('version-not-found')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    expect(result.exitCode).not.toBe(PROMOTE_EXIT.ok)
+    expect(result.detail).toContain(SHA)
+    expect(result.detail).toContain('1 version(s) searched')
+    expect(result.searchedVersions).toBe(1)
+    expect(result.versionSearch).toEqual({
+      source: 'api',
+      limit: DEFAULT_VERSION_SEARCH_LIMIT,
+      complete: true,
+    })
+  })
+
+  it('tells "never uploaded" apart from "older than the bound" and from the wrangler fallback', () => {
+    const exhausted = describeVersionSearch(SHA, 500, {
+      source: 'api',
+      limit: 500,
+      complete: false,
+    })
+    expect(exhausted).toContain('stopped at its bound')
+    expect(exhausted).toContain('--max-versions')
+    const complete = describeVersionSearch(SHA, 83, { source: 'api', limit: 500, complete: true })
+    expect(complete).toContain('reached the end')
+    expect(complete).toContain('no build ever uploaded')
+    const fallback = describeVersionSearch(SHA, 10, {
+      source: 'wrangler',
+      limit: WRANGLER_VERSION_LIST_CAP,
+      complete: false,
+    })
+    expect(fallback).toContain('CLOUDFLARE_API_TOKEN')
+    expect(fallback).toContain('takes no paging flag')
+  })
+
+  it('falls back to wrangler only when the account id or token is missing, and says which', async () => {
+    expect(resolveVersionsApiAuth({ workerName: 'buoys', accountId: 'acct-1' }, {})).toBeNull()
+    expect(
+      resolveVersionsApiAuth({ workerName: 'buoys' }, { CLOUDFLARE_API_TOKEN: 't' }),
+    ).toBeNull()
+    expect(
+      resolveVersionsApiAuth(
+        { workerName: 'buoys' },
+        {
+          CLOUDFLARE_ACCOUNT_ID: 'acct-2',
+          CLOUDFLARE_API_TOKEN: 't',
+        },
+      ),
+    ).toEqual({ accountId: 'acct-2', apiToken: 't' })
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: {},
+      spawn: () => ({
+        status: 0,
+        signal: null,
+        stdout: JSON.stringify([version('v-1', 'aaaaaaa')]),
+      }),
+    })
+    const listing: VersionListing = await cli.listVersions(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(listing.source).toBe('wrangler')
+    expect(listing.limit).toBe(WRANGLER_VERSION_LIST_CAP)
+    expect(listing.complete).toBe(true)
+  })
+
+  it('surfaces a Cloudflare API error rather than reporting an empty history', async () => {
+    const fetchImpl = (async () =>
+      ({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: async () => ({ success: false, errors: [{ message: 'Insufficient permissions' }] }),
+      }) as unknown as Response) as unknown as typeof fetch
+    await expect(
+      listWorkerVersionsViaApi({
+        accountId: 'acct-1',
+        apiToken: 'token-1',
+        scriptName: 'buoys',
+        limit: 50,
+        fetchImpl,
+      }),
+    ).rejects.toThrow('Cloudflare API 403')
+  })
+
+  it('parses and bounds --max-versions', () => {
+    expect(parseVersionsPromoteArgs([]).maxVersions).toBe(DEFAULT_VERSION_SEARCH_LIMIT)
+    expect(parseVersionsPromoteArgs(['--max-versions', '25']).maxVersions).toBe(25)
+    expect(() => parseVersionsPromoteArgs(['--max-versions', '0'])).toThrow('1..10000')
+    expect(() => parseVersionsPromoteArgs(['--max-versions', 'lots'])).toThrow('1..10000')
+  })
+})
+
+/**
+ * narduk-libs#451 defect 2: under `on: workflow_run`, `GITHUB_SHA` is the
+ * default branch head at trigger time, not the commit whose run went green.
+ */
+describe('workflow_run commit resolution (#451 defect 2)', () => {
+  const DEFAULT_BRANCH_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+  const VERIFIED = SHA
+
+  it('refuses to default --sha to GITHUB_SHA under a workflow_run event', () => {
+    expect(() =>
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        false,
+      ),
+    ).toThrow('workflow_run')
+    expect(() =>
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        false,
+      ),
+    ).toThrow('github.event.workflow_run.head_sha')
+  })
+
+  it('still defaults on the events where GITHUB_SHA is the commit', () => {
+    expect(
+      defaultPromoteSha({ GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'push' }, false),
+    ).toBe(DEFAULT_BRANCH_HEAD)
+    expect(defaultPromoteSha({ GITHUB_SHA: DEFAULT_BRANCH_HEAD }, false)).toBe(DEFAULT_BRANCH_HEAD)
+    expect(
+      defaultPromoteSha(
+        { GITHUB_SHA: DEFAULT_BRANCH_HEAD, GITHUB_EVENT_NAME: 'workflow_run' },
+        true,
+      ),
+    ).toBeNull()
+  })
+
+  it('does not promote the default-branch head a workflow_run run carries', async () => {
+    const versions = [
+      version('v-head', DEFAULT_BRANCH_HEAD, { number: 9 }),
+      version('v-verified', VERIFIED, { number: 8 }),
+      version('v-live', 'cccccccc', { number: 7 }),
+    ]
+    const deployments = [deployment('d-1', 'v-live', '2026-09-17T00:00:00Z')]
+    const env = {
+      ...ACTIONS_ENV,
+      GITHUB_SHA: DEFAULT_BRANCH_HEAD,
+      GITHUB_EVENT_NAME: 'workflow_run',
+      GITHUB_REF_NAME: 'main',
+    }
+    const { context: ctx } = context(versions, deployments, env)
+    await expect(runVersionsPromote(parseVersionsPromoteArgs([]), ctx)).rejects.toThrow(
+      'workflow_run',
+    )
+    // The explicit, correct form still promotes -- the refusal is about the
+    // default, not about the event.
+    const { context: ok, calls } = context(versions, deployments, env)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', VERIFIED, '--any-branch']),
+      ok,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v-verified')
+  })
+})
+
+/**
+ * The two behavioural regressions, written so they run against either shape of
+ * `listVersions`: the stub returns an array that ALSO carries the listing
+ * fields, and caps itself at ten when the caller asks for no bound -- which is
+ * exactly what a client that can only read `wrangler versions list` could ever
+ * hand back. The ten is a literal on purpose: a constant imported from the
+ * module under test would be `undefined` on a revision that does not export it,
+ * and an `undefined` cap silently un-caps the stub.
+ */
+describe('#451 regressions, shape-agnostic', () => {
+  const WRANGLER_CAP = 10
+
+  function cappedClient(
+    versions: WorkerVersion[],
+    deployments: WorkerDeployment[],
+  ): { client: WranglerVersionsClient; calls: StubCalls } {
+    const calls: StubCalls = { deployed: [], rolledBack: [] }
+    const listVersions = async (limit?: number) => {
+      const rows = versions.slice(0, limit ?? WRANGLER_CAP)
+      return Object.assign(rows.slice(), {
+        versions: rows,
+        complete: rows.length === versions.length,
+        limit: limit ?? WRANGLER_CAP,
+        source: 'api' as const,
+      })
+    }
+    return {
+      calls,
+      client: {
+        listVersions: listVersions as WranglerVersionsClient['listVersions'],
+        listDeployments: async () => deployments,
+        deployVersion: async (versionId, percentage, message) => {
+          calls.deployed.push({ versionId, percentage, message })
+        },
+        rollback: async () => {},
+      },
+    }
+  }
+
+  it("models wrangler's own cap", () => {
+    expect(WRANGLER_CAP).toBe(WRANGLER_VERSION_LIST_CAP)
+  })
+
+  it('promotes a merge whose version is buried under branch uploads (defect 1)', async () => {
+    // 47 branch uploads landed between the main upload and the promote job.
+    const versions = [
+      ...Array.from({ length: 47 }, (_, index) =>
+        version(`v-branch-${String(index)}`, `abcdef${String(index).padStart(2, '0')}`, {
+          number: 500 - index,
+        }),
+      ),
+      version('v-main', SHA, { number: 400 }),
+      version('v-live', 'ffffff00', { number: 399 }),
+    ]
+    const { client, calls } = cappedClient(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--any-branch']),
+      { client, env: ACTIONS_ENV, resolveWorkerName: () => 'buoys', appDir: '/tmp/app' },
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed).toEqual([
+      { versionId: 'v-main', percentage: 100, message: `narduk-app promote ${SHA}` },
+    ])
+  })
+
+  it('never promotes the default-branch head under workflow_run (defect 2)', async () => {
+    const head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+    const versions = [
+      version('v-head', head, { number: 9 }),
+      version('v-verified', SHA, { number: 8 }),
+      version('v-live', 'cccccc00', { number: 7 }),
+    ]
+    const { client, calls } = cappedClient(versions, [
+      deployment('d-1', 'v-live', '2026-09-17T00:00:00Z'),
+    ])
+    const env = {
+      ...ACTIONS_ENV,
+      GITHUB_SHA: head,
+      GITHUB_EVENT_NAME: 'workflow_run',
+      GITHUB_REF_NAME: 'main',
+    }
+    await runVersionsPromote(parseVersionsPromoteArgs(['--any-branch']), {
+      client,
+      env,
+      resolveWorkerName: () => 'buoys',
+      appDir: '/tmp/app',
+    }).catch(() => {
+      // On this revision the default is refused outright; on the one before it
+      // the call resolved and deployed. Either way the assertion below is the
+      // regression: nothing may be deployed from the branch head.
+    })
+    // The commit `ci / Required` verified is SHA, not the branch head. Promoting
+    // `v-head` deploys code that never passed the gate.
+    expect(calls.deployed).toEqual([])
+  })
+})
+
+/**
+ * The two pagination defects an orchestrator diff-read of PR #457 found in
+ * `listWorkerVersionsViaApi` at b0c4e898.
+ *
+ * Both fakes model V4 page pagination the way the API defines it -- the offset
+ * is `(page - 1) * per_page_applied`, computed server side -- rather than the
+ * way the caller hoped, which is the whole point.
+ */
+describe('Versions API pagination (#457 diff-read)', () => {
+  /**
+   * `clamp` is the largest `per_page` this fake honours; a request above it is
+   * silently reduced, exactly as an endpoint with a lower maximum would.
+   * `reportInfo` decides whether the envelope carries `result_info` at all.
+   */
+  function apiFake(options: { all: WorkerVersion[]; clamp?: number; reportInfo?: boolean }): {
+    fetchImpl: typeof fetch
+    urls: string[]
+  } {
+    const urls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      urls.push(String(input))
+      const asked = Number(url.searchParams.get('per_page'))
+      const page = Number(url.searchParams.get('page'))
+      const perPage = Math.min(asked, options.clamp ?? asked)
+      const items = options.all.slice((page - 1) * perPage, page * perPage)
+      const body: Record<string, unknown> = {
+        success: true,
+        errors: [],
+        messages: [],
+        result: { items },
+      }
+      if (options.reportInfo) {
+        body.result_info = {
+          page,
+          per_page: perPage,
+          count: items.length,
+          total_count: options.all.length,
+          total_pages: Math.ceil(options.all.length / perPage),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => body,
+      } as unknown as Response
+    }) as unknown as typeof fetch
+    return { fetchImpl, urls }
+  }
+
+  /** A history of `size` versions, the target tagged at 0-based `position`. */
+  function historyWithTargetAt(size: number, position: number, tag: string): WorkerVersion[] {
+    return Array.from({ length: size }, (_, index) =>
+      version(
+        `v-${String(index)}`,
+        index === position ? tag : `dead${String(index).padStart(4, '0')}`,
+        { number: 100_000 - index },
+      ),
+    )
+  }
+
+  it('asks for one constant per_page, so a non-multiple bound cannot re-read page 1', async () => {
+    // 250 is deliberately not a multiple of 100: a last page asking
+    // per_page=50&page=3 is served items 101..150 again, so the rows the bound
+    // was meant to reach are never read and the duplicates can even make one
+    // tag look ambiguous.
+    const all = historyWithTargetAt(400, 230, SHA)
+    const { fetchImpl, urls } = apiFake({ all, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 250,
+      fetchImpl,
+    })
+    const sizes = new Set(urls.map((url) => new URL(url).searchParams.get('per_page')))
+    expect([...sizes]).toEqual([String(VERSION_PAGE_SIZE)])
+    expect(listing.versions).toHaveLength(250)
+    expect(new Set(listing.versions.map((row) => row.id)).size).toBe(250)
+    const tagged = listing.versions.filter((row) => row.annotations?.['workers/tag'] === SHA)
+    expect(tagged).toHaveLength(1)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-230' },
+    })
+  })
+
+  it('walks past a clamped per_page the envelope reports', async () => {
+    const all = historyWithTargetAt(120, 60, SHA)
+    const { fetchImpl } = apiFake({ all, clamp: 25, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 500,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(120)
+    expect(listing.complete).toBe(true)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-60' },
+    })
+  })
+
+  it('walks past a per_page clamped silently, and only an empty page ends it', async () => {
+    const all = historyWithTargetAt(120, 60, SHA)
+    const { fetchImpl, urls } = apiFake({ all, clamp: 25 })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 500,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(120)
+    expect(resolveVersionForSha(listing.versions, SHA)).toMatchObject({
+      kind: 'found',
+      version: { id: 'v-60' },
+    })
+    // Without result_info a short page proves nothing -- the endpoint may have
+    // clamped. Completion is claimed only after a page comes back empty, which
+    // costs exactly one extra read.
+    expect(listing.complete).toBe(true)
+    expect(urls).toHaveLength(Math.ceil(120 / 25) + 1)
+  })
+
+  it('does not claim the end of the history when it stopped at the bound', async () => {
+    const all = historyWithTargetAt(400, 10, SHA)
+    const { fetchImpl } = apiFake({ all, reportInfo: true })
+    const listing = await listWorkerVersionsViaApi({
+      accountId: 'acct-1',
+      apiToken: 'token-1',
+      scriptName: 'buoys',
+      limit: 150,
+      fetchImpl,
+    })
+    expect(listing.versions).toHaveLength(150)
+    expect(listing.complete).toBe(false)
+  })
+})
+
+describe('--wait-for-version (narduk-libs#695)', () => {
+  /** A client whose listing gains `arriving` on the `arrivesOn`th call; a fake clock. */
+  function racing(arrivesOn: number, arriving: WorkerVersion[] = [version('v-new', SHA)]) {
+    const { client, calls } = stubClient([], [])
+    let listings = 0
+    let clock = 0
+    const slept: number[] = []
+    const ctx: PromoteContext = {
+      appDir: '/tmp/app',
+      client: {
+        ...client,
+        listVersions: async (limit) => {
+          listings += 1
+          const versions = listings >= arrivesOn ? arriving : [version('v-old', 'abcdef1')]
+          return { versions, complete: true, limit, source: 'api' }
+        },
+      },
+      env: ACTIONS_ENV,
+      now: () => clock,
+      resolveWorkerName: () => 'buoys',
+      sleep: async (milliseconds) => {
+        slept.push(milliseconds)
+        clock += milliseconds
+      },
+    }
+    return { calls, ctx, listings: () => listings, slept }
+  }
+
+  it('looks once by default, exactly as before', async () => {
+    const run = racing(2)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA]), run.ctx)
+    expect(result.outcome).toBe('version-not-found')
+    expect(run.listings()).toBe(1)
+    expect(run.slept).toEqual([])
+    expect(result.detail).not.toContain('Waited')
+  })
+
+  it('promotes the version that lands while it waits', async () => {
+    const run = racing(3)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs([
+        '--sha',
+        SHA,
+        '--wait-for-version',
+        '300',
+        '--wait-interval',
+        '20',
+      ]),
+      run.ctx,
+    )
+    expect(result.exitCode).toBe(PROMOTE_EXIT.ok)
+    expect(run.calls.deployed.map((call) => call.versionId)).toEqual(['v-new'])
+    expect(run.listings()).toBe(3)
+    expect(run.slept).toEqual([20_000, 20_000])
+  })
+
+  it('gives up at the deadline with exit 3, naming the wait', async () => {
+    const run = racing(Number.POSITIVE_INFINITY)
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--wait-for-version', '50', '--wait-interval', '20']),
+      run.ctx,
+    )
+    expect(result.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    // 20 + 20 + the 10 left, never past the deadline.
+    expect(run.slept).toEqual([20_000, 20_000, 10_000])
+    expect(run.listings()).toBe(4)
+    expect(result.detail).toContain('Waited 50s over 4 listings (--wait-for-version 50).')
+  })
+
+  it('never waits out an ambiguous match: that is about the commit, not timing', async () => {
+    const run = racing(1, [version('a', SHA), version('b', SHA)])
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--wait-for-version', '300']),
+      run.ctx,
+    )
+    expect(result.outcome).toBe('ambiguous-version')
+    expect(run.listings()).toBe(1)
+    expect(run.slept).toEqual([])
+  })
+
+  it('bounds its flags', () => {
+    expect(parseVersionsPromoteArgs(['--sha', SHA]).waitForVersionSeconds).toBe(0)
+    expect(() => parseVersionsPromoteArgs(['--wait-for-version', '-1'])).toThrow('0..3600')
+    expect(() => parseVersionsPromoteArgs(['--wait-for-version', '3601'])).toThrow('0..3600')
+    expect(() => parseVersionsPromoteArgs(['--wait-interval', '0'])).toThrow('1..3600')
+  })
+})
+
+describe('--gate-verified binds the gate result to the promoted commit (narduk-libs#400)', () => {
+  const GATE = 'ci / Required'
+  const OTHER = '0123456789abcdef0123456789abcdef01234567'
+  const versions = [
+    numbered('v-target', SHA, 12),
+    numbered('v-other', OTHER, 11),
+    version('v-untagged', undefined, { number: 10 }),
+  ]
+  const live = [deployment('d1', 'v-live', '2026-09-17T01:00:00Z')]
+
+  function run(args: string[], env: Record<string, string | undefined> = ACTIONS_ENV) {
+    const lines: string[] = []
+    const { context: ctx, calls } = context(versions, live, env)
+    return {
+      calls,
+      lines,
+      result: runVersionsPromote(parseVersionsPromoteArgs(args), {
+        ...ctx,
+        log: (line) => lines.push(line),
+      }),
+    }
+  }
+
+  it('parses <check>@<sha> on the LAST @, keeping spaces and slashes in the check name', () => {
+    expect(parseGateAttestation(`${GATE}@${SHA}`)).toEqual({ check: GATE, sha: SHA })
+    expect(parseGateAttestation(`ci / Required@${SHA.toUpperCase()}`).sha).toBe(SHA)
+    expect(parseGateAttestation(`deploy@prod / gate@${SHA}`)).toEqual({
+      check: 'deploy@prod / gate',
+      sha: SHA,
+    })
+    expect(parseVersionsPromoteArgs(['--gate-verified', `${GATE}@${SHA}`]).gateVerified).toEqual({
+      check: GATE,
+      sha: SHA,
+    })
+    expect(parseVersionsPromoteArgs([]).gateVerified).toBeNull()
+  })
+
+  it('refuses a malformed attestation as a usage error', async () => {
+    expect(() => parseGateAttestation(GATE)).toThrow('<check>@<sha>')
+    expect(() => parseGateAttestation(`@${SHA}`)).toThrow('names no check')
+    expect(() => parseGateAttestation(`${GATE}@${SHORT}`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`${GATE}@${SHA}0`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`${GATE}@`)).toThrow('full 40-character')
+    expect(() => parseGateAttestation(`ci\n::error::forged@${SHA}`)).toThrow('control characters')
+    expect(() => parseGateAttestation(`${'x'.repeat(201)}@${SHA}`)).toThrow('longer than')
+    expect(() => parseVersionsPromoteArgs(['--gate-verified'])).toThrow(
+      '--gate-verified requires a value',
+    )
+    expect(await main(['deploy', 'versions-promote', '--sha', SHA, '--gate-verified', SHORT])).toBe(
+      PROMOTE_EXIT.usage,
+    )
+  })
+
+  it('promotes when the attestation names the promoted commit, and logs the binding', async () => {
+    const { result, calls, lines } = run(['--sha', SHA, '--gate-verified', `${GATE}@${SHA}`])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.gateVerified).toEqual({ check: GATE, sha: SHA })
+    expect(calls.deployed.map((call) => call.versionId)).toEqual(['v-target'])
+    expect(lines).toEqual([expect.stringContaining(`gate attestation: ${GATE} passed on ${SHA}`)])
+    expect(lines[0]).toContain('bound to version v-target')
+    expect(lines[0]).toContain('not read from GitHub')
+    expect(formatPromoteResult(promoted)).toContain(`gate       ${GATE} @ ${SHA}`)
+  })
+
+  it('refuses, before any Cloudflare read, when the attestation names another commit', async () => {
+    let reads = 0
+    const { client: stub, calls } = stubClient(versions, live)
+    const client: WranglerVersionsClient = {
+      ...stub,
+      listVersions: async (limit) => {
+        reads += 1
+        return stub.listVersions(limit)
+      },
+      listDeployments: async () => {
+        reads += 1
+        return stub.listDeployments()
+      },
+    }
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA, '--gate-verified', `${GATE}@${OTHER}`]),
+      { ...context(versions, live).context, client },
+    )
+    expect(result.outcome).toBe('gate-mismatch')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.gateMismatch)
+    expect(result.detail).toContain(`${GATE} passed on ${OTHER}`)
+    expect(result.detail).toContain(`this promote is for ${SHA}`)
+    expect(result.gateVerified).toEqual({ check: GATE, sha: OTHER })
+    expect(reads).toBe(0)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('requires the full SHA: a short --sha is not the attested commit', async () => {
+    const { result, calls } = run(['--sha', SHORT, '--gate-verified', `${GATE}@${SHA}`])
+    expect((await result).outcome).toBe('gate-mismatch')
+    expect(calls.deployed).toEqual([])
+    expect(checkGateAgainstSha({ check: GATE, sha: SHA }, SHA.toUpperCase())).toBeNull()
+  })
+
+  it('checks a GITHUB_SHA default against the attestation too', async () => {
+    const { result, calls } = run(['--gate-verified', `${GATE}@${OTHER}`], {
+      ...ACTIONS_ENV,
+      GITHUB_EVENT_NAME: 'push',
+    })
+    expect((await result).outcome).toBe('gate-mismatch')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('binds a --version-id promote through the version tag', async () => {
+    const ok = run(['--version-id', 'v-target', '--gate-verified', `${GATE}@${SHA}`])
+    expect((await ok.result).outcome).toBe('promoted')
+
+    const other = run(['--version-id', 'v-other', '--gate-verified', `${GATE}@${SHA}`])
+    const refused = await other.result
+    expect(refused.outcome).toBe('gate-mismatch')
+    expect(refused.versionId).toBe('v-other')
+    expect(refused.detail).toContain(`built from ${OTHER}`)
+    expect(other.calls.deployed).toEqual([])
+
+    const untagged = run(['--version-id', 'v-untagged', '--gate-verified', `${GATE}@${SHA}`])
+    const noTag = await untagged.result
+    expect(noTag.outcome).toBe('gate-mismatch')
+    expect(noTag.detail).toContain('carries no workers/tag')
+
+    const missing = run(['--version-id', 'v-gone', '--gate-verified', `${GATE}@${SHA}`])
+    const gone = await missing.result
+    expect(gone.outcome).toBe('gate-mismatch')
+    expect(gone.detail).toContain('was not in the searched listing')
+    expect(missing.calls.deployed).toEqual([])
+  })
+
+  it('checks the binding before a dry run reports success', async () => {
+    const { result } = run([
+      '--version-id',
+      'v-other',
+      '--gate-verified',
+      `${GATE}@${SHA}`,
+      '--dry-run',
+    ])
+    expect((await result).outcome).toBe('gate-mismatch')
+  })
+
+  it('keeps promoting without the flag, but warns that the attestation is missing', async () => {
+    const { result, calls, lines } = run(['--sha', SHA])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.gateVerified).toBeNull()
+    expect(calls.deployed.map((call) => call.versionId)).toEqual(['v-target'])
+    expect(lines).toEqual([GATE_ATTESTATION_MISSING_WARNING])
+    expect(lines[0]).toContain('--gate-verified')
+    expect(formatPromoteResult(promoted)).toContain('gate       NOT ATTESTED')
+  })
+
+  it('says nothing about the gate on a guard refusal or a rollback', async () => {
+    const refused = run(['--sha', SHA, '--gate-verified', `${GATE}@${SHA}`], { CI: 'true' })
+    expect((await refused.result).outcome).toBe('guard-refused')
+    expect(refused.lines).toEqual([])
+
+    const rolled = await runRollback(
+      parseRollbackArgs(['--to', 'v-target']),
+      context(versions, live).context,
+    )
+    expect(rolled.gateVerified).toBeUndefined()
+    expect(formatPromoteResult(rolled)).not.toContain('gate ')
+  })
+
+  it('rejects a version whose tag is another commit even when prefixes collide', () => {
+    const gate = { check: GATE, sha: SHA }
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', SHA, 1))).toBeNull()
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', SHA.slice(0, 12), 1))).toBeNull()
+    expect(checkGateAgainstVersion(gate, 'v', numbered('v', `${SHA.slice(0, 39)}0`, 1))).toContain(
+      'built from',
+    )
   })
 })

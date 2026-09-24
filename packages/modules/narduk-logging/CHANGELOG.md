@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.2
+
+### Patch Changes
+
+- e61a56d: Test configuration only (#605): adapter tests that boot a real host
+  get a 20 s budget instead of vitest's 5 s default. Nothing in the published
+  package changes.
+
+## 0.3.1
+
+### Patch Changes
+
+- 7bfcf46: Fix `logRequest` throwing a `RangeError` on a 101 WebSocket upgrade
+  response.
+
+  `logRequest` re-wrapped every handler response with
+  `new Response(response.body, response)` to attach correlation headers.
+  `new Response(body, init)` only accepts a status in 200–599, so a handler
+  returning a 101 Switching Protocols response (the normal shape for a Durable
+  Object WebSocket endpoint, as `@narduk-enterprises/narduk-realtime` uses) made
+  `logRequest` throw before the upgrade ever reached the client. The re-wrap
+  would also have dropped `webSocket`, the Cloudflare Workers upgrade extension
+  carrying the actual socket pair — the whole payload of an upgrade in workerd.
+
+  `logRequest` now returns a 101 (or any response carrying `webSocket`)
+  untouched, skipping the correlation-header and Server-Timing stamp it would
+  otherwise add — a protocol switch has no body to stream and nothing useful to
+  attach one to.
+
+## 0.3.0
+
+### Minor Changes
+
+- a82dc2d: Add the statement / round-trip counter contract from narduk-libs#325.
+  `QueryCounter` is driver-agnostic: a data-binding wrapper calls
+  `recordRoundTrip(statements = 1)` once per call into the binding
+  (`statements.length` for a D1 batch). Every `RequestTiming` owns one as
+  `timing.counter`; on h3, `useRequestCounter(event)` returns the same object.
+  Once anything is counted, exposed phases render their own delta
+  (`desc="1 stmt / 1 rt"`) and `total` renders the cumulative counts, and the
+  "Request completed" / "Slow route" records carry `statements` and
+  `roundTrips`. A request that counts nothing renders and logs exactly what it
+  did before. Also exported: `formatQueryCounts` and the `QueryCounts` type.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -4,9 +4,11 @@
 import { uploadToR2 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/r2'
 import {
   capIncomingMessageBytes,
+  enforceUploadBodyByteCap,
   getUploadPerformanceWarnings,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
+  sniffUploadImageType,
   validateUploadFiles,
 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/upload'
 import { createError, getHeader, readMultipartFormData } from 'h3'
@@ -46,6 +48,7 @@ export default defineUserMutation(
     parseBody: async (event) => {
       rejectOversizedUploadRequest(event)
       capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
+      await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
       let formData
       try {
         formData = await readMultipartFormData(event)
@@ -78,16 +81,30 @@ export default defineUserMutation(
 
     validateUploadFiles(files)
 
+    // The declared type is a client header. Identify every file from its
+    // bytes before anything is written, so one bad part stores nothing.
+    const contentTypes = files.map((file) => {
+      const sniffed = sniffUploadImageType(file.data)
+      if (!sniffed) {
+        throw createError({
+          statusCode: 415,
+          message: 'File content is not a supported image',
+        })
+      }
+      return sniffed
+    })
+
     const results = []
 
-    for (const file of files) {
-      const ext = normalizeExtension(file.type)
+    for (const [index, file] of files.entries()) {
+      const contentType = contentTypes[index]
+      const ext = normalizeExtension(contentType)
       const key = `uploads/${crypto.randomUUID()}.${ext}`
       const payload = new ArrayBuffer(file.data.byteLength)
-      const performanceWarnings = getUploadPerformanceWarnings(file)
+      const performanceWarnings = getUploadPerformanceWarnings({ ...file, type: contentType })
       new Uint8Array(payload).set(file.data)
 
-      await uploadToR2(event, key, payload, file.type)
+      await uploadToR2(event, key, payload, contentType)
 
       if (performanceWarnings.length > 0) {
         log.warn('Uploaded image exceeds public performance budget', {

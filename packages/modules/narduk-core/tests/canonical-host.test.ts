@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, request } from 'node:http'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,7 @@ const { runtime } = vi.hoisted(() => ({
       appUrl: 'https://www.example.com',
       enforceCanonicalHost: true as boolean | string,
       authEnforceCanonicalHost: false as boolean | string,
+      canonicalRedirectHosts: undefined as string | string[] | undefined,
     },
   },
 }))
@@ -24,7 +25,12 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const middlewareDirectory = join(packageRoot, 'runtime/server/middleware')
 
 /** Env wins over `runtimeConfig.public`, so a stray value would silently rewrite every case. */
-const ENV_KEYS = ['SITE_URL', 'ENFORCE_CANONICAL_HOST', 'AUTH_ENFORCE_CANONICAL_HOST']
+const ENV_KEYS = [
+  'SITE_URL',
+  'ENFORCE_CANONICAL_HOST',
+  'AUTH_ENFORCE_CANONICAL_HOST',
+  'CANONICAL_REDIRECT_HOSTS',
+]
 const HANDLER_RAN = 'handler-ran'
 
 interface Probe {
@@ -47,18 +53,39 @@ async function probe(
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
   try {
-    const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
-      method: init.method ?? 'GET',
-      headers: init.headers,
-      redirect: 'manual',
+    // node:http rather than fetch: fetch drops a caller-set `host` header, and
+    // the host is what the middleware routes on.
+    return await new Promise<Probe>((resolve, reject) => {
+      const req = request(
+        {
+          headers: init.headers,
+          host: '127.0.0.1',
+          method: init.method ?? 'GET',
+          path,
+          port: address.port,
+        },
+        (response) => {
+          let text = ''
+          response.setEncoding('utf8')
+          response.on('data', (chunk: string) => (text += chunk))
+          response.on('end', () => {
+            const header = (name: string) => {
+              const value = response.headers[name]
+              return value === undefined ? null : Array.isArray(value) ? value.join(', ') : value
+            }
+            resolve({
+              cacheControl: header('cache-control'),
+              location: header('location'),
+              status: response.statusCode ?? 0,
+              text,
+              vary: header('vary'),
+            })
+          })
+        },
+      )
+      req.on('error', reject)
+      req.end()
     })
-    return {
-      cacheControl: response.headers.get('cache-control'),
-      location: response.headers.get('location'),
-      status: response.status,
-      text: await response.text(),
-      vary: response.headers.get('vary'),
-    }
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
@@ -88,6 +115,8 @@ const SAME_ORIGIN_FETCH = {
 }
 
 const PAGE_PATH = '/lakes/superior'
+const WWW_HOST = 'www.example.com'
+const PREVIEW_HOST = 'app.acct.workers.dev'
 const API_PATH = '/api/mapkit/token'
 const CANONICAL_PAGE_URL = 'https://www.example.com/lakes/superior'
 
@@ -97,6 +126,7 @@ describe('canonical-host middleware', () => {
     runtime.public.appUrl = 'https://www.example.com'
     runtime.public.enforceCanonicalHost = true
     runtime.public.authEnforceCanonicalHost = false
+    runtime.public.canonicalRedirectHosts = undefined
   })
 
   afterEach(() => {
@@ -261,6 +291,62 @@ describe('canonical-host middleware', () => {
     })
   })
 
+  describe('a named host list redirects only those hosts (narduk-libs#515)', () => {
+    const onHost = (host: string) => ({ headers: { ...DOCUMENT_NAVIGATION, host } })
+
+    beforeEach(() => {
+      runtime.public.appUrl = 'https://example.com'
+      runtime.public.enforceCanonicalHost = false
+      runtime.public.canonicalRedirectHosts = WWW_HOST
+    })
+
+    it('redirects a navigation on a named host without ENFORCE_CANONICAL_HOST', async () => {
+      const result = await probe(`${PAGE_PATH}?q=1`, onHost(WWW_HOST))
+
+      expect(result.status).toBe(308)
+      expect(result.location).toBe('https://example.com/lakes/superior?q=1')
+    })
+
+    it('serves a workers.dev preview where it was asked, even with ENFORCE_CANONICAL_HOST on', async () => {
+      runtime.public.enforceCanonicalHost = true
+
+      for (const host of [PREVIEW_HOST, 'a1b2c3d4-app.acct.workers.dev']) {
+        const result = await probe(PAGE_PATH, onHost(host))
+        expect(result.status, host).toBe(200)
+        expect(result.text).toBe(HANDLER_RAN)
+      }
+    })
+
+    it('ignores a workers.dev entry in the list', async () => {
+      runtime.public.canonicalRedirectHosts = [WWW_HOST, PREVIEW_HOST]
+
+      const result = await probe(PAGE_PATH, onHost(PREVIEW_HOST))
+      expect(result.status).toBe(200)
+    })
+
+    it('serves the canonical host and an unnamed host where they were asked', async () => {
+      for (const host of ['example.com', 'staging.example.com']) {
+        const result = await probe(PAGE_PATH, onHost(host))
+        expect(result.status, host).toBe(200)
+      }
+    })
+
+    it('reads the list from the env, which beats runtimeConfig', async () => {
+      vi.stubEnv('CANONICAL_REDIRECT_HOSTS', ' https://old.example.com/ , WWW.example.net')
+
+      expect((await probe(PAGE_PATH, onHost('old.example.com'))).status).toBe(308)
+      expect((await probe(PAGE_PATH, onHost('www.example.net'))).status).toBe(308)
+      expect((await probe(PAGE_PATH, onHost(WWW_HOST))).status).toBe(200)
+    })
+
+    it('still never redirects a sub-resource fetch on a named host', async () => {
+      const result = await probe(API_PATH, {
+        headers: { ...SAME_ORIGIN_FETCH, host: WWW_HOST },
+      })
+      expect(result.status).toBe(200)
+    })
+  })
+
   describe('gates that must keep working', () => {
     it('skips non-safe methods', async () => {
       const result = await probe(PAGE_PATH, {
@@ -292,7 +378,7 @@ describe('canonical-host middleware', () => {
 
     it('does not trust x-forwarded-host to bypass the redirect', async () => {
       const result = await probe(PAGE_PATH, {
-        headers: { ...DOCUMENT_NAVIGATION, 'x-forwarded-host': 'www.example.com' },
+        headers: { ...DOCUMENT_NAVIGATION, 'x-forwarded-host': WWW_HOST },
       })
 
       expect(result.status).toBe(308)
@@ -301,14 +387,71 @@ describe('canonical-host middleware', () => {
   })
 
   describe('exactly one canonical redirect is registered (narduk-libs#409)', () => {
+    /**
+     * The source with its comments removed, so a middleware whose doc comment
+     * only mentions canonicalisation does not read as a second redirect
+     * (narduk-libs#682). A redirect still has to be written in code, and code
+     * keeps every string and identifier, so the guard loses no strength. A
+     * scanner, not a lazy block-comment regex, which is polynomial on an
+     * unterminated `/*`. A `//` right after `:` is a URL scheme.
+     */
+    function withoutComments(source: string): string {
+      let code = ''
+      let index = 0
+      while (index < source.length) {
+        if (source.startsWith('/*', index)) {
+          const end = source.indexOf('*/', index + 2)
+          index = end === -1 ? source.length : end + 2
+          code += ' '
+        } else if (source.startsWith('//', index) && source[index - 1] !== ':') {
+          const end = source.indexOf('\n', index)
+          index = end === -1 ? source.length : end
+        } else {
+          code += source[index]
+          index++
+        }
+      }
+      return code
+    }
+
+    function mentionsCanonicalInCode(source: string): boolean {
+      return /canonical/i.test(withoutComments(source))
+    }
+
     it('leaves one canonical-host middleware in the auto-scanned tree', () => {
       const canonicalMiddleware = readdirSync(middlewareDirectory)
         .filter((entry) => entry.endsWith('.ts'))
         .filter((entry) =>
-          /canonical/i.test(readFileSync(join(middlewareDirectory, entry), 'utf-8')),
+          mentionsCanonicalInCode(readFileSync(join(middlewareDirectory, entry), 'utf-8')),
         )
 
-      expect(canonicalMiddleware).toEqual(['00-canonical-host.ts'])
+      expect(
+        canonicalMiddleware,
+        'server/middleware files whose code (comments excluded) mentions "canonical"; only one canonical redirect may be auto-scanned (narduk-libs#409)',
+      ).toEqual(['00-canonical-host.ts'])
+    })
+
+    it('ignores prose about canonicalisation but not a redirect in code (narduk-libs#682)', () => {
+      const prose = [
+        '/**',
+        ' * Runs right after the canonical-host redirect.',
+        ' */',
+        '// keep ordering with the canonical middleware',
+        'export default defineEventHandler(() => {})',
+      ].join('\n')
+      const redirect = [
+        '// a comment that says nothing',
+        'const canonicalOrigin = "https://example.com"',
+        'export default defineEventHandler((event) => {',
+        '  setResponseStatus(event, 308)',
+        '  setResponseHeader(event, "location", canonicalOrigin + event.path)',
+        '})',
+      ].join('\n')
+
+      expect(mentionsCanonicalInCode(prose)).toBe(false)
+      expect(mentionsCanonicalInCode(redirect)).toBe(true)
+      expect(mentionsCanonicalInCode('/* unterminated canonical')).toBe(false)
+      expect(mentionsCanonicalInCode('const url = "https://x.test/canonical"')).toBe(true)
     })
 
     it('resolves the retired middleware specifier to the live handler', () => {

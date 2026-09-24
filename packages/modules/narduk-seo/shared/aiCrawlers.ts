@@ -99,6 +99,15 @@ export function resolveAiCrawlerRobotsGroups(option: unknown = 'allow'): AiCrawl
   return groups
 }
 
+/**
+ * Append the AI-crawler groups to an @nuxtjs/robots config.
+ *
+ * A crawler obeys only the most specific group naming it (RFC 9309 §2.2.1),
+ * so a group that names a crawler replaces the wildcard group for it. An
+ * `allow` group therefore restates the wildcard group's top-level `disallow`
+ * paths, the non-public routes narduk-seo adds among them. Without them, naming
+ * a crawler to welcome it would open those routes to it alone.
+ */
 export function mergeAiCrawlerRobotsGroups(
   robots: Record<string, unknown>,
   option: unknown,
@@ -106,9 +115,17 @@ export function mergeAiCrawlerRobotsGroups(
   const extraGroups = resolveAiCrawlerRobotsGroups(option)
   if (extraGroups.length === 0) return robots
 
+  const wildcardDisallow = Array.isArray(robots.disallow)
+    ? robots.disallow.filter((path): path is string => typeof path === 'string')
+    : []
+  const groups = extraGroups.map((group) =>
+    group.allow && wildcardDisallow.length > 0
+      ? { ...group, disallow: [...wildcardDisallow] }
+      : group,
+  )
   const existingGroups = Array.isArray(robots.groups) ? robots.groups : []
   return {
     ...robots,
-    groups: [...existingGroups, ...extraGroups],
+    groups: [...existingGroups, ...groups],
   }
 }

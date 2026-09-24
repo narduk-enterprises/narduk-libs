@@ -72,6 +72,79 @@ export type {
 
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
+/**
+ * The card / card-list / detail-view family (narduk-libs#264). Types only:
+ * the SFCs stay out of the barrel's value-import graph, matching the rest
+ * of the suite.
+ */
+export type { NeCardBadge, NeCardProps, NeCardStat } from './runtime/components/ne-card-types'
+export type {
+  NeCardListBreakpoint,
+  NeCardListColumnCount,
+  NeCardListProps,
+} from './runtime/components/ne-card-list-types'
+export type {
+  NeDetailFormat,
+  NeDetailItem,
+  NeDetailViewProps,
+} from './runtime/components/ne-detail-view-types'
+
+/**
+ * The filter bar's caller-built shapes (narduk-libs#261). `ne-filter-bar-types`
+ * exists so a page can type its items array without importing the SFC, which
+ * only works if the barrel carries the types: the exports map exposes `.`,
+ * `./module`, `./format` and `./theme.css`, so a deep path is not a legal
+ * subpath and `from '@narduk-enterprises/narduk-shell'` is the only import a
+ * consumer can write.
+ */
+export type {
+  NeFilterBarItem,
+  NeFilterBarKind,
+  NeFilterBarProps,
+} from './runtime/components/ne-filter-bar-types'
+
+/**
+ * The search field's caller-built shapes and the debounce constant
+ * (narduk-libs#261). `NE_SEARCH_DEBOUNCE_MS` is a value on purpose: a page
+ * that wants the same window without importing the SFC should not have to
+ * hardcode 250. The types file is a plain module, so this does not put the
+ * component — or `@nuxt/ui` — in the barrel's value-import graph.
+ */
+export { NE_SEARCH_DEBOUNCE_MS } from './runtime/components/ne-search-input-types'
+export type {
+  NeSearchInputProps,
+  NeSearchInputSize,
+} from './runtime/components/ne-search-input-types'
+
+/**
+ * The unreported treatment's vocabulary (narduk-libs#602) — the text every
+ * figure component says, and the test it uses, when nothing produced a value —
+ * and NeMeter's shapes (narduk-libs#601). Both files are plain modules, so
+ * neither an SFC nor `@nuxt/ui` enters the barrel's value-import graph.
+ */
+export { isUnreported, NE_UNREPORTED_TEXT } from './runtime/utils/unreported'
+export type { NeMeterProps, NeMeterVariant } from './runtime/components/ne-meter-types'
+
+/**
+ * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure
+ * functions with no Vue or DOM import, so a server route can write the same
+ * CSV `NeCsvDownload` does, and a page can read a wire sort without a regex.
+ */
+export { parseSort, toCsv } from './runtime/utils/data-table'
+export type {
+  NeCsvDownloadProps,
+  NeDataColumn,
+  NeDataColumnGroup,
+  NeDataTableBreakSlotProps,
+  NeDataTableCellSlotProps,
+  NeDataTableGroupSlotProps,
+  NeDataTableProps,
+  NeDataTableSlots,
+  NeSortableColumn,
+  NeSortDirection,
+  NeSortHeaderProps,
+} from './runtime/components/ne-data-table-types'
+
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added
 // `./module`, but only for the Nuxt module definition, not for app-facing

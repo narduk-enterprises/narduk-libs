@@ -19,25 +19,25 @@ export const PNPM_VERSION = '10.33.4'
 export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
 export const PACKAGE_VERSIONS = {
-  '@cloudflare/workers-types': '5.20260714.1',
+  '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.1.0',
+  '@narduk-enterprises/narduk-mapkit': '2.9.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.7.0',
-  '@narduk-enterprises/eslint-config': '2.0.3',
-  '@narduk-enterprises/narduk-ai': '0.3.0',
-  '@narduk-enterprises/narduk-analytics': '1.21.0',
-  '@narduk-enterprises/narduk-auth': '1.28.0',
-  '@narduk-enterprises/narduk-charts': '2.5.3',
-  '@narduk-enterprises/narduk-core': '2.2.0',
-  '@narduk-enterprises/narduk-logging': '0.2.0',
+  '@narduk-enterprises/narduk-app-tools': '0.21.1',
+  '@narduk-enterprises/eslint-config': '2.3.0',
+  '@narduk-enterprises/narduk-ai': '0.3.22',
+  '@narduk-enterprises/narduk-analytics': '1.25.0',
+  '@narduk-enterprises/narduk-auth': '1.29.4',
+  '@narduk-enterprises/narduk-charts': '2.5.6',
+  '@narduk-enterprises/narduk-core': '2.13.1',
+  '@narduk-enterprises/narduk-logging': '0.3.2',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
-  '@narduk-enterprises/narduk-platform': '2.1.0',
-  '@narduk-enterprises/narduk-seo': '2.4.0',
+  '@narduk-enterprises/narduk-platform': '2.1.1',
+  '@narduk-enterprises/narduk-seo': '2.6.0',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
@@ -52,9 +52,9 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.3.2',
-  '@narduk-enterprises/narduk-testkit': '1.5.0',
-  '@narduk-enterprises/narduk-uploads': '1.21.0',
+  '@narduk-enterprises/narduk-shell': '0.6.1',
+  '@narduk-enterprises/narduk-testkit': '1.7.1',
+  '@narduk-enterprises/narduk-uploads': '1.21.4',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
   // deep in the setup chain to finish registering the icon client-bundle
@@ -62,7 +62,7 @@ export const PACKAGE_VERSIONS = {
   // the reference app's own modules array and devDependency exactly.
   '@nuxt/icon': '2.5.1',
   '@nuxt/test-utils': '4.0.3',
-  '@nuxt/ui': '4.8.1',
+  '@nuxt/ui': '4.11.1',
   '@playwright/test': '1.61.1',
   // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
   // Vite 7, which makes a newly generated app install with a peer warning.
@@ -94,13 +94,18 @@ export const PACKAGE_VERSIONS = {
   // narduk-seo's current module set uses Unhead 3's tree-shake transform.
   // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
   nuxt: '4.5.2',
+  // narduk-seo@2.6+ treats this as an optional peer (narduk-libs#170).
+  // Generated SEO apps still call useSeo() with runtime OG on by default,
+  // so the scaffold must install the peer -- otherwise packed-consumer-smoke
+  // typecheck/build warns and the #316 /_og/ proofs receive /og.png.
+  'nuxt-og-image': '6.8.0',
   '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
   tailwindcss: '4.3.2',
   typescript: '5.9.3',
   vitest: '4.1.6',
   'vue-tsc': '3.2.5',
-  wrangler: '4.110.0',
+  wrangler: '4.136.3',
   zod: '4.4.3',
 } as const
 
@@ -115,7 +120,7 @@ const capabilityPackages: Record<Capability, readonly string[]> = {
   // [...]` array for exactly this reason.
   charts: ['@narduk-enterprises/narduk-charts'],
   mapkit: ['@narduk-enterprises/narduk-mapkit', '@narduk-enterprises/narduk-mapkit-nuxt'],
-  seo: ['@narduk-enterprises/narduk-seo'],
+  seo: ['@narduk-enterprises/narduk-seo', 'nuxt-og-image'],
   uploads: ['@narduk-enterprises/narduk-uploads'],
 }
 
@@ -247,8 +252,23 @@ export function createRootPackageManifest(
       // deployable Worker shape. CI's ci.yml `build-script: build:ci` and
       // the public browser job's `pnpm run build:ci` both call this --
       // matches the reference app's root script exactly.
-      'build:ci': 'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
-      'cf:build': 'pnpm --filter web run cf:build',
+      // Test-only NUXT_* values: the private reusable workflow does not
+      // inherit caller job env, and narduk-seo throws on a non-dev build
+      // when NUXT_OG_IMAGE_SECRET is empty. Public CI also sets these on
+      // the quality/browser jobs; they stay here so both variants work.
+      // Literal, not imported from ci-test-env.ts: repo scripts load this
+      // file with Node's own type stripping (consumer-smoke-fixture.mjs), so
+      // it must have no runtime imports. ci-workflow.test.ts pins the two
+      // copies together.
+      'build:ci':
+        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
+        'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+      // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
+      // install before `narduk-app` / `nuxt` exist. The frozen install reads
+      // `@narduk-enterprises/*` from `https://npm.nard.uk` with no token.
+      // `scripts/gh-packages-run.mjs` remains opt-in break-glass.
+      'cf:build': 'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
       'cf:deploy': 'pnpm --filter web run cf:deploy',
       'cf:deploy:preview': 'pnpm --filter web run cf:deploy:preview',
       ...(databaseBackend === 'none'
@@ -256,9 +276,12 @@ export function createRootPackageManifest(
         : {
             'db:migrate:local': 'pnpm --filter web run db:migrate:local',
             'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+            'db:status:production': 'pnpm --filter web run db:status:production',
+            'db:status:preview': 'pnpm --filter web run db:status:preview',
           }),
       deploy: 'pnpm --filter web run deploy',
       'deploy:dry-run': 'pnpm --filter web run deploy:dry-run',
+      'deploy:dev': 'pnpm --filter web run deploy:dev',
       'deploy:version': 'pnpm --filter web run deploy:version',
       dev: 'pnpm --filter web run dev',
       doctor: 'pnpm --filter web run doctor',
@@ -273,7 +296,14 @@ export function createRootPackageManifest(
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       knip: 'knip',
-      lint: 'pnpm --filter web run lint',
+      // eslint AND prettier. `lint` is the command a contributor or agent
+      // reaches for, and CI fails a prettier-only diff through the separate
+      // root `format:check` (the first entry in the reusable workflow's
+      // `extra-scripts`), so an eslint-only `lint` is a false green that
+      // costs a whole CI cycle for whitespace -- narduk-libs#628. The root
+      // check is the one composed here, not apps/web's: only it reaches
+      // `.changeset/`, root Markdown and `.github/`.
+      lint: 'pnpm --filter web run lint && pnpm run format:check',
       // Reads only apps/web/wrangler.jsonc and, once onboarding creates it,
       // ../../Config/cloudflare-app.json -- no install-time resolution or
       // registry credential, so it belongs in the static half of quality
@@ -293,8 +323,21 @@ export function createRootPackageManifest(
       // ambient token. narduk-libs' own `packed-consumer-smoke` job expands
       // this chain via `scripts/consumer-smoke-phases.mjs`, so the check also
       // runs against a really-installed generated app on every narduk-libs PR.
+      // `build:ci`, not `build`: CI builds with `build:ci` on both paths (the
+      // private caller's `build-script:` input, the public browser job's own
+      // step), and `build` alone throws on any `seo` app because narduk-seo
+      // refuses a non-dev build with an empty NUXT_OG_IMAGE_SECRET. The local
+      // gate therefore went red where CI was green, and the only way to run
+      // it was to know the two test-only placeholders out of band
+      // (narduk-libs#617). `build` stays the real-secret path for `cf:build`
+      // and operator recovery.
       'quality:static':
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build && pnpm run test:unit',
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build:ci && pnpm run test:unit',
+      'hotfix:check':
+        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run test:unit',
+      'deploy:hotfix': 'pnpm --filter web exec narduk-app deploy-hotfix',
+      'hotfix:build':
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm --filter web run cf:build',
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
@@ -413,11 +456,33 @@ export function createRootPackageManifest(
         // the same version. Narduk modules depend on `@nuxt/kit@^4.0.0`, so
         // without this every upstream Nuxt minor silently splits the app's kit
         // from its nuxt and drags in that kit's transitive dependency block.
+        //
+        // This literal is the same shape that reddened gonogo's first safe
+        // Dependabot lane PR (gonogo#106: nuxt bumped to 4.5.2, this literal
+        // did not move, `@nuxt/kit` stayed behind, `buildDiagnostics` import
+        // broke). gonogo#108's fix -- `"@nuxt/kit": "$nuxt"` -- does NOT
+        // transfer here as a plain substitution: pnpm only resolves `$<name>`
+        // against a dependency declared in the SAME package.json as
+        // `pnpm.overrides` (this one, the root manifest), and `nuxt` is a
+        // dependency of apps/web/package.json, not this one (confirmed
+        // empirically -- a bare `$nuxt` here fails `pnpm install` with
+        // "Cannot resolve version $nuxt in overrides"). Every other
+        // `@narduk-enterprises/*` override below has the identical problem:
+        // none of their referenced packages are direct dependencies of this
+        // root manifest either. Making any of them track-by-reference needs
+        // that package anchored as a real root-manifest dependency too --
+        // narduk-libs#282's already-tracked follow-up, not done here.
         '@nuxt/kit': PACKAGE_VERSIONS.nuxt,
         'eslint-plugin-vitest>@typescript-eslint/utils':
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
+        // Speed, not security. Miniflare pins its undici exactly (7.29.0 in
+        // 5.20260921.0-alpha), and below 7.29.1 every D1 call a test makes
+        // through narduk-testkit costs ~6.5ms instead of ~2ms, so seed-heavy
+        // suites time out on the CI pool (narduk-libs#740). A floor rather
+        // than a pin, so a lockfile refresh can still move it forward.
+        'miniflare>undici': '^7.29.1',
       },
       ...(capabilities.includes('auth')
         ? {
@@ -479,7 +544,10 @@ export function createWebPackageManifest(
       // runs this same command under `narduk-app dev --credentials nvault`.
       dev: 'nuxt dev --host 127.0.0.1',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
-      lint: 'nuxt prepare && eslint . --max-warnings 0',
+      // narduk-lint (from @narduk-enterprises/eslint-config) replaces
+      // `eslint . --max-warnings 0`: errors fail, warnings are held to the
+      // checked-in apps/web/lint-budget.json, which starts empty.
+      lint: 'nuxt prepare && narduk-lint',
       // Cross-checks wrangler.jsonc's bindings against ../../Config/cloudflare-app.json
       // (populated by onboarding, after this generator runs). Absent that
       // file the script exits 0 with an explanatory message instead of
@@ -503,6 +571,8 @@ export function createWebPackageManifest(
       ...(databaseBackend === 'none'
         ? {}
         : {
+            'db:status:production': 'narduk-app db migrate-deployment --target production --check',
+            'db:status:preview': 'narduk-app db migrate-deployment --target preview --check',
             'db:migrate:local':
               'narduk-app db migrate --config migrations.sources.json --database ' +
               appName +
@@ -514,6 +584,9 @@ export function createWebPackageManifest(
           }),
       deploy: 'narduk-app deploy deploy',
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
+      // Development mode (company-hq#781): refuses unless this workstation holds
+      // an activation record from `narduk-app development enter`.
+      'deploy:dev': 'narduk-app development deploy',
       'deploy:local': 'narduk-app deploy-local',
       'deploy:version': 'narduk-app deploy versions-upload',
       // Nuxt DevTools explicitly skips TEST processes. The browser fixture
@@ -521,13 +594,14 @@ export function createWebPackageManifest(
       // its Vite 8-incompatible config-retriever hook.
       'dev:test': 'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
-      // `--checkout ..` because the item reads the WHOLE checkout (root and
-      // apps/web manifests, nuxt.config, pages/components), and pnpm runs this
-      // script with the cwd at apps/web.
-      // Same `--checkout ..` reasoning: the item reads Config/cloudflare-app.json
-      // and the wrangler config from the repository root.
-      'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ..',
-      'foundation:shared-ui-pinned': 'narduk-app foundation:check:shared-ui-pinned --checkout ..',
+      // pnpm runs these with the cwd at apps/web, and both items read the
+      // checkout from the repository root: its manifests, Config/
+      // cloudflare-app.json, the wrangler config. That root is `../..`. `..` is
+      // apps/, where item 12 found no deployment block and reported N/A with
+      // exit 0 (narduk-libs#679).
+      'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ../..',
+      'foundation:shared-ui-pinned':
+        'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
       'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
       'og:generate': 'narduk-app og:generate',
       'og:check': 'narduk-app og:check',

@@ -31,6 +31,23 @@
  *                                   with no bound. Presence of the key is not
  *                                   the guarantee; a value is.
  *
+ * ## Chains that are neither awaited nor returned (2026-09-18)
+ *
+ * A select chain handed straight to a helper was invisible:
+ * `getDatabaseRows(db.select().from(apiKeys).where(eq(apiKeys.userId, id)))`
+ * in narduk-auth's `api-keys.get.ts` passed unbounded. The outermost
+ * `.where(eq(<non-primary column>, …))` of a `.from()` chain is now checked
+ * wherever it appears. Any other `.where(…)` in argument position is left alone
+ * — only the equality-on-a-foreign-column shape reliably means "a list".
+ *
+ * ## Opting out with a reason
+ *
+ * Some lists are bounded by the domain rather than by the query (a user's API
+ * keys, a tenant's handful of roles). A `// narduk-bounded: <reason>` comment
+ * directly before the statement records that judgement and silences the rule
+ * for that statement. The reason is required; a bare `narduk-bounded:` does
+ * not count.
+ *
  * No autofix and no suggestion. v1 offered to append `.limit(100)`; the right
  * bound is a product decision, and an editor "quick fix" that silently caps a
  * result set is worse than the warning.
@@ -52,6 +69,7 @@ interface Options {
 }
 
 const DEFAULT_PRIMARY_KEY_CALLEES = ['eq', 'inArray']
+const BOUNDED_COMMENT = /^\s*narduk-bounded:\s*\S/
 const DEFAULT_PRIMARY_KEY_COLUMNS = ['id', 'uuid']
 const DEFAULT_AGGREGATE_CALLEES = [
   'count',
@@ -226,6 +244,28 @@ export default {
       return false
     }
 
+    /** `eq(<non-primary column>, …)` — an equality that selects a list. */
+    function isForeignColumnEquality(node: any): boolean {
+      const target = unwrapTsWrappers(node)
+      if (target?.type !== 'CallExpression') return false
+      if (getIdentifierName(unwrapTsWrappers(target.callee)) !== 'eq') return false
+      const column = unwrapTsWrappers(target.arguments?.[0])
+      return column?.type === 'MemberExpression' && !targetsPrimaryKey(column)
+    }
+
+    /** The call is not itself the receiver of a further chained method. */
+    function isOutermostChainCall(node: any): boolean {
+      let current = node
+      while (
+        current.parent &&
+        ['TSAsExpression', 'TSNonNullExpression', 'ChainExpression'].includes(current.parent.type)
+      ) {
+        current = current.parent
+      }
+      const parent = current.parent
+      return !(parent?.type === 'MemberExpression' && parent.object === current)
+    }
+
     /** Does the projection consist of aggregate helpers or aggregate sql? */
     function isAggregateProjection(node: any): boolean {
       const target = unwrapTsWrappers(node)
@@ -249,9 +289,22 @@ export default {
       })
     }
 
+    /** `// narduk-bounded: <reason>` before the node or its statement. */
+    function isDeclaredBounded(node: any): boolean {
+      let current = node
+      for (let depth = 0; current && depth < 64; depth += 1) {
+        const comments = sourceCode.getCommentsBefore(current)
+        if (comments.some((comment: any) => BOUNDED_COMMENT.test(comment.value))) return true
+        if (/Statement$|Declaration$/.test(current.type)) return false
+        current = current.parent
+      }
+      return false
+    }
+
     function report(node: any, messageId: 'requireLimit' | 'requireLimitOption'): void {
       if (reported.has(node)) return
       reported.add(node)
+      if (isDeclaredBounded(node)) return
       context.report({ node, messageId })
     }
 
@@ -324,6 +377,14 @@ export default {
 
         if (method === 'findMany') {
           analyzeFindMany(node)
+          return
+        }
+        if (
+          method === 'where' &&
+          isOutermostChainCall(node) &&
+          isForeignColumnEquality(node.arguments?.[0])
+        ) {
+          analyzeSelectChain(node, node)
           return
         }
         if (method && TERMINALS.has(method)) {

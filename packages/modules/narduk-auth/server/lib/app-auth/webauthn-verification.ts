@@ -1,7 +1,8 @@
-import { isoBase64URL } from '@simplewebauthn/server/helpers'
 import { createError } from 'h3'
 
-import type { AuthenticatorTransportFuture } from '@simplewebauthn/server'
+import { isoBase64URL } from './webauthn-server'
+
+import type { AuthenticatorTransportFuture } from './webauthn-server'
 
 /**
  * The decision half of the passkey ceremonies, kept free of every Nuxt-layer

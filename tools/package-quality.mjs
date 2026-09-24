@@ -89,7 +89,7 @@ const commands = {
     '--ignore-path',
     join(repoRoot, '.prettierignore'),
   ],
-  lint: ['eslint', ...(extraArgs.length > 0 ? extraArgs : ['src/**/*.ts']), '--max-warnings', '0'],
+  lint: ['narduk-lint', ...(extraArgs.length > 0 ? extraArgs : ['src/**/*.ts'])],
   typecheck: ['tsc', '--noEmit', '--project', extraArgs[0] || 'tsconfig.json'],
 }
 

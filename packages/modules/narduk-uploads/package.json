@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-uploads",
-  "version": "1.21.0",
+  "version": "1.21.4",
   "private": false,
   "type": "module",
   "description": "R2 upload and image delivery Nuxt module for Narduk Cloudflare apps.",
@@ -70,10 +70,10 @@
     "typecheck": "nuxt typecheck",
     "prelint": "pnpm run nuxt:prepare",
     "eslint:typegen": "eslint --print-config package.json >/dev/null 2>&1",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
@@ -117,6 +117,6 @@
     "vite": "npm:rolldown-vite@7.3.1"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

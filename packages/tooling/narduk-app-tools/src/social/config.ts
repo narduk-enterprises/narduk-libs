@@ -80,10 +80,21 @@ export const socialPreviewSchema = z
           code: 'custom',
           message: 'Routes without a page file require a reason identifying their owner',
         })
-      if (route.kind === 'dynamic' && route.source?.includes('[') && route.paths.length < 2)
+      // Two samples are what prove a parameterized route's preview actually
+      // varies with its parameter. An app whose route family genuinely has one
+      // instance today cannot produce a second real path, and a fabricated one
+      // proves less than nothing -- so that app says why in `reason` instead,
+      // the same carve-out a generic `default` shell already uses.
+      if (
+        route.kind === 'dynamic' &&
+        route.source?.includes('[') &&
+        route.paths.length < 2 &&
+        !route.reason
+      )
         ctx.addIssue({
           code: 'custom',
-          message: 'Parameterized dynamic routes require at least two examples',
+          message:
+            'Parameterized dynamic routes require at least two examples, or a reason explaining why only one exists',
         })
     }
   })

@@ -25,9 +25,17 @@ export type HealthCheckDetail = Record<string, unknown>
 
 /**
  * How one failure rolls up, in the report's own vocabulary: `error` makes the
- * report `error` (HTTP 503), `degraded` makes it `degraded` (HTTP 200).
+ * report `error` (HTTP 503), `degraded` makes it `degraded` (HTTP 200), and
+ * `notice` leaves the report's `status` alone.
+ *
+ * `degraded` is not the mild option it reads as. A monitor that matches
+ * `"status":"ok"` in the body -- the estate uptime detector does -- reads a
+ * `degraded` report as down and pages exactly as it would for `error`. A
+ * failure worth publishing but not worth a page is a `notice`: the entry still
+ * says `result: 'fail'` with its `detail`, for a dashboard or a detector that
+ * selects by `kind`, and the report stays `ok` (narduk-libs#414).
  */
-export type HealthCheckSeverity = 'degraded' | 'error'
+export type HealthCheckSeverity = 'degraded' | 'error' | 'notice'
 
 export interface HealthCheckContext {
   event: H3Event
@@ -46,10 +54,10 @@ export interface HealthCheckOutcome {
   /**
    * How this particular failure should roll up, for a check that can fail at
    * more than one severity. It is published as the report entry's `required`
-   * flag (`error` -> `true`, `degraded` -> `false`), so the rollup keeps
-   * reading one field. A check declared `required: false` can only ever report
-   * `degraded`; it cannot escalate itself into an HTTP 503. Ignored when the
-   * check passed.
+   * flag (`error` -> `true`, `degraded` -> `false`), plus `notice: true` for a
+   * `notice`, which the rollup skips. A check declared `required: false` can
+   * report `degraded` or `notice`; it cannot escalate itself into an HTTP 503.
+   * Ignored when the check passed.
    */
   severity?: HealthCheckSeverity
 }
@@ -99,6 +107,11 @@ export interface HealthCheckReport {
   /** The check's family label, when it declared one. See `HealthCheckDefinition.kind`. */
   kind?: string
   name: string
+  /**
+   * `true` on a failure its check reported at `notice` severity: published for
+   * observation, and left out of the report's `status`. Omitted otherwise.
+   */
+  notice?: true
   /** Why a check did not run. Present only when `result` is `skipped`. */
   reason?: string
   /**
@@ -180,7 +193,7 @@ export function resolveFailureRequired(declaredRequired: boolean, severity: unkn
   if (!declaredRequired) {
     return false
   }
-  return severity === 'degraded' ? false : true
+  return severity === 'degraded' || severity === 'notice' ? false : true
 }
 
 /**
@@ -283,11 +296,13 @@ export async function runRegisteredHealthCheck(
 
   const outcome = settled.value as HealthCheckOutcome | undefined
   const passed = outcome?.ok !== false
-  if (!passed) {
+  const notice = !passed && outcome?.severity === 'notice'
+  if (!passed && !notice) {
     log.error('Health check reported a failure', { check: check.name })
   }
   return {
     ...base,
+    ...(notice ? { notice: true as const } : {}),
     // A timed-out or thrown check keeps the declared flag: only a check that
     // reported its own failure may say this one was the milder kind.
     required: passed ? check.required : resolveFailureRequired(check.required, outcome?.severity),

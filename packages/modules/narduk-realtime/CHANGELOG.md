@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-realtime
 
+## 0.3.2
+
+### Patch Changes
+
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 0.3.1
+
+### Patch Changes
+
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
 ## 0.3.0
 
 ### Minor Changes

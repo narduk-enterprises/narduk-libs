@@ -33,6 +33,8 @@
  * on `AbortSignal`.
  */
 
+import { readBoundedBody } from './boundedBody'
+
 /** Origin every published narduk-data product is served from. */
 export const NARDUK_DATA_ORIGIN = 'https://data.nard.uk'
 
@@ -58,12 +60,16 @@ const FORBIDDEN_FORWARD_HEADERS = new Set(['authorization', 'cookie', 'proxy-aut
 /** An artifact file name: one path segment, so a manifest cannot escape its release prefix. */
 const ARTIFACT_PATH_PATTERN = /^[A-Za-z0-9][\w.-]*$/u
 
+const SHA256_PATTERN = /^[a-f0-9]{64}$/iu
+
 /**
  * Why a narduk-data read failed.
  *
  * - `aborted` — the caller's own signal cancelled its read.
  * - `checksum` — the artifact does not match its immutable manifest.
  * - `http` — the upstream answered a non-2xx status (see `status`).
+ * - `missing` — the manifest lists no artifact at the requested `entryPath`:
+ *   the release does not publish it, which is not an outage.
  * - `network` — the request never produced a response.
  * - `rejected` — a consumer hook, the origin pin or the expected artifact path
  *   refused an otherwise well-formed response.
@@ -72,7 +78,15 @@ const ARTIFACT_PATH_PATTERN = /^[A-Za-z0-9][\w.-]*$/u
  * - `too-large` — the body exceeded the caller's byte ceiling.
  */
 export type NardukDataErrorReason =
-  'aborted' | 'checksum' | 'http' | 'network' | 'rejected' | 'schema' | 'timeout' | 'too-large'
+  | 'aborted'
+  | 'checksum'
+  | 'http'
+  | 'missing'
+  | 'network'
+  | 'rejected'
+  | 'schema'
+  | 'timeout'
+  | 'too-large'
 
 /** Every failure this module raises, so callers can branch on `reason`. */
 export class NardukDataError extends Error {
@@ -172,6 +186,11 @@ export interface NardukDataFetchOptions<T> extends NardukDataRequestPolicy {
  */
 export interface NardukDataReleaseManifest {
   artifact: { path: string; sha256: string }
+  /**
+   * Every artifact in the release, the primary one included. Read only when a
+   * product sets `entryPath`; entries are validated at that point.
+   */
+  artifacts?: Array<{ path: string; sha256: string }>
   releaseId: string
   staleness?: {
     age_minutes?: number | null
@@ -249,6 +268,15 @@ export interface NardukDataProduct<
    * different artifact is refused rather than silently followed.
    */
   artifactPath?: string
+  /**
+   * Read a secondary artifact the manifest lists in `artifacts[]` instead of
+   * the primary `artifact` — e.g. `consumer/lakes/texas/canyon-lake/history-1y.json`.
+   * The release-relative path may have several segments, each of which must be
+   * a plain file or directory name. It is checked against that entry's own
+   * SHA-256. A release that lists no such entry fails with reason `missing`,
+   * never by falling back to the primary artifact.
+   */
+  entryPath?: string
   /** Thresholds for the derived state; defaults to the manifest's own. */
   freshness?: NardukDataFreshnessThresholds
   /** Hard ceiling on the manifest body. Defaults to 256 KiB. */
@@ -347,7 +375,7 @@ const releaseManifestSchema: NardukDataSchema<NardukDataReleaseManifest> = {
       !isRecord(value.artifact) ||
       typeof value.artifact.path !== 'string' ||
       typeof value.artifact.sha256 !== 'string' ||
-      !/^[a-f0-9]{64}$/iu.test(value.artifact.sha256)
+      !SHA256_PATTERN.test(value.artifact.sha256)
     ) {
       return { error: 'not a narduk-data release manifest', success: false }
     }
@@ -432,65 +460,6 @@ function assertOrigin(url: string, origin: string): void {
   }
 }
 
-/**
- * Read a body while holding `maxBytes` as a hard ceiling.
- *
- * The ceiling is enforced against bytes actually accumulated, so an upstream
- * that omits or lies about `content-length` cannot push more than one chunk
- * past it into isolate memory; the stream is cancelled rather than drained. A
- * single-chunk body is returned as-is, so the common small response never pays
- * for a merged copy.
- */
-async function readBoundedBody(
-  response: Response,
-  url: string,
-  maxBytes: number,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const declaredLength = Number(response.headers.get('content-length') ?? '')
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw tooLargeError(url, maxBytes)
-  }
-
-  const body = response.body
-  if (!body) {
-    const buffered = new Uint8Array(await response.arrayBuffer())
-    if (buffered.byteLength > maxBytes) throw tooLargeError(url, maxBytes)
-    return buffered
-  }
-
-  const reader = body.getReader()
-  const chunks: Array<Uint8Array<ArrayBufferLike>> = []
-  let byteCount = 0
-  try {
-    for (;;) {
-      // eslint-disable-next-line no-await-in-loop -- a stream is read one chunk at a time; that is the point of the ceiling
-      const { done, value } = await reader.read()
-      if (done) break
-      byteCount += value.byteLength
-      if (byteCount > maxBytes) {
-        // eslint-disable-next-line no-await-in-loop -- cancelling stops the download instead of draining the rest of it
-        await reader.cancel()
-        throw tooLargeError(url, maxBytes)
-      }
-      chunks.push(value)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-
-  const only = chunks.length === 1 ? chunks[0] : undefined
-  if (only && only.byteLength === byteCount && only.buffer instanceof ArrayBuffer) {
-    return only as Uint8Array<ArrayBuffer>
-  }
-  const merged = new Uint8Array(byteCount)
-  let offset = 0
-  for (const chunk of chunks) {
-    merged.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return merged
-}
-
 async function attemptRequest(
   url: string,
   policy: NardukDataRequestPolicy,
@@ -505,7 +474,9 @@ async function attemptRequest(
       method,
       // A published artifact never redirects; following one off-origin would
       // defeat the origin pin, so a redirect is an error rather than a hop.
-      redirect: 'error',
+      // `manual`, not `error`: the Workers runtime rejects `redirect: 'error'`
+      // outright, and a 3xx (or an opaque redirect) is still not `ok` below.
+      redirect: 'manual',
       signal: timeoutSignal,
     })
     if (!response.ok) {
@@ -516,7 +487,10 @@ async function attemptRequest(
         response.status,
       )
     }
-    return await readBoundedBody(response, url, policy.maxBytes ?? DEFAULT_MAX_BYTES)
+    const maxBytes = policy.maxBytes ?? DEFAULT_MAX_BYTES
+    return await readBoundedBody(response, maxBytes, {
+      tooLarge: () => tooLargeError(url, maxBytes),
+    })
   } catch (error) {
     if (error instanceof NardukDataError) throw error
     if (isAbortError(error)) {
@@ -708,7 +682,63 @@ function describeFreshness(
   }
 }
 
+/**
+ * Split a release-relative `entryPath` into URL-safe segments.
+ *
+ * Every segment must be a plain name, so a path cannot climb out of its release
+ * with `..`, start at the origin root, or smuggle an encoded separator.
+ */
+function entrySegments(entryPath: string, manifestUrl: string): string[] {
+  const segments = entryPath.split('/')
+  // The pattern requires a leading letter or digit, which also refuses `.`, `..` and ''.
+  if (!segments.every((segment) => ARTIFACT_PATH_PATTERN.test(segment))) {
+    throw new NardukDataError(
+      `narduk-data entry path '${entryPath}' is not a plain release-relative path.`,
+      'rejected',
+      manifestUrl,
+    )
+  }
+  return segments
+}
+
+/** The checksum of the manifest-listed entry at `entryPath`, or a `missing` failure. */
+function entrySha256(
+  manifest: NardukDataReleaseManifest,
+  entryPath: string,
+  manifestUrl: string,
+): string {
+  const listed: unknown = manifest.artifacts
+  // A list that is present but not a list is a producer defect, not "not published".
+  if (listed !== undefined && !Array.isArray(listed)) {
+    throw new NardukDataError(
+      `narduk-data manifest at ${manifestUrl} has an unusable artifacts list.`,
+      'rejected',
+      manifestUrl,
+    )
+  }
+  const entry = Array.isArray(listed)
+    ? listed.find((candidate) => isRecord(candidate) && candidate.path === entryPath)
+    : undefined
+  if (!isRecord(entry)) {
+    throw new NardukDataError(
+      `narduk-data release ${manifest.releaseId} lists no artifact at '${entryPath}'.`,
+      'missing',
+      manifestUrl,
+    )
+  }
+  if (typeof entry.sha256 !== 'string' || !SHA256_PATTERN.test(entry.sha256)) {
+    throw new NardukDataError(
+      `narduk-data manifest at ${manifestUrl} lists '${entryPath}' without a usable SHA-256.`,
+      'rejected',
+      manifestUrl,
+    )
+  }
+  return entry.sha256
+}
+
 interface CacheEntry {
+  /** The manifest-declared SHA-256 the cached bytes were verified against. */
+  artifactSha256: string
   artifactUrl: string
   /** Serve this entry without re-attempting upstream until this instant. */
   cooldownUntilMs: number
@@ -811,6 +841,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     return [
       product.productId,
       product.artifactPath ?? '',
+      product.entryPath ?? '',
       product.maxBytes ?? DEFAULT_MAX_BYTES,
       product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
       identityOf(product.schema),
@@ -851,6 +882,8 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     product: NardukDataProduct<TArtifact, TManifest>,
     context: NardukDataRequestContext | undefined,
     manifestUrl: string,
+    segments: string[] | null,
+    previous: CacheEntry | undefined,
   ): Promise<CacheEntry> {
     // The shared read carries the first caller's correlation and fetcher, but
     // never a caller's signal: cancellation is raced per caller instead.
@@ -891,20 +924,40 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       )
     }
 
+    const expectedSha256 =
+      product.entryPath === undefined
+        ? manifest.artifact.sha256
+        : entrySha256(manifest, product.entryPath, manifestUrl)
     const artifactUrl = joinUrl(
       origin,
       encodeURIComponent(product.productId),
       'releases',
       encodeURIComponent(manifest.releaseId),
-      encodeURIComponent(artifactName),
+      ...(segments ?? [artifactName]).map((segment) => encodeURIComponent(segment)),
     )
+    const sha256 = expectedSha256.toLowerCase()
+    // A release is immutable: when the pointer still names the release and
+    // checksum already held, revalidation costs the manifest only. The parsed
+    // value keeps its identity, so a caller can memoize work derived from it.
+    if (previous && previous.artifactUrl === artifactUrl && previous.artifactSha256 === sha256) {
+      // The pairing is new even though the bytes are not: `validate` still
+      // cross-checks the kept value against the manifest just read.
+      if (product.validate) {
+        const validate = product.validate
+        const kept = previous.data as TArtifact
+        runHook(artifactUrl, 'validate', () => {
+          validate(kept, manifest)
+        })
+      }
+      return { ...previous, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
+    }
     const bytes = await requestBytes(
       artifactUrl,
       { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
       'GET',
     )
     const observed = await sha256Hex(bytes)
-    if (observed !== manifest.artifact.sha256.toLowerCase()) {
+    if (observed !== sha256) {
       throw new NardukDataError(
         `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
         'checksum',
@@ -921,6 +974,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     }
 
     return {
+      artifactSha256: sha256,
       artifactUrl,
       cooldownUntilMs: 0,
       data,
@@ -947,13 +1001,17 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       product: NardukDataProduct<TArtifact, TManifest>,
       context?: NardukDataRequestContext,
     ): Promise<NardukDataResult<TArtifact, TManifest>> {
-      const key = cacheKey(product, context)
       const manifestUrl = joinUrl(
         origin,
         encodeURIComponent(product.productId),
         'current',
         'manifest.json',
       )
+      // Checked before the memo is consulted, so an unusable path can never be
+      // answered from another entry's cached value.
+      const segments =
+        product.entryPath === undefined ? null : entrySegments(product.entryPath, manifestUrl)
+      const key = cacheKey(product, context)
       const present = (entry: CacheEntry, source: NardukDataSource) => ({
         artifactUrl: entry.artifactUrl,
         data: entry.data as TArtifact,
@@ -985,7 +1043,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
 
       let flight = inFlight.get(key)
       if (!flight) {
-        flight = load(product, context, manifestUrl)
+        flight = load(product, context, manifestUrl, segments, memo)
           .then((entry) => {
             remember(key, entry)
             return entry

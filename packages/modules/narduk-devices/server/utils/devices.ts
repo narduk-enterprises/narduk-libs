@@ -22,6 +22,14 @@ import {
   type ReissueOutcome,
   type ScopedNonceRef,
 } from './devices-complete-claim'
+import {
+  type ContextBoundCompletionProof,
+  contextBoundSigningBytes,
+  DEVICE_PROOF_CONTEXT_PATTERN,
+  isContextBoundProof,
+  parseContextBoundRequest,
+  timingSafeEqualText,
+} from './devices-context-proof'
 import { DevicesError } from './devices-error'
 import {
   createLockoutGate,
@@ -30,6 +38,7 @@ import {
   type LockoutSubject,
   lockoutSubjectFor,
 } from './devices-lockout'
+import { revokeDeviceAtomically, rotateCredentialAtomically } from './devices-revocation'
 import {
   canonicalBytes,
   type CanonicalValue,
@@ -55,6 +64,7 @@ import type {
   DevicesAuditAction,
   DevicesAuditEvent,
   DeviceSession,
+  DeviceSessionWithDevice,
   DevicesResourceRef,
   IssuedCredential,
 } from '../../shared/types/devices'
@@ -82,6 +92,15 @@ export interface DevicesServiceOptions {
   approvalTtlSeconds?: number
   /** Session-open challenge lifetime; also bounds the replay cache. Default 5 minutes. */
   challengeTtlSeconds?: number
+  /**
+   * The one signing context a `ContextBoundCompletionProof` may carry, such as
+   * `mybo/claim-handoff/v1` (narduk-libs#237). Unset, every context-bound
+   * proof is refused `invalid`: the context is what keeps a signature made for
+   * another protocol from being replayed as a completion proof, so the library
+   * never accepts one it was not told to expect. Must match
+   * `DEVICE_PROOF_CONTEXT_PATTERN` and must not name this package.
+   */
+  completionProofContext?: string
   /** Primary-key generator. Defaults to `crypto.randomUUID()`. */
   idGenerator?: () => string
   /** Millisecond epoch clock. Injectable so tests own time. */
@@ -381,6 +400,14 @@ export interface DeviceCompletionProof {
 }
 
 /**
+ * Either proof shape `completeClaimWithRecordedApproval` verifies: the
+ * library's own `DeviceCompletionProof`, or the consumer-shaped
+ * `ContextBoundCompletionProof` a device signing its own domain-separated
+ * handoff body can produce (narduk-libs#237).
+ */
+export type CompletionProof = ContextBoundCompletionProof | DeviceCompletionProof
+
+/**
  * Completion driven by the *device*, on the strength of the approval already
  * recorded on the claim session by `issueApprovalToken`.
  *
@@ -406,7 +433,7 @@ export interface CompleteClaimWithRecordedApprovalInput {
    * Optional for a first completion; **required** for
    * `reissueOnIdempotentReplay`, which rotates live credentials.
    */
-  deviceProof?: DeviceCompletionProof
+  deviceProof?: CompletionProof
   /** Base64url raw Ed25519 key; must equal the key the claim session recorded. */
   devicePublicKey: string
   hardwareFingerprint: string
@@ -437,6 +464,14 @@ export interface CompleteClaimResult {
    */
   credentials: IssuedCredential[]
   deviceId?: string
+  /**
+   * Set only on a served re-issue: the installation id the device was
+   * completed with. A consumer that mints a fresh installation id per attempt
+   * (because the device cannot sign one) returns this instead of the id it
+   * minted for the replay, which the device row never recorded
+   * (narduk-libs#237).
+   */
+  installationId?: string
   retryAfterSeconds?: number
   status: ClaimCompleteStatus
 }
@@ -689,6 +724,17 @@ export interface DevicesService {
   getSession: (sessionId: string) => Promise<DeviceSession | null>
   /** The active session a bearer token names, resolved by digest, or null. */
   getSessionByToken: (sessionToken: string) => Promise<DeviceSession | null>
+  /**
+   * The same resolution, with the session's device, in **one** query.
+   *
+   * The tenant facts a route needs to authorize anything — `orgId`,
+   * `resourceKind`/`resourceId`, `installationId` — live on the device, not
+   * the session, so a consumer that resolved a bearer and then re-read the
+   * device paid two D1 round trips on its hottest authenticated path
+   * (narduk-libs#225). This is an inner join: a session whose device row is
+   * gone resolves to null rather than to a session with no tenant.
+   */
+  getSessionByTokenWithDevice: (sessionToken: string) => Promise<DeviceSessionWithDevice | null>
   heartbeat: (input: SessionSelector) => Promise<HeartbeatResult>
   issueApprovalToken: (input: IssueApprovalTokenInput) => Promise<IssueApprovalTokenResult>
   issueChallenge: (input: IssueChallengeInput) => Promise<IssueChallengeResult>
@@ -714,6 +760,23 @@ export interface DevicesService {
 }
 
 /**
+ * The longest gap between two opportunistic prunes: the shortest lockout
+ * window. The interval actually used is the shorter of this and the service's
+ * challenge TTL (narduk-libs#227).
+ */
+export const OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS = Math.min(
+  DEVICES_LOCKOUT_POLICY.perTokenOrDevice.windowSeconds,
+  DEVICES_LOCKOUT_POLICY.perAccountOrIp.windowSeconds,
+)
+
+/**
+ * When each database was last opportunistically pruned. Keyed by the database
+ * object rather than held per service, so services built per request over one
+ * shared database still share the throttle.
+ */
+const lastOpportunisticPrune = new WeakMap<DevicesDatabase, number>()
+
+/**
  * Build the devices service over a caller-supplied database.
  *
  * Nothing here reads ambient request state, environment variables, or another
@@ -733,7 +796,18 @@ export function createDevices(
   const challengeTtlMs = (options.challengeTtlSeconds ?? CHALLENGE_DEFAULT_TTL_SECONDS) * 1000
   const sessionTtlMs = (options.sessionTtlSeconds ?? SESSION_DEFAULT_TTL_SECONDS) * 1000
   const skewSeconds = options.timestampSkewSeconds ?? TIMESTAMP_SKEW_DEFAULT_SECONDS
+  const proofContext = options.completionProofContext
+  if (
+    proofContext !== undefined &&
+    (!DEVICE_PROOF_CONTEXT_PATTERN.test(proofContext) || proofContext.startsWith('narduk-devices'))
+  ) {
+    throw new DevicesError(
+      'invalid',
+      'completionProofContext must be a versioned context such as "app/claim-handoff/v1", and must not name narduk-devices.',
+    )
+  }
   const lockouts = createLockoutGate(db, now, nextId)
+  const pruneIntervalMs = Math.min(challengeTtlMs, OPPORTUNISTIC_PRUNE_MAX_INTERVAL_SECONDS * 1000)
 
   async function audit(input: {
     action: DevicesAuditAction
@@ -758,7 +832,12 @@ export function createDevices(
       .run()
   }
 
-  /** Records an attempt and writes the security audit row for any escalating threshold crossed. */
+  /**
+   * Records an attempt and writes the security audit row for any escalating
+   * threshold crossed. The gate reports flat (token/device) crossings too; the
+   * library's own trail records only the escalating account/IP kind, as it
+   * always has.
+   */
   async function recordAttempt(
     subjects: readonly LockoutSubject[],
     outcome: 'success' | 'failure',
@@ -766,6 +845,7 @@ export function createDevices(
   ): Promise<void> {
     const crossed = await lockouts.record(subjects, outcome)
     for (const threshold of crossed) {
+      if (!threshold.escalates) continue
       // eslint-disable-next-line no-await-in-loop -- one audit row per crossed threshold, in order; the list is at most two long
       await audit({
         orgId: context.orgId,
@@ -876,6 +956,27 @@ export function createDevices(
   }
 
   /**
+   * The same lookup joined to the device, so a caller that needs the tenant
+   * does not pay a second round trip for it (narduk-libs#225). Inner join:
+   * a session whose device row is gone is not a session anyone may act on.
+   */
+  async function findSessionWithDeviceByTokenHash(
+    tokenHash: string,
+  ): Promise<DeviceSessionWithDevice | undefined> {
+    const row = first(
+      await db
+        .select()
+        .from(devicesSessions)
+        .innerJoin(devicesDevices, eq(devicesDevices.id, devicesSessions.deviceId))
+        .where(eq(devicesSessions.tokenHash, tokenHash))
+        .limit(1)
+        .all(),
+    )
+    if (!row) return undefined
+    return { ...row.devices_sessions, device: row.devices_devices }
+  }
+
+  /**
    * Resolve a `SessionSelector`. The bearer never reaches a query in the clear:
    * `sessionToken` is digested and matched against the unique `token_hash`.
    */
@@ -921,10 +1022,21 @@ export function createDevices(
     }
   }
 
-  /** Pruning is housekeeping: it must never turn into an authentication failure. */
+  /**
+   * Pruning is housekeeping: it must never turn into an authentication failure.
+   * It is also throttled (narduk-libs#227). `startClaim` is polled — an edge
+   * re-posts it every few seconds while an owner approves — and every run was
+   * three DELETEs that almost always removed nothing. Skipping a run only leaves
+   * already-expired rows a little longer; no live check reads them.
+   */
   async function pruneOpportunistically(): Promise<void> {
+    const at = now()
+    const last = lastOpportunisticPrune.get(db)
+    // A clock behind the last run (another instance's clock) prunes rather than waits.
+    if (last !== undefined && at >= last && at - last < pruneIntervalMs) return
+    lastOpportunisticPrune.set(db, at)
     try {
-      await prune()
+      await prune(at)
     } catch {
       // Deliberately swallowed. `pruneExpired()` is the surface that reports.
     }
@@ -1033,6 +1145,25 @@ export function createDevices(
       token: ClaimToken,
     ) => ApprovalOutcome | Promise<ApprovalOutcome>
     /**
+     * Is this caller inside the tenancy the claim token was minted for?
+     *
+     * Decided before anything about the session is told and before the
+     * owner's counter is touched, because everything downstream — the replay
+     * branch, `completionBlocker`, the lockout subject list — speaks about a
+     * session this caller may not be entitled to hear about at all. Folded
+     * into `authorize` instead, as it was through 0.5.0, a foreign org heard
+     * `already_completed` / `revoked` / `expired` / `hardware_mismatch` and
+     * its refusals were counted against the owner's claim token
+     * (narduk-libs#533). This is #243's authorise-before-describe rule,
+     * applied to the completion path.
+     *
+     * `completeClaimWithRecordedApproval` has no caller tenancy to compare —
+     * a device presents no org, and `approvalMatchesToken` is what binds its
+     * recorded approval to the token — so it answers `true` and reaches
+     * exactly the checks it always did.
+     */
+    callerScopeMatches: (token: ClaimToken) => boolean
+    /**
      * May this caller be served a replay of the completion it already made?
      *
      * Exactly `authorize` minus its approval-expiry clause, and never less:
@@ -1117,8 +1248,9 @@ export function createDevices(
       idempotencyKey: string
       installationId: string
     },
-    proof: DeviceCompletionProof,
+    proof: CompletionProof,
   ): Promise<boolean> {
+    if (isContextBoundProof(proof)) return contextBoundProofBinds(session, bound, proof)
     const request = proof.canonicalRequest
     if (
       request.claimSessionId !== session.id ||
@@ -1145,14 +1277,62 @@ export function createDevices(
     return verified
   }
 
-  /** The single-use row a completion proof's nonce occupies for this session. */
-  function completionProofNonceRef(
+  /**
+   * `completionProofBinds` for a `ContextBoundCompletionProof`. The context is
+   * the configured one, the canonical request is exactly the six signed keys
+   * in canonical form, each bound field equals resolved state, `signedAt` is
+   * inside the skew window, and the signature over
+   * `context + "\n" + canonicalRequest` verifies against the key the claim
+   * session recorded. `installationId` is deliberately not bound: the cloud
+   * mints it, so the device cannot sign it. Every comparison is constant-time.
+   */
+  async function contextBoundProofBinds(
     session: ClaimSession,
-    proof: DeviceCompletionProof,
-  ): ScopedNonceRef {
+    bound: { devicePublicKey: string; hardwareFingerprint: string; idempotencyKey: string },
+    proof: ContextBoundCompletionProof,
+  ): Promise<boolean> {
+    if (proofContext === undefined) return false
+    if (typeof proof.context !== 'string' || typeof proof.signature !== 'string') return false
+    const request = parseContextBoundRequest(proof.canonicalRequest)
+    if (request === null) return false
+    const matches = await Promise.all([
+      timingSafeEqualText(proof.context, proofContext),
+      timingSafeEqualText(request.claimSessionId, session.id),
+      timingSafeEqualText(request.devicePublicKey, session.publicKey),
+      timingSafeEqualText(request.devicePublicKey, bound.devicePublicKey),
+      timingSafeEqualText(request.hardwareFingerprint, bound.hardwareFingerprint),
+      timingSafeEqualText(request.idempotencyKey, bound.idempotencyKey),
+    ])
+    if (!matches.every(Boolean)) return false
+    if (!isWithinTimestampSkew(request.signedAt, now(), skewSeconds)) return false
+    const signatureBytes = tryBase64UrlDecode(proof.signature)
+    const publicKeyBytes = tryBase64UrlDecode(session.publicKey)
+    if (!signatureBytes || publicKeyBytes?.length !== ED25519_PUBLIC_KEY_BYTES) return false
+    return verifySignature({
+      message: contextBoundSigningBytes(proofContext, proof.canonicalRequest),
+      publicKey: publicKeyBytes,
+      signature: signatureBytes,
+    })
+  }
+
+  /**
+   * The nonce a proof carries. Only reached after `completionProofBinds`
+   * accepted the proof, so a context-bound request is known to parse.
+   */
+  function completionProofNonce(proof: CompletionProof): string {
+    if (!isContextBoundProof(proof)) return proof.canonicalRequest.nonce
+    const request = parseContextBoundRequest(proof.canonicalRequest)
+    if (request === null) {
+      throw new DevicesError('invalid', 'The completion proof does not parse.')
+    }
+    return request.nonce
+  }
+
+  /** The single-use row a completion proof's nonce occupies for this session. */
+  function completionProofNonceRef(session: ClaimSession, proof: CompletionProof): ScopedNonceRef {
     return {
       scope: completionNonceScope(session.id),
-      nonce: proof.canonicalRequest.nonce,
+      nonce: completionProofNonce(proof),
       expiresAt: session.expiresAt,
     }
   }
@@ -1256,6 +1436,7 @@ export function createDevices(
       result: {
         status: 'completed',
         deviceId: device.id,
+        installationId: device.installationId,
         credentials: prepared.map((entry) => entry.issued),
       },
     }
@@ -1398,8 +1579,15 @@ export function createDevices(
     if (!token) throw new DevicesError('not_found', 'The claim token behind this session is gone.')
 
     const account = run.accountSubject(session)
-    const subjects: LockoutSubject[] = [
-      { kind: 'token', subject: token.tokenHash },
+    /**
+     * The subjects that identify *this caller*: the account it named and the
+     * IP it came from. The owner's claim token is deliberately not among them
+     * yet — unlike `startClaim`, a completion never presents the claim token,
+     * it names a session id and the library looks the token up, so counting an
+     * unauthorised caller against that token is charging a stranger's failure
+     * to the tenant who owns it (narduk-libs#533).
+     */
+    const callerSubjects: LockoutSubject[] = [
       // Namespaced exactly like a `remote` account key: the approving account
       // is the same kind of subject, so it must not share a counter with the
       // credential lookup either (narduk-libs#228 third review HIGH-4).
@@ -1409,6 +1597,35 @@ export function createDevices(
       ...remoteSubjects(run.remote, 'claim').filter(
         (subject) => account === null || subject.kind !== 'account',
       ),
+    ]
+
+    if (!run.callerScopeMatches(token)) {
+      // Refused on the caller's own counters and told nothing: every session
+      // state answers `unauthorized_user`, so a foreign org cannot tell a
+      // claimed session from a revoked, expired or fingerprint-mismatched
+      // one, and five of these no longer lock the owner out of their own
+      // ceremony (narduk-libs#533). The attempt is still counted — a
+      // cross-org probe is bounded, just not by the tenant it targets — and
+      // `orgId: null` keeps the stranger's lockout out of the owner's audit
+      // trail, exactly as the unknown-session branch above does.
+      const foreign = await lockouts.check(callerSubjects)
+      if (foreign) {
+        return {
+          status: 'rate_limited',
+          credentials: [],
+          retryAfterSeconds: foreign.retryAfterSeconds,
+        }
+      }
+      await recordAttempt(callerSubjects, 'failure', {
+        orgId: null,
+        reason: 'unauthorized_user',
+      })
+      return { status: 'unauthorized_user', credentials: [] }
+    }
+
+    const subjects: LockoutSubject[] = [
+      { kind: 'token', subject: token.tokenHash },
+      ...callerSubjects,
     ]
     const locked = await lockouts.check(subjects)
     if (locked) {
@@ -1760,15 +1977,12 @@ export function createDevices(
       if (!session) {
         throw new DevicesError('not_found', `Claim session ${input.claimSessionId} does not exist.`)
       }
-      if (session.status === 'claimed') {
-        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
-      }
-      if (session.status === 'revoked') {
-        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
-      }
-      if (session.status === 'expired' || session.expiresAt <= now()) {
-        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
-      }
+      // Authorise before describing: whether this caller may hear anything
+      // about the session is settled before its state is reported. Checked
+      // after the state, a foreign org's admin holding a session id (it
+      // travels to the appliance and the org console renders it) learned
+      // `conflict` / `revoked` / `expired` for a session that is not theirs —
+      // claim state leaking across the tenant boundary (narduk-libs#243).
       const token = await findClaimToken(session.claimTokenId)
       if (!token)
         throw new DevicesError('not_found', 'The claim token behind this session is gone.')
@@ -1780,6 +1994,15 @@ export function createDevices(
           'forbidden',
           'An approval must name the org and resource the claim token was minted for.',
         )
+      }
+      if (session.status === 'claimed') {
+        throw new DevicesError('conflict', `Claim session ${session.id} is already completed.`)
+      }
+      if (session.status === 'revoked') {
+        throw new DevicesError('revoked', `Claim session ${session.id} was revoked.`)
+      }
+      if (session.status === 'expired' || session.expiresAt <= now()) {
+        throw new DevicesError('expired', `Claim session ${session.id} expired.`)
       }
       if (session.hardwareFingerprint !== input.hardwareFingerprint) {
         throw new DevicesError(
@@ -1846,6 +2069,7 @@ export function createDevices(
         // LOW-4). It is not a single-use signed proof, so there is no nonce for
         // the batch to burn.
         carriesProof: true,
+        callerScopeMatches: orgAndResourceMatch,
         completionProofNonce: () => null,
         canReissue: async (session, token) =>
           session.hardwareFingerprint === input.hardwareFingerprint &&
@@ -1870,7 +2094,16 @@ export function createDevices(
     async completeClaimWithRecordedApproval(input) {
       const devicePublicKey = requireText(input.devicePublicKey, 'devicePublicKey')
       const reissue = input.reissueOnIdempotentReplay ?? false
-      const proof = input.deviceProof
+      // `null` from a JavaScript caller is no proof, never a crash.
+      const proof = input.deviceProof ?? undefined
+      if (proof !== undefined && isContextBoundProof(proof) && proofContext === undefined) {
+        // A misconfiguration, not a device failing to authenticate: said
+        // loudly rather than counted, so it cannot hide as a lockout.
+        throw new DevicesError(
+          'invalid',
+          'A context-bound deviceProof needs createDevices({ completionProofContext }): the library accepts only a context it was told to expect.',
+        )
+      }
       if (reissue && proof === undefined) {
         // Refused loudly rather than served: a re-issue revokes the genuine
         // device's credentials and sessions and hands the caller live secrets,
@@ -1932,6 +2165,9 @@ export function createDevices(
         // does not learn `deviceId` when it loses the race (third review
         // LOW-4).
         carriesProof: proof !== undefined,
+        // A device names no org: `approvalMatchesToken` below is what ties the
+        // recorded approval to this token's tenancy.
+        callerScopeMatches: () => true,
         completionProofNonce: (session) =>
           proof === undefined ? null : completionProofNonceRef(session, proof),
         canReissue: async (session, token) =>
@@ -2256,6 +2492,18 @@ export function createDevices(
       return session
     },
 
+    async getSessionByTokenWithDevice(sessionToken) {
+      const session = await findSessionWithDeviceByTokenHash(await sha256Hex(sessionToken))
+      // Exactly `getSessionByToken`'s liveness rule, applied to the same row.
+      // Device status and revocation generation are deliberately not re-tested
+      // here: `revokeDeviceAtomically` and `rotateCredentialAtomically` revoke
+      // the device's sessions in the same batch that bumps the generation, so
+      // a live session already implies a device that has not been revoked out
+      // from under it.
+      if (!session || session.revokedAt !== null || session.expiresAt <= now()) return null
+      return session
+    },
+
     async heartbeat(input) {
       const session = await selectSession(input)
       if (!session)
@@ -2306,33 +2554,22 @@ export function createDevices(
     async revokeDevice(input) {
       const device = await requireDevice(input.deviceId)
       if (device.status === 'revoked') return device
-      const revokedAt = now()
-      const revocationGeneration = device.revocationGeneration + 1
-      await db
-        .update(devicesDevices)
-        .set({ status: 'revoked', revokedAt, revocationGeneration })
-        .where(eq(devicesDevices.id, device.id))
-        .run()
-      await db
-        .update(devicesCredentials)
-        .set({ revokedAt })
-        .where(
-          and(eq(devicesCredentials.deviceId, device.id), isNull(devicesCredentials.revokedAt)),
-        )
-        .run()
-      const revokedSessions = await revokeSessionsWhere(
-        eq(devicesSessions.deviceId, device.id),
-        revokedAt,
+      // Device, credentials, sessions and audit row in one transaction: a
+      // failure part-way can no longer leave a revoked device whose
+      // credentials still resolve (narduk-libs#231).
+      const revoked = await revokeDeviceAtomically(
+        db,
+        {
+          device,
+          actorUserId: input.actorUserId ?? null,
+          reason: input.reason ?? null,
+          revokedAt: now(),
+        },
+        nextId,
       )
-      await audit({
-        orgId: device.orgId,
-        actorUserId: input.actorUserId,
-        action: 'device.revoke',
-        subjectKind: 'device',
-        subjectId: device.id,
-        details: { reason: input.reason ?? null, revocationGeneration, revokedSessions },
-      })
-      return { ...device, status: 'revoked', revokedAt, revocationGeneration }
+      // Null: a concurrent revocation committed first and wrote everything
+      // this one would have. Report the device as it left it.
+      return revoked ?? requireDevice(device.id)
     },
 
     async rotateCredential(input) {
@@ -2356,65 +2593,26 @@ export function createDevices(
         .all()
       const version = (first(current)?.version ?? 0) + 1
       const rotatedAt = now()
-      const revocationGeneration = device.revocationGeneration + 1
       const { issued, prepared } = await prepareCredential(
         input.credentialClass,
         version,
         expiresAt,
       )
-
-      await db
-        .update(devicesCredentials)
-        .set({ revokedAt: rotatedAt })
-        .where(
-          and(
-            eq(devicesCredentials.deviceId, device.id),
-            eq(devicesCredentials.credentialClass, input.credentialClass),
-            isNull(devicesCredentials.revokedAt),
-          ),
-        )
-        .run()
-      await db
-        .insert(devicesCredentials)
-        .values({
-          id: prepared.id,
-          deviceId: device.id,
-          credentialClass: prepared.credentialClass,
-          secretHash: prepared.secretHash,
-          fingerprint: prepared.fingerprint,
-          version: prepared.version,
-          issuedAt: rotatedAt,
-          expiresAt: prepared.expiresAt,
-          revokedAt: null,
-        })
-        .run()
-      await db
-        .update(devicesDevices)
-        .set({ revocationGeneration })
-        .where(eq(devicesDevices.id, device.id))
-        .run()
-      const revokedSessions = await revokeSessionsWhere(
-        and(
-          eq(devicesSessions.deviceId, device.id),
-          eq(devicesSessions.credentialClass, input.credentialClass),
-        ),
-        rotatedAt,
-      )
-      await audit({
-        orgId: device.orgId,
-        actorUserId: input.actorUserId,
-        action: 'credential.rotate',
-        subjectKind: 'credential',
-        subjectId: prepared.id,
-        details: {
-          deviceId: device.id,
-          credentialClass: input.credentialClass,
-          version,
-          revocationGeneration,
-          revokedSessions,
+      // Supersede, issue, bump and audit in one transaction, the replacement
+      // gated on the device still being claimed (narduk-libs#231).
+      const rotated = await rotateCredentialAtomically(
+        db,
+        {
+          device,
+          credential: prepared,
+          actorUserId: input.actorUserId ?? null,
           reason: input.reason ?? null,
+          rotatedAt,
         },
-      })
+        nextId,
+      )
+      // Revoked between the read above and the batch: nothing was issued.
+      if (!rotated) throw new DevicesError('revoked', `Device ${device.id} is revoked.`)
       // The new secret is returned exactly once.
       return issued
     },

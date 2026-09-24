@@ -16,12 +16,12 @@ pnpm add @narduk-enterprises/narduk-timeseries
 
 ## Exports
 
-| Subpath          | What it holds                                                   |
-| ---------------- | --------------------------------------------------------------- |
-| `.`              | `TelemetryHistoryStore`, its types, retention policy validation |
-| `./timescale`    | The adapter, every SQL builder, the migration set               |
-| `./influx`       | The read-only dual-run parity adapter                           |
-| `./migrations/*` | The `.sql` files themselves, for a deploy job                   |
+| Subpath          | What it holds                                                                     |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `.`              | `TelemetryHistoryStore`, its types, retention policy validation, `bucketReadings` |
+| `./timescale`    | The adapter, every SQL builder, the migration set                                 |
+| `./influx`       | The read-only dual-run parity adapter                                             |
+| `./migrations/*` | The `.sql` files themselves, for a deploy job                                     |
 
 The root entry carries **no SQL**, so a route handler, a test double or a second
 backend can import the interface without pulling in the adapter.
@@ -45,6 +45,39 @@ await store.applyRetention(policy)
 Every method returns what it cost: `WriteResult` carries `statements`,
 `parameters`, `rows`, `seriesResolved` and `seriesFromCache`, so a consumer can
 assert the shape of its own data path rather than trusting this README.
+
+## Client bucketing: `bucketReadings`
+
+`queryRollup` summarizes in the database over a fixed UTC ladder. A page that
+already holds a history and wants a table **every hour, every three hours or one
+line per day** — cut on the reader's calendar, not UTC midnight — uses
+`bucketReadings` from the root entry instead. It carries no SQL, so a browser
+bundle can import it.
+
+```ts
+import { bucketReadings } from '@narduk-enterprises/narduk-timeseries'
+
+const { buckets, skipped } = bucketReadings(readings, {
+  bucket: '1d', // '1h' | '3h' | '1d'
+  timeZone: 'America/Chicago', // default 'UTC'
+  time: (r) => r.observedAt, // Date, epoch ms or ISO string
+  fields: { wind: (r) => r.windKt, pressure: (r) => r.pressureInHg },
+  order: 'desc', // newest first; default 'asc'
+})
+// buckets[0] → { key: '2026-09-18', start, end, rows, fields: { wind: { min, avg, max, n } } }
+```
+
+- **Missing is not zero.** A field with no finite value in a bucket reports
+  `min`/`avg`/`max` as `null` and `n: 0`, the rule `RollupRow` already states.
+  `0` is a reading.
+- **Calendar-true.** Boundaries are floored on the zone's wall clock, so a DST
+  day is 23 or 25 hours long and a 3-hour bucket opens at 00, 03, 06 … local.
+- **One pass.** `O(rows)`, one formatter per call, no per-row awaits. Rows whose
+  time is unreadable are skipped and counted in `skipped` rather than throwing.
+- An unknown bucket throws `BUCKET_UNKNOWN`; an unknown zone `RANGE_INVALID`.
+
+The 30-day "one line per day" view over a long window still wants a server-side
+daily aggregate — this summarizes what the page holds, it does not fetch more.
 
 ## What is bounded, and by what
 
@@ -356,7 +389,10 @@ it — refresh 1d first and it summarizes buckets that do not exist yet, and
 nothing reports the hole. **Bounds**: a refresh materializes every bucket in its
 range inside one statement, so the range is split per level — 7 days at 1m, 30
 days at 15m, 90 days at 1h, a year at 1d — and a wider `maxWindowMs` is refused
-with `REFRESH_WINDOW_TOO_WIDE` rather than accepted and regretted.
+with `REFRESH_WINDOW_TOO_WIDE` rather than accepted and regretted. The requested
+range is snapped outward onto that level's bucket first, then split from the
+aligned start, so a ten-minute backfill still produces a legal refresh at 1d and
+a year-long unaligned backfill stays inside those ceilings.
 
 ### Two deliberate deviations from docs/04
 

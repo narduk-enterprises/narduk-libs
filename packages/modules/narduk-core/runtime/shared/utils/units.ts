@@ -72,6 +72,12 @@ const METRIC_DISTANCE_BREAKPOINT = 1000
 /** Imperial distances at or above this render as miles rather than feet. */
 const IMPERIAL_DISTANCE_BREAKPOINT = METRES_PER_MILE
 
+/** Exact, by the 1929 international definition of the nautical mile. */
+export const METRES_PER_NAUTICAL_MILE = 1852
+
+/** Exact: 3600 seconds per hour over {@link METRES_PER_NAUTICAL_MILE}. */
+const MPS_TO_KNOTS = 3600 / METRES_PER_NAUTICAL_MILE
+
 /** Degrees Celsius to degrees Fahrenheit. */
 export function celsiusToFahrenheit(celsius: number): number {
   return celsius * 1.8 + 32
@@ -100,6 +106,96 @@ export function metresPerSecondToKilometresPerHour(metresPerSecond: number): num
 /** Hectopascals to inches of mercury. */
 export function hectopascalsToInchesOfMercury(hectopascals: number): number {
   return hectopascals / HECTOPASCALS_PER_INHG
+}
+
+/** Metres per second to knots (nautical miles per hour). */
+export function metresPerSecondToKnots(metresPerSecond: number): number {
+  return metresPerSecond * MPS_TO_KNOTS
+}
+
+/*
+ * The inverses. Stored values are SI, so these are for input — a form field,
+ * a query parameter, or a feed that publishes in the other system
+ * (narduk-libs#518).
+ */
+
+/** Degrees Fahrenheit to degrees Celsius. */
+export function fahrenheitToCelsius(fahrenheit: number): number {
+  return (fahrenheit - 32) / 1.8
+}
+
+/** Feet to metres. */
+export function feetToMetres(feet: number): number {
+  return feet * METRES_PER_FOOT
+}
+
+/** Statute miles to metres. */
+export function milesToMetres(miles: number): number {
+  return miles * METRES_PER_MILE
+}
+
+/** Miles per hour to metres per second. */
+export function milesPerHourToMetresPerSecond(milesPerHour: number): number {
+  return milesPerHour / MPS_TO_MPH
+}
+
+/** Kilometres per hour to metres per second. */
+export function kilometresPerHourToMetresPerSecond(kilometresPerHour: number): number {
+  return kilometresPerHour / MPS_TO_KPH
+}
+
+/** Knots to metres per second. */
+export function knotsToMetresPerSecond(knots: number): number {
+  return knots / MPS_TO_KNOTS
+}
+
+/** Inches of mercury to hectopascals. */
+export function inchesOfMercuryToHectopascals(inchesOfMercury: number): number {
+  return inchesOfMercury * HECTOPASCALS_PER_INHG
+}
+
+/* -------------------------------------------------------------------------- */
+/* Compass                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** The sixteen compass points, clockwise from north. */
+export const NE_COMPASS_POINTS_16 = [
+  'N',
+  'NNE',
+  'NE',
+  'ENE',
+  'E',
+  'ESE',
+  'SE',
+  'SSE',
+  'S',
+  'SSW',
+  'SW',
+  'WSW',
+  'W',
+  'WNW',
+  'NW',
+  'NNW',
+] as const
+
+/** One of {@link NE_COMPASS_POINTS_16}. */
+export type NeCompassPoint16 = (typeof NE_COMPASS_POINTS_16)[number]
+
+/**
+ * The nearest of the sixteen compass points to a bearing in degrees, or
+ * `undefined` for absent or non-finite input.
+ *
+ * Any finite bearing works: `-30` and `330` are both `NNW`, `720` is `N`. JS
+ * `%` keeps the dividend's sign, so the index is normalised twice; a single
+ * `% 16` turned a negative bearing into `undefined` in Buoys' copy of this
+ * (narduk-libs#518). Each point owns 22.5°, centred on it, so `11.25` rounds
+ * up to `NNE`.
+ */
+export function compassPoint16(degrees: number | null | undefined): NeCompassPoint16 | undefined {
+  if (!isRenderable(degrees)) return undefined
+  const count = NE_COMPASS_POINTS_16.length
+  const index = ((Math.round(degrees / (360 / count)) % count) + count) % count
+  return NE_COMPASS_POINTS_16[index]
 }
 
 /* -------------------------------------------------------------------------- */

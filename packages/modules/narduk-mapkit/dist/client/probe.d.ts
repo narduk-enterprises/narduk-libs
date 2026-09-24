@@ -63,9 +63,10 @@ export interface MapKitProbePointerEventLike {
  * The structural subset of an `HTMLElement` the probe attaches to. A real
  * `HTMLElement` satisfies it, and so does a plain test double.
  *
- * The listener parameter is `any` deliberately: `lib.dom`'s `addEventListener`
- * takes `EventListenerOrEventListenerObject`, and only `any` stays assignable
- * in both directions so that passing a real element still typechecks.
+ * The listener parameter is `any` deliberately (narduk-libs#138, working as
+ * intended): `lib.dom`'s `addEventListener` takes
+ * `EventListenerOrEventListenerObject`, and only `any` stays assignable in
+ * both directions so that passing a real element still typechecks.
  */
 export interface MapKitProbeElement {
     addEventListener: (type: string, listener: (event: any) => void, options?: any) => void;

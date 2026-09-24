@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/status-runtime",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": false,
   "description": "Shared build-time configuration for the five status applications.",
   "type": "module",
@@ -27,9 +27,10 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{mjs,mts,json,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test:unit": "vitest run",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",
@@ -39,6 +40,6 @@
     "vitest": "^4.1.11"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

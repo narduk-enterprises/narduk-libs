@@ -39,6 +39,18 @@ const USkeleton = defineComponent({
   },
 })
 
+const UCard = defineComponent({
+  name: 'UCard',
+  setup(_props, { attrs, slots }) {
+    return () =>
+      h('div', { 'data-stub': 'UCard', ...attrs }, [
+        slots.header ? h('header', { 'data-stub-slot': 'header' }, slots.header()) : null,
+        slots.default?.(),
+        slots.footer ? h('footer', { 'data-stub-slot': 'footer' }, slots.footer()) : null,
+      ])
+  },
+})
+
 const UAlert = defineComponent({
   name: 'UAlert',
   props: {
@@ -69,4 +81,4 @@ const UAlert = defineComponent({
 })
 
 /** Registered globally, exactly as `@nuxt/ui` registers the real ones. */
-export const nuxtUiStubs: Record<string, Component> = { UAlert, UEmpty, USkeleton }
+export const nuxtUiStubs: Record<string, Component> = { UAlert, UCard, UEmpty, USkeleton }

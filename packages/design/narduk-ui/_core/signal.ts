@@ -1,6 +1,9 @@
 /**
- * The estate's four signal states, shared by all five status applications and
- * never restyled per app.
+ * The estate's four signal states. The states themselves are shared by every
+ * status application; their colours are shared defaults an app's own design
+ * may restyle (apps are designed independently, Logan 2026-09-19). What must
+ * not drift is the meaning below, because that is what makes the states
+ * comparable across products at all.
  *
  * These are deliberately defined by the source's own publishing interval rather
  * than by absolute ages. A buoy publishing every ten minutes and a reservoir

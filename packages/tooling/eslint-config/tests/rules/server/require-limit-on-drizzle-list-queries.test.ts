@@ -13,6 +13,33 @@ const ruleTester = new RuleTester({
 ruleTester.run('require-limit-on-drizzle-list-queries', rule, {
   valid: [
     {
+      name: 'narduk-bounded comment with a reason silences the statement',
+      filename: 'server/api/keys.get.ts',
+      code: `export default defineEventHandler(async () => {
+  // narduk-bounded: a user holds at most a handful of API keys
+  return await getRows(db.select().from(apiKeys).where(eq(apiKeys.userId, userId)))
+})`,
+    },
+    {
+      name: 'narduk-bounded comment also covers an awaited chain',
+      filename: 'server/api/keys.get.ts',
+      code: `export default defineEventHandler(async () => {
+  // narduk-bounded: per-tenant role list, capped at 20 by the admin UI
+  const rows = await db.select().from(roles).where(eq(roles.tenantId, tenantId))
+  return rows
+})`,
+    },
+    {
+      name: 'argument-position where on the primary key is fine',
+      filename: 'server/api/keys.get.ts',
+      code: `export default defineEventHandler(async () => getRows(db.select().from(apiKeys).where(eq(apiKeys.id, id))))`,
+    },
+    {
+      name: 'argument-position chain that is bounded',
+      filename: 'server/api/keys.get.ts',
+      code: `export default defineEventHandler(async () => getRows(db.select().from(apiKeys).where(eq(apiKeys.userId, id)).limit(10)))`,
+    },
+    {
       name: 'bounded select chain',
       filename: 'server/api/things.get.ts',
       code: `export default defineEventHandler(async () => await db.select().from(things).limit(50))`,
@@ -120,6 +147,21 @@ ruleTester.run('require-limit-on-drizzle-list-queries', rule, {
   ],
 
   invalid: [
+    {
+      name: 'api-keys.get.ts shape — where(eq(non-PK)) passed to a helper, unbounded',
+      filename: 'server/api/auth/api-keys.get.ts',
+      code: `export default defineEventHandler(async () => getRows(db.select().from(apiKeys).where(eq(apiKeys.userId, user.id))))`,
+      errors: [{ messageId: 'requireLimit' }],
+    },
+    {
+      name: 'a bare narduk-bounded marker without a reason does not count',
+      filename: 'server/api/keys.get.ts',
+      code: `export default defineEventHandler(async () => {
+  // narduk-bounded:
+  return await db.select().from(apiKeys).where(eq(apiKeys.userId, userId))
+})`,
+      errors: [{ messageId: 'requireLimit' }],
+    },
     {
       name: 'REVIEW REGRESSION — db.query.<table>.findMany() was never checked by v1',
       filename: 'server/api/things.get.ts',

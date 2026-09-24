@@ -2,23 +2,25 @@
  * Statement ceiling for this package's two list routes (narduk-libs#257).
  *
  * What is counted: every SQL statement the routes prepare against a real
- * Miniflare D1 database, created from narduk-core's own migrations. The D1
- * binding drizzle receives is wrapped so `prepare()` records the statement text
- * — so these are the statements the ORM actually emits, not a count of helper
- * calls. The ceiling must hold as the page size and the offset move.
+ * Miniflare D1 database, created from narduk-core's own migrations by
+ * narduk-testkit's D1 query harness. The binding drizzle receives records each
+ * `prepare()` — so these are the statements the ORM actually emits, not a
+ * count of helper calls. The ceiling must hold as the page size and the offset
+ * move.
  */
-import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { drizzle } from 'drizzle-orm/d1'
 import { createApp, toWebHandler } from 'h3'
-import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createD1QueryHarness, expectStatementBudget } from '../../../tooling/narduk-testkit/src/d1'
+
+import type { D1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
 import type { EventHandler } from 'h3'
 
 const harness = vi.hoisted(() => ({
   database: null as unknown,
-  statements: [] as string[],
 }))
 
 // The real narduk-core tables, so the statements run against the real columns.
@@ -34,34 +36,11 @@ vi.mock('#layer/server/utils/database', () => ({
   useDatabase: () => harness.database,
 }))
 
-const MIGRATIONS = ['0000_initial_schema.sql', '0003_notifications.sql']
+const MIGRATIONS = ['0000_initial_schema.sql', '0003_notifications.sql'].map((name) =>
+  fileURLToPath(new URL(`../../narduk-core/runtime/drizzle/${name}`, import.meta.url)),
+)
 const USER_COUNT = 25
 const NOTIFICATION_COUNT = 12
-
-type D1 = Awaited<ReturnType<Miniflare['getD1Database']>>
-
-function readMigration(name: string): string[] {
-  const sql = readFileSync(new URL(`../../narduk-core/runtime/drizzle/${name}`, import.meta.url), {
-    encoding: 'utf8',
-  })
-
-  return sql
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter(Boolean)
-}
-
-/** Records the SQL drizzle prepares, then hands the real statement back. */
-function countingBinding(binding: D1): D1 {
-  return {
-    ...binding,
-    batch: (statements: unknown[]) => (binding.batch as (input: unknown[]) => unknown)(statements),
-    prepare: (sql: string) => {
-      harness.statements.push(sql)
-      return binding.prepare(sql)
-    },
-  } as unknown as D1
-}
 
 async function call(handler: EventHandler, url: string) {
   const response = await toWebHandler(createApp().use(handler))(
@@ -72,19 +51,11 @@ async function call(handler: EventHandler, url: string) {
 }
 
 describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
-  const runtime = new Miniflare({
-    compatibilityDate: '2026-07-01',
-    d1Databases: ['DB'],
-    modules: true,
-    script: 'export default { fetch() { return new Response("ok") } }',
-  })
+  let d1: D1QueryHarness
 
   beforeAll(async () => {
-    const binding = await runtime.getD1Database('DB')
-
-    for (const migration of MIGRATIONS) {
-      await binding.batch(readMigration(migration).map((statement) => binding.prepare(statement)))
-    }
+    d1 = await createD1QueryHarness({ migrations: MIGRATIONS })
+    const binding = d1.raw
 
     await binding.batch(
       Array.from({ length: USER_COUNT }, (_row, index) =>
@@ -121,13 +92,13 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     )
 
     // Seeding used the raw binding; only the routes' own statements are counted.
-    harness.database = drizzle(countingBinding(binding))
+    harness.database = drizzle(d1.db)
   })
 
-  afterAll(() => runtime.dispose())
+  afterAll(() => d1.dispose())
 
   beforeEach(() => {
-    harness.statements.length = 0
+    d1.reset()
   })
 
   it('serves any page of /api/admin/users in one page query plus one count query', async () => {
@@ -138,16 +109,22 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
       [2, 20],
       [100, 0],
     ]) {
-      harness.statements.length = 0
-      const { body, status } = await call(handler, `/?limit=${limit}&offset=${offset}`)
+      const {
+        result: { body, status },
+        statements,
+      } = await expectStatementBudget(
+        d1,
+        () => call(handler, `/?limit=${limit}&offset=${offset}`),
+        { max: 2 },
+      )
 
       expect(status).toBe(200)
       expect(body).toMatchObject({ limit, offset, q: null, sort: 'createdAt:desc', total: 25 })
       expect(body.items).toHaveLength(Math.min(limit, USER_COUNT - offset))
       expect(body.users).toEqual(body.items)
       expect(body.page).toBe(Math.floor(offset / limit) + 1)
-      expect(harness.statements).toHaveLength(2)
-      expect(harness.statements.filter((sql) => /count\(\*\)/iu.test(sql))).toHaveLength(1)
+      expect(statements).toHaveLength(2)
+      expect(statements.filter((sql) => /count\(\*\)/iu.test(sql))).toHaveLength(1)
     }
   })
 
@@ -185,13 +162,15 @@ describe('list routes hold a one-page-plus-one-count statement ceiling', () => {
     const handler = (await import('../server/api/notifications/index.get')).default
 
     for (const query of ['/', '/?limit=4&offset=4', '/?limit=4&unreadOnly=true']) {
-      harness.statements.length = 0
-      const { body, status } = await call(handler, query)
+      const {
+        result: { body, status },
+        statements,
+      } = await expectStatementBudget(d1, () => call(handler, query), { max: 1 })
 
       expect(status).toBe(200)
       expect(body.total).toBeNull()
       expect(body.notifications).toEqual(body.items)
-      expect(harness.statements).toHaveLength(1)
+      expect(statements).toHaveLength(1)
     }
   })
 

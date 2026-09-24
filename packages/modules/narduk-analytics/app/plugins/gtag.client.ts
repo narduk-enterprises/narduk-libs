@@ -16,6 +16,7 @@ import {
   normalizeAnalyticsLoadStrategy,
   runWithAnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
+import { normalizeAnalyticsPrivacy, templatePath, templateUrl } from '../utils/analyticsPrivacy'
 
 export default defineNuxtPlugin({
   name: 'gtag',
@@ -25,6 +26,7 @@ export default defineNuxtPlugin({
     const measurementId = runtimeConfig.public.gaMeasurementId
     const previewSafeMode = runtimeConfig.public.previewSafeMode === true
     const strategy = normalizeAnalyticsLoadStrategy(runtimeConfig.public.analyticsLoadStrategy)
+    const strict = normalizeAnalyticsPrivacy(runtimeConfig.public.analyticsPrivacy) === 'strict'
 
     if (!measurementId || previewSafeMode || import.meta.server || strategy === 'off') return
 
@@ -33,6 +35,15 @@ export default defineNuxtPlugin({
     }
 
     const router = useRouter()
+    const resolveRoute = (path: string) => router.resolve(path)
+    const strictPage = (path: string) => {
+      const pattern = templatePath(path, resolveRoute)
+      return {
+        page_path: pattern,
+        page_location: window.location.origin + pattern,
+        page_title: pattern,
+      }
+    }
 
     runWithAnalyticsLoadStrategy(strategy, () => {
       // Queue must exist before any sync `gtag()` calls — the external gtag.js script loads async and replays it later.
@@ -54,7 +65,23 @@ export default defineNuxtPlugin({
       // the tag without emitting a page view; this plugin owns the complete
       // initial + successful SPA navigation page-view lifecycle below.
       gtag('js', new Date())
-      gtag('config', measurementId, { send_page_view: false })
+      if (strict) {
+        // Strict privacy: Google gets the route pattern as the page, never the
+        // raw path, query, fragment or title, and no signals or ad
+        // personalisation. `page_location` set here also overrides the address
+        // Google would otherwise read from `document.location` for any event
+        // the tag collects on its own (Enhanced Measurement).
+        const page = strictPage(router.currentRoute.value.path)
+        gtag('config', measurementId, {
+          send_page_view: false,
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+          page_referrer: templateUrl(document.referrer, window.location.origin, resolveRoute),
+          ...page,
+        })
+      } else {
+        gtag('config', measurementId, { send_page_view: false })
+      }
 
       const script = document.createElement('script')
       script.async = true
@@ -68,10 +95,18 @@ export default defineNuxtPlugin({
         if (path === lastTrackedPath) return
 
         lastTrackedPath = path
+        if (strict) {
+          const page = strictPage(path)
+          gtag('set', page)
+          gtag('event', 'page_view', page)
+          return
+        }
         gtag('event', 'page_view', {
           page_path: path,
           page_location: window.location.origin + path,
-          page_title: document.title,
+          // Standard floor: do not send document.title (page text). The path
+          // is already query- and fragment-free.
+          page_title: path,
         })
       }
 

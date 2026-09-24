@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/design-system-build",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "One-shot static Claude Design previews rendered from the coded Vue system.",
@@ -8,15 +8,17 @@
     "prepare": "nuxt prepare",
     "build": "nuxt generate && node --experimental-strip-types scripts/build.mts",
     "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions scripts/*.mts",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test:unit": "node --experimental-strip-types --test scripts/build.test.mts",
-    "check:package": "node --experimental-strip-types scripts/check-package.mts"
+    "check:package": "node --experimental-strip-types scripts/check-package.mts",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@narduk-enterprises/narduk-shell": "workspace:*",
     "@narduk-enterprises/narduk-ui": "workspace:*",
     "@nuxt/eslint": "^1.15.2",
-    "@nuxt/ui": "4.8.1",
+    "@nuxt/ui": "4.11.1",
     "@types/node": "^22.19.19",
     "@vue/compiler-dom": "3.5.39",
     "nuxt": "^4.5.2",

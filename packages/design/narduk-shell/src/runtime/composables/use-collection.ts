@@ -433,9 +433,18 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   // refs, which is why `applyResponse` can adopt the route's echoed limit and
   // offset without that adoption looping back into another request.
 
+  /**
+   * Clamps a candidate page against `pageCount` when it is already known
+   * (narduk-libs#288) -- shared so a route-sourced page gets the same bound
+   * a caller-sourced one does through {@link setPage}.
+   */
+  function clampToKnownPageCount(page: number): number {
+    return pageCount.value === null ? page : Math.min(page, pageCount.value)
+  }
+
   function setPage(next: number): void {
     const clamped = Math.max(1, Math.trunc(Number.isFinite(next) ? next : 1))
-    const bounded = pageCount.value === null ? clamped : Math.min(clamped, pageCount.value)
+    const bounded = clampToKnownPageCount(clamped)
     if (bounded === pageRef.value) return
     pageRef.value = bounded
     schedule()
@@ -512,7 +521,10 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
     /** Reads the URL into the state. Called before the first fetch, so
      *  landing on `?page=3` costs one request rather than two. */
     const readRouteQuery = (query: LocationQuery, schedules: boolean): void => {
-      const page = readPage(query.page) ?? 1
+      // Clamped the same way setPage() clamps a caller-given page (#288): a
+      // stale or hand-edited URL can carry a page the client already knows
+      // is out of range, and it should never send an offset for it.
+      const page = clampToKnownPageCount(readPage(query.page) ?? 1)
       const search = firstQueryValue(query.q)?.trim().slice(0, maxQueryLength) ?? ''
       const sort = readSort(firstQueryValue(query.sort), options.sortable)
 

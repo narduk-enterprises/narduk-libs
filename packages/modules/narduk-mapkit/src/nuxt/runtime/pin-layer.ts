@@ -66,6 +66,9 @@ export interface MapKitPinElement {
   element: HTMLElement
 }
 
+/** How a pin selection was made. */
+export type MapKitSelectVia = 'keyboard' | 'pointer'
+
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
   clusteringIdentifier?: string
@@ -73,14 +76,38 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   createPinElement?: (item: T, isSelected: boolean) => MapKitPinElement
   /** Injected so a plain-TS test can run against any document. */
   document?: Document
+  /**
+   * Whether the library-owned host is an interactive control. Default `true`.
+   *
+   * 2.1.0 had no way to say otherwise (2.1.1, K-8): every host carried
+   * `role="button"` and `tabindex="0"`, so a decorative map marked
+   * `aria-hidden="true"` was full of focusable descendants -- axe's
+   * `aria-hidden-focus` -- and the only way out was `inert` on the consumer's
+   * side. `false` builds a plain host: no role, no tabindex, no `aria-pressed`,
+   * no click or key listener, and no required `itemLabel`.
+   */
+  focusable?: boolean
   /** Stable identity per item. Must be non-blank and unique. */
   itemKey: (item: T, index: number) => string
-  /** Accessible name of the library-owned host. Required whenever `items` is non-empty. */
+  /**
+   * Accessible name of the library-owned host. Required whenever `items` is
+   * non-empty AND the host is focusable; a non-interactive host has no
+   * accessible name to carry.
+   */
   itemLabel?: (item: T) => string
   map: MapKitMapLike
   mapkit: MapKitNamespaceLike
-  /** Called when a pin is activated by pointer or keyboard, with the toggled id. */
-  onSelect?: (id: string | null) => void
+  /**
+   * Called when the pointer enters or leaves a pin host. The layer does not
+   * apply hover itself -- the host's `hoveredId` (or the app) writes it back
+   * through `setHovered`, the same way `selectedId` works.
+   */
+  onHover?: (id: string | null) => void
+  /**
+   * Called when a pin is activated by pointer or keyboard, with the toggled id
+   * and which of the two activated it.
+   */
+  onSelect?: (id: string | null, via: MapKitSelectVia) => void
   pinGeometry?: (item: T) => MapKitPinGeometry
 }
 
@@ -90,6 +117,7 @@ interface MapKitPinEntry<T> {
   geometrySignature: string
   host: HTMLElement
   item: T
+  key: string
   selected: boolean
 }
 
@@ -135,6 +163,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   readonly #options: MapKitPinLayerOptions<T>
   readonly #registry: MapKitAnnotationRegistry<MapKitAnnotationLike>
   #destroyed = false
+  #hoveredId: string | null = null
   #lastDiff: MapKitDiff = emptyDiff()
   #selectedId: string | null = null
 
@@ -151,6 +180,10 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
         },
       },
     })
+  }
+
+  get hoveredId(): string | null {
+    return this.#hoveredId
   }
 
   get selectedId(): string | null {
@@ -193,6 +226,9 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
    */
   setItems(items: readonly T[]): MapKitDiff {
     if (this.#destroyed) return emptyDiff()
+    // K-9: raised before anything is reconciled, so a missing `itemLabel`
+    // cannot leave the registry and `#entries` disagreeing about what exists.
+    this.#assertLabelling(items)
 
     const diff = emptyDiff()
     const keyFor = this.#options.itemKey
@@ -231,6 +267,10 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     // A key whose selection no longer exists leaves the layer unselected, so a
     // later re-selection of the same id is not swallowed as a no-op.
     if (this.#selectedId !== null && !this.#entries.has(this.#selectedId)) this.#selectedId = null
+    if (this.#hoveredId !== null && !this.#entries.has(this.#hoveredId)) {
+      this.#hoveredId = null
+      this.#options.onHover?.(null)
+    }
 
     // `recreated` means a changed signature reached a key with no update hook.
     // Every descriptor here supplies one, so this is a contract check, not a
@@ -266,6 +306,22 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     return diff
   }
 
+  /**
+   * Mark the hovered pin.
+   *
+   * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+   * moves, so a hover cannot recreate the host the pointer is on.
+   */
+  setHovered(id: string | null): void {
+    if (this.#destroyed) return
+    const next = id !== null && this.#entries.has(id) ? id : null
+    if (next === this.#hoveredId) return
+    const previous = this.#hoveredId
+    this.#hoveredId = next
+    if (previous !== null) this.#applyHover(previous, false)
+    if (next !== null) this.#applyHover(next, true)
+  }
+
   /** Remove every pin and make the layer inert. Idempotent. */
   destroy(): void {
     if (this.#destroyed) return
@@ -294,39 +350,77 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       entry.cleanup = rendered.cleanup
       entry.host.append(rendered.element)
     }
-    entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false')
+    if (this.#focusable) entry.host.setAttribute('aria-pressed', entry.selected ? 'true' : 'false')
     if (entry.selected) entry.host.setAttribute('data-mapkit-selected', '')
     else entry.host.removeAttribute('data-mapkit-selected')
+    this.#writeHover(entry.host, this.#hoveredId === entry.key)
+  }
+
+  #applyHover(key: string, hovered: boolean): void {
+    const host = this.#entries.get(key)?.host
+    if (!host) return
+    this.#writeHover(host, hovered)
+  }
+
+  #writeHover(host: HTMLElement, hovered: boolean): void {
+    if (hovered) host.setAttribute('data-mapkit-hovered', '')
+    else host.removeAttribute('data-mapkit-hovered')
+  }
+
+  /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
+  get #focusable(): boolean {
+    return this.#options.focusable ?? true
+  }
+
+  #assertLabelling(items: readonly T[]): void {
+    if (items.length === 0 || !this.#focusable || this.#options.itemLabel) return
+    throw new Error(
+      '<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
+        'accessible name of the pin, and a pin without one is unreachable by screen reader. ' +
+        'Pass itemLabel, or build the layer with focusable: false for pins that are not ' +
+        'interactive controls.',
+    )
   }
 
   #buildHost(key: string, item: T): HTMLElement {
     const host = this.#document.createElement('div')
-    host.setAttribute('role', 'button')
-    host.setAttribute('tabindex', '0')
     host.setAttribute('data-map-pin', '')
     host.setAttribute('data-mapkit-pin', key)
-    host.style.cursor = 'pointer'
-    const label = this.#options.itemLabel?.(item)
-    if (label === undefined) {
-      throw new Error(
-        '<AppMapKit>: itemLabel is required whenever items is non-empty -- it is the ' +
-          'accessible name of the pin, and a pin without one is unreachable by screen reader.',
-      )
+    if (this.#options.onHover) {
+      host.addEventListener('pointerenter', () => {
+        this.#options.onHover?.(key)
+      })
+      host.addEventListener('pointerleave', () => {
+        this.#options.onHover?.(null)
+      })
     }
-    host.setAttribute('aria-label', label)
 
-    const activate = (): void => {
-      this.#options.onSelect?.(this.#selectedId === key ? null : key)
+    if (!this.#focusable) {
+      // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
+      // roleless element is what axe reports as `aria-allowed-attr`. The label
+      // is dropped with the role: `aria-label` on an element with no role names
+      // nothing, and assistive technology ignores it.
+      return host
+    }
+
+    host.setAttribute('role', 'button')
+    host.setAttribute('tabindex', '0')
+    host.style.cursor = 'pointer'
+    // `#assertLabelling` has already refused a focusable layer without one.
+    host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '')
+
+    const activate = (via: MapKitSelectVia): void => {
+      this.#options.onSelect?.(this.#selectedId === key ? null : key, via)
     }
     host.addEventListener('click', (event) => {
       event.stopPropagation()
-      activate()
+      activate('pointer')
     })
     host.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
       event.preventDefault()
       event.stopPropagation()
-      activate()
+      activate('keyboard')
     })
     return host
   }
@@ -346,6 +440,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       geometrySignature,
       host,
       item,
+      key,
       selected: this.#selectedId === key,
     }
     this.#renderGlyph(entry)
@@ -406,7 +501,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     // glyph is re-rendered -- in place, inside the same host.
     if (previous !== item) {
       const label = this.#options.itemLabel?.(item)
-      if (label !== undefined) entry.host.setAttribute('aria-label', label)
+      if (label !== undefined && this.#focusable) entry.host.setAttribute('aria-label', label)
       this.#renderGlyph(entry)
       if (!diff.restyled.includes(key)) diff.restyled.push(key)
     }

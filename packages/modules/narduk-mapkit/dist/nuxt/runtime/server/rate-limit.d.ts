@@ -1,23 +1,12 @@
 /**
- * The default rate-limit hook for the token route.
+ * The opt-in rate-limit hook for the token route.
  *
- * §e.4 hands rate limiting to narduk-core, and an app that mounts its limiter on
- * `event.context.nardukMapKit.rateLimit` still wins. But the route mints signed
- * JWTs, so leaving it unlimited by default when narduk-core is absent is the
- * wrong failure mode -- and the 2.0.x `rateLimit` seam had zero consumers
- * precisely because it required the app to build the limiter itself.
+ * The route applies no limit by default (narduk-libs#485): it builds this
+ * limiter only when the app sets the module's `rateLimit` option, and a limiter
+ * an app mounts on `event.context.nardukMapKit.rateLimit` wins over both.
  *
- * Deliberately in-process and per-instance: it bounds one server's own signing
- * work, and it makes no claim to be a distributed limiter. A serverless
- * deployment gets one window per warm instance, which is why an app with real
- * abuse exposure still mounts narduk-core's.
+ * The implementation lives on the Worker-safe server entry points so a Worker
+ * caller of `mapKitTokenResponseFromEnv` uses the same one (narduk-libs#485).
  */
-import type { MapKitRateLimitHook } from '../../../server/handler.js';
-export interface MapKitFixedWindowOptions {
-    limit: number;
-    /** Injected so a test does not have to wait a window out. */
-    now?: () => number;
-    windowSeconds: number;
-}
-export declare function createMapKitFixedWindowRateLimit(options: MapKitFixedWindowOptions): MapKitRateLimitHook;
+export { createMapKitFixedWindowRateLimit, type MapKitFixedWindowOptions, } from '../../../server/rate-limit.js';
 //# sourceMappingURL=rate-limit.d.ts.map

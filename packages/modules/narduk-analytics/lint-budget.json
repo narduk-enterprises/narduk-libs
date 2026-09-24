@@ -1,0 +1,6 @@
+{
+  "strict": true,
+  "rules": {
+    "narduk/require-fetch-timeout": 6
+  }
+}

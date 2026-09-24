@@ -6,6 +6,8 @@
  * resolution order is unit-testable without booting Nitro.
  */
 
+import { rateLimitClientBucket } from './client-bucket'
+
 /** Which dimension a route's allowance is counted against. */
 export type RateLimitScope =
   /** One allowance per client address, shared by every path using this key. */
@@ -215,24 +217,44 @@ export function resolveRoutePolicy(
 }
 
 /**
+ * The path an `'ip-path'` counter is keyed on.
+ *
+ * The wrapper runs inside the handler, so every spelling the router dispatches
+ * to this route must land in one bucket (narduk-libs#433): the query string is
+ * dropped, a percent-encoded spelling is decoded, and a trailing slash is
+ * removed. A malformed escape keeps its raw spelling rather than throwing.
+ */
+function counterPath(path: string): string {
+  const withoutQuery = path.split('?')[0] ?? path
+  let decoded = withoutQuery
+  try {
+    decoded = decodeURI(withoutQuery)
+  } catch {
+    // Keep the raw path; it is still a stable key for that spelling.
+  }
+  return decoded.length > 1 && decoded.endsWith('/') ? decoded.slice(0, -1) : decoded
+}
+
+/**
  * The counter key for one request.
  *
  * `identity` is the client address for the IP-counted scopes and is ignored for
- * `'global'`. A request with no resolvable address collapses into one shared
- * bucket rather than escaping the limit — under-serving an unknown caller beats
- * handing every unknown caller an unlimited allowance.
+ * `'global'`. An IPv6 address is counted by its /64 (see
+ * `./client-bucket.ts`). A request with no resolvable address collapses into
+ * one shared bucket rather than escaping the limit — under-serving an unknown
+ * caller beats handing every unknown caller an unlimited allowance.
  */
 export function rateLimitCounterKey(
   policy: ResolvedRateLimitPolicy,
   identity: string | undefined,
   path: string,
 ): string {
-  const who = identity ?? 'unknown'
+  const who = identity === undefined ? 'unknown' : rateLimitClientBucket(identity)
   switch (policy.scope) {
     case 'global':
       return `${policy.key}:global`
     case 'ip-path':
-      return `${policy.key}:${who}:${path.split('?')[0] ?? path}`
+      return `${policy.key}:${who}:${counterPath(path)}`
     default:
       return `${policy.key}:${who}`
   }

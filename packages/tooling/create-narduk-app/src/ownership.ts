@@ -43,7 +43,7 @@ export const NODE_SOURCE_FILE = '.node-version'
 const UNMANAGED_COMMENT_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
   [/\.(?:md|markdown)$/u, '<!-- narduk:unmanaged -->'],
   [/\.ya?ml$/u, '# narduk:unmanaged'],
-  [/\.(?:ts|mts|js|mjs)$/u, '// narduk:unmanaged'],
+  [/\.(?:ts|mts|js|mjs|jsonc)$/u, '// narduk:unmanaged'],
 ]
 
 /**
@@ -106,7 +106,18 @@ export const MANAGED_SCRIPT_KEYS = [
   'manifests:validate',
 ] as const
 
-export type OwnershipMode = 'file' | 'keys' | 'pin' | 'region'
+/**
+ * Managed keys whose NAME is the contract once present: upgrade creates a
+ * missing one, and leaves a present, non-empty body alone. `manifests:validate`
+ * has two independently authored shapes in the estate -- Buoys delegates to
+ * `apps/web`'s bindings diff, riverstatus runs its state-contract and
+ * template-independence proofs -- and `foundation:check` item 1.3 already
+ * accepts either by name, so rewriting the body would replace a working proof
+ * with a scaffold one that may not exist in that repo (narduk-libs#468).
+ */
+export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set(['manifests:validate'])
+
+export type OwnershipMode = 'file' | 'jsonc-keys' | 'keys' | 'pin' | 'region'
 
 export interface ManagedTarget {
   /** Path relative to the app root, matching the generated file's path. */
@@ -116,6 +127,8 @@ export interface ManagedTarget {
   unit: string
   /** Which marker pair delimits the region. Required for `region` targets. */
   region?: RegionName
+  /** Top-level JSONC keys this target owns. Required for `jsonc-keys`. */
+  jsonKeys?: readonly string[]
 }
 
 /**
@@ -139,6 +152,15 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     unit: 'whole file',
   },
   { path: '.github/dependabot.yml', mode: 'file', unit: 'whole file' },
+  {
+    path: '.github/workflows/dependabot-merge.yml',
+    mode: 'file',
+    unit: 'whole file',
+  },
+  // The runner labels the managed workflows above name, so it moves with them
+  // (narduk-libs#778). An app that routes its own workflows elsewhere disowns
+  // it with a `# narduk:unmanaged` header.
+  { path: '.github/actionlint.yaml', mode: 'file', unit: 'whole file' },
   { path: 'AGENTS.md', mode: 'region', region: 'agentsRouter', unit: 'narduk:router block' },
   {
     path: 'docs/e2e-testing.md',
@@ -150,6 +172,15 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     path: 'package.json',
     mode: 'keys',
     unit: 'scripts: ' + MANAGED_SCRIPT_KEYS.join(', '),
+  },
+  // Only the top-level `cache` key (narduk-libs#672). Bindings, routes,
+  // account_id and env blocks stay app-owned. An explicit `enabled: false`
+  // is left alone; missing `cache` is the pre-#658 gap this unit closes.
+  {
+    path: 'apps/web/wrangler.jsonc',
+    mode: 'jsonc-keys',
+    unit: 'top-level cache.enabled',
+    jsonKeys: ['cache'],
   },
 ]
 

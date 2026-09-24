@@ -1,0 +1,67 @@
+{
+  "name": "@narduk-enterprises/stylelint-config",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Stylelint baseline and ratcheting warning budget for Narduk CSS token rules.",
+  "license": "UNLICENSED",
+  "author": "Narduk Enterprises",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/tooling/stylelint-config"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "bin": {
+    "narduk-stylelint": "./bin/narduk-stylelint.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": "./index.mjs"
+    },
+    "./stylelint-budget": {
+      "import": "./stylelint-budget.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin/",
+    "plugins/",
+    "index.mjs",
+    "stylelint-budget.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "pnpm run typecheck",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lint": "narduk-lint",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test:unit": "vitest run",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
+  },
+  "peerDependencies": {
+    "stylelint": "^16.0.0"
+  },
+  "dependencies": {
+    "stylelint": "^16.25.0"
+  },
+  "devDependencies": {
+    "@narduk-enterprises/eslint-config": "workspace:*",
+    "@types/node": "^22.19.19",
+    "eslint": "^10.8.0",
+    "prettier": "^3.8.3",
+    "publint": "^0.3.21",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "volta": {
+    "node": "24.21.0"
+  }
+}

@@ -45,13 +45,13 @@ describe('readBearerSessionToken', () => {
 
 describe('requireDeviceSession', () => {
   it('401s a request without a bearer session before consulting the service', async () => {
-    const devices: DeviceSessionResolver = { getSessionByToken: vi.fn() }
+    const devices: DeviceSessionResolver = { getSessionByTokenWithDevice: vi.fn() }
     const error = await thrown(
       requireDeviceSession(eventWith(), { devices, credentialClass: 'ingest' }),
     )
     expect(error.statusCode).toBe(401)
     expect(error.data?.errorCode).toBe(DEVICES_UNAUTHORIZED_ERROR_CODE)
-    expect(devices.getSessionByToken).not.toHaveBeenCalled()
+    expect(devices.getSessionByTokenWithDevice).not.toHaveBeenCalled()
   })
 
   it('never admits the session row id as a bearer', async () => {
@@ -109,7 +109,17 @@ describe('requireDeviceSession', () => {
         devices,
         credentialClass: 'ingest',
       }),
-    ).resolves.toMatchObject({ id: ingest.sessionId, credentialClass: 'ingest' })
+    ).resolves.toMatchObject({ credentialClass: 'ingest', id: ingest.sessionId })
+
+    // The tenant arrives with the session, and it is the device row itself:
+    // this is exactly what a route used to re-read to learn which org it was
+    // serving (narduk-libs#225).
+    const resolved = await requireDeviceSession(eventWith(`Bearer ${ingest.sessionToken}`), {
+      devices,
+      credentialClass: 'ingest',
+    })
+    expect(resolved.device).toEqual(await devices.getDevice(claimed.deviceId))
+    expect(resolved.device.id).toBe(claimed.deviceId)
 
     const denied = await thrown(
       requireDeviceSession(eventWith(`Bearer ${ingest.sessionToken}`), {

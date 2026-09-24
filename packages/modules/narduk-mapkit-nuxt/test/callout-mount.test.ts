@@ -243,6 +243,65 @@ describe('AppMapKitCallout mounted content', () => {
     harness.wrapper.unmount()
   })
 
+  it('does not forward fallthrough attributes onto teleported content', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const controller = createMapKitCalloutController<Station, Coordinate>({
+      container,
+      coordinateSpace: 'container',
+      mode: 'single',
+      projectCoordinate: () => ({ x: 200, y: 200 }),
+    })
+    const entries = shallowRef<AppMapKitCalloutEntry[]>([])
+    controller.subscribe(() => {
+      const next: AppMapKitCalloutEntry[] = []
+      for (const key of controller.openKeys) {
+        const host = controller.hostFor(key) as HTMLElement | null
+        const item = controller.itemFor(key)
+        if (host && item) next.push({ host, item, key })
+      }
+      entries.value = next
+    })
+    const context: AppMapKitCalloutContext = {
+      close: (key) => (key === undefined ? controller.closeAll() : controller.close(key)),
+      entries,
+      open: () => {},
+      reposition: () => controller.reposition(),
+    }
+    const wrapper = mount(
+      defineComponent({
+        name: 'AttrRoot',
+        setup() {
+          provide(appMapKitCalloutInjectionKey, context)
+          return () =>
+            h(
+              AppMapKitCallout,
+              { class: 'from-parent', 'data-from-parent': '' },
+              {
+                default: () => h('p', { 'data-testid': 'callout-body' }, 'body'),
+              },
+            )
+        },
+      }),
+    )
+    controller.open({
+      coordinate: { lat: 1, lng: 2 },
+      item: stationOf('a', 'Alpha', '12.4C'),
+      key: 'a',
+    })
+    await nextTick()
+
+    const host = controller.hostFor('a') as HTMLElement
+    const body = host.querySelector('[data-testid="callout-body"]')
+    expect(body).not.toBeNull()
+    expect(body?.classList.contains('from-parent')).toBe(false)
+    expect(host.hasAttribute('data-from-parent')).toBe(false)
+    expect(body?.hasAttribute('data-from-parent')).toBe(false)
+
+    wrapper.unmount()
+    controller.destroy()
+  })
+
   it('refuses to render outside a map that provides the callout context', () => {
     const Orphan = defineComponent({
       name: 'Orphan',

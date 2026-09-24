@@ -1,6 +1,6 @@
 import { createError } from 'h3'
-import { useRuntimeConfig } from 'nitropack/runtime'
 
+import { coreRuntimeConfig } from './runtime-config'
 import { readWorkerRuntimeEnv } from './worker-env'
 
 import type { H3Event } from 'h3'
@@ -22,7 +22,7 @@ export interface HyperdriveBinding {
  * `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>` or `localConnectionString`.
  */
 export function useHyperdriveConnectionString(event: H3Event): string {
-  const { hyperdriveBinding } = useRuntimeConfig(event)
+  const { hyperdriveBinding } = coreRuntimeConfig(event)
   const name = hyperdriveBinding || 'HYPERDRIVE'
   const binding = (readWorkerRuntimeEnv(event) as Record<string, unknown>)[name] as
     HyperdriveBinding | undefined

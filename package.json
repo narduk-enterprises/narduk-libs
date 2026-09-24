@@ -5,9 +5,12 @@
   "packageManager": "pnpm@10.33.4",
   "scripts": {
     "postinstall": "pnpm --filter @narduk-enterprises/eslint-config run build",
-    "build": "turbo run build --filter='./packages/*/*' --concurrency=1",
-    "typecheck": "turbo run typecheck --filter='./packages/*/*' --concurrency=1",
-    "lint": "turbo run lint --filter='./packages/*/*' --concurrency=1",
+    "build": "turbo run build --filter='./packages/*/*' --concurrency=4",
+    "build:affected": "turbo run build --filter='./packages/*/*' --affected --concurrency=4",
+    "typecheck": "turbo run typecheck --filter='./packages/*/*' --concurrency=4",
+    "typecheck:affected": "turbo run typecheck --filter='./packages/*/*' --affected --concurrency=4",
+    "lint": "turbo run lint --filter='./packages/*/*' --concurrency=4 && pnpm run format:check",
+    "lint:affected": "turbo run lint --filter='./packages/*/*' --affected --concurrency=4 && pnpm run format:check",
     "format": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\"",
     "test": "pnpm --workspace-concurrency=2 -r --filter './packages/*/*' --if-present test:unit",
@@ -17,6 +20,7 @@
     "scripts:test": "node --test scripts/*.test.mjs",
     "changeset": "changeset",
     "pack:check": "node scripts/release-packages.mjs --dry-run",
+    "preflight": "node scripts/preflight.mjs",
     "release:dry-run": "node scripts/release-packages.mjs --dry-run",
     "release:consumer-smoke": "node scripts/release-packages.mjs --dry-run --consumer-smoke",
     "release:version": "pnpm run release-plan:check && changeset version && pnpm run versions:sync",
@@ -30,7 +34,10 @@
     "ci:affected": "node scripts/ci-packages.mjs",
     "ci:full": "node scripts/ci-packages.mjs --all",
     "ci:batch": "node scripts/ci-packages.mjs --batch",
-    "design-system:build": "pnpm --filter @narduk-enterprises/design-system-build build"
+    "design-system:build": "pnpm --filter @narduk-enterprises/design-system-build build",
+    "explorer:dev": "pnpm --filter @narduk-enterprises/libs-explorer dev",
+    "explorer:build": "pnpm --filter @narduk-enterprises/libs-explorer build",
+    "explorer:test": "pnpm --filter @narduk-enterprises/libs-explorer test:unit && pnpm --filter @narduk-enterprises/libs-explorer test:e2e"
   },
   "pnpm": {
     "overrides": {
@@ -47,7 +54,7 @@
       "svgo": "^4.1.0",
       "tar": "^7.5.21",
       "miniflare>sharp": "^0.35.4",
-      "miniflare>undici": "^7.29.0",
+      "miniflare>undici": "^7.29.1",
       "flatted": "3.4.2",
       "node-forge": "1.4.0",
       "defu": "6.1.7",

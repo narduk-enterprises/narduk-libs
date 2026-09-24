@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
+import { registerNuxtUiSources } from '@narduk-enterprises/narduk-core/nuxt-ui-sources'
 import {
   addComponentsDir,
   addImportsDir,
@@ -14,6 +15,8 @@ import { defu } from 'defu'
 
 // Explicit import (not a Nuxt auto-import): module setup runs in Node before Nuxt app auto-imports exist.
 import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../shared/utils/auth-environment'
+
+import { AUTH_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-auth'
 const AUTH_PRIVATE_HEADERS = {
@@ -95,6 +98,14 @@ function addNitroInlinePackage(nuxtOptions: MutableNuxtOptionsRecord, packageNam
   pushUnique(nitro.externals.inline, packageName)
 }
 
+function addNitroModuleSideEffect(nuxtOptions: MutableNuxtOptionsRecord, specifier: string): void {
+  const nitro = (nuxtOptions.nitro ??= {}) as {
+    moduleSideEffects?: string[]
+  }
+  nitro.moduleSideEffects ??= []
+  pushUnique(nitro.moduleSideEffects, specifier)
+}
+
 function addFallbackLayout(
   nuxt: { hook: (name: 'app:templates', handler: (app: NuxtAppTemplateState) => void) => void },
   template: { src: string },
@@ -133,7 +144,7 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
   meta: {
     name: PACKAGE_NAME,
     configKey: 'nardukAuth',
-    compatibility: { nuxt: '>=3.16.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
   defaults: {
     app: true,
@@ -158,6 +169,13 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
 
     pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
     addNitroInlinePackage(nuxtOptions, PACKAGE_NAME)
+    // Nitro's moduleSideEffects is an allowlist. Keep `@peculiar/x509`'s
+    // bare `import 'reflect-metadata'` so tsyringe can load on a
+    // cloudflare_module Worker (narduk-libs#786). The in-tree installer is
+    // kept by the eager imports in webauthn-server and 00-reflect-metadata;
+    // Nitro matches prefixes with startsWith, so a basename allowlist
+    // entry would not hit that file path.
+    addNitroModuleSideEffect(nuxtOptions, 'reflect-metadata')
     nuxtOptions.alias = {
       ...nuxtOptions.alias,
       '#narduk-auth-server': resolver.resolve('../server'),
@@ -236,6 +254,12 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
           path: '/settings/passkeys',
           file: resolver.resolve('../app/pages/settings/passkeys.vue'),
         })
+      })
+      // A module is not a Nuxt layer, so neither Tailwind nor Nuxt UI's
+      // componentDetection scans app/ unless it is registered (#700).
+      registerNuxtUiSources(nuxt, {
+        sources: [resolver.resolve('../app')],
+        components: AUTH_NUXT_UI_COMPONENTS,
       })
     }
 

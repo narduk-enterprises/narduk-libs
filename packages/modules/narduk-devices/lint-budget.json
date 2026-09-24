@@ -1,0 +1,6 @@
+{
+  "strict": true,
+  "rules": {
+    "narduk/prefer-db-batch": 2
+  }
+}

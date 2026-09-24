@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-ai",
-  "version": "0.3.0",
+  "version": "0.3.22",
   "private": false,
   "type": "module",
   "description": "Reusable AI contracts, xAI helpers, prompt resolution, and admin configuration for Narduk Nuxt apps.",
@@ -83,12 +83,13 @@
     "pretypecheck": "pnpm run nuxt:prepare",
     "prelint": "pnpm run nuxt:prepare",
     "typecheck": "nuxt typecheck",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "narduk-lint",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "prettier": "pnpm run format:check",
-    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
+    "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
     "@narduk-enterprises/narduk-core": "workspace:*",
@@ -104,7 +105,7 @@
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/test-utils": "^4.0.3",
-    "@nuxt/ui": "4.8.1",
+    "@nuxt/ui": "4.11.1",
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "2.4.11",
@@ -133,6 +134,6 @@
     }
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

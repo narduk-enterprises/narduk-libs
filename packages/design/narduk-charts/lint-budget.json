@@ -1,0 +1,6 @@
+{
+  "strict": true,
+  "rules": {
+    "@typescript-eslint/no-floating-promises": 2
+  }
+}

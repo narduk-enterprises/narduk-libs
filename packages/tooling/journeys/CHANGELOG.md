@@ -1,5 +1,46 @@
 # @narduk-enterprises/journeys
 
+## 0.4.3
+
+### Patch Changes
+
+- e4e7306: A `must()` that finds nothing now says which page it was on and lists
+  the accessible names present for that role (and, for a `button`, the links),
+  capped at 20 names of 60 characters (#68).
+
+## 0.4.2
+
+### Patch Changes
+
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 0.4.1
+
+### Patch Changes
+
+- e61a56d: The declaration digest now hashes every file under the catalog
+  directory, whatever its size (#118). It used to skip files of 1 MB or more
+  without saying so, so changing one of them left promoted captures verifying
+  against a changed declaration. **Digest-changing** for a catalog that holds
+  such a file: its promoted captures need one re-capture. A catalog without one
+  gets the same digest as before.
+
+## 0.4.0
+
+### Minor Changes
+
+- fc3b82d: Apple driven journeys can press a control by accessibility identifier
+  (`{ kind: 'element', id }`) and press hardware-keyboard keys
+  (`{ kind: 'key', key, repeat? }`). The world gains optional `prepare` and
+  `generation` hooks. The declared `start` landing is now checked even when
+  `world.confirm` names the scenario. An unknown gesture kind is refused when
+  the catalog loads and when the press is performed, where before it did nothing
+  (narduk-libs#75).
+
 ## 0.3.1
 
 ### Patch Changes

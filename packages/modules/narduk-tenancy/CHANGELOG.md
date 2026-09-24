@@ -1,5 +1,128 @@
 # @narduk-enterprises/narduk-tenancy
 
+## 0.5.2
+
+### Patch Changes
+
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 0.5.1
+
+### Patch Changes
+
+- e61a56d: `meta.compatibility.nuxt` now says `>=4.0.0`, matching the `nuxt`
+  peer range these modules already declare (#444). Before, the module metadata
+  still claimed `>=3.16.0`, so a Nuxt 3 app got no compatibility warning from
+  Nuxt and failed later instead. Nuxt 4 apps see no change.
+
+## 0.5.0
+
+### Minor Changes
+
+- 55d4006: Index the org-scoped membership ordering and the pending-invite
+  predicate.
+
+  A new `drizzle/0002_org_list_indexes.sql` adds three
+  `CREATE INDEX IF NOT EXISTS` statements for the two list reads a consuming
+  app's org console issues. Neither read was a full table scan before -- `0001`
+  already narrows to one org -- but both paid for everything the org had
+  accumulated rather than for what they returned: a 200-member page read and
+  sorted every membership in the org, and the live-invite list and its
+  `count(*)` read every invitation the org had ever issued, accepted and revoked
+  rows included.
+
+  Measured by rows visited, a member page now costs 201 reads whether the org
+  has 200 members or 5 000 (was 200, 1 000 and 5 000), and five live invitations
+  cost five reads whether 0, 50 or 500 accepted invitations sit behind them (was
+  5, 55 and 505).
+
+  Additive and `IF NOT EXISTS` throughout, with no down-migration, so an app
+  already carrying these indexes in its own migration finds them present rather
+  than duplicated.
+
+### Patch Changes
+
+- 3afc622: Prove cross-org isolation with a suite built on deliberately
+  colliding data: two orgs in one database sharing an identity, a resource id,
+  an email, an actor, and a clock, so a passing assertion can only come from org
+  scoping rather than from the fixtures happening to differ. It covers per-org
+  role resolution for one identity, resource-role overrides not bleeding across
+  orgs, `listOrgsForUser` returning only real memberships, the audit trail and
+  support grants each confined to their own org, an invitation landing only in
+  the issuing org, `removeMember` leaving the other org's membership and
+  identically keyed override intact, and a stranger being refused identically
+  whether the org exists or not, so the refusal is no existence oracle.
+  Mutation-tested four ways to prove the suite can fail.
+
+  Test-only: no runtime behaviour, no exported surface, and no published file
+  changes — `tests/` is outside the package's `files` list, so this release
+  ships an identical tarball.
+
+- c494a66: Re-check rank inside the write for every remaining tenancy mutation
+
+  `addMember`, `setResourceRoleOverride`, `clearResourceRoleOverride` and
+  `createInvite` ranked from a read made just before the write, not inside it. A
+  role change landing in that window let one change through against the roles as
+  they were read: a demoted admin could still add a member, set or clear a
+  resource override, or mint an invite.
+
+  Each now carries the rank inputs into the statement itself — an
+  `INSERT … SELECT … WHERE` for the two inserts, and a guarded `UPDATE`/`DELETE`
+  for the overrides — asserting that the actor still holds exactly the role the
+  check read and that the member still stands exactly as it read them. If either
+  moved, the call answers `conflict` and writes nothing, matching
+  `setMemberRole` and `removeMember`. In-rank callers are unaffected.
+
+## 0.4.0
+
+### Minor Changes
+
+- b0fbfb0: **BREAKING (0.x minor): `actorUserId` is required, and identified
+  actors are ranked (narduk-libs#213).**
+
+  Rank floor. An identified actor may grant a role, or act on a member who holds
+  one, only at or below their own org role, or the call throws
+  `TenancyError('forbidden')`. It covers `addMember`, `setMemberRole`,
+  `removeMember`, `setResourceRoleOverride`, `clearResourceRoleOverride`,
+  `createInvite` and, new, `acceptInvite`: an invite is refused `forbidden` once
+  its inviter is no longer a member holding the invite's role or above, checked
+  before the claim and again inside it. An admin can no longer make itself an
+  owner, or demote, remove or narrow an owner, and an actor who is not a member
+  of the org is refused before anything about the target is read.
+  `setMemberRole` and `removeMember` re-assert both roles inside the write and
+  answer `conflict` if either moved. Apps that want "strictly below" or an admin
+  floor keep that check in their routes; the package enforces only the floor.
+
+  Mandatory actor. `actorUserId` is now required on `addMember`,
+  `setMemberRole`, `removeMember`, `setResourceRoleOverride`,
+  `clearResourceRoleOverride`, `revokeInvite` and `revokeSupportGrant`. Omitting
+  it no longer means a system call: a missing, `null`, empty or blank value
+  throws `TenancyError('invalid')` before anything is read. A call no user makes
+  passes the new exported marker `TENANCY_SYSTEM_ACTOR` (a `Symbol.for` symbol,
+  so no request input can equal it); it is not ranked and is audited with a null
+  actor, exactly as an omitted actor was before.
+
+  Migration:
+
+  - Every mutation above now needs `actorUserId`. Pass the signed-in user's id
+    from the route, as most routes already do. TypeScript flags each call that
+    omits it.
+  - For seeding, migrations, backfills and platform tooling, pass
+    `actorUserId: TENANCY_SYSTEM_ACTOR`, imported from
+    `@narduk-enterprises/narduk-tenancy/server/utils/tenancy` (Nitro
+    auto-imports it too). Do not substitute a made-up string such as `'system'`:
+    a string is ranked as a user id and refused as a non-member.
+  - Callers that passed `actorUserId: null` for a system call must switch to the
+    marker.
+  - Fixtures whose actor or inviter is not a member, or ranks below the role it
+    hands out, now get `forbidden` and need a real member of sufficient rank.
+  - An outstanding invite whose inviter has since been demoted below its role or
+    removed can no longer be accepted; re-issue it from a member in rank.
+
 ## 0.3.0
 
 ### Minor Changes

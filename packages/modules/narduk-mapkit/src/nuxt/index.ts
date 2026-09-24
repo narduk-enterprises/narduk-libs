@@ -7,30 +7,58 @@
  *
  * What the module does NOT carry over from that adapter, all of it with zero
  * consumers: the `callouts*` props, `<AppMapKitCallout>`, `useMapKitCallouts`,
- * `useMapkitToken`, `fullscreenControl` / `fullscreenMode`, `centerLabel`, and
- * the `event.context.nardukMapKit.rateLimit` hook as a documented seam. The
- * callout need is met by the `#callout` slot instead.
+ * `useMapkitToken`, `fullscreenControl` / `fullscreenMode` and `centerLabel`.
+ * The callout need is met by the `#callout` slot instead. The token route
+ * still honours a limiter an app mounts on `event.context.nardukMapKit.rateLimit`,
+ * and applies none of its own unless the app sets `rateLimit`.
  */
 import {
   addComponent,
   addImports,
   addServerHandler,
+  addTemplate,
   addTypeTemplate,
   createResolver,
   defineNuxtModule,
 } from '@nuxt/kit'
 
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js'
+import { MAPKIT_MARKS_CSS } from '../marks/styles.js'
+import { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
 
 import type { MapKitPublicRuntimeOptions } from './runtime/options.js'
 import type { ModuleOptions } from './types.js'
 import type { NuxtModule } from '@nuxt/schema'
 
 export type * from './types.js'
+export type { MapKitBasemap } from './runtime/basemap.js'
 export type { MapKitCalloutEntry, MapKitCalloutPlacement } from './runtime/callout-host.js'
 export type { MapKitPinAnchor, MapKitPinGeometry } from './runtime/pin-geometry.js'
-export type { MapKitDiff, MapKitPinElement, MapKitPinItem } from './runtime/pin-layer.js'
+export type {
+  MapKitDiff,
+  MapKitPinElement,
+  MapKitPinItem,
+  MapKitSelectVia,
+} from './runtime/pin-layer.js'
+export type {
+  AppMapKitItemProps,
+  AppMapKitProps,
+  AppMapKitSlots,
+  MapKitCalloutFocus,
+  MapKitCalloutSlotScope,
+  MapKitLeaderProp,
+} from './runtime/components/AppMapKit.js'
+export type {
+  UseMapKitFullscreenOptions,
+  UseMapKitFullscreenResult,
+} from './runtime/composables/useMapKitFullscreen.js'
+export type {
+  UseMapKitViewOptions,
+  UseMapKitViewResult,
+} from './runtime/composables/useMapKitView.js'
 export { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from './runtime/injection-keys.js'
+export { applyMapKitBasemap, resolveMapKitMapType } from './runtime/basemap.js'
+export { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
 
 interface MutableRuntimeConfig {
   appleKeyId?: string
@@ -105,10 +133,12 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
   defaults: {
     component: true,
     composables: true,
+    marks: false,
     // `libraries` is deliberately absent: `defu` concatenates arrays, so a
     // default here would append to whatever the app configured. It is resolved
     // in `setup` instead.
-    rateLimit: { limit: 30, windowSeconds: 60 },
+    // `rateLimit` is deliberately absent: the token route is unlimited unless
+    // the app opts in (narduk-libs#485).
     ssrPreload: true,
     tokenRoute: true,
     tokenRoutePath: DEFAULT_MAPKIT_TOKEN_ROUTE,
@@ -130,8 +160,13 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
     runtimeConfig.appleSecretKey ??= ''
     runtimeConfig.appleTeamId ??= ''
     runtimeConfig.public.mapkitTokenEndpoint ??= tokenRoutePath
-    // Server-side and non-secret: a ceiling, not a credential.
-    runtimeConfig['nardukMapKit'] = { rateLimit: options.rateLimit }
+    // Server-side and non-secret: a ceiling and a host list, not credentials.
+    // Each is absent unless the app opted in, so the route's default is no
+    // limit and every routed host.
+    runtimeConfig['nardukMapKit'] = {
+      ...(options.rateLimit ? { rateLimit: { ...options.rateLimit } } : {}),
+      ...(options.allowedHosts?.length ? { allowedHosts: [...options.allowedHosts] } : {}),
+    }
     warnRetiredKeys(runtimeConfig)
 
     // The client runtime's own non-secret configuration. Deliberately one key,
@@ -154,9 +189,36 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
         filePath: resolver.resolve('./runtime/components/AppMapKit'),
         name: 'AppMapKit',
       })
+      // K-6. The host chrome the component cannot work without, written out of
+      // a TS string because `tsc` -- this package's whole build -- emits no
+      // `.css`. `unshift`, not `push`: the stylesheet has to come FIRST so an
+      // app's own single-class rule for the same property wins on order.
+      const stylesheet = addTemplate({
+        filename: 'narduk-mapkit.css',
+        getContents: () => MAPKIT_COMPONENT_CSS,
+        write: true,
+      })
+      nuxt.options.css.unshift(stylesheet.dst)
+    }
+    if (options.marks) {
+      // After the host chrome, and still before the app's own stylesheets, so
+      // an app rule for a mark wins on order.
+      const marksStylesheet = addTemplate({
+        filename: 'narduk-mapkit-marks.css',
+        getContents: () => MAPKIT_MARKS_CSS,
+        write: true,
+      })
+      nuxt.options.css.splice(options.component ? 1 : 0, 0, marksStylesheet.dst)
     }
     if (options.composables) {
-      addImports([{ from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' }])
+      addImports([
+        { from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' },
+        { from: resolver.resolve('./runtime/composables/useMapKitView'), name: 'useMapKitView' },
+        {
+          from: resolver.resolve('./runtime/composables/useMapKitFullscreen'),
+          name: 'useMapKitFullscreen',
+        },
+      ])
     }
     if (options.tokenRoute) {
       addServerHandler({
@@ -183,7 +245,7 @@ declare module '@nuxt/schema' {
     applePrivateKey: string
     appleSecretKey: string
     appleTeamId: string
-    nardukMapKit: { rateLimit: { limit: number; windowSeconds: number } }
+    nardukMapKit: { rateLimit?: { limit: number; windowSeconds: number } }
   }
   interface PublicRuntimeConfig {
     mapkitTokenEndpoint: string

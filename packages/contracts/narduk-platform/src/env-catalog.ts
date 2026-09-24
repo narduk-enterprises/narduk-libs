@@ -667,12 +667,12 @@ const SEARCH_CONSOLE_MODULE: CatalogEntry[] = [
 const INDEXNOW_MODULE: CatalogEntry[] = [
   {
     key: 'INDEXNOW_KEY',
-    from: 'doppler:narduk/tokens/INDEXNOW_KEY',
+    from: 'generate:nonce-32',
     to: ['cf:build-var', 'cf:runtime-var'],
-    scope: 'every-app',
+    scope: 'one-app',
     secret: false,
     module: 'indexnow',
-    note: 'Shared IndexNow key copied directly to the app provider planes during onboarding.',
+    note: 'Unique IndexNow key per app. A shared key corrupts attribution.',
   },
 ]
 

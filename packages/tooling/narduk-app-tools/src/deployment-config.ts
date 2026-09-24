@@ -38,6 +38,9 @@
 
 import { z } from 'zod'
 
+import { databaseOwnershipSchema } from './database-ownership.js'
+import { developmentSchema } from './development-config.js'
+
 /** The conformance key. Any other value means the app is deliberately exempt
  * from the standard and must justify that elsewhere -- it is not a failure
  * here, because an exempt app is not claiming conformance. */
@@ -78,8 +81,10 @@ const appPath = z
 const bindingName = z.string().trim().min(1).max(200)
 
 /** A preview replacement for one production binding: the binding name alone, or
- * an object naming it alongside whatever ids the generated preview wrangler
- * config will need. */
+ * an object naming it alongside the preview resource, in wrangler's own field
+ * names (KV `id`, D1 `database_id` + `database_name`, R2 `bucket_name`). Only
+ * the object form isolates anything: `narduk-app deploy versions-upload` can
+ * rebind a binding only to a resource it is told (`./preview-config.ts`). */
 const previewBindingEntry = z.union([bindingName, z.looseObject({ binding: bindingName })])
 
 export type PreviewBindingEntry = z.infer<typeof previewBindingEntry>
@@ -89,10 +94,31 @@ export function previewBindingName(entry: PreviewBindingEntry): string {
   return typeof entry === 'string' ? entry.trim() : entry.binding.trim()
 }
 
+/** One entry per binding. A second entry for the same binding would be silently
+ * shadowed by the first, so a contradictory declaration is refused instead. */
+const previewBindingList = z
+  .array(previewBindingEntry)
+  .max(100)
+  .default([])
+  .superRefine((entries, ctx) => {
+    const seen = new Set<string>()
+    for (const [index, entry] of entries.entries()) {
+      const name = previewBindingName(entry)
+      if (seen.has(name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index],
+          message: `${name} appears more than once; give each binding exactly one preview entry`,
+        })
+      }
+      seen.add(name)
+    }
+  })
+
 export const previewBindingsSchema = z.strictObject({
-  d1: z.array(previewBindingEntry).max(100).default([]),
-  kv: z.array(previewBindingEntry).max(100).default([]),
-  r2: z.array(previewBindingEntry).max(100).default([]),
+  d1: previewBindingList,
+  kv: previewBindingList,
+  r2: previewBindingList,
 })
 
 /** The two §5.2 gates between "proved on staging" and "live in production". */
@@ -200,6 +226,43 @@ export const stagingSchema = z
 
 export type StagingBlock = z.infer<typeof stagingSchema>
 
+/**
+ * One reviewed contract migration (narduk-libs#399): an app migration that
+ * drops or renames something, declared safe because the code that read it is
+ * past the rollback window. Pinned by checksum -- the same sha256 the migration
+ * ledger records -- so the waiver covers the reviewed bytes and nothing else.
+ */
+export const contractMigrationSchema = z.strictObject({
+  /** Checkout-relative path of the `.sql` file. */
+  path: z.string().trim().min(1).max(2000),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  /** Why no serving or rollback-target version still reads what it removes. */
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine((reason) => !reason.startsWith('<'), 'replace the placeholder with the actual reason'),
+})
+
+export type ContractMigration = z.infer<typeof contractMigrationSchema>
+
+export const deploymentMigrationsSchema = z.strictObject({
+  compatibility: z.literal('expand-contract'),
+  credential: z.string().trim().min(1).max(300),
+  databases: z
+    .array(
+      z.strictObject({
+        binding: bindingName,
+        sources: z.string().trim().min(1).max(2000),
+      }),
+    )
+    .min(1)
+    .max(100),
+  /** The escape hatch from foundation sub-check 12.9's expand-only rule. */
+  contractMigrations: z.array(contractMigrationSchema).max(500).optional(),
+})
+
 export const deploymentBlockSchema = z.strictObject({
   standard: z.literal(DEPLOYMENT_STANDARD),
   builder: z.literal(DEPLOYMENT_BUILDER),
@@ -220,11 +283,25 @@ export const deploymentBlockSchema = z.strictObject({
   liveProof: z.strictObject({
     buildVersionHeader: z.string().trim().min(1).max(200).default(BUILD_VERSION_HEADER),
     healthPath: appPath,
+    /**
+     * Whether `healthPath` answers an anonymous request. `authenticated` means
+     * it sits behind the app's auth: the path stays declared, because the route
+     * exists, but nothing asserts it anonymously -- the hotfix and development
+     * deploy proofs skip the health assertion, and the adoption read reports it
+     * unknown rather than failing a 401 (narduk-libs#585).
+     */
+    healthAuth: z.enum(['anonymous', 'authenticated']).default('anonymous'),
     smokePath: appPath,
     attempts: z.number().int().min(1).max(60).default(6),
     intervalSeconds: z.number().int().min(1).max(600).default(10),
   }),
   rollback: z.strictObject({
+    /**
+     * `manual` is the only mode anything honours: a person, or a step the app
+     * wrote into its own promote job, runs `narduk-app deploy rollback`.
+     * `auto` still parses so an older manifest does not stop the tools, but
+     * nothing reads it, and foundation sub-check 12.10 fails it (#399).
+     */
     mode: z.enum(['auto', 'manual']),
     alert: z.enum(['resend', 'none']),
   }),
@@ -233,6 +310,24 @@ export const deploymentBlockSchema = z.strictObject({
   staging: stagingSchema.default({ enabled: false }),
   previewBindings: previewBindingsSchema.default({ d1: [], kv: [], r2: [] }),
   previewChecks: z.array(z.enum(PREVIEW_CHECK_MEMBERS)).max(10).optional(),
+  /** Explicit adoption; existing database-free applications need no migration step. */
+  migrations: deploymentMigrationsSchema.optional(),
+  /**
+   * Who owns each D1 binding's schema (`./database-ownership.ts`).
+   *
+   * Optional, and absent means what it has always meant: every D1 binding is
+   * migration-owned and `deployment.migrations` must cover all of them. An app
+   * declares this only when at least one database's schema is owned by a
+   * contract rather than by a migration history -- which is the only way to
+   * declare `deployment.migrations` for the rest without manufacturing a
+   * migration baseline for a database nobody migrates.
+   *
+   * When present it is the **complete** statement: every migrated binding must
+   * appear here too, so the manifest never leaves a binding's owner implied.
+   */
+  databaseOwnership: databaseOwnershipSchema.optional(),
+  /** Optional capability. Enrollment and publisher custody live outside source control. */
+  development: developmentSchema.optional(),
 })
 
 export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>
@@ -241,6 +336,18 @@ export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>
  * Read first, so an app on a different standard is reported as exempt rather
  * than as 20 schema violations against a contract it never claimed. */
 const deploymentEnvelopeSchema = z.looseObject({ standard: z.string().trim().min(1).max(200) })
+
+/**
+ * The `verify --live` health arguments a declared `liveProof` asks for: the
+ * path, or `--no-health` when the route is authenticated (narduk-libs#585).
+ */
+export function healthArgs(
+  liveProof: Pick<DeploymentBlock['liveProof'], 'healthAuth' | 'healthPath'>,
+): string[] {
+  return liveProof.healthAuth === 'authenticated'
+    ? ['--no-health']
+    : ['--health-path', liveProof.healthPath]
+}
 
 export interface DeploymentIssue {
   path: string
@@ -324,7 +431,7 @@ export function defaultDeploymentBlock(options: {
       attempts: 6,
       intervalSeconds: 10,
     },
-    rollback: { mode: 'auto', alert: 'resend' },
+    rollback: { mode: 'manual', alert: 'resend' },
     staging: { enabled: false },
     previewBindings: { d1: [], kv: [], r2: [] },
   }

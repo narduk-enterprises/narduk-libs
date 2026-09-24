@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/eslint-config",
-  "version": "2.0.3",
+  "version": "2.3.0",
   "private": false,
   "type": "module",
   "description": "Consolidated ESLint plugin and capability packs for Nuxt 4, Vue 3, Tailwind v4, and Nuxt UI v4 projects.",
@@ -26,6 +26,9 @@
     "pinia"
   ],
   "types": "./dist/index.d.ts",
+  "bin": {
+    "narduk-lint": "./bin/narduk-lint.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -80,24 +83,29 @@
     "./config/monorepo": {
       "import": "./configs/monorepo.mjs"
     },
+    "./lint-budget": {
+      "import": "./lint-budget.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
+    "bin/",
     "configs/",
     "dist/",
     "eslint-app-config.mjs",
     "eslint-nuxt-flat-fragments.mjs",
+    "lint-budget.mjs",
     "README.md"
   ],
   "scripts": {
     "build": "tsup",
     "prepack": "pnpm run build",
     "check:package": "publint --strict && pnpm pack --dry-run",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node ./bin/narduk-lint.mjs",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "quality": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run build && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "prettier": "pnpm run format:check",

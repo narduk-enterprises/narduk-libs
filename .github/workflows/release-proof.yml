@@ -1,0 +1,211 @@
+name: Release publication proof
+
+# Proves, after a release-PR merge, that every version the merge commit bumped
+# is served by GitHub Packages and by the npm.nard.uk mirror (narduk-libs#490).
+# A "skipped" or lost Release run used to leave sessions reconstructing by hand
+# whether anything published; this workflow answers that on its own and fails
+# with the exact missing name@version. It re-dispatches release.yml at most
+# once and the mirror sync at most once. The logic and its unit tests live in
+# scripts/prove-release-publication.mjs; docs/package-releases.md, "Release
+# publication proof", is the operator view.
+#
+# Only commits that change a package manifest start it, and `plan` finishes in
+# seconds when the commit bumps no publishable version. To prove an older
+# commit by hand, dispatch it from main with `sha` set to that commit.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packages/**/package.json
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit on main whose bumped package versions to prove
+        required: true
+        type: string
+
+concurrency:
+  group: narduk-libs-release-proof-${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  RELEASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: List the publishable versions this commit bumps
+        id: plan
+        run: node scripts/prove-release-publication.mjs plan
+
+  # Polls GitHub Packages with the job token. After the grace period, when push
+  # CI for the commit succeeded and no Release run is queued or running, it
+  # re-dispatches release.yml once with `verified-sha` set to the commit.
+  # Waiting for an idle Release group matters: a new queued run replaces the
+  # pending one in `narduk-libs-release`, which is how #477 looked lost.
+  github-packages:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      actions: write
+      contents: read
+      packages: read
+    outputs:
+      served: ${{ steps.prove.outputs.served }}
+      served-count: ${{ steps.prove.outputs.served-count }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Prove every bumped version is on GitHub Packages
+        id: prove
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGETS: ${{ needs.plan.outputs.targets }}
+        run: node scripts/prove-release-publication.mjs github --grace-minutes 20 --timeout-minutes 75
+
+  # Anonymous read of the mirror, the same read an app install makes.
+  mirror-settle:
+    needs: github-packages
+    if: needs.github-packages.outputs.served-count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      missing: ${{ steps.settle.outputs.missing }}
+      missing-count: ${{ steps.settle.outputs.missing-count }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Wait for npm.nard.uk to serve the published versions
+        id: settle
+        env:
+          RELEASE_TARGETS: ${{ needs.github-packages.outputs.served }}
+        run: node scripts/prove-release-publication.mjs mirror --phase settle --timeout-minutes 15
+
+  # The same credential shape as release.yml's notify-mirror job: a per-run
+  # narduk-lane-automation token downscoped to package-delivery with
+  # `contents: write`, read back before use. It checks out no code and
+  # installs nothing, so the key never shares a job with repository scripts.
+  # A missing credential or failed dispatch does not fail here; the confirm
+  # job below is the verdict.
+  mirror-redispatch:
+    needs: mirror-settle
+    if: needs.mirror-settle.outputs.missing-count != '0'
+    environment: npm-release
+    permissions: {}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Check for the mirror dispatch credential
+        id: credential
+        env:
+          LANE_AUTOMATION_APP_KEY: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          LANE_AUTOMATION_APP_ID: ${{ vars.LANE_AUTOMATION_APP_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_APP_ID:-}" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Mirror re-dispatch skipped::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_APP_ID (repository variable) is absent, so package-delivery was not re-notified."
+          fi
+
+      - name: Mint a dispatch token scoped to package-delivery
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.LANE_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          owner: narduk-enterprises
+          repositories: package-delivery
+          permission-contents: write
+
+      - name: Verify the token sees exactly package-delivery
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          seen="$(gh api /installation/repositories --paginate --jq '.repositories[].full_name' | sort | tr '\n' ' ')"
+          if [ "${seen}" != "narduk-enterprises/package-delivery " ]; then
+            echo "::error title=Unscoped mint::the minted token sees [${seen}] rather than exactly narduk-enterprises/package-delivery; refusing to dispatch with it."
+            exit 1
+          fi
+
+      - name: Re-dispatch the npm.nard.uk mirror sync once
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Provenance only: the sync reads GitHub Packages, never this payload.
+          gh api repos/narduk-enterprises/package-delivery/dispatches \
+            --method POST \
+            -f event_type=narduk-libs-release \
+            -f "client_payload[sha]=${RELEASE_SHA}" \
+            -f "client_payload[run_id]=${GITHUB_RUN_ID}"
+          echo "re-dispatched narduk-libs-release to narduk-enterprises/package-delivery"
+
+      - name: Report a failed mirror re-dispatch
+        if: failure()
+        run: echo "::warning title=Mirror re-dispatch failed::package-delivery was not re-notified; mirror-confirm still decides the verdict."
+
+  mirror-confirm:
+    needs: [mirror-settle, mirror-redispatch]
+    if: ${{ !cancelled() && needs.mirror-settle.result == 'success' && needs.mirror-settle.outputs.missing-count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Require npm.nard.uk to serve every published version
+        env:
+          RELEASE_TARGETS: ${{ needs.mirror-settle.outputs.missing }}
+        run: node scripts/prove-release-publication.mjs mirror --phase confirm --timeout-minutes 20

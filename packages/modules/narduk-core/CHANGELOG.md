@@ -1,5 +1,656 @@
 # @narduk-enterprises/narduk-core
 
+## 2.13.1
+
+### Patch Changes
+
+- dfa8d39: Fix three defects that made core's own components break in a
+  consuming app, where core is installed as a module:
+
+  - LayerAppFooter (`useSsrNow`), AppBreadcrumbs (`toRef`) and `useFormHandler`
+    (`readonly`) called names the app runtime import bridge did not inject, so
+    they threw `ReferenceError` during SSR and failed prerendering. The seo and
+    analytics admin panels had the same gap for `useOgImagePreviewResolver`,
+    `normalizeOgPreviewSections`, `useAdminGaOverview`, `useAdminGscPerformance`
+    and `useAdminPosthogDashboard`. All are now bridged, and a test scans every
+    bridged app file so the lists cannot drift again.
+  - `main.css` now declares `@source` for core's `runtime/app`. Tailwind skips
+    `node_modules`, so utilities used only by core components were never
+    generated; LayerAppHeader's desktop nav (`hidden md:flex`) stayed hidden at
+    every width.
+
+## 2.13.0
+
+### Minor Changes
+
+- e8a373e: Health checks can fail at `notice` severity: the entry publishes
+  `result: 'fail'` with `notice: true` and its `detail`, and the report's
+  `status` does not move, so a monitor matching `"status":"ok"` does not page.
+  `registerFreshnessCheck` takes an optional `noticeAfter` below `warnAfter` for
+  the aging band of a three-band freshness policy. The docs no longer describe
+  `degraded` as something that does not take the app down: to a `"status":"ok"`
+  monitor it pages like `error` (#414).
+- 12f3294: `runAtomicBatch(db, statements)` runs a group of writes as one
+  transaction on D1 (`batch()`) or better-sqlite3 (`$client.transaction`), so
+  apps stop copying tenancy's dual-driver helper (#201).
+- e87803e: `types/**/*.d.ts` joins Nuxt's generated app, server, shared and node
+  tsconfigs, so a `nuxt/schema` runtime-config augmentation in `types/` types
+  its keys instead of leaving them `unknown` with no error (#669). An
+  augmentation that was inert before can now surface type errors it was hiding.
+
+## 2.12.0
+
+### Minor Changes
+
+- 551e39a: The canonical-host redirect takes a host list:
+  `CANONICAL_REDIRECT_HOSTS` (or `runtimeConfig.public.canonicalRedirectHosts`)
+  redirects only the named hosts, such as `www`, to the canonical origin and
+  serves every other host where it was asked, so `*.workers.dev` previews keep
+  working. It needs no `ENFORCE_CANONICAL_HOST`, and a `*.workers.dev` entry is
+  ignored (#515).
+
+## 2.11.0
+
+### Minor Changes
+
+- 5747011: Three small narduk-core changes.
+
+  - `readBoundedBody` and `readBoundedJson` are exported server utils
+    (narduk-libs#565). They read an upstream body with a hard size ceiling,
+    cancelling the stream once it passes `maxBytes`, and throw
+    `BoundedBodyTooLargeError`, or your own error via `tooLarge`. The
+    narduk-data client already read its bodies this way. The README documents
+    it. An app with its own util of the same name gets a duplicate auto-import
+    warning; delete the app's copy.
+  - `x-build-version` reads `WORKERS_CI_COMMIT_SHA` before it asks `git`
+    (narduk-libs#584). A Workers Build no longer depends on its checkout
+    carrying `.git` to stamp the commit.
+  - `defineRateLimitedHandler` given an async handler returns
+    `EventHandler<Request, Promise<Response>>`, not `Promise<Promise<Response>>`
+    (narduk-libs#653). Runtime behaviour is unchanged, and the cast in
+    `definePublishedDataHandler` is gone.
+
+- b0dca25: `LayerAppFooter` has an extension point for extra rows
+  (narduk-libs#743). It renders an `after` slot below its content, and by
+  default that slot renders the global components listed in
+  `appConfig.nardukCore.footer.after`. A module can now add a footer row without
+  shipping its own copy of the footer. The README documents it.
+- 45ea540: `consumeRateLimit(event, options, path?)`:
+  `defineRateLimitedHandler`'s decision step as a non-throwing verdict, for a
+  route the app cannot wrap, such as a module's token route (#413). The wrapper
+  now calls it, so the two share one counter key, store, binding and override
+  surface.
+
+  `shared/utils/units` adds knots (`metresPerSecondToKnots`,
+  `knotsToMetresPerSecond`), the inverse of every existing conversion, and
+  `compassPoint16(degrees)` with `NE_COMPASS_POINTS_16` (#518).
+
+### Patch Changes
+
+- 02b6c1a: The CSP report route answers 204 without reading any body that is not
+  `application/csp-report` or `application/reports+json`, and limits each client
+  to 60 reports a minute (rate-limit key `csp-report`); a request of any other
+  type is answered before the limiter and never counts against it (#444).
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
+## 2.10.1
+
+### Patch Changes
+
+- 0da668a: Core migration `0007_api_key_hash_index.sql` adds a unique index on
+  `api_keys.key_hash` (#168). Every API-key authentication looks the key up by
+  its hash, and without the index each one scanned `api_keys`, including a
+  request presenting a well-formed but fabricated key. The D1 and Postgres
+  schemas declare the same index. Apply it with the app's migrate script
+  (`narduk-app db migrate`). A Postgres app adds it with its own DDL.
+- 5ac629e: The seeded `@nuxt/icon` client bundle now includes `lucide:check`,
+  `lucide:copy` and `lucide:link`, which `AppCopyButton` and `AppShareButtons`
+  render. The build now warns when an app lists `@nuxt/icon` before narduk-core
+  without setting `icon.fallbackToApi: false`: `@nuxt/icon` has then already
+  installed with the Iconify API fallback, which an enforcing CSP refuses
+  (narduk-libs#467). The README states the module order.
+- 1759259: A thrown error answered as JSON now leaves `private, no-store`
+  (narduk-libs#493). For an `/api/*` or `.json` path,
+  `Accept: application/json`, a CORS fetch or curl, Nuxt hands the error to
+  Nitro's own handler, which sent `Cache-Control: no-cache` on every 404 and
+  bypassed the `error-cache` plugin. Workers Cache stores `no-cache`, so an app
+  with `"cache": { "enabled": true }` stored its API errors. A new prepended
+  Nitro error handler, `json-error-no-store`, answers those errors itself with
+  Nitro's status and body and `private, no-store`, and strips any CDN headers a
+  route set before it threw. HTML errors and `nuxt dev` are unchanged.
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-platform@2.1.1
+
+## 2.10.0
+
+### Minor Changes
+
+- 056105e: Bump `@nuxt/ui` from `4.8.1` to `4.11.1` everywhere the layer pins
+  it: the `narduk-core` dependency, the `narduk-shell` peer and dev pins, the
+  `narduk-ai` and `design-system-build` dev pins, and the `create-narduk-app`
+  generator manifest (following the same coordinated-pin pattern as 8f693b1).
+
+  A consumer app already on `@nuxt/ui@4.11.1` (buoys#287) failed
+  `nuxt typecheck` against narduk-core's `AppTabs.vue`:
+
+  ```
+  error TS2345: Argument of type '{ ... items: TabsItem[] | undefined; ... }' is
+  not assignable to parameter of type '... items?: TabsItem[] | undefined; ...'.
+    Type 'import(".../@nuxt+ui@4.8.1/.../Tabs.d.vue").TabsItem[] | undefined' is
+    not assignable to type 'import(".../@nuxt+ui@4.11.1/.../Tabs.d.vue").TabsItem[]
+    | undefined'.
+  ```
+
+  Two different `@nuxt/ui` installs (narduk-core's pinned `4.8.1` and the app's
+  own `4.11.1`) produced structurally distinct `TabsItem`/`AvatarProps` types
+  that TypeScript will not unify, even though both come from the same package
+  name. Matching narduk-core's declared version to the app's removes the
+  duplicate-copy mismatch.
+
+  `nuxt typecheck` passes clean in narduk-core against `4.11.1` with no source
+  changes; no other breaking change between `4.8.1` and `4.11.1` touched
+  anything in this workspace.
+
+  Consumer migration: an app that declares `@nuxt/ui` itself must move its own
+  pin to `4.11.1` in the same change that takes this release. `narduk-shell`'s
+  peer is exact, so any other version is a peer conflict, and `narduk-core`
+  carries `@nuxt/ui` as a dependency, so a different app-level pin resolves a
+  second copy -- the duplicate-copy failure this release removes.
+
+  Refs narduk-enterprises/buoys#287.
+
+### Patch Changes
+
+- Updated dependencies [e61a56d]
+  - @narduk-enterprises/narduk-logging@0.3.2
+
+## 2.9.0
+
+### Minor Changes
+
+- 671fbf3: Adds `useCurrentLocation()`, a consent-first "near me" location read
+  (#385). Nothing is read until `locate()` is called from a user gesture. Each
+  call is one `getCurrentPosition`: it never watches, polls or reports a
+  coordinate, and server rendering is a no-op.
+
+  It keeps four failure outcomes apart. `denied` means the person refused.
+  `blocked` means the page's own Permissions-Policy forbids geolocation;
+  Chromium reports that as a denial, and the composable tells the two apart.
+  `unavailable` means no position could be had, and `timeout` means none arrived
+  in time.
+
+  Fixes `NUXT_PUBLIC_ALLOW_GEOLOCATION` having no effect with the
+  `security.headers` preset on. Before this change only the legacy middleware
+  read it, so the app reported `allowGeolocation: true` and still sent
+  `geolocation=()`. The preset now grants `geolocation=(self)` from it at build
+  time. An explicit `permissionsPolicy.geolocation` still wins.
+
+## 2.8.1
+
+### Patch Changes
+
+- df7568d: Stop published server code from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-core` ships raw `.ts`, and a consumer's Nitro type program types
+  `useRuntimeConfig(event)` as `@nuxt/schema`'s `RuntimeConfig`
+  (`Record<string, unknown>`). `useHyperdriveConnectionString` indexed
+  `hyperdriveBinding || 'HYPERDRIVE'`, which is `{} | string` there, so every
+  consumer failed with TS2538 while this package's own `nuxt typecheck` stayed
+  green (narduk-libs#656, the same gap as #649). The legacy security-headers
+  middleware had the same shape on `public.appVersion` and the `csp*Src` keys: a
+  truthiness guard narrows `unknown` to `{}`.
+
+  Server code that reads a key the module actually writes now goes through
+  `coreRuntimeConfig(event)`. The type names only those keys —
+  `hyperdriveBinding` and the public version, CSP, and geolocation defaults from
+  `src/module.ts` — and leaves everything else `unknown`. A
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `runtime/server/**` against that unaugmented view and
+  fails if the view stops rejecting a direct `hyperdriveBinding` index.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+
+## 2.8.0
+
+### Minor Changes
+
+- 62b7b79: New server util
+  `definePublishedDataHandler(handler, { profile, tags?, vary?, fallbackMessage?, rateLimit? })`
+  for public published-data reads (narduk-libs#514). It applies the cache
+  profile only after the handler succeeds, so an error never advertises a
+  cacheable posture. An internal failure without a `statusCode` is logged and
+  answered with a sanitized 503, and a deliberate `createError` passes through
+  unchanged. Rate limiting goes through `defineRateLimitedHandler` and is
+  applied only when `rateLimit` is passed. It is auto-imported, so an app with
+  its own `definePublishedDataHandler` in `server/utils` (Buoys) should replace
+  its local copy when it adopts this release. `create-narduk-app` is a companion
+  patch so the generator pin moves with this core minor.
+- c574403: core: answer `HEAD` on file-based API routes
+
+  h3's router matches the request method exactly, so a `*.get.ts` file route
+  registers `handlers.get` and nothing else and every `HEAD` to an API path fell
+  through to a 404 — including `/api/health`, the path apps enrol for uptime
+  monitoring. A monitor probing with `HEAD`, the conventional choice for a
+  liveness check, saw the app as down. RFC 9110 §9.3.2 requires `HEAD` to be
+  identical to `GET` minus the body.
+
+  A new server middleware answers `HEAD` on `/api` paths by re-entering the app
+  with `GET` and returning that response's status and headers with no body, so
+  the two cannot drift and a failing health check still surfaces as its real
+  status rather than as a cheap `200`. Pages are untouched: the Nuxt renderer is
+  bound to no method and already answers `HEAD`.
+
+  The re-entering request carries the caller's identity. Headers already
+  forwarded survive the hop untouched; a caller identified only by its socket
+  has that address carried inward explicitly, because the inner request has no
+  socket and would otherwise join every other `HEAD` in the single `'unknown'`
+  rate-limit bucket. A client-chosen forwarded address is never promoted to the
+  trusted identity header.
+
+### Patch Changes
+
+- cecc72a: Dedupe `parseListQuery`'s unknown-query-key warning per distinct key
+  set instead of logging once per request.
+
+  The tolerate-and-warn path (#257, shipped in #283) logged one structured
+  `warn` line every time a request carried an unknown list-query key, with no
+  dedupe, counter, or cache. Two of the three routes it covers have no rate
+  limit ahead of it, so an ordinary authenticated session could force unbounded
+  log volume — and the per-request hot-path cost that comes with it — just by
+  appending one throwaway query parameter to every request (e.g.
+  `GET /api/notifications?limit=20&x=1`).
+
+  The warning now logs once per distinct unknown-key set per process,
+  remembering at most 256 sets. Past that cap it emits exactly one final
+  `list_query_unknown_keys_suppressed` notice and stops — it does not clear and
+  resume — so a caller varying the throwaway key every request cannot reproduce
+  one-log-line-per-request by pushing the memorized set past its limit. Memory
+  stays bounded at 256 remembered sets, and total log lines are now at most 257
+  per isolate, regardless of request volume. Only the key _names_ were ever
+  logged, never values, so this was a log-volume issue, not an injection or
+  leakage one.
+
+- 62b7b79: Stop the unhandled `/api/_auth/session` SSR error in apps that have
+  not configured auth (narduk-libs#540). `coreModules` still installs
+  `nuxt-auth-utils` (dashboard chrome uses `useUserSession`), but passes the
+  module's existing `auth.loadStrategy: 'none'` unless the app already set a
+  strategy, has a session password (`NUXT_SESSION_PASSWORD`, `SESSION_PASSWORD`,
+  or `runtimeConfig.session.password`), or lists `narduk-auth` /
+  `nuxt-auth-utils` in `modules`. A no-auth fixture SSRs without that fetch and
+  without an error log. `create-narduk-app` is a companion patch so the
+  generator pin moves with core.
+- 2671ccd: The production error sanitizer can no longer throw.
+  `sanitizeProductionError` assigned `statusText` unguarded, and
+  `'statusText' in error` is true for a getter with no setter, so the write
+  threw in strict mode, escaped into Nitro's error handling, and turned a
+  correct status into a 500 with the original error discarded. `message`,
+  `statusMessage` and the `delete` of `data` and `cause` could fail the same
+  way, with worse consequences.
+
+  Every field is now scrubbed defensively, falling back to
+  `Object.defineProperty` so an inherited accessor is shadowed by an own data
+  property and the value is actually removed rather than merely not throwing.
+  One field that resists both paths no longer aborts the rest of the pass.
+
+- b672613: Declare `vue-router` as a peer dependency of narduk-core.
+
+  `runtime/app/components/app/LayerAppHeader.vue` imports the type
+  `RouteLocationRaw` from `vue-router`, and `runtime/` is in narduk-core's
+  published `files`, so that bare specifier ships to every consumer. narduk-core
+  declared `vue-router` nowhere — not in `dependencies`, not in
+  `peerDependencies` — so it resolved only because `vue-router` is a dependency
+  of `nuxt` (`^5.2.0` per `nuxt@4.5.2`'s own `package.json`), which every
+  consumer has today. A pnpm install with a restricted `hoist-pattern`, or a
+  `node-linker` setting that suppresses that hoist, would get
+  `TS2307: Cannot find module 'vue-router'`.
+
+  Same shape as the `@nuxt/schema` phantom dependency closed in #382 — it was
+  found by that PR's published-surface scan and deliberately left out to keep
+  that PR scoped (narduk-libs#383). The range mirrors what `nuxt@4.5.2` itself
+  declares, so any Nuxt app already has a satisfying copy and this declaration
+  adds no install.
+
+  `@narduk-enterprises/create-narduk-app` moves in lockstep because it pins
+  narduk-core's version in `PACKAGE_VERSIONS`.
+
+  **Consumer impact.** `patch`, not `minor`: this declares a dependency that was
+  already required at runtime for every consumer today (any app using
+  narduk-core already brings in `nuxt`, which already brings in `vue-router` —
+  narduk-core's own type import has always needed it to resolve), it does not
+  add a new runtime requirement. A consumer already on `vue-router >=5.2.0` —
+  which is every consumer today, since that is what `nuxt@4.5.2` itself pulls in
+  — sees no change: no new install, no version bump forced on their lockfile, no
+  new peer warning. A consumer on an older, unsupported `nuxt` that resolved a
+  pre-5.2.0 `vue-router` would newly see a peer range warning on their next
+  install, surfacing a version this package already silently depended on rather
+  than creating a new one.
+
+- Updated dependencies [7bfcf46]
+  - @narduk-enterprises/narduk-logging@0.3.1
+
+## 2.7.0
+
+### Minor Changes
+
+- 693f7d3: security.headers: let a first-party-only app opt out of the estate
+  CSP baseline
+
+  `security.headers.baseline` selects which third-party origins an app inherits
+  before its own `allow` is applied. It defaults to `'estate'`, so no existing
+  app's policy changes.
+
+  `baseline: 'self'` inherits none of them: every directive is `'self'` plus
+  whatever the app names in `allow`. It exists because `allow` can only add,
+  which left an app reaching no third party unable to enforce the strict nonce
+  policy without widening its CSP — trading `script-src 'unsafe-inline'` for the
+  eleven `BASELINE_ALLOWLIST` origins, eight of them on `connect-src`.
+
+  The nonce, `'strict-dynamic'`, HSTS, `frame-ancestors`, `form-action`,
+  `object-src`, the report route and style-src's `'unsafe-inline'` are
+  unchanged, and the resulting policy is a strict subset of the `'estate'` one.
+
+  Closes #560.
+
+## 2.6.4
+
+### Patch Changes
+
+- fa2f123: fix(narduk-core): put the base element styles in `@layer base` so an
+  app's theme wins
+
+  `main.css` is appended to `nuxt.options.css` after the consuming app's own
+  stylesheets, and its `body` and `h1`–`h4` rules were unlayered. Unlayered CSS
+  beats every layered rule regardless of source order, so those defaults could
+  not be overridden by an app at all: measured on lakestat-us, the app's own
+  `body { color: var(--gs-ink); background: var(--gs-page) }` lost, and the page
+  computed `#fff`, slate-700 and Inter instead of the app's palette.
+
+  Both rules now sit in `@layer base`, which is where Nuxt UI already ships the
+  same body declarations. `.font-display` stays unlayered, because an app opts
+  into that class by name rather than inheriting it.
+
+## 2.6.3
+
+### Patch Changes
+
+- ecc731b: The report-only CSP no longer carries `upgrade-insecure-requests`.
+
+  The preset already meant to keep that directive on the enforcing header only —
+  browsers ignore it in a report-only policy, and Chromium logs a console error
+  for every document load. It did that by leaving the key off its own config
+  object, which is not the same thing: nuxt-security merges our options _over_
+  its defaults (`defuReplaceArray(userOptions, defaultSecurityConfig(...))`),
+  and its default CSP sets `'upgrade-insecure-requests': true`. defu fills in
+  any key we leave undefined, so the directive came back at full strength and
+  the README's documented contract — report-only "without
+  `upgrade-insecure-requests`" — was never what shipped.
+
+  The directive is now set explicitly to `false` in report-only mode. defu keeps
+  a declared `false`, and nuxt-security's serializer drops a false directive
+  rather than emitting it.
+
+  Found on lakestat.us, where enabling the preset turned every page load into a
+  console error and failed the app's visual-audit E2E suite (18 errors: 6 routes
+  × 3 viewports). The unit test that covered this asserted the key was _absent_
+  from our config object, which is exactly the state that let the default
+  through — so `nuxt-security-contract.test.ts` now reproduces upstream's own
+  merge with upstream's own code, rather than asserting on our half of it.
+
+## 2.6.2
+
+### Patch Changes
+
+- 81051b0: Narduk Data client: send `redirect: 'manual'` instead of `'error'`,
+  which the Cloudflare Workers runtime rejects before any response arrives. A
+  redirect is still an `http` failure and is never followed (#563).
+
+## 2.6.1
+
+### Patch Changes
+
+- 448e86f: `createNardukDataClient` no longer re-downloads an unchanged release
+  when its TTL lapses. If the manifest still names the same release and artifact
+  checksum, the client keeps the cached value (and its object identity) and
+  fetches only the manifest.
+- 7142305: `useSsrNow(key, { tickMs })` also re-reads the browser clock when the
+  page becomes visible again, so a viewer returning to a background tab sees
+  current relative ages at once instead of after the next (throttled) tick. The
+  listener is registered only for a ticking clock and removed on unmount. This
+  closes the last gap between `useSsrNow` and the Buoys map clock it
+  generalises. `create-narduk-app` is a companion patch so the generator pin
+  moves with the core patch.
+
+## 2.6.0
+
+### Minor Changes
+
+- 4599aa7: `createNardukDataClient` can now read a release's secondary
+  artifacts, the ones the manifest lists in `artifacts[]` beside the primary
+  `artifact`. Set the new `NardukDataProduct.entryPath` option to a
+  release-relative path, for example
+  `consumer/lakes/texas/canyon-lake/history-1y.json`.
+
+  - The path may have several segments, each of which must be a plain name.
+  - The entry is checked against its own listed SHA-256, with the usual timeout,
+    retry, single-flight, memo, stale-if-error and freshness handling.
+  - A release that does not list the entry fails with the new `NardukDataError`
+    reason `'missing'`, so consumers can answer "not published" rather than
+    reporting an outage. It never falls back to the primary artifact.
+
+  Reads without `entryPath` are unchanged (#552).
+
+- 4ba5d02: AppLightbox gains optional thumbnail rails (0–2 labelled rails, each
+  with its own keyboard axis) and a `side` slot for per-picture details.
+  `AppImage` wraps remote pictures with loading and failed states.
+  `AppSnapStrip` is a horizontal scroll-snap strip with an en-dash position
+  readout (narduk-libs#529). `create-narduk-app` is a companion patch so the
+  generator pin moves with the core minor.
+
+## 2.5.0
+
+### Minor Changes
+
+- 8d35cb8: `useDatabase(event)` and `createAppDatabase` accessors now count D1
+  round trips on narduk-logging's request counter (narduk-libs#511): one per
+  `first` / `all` / `run` / `raw` on a prepared statement, and one carrying
+  every statement for a `batch`. The counts reach `Server-Timing` and the
+  "Request completed" record. Counting never fails a query.
+- 8d35cb8: A response that leaves the app with no cache posture now ships
+  `Cache-Control: private` (narduk-libs#435, step 1). SSR pages, API JSON, and a
+  returned `Response` without its own header all get it. Any explicit posture
+  wins unchanged: `Cache-Control`, `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control` or `Expires` from
+  `setCacheProfile`, `setResponseHeader`, route rules, cached handlers, or the
+  returned `Response`. Build assets under `app.buildAssetsDir` are left alone,
+  and thrown errors stay `private, no-store`. A route that relied on having no
+  `Cache-Control` to be stored by a shared cache must now say so with
+  `setCacheProfile`.
+
+### Patch Changes
+
+- 8d35cb8: The `./app/error-page` export now has a `types` condition
+  (narduk-libs#521). The page is typed as a component taking `error: NuxtError`,
+  so an app importing it into its own `app/error.vue` no longer needs
+  `@ts-expect-error`.
+- 92835a1: Fixes for the new error-severity lint rules. `LayerAppFooter`
+  (narduk-core, narduk-seo) no longer reads `new Date()` during render for the
+  copyright year; it reads one SSR-hydrated timestamp (`useSsrNow` in
+  narduk-core, `useState` in narduk-seo), so server and client agree.
+  `GET /api/auth/api-keys` (narduk-auth) is ordered newest first in SQL and
+  limited to 100 keys, since nothing caps how many keys a user may create.
+
+## 2.4.0
+
+### Minor Changes
+
+- bb37590: New auto-imported composable `useSsrNow(key, { tickMs? })`: a
+  render-safe "now" for relative times. The server reads `Date.now()` once into
+  `useState('narduk:now:<key>')`, the client hydrates with that same value (no
+  hydration mismatch across a minute boundary), and after mount it switches to
+  the browser clock, optionally re-reading it every `tickMs` and clearing the
+  interval on unmount. Returns a readonly `Ref<number>`. It generalises Buoys'
+  `useStationPageClock`, `map:now` and `stations:now`. The lifecycle half is
+  also exported as `createSsrNowClock(stateRef, options)` from
+  `./app/utils/ssrNowClock`.
+- bb37590: New D1 migration `runtime/drizzle/0006_user_id_indexes.sql` adds
+  `api_keys_user_id_idx` on `api_keys(user_id)` and `sessions_user_id_idx` on
+  `sessions(user_id)` (`CREATE INDEX IF NOT EXISTS`). The Drizzle schema and the
+  Postgres schema declare the same indexes.
+
+  Why: `api_keys.user_id` is the only predicate of narduk-auth's
+  `GET /api/auth/api-keys`, which scanned the whole table on every listing; the
+  plan is now `SEARCH api_keys USING INDEX api_keys_user_id_idx`.
+  `sessions.user_id` is not a query predicate (sessions are looked up by id),
+  but it is the child column of `users ON DELETE CASCADE`, so each user delete
+  scanned `sessions`; SQLite recommends indexing foreign-key child columns.
+  `CREATE INDEX` holds D1 writes while it builds; both tables are small today.
+
+  Consumer action: none beyond the normal migrate step. Apps generated by
+  create-narduk-app list narduk-core's `runtime/drizzle` directory in
+  `migrations.sources.json`, so after upgrading run `pnpm db:migrate:local`, and
+  `cf:deploy` applies it remotely through `narduk-app db migrate --remote` in
+  Workers Builds. An app that deploys another way must run its
+  `db:migrate:remote` (or equivalent) before or with the deploy. Postgres apps:
+  core ships no Postgres migrations, so add the two indexes with your own DDL.
+
+## 2.3.0
+
+### Minor Changes
+
+- 8da7e33: Rate limiting and CSRF hardening.
+
+  - Rate-limit counters key an IPv6 caller by its `/64` instead of the full
+    address, in `defineRateLimitedHandler` (window and Cloudflare binding) and
+    in `enforceRateLimit` / `enforceRateLimitPolicy`. IPv4 keys are unchanged;
+    `getClientIp` still returns the full address (#430).
+  - An `'ip-path'` route counts `/path/`, `/path?x=1` and a percent-encoded
+    spelling in the same bucket as `/path` (#433).
+  - New `shared/rate-limit-namespace` helper (`rateLimitNamespaceId`,
+    `rateLimitNamespacePrefix`, `RATE_LIMIT_SCAFFOLD_NAMESPACE_IDS`) and README
+    guidance: Cloudflare `namespace_id` is account-unique, so the pasteable
+    `1001` example is gone (#433).
+  - New `nardukCore.csrf.exemptPaths` option lets an app declare credential-free
+    device routes CSRF-exempt (exact paths or `/prefix/*`); over-broad or
+    ambiguous entries fail the build and are ignored at runtime (#239).
+  - The CSP report route exemption also accepts the trailing-slash and query
+    spellings the router dispatches to it (#415).
+
+- 05b3ef9: Keep per-request headers off shared-cacheable responses
+  (narduk-libs#412, narduk-libs#418). `setCacheProfile` now strips the
+  `RateLimit-*` family (`RateLimit`, `RateLimit-Policy`, `RateLimit-Limit`,
+  `RateLimit-Remaining`, `RateLimit-Reset`), `Retry-After`, `x-request-id` and
+  `Server-Timing` whenever it emits a public profile (`live`, `slow`, `static`,
+  or a non-private inline profile), so a route no longer has to pass
+  `headers: 'none'` to `defineRateLimitedHandler` to be safe. A new
+  `shared-cache-headers` Nitro plugin strips the same headers in
+  `beforeResponse` from any non-error response that is shared-cacheable by then
+  — including a returned web `Response` — so the order of limiter, logger and
+  profile no longer matters. `none`, `private` profiles and error responses are
+  untouched; a 429 keeps its `Retry-After`.
+
+  The README's Workers Cache section now documents the full enablement contract
+  (narduk-libs#435): the verified `"cache": { "enabled": true }` mechanism, that
+  a response with no `Cache-Control` is still stored (a 200 for 2 hours), the
+  narduk-core >= 2.2.4 precondition, and how to prove a HIT.
+
+### Patch Changes
+
+- Updated dependencies [a82dc2d]
+  - @narduk-enterprises/narduk-logging@0.3.0
+
+## 2.2.4
+
+### Patch Changes
+
+- fe58c5f: SSR HTML is never shared-cache storable on an app that serves the
+  nonce CSP (`nardukCore.security.headers` in `enforce` or `report-only` mode),
+  because nuxt-security writes one per-request nonce into both the HTML and the
+  CSP header and an edge cache would replay it to every visitor
+  (narduk-libs#435). `setCacheProfile` refuses a cacheable profile on a page
+  render with the new `nonce-csp-html` suppression reason, and a new
+  `nonce-csp-cache` Nitro plugin pins `Cache-Control: private, no-store` on the
+  final `text/html` response and strips `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`, `Expires`
+  and `Age` however they got there. JSON API routes and Nuxt `_payload.json`
+  responses keep their profile and stay edge-cacheable. In development, a page
+  that asked for a cacheable profile logs one warning per path.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-core` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule) — no
+  generator behavior changes.
+
+## 2.2.3
+
+### Patch Changes
+
+- 7ae9278: Thrown 4xx/5xx responses — including a 429 from
+  `defineRateLimitedHandler` — now carry `Cache-Control: private, no-store` and
+  drop `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`,
+  `Cache-Tag`, `Expires` and `Age`, even when the route had already set a
+  cacheable profile (e.g. `setCacheProfile(event, 'live')`) before throwing.
+  Nitro's own error page otherwise ships `Cache-Control: no-cache`, which
+  Cloudflare Workers Cache _stores_ and revalidates once an app turns on
+  `"cache": { "enabled": true }`; `no-store` / `private` are the documented
+  opt-out. This is a safe precondition for narduk-libs#435 (making
+  `setCacheProfile`'s edge header actually hit) — do not enable Workers Cache in
+  a consuming app until this release.
+
+  The header-strip list that already backed the `preferences-cache` plugin
+  (narduk-libs#386) moved to a new framework-free
+  `runtime/shared/utils/shared-cache.ts` so the error path reuses it rather than
+  duplicating it; `preferences.ts` re-exports the same names it always has, so
+  no consumer import changes.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-core` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule) — no
+  generator behavior changes.
+
+## 2.2.2
+
+### Patch Changes
+
+- 766ce96: Fix the estate CSP baseline refusing GA4's Google-signals beacon
+  (narduk-libs#472). A GA4 property with Google signals enabled sends a second
+  `page_view` beacon straight to `https://www.google.com/g/collect` (not a
+  `*.google-analytics.com` host), with an `<img>` fallback at the same origin
+  when `fetch`/`sendBeacon` is unavailable. Both the strict nonce-CSP baseline
+  (`runtime/shared/security-headers.ts` `BASELINE_ALLOWLIST`) and the legacy
+  enforcing middleware (`runtime/server/middleware/securityHeaders.ts`
+  `BASELINE_CONNECT_SRC`) now allow `https://www.google.com` on `connect-src`;
+  the legacy middleware's `img-src` already carries an `https:` wildcard that
+  covers the same host, so it needed no change. A property that runs with Google
+  signals off never sends this beacon and does not need the host.
+
+  create-narduk-app re-releases so its generated package pins follow the
+  narduk-core patch and its dependents.
+
+## 2.2.1
+
+### Patch Changes
+
+- fa41027: Default `colorMode.classSuffix` to `''` so `@nuxtjs/color-mode`
+  writes `class="dark"` instead of `class="dark-mode"`. Tailwind v4 and Nuxt UI
+  4 key dark styles on `.dark`, so the previous suffix left every dark token
+  inert.
+
+  **Adoption.** Apps with no dark styling will start rendering Nuxt UI chrome
+  dark for dark-preference users. An app that wants light-only sets
+  `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app
+  can still override `classSuffix`.
+
+- fa41027: Omit `upgrade-insecure-requests` from the `security.headers`
+  report-only CSP. Browsers ignore that directive in a report-only policy and
+  Chromium logs a console error on every page. The enforcing header still
+  includes it.
+
 ## 2.2.0
 
 ### Minor Changes

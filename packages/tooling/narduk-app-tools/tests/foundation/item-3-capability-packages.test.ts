@@ -8,6 +8,7 @@ import {
   makeTempRepo,
   subCheckStatus,
   writeConformantBaseline,
+  writeCoolifyOnlyApp,
   writeFile,
   writeJson,
 } from './helpers.js'
@@ -157,6 +158,15 @@ describe('item 3 -- capability packages', () => {
       },
     })
     expect(subCheckStatus(await run(root), '3.5')).toBe('fail')
+  })
+
+  it('3.1/3.2 read exposureClass from Config/coolify-app.json (narduk-libs#158)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '3.1')).toBe('pass')
+    expect(subCheckStatus(artefact, '3.2')).toBe('not-applicable')
   })
 
   it('3.5 fails a direct chart-library import with no owning package, passes not-applicable with neither', async () => {

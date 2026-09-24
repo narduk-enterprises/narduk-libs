@@ -1,10 +1,12 @@
 /// <reference types="@cloudflare/workers-types" />
+import { useRequestCounter } from '@narduk-enterprises/narduk-logging/h3'
 import { drizzle as drizzleD1, type DrizzleD1Database } from 'drizzle-orm/d1'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { createPostgresDatabase } from '#narduk-core/postgres-runtime'
 
+import { countD1RoundTrips } from '../database/d1RoundTrips'
 import * as pgSchema from '../database/pg-schema'
 import * as d1Schema from '../database/schema'
 
@@ -148,6 +150,17 @@ function wrapPgCompat<T>(value: T): T {
   return proxy as T
 }
 
+/**
+ * The request's D1 binding, wrapped so each call into it records a round trip
+ * on narduk-logging's request counter (narduk-libs#511). The counts reach the
+ * `Server-Timing` header and the "Request completed" record.
+ */
+function countedD1Binding(event: H3Event, binding: D1Database): D1Database {
+  return countD1RoundTrips(binding, (statements) => {
+    useRequestCounter(event).recordRoundTrip(statements)
+  })
+}
+
 function isAppSchemaMap<TD1 extends Record<string, unknown>, TPG extends Record<string, unknown>>(
   value: TD1 | AppSchemaMap<TD1, TPG>,
 ): value is AppSchemaMap<TD1, TPG> {
@@ -238,7 +251,7 @@ export function useDatabase(event: H3Event): LayerDatabase {
     })
   }
 
-  const db = drizzleD1(d1Binding, {
+  const db = drizzleD1(countedD1Binding(event, d1Binding), {
     schema: d1Schema,
     logger: makeLogger(event, 'D1'),
   })
@@ -301,7 +314,7 @@ export function createAppDatabase<
       })
     }
 
-    const db = drizzleD1(d1Binding, {
+    const db = drizzleD1(countedD1Binding(event, d1Binding), {
       schema: resolvedSchema.d1,
       logger: makeLogger(event, 'D1'),
     })

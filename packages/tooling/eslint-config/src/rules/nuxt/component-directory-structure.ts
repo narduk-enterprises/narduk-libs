@@ -12,10 +12,9 @@
 
 import type { Rule } from 'eslint'
 
-import { getFilename, inDir, isTestOrFixturePath } from './_internal'
+import { componentPathSegments, getFilename, isTestOrFixturePath } from './_internal'
 
 const DEFAULT_MAX_DEPTH = 2
-const COMPONENTS_SEGMENT = 'components/'
 
 export default {
   meta: {
@@ -42,13 +41,13 @@ export default {
   create(context: Rule.RuleContext): Rule.RuleListener {
     const filename = getFilename(context)
     if (isTestOrFixturePath(filename)) return {}
-    if (!filename.endsWith('.vue') || !inDir(filename, 'components')) return {}
+    if (!filename.endsWith('.vue')) return {}
 
-    const rootIndex = filename.indexOf(COMPONENTS_SEGMENT)
-    if (rootIndex < 0) return {}
-
-    const relativePath = filename.slice(rootIndex + COMPONENTS_SEGMENT.length)
-    const segments = relativePath.split('/').filter(Boolean)
+    // By segment, not `indexOf('components/')`: that matched inside a checkout
+    // directory such as `app-components/` and counted every folder after it
+    // (narduk-libs#777).
+    const segments = componentPathSegments(filename)
+    if (!segments) return {}
     const folderDepth = Math.max(0, segments.length - 1)
 
     const maxDepth =

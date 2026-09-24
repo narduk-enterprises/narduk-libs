@@ -431,3 +431,68 @@ describe('preference-influenced responses', () => {
     expect(vary).toEqual(expect.arrayContaining([VARY_ACCEPT_LANGUAGE, VARY_COOKIE]))
   })
 })
+
+/**
+ * narduk-libs#412 and #418: a shared cache stores one caller's response and
+ * replays it to everyone, so per-caller quota headers and per-request
+ * correlation headers must not ride on a response a profile made
+ * shared-cacheable. The natural order — the limiter and the request logger
+ * write first, the handler picks its profile last — is covered here; the
+ * reverse order is the `shared-cache-headers` plugin's job.
+ */
+describe('per-request headers on a shared-cacheable profile', () => {
+  const PER_REQUEST: Record<string, string> = {
+    RateLimit: '"route";r=41;t=12',
+    'RateLimit-Policy': '"route";q=60;w=60',
+    'RateLimit-Limit': '60',
+    'RateLimit-Remaining': '41',
+    'RateLimit-Reset': '12',
+    'Retry-After': '12',
+    'x-request-id': 'bef25400-ec69-427d-a05f-650ca072dc18',
+    'server-timing': 'total;dur=4',
+  }
+
+  function withPerRequestHeaders(input: CacheProfileInput) {
+    return respond((event) => {
+      for (const [name, value] of Object.entries(PER_REQUEST)) {
+        event.node.res.setHeader(name, value)
+      }
+      setCacheProfile(event, input)
+    })
+  }
+
+  it.each(['live', 'slow', 'static'] as const)(
+    'strips the RateLimit family, Retry-After, x-request-id and Server-Timing from %s',
+    async (name) => {
+      const { headers } = await withPerRequestHeaders(name)
+      for (const header of Object.keys(PER_REQUEST)) {
+        expect(headers.get(header), header).toBeNull()
+      }
+      expect(headers.get(HEADER_CDN_CACHE_CONTROL)).not.toBeNull()
+    },
+  )
+
+  it('strips them from a public inline profile too', async () => {
+    const { headers } = await withPerRequestHeaders({ maxAge: 30, sMaxAge: 120, swr: 0 })
+    expect(headers.get('ratelimit-remaining')).toBeNull()
+    expect(headers.get('x-request-id')).toBeNull()
+  })
+
+  it.each([
+    ['none', 'none' as CacheProfileInput],
+    ['a private inline profile', { maxAge: 30, sMaxAge: 0, swr: 0, private: true }],
+  ])('keeps them on %s, which no shared cache stores', async (_label, input) => {
+    const { headers } = await withPerRequestHeaders(input)
+    for (const [header, value] of Object.entries(PER_REQUEST)) {
+      expect(headers.get(header), header).toBe(value)
+    }
+  })
+
+  it('keeps them when a guard downgraded the profile to none', async () => {
+    overlay.previewSafeMode = true
+    const { headers } = await withPerRequestHeaders('live')
+    expect(headers.get(HEADER_CACHE_CONTROL)).toBe(NO_STORE)
+    expect(headers.get('x-request-id')).toBe(PER_REQUEST['x-request-id'])
+    expect(headers.get('ratelimit-remaining')).toBe('41')
+  })
+})

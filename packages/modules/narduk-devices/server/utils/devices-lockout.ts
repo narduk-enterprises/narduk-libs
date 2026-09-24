@@ -62,8 +62,20 @@ export interface LockoutState {
   subject: LockoutSubject
 }
 
+/**
+ * One subject crossing its rule's threshold: the attempt that locked it out.
+ *
+ * Published for **every** rule. `escalates` says which kind of rule it was — it
+ * governs whether the cooldown grows, not whether the caller is told a
+ * threshold was reached — so a consumer building a non-escalating limiter on
+ * the exported gate can audit the one attempt that locked the subject out
+ * (narduk-libs#238). The library itself writes a `security.lockout` audit row
+ * only for the escalating crossings.
+ */
 export interface LockoutThreshold {
   cooldownSeconds: number
+  /** Whether the crossed rule escalates (the account/IP rule), or is flat (token/device). */
+  escalates: boolean
   failures: number
   subject: LockoutSubject
 }
@@ -87,7 +99,10 @@ function windowReadLimit(rule: LockoutRule): number {
 export interface LockoutGate {
   /** The first locked subject, or null when every subject may proceed. */
   check: (subjects: readonly LockoutSubject[]) => Promise<LockoutState | null>
-  /** Record an attempt per subject; returns the escalating thresholds crossed. */
+  /**
+   * Record an attempt per subject; returns every threshold this attempt
+   * crossed, escalating or not, in subject order. Empty for a success.
+   */
   record: (
     subjects: readonly LockoutSubject[],
     outcome: 'success' | 'failure',
@@ -188,15 +203,22 @@ export function createLockoutGate(
         }
       }
 
+      // Every rule publishes its crossing. Filtering here on `escalates` left a
+      // consumer's non-escalating limiter with no signal at all for the attempt
+      // that locked its caller out (narduk-libs#238); which crossings deserve a
+      // `security.lockout` row is the caller's call, and the library's own
+      // `recordAttempt` keeps writing one only for the escalating kind.
       const crossed: LockoutThreshold[] = []
       for (const [index, subject] of subjects.entries()) {
         const rule = rules[index] ?? lockoutRuleFor(subject.kind)
-        // Only the escalating rules publish a `security.lockout` audit row; the
-        // per-token/device rule is counted the same way and read by `check`.
-        if (!rule.escalates) continue
         const failures = counted[index] ?? 0
         if (failures > 0 && failures % rule.failures === 0) {
-          crossed.push({ subject, failures, cooldownSeconds: cooldownSecondsFor(rule, failures) })
+          crossed.push({
+            subject,
+            failures,
+            cooldownSeconds: cooldownSecondsFor(rule, failures),
+            escalates: rule.escalates === true,
+          })
         }
       }
       return crossed

@@ -184,6 +184,44 @@ unknown addresses. Stored links contain only a SHA-256 token digest and expire
 after one use. Repeated credential attempts use persistent exponential lockout
 in addition to the package's outer IP rate limit.
 
+### Branded password emails
+
+The setup and reset emails are plain by default. An app replaces them with a
+Nitro plugin on the `narduk-auth:email` hook:
+
+```ts
+// server/plugins/auth-email.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('narduk-auth:email', (context) => {
+    context.message = renderMyPasswordEmail(context) // { subject, text, html }
+  })
+})
+```
+
+The context carries `purpose` (`setup` or `reset`), `actionUrl`, `appName`,
+`appUrl`, `email`, `ttlMinutes` and the default `message`. A template must keep
+`actionUrl` in both the text and the HTML part (HTML-escaped). A handler that
+throws or drops the link is ignored, and the default email is sent instead, so a
+template bug never costs a user their link.
+
+`sendAuthEmail(event, readLocalEmailSettings(event), { to, message })` from
+`@narduk-enterprises/narduk-auth/server/utils/auth-email` sends an app's own
+account email (an invitation, say) from the same verified sender. It returns
+whether the provider accepted the message and never logs the recipient.
+
+### Accounts for an address the app already proved
+
+`registerLocalUserWithProvenEmail(event, { email, name, password })` and
+`confirmSessionEmailWithProof(event, email)` from
+`@narduk-enterprises/narduk-auth/server/utils/proven-email` are for an app that
+has just redeemed a single-use token it emailed to that address, such as an
+invitation link. Holding the token proves the inbox, so the account is created
+confirmed and signed in, with no second confirmation email. The first answers
+409 for an address that already has an account. The second confirms only the
+signed-in user's own address and returns null for any other. Both work while
+`publicSignup` is off, so a closed app still admits the people it invites. Never
+pass an address the visitor merely typed.
+
 Application-specific authorization, membership, and roles remain app-owned.
 Machine access such as `/mcp` should continue to use a scoped API key or another
 explicit machine credential; browser email sessions are not a machine-auth
@@ -225,6 +263,14 @@ model (`auth_sessions` rows, refresh tokens, AAL) and is untouched.
 Verification uses [`@simplewebauthn/server`](https://simplewebauthn.dev) on the
 server and `@simplewebauthn/browser` in the client, both **exact-pinned** — a
 security-critical verifier is not a `^` range (D3).
+
+On a Cloudflare Workers build the module loads a Reflect metadata polyfill
+before `@simplewebauthn/server` evaluates. That package pulls `tsyringe`, which
+throws at import time unless `Reflect.getMetadata` exists; Workers does not
+provide it, and Nitro will tree-shake a bare `import 'reflect-metadata'` unless
+`reflect-metadata` is on `nitro.moduleSideEffects` (narduk-libs#786). Consuming
+apps should not add their own `00.reflect-metadata` plugin or allowlist entry —
+remove any app-local stopgap after this package ships the fix.
 
 ### Enabling
 
@@ -301,6 +347,12 @@ deferred until the card mechanism in
 
 The stonx `AuthBackground` / `AuthLegalFooter` rename and the been-sober-for and
 bluebonnet `auth/*` copies are app-repo work, not this package.
+
+The module registers `app/` as a Tailwind source in Nuxt UI's `ui.css`, and when
+an app turns on `ui.experimental.componentDetection`, it adds the Nuxt UI
+components its pages and cards render (`src/nuxt-ui-components.ts`, `UAlert` and
+`UCard` among them) to the detection list. An app does not list this package's
+files or components itself (narduk-libs#700).
 
 ### `AuthLoginCard`
 
@@ -428,6 +480,11 @@ None. Toasts report add/remove; failures stay on the card.
 ### `AuthApiKeysPanel`
 
 Mints and revokes personal API tokens. Renders on `/settings/api-keys`.
+
+A token whose scopes include `*` is a boundary-class credential
+(narduk-libs#168): `POST /api/auth/api-keys` refuses `expiresInDays: null` and
+caps the lifetime at 90 days. Narrow machine scopes may still omit expiry. The
+unique index on `api_keys.key_hash` lives in narduk-core (migration 0007).
 
 #### Props
 

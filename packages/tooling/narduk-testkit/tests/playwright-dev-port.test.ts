@@ -132,18 +132,71 @@ describe('resolveLocalDevPort', () => {
     expect(second.port).toBe(first.port)
   })
 
-  it('derives different ports for different worktrees of the same app', () => {
+  it('leaves a group of lanes on the same app practically unable to collide', () => {
     // The whole point of narduk-libs#417: two lanes, one app, one machine.
-    const ports = ['lane-one', 'lane-two', 'lane-three', 'lane-four'].map(
-      (name) =>
-        resolveLocalDevPort({
-          rootDir: linkedWorktree(name),
-          declaredPort: DECLARED,
-          env: {},
-        }).port,
+    //
+    // Asserting that four lanes ALWAYS land on four different ports is the one
+    // thing this design does not promise. `stablePathOffset` is SHA-256 mod
+    // span, so four paths into 1000 buckets collide at the birthday rate --
+    // 1 - (999/1000)(998/1000)(997/1000) = 0.599% -- and the implementation
+    // says so itself: "a 1-in-`span` hash clash" is a case it handles rather
+    // than prevents (see `shouldReuseExistingServer`, which turns exactly that
+    // residual collision into a loud failure instead of a silent wrong-branch
+    // pass). The old single-sample assertion flaked at that 0.6% and took a
+    // narduk-libs release down with it, because it was testing injectivity the
+    // hash was never going to have.
+    //
+    // So assert the claim that IS made -- "practically unable to collide" --
+    // over enough independent groups that the sample is meaningful. At 0.599%
+    // per group, colliding groups over 120 trials are Poisson(0.72); the bound
+    // below is the 9th tail, about one run in 13 million.
+    const LANES_PER_GROUP = 4
+    const GROUPS = 120
+    const MAX_COLLIDING_GROUPS = 8
+
+    const ports = Array.from({ length: GROUPS * LANES_PER_GROUP }, (_unused, index) =>
+      resolveLocalDevPort({
+        rootDir: linkedWorktree(`spread-${index}`),
+        declaredPort: DECLARED,
+        env: {},
+      }),
     )
 
-    expect(new Set(ports).size).toBe(ports.length)
+    // Every lane is still inside the app's own recognisable window, which is
+    // what makes a derived port identifiable in `lsof` output.
+    for (const resolution of ports) {
+      expect(resolution.source).toBe('derived')
+      expect(resolution.port).toBeGreaterThanOrEqual(DECLARED)
+      expect(resolution.port).toBeLessThan(DECLARED + 1000)
+    }
+
+    let collidingGroups = 0
+    for (let group = 0; group < GROUPS; group += 1) {
+      const lanes = ports
+        .slice(group * LANES_PER_GROUP, (group + 1) * LANES_PER_GROUP)
+        .map((resolution) => resolution.port)
+      if (new Set(lanes).size !== lanes.length) collidingGroups += 1
+    }
+
+    expect(collidingGroups).toBeLessThanOrEqual(MAX_COLLIDING_GROUPS)
+  })
+
+  it('keeps a collision loud rather than silent when one does happen', () => {
+    // The other half of the fix, stated as one test so the tolerance above
+    // cannot be read as "collisions are fine". Two lanes that land on the same
+    // port do not quietly share a server: a derived port never reuses, and the
+    // second lane to start is told which port and why.
+    const resolution = resolveLocalDevPort({
+      rootDir: linkedWorktree('collision-loud'),
+      declaredPort: DECLARED,
+      env: {},
+    })
+
+    expect(resolution.source).toBe('derived')
+    expect(shouldReuseExistingServer({ resolution, env: {} })).toBe(false)
+    expect(() => assertLocalDevPortAvailable({ resolution, env: {}, probe: () => true })).toThrow(
+      String(resolution.port),
+    )
   })
 
   it.each([

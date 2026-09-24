@@ -97,6 +97,19 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
         { tier: tierName },
       )
     }
+    // Each vessel batch binds as ONE comma-joined text parameter (a bare array
+    // fails under an unprepared connection, narduk-libs#311). A comma inside an
+    // id would split it into two array elements and widen the DELETE, so it is
+    // refused here rather than sent.
+    for (const vesselId of tier.vesselIds) {
+      if (typeof vesselId !== 'string' || vesselId.length === 0 || vesselId.includes(',')) {
+        throw new NardukTimeseriesError(
+          'RETENTION_POLICY_INVALID',
+          `Tier ${tierName} lists a vessel id that is not a non-empty, comma-free string.`,
+          { tier: tierName },
+        )
+      }
+    }
 
     if (tier.rawWindowMs !== undefined) {
       const raw = assertWindow(`tiers.${tierName}.rawWindowMs`, tier.rawWindowMs)

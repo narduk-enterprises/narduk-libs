@@ -28,6 +28,7 @@ import { rollUp } from './schema.js'
 import { resolveAppInfo } from './evaluate.js'
 import { AppRepo } from './source.js'
 import { DEPLOYMENT_STANDARD, PREVIEW_BINDING_KINDS } from '../deployment-config.js'
+import { PREVIEW_CONFIG_FILENAME, type PreviewPlanStatus } from '../preview-config.js'
 import type { FoundationAppInfo, FoundationItemResult, FoundationResult } from './types.js'
 
 export const DEPLOYMENT_TOOL_NAME = '@narduk-enterprises/narduk-app-tools/deployment-standard'
@@ -40,6 +41,27 @@ export type DeploymentCheckMode = 'rollout' | 'strict'
 
 /** What the repository says about its relationship to the standard. */
 export type DeploymentAdoption = 'adopted' | 'not-adopted' | 'exempt' | 'invalid'
+
+/**
+ * The live-proof contract the app declares, carried out of the scan so a
+ * caller that probes the origin reads the app's own paths rather than
+ * assuming them (narduk-libs#632).
+ *
+ * Null whenever the block is absent, exempt or invalid: there is then no
+ * declaration to honour, and a consumer falls back to the standard's
+ * defaults rather than inventing one.
+ */
+export interface DeclaredLiveProof {
+  /** The response header that carries the deployed build stamp. */
+  buildVersionHeader: string
+  /** The path a health probe must read. */
+  healthPath: string
+  /** `authenticated`: the health path refuses an anonymous read by design.
+   * Absent means `anonymous`, the schema's default. */
+  healthAuth?: 'anonymous' | 'authenticated'
+  /** The path a delivery-path probe must read. */
+  smokePath: string
+}
 
 /** A one-item artefact, deliberately NOT shaped like `FoundationCheckArtefact`
  * (no `items` array, no claim of the ratified 7-item contract). */
@@ -58,11 +80,23 @@ export interface DeploymentArtefact {
     standard: string | null
     nonProductionBranchBuilds: boolean | null
     stagingEnabled: boolean | null
+    /** What the block declares about proving a deployment live. Null unless
+     * the block is valid -- see `DeclaredLiveProof`. */
+    liveProof: DeclaredLiveProof | null
   }
   /** D1/KV/R2 bindings the committed wrangler config declares. */
   productionBindings: BindingsByKind
   /** Production bindings a branch preview would reach with no replacement. */
   uncoveredPreviewBindings: BindingsByKind
+  /** What a non-production branch build uploads (narduk-libs#473). Null unless
+   * the block is valid and non-production branch builds are on. `file` is the
+   * preview config the build writes, or null when it keeps the production one. */
+  previewConfig: {
+    status: PreviewPlanStatus | 'blocked'
+    file: string | null
+    rebound: string[]
+    blockers: string[]
+  } | null
   /** What a repository read structurally cannot decide. Always populated. */
   limitations: readonly string[]
   item: FoundationItemResult
@@ -132,9 +166,25 @@ export function runDeploymentCheck(options: RunDeploymentCheckOptions): Deployme
             : null,
       nonProductionBranchBuilds: block ? block.nonProductionBranchBuilds : null,
       stagingEnabled: block ? block.staging.enabled : null,
+      liveProof: block
+        ? {
+            buildVersionHeader: block.liveProof.buildVersionHeader,
+            healthPath: block.liveProof.healthPath,
+            healthAuth: block.liveProof.healthAuth,
+            smokePath: block.liveProof.smokePath,
+          }
+        : null,
     },
     productionBindings: scan.production,
     uncoveredPreviewBindings: scan.uncovered,
+    previewConfig: scan.preview
+      ? {
+          status: scan.preview.plan ? scan.preview.plan.status : 'blocked',
+          file: scan.preview.plan?.status === 'ready' ? PREVIEW_CONFIG_FILENAME : null,
+          rebound: scan.preview.plan?.rebound ?? [],
+          blockers: scan.preview.blockers,
+        }
+      : null,
     limitations: TIER_ONE_LIMITATIONS,
     item,
     result,
@@ -162,6 +212,13 @@ export function formatDeploymentSummary(artefact: DeploymentArtefact): string {
     `  wrangler   ${artefact.declaration.wranglerConfig ?? '(none found)'}; production D1/KV/R2 ` +
       `bindings: ${bindingSummary(artefact.productionBindings)}`,
   )
+  if (artefact.previewConfig) {
+    const { status, file, rebound } = artefact.previewConfig
+    lines.push(
+      `  preview    ${status}` +
+        (file ? `; branch builds upload ${file}: ${rebound.join(', ')}` : ''),
+    )
+  }
   if (artefact.adoption === 'not-adopted') {
     lines.push('')
     lines.push(

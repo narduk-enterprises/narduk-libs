@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-realtime",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "private": false,
   "type": "module",
   "description": "Durable Object build wiring, a WebSocket upgrade router, and a hibernating WebSocket base class for Narduk Cloudflare apps.",
@@ -50,11 +50,11 @@
     "check:dist": "node scripts/check-dist-clean.mjs",
     "check:package": "node scripts/check-dist-clean.mjs && publint --strict && pnpm pack --dry-run",
     "prepack": "pnpm run build",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "narduk-lint src tests",
     "lint:strict": "eslint src tests --max-warnings 0",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run --coverage --config vitest.config.ts",
-    "quality": "pnpm run test:unit",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
@@ -83,6 +83,6 @@
     "node": ">=22"
   },
   "volta": {
-    "node": "22.22.3"
+    "node": "24.21.0"
   }
 }

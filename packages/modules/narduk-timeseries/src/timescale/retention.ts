@@ -97,10 +97,10 @@ export function buildRetentionStatements(policy: RetentionPolicyInput): Retentio
       for (const vesselIds of batches) {
         statements.push({
           kind: 'delete',
-          params: [vesselIds, cutoff(validated.now, tier.trackWindowMs)],
+          params: [vesselIds.join(','), cutoff(validated.now, tier.trackWindowMs)],
           rollup: null,
           target: TRACK_TABLE,
-          text: `DELETE FROM ${TRACK_TABLE} WHERE vessel_id = ANY($1::uuid[]) AND ts < $2::timestamptz`,
+          text: `DELETE FROM ${TRACK_TABLE} WHERE vessel_id = ANY(string_to_array($1::text, ',')::uuid[]) AND ts < $2::timestamptz`,
           tier: tierName,
         })
       }
@@ -110,10 +110,10 @@ export function buildRetentionStatements(policy: RetentionPolicyInput): Retentio
       for (const vesselIds of batches) {
         statements.push({
           kind: 'delete',
-          params: [vesselIds, cutoff(validated.now, tier.rawWindowMs)],
+          params: [vesselIds.join(','), cutoff(validated.now, tier.rawWindowMs)],
           rollup: null,
           target: NUMERIC_TABLE,
-          text: `DELETE FROM ${NUMERIC_TABLE} WHERE vessel_id = ANY($1::uuid[]) AND ts < $2::timestamptz`,
+          text: `DELETE FROM ${NUMERIC_TABLE} WHERE vessel_id = ANY(string_to_array($1::text, ',')::uuid[]) AND ts < $2::timestamptz`,
           tier: tierName,
         })
       }

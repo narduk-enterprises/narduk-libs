@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.3.2
+
+### Patch Changes
+
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+- Updated dependencies [5ac629e]
+  - @narduk-enterprises/narduk-postgres@0.2.4
+
+## 0.3.1
+
+### Patch Changes
+
+- 8943c9e: `narduk-lint` can now fail a warning in a rule that has no budget
+  entry. A `lint-budget.json` carrying `"strict": true` gates every rule: a new
+  rule's warnings exit non-zero, naming the rule and its locations, instead of
+  being recorded as the rule's budget and passing (#673). Adopt a new rule's
+  current count deliberately with `narduk-lint --accept-new-rules`, which
+  refuses to run in CI or with `--no-write`. A budget file without `strict`
+  keeps the old record-and-pass behaviour and now says so on every run.
+  narduk-timeseries fixes the one warning that behaviour had let through.
+  - @narduk-enterprises/narduk-postgres@0.2.3
+
+## 0.3.0
+
+### Minor Changes
+
+- c1c8b42: Add the narduk-shell data-table family — `NeDataTable` (UTable preset
+  with column groups, units, tabular numerals, the missing dash, day/group rows,
+  a pinned first column, the phone column-set switch, the break row, and
+  loading), `NeSortHeader`, `NeCsvDownload`, plus `toCsv` / `parseSort` from the
+  package root — and extend `NePager` with `pageSizes`, `mode` (`pages` | `more`
+  | `auto`), `moreStep`, `maxLimit` and `update:limit`. narduk-timeseries gains
+  `bucketReadings` (1h / 3h / 1d min/avg/max; missing is `null`, not `0`).
+  create-narduk-app is patched because it pins narduk-shell (narduk-libs#528).
+
+### Patch Changes
+
+- e693c21: Align `refreshRollupsStatements` by snapping the requested range
+  outward onto each level's bucket, then walking `maxWindowMs` steps so
+  neighbours abut and no CALL exceeds the ceiling. Fold a leftover narrower than
+  one bucket into the previous window. Reject an empty `buckets` list or a
+  non-positive `maxWindowMs` before the per-level loop (narduk-libs#293).
+- Updated dependencies [1f7feee]
+  - @narduk-enterprises/narduk-postgres@0.2.3
+
+## 0.2.3
+
+### Patch Changes
+
+- 939927b: Bind no bare JS arrays (narduk-libs#311). `queryRollup`'s series ids
+  and `applyRetention`'s per-tier vessel batches now bind as one comma-joined
+  text parameter, split server-side with
+  `ANY(string_to_array($n::text, ',')::bigint[])` / `::uuid[]`. Under a
+  Hyperdrive-shaped postgres.js connection
+  (`prepare: false, fetch_types: false`) the old `ANY($n::type[])` bind failed
+  with `22P02 malformed array literal`, proven against a real TimescaleDB 17
+  before and after. The rollup statement still binds exactly five parameters.
+  `applyRetention` now refuses a vessel id that is empty or contains a comma
+  (`RETENTION_POLICY_INVALID`), because a comma would split one id into two
+  array elements and widen the DELETE.
+
 ## 0.2.2
 
 ### Patch Changes

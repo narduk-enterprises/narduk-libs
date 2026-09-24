@@ -1,5 +1,1401 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.13.4
+
+### Patch Changes
+
+- 1716307: Exclude the private Libs Explorer from the shared capability catalog
+  so foundation coverage does not treat the showcase as an app-adoptable
+  package.
+- 42019f6: Pin SSR hydration for `NardukLineChart` and `ChartTooltip`. The
+  components are unchanged; these are the first hydration tests in the package,
+  added while narrowing riverstatus#204 — they server-render each component,
+  hydrate that exact markup and assert that Vue raised no warning, which is the
+  only place a hydration mismatch is visible.
+
+  `create-narduk-app` releases alongside because it pins narduk-charts.
+
+## 0.13.3
+
+### Patch Changes
+
+- dfa8d39: Fix three defects that made core's own components break in a
+  consuming app, where core is installed as a module:
+
+  - LayerAppFooter (`useSsrNow`), AppBreadcrumbs (`toRef`) and `useFormHandler`
+    (`readonly`) called names the app runtime import bridge did not inject, so
+    they threw `ReferenceError` during SSR and failed prerendering. The seo and
+    analytics admin panels had the same gap for `useOgImagePreviewResolver`,
+    `normalizeOgPreviewSections`, `useAdminGaOverview`, `useAdminGscPerformance`
+    and `useAdminPosthogDashboard`. All are now bridged, and a test scans every
+    bridged app file so the lists cannot drift again.
+  - `main.css` now declares `@source` for core's `runtime/app`. Tailwind skips
+    `node_modules`, so utilities used only by core components were never
+    generated; LayerAppHeader's desktop nav (`hidden md:flex`) stayed hidden at
+    every width.
+
+## 0.13.2
+
+### Patch Changes
+
+- 1b14eaf: Add `nardukAnalytics.privacy: 'strict'` for apps whose pages hold
+  private records. PostHog then runs with no autocapture, rage clicks, dead
+  clicks, heatmaps, session replay, surveys, `/flags` request or remote
+  extensions, and a final `before_send` hook reduces every URL, pathname and
+  referrer property — including `$set`, `$set_once` and nested web-vitals
+  payloads — to the matched route pattern, drops page titles and element text,
+  and reports exception messages only in narduk-core's redacted form. GA4
+  receives route patterns as `page_path`, `page_location` and `page_title`, with
+  Google signals and ad personalisation off. The option is build-time and wins
+  over an app's own `runtimeConfig.public.analyticsPrivacy`; the runtime-public
+  overlay never carries it, so a Worker variable cannot switch a strict app back
+  to standard. Standard apps see no change.
+- e8a373e: Health checks can fail at `notice` severity: the entry publishes
+  `result: 'fail'` with `notice: true` and its `detail`, and the report's
+  `status` does not move, so a monitor matching `"status":"ok"` does not page.
+  `registerFreshnessCheck` takes an optional `noticeAfter` below `warnAfter` for
+  the aging band of a three-band freshness policy. The docs no longer describe
+  `degraded` as something that does not take the app down: to a `"status":"ok"`
+  monitor it pages like `error` (#414).
+- 12f3294: `runAtomicBatch(db, statements)` runs a group of writes as one
+  transaction on D1 (`batch()`) or better-sqlite3 (`$client.transaction`), so
+  apps stop copying tenancy's dual-driver helper (#201).
+- e87803e: `types/**/*.d.ts` joins Nuxt's generated app, server, shared and node
+  tsconfigs, so a `nuxt/schema` runtime-config augmentation in `types/` types
+  its keys instead of leaving them `unknown` with no error (#669). An
+  augmentation that was inert before can now surface type errors it was hiding.
+- d8aec20: narduk-seo no longer ships its own copy of `LayerAppFooter`
+  (narduk-libs#743). It registers `LayerNetworkFooter` globally and adds it to
+  `appConfig.nardukCore.footer.after`, so narduk-core's footer renders the
+  network row. The footer an app sees is unchanged. This needs narduk-core
+  2.11.0 or later, and the peer range now says so.
+
+## 0.13.1
+
+### Patch Changes
+
+- 3f8eac8: The `/api/admin/**` GA, Search Console, Indexing and PostHog routes
+  register only when the app has a database: an app declaring
+  `nardukCore.databaseBackend: 'none'` (or `NUXT_DATABASE_BACKEND=none`) no
+  longer ships routes `requireAdmin` could only ever refuse.
+  `nardukAnalytics.admin` overrides either way (#524).
+- 551e39a: The canonical-host redirect takes a host list:
+  `CANONICAL_REDIRECT_HOSTS` (or `runtimeConfig.public.canonicalRedirectHosts`)
+  redirects only the named hosts, such as `www`, to the canonical origin and
+  serves every other host where it was asked, so `*.workers.dev` previews keep
+  working. It needs no `ENFORCE_CANONICAL_HOST`, and a `*.workers.dev` entry is
+  ignored (#515).
+
+## 0.13.0
+
+### Minor Changes
+
+- e6c9263: `.github/dependabot.yml`'s npm update now splits into two groups by
+  `update-types` over the same packages: `safe` (minor + patch) and `majors`
+  (major), `open-pull-requests-limit: 2`. A new generated
+  `.github/workflows/dependabot-merge.yml` merges the `safe` lane once CI is
+  green on its exact PR head; `majors` and the `github-actions` lane stay a
+  deliberate person/agent PR. This replaces the old single all-in `dependencies`
+  group (gonogo#104, the reference shape): apps on the old canonical shape
+  (`open-pull-requests-limit: 10`, ~10 groups) stacked roughly ten open PRs that
+  all edited `pnpm-lock.yaml`, so merging any one conflicted the rest, and a
+  single combined group let one breaking major hold every harmless patch bump
+  red behind it (riverstatus#215).
+
+  `create-narduk-app upgrade` delivers `.github/workflows/dependabot-merge.yml`
+  to existing apps as a new whole-file managed target alongside the refreshed
+  `.github/dependabot.yml`.
+
+  `narduk-app-tools`' `foundation:check` gains an advisory-only print (not a
+  `FoundationSubCheck`, since this framework has no warning tier) that flags a
+  `.github/dependabot.yml` npm update reproducing the old stacking shape:
+  `open-pull-requests-limit` above 2, or npm groups not split by `update-types`
+  into a safe and a majors lane. It never affects the check's `score`, `result`,
+  or `exitCode`.
+
+### Patch Changes
+
+- 8ec9bb9: Tooling carpool: the migration runner refuses a contract-owned D1
+  database named by its `database_name` as well as its id (#637); foundation
+  item 5.2 accepts the canonical Dependabot recipe, an npm update routed through
+  a registry scoped to `@narduk-enterprises` (#241); a failed schema-adoption
+  probe names the adoption, says the migration has no receipt yet, and says how
+  to record it or correct the evidence (#600).
+- 1bca010: `deployment.liveProof.healthAuth: "anonymous" | "authenticated"`
+  (default `anonymous`). An authenticated health route stays declared,
+  `deploy hotfix` and `development deploy` skip the anonymous health assertion,
+  item 12.3 says so, and the adoption live read reports requirement 12 unknown
+  instead of failing a 401 (#585).
+- bad1b0d: Two foundation checks for the components-library plan
+  (narduk-libs#260). `narduk-app foundation:check:no-local-copy` (item 13) fails
+  when an app depends on a shared UI package and keeps its own copy of one of
+  its components. `narduk-app foundation:check:list-routes` (item 14) fails when
+  a GET server route reads pagination from its query without narduk-core's
+  `parseListQuery`. Each writes its own JSON artefact and uses the usual exit
+  codes: 0 pass, 1 fail, 2 unknown. The README documents both.
+- ff26c60: `narduk-app doctor` warns when a worker whose `main` is Nitro's
+  `.output/server` lacks `no_bundle`, `find_additional_modules` or `base_dir`.
+  Without them, wrangler re-bundles the build and every server-rendered 404/500
+  comes out empty (#245).
+  `deploy versions-promote --wait-for-version <seconds> [--wait-interval <seconds>]`
+  re-lists while the commit's version is absent, so a Workers Build that
+  finishes after CI no longer turns an unbroken merge into exit 3 (#695). The
+  default is 0, which keeps today's single look.
+- 5747011: Three small narduk-core changes.
+
+  - `readBoundedBody` and `readBoundedJson` are exported server utils
+    (narduk-libs#565). They read an upstream body with a hard size ceiling,
+    cancelling the stream once it passes `maxBytes`, and throw
+    `BoundedBodyTooLargeError`, or your own error via `tooLarge`. The
+    narduk-data client already read its bodies this way. The README documents
+    it. An app with its own util of the same name gets a duplicate auto-import
+    warning; delete the app's copy.
+  - `x-build-version` reads `WORKERS_CI_COMMIT_SHA` before it asks `git`
+    (narduk-libs#584). A Workers Build no longer depends on its checkout
+    carrying `.git` to stamp the commit.
+  - `defineRateLimitedHandler` given an async handler returns
+    `EventHandler<Request, Promise<Response>>`, not `Promise<Promise<Response>>`
+    (narduk-libs#653). Runtime behaviour is unchanged, and the cast in
+    `definePublishedDataHandler` is gone.
+
+- 02b6c1a: The CSP report route answers 204 without reading any body that is not
+  `application/csp-report` or `application/reports+json`, and limits each client
+  to 60 reports a minute (rate-limit key `csp-report`); a request of any other
+  type is answered before the limiter and never counts against it (#444).
+- b0dca25: `LayerAppFooter` has an extension point for extra rows
+  (narduk-libs#743). It renders an `after` slot below its content, and by
+  default that slot renders the global components listed in
+  `appConfig.nardukCore.footer.after`. A module can now add a footer row without
+  shipping its own copy of the footer. The README documents it.
+- 45ea540: `consumeRateLimit(event, options, path?)`:
+  `defineRateLimitedHandler`'s decision step as a non-throwing verdict, for a
+  route the app cannot wrap, such as a module's token route (#413). The wrapper
+  now calls it, so the two share one counter key, store, binding and override
+  surface.
+
+  `shared/utils/units` adds knots (`metresPerSecondToKnots`,
+  `knotsToMetresPerSecond`), the inverse of every existing conversion, and
+  `compassPoint16(degrees)` with `NE_COMPASS_POINTS_16` (#518).
+
+- 02b6c1a: `upgrade` creates a missing `manifests:validate` script but no longer
+  rewrites one an app has already given a body, so an app whose own proofs run
+  under that name keeps them (#468).
+- 85cd719: `narduk/no-csrf-exempt-route-misuse` and
+  `narduk/require-csrf-header-on-mutations` take an `exemptPaths` option: the
+  app's `nardukCore.csrf.exemptPaths`. A route it covers is CSRF-exempt to both
+  rules, so it must verify a credential header rather than the browser CSRF
+  header (#510).
+- f395bd6: The shared imports block now sets `import-x/resolver-next` to
+  eslint-plugin-import-x's own Node resolver (narduk-libs#562). With no resolver
+  set, import-x fell back to its legacy `node` probe, which crashed
+  `import-x/no-cycle` on a `vitest.config.ts` with "node with invalid interface
+  loaded as resolver". An app that turned `import-x/no-cycle` off for its
+  `vitest.config.ts` can drop that override. narduk-core and narduk-auth have
+  dropped theirs.
+
+## 0.12.5
+
+### Patch Changes
+
+- 1759259: Foundation check 12.7 now needs narduk-core **2.10.1** or later
+  before an app turns on Workers Cache, up from 2.2.4. Cores from 2.2.4 to
+  2.10.0 still let Cloudflare store a thrown JSON 404 as Nitro's `no-cache`
+  (narduk-libs#493). An app with the switch on and an older core now fails 12.7;
+  upgrade narduk-core or remove the `cache` block.
+
+  New `docs/workers-cache.md`: the standard for turning Workers Cache on in an
+  existing app (narduk-libs#435), with its preconditions, the wrangler change,
+  the `verify --live --edge-cache-path` proof, purging and rollback.
+
+- a7e08a4: Apps can brand the password setup and reset emails through the
+  `narduk-auth:email` Nitro hook. A template that throws or drops the link falls
+  back to the default email. `sendAuthEmail` sends an app's own account email,
+  such as an invitation, from the configured sender.
+  `registerLocalUserWithProvenEmail` and `confirmSessionEmailWithProof` create
+  or confirm an account for an address the app has just proven by redeeming a
+  single-use token it emailed there, so an invited person sets a password and is
+  in without a second confirmation email.
+- 0da668a: Core migration `0007_api_key_hash_index.sql` adds a unique index on
+  `api_keys.key_hash` (#168). Every API-key authentication looks the key up by
+  its hash, and without the index each one scanned `api_keys`, including a
+  request presenting a well-formed but fabricated key. The D1 and Postgres
+  schemas declare the same index. Apply it with the app's migrate script
+  (`narduk-app db migrate`). A Postgres app adds it with its own DDL.
+- 5ac629e: The seeded `@nuxt/icon` client bundle now includes `lucide:check`,
+  `lucide:copy` and `lucide:link`, which `AppCopyButton` and `AppShareButtons`
+  render. The build now warns when an app lists `@nuxt/icon` before narduk-core
+  without setting `icon.fallbackToApi: false`: `@nuxt/icon` has then already
+  installed with the Iconify API fallback, which an enforcing CSP refuses
+  (narduk-libs#467). The README states the module order.
+- 1759259: A thrown error answered as JSON now leaves `private, no-store`
+  (narduk-libs#493). For an `/api/*` or `.json` path,
+  `Accept: application/json`, a CORS fetch or curl, Nuxt hands the error to
+  Nitro's own handler, which sent `Cache-Control: no-cache` on every 404 and
+  bypassed the `error-cache` plugin. Workers Cache stores `no-cache`, so an app
+  with `"cache": { "enabled": true }` stored its API errors. A new prepended
+  Nitro error handler, `json-error-no-store`, answers those errors itself with
+  Nitro's status and body and `private, no-store`, and strips any CDN headers a
+  route set before it threw. HTML errors and `nuxt dev` are unchanged.
+- 0da668a: New apps ignore `/foundation-check/`, where the root
+  `foundation:check` script writes `foundation-check.json` (#652). A cold
+  scaffold's first local run no longer leaves an untracked directory. The
+  artefact stays at the same path, so a failed run can still be read. Existing
+  apps add the line by hand; most already have.
+- 0da668a: New apps get a strict `apps/web/lint-budget.json`,
+  `{ "strict": true, "rules": {} }` (#713). A warning in a rule with no budget
+  entry now fails `pnpm lint` in a fresh app, instead of being recorded as that
+  rule's budget and passing. Adopt one on purpose with
+  `narduk-lint --accept-new-rules`. Needs `@narduk-enterprises/eslint-config`
+  2.2.0 or later, which the generator already pins (2.2.1). Existing apps are
+  unchanged until they add the key.
+- 2d25947: Generated apps now override `miniflare>undici` to `^7.29.1`.
+  Miniflare pins undici exactly, and below 7.29.1 each D1 call a test makes
+  through the testkit harness costs about 6.5ms instead of about 2ms. That is
+  enough to push seed-heavy suites past their CI timeouts (narduk-libs#740). The
+  testkit README documents the override for existing apps.
+
+## 0.12.4
+
+### Patch Changes
+
+- 056105e: Bump `@nuxt/ui` from `4.8.1` to `4.11.1` everywhere the layer pins
+  it: the `narduk-core` dependency, the `narduk-shell` peer and dev pins, the
+  `narduk-ai` and `design-system-build` dev pins, and the `create-narduk-app`
+  generator manifest (following the same coordinated-pin pattern as 8f693b1).
+
+  A consumer app already on `@nuxt/ui@4.11.1` (buoys#287) failed
+  `nuxt typecheck` against narduk-core's `AppTabs.vue`:
+
+  ```
+  error TS2345: Argument of type '{ ... items: TabsItem[] | undefined; ... }' is
+  not assignable to parameter of type '... items?: TabsItem[] | undefined; ...'.
+    Type 'import(".../@nuxt+ui@4.8.1/.../Tabs.d.vue").TabsItem[] | undefined' is
+    not assignable to type 'import(".../@nuxt+ui@4.11.1/.../Tabs.d.vue").TabsItem[]
+    | undefined'.
+  ```
+
+  Two different `@nuxt/ui` installs (narduk-core's pinned `4.8.1` and the app's
+  own `4.11.1`) produced structurally distinct `TabsItem`/`AvatarProps` types
+  that TypeScript will not unify, even though both come from the same package
+  name. Matching narduk-core's declared version to the app's removes the
+  duplicate-copy mismatch.
+
+  `nuxt typecheck` passes clean in narduk-core against `4.11.1` with no source
+  changes; no other breaking change between `4.8.1` and `4.11.1` touched
+  anything in this workspace.
+
+  Consumer migration: an app that declares `@nuxt/ui` itself must move its own
+  pin to `4.11.1` in the same change that takes this release. `narduk-shell`'s
+  peer is exact, so any other version is a peer conflict, and `narduk-core`
+  carries `@nuxt/ui` as a dependency, so a different app-level pin resolves a
+  second copy -- the duplicate-copy failure this release removes.
+
+  Refs narduk-enterprises/buoys#287.
+
+- e61a56d: `narduk-app doctor` now refuses a rate-limit `namespace_id` that is
+  not a positive decimal integer, such as `"abc"`, `"0x1F"`, `"0120"`, `-5` or
+  `1.5` (#509). Scaffold ids and ids declared twice were already refused,
+  including across `env.*` overlays.
+
+## 0.12.3
+
+### Patch Changes
+
+- bbe7a1a: Document a post-merge deploy assertion for apps whose Workers Build
+  deploys directly: a job that runs
+  `narduk-app verify --live --expect-sha "$GITHUB_SHA"` over a build-length wait
+  and names the Workers Build on failure (narduk-libs#597).
+- 0e1a1ee: `foundation:check:deployment` enforces the expand-only half of
+  `deployment.migrations.compatibility: "expand-contract"` (#399). New sub-check
+  12.9 fails an app-owned D1 migration that drops or renames a table, view or
+  column, because `narduk-app deploy rollback` restores code, never a schema. A
+  deliberate contract migration is declared under
+  `deployment.migrations.contractMigrations` (`path`, `sha256`, `reason`),
+  pinned to the checksum the migration ledger records, and the failure prints
+  that entry. An app with such a migration in its history adopts the rule by
+  listing it once.
+
+  `deployment.rollback.mode` now defaults to `manual` in new apps. Nothing ever
+  read `"auto"`, so a generated app was declaring an automatic safety net it did
+  not have. New sub-check 12.10 fails `"auto"`; the value still parses, so older
+  manifests do not stop the tools. The generated deployment doc now says what
+  actually triggers a rollback: only the app's own promote step, after a
+  completed promotion fails its live proof. A failed migration triggers nothing.
+
+- 2a35b4e: `foundation:check:coverage` gives each shared capability one of three
+  states: `absent`, `adopted` or `forked` (#620). A capability is `forked` when
+  an app pins the package and also carries its own copy of the package's
+  internals. It is reported with its files and line count, and it no longer
+  counts as adopted. Item 9.1 names it but does not fail, because some forks are
+  deliberate and tracked.
+
+  The signal is opt-in per capability, through `forkStems` in the generated
+  catalog. Today only `narduk-mapkit` declares one (`mapkit`). A file counts
+  when a directory segment of its path, or its own name, equals the stem, and it
+  imports no package named for that stem.
+
+  Inventory rows gain `state` and `fork`. `adopted` is now true only for
+  `state: "adopted"`.
+
+- ca8f56f: Generated apps run `foundation:check:deployment` and
+  `foundation:check:shared-ui-pinned` with `--checkout ../..`, the repository
+  root. They used to pass `--checkout ..` from `apps/web`, which is `apps/`, and
+  item 12 read that as "no deployment block, not applicable" with exit 0 (#679).
+
+  The foundation checks now exit 1 when `--checkout` has no `package.json`,
+  naming the directory and the fix, so the old path cannot pass quietly. This
+  covers `foundation:check` and its `:shared-ui-pinned`, `:toolchain`,
+  `:deployment` and `:coverage` variants. **An app scaffolded before this fix
+  must change `--checkout ..` to `--checkout ../..` in `apps/web/package.json`**
+  before it takes this version.
+
+- 24805a6: `better-tailwindcss/no-unknown-classes` no longer reports classes the
+  app defines itself (#55). `createAppLintConfig` collects class selectors from
+  the Tailwind entry stylesheet and the `.css` files it imports, including
+  `@narduk-enterprises/narduk-ui/tokens.css`, and from every Vue SFC `<style>`
+  block under `appRootDir`. It passes them to the rule as one exact-match
+  `ignore`. A typo, or a Tailwind variant on an app-defined class, is still
+  reported.
+- c67b585: The generated `docs/deployment/promote-d1.steps.yml` now starts with
+  two credential-free steps. They run `foundation:check:deployment` on the exact
+  SHA being promoted, and refuse to migrate unless sub-check 12.9 passes. Only
+  12.9 is judged, so another sub-check's UNKNOWN does not block a promotion.
+  Worker rollback restores code, never a schema, so automating rollback beside
+  the migrate step is safe only with this check in front of it (#399). The
+  deployment-migrations runbook specifies the same ordering. It also names the
+  check as a precondition for any promote workflow that runs
+  `narduk-app deploy rollback` automatically.
+
+  Existing apps copied the template once. To adopt, paste the two new steps
+  above the dry-run step.
+
+- 671fbf3: Adds `useCurrentLocation()`, a consent-first "near me" location read
+  (#385). Nothing is read until `locate()` is called from a user gesture. Each
+  call is one `getCurrentPosition`: it never watches, polls or reports a
+  coordinate, and server rendering is a no-op.
+
+  It keeps four failure outcomes apart. `denied` means the person refused.
+  `blocked` means the page's own Permissions-Policy forbids geolocation;
+  Chromium reports that as a denial, and the composable tells the two apart.
+  `unavailable` means no position could be had, and `timeout` means none arrived
+  in time.
+
+  Fixes `NUXT_PUBLIC_ALLOW_GEOLOCATION` having no effect with the
+  `security.headers` preset on. Before this change only the legacy middleware
+  read it, so the app reported `allowGeolocation: true` and still sent
+  `geolocation=()`. The preset now grants `geolocation=(self)` from it at build
+  time. An explicit `permissionsPolicy.geolocation` still wins.
+
+## 0.12.2
+
+### Patch Changes
+
+- 3dce8b4: Foundation item 11.3 no longer fails a job that calls a shared
+  workflow with no Node input, such as `cursor-review.yml`. It no longer tells a
+  caller of a `node-version`-only callable to use `node-version-file`, an input
+  that callable does not declare; 11.1 still holds that caller's literal to
+  `.node-version`. Workflows are also evaluated per job, so one job's
+  `node-version-file` no longer satisfies another job in the same file.
+- e42c8c9: `narduk-app doctor` checks Cloudflare rate-limit namespace ids
+  (#433). A `ratelimits` binding, top level or under `env.*`, fails if it uses a
+  scaffold id (`1001`, `50110`, `50121`, `50300`), if its id is declared more
+  than once, or if it has no `namespace_id`. `namespace_id` is unique per
+  account, so any of those shares counters with another Worker or environment.
+  An app with its own unique ids passes.
+
+  `create-narduk-app` writes the new app's own namespace prefix into
+  `wrangler.jsonc`, derived from the Worker name by narduk-core's scheme, beside
+  a commented example binding. It still emits no binding, because the limiter
+  needs none.
+
+- 8943c9e: `narduk-lint` can now fail a warning in a rule that has no budget
+  entry. A `lint-budget.json` carrying `"strict": true` gates every rule: a new
+  rule's warnings exit non-zero, naming the rule and its locations, instead of
+  being recorded as the rule's budget and passing (#673). Adopt a new rule's
+  current count deliberately with `narduk-lint --accept-new-rules`, which
+  refuses to run in CI or with `--no-write`. A budget file without `strict`
+  keeps the old record-and-pass behaviour and now says so on every run.
+  narduk-timeseries fixes the one warning that behaviour had let through.
+- b47ddc7: `narduk-testkit/d1`: `createD1QueryHarness` now runs on Miniflare 5,
+  which every Wrangler from 4.129 ships. It converts its options with
+  Miniflare's own `convertV4MiniflareOptions` when that exists and passes them
+  unchanged to Miniflare 4.
+
+  `create-narduk-app`: generated apps pin `wrangler` 4.136.3 and
+  `@cloudflare/workers-types` 5.20260922.1. The older Wrangler's Miniflare
+  brought `sharp` and `undici` versions with high advisories.
+
+- c541ef4: Add `waitForVueHydrated(page)`, a real hydration barrier. It waits
+  until the Vue app has mounted and Nuxt's `isHydrating` is `false`.
+  `waitForHydration` only ever waited for the document `load` event, which on a
+  Nuxt page fires before hydration. It is now deprecated with unchanged
+  behaviour, and `waitForPageLoad` is the same wait under an accurate name. The
+  shared auth, notifications and user-profile contract suites, and the
+  generator's e2e fixtures and audit spec, now use `waitForVueHydrated`.
+
+## 0.12.1
+
+### Patch Changes
+
+- df7568d: Stop published server code from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-core` ships raw `.ts`, and a consumer's Nitro type program types
+  `useRuntimeConfig(event)` as `@nuxt/schema`'s `RuntimeConfig`
+  (`Record<string, unknown>`). `useHyperdriveConnectionString` indexed
+  `hyperdriveBinding || 'HYPERDRIVE'`, which is `{} | string` there, so every
+  consumer failed with TS2538 while this package's own `nuxt typecheck` stayed
+  green (narduk-libs#656, the same gap as #649). The legacy security-headers
+  middleware had the same shape on `public.appVersion` and the `csp*Src` keys: a
+  truthiness guard narrows `unknown` to `{}`.
+
+  Server code that reads a key the module actually writes now goes through
+  `coreRuntimeConfig(event)`. The type names only those keys —
+  `hyperdriveBinding` and the public version, CSP, and geolocation defaults from
+  `src/module.ts` — and leaves everything else `unknown`. A
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `runtime/server/**` against that unaugmented view and
+  fails if the view stops rejecting a direct `hyperdriveBinding` index.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+
+- 7aeacad: Add owner-enrolled development mode (company-hq#781).
+  `narduk-app development` gains `deploy`, `status`, `enter`, `pin`/`unpin`,
+  `exec`, `validate`, `handoff`, `resolve` and `exit`. The optional
+  `deployment.development` capability declares targets. A host-private
+  activation record grants custody. Deploys capture the checkout, dirty edits
+  included, and gate, build, upload, promote and prove the exact build ID under
+  a target lock shared with hotfixes. Entry holds classified workflows and
+  Workers Builds triggers and restores them exactly on exit, after the merged
+  release commit passes explicit validation. Existing apps are unchanged until
+  an owner enrolls them. See `docs/development-mode.md`.
+
+  create-narduk-app now emits a `deploy:dev` script, a private-app explicit
+  validation caller (`.github/workflows/validate.yml`, `narduk-validation/**`
+  pushes only) and a Development mode section in `docs/workers-builds.md`. It
+  never declares the capability.
+
+## 0.12.0
+
+### Minor Changes
+
+- ed86373: Scaffold a declared AI-crawler policy, and a `security.txt` only when
+  the app supplies a contact.
+
+  An app generated with the `seo` capability now writes `aiCrawlers: 'allow'`
+  into its `narduk-seo` block. That is the value narduk-seo already defaulted
+  to, so nothing about the served site changes; what changes is that the policy
+  is visible in `nuxt.config.ts` instead of being an unstated default, which is
+  where an app goes to tighten it to `'disallow'` or to a per-agent
+  `{ allow, disallow }` split.
+
+  The new `--security-contact <uri>` flag (and the `securityContact` option)
+  adds an RFC 9116 `securityTxt` block. It has **no default on purpose**: a
+  scaffold cannot know who receives a vulnerability report, and a published
+  `/.well-known/security.txt` naming an address nobody reads is worse than no
+  file at all, because a reporter believes they have reported. An app that
+  passes the flag publishes the file; an app that does not publishes nothing.
+
+  The value is checked rather than pasted through. A contact must be a
+  `mailto:`, `https:` or `tel:` URI, or a bare address, and may not contain a
+  line break -- `security.txt` is a line-oriented format, so an unchecked
+  newline would let a value inject a second `Contact:` line. A contact passed
+  without the `seo` capability is refused at the call, not silently dropped,
+  because the option it would land in does not exist in that generated config.
+
+  `create-narduk-app upgrade` does not touch either setting on an existing app:
+  `apps/web/nuxt.config.ts` is not a managed target, so an app that has
+  tightened its crawler policy or moved its security contact keeps both.
+
+- 13115ca: A new app's `apps/web/wrangler.jsonc` enables Workers Cache
+  (`"cache": { "enabled": true }`), so `setCacheProfile`'s `CDN-Cache-Control`
+  and `Cache-Tag` bind at the edge instead of being inert headers advertising a
+  TTL the app does not have (narduk-libs#435). Without the block Cloudflare
+  invokes the Worker on every request and never stores the response, which is
+  what Buoys shipped: correct cache headers and no `Cf-Cache-Status`.
+
+  On by default is safe because the narduk-core this generator pins keeps
+  uncacheable responses out of a shared cache: thrown 4xx/5xx/429 are
+  `private, no-store` (narduk-libs#429), nonce-CSP SSR HTML is too, and a route
+  that picks no profile at all is `private` rather than left to Cloudflare's
+  heuristic. `foundation:check` item 12.7 fails the block against an older
+  narduk-core, so an app that downgrades core is told rather than silently
+  storing error pages. `cross_version_cache` is left unset: a deployment
+  partitions the cache by Worker version, and sharing across versions wants an
+  app-specific reason.
+
+  Enabling storage is a repository fact, not a live one. Prove a real hit with
+  `narduk-app verify --live <production-url> --edge-cache-path <route>`; a
+  `*.workers.dev` preview cannot show one.
+
+  Existing apps are unaffected: `apps/web/wrangler.jsonc` is not an `upgrade`
+  managed target, so `create-narduk-app upgrade` does not add the block to an
+  app that already exists. Item 12.7 reports those apps `not-applicable` and
+  says the edge headers are inert.
+
+### Patch Changes
+
+- 07bde95: Stop the published server sources from depending on a consumer-side
+  runtime-config augmentation.
+
+  `narduk-analytics` ships raw `.ts`, so a consumer compiles `server/**` inside
+  its own Nitro type program — where the runtime-config augmentation this module
+  registers does not take effect. Every `runtimeConfig` key is `unknown` there,
+  and a truthiness guard narrows `unknown` to `{}`, so `config.ownerTagSecret`
+  flowing into a `string` failed in every consumer while this package's own
+  `nuxt typecheck` stayed green.
+
+  Server code now reads config through a package-owned
+  `analyticsRuntimeConfig(event)` accessor whose `AnalyticsServerRuntimeConfig`
+  type promises only what `src/module.ts` actually defaults, so the same types
+  hold in this workspace and in a consumer. A new
+  `tsconfig.consumer-server.json` project, run from the package's vitest suite,
+  compiles the shipped `server/**` against a deliberately unaugmented ambient
+  context so the gap cannot reopen silently.
+
+- 62b7b79: Stop the unhandled `/api/_auth/session` SSR error in apps that have
+  not configured auth (narduk-libs#540). `coreModules` still installs
+  `nuxt-auth-utils` (dashboard chrome uses `useUserSession`), but passes the
+  module's existing `auth.loadStrategy: 'none'` unless the app already set a
+  strategy, has a session password (`NUXT_SESSION_PASSWORD`, `SESSION_PASSWORD`,
+  or `runtimeConfig.session.password`), or lists `narduk-auth` /
+  `nuxt-auth-utils` in `modules`. A no-auth fixture SSRs without that fetch and
+  without an error log. `create-narduk-app` is a companion patch so the
+  generator pin moves with core.
+- c7a6b59: Declare `narduk-core` as a peer range instead of an exact-pinned
+  dependency.
+
+  Both packages carried `@narduk-enterprises/narduk-core` as `workspace:*` in
+  `dependencies`, which publishes as an exact pin. An app upgrading narduk-core
+  therefore kept a second, older copy alive underneath these two — and
+  narduk-core is a Nuxt module that appends global CSS to `nuxt.options.css`, so
+  which copy's stylesheet wins comes down to module resolution order rather than
+  anything the app declares.
+
+  `narduk-core` now sits in `peerDependencies` at `>=2.6.3 <3.0.0` with a
+  `workspace:*` `devDependencies` entry for these packages' own builds and
+  tests, matching `narduk-uploads`. The consuming app owns the single resolved
+  version.
+
+  Released as a minor rather than a patch because it changes the published
+  manifest shape: an app that reached narduk-core only transitively through
+  these packages must now resolve it itself. Every generated app already
+  declares narduk-core directly — it is the first entry in the generator's Nuxt
+  `modules` list — and pnpm and npm both auto-install a missing peer, so no
+  estate app is expected to need a change.
+
+- 62b7b79: New server util
+  `definePublishedDataHandler(handler, { profile, tags?, vary?, fallbackMessage?, rateLimit? })`
+  for public published-data reads (narduk-libs#514). It applies the cache
+  profile only after the handler succeeds, so an error never advertises a
+  cacheable posture. An internal failure without a `statusCode` is logged and
+  answered with a sanitized 503, and a deliberate `createError` passes through
+  unchanged. Rate limiting goes through `defineRateLimitedHandler` and is
+  applied only when `rateLimit` is passed. It is auto-imported, so an app with
+  its own `definePublishedDataHandler` in `server/utils` (Buoys) should replace
+  its local copy when it adopts this release. `create-narduk-app` is a companion
+  patch so the generator pin moves with this core minor.
+- b672613: Fix two entries in the generated `.gitignore` that never matched what
+  they were meant to ignore.
+
+  `.narduk/recovery` contains an embedded slash before the trailing one, which
+  git anchors to the directory holding the `.gitignore` — the repository root.
+  `narduk-app` actually writes recovery artifacts under
+  `apps/web/.narduk/recovery/`, which the anchored pattern never matched, so
+  they landed in `git status` and could be staged by `git add -A`
+  (narduk-libs#624, evidence in narduk-enterprises/austin-rising-runners#3).
+  Replaced with the unanchored `.narduk/`, which matches at any depth.
+
+  `@narduk-enterprises/narduk-testkit` writes visual-audit artifacts to a
+  hard-coded `output/playwright/visual-audit`, and nothing in the generated
+  `.gitignore` covered `output/` even though it ignores every other Playwright
+  artifact root (`playwright-report`, `test-results`, `blob-report`,
+  `all-blob-reports`). A visual audit run left PNG output staged and invisible
+  to every gate (narduk-libs#630, evidence in
+  narduk-enterprises/austin-rising-runners#10, merge c7d3e59 committing 2.8 MB
+  of screenshots). Added `output` alongside the existing Playwright entries.
+
+  Neither change touches an existing app's committed `.gitignore` — only apps
+  generated after this release get the corrected patterns.
+
+- 9452204: Document verified persona injection for local hotfix credentials
+  whose registered nVault key names differ from Wrangler's environment variable
+  names.
+
+  Preserve runtime variables through generated Wrangler configuration so local
+  hotfix uploads support Wrangler 4.90.1, whose versions-upload command does not
+  yet accept the equivalent CLI flag.
+
+- 7b99efb: `doctor --adoption --live` and `foundation:check:security-headers`
+  now probe the paths the app declares in `deployment.liveProof`, instead of a
+  hard-coded `/`, `/api/health` and `x-build-version`.
+
+  Requirement 5 reads the build stamp from `liveProof.smokePath` under the
+  header `liveProof.buildVersionHeader`, requirement 12 reads
+  `liveProof.healthPath`, and requirement 8 points its header probe at the
+  declared smoke path. With no `--path`, `resolveProbeUrls` now reads the base
+  URL exactly as given rather than resolving `/` against it, so a
+  `--base-url https://app.example/login` probes `/login`.
+
+  `foundation:check:deployment` item 12.3 already requires those fields, so the
+  declaration always existed and the tools simply did not read it. On an
+  authenticated app -- one whose root correctly refuses an anonymous request --
+  that reported a working delivery path as undecided (R5) and a working health
+  contract as failing (R12), and rewarded an app that left its health route open
+  to anonymous callers over one that did not. A required `unknown` blocks
+  declaration, so this was not a cosmetic verdict.
+
+  The old values remain the fallback for an app that declares no `liveProof`
+  block, so an app declaring the defaults is unaffected. `DeploymentArtefact`
+  gains `declaration.liveProof`, and `AdoptionLiveReading` gains `smokeUrl`,
+  `healthUrl` and `buildVersionHeader` so a report names the routes it actually
+  read.
+
+- de5abe4: Add an explicit local incident hotfix command with a clean commit
+  snapshot, offline frozen install, required app checks, isolated build
+  credentials, confirmed production target, version promotion, live proof and a
+  durable failure receipt. Ship the operator runbook and generator scripts.
+  Existing deployment commands remain compatible.
+
+  Prevent the shared live probe from forwarding caller-provided request headers,
+  including Cloudflare Access credentials, through cross-origin redirects.
+
+- 62b7b79: Point `homepage` and `bugs.url` at narduk-libs instead of the
+  archived `narduk-enterprises/narduk-mapkit` repo (narduk-libs#540). The
+  Changesets fixed group is empty and `narduk-mapkit-nuxt` stays ignored, so
+  this patch does not pull the frozen adapter; the adapter's matching metadata
+  is updated in tree without a release. `create-narduk-app` is a companion patch
+  so the generator-owned mapkit pin moves with it.
+- c574403: core: answer `HEAD` on file-based API routes
+
+  h3's router matches the request method exactly, so a `*.get.ts` file route
+  registers `handlers.get` and nothing else and every `HEAD` to an API path fell
+  through to a 404 — including `/api/health`, the path apps enrol for uptime
+  monitoring. A monitor probing with `HEAD`, the conventional choice for a
+  liveness check, saw the app as down. RFC 9110 §9.3.2 requires `HEAD` to be
+  identical to `GET` minus the body.
+
+  A new server middleware answers `HEAD` on `/api` paths by re-entering the app
+  with `GET` and returning that response's status and headers with no body, so
+  the two cannot drift and a failing health check still surfaces as its real
+  status rather than as a cheap `200`. Pages are untouched: the Nuxt renderer is
+  bound to no method and already answers `HEAD`.
+
+  The re-entering request carries the caller's identity. Headers already
+  forwarded survive the hop untouched; a caller identified only by its socket
+  has that address carried inward explicitly, because the inner request has no
+  socket and would otherwise join every other `HEAD` in the single `'unknown'`
+  rate-limit bucket. A client-chosen forwarded address is never promoted to the
+  trusted identity header.
+
+- 2671ccd: The production error sanitizer can no longer throw.
+  `sanitizeProductionError` assigned `statusText` unguarded, and
+  `'statusText' in error` is true for a getter with no setter, so the write
+  threw in strict mode, escaped into Nitro's error handling, and turned a
+  correct status into a 500 with the original error discarded. `message`,
+  `statusMessage` and the `delete` of `data` and `cause` could fail the same
+  way, with worse consequences.
+
+  Every field is now scrubbed defensively, falling back to
+  `Object.defineProperty` so an inherited accessor is shadowed by an own data
+  property and the value is actually removed rather than merely not throwing.
+  One field that resists both paths no longer aborts the rest of the pass.
+
+- 0f43a24: Stop pinning `/_og/**` to `prerender: false`, so OG images for
+  prerendered pages are actually generated (narduk-libs#170).
+
+  `nuxt-og-image` emits an _unsigned_ `/_og/s/...` URL while a page is
+  prerendered and relies on the prerender crawler to bake that image to a file.
+  The pin stopped the file being produced, so the unsigned URL fell through to
+  the runtime handler, which rejects it with `403 Missing URL signature` as soon
+  as a signing secret is configured -- which every deployed build requires. SSR
+  pages were never affected; they take the signed `/_og/d/...` branch.
+
+  **This changes your build output.** Each prerendered page that renders a card
+  now writes one image file into the app's static assets, counting against the
+  Workers per-file size and total file-count ceilings, and build time grows with
+  the number of such pages. A baked card is exactly as stale as the page it was
+  built from, so a card that must track data moving between deploys does not
+  belong on a prerendered route. Apps that ship only a static `defaultOgImage`
+  are unaffected; set `ogImage.zeroRuntime: true` or `ogImage.enabled: false` as
+  before.
+
+- b672613: Declare `vue-router` as a peer dependency of narduk-core.
+
+  `runtime/app/components/app/LayerAppHeader.vue` imports the type
+  `RouteLocationRaw` from `vue-router`, and `runtime/` is in narduk-core's
+  published `files`, so that bare specifier ships to every consumer. narduk-core
+  declared `vue-router` nowhere — not in `dependencies`, not in
+  `peerDependencies` — so it resolved only because `vue-router` is a dependency
+  of `nuxt` (`^5.2.0` per `nuxt@4.5.2`'s own `package.json`), which every
+  consumer has today. A pnpm install with a restricted `hoist-pattern`, or a
+  `node-linker` setting that suppresses that hoist, would get
+  `TS2307: Cannot find module 'vue-router'`.
+
+  Same shape as the `@nuxt/schema` phantom dependency closed in #382 — it was
+  found by that PR's published-surface scan and deliberately left out to keep
+  that PR scoped (narduk-libs#383). The range mirrors what `nuxt@4.5.2` itself
+  declares, so any Nuxt app already has a satisfying copy and this declaration
+  adds no install.
+
+  `@narduk-enterprises/create-narduk-app` moves in lockstep because it pins
+  narduk-core's version in `PACKAGE_VERSIONS`.
+
+  **Consumer impact.** `patch`, not `minor`: this declares a dependency that was
+  already required at runtime for every consumer today (any app using
+  narduk-core already brings in `nuxt`, which already brings in `vue-router` —
+  narduk-core's own type import has always needed it to resolve), it does not
+  add a new runtime requirement. A consumer already on `vue-router >=5.2.0` —
+  which is every consumer today, since that is what `nuxt@4.5.2` itself pulls in
+  — sees no change: no new install, no version bump forced on their lockfile, no
+  new peer warning. A consumer on an older, unsupported `nuxt` that resolved a
+  pre-5.2.0 `vue-router` would newly see a peer range warning on their next
+  install, surfacing a version this package already silently depended on rather
+  than creating a new one.
+
+## 0.11.1
+
+### Patch Changes
+
+- 693f7d3: security.headers: let a first-party-only app opt out of the estate
+  CSP baseline
+
+  `security.headers.baseline` selects which third-party origins an app inherits
+  before its own `allow` is applied. It defaults to `'estate'`, so no existing
+  app's policy changes.
+
+  `baseline: 'self'` inherits none of them: every directive is `'self'` plus
+  whatever the app names in `allow`. It exists because `allow` can only add,
+  which left an app reaching no third party unable to enforce the strict nonce
+  policy without widening its CSP — trading `script-src 'unsafe-inline'` for the
+  eleven `BASELINE_ALLOWLIST` origins, eight of them on `connect-src`.
+
+  The nonce, `'strict-dynamic'`, HSTS, `frame-ancestors`, `form-action`,
+  `object-src`, the report route and style-src's `'unsafe-inline'` are
+  unchanged, and the resulting policy is a strict subset of the `'estate'` one.
+
+  Closes #560.
+
+- eb07a18: Declare who owns each D1 schema: `deployment.databaseOwnership`
+
+  `deployment.migrations` had to cover **every** D1 binding exactly once, which
+  is right for a database whose schema is its migration history and wrong for
+  one whose schema is owned by a contract and applied by a refresh job. The only
+  way such an app could declare migrations for the rest of its estate was to
+  manufacture a migration baseline for a database nobody migrates -- a false
+  claim that the ledger describes that schema.
+
+  `Config/cloudflare-app.json`'s deployment block now accepts an optional
+  `databaseOwnership` array giving every binding exactly one owner: `migrations`
+  (resolving to an entry in `deployment.migrations.databases`) or `contract`
+  (naming the schema contract file and the package script that proves it).
+  Absent, nothing changes -- an app that migrates everything keeps working with
+  no config edit.
+
+  The load-bearing part is at the runner, not the validator:
+  `migrationDatabase()` is the single function every migration path uses to
+  reach D1, and it refuses a contract-owned binding before any provider call.
+  `db migrate --database READ_MODEL`, `db status`, `db migrate-deployment`,
+  baseline capture and baseline registration are all refused, as is a wrangler
+  config pointing another binding name at the contract-owned database id. The
+  contract-owned database is also absent from the minimal wrangler config the
+  deployment runner is handed.
+
+  `foundation:check:deployment` sub-check 12.8 now applies the same coverage
+  rule from the same implementation -- a contract-owned binding passes without a
+  source manifest, while an uncovered or doubly-owned binding still fails -- and
+  `doctor --adoption` requirement 6 reads that sub-check.
+
+## 0.11.0
+
+### Minor Changes
+
+- d3f91b4: feat(create-narduk-app): a fresh scaffold reaches a green first CI
+  run
+
+  Six independent defects sat between `create-narduk-app` and a green `main`,
+  and four were invisible until after the first push (narduk-libs#617).
+
+  **The scaffold failed the gate its own CI runs.** Generated CI calls the
+  shared workflow with `foundation-check: true`, which fails the build on `FAIL`
+  _or_ `UNKNOWN`. A fresh scaffold produced a decided FAIL on item 1.2 —
+  `apps/web/wrangler.jsonc` exists but `Config/cloudflare-app.json` does not —
+  plus UNKNOWNs on 1.4/3.1/3.2 for want of `access.exposureClass`, and a FAIL on
+  1.1 once a build had run. The first CI run of every new app was red by
+  construction and nothing inside the app could fix it. The generator now emits
+  `Config/cloudflare-app.json`: schema version, product, worker, `access`
+  (`public` or `authenticated-public`, from `--exposure`) and the bindings
+  mirror. What it cannot know — `product.repository`, the account id, domains,
+  the narduk-v1 `deployment` block — is absent rather than fabricated, the same
+  rule `wrangler.jsonc`'s missing `account_id` already followed. Absent leaves
+  the app NOT ADOPTED for deployment, which is the truth before onboarding.
+
+  **`quality:static` was weaker than the gate that judges it.** It called
+  `build`, where CI calls `build:ci`; on any `seo` app `build` throws on an
+  empty `NUXT_OG_IMAGE_SECRET`, so the local gate went red where CI was green.
+  It now builds with the script CI builds with.
+
+  **The scaffold failed its own `quality:static` three ways.** Long free text —
+  a display name, a description, a site URL — pushed `const X = '…'` past the
+  generated Prettier `printWidth: 100`, so `format:check` failed on the
+  generator's own output; the emitter now breaks those declarations exactly
+  where Prettier breaks them, and the e2e heading assertion binds its name to a
+  const so that line is fixed-width at any input length. `knip` reported
+  `narduk-logging` (reached through `runtimeConfig`, no named import) and
+  `eslint` (backing `narduk-lint` and `eslint.config.mjs`) as unused; both are
+  now declared ignores.
+
+  **`xaiApiKey` leaked into apps without the `ai` capability.** It was emitted
+  unconditionally into `runtimeConfig`. `narduk-ai` declares that key itself
+  with a validator, and under `defu` an app-side `''` is a defined value that
+  _wins_ — so the line both advertised a key to capability sets that never asked
+  for one and defeated the module's own validation for the sets that did.
+  Removed.
+
+  **The generated README now names the three gates** — `quality:static`
+  (credential-free, offline, what you run), `foundation:check` (reads the
+  registry, exits 2 on UNKNOWN, deliberately not chained), `quality` (adds the
+  browser suite) — and, for a private app, warns before the first push that CI
+  runs on self-hosted manifest-routed runners: without runner-group membership
+  the first workflow run sits `queued` indefinitely with no error, no timeout
+  and no log.
+
+  A new end-to-end test in `narduk-app-tools` runs the real `foundation:check`
+  against a real generated app, before and after a build, and asserts `PASS`
+  with zero unknowns — the claim nothing in this repository previously made.
+
+### Patch Changes
+
+- e82eb47: Make a generated app's root `lint` run prettier as well as eslint.
+
+  `lint` is the command a contributor or agent reaches for, and it was eslint
+  only. The formatting gate CI fails on is a different script -- the root
+  `format:check`, which the shared callable runs as the first entry in
+  `extra-scripts` -- so a prettier-only diff passed locally and failed CI,
+  costing a whole cycle for whitespace. Nothing a person naturally types ran
+  both; only `quality:static` chained them.
+
+  Root `lint` now composes the root `format:check`. The root one, not
+  `apps/web`'s: only it reaches `.changeset/`, root Markdown and `.github/`.
+  `lint:fix` and `quality:fix` are unchanged -- they already chain
+  `prettier --write` through `format` -- and `quality:static` keeps its own
+  explicit `format:check` first, so the fastest check still fails fastest and
+  the chain does not depend on how `lint` happens to be composed today.
+
+  narduk-libs#628.
+
+## 0.10.12
+
+### Patch Changes
+
+- fa2f123: fix(narduk-core): put the base element styles in `@layer base` so an
+  app's theme wins
+
+  `main.css` is appended to `nuxt.options.css` after the consuming app's own
+  stylesheets, and its `body` and `h1`–`h4` rules were unlayered. Unlayered CSS
+  beats every layered rule regardless of source order, so those defaults could
+  not be overridden by an app at all: measured on lakestat-us, the app's own
+  `body { color: var(--gs-ink); background: var(--gs-page) }` lost, and the page
+  computed `#fff`, slate-700 and Inter instead of the app's palette.
+
+  Both rules now sit in `@layer base`, which is where Nuxt UI already ships the
+  same body declarations. `.font-display` stays unlayered, because an app opts
+  into that class by name rather than inheriting it.
+
+## 0.10.11
+
+### Patch Changes
+
+- 9f6038a: Stop the `playwright-dev-port` suite asserting a hash property the
+  dev-port derivation never had. Four worktree paths into a 1000-port span
+  collide at the birthday rate (0.599%), which is the rate the old single-sample
+  test failed at — it blocked the narduk-core 2.6.3 release on 2026-09-19. The
+  suite now asserts what the implementation actually promises: derived ports
+  spread widely enough that lanes are practically unable to collide, and a
+  residual collision stays loud rather than silently attaching to another lane's
+  dev server. Test-only; `resolveLocalDevPort` behaviour is unchanged.
+  `create-narduk-app` moves only because it pins the testkit version it
+  generates against.
+- 159e762: Re-release so the generator's `@narduk-enterprises/narduk-shell` pin
+  moves with that package's `NeFilterBar` release (0.4.0 → 0.5.0).
+
+  The pin literal in `src/manifest.ts` is deliberately not hand-edited here:
+  `versions:check` requires it to equal narduk-shell's **live** `package.json`
+  version rather than a preview of its next one, so `versions:sync` re-pins it
+  when `release:version` actually runs. This changeset is what makes that
+  release happen in the same wave, which is what `release-plan:check` asks for.
+
+## 0.10.10
+
+### Patch Changes
+
+- ecc731b: Pin generated apps to `@narduk-enterprises/narduk-core` 2.6.3, whose
+  report-only security-headers preset no longer emits
+  `upgrade-insecure-requests` — a directive browsers ignore in a report-only
+  policy and Chromium logs a console error for on every document load.
+
+## 0.10.9
+
+### Patch Changes
+
+- 2e5959d: Pin generated apps to `@narduk-enterprises/narduk-app-tools` 0.13.1,
+  whose runner-ledger guard no longer refuses a migration for mentioning the
+  bookkeeping tables in a comment.
+
+## 0.10.8
+
+### Patch Changes
+
+- 52ab505: Add a reviewed D1 baseline process: immutable schema/ledger capture,
+  full-schema comparison, explicit metadata-only registration for untracked
+  schemas, and a shared disposable-local cutover proof. Preserve historical
+  fixtures across package upgrades and stop rechecking superseded legacy schema
+  probes after stable checksum adoption. Document app-owned review, data-proof
+  limits and migration-before-promotion onboarding.
+
+## 0.10.7
+
+### Patch Changes
+
+- 176cbaf: Decode vector tiles, off the main thread, behind a new
+  `./vector-tiles` entry.
+
+  `createMvtDecoder` reads Mapbox Vector Tiles with `@mapbox/vector-tile` and
+  `pbf`, and `serveVectorTileDecoder` hosts it in a worker that
+  `createWorkerDecoder` (in `./client`) talks to, correlating replies by id and
+  transferring buffers both ways so nothing is copied. The protobuf dependencies
+  are reachable only from `./vector-tiles`, so a consumer of `./client` never
+  bundles a parser; a test walks the import graph and fails if that changes.
+
+  A decoded tile is now columnar -- an `Int16Array` of coordinates plus two
+  `Uint32Array` indexes -- rather than an object per point, which is the
+  difference between a 256-tile cache retaining about a gigabyte and retaining
+  about a hundred megabytes. `buildDecodedVectorTile` packs one,
+  `decodedVectorTileBytes` and the new `cacheBytes` measure what is retained,
+  and `vectorTileFeatureCount` reads the feature count back.
+
+  Tile bytes are posted as a tight buffer, so a `Uint8Array` that views part of
+  a larger allocation decodes correctly and its parent buffer is not detached.
+  Requests for an address already in flight join that read instead of starting a
+  second one, and `cacheBytes` now counts an estimate of the property payload
+  rather than geometry alone.
+
+- 1c64619: Answer a tap on a painted vector tile, and wire the overlay to a Vue
+  scope.
+
+  `source.hitTest({ coordinate, zoom, tolerancePx })` returns the nearest
+  feature within a screen-pixel radius, with the properties the archive carried.
+  It reads only tiles the cache already holds, so it is synchronous and can
+  answer inside a gesture; a tap on an undrawn tile misses rather than fetching.
+  Distance is measured to the nearest point on a segment, not to a vertex, and
+  the probe reaches into neighbouring tiles when it lands within the tolerance
+  of an edge -- wrapping at the antimeridian, stopping at the poles -- so a
+  river drawn a pixel inside the next tile is still tappable.
+  `projectToTilePoint`, `hitTestTile` and `hitTestNeighbours` are exported for
+  callers that hold their own tiles.
+
+  `useMapKitVectorTiles()` in the Nuxt module -- which this changeset cannot
+  name, because the adapter is frozen at 2.0.x (narduk-libs#405, #421) -- builds
+  the PMTiles reader and the overlay source, rebuilds them when the archive url
+  changes, repaints a style change from the decoded tiles rather than
+  refetching, and terminates the decoder worker with the Vue scope. The worker
+  factory and the `pmtiles` reader stay the app's, because a published worker
+  chunk is the one thing Vite, webpack and Nuxt do not agree on.
+
+  Two client interfaces were also corrected against the browser types they stand
+  in for: `VectorTileCanvasContext.strokeStyle` was too narrow for a real
+  `CanvasRenderingContext2D`, and `VectorTileWorkerPort.postMessage` was
+  declared so that a real `Worker` could not satisfy it. Both are now proven
+  assignable by typecheck-time tests.
+
+## 0.10.6
+
+### Patch Changes
+
+- 3a10f40: Gate narduk-v1 promotion and shared previews on compatible D1
+  migrations. Add explicit deployment target selection, read-only
+  checksum/history status, a per-database migration lock with conservative
+  failure recovery, SQL-only preview bundles, foundation coverage checks, and
+  one-shot workflow onboarding templates.
+- 8cd6999: Refuse an existing D1 application schema with no recorded migration
+  history, even when a source manifest contains no SQL. Require reviewed
+  baseline evidence instead of reporting an untracked read model current or
+  replaying its schema.
+- d077c85: Add a vector-tile canvas overlay source to `./client`.
+
+  `createVectorTileOverlaySource` paints decoded vector tiles to a canvas and
+  returns the `imageForTile` function the async tile overlay and the layer
+  registry already take, so a dense network stays off MapKit's overlay list.
+  Decoded tiles are cached, so `setStyle()` repaints from memory without a
+  refetch or a re-decode. The decode step is injected, which keeps this entry
+  free of protobuf dependencies and lets an app decode in a worker.
+
+  `createPmTilesTileSource` and `createPmTilesFetchSource` read a PMTiles
+  archive over HTTP range requests, taking the reader and the `fetch` they use
+  so tests need no network. A missing tile, an empty tile and a failed read all
+  resolve to `null` and report through `onError`, instead of throwing into the
+  map.
+
+## 0.10.5
+
+### Patch Changes
+
+- e34b2da: `<AppMapKit>` now infers the app's item type in an SFC template
+  (narduk-libs#573, K-1). The exported type keeps only the generic construct
+  signature, so `create-pin-element`, `item-key`, `item-label`, `pin-geometry`
+  and the `#callout` scope accept callbacks narrowed to the app's own item type
+  without a cast. A vue-tsc template fixture in `tests/nuxt/template/` gates it.
+- 20d72a9: `narduk-mapkit/nuxt` auto-imports `useMapKitView()` and
+  `useMapKitFullscreen()`, lifted from buoys. `useMapKitView()` owns the map
+  behind a map-first page's `<AppMapKit>` -- camera, frame, zoom tier, padding,
+  basemap, the `./marks` layer and fullscreen -- and takes the scoped runtime
+  from `map-ready` (K-10). A map-first app no longer copies buoys'
+  `utils/mapkit/*` and view composables to draw marks. The `./testing` fake map
+  now models `showsMapTypeControl`.
+
+## 0.10.4
+
+### Patch Changes
+
+- 80dde89: Generated apps pin `@narduk-enterprises/narduk-app-tools` 0.11.0,
+  whose `verify --live` can prove a host behind Cloudflare Access.
+- ef39ebf: Add `@narduk-enterprises/narduk-mapkit/marks`, the point-map mark kit
+  lifted from buoys (narduk-libs#517): the declutter engine, label placement,
+  keyed mark layer, DOM pin builders, frame and camera math, and IQR overview
+  framing. The Nuxt module gains an opt-in `marks` option that adds the marks
+  stylesheet (`MAPKIT_MARKS_CSS`) after the host chrome.
+
+## 0.10.3
+
+### Patch Changes
+
+- 81051b0: Narduk Data client: send `redirect: 'manual'` instead of `'error'`,
+  which the Cloudflare Workers runtime rejects before any response arrives. A
+  redirect is still an `http` failure and is never followed (#563).
+
+## 0.10.2
+
+### Patch Changes
+
+- 448e86f: `createNardukDataClient` no longer re-downloads an unchanged release
+  when its TTL lapses. If the manifest still names the same release and artifact
+  checksum, the client keeps the cached value (and its object identity) and
+  fetches only the manifest.
+- 7142305: `useSsrNow(key, { tickMs })` also re-reads the browser clock when the
+  page becomes visible again, so a viewer returning to a background tab sees
+  current relative ages at once instead of after the next (throttled) tick. The
+  listener is registered only for a ticking clock and removed on unmount. This
+  closes the last gap between `useSsrNow` and the Buoys map clock it
+  generalises. `create-narduk-app` is a companion patch so the generator pin
+  moves with the core patch.
+
+## 0.10.1
+
+### Patch Changes
+
+- 4599aa7: `createNardukDataClient` can now read a release's secondary
+  artifacts, the ones the manifest lists in `artifacts[]` beside the primary
+  `artifact`. Set the new `NardukDataProduct.entryPath` option to a
+  release-relative path, for example
+  `consumer/lakes/texas/canyon-lake/history-1y.json`.
+
+  - The path may have several segments, each of which must be a plain name.
+  - The entry is checked against its own listed SHA-256, with the usual timeout,
+    retry, single-flight, memo, stale-if-error and freshness handling.
+  - A release that does not list the entry fails with the new `NardukDataError`
+    reason `'missing'`, so consumers can answer "not published" rather than
+    reporting an outage. It never falls back to the primary artifact.
+
+  Reads without `entryPath` are unchanged (#552).
+
+- 4ba5d02: AppLightbox gains optional thumbnail rails (0–2 labelled rails, each
+  with its own keyboard axis) and a `side` slot for per-picture details.
+  `AppImage` wraps remote pictures with loading and failed states.
+  `AppSnapStrip` is a horizontal scroll-snap strip with an en-dash position
+  readout (narduk-libs#529). `create-narduk-app` is a companion patch so the
+  generator pin moves with the core minor.
+- c1c8b42: Add the narduk-shell data-table family — `NeDataTable` (UTable preset
+  with column groups, units, tabular numerals, the missing dash, day/group rows,
+  a pinned first column, the phone column-set switch, the break row, and
+  loading), `NeSortHeader`, `NeCsvDownload`, plus `toCsv` / `parseSort` from the
+  package root — and extend `NePager` with `pageSizes`, `mode` (`pages` | `more`
+  | `auto`), `moreStep`, `maxLimit` and `update:limit`. narduk-timeseries gains
+  `bucketReadings` (1h / 3h / 1d min/avg/max; missing is `null`, not `0`).
+  create-narduk-app is patched because it pins narduk-shell (narduk-libs#528).
+- dd1a7d9: `createConsoleTracker` accepts URL-scoped ignore rules
+  (`{ text: RegExp; url?: RegExp }`) and records 4xx/5xx response URLs so an
+  object rule's optional `url` matches the request that actually failed. Bare
+  `RegExp[]` call sites stay unchanged (narduk-libs#134). `create-narduk-app` is
+  a companion patch so the generator pin moves with the testkit release.
+
+## 0.10.0
+
+### Minor Changes
+
+- 92835a1: Generated apps lint through `narduk-lint`: `apps/web`'s lint script
+  is `nuxt prepare && narduk-lint` (no more `--max-warnings 0`), and the
+  generator emits an empty `apps/web/lint-budget.json` (`{ "rules": {} }`).
+
+## 0.9.9
+
+### Patch Changes
+
+- bb37590: Pin generated apps to the narduk-core release with `useSsrNow` and
+  migration `0006_user_id_indexes.sql`, and the narduk-testkit release with the
+  `./d1` query harness. A newly generated app applies `0006` with its first
+  `db:migrate:local` / `cf:deploy`.
+- 36d9e18: `./testing` fake: a second `mapkit.init()` while the first token
+  exchange is pending, or after it succeeded, is now an idempotent no-op instead
+  of throwing `FakeMapKitNotImplemented` (K-7, narduk-libs#522). No new token is
+  requested, the first call's options stand, and the call is logged as `init`
+  with detail `ignored`. A second `init()` after a failed exchange still runs a
+  new exchange, so `retry()` stays testable. New conformance tests pin the rect
+  camera (K-5: `visibleMapRect`, `setVisibleMapRectAnimated`, `MapRect` /
+  `MapPoint` / `MapSize`, `Map.MapTypes`) against the Web-Mercator maths buoys'
+  shim used, in vitest and through `fakeMapKitInitScript()`, so buoys can delete
+  both shims.
+- 36d9e18: The Nuxt module's `/api/mapkit-token` route now applies **no rate
+  limit by default** (narduk-libs#485). Since #436 it limited every app to 30
+  requests per 60 s per routed origin; that ceiling is now opt-in.
+  `ModuleOptions.rateLimit` is optional and has no default: set
+  `nardukMapKit: { rateLimit: { limit, windowSeconds } }` to keep a ceiling. A
+  limiter an app mounts on `event.context.nardukMapKit.rateLimit` still wins,
+  with or without the option. With per-client keying of the default no longer
+  needed, narduk-libs#512 is moot.
+
+  Logan's decision (askme, 2026-09-18 14:23 CT): "whatever the least restrcitive
+  reasonable option is.....i do NOT want rate limits to come up again....its
+  super annoying and not a problem".
+
+  `create-narduk-app` picks up the generator-owned narduk-mapkit pin.
+
+## 0.9.8
+
+### Patch Changes
+
+- 8da7e33: Generated apps pin the narduk-core release that keys IPv6 rate-limit
+  callers by `/64`, adds `nardukCore.csrf.exemptPaths`, and documents
+  account-unique `namespace_id`s.
+- 05b3ef9: Pick up narduk-core's per-request header strip on shared-cacheable
+  responses and narduk-app-tools' edge-cache proof (narduk-libs#412, #418, #435)
+  in newly generated apps' pins.
+- c16bdfd: `foundation:check` now reads the registry for sub-check 2.3 from the
+  project's own `@narduk-enterprises` scope route (narduk-libs#498). The reader
+  takes the last `@narduk-enterprises:registry=` line in the checkout's
+  `.npmrc`, the same rule as the shared CI workflows. A repo that routes the
+  scope to the `https://npm.nard.uk` mirror, or to any other registry that is
+  not GitHub Packages, is read anonymously. The reader sends no `Authorization`
+  header there, so it needs no `NODE_AUTH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`.
+  Repos with no route line, or a route to `npm.pkg.github.com`, keep the
+  existing GitHub Packages Bearer read and its scope-probe 404 corroboration.
+  Other scopes such as `@narduk-geo` stay on GitHub Packages.
+
+  `create-narduk-app` takes a patch so generated apps pin the fixed
+  `narduk-app-tools`.
+
+- a82dc2d: Pick up the generator-owned pin bumps from narduk-logging 0.3.0 (the
+  `QueryCounter` statement / round-trip counter, narduk-libs#325) and the
+  dependents it re-releases.
+- 49d2606: Pick up the generator-owned narduk-mapkit 2.2.0 pin (the Worker-safe
+  token-route limiter export, narduk-libs#485).
+
+## 0.9.7
+
+### Patch Changes
+
+- ad7a156: Give generated CI a committed test-only `NUXT_OG_IMAGE_SECRET` so
+  `nuxt build` does not fail closed.
+
+  narduk-seo now throws on a non-dev build when runtime OG is enabled and the
+  secret is empty. Public `quality` / `browser` jobs set the Playwright
+  placeholders as plain `env:` values (not repository secrets). The private
+  reusable workflow cannot inherit caller env, so the same placeholders prefix
+  `build:ci`. The Workers Builds runbook requires `NUXT_OG_IMAGE_SECRET` and
+  `NUXT_SESSION_PASSWORD` as Build variables — Worker secrets are runtime-only.
+
+- ad7a156: Ignore generated Wrangler `.dev.vars` secrets, and make `cf:build`
+  authenticate before it installs.
+
+  The scaffolded `.gitignore` now lists `.dev.vars` / `**/.dev.vars` /
+  `.dev.vars.*` with a `!.dev.vars.example` carve-out, matching the existing
+  `.env` pattern. Root `cf:build` runs a committed `scripts/gh-packages-run.mjs`
+  (process-scoped temp userconfig from `GH_PACKAGES_READ`, then
+  `pnpm install --frozen-lockfile`) so a Workers Builds dashboard that sets
+  `SKIP_DEPENDENCY_INSTALL=1` actually has `node_modules` and registry auth
+  before `nuxt build`. `narduk-app gh-packages-run` is the same helper for
+  post-install callers.
+
+## 0.9.6
+
+### Patch Changes
+
+- fe58c5f: SSR HTML is never shared-cache storable on an app that serves the
+  nonce CSP (`nardukCore.security.headers` in `enforce` or `report-only` mode),
+  because nuxt-security writes one per-request nonce into both the HTML and the
+  CSP header and an edge cache would replay it to every visitor
+  (narduk-libs#435). `setCacheProfile` refuses a cacheable profile on a page
+  render with the new `nonce-csp-html` suppression reason, and a new
+  `nonce-csp-cache` Nitro plugin pins `Cache-Control: private, no-store` on the
+  final `text/html` response and strips `CDN-Cache-Control`,
+  `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`, `Cache-Tag`, `Expires`
+  and `Age` however they got there. JSON API routes and Nuxt `_payload.json`
+  responses keep their profile and stay edge-cacheable. In development, a page
+  that asked for a cacheable profile logs one warning per path.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-core` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule) — no
+  generator behavior changes.
+
+- cf8e05e: `<AppMapKit>` no longer loads `mapkit.core.js` twice
+  (narduk-libs#469). The SSR preload's `useHead()` now runs during the server
+  render only. Through 2.1.2 it also ran on the client, where unhead's DOM
+  renderer had to recognise the server's `<script>` by hashing every attribute
+  on it. Under a nonce CSP (narduk-core `security.headers`) the browser hides
+  the tag's nonce as `nonce=""`, the hash never matched, and unhead appended a
+  second copy, which MapKit reports as `Mapkit namespace already exists`. On the
+  client, Apple's `@apple/mapkit-loader` is now the tag's only owner: it adopts
+  the server's tag on an SSR page load and injects the single tag on a
+  client-side navigation.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-mapkit` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule). The
+  generator's behavior does not change.
+
+## 0.9.5
+
+### Patch Changes
+
+- 7ae9278: Thrown 4xx/5xx responses — including a 429 from
+  `defineRateLimitedHandler` — now carry `Cache-Control: private, no-store` and
+  drop `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`, `Surrogate-Control`,
+  `Cache-Tag`, `Expires` and `Age`, even when the route had already set a
+  cacheable profile (e.g. `setCacheProfile(event, 'live')`) before throwing.
+  Nitro's own error page otherwise ships `Cache-Control: no-cache`, which
+  Cloudflare Workers Cache _stores_ and revalidates once an app turns on
+  `"cache": { "enabled": true }`; `no-store` / `private` are the documented
+  opt-out. This is a safe precondition for narduk-libs#435 (making
+  `setCacheProfile`'s edge header actually hit) — do not enable Workers Cache in
+  a consuming app until this release.
+
+  The header-strip list that already backed the `preferences-cache` plugin
+  (narduk-libs#386) moved to a new framework-free
+  `runtime/shared/utils/shared-cache.ts` so the error path reuses it rather than
+  duplicating it; `preferences.ts` re-exports the same names it always has, so
+  no consumer import changes.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-core` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule) — no
+  generator behavior changes.
+
+## 0.9.4
+
+### Patch Changes
+
+- 766ce96: Fix the estate CSP baseline refusing GA4's Google-signals beacon
+  (narduk-libs#472). A GA4 property with Google signals enabled sends a second
+  `page_view` beacon straight to `https://www.google.com/g/collect` (not a
+  `*.google-analytics.com` host), with an `<img>` fallback at the same origin
+  when `fetch`/`sendBeacon` is unavailable. Both the strict nonce-CSP baseline
+  (`runtime/shared/security-headers.ts` `BASELINE_ALLOWLIST`) and the legacy
+  enforcing middleware (`runtime/server/middleware/securityHeaders.ts`
+  `BASELINE_CONNECT_SRC`) now allow `https://www.google.com` on `connect-src`;
+  the legacy middleware's `img-src` already carries an `https:` wildcard that
+  covers the same host, so it needed no change. A property that runs with Google
+  signals off never sends this beacon and does not need the host.
+
+  create-narduk-app re-releases so its generated package pins follow the
+  narduk-core patch and its dependents.
+
+- 86bdb58: Make `deployment.previewBindings` real, so item 12.4 can pass with
+  non-production branch builds on (narduk-libs#473, deployment-standard design
+  §3.3 option A).
+
+  **The build now isolates a preview.** A `previewBindings` entry may name its
+  preview resource with wrangler's own fields: `id` for KV, `database_id` and
+  `database_name` for D1, `bucket_name` for R2. On a Workers Build whose
+  `WORKERS_CI_BRANCH` is not `productionBranch`,
+  `narduk-app deploy versions-upload` writes `.wrangler.deploy.preview.json`
+  with every D1, KV and R2 binding rebound, and uploads with it. The rebinding
+  is all or nothing. When any binding lacks its preview resource, or names a
+  production one, the build keeps `.wrangler.deploy.production.json` exactly as
+  before and prints a `WARNING`. `deploy`, the production branch, runs outside
+  Workers Builds, an explicit `--env` target and apps without a valid
+  `narduk-v1` block are unchanged.
+
+  **12.4 checks the config the build would upload.** It runs the same planner
+  against the app's own wrangler config.
+
+  - It reports `pass` when every binding is rebound to a resource that is not a
+    production one.
+  - It reports `fail` when a preview entry names no binding of its kind, or when
+    a preview id, name or bucket is a production one in any scope.
+  - It stays `unknown` for bare names, a D1 entry missing its id or name, a TOML
+    app config, or bindings in a second Worker's config.
+
+  The artefact gains `previewConfig`, and the summary prints a `preview` line.
+
+  A binding listed twice in one `previewBindings` kind now makes the block
+  invalid. Before this change, the second entry was silently shadowed by the
+  first.
+
+  `create-narduk-app` adds `.wrangler.deploy.preview.json` to the generated
+  `.gitignore` and `.prettierignore`.
+
+## 0.9.3
+
+### Patch Changes
+
+- 62c69e0: Bump the pinned `@narduk-enterprises/narduk-mapkit` version to 2.1.2,
+  so a newly generated app starts on the release that builds a late-mounted
+  `<AppMapKit>` rather than on 2.1.1. No generator behavior changes — this only
+  keeps the generator's own release in step with the release-plan guard's
+  generator-pin rule (`scripts/check-generator-release-plan.mjs`), which
+  requires a companion release whenever a changeset moves a package the
+  generator pins by version literal.
+
+## 0.9.2
+
+### Patch Changes
+
+- 554ae27: Bump the pinned `@narduk-enterprises/narduk-mapkit` version to 2.1.1,
+  so a newly generated app starts on the release that fixes the ten adoption
+  defects (narduk-libs#422) rather than on 2.1.0. No generator behavior changes
+  — this only keeps the generator's own release in step with the release-plan
+  guard's generator-pin rule (`scripts/check-generator-release-plan.mjs`), which
+  requires a companion release whenever a changeset moves a package the
+  generator pins by version literal.
+
+## 0.9.1
+
+### Patch Changes
+
+- fa41027: Bump the generated-app pin for `@narduk-enterprises/narduk-core` (and
+  the workspace dependents Changesets will move with it) so a fresh scaffold
+  gets the empty `colorMode.classSuffix` and the report-only CSP that omits
+  `upgrade-insecure-requests`. The generator templates do not set `classSuffix`
+  themselves.
+- cbee698: Fix the generated deployment runbook's promote snippet, which told
+  every new app to promote the wrong commit (narduk-libs#451 defect 2).
+
+  The snippet passed `--sha "$GITHUB_SHA"`, but the promote job runs on
+  `workflow_run`, where `GITHUB_SHA` is the default branch's head at trigger
+  time rather than the commit whose run completed -- so a commit that never
+  passed `ci / Required` could reach production. The runbook now shows a
+  `workflow_run` workflow excerpt binding `VERIFIED_SHA` to
+  `${{ github.event.workflow_run.head_sha }}`, uses it for both the promote and
+  the live proof, and states why `$GITHUB_SHA` is wrong there. It also records
+  that the `--sha` lookup is bounded by `--max-versions` rather than capped at
+  ten, and that a lookup finding nothing exits 3 and must be a red job.
+
+- a1efa4e: Patch release alongside the `@narduk-enterprises/narduk-uploads`
+  patch (the upload byte cap is now enforced while the body is read) so
+  `@narduk-enterprises/create-narduk-app` can refresh its pinned
+  `narduk-uploads` version in `src/manifest.ts`.
+  `scripts/check-generator-release-plan.mjs` requires a generator release
+  whenever a package it pins changes version. No generator behavior changes.
+
 ## 0.9.0
 
 ### Minor Changes

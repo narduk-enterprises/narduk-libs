@@ -60,6 +60,33 @@ const networkLatencyOnlyWarningPatterns = [
 ]
 
 /**
+ * pnpm's notice that a registry request failed transiently and is being
+ * retried. Emitted by pnpm 10.33.4's default reporter
+ * (`reporterForClient/reportRequestRetry.js`) as
+ *
+ *   `${method} ${url} error (${errorCode}). Will retry in ${prettyMs(timeout, { verbose: true })}. ${retriesLeft} retries left.`
+ *
+ * where `errorCode` is the HTTP status or the socket error code. The notice
+ * is printed BEFORE the outcome is known, so on its own it proves nothing.
+ * What makes it benign here is where it is read: `runChecked()` scans output
+ * only after the command exited 0, and pnpm exits non-zero when its retries
+ * run out. A retry notice in the output of a successful install is therefore a
+ * retry that recovered — the fetch completed, the install completed, and the
+ * notice carries no signal about the packed artifacts. On 2026-09-20 one such
+ * line (`GET https://registry.npmjs.org/eslint error (ECONNRESET)`) turned the
+ * required `packed-consumer-smoke` context red on narduk-libs#643 (run
+ * 35545349563) after a complete install (narduk-libs#650).
+ *
+ * Narrow on purpose: whole-line anchored, only the transient error classes —
+ * socket error codes (`ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`, …), 5xx, 408 and
+ * 429. A retry after a 4xx that is not a throttle, or any other WARN about the
+ * same URL, still fails the gate. Filtered notices are printed by
+ * `runChecked()`, not dropped silently (see `collectRecoveredRetryNotices`).
+ */
+const recoveredRetryNoticePattern =
+  /^\s*WARN\s+[A-Z]+ https?:\/\/\S+ error \((?:E[A-Z0-9_]+|ERR_[A-Z0-9_]+|5\d\d|408|429)\)\. Will retry in \d+(?:\.\d+)? [a-z]+(?: \d+(?:\.\d+)? [a-z]+)*\. \d+ retries left\.$/u
+
+/**
  * Bundler warnings about THIRD-PARTY source that the bundler itself resolves
  * on its success path. Same bar as the network patterns above: provably
  * emitted from a success path, provably carrying no signal about the packed
@@ -94,11 +121,16 @@ const networkLatencyOnlyWarningPatterns = [
 const thirdPartyBundlerNoticePatterns = [
   // [warn] ../../node_modules/.pnpm/zod@4.5.1/node_modules/zod/v4/core/regexes.js (70:0): A comment
   /^(?:\[warn\]|WARN)\s+\S*node_modules\/\S+ \(\d+:\d+\): A comment$/u,
-  // Nuxt 4.5.2's h3 compatibility barrel imports and re-exports H3Event.
-  // Rollup reports its unused external import after pruning that re-export;
-  // no app import or missing export is involved. Keep the notice visible in
-  // build output, but classify this exact upstream barrel/version as benign.
+  // Nuxt 4.5.2's h3 compatibility barrel imports and re-exports H3Error and
+  // H3Event. Rollup reports the unused external imports after pruning those
+  // re-exports; no app import or missing export is involved. With
+  // nuxt-og-image in the graph the leftover is usually H3Event alone; without
+  // it (narduk-seo optional peer, narduk-libs#170) both symbols stay unused
+  // (packed-consumer-smoke run 35956137259). Keep the notice visible in
+  // build output, but classify these exact upstream barrel/version lines as
+  // benign. Other unused symbols or other nitro-server versions still fail.
   /^(?:\[warn\]|WARN)\s+"H3Event" is imported from external module "file:\/\/[^"\n]*\/node_modules\/h3\/dist\/index\.mjs" but never used in "[^"\n]*\/node_modules\/\.pnpm\/@nuxt\+nitro-server@4\.5\.2(?:_[^"/]+)?\/node_modules\/@nuxt\/nitro-server\/dist\/h3\.mjs"\.$/u,
+  /^(?:\[warn\]|WARN)\s+"H3Error" and "H3Event" are imported from external module "file:\/\/[^"\n]*\/node_modules\/h3\/dist\/index\.mjs" but never used in "[^"\n]*\/node_modules\/\.pnpm\/@nuxt\+nitro-server@4\.5\.2(?:_[^"/]+)?\/node_modules\/@nuxt\/nitro-server\/dist\/h3\.mjs"\.$/u,
 ]
 
 // Rolldown emits this timing summary after successful bundle cleanup. It
@@ -108,8 +140,22 @@ const thirdPartyBundlerNoticePatterns = [
 // compatibility failure. Every other PLUGIN_* diagnostic remains a finding.
 // Source: rolldown/rolldown crates/rolldown_binding/src/binding_bundler.rs,
 // report_plugin_timings; crates/rolldown_error/.../events/plugin_timings.rs.
+// A later Rolldown reworded "Plugin hooks" to "JavaScript callbacks" with the
+// same meaning and shape, and the old-only pattern turned a README-only PR red
+// (narduk-libs#753), so both wordings pass and nothing else does.
 const buildTimingOnlyWarningPattern =
-  /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] Plugin hooks ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
+  /^(?:\[warn\]|WARN)\s+\[PLUGIN_TIMINGS\] (?:Plugin hooks|JavaScript callbacks) ran for \d+(?:\.\d+)?(?:ms|s) of this \d+(?:\.\d+)?(?:ms|s) build \(\d+%\)\.$/u
+
+// narduk-core's build-info client plugin logs one banner per page load through
+// console.warn (runtime/app/plugins/build-info.client.ts). A web server that
+// forwards the browser console prints it as a warning, so a local e2e run went
+// red on the app announcing its own build (narduk-libs#699). Only the exact
+// banner shape passes: `[build] <name> v<version> · <build> · deployed <time>`,
+// optionally with the forwarder's `(xN)` repeat count. Any other console.warn,
+// including a different `[build]` line, stays a finding. Generated apps'
+// consoleTracker ignores the same banner.
+const buildInfoBannerPattern =
+  /^(?:\[WebServer\]\s+)?\[warn\]\s+\[console\.warn\]\s+\[build\] .+ v\S+ · \S+ · deployed [^·]+?(?: \(x\d+\))?$/u
 
 export function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
@@ -121,6 +167,25 @@ export function stripAnsi(value) {
  */
 export function isNetworkLatencyOnlyWarning(line) {
   return networkLatencyOnlyWarningPatterns.some((pattern) => pattern.test(line))
+}
+
+/**
+ * True when `line` is pnpm's transient-registry retry notice. Only meaningful
+ * for the output of a command that exited 0 -- see the pattern's comment.
+ */
+export function isRecoveredRetryNotice(line) {
+  return recoveredRetryNoticePattern.test(line)
+}
+
+/**
+ * The retry notices `collectWarningFindings` skipped, trimmed and in order, so
+ * the caller can print them: a filtered warning stays visible.
+ */
+export function collectRecoveredRetryNotices(output) {
+  return stripAnsi(output)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => isRecoveredRetryNotice(line))
 }
 
 /**
@@ -143,7 +208,9 @@ export function collectWarningFindings(output) {
       (line) =>
         warningOrErrorTokenPattern.test(line) &&
         !isNetworkLatencyOnlyWarning(line) &&
+        !isRecoveredRetryNotice(line) &&
         !isThirdPartyBundlerNotice(line) &&
-        !buildTimingOnlyWarningPattern.test(line),
+        !buildTimingOnlyWarningPattern.test(line) &&
+        !buildInfoBannerPattern.test(line),
     )
 }

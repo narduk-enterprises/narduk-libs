@@ -29,6 +29,8 @@
 // never heard of is release-relevant, so a new npm field cannot silently
 // become exempt.
 
+import { posix } from 'node:path'
+
 // Manifest fields whose change cannot reach a consumer of the published
 // tarball. Everything not named here is release-relevant.
 //
@@ -199,6 +201,67 @@ export function classifyManifestChange(before, after) {
   return { devOnly, deferred, releaseRelevant }
 }
 
+/**
+ * Package-root files that feed only this repository's own gates and are in no
+ * package's `files` list, so no tarball contains them (pinned by
+ * scripts/lint-budget-strict.test.mjs). Changing one changes nothing a
+ * consumer installs, so, like a devDependency bump, it owes no release.
+ * `lint-budget.json` is narduk-lint's warning budget (#673).
+ */
+export const NEVER_PUBLISHED_FILES = new Set(['lint-budget.json'])
+
+/**
+ * Package paths that hold only tests and test configuration (#686). A change to
+ * one owes no release **only when the package's `files` list leaves it out**:
+ * narduk-analytics, for example, publishes its `vitest.config.ts`.
+ *
+ * Both conditions are needed. `files` alone is not enough, because a package
+ * that publishes `dist/` builds it from `src/` at pack time, so `src/` is
+ * outside `files` and still changes the tarball. This list names paths no
+ * package in this workspace builds from; anything it does not name keeps the
+ * original requirement.
+ */
+export const TEST_ONLY_PATH_PATTERNS = Object.freeze([
+  /^(?:tests?|__tests__|e2e)\//u,
+  /^(?:vitest|playwright)(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/u,
+])
+
+// npm packs these from the package root whatever `files` says.
+const ALWAYS_PACKED = /^(?:package\.json|readme|licen[cs]e|changelog)(?:\.[^/]*)?$/iu
+const GLOB_CHARS = /[*?[\]{}!]/u
+
+/**
+ * Whether `relativePath` is inside the package's `files` surface. No `files`
+ * list means npm packs everything, and a glob this cannot evaluate counts as a
+ * match, so every doubt resolves toward "published".
+ *
+ * @param {string} relativePath posix path relative to the package root
+ * @param {unknown} files the manifest's `files` field
+ */
+export function isInPublishedFiles(relativePath, files) {
+  if (!Array.isArray(files)) return true
+  if (ALWAYS_PACKED.test(relativePath)) return true
+  return files.some((entry) => {
+    if (typeof entry !== 'string') return true
+    const pattern = entry.replace(/^\.\//u, '').replace(/\/+$/u, '')
+    if (!GLOB_CHARS.test(pattern)) {
+      return relativePath === pattern || relativePath.startsWith(`${pattern}/`)
+    }
+    if (typeof posix.matchesGlob !== 'function') return true
+    return (
+      posix.matchesGlob(relativePath, pattern) || posix.matchesGlob(relativePath, `${pattern}/**`)
+    )
+  })
+}
+
+function owesNoRelease(relativePath, files) {
+  if (NEVER_PUBLISHED_FILES.has(relativePath)) return true
+  return (
+    TEST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(relativePath)) &&
+    !isInPublishedFiles(relativePath, files)
+  )
+}
+
 function packageForPath(packages, path) {
   return packages
     .filter(
@@ -213,7 +276,8 @@ function packageForPath(packages, path) {
  * Classify every workspace package touched by a diff.
  *
  * @param {object} options
- * @param {Array<{name: string, relativeDirectory: string, private?: boolean, frozen?: boolean}>} options.packages
+ * @param {Array<{name: string, relativeDirectory: string, private?: boolean, frozen?: boolean, files?: unknown}>} options.packages
+ *   `files` is the head manifest's `files` field.
  * @param {string[]} options.changedFiles posix paths relative to the repo root
  * @param {(relativeDirectory: string) => {before: object|undefined, after: object|undefined}} options.readManifests
  * @returns {Array<{name: string, verdict: string, otherFiles: string[], manifest: object}>}
@@ -234,7 +298,9 @@ export function classifyChangedPackages({ packages, changedFiles, readManifests 
     const entry = touched.get(workspacePackage.name)
     const relativePath = path.slice(workspacePackage.relativeDirectory.length + 1)
     if (relativePath === 'package.json') entry.manifestChanged = true
-    else entry.otherFiles.push(relativePath)
+    else if (!owesNoRelease(relativePath, workspacePackage.files)) {
+      entry.otherFiles.push(relativePath)
+    }
   }
 
   return [...touched.values()]
@@ -280,7 +346,7 @@ export function classifyChangedPackages({ packages, changedFiles, readManifests 
  * under-matches degrades to the previous loud failure rather than to a silent
  * wrong release.
  *
- * Lives here because this module has no imports of its own, so both
+ * Lives here because this module imports nothing from this repository, so both
  * `check-generator-release-plan.mjs` and `synthesize-manifest-drift.mjs` can
  * read one definition without an import cycle between them.
  *

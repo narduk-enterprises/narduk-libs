@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  type CompleteClaimWithRecordedApprovalInput,
+  createDevices,
   MAX_REISSUES_PER_CLAIM_SESSION,
   REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN,
 } from '../server/utils/devices'
@@ -11,6 +13,7 @@ import {
   completionRequest,
   createDeviceKey,
   createTestHarness,
+  createTestIdGenerator,
   FINGERPRINT,
   ORG,
   signedOpen,
@@ -19,6 +22,7 @@ import {
   type TestHarness,
   VESSEL,
 } from './support/database'
+import { interleaveAtWrite, REISSUE_LOCK_WRITE } from './support/interleave'
 
 const HANDOFF_KEY = 'handoff-1'
 const ATTACKER_IP = '203.0.113.9'
@@ -47,6 +51,37 @@ function provenReplay(harness: TestHarness, claim: Awaited<ReturnType<typeof app
       idempotencyKey: HANDOFF_KEY,
       key: claim.key,
     }).input
+}
+
+/**
+ * Two re-issues of the same completed claim, genuinely contending.
+ *
+ * The caller that will lose runs against a database that holds its re-issue
+ * lock write open until the winner -- the harness's own service, on the same
+ * SQLite file, as a second process would be -- has finished. Both therefore
+ * read the same `revocationGeneration` and contend for the one lock key that
+ * generation has, which is the outcome `Promise.all` produced only when the
+ * scheduler happened to interleave the two calls that way (narduk-libs#445).
+ */
+async function contendedReissue(
+  harness: TestHarness,
+  proven: () => CompleteClaimWithRecordedApprovalInput,
+) {
+  let winner:
+    Awaited<ReturnType<TestHarness['devices']['completeClaimWithRecordedApproval']>> | undefined
+  const contended = createDevices(
+    interleaveAtWrite(harness.db, {
+      whenWriting: REISSUE_LOCK_WRITE,
+      sneak: async () => {
+        winner = await harness.devices.completeClaimWithRecordedApproval(proven())
+      },
+    }),
+    { now: harness.clock.now, idGenerator: createTestIdGenerator('race') },
+  )
+  const loserInput = proven()
+  const loser = await contended.completeClaimWithRecordedApproval(loserInput)
+  if (winner === undefined) throw new Error('the gated write never ran, so nothing contended')
+  return { loser, loserInput, winner }
 }
 
 /**
@@ -457,16 +492,19 @@ describe('idempotent completion replay', () => {
     const first = await harness.devices.completeClaimWithRecordedApproval(proven())
     expect(first.status).toBe('completed')
 
-    const [a, b] = await Promise.all([
-      harness.devices.completeClaimWithRecordedApproval(proven()),
-      harness.devices.completeClaimWithRecordedApproval(proven()),
-    ])
+    // Deterministic contention rather than `Promise.all`: the losing caller is
+    // held at its own re-issue lock write until the winner has finished, so
+    // both acted on the generation `first` left behind. Left to the scheduler,
+    // the two calls sometimes serialised instead -- the second then read the
+    // already-bumped generation, legitimately re-issued against it, and the
+    // test failed on two `completed` (narduk-libs#445).
+    const { loser, winner } = await contendedReissue(harness, proven)
     // The loser lost a race with a replay of its *own* request, and the winner
     // rotated the credentials it was holding. `already_completed` here is the
     // bricking outcome the whole replay path exists to remove: it must be
     // retryable (narduk-libs#228 review H3).
-    expect([a.status, b.status].sort()).toEqual(['completed', 'rate_limited'])
-    const loser = a.status === 'rate_limited' ? a : b
+    expect(winner.status).toBe('completed')
+    expect(loser.status).toBe('rate_limited')
     expect(loser.credentials).toEqual([])
     expect(loser.retryAfterSeconds).toBeGreaterThan(0)
     expect(loser.deviceId).toBe(first.deviceId)
@@ -477,7 +515,6 @@ describe('idempotent completion replay', () => {
     // away holding dead secrets. Only resolving the winner's own returned
     // secrets distinguishes the two, so this is what pins the compare-and-set
     // being inside the batch rather than beside it (narduk-libs#228 H3).
-    const winner = a.status === 'completed' ? a : b
     expect(winner.credentials).toHaveLength(2)
     for (const credential of winner.credentials) {
       await expect(
@@ -773,25 +810,21 @@ describe('an authenticated replay never spends the device\u2019s own lockout', (
       'completed',
     )
 
-    // Two re-issues of the same completion, racing: both read generation 0.
+    // Two re-issues of the same completion, genuinely contending: both read
+    // generation 0, because the loser is held at its lock write until the
+    // winner has finished rather than left to the scheduler (narduk-libs#445).
     const before = failures(harness)
-    const a = proven()
-    const b = proven()
-    const raced = await Promise.all([
-      harness.devices.completeClaimWithRecordedApproval(a),
-      harness.devices.completeClaimWithRecordedApproval(b),
-    ])
-    expect(raced.map((result) => result.status).sort()).toEqual(['completed', 'rate_limited'])
-    const loserInput = raced[0]?.status === 'rate_limited' ? a : b
-    const loser = raced.find((result) => result.status === 'rate_limited')
-    expect(loser?.retryAfterSeconds).toBeGreaterThanOrEqual(
+    const { loser, loserInput, winner } = await contendedReissue(harness, proven)
+    expect(winner.status).toBe('completed')
+    expect(loser.status).toBe('rate_limited')
+    expect(loser.retryAfterSeconds).toBeGreaterThanOrEqual(
       REISSUE_CONTENTION_RETRY_AFTER_SECONDS_MIN,
     )
 
     // The loser spent nothing, so the retry the library invited is the
     // identical signed payload rather than a fresh signature the already-built
     // edge has no code to produce.
-    harness.clock.advance((loser?.retryAfterSeconds ?? 1) * 1000)
+    harness.clock.advance((loser.retryAfterSeconds ?? 1) * 1000)
     const retry = await harness.devices.completeClaimWithRecordedApproval(loserInput)
     expect(retry.status).toBe('completed')
     expect(retry.credentials).toHaveLength(2)

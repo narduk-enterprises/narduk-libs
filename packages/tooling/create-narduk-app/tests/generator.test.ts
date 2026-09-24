@@ -28,6 +28,16 @@ const CANONICAL_DEPLOYMENT_BLOCK = new URL(
   import.meta.url,
 )
 
+/** True when `spec` (an exact pin) is at or above `minimum`. */
+function atLeast(spec: string, minimum: string): boolean {
+  const left = spec.split('.').map(Number)
+  const right = minimum.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index]
+  }
+  return true
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -195,6 +205,73 @@ describe('create-narduk-app generation contract', () => {
     ).toBe(true)
   })
 
+  it.each(['private', 'public'] as const)(
+    'ignores Wrangler .dev.vars secrets in the generated %s .gitignore',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'gitignore-secrets',
+          capabilities: [],
+          noGit: true,
+          targetDir: '/tmp/gitignore-secrets',
+          visibility,
+        }),
+      )
+      const gitignore = files.get('.gitignore') ?? ''
+      expect(gitignore).toContain('.env\n')
+      expect(gitignore).toContain('.env.*\n')
+      expect(gitignore).toContain('!.env.example\n')
+      expect(gitignore).toContain('.dev.vars\n')
+      expect(gitignore).toContain('**/.dev.vars\n')
+      expect(gitignore).toContain('.dev.vars.*\n')
+      expect(gitignore).toContain('!.dev.vars.example\n')
+    },
+  )
+
+  it.each(['private', 'public'] as const)(
+    'ignores the directory foundation:check writes, in the generated %s .gitignore',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'gitignore-foundation-check',
+          capabilities: [],
+          noGit: true,
+          targetDir: '/tmp/gitignore-foundation-check',
+          visibility,
+        }),
+      )
+      const manifest = JSON.parse(files.get('package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      // A cold scaffold's first local run left this directory untracked (#652).
+      expect(manifest.scripts['foundation:check']).toContain('--json foundation-check/')
+      expect(files.get('.gitignore')).toContain('\n/foundation-check/\n')
+    },
+  )
+
+  it.each(['private', 'public'] as const)(
+    'ignores .narduk/recovery and output/ at any depth in the generated %s .gitignore',
+    (visibility) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'gitignore-narduk-output',
+          capabilities: [],
+          noGit: true,
+          targetDir: '/tmp/gitignore-narduk-output',
+          visibility,
+        }),
+      )
+      const gitignore = files.get('.gitignore') ?? ''
+      // Unanchored: no embedded slash before the trailing one, so it matches
+      // `apps/web/.narduk/recovery/` -- where narduk-app actually writes recovery
+      // artifacts -- not just a root-level `.narduk` (narduk-libs#624).
+      expect(gitignore).toContain('.narduk/\n')
+      expect(gitignore).not.toContain('.narduk/recovery\n')
+      // Where narduk-testkit writes visual-audit artifacts (narduk-libs#630).
+      expect(gitignore).toContain('output\n')
+    },
+  )
+
   it('selects capabilities, keeps core implicit, and pins every manifest version', () => {
     const files = asFileMap(
       buildGeneratedFiles({
@@ -248,6 +325,7 @@ describe('create-narduk-app generation contract', () => {
           PACKAGE_VERSIONS['@typescript-eslint/utils'],
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
+        'miniflare>undici': '^7.29.1',
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on
@@ -294,6 +372,10 @@ describe('create-narduk-app generation contract', () => {
     expect(dependencies['@narduk-enterprises/narduk-testkit']).toBe(
       PACKAGE_VERSIONS['@narduk-enterprises/narduk-testkit'],
     )
+    // narduk-seo's optional nuxt-og-image peer (narduk-libs#170). Generated
+    // SEO apps still request runtime OG, so the scaffold must install it.
+    expect(dependencies['nuxt-og-image']).toBe(PACKAGE_VERSIONS['nuxt-og-image'])
+    expect(knipConfig.ignoreDependencies).toContain('nuxt-og-image')
     expect(dependencies.nuxt).toBe('4.5.2')
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,
@@ -470,19 +552,31 @@ describe('create-narduk-app generation contract', () => {
     // ${VAR} and pnpm 11 removes .npmrc env interpolation outright, so the
     // file must carry no _authToken line at all -- not even an env reference.
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
-      '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
+      '@narduk-enterprises:registry=https://npm.nard.uk\n',
     )
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
+      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
     )
-    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
+    expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).not.toContain(
+      'NARDUK_PLATFORM_GH_PACKAGES_READ',
     )
-    // One credential, two names: the org secret maps into the single process
-    // env name the committed .npmrc reads. No second alias, and no setup-node
-    // registry-url writing a competing userconfig .npmrc (company-hq#488).
+    // Default CI and validation callers pass no package-read secret.
+    // No setup-node registry-url writing a competing userconfig .npmrc
+    // (company-hq#488).
+    // Development mode's explicit validation caller: a reserved-ref push is its
+    // only trigger, so held automation stays quiet and the run still satisfies
+    // the required check on the exact candidate (company-hq#781).
+    const validation = YAML.parse(
+      files.find((file) => file.path === '.github/workflows/validate.yml')?.contents ?? '',
+    )
+    expect(validation.on).toEqual({ push: { branches: ['narduk-validation/**'] } })
+    expect(validation.jobs.ci.uses).toBe(
+      'narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@67968e304ba64e7733dc36d23d80eefda8d72e33',
+    )
+    expect(validation.jobs.ci.with['expected-candidate-sha']).toBe('${{ github.sha }}')
+    expect(validation.jobs.ci.secrets).toBeUndefined()
     const generatedCi =
       files.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
     expect(generatedCi).not.toContain('NODE_AUTH_TOKEN')
@@ -592,8 +686,18 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toBeDefined()
       expect(runbook, label).toContain('## Cloudflare connection')
       expect(runbook, label).toContain(
-        '| Build command                 | `pnpm run cf:build`                                   |',
+        '| Build command                 | `pnpm run cf:build`                               |',
       )
+      expect(runbook, label).toContain(
+        '| `SKIP_DEPENDENCY_INSTALL`     | `1`                                               |',
+      )
+      expect(runbook, label).toContain('`NUXT_OG_IMAGE_SECRET`')
+      expect(runbook, label).toContain(
+        '| `NUXT_OG_IMAGE_SECRET`        | Build variable (Worker secrets are runtime-only)  |',
+      )
+      expect(runbook, label).toContain('`NUXT_SESSION_PASSWORD`')
+      expect(runbook, label).toContain('scripts/gh-packages-run.mjs')
+      expect(runbook, label).toContain('frozen workspace lockfile')
       expect(runbook, label).toContain('TODO(onboarding):')
 
       // The deployment standard: a build uploads a version and deploys
@@ -601,10 +705,10 @@ describe('create-narduk-app generation contract', () => {
       // a production command that deploys puts a `main` push straight into
       // production, which is the failure the standard exists to prevent.
       expect(runbook, label).toContain(
-        '| Production deploy command     | `pnpm run cf:deploy:preview`                          |',
+        '| Production deploy command     | `pnpm run cf:deploy:preview`                      |',
       )
       expect(runbook, label).toContain(
-        '| Non-production deploy command | `pnpm run cf:deploy:preview`                          |',
+        '| Non-production deploy command | `pnpm run cf:deploy:preview`                      |',
       )
       expect(runbook, label).toContain('## The deployment standard')
       expect(runbook, label).toContain('"standard": "narduk-v1"')
@@ -616,20 +720,57 @@ describe('create-narduk-app generation contract', () => {
       // every pull request write production data.
       expect(runbook, label).toContain('"nonProductionBranchBuilds": false')
       expect(runbook, label).toContain(
-        '| Non-production branch builds  | disabled until preview bindings exist (see below)     |',
+        '| Non-production branch builds  | disabled until preview bindings exist (see below) |',
       )
       expect(runbook, label).toContain('"previewBindings"')
       expect(runbook, label).toContain('narduk-app foundation:check:deployment')
       expect(runbook, label).toContain('## Public runtime keys vs wrangler vars')
       expect(runbook, label).toContain('does **not** export `wrangler.jsonc` `vars`')
       expect(runbook, label).toContain('Do **not** read `wrangler.jsonc` from `nuxt.config.ts`')
-      // The generator emits the block to paste, never the file itself:
-      // Config/cloudflare-app.json records live Cloudflare facts a checkout
-      // cannot know, and onboarding owns it.
-      expect(
-        files.some((file) => file.path === 'Config/cloudflare-app.json'),
-        label,
-      ).toBe(false)
+      // narduk-libs#451 defect 2: under `on: workflow_run` GITHUB_SHA is the
+      // default branch head at trigger time, not the commit whose run went
+      // green, so a snippet that passes it can promote a commit the gate check
+      // never saw. The runbook must show the triggering commit and must not
+      // hand anyone `$GITHUB_SHA` to copy.
+      expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
+      // narduk-libs#400: the promote binds the gate result to the same commit
+      // it promotes -- the workflow_run head SHA, never GITHUB_SHA.
+      expect(runbook, label).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
+      expect(runbook, label).not.toContain('Required@$GITHUB_SHA')
+      expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
+      expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
+      expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
+      // The generator writes the app's own half of Config/cloudflare-app.json
+      // and still emits the `deployment` block for onboarding to paste in.
+      // Without the file, foundation:check item 1.2 is a decided FAIL on
+      // every brand-new app and CI's `foundation-check: true` input fails the
+      // build, so the first CI run was red by construction (narduk-libs#617).
+      const cloudflareApp = byPath.get('Config/cloudflare-app.json')
+      expect(cloudflareApp, label).toBeDefined()
+      const declared = JSON.parse(cloudflareApp ?? '{}') as Record<string, never>
+      expect(declared, label).toMatchObject({
+        schemaVersion: 1,
+        worker: {
+          nitroPreset: 'cloudflare_module',
+          wranglerConfig: 'apps/web/wrangler.jsonc',
+          // The same pair wrangler.jsonc sets: closed for an authenticated
+          // app, open for a public one. Item 1.4 reads the wrangler flags and
+          // this class together, so they must not disagree.
+          workersDev: !hasAuth,
+          previewUrls: !hasAuth,
+        },
+        // `auth` defaults the exposure to authenticated (generate.ts), and
+        // authenticated maps to the contract's `authenticated-public`.
+        access: { exposureClass: hasAuth ? 'authenticated-public' : 'public' },
+        bindings: { d1: hasDatabase ? [{ binding: 'DB' }] : [], kv: [], queues: [], cron: [] },
+      })
+      // Live Cloudflare facts stay ABSENT rather than fabricated -- the same
+      // rule wrangler.jsonc's missing `account_id` follows. Onboarding adds
+      // these, and the deployment check reports NOT ADOPTED (exit 0) until it
+      // does.
+      expect(declared.deployment, label).toBeUndefined()
+      expect(declared.domains, label).toBeUndefined()
+      expect((declared.product as Record<string, unknown>).repository, label).toBeUndefined()
 
       // docs/e2e-testing.md + apps/web/tests/e2e/visual-audit.spec.ts: the
       // shared narduk-testkit UI-quality toolkit, scoped to the one route
@@ -716,7 +857,7 @@ describe('create-narduk-app generation contract', () => {
         devDependencies: Record<string, string>
       }
       expect(rootManifest.scripts['build:ci'], label).toBe(
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       )
       expect(rootManifest.scripts['foundation:check'], label).toBe(
         'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',
@@ -741,11 +882,11 @@ describe('create-narduk-app generation contract', () => {
       expect(webManifest.devDependencies['nitro-cloudflare-dev'], label).toBe(
         PACKAGE_VERSIONS['nitro-cloudflare-dev'],
       )
-      // `--checkout ..` because the item reads Config/cloudflare-app.json and
-      // the wrangler config from the repository root, while pnpm runs this
-      // script with the cwd at apps/web.
+      // `--checkout ../..` because the item reads Config/cloudflare-app.json
+      // and the wrangler config from the repository root, while pnpm runs this
+      // script with the cwd at apps/web (`..` is apps/, narduk-libs#679).
       expect(webManifest.scripts['foundation:deployment'], label).toBe(
-        'narduk-app foundation:check:deployment --checkout ..',
+        'narduk-app foundation:check:deployment --checkout ../..',
       )
     }
   })
@@ -799,6 +940,166 @@ describe('create-narduk-app generation contract', () => {
     const disagreeing = run()
     expect(disagreeing.status).not.toBe(0)
     expect(disagreeing.stderr).toContain('wrangler bindings disagree')
+  })
+
+  // narduk-libs#435. `setCacheProfile` has always emitted CDN-Cache-Control
+  // and Cache-Tag; without `"cache": { "enabled": true }` Cloudflare invokes
+  // the Worker on every request and those headers bind to nothing, which is
+  // how Buoys came to advertise edge TTLs it did not have.
+  //
+  // What these assert is not the literal string -- `foundation:check` item
+  // 12.7 is what reads this block, and it reads it as parsed JSON plus the
+  // narduk-core spec it finds. So the facts pinned here are exactly the ones
+  // 12.7 resolves, because getting any of them wrong turns a fresh scaffold's
+  // first CI run from `not-applicable` into `unknown` or `fail`, and
+  // foundation:check fails the build on either (narduk-libs#617/#622).
+  describe('Workers Cache is on, and on a core that keeps errors out of it', () => {
+    function wranglerOf(options: Parameters<typeof buildGeneratedFiles>[0]) {
+      const files = asFileMap(buildGeneratedFiles(options))
+      const parsed = ts.parseConfigFileTextToJson(
+        'wrangler.jsonc',
+        files.get('apps/web/wrangler.jsonc') ?? '',
+      )
+      expect(parsed.error, 'the emitted wrangler.jsonc parses as JSONC').toBeUndefined()
+      return { files, wrangler: parsed.config as Record<string, unknown> }
+    }
+
+    it('enables the Worker cache in every capability shape', () => {
+      for (const capabilities of [[], ['auth'], ['seo', 'analytics']] as const) {
+        const { wrangler } = wranglerOf({
+          appName: 'cache-on',
+          capabilities: [...capabilities],
+          targetDir: '/tmp/cache-on',
+        })
+        expect(wrangler.cache, JSON.stringify(capabilities)).toEqual({ enabled: true })
+      }
+    })
+
+    // A deployment partitions the cache by Worker version by default. Sharing
+    // across versions means a rollback serves the previous version's bodies,
+    // which wants an app-specific reason rather than a generator default.
+    it('leaves cross_version_cache unset', () => {
+      const { wrangler } = wranglerOf({ appName: 'cache-scope', targetDir: '/tmp/cache-scope' })
+      expect(Object.keys(wrangler.cache as object)).toEqual(['enabled'])
+    })
+
+    // 12.7 takes the FIRST package.json in its candidate order that declares
+    // narduk-core, and the root is ahead of apps/web in that order. A root
+    // that declared core too would decide the verdict from the wrong file.
+    it('declares narduk-core where 12.7 looks for it, at a version above the floor', () => {
+      const { files } = wranglerOf({ appName: 'cache-core', targetDir: '/tmp/cache-core' })
+      const deps = (relative: string): Record<string, string> => {
+        const parsed = JSON.parse(files.get(relative) ?? '{}') as {
+          dependencies?: Record<string, string>
+          devDependencies?: Record<string, string>
+        }
+        return { ...parsed.dependencies, ...parsed.devDependencies }
+      }
+
+      expect(deps('package.json')['@narduk-enterprises/narduk-core']).toBeUndefined()
+
+      // The floor 12.7 compares against: the first narduk-core whose thrown
+      // 4xx/5xx/429 and nonce-CSP HTML are private, no-store.
+      const core = deps('apps/web/package.json')['@narduk-enterprises/narduk-core']
+      expect(core).toMatch(/^\d+\.\d+\.\d+$/u)
+      expect(atLeast(core, '2.2.4'), `narduk-core ${core} >= 2.2.4`).toBe(true)
+
+      // `cache` is only read by Wrangler >= 4.69.0; below it the key is
+      // ignored and the block is silently inert again.
+      const wranglerSpec = deps('apps/web/package.json').wrangler
+      expect(wranglerSpec).toMatch(/^\d+\.\d+\.\d+$/u)
+      expect(atLeast(wranglerSpec, '4.69.0'), `wrangler ${wranglerSpec} >= 4.69.0`).toBe(true)
+    })
+  })
+
+  // narduk-libs#384. narduk-seo@2.4.14 already ships the generator for both
+  // (narduk-libs#397); what was missing is a new app ever declaring them, so a
+  // scaffold shipped no security contact and took an AI-crawler default it
+  // never saw.
+  //
+  // The rule these all turn on: **the generator never invents a reporting
+  // address.** narduk-seo refuses to, and a generator that supplied one would
+  // publish a mailbox nobody had agreed to answer -- worse than no file, since
+  // a security.txt is a promise that someone reads it.
+  describe('security.txt and the AI-crawler policy (narduk-libs#384)', () => {
+    function seoConfig(options: Partial<Parameters<typeof buildGeneratedFiles>[0]> = {}) {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'seo-fixture',
+          capabilities: ['seo'],
+          targetDir: '/tmp/seo-fixture',
+          ...options,
+        }),
+      )
+      return { files, config: files.get('apps/web/nuxt.config.ts') ?? '' }
+    }
+
+    it('declares the AI-crawler policy even when it is the default', () => {
+      const { config } = seoConfig()
+      expect(config).toContain("aiCrawlers: 'allow',")
+    })
+
+    it('publishes security.txt only when a contact was given', () => {
+      expect(seoConfig().config).not.toContain('securityTxt')
+
+      const { config } = seoConfig({ securityContact: 'mailto:security@example.test' })
+      expect(config).toContain('securityTxt: {')
+      expect(config).toContain("contact: 'mailto:security@example.test',")
+    })
+
+    // The README is where someone looks to find out why there is no
+    // security.txt, so the absent case has to say so rather than be silent.
+    it('tells the app which of the two it got', () => {
+      expect(seoConfig().files.get('README.md')).toContain('serves **no** `security.txt`')
+
+      const withContact = seoConfig({ securityContact: 'security@example.test' })
+      expect(withContact.files.get('README.md')).toContain('security@example.test')
+    })
+
+    // `nardukSeo` is only a config key when @nuxtjs/seo is installed. Emitting
+    // it without the capability fails the new app's `nuxt typecheck` with
+    // TS2353 -- the trap `site` fell into (narduk-libs#172) -- so the flag is
+    // refused while it is still in view.
+    it('refuses a contact without the seo capability', () => {
+      expect(() =>
+        buildGeneratedFiles({
+          appName: 'no-seo',
+          capabilities: [],
+          securityContact: 'mailto:security@example.test',
+          targetDir: '/tmp/no-seo',
+        }),
+      ).toThrow(/seo capability/u)
+
+      expect(
+        asFileMap(buildGeneratedFiles({ appName: 'no-seo', targetDir: '/tmp/no-seo' })).get(
+          'apps/web/nuxt.config.ts',
+        ),
+      ).not.toContain('nardukSeo')
+    })
+
+    // Rejected here rather than on the new app's first build, where the error
+    // arrives detached from the flag that caused it. The line-break case is
+    // not cosmetic: RFC 9116 fields are one per line, so a break would inject
+    // a second field into the published body.
+    it.each([
+      ['not a uri', /mailto:, https: or tel:/u],
+      ['   ', /cannot be empty/u],
+      ['mailto:a@b.test\nContact: mailto:attacker@evil.test', /line breaks/u],
+    ])('rejects %j', (contact, message) => {
+      expect(() =>
+        buildGeneratedFiles({
+          appName: 'bad-contact',
+          capabilities: ['seo'],
+          securityContact: contact,
+          targetDir: '/tmp/bad-contact',
+        }),
+      ).toThrow(message)
+    })
+
+    it('accepts a bare address, which narduk-seo reads as mailto:', () => {
+      const { config } = seoConfig({ securityContact: 'security@example.test' })
+      expect(config).toContain("contact: 'security@example.test',")
+    })
   })
 
   it('emits files already canonical under the generated Prettier contract', async () => {
@@ -861,11 +1162,20 @@ describe('create-narduk-app generation contract', () => {
     const rootPackage = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
+    expect(rootPackage.scripts['deploy:hotfix']).toBe(
+      'pnpm --filter web exec narduk-app deploy-hotfix',
+    )
+    expect(rootPackage.scripts['hotfix:check']).toContain('pnpm run test:unit')
+    expect(rootPackage.scripts['hotfix:check']).not.toContain('build:ci')
+    expect(rootPackage.scripts['hotfix:build']).toContain('pnpm --filter web run cf:build')
+    expect(rootPackage.scripts['hotfix:build']).not.toContain('narduk-test-only')
     expect(rootPackage.scripts['quality:static']).toContain('pnpm run format:check')
     expect(rootPackage.scripts['quality:static']).toContain('pnpm run knip')
     expect(rootPackage.scripts.build).toContain('pnpm --filter web')
     expect(rootPackage.scripts.test).toContain('playwright')
-    expect(rootPackage.scripts['cf:build']).toBe('pnpm --filter web run cf:build')
+    expect(rootPackage.scripts['cf:build']).toBe(
+      'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+    )
     expect(rootPackage.scripts['cf:deploy']).toBe('pnpm --filter web run cf:deploy')
     expect(rootPackage.scripts.deploy).toBe('pnpm --filter web run deploy')
     const knipConfig = JSON.parse(await readFile(join(targetDir, 'knip.json'), 'utf8')) as {
@@ -901,6 +1211,7 @@ describe('create-narduk-app generation contract', () => {
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
     expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
     expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
+    expect(webPackage.scripts['deploy:dev']).toBe('narduk-app development deploy')
     expect(webPackage.scripts['performance-budget']).toContain('--font-total-budget-kb 140')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
@@ -930,7 +1241,7 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-shell'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
+    expect(generatedCi).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
     expect(generatedCi).toContain('require-scripts: true')
     expect(generatedCi).toContain('run-tests: true')
     expect(generatedCi).toContain('run-e2e: true')
@@ -1034,12 +1345,24 @@ describe('generated app typecheck and lint surfaces', () => {
   // or auth-only scaffold fail `nuxt typecheck` with TS2353 on its first run.
   it('emits the nuxt-site-config `site` block only for an seo scaffold', () => {
     for (const { capabilities, label } of capabilitySets) {
-      const nuxtConfig = generate(capabilities).get('apps/web/nuxt.config.ts') ?? ''
+      const files = generate(capabilities)
+      const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
       const hasSeo = capabilities.includes('seo')
+      const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        dependencies?: Record<string, string>
+      }
+      const knip = JSON.parse(files.get('knip.json') ?? '{}') as {
+        ignoreDependencies?: string[]
+      }
 
       expect(nuxtConfig.includes('  site: {'), label).toBe(hasSeo)
       expect(nuxtConfig.includes('zeroRuntime: true'), label).toBe(hasSeo)
       expect(nuxtConfig.includes("routeRules: { '/': { prerender: true } }"), label).toBe(hasSeo)
+      expect(
+        webManifest.dependencies?.['nuxt-og-image'] === PACKAGE_VERSIONS['nuxt-og-image'],
+        label,
+      ).toBe(hasSeo)
+      expect(knip.ignoreDependencies?.includes('nuxt-og-image'), label).toBe(hasSeo)
       // The consts the seo block reads stay used by runtimeConfig either way, so
       // dropping the block never leaves an unused binding behind.
       expect(nuxtConfig).toContain('      appName,')
@@ -1091,7 +1414,7 @@ describe('generated app typecheck and lint surfaces', () => {
         ...rootPackage.scripts,
         ...webPackage.scripts,
       })) {
-        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev/u)
+        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev\b/u)
       }
       expect(generatedText, label).not.toMatch(/narduk-app dev --project/u)
       expect(generatedText, label).not.toMatch(/doppler/iu)
@@ -1117,6 +1440,31 @@ describe('generated app typecheck and lint surfaces', () => {
     }
   })
 
+  it('puts test-only Nuxt build env in public CI jobs and on private build:ci', () => {
+    const publicFiles = generate(['seo'])
+    // generate() defaults to private; rebuild public explicitly.
+    const publicCi = asFileMap(
+      buildGeneratedFiles({
+        appName: 'surface-check',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/surface-check',
+        visibility: 'public',
+      }),
+    ).get('.github/workflows/ci.yml')!
+    expect(publicCi).toContain('NUXT_OG_IMAGE_SECRET: narduk-test-only-og-image-secret-000000')
+    expect(publicCi).toContain('NUXT_SESSION_PASSWORD: narduk-test-only-session-password-000000')
+    expect(publicCi).toContain('- run: pnpm run quality:static')
+    expect(publicCi).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
+
+    const privateRoot = JSON.parse(publicFiles.get('package.json') ?? '{}') as {
+      scripts: Record<string, string>
+    }
+    expect(privateRoot.scripts['build:ci']).toContain(
+      'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000',
+    )
+  })
+
   it('keeps registry auth out of the committed .npmrc for every capability set', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
@@ -1124,69 +1472,98 @@ describe('generated app typecheck and lint surfaces', () => {
       const ci = files.get('.github/workflows/ci.yml') ?? ''
       const readme = files.get('README.md') ?? ''
 
-      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.pkg.github.com\n')
+      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.nard.uk\n')
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
-      expect(ci, label).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
-      expect(ci, label).toContain(
-        'NARDUK_PLATFORM_GH_PACKAGES_READ: ${{ secrets.NARDUK_PLATFORM_GH_PACKAGES_READ }}',
-      )
-      // The retired Doppler/nvault fallback wording is gone; the README now
-      // documents the process-scoped path only.
+      expect(npmrc, label).not.toContain('npm.pkg.github.com')
+      expect(ci, label).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
+      expect(ci, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
+      expect(ci, label).not.toContain('npm.pkg.github.com')
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
-      expect(readme, label).toContain('NPM_CONFIG_USERCONFIG')
+      expect(readme, label).toContain('https://npm.nard.uk')
       expect(readme, label).toContain('gh-packages-run')
-      expect(readme, label).toContain('org Dependabot secret store')
-      expect(readme, label).toContain('selected repositories')
+      expect(readme, label).toContain('no `registries:` block')
+      expect(files.has('scripts/package-registry-auth.mjs'), label).toBe(false)
+      expect(files.has('scripts/gh-packages-run.mjs'), label).toBe(true)
+      const root = JSON.parse(files.get('package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+      expect(root.scripts['cf:build'], label).toBe(
+        'pnpm install --frozen-lockfile && pnpm --filter web run cf:build',
+      )
+      expect(root.scripts['cf:build'], label).not.toContain('gh-packages-run')
     }
   })
 
   // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-  // generator-parity audit narduk-libs#D2), not the older canonical
-  // template: `scope` is functionally required, not decorative -- without
-  // it Dependabot's npm_and_yarn update aborts outright the moment the repo
-  // carries any @narduk-enterprises/* dependency (coding-standards#9). One
-  // combined `dependencies` group still keeps a main-branch merge from
-  // triggering several simultaneous update PRs (foundation:check item 5.2's
-  // "grouping .github/dependabot.yml" acceptance shape, narduk-libs#233).
-  it('emits a .github/dependabot.yml with the required registry scope and a github-actions ecosystem block', () => {
+  // gonogo#104 / narduk-libs#U2). After D-PKG-6 there is no `registries:`
+  // block (narduk-libs#568). Two npm groups, split by `update-types` into a
+  // `safe` (minor + patch) lane and a `majors` lane, replace the old single
+  // all-in `dependencies` group: a main-branch merge still can't trigger
+  // more than one PR per lane (foundation:check item 5.2's "grouping
+  // .github/dependabot.yml" acceptance shape, narduk-libs#233, is
+  // indifferent to which group name carries the scope).
+  it('emits a .github/dependabot.yml with two update-type-split npm groups and a github-actions ecosystem block', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
       const dependabot = files.get('.github/dependabot.yml') ?? ''
 
       expect(dependabot, label).toContain("package-ecosystem: 'npm'")
       expect(dependabot, label).toContain("package-ecosystem: 'github-actions'")
-      expect(dependabot, label).toContain("scope: '@narduk-enterprises'")
-      expect(dependabot, label).toContain('dependencies:')
+      expect(dependabot, label).not.toContain('scope:')
+      expect(dependabot, label).toContain('safe:')
+      expect(dependabot, label).toContain('majors:')
       expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
-      // Reuses the same registry URL as the committed .npmrc and the same
-      // org Actions secret name already used for install auth -- no new
-      // registry or credential name invented for Dependabot.
-      expect(dependabot, label).toContain('url: https://npm.pkg.github.com')
-      expect(dependabot, label).toContain('${{secrets.NARDUK_PLATFORM_GH_PACKAGES_READ}}')
+      expect(dependabot, label).not.toContain('registries:')
+      expect(dependabot, label).not.toContain('npm.pkg.github.com')
+      expect(dependabot, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(() => YAML.parse(dependabot), label).not.toThrow()
       const parsed = YAML.parse(dependabot) as {
         version: number
-        registries: Record<string, { type: string; url: string; scope: string }>
+        registries?: Record<string, unknown>
         updates: Array<{
           'package-ecosystem': string
           directory?: string
           registries?: string[]
-          groups: Record<string, { patterns: string[] }>
+          'open-pull-requests-limit'?: number
+          groups: Record<string, { patterns: string[]; 'update-types'?: string[] }>
         }>
       }
       expect(parsed.version, label).toBe(2)
-      expect(parsed.registries['narduk-github-packages'].scope, label).toBe('@narduk-enterprises')
+      expect(parsed.registries, label).toBeUndefined()
       expect(parsed.updates, label).toHaveLength(2)
       const npmUpdate = parsed.updates.find((update) => update['package-ecosystem'] === 'npm')
       expect(npmUpdate?.directory, label).toBe('/')
-      expect(npmUpdate?.registries, label).toEqual(['narduk-github-packages'])
-      expect(npmUpdate?.groups.dependencies.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.registries, label).toBeUndefined()
+      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
+      expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups.safe['update-types'], label).toEqual(['minor', 'patch'])
+      expect(npmUpdate?.groups.majors.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups.majors['update-types'], label).toEqual(['major'])
       const actionsUpdate = parsed.updates.find(
         (update) => update['package-ecosystem'] === 'github-actions',
       )
       expect(actionsUpdate?.directory, label).toBe('/')
+      expect(actionsUpdate?.['open-pull-requests-limit'], label).toBe(1)
       expect(files.has('renovate.json'), label).toBe(false)
+    }
+  })
+
+  // Merges the `safe` lane once CI is green on its exact head; the majors
+  // and github-actions lanes stay manual (gonogo#104 / narduk-libs#U2).
+  it('emits a .github/workflows/dependabot-merge.yml that triggers on CI completion and merges only the safe lane', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const mergeWorkflow = files.get('.github/workflows/dependabot-merge.yml') ?? ''
+
+      expect(mergeWorkflow, label).toContain('workflow_run:')
+      expect(mergeWorkflow, label).toContain('workflows: [CI]')
+      expect(mergeWorkflow, label).toContain(
+        "startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/safe-')",
+      )
+      expect(mergeWorkflow, label).toContain('gh pr merge')
+      expect(mergeWorkflow, label).toContain('gh workflow run ci.yml')
+      expect(() => YAML.parse(mergeWorkflow), label).not.toThrow()
     }
   })
 
@@ -1205,6 +1582,29 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(rootConfig, label).toContain("'core',")
       expect(rootConfig, label).toContain("'design-system',")
       expect(rootConfig, label).toContain("'nuxt-ui',")
+    }
+  })
+
+  // Logan 2026-09-18: warnings are held to a checked-in budget instead of
+  // `--max-warnings 0`. The web app lints through narduk-lint, and a new app
+  // starts with an empty budget, so any warning it later accepts is recorded
+  // by a local `pnpm lint` and reviewed in the diff.
+  it('lints the web app through narduk-lint with an empty warning budget', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+        scripts: Record<string, string>
+      }
+
+      expect(webManifest.scripts.lint, label).toBe('nuxt prepare && narduk-lint')
+      expect(webManifest.scripts.lint, label).not.toContain('--max-warnings')
+      expect(files.get('apps/web/lint-budget.json'), label).toBe(
+        '{\n  "strict": true,\n  "rules": {}\n}\n',
+      )
+      expect(JSON.parse(files.get('apps/web/lint-budget.json') ?? ''), label).toEqual({
+        strict: true,
+        rules: {},
+      })
     }
   })
 
@@ -1448,6 +1848,23 @@ describe('CLI argument parsing', () => {
     expect(parsed.options.visibility).toBe('private')
   })
 
+  // The flag carries no default on purpose (narduk-libs#384): parsing it is
+  // pass-through, and every rule about the value lives in normalizeOptions so
+  // it holds for a programmatic caller that never touches the CLI.
+  it('passes --security-contact through and defaults it to absent', async () => {
+    const { parseCliArguments } = await import('../src/cli.js')
+    expect(
+      parseCliArguments([
+        'contactful',
+        '--capabilities',
+        'seo',
+        '--security-contact',
+        'mailto:a@b.test',
+      ]).options.securityContact,
+    ).toBe('mailto:a@b.test')
+    expect(parseCliArguments(['contactless']).options.securityContact).toBeUndefined()
+  })
+
   it.each([
     { capabilities: ['auth'], exposure: undefined },
     { capabilities: [], exposure: 'authenticated' as const },
@@ -1575,5 +1992,228 @@ describe('CLI argument parsing', () => {
     const code = await runCli({ argv: ['--help'], stdout: output })
     expect(code).toBe(0)
     expect(chunks.join('')).toContain('create-narduk-app')
+  })
+})
+
+/**
+ * narduk-libs#617: a fresh scaffold could not pass its own gate, and its
+ * first CI run was red by construction. Each case below pins one of the
+ * defects that made that true, in the direction that proves the fix rather
+ * than the direction that happened to be green on a short fixture.
+ */
+describe('a fresh scaffold passes its own gate', () => {
+  // The exact description from the narduk-libs#617 reproduction. Long free
+  // text is what crossed printWidth; a short one masks the whole class.
+  const LONG_DESCRIPTION =
+    'Youth running club site for Austin Rising Runners: season schedule, meets, results, ' +
+    'roster and club information for member families.'
+  const LONG_DISPLAY_NAME = 'Austin Rising Runners Youth Track and Cross Country Club'
+
+  const PRETTIER_OPTIONS = {
+    endOfLine: 'lf',
+    printWidth: 100,
+    semi: false,
+    singleQuote: true,
+    trailingComma: 'all',
+  } as const
+
+  it('stays Prettier-canonical when the caller free text is long', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'long-text',
+      capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+      description: LONG_DESCRIPTION,
+      displayName: LONG_DISPLAY_NAME,
+      siteUrl: 'https://austin-rising-runners-youth-track-and-cross-country.example.nard.uk',
+      noGit: true,
+      targetDir: '/tmp/long-text',
+    })
+    const supported = /\.(?:css|json|jsonc|md|mjs|ts|vue|ya?ml)$/u
+
+    for (const file of files.filter((candidate) => supported.test(candidate.path))) {
+      expect(
+        await prettier.check(file.contents, { ...PRETTIER_OPTIONS, filepath: file.path }),
+        file.path,
+      ).toBe(true)
+    }
+  })
+
+  it('breaks a long const after the "=" exactly where Prettier does', () => {
+    const files = new Map(
+      buildGeneratedFiles({
+        appName: 'long-const',
+        capabilities: ['seo'],
+        description: LONG_DESCRIPTION,
+        noGit: true,
+        targetDir: '/tmp/long-const',
+      }).map((file) => [file.path, file.contents]),
+    )
+    // Both emitters that interpolate the description, both broken.
+    expect(files.get('apps/web/app/pages/index.vue')).toContain(
+      `const description =\n  '${LONG_DESCRIPTION}'`,
+    )
+    expect(files.get('apps/web/nuxt.config.ts')).toContain(
+      `const appDescription =\n  '${LONG_DESCRIPTION}'`,
+    )
+    // A short one still fits on the declaration line, which is also what
+    // Prettier produces -- the helper must not break unconditionally.
+    const short = new Map(
+      buildGeneratedFiles({
+        appName: 'short-const',
+        capabilities: ['seo'],
+        description: 'A short description.',
+        noGit: true,
+        targetDir: '/tmp/short-const',
+      }).map((file) => [file.path, file.contents]),
+    )
+    expect(short.get('apps/web/nuxt.config.ts')).toContain(
+      "const appDescription = 'A short description.'\n",
+    )
+  })
+
+  it('does not report its own deliberate pins as unused dependencies', () => {
+    const files = new Map(
+      buildGeneratedFiles({
+        appName: 'knip-fixture',
+        capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+        noGit: true,
+        targetDir: '/tmp/knip-fixture',
+      }).map((file) => [file.path, file.contents]),
+    )
+    const knip = JSON.parse(files.get('knip.json') ?? '{}') as { ignoreDependencies: string[] }
+    const web = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    // Both are really in the generated manifest -- an ignore entry for a
+    // dependency the app does not declare would be dead config, and knip
+    // reports those too.
+    expect(web.dependencies['@narduk-enterprises/narduk-logging']).toBeDefined()
+    expect(web.devDependencies.eslint).toBeDefined()
+    // Neither is reachable by a named import: narduk-logging is wired through
+    // runtimeConfig.nardukLogging, eslint through the narduk-lint binary.
+    expect(knip.ignoreDependencies).toContain('@narduk-enterprises/narduk-logging')
+    expect(knip.ignoreDependencies).toContain('eslint')
+  })
+
+  it('never emits narduk-ai runtimeConfig into an app without the ai capability', () => {
+    for (const capabilities of [
+      ['auth', 'seo', 'analytics', 'uploads'],
+      [],
+      ['ai'],
+    ] as Capability[][]) {
+      const config =
+        buildGeneratedFiles({
+          appName: 'xai-fixture',
+          capabilities,
+          noGit: true,
+          targetDir: '/tmp/xai-fixture',
+        }).find((file) => file.path === 'apps/web/nuxt.config.ts')?.contents ?? ''
+      // @narduk-enterprises/narduk-ai declares xaiApiKey itself, with a
+      // validator, through defu. An app-side `process.env.XAI_API_KEY || ''`
+      // both leaked the key into capability sets that never asked for it and
+      // WON that merge for the apps that did, replacing the validated value
+      // with an empty string.
+      expect(config, JSON.stringify(capabilities)).not.toContain('xaiApiKey:')
+    }
+  })
+
+  it('builds the local gate with the same script CI builds with', () => {
+    const root = JSON.parse(
+      buildGeneratedFiles({
+        appName: 'gate-fixture',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/gate-fixture',
+      }).find((file) => file.path === 'package.json')?.contents ?? '{}',
+    ) as { scripts: Record<string, string> }
+    const segments = root.scripts['quality:static'].split(' && ')
+
+    // `build` alone throws in any seo app with an empty NUXT_OG_IMAGE_SECRET,
+    // so the documented local gate was red where CI was green.
+    expect(segments).toContain('pnpm run build:ci')
+    expect(segments).not.toContain('pnpm run build')
+    // `build` survives as the real-secret path.
+    expect(root.scripts.build).toBe('pnpm --filter web run build')
+    expect(root.scripts['build:ci']).toContain('pnpm run build')
+  })
+
+  it('warns that a repo missing from the runner groups queues its first run forever', () => {
+    const readme = (visibility: 'private' | 'public') =>
+      buildGeneratedFiles({
+        appName: 'runner-fixture',
+        capabilities: ['seo'],
+        noGit: true,
+        targetDir: '/tmp/runner-fixture',
+        visibility,
+      }).find((file) => file.path === 'README.md')?.contents ?? ''
+
+    // Self-hosted jobs sit in `queued` with no log when no runner can pick
+    // them up. The hosted onboarding job still starts and annotates the run.
+    expect(readme('private')).toContain('Runner group onboarding')
+    expect(readme('private')).toContain('annotates the run')
+    expect(readme('private')).toContain('fleet runner groups')
+    // Public apps run on GitHub-hosted runners and never hit this.
+    expect(readme('public')).not.toContain('fleet runner groups')
+  })
+
+  it('offers development mode only where a validation caller can exist, and enrolls nothing', () => {
+    const files = (visibility: 'private' | 'public') =>
+      new Map(
+        buildGeneratedFiles({
+          appName: 'development-fixture',
+          capabilities: ['seo'],
+          noGit: true,
+          targetDir: '/tmp/development-fixture',
+          visibility,
+        }).map((file) => [file.path, file.contents]),
+      )
+    const privateFiles = files('private')
+    const publicFiles = files('public')
+    expect(privateFiles.has('.github/workflows/validate.yml')).toBe(true)
+    expect(publicFiles.has('.github/workflows/validate.yml')).toBe(false)
+    expect(privateFiles.get('docs/workers-builds.md')).toContain('## Development mode')
+    expect(privateFiles.get('docs/workers-builds.md')).toContain('docs/development-mode.md')
+    expect(publicFiles.get('docs/workers-builds.md')).toContain(
+      'always uses the normal promotion path',
+    )
+    // The capability needs live facts (account, hostname, credential selectors,
+    // workflow classification), so generation never declares it.
+    for (const map of [privateFiles, publicFiles])
+      expect(map.get('Config/cloudflare-app.json')).not.toContain('"development"')
+    expect(JSON.parse(privateFiles.get('package.json') ?? '{}').scripts['deploy:dev']).toBe(
+      'pnpm --filter web run deploy:dev',
+    )
+  })
+
+  it('declares its own half of Config/cloudflare-app.json, agreeing with wrangler.jsonc', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'declaration-fixture',
+      capabilities: ['auth', 'seo', 'analytics', 'uploads'],
+      noGit: true,
+      targetDir: '/tmp/declaration-fixture',
+    })
+    const byPath = new Map(files.map((file) => [file.path, file.contents]))
+    const root = await makeTempDirectory()
+    const webDir = join(root, 'apps', 'web')
+    await mkdir(join(webDir, 'scripts'), { recursive: true })
+    await mkdir(join(root, 'Config'), { recursive: true })
+    for (const path of [
+      'apps/web/scripts/validate-manifests.mjs',
+      'apps/web/wrangler.jsonc',
+      'Config/cloudflare-app.json',
+    ]) {
+      await writeFile(join(root, path), byPath.get(path)!)
+    }
+
+    // The generated pair must agree on the generator's own output -- this is
+    // the check that runs pre-deploy on every build, and before this change
+    // it could only ever no-op.
+    const result = spawnSync(process.execPath, ['scripts/validate-manifests.mjs'], {
+      cwd: webDir,
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('agree')
+    expect(result.stdout).not.toContain('does not exist yet')
   })
 })

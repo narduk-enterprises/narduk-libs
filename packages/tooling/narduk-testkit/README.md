@@ -32,6 +32,55 @@ defineSharedAuthContract({ appName: 'my-app' })
 void test
 ```
 
+### Waiting for hydration
+
+`waitForVueHydrated(page)` resolves once the Vue app has mounted and Nuxt has
+finished hydrating (`__vue_app__.$nuxt.isHydrating === false`). Use it before
+asserting on anything the client changes after the server render. The shared
+contract suites use it.
+
+`waitForHydration(page)` is deprecated. It waits only for the document `load`
+event, which on a Nuxt page fires **before** hydration (#697). It keeps that
+behaviour so existing suites do not all change at once. `waitForPageLoad(page)`
+is the same wait under an accurate name.
+
+### Hydration mismatch failures
+
+The shared `page` fixture fails any test whose console logs a Vue hydration
+mismatch. Production Vue logs only `Hydration completed but contains mismatches`
+— no URL, no element — so a consumer CI line used to name nothing.
+
+The fixture installs an `addInitScript` that wraps `console.warn` and, as the
+warning fires, serialises `location.pathname`, the page URL, the mismatched
+node's `outerHTML`, and its parent (truncated). Those strings are appended to
+the warning so Playwright's `msg.text()` already carries them. A
+`page.on('console')` handler that `await`s `arg.evaluate` loses the handle as
+soon as the test navigates again, which is the back-to-back `goto` pattern that
+exposes these bugs.
+
+Production Vue strips the node arguments unless the E2E or CI preview artifact
+is built with `vite.define.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = 'true'`.
+That flag is never for the production deploy. Import the helper from the
+config-safe subpath — not from `e2e/fixtures`, which registers Playwright
+fixtures at module scope:
+
+```ts
+import { VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE } from '@narduk-enterprises/narduk-testkit/e2e/hydration-mismatch'
+
+export default defineNuxtConfig({
+  vite: {
+    define: {
+      ...(process.env.NARDUK_E2E === '1'
+        ? VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE
+        : {}),
+    },
+  },
+})
+```
+
+With the flag on, Vue prints the server node and the client expectation on the
+first mismatch; the fixture then names the page those arguments belonged to.
+
 Apps whose users endpoint is not the default `/api/admin/users` can configure
 the reusable API spec without copying it:
 
@@ -281,6 +330,18 @@ const consoleTracker = createConsoleTracker(page, {
 await consoleTracker.expectClean()
 ```
 
+An object rule scopes that ignore to a failed HTTP response. The tracker records
+4xx/5xx URLs from `page.on('response')` and matches `url` against those, not
+against the console line's `location().url` — Chromium often attributes a failed
+resource load to the document. Each ignore consumes one matching failed URL, so
+a later first-party failure with the same console text is still reported:
+
+```ts
+const consoleTracker = createConsoleTracker(page, [
+  { text: /Failed to load resource/, url: /\/api\/mapkit-token/ },
+])
+```
+
 `telemetry: 'stub'` is for the suite that has to pass on a machine whose network
 is not the internet's:
 
@@ -406,6 +467,166 @@ instead of becoming another silent wrong-branch pass.
 Like `e2e/fixture-server`, this subpath is deliberately absent from the root
 barrel — it is imported from a Playwright config, before the runner exists.
 
+## Playwright `pr` / `web` tier preset
+
+`playwright/config` is the estate Playwright config: a cheap `pr` project for
+pull requests and a full `web` project for push/main. Spread it. Do not invent a
+third `chromium`-only project — that is how an undeclared spec is collected
+twice and a 10-test PR suite becomes 36 (narduk-libs#434).
+
+```ts
+import { defineConfig, devices } from '@playwright/test'
+
+import { createNardukPlaywrightPreset } from '@narduk-enterprises/narduk-testkit/playwright/config'
+import {
+  assertLocalDevPortAvailable,
+  resolveLocalDevPort,
+  shouldReuseExistingServer,
+} from '@narduk-enterprises/narduk-testkit/playwright/dev-port'
+
+const devPort = resolveLocalDevPort({
+  rootDir: process.cwd(),
+  declaredPort: 51952,
+})
+const reuseExistingServer = shouldReuseExistingServer({ resolution: devPort })
+if (!reuseExistingServer) assertLocalDevPortAvailable({ resolution: devPort })
+
+export default defineConfig({
+  testDir: './apps/web/tests/e2e',
+  ...createNardukPlaywrightPreset({
+    baseURL: `http://127.0.0.1:${devPort.port}`,
+    browserUse: devices['Desktop Chrome'],
+    testDir: './apps/web/tests/e2e',
+  }),
+  webServer: {
+    command: `PORT=${devPort.port} pnpm --filter web run dev:test`,
+    url: `http://127.0.0.1:${devPort.port}/api/health`,
+    reuseExistingServer,
+  },
+})
+```
+
+The preset is `fullyParallel: true` and `workers: 2`. That worker count is the
+measured default from Buoys' `e2e-parallel-config` experiment (2026-09-17): 1 is
+Playwright's `CI` default and is why 2-vCPU and 8g slots both ran serial; 2 cut
+local web median 69s → 39s; 4 workers were slower on one workerd. Do not raise
+`e2e-shards` — a second pool slot recreates the queue storms.
+
+A file that must not contend with another heavy file on that one workerd
+(visual-audit, a 44-scan a11y file) opts out **per file**, not by flipping the
+preset:
+
+```ts
+test.describe.configure({ mode: 'serial' })
+```
+
+### Spec → tier
+
+A spec declares its tier in the filename. Collection uses `testMatch`, so an
+undeclared file is in **no** project — and
+`createNardukPlaywrightPreset({ testDir })` throws if one still exists, so it
+cannot hide.
+
+| File                       | Collected by                       |
+| -------------------------- | ---------------------------------- |
+| `home.pr.spec.ts`          | `pr`                               |
+| `visual-audit.web.spec.ts` | `web`                              |
+| `headers.pr-web.spec.ts`   | `pr` and `web` (explicit dual-run) |
+| `orphan.spec.ts`           | none — config load throws          |
+| `global.setup.ts`          | `setup` only                       |
+
+Dual-run is the `.pr-web.` name, an explicit reviewable choice. CI selects the
+tier with `--project=pr` on pull_request and `--project=web` on push. Pass
+`chromiumAlias: true` to register a `chromium` project that collects the same
+specs as `web`, so `--project=chromium` still runs the web tier. The alias is
+off by default: a bare `playwright test` would otherwise run every `.web` /
+`.pr-web` spec twice.
+
+`specFiles` is an extra assertion list, not a replacement for the `testDir`
+scan. When both are passed, undeclared files still under `testDir` fail config
+load.
+
+### Quarantine (`@quarantine`)
+
+A flake leaves the PR gate with a Playwright tag, not `test.skip` and not
+`test.fixme`. `pr` and `web` set `grepInvert: /@quarantine/`, so a tagged spec
+is not collected there. The `quarantine` project sets `grep: /@quarantine/` so
+the same spec still has a home (`--project=quarantine`).
+
+```ts
+import { test } from '@playwright/test'
+import { quarantineDetails } from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+test(
+  'flaky checkout',
+  quarantineDetails({ issue: 'app#12', date: '2026-09-24', owner: 'logan' }),
+  async ({ page }) => {
+    /* … */
+  },
+)
+```
+
+A quarantine with no issue is not a quarantine. The vitest guard is checked
+against what Playwright actually collected (`playwright test --list`), so an
+untagged test in `quarantine` or a tagged test still collected by `pr` fails the
+unit suite. Default `--list` titles omit `{ tag: '@quarantine' }` from
+`quarantineDetails`, so pass `readSource`. The source check uses the listed
+`file:line:col`, so one quarantined test does not quarantine its siblings.
+`readSource` does not see `test.describe(..., quarantineDetails(...), …)` — tag
+the test itself, or use JSON `--list --reporter=json`, which fills `tags`
+including describe-inherited ones.
+
+```ts
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+import {
+  assertPlaywrightQuarantineCollection,
+  parsePlaywrightListOutput,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const listed = execFileSync('pnpm', ['exec', 'playwright', 'test', '--list'], {
+  encoding: 'utf8',
+})
+assertPlaywrightQuarantineCollection({
+  collected: parsePlaywrightListOutput(listed),
+  readSource: (file) => readFileSync(file, 'utf8'),
+})
+```
+
+### Collection-time viewports
+
+Viewport slice lives on project metadata (`metadata.visualAuditViewports`).
+Filter at collection so a skipped viewport never constructs a `page` fixture —
+in-body `test.skip` still pays setup.
+
+```ts
+import {
+  createNardukPlaywrightPreset,
+  viewportsAtCollection,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+const preset = createNardukPlaywrightPreset({
+  testDir,
+  prViewports: ['desktop'],
+})
+const prProject = preset.projects.find((project) => project.name === 'pr')!
+const viewports = viewportsAtCollection(ALL_VIEWPORTS, prProject)
+for (const viewport of viewports) {
+  test(`a11y ${viewport.name}`, async ({ page }) => {
+    /* … */
+  })
+}
+```
+
+`pr` defaults to `desktop` + `mobile`. `web` defaults to those plus `tablet` and
+`wide`. Pass `prViewports` / `webViewports` to change the slice. Pass the
+project from the preset — not `{ name: 'pr' }` — so collection uses that custom
+slice.
+
+This subpath is config-safe: `import` and `require` both resolve, and it is
+absent from the root barrel.
+
 The UI-quality analyzer is also available as a small binary:
 
 ```sh
@@ -414,6 +635,93 @@ narduk-testkit ui analyze output/playwright/visual-audit
 
 Playwright and Vitest are peer dependencies so each app controls its test runner
 version. The analyzer uses `sharp` as a package runtime dependency.
+
+## D1 query harness
+
+`@narduk-enterprises/narduk-testkit/d1` runs code under test against a real
+Miniflare D1 database (the workerd SQLite the platform runs) created from your
+own migration files, and records every statement it prepares. It is a Vitest
+helper; it installs no matchers and fails by throwing.
+
+It proves query **shape**: how many statements a route emits, whether that count
+holds as data grows, which index SQLite picks, and how many bytes the response
+carries. It does **not** prove latency. Miniflare runs on the test machine with
+no network hop, no replica and no production load, so its timings mean nothing,
+and none of these helpers measures one.
+
+`miniflare` is an optional peer dependency: add it to the app's
+`devDependencies`. It is loaded only when a harness is created, so importing the
+subpath never requires it. Miniflare 4 and 5 both work from 1.6.3. Keep
+`miniflare` on the major your `wrangler` ships: every `wrangler` from 4.129
+ships 5.
+
+Resolve `undici` 7.29.1 or later under Miniflare, or every harness statement is
+about three times slower. Miniflare pins its `undici` exactly (7.28.0 in
+4.20260708, 7.29.0 in 5.20260921.0-alpha), and on either of those one awaited D1
+call from a test costs about 6.5ms; on 7.29.1 it costs about 2ms, measured on
+both Miniflare majors (narduk-libs#740). A test that seeds a few hundred rows
+one `await` at a time crosses a 60s timeout on the CI pool at the slower rate.
+Apps generated by `create-narduk-app` carry the override; an older app adds it
+to the root `package.json`:
+
+```json
+"pnpm": { "overrides": { "miniflare>undici": "^7.29.1" } }
+```
+
+```ts
+import { drizzle } from 'drizzle-orm/d1'
+import {
+  createD1QueryHarness,
+  expectQueryPlan,
+  expectStatementBudget,
+  scaleMatrix,
+} from '@narduk-enterprises/narduk-testkit/d1'
+
+const d1 = await createD1QueryHarness({ migrations: 'drizzle' })
+// afterAll(() => d1.dispose())
+
+const db = drizzle(d1.db) // recorded: hand this to the code under test
+await d1.raw.prepare('INSERT INTO users (id) VALUES (?)').bind('u1').run() // unrecorded: seeding
+
+// At most one page query plus one count query.
+const { result, statements } = await expectStatementBudget(
+  d1,
+  () => listUsers(db),
+  { max: 2 },
+)
+
+// Fails on `SCAN api_keys`; passes on `SEARCH api_keys USING INDEX …`.
+await expectQueryPlan(d1, 'SELECT * FROM api_keys WHERE user_id = ?', ['u1'], {
+  forbidFullScanOf: ['api_keys'],
+})
+
+// Same statement count in every cell, or it throws with the per-cell counts.
+const cells = await scaleMatrix(d1, {
+  axes: { history: [0, 1_000], live: [1, 50] },
+  seed: async ({ history, live }) => seedRows(d1.raw, { history, live }),
+  run: () => loadLiveView(db),
+})
+expect(cells.find((c) => c.history === 1_000 && c.live === 50)?.result).toEqual(
+  cells.find((c) => c.history === 0 && c.live === 50)?.result,
+)
+expect(Math.max(...cells.map((c) => c.bytes))).toBeLessThan(64_000)
+```
+
+| Export                                                        | Does                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createD1QueryHarness({ migrations, compatibilityDate? })`    | Applies `migrations` (a list of `.sql` paths, or one directory whose numbered files are applied in lexical order, skipping utility SQL such as `seed.sql` — the discovery `narduk-app db migrate` uses). Returns `{ db, raw, statements, reset(), clearData(), dispose() }`.                   |
+| `expectStatementBudget(harness, fn, { max })`                 | Resets the recorder, runs `fn`, throws if it prepared more than `max` statements. Returns `{ result, statements }` so a test can also pin the exact count.                                                                                                                                     |
+| `expectQueryPlan(harness, sql, params, { forbidFullScanOf })` | Runs `EXPLAIN QUERY PLAN` and throws on a `SCAN <table>` step for any named table (including `SCAN … USING COVERING INDEX`, which still reads every entry). Returns the plan lines. Tables match the name the plan prints, which is the alias when the query aliases one.                      |
+| `scaleMatrix(harness, { axes, seed, run })`                   | For each `history` × `live` cell: `clearData()`, `seed(cell)`, then `run()` recorded. Throws unless every cell prepared the same number of statements. Returns `{ history, live, statements, bytes, result }[]`; `bytes` is the UTF-8 size of a string/bytes result, or of its JSON otherwise. |
+| `splitSqlStatements(sql)`                                     | Strips `--` and `/* */` comments and splits on `;`. It does not parse SQL: a `;` inside a string literal or a trigger body is not supported.                                                                                                                                                   |
+
+`statements` is emptied in place by `reset()`, so a held reference stays live.
+`clearData()` deletes every row of every migrated table in one batch with
+foreign keys deferred, and keeps the schema.
+
+Inside narduk-libs, packages import the harness from source
+(`../../../tooling/narduk-testkit/src/d1`) so their tests need no testkit build;
+narduk-auth, narduk-ai, narduk-devices and narduk-core's D1 tests use it.
 
 ## Handler test harness
 

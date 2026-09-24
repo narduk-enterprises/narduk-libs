@@ -1,10 +1,10 @@
 /**
- * The token route's default ceiling (§e.4).
+ * The token route's opt-in ceiling (§e.4).
  *
- * The 2.0.x `rateLimit` seam had zero consumers because it required the app to
- * build the limiter itself, which left a JWT-signing route unlimited by default.
- * An app that mounts narduk-core's limiter still wins; this only means the
- * unconfigured case is not the unlimited case.
+ * The Nuxt route applies this limiter only when the app sets the module's
+ * `rateLimit` option (narduk-libs#485); the route-level default and opt-in are
+ * pinned in tests/nuxt/token-route.test.ts. This file pins the limiter's own
+ * arithmetic.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -42,7 +42,7 @@ describe('createMapKitFixedWindowRateLimit', () => {
   it('counts down the retry-after as the window drains', () => {
     let now = 0
     const limit = createMapKitFixedWindowRateLimit({ limit: 1, now: () => now, windowSeconds: 60 })
-    limit(context())
+    void limit(context())
 
     now = 45_000
     expect(decide(limit)).toStrictEqual({ allowed: false, retryAfterSeconds: 15 })
@@ -51,7 +51,7 @@ describe('createMapKitFixedWindowRateLimit', () => {
   it('opens a fresh window once the old one expires', () => {
     let now = 0
     const limit = createMapKitFixedWindowRateLimit({ limit: 1, now: () => now, windowSeconds: 60 })
-    limit(context())
+    void limit(context())
     expect(decide(limit).allowed).toBe(false)
 
     now = 60_000
@@ -61,7 +61,7 @@ describe('createMapKitFixedWindowRateLimit', () => {
   it('keys on the request origin, so one host cannot spend another host budget', () => {
     let now = 0
     const limit = createMapKitFixedWindowRateLimit({ limit: 1, now: () => now, windowSeconds: 60 })
-    limit(context('https://a.test'))
+    void limit(context('https://a.test'))
 
     expect(decide(limit, 'https://a.test').allowed).toBe(false)
     expect(decide(limit, 'https://b.test').allowed).toBe(true)

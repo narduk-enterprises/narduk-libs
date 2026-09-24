@@ -1,5 +1,156 @@
 # @narduk-enterprises/narduk-devices
 
+## 0.6.1
+
+### Patch Changes
+
+- 0da668a: The opportunistic prune in `openSession` and `startClaim` runs at
+  most once per interval per database object: the shorter of the challenge TTL
+  and the shortest lockout window, five minutes by default (#227). A device
+  polling `startClaim` every 5 s for 15 minutes used to cost 540 `DELETE`s,
+  almost all of them removing nothing. It now costs three prunes.
+  `pruneExpired()` is unchanged and always runs.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 0.6.0
+
+### Minor Changes
+
+- 4248b20: Resolve a device session and its tenant in one query.
+
+  `DeviceSession` carries the session's own facts but not the tenant's: `orgId`,
+  `resourceKind`/`resourceId` and `installationId` live on the device row. A
+  consumer answering "which tenant is this request for?" had to resolve the
+  bearer and then re-read the device — two D1 round trips on the hottest
+  authenticated path the package has.
+
+  `getSessionByTokenWithDevice(sessionToken)` is the joined resolution, and
+  `requireDeviceSession` now uses it and returns `DeviceSessionWithDevice`, so
+  `session.device` is already populated. Proven on the real D1 driver: one
+  statement for the guard end to end, exactly two for the shape it replaces, and
+  `n` statements for `n` requests rather than `2n`.
+
+  The session's own fields are unchanged, and the device is nested rather than
+  merged because both rows carry `id`, `createdAt`, `revokedAt` and
+  `revocationGeneration`.
+
+  Adjust if you supply your own resolver: `DeviceSessionResolver` is now
+  `Pick<DevicesService, 'getSessionByTokenWithDevice'>`. Passing the real
+  service needs no change; a hand-rolled stub that only implements
+  `getSessionByToken` must implement the joined method instead.
+  `getSessionByToken` itself is unchanged and still exported.
+
+### Patch Changes
+
+- 45cd906: `completeClaim` checks the caller's org and resource before it
+  reports anything about the claim session, and before it counts the attempt
+  (narduk-libs#533). This is the fix #243 made to `issueApprovalToken`, applied
+  to the completion path it was left off.
+
+  A caller naming another org or resource now gets `unauthorized_user` whatever
+  state the session is in. Before, only a pending session answered that way: a
+  completed one answered `already_completed`, a revoked one `revoked`, an
+  expired one `expired` and a wrong fingerprint `hardware_mismatch`, so any
+  caller holding a claim session id could read another tenant's claim state.
+
+  Those refusals are also no longer counted against the owner's claim token. The
+  subject list was built before the org was ever compared, so five refused
+  cross-org attempts crossed the per-token threshold and locked the owning
+  tenant out of its own ceremony for the cooldown. A cross-org attempt is still
+  counted — against the caller's own account and IP — and the owning org's
+  answers, `completeClaimWithRecordedApproval`, and `not_found` for a session id
+  that does not exist are all unchanged.
+
+## 0.5.0
+
+### Minor Changes
+
+- b0fbfb0: `completeClaimWithRecordedApproval` accepts a consumer-shaped device
+  proof, so a device whose completion response was lost can be re-issued its
+  credentials (narduk-libs#237). `deviceProof` may now be a
+  `ContextBoundCompletionProof`, `{ context, canonicalRequest, signature }`, in
+  mybo.at's `mybo/claim-handoff/v1` layout: an Ed25519 signature over
+  `context + "\n" + canonicalRequest`, where `canonicalRequest` is the canonical
+  JSON of `claimSessionId`, `devicePublicKey`, `hardwareFingerprint`,
+  `idempotencyKey`, `nonce` and `signedAt`. It carries no `installationId`,
+  which the cloud mints and the device cannot sign.
+
+  The library fails closed. The accepted context is configured with the new
+  `createDevices({ completionProofContext })` option; without it a context-bound
+  proof throws `invalid`. A proof under any other context, a `canonicalRequest`
+  that is not exactly the canonical form of the six keys, a field that does not
+  match the claim session and the call, a `signedAt` outside the skew window, a
+  bad signature, or a nonce already spent is refused like any other failed
+  proof. The binding compares are constant-time. A served re-issue now also
+  returns the device's recorded `installationId`, for a consumer that mints a
+  fresh one per attempt.
+
+  The library's own `DeviceCompletionProof` is unchanged.
+
+### Patch Changes
+
+- 44d26f7: Add `toWireCredential(issued)` beside `IssuedCredential` so a
+  consumer can map claim/rotation output onto the wire field set
+  (`credentialClass`, `credentialId`, `fingerprint`, `secret`, optional
+  `expiresAt`) in one place. `version` stays on the library type.
+  `completeClaim` and `rotateCredential` return types are unchanged
+  (narduk-libs#226).
+
+## 0.4.0
+
+### Minor Changes
+
+- 0e99614: `revokeDevice` and `rotateCredential` are all-or-nothing
+  (narduk-libs#231). Each now writes its rows, the audit row included, in one D1
+  batch / better-sqlite3 transaction. Written one statement at a time, a failure
+  part-way left a revoked device whose credentials still resolved through
+  `getCredentialBySecret` (a permanent bearer, since completion-issued
+  credentials never expire), or a rotation that had revoked the old secret,
+  issued the new one and left the generation unbumped. The device write, the new
+  credential and the audit row are gated on the device still being `claimed`: a
+  revocation that loses a race writes nothing, and a rotation racing a
+  revocation issues nothing and throws `revoked`. Audit `details_json` is
+  byte-for-byte what it was.
+
+  Both now require the batch-capable database the claim path already requires,
+  and refuse an adapter without one with `DevicesError('invalid')` before
+  writing anything.
+
+- 0e99614: `createLockoutGate(...).record` returns every threshold an attempt
+  crossed, not only escalating ones (narduk-libs#238). A limiter built on the
+  flat token/device rule was never told which attempt locked its subject out, so
+  it could not audit the lockout without re-deriving the rule.
+  `LockoutThreshold` gains `escalates: boolean`; filter on it to keep the
+  previous set. The library's own `security.lockout` audit rows are unchanged:
+  still written for escalating crossings only.
+
+### Patch Changes
+
+- 0e99614: `issueApprovalToken` checks the caller's org and resource before it
+  reports anything about the claim session (narduk-libs#243). A caller naming
+  another org or resource now gets `forbidden` whatever state the session is in;
+  before, any authenticated caller holding a claim session id heard whether
+  another tenant's session was claimed (`conflict`), revoked or expired. The
+  owning org's answers are unchanged, and an id that does not exist is still
+  `not_found`.
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
+## 0.3.1
+
+### Patch Changes
+
+- bb37590: Test-only: the D1-driver suite now runs on narduk-testkit's D1 query
+  harness instead of its own Miniflare setup and migration splitter. No
+  published file changes; the release gate requires a changeset for any change
+  under the package.
+
 ## 0.3.0
 
 ### Minor Changes

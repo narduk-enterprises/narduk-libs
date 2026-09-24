@@ -1,5 +1,82 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.7.1
+
+### Patch Changes
+
+- 2d25947: Generated apps now override `miniflare>undici` to `^7.29.1`.
+  Miniflare pins undici exactly, and below 7.29.1 each D1 call a test makes
+  through the testkit harness costs about 6.5ms instead of about 2ms. That is
+  enough to push seed-heavy suites past their CI timeouts (narduk-libs#740). The
+  testkit README documents the override for existing apps.
+- 5ac629e: The package's `volta.node` pin moves from 22.22.3 to 24.21.0, the
+  Node the workspace root and CI run (narduk-libs#647). No runtime change: the
+  pin only selects the Node that Volta runs for commands inside the package
+  directory. It now matches the ABI of the native modules that the root install
+  builds.
+
+## 1.7.0
+
+### Minor Changes
+
+- c541ef4: Add `waitForVueHydrated(page)`, a real hydration barrier. It waits
+  until the Vue app has mounted and Nuxt's `isHydrating` is `false`.
+  `waitForHydration` only ever waited for the document `load` event, which on a
+  Nuxt page fires before hydration. It is now deprecated with unchanged
+  behaviour, and `waitForPageLoad` is the same wait under an accurate name. The
+  shared auth, notifications and user-profile contract suites, and the
+  generator's e2e fixtures and audit spec, now use `waitForVueHydrated`.
+
+### Patch Changes
+
+- b47ddc7: `narduk-testkit/d1`: `createD1QueryHarness` now runs on Miniflare 5,
+  which every Wrangler from 4.129 ships. It converts its options with
+  Miniflare's own `convertV4MiniflareOptions` when that exists and passes them
+  unchanged to Miniflare 4.
+
+  `create-narduk-app`: generated apps pin `wrangler` 4.136.3 and
+  `@cloudflare/workers-types` 5.20260922.1. The older Wrangler's Miniflare
+  brought `sharp` and `undici` versions with high advisories.
+
+## 1.6.2
+
+### Patch Changes
+
+- 9f6038a: Stop the `playwright-dev-port` suite asserting a hash property the
+  dev-port derivation never had. Four worktree paths into a 1000-port span
+  collide at the birthday rate (0.599%), which is the rate the old single-sample
+  test failed at — it blocked the narduk-core 2.6.3 release on 2026-09-19. The
+  suite now asserts what the implementation actually promises: derived ports
+  spread widely enough that lanes are practically unable to collide, and a
+  residual collision stays loud rather than silently attaching to another lane's
+  dev server. Test-only; `resolveLocalDevPort` behaviour is unchanged.
+  `create-narduk-app` moves only because it pins the testkit version it
+  generates against.
+
+## 1.6.1
+
+### Patch Changes
+
+- dd1a7d9: `createConsoleTracker` accepts URL-scoped ignore rules
+  (`{ text: RegExp; url?: RegExp }`) and records 4xx/5xx response URLs so an
+  object rule's optional `url` matches the request that actually failed. Bare
+  `RegExp[]` call sites stay unchanged (narduk-libs#134). `create-narduk-app` is
+  a companion patch so the generator pin moves with the testkit release.
+
+## 1.6.0
+
+### Minor Changes
+
+- bb37590: New `./d1` export: a Miniflare D1 query harness for Vitest.
+  `createD1QueryHarness({ migrations })` applies a migration list or directory
+  and returns `{ db, raw, statements, reset(), clearData(), dispose() }` with
+  every statement prepared on `db` recorded. `expectStatementBudget` fails above
+  a statement ceiling, `expectQueryPlan` fails on `SCAN <table>` in
+  `EXPLAIN QUERY PLAN`, and `scaleMatrix` runs a history × live matrix, fails
+  unless the statement count is constant, and returns per-cell statements, bytes
+  and results. It proves query shape, not latency. `miniflare` is a new optional
+  peer dependency, loaded only when a harness is created.
+
 ## 1.5.0
 
 ### Minor Changes

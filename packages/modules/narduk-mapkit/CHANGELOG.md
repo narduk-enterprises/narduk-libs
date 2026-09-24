@@ -1,5 +1,300 @@
 # Changelog
 
+## 2.9.0
+
+### Minor Changes
+
+- ab2a69b: `allowedHosts` (on `MapKitServerConfig`, and the
+  `nardukMapKit.allowedHosts` module option) refuses a token for any routed host
+  outside the list with `403 not-same-origin`, before the limiter and before
+  signing, so a forged `Host` on a Node listener can no longer name the origin
+  claim. Unset, nothing changes (#437).
+- d671cdc: `<AppMapKit>` moves focus into the callout when a pin is selected
+  from the keyboard (narduk-libs#746). Once the `#callout` slot renders, focus
+  goes to its first focusable element, so a keyboard or screen-reader user
+  reaches the callout's action, such as a "View details" link, without tabbing
+  back through the page. A pointer selection leaves focus where it is.
+  `calloutFocus="never"` opts out; the default is `'keyboard'`. The pin layer's
+  `onSelect` now receives a second argument, `'keyboard' | 'pointer'`, which
+  existing handlers can ignore. An app that focuses the callout itself, as
+  Buoys' `focusSelectedCalloutAction` does, can delete that code.
+
+## 2.8.2
+
+### Patch Changes
+
+- e61a56d: Docs only (#664). The README and SECURITY.md now say plainly that
+  `MAPKIT_ALLOWED_ORIGINS`, `MAPKIT_TOKEN` and `APPLE_MAPKIT_TOKEN` do nothing
+  since 2.1 and should not be set. The token route answers same-origin requests
+  only, whatever an allowlist holds. SECURITY.md previously told operators to
+  set `MAPKIT_ALLOWED_ORIGINS` on production endpoints, which had no effect.
+- e61a56d: `<AppMapKit>`'s default error content no longer draws a bare
+  browser-chrome button (#614). The title, status code and retry button carry
+  `.mk-status-title`, `.mk-status-code` and `.mk-status-retry`. The retry button
+  resets its native appearance and reads `--mk-ink`, `--mk-surface`,
+  `--mk-font-sans` and `--mk-focus`, with the same neutral fallbacks as the
+  marks stylesheet. The `#error` and `#loading` slots are unchanged.
+
+## 2.8.1
+
+### Patch Changes
+
+- 62b7b79: Point `homepage` and `bugs.url` at narduk-libs instead of the
+  archived `narduk-enterprises/narduk-mapkit` repo (narduk-libs#540). The
+  Changesets fixed group is empty and `narduk-mapkit-nuxt` stays ignored, so
+  this patch does not pull the frozen adapter; the adapter's matching metadata
+  is updated in tree without a release. `create-narduk-app` is a companion patch
+  so the generator-owned mapkit pin moves with it.
+
+## 2.8.0
+
+### Minor Changes
+
+- e82eb47: Export `useMapKitView()` and `useMapKitFullscreen()` from a new
+  `@narduk-enterprises/narduk-mapkit/nuxt/composables` subpath.
+
+  Both are public API already: the Nuxt module registers them with `addImports`,
+  and `./nuxt` exports their option and result types. Only the functions were
+  unreachable by an explicit import -- the exports map has no pattern entry, so
+  a caller outside Nuxt's auto-import had no door at all. That bites a unit test
+  under plain vitest, an app running with `imports.autoImport` off, and any
+  module that wants the function rather than the ambient name.
+
+  `useMapKit()` is deliberately not on the new subpath: it reads the module's
+  runtime options through `#imports`, a specifier that resolves only inside a
+  Nuxt build, so a subpath carrying it would throw on import anywhere else. The
+  two that are exported need Vue and nothing more, because `useMapKitView()`
+  takes its MapKit namespace from the `map-ready` payload rather than from the
+  kit handle.
+
+  `./nuxt` itself is unchanged: it stays the module entry and must not drag
+  Vue's runtime into the graph Nuxt loads modules from.
+
+## 2.7.0
+
+### Minor Changes
+
+- 176cbaf: Decode vector tiles, off the main thread, behind a new
+  `./vector-tiles` entry.
+
+  `createMvtDecoder` reads Mapbox Vector Tiles with `@mapbox/vector-tile` and
+  `pbf`, and `serveVectorTileDecoder` hosts it in a worker that
+  `createWorkerDecoder` (in `./client`) talks to, correlating replies by id and
+  transferring buffers both ways so nothing is copied. The protobuf dependencies
+  are reachable only from `./vector-tiles`, so a consumer of `./client` never
+  bundles a parser; a test walks the import graph and fails if that changes.
+
+  A decoded tile is now columnar -- an `Int16Array` of coordinates plus two
+  `Uint32Array` indexes -- rather than an object per point, which is the
+  difference between a 256-tile cache retaining about a gigabyte and retaining
+  about a hundred megabytes. `buildDecodedVectorTile` packs one,
+  `decodedVectorTileBytes` and the new `cacheBytes` measure what is retained,
+  and `vectorTileFeatureCount` reads the feature count back.
+
+  Tile bytes are posted as a tight buffer, so a `Uint8Array` that views part of
+  a larger allocation decodes correctly and its parent buffer is not detached.
+  Requests for an address already in flight join that read instead of starting a
+  second one, and `cacheBytes` now counts an estimate of the property payload
+  rather than geometry alone.
+
+- 1c64619: Answer a tap on a painted vector tile, and wire the overlay to a Vue
+  scope.
+
+  `source.hitTest({ coordinate, zoom, tolerancePx })` returns the nearest
+  feature within a screen-pixel radius, with the properties the archive carried.
+  It reads only tiles the cache already holds, so it is synchronous and can
+  answer inside a gesture; a tap on an undrawn tile misses rather than fetching.
+  Distance is measured to the nearest point on a segment, not to a vertex, and
+  the probe reaches into neighbouring tiles when it lands within the tolerance
+  of an edge -- wrapping at the antimeridian, stopping at the poles -- so a
+  river drawn a pixel inside the next tile is still tappable.
+  `projectToTilePoint`, `hitTestTile` and `hitTestNeighbours` are exported for
+  callers that hold their own tiles.
+
+  `useMapKitVectorTiles()` in the Nuxt module -- which this changeset cannot
+  name, because the adapter is frozen at 2.0.x (narduk-libs#405, #421) -- builds
+  the PMTiles reader and the overlay source, rebuilds them when the archive url
+  changes, repaints a style change from the decoded tiles rather than
+  refetching, and terminates the decoder worker with the Vue scope. The worker
+  factory and the `pmtiles` reader stay the app's, because a published worker
+  chunk is the one thing Vite, webpack and Nuxt do not agree on.
+
+  Two client interfaces were also corrected against the browser types they stand
+  in for: `VectorTileCanvasContext.strokeStyle` was too narrow for a real
+  `CanvasRenderingContext2D`, and `VectorTileWorkerPort.postMessage` was
+  declared so that a real `Worker` could not satisfy it. Both are now proven
+  assignable by typecheck-time tests.
+
+## 2.6.0
+
+### Minor Changes
+
+- d077c85: Add a vector-tile canvas overlay source to `./client`.
+
+  `createVectorTileOverlaySource` paints decoded vector tiles to a canvas and
+  returns the `imageForTile` function the async tile overlay and the layer
+  registry already take, so a dense network stays off MapKit's overlay list.
+  Decoded tiles are cached, so `setStyle()` repaints from memory without a
+  refetch or a re-decode. The decode step is injected, which keeps this entry
+  free of protobuf dependencies and lets an app decode in a worker.
+
+  `createPmTilesTileSource` and `createPmTilesFetchSource` read a PMTiles
+  archive over HTTP range requests, taking the reader and the `fetch` they use
+  so tests need no network. A missing tile, an empty tile and a failed read all
+  resolve to `null` and report through `onError`, instead of throwing into the
+  map.
+
+## 2.5.0
+
+### Minor Changes
+
+- 20d72a9: `narduk-mapkit/nuxt` auto-imports `useMapKitView()` and
+  `useMapKitFullscreen()`, lifted from buoys. `useMapKitView()` owns the map
+  behind a map-first page's `<AppMapKit>` -- camera, frame, zoom tier, padding,
+  basemap, the `./marks` layer and fullscreen -- and takes the scoped runtime
+  from `map-ready` (K-10). A map-first app no longer copies buoys'
+  `utils/mapkit/*` and view composables to draw marks. The `./testing` fake map
+  now models `showsMapTypeControl`.
+
+### Patch Changes
+
+- e34b2da: `<AppMapKit>` now infers the app's item type in an SFC template
+  (narduk-libs#573, K-1). The exported type keeps only the generic construct
+  signature, so `create-pin-element`, `item-key`, `item-label`, `pin-geometry`
+  and the `#callout` scope accept callbacks narrowed to the app's own item type
+  without a cast. A vue-tsc template fixture in `tests/nuxt/template/` gates it.
+
+## 2.4.0
+
+### Minor Changes
+
+- ef39ebf: Add `@narduk-enterprises/narduk-mapkit/marks`, the point-map mark kit
+  lifted from buoys (narduk-libs#517): the declutter engine, label placement,
+  keyed mark layer, DOM pin builders, frame and camera math, and IQR overview
+  framing. The Nuxt module gains an opt-in `marks` option that adds the marks
+  stylesheet (`MAPKIT_MARKS_CSS`) after the host chrome.
+
+## 2.3.1
+
+### Patch Changes
+
+- 92835a1: Lint through `narduk-lint` with a checked-in `lint-budget.json`
+  recording the package's current warning counts (narduk-mapkit also marks
+  fire-and-forget limiter calls in its tests with `void`). No runtime change;
+  the release gate requires a changeset for any changed package file.
+
+## 2.3.0
+
+### Minor Changes
+
+- 36d9e18: The Nuxt module's `/api/mapkit-token` route now applies **no rate
+  limit by default** (narduk-libs#485). Since #436 it limited every app to 30
+  requests per 60 s per routed origin; that ceiling is now opt-in.
+  `ModuleOptions.rateLimit` is optional and has no default: set
+  `nardukMapKit: { rateLimit: { limit, windowSeconds } }` to keep a ceiling. A
+  limiter an app mounts on `event.context.nardukMapKit.rateLimit` still wins,
+  with or without the option. With per-client keying of the default no longer
+  needed, narduk-libs#512 is moot.
+
+  Logan's decision (askme, 2026-09-18 14:23 CT): "whatever the least restrcitive
+  reasonable option is.....i do NOT want rate limits to come up again....its
+  super annoying and not a problem".
+
+  `create-narduk-app` picks up the generator-owned narduk-mapkit pin.
+
+### Patch Changes
+
+- 36d9e18: `./testing` fake: a second `mapkit.init()` while the first token
+  exchange is pending, or after it succeeded, is now an idempotent no-op instead
+  of throwing `FakeMapKitNotImplemented` (K-7, narduk-libs#522). No new token is
+  requested, the first call's options stand, and the call is logged as `init`
+  with detail `ignored`. A second `init()` after a failed exchange still runs a
+  new exchange, so `retry()` stays testable. New conformance tests pin the rect
+  camera (K-5: `visibleMapRect`, `setVisibleMapRectAnimated`, `MapRect` /
+  `MapPoint` / `MapSize`, `Map.MapTypes`) against the Web-Mercator maths buoys'
+  shim used, in vitest and through `fakeMapKitInitScript()`, so buoys can delete
+  both shims.
+
+## 2.2.0
+
+### Minor Changes
+
+- 49d2606: Export §e.4's fixed-window token-route limiter,
+  `createMapKitFixedWindowRateLimit`, from the Worker-safe `/server` and
+  `/worker` entry points (narduk-libs#485). A Worker caller of
+  `mapKitTokenResponseFromEnv` can now pass the same limiter the 2.1 Nuxt module
+  applies to its own route, as `{ rateLimit }`. A new optional `key` names the
+  bucket: the default is still the routed origin, and a Worker can key per
+  client, for example on `cf-connecting-ip`. The Nuxt runtime re-exports the
+  same function. `mapKitTokenResponseFromEnv`'s default is unchanged: it applies
+  no limiter unless one is passed. Whether it should apply one by default is an
+  open decision on #485.
+
+## 2.1.3
+
+### Patch Changes
+
+- cf8e05e: `<AppMapKit>` no longer loads `mapkit.core.js` twice
+  (narduk-libs#469). The SSR preload's `useHead()` now runs during the server
+  render only. Through 2.1.2 it also ran on the client, where unhead's DOM
+  renderer had to recognise the server's `<script>` by hashing every attribute
+  on it. Under a nonce CSP (narduk-core `security.headers`) the browser hides
+  the tag's nonce as `nonce=""`, the hash never matched, and unhead appended a
+  second copy, which MapKit reports as `Mapkit namespace already exists`. On the
+  client, Apple's `@apple/mapkit-loader` is now the tag's only owner: it adopts
+  the server's tag on an SSR page load and injects the single tag on a
+  client-side navigation.
+
+  `@narduk-enterprises/create-narduk-app` only re-releases so its pinned
+  `@narduk-enterprises/narduk-mapkit` version follows this patch
+  (`scripts/check-generator-release-plan.mjs`'s generator-pin rule). The
+  generator's behavior does not change.
+
+## 2.1.2
+
+### Patch Changes
+
+- 62c69e0: Fix a blank map after client-side navigation: a late-mounted
+  `<AppMapKit>` never built its `mapkit.Map` because the init watcher fired once
+  while `ready` was already true and the canvas ref was still null. Init now
+  waits for both MapKit JS and the mounted container, whichever arrives last.
+
+## 2.1.1
+
+### Patch Changes
+
+- 554ae27: Fix the ten kit defects the first adopting app hit on 2.1.0.
+
+  **The one that made maps blank.** MapKit JS 6 resolves
+  `mapkit.load(libraries)` to a scoped namespace that is **not**
+  `window.mapkit`, and a value built from the global one is refused by your own
+  map
+  (`Map.addAnnotations expected an annotation at index 0, but got [object EventTarget]`).
+  The fake collapsed the two into one object, so a suite could be green against
+  it and blank against Apple. The fake now models the split; `<AppMapKit>` hands
+  the right namespace over as `map-ready`'s **second argument** and as a new
+  exposed `getMapKit()` (both additive — no existing handler or ref breaks).
+
+  **The rest.** `<AppMapKit>`'s generic now reaches `createPinElement`,
+  `itemKey`, `itemLabel`, `pinGeometry` and the `#callout` slot, so an adopting
+  component no longer needs a cast at the call site. `mapType` and `colorScheme`
+  are written to a live map when the prop changes, not only in the constructor,
+  and `mapType` accepts Apple's `'mutedStandard'` beside this library's
+  `'muted'`. The component ships the host chrome as a module-injected stylesheet
+  (single-class selectors, first in `nuxt.options.css`, layout only) instead of
+  making every app rewrite it. A new `pinsFocusable={false}` makes pins
+  decorative for a map whose pins are not the interactive surface. A missing
+  `itemLabel` now throws from `setup` instead of during the first map init. And
+  the fake models the rect camera (`visibleMapRect`,
+  `setVisibleMapRectAnimated`, `padding`) and records degenerate inputs on
+  `inspect.degenerateCameraInputs`.
+
+  **Operators:** no configuration changes, no route changes, no new environment
+  names. Apps on 2.1.0 upgrade in place. The one visible change is the
+  stylesheet: if your app already ships the `.mapkit-wrapper` / `.mapkit-canvas`
+  / `.mapkit-status` rules by hand, they still win (they load after ours and
+  ours are single-class with no `!important`), and you can delete them.
+
 ## 2.1.0
 
 ### Minor Changes
