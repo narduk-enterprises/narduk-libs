@@ -447,6 +447,19 @@ describe('AuthApiKeysPanel mount', () => {
     wrapper.unmount()
   })
 
+  it('warns that a wildcard token must expire and cannot use Never', async () => {
+    const wrapper = mountAuthCard(AuthApiKeysPanel)
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('*')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Wildcard token')
+    expect(wrapper.text()).toContain('capped at 90 days')
+    expect(wrapper.text()).not.toContain('No expiry selected')
+    wrapper.unmount()
+  })
+
   it('surfaces a failed token creation without clearing the raw-key banner state', async () => {
     authApiMocks.createApiKey.mockRejectedValue(new Error('Scope not permitted.'))
     const wrapper = mountAuthCard(AuthApiKeysPanel)

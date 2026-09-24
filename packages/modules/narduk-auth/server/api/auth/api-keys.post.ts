@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 
 import {
@@ -17,6 +18,11 @@ import {
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { apiKeys } from '#narduk-core/schema'
 
+import {
+  BOUNDARY_API_KEY_MAX_EXPIRY_DAYS,
+  resolveApiKeyMintExpiry,
+} from '../../../shared/utils/api-key-lifetime'
+
 const bodySchema = z.object({
   name: z.string().min(1).max(100),
   scopes: z.array(z.string().trim().min(1).max(100)).max(32).default([]),
@@ -26,6 +32,12 @@ const bodySchema = z.object({
 /**
  * POST /api/auth/api-keys
  * Create a new API key. Returns the raw key ONCE — caller must save it.
+ *
+ * A wildcard (`*`) key is a boundary-class credential (narduk-libs#168): it
+ * must expire, and the lifetime is capped at
+ * {@link BOUNDARY_API_KEY_MAX_EXPIRY_DAYS}. Narrow machine keys may still
+ * omit expiry. The unique index on `api_keys.key_hash` lives in narduk-core
+ * 0007 — this handler stores that digest and never the raw token.
  */
 export default defineUserMutation(
   {
@@ -40,7 +52,17 @@ export default defineUserMutation(
     const { rawKey, keyHash, keyPrefix } = await generateApiKey()
     const id = crypto.randomUUID()
     const scopes = normalizeAuthScopes(input.scopes)
-    const expiresAt = resolveApiKeyExpiry(input.expiresInDays)
+    const mintExpiry = resolveApiKeyMintExpiry(scopes, input.expiresInDays)
+    if (!mintExpiry.ok) {
+      throw createError({
+        statusCode: 400,
+        message:
+          mintExpiry.reason === 'boundary-unbounded'
+            ? 'A wildcard API key must have an expiry.'
+            : `A wildcard API key cannot expire more than ${BOUNDARY_API_KEY_MAX_EXPIRY_DAYS} days from now.`,
+      })
+    }
+    const expiresAt = resolveApiKeyExpiry(mintExpiry.expiresInDays)
 
     await db.insert(apiKeys).values({
       id,
