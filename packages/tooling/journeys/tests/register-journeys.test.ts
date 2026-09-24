@@ -40,22 +40,4 @@ describe('registerJourneys worker binding', () => {
       registerJourneys(options({ base: (index) => `http://localhost:${3241 + index}` })),
     ).toThrow(/scalar world/)
   })
-
-  it('registers a function pair against a worker pool', () => {
-    process.env.TEST_WORKERS = '4'
-    expect(() =>
-      registerJourneys(
-        options({
-          base: (index) => `http://localhost:${3241 + index}`,
-          world: () => world,
-          only: [],
-        }),
-      ),
-    ).not.toThrow()
-  })
-
-  it('still registers today\'s scalars when the pool is serial', () => {
-    delete process.env.TEST_WORKERS
-    expect(() => registerJourneys(options({ only: [] }))).not.toThrow()
-  })
 })

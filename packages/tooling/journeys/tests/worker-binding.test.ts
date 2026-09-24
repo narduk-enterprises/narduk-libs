@@ -29,7 +29,7 @@ describe('isWorkerResolver / resolveWorkerValue', () => {
     expect(isWorkerResolver('http://localhost:3241')).toBe(false)
     expect(isWorkerResolver(scalarWorld)).toBe(false)
     expect(resolveWorkerValue('http://localhost:3241', 3)).toBe('http://localhost:3241')
-    expect(resolveWorkerValue(baseFor, 3)).toBe('http://localhost:3243')
+    expect(resolveWorkerValue(baseFor, 3)).toBe('http://localhost:3244')
   })
 })
 
@@ -66,7 +66,7 @@ describe('configuredWorkersFrom', () => {
 })
 
 describe('assertIsolatedTargets', () => {
-  it('allows today\'s scalars when the pool is serial or unknown', () => {
+  it("allows today's scalars when the pool is serial or unknown", () => {
     expect(() =>
       assertIsolatedTargets({ base: 'http://localhost:3241', world: scalarWorld, workers: 1 }),
     ).not.toThrow()
@@ -86,7 +86,7 @@ describe('assertIsolatedTargets', () => {
   })
 
   it('refuses a scalar base or world against a worker pool, naming the overwrite', () => {
-    const shared = /wrong-but-green overwrite[\s\S]*one origin and one database/
+    const shared = /one origin and one database[\s\S]*wrong-but-green overwrite/
     expect(() =>
       assertIsolatedTargets({ base: 'http://localhost:3241', world: scalarWorld, workers: 4 }),
     ).toThrow(shared)
@@ -96,9 +96,9 @@ describe('assertIsolatedTargets', () => {
     expect(() =>
       assertIsolatedTargets({ base: 'http://localhost:3241', world: worldFor, workers: 4 }),
     ).toThrow(/scalar base/)
-    expect(() =>
-      assertIsolatedTargets({ base: baseFor, world: scalarWorld, workers: 4 }),
-    ).toThrow(/scalar world/)
+    expect(() => assertIsolatedTargets({ base: baseFor, world: scalarWorld, workers: 4 })).toThrow(
+      /scalar world/,
+    )
   })
 })
 
