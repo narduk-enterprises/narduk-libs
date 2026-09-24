@@ -44,9 +44,9 @@ export function redactConnectionString(value: unknown): string {
 export function redactSecrets(text: unknown): string {
   if (typeof text !== 'string') return REDACTED
   return text
-    .replaceAll(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@]*)@/giu, `$1$2:${REDACTED}@`)
+    .replaceAll(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):[^\s@]*@/giu, `$1$2:${REDACTED}@`)
     .replaceAll(
-      /\b(password|pgpassword|sslpassword|token)\s*[=:]\s*("[^"]*"|'[^']*'|\S+)/giu,
+      /\b(password|pgpassword|sslpassword|token)\s*[=:]\s*(?:"[^"]*"|'[^']*'|\S+)/giu,
       `$1=${REDACTED}`,
     )
 }

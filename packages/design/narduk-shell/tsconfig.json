@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
     "allowJs": false,
-    "baseUrl": ".",
     "isolatedModules": true,
     "lib": ["ES2022", "DOM"],
     "module": "ESNext",

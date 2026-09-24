@@ -1355,7 +1355,7 @@ try {
           // both downloaded and immutable-image proof paths assert it.
           '@playwright/test': PLAYWRIGHT_TOOLCHAIN_VERSION,
           eslint: WORKSPACE_ESLINT_VERSION_RANGE,
-          typescript: '5.9.3',
+          typescript: '~6.0.3',
           vitest: '4.1.6',
         },
         pnpm: {

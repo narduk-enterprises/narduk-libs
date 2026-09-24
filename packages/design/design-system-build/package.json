@@ -7,7 +7,7 @@
   "scripts": {
     "prepare": "nuxt prepare",
     "build": "nuxt generate && node --experimental-strip-types scripts/build.mts",
-    "typecheck": "nuxt typecheck && tsc --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions scripts/*.mts",
+    "typecheck": "nuxt typecheck && tsc --ignoreConfig --noEmit --strict --module NodeNext --target ES2022 --allowImportingTsExtensions --types node scripts/*.mts",
     "lint": "narduk-lint",
     "test:unit": "node --experimental-strip-types --test scripts/build.test.mts",
     "check:package": "node --experimental-strip-types scripts/check-package.mts",
@@ -24,7 +24,7 @@
     "nuxt": "^4.5.2",
     "parse5": "^7.3.0",
     "postcss": "8.5.28",
-    "typescript": "^5.9.3",
+    "typescript": "~6.0.3",
     "vue": "^3.5.39",
     "vue-tsc": "^3.2.5"
   }

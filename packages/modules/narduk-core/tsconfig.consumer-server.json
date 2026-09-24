@@ -17,7 +17,6 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
       "#layer/*": ["./runtime/*"],
       "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"],

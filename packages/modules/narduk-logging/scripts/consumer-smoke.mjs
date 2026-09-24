@@ -23,7 +23,7 @@ try {
     '--no-audit',
     '--no-fund',
     join(temporary, archive),
-    'typescript@5.9.3',
+    'typescript@~6.0.3',
     '@types/node@22',
     'esbuild@0.25.12',
     'h3@1.15.11',
