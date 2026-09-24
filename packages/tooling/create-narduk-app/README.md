@@ -298,13 +298,15 @@ to `.node-version` plus one `--fix`.
 Passing `node-version-file` requires the shared workflow pin to be
 `6f56678ad7562234e465284e48f27008e0f32db7` (workflows#97) or later — a reusable
 workflow rejects an input it does not declare, so this is not an optional bump.
-That commit also adds an always-run required `caller-lint` job which actionlints
-the **calling** repository's own workflows and audits them for workflow-level
-concurrency, a top-level and per-job `permissions:` block, per-job
-`timeout-minutes`, and 40-character SHA pins. Every workflow this generator
-emits satisfies those rules, and `tests/toolchain-single-source.test.ts` re-runs
-the gate's own checks over the generated output so the templates cannot drift
-back.
+The generator pins `1513b2a2f4b147b2e625478e56eb9de0cc5d5399` (workflows#116) so
+a tokenless `https://npm.nard.uk` caller also gets the install and
+foundation-check mirror skips (#108 / #116). That pin still includes #97's
+always-run required `caller-lint` job which actionlints the **calling**
+repository's own workflows and audits them for workflow-level concurrency, a
+top-level and per-job `permissions:` block, per-job `timeout-minutes`, and
+40-character SHA pins. Every workflow this generator emits satisfies those
+rules, and `tests/toolchain-single-source.test.ts` re-runs the gate's own checks
+over the generated output so the templates cannot drift back.
 
 ## Buoys-shape parity
 

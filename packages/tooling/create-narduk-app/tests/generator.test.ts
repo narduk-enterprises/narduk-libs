@@ -553,7 +553,7 @@ describe('create-narduk-app generation contract', () => {
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7',
+      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).not.toContain(
       'NARDUK_PLATFORM_GH_PACKAGES_READ',
@@ -1230,7 +1230,7 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-shell'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
+    expect(generatedCi).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
     expect(generatedCi).toContain('require-scripts: true')
     expect(generatedCi).toContain('run-tests: true')
     expect(generatedCi).toContain('run-e2e: true')
@@ -1453,7 +1453,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
       expect(npmrc, label).not.toContain('npm.pkg.github.com')
-      expect(ci, label).toContain('nuxt-cloudflare.yml@6f56678ad7562234e465284e48f27008e0f32db7')
+      expect(ci, label).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
       expect(ci, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(ci, label).not.toContain('npm.pkg.github.com')
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')

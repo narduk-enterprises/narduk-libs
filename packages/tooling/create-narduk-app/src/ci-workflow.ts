@@ -6,22 +6,27 @@ import { NODE_SOURCE_FILE } from './ownership.js'
 
 import type { AppVisibility } from './types.js'
 
-// workflows#97, the commit that ADDS the `node-version-file` caller input this
-// template now passes. The bump is not optional: a reusable workflow rejects an
-// input it does not declare, so a caller passing `node-version-file` to the
-// previous pin (#93, `4e99dafc`) fails at startup.
+// workflows#116, the first commit whose install AND foundation-check treat a
+// committed `.npmrc` route to `https://npm.nard.uk` as anonymous (install
+// skip: #108 / `eb7983fc`; foundation-check skip: this SHA). Tokenless
+// private callers need both: #97's Configure package registry auth still
+// classified every `@narduk-enterprises/*` app as private and exited 1
+// without `NARDUK_PLATFORM_GH_PACKAGES_READ` (narduk-libs#568).
 //
-// It also brings #94 (caller-defined E2E subset on pull requests -- additive
-// opt-in inputs, no caller change required) and #97's OWN second half: a new
-// always-run required `caller-lint` job that actionlints the CALLING repo's
-// workflows and audits them for workflow-level concurrency, a top-level and a
-// per-job `permissions:` block, per-job `timeout-minutes`, and 40-character SHA
-// pins. That gate is why this file now emits a job-level `permissions:` block on
-// every job it writes -- `tests/caller-lint-hygiene.test.ts` re-runs the audit's
-// own rules over the generated output so the templates cannot drift back.
+// Still carries #97's `node-version-file` input and the always-run required
+// `caller-lint` job (workflow-level concurrency, top-level and per-job
+// `permissions:`, per-job `timeout-minutes`, 40-character SHA pins). That
+// gate is why this file emits a job-level `permissions:` block on every job
+// it writes -- `tests/caller-lint-hygiene.test.ts` re-runs the audit's own
+// rules over the generated output so the templates cannot drift back.
 //
-// Deliberately NOT main's tip: #99 and #100 are separate decisions.
-const workflowSha = '6f56678ad7562234e465284e48f27008e0f32db7'
+// #99 and #100 sit between #97 and #116; there is no pin that only adds the
+// mirror skip. #99 is inert for generated apps (no `install-script`). #100
+// fails the build on fixable high/critical advisories.
+//
+// Still not main's tip. The development-mode validation caller stays on #141
+// below so ordinary CI does not also adopt every change between #116 and #141.
+const workflowSha = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
 
 // workflows#141 (merged as 67968e3): the first commit whose callable accepts an
 // explicit exact-candidate request pushed to `narduk-validation/<sha>/<id>`. Only
