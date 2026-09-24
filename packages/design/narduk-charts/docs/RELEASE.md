@@ -1,51 +1,38 @@
 # Release Runbook
 
-`@narduk-enterprises/narduk-charts` publishes to **GitHub Packages**:
+`@narduk-enterprises/narduk-charts` is released from
+[narduk-libs](https://github.com/narduk-enterprises/narduk-libs), with the rest
+of the monorepo's packages, to **GitHub Packages**
+(`https://npm.pkg.github.com`). The full process, including the release PR,
+registry preflight and the publication proof, is in the repository's
+[package release runbook](../../../../docs/package-releases.md).
 
-`https://npm.pkg.github.com`
+## Shipping a change
 
-## Prerequisites
+1. Make the change under `packages/design/narduk-charts`.
+2. Run the package gate from the repository root:
+   - `CI=true pnpm --filter @narduk-enterprises/narduk-charts run quality`
+   - `pnpm --filter @narduk-enterprises/narduk-charts run test:e2e` for visual
+     or interaction changes
+   - `pnpm --filter @narduk-enterprises/narduk-charts run build` and
+     `pnpm --filter @narduk-enterprises/narduk-charts run check:package`
+3. Add a Changeset under the repository root's `.changeset/` naming
+   `'@narduk-enterprises/narduk-charts'` with `patch`, `minor` or `major`. The
+   generator pins this package, so the same Changeset also lists
+   `'@narduk-enterprises/create-narduk-app': patch`;
+   `pnpm run release-plan:check` enforces that.
+4. Do not edit `version` in `package.json` or add a `CHANGELOG.md` section by
+   hand. The `chore: release packages` PR does both.
 
-- Root `.npmrc` scopes `@narduk-enterprises` to GitHub Packages (committed in
-  this repo).
-- CI and publish workflows use the repository-owned
-  `tools/configure-package-registry-auth.mjs` helper.
-- The publish workflow expects org secrets: `NARDUK_PLATFORM_GH_PACKAGES_READ`
-  and `NARDUK_PLATFORM_GH_PACKAGES_WRITE`, or `NARDUK_PLATFORM_GH_PACKAGES_RW`
-  for both.
+## History
 
-## Release Steps
-
-1. Update the implementation.
-2. Run local verification:
-   - `npm run typecheck`
-   - `npm test`
-   - `npm run build`
-   - `npm run size`
-   - `npm pack`
-3. Bump the package version in `package.json`.
-4. Update `CHANGELOG.md`.
-5. Commit the release changes.
-6. **Land the release commit on `main` before tagging it.** Tag a commit that is
-   an ancestor of `main`, never one that only exists on a release branch.
-   `v2.4.0` was cut off a branch that never merged back (narduk-charts#32): the
-   package published fine, but `main` then declared `2.3.0` while `2.4.0` was in
-   the registry, and step 3 above reads that stale number. Verify before
-   tagging:
-
-   ```bash
-   git fetch origin main
-   git merge-base --is-ancestor HEAD origin/main && echo "on main" || echo "NOT on main — do not tag"
-   ```
-
-7. Create a tag in the format `vX.Y.Z`.
-8. Push the tag to GitHub.
-9. Confirm the **Publish package** workflow completed in GitHub Actions. Note
-   that its "Check published package version" step **skips** the publish when
-   the version already exists in the registry and the run still reports success
-   — so read that step's output, not just the run's conclusion.
-10. Confirm the version appears under the org packages and installs cleanly from
-    a consumer app.
+Through 2.6.0 the package was released from the standalone
+`narduk-enterprises/narduk-charts` repository by pushing a `vX.Y.Z` tag. That
+repository published 2.6.0 on 2026-09-23, after the source had moved here at
+2.5.6, which left the registry's `latest` ahead of this package's version until
+narduk-libs took 2.6.0 over. The registry preflight refuses to move `latest`
+backwards, so a version published from anywhere else blocks every release here.
+Publish only from narduk-libs.
 
 ## Consumer Install Smoke
 

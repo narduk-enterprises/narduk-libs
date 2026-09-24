@@ -90,6 +90,8 @@ export type { DecimatedCategoryData, XYPoint, AggregatedCandleBucket } from './u
 
 export type {
   ChartSeries,
+  ChartSeriesMode,
+  ChartSeriesMarker,
   PieDataItem,
   TooltipItem,
   LegendItem,

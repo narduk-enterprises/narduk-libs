@@ -57,11 +57,14 @@ to every job that uses the environment. Only install-free jobs use it
 so the key never shares a runner with dependency install scripts. GitHub
 Packages must grant this repository Actions access to every existing package,
 including packages not automatically linked to this repository. Before writing
-registry auth, the job checks that its token can read metadata for every current
-publication target; a missing or foreign package fails closed. Changesets gets a
-mode-0600 temporary home for its git push credential, created only after the
-dependency install and removed on exit. The release's exact version registry
-proof uses the same temporary token config.
+registry auth, the job checks that its token can read metadata for every
+publication target that has a release tag (`<name>@<version>`); a missing or
+foreign package among those fails closed. A target with no release tag has never
+been published and has no GitHub Packages metadata to read yet, so it is named
+in the log and left to its first publish, which creates both the package and its
+tag. Changesets gets a mode-0600 temporary home for its git push credential,
+created only after the dependency install and removed on exit. The release's
+exact version registry proof uses the same temporary token config.
 
 ## Packed consumer preparation
 

@@ -4,16 +4,20 @@
 stack—TypeScript-first, themeable, accessible, built without D3 or Chart.js.
 
 **npm package:**
-[`@narduk-enterprises/narduk-charts`](https://github.com/narduk-enterprises/narduk-charts)
+[`@narduk-enterprises/narduk-charts`](https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/design/narduk-charts)
 (published to **GitHub Packages**; not the public npm registry).
 
 **Companion marketing site** (broader Narduk narrative, enterprise pages, SEO):
 [charts.nard.uk](https://charts.nard.uk)
 
-**This repository:** library source, tests, markdown API notes (`docs/`), and
-**Histoire** component stories (`pnpm dev` / `npm run dev`, same as
-`npm run story:dev`). Runnable demos and flagship examples live on the companion
-**charts** site, not in this package repo.
+**Source:** this package directory in
+[narduk-libs](https://github.com/narduk-enterprises/narduk-libs) holds the
+library source, tests, markdown API notes (`docs/`), and **Histoire** component
+stories (`pnpm --filter @narduk-enterprises/narduk-charts run dev`). Runnable
+demos and flagship examples live on the companion **charts** site. The former
+standalone `narduk-enterprises/narduk-charts` repository is retired; it
+published its last release, 2.6.0, on 2026-09-23, and narduk-libs carries
+everything in it.
 
 ## Install
 
@@ -22,19 +26,14 @@ npm install @narduk-enterprises/narduk-charts
 ```
 
 For private org packages, configure the `@narduk-enterprises` scope to **GitHub
-Packages** (see root `.npmrc`) and authenticate with a GitHub token that has
-`read:packages` (install) or `write:packages` (publish). Locally,
-`npm run package-registry:auth` writes `.npmrc.auth` when
-`NARDUK_PLATFORM_GH_PACKAGES_READ` or `NARDUK_PLATFORM_GH_PACKAGES_RW` is set.
+Packages** (`@narduk-enterprises:registry=https://npm.pkg.github.com`) and
+authenticate with a GitHub token that has `read:packages`.
 
 ## Publishing
 
-GitHub Actions publishes tags `v*` to GitHub Packages (see
-`.github/workflows/publish.yml`) using org secrets
-`NARDUK_PLATFORM_GH_PACKAGES_READ` / `NARDUK_PLATFORM_GH_PACKAGES_WRITE` (or
-`NARDUK_PLATFORM_GH_PACKAGES_RW`).
-
-Release steps live in [docs/RELEASE.md](./docs/RELEASE.md).
+narduk-libs publishes this package with the rest of the monorepo, through
+Changesets and the repository's release workflow. There is no per-package tag or
+publish workflow. See [docs/RELEASE.md](./docs/RELEASE.md).
 
 ## Setup
 
@@ -133,7 +132,7 @@ labels, or `formatTime` to own the string.
 
 | Prop                              | Type                    | Default                                        | Description                                                                                                                                                                                                                                                                                                         |
 | --------------------------------- | ----------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `series`                          | `ChartSeries[]`         | _required_                                     | `{ name, data, color?, yAxis? }` — use `yAxis: 'secondary'` with `dualYAxis`                                                                                                                                                                                                                                        |
+| `series`                          | `ChartSeries[]`         | _required_                                     | `{ name, data, color?, yAxis?, spanGaps?, mode?, marker?, opacity?, showValues?, formatValue? }` — use `yAxis: 'secondary'` with `dualYAxis`; see **Sparse and point-only series** below                                                                                                                            |
 | `labels`                          | `string[]`              | _required_                                     | X-axis labels                                                                                                                                                                                                                                                                                                       |
 | `width`                           | `number`                | auto                                           | Fixed width in px (responsive if omitted)                                                                                                                                                                                                                                                                           |
 | `height`                          | `number`                | `400`                                          | Chart height in px                                                                                                                                                                                                                                                                                                  |
@@ -163,7 +162,7 @@ labels, or `formatTime` to own the string.
 | `yScaleSecondary`                 | `ChartYScaleMode`       | `linear`                                       | Right axis scale when `dualYAxis`                                                                                                                                                                                                                                                                                   |
 | `symlogLinthresh`                 | `number`                | `1`                                            | Linear threshold for `symlog`                                                                                                                                                                                                                                                                                       |
 | `yBands`                          | `ChartYBand[]`          | —                                              | Horizontal bands (`y0`, `y1`, optional `color`, `opacity`, `yAxis`)                                                                                                                                                                                                                                                 |
-| `annotations`                     | `ChartLineAnnotation[]` | —                                              | `vline`, `point`, or `label` markers                                                                                                                                                                                                                                                                                |
+| `annotations`                     | `ChartLineAnnotation[]` | —                                              | `vline`, `point`, or `label` markers; `point` takes `ring: true` for a ringed marker                                                                                                                                                                                                                                |
 | `zoomable`                        | `boolean`               | `false`                                        | X zoom: **drag** a box on the plot, **Ctrl/Cmd + wheel**, **Shift + drag** to pan, **double-click** to reset; emits `zoom`                                                                                                                                                                                          |
 | `zoomAutoY`                       | `boolean`               | `true`                                         | When `zoomable`, rescale Y from series values in the visible X window                                                                                                                                                                                                                                               |
 | `zoomMinPoints`                   | `number`                | `3`                                            | Minimum points visible along X when zoomed in                                                                                                                                                                                                                                                                       |
@@ -172,6 +171,7 @@ labels, or `formatTime` to own the string.
 | `formatTime`                      | `(timestamp) => string` | `en-US` / `timeZone`                           | Override time-axis labels and tooltip titles. The default is pinned `en-US` in `timeZone` (default `'UTC'`), never the host locale or zone                                                                                                                                                                          |
 | `timeZone`                        | `string`                | `'UTC'`                                        | IANA zone for the default time-axis labels. Ignored when `formatTime` is set. Required for SSR: workerd is UTC, the browser is the reader's zone                                                                                                                                                                    |
 | `xAxisMinLabelPx`                 | `number`                | `112` time / `50` category                     | Minimum horizontal spacing per X label                                                                                                                                                                                                                                                                              |
+| `xTickIndices`                    | `number[]`              | —                                              | Label exactly these category indices (e.g. month starts on a day-of-year axis); ticks closer than `xAxisMinLabelPx` (default `36` here) to the previous one are skipped                                                                                                                                             |
 | `padding`                         | `Partial<ChartPadding>` | `{ top: 24, right: 24, bottom: 48, left: 56 }` | Override plot padding, useful for compact previews with hidden axes                                                                                                                                                                                                                                                 |
 | `linearFromZero`                  | `boolean`               | `true`                                         | Include zero in positive linear Y domains; set `false` for relative trend/detail charts                                                                                                                                                                                                                             |
 | `linearPaddingRatio`              | `number`                | `0`                                            | Add proportional headroom/footroom to linear Y domains                                                                                                                                                                                                                                                              |
@@ -256,6 +256,51 @@ const d = sparkPath(values, 80, 24, {
 })
 ```
 
+#### Sparse and point-only series
+
+Per-series options (line chart only; all opt-in):
+
+| Field                        | Type                                   | Default                     | Description                                                                                                                                                                                          |
+| ---------------------------- | -------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spanGaps`                   | `boolean \| number`                    | —                           | Join values across `null`s. `true` bridges every gap; a number bridges only when the two values are at most that many label slots apart (`40` on a day-of-year axis never draws across a longer gap) |
+| `mode`                       | `'line' \| 'points'`                   | `'line'`                    | `'points'` draws a marker per value and no line or area                                                                                                                                              |
+| `marker`                     | `{ radius?, filled? }`                 | chart `pointRadius`, filled | `filled: false` draws a ring in the series colour over the plot background                                                                                                                           |
+| `opacity`                    | `number`                               | `1`                         | Opacity for everything the series draws                                                                                                                                                              |
+| `showValues` / `formatValue` | `boolean` / `(value, index) => string` | —                           | Always-visible value text above each point                                                                                                                                                           |
+
+```vue
+<NardukLineChart
+  :labels="dayOfYearLabels"
+  :series="[
+    { name: '2024', data: clear, spanGaps: 40, color: 'var(--farm-accent)' },
+    {
+      name: '2024 cloudy',
+      data: cloudy,
+      mode: 'points',
+      marker: { filled: false, radius: 2.5 },
+      opacity: 0.5,
+    },
+  ]"
+  :annotations="[
+    {
+      type: 'point',
+      xIndex: peakDay - 1,
+      y: peak,
+      ring: true,
+      color: 'var(--farm-accent)',
+      label: 'Peak',
+    },
+  ]"
+  :x-tick-indices="[0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]"
+  :y-min="0"
+  :y-max="0.8"
+  :y-tick-count="5"
+/>
+```
+
+Colours may be CSS custom properties. A hollow marker's or ring's colour is set
+on the element's `style`, so it outranks the stylesheet's marker stroke.
+
 ---
 
 ### NardukBarChart
@@ -282,24 +327,29 @@ const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
 
 #### Props
 
-| Prop                   | Type                    | Default          | Description                                                 |
-| ---------------------- | ----------------------- | ---------------- | ----------------------------------------------------------- |
-| `series`               | `ChartSeries[]`         | _required_       | `{ name, data, color? }` (`yAxis` is ignored on bar charts) |
-| `labels`               | `string[]`              | _required_       | X-axis category labels                                      |
-| `width`                | `number`                | auto             | Fixed width in px                                           |
-| `height`               | `number`                | `400`            | Chart height in px                                          |
-| `stacked`              | `boolean`               | `false`          | Stack bars instead of grouping                              |
-| `colors`               | `string[]`              | built-in palette | Custom color palette                                        |
-| `animate`              | `boolean`               | `true`           | Animate bars growing on mount                               |
-| `barRadius`            | `number`                | `4`              | Border radius on bars                                       |
-| `referenceLines`       | `ChartReferenceLine[]`  | —                | Horizontal guides (extends scale when needed)               |
-| `respectReducedMotion` | `boolean`               | `true`           | Honor `prefers-reduced-motion`                              |
-| `theme`                | `ChartTheme`            | `default`        | Preset visual theme                                         |
-| `dark`                 | `boolean`               | auto-detect      | Force dark/light mode                                       |
-| `yScale`               | `ChartYScaleMode`       | `linear`         | `linear` · `log` · `symlog` for bar height                  |
-| `symlogLinthresh`      | `number`                | `1`              | Used when `yScale` is `symlog`                              |
-| `yBands`               | `ChartYBand[]`          | —                | Horizontal bands behind bars                                |
-| `annotations`          | `ChartLineAnnotation[]` | —                | `vline` entries draw vertical guides at category centers    |
+| Prop                      | Type                    | Default          | Description                                                                                   |
+| ------------------------- | ----------------------- | ---------------- | --------------------------------------------------------------------------------------------- |
+| `series`                  | `ChartSeries[]`         | _required_       | `{ name, data, color? }` (`yAxis` is ignored on bar charts)                                   |
+| `labels`                  | `string[]`              | _required_       | X-axis category labels                                                                        |
+| `width`                   | `number`                | auto             | Fixed width in px                                                                             |
+| `height`                  | `number`                | `400`            | Chart height in px                                                                            |
+| `stacked`                 | `boolean`               | `false`          | Stack bars instead of grouping                                                                |
+| `colors`                  | `string[]`              | built-in palette | Custom color palette                                                                          |
+| `animate`                 | `boolean`               | `true`           | Animate bars growing on mount                                                                 |
+| `barRadius`               | `number`                | `4`              | Border radius on bars                                                                         |
+| `referenceLines`          | `ChartReferenceLine[]`  | —                | Horizontal guides (extends scale when needed)                                                 |
+| `respectReducedMotion`    | `boolean`               | `true`           | Honor `prefers-reduced-motion`                                                                |
+| `theme`                   | `ChartTheme`            | `default`        | Preset visual theme                                                                           |
+| `dark`                    | `boolean`               | auto-detect      | Force dark/light mode                                                                         |
+| `yScale`                  | `ChartYScaleMode`       | `linear`         | `linear` · `log` · `symlog` for bar height                                                    |
+| `symlogLinthresh`         | `number`                | `1`              | Used when `yScale` is `symlog`                                                                |
+| `yBands`                  | `ChartYBand[]`          | —                | Horizontal bands behind bars                                                                  |
+| `annotations`             | `ChartLineAnnotation[]` | —                | `vline` entries draw vertical guides at category centers                                      |
+| `yMin` / `yMax`           | `number`                | —                | Pin the value-axis domain; either end alone, used exactly                                     |
+| `showXAxis` / `showYAxis` | `boolean`               | `true`           | Draw the bottom / left axis line and labels (whichever role it carries in the orientation)    |
+| `showGrid`                | `boolean`               | `true`           | Draw the value gridlines                                                                      |
+| `showLegend`              | `boolean`               | `true`           | Render the legend                                                                             |
+| `padding`                 | `Partial<ChartPadding>` | —                | Override chart padding, e.g. `{ top: 0, right: 0, bottom: 0, left: 0 }` for a thin inline bar |
 
 #### Events
 
@@ -696,6 +746,13 @@ interface ChartSeries {
   data: (number | null)[]
   color?: string
   yAxis?: ChartYAxisId
+  // NardukLineChart only:
+  spanGaps?: boolean | number
+  mode?: 'line' | 'points'
+  marker?: { radius?: number; filled?: boolean }
+  opacity?: number
+  showValues?: boolean
+  formatValue?: (value: number, index: number) => string
 }
 
 type ChartTheme = 'default' | 'high-contrast' | 'print' | 'colorblind-safe'
@@ -732,6 +789,8 @@ type ChartLineAnnotation =
       color?: string
       label?: string
       yAxis?: ChartYAxisId
+      radius?: number
+      ring?: boolean
     }
   | {
       type: 'label'

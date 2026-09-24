@@ -55,3 +55,48 @@ describe('NardukBarChart', () => {
     expect((rects[0]!.element as SVGRectElement).getAttribute('width')).not.toBe('0')
   })
 })
+
+describe('NardukBarChart thin "% of normal" bar (narduk-charts#37)', () => {
+  const props = {
+    series: [{ name: 'Rain', data: [87], color: 'var(--farm-accent)' }],
+    labels: ['Rain'],
+    orientation: 'horizontal' as const,
+    width: 300,
+    height: 14,
+    animate: false,
+    barRadius: 0,
+    yMin: 0,
+    yMax: 150,
+    referenceLines: [{ value: 100, dashed: false }],
+    showXAxis: false,
+    showYAxis: false,
+    showGrid: false,
+    showLegend: false,
+    padding: { top: 1, right: 0, bottom: 1, left: 0 },
+    chartTitle: 'Rainfall, 87% of normal',
+  }
+
+  it('draws no axes, grid or legend, and fills the width it is given', () => {
+    const w = mount(NardukBarChart, { props })
+    expect(w.findAll('.narduk-axis')).toHaveLength(0)
+    expect(w.findAll('.narduk-grid')).toHaveLength(0)
+    expect(w.find('.narduk-legend__fieldset').exists()).toBe(false)
+    const bar = w.find('rect.narduk-bar-rect')
+    expect(Number(bar.attributes('x'))).toBe(0)
+    expect(bar.attributes('fill')).toBe('var(--farm-accent)')
+  })
+
+  it('scales the bar and the reference tick against the pinned 0–150 domain', () => {
+    const w = mount(NardukBarChart, { props })
+    const bar = w.find('rect.narduk-bar-rect')
+    expect(Number(bar.attributes('width'))).toBeCloseTo((87 / 150) * 300, 5)
+    const tick = w.find('line.narduk-ref-line')
+    expect(Number(tick.attributes('x1'))).toBeCloseTo((100 / 150) * 300, 5)
+    expect(tick.classes()).not.toContain('narduk-ref-line--dashed')
+  })
+
+  it('keeps its accessible name', () => {
+    const w = mount(NardukBarChart, { props })
+    expect(w.find('svg title').text()).toBe('Rainfall, 87% of normal')
+  })
+})

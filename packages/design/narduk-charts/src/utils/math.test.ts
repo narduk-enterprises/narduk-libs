@@ -82,6 +82,33 @@ describe('segmentLinePoints', () => {
   })
 })
 
+describe('segmentLinePoints maxGap (spanGaps)', () => {
+  const data = [1, null, null, 4, null, null, null, null, null, 10]
+
+  it('bridges a gap no wider than maxGap and breaks at a wider one', () => {
+    // 0 -> 3 is a distance of 3; 3 -> 9 is a distance of 6.
+    const segs = segmentLinePoints(data, (i, v) => [i, v], 3)
+    expect(segs).toEqual([
+      [
+        [0, 1],
+        [3, 4],
+      ],
+      [[9, 10]],
+    ])
+  })
+
+  it('bridges every gap with Infinity', () => {
+    const segs = segmentLinePoints(data, (i, v) => [i, v], Number.POSITIVE_INFINITY)
+    expect(segs).toHaveLength(1)
+    expect(segs[0]).toHaveLength(3)
+  })
+
+  it('keeps the default split-on-every-null behaviour when omitted or below 1', () => {
+    expect(segmentLinePoints(data, (i, v) => [i, v])).toHaveLength(3)
+    expect(segmentLinePoints(data, (i, v) => [i, v], 0)).toHaveLength(3)
+  })
+})
+
 describe('lineSegmentsToPaths', () => {
   it('returns empty for short segments', () => {
     const paths = lineSegmentsToPaths([[[0, 0]]], false)

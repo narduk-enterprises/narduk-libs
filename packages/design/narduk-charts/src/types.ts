@@ -18,6 +18,44 @@ export interface ChartSeries {
    * or right (`secondary`) scale. Defaults to `primary`.
    */
   yAxis?: ChartYAxisId
+  /**
+   * **NardukLineChart only.** Join measured values across `null` entries.
+   * `true` bridges every gap; a number bridges only when the two values are at
+   * most that many label slots apart — `spanGaps: 40` on a 366-slot
+   * day-of-year series joins passes up to 40 days apart and never draws a line
+   * across a longer gap. Default: every `null` breaks the line.
+   */
+  spanGaps?: boolean | number
+  /**
+   * **NardukLineChart only.** `'points'` draws a marker for every value and no
+   * line or area — for observations that must not read as a trend. Default `'line'`.
+   */
+  mode?: ChartSeriesMode
+  /** **NardukLineChart only.** Marker style for this series' points. */
+  marker?: ChartSeriesMarker
+  /** **NardukLineChart only.** 0–1 opacity for everything this series draws. Default `1`. */
+  opacity?: number
+  /**
+   * **NardukLineChart only.** Print each value as text above its point, always
+   * visible (not a hover tooltip). Pair with `formatValue`.
+   */
+  showValues?: boolean
+  /** **NardukLineChart only.** Formats `showValues` labels. Default: the chart's compact number format. */
+  formatValue?: (value: number, index: number) => string
+}
+
+/** **NardukLineChart only.** How a series draws: a joined line (default) or markers only. */
+export type ChartSeriesMode = 'line' | 'points'
+
+/** **NardukLineChart only.** Per-series marker style. */
+export interface ChartSeriesMarker {
+  /** Marker radius in px. Default: the chart's `pointRadius`. */
+  radius?: number
+  /**
+   * `true` (default) fills the marker with the series colour. `false` draws a
+   * hollow ring: the series colour as the stroke over the plot background.
+   */
+  filled?: boolean
 }
 
 export interface ChartReferenceLine {
@@ -64,6 +102,12 @@ export type ChartLineAnnotation =
       yAxis?: ChartYAxisId
       /** Marker radius in px. Default `5`; shrink it for compact charts. */
       radius?: number
+      /**
+       * Draw a ringed marker — `color` as a ring over the plot background
+       * (white in the default light theme) — instead of a filled dot. Use it to
+       * single out one value, such as a season peak. Default `false`.
+       */
+      ring?: boolean
     }
   | {
       type: 'label'
@@ -189,6 +233,12 @@ export interface NardukLineChartProps {
   timeZone?: string
   /** Minimum horizontal label spacing. Defaults to 112px for time axes and 50px for category axes. */
   xAxisMinLabelPx?: number
+  /**
+   * Label exactly these category indices on the X axis instead of the automatic
+   * spacing (e.g. month starts on a day-of-year axis). Ticks closer than
+   * `xAxisMinLabelPx` (default `36` here) to the previous kept one are skipped.
+   */
+  xTickIndices?: number[]
   /** Override chart padding, useful for compact axis-free previews. */
   padding?: Partial<ChartPadding>
   /** Card border/shadow/background wrapper styling. `false` for decorative/sparkline usage. */
@@ -238,6 +288,19 @@ export interface NardukBarChartProps {
    * gutter. Layout uses `min(estimated, cap)` (minimum gutter 32px).
    */
   categoryLabelMaxWidth?: number
+  /** Pin the value-axis domain; either end on its own, used exactly. */
+  yMin?: number
+  yMax?: number
+  /** Draw the bottom axis line and labels. Default `true`. */
+  showXAxis?: boolean
+  /** Draw the left axis line and labels. Default `true`. */
+  showYAxis?: boolean
+  /** Render the legend. Default `true`. */
+  showLegend?: boolean
+  /** Draw the value gridlines. Default `true`. */
+  showGrid?: boolean
+  /** Override chart padding, e.g. for a thin inline bar with no axes. */
+  padding?: Partial<ChartPadding>
 }
 
 export interface PieSliceClickPayload {

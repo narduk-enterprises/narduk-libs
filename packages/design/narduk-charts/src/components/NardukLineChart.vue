@@ -149,6 +149,14 @@ const props = withDefaults(
     xAxisMinLabelPx?: number
     /** Default `'category'`; use `'time'` with `times` for dense timestamp axes. */
     xAxisType?: ChartXAxisType
+    /**
+     * Label exactly these category indices on the X axis (those inside the
+     * visible window) instead of the automatic even spacing — e.g. the twelve
+     * month starts on a 366-slot day-of-year axis. A tick closer than
+     * `xAxisMinLabelPx` (default `36` here) to the previous kept one is skipped,
+     * so a narrow chart shows every other month rather than overlapping text.
+     */
+    xTickIndices?: number[]
     /** Horizontal bands (Y in data space). */
     yBands?: ChartYBand[]
     yMax?: number
@@ -829,9 +837,23 @@ function xPos(index: number): number {
 
 const yBaseline = computed(() => padding.value.top + priceInnerHeight.value)
 
+/** `spanGaps: true` bridges every gap; a number bridges gaps up to that many slots. */
+function spanGapsToMaxGap(spanGaps: ChartSeries['spanGaps']): number | undefined {
+  if (spanGaps === true) return Number.POSITIVE_INFINITY
+  return typeof spanGaps === 'number' ? spanGaps : undefined
+}
+
 const seriesRender = computed(() =>
   visibleSeries.value.map(s => {
-    const segments = segmentLinePoints(s.data, (i, v) => [xPos(i), yPosForSeries(s, v)])
+    /* A points-only series draws every value through the markers loop below. */
+    if (s.mode === 'points') {
+      return { segments: [], lineDs: [], areaDs: [], isolated: [] }
+    }
+    const segments = segmentLinePoints(
+      s.data,
+      (i, v) => [xPos(i), yPosForSeries(s, v)],
+      spanGapsToMaxGap(s.spanGaps),
+    )
     const lineDs = lineSegmentsToPaths(segments, props.smooth)
     const areaDs = props.showArea
       ? lineDs.map((d, i) => closeAreaUnderLine(d, segments[i], yBaseline.value))
@@ -857,6 +879,56 @@ function resolveColor(s: ChartSeries): string {
   const idx = props.series.findIndex(x => x.name === s.name)
   return s.color || getColor(props.colors, idx >= 0 ? idx : 0)
 }
+
+/** Background a hollow marker or ringed annotation is filled with (white in the light theme). */
+const RING_FILL = 'var(--color-chart-plot-tint, #fff)'
+
+function markerRadius(s: ChartSeries): number {
+  return s.marker?.radius ?? props.pointRadius
+}
+
+function markerHollow(s: ChartSeries): boolean {
+  return s.marker?.filled === false
+}
+
+/*
+ * A hollow marker's ring is the series colour. It goes on `style`, not the
+ * `stroke` attribute: `.narduk-line-point` sets `stroke` in the stylesheet,
+ * and a stylesheet rule outranks a presentation attribute.
+ */
+function markerStyle(s: ChartSeries): Record<string, string> | undefined {
+  return markerHollow(s) ? { stroke: resolveColor(s) } : undefined
+}
+
+interface ValueLabel {
+  key: string
+  opacity?: number
+  text: string
+  x: number
+  y: number
+}
+
+/** `showValues` labels, drawn outside the plot clip so a top value's label is not cut. */
+const valueLabels = computed(() => {
+  const lo = Math.floor(xViewMin.value)
+  const hi = Math.ceil(xViewMax.value)
+  return visibleSeries.value.flatMap(s => {
+    if (!s.showValues) return []
+    const r = s.mode === 'points' || props.showPoints ? markerRadius(s) : 0
+    const out: ValueLabel[] = []
+    for (const [i, v] of s.data.entries()) {
+      if (v == null || Number.isNaN(v) || i < lo || i > hi) continue
+      out.push({
+        key: `${s.name}-${i}`,
+        x: xPos(i),
+        y: yPosForSeries(s, v) - r - 5,
+        text: s.formatValue ? s.formatValue(v, i) : formatValue(v),
+        opacity: s.opacity,
+      })
+    }
+    return out
+  })
+})
 
 /** Same bull/bear/neutral color resolution `NardukCandleChart` uses for its volume bars. */
 const VOLUME_BULL_COLOR = 'var(--color-chart-up, #22c55e)'
@@ -1144,6 +1216,17 @@ const xAxisLabelIndices = computed(() => {
   if (n === 0) return []
   const i0 = Math.max(0, Math.floor(xViewMin.value))
   const i1 = Math.min(n - 1, Math.ceil(xViewMax.value))
+  if (props.xTickIndices) {
+    /* Thinned so labels keep their real size without colliding on a narrow chart. */
+    const minPx = props.xAxisMinLabelPx ?? 36
+    const kept: number[] = []
+    for (const i of [...new Set(props.xTickIndices)].sort((a, b) => a - b)) {
+      if (!Number.isInteger(i) || i < i0 || i > i1) continue
+      const prev = kept.at(-1)
+      if (prev === undefined || xPos(i) - xPos(prev) >= minPx) kept.push(i)
+    }
+    return kept
+  }
   if (props.xAxisType === 'time') {
     return selectEvenAxisLabelIndices({
       i0,
@@ -1446,7 +1529,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           </g>
 
           <!-- Series -->
-          <g v-for="(s, si) in visibleSeries" :key="s.name">
+          <g v-for="(s, si) in visibleSeries" :key="s.name" :opacity="s.opacity">
             <path
               v-for="(ad, ai) in seriesRender[si].areaDs"
               v-show="ad"
@@ -1468,15 +1551,17 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             />
 
             <circle
-              v-if="showPoints"
+              v-if="showPoints || s.mode === 'points'"
               v-for="(v, pi) in s.data"
               :key="'p-' + s.name + '-' + pi"
               v-show="v != null && !Number.isNaN(v)"
               class="narduk-line-point"
+              :class="{ 'narduk-line-point--hollow': markerHollow(s) }"
               :cx="xPos(pi)"
               :cy="yPosForSeries(s, v as number)"
-              :r="pointRadius"
-              :fill="resolveColor(s)"
+              :r="markerRadius(s)"
+              :fill="markerHollow(s) ? RING_FILL : resolveColor(s)"
+              :style="markerStyle(s)"
             />
 
             <!-- Values with no measured neighbour: drawn as themselves, never
@@ -1485,10 +1570,12 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               v-for="(pt, ii) in seriesRender[si].isolated"
               :key="'iso-' + s.name + '-' + ii"
               class="narduk-line-point narduk-line-point--isolated"
+              :class="{ 'narduk-line-point--hollow': markerHollow(s) }"
               :cx="pt[0]"
               :cy="pt[1]"
-              :r="pointRadius"
-              :fill="resolveColor(s)"
+              :r="markerRadius(s)"
+              :fill="markerHollow(s) ? RING_FILL : resolveColor(s)"
+              :style="markerStyle(s)"
             />
           </g>
 
@@ -1519,10 +1606,12 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             <g v-for="(ap, pi) in pointAnnotations" :key="'ap-' + pi">
               <circle
                 class="narduk-ann-point"
+                :class="{ 'narduk-ann-point--ring': ap.ring }"
                 :cx="xPos(ap.xIndex)"
                 :cy="yAtDataValue(ap.y, ap.yAxis ?? 'primary')"
                 :r="ap.radius ?? 5"
-                :fill="ap.color || 'var(--color-chart-text)'"
+                :fill="ap.ring ? RING_FILL : ap.color || 'var(--color-chart-text)'"
+                :style="ap.ring ? { stroke: ap.color || 'var(--color-chart-text)' } : undefined"
               />
               <text
                 v-if="ap.label"
@@ -1570,6 +1659,21 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               :fill="resolveColor(s)"
             />
           </g>
+        </g>
+
+        <!-- Per-series value labels (unclipped so a label above the top value stays whole) -->
+        <g v-if="valueLabels.length" class="narduk-line-values">
+          <text
+            v-for="vl in valueLabels"
+            :key="'vl-' + vl.key"
+            class="narduk-line-value"
+            :x="vl.x"
+            :y="vl.y"
+            :opacity="vl.opacity"
+            text-anchor="middle"
+          >
+            {{ vl.text }}
+          </text>
         </g>
 
         <!-- Axes (unclipped so tick labels stay readable) -->
