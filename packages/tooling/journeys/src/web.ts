@@ -7,6 +7,7 @@
  * implementation; deviations found while building are recorded in the PR, not
  * silently absorbed.
  */
+import { Buffer } from 'node:buffer'
 import {
   copyFileSync,
   existsSync,
@@ -120,9 +121,98 @@ export function createWorldQuery(base: string): WorldQuery {
  * defect and the workaround separately.
  */
 const SCROLL_TIMEOUT_MS = 4_000
+const ASSERT_TIMEOUT_MS = 8_000
+const ASSERT_POLL_MS = 50
 
 const LISTED_NAMES = 20
 const LISTED_NAME_CHARS = 60
+
+/**
+ * Playwright treats `timeout: 0` as "wait forever" and `NaN` as nonsense.
+ * `Number(process.env.X || 25_000)` turns `X=0` into that forever wait
+ * (narduk-libs#67). Refuse those here; an assertion that cannot fail is not
+ * an assertion.
+ */
+function assertionTimeout(override?: number): number {
+  const fromEnv = process.env.JOURNEYS_ASSERT_TIMEOUT
+  let value = override
+  if (value === undefined && fromEnv !== undefined) {
+    value = Number(fromEnv)
+  }
+  if (value === undefined) return ASSERT_TIMEOUT_MS
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(
+      `assertion timeout must be a positive finite number of milliseconds, got ${JSON.stringify(
+        override ?? fromEnv,
+      )}`,
+    )
+  }
+  return value
+}
+
+async function pollUntil(probe: () => Promise<boolean>, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (await probe()) return true
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return false
+    await sleep(Math.min(ASSERT_POLL_MS, remaining))
+  }
+}
+
+function pageUrl(page: Page): string {
+  try {
+    return page.url()
+  } catch {
+    return ''
+  }
+}
+
+function quoted(value: string | RegExp): string {
+  return typeof value === 'string' ? JSON.stringify(value) : String(value)
+}
+
+function looksLikeSelector(target: string): boolean {
+  const trimmed = target.trim()
+  // Labels commonly contain `:`, `=`, and unit brackets (`Quantity [kg]`).
+  // Treat as a selector only when it starts like one or carries an attribute.
+  return (
+    /^[.#[]/.test(trimmed) ||
+    /^(?:input|textarea|select)\b/i.test(trimmed) ||
+    /\[[a-z][\w-]*\s*[~|^$*]?=/i.test(trimmed)
+  )
+}
+
+function roleLocator(page: Page, role: Parameters<Page['getByRole']>[0], name: string | RegExp) {
+  return page.getByRole(role, {
+    name,
+    ...(typeof name === 'string' ? { exact: true } : {}),
+  })
+}
+
+function textLocator(page: Page, text: string | RegExp) {
+  return typeof text === 'string' ? page.getByText(text, { exact: true }) : page.getByText(text)
+}
+
+type PresenceLocator = {
+  count: () => Promise<number>
+  first: () => {
+    waitFor: (opts: { state: 'visible'; timeout: number }) => Promise<void>
+    isVisible: () => Promise<boolean>
+  }
+}
+
+/**
+ * Presence is a visible match. `waitFor({ state: 'visible' })` can fail while
+ * `count()` is still non-zero (off-screen, `aria-hidden`, a template node).
+ * Swallowing that failure and treating count as success was the hidden-match
+ * pass narduk-libs#67 called out.
+ */
+async function hasVisibleMatch(locator: PresenceLocator, timeout: number): Promise<boolean> {
+  const first = locator.first()
+  await first.waitFor({ state: 'visible', timeout }).catch(() => {})
+  return (await locator.count()) > 0 && (await first.isVisible())
+}
 
 /**
  * The accessible names present for `role`, capped and truncated. Read with
@@ -191,9 +281,9 @@ async function describeMissingControl(
 
 /**
  * Exported for the unit suite, not for consumers: the bound above is a property
- * of these five helpers, and a browser is far too expensive a way to assert
- * that a call passes a timeout. Not re-exported from `./index` or `./web`'s
- * public surface in any documented form.
+ * of these helpers, and a browser is far too expensive a way to assert that a
+ * call passes a timeout. Not re-exported from `./index` or `./web`'s public
+ * surface in any documented form.
  */
 export function createContextApi(page: Page, base: string, mode: Mode): WebJourneyContext {
   const paced = mode === 'capture'
@@ -212,6 +302,97 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
       await locator.scrollIntoViewIfNeeded({ timeout: SCROLL_TIMEOUT_MS }).catch(() => {})
       await locator.click({ timeout: 8_000 })
       if (paced) await sleep(400)
+    },
+    async see(text, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const locator = textLocator(page, text)
+      if (!(await hasVisibleMatch(locator, timeout))) {
+        const url = pageUrl(page)
+        throw new Error(`expected ${quoted(text)} on ${url || 'the page'} within ${timeout}ms`)
+      }
+    },
+    async hasControl(name, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const role = (opts.role ?? 'button') as Parameters<Page['getByRole']>[0]
+      const locator = roleLocator(page, role, name)
+      if (!(await hasVisibleMatch(locator, timeout))) {
+        throw new Error(await describeMissingControl(page, String(role), name))
+      }
+    },
+    async noControl(name, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const role = (opts.role ?? 'button') as Parameters<Page['getByRole']>[0]
+      const locator = roleLocator(page, role, name)
+      // Poll count() to zero. waitFor({ state: 'detached' }) resolves
+      // immediately when the locator matches nothing — a snapshot wearing
+      // an assertion's clothes (narduk-libs#67).
+      const absent = await pollUntil(async () => (await locator.count()) === 0, timeout)
+      if (!absent) {
+        const url = pageUrl(page)
+        throw new Error(
+          `expected no ${String(role)} named ${quoted(name)} on ${url || 'the page'} within ${timeout}ms`,
+        )
+      }
+    },
+    async gone(text, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const locator = textLocator(page, text)
+      let saw = false
+      const left = await pollUntil(async () => {
+        const count = await locator.count()
+        const visible = count > 0 && (await locator.first().isVisible())
+        if (visible) {
+          saw = true
+          return false
+        }
+        return saw
+      }, timeout)
+      const url = pageUrl(page)
+      if (!left) {
+        if (!saw) {
+          throw new Error(
+            `never saw ${quoted(text)} on ${url || 'the page'} within ${timeout}ms, so cannot assert it is gone`,
+          )
+        }
+        throw new Error(
+          `expected ${quoted(text)} to be gone from ${url || 'the page'} within ${timeout}ms`,
+        )
+      }
+    },
+    async fill(target, value, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const field = looksLikeSelector(target)
+        ? page.locator(target)
+        : page.getByLabel(target, { exact: true })
+      const locator = field.nth(opts.nth ?? 0)
+      if (!(await hasVisibleMatch(locator, timeout))) {
+        const url = pageUrl(page)
+        throw new Error(
+          `no field matching ${JSON.stringify(target)}${url ? ` on ${url}` : ''} within ${timeout}ms`,
+        )
+      }
+      await locator.fill(value, { timeout })
+      const read = await locator.inputValue()
+      if (read !== value) {
+        const url = pageUrl(page)
+        throw new Error(
+          `fill wrote ${JSON.stringify(value)} but the field reads ${JSON.stringify(read)}` +
+            `${url ? ` on ${url}` : ''}`,
+        )
+      }
+    },
+    async attach(selector, file, opts = {}) {
+      const timeout = assertionTimeout(opts.timeout)
+      const locator = page.locator(selector)
+      await locator.waitFor({ state: 'attached', timeout }).catch(() => {})
+      if (typeof file === 'string') {
+        await locator.setInputFiles(file, { timeout })
+        return
+      }
+      await locator.setInputFiles(
+        { name: file.name, mimeType: file.mimeType, buffer: Buffer.from(file.buffer) },
+        { timeout },
+      )
     },
     async goto(path) {
       await page.goto(base + path, { waitUntil: 'load', timeout: 45_000 })
