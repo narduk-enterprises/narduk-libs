@@ -1,0 +1,70 @@
+# One-shot: this run's ManagePullRequest identity is bound to PR #791, and
+# the integration token cannot createPullRequest. A push here asks Actions
+# (pull-requests: write) to open analytics-standard-mode-772 as a non-draft
+# PR. That branch is not modified.
+name: Open #772 pull request
+
+on:
+  push:
+    branches:
+      - chore/open-772-pr
+
+concurrency:
+  group: open-772-pr
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  open:
+    if: github.repository == 'narduk-enterprises/narduk-libs'
+    name: Open analytics-standard-mode-772
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Open non-draft PR and request review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: narduk-enterprises/narduk-libs
+          PR_TITLE: "fix(narduk-analytics): standard-mode URL and IndexNow host floor (#772)"
+          PR_BODY: |
+            ## Problem
+
+            Standard analytics mode still sent whole URLs and page text. IndexNow submit accepted any caller URL. The platform env catalog treated `INDEXNOW_KEY` as a shared Doppler token.
+
+            Strict privacy stays opt-in. This is the standard-mode floor only.
+
+            ## Change
+
+            - Strip fragments and sensitive query keys from standard-mode URLs; drop title / `$title` / `$el_text` / `$elements` / `$elements_chain`. No route templating. GA4 `page_title` is the path, not `document.title`.
+            - `POST /api/indexnow/submit` rejects URLs whose host is not `SITE_URL` (`400` `host_mismatch`).
+            - Catalog `INDEXNOW_KEY` as `generate:nonce-32`, scope `one-app`, unique per app.
+
+            Work branch: `analytics-standard-mode-772` at `dfa750f3`. Reserved files (`src/module.ts`, `tests/module.test.ts`, `README.md`, `package.json`, `CHANGELOG.md`) were not edited.
+
+            ## Changeset
+
+            Patch on `@narduk-enterprises/narduk-analytics` and `@narduk-enterprises/narduk-platform`. Also lists `@narduk-enterprises/create-narduk-app` because `PACKAGE_VERSIONS` pins analytics. Generator source was not edited.
+
+            ## Merge
+
+            **Hold merge.** Do not merge until a follow-up says MERGE.
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head analytics-standard-mode-772 --state open --json url --jq '.[0].url // empty')"
+          if [ -n "${existing}" ]; then
+            url="${existing}"
+            echo "PR already open: ${url}"
+          else
+            url="$(gh pr create --base main --head analytics-standard-mode-772 --title "${PR_TITLE}" --body "${PR_BODY}")"
+            echo "Opened ${url}"
+          fi
+          gh pr edit "${url}" --add-label review-deep --add-label review-now
+          echo "Labeled review-deep and review-now on ${url}"
