@@ -74,6 +74,29 @@
   --ne-line-strong: #c9d1d7;
   --ne-line-inverted: #0e1418;
 
+  /* ---- the unreported material ----------------------------------------
+   * A figure with no producer is neither zero nor stale, and it gets its own
+   * look: geometry with texture and no magnitude (narduk-libs#602). A hatch of
+   * 1px diagonals has no length to compare, so it says "there is a slot here
+   * and nothing filled it" where an empty bar would say "the answer is zero".
+   * Paint it with `background-image`, over the slot's own surface, and pair it
+   * with an em-dash figure and a "not reported" accessible name — see
+   * README.md § The unreported treatment.
+   *
+   * Both are derived from the ink and line tokens rather than given colours of
+   * their own, so they follow the scheme (and any override of those tokens)
+   * with no second declaration. `--ne-hatch` draws in `--ne-ink-dimmed`, the
+   * suite's non-text-floor ink, for a slot small enough that the texture is
+   * the whole signal (a meter track, a chip); `--ne-hatch-soft` draws in
+   * `--ne-line-strong` for a large area that carries its own em-dash on top.
+   */
+  --ne-hatch: repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px);
+  --ne-hatch-soft: repeating-linear-gradient(
+    135deg,
+    var(--ne-line-strong) 0 1px,
+    transparent 1px 6px
+  );
+
   /* ---- brand hooks ------------------------------------------------------
    * The only two tokens an app is expected to set: `--ne-accent` (interaction,
    * links, data ink, the brand mark) and `--ne-structure` (rails, headers and
@@ -178,6 +201,13 @@
   --ne-line-strong: #33424d;
   --ne-line-inverted: #f3f7f9;
 
+  --ne-hatch: repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px);
+  --ne-hatch-soft: repeating-linear-gradient(
+    135deg,
+    var(--ne-line-strong) 0 1px,
+    transparent 1px 6px
+  );
+
   --ne-accent: #63a6cd;
   --ne-accent-soft: #17303f;
   --ne-accent-ink: #0c1216;
@@ -262,6 +292,13 @@
     --ne-divider: #1b242b;
     --ne-line-strong: #33424d;
     --ne-line-inverted: #f3f7f9;
+
+    --ne-hatch: repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px);
+    --ne-hatch-soft: repeating-linear-gradient(
+      135deg,
+      var(--ne-line-strong) 0 1px,
+      transparent 1px 6px
+    );
 
     --ne-accent: #63a6cd;
     --ne-accent-soft: #17303f;

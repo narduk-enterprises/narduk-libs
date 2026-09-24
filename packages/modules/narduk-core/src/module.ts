@@ -37,6 +37,8 @@ import { includeAppTypesDir } from './app-types-dir'
 import { resolveNuxtAuthUtilsInstallOptions } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
+import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
+import { registerNuxtUiSources } from './nuxt-ui-sources'
 import {
   APP_RUNTIME_NUXT_IMPORTS,
   APP_RUNTIME_VUE_IMPORTS,
@@ -618,6 +620,11 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
             ),
           )
         }
+
+        // main.css already `@source`s runtime/app for Tailwind. Nuxt UI's
+        // componentDetection still never scans a module, so name the U*
+        // components core renders, error.vue's UButton among them (#700).
+        registerNuxtUiSources(nuxt, { components: CORE_NUXT_UI_COMPONENTS })
       }
 
       if (options.server) {

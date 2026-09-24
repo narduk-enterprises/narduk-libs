@@ -73,6 +73,14 @@ export interface NeDataColumn<TRow = Record<string, unknown>> {
    * hidden by the phone column-set switch. Put sticky columns first.
    */
   sticky?: boolean
+  /**
+   * The column's width as any CSS length (`'8rem'`, `'120px'`), set on its
+   * header cell. Leave the column that should take the slack width-less.
+   * Once any shown column declares a width, every width-less one is floored
+   * at 200px through the table's own minimum width, and the table's scroll
+   * box scrolls sideways rather than squeezing it (narduk-libs#684).
+   */
+  width?: string
   /** How to read the cell's value. Defaults to `row[key]`. */
   value?: (row: TRow) => unknown
   /** How to print a present value. Missing values never reach it. */
