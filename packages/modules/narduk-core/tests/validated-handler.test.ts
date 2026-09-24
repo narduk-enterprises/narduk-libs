@@ -589,12 +589,18 @@ describe('defineValidatedHandler', () => {
         },
       })
 
-      // `{ name: 123 }` would be a 400 if the body schema ran first.
-      const result = await request(handler, GREET, json({ name: 123 }))
+      // Unparseable JSON makes `readJsonBody` throw 400. If authorize ran
+      // after the body read, this would be 400, not 401.
+      const result = await request(handler, GREET, {
+        body: '{ not json at all',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      })
 
       expect(result.status).toBe(401)
       expect(ran.handler).toBe(false)
       expect(result.body).not.toContain('VALIDATION_FAILED')
+      expect(result.body).not.toContain('Body is not valid JSON')
     })
 
     it('hands authorize the parsed params and query, never a body', async () => {
