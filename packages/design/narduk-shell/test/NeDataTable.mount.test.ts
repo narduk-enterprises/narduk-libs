@@ -252,3 +252,69 @@ describe('NeDataTable: loading', () => {
     expect(wrapper.get('tbody').classes()).not.toContain('opacity-50')
   })
 })
+
+describe('NeDataTable: overflow and the column floor (narduk-libs#684)', () => {
+  const sized: Array<NeDataColumn<Reading>> = [
+    { key: 'time', label: 'Time', sticky: true },
+    { key: 'wind', label: 'avg', numeric: true, width: '6rem' },
+    { key: 'gust', label: 'gust', numeric: true, width: '6rem' },
+    { key: 'day', label: 'Day' },
+  ]
+  const floorClass = 'sm:min-w-[max(100%,var(--ne-data-table-min,0px))]'
+  const scrollBox = (wrapper: ReturnType<typeof render>) =>
+    wrapper.get('[data-ne-data-table-scroll]')
+
+  it('wraps the table in its own scroll box that cannot widen its parent', () => {
+    const wrapper = render()
+    const box = scrollBox(wrapper)
+    expect(box.find('table').exists()).toBe(true)
+    expect(box.classes()).toEqual(
+      expect.arrayContaining(['overflow-auto', 'min-w-0', 'max-w-full']),
+    )
+    expect(wrapper.get('[data-ne-data-table]').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'max-w-full']),
+    )
+  })
+
+  it('floors the table, not the cell: every width-less column at 200px, from sm up', () => {
+    const wrapper = render({ columns: sized })
+    expect(scrollBox(wrapper).attributes('style')).toContain(
+      '--ne-data-table-min: calc(200px + 6rem + 6rem + 200px)',
+    )
+    expect(wrapper.get('table').classes()).toContain(floorClass)
+    expect(wrapper.get('table').classes()).toContain('min-w-full')
+  })
+
+  it('sets a declared width on the header cell only', () => {
+    const headers = render({ columns: sized }).findAll('thead th')
+    expect(headers[1]!.attributes('style')).toContain('width: 6rem')
+    expect(headers[0]!.attributes('style') ?? '').not.toContain('width')
+  })
+
+  it('counts only shown columns: a csvOnly column adds no term', () => {
+    const wrapper = render({
+      columns: [...sized, { csvOnly: true, key: 'pressure', label: 'SI', width: '9rem' }],
+    })
+    expect(scrollBox(wrapper).attributes('style')).toContain(
+      '--ne-data-table-min: calc(200px + 6rem + 6rem + 200px)',
+    )
+  })
+
+  it('sets no floor when every column, or no column, declares a width', () => {
+    for (const cols of [
+      columns,
+      sized.map((column) => ({ ...column, width: column.width ?? '10rem' })),
+    ]) {
+      const wrapper = render({ columns: cols })
+      expect(scrollBox(wrapper).attributes('style') ?? '').not.toContain('--ne-data-table-min')
+      expect(wrapper.get('table').classes()).not.toContain(floorClass)
+    }
+  })
+
+  it('gives up the scroll box and the floor under a page-sticky header', () => {
+    const wrapper = render({ columns: sized, stickyHeader: 'page' })
+    expect(wrapper.find('[data-ne-data-table-scroll]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('--ne-data-table-min')
+    expect(wrapper.get('table').classes()).not.toContain(floorClass)
+  })
+})

@@ -1449,6 +1449,7 @@ const groups = [
 | `numeric`        | `boolean`                   | Right-aligned, tabular, monospaced numerals (`font-mono tabular-nums`).                    |
 | `emphasis`       | `boolean`                   | The group’s headline value, drawn at `font-medium`.                                        |
 | `sticky`         | `boolean`                   | Pinned to the left edge, and never hidden by the phone column-set switch.                  |
+| `width`          | `string`                    | Any CSS length, set on the header cell. See “Overflow and column widths” below.            |
 | `value`          | `(row) => unknown`          | How to read the cell. Defaults to `row[key]`.                                              |
 | `format`         | `(value, row) => string`    | How to print a present value. Missing values never reach it.                               |
 | `sortKey`        | `string`                    | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself. |
@@ -1494,6 +1495,38 @@ which group shows; sticky and ungrouped columns stay. The hidden groups carry
 `max-sm:hidden`, so the server renders every column and CSS hides the rest — no
 viewport is consulted. `stickyHeader="page"` pairs with this: the box no longer
 scrolls sideways.
+
+#### Overflow and column widths
+
+The table owns its sideways overflow
+([narduk-libs#684](https://github.com/narduk-enterprises/narduk-libs/issues/684),
+proven in operator-portal’s `CollectionTable`). `UTable`’s root is the table’s
+scroll box (`data-ne-data-table-scroll`, `overflow-auto`), and both it and the
+outer `[data-ne-data-table]` carry `min-w-0 max-w-full`. One long unbreakable
+string — a hostname, a SHA — scrolls the box, never the page, including when the
+table sits in a flex or grid parent that would otherwise grow to fit it.
+
+A column may declare a `width` (`'6rem'`, `'120px'`); leave the column that
+should take the slack width-less. A cell ignores `min-width`, so fixed-width
+columns would hand a width-less one only what they leave over (146–191 px on a
+1024 px iPad in operator-portal, rows wrapped thousands of pixels tall). The
+floor is therefore on the **table**, not the cell: once any shown column
+declares a width, the scroll box gets
+`--ne-data-table-min: calc(<each width, or 200px for a width-less column> + …)`
+inline and the `<table>` takes `min-width: max(100%, var(--ne-data-table-min))`.
+Every width-less column is floored, not only the first, and the box scrolls
+sideways when the container is narrower.
+
+- No floor when no column declares a width (nothing squeezes a column, and a
+  table written before `width` renders exactly as it did), and none when every
+  column declares one (the widths already are the floor).
+- The floor applies from `sm` up. Below `sm` the phone column-set switch hides
+  groups the sum still counts, so the table stays `min-w-full` there and a phone
+  is never forced to scroll by the floor alone.
+- `stickyHeader="page"` gives up the scroll box — a scroll box would pin the
+  header to itself instead of the page — and with it the floor, which is only
+  safe inside one. Pair it with the phone column-set switch, and keep its cells
+  short.
 
 #### Loading
 
