@@ -17,7 +17,9 @@ Types ship from `dist/index.d.ts`. Import paths:
   `import { NardukLineChart } from '@narduk-enterprises/narduk-charts/line'`
   (same stylesheet import as above); `@narduk-enterprises/narduk-charts/candle`
   for `NardukCandleChart` only; `@narduk-enterprises/narduk-charts/studies` for
-  indicator math only (no Vue).
+  indicator math only (no Vue). Micro-sparkline helpers (`sparkAxis`,
+  `sparkPath`, `trailingSparkWindow`, `SPARK_WINDOWS`) ship from the package
+  root — no Vue.
 
 ## Components
 
@@ -66,6 +68,8 @@ eight hues separated by lightness as well as hue, wrapping slots 9–10 back to
 - Studies: `sma`, `ema`, `vwap`, `bollinger`, `rsi`, `macd`; perf helpers:
   `recommendMaxDrawBars`, `suggestCandleRenderStrategy`
 - `createYAxisMap` / `dataValueFromBottomPx` (`yScale.ts`) for custom overlays
+- Micro-sparkline: `sparkAxis`, `sparkPath`, `trailingSparkWindow`,
+  `sparkWindowMs`, `SPARK_WINDOWS` / `SPARK_WINDOW_MS` (24h / 7d / 30d)
 
 ## Versioned types
 

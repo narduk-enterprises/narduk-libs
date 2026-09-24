@@ -232,6 +232,28 @@ breaks the line where the data breaks, and `showIsolatedPoints` (on by default)
 draws the values that end up with no measured neighbour, which would otherwise
 be invisible.
 
+When the tile only needs an SVG `path` — no Vue chart, no CSS — import
+`sparkAxis`, `sparkPath`, and `trailingSparkWindow` from
+`@narduk-enterprises/narduk-charts`. `sparkAxis` picks a Y domain, `sparkPath`
+turns a series into a `d` string, and `trailingSparkWindow` keeps the last 24h /
+7d / 30d of `{ t }` samples.
+
+```ts
+import {
+  sparkAxis,
+  sparkPath,
+  trailingSparkWindow,
+} from '@narduk-enterprises/narduk-charts'
+
+const windowed = trailingSparkWindow(samples, '24h')
+const d = sparkPath(
+  windowed.map(point => point.v),
+  80,
+  24,
+  { axis: sparkAxis(windowed.map(point => point.v)) },
+)
+```
+
 ---
 
 ### NardukBarChart
@@ -633,6 +655,21 @@ build a custom wrapper.
 **`createYAxisMap(mode, dataValues, extraValues, plotHeight, options?)`** —
 builds `{ yFromBottom, ticks, domain }` for `linear` / `log` / `symlog` scales
 (used internally by charts; useful for custom SVG layers).
+
+### Micro-sparkline helpers
+
+DOM-free path helpers for KPI / marine tiles that draw their own `<path>`:
+
+- **`sparkAxis(values, options?)`** — Y domain. Non-negative series whose floor
+  sits close to zero pin `min` at 0 (`fromZero`); tight bands far from zero stay
+  `linear`. Override with `mode` / `padRatio` (default `0.08`).
+- **`sparkPath(values, width, height, options?)`** — SVG path `d`. Null / NaN
+  break the line. Default `inset` is `1` so a 1px stroke is not clipped.
+- **`trailingSparkWindow(points, window, now?)`** — keep `{ t }` samples in the
+  last `24h` / `7d` / `30d`. When `now` is omitted, the latest finite `t` is the
+  window end so a stale station still shows its own last window.
+- **`SPARK_WINDOWS`**, **`SPARK_WINDOW_MS`**, **`sparkWindowMs(window)`** —
+  the three inclusive trailing windows.
 
 ## Histoire (component stories)
 
