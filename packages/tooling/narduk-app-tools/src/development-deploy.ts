@@ -484,7 +484,14 @@ export async function runDevelopmentDeploy(
       }
       const upload = context.upload ?? runDeploy
       const appDir = join(workspace, component.appDir)
-      if (upload(['triggers-deploy'], appDir, deployEnv) !== 0) {
+      let applyStatus: number
+      try {
+        applyStatus = upload(['triggers-deploy'], appDir, deployEnv)
+      } catch (error) {
+        receipt.components[id].status = 'failed'
+        throw error
+      }
+      if (applyStatus !== 0) {
         receipt.components[id].status = 'failed'
         throw new Error(
           `${id} trigger apply failed; inspect script schedules and routes before retrying`,

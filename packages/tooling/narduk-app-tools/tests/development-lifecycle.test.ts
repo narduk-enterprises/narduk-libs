@@ -711,6 +711,22 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
     expect(h.cloudflare.serving('fixture-app')).toBe(receipt.components.web.candidateVersionId)
   })
 
+  it('records a thrown trigger-apply error as unproven with failed component status', async () => {
+    const h = harness()
+    await enter(h)
+    const upload = h.context.upload!
+    h.context.upload = (args, appDir, env, options) => {
+      if (args[0] === 'triggers-deploy')
+        throw new Error('routes[0] must be a pattern string or a { pattern } object')
+      return upload(args, appDir, env, options)
+    }
+    const receipt = await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(receipt.outcome).toBe('unproven')
+    expect(receipt.components.web.status).toBe('failed')
+    expect(receipt.failure).toMatch(/pattern string/u)
+    expect(h.cloudflare.serving('fixture-app')).toBe(receipt.components.web.candidateVersionId)
+  })
+
   it('gives the registry credential to a cold install only', async () => {
     const h = harness()
     await enter(h)
