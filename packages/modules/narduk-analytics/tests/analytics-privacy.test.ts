@@ -66,6 +66,17 @@ describe('sanitizeStandardUrl', () => {
     expect(sanitizeStandardUrl(`${ORIGIN}/join?token=invite-secret&utm_source=mail#frag`)).toBe(
       `${ORIGIN}/join?utm_source=mail`,
     )
+    expect(sanitizeStandardUrl(`${ORIGIN}/join?invite_code=invite-secret`)).toBe(`${ORIGIN}/join`)
+    expect(sanitizeStandardUrl(`${ORIGIN}/join?invitation_code=invite-secret`)).toBe(
+      `${ORIGIN}/join`,
+    )
+    expect(sanitizeStandardUrl(`${ORIGIN}/oauth?authorization_code=abc&auth_code=def`)).toBe(
+      `${ORIGIN}/oauth`,
+    )
+    expect(sanitizeStandardUrl(`${ORIGIN}/s?session_id=sid&otp_code=123456`)).toBe(`${ORIGIN}/s`)
+    expect(sanitizeStandardUrl(`${ORIGIN}/login?magic_link=ml&password_reset=1`)).toBe(
+      `${ORIGIN}/login`,
+    )
     expect(sanitizeStandardUrl(`${ORIGIN}/farms/frm_1/2024?tab=yield#x`)).toBe(
       `${ORIGIN}/farms/frm_1/2024?tab=yield`,
     )

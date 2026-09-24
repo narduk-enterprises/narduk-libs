@@ -70,16 +70,18 @@ export function templateUrl(
 const URL_KEY = /^\$.*(?:url|referrer)$/u
 const PATHNAME_KEY = /^\$.*pathname$/u
 // Element text and structure: autocapture, rage clicks and dead clicks. Strict
-// mode turns those off; standard mode drops the keys so `$el_text` cannot leak
-// page copy while click-structure autocapture stays on.
+// mode turns those off; standard mode drops the same keys so `$el_text` and
+// click structure cannot leak page copy, while the autocapture *setting* stays
+// the PostHog default.
 const DROPPED_KEYS = new Set(['title', '$title', '$el_text', '$elements', '$elements_chain'])
 
 /**
  * Query keys that commonly carry reset, invite, OAuth or session secrets.
- * UTM and ordinary UI params (`tab`, `layer`) are left alone.
+ * Matches a keyword as a whole key or as a `_` / `-` / `.` segment so
+ * `invite_code` and `session_id` drop; UTM and ordinary UI params stay.
  */
 const SENSITIVE_QUERY_KEY =
-  /^(?:.*(?:token|secret|password|passwd|pwd|invite|invitation|auth|authorization|session|jwt|otp|magic)|code|key|api[_-]?key|email|state|reset)$/iu
+  /^api[_-]?key$|(?:^|[._-])(?:token|secret|password|passwd|pwd|invite|invitation|auth|authorization|session|jwt|otp|magic|code|key|email|state|reset)(?:[._-]|$)/iu
 
 function isSensitiveQueryKey(key: string): boolean {
   return SENSITIVE_QUERY_KEY.test(key)

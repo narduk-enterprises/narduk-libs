@@ -82,6 +82,9 @@ describe('indexNowUrlBelongsToHost', () => {
     expect(indexNowUrlBelongsToHost('https://evil.example/about', SITE_HOST)).toBe(false)
     expect(indexNowUrlBelongsToHost('https://example.com.evil/about', SITE_HOST)).toBe(false)
     expect(indexNowUrlBelongsToHost('not-a-url', SITE_HOST)).toBe(false)
+    expect(indexNowUrlBelongsToHost('file://example.com/a', SITE_HOST)).toBe(false)
+    expect(indexNowUrlBelongsToHost('ftp://example.com/a', SITE_HOST)).toBe(false)
+    expect(indexNowUrlBelongsToHost('javascript://example.com/%0Aalert(1)', SITE_HOST)).toBe(false)
   })
 })
 

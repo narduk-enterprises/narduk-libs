@@ -70,7 +70,11 @@ export function indexNowUrlBelongsToHost(url: string, siteHost: string): boolean
   const expected = siteHost.trim().toLowerCase()
   if (!expected) return false
   try {
-    return new URL(url).host.toLowerCase() === expected
+    const parsed = new URL(url)
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.host.toLowerCase() === expected
+    )
   } catch {
     return false
   }
