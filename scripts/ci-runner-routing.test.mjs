@@ -27,8 +27,8 @@ test('every public CI and language job uses a hosted runner without package cred
   assert.doesNotMatch(ci, /git fetch/u)
 })
 
-// The mirror-notify job is the only place release.yml may name a secret; the
-// verify and publish jobs run on the job-scoped GITHUB_TOKEN alone.
+// notify-mirror and the release-PR mint may name LANE_AUTOMATION_APP_KEY;
+// package writes still use the job-scoped GITHUB_TOKEN alone.
 const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 
 test('only the verified main release receives a job-scoped package write token', () => {
@@ -43,7 +43,16 @@ test('only the verified main release receives a job-scoped package write token',
   assert.doesNotMatch(release, /git fetch/u)
   assert.doesNotMatch(
     releasePublish,
-    /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted|secrets\./u,
+    /NARDUK_PLATFORM_GH_PACKAGES_(?:RW|WRITE)|GH_PACKAGES_READ|self-hosted/u,
+  )
+  assert.deepEqual(
+    [...new Set([...releasePublish.matchAll(/secrets\.([A-Z_]+)/gu)].map((match) => match[1]))],
+    ['LANE_AUTOMATION_APP_KEY'],
+  )
+  assert.match(releasePublish, /id: release-app-token/u)
+  assert.match(
+    releasePublish,
+    /GITHUB_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \|\| github\.token \}\}/u,
   )
   assert.doesNotMatch(
     release,
