@@ -88,6 +88,28 @@ The `world` hooks are repo-owned: `prepare` loads a scenario behind the loader's
 own fail-closed gate and lease, and returns the generation token the runner
 re-checks after every journey.
 
+`must` clicks. The rest of the assertion vocabulary waits; it does not read
+once, and it does not match body-text substrings (narduk-libs#67):
+
+- `see(text)` — this exact text is on the page. `see('VERIFIED')` does not pass
+  on `PENDING VERIFICATION`. Prefer `hasControl` when the claim is about a
+  control.
+- `hasControl(name, { role })` — a control with that accessible name is offered.
+  Never body text.
+- `noControl(name, { role })` — polls `count()` to zero. Do not assert absence
+  by scanning the page (`Record as sent` matching
+  `Records that the invoice was sent.`), and do not use
+  `waitFor({ state: 'detached' })` — that resolves immediately against a locator
+  matching nothing.
+- `gone(text)` — a distinctive sentence that was on the page has left. A first
+  sample of nothing is not evidence it went away.
+- `fill(target, value)` — writes, then reads the value back.
+- `attach(selector, file)` — a file input.
+
+`page` stays the escape hatch. Do not assert the absence of a control by body
+text. Timeouts must be a positive finite number of milliseconds;
+`JOURNEYS_ASSERT_TIMEOUT=0` is refused (Playwright would wait forever).
+
 ## Verify, promote, publish
 
 ```sh

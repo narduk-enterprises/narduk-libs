@@ -76,6 +76,41 @@ export interface WebJourneyContext {
   base: string
   /** Click by accessible name or THROW naming what was missing. */
   must(name: string | RegExp, opts?: { role?: string; nth?: number }): Promise<void>
+  /**
+   * Wait until this exact text is on the page. A string is matched exactly —
+   * `see('VERIFIED')` does not pass on `PENDING VERIFICATION` — and the helper
+   * waits, it does not read once (narduk-libs#67). Throws naming the text, the
+   * URL and the timeout. Prefer `hasControl` when the claim is about a control.
+   */
+  see(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Wait until a control with this accessible name is offered. Never body
+   * text: `hasControl('Cancel')` does not pass on a `Cancelled` label.
+   */
+  hasControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Poll until no control with this accessible name remains. Never body text,
+   * and never `waitFor({ state: 'detached' })` — that resolves immediately
+   * against a locator matching nothing (narduk-libs#67).
+   */
+  noControl(name: string | RegExp, opts?: { role?: string; timeout?: number }): Promise<void>
+  /**
+   * Wait until a distinctive sentence that *was* on the page has left.
+   * Fails if the text was never seen: a count of zero on the first sample
+   * is not evidence it went away.
+   */
+  gone(text: string | RegExp, opts?: { timeout?: number }): Promise<void>
+  /**
+   * Fill a field (CSS selector or accessible label) and read the value back.
+   * A write that lands in the wrong box, or not at all, fails the step.
+   */
+  fill(target: string, value: string, opts?: { timeout?: number; nth?: number }): Promise<void>
+  /** Set files on a file input. `page` stays the escape hatch for everything else. */
+  attach(
+    selector: string,
+    file: string | { name: string; mimeType: string; buffer: Uint8Array },
+    opts?: { timeout?: number },
+  ): Promise<void>
   goto(path: string): Promise<void>
   /** Capture: dwell. Test: no-op. */
   beat(ms: number): Promise<void>
