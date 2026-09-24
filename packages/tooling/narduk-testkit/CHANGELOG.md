@@ -1,5 +1,36 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.8.0
+
+### Minor Changes
+
+- d7c1ace: The E2E `page` fixture now names the page URL and the mismatched node
+  when Vue logs a hydration mismatch. An `addInitScript` wraps `console.warn`
+  and serialises `location.pathname`, the node's `outerHTML`, and its parent as
+  the warning fires, so a later `goto` cannot drop the details. Apps that build
+  an E2E artifact can spread `VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE` into
+  `vite.define` so production Vue keeps those node arguments
+  (`__VUE_PROD_HYDRATION_MISMATCH_DETAILS__`). `create-narduk-app` is a
+  companion patch so the generator pin moves with the testkit release.
+- f10064d: Add `@narduk-enterprises/narduk-testkit/playwright/config`, a
+  Playwright preset with `setup` / `pr` / `web` projects, `fullyParallel: true`,
+  and `workers: 2` (the measured default from the Buoys e2e-parallel-config
+  experiment). Specs declare a tier in the filename so an undeclared file is not
+  collected by every project. Viewport filtering is collection-time via project
+  metadata. `create-narduk-app` is a companion patch so the generator pin moves
+  with the testkit release.
+
+### Patch Changes
+
+- ca67c3f: Add tag-based E2E quarantine to
+  `@narduk-enterprises/narduk-testkit/playwright/config`: `@quarantine` via
+  `quarantineDetails`, `grepInvert` on the `pr` / `web` projects so a tagged
+  spec is excluded from the PR project, a `quarantine` project that collects the
+  tag, and `assertPlaywrightQuarantineCollection` so a vitest guard fails when
+  Playwright collects an untagged or wrongly tagged file (narduk-libs#520).
+  `create-narduk-app` is a companion patch so the generator pin moves with the
+  testkit release.
+
 ## 1.7.1
 
 ### Patch Changes

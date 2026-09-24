@@ -1,5 +1,198 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.22.0
+
+### Minor Changes
+
+- 1dc62db: Add `narduk-app db create` and fail `foundation:check` on the
+  placeholder D1 id (narduk-libs#662).
+
+  `foundation:check` sub-check 1.5 fails any `d1_databases[].database_id` (top
+  level or any `env.<name>`) that is still the scaffold placeholder
+  `00000000-0000-0000-0000-000000000000`, naming `narduk-app db create` and the
+  raw `wrangler d1 create <name>` step. The placeholder builds, dry-runs and
+  tests clean, so this is the first gate that notices the database does not
+  exist. A fresh `create-narduk-app` scaffold with a database now fails 1.5, and
+  only 1.5, until it is provisioned; a `--no-database` scaffold is unaffected.
+
+  `narduk-app db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]`
+  creates the one database a placeholder binding stands for: it refuses when the
+  id is already real, takes the name from `Config/cloudflare-app.json` (never an
+  argument), requires an explicit account (`account_id` or
+  `CLOUDFLARE_ACCOUNT_ID`), writes the returned id into the wrangler config the
+  manifest names with comments and formatting intact, prints the id and account,
+  and never deletes.
+
+  The generated `apps/web/wrangler.jsonc`, `README.md` and
+  `docs/workers-builds.md` now say how to create the database.
+
+- 1dc62db: `narduk-app deploy versions-promote` accepts
+  `--gate-verified "<check>@<sha>"`, the promote workflow's attestation that the
+  gate check passed on a commit (narduk-libs#400, option 2). The value splits on
+  its last `@` and needs the full 40-character SHA. The promote refuses with
+  `gate-mismatch` (exit 9), before touching anything, when the attested SHA is
+  not the commit being promoted or the resolved version's `workers/tag` is not
+  that commit. It logs the attested check and SHA and reports them as
+  `gateVerified`. The flag is optional: without it the promote runs as before
+  and warns that no gate attestation was passed. The generated
+  `docs/workers-builds.md` promote excerpt and the `promote-d1.steps.yml` dry
+  run now pass `--gate-verified "ci / Required@$VERIFIED_SHA"`.
+- 1dc62db: `verify --live` diagnoses a stale local NXDOMAIN (narduk-libs#783).
+  When the system lookup fails with `ENOTFOUND` / `EAI_AGAIN` but 1.1.1.1 /
+  8.8.8.8 resolve the host, the report adds a distinct `dns` UNKNOWN assertion
+  ("local resolver has a stale negative answer") with the public addresses and
+  the remedies, instead of reading like a dead deployment; the exit code
+  stays 2. The new `--resolver public` probes through the public resolvers'
+  answer while keeping the hostname for TLS SNI and `Host`. Live probe responses
+  also carry the transport's `errorCode`.
+- 408ad37: `narduk-app deploy-local` no longer reads Doppler `narduk/tokens`:
+  Doppler is retired except the `ne` root store. It takes `GH_PACKAGES_READ`,
+  `NUXT_OG_IMAGE_SECRET` and `NUXT_SESSION_PASSWORD` (or the list in
+  `NARDUK_APP_SECRET_KEYS`, formerly `NARDUK_APP_DOPPLER_KEYS`, still honoured)
+  from its environment and fails closed, naming the missing keys and the
+  `nvault run -- narduk-app deploy-local` route, when any is absent.
+  `buildMergedDeployEnv` takes `secrets` instead of `dopplerSecrets`.
+  `narduk-app doctor` checks for `nvault` on PATH instead of `doppler`.
+- c6ec7da: development deploy: receipts carry per-step timings (`steps`,
+  `totalSeconds`) and print the slowest steps. Every verified deploy queues full
+  validation of the deployed commit (a capture commit for a dirty tree) to a
+  detached worker that pushes `narduk-validation/<sha>/<uuid>`; one worker per
+  repository, the newest SHA wins, superseded automatic runs are cancelled and
+  their branches deleted, and a push that fails twice shows as `NOT PUSHED` in
+  `development status`. deploy:dev refuses a capture that changes protected
+  paths (`deployment.development.protectedPaths`, migration directories,
+  Wrangler binding or Durable Object changes) unless run with `--gated`, and
+  refuses after a `red-main` issue has been open for 24 h unless
+  `--red-main-fix <issue>` names it. New
+  `development rollback --to <known-good build>`; automatic rollback on failed
+  proof is off unless `deployment.development.rollback` declares
+  `automatic: true` with a `rehearsalRef`, and it pages instead of crossing a
+  Durable Object, binding or non-expand-only migration change.
+  `exec --operation migration` applies the expand-only rule (12.9): a drop or
+  rename refuses unless it is a declared contract migration already landed on
+  the production branch. For an app that declares no `deployment.migrations`
+  (12.9 NA), files already on the production branch before the hold took effect
+  (recorded as `migrationBaseline`; `enter --refresh` recovers it for an
+  existing enrollment from the checkout's reflog, never from the current ref)
+  are not judged; files that landed during the hold always are. An app that
+  declares `deployment.migrations` (expand-contract) has every file judged.
+
+### Patch Changes
+
+- 1dc62db: `narduk-app e2e-serve` now drops service bindings to Workers outside
+  the E2E run instead of letting workerd refuse to start
+  (`binding "ENGINE" refers to a service "…", but no such service is defined`),
+  and names each one on stderr. A binding back to the Worker itself is kept,
+  nothing is written into the app tree, and `--keep-service-bindings` passes the
+  config through untouched for an app that runs the target Worker alongside.
+  Dropping needs the app's wrangler at 4.99.0 or later (narduk-libs#788).
+- c6653d8: Resolve the active Worker version from provider deployment allocation
+  instead of versions-inventory list position, page the deployments list the
+  same way as versions when `result_info` is present, and add bounded
+  preview-alias identity convergence with aggregated post-convergence
+  diagnostics (narduk-libs#47).
+- 10aca7a: development deploy now reconciles Worker crons and routes after
+  promote. Version upload and `POST {script}/deployments` carry code only, so a
+  trigger change in wrangler.jsonc previously never applied. The deploy path now
+  runs `wrangler triggers deploy` from the artifact's resolved config
+  (`.output/server/wrangler.json`, falling back to the source Wrangler file when
+  the artifact omits those keys).
+- feafb59: development enter refuses an already-disabled held workflow unless it
+  is retired or `--accept-prior-state` is journaled. Adopting
+  `disabled_manually` as `desiredState` silently left CI and promote off after
+  exit (narduk-libs#754). Exit and `development status` now name any workflow
+  restored to a disabled state.
+- 1dc62db: Add `NeMeter` to the shared-component lists in eslint-config and
+  narduk-app-tools so they match narduk-shell's registry after #601.
+- 1c10b9b: Add `NeSearchInput` to the shared-component lists in eslint-config
+  and narduk-app-tools so they match narduk-shell's registry after #815.
+- d880027: `foundation:check` items 1.1, 1.2, 1.4 and 1.5 are not-applicable
+  when the app's only declared deployment target is not Cloudflare
+  (narduk-libs#158). The checker reads `Config/project-lifecycle.json`
+  `environments[].deploymentTargets[].provider`, or `Config/coolify-app.json`
+  when there is no `Config/cloudflare-app.json`. A Worker that sets
+  `worker.nitroPreset` (or `worker.framework`) to `none` is the same: 1.1 no
+  longer fails a hand-rolled `src/index.ts` Worker that has no Nitro build. Item
+  1.3 still requires `manifests:validate`. Items 3.1/3.2 read
+  `access.exposureClass` from `Config/coolify-app.json` when the Cloudflare
+  manifest is absent, so a Coolify public site is still asked for narduk-seo and
+  narduk-analytics.
+- 9cb7dbf: `narduk-app db migrate` starts far fewer wrangler processes
+  (narduk-libs#704). On `--local`, every inspection read — the table list,
+  ledger shape and rows, both legacy ledgers, the lock owner and adoption
+  evidence — now goes to wrangler as one multi-statement `--command`, so an
+  inspection is at most two processes whatever the history. A run that finds
+  nothing to apply or adopt and no lock row now returns after that read, without
+  taking the lock, and a run whose work another runner already finished skips
+  the redundant post-apply read. Against real wrangler on a local D1 with 19
+  migrations, a warm (no-op) run went from 20.1 s to 3.3 s. On `--remote` a warm
+  run drops from 15 processes to 5, and no remote path starts more processes
+  than before: statements are still sent one per process there, because that
+  path's multi-statement reply is not proven here. Each migration file is still
+  applied and recorded on its own, and a retained lock still fails the run.
+- a07c87b: Add `NeCard`, `NeCardList` and `NeDetailView` (item 17, #264).
+
+  The eslint-config and narduk-app-tools shared-component lists name those three
+  plus `NeSearchInput` so the drift and item-13 tests match `narduk-shell`'s
+  registry. Explorer inventory, catalog, and usage ship beside the components.
+
+  `NeCard` wraps `UCard` with media, title, badge, stat rows and actions.
+  `NeCardList` renders the same collection state as the table (`v-model:state`
+  or `:collection`) with `NeStatePanel` and `NePager` built in, so one page
+  toggles cards and table. `NeDetailView` is a key-value panel: label, value,
+  format, unit, and an unavailable message that never looks like zero.
+
+  The pin literal in `create-narduk-app`'s `PACKAGE_VERSIONS` is deliberately
+  not hand-edited: `versions:check` requires it to equal narduk-shell's live
+  `package.json` version, and `versions:sync` re-pins it when `release:version`
+  runs.
+
+- 7ae3a16: Fill the SSR `__NUXT__` payload from Worker public bindings, so
+  Workers Builds no longer ships an empty `gaMeasurementId` / `posthogPublicKey`
+  when the Worker has the keys (buoys#133).
+
+  Workers Builds does not inject `wrangler.json` `vars` into `nuxt build`, and
+  Nuxt's own request-time overlay only maps `NUXT_PUBLIC_*` names. Apps that
+  wrote `process.env.GA_MEASUREMENT_ID || ''` shipped an empty page payload
+  while `/api/runtime/public` was correct.
+
+  **narduk-core**: a new `00-runtime-public` Nitro plugin runs
+  `applyRuntimePublicOverlay(event)` on every page request (not `/api/` or
+  `/_nuxt/`) before SSR. It writes the browser-only overlay keys
+  (`RUNTIME_PUBLIC_SSR_KEYS`: analytics keys and PostHog flags,
+  `allowGeolocation`, `twitterSite`, `seoSearchActionUrlTemplate`) onto the
+  request's own `runtimeConfig.public` clone. `previewSafeMode`,
+  `deploymentTarget`, the URLs and the auth keys keep their build values on the
+  server, because the 5xx sanitizer and narduk-auth read them from the same
+  object; the client plugin still applies the full overlay. Preview hosts still
+  blank analytics, and `analyticsPrivacy: 'strict'` is untouched. The overlay
+  also accepts `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` / `NUXT_PUBLIC_POSTHOG_HOST` after the short
+  names, and the module seeds `gaMeasurementId` / `posthogPublicKey` so Nuxt's
+  native `NUXT_PUBLIC_*` overlay has keys to fill.
+
+  **narduk-analytics** seeds `posthogPublicKey` and accepts the same
+  `NUXT_PUBLIC_*` aliases at build time. **narduk-platform** catalog notes,
+  **narduk-app-tools** README and the **create-narduk-app** runbook document
+  that `cf:runtime-var` is the contract and a `nuxt.config.ts` wrangler reader
+  is not.
+
+  **Upgrade (Buoys and any app with the same workaround):** bump
+  `@narduk-enterprises/narduk-core` (and `narduk-analytics` if pinned), delete
+  the app-local `wrangler.json` reader, drop `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler copies kept only as Nuxt aliases,
+  and keep the short names in wrangler `vars`.
+
+- 4a3178b: `create-narduk-app upgrade` now writes only the top-level Workers
+  Cache key on an existing `apps/web/wrangler.jsonc`. Bindings, routes and
+  account stay app-owned. An explicit `cache.enabled: false` is left alone
+  (narduk-libs#672).
+- f84b7de: `verify --live --expect-sha` reads `x-build-version` from the health
+  route when one is enabled. A prerendered smoke path (generated SEO apps
+  prerender `/`) is a static asset and has no Worker header, so exact-SHA live
+  proof no longer depends on that route (narduk-libs#781). `--no-health` still
+  falls back to the smoke path.
+
 ## 0.21.1
 
 ### Patch Changes

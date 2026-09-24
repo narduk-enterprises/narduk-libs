@@ -1,5 +1,46 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.7.0
+
+### Minor Changes
+
+- 1dc62db: `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing` exports
+  `canonicalRobotsPolicy(hostname, canonicalHostname, options)`, which returns
+  the full robots directive for a request host:
+  `'index, follow, max-image-preview:large'` (exported as `hostAwareIndexRule`)
+  on the canonical host and `'noindex, nofollow'` everywhere else. Options cover
+  route-level `indexable: false`, `additionalCanonicalHostnames` for aliases
+  such as `www.`, and overrides for both directive strings. Apps that carry
+  their own `robotsForHostname` and hardcoded canonical hostname can use it
+  instead (narduk-libs#836).
+
+### Patch Changes
+
+- 408ad37: README only: point secret-backed local flows at nvault instead of
+  Doppler, which is retired except the `ne` root store. `create-narduk-app`
+  releases alongside because it pins both packages.
+- 8affc4a: narduk-seo no longer hard-depends on nuxt-og-image. The package is an
+  optional peer at 6.8.0. Static-card apps omit it and set
+  `ogImage.enabled: false`. Runtime OG or build-time prerender cards
+  (`ogImage.zeroRuntime: true`) add `nuxt-og-image@6.8.0` themselves --
+  `zeroRuntime` still installs the module and only disables the request-time
+  renderer. If the peer is missing, the layer skips `installModule`, registers a
+  no-op `defineOgImage`, and `useSeo` falls back to the static image. A missing
+  peer is a silent skip on the default/static path and when the app set only
+  `ogImage.zeroRuntime: true`; the layer warns only when the app set
+  `ogImage.enabled: true`. Generated SEO apps pin `nuxt-og-image@6.8.0` so the
+  default `useSeo()` path still produces `/_og/` cards (narduk-libs#316).
+
+  The three image-size highs that originally filed narduk-libs#170 are already
+  gone at nuxt-og-image 6.8.0 (`image-size` is not in the lockfile). This change
+  is the coupling half.
+
+  On npm.pkg.github.com / npm.nard.uk the abbreviated packument drops
+  `peerDependenciesMeta`, so an optional peer can still install as required
+  (package-delivery#7). The module skip is what keeps a consumer that does not
+  have the package able to build. Whether the install tree is actually free of
+  nuxt-og-image depends on the registry's packument until the npmjs.org move.
+
 ## 2.6.0
 
 ### Minor Changes

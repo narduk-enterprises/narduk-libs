@@ -1,5 +1,502 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.0
+
+### Minor Changes
+
+- b59c4a8: Scaffold new apps on TypeScript 6.0 (`6.0.3`), inside the
+  D-TOOLCHAIN-1 `~6.0.3` baseline (narduk-libs#307).
+
+  The generated root `package.json` now pins exact `typescript: 6.0.3` (inside
+  the baseline `~6.0.3` range; the generator pins every dependency exactly)
+  instead of `5.9.3`. The rest of D-TOOLCHAIN-1 (Node 24 through
+  `.node-version`, `engines.node`, the current shared-workflow pin and the
+  `github-actions` Dependabot block) had already landed, so this was the last
+  stale point. The workspace moves in the same change: every narduk-libs package
+  now builds and typechecks with TypeScript `~6.0.3`, so a scaffolded app and
+  the packages it consumes are compiled with the same major.
+
+### Patch Changes
+
+- 8f4a177: Scope admin PostHog session recordings to `POSTHOG_DOMAIN` so a
+  shared project cannot list another app's replays, and include the domain in
+  the recordings cache key.
+- 70168be: Standard-mode analytics now strips fragments, sensitive query keys
+  and page text without enabling strict privacy; IndexNow submit keeps URLs on
+  the site host; the env catalog treats INDEXNOW_KEY as unique per app.
+- 1dc62db: Add `narduk-app db create` and fail `foundation:check` on the
+  placeholder D1 id (narduk-libs#662).
+
+  `foundation:check` sub-check 1.5 fails any `d1_databases[].database_id` (top
+  level or any `env.<name>`) that is still the scaffold placeholder
+  `00000000-0000-0000-0000-000000000000`, naming `narduk-app db create` and the
+  raw `wrangler d1 create <name>` step. The placeholder builds, dry-runs and
+  tests clean, so this is the first gate that notices the database does not
+  exist. A fresh `create-narduk-app` scaffold with a database now fails 1.5, and
+  only 1.5, until it is provisioned; a `--no-database` scaffold is unaffected.
+
+  `narduk-app db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]`
+  creates the one database a placeholder binding stands for: it refuses when the
+  id is already real, takes the name from `Config/cloudflare-app.json` (never an
+  argument), requires an explicit account (`account_id` or
+  `CLOUDFLARE_ACCOUNT_ID`), writes the returned id into the wrangler config the
+  manifest names with comments and formatting intact, prints the id and account,
+  and never deletes.
+
+  The generated `apps/web/wrangler.jsonc`, `README.md` and
+  `docs/workers-builds.md` now say how to create the database.
+
+- 1dc62db: `narduk-app e2e-serve` now drops service bindings to Workers outside
+  the E2E run instead of letting workerd refuse to start
+  (`binding "ENGINE" refers to a service "…", but no such service is defined`),
+  and names each one on stderr. A binding back to the Worker itself is kept,
+  nothing is written into the app tree, and `--keep-service-bindings` passes the
+  config through untouched for an app that runs the target Worker alongside.
+  Dropping needs the app's wrangler at 4.99.0 or later (narduk-libs#788).
+- 1dc62db: `narduk-app deploy versions-promote` accepts
+  `--gate-verified "<check>@<sha>"`, the promote workflow's attestation that the
+  gate check passed on a commit (narduk-libs#400, option 2). The value splits on
+  its last `@` and needs the full 40-character SHA. The promote refuses with
+  `gate-mismatch` (exit 9), before touching anything, when the attested SHA is
+  not the commit being promoted or the resolved version's `workers/tag` is not
+  that commit. It logs the attested check and SHA and reports them as
+  `gateVerified`. The flag is optional: without it the promote runs as before
+  and warns that no gate attestation was passed. The generated
+  `docs/workers-builds.md` promote excerpt and the `promote-d1.steps.yml` dry
+  run now pass `--gate-verified "ci / Required@$VERIFIED_SHA"`.
+- 1dc62db: `verify --live` diagnoses a stale local NXDOMAIN (narduk-libs#783).
+  When the system lookup fails with `ENOTFOUND` / `EAI_AGAIN` but 1.1.1.1 /
+  8.8.8.8 resolve the host, the report adds a distinct `dns` UNKNOWN assertion
+  ("local resolver has a stale negative answer") with the public addresses and
+  the remedies, instead of reading like a dead deployment; the exit code
+  stays 2. The new `--resolver public` probes through the public resolvers'
+  answer while keeping the hostname for TLS SNI and `Host`. Live probe responses
+  also carry the transport's `errorCode`.
+- c6653d8: Resolve the active Worker version from provider deployment allocation
+  instead of versions-inventory list position, page the deployments list the
+  same way as versions when `result_info` is present, and add bounded
+  preview-alias identity convergence with aggregated post-convergence
+  diagnostics (narduk-libs#47).
+- 429fd81: Refuse a never-expiring wildcard API key and cap its lifetime at 90
+  days (narduk-libs#168). `create-narduk-app` is a companion patch so the
+  generator pin moves with auth.
+- 0c5bf3d: Load a Reflect metadata polyfill on the Workers path so narduk-auth
+  passkey routes no longer 500 when tsyringe evaluates without
+  `Reflect.getMetadata` (narduk-libs#786). `create-narduk-app` is a companion
+  patch so the generator pin moves with auth.
+- 8226f05: Address narduk-charts lint findings deferred at eslint-config
+  adoption (#131). `create-narduk-app` releases alongside because it pins
+  narduk-charts.
+- 7484b7d: Carry the options the retired standalone narduk-charts repository
+  published as 2.6.0 on 2026-09-23: line-series `spanGaps`, `mode: 'points'`,
+  `marker` (`radius`, `filled: false` rings), `opacity` and `showValues` /
+  `formatValue`; point annotations' `ring`; `xTickIndices` with thinning on
+  narrow charts; and bar `yMin` / `yMax`, `showXAxis`, `showYAxis`, `showGrid`,
+  `showLegend` and `padding`. narduk-libs continues from 2.6.0, the registry's
+  `latest`, so this release is the first to ship those options together with
+  narduk-libs' 2.5.x fixes and the `./spark` export. The package docs now name
+  narduk-libs as the only source and release path. `create-narduk-app` releases
+  alongside because it pins narduk-charts.
+- 1df13cb: Add `@narduk-enterprises/narduk-charts/spark`: axis choice, SVG path
+  generation (optional timestamp X via `times`), and 24h/7d/30d trailing-window
+  helpers for micro-sparklines. The Vue line-chart sparkline recipe is
+  unchanged. `create-narduk-app` releases alongside because it pins
+  narduk-charts.
+- 7766d90: `composeSharedConfigs()` and `createAppLintConfig()` accept
+  `communityLayer: false` so a caller can take a capability pack without the
+  shared community plugin tail (`import-x`, `unicorn`, `promise`, `security`,
+  `regexp`, `eslint-comments`, `vitest`, Vue house style). Baseline ignores,
+  typescript-eslint project rules, and console hygiene stay on. Today's default
+  stays on for every existing caller (narduk-libs#167).
+- 1dc62db: Revoke an API key by setting `revoked_at` instead of deleting its
+  row, so `last_used_at`, `key_prefix` and the scopes survive as the audit trail
+  a suspected leak needs (narduk-libs#806).
+
+  - narduk-core: migration `0008_api_key_revoked_at.sql` adds the nullable
+    `api_keys.revoked_at` column (ISO text). `authenticateApiKey` refuses a
+    revoked key (`null`); `authenticateD1ApiKey` answers
+    `{ ok: false, reason: 'revoked' }`, a new member of
+    `D1ApiKeyAuthFailureReason`. The new
+    `revokeApiKey(db, id, { userId?, now? })` sets the column and keeps the row.
+    Run the app's migrations before deploying this version: both authenticate
+    functions read the new column. A Postgres app adds it with
+    `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+  - narduk-auth: `DELETE /api/auth/api-keys/:id` revokes through `revokeApiKey`
+    (an already-revoked key answers 404), and `GET /api/auth/api-keys` no longer
+    lists revoked keys.
+
+  `create-narduk-app` is a companion patch so the generator pins move with core
+  and auth.
+
+- 1dc62db: narduk-core and narduk-auth register the files they render with
+  Tailwind and with Nuxt UI's component detection (narduk-libs#700). Nuxt UI
+  adds an `@source` and scans for `U*` components only in Nuxt layers, and both
+  packages are modules, so their utilities existed only when a Nuxt UI theme
+  happened to name the same class, and `ui.experimental.componentDetection`
+  dropped the themes of components only they render.
+
+  - narduk-auth adds its `app/` directory to the `@source` lines in Nuxt UI's
+    `ui.css`: `/auth/callback`, `/auth/confirm` and the sign-in pages keep
+    `px-4`, `font-bold`, `min-h-[calc(100vh-8rem)]` and their card widths.
+  - With `componentDetection` on, both modules add the Nuxt UI components their
+    own files render (core's `UButton` on the error page and the `UDashboard*`
+    shell; auth's `UAlert` and `UCard`, among others) to the detection list. An
+    app no longer lists module files or components to turn detection on.
+  - narduk-core exports the helper as
+    `@narduk-enterprises/narduk-core/nuxt-ui-sources` (`registerNuxtUiSources`)
+    for other modules that ship app files.
+
+- 73c6246: Add `nardukCore.auth` (default `true`) so a site with no accounts can
+  skip `nuxt-auth-utils` and the empty `session.password` seed
+  (narduk-libs#169). `auth: false` does not install the session module and does
+  not register `/api/_auth/session`. With `app` on it registers a signed-out
+  `useUserSession` so the dashboard layout still renders, and the build stops
+  with a clear error if `@narduk-enterprises/narduk-auth` is installed with
+  nothing else providing `nuxt-auth-utils`. Existing apps keep today's install.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+- ab81821: Downstream modules can add CSP sources through
+  `nuxt.hook('narduk-core:csp', allow => ...)` without forking the estate
+  policy. The hook is applied before the policy is resolved, and a contribution
+  that arrives too late to merge fails the build instead of silently dropping
+  (narduk-libs#410). `create-narduk-app` is a companion patch so the generator
+  pin moves with core.
+- 1dc62db: Document in the README that on the `cloudflare-module` preset,
+  nitropack 2.13.4 reads the whole request body into memory before h3 or any
+  route handler runs (narduk-libs#458). Only Cloudflare's edge limit (100 MB on
+  Free and Pro) bounds that read. The package's own ceilings
+  (`defineValidatedHandler` `maxBodyBytes`, the 64 KiB CSP report cap) bound
+  parsing, not the read. The note says why there is no Content-Length gate and
+  when to re-test: when the Nitro pin moves, or on Nitro v3, whose Cloudflare
+  handler does not buffer. No runtime change.
+- 3052028: Resolve Cloudflare bindings on Nitro internal SSR fetches so a nested
+  `useFetch` / `$fetch` keeps the Worker `DB` (narduk-libs#49). When an event
+  carries no `event.context.cloudflare`, the worker-env resolver behind
+  `useDatabase`, KV, Hyperdrive and rate-limit helpers now falls back to the
+  isolate env Nitro's cloudflare presets set on `globalThis.__env__` for every
+  fetch and scheduled event; with neither present it still fails closed. No
+  `AsyncLocalStorage.enterWith()`, which workerd does not implement.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+- 9cb7dbf: Add `useLiveProduct(refresh, { intervalMs, updatedAt? })`, the
+  recommended replacement for a bare `useIntervalRefresh` when the refreshed
+  data is user-visible live content (narduk-libs#374). Polling pauses while the
+  page is hidden and refreshes at once on return when a poll fell due;
+  overlapping refreshes share the run in flight (`useInFlightTracker`), and
+  `refresh()` never rejects, keeping a failure in `error`. Its `updatedAgo` ("3
+  minutes ago") reads `formatRelative` against `useSsrNow`, and nothing runs
+  until mount, so neither the label nor `pending` can mismatch the server
+  render. It takes any refresh callback and fetches nothing itself.
+- d8f4366: `defineValidatedHandler` now accepts `authorize`, which runs after
+  params and query pass and before the body is read, so an unauthenticated
+  caller never pays for the payload or the body schema (narduk-libs#371).
+  Mutation helpers map a `ZodError` onto the same `VALIDATION_FAILED` 400, so
+  caller key names no longer land in `statusMessage`. `create-narduk-app` is a
+  companion patch so the generator pin moves with core.
+- c6ec7da: development deploy: receipts carry per-step timings (`steps`,
+  `totalSeconds`) and print the slowest steps. Every verified deploy queues full
+  validation of the deployed commit (a capture commit for a dirty tree) to a
+  detached worker that pushes `narduk-validation/<sha>/<uuid>`; one worker per
+  repository, the newest SHA wins, superseded automatic runs are cancelled and
+  their branches deleted, and a push that fails twice shows as `NOT PUSHED` in
+  `development status`. deploy:dev refuses a capture that changes protected
+  paths (`deployment.development.protectedPaths`, migration directories,
+  Wrangler binding or Durable Object changes) unless run with `--gated`, and
+  refuses after a `red-main` issue has been open for 24 h unless
+  `--red-main-fix <issue>` names it. New
+  `development rollback --to <known-good build>`; automatic rollback on failed
+  proof is off unless `deployment.development.rollback` declares
+  `automatic: true` with a `rehearsalRef`, and it pages instead of crossing a
+  Durable Object, binding or non-expand-only migration change.
+  `exec --operation migration` applies the expand-only rule (12.9): a drop or
+  rename refuses unless it is a declared contract migration already landed on
+  the production branch. For an app that declares no `deployment.migrations`
+  (12.9 NA), files already on the production branch before the hold took effect
+  (recorded as `migrationBaseline`; `enter --refresh` recovers it for an
+  existing enrollment from the checkout's reflog, never from the current ref)
+  are not judged; files that landed during the hold always are. An app that
+  declares `deployment.migrations` (expand-contract) has every file judged.
+- 10aca7a: development deploy now reconciles Worker crons and routes after
+  promote. Version upload and `POST {script}/deployments` carry code only, so a
+  trigger change in wrangler.jsonc previously never applied. The deploy path now
+  runs `wrangler triggers deploy` from the artifact's resolved config
+  (`.output/server/wrangler.json`, falling back to the source Wrangler file when
+  the artifact omits those keys).
+- feafb59: development enter refuses an already-disabled held workflow unless it
+  is retired or `--accept-prior-state` is journaled. Adopting
+  `disabled_manually` as `desiredState` silently left CI and promote off after
+  exit (narduk-libs#754). Exit and `development status` now name any workflow
+  restored to a disabled state.
+- 9cb7dbf: `narduk/component-directory-structure` and
+  `narduk/no-shadowed-shared-component` find a component's `components/` root by
+  path segment instead of `indexOf('components/')` (narduk-libs#777). A checkout
+  directory whose name ends in `components` — a worktree such as
+  `core-module-app-components/` — is no longer taken for the root, so a local
+  `pnpm run quality` stops reporting every component as "folder depth 7". A
+  nested `my-components/` folder no longer cuts the path in half when the shadow
+  rule computes Nuxt's component name. Both go through a new, tested
+  `segmentsAfter` helper in `path-scope`.
+- 1dc62db: Add `NeMeter` to the shared-component lists in eslint-config and
+  narduk-app-tools so they match narduk-shell's registry after #601.
+- 1c10b9b: Add `NeSearchInput` to the shared-component lists in eslint-config
+  and narduk-app-tools so they match narduk-shell's registry after #815.
+- a48e52e: `createAppLintConfig` no longer enables the theme-resolving
+  `better-tailwindcss` rules just because `app/assets/css/main.css` exists or
+  `tailwindcss` happens to resolve (narduk-libs#665). Pass `tailwindEntryPoint`
+  to opt in. `create-narduk-app` is a companion patch so the generator pin moves
+  with eslint-config; no generator source change.
+- d880027: `foundation:check` items 1.1, 1.2, 1.4 and 1.5 are not-applicable
+  when the app's only declared deployment target is not Cloudflare
+  (narduk-libs#158). The checker reads `Config/project-lifecycle.json`
+  `environments[].deploymentTargets[].provider`, or `Config/coolify-app.json`
+  when there is no `Config/cloudflare-app.json`. A Worker that sets
+  `worker.nitroPreset` (or `worker.framework`) to `none` is the same: 1.1 no
+  longer fails a hand-rolled `src/index.ts` Worker that has no Nitro build. Item
+  1.3 still requires `manifests:validate`. Items 3.1/3.2 read
+  `access.exposureClass` from `Config/coolify-app.json` when the Cloudflare
+  manifest is absent, so a Coolify public site is still asked for narduk-seo and
+  narduk-analytics.
+- 9cb7dbf: A generated private app now ships `.github/actionlint.yaml` declaring
+  the self-hosted runner labels its workflows name — `proxmox` and `linux-ci`
+  (`dependabot-merge.yml`), plus `proxmox-deploy` for the D1 `preview-d1.yml`
+  template — so the shared workflow's required `caller-lint` job no longer fails
+  a fresh app's first CI run with `label "proxmox" is unknown`
+  (narduk-libs#778). The labels come from the same arrays the `runs-on:` blocks
+  are written from, the file is a managed `upgrade` target like the workflows it
+  describes, and a test re-runs actionlint's runner-label rule over every
+  emitted workflow. Public apps name no self-hosted label and get no file.
+- 0309559: Generated apps now route `@narduk-enterprises/*` to the anonymous
+  `https://npm.nard.uk` mirror, drop the Dependabot `registries:` block, and
+  install without a GitHub Packages token. `scripts/gh-packages-run.mjs` stays
+  as opt-in break-glass and is unused by the default `cf:build` and CI paths
+  (narduk-libs#568).
+- 1dc62db: `upgrade` no longer reads an app as an `seo` app just because it
+  depends on `nuxt-og-image` (narduk-libs#825). Since narduk-seo made
+  `nuxt-og-image` an optional peer (#809), generated SEO apps pin
+  `nuxt-og-image@6.8.0` beside `@narduk-enterprises/narduk-seo`, so the default
+  `useSeo()` path still emits `/_og/` cards and the #316 packed-consumer proofs
+  keep their `/_og/` assertions. That put a third-party package in the `seo`
+  capability's package list. When an app has no `narduk.capabilities` block,
+  `upgrade` works out its capabilities from its dependencies, and any match in
+  that list counted, so an app with `nuxt-og-image` and no `narduk-seo` was read
+  as `seo`. Now only `@narduk-enterprises/*` packages identify a capability.
+- 4fda255: Generated private CI now ships a GitHub-hosted
+  `Runner group onboarding` job so a repo missing fleet runner-group membership
+  gets a workflow log and annotation instead of an indefinite `queued` with no
+  output (narduk-libs#625).
+- 427d98f: Add a Go slog.Handler adapter that emits the shared narduk-logging
+  record contract (narduk-libs#206).
+- b6a06b6: Clear the narduk-mapkit lint suppressions left by first-time
+  eslint-config adoption (narduk-libs#138).
+- a032e64: `rectBeside`, a leader overlay, and `hoveredId` for AppMapKit (design
+  round 2, narduk-libs#517).
+
+  `rectBeside(rect, frame, point, anchor, options)` on `./client` is pure camera
+  math beside `refreshMapKitMapLayout`: it returns the visible map rect that
+  places a coordinate beside a DOM rect, with a gap, a vertical target, and one
+  extra zoom step when the station is clustered.
+
+  `MapKitLeaderOverlay` follows an annotation's screen point on every region
+  change, draws a line to an anchor element, and reports when the point is off
+  screen. `<AppMapKit>` accepts the same overlay as the `leader` prop and emits
+  `leader-offscreen`.
+
+  `hoveredId` (`v-model:hovered-id`) sits beside `selectedId`. The matching pin
+  host carries `data-mapkit-hovered`; hover never adds or removes annotations.
+
+- 9cb7dbf: `narduk-app db migrate` starts far fewer wrangler processes
+  (narduk-libs#704). On `--local`, every inspection read — the table list,
+  ledger shape and rows, both legacy ledgers, the lock owner and adoption
+  evidence — now goes to wrangler as one multi-statement `--command`, so an
+  inspection is at most two processes whatever the history. A run that finds
+  nothing to apply or adopt and no lock row now returns after that read, without
+  taking the lock, and a run whose work another runner already finished skips
+  the redundant post-apply read. Against real wrangler on a local D1 with 19
+  migrations, a warm (no-op) run went from 20.1 s to 3.3 s. On `--remote` a warm
+  run drops from 15 processes to 5, and no remote path starts more processes
+  than before: statements are still sent one per process there, because that
+  path's multi-statement reply is not proven here. Each migration file is still
+  applied and recorded on its own, and a retained lock still fails the run.
+- a07c87b: Add `NeCard`, `NeCardList` and `NeDetailView` (item 17, #264).
+
+  The eslint-config and narduk-app-tools shared-component lists name those three
+  plus `NeSearchInput` so the drift and item-13 tests match `narduk-shell`'s
+  registry. Explorer inventory, catalog, and usage ship beside the components.
+
+  `NeCard` wraps `UCard` with media, title, badge, stat rows and actions.
+  `NeCardList` renders the same collection state as the table (`v-model:state`
+  or `:collection`) with `NeStatePanel` and `NePager` built in, so one page
+  toggles cards and table. `NeDetailView` is a key-value panel: label, value,
+  format, unit, and an unavailable message that never looks like zero.
+
+  The pin literal in `create-narduk-app`'s `PACKAGE_VERSIONS` is deliberately
+  not hand-edited: `versions:check` requires it to equal narduk-shell's live
+  `package.json` version, and `versions:sync` re-pins it when `release:version`
+  runs.
+
+- 1dc62db: `NeDataTable` owns its sideways overflow and floors width-less
+  columns (narduk-libs#684, proven in operator-portal's `CollectionTable`).
+  `UTable`'s root is now the named scroll box (`data-ne-data-table-scroll`), and
+  it and the outer wrapper carry `min-w-0 max-w-full`, so one long unbreakable
+  string scrolls the table, never the page, even inside a flex or grid parent.
+  `NeDataColumn` gains an optional `width` (any CSS length, set on the header
+  cell); once any shown column declares one, the table takes
+  `min-width: max(100%, calc(<each width, or 200px for a width-less column> + …))`
+  from `sm` up through `--ne-data-table-min`, so every width-less column keeps
+  at least 200px and the box scrolls instead. A table that declares no widths
+  renders as before; `stickyHeader: 'page'` keeps no scroll box and no floor.
+- 9cb7dbf: `NeDataTable` now declares its slots (narduk-libs#780). A consumer's
+  `<template #status-cell="{ row }">` type-checks under `vue-tsc` /
+  `nuxt typecheck`, and `row` is the table's own row type, so the local typed
+  wrapper apps wrote to get past TS2339/TS7053 can be deleted. The slot shape is
+  exported as `NeDataTableSlots<T>` (with `NeDataTableCellSlotProps`,
+  `NeDataTableGroupSlotProps` and `NeDataTableBreakSlotProps`) for a wrapper
+  that forwards them.
+- 1dc62db: Add `NeMeter` and the unreported treatment (#601, #602).
+
+  `NeMeter` is one value against a known ceiling — a filled track with the
+  figure beside it (`4,200 / 5,000`), in a `block` or `inline` variant. The fill
+  is clamped to `[0, max]`; the figure and `aria-valuetext` always carry the
+  real value, and a `max` of zero or less is a ceiling with no room rather than
+  a division by zero. It is a plain element with token-read scoped CSS:
+  `UProgress` is a `progressbar` whose `null` is the indeterminate "working on
+  it" state, which is the wrong reading twice over.
+
+  A figure with no producer now has its own look, distinct from zero and from
+  stale. `theme.css` gains `--ne-hatch` and `--ne-hatch-soft` — 1px diagonal
+  hatches derived from `--ne-ink-dimmed` and `--ne-line-strong`, declared in
+  every scheme block — and the README documents the CSS contract under "The
+  unreported treatment". `NeMeter` takes `:value="null"` and renders the hatched
+  track, an em-dash and a `role="img"` named "…: not reported" (never
+  `aria-valuenow="0"`). `NeKpiTile`'s existing `null` value now renders the same
+  way: the em-dash on the soft hatch, named "Not reported", with
+  `data-state="unreported"`. A reported `0` is unchanged in both.
+  `isUnreported`, `NE_UNREPORTED_TEXT`, `NeMeterProps` and `NeMeterVariant` are
+  exported from the package root.
+
+  The styling-contract test now allows a `font-family` / `box-shadow` /
+  `border-radius` declaration whose whole value is one `var(--ne-*)` or
+  `var(--ui-*)` read, and still rejects raw values and `var()` fallbacks.
+  Explorer inventory, catalog and usage ship beside the component.
+
+- 8994b95: Add `NeSearchInput`: the debounced search field beside a collection
+  (item 14, #261), the other half of `NeFilterBar`. Explorer inventory, catalog,
+  and usage ship beside the component so the private showcase stays complete.
+
+  `v-model` is the applied term, not the keystroke — the box updates as you type
+  and the model updates after 250 ms, the same window `useCollection` uses for
+  `q`. Bind `v-model="c.q"` with `:debounce="0"` so the two windows do not
+  stack. The trailing clear empties the box and the model in the same tick; a
+  reset that waited out the debounce would keep the previous term live after the
+  reader asked it to stop. Length is the list-query contract's 200-character
+  ceiling, so a `q` that cannot travel is never typed.
+
+  The pin literal in `create-narduk-app`'s `PACKAGE_VERSIONS` is deliberately
+  not hand-edited: `versions:check` requires it to equal narduk-shell's live
+  `package.json` version, and `versions:sync` re-pins it when `release:version`
+  runs.
+
+- 408ad37: README only: point secret-backed local flows at nvault instead of
+  Doppler, which is retired except the `ne` root store. `create-narduk-app`
+  releases alongside because it pins both packages.
+- 7ae3a16: Fill the SSR `__NUXT__` payload from Worker public bindings, so
+  Workers Builds no longer ships an empty `gaMeasurementId` / `posthogPublicKey`
+  when the Worker has the keys (buoys#133).
+
+  Workers Builds does not inject `wrangler.json` `vars` into `nuxt build`, and
+  Nuxt's own request-time overlay only maps `NUXT_PUBLIC_*` names. Apps that
+  wrote `process.env.GA_MEASUREMENT_ID || ''` shipped an empty page payload
+  while `/api/runtime/public` was correct.
+
+  **narduk-core**: a new `00-runtime-public` Nitro plugin runs
+  `applyRuntimePublicOverlay(event)` on every page request (not `/api/` or
+  `/_nuxt/`) before SSR. It writes the browser-only overlay keys
+  (`RUNTIME_PUBLIC_SSR_KEYS`: analytics keys and PostHog flags,
+  `allowGeolocation`, `twitterSite`, `seoSearchActionUrlTemplate`) onto the
+  request's own `runtimeConfig.public` clone. `previewSafeMode`,
+  `deploymentTarget`, the URLs and the auth keys keep their build values on the
+  server, because the 5xx sanitizer and narduk-auth read them from the same
+  object; the client plugin still applies the full overlay. Preview hosts still
+  blank analytics, and `analyticsPrivacy: 'strict'` is untouched. The overlay
+  also accepts `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` / `NUXT_PUBLIC_POSTHOG_HOST` after the short
+  names, and the module seeds `gaMeasurementId` / `posthogPublicKey` so Nuxt's
+  native `NUXT_PUBLIC_*` overlay has keys to fill.
+
+  **narduk-analytics** seeds `posthogPublicKey` and accepts the same
+  `NUXT_PUBLIC_*` aliases at build time. **narduk-platform** catalog notes,
+  **narduk-app-tools** README and the **create-narduk-app** runbook document
+  that `cf:runtime-var` is the contract and a `nuxt.config.ts` wrangler reader
+  is not.
+
+  **Upgrade (Buoys and any app with the same workaround):** bump
+  `@narduk-enterprises/narduk-core` (and `narduk-analytics` if pinned), delete
+  the app-local `wrangler.json` reader, drop `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler copies kept only as Nuxt aliases,
+  and keep the short names in wrangler `vars`.
+
+- 1dc62db: `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing` exports
+  `canonicalRobotsPolicy(hostname, canonicalHostname, options)`, which returns
+  the full robots directive for a request host:
+  `'index, follow, max-image-preview:large'` (exported as `hostAwareIndexRule`)
+  on the canonical host and `'noindex, nofollow'` everywhere else. Options cover
+  route-level `indexable: false`, `additionalCanonicalHostnames` for aliases
+  such as `www.`, and overrides for both directive strings. Apps that carry
+  their own `robotsForHostname` and hardcoded canonical hostname can use it
+  instead (narduk-libs#836).
+- 8affc4a: narduk-seo no longer hard-depends on nuxt-og-image. The package is an
+  optional peer at 6.8.0. Static-card apps omit it and set
+  `ogImage.enabled: false`. Runtime OG or build-time prerender cards
+  (`ogImage.zeroRuntime: true`) add `nuxt-og-image@6.8.0` themselves --
+  `zeroRuntime` still installs the module and only disables the request-time
+  renderer. If the peer is missing, the layer skips `installModule`, registers a
+  no-op `defineOgImage`, and `useSeo` falls back to the static image. A missing
+  peer is a silent skip on the default/static path and when the app set only
+  `ogImage.zeroRuntime: true`; the layer warns only when the app set
+  `ogImage.enabled: true`. Generated SEO apps pin `nuxt-og-image@6.8.0` so the
+  default `useSeo()` path still produces `/_og/` cards (narduk-libs#316).
+
+  The three image-size highs that originally filed narduk-libs#170 are already
+  gone at nuxt-og-image 6.8.0 (`image-size` is not in the lockfile). This change
+  is the coupling half.
+
+  On npm.pkg.github.com / npm.nard.uk the abbreviated packument drops
+  `peerDependenciesMeta`, so an optional peer can still install as required
+  (package-delivery#7). The module skip is what keeps a consumer that does not
+  have the package able to build. Whether the install tree is actually free of
+  nuxt-og-image depends on the registry's packument until the npmjs.org move.
+
+- ca67c3f: Add tag-based E2E quarantine to
+  `@narduk-enterprises/narduk-testkit/playwright/config`: `@quarantine` via
+  `quarantineDetails`, `grepInvert` on the `pr` / `web` projects so a tagged
+  spec is excluded from the PR project, a `quarantine` project that collects the
+  tag, and `assertPlaywrightQuarantineCollection` so a vitest guard fails when
+  Playwright collects an untagged or wrongly tagged file (narduk-libs#520).
+  `create-narduk-app` is a companion patch so the generator pin moves with the
+  testkit release.
+- d7c1ace: The E2E `page` fixture now names the page URL and the mismatched node
+  when Vue logs a hydration mismatch. An `addInitScript` wraps `console.warn`
+  and serialises `location.pathname`, the node's `outerHTML`, and its parent as
+  the warning fires, so a later `goto` cannot drop the details. Apps that build
+  an E2E artifact can spread `VUE_E2E_HYDRATION_MISMATCH_DETAILS_DEFINE` into
+  `vite.define` so production Vue keeps those node arguments
+  (`__VUE_PROD_HYDRATION_MISMATCH_DETAILS__`). `create-narduk-app` is a
+  companion patch so the generator pin moves with the testkit release.
+- f10064d: Add `@narduk-enterprises/narduk-testkit/playwright/config`, a
+  Playwright preset with `setup` / `pr` / `web` projects, `fullyParallel: true`,
+  and `workers: 2` (the measured default from the Buoys e2e-parallel-config
+  experiment). Specs declare a tier in the filename so an undeclared file is not
+  collected by every project. Viewport filtering is collection-time via project
+  metadata. `create-narduk-app` is a companion patch so the generator pin moves
+  with the testkit release.
+- 4a3178b: `create-narduk-app upgrade` now writes only the top-level Workers
+  Cache key on an existing `apps/web/wrangler.jsonc`. Bindings, routes and
+  account stay app-owned. An explicit `cache.enabled: false` is left alone
+  (narduk-libs#672).
+- f84b7de: `verify --live --expect-sha` reads `x-build-version` from the health
+  route when one is enabled. A prerendered smoke path (generated SEO apps
+  prerender `/`) is a static asset and has no Worker header, so exact-SHA live
+  proof no longer depends on that route (narduk-libs#781). `--no-health` still
+  falls back to the smoke path.
+
 ## 0.13.4
 
 ### Patch Changes

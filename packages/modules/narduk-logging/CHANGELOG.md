@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- 427d98f: Add a Go slog.Handler adapter that emits the shared narduk-logging
+  record contract (narduk-libs#206).
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,31 @@
 # @narduk-enterprises/journeys
 
+## 0.4.4
+
+### Patch Changes
+
+- f5ca367: `WebJourneyContext` gains `see`, `hasControl`, `noControl`, `gone`,
+  `fill` and `attach`. `see` and `hasControl` wait for a visible match — a
+  hidden DOM node is not enough — and `see` matches exact text rather than a
+  substring. `gone` tracks visible presence, not raw DOM count. `fill` fails
+  naming the target when the field never appears, and treats `Email:` /
+  `Quantity [kg]` as labels. Absence is by accessible name and a `count()` poll,
+  not `hasText` or `waitFor({ state: 'detached' })` (narduk-libs#67).
+- 75403b3: `registerJourneys` accepts `base` and `world` as today's scalars or
+  as functions of `workerIndex`, resolves them inside the registered `test()`
+  body, and records the resolved origin on the run manifest. A Playwright worker
+  pool (`workers > 1`) is refused unless both are functions — a shared origin or
+  shared database across the pool is the wrong-but-green overwrite
+  (narduk-libs#116).
+- 41b1164: The declaration digest that promotion and walkthrough compare is now
+  per journey (`digestJourney`, recorded as `journeyDigest` on each run). Adding
+  a sibling journey — or any other file under the catalog directory — no longer
+  invalidates every promoted capture (narduk-libs#66). The catalog-wide
+  `digestDirectory` / `declarationDigest` path remains for manifests written
+  before this field existed. **Not digest-changing** for those older captures
+  until the catalog directory itself moves; a recapture writes `journeyDigest`
+  and is then isolated from sibling drift.
+
 ## 0.4.3
 
 ### Patch Changes

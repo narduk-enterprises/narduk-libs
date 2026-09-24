@@ -1,5 +1,70 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.30.0
+
+### Minor Changes
+
+- 1dc62db: Revoke an API key by setting `revoked_at` instead of deleting its
+  row, so `last_used_at`, `key_prefix` and the scopes survive as the audit trail
+  a suspected leak needs (narduk-libs#806).
+
+  - narduk-core: migration `0008_api_key_revoked_at.sql` adds the nullable
+    `api_keys.revoked_at` column (ISO text). `authenticateApiKey` refuses a
+    revoked key (`null`); `authenticateD1ApiKey` answers
+    `{ ok: false, reason: 'revoked' }`, a new member of
+    `D1ApiKeyAuthFailureReason`. The new
+    `revokeApiKey(db, id, { userId?, now? })` sets the column and keeps the row.
+    Run the app's migrations before deploying this version: both authenticate
+    functions read the new column. A Postgres app adds it with
+    `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+  - narduk-auth: `DELETE /api/auth/api-keys/:id` revokes through `revokeApiKey`
+    (an already-revoked key answers 404), and `GET /api/auth/api-keys` no longer
+    lists revoked keys.
+
+  `create-narduk-app` is a companion patch so the generator pins move with core
+  and auth.
+
+### Patch Changes
+
+- 429fd81: Refuse a never-expiring wildcard API key and cap its lifetime at 90
+  days (narduk-libs#168). `create-narduk-app` is a companion patch so the
+  generator pin moves with auth.
+- 0c5bf3d: Load a Reflect metadata polyfill on the Workers path so narduk-auth
+  passkey routes no longer 500 when tsyringe evaluates without
+  `Reflect.getMetadata` (narduk-libs#786). `create-narduk-app` is a companion
+  patch so the generator pin moves with auth.
+- 1dc62db: narduk-core and narduk-auth register the files they render with
+  Tailwind and with Nuxt UI's component detection (narduk-libs#700). Nuxt UI
+  adds an `@source` and scans for `U*` components only in Nuxt layers, and both
+  packages are modules, so their utilities existed only when a Nuxt UI theme
+  happened to name the same class, and `ui.experimental.componentDetection`
+  dropped the themes of components only they render.
+
+  - narduk-auth adds its `app/` directory to the `@source` lines in Nuxt UI's
+    `ui.css`: `/auth/callback`, `/auth/confirm` and the sign-in pages keep
+    `px-4`, `font-bold`, `min-h-[calc(100vh-8rem)]` and their card widths.
+  - With `componentDetection` on, both modules add the Nuxt UI components their
+    own files render (core's `UButton` on the error page and the `UDashboard*`
+    shell; auth's `UAlert` and `UCard`, among others) to the detection list. An
+    app no longer lists module files or components to turn detection on.
+  - narduk-core exports the helper as
+    `@narduk-enterprises/narduk-core/nuxt-ui-sources` (`registerNuxtUiSources`)
+    for other modules that ship app files.
+
+- Updated dependencies [70168be]
+- Updated dependencies [1dc62db]
+- Updated dependencies [1dc62db]
+- Updated dependencies [73c6246]
+- Updated dependencies [ab81821]
+- Updated dependencies [1dc62db]
+- Updated dependencies [3052028]
+- Updated dependencies [9cb7dbf]
+- Updated dependencies [d8f4366]
+- Updated dependencies [7ae3a16]
+  - @narduk-enterprises/narduk-platform@2.1.2
+  - @narduk-enterprises/narduk-core@2.14.0
+  - @narduk-enterprises/narduk-app@1.20.2
+
 ## 1.29.4
 
 ### Patch Changes

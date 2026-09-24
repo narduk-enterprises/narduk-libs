@@ -1,5 +1,53 @@
 # @narduk-enterprises/eslint-config
 
+## 2.4.0
+
+### Minor Changes
+
+- 7766d90: `composeSharedConfigs()` and `createAppLintConfig()` accept
+  `communityLayer: false` so a caller can take a capability pack without the
+  shared community plugin tail (`import-x`, `unicorn`, `promise`, `security`,
+  `regexp`, `eslint-comments`, `vitest`, Vue house style). Baseline ignores,
+  typescript-eslint project rules, and console hygiene stay on. Today's default
+  stays on for every existing caller (narduk-libs#167).
+
+### Patch Changes
+
+- 9cb7dbf: `narduk/component-directory-structure` and
+  `narduk/no-shadowed-shared-component` find a component's `components/` root by
+  path segment instead of `indexOf('components/')` (narduk-libs#777). A checkout
+  directory whose name ends in `components` — a worktree such as
+  `core-module-app-components/` — is no longer taken for the root, so a local
+  `pnpm run quality` stops reporting every component as "folder depth 7". A
+  nested `my-components/` folder no longer cuts the path in half when the shadow
+  rule computes Nuxt's component name. Both go through a new, tested
+  `segmentsAfter` helper in `path-scope`.
+- 1dc62db: Add `NeMeter` to the shared-component lists in eslint-config and
+  narduk-app-tools so they match narduk-shell's registry after #601.
+- 1c10b9b: Add `NeSearchInput` to the shared-component lists in eslint-config
+  and narduk-app-tools so they match narduk-shell's registry after #815.
+- a48e52e: `createAppLintConfig` no longer enables the theme-resolving
+  `better-tailwindcss` rules just because `app/assets/css/main.css` exists or
+  `tailwindcss` happens to resolve (narduk-libs#665). Pass `tailwindEntryPoint`
+  to opt in. `create-narduk-app` is a companion patch so the generator pin moves
+  with eslint-config; no generator source change.
+- a07c87b: Add `NeCard`, `NeCardList` and `NeDetailView` (item 17, #264).
+
+  The eslint-config and narduk-app-tools shared-component lists name those three
+  plus `NeSearchInput` so the drift and item-13 tests match `narduk-shell`'s
+  registry. Explorer inventory, catalog, and usage ship beside the components.
+
+  `NeCard` wraps `UCard` with media, title, badge, stat rows and actions.
+  `NeCardList` renders the same collection state as the table (`v-model:state`
+  or `:collection`) with `NeStatePanel` and `NePager` built in, so one page
+  toggles cards and table. `NeDetailView` is a key-value panel: label, value,
+  format, unit, and an unavailable message that never looks like zero.
+
+  The pin literal in `create-narduk-app`'s `PACKAGE_VERSIONS` is deliberately
+  not hand-edited: `versions:check` requires it to equal narduk-shell's live
+  `package.json` version, and `versions:sync` re-pins it when `release:version`
+  runs.
+
 ## 2.3.0
 
 ### Minor Changes

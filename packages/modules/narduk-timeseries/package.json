@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-timeseries",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": false,
   "type": "module",
   "description": "A TelemetryHistoryStore boundary for Narduk products: a TimescaleDB + PostGIS adapter with bounded batched writes, rollup and track queries, tier-parameterized retention, and a read-only Influx adapter for dual-run parity.",

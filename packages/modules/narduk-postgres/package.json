@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-postgres",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": false,
   "type": "module",
   "description": "One PostgreSQL access surface for Narduk apps: Hyperdrive-bound Workers connections, direct Node connections, health checks, an immutable-file migrations runner and the three least-privilege roles.",

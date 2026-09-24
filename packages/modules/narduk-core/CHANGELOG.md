@@ -1,5 +1,136 @@
 # @narduk-enterprises/narduk-core
 
+## 2.14.0
+
+### Minor Changes
+
+- 1dc62db: Revoke an API key by setting `revoked_at` instead of deleting its
+  row, so `last_used_at`, `key_prefix` and the scopes survive as the audit trail
+  a suspected leak needs (narduk-libs#806).
+
+  - narduk-core: migration `0008_api_key_revoked_at.sql` adds the nullable
+    `api_keys.revoked_at` column (ISO text). `authenticateApiKey` refuses a
+    revoked key (`null`); `authenticateD1ApiKey` answers
+    `{ ok: false, reason: 'revoked' }`, a new member of
+    `D1ApiKeyAuthFailureReason`. The new
+    `revokeApiKey(db, id, { userId?, now? })` sets the column and keeps the row.
+    Run the app's migrations before deploying this version: both authenticate
+    functions read the new column. A Postgres app adds it with
+    `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+  - narduk-auth: `DELETE /api/auth/api-keys/:id` revokes through `revokeApiKey`
+    (an already-revoked key answers 404), and `GET /api/auth/api-keys` no longer
+    lists revoked keys.
+
+  `create-narduk-app` is a companion patch so the generator pins move with core
+  and auth.
+
+- 9cb7dbf: Add `useLiveProduct(refresh, { intervalMs, updatedAt? })`, the
+  recommended replacement for a bare `useIntervalRefresh` when the refreshed
+  data is user-visible live content (narduk-libs#374). Polling pauses while the
+  page is hidden and refreshes at once on return when a poll fell due;
+  overlapping refreshes share the run in flight (`useInFlightTracker`), and
+  `refresh()` never rejects, keeping a failure in `error`. Its `updatedAgo` ("3
+  minutes ago") reads `formatRelative` against `useSsrNow`, and nothing runs
+  until mount, so neither the label nor `pending` can mismatch the server
+  render. It takes any refresh callback and fetches nothing itself.
+- 7ae3a16: Fill the SSR `__NUXT__` payload from Worker public bindings, so
+  Workers Builds no longer ships an empty `gaMeasurementId` / `posthogPublicKey`
+  when the Worker has the keys (buoys#133).
+
+  Workers Builds does not inject `wrangler.json` `vars` into `nuxt build`, and
+  Nuxt's own request-time overlay only maps `NUXT_PUBLIC_*` names. Apps that
+  wrote `process.env.GA_MEASUREMENT_ID || ''` shipped an empty page payload
+  while `/api/runtime/public` was correct.
+
+  **narduk-core**: a new `00-runtime-public` Nitro plugin runs
+  `applyRuntimePublicOverlay(event)` on every page request (not `/api/` or
+  `/_nuxt/`) before SSR. It writes the browser-only overlay keys
+  (`RUNTIME_PUBLIC_SSR_KEYS`: analytics keys and PostHog flags,
+  `allowGeolocation`, `twitterSite`, `seoSearchActionUrlTemplate`) onto the
+  request's own `runtimeConfig.public` clone. `previewSafeMode`,
+  `deploymentTarget`, the URLs and the auth keys keep their build values on the
+  server, because the 5xx sanitizer and narduk-auth read them from the same
+  object; the client plugin still applies the full overlay. Preview hosts still
+  blank analytics, and `analyticsPrivacy: 'strict'` is untouched. The overlay
+  also accepts `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` / `NUXT_PUBLIC_POSTHOG_HOST` after the short
+  names, and the module seeds `gaMeasurementId` / `posthogPublicKey` so Nuxt's
+  native `NUXT_PUBLIC_*` overlay has keys to fill.
+
+  **narduk-analytics** seeds `posthogPublicKey` and accepts the same
+  `NUXT_PUBLIC_*` aliases at build time. **narduk-platform** catalog notes,
+  **narduk-app-tools** README and the **create-narduk-app** runbook document
+  that `cf:runtime-var` is the contract and a `nuxt.config.ts` wrangler reader
+  is not.
+
+  **Upgrade (Buoys and any app with the same workaround):** bump
+  `@narduk-enterprises/narduk-core` (and `narduk-analytics` if pinned), delete
+  the app-local `wrangler.json` reader, drop `NUXT_PUBLIC_GA_MEASUREMENT_ID` /
+  `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` wrangler copies kept only as Nuxt aliases,
+  and keep the short names in wrangler `vars`.
+
+### Patch Changes
+
+- 1dc62db: narduk-core and narduk-auth register the files they render with
+  Tailwind and with Nuxt UI's component detection (narduk-libs#700). Nuxt UI
+  adds an `@source` and scans for `U*` components only in Nuxt layers, and both
+  packages are modules, so their utilities existed only when a Nuxt UI theme
+  happened to name the same class, and `ui.experimental.componentDetection`
+  dropped the themes of components only they render.
+
+  - narduk-auth adds its `app/` directory to the `@source` lines in Nuxt UI's
+    `ui.css`: `/auth/callback`, `/auth/confirm` and the sign-in pages keep
+    `px-4`, `font-bold`, `min-h-[calc(100vh-8rem)]` and their card widths.
+  - With `componentDetection` on, both modules add the Nuxt UI components their
+    own files render (core's `UButton` on the error page and the `UDashboard*`
+    shell; auth's `UAlert` and `UCard`, among others) to the detection list. An
+    app no longer lists module files or components to turn detection on.
+  - narduk-core exports the helper as
+    `@narduk-enterprises/narduk-core/nuxt-ui-sources` (`registerNuxtUiSources`)
+    for other modules that ship app files.
+
+- 73c6246: Add `nardukCore.auth` (default `true`) so a site with no accounts can
+  skip `nuxt-auth-utils` and the empty `session.password` seed
+  (narduk-libs#169). `auth: false` does not install the session module and does
+  not register `/api/_auth/session`. With `app` on it registers a signed-out
+  `useUserSession` so the dashboard layout still renders, and the build stops
+  with a clear error if `@narduk-enterprises/narduk-auth` is installed with
+  nothing else providing `nuxt-auth-utils`. Existing apps keep today's install.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+- ab81821: Downstream modules can add CSP sources through
+  `nuxt.hook('narduk-core:csp', allow => ...)` without forking the estate
+  policy. The hook is applied before the policy is resolved, and a contribution
+  that arrives too late to merge fails the build instead of silently dropping
+  (narduk-libs#410). `create-narduk-app` is a companion patch so the generator
+  pin moves with core.
+- 1dc62db: Document in the README that on the `cloudflare-module` preset,
+  nitropack 2.13.4 reads the whole request body into memory before h3 or any
+  route handler runs (narduk-libs#458). Only Cloudflare's edge limit (100 MB on
+  Free and Pro) bounds that read. The package's own ceilings
+  (`defineValidatedHandler` `maxBodyBytes`, the 64 KiB CSP report cap) bound
+  parsing, not the read. The note says why there is no Content-Length gate and
+  when to re-test: when the Nitro pin moves, or on Nitro v3, whose Cloudflare
+  handler does not buffer. No runtime change.
+- 3052028: Resolve Cloudflare bindings on Nitro internal SSR fetches so a nested
+  `useFetch` / `$fetch` keeps the Worker `DB` (narduk-libs#49). When an event
+  carries no `event.context.cloudflare`, the worker-env resolver behind
+  `useDatabase`, KV, Hyperdrive and rate-limit helpers now falls back to the
+  isolate env Nitro's cloudflare presets set on `globalThis.__env__` for every
+  fetch and scheduled event; with neither present it still fails closed. No
+  `AsyncLocalStorage.enterWith()`, which workerd does not implement.
+  `create-narduk-app` is a companion patch so the generator pin moves with core.
+- d8f4366: `defineValidatedHandler` now accepts `authorize`, which runs after
+  params and query pass and before the body is read, so an unauthenticated
+  caller never pays for the payload or the body schema (narduk-libs#371).
+  Mutation helpers map a `ZodError` onto the same `VALIDATION_FAILED` 400, so
+  caller key names no longer land in `statusMessage`. `create-narduk-app` is a
+  companion patch so the generator pin moves with core.
+- Updated dependencies [70168be]
+- Updated dependencies [427d98f]
+- Updated dependencies [7ae3a16]
+  - @narduk-enterprises/narduk-platform@2.1.2
+  - @narduk-enterprises/narduk-logging@0.4.0
+
 ## 2.13.1
 
 ### Patch Changes
