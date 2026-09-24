@@ -27,10 +27,11 @@
  * effect on the other suites.
  */
 import { mount } from '@vue/test-utils'
-import { nextTick, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AppMapKit from '../src/runtime/components/AppMapKit.vue'
+import AppMapKitCallout from '../src/runtime/components/AppMapKitCallout.vue'
 import { createMapKitCalloutController } from '@narduk-enterprises/narduk-mapkit/client'
 
 import type { GeoJSONFeatureCollection } from '../src/runtime/components/AppMapKit.vue'
@@ -655,6 +656,119 @@ describe('AppMapKit mount: callout wiring (#269)', () => {
     await nextTick()
 
     expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+})
+
+/**
+ * Keyboard selection must move focus into the callout (narduk-libs#746). The
+ * core `narduk-mapkit` AppMapKit already does this; this adapter's SFC still
+ * leaves focus on the pin (or never activates the pin from the keyboard).
+ * Pins are MapKit annotation hosts, so the factory has to run and the host
+ * has to sit in the document before we can dispatch Enter / click.
+ */
+describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
+  const items: Station[] = [
+    { id: 'a', lat: 10, lng: 20 },
+    { id: 'b', lat: 12, lng: 22 },
+  ]
+
+  const CalloutCard = defineComponent({
+    props: { label: { required: true, type: String } },
+    setup: (props) => () =>
+      h('div', [
+        h('span', props.label),
+        h('a', { class: 'callout-link', href: '/details' }, 'View details'),
+      ]),
+  })
+
+  function createPinElement(item: Station): { element: HTMLElement } {
+    const element = document.createElement('div')
+    element.className = 'pin'
+    element.textContent = item.id
+    return { element }
+  }
+
+  function materializePin(map: MapKitMapInstance, id: string): HTMLElement {
+    const call = assertDefined(map.addAnnotations.mock.calls.at(-1), 'expected addAnnotations')
+    const annotations = call[0] as MapKitAnnotation[]
+    const annotation = annotations.find((candidate) => {
+      const data = candidate.options.data as { id?: string } | undefined
+      return data?.id === id
+    })
+    const host = assertDefined(annotation, `expected annotation for ${id}`).factory() as HTMLElement
+    document.body.append(host)
+    return host
+  }
+
+  async function flushFocus(): Promise<void> {
+    await nextTick()
+    await nextTick()
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+  }
+
+  function mountMap(extra: Record<string, unknown> = {}) {
+    const { mapkit, mapInstances } = createMapkitMock()
+    vi.stubGlobal('mapkit', mapkit)
+    const wrapper = mount(AppMapKit, {
+      props: { callouts: true, createPinElement, items, selectedId: null, ...extra },
+      slots: {
+        default: () =>
+          h(AppMapKitCallout, { items }, {
+            default: (scope: { item: Station }) => h(CalloutCard, { label: scope.item.id }),
+          }),
+      },
+    })
+    const map = assertDefined(mapInstances[0], 'expected a mapkit.Map instance')
+    return { map, wrapper }
+  }
+
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('moves focus to the first focusable element in the callout', async () => {
+    const { map, wrapper } = mountMap()
+    const pin = materializePin(map, 'b')
+
+    pin.focus()
+    pin.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    await flushFocus()
+
+    const link = document.querySelector('[data-mapkit-callout="b"] .callout-link')
+    expect(link).not.toBeNull()
+    expect(document.activeElement).toBe(link)
+
+    wrapper.unmount()
+  })
+
+  it('leaves focus on the pin after a pointer selection', async () => {
+    const { map, wrapper } = mountMap()
+    const pin = materializePin(map, 'b')
+
+    pin.focus()
+    pin.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushFocus()
+
+    expect(document.querySelector('[data-mapkit-callout="b"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
+
+    wrapper.unmount()
+  })
+
+  it("leaves focus on the pin when calloutFocus is 'never'", async () => {
+    const { map, wrapper } = mountMap({ calloutFocus: 'never' })
+    const pin = materializePin(map, 'b')
+
+    pin.focus()
+    pin.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))
+    await flushFocus()
+
+    expect(document.querySelector('[data-mapkit-callout="b"] .callout-link')).not.toBeNull()
+    expect(document.activeElement).toBe(pin)
 
     wrapper.unmount()
   })

@@ -629,7 +629,10 @@ function addAnnotations() {
         const isSelected = selectedId.value === item.id
         const { element, cleanup } = props.createPinElement!(item, isSelected)
 
-        const wrapper = import.meta.client ? document.createElement('div') : ({} as HTMLElement)
+        // `isClientEnvironment()` rather than `import.meta.client` so a mount
+        // test can force a real host (narduk-libs#746). Keep `data-map-pin` so
+        // the map background click still ignores pins.
+        const wrapper = isClientEnvironment() ? document.createElement('div') : ({} as HTMLElement)
         wrapper.setAttribute('data-map-pin', '')
         wrapper.style.cursor = 'pointer'
         wrapper.appendChild(element)
