@@ -724,9 +724,10 @@ describe('create-narduk-app generation contract', () => {
       // default branch head at trigger time, not the commit whose run went
       // green, so a snippet that passes it can promote a commit the gate check
       // never saw. The runbook must show the triggering commit and must not
-      // hand anyone `$GITHUB_SHA` to copy.
+      // hand anyone `$GITHUB_SHA` to copy. narduk-libs#787 wraps that SHA in a
+      // ternary so workflow_dispatch (Dependabot merge) can pass verified-sha.
       expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
-      expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
+      expect(runbook, label).toContain('github.event.workflow_run.head_sha')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
       // The generator writes the app's own half of Config/cloudflare-app.json
