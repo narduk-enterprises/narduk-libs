@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest'
 import { parseSort, toCsv } from '../src/index'
 import {
   csvHeader,
+  DATA_TABLE_COLUMN_FLOOR,
+  dataTableMinWidth,
   isMissingValue,
   nextSortDirection,
   readColumnValue,
@@ -20,6 +22,29 @@ describe('isMissingValue', () => {
     for (const value of [0, false, 'x', new Date(0)]) expect(isMissingValue(value)).toBe(false)
     for (const value of [null, undefined, '', Number.NaN, Number.POSITIVE_INFINITY, new Date('x')])
       expect(isMissingValue(value)).toBe(true)
+  })
+})
+
+describe('dataTableMinWidth (narduk-libs#684)', () => {
+  it('floors every width-less column at 200px once any column declares a width', () => {
+    expect(DATA_TABLE_COLUMN_FLOOR).toBe('200px')
+    expect(dataTableMinWidth([{}, { width: '8rem' }, {}, { width: '120px' }])).toBe(
+      'calc(200px + 8rem + 200px + 120px)',
+    )
+    expect(dataTableMinWidth([{ width: '6rem' }, {}])).toBe('calc(6rem + 200px)')
+  })
+
+  it('sets no floor when every column declares a width, including one of exactly 200px', () => {
+    expect(dataTableMinWidth([{ width: '200px' }, { width: '8rem' }])).toBeUndefined()
+  })
+
+  it('sets no floor when no column declares a width, so older tables render unchanged', () => {
+    expect(dataTableMinWidth([{}, {}, {}])).toBeUndefined()
+    expect(dataTableMinWidth([])).toBeUndefined()
+  })
+
+  it('treats an empty width as width-less rather than writing an empty calc term', () => {
+    expect(dataTableMinWidth([{ width: '' }, { width: '4rem' }])).toBe('calc(200px + 4rem)')
   })
 })
 

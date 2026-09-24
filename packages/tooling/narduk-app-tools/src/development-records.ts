@@ -20,7 +20,7 @@ import { readDeploymentBlock, type DeploymentBlock } from './deployment-config.j
 
 export type DevelopmentMode = 'entering' | 'active' | 'suspended' | 'exiting' | 'restoring'
 export type DevelopmentOutcome =
-  'verified' | 'awaiting-owner' | 'refused' | 'failed-before-traffic' | 'unproven'
+  'verified' | 'awaiting-owner' | 'refused' | 'failed-before-traffic' | 'unproven' | 'rolled-back'
 
 export interface AppliedMigration {
   commit: string
@@ -28,6 +28,12 @@ export interface AppliedMigration {
   approvalRef: string
   appliedAt: string
   files: Array<{ path: string; sha256: string }>
+  /**
+   * What the expand-only rule (12.9) found in the files this run applied.
+   * Absent on records written before the rule ran here, which rollback treats
+   * as unknown, never as expand-only.
+   */
+  compatibility?: 'expand-only' | 'contract'
 }
 
 export interface ActivationRecord {
@@ -59,6 +65,18 @@ export interface ActivationRecord {
   }
   pendingAttempt?: { buildId: string; receipt: string; startedAt: string }
   appliedMigrations: AppliedMigration[]
+  /**
+   * The production-branch commit this checkout had fetched before the hold
+   * took effect. For an app that declares no deployment.migrations (12.9 NA),
+   * migration files byte-identical there landed through normal delivery and
+   * development mode does not judge them. An app that declares
+   * deployment.migrations ignores it: every file is judged, as foundation 12.9
+   * judges every file on every run. `hold`: read on a fresh entry
+   * before anything was held. `reflog`: recovered by `enter --refresh` from the
+   * checkout's reflog, as of a whole second before `enter-started`. Never the
+   * ref as fetched during the hold, and never moved once recorded.
+   */
+  migrationBaseline?: { commit: string; recordedAt: string; source?: 'hold' | 'reflog' }
   validations: Array<{ ref: string; sha: string; reason: string; requestedAt: string }>
   handoff?: { to: string; suspendedAt: string; bundle: string }
   exit?: { preparedAt: string; releaseSha?: string; validationRun?: number }

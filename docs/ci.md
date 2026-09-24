@@ -50,10 +50,13 @@ Python/Swift checks and browser/consumer gates. Forked PRs receive no registry
 secret: every workspace package dependency in this repository's lockfile is
 resolved locally, and `package-registry-auth: disabled` prevents the callable
 from generating a registry credential. The release job runs on `ubuntu-latest`
-after exact-SHA CI verification and requires the main-only `npm-release`
-environment. The job-scoped `GITHUB_TOKEN` publishes with `packages: write`;
-each existing package must grant this repository Actions access. Publication and
-external registry proof still run only from verified main history.
+after exact-SHA CI verification of a main commit. It stays out of the main-only
+`npm-release` environment, which holds the estate App key and is used only by
+jobs that check out and install nothing (see
+[package-releases.md](package-releases.md)). The job-scoped `GITHUB_TOKEN`
+publishes with `packages: write`; each existing package must grant this
+repository Actions access. Publication and external registry proof still run
+only from verified main history.
 
 The packed-consumer job restores a lockfile-keyed pnpm store seeded by a green
 main run, and shares that store across its root and generated consumer installs.
