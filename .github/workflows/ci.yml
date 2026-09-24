@@ -45,6 +45,7 @@ jobs:
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
       logging-languages: ${{ steps.plan.outputs.logging-languages }}
+      auth-kit-swift: ${{ steps.plan.outputs.auth-kit-swift }}
     steps:
       - name: Check out source and comparison history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -99,11 +100,17 @@ jobs:
             --github-output "${GITHUB_OUTPUT}" \
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
+          node scripts/auth-kit-ci-plan.mjs "${args[@]}"
 
   logging-languages:
     needs: [affected]
     if: needs.affected.outputs.logging-languages == 'true'
     uses: ./.github/workflows/logging-languages.yml
+
+  auth-kit-swift:
+    needs: [affected]
+    if: needs.affected.outputs.auth-kit-swift == 'true'
+    uses: ./.github/workflows/auth-kit-swift.yml
 
   ci:
     needs: [affected]
@@ -481,7 +488,15 @@ jobs:
     name: verify
     if: always()
     needs:
-      [affected, ci, contracts, packed-consumer-smoke, package-browser-tests, logging-languages]
+      [
+        affected,
+        ci,
+        contracts,
+        packed-consumer-smoke,
+        package-browser-tests,
+        logging-languages,
+        auth-kit-swift
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -500,6 +515,8 @@ jobs:
           BROWSER_RESULT: ${{ needs.package-browser-tests.result }}
           LOGGING_EXPECTED: ${{ needs.affected.outputs.logging-languages }}
           LOGGING_RESULT: ${{ needs.logging-languages.result }}
+          AUTH_KIT_EXPECTED: ${{ needs.affected.outputs.auth-kit-swift }}
+          AUTH_KIT_RESULT: ${{ needs.auth-kit-swift.result }}
         run: |
           set -euo pipefail
           status=0
@@ -509,6 +526,14 @@ jobs:
             test "${LOGGING_RESULT}" = skipped || status=1
           else
             echo "::error::Planner did not report logging language applicability"
+            status=1
+          fi
+          if [ "${AUTH_KIT_EXPECTED}" = "true" ]; then
+            test "${AUTH_KIT_RESULT}" = success || status=1
+          elif [ "${AUTH_KIT_EXPECTED}" = "false" ]; then
+            test "${AUTH_KIT_RESULT}" = skipped || status=1
+          else
+            echo "::error::Planner did not report NardukAuthKit Swift applicability"
             status=1
           fi
           if ! [[ "${AFFECTED_COUNT}" =~ ^[0-9]+$ ]]; then

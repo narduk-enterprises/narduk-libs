@@ -40,6 +40,10 @@ def main() -> None:
         shutil.copy(ROOT / "Package.swift", source)
         for directory in ("swift", "schema", "examples/swift"):
             shutil.copytree(PACKAGE / directory, destination / directory)
+        # On an Apple host the manifest also declares NardukAuthKit's targets.
+        auth = ROOT / "packages/modules/narduk-auth/swift"
+        for directory in ("Sources", "Tests"):
+            shutil.copytree(auth / directory, source / auth.relative_to(ROOT) / directory)
         run("git", "init", "--quiet", cwd=source)
         run("git", "add", ".", cwd=source)
         run(
