@@ -21,6 +21,7 @@ import {
 } from './promote.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
 import { inspectMigrations, runMigrations, type MigrationLocation } from './migrations.js'
+import { formatD1CreateResult, parseD1CreateArgs, runD1Create } from './d1-create.js'
 import {
   parseDeploymentMigrationArgs,
   runDeploymentMigrations,
@@ -63,6 +64,14 @@ function usage(): string {
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
+    '  db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]',
+    '                                       Create the D1 database a placeholder binding stands',
+    '                                       for (database_id 00000000-...) and write its id into the',
+    '                                       wrangler config Config/cloudflare-app.json names. The',
+    '                                       name comes from that manifest, never an argument; the',
+    '                                       account from account_id or CLOUDFLARE_ACCOUNT_ID.',
+    '                                       Refuses a binding that already has a real id; never',
+    '                                       deletes.',
     '  deploy <deploy|versions-upload|triggers-deploy> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
     '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
@@ -232,6 +241,12 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         writeDeploymentMigrationBundle(migrateArgs[1])
         return 0
       }
+      if (subcommand === 'create') {
+        const flags = withAppCheckout(parseD1CreateArgs(migrateArgs), 'db create')
+        const result = runD1Create(flags)
+        console.log(flags.json ? JSON.stringify(result, null, 2) : formatD1CreateResult(result))
+        return 0
+      }
       if (subcommand === 'migrate-deployment') {
         const options = parseDeploymentMigrationArgs(migrateArgs)
         const plans = runDeploymentMigrations(options)
@@ -245,7 +260,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         return options.check && plans.some((plan) => plan.apply + plan.adopt > 0) ? 2 : 0
       }
       if (subcommand !== 'migrate' && subcommand !== 'status')
-        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment ...')
+        throw new Error('Usage: narduk-app db migrate|status|migrate-deployment|create ...')
       const options = parseMigrationArgs(migrateArgs)
       if (subcommand === 'status') {
         const plan = inspectMigrations(options)

@@ -107,6 +107,41 @@ following `ECONNREFUSED` is the real crash
 ([cloudflare/workers-sdk#15202](https://github.com/cloudflare/workers-sdk/issues/15202)).
 See [the e2e-serve guide](docs/e2e-serve.md).
 
+## Creating the D1 database (`narduk-app db create`)
+
+`create-narduk-app` binds `DB` to the placeholder `database_id`
+`00000000-0000-0000-0000-000000000000`: the generator never calls Cloudflare, so
+the real id cannot exist yet. Every build, `wrangler deploy --dry-run` and test
+accepts that placeholder, and `foundation:check` sub-check 1.5 fails on it
+(narduk-libs#662). One command clears it, run once from the repository root:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \
+  pnpm exec narduk-app db create [--binding <NAME>] [--dry-run] [--json]
+```
+
+- **It refuses when the id is already real.** Only a binding still carrying the
+  placeholder is created, so it cannot make a second database for an app that
+  has one. A re-run after success exits `1` without calling Wrangler.
+- **The name comes from `Config/cloudflare-app.json`, never an argument.** The
+  manifest's `bindings.d1[]` entry may set `database_name`; otherwise the name
+  is `<worker.name>-<binding>` (`<app>-db` for `DB`), Wrangler's own
+  auto-provisioning convention and the name the generator writes. The wrangler
+  config must already say the same, or the command refuses.
+- **The account is explicit.** `account_id` in the wrangler config or
+  `CLOUDFLARE_ACCOUNT_ID`; neither, or two that disagree, is a refusal.
+  Credentials are Wrangler's own, exactly as `db migrate --remote` uses them.
+- **It writes the id into the wrangler config the manifest names**
+  (`worker.wranglerConfig`, JSON/JSONC only) with a `jsonc-parser` edit, so
+  comments and formatting survive, and prints the id and the account. If the
+  file changed while Wrangler ran it writes nothing and prints the id to record.
+- **It never deletes.** Removing a data store is an operator action.
+
+`--binding` is needed only when more than one top-level binding is a
+placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
+under the same credentials, then setting that binding's `database_id` to the id
+it prints.
+
 ## Migration config
 
 `narduk-app db migrate` accepts a JSON config with explicit source names and
@@ -797,6 +832,17 @@ Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
 (then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
 corroborates an ambiguous 404 with a scope probe. Other scopes, such as
 `@narduk-geo`, always stay on GitHub Packages.
+
+**Sub-check 1.5 fails a D1 binding that names no real database.** Any
+`d1_databases[].database_id` in the app's wrangler config (top level or any
+`env.<name>`) that is still the scaffold placeholder
+`00000000-0000-0000-0000-000000000000` is a decided FAIL naming
+`narduk-app db create` and the raw `wrangler d1 create <name>` step. An app with
+no D1 binding is `not-applicable`. A fresh `create-narduk-app` scaffold with a
+database therefore fails 1.5, and only 1.5, until it is provisioned: the
+placeholder builds and deploys, but no request that touches the database can
+succeed (narduk-libs#662). A PASS reads the file only; it does not prove the
+database exists.
 
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;

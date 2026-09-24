@@ -808,6 +808,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry over the network. Default generated apps read `https://npm.nard.uk` anonymously and do not need a GitHub Packages credential.',
         '- `pnpm run quality` -- `quality:static` plus the Playwright browser tests, which both CI paths run as separate jobs.',
         '',
+        ...(hasDatabase
+          ? [
+              '> **Create the database before the first push.** `apps/web/wrangler.jsonc` binds `DB` to the placeholder `database_id` `00000000-0000-0000-0000-000000000000`, because the generator does not call Cloudflare. Every build, dry-run and test accepts it, but no request that touches the database can succeed, so `foundation:check` fails sub-check 1.5 -- and with it CI -- until the database exists. From the repository root, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set for the account this app deploys to, run `pnpm exec narduk-app db create`. It creates `' +
+                appName +
+                '-db` (the name comes from `Config/cloudflare-app.json`), writes the returned id into `apps/web/wrangler.jsonc` with its comments intact, and prints the id and account. Commit that change: the id is configuration, not a secret. It refuses to run once the id is real and never deletes anything. `--dry-run` shows what it would do.',
+              '',
+            ]
+          : []),
         'The build step is `build:ci`, the same script CI builds with: it injects test-only `NUXT_OG_IMAGE_SECRET` / `NUXT_SESSION_PASSWORD` placeholders and targets the deployable Worker shape. Plain `pnpm run build` is the real-secret path, used by `cf:build` and operator recovery; it throws on an empty OG secret by design.',
         '',
         ...(visibility === 'private'
@@ -1013,6 +1021,21 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         ...(databaseBackend === 'd1'
           ? [
+              '## Create the D1 database',
+              '',
+              'The generator writes the `DB` binding with the placeholder `database_id` `00000000-0000-0000-0000-000000000000`; it never calls Cloudflare. Create the database once, before the first push, from the repository root:',
+              '',
+              '```sh',
+              'CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \\',
+              '  pnpm exec narduk-app db create',
+              '```',
+              '',
+              '`db create` takes the database name from `Config/cloudflare-app.json` (`' +
+                appName +
+                '-db`), never from an argument, runs `wrangler d1 create`, writes the returned id into `apps/web/wrangler.jsonc` without touching its comments, and prints the id and the account. It refuses when the id is already real, so it cannot create a second database for an app that has one, and it never deletes. Without it, the equivalent is `wrangler d1 create ' +
+                appName +
+                '-db` under the same credentials, then setting `d1_databases[0].database_id` in `apps/web/wrangler.jsonc` to the id it prints. `foundation:check` sub-check 1.5 fails while the placeholder remains.',
+              '',
               '## D1 migrations are a promotion gate',
               '',
               'Declare `deployment.migrations` before adopting narduk-v1: compatibility `expand-contract`, a separate `cloudflare/prd/' +
@@ -1660,6 +1683,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           '120", "simple": { "limit": 120, "period": 60 } }]',
         ...(hasDatabase
           ? [
+              // The generator must not call Cloudflare, so the id is a
+              // placeholder every build and dry-run accepts. foundation:check
+              // sub-check 1.5 fails on it, and `narduk-app db create` is the
+              // one step that replaces it (narduk-libs#662).
+              '  // DB: database_id is a placeholder until the database exists. Run',
+              '  //   pnpm exec narduk-app db create',
+              '  // from the repository root (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID',
+              '  // set) to create it and write the real id here. foundation:check fails',
+              '  // until then.',
               '  "d1_databases": [',
               '    {',
               '      "binding": "DB",',

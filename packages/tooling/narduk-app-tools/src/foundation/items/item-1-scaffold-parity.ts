@@ -6,8 +6,11 @@
  * disagree on a manifest-only question. Sub-check 1.1 is the one this tool
  * OWNS per spec §3: "Absent ⇒ unknown in the static evaluator;
  * `foundation:check` resolves the config for real and must decide it."
+ * Sub-check 1.5 (D1 bindings name a real database, narduk-libs#662) is this
+ * tool's too; it lives in `../d1-placeholder.ts`.
  */
 
+import { evaluateD1Provisioned } from '../d1-placeholder.js'
 import { check } from '../schema.js'
 import {
   bindingNames,
@@ -260,6 +263,7 @@ export function evaluateItem1(repo: AppRepo): FoundationSubCheck[] {
     evaluate12(repo, cfApp, wranglerRel),
     evaluate13(repo),
     evaluate14(repo, exposureClass, wranglerRel),
+    evaluateD1Provisioned(repo, wranglerRel),
   ]
 }
 
