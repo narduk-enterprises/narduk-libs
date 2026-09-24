@@ -1,0 +1,177 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+
+import {
+  approveableRunIds,
+  mirrorMissing,
+  missingPublishTags,
+  requireMergeSha,
+  selectPushCiRun,
+  selectReleaseRun,
+  waitForRelease,
+} from './release-wait.mjs'
+
+const mergeSha = 'a'.repeat(40)
+const laterMain = 'b'.repeat(40)
+const currentHead = 'c'.repeat(40)
+const staleHead = 'd'.repeat(40)
+const core = { name: '@narduk-enterprises/narduk-core', version: '2.2.2' }
+
+test('the merge SHA must be a full hex commit', () => {
+  assert.equal(requireMergeSha(mergeSha), mergeSha)
+  assert.throws(() => requireMergeSha('a'.repeat(7)), /full commit SHA/u)
+  assert.throws(() => requireMergeSha(''), /full commit SHA/u)
+})
+
+// The 12-libs retro watcher exited on a completed/skipped Release run whose
+// `headSha` equalled the merge SHA. For `workflow_run`, that field is main's
+// head at trigger time, not verify-ci's VERIFIED_SHA. The skipped run is not
+// the release for this merge; keep waiting for the run that actually verified it.
+test('a completed/skipped Release run keyed by workflow_run headSha is not the merge SHA release', () => {
+  const skipped = {
+    id: 1,
+    headSha: mergeSha,
+    status: 'completed',
+    conclusion: 'skipped',
+    verifiedSha: null,
+  }
+  const verified = {
+    id: 2,
+    headSha: laterMain,
+    status: 'completed',
+    conclusion: 'success',
+    verifiedSha: mergeSha,
+  }
+  assert.equal(selectReleaseRun({ mergeSha, runs: [skipped] }), null)
+  assert.equal(selectReleaseRun({ mergeSha, runs: [skipped, verified] })?.id, 2)
+  assert.equal(
+    selectReleaseRun({
+      mergeSha,
+      runs: [{ ...verified, conclusion: 'cancelled', id: 3 }, skipped],
+    }),
+    null,
+  )
+})
+
+test('push CI for the merge SHA must be a successful main push, not a PR run', () => {
+  const push = {
+    id: 11,
+    event: 'push',
+    headSha: mergeSha,
+    headBranch: 'main',
+    status: 'completed',
+    conclusion: 'success',
+  }
+  const pr = { ...push, id: 12, event: 'pull_request', headBranch: 'feat' }
+  assert.equal(selectPushCiRun({ mergeSha, runs: [pr] }), null)
+  assert.equal(selectPushCiRun({ mergeSha, runs: [pr, push] })?.id, 11)
+  assert.equal(selectPushCiRun({ mergeSha, runs: [{ ...push, conclusion: 'failure' }] }), null)
+})
+
+// Unfiltered `gh run list --branch changeset-release/main --status action_required`
+// approved days-old SHAs. Three started and cancelled the current head.
+test('held-run approval keeps only action_required runs for the current PR head', () => {
+  const stale = Array.from({ length: 10 }, (_, index) => ({
+    id: index + 1,
+    headSha: staleHead,
+    status: 'action_required',
+  }))
+  const runs = [
+    ...stale,
+    { id: 99, headSha: currentHead, status: 'action_required' },
+    { id: 100, headSha: currentHead, status: 'completed' },
+  ]
+  assert.deepEqual(approveableRunIds({ currentHeadSha: currentHead, runs }), [99])
+  assert.deepEqual(
+    approveableRunIds({ currentHeadSha: staleHead, runs }),
+    stale.map((run) => run.id),
+  )
+})
+
+test('mirror wait requires versions|has(v) for every bumped version', () => {
+  assert.deepEqual(
+    mirrorMissing(
+      [core, { name: '@narduk-enterprises/narduk-app-tools', version: '0.9.0' }],
+      new Map([
+        [core.name, { versions: { '2.2.2': {} } }],
+        ['@narduk-enterprises/narduk-app-tools', { versions: { '0.8.0': {} } }],
+      ]),
+    ),
+    [{ name: '@narduk-enterprises/narduk-app-tools', version: '0.9.0' }],
+  )
+  assert.deepEqual(mirrorMissing([core], new Map([[core.name, { versions: { '2.2.2': {} } }]])), [])
+  assert.deepEqual(missingPublishTags([`${core.name}@${core.version}`], []), [
+    `${core.name}@${core.version}`,
+  ])
+  assert.deepEqual(
+    missingPublishTags([`${core.name}@${core.version}`], [`${core.name}@${core.version}`]),
+    [],
+  )
+})
+
+function clock() {
+  let now = 0
+  return {
+    now: () => now,
+    sleep: async (ms) => {
+      now += ms
+    },
+  }
+}
+
+test('waitForRelease does not exit on the skipped headSha run and reaches the mirror', async () => {
+  const time = clock()
+  const approved = []
+  const result = await waitForRelease({
+    mergeSha,
+    intervalMs: 1_000,
+    deadlineMs: 20_000,
+    ...time,
+    readPushCi: async () => [
+      {
+        id: 11,
+        event: 'push',
+        headSha: mergeSha,
+        headBranch: 'main',
+        status: 'completed',
+        conclusion: 'success',
+      },
+    ],
+    readReleaseRuns: async () =>
+      time.now() < 3_000
+        ? [
+            {
+              id: 1,
+              headSha: mergeSha,
+              status: 'completed',
+              conclusion: 'skipped',
+              verifiedSha: null,
+            },
+          ]
+        : [
+            {
+              id: 2,
+              headSha: laterMain,
+              status: 'completed',
+              conclusion: 'success',
+              verifiedSha: mergeSha,
+            },
+          ],
+    readReleasePrHead: async () => currentHead,
+    readHeldRuns: async () => [
+      { id: 50, headSha: staleHead, status: 'action_required' },
+      { id: 51, headSha: currentHead, status: 'action_required' },
+    ],
+    approveRuns: async (ids) => {
+      approved.push(...ids)
+    },
+    readTargets: async () => [core],
+    readTags: async () => (time.now() < 6_000 ? [] : [`${core.name}@${core.version}`]),
+    readMirror: async () =>
+      new Map([[core.name, { versions: time.now() < 9_000 ? {} : { '2.2.2': {} } }]]),
+    log: () => {},
+  })
+  assert.equal(result.releaseRunId, 2)
+  assert.deepEqual(approved, [51])
+  assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
+})
