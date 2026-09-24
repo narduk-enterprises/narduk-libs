@@ -128,6 +128,32 @@ The command emits a single sanitized record on stderr and leaves stdout free. Do
 not place secrets in command arguments; recursive field redaction does not
 protect process listings or shell history.
 
+## Go edge binaries and services
+
+Require the module from this repository and construct an isolated slog logger.
+The constructor does not install a process-wide default.
+
+```go
+import (
+    "log/slog"
+    "os"
+
+    narduklogging "github.com/narduk-enterprises/narduk-libs/packages/modules/narduk-logging/go"
+)
+
+log, err := narduklogging.NewLogger(os.Stderr, narduklogging.Options{
+    Service:     "example-go",
+    Environment: "production",
+})
+if err != nil {
+    panic(err)
+}
+log.Info("Synthetic logging check", slog.String("check", "go"), slog.Int("count", 1))
+```
+
+Run [examples/go/main.go](../examples/go/main.go) with `go run .` from that
+directory. Replace `slog.NewTextHandler` — it is not a schema record.
+
 ## Dagster
 
 Install the `dagster` extra and run
