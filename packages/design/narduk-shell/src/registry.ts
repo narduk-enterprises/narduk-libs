@@ -44,9 +44,10 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeStatePanel', filePath: './runtime/components/NeStatePanel.vue' },
   // Item 11 (narduk-libs#258): NePager.
   { name: 'NePager', filePath: './runtime/components/NePager.vue' },
-  // Item 14 (narduk-libs#261): NeFilterBar. NeSearchInput, the other half of
-  // that item, ships separately — it belongs beside the table, not in the row.
+  // Item 14 (narduk-libs#261): NeFilterBar + NeSearchInput. The search field
+  // belongs beside the row, not in it — a search is a text control, not a chip.
   { name: 'NeFilterBar', filePath: './runtime/components/NeFilterBar.vue' },
+  { name: 'NeSearchInput', filePath: './runtime/components/NeSearchInput.vue' },
   // Item 19 (narduk-libs#266): NeForm, NeFormSection, NeSettingsPage.
   { name: 'NeForm', filePath: './runtime/components/NeForm.vue' },
   { name: 'NeFormSection', filePath: './runtime/components/NeFormSection.vue' },

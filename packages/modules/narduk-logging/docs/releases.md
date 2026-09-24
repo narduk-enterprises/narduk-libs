@@ -5,10 +5,12 @@ Their release versions are independent. The logging-only colocation exception is
 recorded in the repository's `docs/architecture/narduk-logging.md`.
 
 Run repository `pnpm run quality`, the package's `quality` script, Python's
-`uv run --all-extras python scripts/quality.py`, and the root Swift check:
+`uv run --all-extras python scripts/quality.py`, the root Swift check, and the
+root Go check:
 
 ```sh
 python3 packages/modules/narduk-logging/scripts/swift-quality.py
+python3 packages/modules/narduk-logging/scripts/go-quality.py
 ```
 
 The TypeScript gate builds and packs the distribution, installs its tarball in a
@@ -76,3 +78,13 @@ Select `.product(name: "NardukLogging", package: "narduk-libs")` for the
 consuming target. Commit the consumer's `Package.resolved`. Roll back by
 selecting its prior known-good exact version and resolved revision; never move
 an existing release tag.
+
+## Go
+
+The adapter is a Go module at
+`github.com/narduk-enterprises/narduk-libs/packages/modules/narduk-logging/go`.
+It is not part of the npm tarball. Pin a commit (or the repository tag the app
+already uses for other narduk-libs Go modules) and commit `go.sum`.
+`scripts/go-quality.py` formats, vets, tests, and runs an isolated consumer that
+resolves the module through `replace`. Roll back by restoring the prior module
+pin; never rewrite a published revision.

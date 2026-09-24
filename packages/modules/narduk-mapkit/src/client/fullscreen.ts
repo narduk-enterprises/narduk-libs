@@ -89,10 +89,11 @@ export type MapKitFullscreenListener = (event: MapKitFullscreenChangeEvent) => v
 /**
  * The structural subset of the presented element.
  *
- * The fullscreen request signatures are `any`/`unknown` on purpose: the real
- * `requestFullscreen` takes a `FullscreenOptions` and returns a `Promise`, the
- * prefixed WebKit one takes nothing and returns nothing, and only these loose
- * shapes keep a real `HTMLElement` and a plain test double both assignable.
+ * The fullscreen request signatures are `any`/`unknown` on purpose
+ * (narduk-libs#138, working as intended): the real `requestFullscreen` takes a
+ * `FullscreenOptions` and returns a `Promise`, the prefixed WebKit one takes
+ * nothing and returns nothing, and only these loose shapes keep a real
+ * `HTMLElement` and a plain test double both assignable.
  */
 export interface MapKitFullscreenElement {
   removeAttribute: (name: string) => void
@@ -116,9 +117,10 @@ export interface MapKitFullscreenKeyboardEventLike {
  * The structural subset of a `Document` the controller listens to and mutates.
  *
  * The listener parameter is `any` for the same reason it is in the pointer
- * probe: `lib.dom`'s `addEventListener` takes an
- * `EventListenerOrEventListenerObject`, and only `any` stays assignable in both
- * directions so that passing a real `document` still typechecks.
+ * probe (narduk-libs#138, working as intended): `lib.dom`'s `addEventListener`
+ * takes an `EventListenerOrEventListenerObject`, and only `any` stays
+ * assignable in both directions so that passing a real `document` still
+ * typechecks.
  */
 export interface MapKitFullscreenDocument {
   addEventListener: (type: string, listener: (event: any) => void, options?: any) => void
@@ -461,9 +463,7 @@ export class MapKitFullscreenController {
     if (this.#nativeElement() !== this.#element) return
     const owner = this.#document
     try {
-      // Equivalent to `() => {}`; this fold changes no runtime expression.
-      // eslint-disable-next-line unicorn/no-useless-undefined -- narduk-libs#138
-      if (owner.exitFullscreen) void Promise.resolve(owner.exitFullscreen()).catch(() => undefined)
+      if (owner.exitFullscreen) void Promise.resolve(owner.exitFullscreen()).catch(() => {})
       else owner.webkitExitFullscreen?.()
     } catch {
       // The document refused or had already left; the element is restored

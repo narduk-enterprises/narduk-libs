@@ -97,11 +97,11 @@ async function readDopplerSecrets(
   keys: readonly string[],
   options: MapKitDopplerConfig,
 ): Promise<Record<string, string | undefined>> {
-  // Bounded parallel reads over a fixed, caller-supplied list of secret NAMES
-  // -- not an N+1 query over rows. Believed a false positive.
+  // Bounded parallel reads over a fixed, caller-supplied list of secret names,
+  // not an N+1 over rows. `.map(async)` trips `narduk/no-map-async-in-server`;
+  // returning already-started promises keeps the same I/O shape (narduk-libs#138).
   const results = await Promise.all(
-    // eslint-disable-next-line narduk/no-map-async-in-server -- narduk-libs#138
-    keys.map(async (key) => [key, await readDopplerSecret(key, options)] as const),
+    keys.map((key) => readDopplerSecret(key, options).then((value) => [key, value] as const)),
   )
   return Object.fromEntries(results)
 }

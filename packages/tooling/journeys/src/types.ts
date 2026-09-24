@@ -407,6 +407,14 @@ export interface RunManifest {
   base: string
   commit: string
   declarationDigest: string
+  /**
+   * Digest of this journey's declared shape (see `digestJourney`). When
+   * present, verify/promote/walkthrough use it — not the catalog-wide
+   * `declarationDigest` — so adding a sibling journey does not stale this
+   * run (narduk-libs#66). Absent on manifests written before that field
+   * existed; those still compare `declarationDigest` to the catalog digest.
+   */
+  journeyDigest?: string
   appRevision: string
   profile: { name: string } & Record<string, unknown>
   startedAt: string

@@ -39,7 +39,9 @@ ships `NeConfirmDialog` and `useConfirm()`; item 7
 ships `NeStatePanel`; item 11
 ([narduk-libs#258](https://github.com/narduk-enterprises/narduk-libs/issues/258))
 ships `NePager` and `useCollection()`, the suite's single-flight paged-list
-state machine; item 5
+state machine; item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261))
+ships `NeFilterBar` and `NeSearchInput`; item 5
 ([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252))
 fills the `./format` subpath with the shared `Intl` formatters, which is the
 last of the three reserved subpaths to stop being a placeholder; item 19
@@ -982,7 +984,12 @@ const c = useCollection<Runner>({
 </script>
 
 <template>
-  <UInput v-model="c.q" placeholder="Search runners" />
+  <NeSearchInput
+    v-model="c.q"
+    :debounce="0"
+    label="Search runners"
+    placeholder="Search runners"
+  />
   <NeStatePanel
     :state="c.pending && c.items.length === 0 ? 'loading' : undefined"
   >
@@ -1129,9 +1136,10 @@ hand-assembled the row with its own pressed logic, its own count and its own
 disabled treatment. The pressed-chip count inversion was carried nine times and
 fixed nine times.
 
-`NeSearchInput`, the other half of item 14, ships separately: a search is a text
-control **beside** the row, not a member of it, and the two have no shared
-state.
+`NeSearchInput` is the other half of item 14: a search is a text control
+**beside** the row, not a member of it, and the two have no shared state. Bind
+the field to `useCollection()`'s `c.q` with `:debounce="0"` — that composable
+already applies the 250 ms window.
 
 #### Three kinds, one DOM shape
 
@@ -1254,6 +1262,98 @@ const state = ref<string | null>('open')
     note="By owner lands with the owner ledger"
   />
 </template>
+```
+
+### NeSearchInput
+
+The search field beside a collection. Backlog item 14
+([narduk-libs#261](https://github.com/narduk-enterprises/narduk-libs/issues/261)),
+built fresh — operator-portal's chips half had no search of its own, and no
+stonx filter bar debounces or syncs today. It wraps Nuxt UI's `UInput`.
+
+`v-model` is the **applied** term, not the keystroke. The box updates as you
+type; the model updates after `debounce` ms (250, the same window
+`useCollection` uses for `q`). A page that is not on `useCollection` still gets
+one request per settled query rather than one per keystroke.
+
+Bind `v-model="c.q"` with `:debounce="0"`. `c.q` is the keystroke value — the
+collection applies it after its own 250 ms — so a second debounce here would
+make "GTM1500" wait half a second twice.
+
+The trailing clear is the item's **reset**: it empties the box and the model in
+the same tick. A reset that waited out the debounce would keep the previous term
+live after the reader asked it to stop. The optional summary (`showSummary`) is
+the **active-filter** readout — a live region that names the applied term, which
+can lag the box while the debounce is open.
+
+Length is the list-query contract's length
+(`LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH`, 200) so a `q` that cannot travel is
+never typed.
+
+#### Props
+
+| Prop          | Type                                   | Default              | Notes                                                       |
+| ------------- | -------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| `label`       | `string`                               | —                    | Required. The field's accessible name.                      |
+| `modelValue`  | `string`                               | `''`                 | The applied term. `''` is "no search".                      |
+| `debounce`    | `number`                               | `250`                | `0` emits on every keystroke — the `useCollection` binding. |
+| `placeholder` | `string`                               | —                    | Hint while empty. Not the accessible name.                  |
+| `pending`     | `boolean`                              | `false`              | Forwards to `UInput`'s `loading` and sets `aria-busy`.      |
+| `disabled`    | `boolean`                              | `false`              | Hides the clear control too.                                |
+| `showSummary` | `boolean`                              | `false`              | Live region naming the applied term.                        |
+| `maxLength`   | `number`                               | contract default 200 | Hard ceiling on what can be typed.                          |
+| `size`        | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'` | `'sm'`               | Sits next to `NeFilterBar`'s `xs` chips.                    |
+| `name`        | `string`                               | —                    | Native `name`, for a field that submits with a form.        |
+
+`update:modelValue` emits the applied string. The component never writes a URL
+or resets a page — those are `useCollection`.
+
+#### Types
+
+```ts
+import {
+  NE_SEARCH_DEBOUNCE_MS,
+  type NeSearchInputProps,
+  type NeSearchInputSize,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const q = ref('')
+const state = ref<string | null>('open')
+</script>
+
+<template>
+  <NeSearchInput
+    v-model="q"
+    :debounce="250"
+    label="Search runners"
+    placeholder="Search runners"
+  />
+  <NeFilterBar
+    v-model="state"
+    label="State"
+    :items="[
+      { key: 'all', label: 'All', count: 24 },
+      { key: 'open', label: 'Open', count: 7 },
+    ]"
+  />
+</template>
+```
+
+With `useCollection`:
+
+```vue
+<NeSearchInput
+  v-model="c.q"
+  :debounce="0"
+  label="Search runners"
+  placeholder="Search runners"
+  :pending="c.pending"
+/>
 ```
 
 ### NeDataTable

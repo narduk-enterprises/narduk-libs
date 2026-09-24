@@ -49,6 +49,7 @@ const SHELL_DEMOS = [
   'ne-state-panel',
   'ne-pager',
   'ne-filter-bar',
+  'ne-search-input',
   'ne-form',
   'ne-form-section',
   'ne-settings-page',
@@ -176,6 +177,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
       'sort',
       'pager',
       'filter bar',
+      'search',
       'forms',
       'settings page',
       'KPI',
@@ -231,5 +233,10 @@ export const CATALOG: Record<string, CatalogEntry> = {
   '@narduk-enterprises/status-runtime': {
     kind: 'contract',
     capabilities: ['status apps', 'build-time config'],
+  },
+  '@narduk-enterprises/stylelint-config': {
+    kind: 'tooling',
+    capabilities: ['Stylelint', 'lint budgets', 'narduk-stylelint', 'design tokens', 'z-index'],
+    setup: { commands: ['narduk-stylelint'] },
   },
 }
