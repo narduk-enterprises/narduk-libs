@@ -31,9 +31,9 @@ them to the client:
 
 ```swift
 let configuration = try AuthConfiguration(
-    serverURL: URL(string: "https://nvr.nardukenterprises.com")!,
-    clientID: "narduk-nvr-macos",
-    redirectURI: URL(string: "com.narduk.nvr:/auth/callback")!
+    serverURL: URL(string: "https://app.example.com")!,
+    clientID: "example-macos",
+    redirectURI: URL(string: "com.example.app:/auth/callback")!
 )
 let client = NardukAuthClient(configuration: configuration)
 try await client.signIn(email: email, password: password)
