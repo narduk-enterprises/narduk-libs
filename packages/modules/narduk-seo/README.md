@@ -382,8 +382,9 @@ after SSR.
   / `description` / `url` from `useSiteConfig()` and `runtimeConfig.public`
   (`appUrl` fallback), so the home page can be a one-liner. Optional
   `SearchAction` is taken from `NUXT_PUBLIC_SEO_SEARCH_ACTION_URL_TEMPLATE` when
-  set in Doppler (e.g. `https://example.com/search/?q={search_term_string}`), or
-  from overrides when you need a path the env cannot express.
+  set in the app's environment, e.g. its nvault config or Worker vars
+  (`https://example.com/search/?q={search_term_string}`), or from overrides when
+  you need a path the env cannot express.
 - **`resolveSiteOriginForSchemaInput` —** Shared helper to normalize `url` for
   JSON-LD (site config first, then `public.appUrl`).
 - **`useSeo` emits Open Graph only —** No `twitter:*` meta at all. X reads

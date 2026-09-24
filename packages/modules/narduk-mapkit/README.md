@@ -334,8 +334,10 @@ but not the apex; an env-supplied string is read as a comma-separated list.
 Unset, every routed host is accepted, which is correct on Cloudflare Workers.
 
 The `/node` entry point is the only surface that reads `process.env` or uses the
-optional Doppler CLI fallback. Use `/server` or `/worker` with explicit
-configuration in Web-standard runtimes.
+optional Doppler CLI fallback. That fallback is legacy: Narduk's Doppler
+projects are retired except the `ne` root store, so supply the values through
+`process.env` (for example under `nvault run --`). Use `/server` or `/worker`
+with explicit configuration in Web-standard runtimes.
 
 ### Cloudflare Workers
 
@@ -383,11 +385,14 @@ one isolate's signing work rather than a deployment's. Put a Cloudflare rate
 limiting rule or narduk-core's limiter in front of it when real abuse exposure
 matters.
 
-Narduk projects should source these values through Doppler, for example:
+Narduk projects source these values from nvault (the shared signing persona is
+`apple/prd/mapkit-signing`), for example:
 
 ```sh
-doppler run -- pnpm dev
+nvault run -p apple -e prd -c mapkit-signing -- pnpm dev
 ```
+
+Doppler is retired for this: do not use `doppler run`.
 
 Cloudflare Workers should receive the same names through Worker secrets or
 bindings. Recognized runtime names:
@@ -1836,10 +1841,10 @@ pnpm run quality
 ```
 
 Do not add `.env` files. For local secret-backed flows, run commands through
-Doppler:
+nvault (Doppler is retired except the `ne` root store):
 
 ```sh
-doppler run -- pnpm run quality
+nvault run -p apple -e prd -c mapkit-signing -- pnpm run quality
 ```
 
 `pnpm run quality` validates core and Nuxt types, tests, production builds,

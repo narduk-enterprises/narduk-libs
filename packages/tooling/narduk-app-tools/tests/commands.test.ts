@@ -24,6 +24,7 @@ import {
   isNonLocalHttpsUrl,
   normalizeDeployHostname,
   parseDeployLocalArgs,
+  readDeployLocalSecrets,
 } from '../src/deploy-local.js'
 import { parsePerformanceBudgetArgs } from '../src/performance.js'
 
@@ -202,6 +203,17 @@ describe('app-local command planning', () => {
       skipMigrate: true,
       yes: true,
     })
+  })
+
+  it('reads deploy-local build secrets from the environment, never Doppler', () => {
+    expect(readDeployLocalSecrets({ A: ' one ', B: 'two' }, ['A', 'B'])).toEqual({
+      A: 'one',
+      B: 'two',
+    })
+    expect(() => readDeployLocalSecrets({ A: 'one', B: '  ' }, ['A', 'B', 'C'])).toThrow(
+      'deploy-local needs B, C in its environment.',
+    )
+    expect(() => readDeployLocalSecrets({}, ['A'])).toThrow('nvault run -p <app>')
   })
 
   it('preserves hotfix runtime vars in generated configuration without changing source', () => {
