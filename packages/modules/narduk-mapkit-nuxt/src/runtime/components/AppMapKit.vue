@@ -98,6 +98,9 @@ export interface OverlayStyle {
   strokeOpacity?: number
 }
 
+/** `<AppMapKit>`'s `calloutFocus` prop (narduk-libs#746). */
+export type MapKitCalloutFocus = 'keyboard' | 'never'
+
 const props = withDefaults(
   defineProps<{
     annotationSize?: { height: number; width: number }
@@ -121,6 +124,13 @@ const props = withDefaults(
      * through the exposed `openCallout` / `closeCallout`.
      */
     calloutFollowSelection?: boolean
+    /**
+     * Where focus goes when a pin is selected from the keyboard. `'keyboard'`
+     * moves it to the first focusable element in the callout once it renders,
+     * so a keyboard or screen-reader user can reach its action. A pointer
+     * selection always leaves focus where it is. `'never'` opts out.
+     */
+    calloutFocus?: MapKitCalloutFocus
     /** How many callouts may be open at once. Default `'single'`. */
     calloutMode?: MapKitCalloutMode
     /** The rest of the callout controller's options, applied at construction. */
@@ -208,6 +218,7 @@ const props = withDefaults(
     callouts: false,
     calloutAnchorOffset: undefined,
     calloutFollowSelection: true,
+    calloutFocus: 'keyboard',
     calloutMode: 'single',
     calloutOptions: undefined,
     calloutPlacement: 'above',
@@ -234,6 +245,10 @@ const emit = defineEmits<{
 }>()
 
 const selectedId = defineModel<string | null>('selectedId', { default: null })
+
+const CALLOUT_FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 const { mapkitReady, mapkitError } = useMapKit()
 const mapContainer = ref<HTMLElement | null>(null)
@@ -629,16 +644,28 @@ function addAnnotations() {
         const isSelected = selectedId.value === item.id
         const { element, cleanup } = props.createPinElement!(item, isSelected)
 
-        // `isClientEnvironment()` rather than `import.meta.client` so a mount
-        // test can force a real host (narduk-libs#746). Keep `data-map-pin` so
-        // the map background click still ignores pins.
-        const wrapper = isClientEnvironment() ? document.createElement('div') : ({} as HTMLElement)
+        // `typeof document` so a happy-dom mount test can build a real host
+        // while `import.meta.client` stays falsy in this package's vitest
+        // compile (narduk-libs#746). Keep `data-map-pin` so the map
+        // background click still ignores pins.
+        const wrapper =
+          typeof document !== 'undefined' ? document.createElement('div') : ({} as HTMLElement)
         wrapper.setAttribute('data-map-pin', '')
+        wrapper.setAttribute('data-mapkit-pin', item.id)
+        wrapper.setAttribute('role', 'button')
+        wrapper.setAttribute('tabindex', '0')
+        wrapper.setAttribute('aria-label', item.id)
         wrapper.style.cursor = 'pointer'
         wrapper.appendChild(element)
         wrapper.addEventListener('click', (e) => {
           e.stopPropagation()
-          selectedId.value = selectedId.value === item.id ? null : item.id
+          selectPin(item.id, 'pointer')
+        })
+        wrapper.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return
+          e.preventDefault()
+          e.stopPropagation()
+          selectPin(item.id, 'keyboard')
         })
 
         if (cleanup) pinCleanups.push(cleanup)
@@ -833,6 +860,31 @@ function zoomOut() {
 
 // ── Watchers ─────────────────────────────────────────────────
 
+// The id whose callout should take focus once it renders: set by a keyboard
+// selection, consumed by the next `selectedId` watch (narduk-libs#746).
+let focusCalloutFor: string | null = null
+
+function selectPin(id: string, via: 'keyboard' | 'pointer'): void {
+  const next = selectedId.value === id ? null : id
+  focusCalloutFor =
+    via === 'keyboard' && next !== null && props.calloutFocus === 'keyboard' ? next : null
+  selectedId.value = next
+}
+
+function focusCallout(id: string, retry = true): void {
+  if (selectedId.value !== id) return
+  const host =
+    (calloutController?.hostFor(id) as HTMLElement | null | undefined) ??
+    calloutEntries.value.find((entry) => entry.key === id)?.host
+  const target = host?.querySelector<HTMLElement>(CALLOUT_FOCUSABLE)
+  if (target) {
+    target.focus({ preventScroll: true })
+    return
+  }
+  // Slot content that renders a frame late still gets focus, once.
+  if (retry && host) requestAnimationFrame(() => focusCallout(id, false))
+}
+
 // Re-render annotations and handle zoom when selection changes
 watch(selectedId, (newId) => {
   if (!map) return
@@ -841,6 +893,9 @@ watch(selectedId, (newId) => {
     if (newId) openCallout(newId)
     else calloutController?.closeAll()
   }
+  const focusFor = focusCalloutFor
+  focusCalloutFor = null
+  if (focusFor !== null && focusFor === newId) void nextTick(() => focusCallout(newId))
   if (props.suppressSelectionZoom) return
   if (newId) {
     const item = props.items.find((i) => i.id === newId)

@@ -13,6 +13,7 @@ describe('AppMapKit callout opt-in contract', () => {
     expect(source).toContain("calloutMode: 'single'")
     expect(source).toContain("calloutPlacement: 'above'")
     expect(source).toContain('calloutFollowSelection: true')
+    expect(source).toContain("calloutFocus: 'keyboard'")
   })
 
   it('never constructs the controller during SSR, or without the opt-in', async () => {

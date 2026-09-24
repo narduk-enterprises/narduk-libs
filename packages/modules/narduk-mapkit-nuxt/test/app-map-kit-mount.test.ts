@@ -714,12 +714,18 @@ describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
     const { mapkit, mapInstances } = createMapkitMock()
     vi.stubGlobal('mapkit', mapkit)
     const wrapper = mount(AppMapKit, {
+      attachTo: document.body,
       props: { callouts: true, createPinElement, items, selectedId: null, ...extra },
       slots: {
         default: () =>
-          h(AppMapKitCallout, { items }, {
-            default: (scope: { item: Station }) => h(CalloutCard, { label: scope.item.id }),
-          }),
+          h(
+            // vue-tsc cannot `h()` this generic slotted SFC without a cast.
+            AppMapKitCallout as never,
+            { items },
+            {
+              default: (scope: { item: Station }) => h(CalloutCard, { label: scope.item.id }),
+            },
+          ),
       },
     })
     const map = assertDefined(mapInstances[0], 'expected a mapkit.Map instance')
