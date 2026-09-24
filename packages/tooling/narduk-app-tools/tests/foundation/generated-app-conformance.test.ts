@@ -220,41 +220,37 @@ describe('an app straight out of create-narduk-app', () => {
 
   it('reports only the registry read as undecided when the registry is unreadable', async () => {
     // Why `foundation:check` is deliberately NOT chained into the generated
-    // `quality:static`: offline, or without a package-read credential, item
-    // 2.3 is honestly UNKNOWN and the command exits 2. Chaining it would put
-    // a red on a laptop that CI does not have -- the exact local/CI
-    // divergence narduk-libs#617 is about, pointed the other way. The
-    // generated README states this; this test is what keeps it true.
-    // "Without a credential" has to be something this test ESTABLISHES, not
-    // something it inherits. Passing `undefined` here builds the real reader,
-    // which resolves its token from the environment, so the assertion below
-    // was really asserting that the machine running it had no package-read
-    // credential exported. It held until `gh-packages-run` -- the sanctioned
-    // local route, which exports GH_PACKAGES_READ -- became a name the reader
-    // consults: `pnpm run ci:affected` runs under it, the reader found a
-    // token, made a live read, and this went PASS. Green on a bare runner and
-    // red on a workstation is the same local/CI divergence the comment above
-    // is about, pointed the other way once more (agent-infrastructure#1644).
+    // `quality:static`: offline, item 2.3 is honestly UNKNOWN and the command
+    // exits 2. Chaining it would put a red on a laptop that CI does not have
+    // -- the exact local/CI divergence narduk-libs#617 is about, pointed the
+    // other way. The generated README states this; this test is what keeps
+    // it true.
+    //
+    // "Unreadable" has to be something this test ESTABLISHES, not something
+    // it inherits. Passing `undefined` here builds the real reader, so the
+    // test takes away every way that reader could get an answer:
+    //
+    // - Credentials. The reader resolves a GitHub Packages token from the
+    //   environment, and `gh-packages-run` -- the sanctioned local route,
+    //   which exports GH_PACKAGES_READ -- once turned this PASS on a
+    //   workstation while a bare runner stayed green (agent-infrastructure#1644).
+    // - The network. Since narduk-libs#821 the generator routes
+    //   `@narduk-enterprises` to the anonymous npm.nard.uk mirror (D-PKG-6),
+    //   so clearing credentials alone no longer makes the registry
+    //   unreadable: the reader made a live, anonymous, successful read and
+    //   every CI run went PASS (narduk-libs#846). Offline is the state the
+    //   README's claim is about, so fetch fails here the way it does on an
+    //   offline machine, and the test never depends on the network.
     clearRegistryCredentials()
-    // Clearing credentials stopped being enough when the generator moved the
-    // scaffold's `.npmrc` to the anonymous `https://npm.nard.uk` mirror
-    // (D-PKG-6, narduk-libs#821): the reader follows that route with no
-    // credential at all, so wherever the mirror answers -- every CI runner --
-    // the live read succeeded and this went PASS (narduk-libs#846). The
-    // network is the other half of "unreadable", so the test establishes that
-    // too: every request the real reader makes fails the way a dead link
-    // does. Nothing the reader decides is faked -- its route, retry budget and
-    // fail-closed answer all still run.
-    const requests: Array<{ url: string; headers: Record<string, string> }> = []
+    const fetchedUrls: string[] = []
+    const sentAuthorization: boolean[] = []
     vi.stubGlobal('fetch', (url: string, init?: { headers?: Record<string, string> }) => {
-      requests.push({ url, headers: init?.headers ?? {} })
+      fetchedUrls.push(String(url))
+      sentAuthorization.push(init?.headers?.Authorization !== undefined)
       return Promise.reject(new TypeError('fetch failed'))
     })
     const artefact = await check(await scaffold({ built: true, provisioned: true }), undefined)
 
-    // Whatever the reader tried, it tried without a credential: the cleared
-    // environment reached it, and the anonymous route never carries one.
-    expect(requests.filter((request) => 'Authorization' in request.headers)).toEqual([])
     expect(artefact.failingItems).toEqual([])
     expect(artefact.result).toBe('UNKNOWN')
     expect(subCheckStatus(artefact, '2.3')).toBe('unknown')
@@ -264,5 +260,11 @@ describe('an app straight out of create-narduk-app', () => {
         .filter((sub) => sub.status === 'unknown')
         .map((sub) => sub.id),
     ).toEqual(['2.3'])
+    // The read really was attempted, against the generated anonymous route,
+    // with no credential -- so the UNKNOWN above is the offline answer, not a
+    // short-circuit on a route this scaffold does not use.
+    expect(fetchedUrls.length).toBeGreaterThan(0)
+    expect(fetchedUrls.every((url) => url.startsWith('https://npm.nard.uk/'))).toBe(true)
+    expect(sentAuthorization).not.toContain(true)
   })
 })
