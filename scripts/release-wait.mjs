@@ -223,12 +223,30 @@ function gitShow(spec) {
   return JSON.parse(result.stdout)
 }
 
+// Depth 2 is required so `mergeSha^1` exists after a fetch of a merge that
+// is not already in the clone. Depth 1 leaves rev-parse without a parent
+// (the same gap as prove-release-publication's fetch-depth 2 plan).
+export function commitFetchArgs(sha) {
+  requireMergeSha(sha)
+  return ['fetch', '--no-tags', '--depth=2', 'origin', sha]
+}
+
+export function readParentSha(sha, exec = spawnSync) {
+  const result = exec('git', ['rev-parse', '--verify', `${sha}^1`], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+  if (result.status !== 0) return null
+  const parent = String(result.stdout || '').trim()
+  return /^[a-f0-9]{40}$/u.test(parent) ? parent : null
+}
+
 function ensureCommit(sha) {
   if (!/^[a-f0-9]{40}$/u.test(sha || '')) return false
   const have = () =>
     spawnSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: root }).status === 0
-  if (have()) return true
-  spawnSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', sha], {
+  if (have() && readParentSha(sha)) return true
+  spawnSync('git', commitFetchArgs(sha), {
     cwd: root,
     timeout: 60_000,
   })
@@ -249,15 +267,6 @@ function manifestsAt(sha) {
     else if (manifest) map.set(name, manifest)
   }
   return map.size === 0 ? null : map
-}
-
-function parentSha(sha) {
-  const result = spawnSync('git', ['rev-parse', '--verify', `${sha}^1`], {
-    cwd: root,
-    encoding: 'utf8',
-  })
-  if (result.status !== 0) throw new Error(`Cannot read the parent of ${sha}`)
-  return result.stdout.trim()
 }
 
 export function createGithubIo({ repo, mergeSha, request = fetch }) {
@@ -300,7 +309,9 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
   }
 
   async function targets() {
-    const parent = parentSha(mergeSha)
+    if (!ensureCommit(mergeSha)) return null
+    const parent = readParentSha(mergeSha)
+    if (!parent) return null
     const headSha = await readPrHead()
     return targetsFromManifests({
       parentManifests: manifestsAt(parent),

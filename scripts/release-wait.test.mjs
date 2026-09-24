@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { readFileSync } from 'node:fs'
 import {
   approveableRunIds,
+  commitFetchArgs,
   mirrorMissing,
   missingPublishTags,
   parseVerifiedShaFromLog,
+  readParentSha,
   requireMergeSha,
   resolveVerifiedSha,
   selectPushCiRun,
@@ -259,6 +262,28 @@ test('a PR head without readable manifests is unread, not a no-op', () => {
       headManifests: null,
     }),
     [{ name: core.name, version: '2.2.2', previous: '2.2.1' }],
+  )
+})
+
+test('merge SHA fetch keeps the parent so targets can plan bumps', () => {
+  assert.deepEqual(commitFetchArgs(mergeSha), [
+    'fetch',
+    '--no-tags',
+    '--depth=2',
+    'origin',
+    mergeSha,
+  ])
+  assert.doesNotMatch(
+    readFileSync(new URL('./release-wait.mjs', import.meta.url), 'utf8'),
+    /--depth=1/u,
+  )
+  assert.equal(
+    readParentSha(mergeSha, () => ({
+      status: 128,
+      stdout: '',
+      stderr: 'fatal: Needed a single revision',
+    })),
+    null,
   )
 })
 
