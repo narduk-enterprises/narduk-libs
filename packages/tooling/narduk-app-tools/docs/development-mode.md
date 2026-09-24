@@ -99,6 +99,8 @@ declaration, `enter --refresh` re-verifies the holds.
 A held workflow that is already `disabled_*` at entry has an ambiguous prior
 state: the tool cannot tell an intentional disable from a stale hold left by
 something else. `enter` and `enter --dry-run` refuse and name the paths.
+`--refresh --dry-run` only treats newly declared held paths as ambiguous;
+workflows this enrollment already holds are the live hold, not prior state.
 Re-enable them first so entry captures the true restore state, or pass
 `--accept-prior-state` to record the live disabled state as the intended restore
 state (journaled). Retired workflows (`automation.retiredWorkflows`) are not

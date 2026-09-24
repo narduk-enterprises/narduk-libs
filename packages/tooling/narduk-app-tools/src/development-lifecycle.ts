@@ -183,16 +183,23 @@ export async function runDevelopmentEnter(
   if (flags.dryRun) {
     const workflows = github.saveWorkflows(automation)
     const retired = new Set(automation.retiredWorkflows)
+    const known = new Set((existing?.workflows ?? []).map((workflow) => workflow.id))
     for (const workflow of workflows) {
       const ambiguous =
-        workflow.previousState.startsWith('disabled_') && !retired.has(workflow.path)
+        !known.has(workflow.id) &&
+        workflow.previousState.startsWith('disabled_') &&
+        !retired.has(workflow.path)
       log(
         `[development]   hold workflow ${workflow.path} (${workflow.previousState})${
           ambiguous ? ' — AMBIGUOUS prior state' : ''
         }`,
       )
     }
-    assertPriorWorkflows(workflows, automation.retiredWorkflows, flags.acceptPriorState)
+    assertPriorWorkflows(
+      workflows.filter((workflow) => !known.has(workflow.id)),
+      automation.retiredWorkflows,
+      flags.acceptPriorState,
+    )
     for (const path of [automation.manualValidationWorkflow, ...automation.independentWorkflows])
       log(`[development]   keep workflow ${path}`)
     for (const writer of automation.continuingWriters)

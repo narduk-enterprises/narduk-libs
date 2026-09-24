@@ -694,6 +694,74 @@ describe('development mode entry', { timeout: 30_000 }, () => {
     ])
   })
 
+  it('does not treat already-held workflows as ambiguous on refresh dry-run', async () => {
+    const h = harness()
+    await enter(h)
+    const before = structuredClone(readActivation(REPO, h.state)!)
+    const mutatingCalls = h.github.calls.filter((call) => !call.startsWith('GET')).length
+    patchAutomation(h.root, (automation) => {
+      automation.workflows = [
+        ...(automation.workflows as string[]),
+        '.github/workflows/nightly.yml',
+      ]
+    })
+    h.github.workflows.push({
+      id: 5,
+      path: '.github/workflows/nightly.yml',
+      state: 'active',
+    })
+    await runDevelopmentEnter(
+      {
+        approvalRef: 'owner-approval#1',
+        publisher: 'lane-a',
+        refresh: true,
+        dryRun: true,
+      },
+      h.context,
+    )
+    expect(h.logs.some((line) => line.includes('AMBIGUOUS prior state'))).toBe(false)
+    expect(
+      h.logs.some((line) => line.includes('hold workflow .github/workflows/nightly.yml')),
+    ).toBe(true)
+    expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toHaveLength(mutatingCalls)
+    expect(readActivation(REPO, h.state)).toEqual(before)
+  })
+
+  it('still refuses refresh dry-run when a newly held workflow is already disabled', async () => {
+    const h = harness()
+    await enter(h)
+    const before = structuredClone(readActivation(REPO, h.state)!)
+    patchAutomation(h.root, (automation) => {
+      automation.workflows = [
+        ...(automation.workflows as string[]),
+        '.github/workflows/nightly.yml',
+      ]
+    })
+    h.github.workflows.push({
+      id: 5,
+      path: '.github/workflows/nightly.yml',
+      state: 'disabled_manually',
+    })
+    await expect(
+      runDevelopmentEnter(
+        {
+          approvalRef: 'owner-approval#1',
+          publisher: 'lane-a',
+          refresh: true,
+          dryRun: true,
+        },
+        h.context,
+      ),
+    ).rejects.toThrow(/nightly\.yml is disabled_manually/u)
+    expect(h.logs.filter((line) => line.includes('AMBIGUOUS prior state')).join('\n')).toContain(
+      'nightly.yml',
+    )
+    expect(h.logs.filter((line) => line.includes('AMBIGUOUS prior state')).join('\n')).not.toMatch(
+      /ci\.yml|promote\.yml/u,
+    )
+    expect(readActivation(REPO, h.state)).toEqual(before)
+  })
+
   it('holds workflows and retires triggers, preserving manual validation and writers', async () => {
     const h = harness()
     const record = await enter(h)
