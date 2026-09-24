@@ -29,6 +29,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeKpiTile',
       'NePageHeader',
       'NePager',
+      'NeSearchInput',
       'NeSectionHeader',
       'NeSettingsPage',
       'NeSortHeader',
