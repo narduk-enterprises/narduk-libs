@@ -92,7 +92,31 @@ describe('app-local command planning', () => {
       }),
     ).toBe(true)
     expect(isWorkersBuildDeployAllowed({ CI: 'true', WORKERS_CI: '1' })).toBe(false)
-    expect(() => parseDeployArgs(['--minify'])).toThrow('deploy <deploy|versions-upload>')
+    expect(() => parseDeployArgs(['--minify'])).toThrow(
+      'deploy <deploy|versions-upload|triggers-deploy>',
+    )
+    expect(parseDeployArgs(['triggers-deploy'])).toEqual({
+      action: 'triggers-deploy',
+      passthroughArgs: [],
+    })
+    expect(
+      buildWranglerCommandArgs({
+        action: 'triggers-deploy',
+        appDir: '/tmp/app',
+        hasGeneratedConfig: true,
+        hasOutputEntrypoint: true,
+        passthroughArgs: [],
+        sourceConfigPath: '/tmp/app/.wrangler.deploy.production.json',
+      }),
+    ).toEqual([
+      'exec',
+      'wrangler',
+      '--config',
+      '/tmp/app/.wrangler.deploy.production.json',
+      'triggers',
+      'deploy',
+      '--env=',
+    ])
     expect(
       buildWranglerCommandArgs({
         action: 'deploy',

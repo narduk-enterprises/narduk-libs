@@ -95,9 +95,11 @@ export function developmentGit(cwd: string, args: string[]): string {
 
 /** owner/name from the origin remote; no network access. */
 export function originRepository(checkout: string): string {
-  const url = developmentGit(checkout, ['remote', 'get-url', 'origin'])
+  // Read the stored URL, not `git remote get-url`, which applies `url.*.insteadOf`
+  // rewrites (token-bearing HTTPS in this agent, and many CI checkouts).
+  const url = developmentGit(checkout, ['config', '--get', 'remote.origin.url'])
   const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?$/u.exec(
+    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/(?:[\w.-]+(?::[^@/]+)?@)?github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?$/u.exec(
       url,
     )
   if (!match) throw new Error('The origin remote is not a GitHub repository')

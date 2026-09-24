@@ -63,7 +63,7 @@ function usage(): string {
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
-    '  deploy <deploy|versions-upload> ... Deploy the built app with Wrangler safeguards',
+    '  deploy <deploy|versions-upload|triggers-deploy> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>|--version-id <id>] [--name <worker>]',
     '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
     '      [--percentage <1-100>] [--message <text>] [--max-versions <n>]',

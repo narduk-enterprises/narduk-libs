@@ -18,6 +18,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import type { DevelopmentCommand } from '../src/development-config.js'
 import { runDevelopmentDeploy, type DevelopmentContext } from '../src/development-deploy.js'
+import {
+  parseDeclaredScriptTriggers,
+  readDeclaredScriptTriggers,
+  routePattern,
+} from '../src/development-script-triggers.js'
 import { DevelopmentGitHub } from '../src/development-github.js'
 import {
   runDevelopmentAccept,
@@ -166,6 +171,9 @@ interface Worker {
   }>
   triggers: Map<string, Record<string, unknown>>
   variables: Map<string, Record<string, { is_secret: boolean; value?: string }>>
+  /** Script-level cron triggers (not Workers Builds triggers). */
+  schedules: string[]
+  routes: Array<{ pattern: string }>
 }
 
 class Cloudflare {
@@ -205,8 +213,17 @@ class Cloudflare {
         variables: new Map([
           [trigger, { PROTECTED: { is_secret: true }, PLAIN: { is_secret: false, value: 'prd' } }],
         ]),
+        schedules: [],
+        routes: [],
       })
     }
+  }
+  applyScriptTriggers(name: string, config: unknown): void {
+    const declared = parseDeclaredScriptTriggers(config)
+    const worker = this.workers.get(name)!
+    if (declared.crons !== undefined) worker.schedules = [...declared.crons]
+    if (declared.routes !== undefined)
+      worker.routes = declared.routes.map((route) => ({ pattern: routePattern(route) }))
   }
   deployment(version: string) {
     this.clock += 1
@@ -390,6 +407,7 @@ interface Harness {
   github: GitHub
   runs: string[]
   uploads: number
+  triggerDeploys: number
   fail: Set<string>
   proofFails: Set<string>
   registryToken: Record<string, string | undefined>
@@ -409,6 +427,7 @@ function harness(paired = false): Harness {
     github,
     runs: [],
     uploads: 0,
+    triggerDeploys: 0,
     fail: new Set(),
     proofFails: new Set(),
     registryToken: {},
@@ -449,6 +468,18 @@ function harness(paired = false): Harness {
             }),
           )
           writeFileSync(join(output, 'public', 'index.html'), '<html></html>')
+          const source = JSON.parse(
+            readFileSync(join(workspace, app, 'wrangler.jsonc'), 'utf8'),
+          ) as Record<string, unknown>
+          writeFileSync(
+            join(output, 'server', 'wrangler.json'),
+            JSON.stringify({
+              name: source.name,
+              main: './index.mjs',
+              triggers: source.triggers,
+              routes: source.routes,
+            }),
+          )
           if (h.fail.has('leak')) writeFileSync(join(output, 'public', 'leak.js'), SECRET)
           if (h.fail.has('mutate-source'))
             writeFileSync(join(workspace, 'apps/web/src/page.ts'), 'x')
@@ -470,12 +501,24 @@ function harness(paired = false): Harness {
         throw new Error('schema check lacked its read-only credential')
     },
     upload: (args, appDir, env) => {
-      h.uploads += 1
       if (!env?.CLOUDFLARE_API_TOKEN) throw new Error('upload lacked deployment credential')
       const name = JSON.parse(readFileSync(join(appDir ?? '', 'wrangler.jsonc'), 'utf8'))
         .name as string
-      cloudflare.upload(name, args[2]!, args[4]!)
-      return 0
+      if (args[0] === 'versions-upload') {
+        h.uploads += 1
+        cloudflare.upload(name, args[2]!, args[4]!)
+        return 0
+      }
+      if (args[0] === 'triggers-deploy') {
+        h.triggerDeploys += 1
+        const declared = readDeclaredScriptTriggers(appDir ?? '')
+        cloudflare.applyScriptTriggers(name, {
+          triggers: declared.triggers.crons ? { crons: declared.triggers.crons } : {},
+          routes: declared.triggers.routes,
+        })
+        return 0
+      }
+      throw new Error(`unexpected deploy action ${args[0]}`)
     },
     verify: async (flags) =>
       ({
@@ -625,6 +668,32 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
       receipt.components.web.candidateVersionId,
     )
     expect(JSON.stringify(receipt)).not.toContain(SECRET)
+  })
+
+  it('reconciles declared crons and routes onto the serving Worker after promote', async () => {
+    const h = harness()
+    writeFileSync(
+      join(h.root, 'apps/web/wrangler.jsonc'),
+      JSON.stringify({
+        name: 'fixture-app',
+        account_id: ACCOUNT,
+        triggers: { crons: ['20 9 * * *'] },
+        routes: [{ pattern: 'fixture.example.com/*', zone_name: 'example.com' }],
+      }),
+    )
+    const worker = h.cloudflare.workers.get('fixture-app')!
+    worker.schedules = ['0 9 * * *', '20 9 * * *']
+    worker.routes = [{ pattern: 'stale.example.com/*' }]
+    await enter(h)
+    const receipt = await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(receipt.outcome).toBe('verified')
+    expect(h.triggerDeploys).toBe(1)
+    expect(worker.schedules).toEqual(['20 9 * * *'])
+    expect(worker.routes).toEqual([{ pattern: 'fixture.example.com/*' }])
+    expect(receipt.components.web.triggers).toEqual({
+      crons: ['20 9 * * *'],
+      routes: ['fixture.example.com/*'],
+    })
   })
 
   it('gives the registry credential to a cold install only', async () => {
