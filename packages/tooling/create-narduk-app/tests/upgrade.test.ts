@@ -283,6 +283,87 @@ describe('upgrade ownership contract', () => {
   })
 })
 
+function parseJsonc(text: string): Record<string, unknown> {
+  return JSON.parse(
+    text.replaceAll(/\/\*[\s\S]*?\*\/|(?<!:)\/\/.*$/gm, '').replaceAll(/,(\s*[}\]])/gu, '$1'),
+  ) as Record<string, unknown>
+}
+
+describe('upgrade Workers Cache key (narduk-libs#672)', () => {
+  it('adds cache.enabled to an existing wrangler.jsonc and leaves bindings alone', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'apps/web/wrangler.jsonc', (contents) =>
+      contents
+        .replace(/\n {2}"cache": \{ "enabled": true \},\n/u, '\n')
+        .replace(
+          '"compatibility_flags": ["nodejs_compat"],',
+          '"compatibility_flags": ["nodejs_compat"],\n  "account_id": "app-owned-account",',
+        ),
+    )
+    const before = parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc'))
+    expect(before.cache, 'the fixture is a pre-#658 app').toBeUndefined()
+    expect(before.account_id).toBe('app-owned-account')
+    const d1 = before.d1_databases
+
+    const dryRun = await upgradeNardukApp({ targetDir })
+    expect(statusOf(dryRun, 'apps/web/wrangler.jsonc')).toBe('drift')
+    expect(parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc')).cache).toBeUndefined()
+
+    const applied = await upgradeNardukApp({ targetDir, write: true })
+    expect(
+      applied.changes.find((change) => change.path === 'apps/web/wrangler.jsonc')?.applied,
+    ).toBe(true)
+    const after = parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc'))
+    expect(after.cache).toEqual({ enabled: true })
+    expect(after.account_id).toBe('app-owned-account')
+    expect(after.d1_databases).toEqual(d1)
+    expect(after.name).toBe(before.name)
+    expect(await read(targetDir, 'apps/web/wrangler.jsonc')).toContain('app-owned-account')
+  })
+
+  it('does not flip an explicit cache.enabled false', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'apps/web/wrangler.jsonc', (contents) =>
+      contents.replace('"cache": { "enabled": true }', '"cache": { "enabled": false }'),
+    )
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('clean')
+    expect(parseJsonc(await read(targetDir, 'apps/web/wrangler.jsonc')).cache).toEqual({
+      enabled: false,
+    })
+  })
+
+  it('honours a narduk:unmanaged header on wrangler.jsonc', async () => {
+    const targetDir = await scaffold()
+    await edit(
+      targetDir,
+      'apps/web/wrangler.jsonc',
+      (contents) =>
+        '// narduk:unmanaged\n' +
+        contents.replace(/\n {2}"cache": \{ "enabled": true \},\n/u, '\n'),
+    )
+    const before = await read(targetDir, 'apps/web/wrangler.jsonc')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('unmanaged')
+    expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, 'apps/web/wrangler.jsonc')).toBe(before)
+  })
+
+  it('does not create a missing wrangler.jsonc', async () => {
+    const targetDir = await scaffold()
+    await rm(join(targetDir, 'apps/web/wrangler.jsonc'))
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/wrangler.jsonc')).toBe('absent')
+    expect(report.driftCount).toBe(0)
+    await expect(read(targetDir, 'apps/web/wrangler.jsonc')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+})
+
 describe('upgrade opt-outs and notices', () => {
   it('honours a narduk:unmanaged header and does not count it as drift', async () => {
     const targetDir = await scaffold()

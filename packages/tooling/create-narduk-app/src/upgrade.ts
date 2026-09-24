@@ -521,6 +521,189 @@ function applyScriptKeys(
   return { contents: next.join('\n'), unresolved }
 }
 
+function stripJsonc(text: string): string {
+  return text.replaceAll(/\/\*[\s\S]*?\*\/|(?<!:)\/\/.*$/gm, '').replaceAll(/,(\s*[}\]])/gu, '$1')
+}
+
+function parseJsoncObject(contents: string | null): Record<string, unknown> | null {
+  if (contents === null) return null
+  try {
+    const parsed: unknown = JSON.parse(stripJsonc(contents))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function cacheEnabledFlag(config: Record<string, unknown>): boolean | undefined {
+  const cache = config.cache
+  if (!cache || typeof cache !== 'object' || Array.isArray(cache)) return undefined
+  const enabled = (cache as Record<string, unknown>).enabled
+  if (enabled === true) return true
+  if (enabled === false) return false
+  return undefined
+}
+
+function rootObjectRange(lines: readonly string[]): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => /^\s*\{\s*$/u.test(line))
+  if (start === -1) return null
+  const indent = leadingIndent(lines[start] as string)
+  const closing = new RegExp('^' + indent + '\\}\\s*$', 'u')
+  for (let index = lines.length - 1; index > start; index -= 1) {
+    if (closing.test(lines[index] as string)) return { end: index, start }
+  }
+  return null
+}
+
+function findJsonProperty(
+  lines: readonly string[],
+  range: { start: number; end: number },
+  key: string,
+): { from: number; to: number; hasComma: boolean } | null {
+  const opener = new RegExp('^\\s*"' + key.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') + '"\\s*:', 'u')
+  for (let from = range.start + 1; from < range.end; from += 1) {
+    if (!opener.test(lines[from] as string)) continue
+    let text = ''
+    for (let to = from; to < range.end; to += 1) {
+      text += lines[to]
+      const hasComma = /,\s*$/u.test(text)
+      try {
+        const parsed: unknown = JSON.parse('{' + stripJsonc(text).replace(/,\s*$/u, '') + '}')
+        if (parsed && typeof parsed === 'object' && key in (parsed as object)) {
+          return { from, hasComma, to }
+        }
+      } catch {
+        // Not a complete property yet.
+      }
+    }
+    return null
+  }
+  return null
+}
+
+function deepEqualIgnoringKeys(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  ignored: readonly string[],
+): boolean {
+  const strip = (value: Record<string, unknown>): string => {
+    const copy = { ...value }
+    for (const key of ignored) delete copy[key]
+    return JSON.stringify(copy)
+  }
+  return strip(before) === strip(after)
+}
+
+const WORKERS_CACHE_PROPERTY = '"cache": { "enabled": true }'
+
+/**
+ * Inserts or replaces the top-level `cache` property in place. A stringify
+ * round trip would drop comments and reorder bindings, which are app-owned
+ * (narduk-libs#672).
+ */
+function applyWorkersCacheKey(source: string): { contents: string; unresolved: boolean } {
+  const lines = source.split('\n')
+  const range = rootObjectRange(lines)
+  if (!range) return { contents: source, unresolved: true }
+  const indent =
+    range.end > range.start + 1
+      ? leadingIndent(lines[range.start + 1] as string)
+      : leadingIndent(lines[range.start] as string) + '  '
+  const existing = findJsonProperty(lines, range, 'cache')
+  const next = [...lines]
+  if (existing) {
+    next.splice(
+      existing.from,
+      existing.to - existing.from + 1,
+      indent + WORKERS_CACHE_PROPERTY + (existing.hasComma ? ',' : ''),
+    )
+    return { contents: next.join('\n'), unresolved: false }
+  }
+  let lastProp = range.end - 1
+  while (lastProp > range.start) {
+    const line = next[lastProp] as string
+    if (line.trim() !== '' && !/^\s*\/\//u.test(line)) break
+    lastProp -= 1
+  }
+  if (lastProp > range.start && !/,\s*$/u.test(next[lastProp] as string)) {
+    next[lastProp] = (next[lastProp] as string).replace(/\s*$/u, ',')
+  }
+  next.splice(range.end, 0, indent + WORKERS_CACHE_PROPERTY + ',')
+  return { contents: next.join('\n'), unresolved: false }
+}
+
+function resolveJsoncKeys(
+  current: string | null,
+  desired: string,
+  target: ManagedTarget,
+): Resolution {
+  if (current === null) {
+    return {
+      detail:
+        'File is absent. Upgrade edits named JSONC keys; it does not create a wrangler config.',
+      status: 'absent',
+    }
+  }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
+  }
+  const currentConfig = parseJsoncObject(current)
+  const desiredConfig = parseJsoncObject(desired)
+  if (!currentConfig || !desiredConfig) {
+    return { detail: 'Wrangler config is not valid JSONC; left untouched.', status: 'unresolved' }
+  }
+  if (!(target.jsonKeys ?? []).includes('cache')) {
+    return { detail: 'Managed target declares no JSONC keys.', status: 'unresolved' }
+  }
+  const desiredCache = desiredConfig.cache
+  if (
+    !desiredCache ||
+    typeof desiredCache !== 'object' ||
+    Array.isArray(desiredCache) ||
+    (desiredCache as Record<string, unknown>).enabled !== true
+  ) {
+    return {
+      detail: 'The generator template no longer enables Workers Cache.',
+      status: 'unresolved',
+    }
+  }
+  const flag = cacheEnabledFlag(currentConfig)
+  if (flag === true) {
+    return { detail: 'Workers Cache is enabled.', status: 'clean' }
+  }
+  if (flag === false) {
+    return { detail: 'App set cache.enabled false; left untouched.', status: 'clean' }
+  }
+  const applied = applyWorkersCacheKey(current)
+  if (applied.unresolved) {
+    return {
+      detail: 'Could not insert cache.enabled without reformatting wrangler.jsonc; left untouched.',
+      status: 'unresolved',
+    }
+  }
+  const verified = parseJsoncObject(applied.contents)
+  if (
+    !verified ||
+    cacheEnabledFlag(verified) !== true ||
+    !deepEqualIgnoringKeys(currentConfig, verified, ['cache'])
+  ) {
+    return {
+      detail: 'Refusing to write: the edit would have changed app-owned wrangler content.',
+      status: 'unresolved',
+    }
+  }
+  return {
+    detail: 'Adds cache.enabled; every other key is untouched.',
+    next: applied.contents,
+    status: 'drift',
+  }
+}
+
 function resolveKeys(current: string | null, desired: string): Resolution {
   if (current === null) {
     return {
@@ -599,6 +782,8 @@ function resolveManagedTarget(
       return resolveRegion(current, desired, target.region)
     case 'keys':
       return resolveKeys(current, desired)
+    case 'jsonc-keys':
+      return resolveJsoncKeys(current, desired, target)
   }
 }
 

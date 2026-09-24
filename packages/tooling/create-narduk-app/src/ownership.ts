@@ -43,7 +43,7 @@ export const NODE_SOURCE_FILE = '.node-version'
 const UNMANAGED_COMMENT_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
   [/\.(?:md|markdown)$/u, '<!-- narduk:unmanaged -->'],
   [/\.ya?ml$/u, '# narduk:unmanaged'],
-  [/\.(?:ts|mts|js|mjs)$/u, '// narduk:unmanaged'],
+  [/\.(?:ts|mts|js|mjs|jsonc)$/u, '// narduk:unmanaged'],
 ]
 
 /**
@@ -117,7 +117,7 @@ export const MANAGED_SCRIPT_KEYS = [
  */
 export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set(['manifests:validate'])
 
-export type OwnershipMode = 'file' | 'keys' | 'pin' | 'region'
+export type OwnershipMode = 'file' | 'jsonc-keys' | 'keys' | 'pin' | 'region'
 
 export interface ManagedTarget {
   /** Path relative to the app root, matching the generated file's path. */
@@ -127,6 +127,8 @@ export interface ManagedTarget {
   unit: string
   /** Which marker pair delimits the region. Required for `region` targets. */
   region?: RegionName
+  /** Top-level JSONC keys this target owns. Required for `jsonc-keys`. */
+  jsonKeys?: readonly string[]
 }
 
 /**
@@ -170,6 +172,15 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     path: 'package.json',
     mode: 'keys',
     unit: 'scripts: ' + MANAGED_SCRIPT_KEYS.join(', '),
+  },
+  // Only the top-level `cache` key (narduk-libs#672). Bindings, routes,
+  // account_id and env blocks stay app-owned. An explicit `enabled: false`
+  // is left alone; missing `cache` is the pre-#658 gap this unit closes.
+  {
+    path: 'apps/web/wrangler.jsonc',
+    mode: 'jsonc-keys',
+    unit: 'top-level cache.enabled',
+    jsonKeys: ['cache'],
   },
 ]
 
