@@ -248,9 +248,13 @@ export const RUNNER_ONBOARDING_MESSAGE =
  * Detects a missing selected-repository runner-group assignment.
  *
  * The org runner-groups API needs admin:org, which `github.token` usually
- * lacks. When that listing works, absence is a hard failure and the sibling
- * self-hosted `ci` job is not the only signal. When it does not, this watches
- * the sibling jobs on this run: if they stay `queued` with no runner, it
+ * lacks. A refused call still prints its JSON error body on stdout, so only a
+ * listing from a `gh` that exited 0 counts. When the listing works, absence is
+ * a hard failure. When it does not -- the usual case -- this watches the
+ * sibling jobs on this run that ask for a self-hosted runner: one that gets a
+ * runner proves the groups are reachable. A skipped job is `completed` with no
+ * runner and proves nothing, and a job on a hosted runner proves nothing about
+ * the self-hosted groups, so neither counts. If none starts in time it
  * annotates the run. It does not fail on that heuristic -- a busy queue looks
  * the same from inside the repository (narduk-libs#625).
  */
@@ -260,35 +264,57 @@ message='${RUNNER_ONBOARDING_MESSAGE}'
 org="\${REPO%%/*}"
 wait_seconds="\${RUNNER_ONBOARDING_WAIT_SECONDS:-90}"
 
+groups=''
+if listing=$(gh api --paginate "orgs/\${org}/actions/runner-groups" --jq '.runner_groups[] | select(.name=="linux-ci" or .name=="playwright-isolated") | [.id, .visibility, .name] | @tsv' 2>/dev/null); then
+  groups="$listing"
+fi
+
 listed=0
 missing=0
+unknown=0
 while IFS=$'\\t' read -r id visibility name; do
   [ -n "$id" ] || continue
   listed=1
-  if [ "$visibility" = "all" ]; then
+  # 'all' admits every repository and 'private' every private one; this job
+  # is only generated for private repositories.
+  if [ "$visibility" = "all" ] || [ "$visibility" = "private" ]; then
     continue
   fi
-  if ! gh api --paginate "orgs/\${org}/actions/runner-groups/\${id}/repositories" --jq '.repositories[].full_name' | grep -Fxq "$REPO"; then
+  if ! members=$(gh api --paginate "orgs/\${org}/actions/runner-groups/\${id}/repositories" --jq '.repositories[].full_name' 2>/dev/null); then
+    echo "Could not list the repositories in \${name} (id \${id})."
+    unknown=1
+    continue
+  fi
+  if ! grep -Fxq "$REPO" <<<"$members"; then
     echo "Not a member of \${name} (id \${id})."
     missing=1
   fi
-done < <(gh api --paginate "orgs/\${org}/actions/runner-groups" --jq '.runner_groups[] | select(.name=="linux-ci" or .name=="playwright-isolated") | [.id, .visibility, .name] | @tsv' 2>/dev/null || true)
+done <<<"$groups"
 
 if [ "$listed" -gt 0 ]; then
   if [ "$missing" -eq 1 ]; then
     echo "::error::$message"
     exit 1
   fi
-  echo "Repository is listed in the named runner groups."
-  exit 0
+  if [ "$unknown" -eq 0 ]; then
+    echo "Repository is listed in the named runner groups."
+    exit 0
+  fi
 fi
 
 deadline=$((SECONDS + wait_seconds))
-started=0
 while :; do
-  started=$(gh api "repos/\${REPO}/actions/runs/\${RUN_ID}/jobs" --jq '[.jobs[] | select(.name != "Runner group onboarding") | select(.status=="in_progress" or .status=="completed")] | length' || echo 0)
-  if [ "$started" -gt 0 ]; then
-    echo "Sibling CI job left queued; runner groups look reachable."
+  counts=''
+  if job_counts=$(gh api "repos/\${REPO}/actions/runs/\${RUN_ID}/jobs?per_page=100" --jq '[.jobs[] | select(.name != "${RUNNER_ONBOARDING_JOB_NAME}")] | [length, (map(select((.labels // []) | index("self-hosted"))) | length), (map(select((.labels // []) | index("self-hosted")) | select(.runner_id != null and .runner_id != 0)) | length)] | @tsv' 2>/dev/null); then
+    counts="$job_counts"
+  fi
+  IFS=$'\\t' read -r siblings self_hosted started <<<"$counts" || true
+  if [[ "\${started:-}" =~ ^[0-9]+$ ]] && [ "$started" -gt 0 ]; then
+    echo "A self-hosted sibling job got a runner; runner groups look reachable."
+    exit 0
+  fi
+  if [[ "\${siblings:-}" =~ ^[0-9]+$ ]] && [ "$siblings" -gt 0 ] && [ "\${self_hosted:-}" = "0" ]; then
+    echo "No sibling job in this run asks for a self-hosted runner."
     exit 0
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
