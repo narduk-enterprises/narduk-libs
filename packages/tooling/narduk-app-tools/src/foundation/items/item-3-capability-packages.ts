@@ -5,7 +5,8 @@
  * manifests, so the rollup's static half reports item 3 `unknown` in full and
  * `foundation:check` owns it." This tool has the whole checkout, so it reads
  * the same in-app signal item 1.4 already uses --
- * `Config/cloudflare-app.json` `access.exposureClass` -- plus real bindings
+ * `access.exposureClass` on `Config/cloudflare-app.json` or, for a
+ * Coolify-only app, `Config/coolify-app.json` -- plus real bindings
  * and a bounded source-import scan, instead of the cross-repo
  * `APP_REGISTRY.yaml` fields an app's own CI cannot read.
  *
@@ -76,13 +77,13 @@ function evaluate31And32(
         '3.1',
         'public site: narduk-seo + narduk-analytics',
         STATUS_UNKNOWN,
-        'Config/cloudflare-app.json records no access.exposureClass, so whether this app is public is undecided',
+        'Config/cloudflare-app.json and Config/coolify-app.json record no access.exposureClass, so whether this app is public is undecided',
       ),
       check(
         '3.2',
         'has a login: narduk-auth',
         STATUS_UNKNOWN,
-        'Config/cloudflare-app.json records no access.exposureClass, so whether this app has a login is undecided',
+        'Config/cloudflare-app.json and Config/coolify-app.json record no access.exposureClass, so whether this app has a login is undecided',
       ),
     ]
   }

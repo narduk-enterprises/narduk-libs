@@ -174,18 +174,35 @@ describe('item 1 -- scaffold parity', () => {
     expect(itemStatus(artefact, 1)).toBe('pass')
   })
 
+  it('1.1 still fails node-server when lifecycle also names cloudflare', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeCoolifyOnlyApp(root)
+    writeJson(root, 'Config/project-lifecycle.json', {
+      schemaVersion: 1,
+      environments: [
+        {
+          name: 'production',
+          deploymentTargets: [{ provider: 'coolify' }, { provider: 'cloudflare' }],
+        },
+      ],
+    })
+    expect(subCheckStatus(await run(root), '1.1')).toBe('fail')
+  })
+
   it('1.1 is not-applicable for a Worker that declares nitroPreset none', async () => {
     const root = makeTempRepo()
     tempDirs.push(root)
     writeConformantBaseline(root)
+    writeJson(root, 'wrangler.json', { d1_databases: [{ binding: 'DB', database_name: 'x' }] })
     writeJson(root, 'Config/cloudflare-app.json', {
       product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
       worker: { nitroPreset: 'none' },
       access: { exposureClass: 'public' },
-      bindings: { r2: [] },
+      bindings: { r2: [], d1: [{ binding: 'DB' }] },
     })
     const artefact = await run(root)
     expect(subCheckStatus(artefact, '1.1')).toBe('not-applicable')
-    expect(subCheckStatus(artefact, '1.2')).not.toBe('not-applicable')
+    expect(subCheckStatus(artefact, '1.2')).toBe('pass')
   })
 })

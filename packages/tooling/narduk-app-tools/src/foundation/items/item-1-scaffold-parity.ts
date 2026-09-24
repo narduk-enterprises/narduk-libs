@@ -8,6 +8,13 @@
  * `foundation:check` resolves the config for real and must decide it."
  */
 
+import {
+  CLOUDFLARE_APP_FILE,
+  classifyDeploymentPlatform,
+  isNonCloudflareOnly,
+  readExposureClass,
+  type DeploymentPlatform,
+} from '../deployment-platform.js'
 import { check } from '../schema.js'
 import {
   bindingNames,
@@ -73,9 +80,41 @@ function samePreset(preset: string, expected: string): boolean {
   return preset.replaceAll('-', '_') === expected.replaceAll('-', '_')
 }
 
-function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
+function nonCloudflareWorkersCheck(
+  id: string,
+  name: string,
+  platform: DeploymentPlatform,
+  clause: string,
+): FoundationSubCheck {
+  return check(
+    id,
+    name,
+    STATUS_NA,
+    `declared deployment target is ${JSON.stringify(platform.providers)} (from ${platform.evidence}); ${clause}`,
+    platform.evidence,
+  )
+}
+
+function declaredNoNitro(cfApp: unknown, preset: string | null): boolean {
+  if (preset !== null && samePreset(preset, 'none')) return true
+  return isRecord(cfApp) && isRecord(cfApp.worker) && cfApp.worker.framework === 'none'
+}
+
+function evaluate11(
+  repo: AppRepo,
+  cfApp: unknown,
+  platform: DeploymentPlatform,
+): FoundationSubCheck {
+  if (isNonCloudflareOnly(platform)) {
+    return nonCloudflareWorkersCheck(
+      '1.1',
+      'nitro preset is cloudflare_module',
+      platform,
+      'the Cloudflare Workers nitro preset does not apply',
+    )
+  }
   let preset: string | null = null
-  let evidence = 'Config/cloudflare-app.json'
+  let evidence = CLOUDFLARE_APP_FILE
   let resolvedForReal = false
   if (isRecord(cfApp) && isRecord(cfApp.worker) && typeof cfApp.worker.nitroPreset === 'string') {
     preset = cfApp.worker.nitroPreset
@@ -85,6 +124,15 @@ function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
     evidence = resolved.evidence
     resolvedForReal = true
   }
+  if (declaredNoNitro(cfApp, preset)) {
+    return check(
+      '1.1',
+      'nitro preset is cloudflare_module',
+      STATUS_NA,
+      `worker.nitroPreset is ${JSON.stringify(preset ?? 'none')} (from ${evidence}); this Worker has no Nitro build`,
+      evidence,
+    )
+  }
   if (preset !== null && samePreset(preset, 'cloudflare_module')) {
     return check(
       '1.1',
@@ -92,7 +140,7 @@ function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
       STATUS_PASS,
       resolvedForReal
         ? `resolved for real from ${evidence} as ${JSON.stringify(preset)} (no Config/cloudflare-app.json)`
-        : `Config/cloudflare-app.json worker.nitroPreset == ${JSON.stringify(preset)}`,
+        : `${CLOUDFLARE_APP_FILE} worker.nitroPreset == ${JSON.stringify(preset)}`,
       evidence,
     )
   }
@@ -110,11 +158,24 @@ function evaluate11(repo: AppRepo, cfApp: unknown): FoundationSubCheck {
     '1.1',
     'nitro preset is cloudflare_module',
     STATUS_UNKNOWN,
-    `no Config/cloudflare-app.json and the preset could not be resolved for real: ${evidence}`,
+    `no ${CLOUDFLARE_APP_FILE} and the preset could not be resolved for real: ${evidence}`,
   )
 }
 
-function evaluate12(repo: AppRepo, cfApp: unknown, wranglerRel: string | null): FoundationSubCheck {
+function evaluate12(
+  repo: AppRepo,
+  cfApp: unknown,
+  wranglerRel: string | null,
+  platform: DeploymentPlatform,
+): FoundationSubCheck {
+  if (isNonCloudflareOnly(platform)) {
+    return nonCloudflareWorkersCheck(
+      '1.2',
+      'bindings mirrored in Config/cloudflare-app.json',
+      platform,
+      `${CLOUDFLARE_APP_FILE} binding mirrors do not apply`,
+    )
+  }
   if (!wranglerRel) {
     return check(
       '1.2',
@@ -196,13 +257,22 @@ function evaluate14(
   repo: AppRepo,
   exposureClass: string | null,
   wranglerRel: string | null,
+  platform: DeploymentPlatform,
 ): FoundationSubCheck {
+  if (isNonCloudflareOnly(platform)) {
+    return nonCloudflareWorkersCheck(
+      '1.4',
+      'access hardening on authenticated-public apps',
+      platform,
+      'Workers access hardening does not apply',
+    )
+  }
   if (exposureClass === null) {
     return check(
       '1.4',
       'access hardening on authenticated-public apps',
       STATUS_UNKNOWN,
-      'Config/cloudflare-app.json records no access.exposureClass, so applicability is undecided',
+      `${CLOUDFLARE_APP_FILE} records no access.exposureClass, so applicability is undecided`,
     )
   }
   if (exposureClass !== 'authenticated-public') {
@@ -249,29 +319,24 @@ function evaluate14(
 }
 
 export function evaluateItem1(repo: AppRepo): FoundationSubCheck[] {
-  const cfApp = parseJson(repo.read('Config/cloudflare-app.json'))
+  const cfApp = parseJson(repo.read(CLOUDFLARE_APP_FILE))
   const wranglerRel = findWranglerConfig(repo)
-  const exposureClass =
-    isRecord(cfApp) && isRecord(cfApp.access) && typeof cfApp.access.exposureClass === 'string'
-      ? cfApp.access.exposureClass
-      : null
+  const platform = classifyDeploymentPlatform(repo)
+  const exposureClass = readExposureClass(repo).value
   return [
-    evaluate11(repo, cfApp),
-    evaluate12(repo, cfApp, wranglerRel),
+    evaluate11(repo, cfApp, platform),
+    evaluate12(repo, cfApp, wranglerRel, platform),
     evaluate13(repo),
-    evaluate14(repo, exposureClass, wranglerRel),
+    evaluate14(repo, exposureClass, wranglerRel, platform),
   ]
 }
 
-// re-exported so item-3 can reuse the same real signal without re-parsing.
+/** Same public/private signal item 3 uses; coolify-app is the Coolify analogue. */
 export function readCloudflareAppExposureClass(repo: AppRepo): string | null {
-  const cfApp = parseJson(repo.read('Config/cloudflare-app.json'))
-  return isRecord(cfApp) && isRecord(cfApp.access) && typeof cfApp.access.exposureClass === 'string'
-    ? cfApp.access.exposureClass
-    : null
+  return readExposureClass(repo).value
 }
 
 export function readCloudflareApp(repo: AppRepo): Record<string, unknown> | null {
-  const cfApp = parseJson(repo.read('Config/cloudflare-app.json'))
+  const cfApp = parseJson(repo.read(CLOUDFLARE_APP_FILE))
   return isRecord(cfApp) ? cfApp : null
 }
