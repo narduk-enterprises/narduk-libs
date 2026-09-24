@@ -475,6 +475,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // scaffold references it yet and knip would otherwise flag it unused,
     // the same reasoning as the mapkit peer package above.
     ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
+    // narduk-seo installModule('nuxt-og-image') when the peer is present.
+    // The generated app never imports the package by name, so knip would
+    // otherwise flag the #170/#316 pin as unused.
+    ...(capabilities.includes('seo') ? ['nuxt-og-image'] : []),
     // Reached through `runtimeConfig.nardukLogging` in nuxt.config.ts and
     // narduk-core's compatibility bridge (see the generated docs/logging.md),
     // never through a named import -- so knip cannot trace it and reported
@@ -804,6 +808,14 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- `pnpm run foundation:check` -- web-foundation conformance, the seven-item contract. Private CI runs it through the shared workflow input `foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN` result. It is deliberately **not** chained into `quality:static`: it reads the package registry over the network. Default generated apps read `https://npm.nard.uk` anonymously and do not need a GitHub Packages credential.',
         '- `pnpm run quality` -- `quality:static` plus the Playwright browser tests, which both CI paths run as separate jobs.',
         '',
+        ...(hasDatabase
+          ? [
+              '> **Create the database before the first push.** `apps/web/wrangler.jsonc` binds `DB` to the placeholder `database_id` `00000000-0000-0000-0000-000000000000`, because the generator does not call Cloudflare. Every build, dry-run and test accepts it, but no request that touches the database can succeed, so `foundation:check` fails sub-check 1.5 -- and with it CI -- until the database exists. From the repository root, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set for the account this app deploys to, run `pnpm exec narduk-app db create`. It creates `' +
+                appName +
+                '-db` (the name comes from `Config/cloudflare-app.json`), writes the returned id into `apps/web/wrangler.jsonc` with its comments intact, and prints the id and account. Commit that change: the id is configuration, not a secret. It refuses to run once the id is real and never deletes anything. `--dry-run` shows what it would do.',
+              '',
+            ]
+          : []),
         'The build step is `build:ci`, the same script CI builds with: it injects test-only `NUXT_OG_IMAGE_SECRET` / `NUXT_SESSION_PASSWORD` placeholders and targets the deployable Worker shape. Plain `pnpm run build` is the real-secret path, used by `cf:build` and operator recovery; it throws on an empty OG secret by design.',
         '',
         ...(visibility === 'private'
@@ -1009,6 +1021,21 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         ...(databaseBackend === 'd1'
           ? [
+              '## Create the D1 database',
+              '',
+              'The generator writes the `DB` binding with the placeholder `database_id` `00000000-0000-0000-0000-000000000000`; it never calls Cloudflare. Create the database once, before the first push, from the repository root:',
+              '',
+              '```sh',
+              'CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_API_TOKEN=<token with D1 edit> \\',
+              '  pnpm exec narduk-app db create',
+              '```',
+              '',
+              '`db create` takes the database name from `Config/cloudflare-app.json` (`' +
+                appName +
+                '-db`), never from an argument, runs `wrangler d1 create`, writes the returned id into `apps/web/wrangler.jsonc` without touching its comments, and prints the id and the account. It refuses when the id is already real, so it cannot create a second database for an app that has one, and it never deletes. Without it, the equivalent is `wrangler d1 create ' +
+                appName +
+                '-db` under the same credentials, then setting `d1_databases[0].database_id` in `apps/web/wrangler.jsonc` to the id it prints. `foundation:check` sub-check 1.5 fails while the placeholder remains.',
+              '',
               '## D1 migrations are a promotion gate',
               '',
               'Declare `deployment.migrations` before adopting narduk-v1: compatibility `expand-contract`, a separate `cloudflare/prd/' +
@@ -1037,7 +1064,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}',
         'steps:',
         '  - id: promote',
-        '    run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --production-branch main --json',
+        '    run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --json',
         '  - id: live-proof',
         '    run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
         '  # Roll back only after a completed promotion followed by failed live proof.',
@@ -1046,6 +1073,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '```',
         '',
         'Use `github.event.workflow_run.head_sha`, never `$GITHUB_SHA`. Under `on: workflow_run` `GITHUB_SHA` is the default branch head at trigger time, not the commit whose run completed, so a commit that never passed the gate check can reach production through it. `versions-promote` refuses to default `--sha` to `GITHUB_SHA` under that event for the same reason.',
+        '',
+        '`--gate-verified "ci / Required@$VERIFIED_SHA"` is the workflow\'s attestation that the gate check passed on that exact commit (narduk-libs#400). `versions-promote` never reads GitHub -- it holds no GitHub token -- so it binds the attestation instead: it refuses with exit 9, before touching anything, when the attested SHA is not the commit being promoted or the resolved version does not carry that commit\'s tag, and it logs the check and SHA it was given. Without the flag it still promotes, with a warning that no gate attestation was passed. Keep the job gated on the `workflow_run` conclusion being `success`; the attestation names what that gate observed, it does not replace it.',
         '',
         'The `--sha` lookup walks the Cloudflare Versions API up to `--max-versions` (default 500), not the ten `wrangler versions list` shows, so branch uploads landing between the merge build and this job cannot hide the version. A lookup that finds nothing exits 3: the promote job is **red**, never skipped, because production is still serving the previous release.',
         '',
@@ -1654,6 +1683,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           '120", "simple": { "limit": 120, "period": 60 } }]',
         ...(hasDatabase
           ? [
+              // The generator must not call Cloudflare, so the id is a
+              // placeholder every build and dry-run accepts. foundation:check
+              // sub-check 1.5 fails on it, and `narduk-app db create` is the
+              // one step that replaces it (narduk-libs#662).
+              '  // DB: database_id is a placeholder until the database exists. Run',
+              '  //   pnpm exec narduk-app db create',
+              '  // from the repository root (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID',
+              '  // set) to create it and write the real id here. foundation:check fails',
+              '  // until then.',
               '  "d1_databases": [',
               '    {',
               '      "binding": "DB",',

@@ -24,6 +24,10 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[1].run).toContain('"12.9"')
       expect(steps[1].env).toBeUndefined()
       expect(steps[2].run).toContain('--dry-run')
+      // The dry run carries the same gate attestation as the real promote
+      // (narduk-libs#400), bound to the verified workflow_run head SHA.
+      expect(steps[2].run).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
+      expect(steps[2].env.VERIFIED_SHA).toBe('${{ github.event.workflow_run.head_sha }}')
       expect(steps[2].env.CLOUDFLARE_API_TOKEN).not.toBe(steps[3].env.CLOUDFLARE_API_TOKEN)
       expect(steps[3].run).toContain('migrate-deployment --target production --sha "$VERIFIED_SHA"')
       expect(steps[3].run).toContain('migrate-deployment --target production --check')

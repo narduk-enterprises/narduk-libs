@@ -41,11 +41,28 @@ import type {
 } from './types.js'
 import { RUN_SCHEMA } from './types.js'
 import { expectedStepIds, makeRunId, runPaths } from './verify.js'
+import {
+  assertIsolatedTargets,
+  bindWorkerTargets,
+  configuredWorkersFrom,
+  type WorkerResolved,
+} from './worker-binding.js'
+
+export type { WorkerResolved, WorkerResolver } from './worker-binding.js'
 
 export interface RegisterJourneysOptions {
   catalog: Catalog
-  world: WorldHooks
-  base: string
+  /**
+   * Today's scalar hooks, or a function of `workerIndex` so worker k
+   * prepares world k. A worker pool is refused unless this and `base`
+   * are both functions (narduk-libs#116).
+   */
+  world: WorkerResolved<WorldHooks>
+  /**
+   * Today's scalar origin, or `(workerIndex) => origin`. Resolved inside
+   * the registered `test()` body and recorded on the run manifest.
+   */
+  base: WorkerResolved<string>
   outRoot: string
   environment: string
   profileName: string
@@ -445,10 +462,25 @@ function toMp4(webmPath: string, mp4Path: string): boolean {
 /**
  * Register one Playwright `test()` per web journey, one `test.step()` per
  * declared step. Call from a spec file. Journeys sharing a world run serially
- * inside one worker by construction here (registration order); isolation
- * across targets is the caller's arrangement per the world-session rules (§5).
+ * inside one worker by construction here (registration order). A pool
+ * (`workers > 1`) is legitimate only when `base` and `world` are both
+ * functions of `workerIndex` — otherwise this refuses, naming the shared
+ * origin / shared database overwrite (§5, narduk-libs#116).
  */
 export function registerJourneys(options: RegisterJourneysOptions): void {
+  assertIsolatedTargets({
+    base: options.base,
+    world: options.world,
+    workers: configuredWorkersFrom({}),
+  })
+  test.beforeAll(() => {
+    const info = test.info()
+    assertIsolatedTargets({
+      base: options.base,
+      world: options.world,
+      workers: configuredWorkersFrom({ workers: info.config.workers }),
+    })
+  })
   const mode: Mode = options.mode ?? (process.env.JOURNEYS_MODE === 'capture' ? 'capture' : 'test')
   const commit = options.commit ?? process.env.JOURNEYS_COMMIT ?? 'uncommitted'
   const profile = options.catalog.profiles[options.profileName]
@@ -492,6 +524,11 @@ interface RunJourneyArgs {
 
 async function runJourney(args: RunJourneyArgs): Promise<void> {
   const { journey, scenarioId, mode, commit, profile, options, browser } = args
+  const info = test.info()
+  const { base, world: worldHooks } = bindWorkerTargets(options, {
+    workers: info.config.workers,
+    parallelIndex: info.parallelIndex,
+  })
   const startedAt = new Date()
   const attemptId = makeRunId(commit, startedAt)
   const paths = runPaths({
@@ -505,9 +542,9 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
   })
   mkdirSync(join(paths.attemptDirectory, 'steps'), { recursive: true })
 
-  const prepared = await options.world.prepare(scenarioId)
+  const prepared = await worldHooks.prepare(scenarioId)
   const confirmed = prepared.scenarioId === scenarioId
-  const appRevision = await options.world.appRevision()
+  const appRevision = await worldHooks.appRevision()
 
   const audienceEntry = options.catalog.audience[journey.role]
   if (!audienceEntry) throw new Error(`unknown role "${journey.role}"`)
@@ -521,7 +558,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
   if (mode === 'capture' && audienceEntry.credentialClass === 'secret') {
     const authContext = await browser.newContext({ viewport: profile.viewport })
     const authPage = await authContext.newPage()
-    await audienceEntry.web(authPage, options.base)
+    await audienceEntry.web(authPage, base)
     storageState = await authContext.storageState()
     await authContext.close()
   }
@@ -535,11 +572,11 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
   })
   const recordingStart = Date.now()
   const page = await context.newPage()
-  const api = createContextApi(page, options.base, mode)
-  const world = createWorldQuery(options.base)
+  const api = createContextApi(page, base, mode)
+  const world = createWorldQuery(base)
 
   if (!storageState && audienceEntry.web) {
-    await audienceEntry.web(page, options.base)
+    await audienceEntry.web(page, base)
   }
 
   const included = new Set(expectedStepIds(journey, scenarioId))
@@ -589,7 +626,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     }
   }
 
-  const generationAfter = await options.world.generation()
+  const generationAfter = await worldHooks.generation()
   await context.close()
 
   let video: RunManifest['video']
@@ -614,7 +651,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     journey: journey.id,
     surface: 'web',
     mode,
-    base: options.base,
+    base,
     commit,
     declarationDigest: options.declarationDigest,
     journeyDigest: digestJourney(journey),

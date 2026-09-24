@@ -66,6 +66,9 @@ export const apiKeys = sqliteTable(
     scopesJson: text('scopes_json').notNull().default('[]'),
     lastUsedAt: text('last_used_at'),
     expiresAt: integer('expires_at'), // Nullable unix timestamp
+    // ISO time the key was revoked (migration 0008); null while the key is live.
+    // A revoked row is kept so last_used_at, key_prefix and scopes survive.
+    revokedAt: text('revoked_at'),
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
