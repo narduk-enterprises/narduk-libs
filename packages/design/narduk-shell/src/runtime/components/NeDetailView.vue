@@ -24,10 +24,10 @@ import {
   formatNumber,
   formatPercent,
   formatQuantity,
-  type NeDateInput,
 } from '../../format'
 
-import type { NeDetailItem, NeDetailViewProps } from './ne-detail-view-types'
+import type { NeDateInput } from '../../format'
+import type { NeDetailFormat, NeDetailItem, NeDetailViewProps } from './ne-detail-view-types'
 
 const props = withDefaults(defineProps<NeDetailViewProps>(), {
   timeZone: undefined,
@@ -42,38 +42,47 @@ function isBlank(value: NeDetailItem['value']): boolean {
   )
 }
 
-function displayValue(item: NeDetailItem): string {
-  if (isBlank(item.value)) return item.empty ?? fallback.value
+function asNumber(value: unknown, empty: string, format: (n: number) => string): string {
+  return typeof value === 'number' ? format(value) : empty
+}
 
-  const value = item.value
-  switch (item.format) {
-    case 'compact':
-      return typeof value === 'number' ? formatCompact(value) : String(value)
-    case 'date': {
-      const timeZone = item.timeZone ?? props.timeZone
-      if (!timeZone) return item.empty ?? fallback.value
-      return formatDate(value as NeDateInput, { timeZone })
-    }
-    case 'datetime': {
-      const timeZone = item.timeZone ?? props.timeZone
-      if (!timeZone) return item.empty ?? fallback.value
-      return formatDateTime(value as NeDateInput, { timeZone })
-    }
-    case 'duration':
-      return typeof value === 'number' ? formatDuration(value) : String(value)
-    case 'money':
-      if (typeof value !== 'number' || !item.currency) return item.empty ?? fallback.value
-      return formatMoney(value, { currency: item.currency })
-    case 'number':
-      return typeof value === 'number' ? formatNumber(value) : String(value)
-    case 'percent':
-      return typeof value === 'number' ? formatPercent(value) : String(value)
-    case 'quantity':
-      if (typeof value !== 'number' || !item.unit) return item.empty ?? fallback.value
-      return formatQuantity(value, { unit: item.unit })
-    default:
-      return typeof value === 'number' ? formatNumber(value) : String(value)
+function asZonedDate(
+  value: unknown,
+  timeZone: string | undefined,
+  empty: string,
+  format: (input: NeDateInput, options: { timeZone: string }) => string,
+): string {
+  if (!timeZone) return empty
+  return format(value as NeDateInput, { timeZone })
+}
+
+const FORMATTERS: Record<
+  NeDetailFormat,
+  (item: NeDetailItem, value: unknown, empty: string, timeZone: string | undefined) => string
+> = {
+  compact: (_item, value, empty) => asNumber(value, empty, formatCompact),
+  date: (item, value, empty, timeZone) =>
+    asZonedDate(value, item.timeZone ?? timeZone, empty, formatDate),
+  datetime: (item, value, empty, timeZone) =>
+    asZonedDate(value, item.timeZone ?? timeZone, empty, formatDateTime),
+  duration: (_item, value, empty) => asNumber(value, empty, formatDuration),
+  money: (item, value, empty) =>
+    typeof value === 'number' && item.currency
+      ? formatMoney(value, { currency: item.currency })
+      : empty,
+  number: (_item, value, empty) => asNumber(value, empty, formatNumber),
+  percent: (_item, value, empty) => asNumber(value, empty, formatPercent),
+  quantity: (item, value, empty) =>
+    typeof value === 'number' && item.unit ? formatQuantity(value, { unit: item.unit }) : empty,
+}
+
+function displayValue(item: NeDetailItem): string {
+  const empty = item.empty ?? fallback.value
+  if (isBlank(item.value)) return empty
+  if (item.format === undefined) {
+    return typeof item.value === 'number' ? formatNumber(item.value) : String(item.value)
   }
+  return FORMATTERS[item.format](item, item.value, empty, props.timeZone)
 }
 
 function isUnavailable(item: NeDetailItem): boolean {

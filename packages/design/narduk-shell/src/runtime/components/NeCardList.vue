@@ -17,6 +17,9 @@
  */
 import { computed } from 'vue'
 
+import NePager from './NePager.vue'
+import NeStatePanel from './NeStatePanel.vue'
+
 import type { NeCollectionState } from '../composables/use-collection'
 import type { NeStateValue } from '../types'
 import type {
@@ -24,9 +27,6 @@ import type {
   NeCardListColumnCount,
   NeCardListProps,
 } from './ne-card-list-types'
-
-import NePager from './NePager.vue'
-import NeStatePanel from './NeStatePanel.vue'
 
 const props = withDefaults(defineProps<NeCardListProps<T>>(), {
   card: undefined,
@@ -52,14 +52,14 @@ const props = withDefaults(defineProps<NeCardListProps<T>>(), {
  * `useCollection` — the composable's setter ignores every other field.
  * A page that binds `:collection` instead writes through `collection.state`.
  */
-const state = defineModel<NeCollectionState<T>>('state')
-
 const emit = defineEmits<{ 'update:limit': [limit: number] }>()
 
 defineSlots<{
   /** One card. Preferred over `:card` when the card needs more than `item`. */
   card?(props: { index: number; item: T }): unknown
 }>()
+
+const state = defineModel<NeCollectionState<T>>('state')
 
 const BREAKPOINTS: readonly NeCardListBreakpoint[] = ['base', 'sm', 'md', 'lg', 'xl']
 
@@ -149,7 +149,7 @@ const gridClasses = computed(() =>
  * over those cards would hide the rows the reader already has.
  */
 const panelState = computed<NeStateValue | undefined>(() => {
-  if (reading.value.items.length > 0) return undefined
+  if (reading.value.items.length > 0) return
   if (reading.value.pending) return 'loading'
   if (reading.value.error) return 'error'
   return 'empty'

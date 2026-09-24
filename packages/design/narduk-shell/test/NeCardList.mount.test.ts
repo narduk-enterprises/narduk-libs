@@ -5,12 +5,14 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h, reactive } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { defineComponent, h, reactive, type Component, type VNode } from 'vue'
 
-import { type NeCardListProps, type NeCollection, type NeCollectionState } from '../src/index'
 import NeCardList from '../src/runtime/components/NeCardList.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'
+
+import type { NeCollection, NeCollectionState } from '../src/index'
+import type { Component, VNode } from 'vue'
 
 const Blank: Component = defineComponent({ setup: () => () => h('div') })
 
@@ -50,9 +52,7 @@ function state(over: Partial<NeCollectionState<{ id: string; name: string }>> = 
 }
 
 function render(
-  props: Partial<NeCardListProps<{ id: string; name: string }>> & {
-    state?: NeCollectionState<{ id: string; name: string }>
-  } = {},
+  props: Record<string, unknown> = {},
   slots: Record<string, string | ((slotProps: { item: { name: string } }) => VNode)> = {},
 ) {
   return mount(NeCardList, {

@@ -18,10 +18,11 @@
 import { computed } from 'vue'
 
 import { formatNumber, formatQuantity } from '../../format'
+
 import NeStatusBadge from './NeStatusBadge.vue'
 
-import type { NeCardProps, NeCardStat } from './ne-card-types'
 import type { NeStatusTone } from '../utils/status-map'
+import type { NeCardProps, NeCardStat } from './ne-card-types'
 
 const props = withDefaults(defineProps<NeCardProps>(), {
   badge: undefined,

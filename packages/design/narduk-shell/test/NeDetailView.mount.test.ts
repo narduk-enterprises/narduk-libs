@@ -6,8 +6,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import { type NeDetailViewProps } from '../src/index'
 import NeDetailView from '../src/runtime/components/NeDetailView.vue'
+
+import type { NeDetailViewProps } from '../src/index'
 
 function render(props: NeDetailViewProps) {
   return mount(NeDetailView, { props })

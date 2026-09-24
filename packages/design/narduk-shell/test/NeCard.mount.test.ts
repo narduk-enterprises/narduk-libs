@@ -7,9 +7,10 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 
-import { type NeCardProps } from '../src/index'
 import NeCard from '../src/runtime/components/NeCard.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'
+
+import type { NeCardProps } from '../src/index'
 
 const FakeUBadge = defineComponent({
   name: 'UBadge',
