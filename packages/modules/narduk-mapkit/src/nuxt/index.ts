@@ -46,6 +46,7 @@ export type {
   AppMapKitSlots,
   MapKitCalloutFocus,
   MapKitCalloutSlotScope,
+  MapKitLeaderProp,
 } from './runtime/components/AppMapKit.js'
 export type {
   UseMapKitFullscreenOptions,

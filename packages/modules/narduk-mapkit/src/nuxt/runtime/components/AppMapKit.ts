@@ -31,6 +31,7 @@ import {
   watch,
 } from 'vue'
 
+import { MapKitLeaderOverlay } from '../../../client/leader-overlay.js'
 import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js'
 import { MapKitCalloutHostLayer } from '../callout-host.js'
 import { useMapKitPreload } from '../preload.js'
@@ -63,6 +64,12 @@ type MapKitItem = MapKitPinItem & { id?: string }
 
 /** `<AppMapKit>`'s `calloutFocus` prop. */
 export type MapKitCalloutFocus = 'keyboard' | 'never'
+
+/** `<AppMapKit>`'s `leader` prop: a line from the selected pin to `anchor`. */
+export interface MapKitLeaderProp {
+  /** The card notch, caret or other element the line ends at. */
+  anchor: HTMLElement | null
+}
 
 const CALLOUT_FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
@@ -110,6 +117,17 @@ const props = {
   dynamicCircleRadius: { default: false, type: Boolean },
   fallbackCenter: { default: undefined, type: Object as PropType<MapKitLatLng> },
   geojson: { default: null, type: Object as PropType<GeoJSONFeatureCollection | null> },
+  /**
+   * The pin the pointer is over (`v-model:hovered-id`). The matching host
+   * carries `data-mapkit-hovered`. A hover never rebuilds annotations.
+   */
+  hoveredId: { default: null, type: String as PropType<string | null> },
+  /**
+   * Draw a leader from the selected annotation to `anchor` on every region
+   * change. The overlay is a plain `./client` class so a consumer that draws
+   * its own pins can use the same one (narduk-libs#517).
+   */
+  leader: { default: null, type: Object as PropType<MapKitLeaderProp | null> },
   isRotationEnabled: { default: false, type: Boolean },
   isScrollEnabled: { default: true, type: Boolean },
   isZoomEnabled: { default: true, type: Boolean },
@@ -147,8 +165,9 @@ const props = {
    * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
    * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
    * handlers. `false` is for a decorative map: the host carries no role, no
-   * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
-   * longer contains focusable descendants (axe `aria-hidden-focus`) and
+   * tabindex, no `aria-pressed` and no click or keyboard listeners, so an
+   * `aria-hidden` map no longer contains focusable descendants (axe
+   * `aria-hidden-focus`) and
    * `itemLabel` stops being required.
    */
   pinsFocusable: { default: true, type: Boolean },
@@ -172,6 +191,7 @@ const AppMapKitImpl = defineComponent({
     'callout-close': (payload: { id: string; item: MapKitItem }) => Boolean(payload),
     'callout-open': (payload: { id: string; item: MapKitItem }) => Boolean(payload),
     'feature-select': (feature: GeoJSONFeature) => Boolean(feature),
+    'leader-offscreen': (offscreen: boolean) => typeof offscreen === 'boolean',
     'map-click': (coordinate: MapKitLatLng) => Boolean(coordinate),
     /**
      * The map, and the namespace that built it (2.1.1, K-10).
@@ -188,6 +208,7 @@ const AppMapKitImpl = defineComponent({
       latDelta: number
       lngDelta: number
     }) => Boolean(region),
+    'update:hoveredId': (id: string | null) => id === null || typeof id === 'string',
     'update:selectedId': (id: string | null) => id === null || typeof id === 'string',
   },
   slots: Object as SlotsType<{
@@ -251,6 +272,7 @@ const AppMapKitImpl = defineComponent({
     const wrapperRef = ref<HTMLElement | null>(null)
 
     let calloutLayer: MapKitCalloutHostLayer<MapKitItem> | null = null
+    let leaderOverlay: MapKitLeaderOverlay | null = null
     let map: MapKitMapLike | null = null
     let overlayLayer: MapKitOverlayLayer | null = null
     let overviewRegion: MapKitRegionLike | null = null
@@ -355,6 +377,43 @@ const AppMapKitImpl = defineComponent({
       return { x: offset.x + (geometry.size?.width ?? 0) / 2, y: offset.y }
     }
 
+    function leaderPoint(): { x: number; y: number } | null {
+      const id = componentProps.selectedId
+      if (!id) return null
+      const item = pinLayer?.itemFor(id)
+      if (!item) return null
+      const projected = projectCoordinate({ lat: item.lat, lng: item.lng }, id)
+      if (!projected) return null
+      const canvas = containerRef.value
+      const host = wrapperRef.value ?? canvas
+      if (!canvas || !host || host === canvas) return projected
+      const canvasBox = canvas.getBoundingClientRect()
+      const hostBox = host.getBoundingClientRect()
+      return {
+        x: projected.x + canvasBox.left - hostBox.left,
+        y: projected.y + canvasBox.top - hostBox.top,
+      }
+    }
+
+    function syncLeader(): void {
+      const host = wrapperRef.value ?? containerRef.value
+      if (!componentProps.leader || !host) {
+        leaderOverlay?.destroy()
+        leaderOverlay = null
+        return
+      }
+      if (!leaderOverlay) {
+        leaderOverlay = new MapKitLeaderOverlay({
+          container: host,
+          getAnchor: () => componentProps.leader?.anchor ?? null,
+          getPoint: leaderPoint,
+          onOffscreen: (offscreen) => emit('leader-offscreen', offscreen),
+        })
+        return
+      }
+      leaderOverlay.refresh()
+    }
+
     function openCallout(id: string): void {
       const item = pinLayer?.itemFor(id)
       const container = containerRef.value
@@ -435,6 +494,10 @@ const AppMapKitImpl = defineComponent({
       const namespace = mapkit.value as unknown as MapKitNamespaceLike | null
       if (!map || !pinLayer || !namespace) return
       pinLayer.setItems(componentProps.items)
+      // Live polls (buoys) move the selected pin in place with preserveRegion
+      // and no region event; the leader must follow that the same way the
+      // callout host repositions on region-change-end (narduk-libs#517).
+      if (componentProps.leader) leaderOverlay?.refresh()
       if (componentProps.preserveRegion) return
       overviewRegion = computeOverview(namespace)
       if (overviewRegion) map.setRegionAnimated(overviewRegion, true)
@@ -492,6 +555,7 @@ const AppMapKitImpl = defineComponent({
         focusable: componentProps.pinsFocusable,
         map,
         mapkit: namespace,
+        onHover: (id) => emit('update:hoveredId', id),
         onSelect: select,
       })
 
@@ -506,12 +570,15 @@ const AppMapKitImpl = defineComponent({
         })
         overlayLayer?.resizeCirclesToRegion(region.span.latitudeDelta)
         calloutLayer?.reposition()
+        leaderOverlay?.refresh()
       })
 
       pinLayer.setItems(componentProps.items)
       applyOverlays()
       if (componentProps.selectedId !== null) applySelection(componentProps.selectedId)
+      if (componentProps.hoveredId !== null) pinLayer.setHovered(componentProps.hoveredId)
       mapReady.value = true
+      syncLeader()
       // K-10: the namespace goes with the map. A value built from
       // `globalThis.mapkit` belongs to a different namespace and this map's own
       // instanceof checks reject it.
@@ -578,11 +645,24 @@ const AppMapKitImpl = defineComponent({
       () => componentProps.selectedId,
       (id) => {
         applySelection(id)
+        syncLeader()
         const namespace = mapkit.value as unknown as MapKitNamespaceLike | null
         if (componentProps.suppressSelectionZoom || !map || !namespace) return
         const item = id === null ? null : pinLayer?.itemFor(id)
         if (item) zoomToItem(namespace, item)
         else if (overviewRegion) map.setRegionAnimated(overviewRegion, true)
+      },
+    )
+    watch(
+      () => componentProps.hoveredId,
+      (id) => {
+        pinLayer?.setHovered(id)
+      },
+    )
+    watch(
+      () => [componentProps.leader, componentProps.leader?.anchor ?? null] as const,
+      () => {
+        syncLeader()
       },
     )
     watch(
@@ -635,6 +715,8 @@ const AppMapKitImpl = defineComponent({
     )
 
     onBeforeUnmount(() => {
+      leaderOverlay?.destroy()
+      leaderOverlay = null
       calloutLayer?.destroy()
       calloutLayer = null
       calloutEntries.value = []
@@ -647,6 +729,8 @@ const AppMapKitImpl = defineComponent({
     })
 
     function retry(): void {
+      leaderOverlay?.destroy()
+      leaderOverlay = null
       pinLayer?.destroy()
       pinLayer = null
       overlayLayer?.destroy()

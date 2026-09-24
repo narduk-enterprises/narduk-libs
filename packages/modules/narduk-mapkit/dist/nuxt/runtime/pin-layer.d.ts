@@ -47,6 +47,12 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     map: MapKitMapLike;
     mapkit: MapKitNamespaceLike;
     /**
+     * Called when the pointer enters or leaves a pin host. The layer does not
+     * apply hover itself -- the host's `hoveredId` (or the app) writes it back
+     * through `setHovered`, the same way `selectedId` works.
+     */
+    onHover?: (id: string | null) => void;
+    /**
      * Called when a pin is activated by pointer or keyboard, with the toggled id
      * and which of the two activated it.
      */
@@ -58,6 +64,7 @@ export declare function defaultMapKitItemKey(item: unknown, index: number): stri
 export declare class MapKitPinLayer<T extends MapKitPinItem> {
     #private;
     constructor(options: MapKitPinLayerOptions<T>);
+    get hoveredId(): string | null;
     get selectedId(): string | null;
     get size(): number;
     /** `getDiagnostics()` on the component's expose (§c.6). */
@@ -86,6 +93,13 @@ export declare class MapKitPinLayer<T extends MapKitPinItem> {
      * re-rendered inside hosts that are not replaced, so focus survives.
      */
     setSelected(id: string | null): MapKitDiff;
+    /**
+     * Mark the hovered pin.
+     *
+     * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+     * moves, so a hover cannot recreate the host the pointer is on.
+     */
+    setHovered(id: string | null): void;
     /** Remove every pin and make the layer inert. Idempotent. */
     destroy(): void;
 }

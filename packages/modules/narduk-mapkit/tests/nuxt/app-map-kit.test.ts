@@ -486,6 +486,93 @@ describe('keyboard selection focuses the callout (narduk-libs#746)', () => {
   })
 })
 
+describe('hoveredId and the leader overlay (narduk-libs#517)', () => {
+  function leaderAnchor(): HTMLElement {
+    const anchor = document.createElement('div')
+    document.body.append(anchor)
+    anchor.getBoundingClientRect = () =>
+      ({
+        bottom: 120,
+        height: 80,
+        left: 700,
+        right: 900,
+        top: 40,
+        width: 200,
+        x: 700,
+        y: 40,
+      }) as DOMRect
+    return anchor
+  }
+
+  function sizeLeaderHost(host: HTMLElement): void {
+    Object.defineProperty(host, 'clientWidth', { configurable: true, value: 1000 })
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 800 })
+    host.getBoundingClientRect = () =>
+      ({
+        bottom: 800,
+        height: 800,
+        left: 0,
+        right: 1000,
+        top: 0,
+        width: 1000,
+        x: 0,
+        y: 0,
+      }) as DOMRect
+  }
+
+  it('marks the hovered pin when the app applies update:hoveredId', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    fake.inspect.reset()
+
+    host.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }))
+    expect(wrapper.emitted('update:hoveredId')).toStrictEqual([['station-1']])
+
+    await wrapper.setProps({ hoveredId: 'station-1' })
+
+    expect(host.hasAttribute('data-mapkit-hovered')).toBe(true)
+    expect(fake.inspect.annotationsAdded).toBe(0)
+    expect(fake.inspect.annotationsRemoved).toBe(0)
+  })
+
+  it('draws a leader from the selected pin to the anchor', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = wrapper.get('.mapkit-wrapper').element as HTMLElement
+    sizeLeaderHost(host)
+
+    await wrapper.setProps({ leader: { anchor: leaderAnchor() }, selectedId: 'station-1' })
+    await nextTick()
+
+    const line = host.querySelector('[data-mapkit-leader-line]')
+    expect(line).not.toBeNull()
+    expect(line?.hasAttribute('hidden')).toBe(false)
+    expect(wrapper.emitted('leader-offscreen')?.at(-1)).toStrictEqual([false])
+  })
+
+  it('refreshes the leader when items move the selected pin', async () => {
+    const wrapper = await mountMap({ items: STATIONS })
+    const host = wrapper.get('.mapkit-wrapper').element as HTMLElement
+    sizeLeaderHost(host)
+
+    await wrapper.setProps({ leader: { anchor: leaderAnchor() }, selectedId: 'station-1' })
+    await nextTick()
+
+    const line = host.querySelector('[data-mapkit-leader-line]')
+    const before = line?.getAttribute('x1')
+    expect(before).not.toBeNull()
+
+    const pin = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    pin.style.left = `${Number.parseFloat(pin.style.left || '0') + 80}px`
+
+    await wrapper.setProps({
+      items: [{ ...STATIONS[0]!, lat: STATIONS[0]!.lat + 0.2 }, ...STATIONS.slice(1)],
+    })
+    await nextTick()
+
+    expect(line?.getAttribute('x1')).not.toBe(before)
+  })
+})
+
 describe('failure and retry (§c.4, §c.6)', () => {
   it('reports the structured failure and offers a retry instead of the raw error', async () => {
     useFake({ auth: { mode: 'error', status: 'Unauthorized' } })

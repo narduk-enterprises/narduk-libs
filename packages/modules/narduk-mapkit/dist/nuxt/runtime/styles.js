@@ -73,5 +73,15 @@ export const MAPKIT_COMPONENT_CSS = `/* @narduk-enterprises/narduk-mapkit -- hos
   inset: 0;
   overflow: auto;
 }
+
+/* Leader overlay: a line from the selected pin to the card. Pointer-events
+ * stay off so the map and the callout keep their own hits. */
+.mapkit-leader {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 8;
+}
 `;
 //# sourceMappingURL=styles.js.map

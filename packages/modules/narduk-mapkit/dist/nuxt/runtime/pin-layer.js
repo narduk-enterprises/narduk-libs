@@ -75,6 +75,7 @@ export class MapKitPinLayer {
     #options;
     #registry;
     #destroyed = false;
+    #hoveredId = null;
     #lastDiff = emptyDiff();
     #selectedId = null;
     constructor(options) {
@@ -90,6 +91,9 @@ export class MapKitPinLayer {
                 },
             },
         });
+    }
+    get hoveredId() {
+        return this.#hoveredId;
     }
     get selectedId() {
         return this.#selectedId;
@@ -165,6 +169,10 @@ export class MapKitPinLayer {
         // later re-selection of the same id is not swallowed as a no-op.
         if (this.#selectedId !== null && !this.#entries.has(this.#selectedId))
             this.#selectedId = null;
+        if (this.#hoveredId !== null && !this.#entries.has(this.#hoveredId)) {
+            this.#hoveredId = null;
+            this.#options.onHover?.(null);
+        }
         // `recreated` means a changed signature reached a key with no update hook.
         // Every descriptor here supplies one, so this is a contract check, not a
         // branch anyone is expected to hit.
@@ -197,6 +205,25 @@ export class MapKitPinLayer {
             this.#applySelection(next, true, diff);
         this.#lastDiff = diff;
         return diff;
+    }
+    /**
+     * Mark the hovered pin.
+     *
+     * Zero adds, zero removes, and no glyph rewrite: only `data-mapkit-hovered`
+     * moves, so a hover cannot recreate the host the pointer is on.
+     */
+    setHovered(id) {
+        if (this.#destroyed)
+            return;
+        const next = id !== null && this.#entries.has(id) ? id : null;
+        if (next === this.#hoveredId)
+            return;
+        const previous = this.#hoveredId;
+        this.#hoveredId = next;
+        if (previous !== null)
+            this.#applyHover(previous, false);
+        if (next !== null)
+            this.#applyHover(next, true);
     }
     /** Remove every pin and make the layer inert. Idempotent. */
     destroy() {
@@ -233,6 +260,19 @@ export class MapKitPinLayer {
             entry.host.setAttribute('data-mapkit-selected', '');
         else
             entry.host.removeAttribute('data-mapkit-selected');
+        this.#writeHover(entry.host, this.#hoveredId === entry.key);
+    }
+    #applyHover(key, hovered) {
+        const host = this.#entries.get(key)?.host;
+        if (!host)
+            return;
+        this.#writeHover(host, hovered);
+    }
+    #writeHover(host, hovered) {
+        if (hovered)
+            host.setAttribute('data-mapkit-hovered', '');
+        else
+            host.removeAttribute('data-mapkit-hovered');
     }
     /** `false` only when the caller asked for it; every 2.1.0 caller gets `true`. */
     get #focusable() {
@@ -250,6 +290,14 @@ export class MapKitPinLayer {
         const host = this.#document.createElement('div');
         host.setAttribute('data-map-pin', '');
         host.setAttribute('data-mapkit-pin', key);
+        if (this.#options.onHover) {
+            host.addEventListener('pointerenter', () => {
+                this.#options.onHover?.(key);
+            });
+            host.addEventListener('pointerleave', () => {
+                this.#options.onHover?.(null);
+            });
+        }
         if (!this.#focusable) {
             // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
             // roleless element is what axe reports as `aria-allowed-attr`. The label
@@ -287,6 +335,7 @@ export class MapKitPinLayer {
             geometrySignature,
             host,
             item,
+            key,
             selected: this.#selectedId === key,
         };
         this.#renderGlyph(entry);

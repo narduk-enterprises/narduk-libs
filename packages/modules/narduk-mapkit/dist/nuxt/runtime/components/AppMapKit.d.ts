@@ -11,6 +11,11 @@ type MapKitItem = MapKitPinItem & {
 };
 /** `<AppMapKit>`'s `calloutFocus` prop. */
 export type MapKitCalloutFocus = 'keyboard' | 'never';
+/** `<AppMapKit>`'s `leader` prop: a line from the selected pin to `anchor`. */
+export interface MapKitLeaderProp {
+    /** The card notch, caret or other element the line ends at. */
+    anchor: HTMLElement | null;
+}
 export interface MapKitCalloutSlotScope<T> {
     close: () => void;
     id: string;
@@ -83,6 +88,23 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: null;
         readonly type: PropType<GeoJSONFeatureCollection | null>;
     };
+    /**
+     * The pin the pointer is over (`v-model:hovered-id`). The matching host
+     * carries `data-mapkit-hovered`. A hover never rebuilds annotations.
+     */
+    readonly hoveredId: {
+        readonly default: null;
+        readonly type: PropType<string | null>;
+    };
+    /**
+     * Draw a leader from the selected annotation to `anchor` on every region
+     * change. The overlay is a plain `./client` class so a consumer that draws
+     * its own pins can use the same one (narduk-libs#517).
+     */
+    readonly leader: {
+        readonly default: null;
+        readonly type: PropType<MapKitLeaderProp | null>;
+    };
     readonly isRotationEnabled: {
         readonly default: false;
         readonly type: BooleanConstructor;
@@ -156,8 +178,9 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
      * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
      * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
      * handlers. `false` is for a decorative map: the host carries no role, no
-     * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
-     * longer contains focusable descendants (axe `aria-hidden-focus`) and
+     * tabindex, no `aria-pressed` and no click or keyboard listeners, so an
+     * `aria-hidden` map no longer contains focusable descendants (axe
+     * `aria-hidden-focus`) and
      * `itemLabel` stops being required.
      */
     readonly pinsFocusable: {
@@ -202,6 +225,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         item: MapKitItem;
     }) => boolean;
     'feature-select': (feature: GeoJSONFeature) => boolean;
+    'leader-offscreen': (offscreen: boolean) => boolean;
     'map-click': (coordinate: MapKitLatLng) => boolean;
     /**
      * The map, and the namespace that built it (2.1.1, K-10).
@@ -218,6 +242,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         latDelta: number;
         lngDelta: number;
     }) => boolean;
+    'update:hoveredId': (id: string | null) => boolean;
     'update:selectedId': (id: string | null) => boolean;
 }, string, import("vue").PublicProps, Readonly<import("vue").ExtractPropTypes<{
     readonly ariaLabel: {
@@ -284,6 +309,23 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: null;
         readonly type: PropType<GeoJSONFeatureCollection | null>;
     };
+    /**
+     * The pin the pointer is over (`v-model:hovered-id`). The matching host
+     * carries `data-mapkit-hovered`. A hover never rebuilds annotations.
+     */
+    readonly hoveredId: {
+        readonly default: null;
+        readonly type: PropType<string | null>;
+    };
+    /**
+     * Draw a leader from the selected annotation to `anchor` on every region
+     * change. The overlay is a plain `./client` class so a consumer that draws
+     * its own pins can use the same one (narduk-libs#517).
+     */
+    readonly leader: {
+        readonly default: null;
+        readonly type: PropType<MapKitLeaderProp | null>;
+    };
     readonly isRotationEnabled: {
         readonly default: false;
         readonly type: BooleanConstructor;
@@ -357,8 +399,9 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
      * `true` -- the default and 2.1.0's only behaviour -- gives every pin host
      * `role="button"`, `tabindex="0"`, an `aria-label` and the click/Enter/Space
      * handlers. `false` is for a decorative map: the host carries no role, no
-     * tabindex, no `aria-pressed` and no listeners, so an `aria-hidden` map no
-     * longer contains focusable descendants (axe `aria-hidden-focus`) and
+     * tabindex, no `aria-pressed` and no click or keyboard listeners, so an
+     * `aria-hidden` map no longer contains focusable descendants (axe
+     * `aria-hidden-focus`) and
      * `itemLabel` stops being required.
      */
     readonly pinsFocusable: {
@@ -402,6 +445,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         item: MapKitItem;
     }) => any;
     "onFeature-select"?: (feature: GeoJSONFeature) => any;
+    "onLeader-offscreen"?: (offscreen: boolean) => any;
     "onMap-ready"?: (map: unknown, mapkit: unknown) => any;
     "onMapkit-error"?: (failure: MapKitFailure) => any;
     "onRegion-change"?: (region: {
@@ -410,6 +454,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         latDelta: number;
         lngDelta: number;
     }) => any;
+    "onUpdate:hoveredId"?: (id: string | null) => any;
     "onUpdate:selectedId"?: (id: string | null) => any;
 }>, {
     readonly language: string;
@@ -433,6 +478,8 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly createPinElement: (item: MapKitItem, isSelected: boolean) => MapKitPinElement;
     readonly dynamicCircleRadius: boolean;
     readonly fallbackCenter: MapKitLatLng;
+    readonly hoveredId: string | null;
+    readonly leader: MapKitLeaderProp | null;
     readonly isRotationEnabled: boolean;
     readonly isScrollEnabled: boolean;
     readonly isZoomEnabled: boolean;
