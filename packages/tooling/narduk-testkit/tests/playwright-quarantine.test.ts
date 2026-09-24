@@ -12,10 +12,12 @@ import {
   assertPlaywrightQuarantineCollection,
   collectSpecsForProject,
   createNardukPlaywrightPreset,
+  parsePlaywrightJsonList,
   parsePlaywrightListOutput,
   quarantineDetails,
   sourceDeclaresQuarantineTag,
   specMatchesProject,
+  testSourceAtLine,
 } from '../src/playwright/config.js'
 
 const FLAKY = 'apps/web/tests/e2e/flaky.pr.spec.ts'
@@ -30,6 +32,17 @@ test('flaky checkout', quarantineDetails({ issue: 'app#12', date: '2026-09-24', 
 `
 const UNTAGGED_SOURCE = `import { test } from '@playwright/test'
 test('home', async ({ page }) => {
+  await page.goto('/')
+})
+`
+const MIXED_SOURCE = `import { test } from '@playwright/test'
+import { quarantineDetails } from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+test('home', async ({ page }) => {
+  await page.goto('/')
+})
+
+test('flaky checkout', quarantineDetails({ issue: 'app#12', date: '2026-09-24', owner: 'logan' }), async ({ page }) => {
   await page.goto('/')
 })
 `
@@ -107,9 +120,58 @@ describe('Playwright-collection guard (#520)', () => {
     ].join('\n')
 
     expect(parsePlaywrightListOutput(listed)).toEqual([
-      { file: HOME, project: 'pr', title: 'home' },
-      { file: FLAKY, project: 'quarantine', title: 'flaky checkout @quarantine' },
+      { file: HOME, project: 'pr', title: 'home', line: 3, column: 1 },
+      {
+        file: FLAKY,
+        project: 'quarantine',
+        title: 'flaky checkout @quarantine',
+        tags: ['@quarantine'],
+        line: 5,
+        column: 1,
+      },
     ])
+  })
+
+  it('fills tags and line from Playwright JSON list output', () => {
+    const report = {
+      suites: [
+        {
+          specs: [
+            {
+              file: FLAKY,
+              title: 'flaky checkout',
+              tags: ['@quarantine'],
+              line: 8,
+              column: 1,
+              tests: [{ projectName: 'quarantine' }],
+            },
+            {
+              file: HOME,
+              title: 'home',
+              tags: [],
+              line: 4,
+              column: 1,
+              tests: [{ projectName: 'pr' }],
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(parsePlaywrightJsonList(report)).toEqual([
+      {
+        file: FLAKY,
+        project: 'quarantine',
+        title: 'flaky checkout',
+        tags: ['@quarantine'],
+        line: 8,
+        column: 1,
+      },
+      { file: HOME, project: 'pr', title: 'home', line: 4, column: 1 },
+    ])
+    expect(parsePlaywrightListOutput(JSON.stringify(report))).toEqual(
+      parsePlaywrightJsonList(report),
+    )
   })
 
   it('accepts a tagged file in quarantine and an untagged file in pr', () => {
@@ -128,40 +190,67 @@ describe('Playwright-collection guard (#520)', () => {
       assertPlaywrightQuarantineCollection({
         collected: [{ file: HOME, project: 'quarantine', title: 'home' }],
       }),
-    ).toThrow(/Untagged file collected by the quarantine project/)
+    ).toThrow(/Untagged test collected by the quarantine project/)
   })
 
-  it('fails when a tagged file is collected by pr', () => {
+  it('fails when a tagged test is collected by pr', () => {
     expect(() =>
       assertPlaywrightQuarantineCollection({
         collected: [{ file: FLAKY, project: 'pr', title: 'flaky checkout @quarantine' }],
       }),
-    ).toThrow(/Wrongly tagged file collected by a PR\/web project/)
+    ).toThrow(/Wrongly tagged test collected by a PR\/web project/)
   })
 
-  it('uses source when --list does not repeat the tag in the title', () => {
+  it('uses the listed test source when --list does not repeat the tag in the title', () => {
+    const taggedLine = lineOf(TAGGED_SOURCE, "test('flaky checkout'")
+    const untaggedLine = lineOf(UNTAGGED_SOURCE, "test('home'")
     expect(() =>
       assertPlaywrightQuarantineCollection({
-        collected: [{ file: FLAKY, project: 'pr', title: 'flaky checkout' }],
+        collected: [{ file: FLAKY, project: 'pr', title: 'flaky checkout', line: taggedLine }],
         sources: { [FLAKY]: TAGGED_SOURCE },
       }),
-    ).toThrow(/Wrongly tagged file collected/)
+    ).toThrow(/Wrongly tagged test collected/)
 
     expect(() =>
       assertPlaywrightQuarantineCollection({
-        collected: [{ file: HOME, project: 'quarantine', title: 'home' }],
+        collected: [{ file: HOME, project: 'quarantine', title: 'home', line: untaggedLine }],
         sources: { [HOME]: UNTAGGED_SOURCE },
       }),
-    ).toThrow(/Untagged file collected/)
+    ).toThrow(/Untagged test collected/)
 
     expect(() =>
       assertPlaywrightQuarantineCollection({
-        collected: [{ file: FLAKY, project: 'quarantine', title: 'flaky checkout' }],
+        collected: [
+          { file: FLAKY, project: 'quarantine', title: 'flaky checkout', line: taggedLine },
+        ],
         sources: { [FLAKY]: TAGGED_SOURCE },
       }),
     ).not.toThrow()
   })
+
+  it('does not treat a sibling as quarantined when only one test in the file is tagged', () => {
+    const homeLine = lineOf(MIXED_SOURCE, "test('home'")
+    const flakyLine = lineOf(MIXED_SOURCE, "test('flaky checkout'")
+    expect(testSourceAtLine(MIXED_SOURCE, homeLine)).toContain("test('home'")
+    expect(testSourceAtLine(MIXED_SOURCE, homeLine)).not.toContain('quarantineDetails')
+    expect(testSourceAtLine(MIXED_SOURCE, flakyLine)).toContain('quarantineDetails')
+
+    expect(() =>
+      assertPlaywrightQuarantineCollection({
+        collected: [
+          { file: HOME, project: 'pr', title: 'home', line: homeLine },
+          { file: HOME, project: 'quarantine', title: 'flaky checkout', line: flakyLine },
+        ],
+        sources: { [HOME]: MIXED_SOURCE },
+      }),
+    ).not.toThrow()
+  })
 })
+
+function lineOf(source: string, snippet: string): number {
+  const index = source.indexOf(snippet)
+  return source.slice(0, index).split('\n').length
+}
 
 describe('quarantine documentation (#520)', () => {
   it('documents the tag, the PR exclusion, and the collection guard', () => {
@@ -172,5 +261,7 @@ describe('quarantine documentation (#520)', () => {
     expect(readme).toContain('playwright test --list')
     expect(readme).toContain('parsePlaywrightListOutput')
     expect(readme).toContain('quarantineDetails')
+    expect(readme).toContain('readSource')
+    expect(readme).toContain("readFileSync(file, 'utf8')")
   })
 })

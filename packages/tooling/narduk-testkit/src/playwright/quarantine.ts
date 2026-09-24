@@ -8,8 +8,10 @@
  *
  * {@link assertPlaywrightQuarantineCollection} is the vitest guard: feed it
  * what Playwright actually collected (`playwright test --list`) so an
- * untagged file in `quarantine` or a tagged file in `pr` fails the unit
- * suite instead of a later CI surprise.
+ * untagged test in `quarantine` or a tagged test in `pr` fails the unit
+ * suite instead of a later CI surprise. `{ tag: '@quarantine' }` does not
+ * appear in the default `--list` title — pass `readSource` (scoped to the
+ * listed `file:line:col`) or JSON list output that carries `tags`.
  */
 
 export const QUARANTINE_TAG = '@quarantine'
@@ -30,7 +32,9 @@ export interface QuarantineTestDetails {
 }
 
 export interface CollectedPlaywrightTest {
+  column?: number
   file: string
+  line?: number
   project: string
   tags?: readonly string[]
   title?: string
@@ -40,13 +44,26 @@ export interface PlaywrightQuarantineCollectionOptions {
   collected: readonly CollectedPlaywrightTest[]
   /**
    * File path (or a suffix of the listed path) → source. Used when the
-   * `--list` title does not repeat `{ tag: '@quarantine' }`.
+   * `--list` title does not repeat `{ tag: '@quarantine' }`. The check is
+   * scoped to the listed test at `line`, so one quarantined test does not
+   * quarantine its siblings.
    */
   sources?: Readonly<Record<string, string>>
   readSource?: (file: string) => string
 }
 
-const FILE_LINE_COL = /:\d+:\d+$/
+const FILE_LINE_COL = /:(\d+):(\d+)$/
+
+const TEST_CALL_PREFIXES = [
+  'test(',
+  'test.only(',
+  'test.fixme(',
+  'test.skip(',
+  'test.describe(',
+  'test.describe.only(',
+  'test.describe.serial(',
+  'test.describe.parallel(',
+] as const
 
 export function isGateProjectName(projectName: string): boolean {
   return (GATE_PROJECT_NAMES as readonly string[]).includes(projectName)
@@ -68,6 +85,19 @@ export function sourceDeclaresQuarantineTag(source: string): boolean {
   )
 }
 
+/**
+ * The `test(` / `test.describe(` call that contains `line` (1-based), or
+ * `undefined` when the line is missing so a whole-file tag cannot leak onto
+ * a sibling.
+ */
+export function testSourceAtLine(source: string, line?: number): string | undefined {
+  if (line === undefined || line < 1) return undefined
+  const lines = source.split(/\r?\n/)
+  const start = findTestCallStartIndex(lines, line - 1)
+  if (start === -1) return undefined
+  return collectBalancedCall(lines, start)
+}
+
 export function collectedTestDeclaresQuarantine(
   entry: CollectedPlaywrightTest,
   source?: string,
@@ -78,8 +108,10 @@ export function collectedTestDeclaresQuarantine(
   if (entry.title !== undefined && titleDeclaresQuarantineTag(entry.title)) {
     return true
   }
-  if (source !== undefined) return sourceDeclaresQuarantineTag(source)
-  return false
+  if (source === undefined) return false
+  const snippet = testSourceAtLine(source, entry.line)
+  if (snippet === undefined) return false
+  return sourceDeclaresQuarantineTag(snippet)
 }
 
 /**
@@ -106,12 +138,88 @@ export function quarantineDetails(meta: QuarantineDetails): QuarantineTestDetail
 }
 
 export function parsePlaywrightListOutput(listed: string): CollectedPlaywrightTest[] {
+  const fromJson = tryParsePlaywrightJson(listed)
+  if (fromJson) return fromJson
+
   const collected: CollectedPlaywrightTest[] = []
   for (const rawLine of listed.split(/\r?\n/)) {
     const parsed = parsePlaywrightListLine(rawLine)
     if (parsed) collected.push(parsed)
   }
   return collected
+}
+
+export function parsePlaywrightJsonList(report: unknown): CollectedPlaywrightTest[] {
+  if (!isJsonReport(report)) return []
+  const collected: CollectedPlaywrightTest[] = []
+  walkJsonSuites(report.suites, collected)
+  return collected
+}
+
+function tryParsePlaywrightJson(listed: string): CollectedPlaywrightTest[] | undefined {
+  const trimmed = listed.trim()
+  const start = trimmed.indexOf('{')
+  const end = trimmed.lastIndexOf('}')
+  if (start === -1 || end <= start) return undefined
+  try {
+    const value: unknown = JSON.parse(trimmed.slice(start, end + 1))
+    if (!isJsonReport(value)) return undefined
+    return parsePlaywrightJsonList(value)
+  } catch {
+    return undefined
+  }
+}
+
+function isJsonReport(value: unknown): value is { suites: unknown[] } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { suites?: unknown }).suites)
+  )
+}
+
+function walkJsonSuites(suites: unknown[], collected: CollectedPlaywrightTest[]): void {
+  for (const suite of suites) {
+    if (!suite || typeof suite !== 'object') continue
+    const record = suite as { specs?: unknown[]; suites?: unknown[] }
+    if (Array.isArray(record.specs)) {
+      for (const spec of record.specs) walkJsonSpec(spec, collected)
+    }
+    if (Array.isArray(record.suites)) walkJsonSuites(record.suites, collected)
+  }
+}
+
+function walkJsonSpec(spec: unknown, collected: CollectedPlaywrightTest[]): void {
+  if (!spec || typeof spec !== 'object') return
+  const record = spec as {
+    column?: unknown
+    file?: unknown
+    line?: unknown
+    tags?: unknown
+    tests?: unknown[]
+    title?: unknown
+  }
+  if (typeof record.file !== 'string') return
+  const tags = Array.isArray(record.tags)
+    ? record.tags.filter((tag): tag is string => typeof tag === 'string')
+    : undefined
+  const title = typeof record.title === 'string' ? record.title : undefined
+  const line = typeof record.line === 'number' ? record.line : undefined
+  const column = typeof record.column === 'number' ? record.column : undefined
+  const tests = Array.isArray(record.tests) ? record.tests : []
+  for (const test of tests) {
+    if (!test || typeof test !== 'object') continue
+    const project = (test as { projectName?: unknown }).projectName
+    if (typeof project !== 'string' || project.length === 0) continue
+    collected.push({
+      file: record.file,
+      project,
+      ...(title === undefined ? {} : { title }),
+      ...(tags && tags.length > 0 ? { tags } : {}),
+      ...(line === undefined ? {} : { line }),
+      ...(column === undefined ? {} : { column }),
+    })
+  }
 }
 
 function parsePlaywrightListLine(rawLine: string): CollectedPlaywrightTest | undefined {
@@ -132,9 +240,25 @@ function parsePlaywrightListLine(rawLine: string): CollectedPlaywrightTest | und
       : -1
   const filePart = (titleSep === -1 ? afterProject : afterProject.slice(0, titleSep)).trim()
   const title = titleSep === -1 ? undefined : stripListSeparator(afterProject.slice(titleSep))
+  const location = FILE_LINE_COL.exec(filePart)
   const file = filePart.replace(FILE_LINE_COL, '')
   if (!file) return undefined
-  return title ? { file, project, title } : { file, project }
+  const tags = title ? tagsFromTitle(title) : undefined
+  return {
+    file,
+    project,
+    ...(title === undefined ? {} : { title }),
+    ...(tags ? { tags } : {}),
+    ...(location ? { line: Number(location[1]), column: Number(location[2]) } : {}),
+  }
+}
+
+function tagsFromTitle(title: string): string[] | undefined {
+  const tags: string[] = []
+  for (const token of title.split(' ')) {
+    if (token.startsWith('@') && token.length > 1) tags.push(token)
+  }
+  return tags.length > 0 ? tags : undefined
 }
 
 export function assertPlaywrightQuarantineCollection(
@@ -159,14 +283,14 @@ export function assertPlaywrightQuarantineCollection(
   if (untagged.length === 0 && wronglyTagged.length === 0) return
 
   const lines = [
-    'Playwright collected a file the @quarantine tag does not explain (narduk-libs#520).',
+    'Playwright collected a test the @quarantine tag does not explain (narduk-libs#520).',
   ]
   if (untagged.length > 0) {
-    lines.push('Untagged file collected by the quarantine project:')
+    lines.push('Untagged test collected by the quarantine project:')
     for (const entry of untagged) lines.push(`  [${entry.project}] ${entry.file}${suffix(entry)}`)
   }
   if (wronglyTagged.length > 0) {
-    lines.push('Wrongly tagged file collected by a PR/web project:')
+    lines.push('Wrongly tagged test collected by a PR/web project:')
     for (const entry of wronglyTagged) {
       lines.push(`  [${entry.project}] ${entry.file}${suffix(entry)}`)
     }
@@ -210,4 +334,94 @@ function sourceFor(
   } catch {
     return undefined
   }
+}
+
+function isTestCallStart(line: string): boolean {
+  const trimmed = line.trimStart()
+  for (const prefix of TEST_CALL_PREFIXES) {
+    if (trimmed.startsWith(prefix)) return true
+  }
+  return false
+}
+
+function findTestCallStartIndex(lines: readonly string[], fromIndex: number): number {
+  const last = Math.min(fromIndex, lines.length - 1)
+  for (let index = last; index >= 0; index -= 1) {
+    if (isTestCallStart(lines[index] ?? '')) return index
+  }
+  return -1
+}
+
+function collectBalancedCall(lines: readonly string[], start: number): string {
+  const from = lines.slice(start).join('\n')
+  const open = from.indexOf('(')
+  if (open === -1) return lines[start] ?? ''
+
+  let depth = 0
+  let inSingle = false
+  let inDouble = false
+  let inTemplate = false
+  let inLineComment = false
+  let inBlockComment = false
+  let escape = false
+
+  for (let index = open; index < from.length; index += 1) {
+    const char = from[index]
+    const next = from[index + 1]
+    if (char === undefined) break
+
+    if (inLineComment) {
+      if (char === '\n') inLineComment = false
+      continue
+    }
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false
+        index += 1
+      }
+      continue
+    }
+    if (inSingle || inDouble || inTemplate) {
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (char === '\\') {
+        escape = true
+        continue
+      }
+      if (inSingle && char === "'") inSingle = false
+      if (inDouble && char === '"') inDouble = false
+      if (inTemplate && char === '`') inTemplate = false
+      continue
+    }
+    if (char === '/' && next === '/') {
+      inLineComment = true
+      index += 1
+      continue
+    }
+    if (char === '/' && next === '*') {
+      inBlockComment = true
+      index += 1
+      continue
+    }
+    if (char === "'") {
+      inSingle = true
+      continue
+    }
+    if (char === '"') {
+      inDouble = true
+      continue
+    }
+    if (char === '`') {
+      inTemplate = true
+      continue
+    }
+    if (char === '(') depth += 1
+    if (char === ')') {
+      depth -= 1
+      if (depth === 0) return from.slice(0, index + 1)
+    }
+  }
+  return from
 }

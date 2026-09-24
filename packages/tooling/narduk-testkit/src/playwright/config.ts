@@ -26,9 +26,11 @@ export {
   QUARANTINE_TAG,
   assertPlaywrightQuarantineCollection,
   collectedTestDeclaresQuarantine,
+  parsePlaywrightJsonList,
   parsePlaywrightListOutput,
   quarantineDetails,
   sourceDeclaresQuarantineTag,
+  testSourceAtLine,
   titleDeclaresQuarantineTag,
 } from './quarantine.js'
 

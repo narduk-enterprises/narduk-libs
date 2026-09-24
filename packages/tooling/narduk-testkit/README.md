@@ -568,11 +568,15 @@ test(
 
 A quarantine with no issue is not a quarantine. The vitest guard is checked
 against what Playwright actually collected (`playwright test --list`), so an
-untagged file in `quarantine` or a tagged file still collected by `pr` fails the
-unit suite:
+untagged test in `quarantine` or a tagged test still collected by `pr` fails the
+unit suite. Default `--list` titles omit `{ tag: '@quarantine' }` from
+`quarantineDetails`, so pass `readSource`. The source check uses the listed
+`file:line:col`, so one quarantined test does not quarantine its siblings. JSON
+`--list --reporter=json` fills `tags` and does not need `readSource`.
 
 ```ts
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 import {
   assertPlaywrightQuarantineCollection,
@@ -584,6 +588,7 @@ const listed = execFileSync('pnpm', ['exec', 'playwright', 'test', '--list'], {
 })
 assertPlaywrightQuarantineCollection({
   collected: parsePlaywrightListOutput(listed),
+  readSource: (file) => readFileSync(file, 'utf8'),
 })
 ```
 
