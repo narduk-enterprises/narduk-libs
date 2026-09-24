@@ -217,8 +217,9 @@ export function assessDevelopmentMigrations(args: {
   files: ReadonlyArray<{ path: string; sha256: string }>
   applied: readonly AppliedMigration[]
   /**
-   * Byte-identical on the production branch when development mode was entered:
-   * normal delivery shipped it through the promote path's own 12.9 check.
+   * Byte-identical on the production branch as fetched before the hold took
+   * effect: normal delivery shipped it through the promote path's own 12.9
+   * check. Anything that landed during the hold is judged here.
    */
   beforeEnrollment?: (path: string) => boolean
   read: (path: string) => string

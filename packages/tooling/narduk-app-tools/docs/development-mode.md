@@ -248,19 +248,24 @@ narduk-app development exec --operation recovery --approval-ref <ref> -- <comman
   too, before the command runs. A `.sql` file this run may apply that drops or
   renames a table, view or column refuses. A file is judged unless it is
   recorded as applied here with the same bytes, or it was byte-identical on the
-  production branch when development mode was entered: normal delivery shipped
-  those through the promote path's own 12.9 check, so a table rebuild in the
-  app's history does not block later development migrations. Entry records that
-  production-branch commit as `migrationBaseline` from the fetched
-  `origin/<productionBranch>` (fetch before entering; a stale ref only makes the
-  check stricter). An enrollment made before the baseline existed has none and
-  judges every tracked file; `development enter --refresh` records it once and
-  never moves it. The one exception is a reviewed contract migration: declared
-  under `deployment.migrations.contractMigrations` with its exact checksum
-  **and** already landed byte-identical on `origin/<productionBranch>`. Contract
-  migrations are reviewed on the gated path; development mode never introduces
-  one. Each applied migration records `compatibility` (`expand-only` or
-  `contract`), which rollback reads.
+  production branch as this checkout had fetched it before the hold took effect:
+  normal delivery shipped those through the promote path's own 12.9 check, so a
+  table rebuild in the app's history does not block later development
+  migrations. A fresh entry records that commit as `migrationBaseline` from
+  `origin/<productionBranch>` just before it holds anything (fetch before
+  entering; a stale ref only makes the check stricter). A file that lands on the
+  production branch while the hold is on skipped the held CI, so it is always
+  judged. An enrollment without a baseline judges every tracked file;
+  `development enter --refresh` recovers one only from this checkout's reflog of
+  `origin/<productionBranch>`, as fetched a whole second before the enrollment's
+  `enter-started` event, never from the current ref, so fetching now does not
+  help. If the reflog does not reach back that far, nothing is recorded. A
+  baseline is never moved once recorded. The one exception is a reviewed
+  contract migration: declared under `deployment.migrations.contractMigrations`
+  with its exact checksum **and** already landed byte-identical on
+  `origin/<productionBranch>`. Contract migrations are reviewed on the gated
+  path; development mode never introduces one. Each applied migration records
+  `compatibility` (`expand-only` or `contract`), which rollback reads.
 
 - **Secrets**: stage runtime secrets with the provider CLI under `secret-stage`.
   Receipts carry names only. A deploy whose declared `requiredRuntimeSecrets`
@@ -289,11 +294,13 @@ a queued commit that has not been pushed yet, and once the newer one is pushed
 the worker cancels the unfinished runs of the older automatic requests and
 deletes their branches, so the newest deployed SHA wins and at most one
 automatic `narduk-validation/*` branch per repository stays on GitHub (a failed
-delete is retried by the next drain). Run results stay after their branch is
-deleted, but the pushed commit, uncommitted edits included for a dirty deploy,
-stays fetchable by SHA until GitHub collects it. Each push starts the app's full
-`validate.yml`, e2e shards included, on the shared runners. Explicit
-`development validate` requests are never cancelled or deleted.
+delete is retried by every later successful push, and the worker history keeps
+that entry past its 20-entry limit until the delete succeeds). Run results stay
+after their branch is deleted, but the pushed commit, uncommitted edits included
+for a dirty deploy, stays fetchable by SHA until GitHub collects it. Each push
+starts the app's full `validate.yml`, e2e shards included, on the shared
+runners. Explicit `development validate` requests are never cancelled or
+deleted.
 
 The receipt's `validation` says what was queued, or why nothing was; the push
 happens after the receipt is written. A push that fails twice is recorded in the

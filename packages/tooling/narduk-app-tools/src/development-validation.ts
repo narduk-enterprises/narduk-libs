@@ -68,6 +68,18 @@ export type ValidationGitHubClient = Pick<
 >
 
 const HISTORY_LIMIT = 20
+
+/**
+ * The newest HISTORY_LIMIT entries, plus any older one whose pushed branch
+ * still awaits deletion: dropping it would leave that branch on GitHub for good.
+ */
+function trimHistory(history: ValidationHistoryEntry[]): ValidationHistoryEntry[] {
+  const keepFrom = history.length - HISTORY_LIMIT
+  return history.filter(
+    (entry, index) => index >= keepFrom || Boolean(entry.validationRef && !entry.branchDeletedAt),
+  )
+}
+
 const WORKER_ROUNDS = 25
 const STARTING_GRACE_MS = 60_000
 const PUSH_ATTEMPTS = 2
@@ -393,7 +405,7 @@ function drainOnce(directory: string, queue: string, args: DrainArgs, pushed: st
         gated: request.gated,
         failed: { at: now, attempts: PUSH_ATTEMPTS, error: failure },
       })
-      writePrivateJson(historyPath, history.slice(-HISTORY_LIMIT))
+      writePrivateJson(historyPath, trimHistory(history))
       continue
     }
     pushed.push(validationRef)
@@ -430,6 +442,6 @@ function drainOnce(directory: string, queue: string, args: DrainArgs, pushed: st
       requestedAt: now,
       gated: request.gated,
     })
-    writePrivateJson(historyPath, history.slice(-HISTORY_LIMIT))
+    writePrivateJson(historyPath, trimHistory(history))
   }
 }

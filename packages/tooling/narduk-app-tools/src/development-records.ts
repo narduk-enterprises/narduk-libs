@@ -66,13 +66,15 @@ export interface ActivationRecord {
   pendingAttempt?: { buildId: string; receipt: string; startedAt: string }
   appliedMigrations: AppliedMigration[]
   /**
-   * The fetched production-branch commit when entry completed. Migration files
-   * byte-identical there landed through normal delivery, whose promote path
-   * already applied the expand-only rule, so development mode does not re-judge
-   * them. Absent on records entered before it existed; `enter --refresh`
-   * records it once and never moves it.
+   * The production-branch commit this checkout had fetched before the hold
+   * took effect. Migration files byte-identical there landed through normal
+   * delivery, whose promote path already applied the expand-only rule, so
+   * development mode does not re-judge them. `hold`: read on a fresh entry
+   * before anything was held. `reflog`: recovered by `enter --refresh` from the
+   * checkout's reflog, as of a whole second before `enter-started`. Never the
+   * ref as fetched during the hold, and never moved once recorded.
    */
-  migrationBaseline?: { commit: string; recordedAt: string }
+  migrationBaseline?: { commit: string; recordedAt: string; source?: 'hold' | 'reflog' }
   validations: Array<{ ref: string; sha: string; reason: string; requestedAt: string }>
   handoff?: { to: string; suspendedAt: string; bundle: string }
   exit?: { preparedAt: string; releaseSha?: string; validationRun?: number }

@@ -77,6 +77,15 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+/** origin/main as last fetched an hour ago: its only reflog entry is dated then. */
+function fetchedAnHourAgo(cwd: string, revision = 'HEAD'): void {
+  git(cwd, 'update-ref', '-d', 'refs/remotes/origin/main')
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/main', revision], {
+    cwd,
+    env: { ...process.env, GIT_COMMITTER_DATE: `@${Math.floor(Date.now() / 1000) - 3600} +0000` },
+  })
+}
+
 function patchAutomation(
   root: string,
   mutate: (automation: Record<string, unknown>) => void,
@@ -1810,31 +1819,98 @@ describe('development-mode migrations are expand-only (12.9)', { timeout: 30_000
     )
   })
 
-  it('an enrollment without a baseline checks everything until enter --refresh records one', async () => {
+  const refresh = (h: Harness) =>
+    runDevelopmentEnter(
+      { approvalRef: 'owner-approval#1', publisher: 'lane-a', refresh: true, dryRun: false },
+      h.context,
+    )
+  const migrate = (h: Harness) =>
+    runDevelopmentExec(
+      {
+        operation: 'migration',
+        approvalRef: 'owner#m',
+        commit: git(h.root, 'rev-parse', 'HEAD'),
+        argv: ['apply'],
+      },
+      { ...h.context, exec: () => 0 },
+    )
+  const forgetBaseline = (h: Harness) => {
+    const legacy = readActivation(REPO, h.state)!
+    delete legacy.migrationBaseline
+    writeActivation(legacy, h.state)
+  }
+
+  it('an enrollment without a baseline recovers it from the reflog as of before entry', async () => {
     const h = harness()
     writeFileSync(join(h.root, 'migrations', '0002_rebuild.sql'), 'drop table t;\n')
     git(h.root, 'add', '.')
     git(h.root, 'commit', '-qm', 'rebuild')
-    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    const shipped = git(h.root, 'rev-parse', 'HEAD')
+    fetchedAnHourAgo(h.root)
     await enter(h)
-    const legacy = readActivation(REPO, h.state)!
-    delete legacy.migrationBaseline
-    writeActivation(legacy, h.state)
-    const flags = {
-      operation: 'migration' as const,
-      approvalRef: 'owner#m',
-      commit: git(h.root, 'rev-parse', 'HEAD'),
-      argv: ['apply'],
-    }
-    const exec = { ...h.context, exec: () => 0 }
-    await expect(runDevelopmentExec(flags, exec)).rejects.toThrow(
-      /records no pre-enrollment baseline.*enter --refresh/u,
+    forgetBaseline(h)
+    await expect(migrate(h)).rejects.toThrow(
+      /records no pre-enrollment baseline.*reflog of origin\/main.*fetching now does not help/u,
     )
-    await runDevelopmentEnter(
-      { approvalRef: 'owner-approval#1', publisher: 'lane-a', refresh: true, dryRun: false },
-      h.context,
-    )
-    expect((await runDevelopmentExec(flags, exec)).record.appliedMigrations).toHaveLength(1)
+    await refresh(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline).toMatchObject({
+      commit: shipped,
+      source: 'reflog',
+    })
+    expect((await migrate(h)).record.appliedMigrations).toHaveLength(1)
+  })
+
+  it('never takes as shipped a migration that landed while the hold was on', async () => {
+    const h = harness()
+    const beforeHold = git(h.root, 'rev-parse', 'HEAD')
+    fetchedAnHourAgo(h.root)
+    await enter(h)
+    forgetBaseline(h)
+    // Lands on the production branch during the hold: ci.yml (and its 12.9
+    // check) is held, so nothing ever judged it.
+    writeFileSync(join(h.root, 'migrations', '0009_drop.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'drop during hold')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    await expect(migrate(h)).rejects.toThrow(/0009_drop\.sql:1 drops table t/u)
+    await refresh(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline?.commit).toBe(beforeHold)
+    await expect(migrate(h)).rejects.toThrow(/0009_drop\.sql:1 drops table t/u)
+  })
+
+  it('records nothing when the reflog does not reach back before entry', async () => {
+    const h = harness()
+    // Unfetched at entry; deleting the ref drops its reflog too.
+    git(h.root, 'update-ref', '-d', 'refs/remotes/origin/main')
+    await enter(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline).toBeUndefined()
+    writeFileSync(join(h.root, 'migrations', '0009_drop.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'drop during hold')
+    // The only reflog entry is a fetch during the hold.
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    await refresh(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline).toBeUndefined()
+    await expect(migrate(h)).rejects.toThrow(/0009_drop\.sql:1 drops table t/u)
+  })
+
+  it('a fresh entry pins the baseline before the hold, even when resumed after a landing', async () => {
+    const h = harness()
+    const beforeHold = git(h.root, 'rev-parse', 'HEAD')
+    h.github.runs.push({ id: 72, workflow: 2, status: 'in_progress' })
+    await expect(enter(h)).rejects.toThrow(/still settling/u)
+    expect(readActivation(REPO, h.state)!.migrationBaseline).toMatchObject({
+      commit: beforeHold,
+      source: 'hold',
+    })
+    writeFileSync(join(h.root, 'migrations', '0009_drop.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'drop during hold')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    h.github.runs[0].status = 'completed'
+    await enter(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline?.commit).toBe(beforeHold)
+    await expect(migrate(h)).rejects.toThrow(/0009_drop\.sql:1 drops table t/u)
   })
 })
 
@@ -1917,6 +1993,53 @@ describe('background validation worker', () => {
     enqueueDeployedValidation(request(state, 'c', 'dev-3'), state)
     drain()
     expect(deleted).toEqual([`narduk-validation/${sha('a')}/x`, `narduk-validation/${sha('b')}/x`])
+  })
+
+  it('keeps an undeleted branch in history past the entry limit until it is deleted', () => {
+    const state = temp('dev-validation-')
+    let failPush = false
+    let failDelete = true
+    const deleted: string[] = []
+    const github = {
+      requestDeployedValidation: (_cwd: string, value: string) => {
+        if (failPush) throw new Error('push rejected')
+        return `narduk-validation/${value}/x`
+      },
+      activeValidationRuns: (): number[] => [],
+      cancelRun: (): void => undefined,
+      deleteValidationRef: (_cwd: string, ref: string) => {
+        if (failDelete) throw new Error('offline')
+        deleted.push(ref)
+      },
+    }
+    const drain = () =>
+      drainDeployedValidations({
+        repository: REPO,
+        stateDirectory: state,
+        github,
+        log: () => {},
+        retryDelayMs: 0,
+      })
+    const buildIds = () => readValidationHistory(state, REPO).map((entry) => entry.buildId)
+    enqueueDeployedValidation(request(state, 'a', 'dev-a'), state)
+    drain()
+    // b supersedes a, whose delete fails; then 25 pushes fail outright.
+    enqueueDeployedValidation(request(state, 'b', 'dev-b'), state)
+    drain()
+    failPush = true
+    for (let index = 0; index < 25; index += 1) {
+      enqueueDeployedValidation(request(state, 'd', `dev-d${index}`), state)
+      drain()
+    }
+    expect(buildIds()).toHaveLength(22)
+    expect(buildIds().slice(0, 2)).toEqual(['dev-a', 'dev-b'])
+    failPush = false
+    failDelete = false
+    enqueueDeployedValidation(request(state, 'e', 'dev-e'), state)
+    drain()
+    expect(deleted).toEqual([`narduk-validation/${sha('a')}/x`, `narduk-validation/${sha('b')}/x`])
+    expect(buildIds()).toHaveLength(20)
+    expect(buildIds()).not.toContain('dev-a')
   })
 
   it('records a push that never succeeds instead of dropping it', () => {

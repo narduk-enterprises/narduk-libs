@@ -19,6 +19,7 @@ failed proof is off unless `deployment.development.rollback` declares
 Durable Object, binding or non-expand-only migration change.
 `exec --operation migration` applies the expand-only rule (12.9): a drop or
 rename refuses unless it is a declared contract migration already landed on the
-production branch. Files already on the production branch when development mode
-was entered (recorded as `migrationBaseline`; `enter --refresh` records it for
-an existing enrollment) are not re-judged.
+production branch. Files already on the production branch before the hold took
+effect (recorded as `migrationBaseline`; `enter --refresh` recovers it for an
+existing enrollment from the checkout's reflog, never from the current ref) are
+not re-judged; files that landed during the hold always are.

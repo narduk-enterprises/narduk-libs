@@ -282,6 +282,17 @@ export async function runDevelopmentEnter(
       writeActivation(record, stateDirectory, 'settings-saved')
     }
     if (!step(record, 'held')) {
+      // The production branch as this checkout knows it before anything is
+      // held: everything in it was pushed while normal delivery still ran.
+      if (
+        record.mode === 'entering' &&
+        !record.migrationBaseline &&
+        !record.workflows.some((workflow) => workflow.held) &&
+        !Object.values(record.triggers).some((triggers) =>
+          triggers.some((trigger) => trigger.retired),
+        )
+      )
+        recordMigrationBaseline(project, record, log)
       for (const workflow of record.workflows) {
         if (workflow.held) continue
         github.holdWorkflow(workflow)
@@ -326,7 +337,7 @@ export async function runDevelopmentEnter(
       }
       record.journal.push('verified')
     }
-    if (!record.migrationBaseline) recordMigrationBaseline(project, record, log)
+    if (!record.migrationBaseline) recoverMigrationBaseline(project, record, log)
     record.mode = 'active'
     record.configDigest = project.configDigest
     record.toolVersion = toolVersion()
@@ -372,9 +383,10 @@ function newRecord(
 }
 
 /**
- * Pin the production branch as fetched now: what normal delivery shipped
- * before the hold. No fetch here; a stale ref only makes the 12.9 check
- * stricter, never looser.
+ * Pin the production branch as this checkout has it fetched. Called only on a
+ * fresh entry before anything is held: a ref read then holds only commits
+ * pushed while normal delivery (and its own 12.9 check) still ran. No fetch
+ * here; a stale ref only makes the check stricter.
  */
 function recordMigrationBaseline(
   project: DevelopmentProject,
@@ -389,12 +401,64 @@ function recordMigrationBaseline(
       '--quiet',
       `refs/remotes/origin/${branch}^{commit}`,
     ])
-    record.migrationBaseline = { commit, recordedAt: new Date().toISOString() }
+    record.migrationBaseline = { commit, recordedAt: new Date().toISOString(), source: 'hold' }
   } catch {
     log(
-      `[development] WARNING: origin/${branch} is not fetched; development migrations will re-check every tracked file. Fetch it and run enter --refresh to record the baseline`,
+      `[development] WARNING: origin/${branch} is not fetched; development migrations will re-check every tracked file`,
     )
   }
+}
+
+/**
+ * An enrollment without a baseline (entered before it existed, or unfetched
+ * at entry) recovers one from this checkout's reflog of origin/<branch>: the
+ * newest value fetched in a whole second before `enter-started`, so before
+ * the hold. Never the current ref: a file that landed while the hold was on
+ * skipped the held CI and its 12.9 check. When the reflog does not reach back
+ * that far, or history no longer starts at `enter-started`, nothing is
+ * recorded and every tracked file stays judged.
+ */
+function recoverMigrationBaseline(
+  project: DevelopmentProject,
+  record: ActivationRecord,
+  log: (message: string) => void,
+): void {
+  const branch = project.deployment.productionBranch
+  const started = record.history[0]
+  const cutoff =
+    started?.event === 'enter-started' ? Math.floor(Date.parse(started.at) / 1000) : Number.NaN
+  let entries = ''
+  if (Number.isFinite(cutoff)) {
+    try {
+      entries = developmentGit(project.checkout, [
+        'reflog',
+        'show',
+        '--date=unix',
+        '--format=%H%x09%gd',
+        `refs/remotes/origin/${branch}`,
+      ])
+    } catch {
+      entries = ''
+    }
+  }
+  for (const line of entries.split('\n')) {
+    const [commit = '', selector = ''] = line.split('\t')
+    const at = Number(/@\{(\d+)\}$/u.exec(selector)?.[1])
+    if (/^[a-f0-9]{40}$/u.test(commit) && at < cutoff) {
+      record.migrationBaseline = {
+        commit,
+        recordedAt: new Date().toISOString(),
+        source: 'reflog',
+      }
+      log(
+        `[development] migration baseline: origin/${branch} was ${commit.slice(0, 12)} before this enrollment began`,
+      )
+      return
+    }
+  }
+  log(
+    `[development] WARNING: this checkout has no record of origin/${branch} from before this enrollment began; development migrations will re-check every tracked file`,
+  )
 }
 
 // ─── status / resolve ─────────────────────────────────────────────────────────
@@ -722,7 +786,7 @@ function expandOnlyMigrations(
       `Refusing the migration: ${assessment.refusals.join(' | ')}${
         baseline
           ? ''
-          : ' | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too: fetch the production branch and run development enter --refresh'
+          : ` | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too. development enter --refresh recovers one only from this checkout's reflog of origin/${branch} before the enrollment began (fetching now does not help); otherwise declare the file under deployment.migrations.contractMigrations`
       }`,
     )
   return assessment.contract.length ? 'contract' : 'expand-only'
