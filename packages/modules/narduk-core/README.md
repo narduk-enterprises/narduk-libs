@@ -1820,6 +1820,7 @@ deploy path) applies any new file; nothing is applied at runtime.
 | ----------------------------- | ------------------------------------------------------------- |
 | `0006_user_id_indexes.sql`    | `api_keys_user_id_idx` and `sessions_user_id_idx` (see below) |
 | `0007_api_key_hash_index.sql` | unique `api_keys_key_hash_idx` (see below)                    |
+| `0008_api_key_revoked_at.sql` | nullable `api_keys.revoked_at` (see below)                    |
 
 `0006` indexes the `user_id` foreign-key columns. `api_keys.user_id` is the only
 predicate of narduk-auth's `GET /api/auth/api-keys`, which scanned the whole
@@ -1837,6 +1838,20 @@ scanned `api_keys`, including one presenting a well-formed but fabricated key
 (#168). The index is `UNIQUE` because the column is the SHA-256 of a random
 32-byte token. `tests/api-key-hash-index-d1.test.ts` checks both lookups the
 same way.
+
+`0008` adds `api_keys.revoked_at` (ISO text, null while the key is live), so a
+key is withdrawn without deleting its row: `last_used_at`, `key_prefix` and the
+scopes are the audit trail a suspected leak needs (#806).
+`revokeApiKey(db, id, { userId?, now? })` sets it and returns `true`, or `false`
+when no live key matched (unknown id, another user's key when `userId` is given,
+or already revoked, whose first `revoked_at` is kept). `authenticateApiKey`
+returns `null` for a revoked key, and `authenticateD1ApiKey` answers
+`{ ok: false, reason: 'revoked' }`, checked before expiry. narduk-auth's
+`DELETE /api/auth/api-keys/:id` revokes this way, and its list omits revoked
+keys. Both authenticate functions read the column, so apply `0008` before
+deploying a Worker built with this version. A Postgres app adds the column with
+its own DDL: `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
+`tests/api-key-revocation-d1.test.ts` covers it on Miniflare D1.
 
 ## Type declarations in `types/`
 
