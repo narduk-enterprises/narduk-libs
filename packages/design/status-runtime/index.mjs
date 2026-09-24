@@ -56,3 +56,5 @@ export const designSystemFontLinks = Object.freeze([
  * rule forbids hardcoded hex in component and config source.
  */
 export const designSystemThemeColor = "rgb(14 20 24)";
+
+export { parseHealthEnvelope, renderStatusPage } from "./status-page.mjs";

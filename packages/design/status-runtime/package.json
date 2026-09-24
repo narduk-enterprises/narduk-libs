@@ -18,6 +18,7 @@
   "files": [
     "index.mjs",
     "index.d.mts",
+    "status-page.mjs",
     "README.md"
   ],
   "exports": {

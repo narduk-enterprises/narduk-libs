@@ -11,5 +11,5 @@
     "target": "ES2022",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["index.mjs", "index.d.mts", "tests/**/*.mjs", "tests/**/*.mts"]
+  "include": ["index.mjs", "index.d.mts", "status-page.mjs", "tests/**/*.mjs", "tests/**/*.mts"]
 }

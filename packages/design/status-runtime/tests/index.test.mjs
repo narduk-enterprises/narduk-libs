@@ -37,9 +37,11 @@ describe("status runtime configuration", () => {
     expect(packageJson.main).toBe("index.mjs");
     expect(packageJson.types).toBe("./index.d.mts");
     expect(packageJson.exports).toEqual({ ".": "./index.mjs" });
-    expect(packageJson.files).toEqual(["index.mjs", "index.d.mts", "README.md"]);
+    expect(packageJson.files).toEqual(["index.mjs", "index.d.mts", "status-page.mjs", "README.md"]);
     expect(declarations).toContain("export function resolveSourceRevision");
     expect(declarations).toContain("export const designSystemFontLinks");
     expect(declarations).toContain("export const designSystemThemeColor");
+    expect(declarations).toContain("export function parseHealthEnvelope");
+    expect(declarations).toContain("export function renderStatusPage");
   });
 });

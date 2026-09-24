@@ -6,13 +6,19 @@ status-app compliance category was retired by company-hq D-WEBFOUND-2's
 It remains published and source-compatible. Migrate existing uses during normal
 app maintenance, preserving their fonts and revision behavior.
 
-This package has no status-data service, health endpoint, or Nuxt module.
+This package has no health endpoint and no Nuxt module. It can render a public
+status page from a narduk-core `/api/health` body that the app already serves.
 
 - `resolveSourceRevision(env?)` — the exact source revision a build is produced
   from, resolved in a fixed precedence so an authorized exact-SHA release always
   stamps the SHA it was authorized for.
 - `designSystemFontLinks` — the design system's single two-family font request.
 - `designSystemThemeColor` — `--ns-ink`, for `<meta name="theme-color">`.
+- `parseHealthEnvelope(body)` — reads the narduk-core health envelope
+  (`{ success: true, data }`) or the inner `data` object.
+- `renderStatusPage(body, { appName? })` — opt-in public HTML for `/status`:
+  overall status, per-check results, and freshness per data product. No auth
+  UI. Apps mount it; nothing is auto-injected.
 
 ## Publication
 
