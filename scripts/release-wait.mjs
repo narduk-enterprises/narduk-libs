@@ -119,13 +119,20 @@ export function resolveVerifiedSha({ runId, jobs, readJobLog, cache }) {
 }
 
 // Null means the comparison commit is not readable in this clone. An empty
-// array means the manifests were read and there is no publishable bump.
-export function targetsFromManifests({ parentManifests, mergeManifests, headSha, headManifests }) {
+// array means parent and merge were read and this merge has no publishable
+// bump. Do not invent targets from changeset-release/main: release.yml
+// publishes the verified merge tree, not the open Version Packages head.
+export function targetsFromManifests({ parentManifests, mergeManifests }) {
   if (!parentManifests || !mergeManifests) return null
-  const fromMerge = releaseTargets(parentManifests, mergeManifests)
-  if (fromMerge.length > 0) return fromMerge
-  if (!headSha || !headManifests) return null
-  return releaseTargets(mergeManifests, headManifests)
+  return releaseTargets(parentManifests, mergeManifests)
+}
+
+export function releaseRunNeedsVerifiedSha(run) {
+  return run?.status === 'completed' && run.conclusion === 'success'
+}
+
+export function tagRefApiPath(tag) {
+  return `git/ref/tags/${encodeURIComponent(tag)}`
 }
 
 export async function waitForRelease({
@@ -190,7 +197,7 @@ export async function waitForRelease({
     }
 
     const versions = targets.map(publishTag)
-    const tags = missingPublishTags(versions, await readTags())
+    const tags = missingPublishTags(versions, await readTags(versions))
     if (tags.length > 0) {
       log(`waiting for publish tags ${tags.join(', ')}`)
       await sleep(intervalMs)
@@ -322,12 +329,9 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
     if (!ensureCommit(mergeSha)) return null
     const parent = readParentSha(mergeSha)
     if (!parent) return null
-    const headSha = await readPrHead()
     return targetsFromManifests({
       parentManifests: manifestsAt(parent),
       mergeManifests: manifestsAt(mergeSha),
-      headSha,
-      headManifests: headSha ? manifestsAt(headSha) : null,
     })
   }
 
@@ -349,14 +353,16 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
       const { workflow_runs: runs } = api('actions/workflows/release.yml/runs?per_page=30')
       const listed = []
       for (const run of runs || []) {
-        listed.push({
+        const row = {
           id: run.id,
           headSha: run.head_sha,
           status: run.status,
           conclusion: run.conclusion,
           event: run.event,
-          verifiedSha: await readVerifiedSha(run),
-        })
+          verifiedSha: null,
+        }
+        if (releaseRunNeedsVerifiedSha(row)) row.verifiedSha = await readVerifiedSha(run)
+        listed.push(row)
       }
       return listed
     },
@@ -388,11 +394,13 @@ export function createGithubIo({ repo, mergeSha, request = fetch }) {
       }
     },
     readTargets: targets,
-    async readTags() {
-      const refs = api('git/matching-refs/tags/@narduk-enterprises')
-      return (Array.isArray(refs) ? refs : []).map((ref) =>
-        String(ref.ref || '').replace(/^refs\/tags\//u, ''),
-      )
+    async readTags(expected) {
+      const have = []
+      for (const tag of Array.isArray(expected) ? expected : []) {
+        const out = gh(['api', `repos/${repo}/${tagRefApiPath(tag)}`], { reject: false }).trim()
+        if (out) have.push(tag)
+      }
+      return have
     },
     async readMirror(expectedTargets) {
       const pending = mirrorPackumentTargets(

@@ -10,10 +10,12 @@ import {
   missingPublishTags,
   parseVerifiedShaFromLog,
   readParentSha,
+  releaseRunNeedsVerifiedSha,
   requireMergeSha,
   resolveVerifiedSha,
   selectPushCiRun,
   selectReleaseRun,
+  tagRefApiPath,
   targetsFromManifests,
   waitForRelease,
 } from './release-wait.mjs'
@@ -265,19 +267,18 @@ test('unread mirror targets are an empty list, not iterable null', () => {
   assert.deepEqual(mirrorPackumentTargets([core]), [core])
 })
 
-test('a PR head without readable manifests is unread, not a no-op', () => {
+test('a readable parent/merge comparison is the publish plan; unread commits stay unread', () => {
   const registry = 'https://npm.pkg.github.com'
   const manifest = (version) =>
     new Map([
       [core.name, { name: core.name, version, publishConfig: { registry }, private: false }],
     ])
   const merge = manifest('2.2.1')
+  const head = manifest('2.2.2')
   assert.equal(
     targetsFromManifests({
-      parentManifests: merge,
+      parentManifests: null,
       mergeManifests: merge,
-      headSha: currentHead,
-      headManifests: null,
     }),
     null,
   )
@@ -285,8 +286,15 @@ test('a PR head without readable manifests is unread, not a no-op', () => {
     targetsFromManifests({
       parentManifests: merge,
       mergeManifests: merge,
+    }),
+    [],
+  )
+  assert.deepEqual(
+    targetsFromManifests({
+      parentManifests: merge,
+      mergeManifests: merge,
       headSha: currentHead,
-      headManifests: merge,
+      headManifests: head,
     }),
     [],
   )
@@ -294,10 +302,21 @@ test('a PR head without readable manifests is unread, not a no-op', () => {
     targetsFromManifests({
       parentManifests: manifest('2.2.1'),
       mergeManifests: manifest('2.2.2'),
-      headSha: currentHead,
-      headManifests: null,
     }),
     [{ name: core.name, version: '2.2.2', previous: '2.2.1' }],
+  )
+})
+
+test('verify-ci logs are only resolved for successful completed Release runs', () => {
+  assert.equal(releaseRunNeedsVerifiedSha({ status: 'completed', conclusion: 'success' }), true)
+  assert.equal(releaseRunNeedsVerifiedSha({ status: 'in_progress', conclusion: null }), false)
+  assert.equal(releaseRunNeedsVerifiedSha({ status: 'completed', conclusion: 'skipped' }), false)
+})
+
+test('publish tags are addressed as individual git refs', () => {
+  assert.equal(
+    tagRefApiPath(`${core.name}@${core.version}`),
+    `git/ref/tags/${encodeURIComponent(`${core.name}@${core.version}`)}`,
   )
 })
 
@@ -423,6 +442,30 @@ test('unread targets with a PR head keep waiting instead of reporting no publish
   })
   assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
   assert.ok(time.now() >= 2_000)
+})
+
+test('waitForRelease asks readTags only for the merge SHA publish tags', async () => {
+  const seen = []
+  const result = await waitForRelease({
+    mergeSha,
+    intervalMs: 1_000,
+    deadlineMs: 20_000,
+    ...clock(),
+    readPushCi: async () => successfulPush(),
+    readReleaseRuns: async () => verifiedRelease(),
+    readReleasePrHead: async () => currentHead,
+    readHeldRuns: async () => [],
+    approveRuns: async () => {},
+    readTargets: async () => [core],
+    readTags: async (expected) => {
+      seen.push(expected)
+      return expected
+    },
+    readMirror: async () => new Map([[core.name, { versions: { '2.2.2': {} } }]]),
+    log: () => {},
+  })
+  assert.deepEqual(seen, [[`${core.name}@${core.version}`]])
+  assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
 })
 
 test('waitForRelease passes resolved targets into readMirror', async () => {
