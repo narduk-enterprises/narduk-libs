@@ -12,7 +12,7 @@ import type {
   Story,
   XcTestAppleJourney,
 } from './types.js'
-import { APPLE_KEYS } from './types.js'
+import { APPLE_KEYS, X264_PRESETS } from './types.js'
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -46,6 +46,24 @@ export function defineCatalog(catalog: Catalog): Catalog {
       }
     } else if (!profile.device.trim()) {
       note(`profile "${name}": device is empty`)
+    }
+    if (profile.kind === 'web' && profile.video) {
+      const encode = profile.video
+      if (
+        encode.crf !== undefined &&
+        (!Number.isInteger(encode.crf) || encode.crf < 0 || encode.crf > 51)
+      ) {
+        note(`profile "${name}": video.crf must be an integer from 0 to 51`)
+      }
+      if (
+        encode.maxBytes !== undefined &&
+        (!Number.isInteger(encode.maxBytes) || encode.maxBytes < 1)
+      ) {
+        note(`profile "${name}": video.maxBytes must be a positive integer`)
+      }
+      if (encode.preset !== undefined && !X264_PRESETS.includes(encode.preset)) {
+        note(`profile "${name}": video.preset must be an x264 preset`)
+      }
     }
   }
 

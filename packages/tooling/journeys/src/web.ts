@@ -8,24 +8,14 @@
  * silently absorbed.
  */
 import { Buffer } from 'node:buffer'
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-
 import { test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 
 import { digestJourney } from './digest.js'
-import { sha256File, videoSeconds } from './media.js'
+import { createEncodeLane, encodeVideo, sha256File } from './media.js'
 
 import type {
   Applicability,
@@ -439,25 +429,8 @@ export function createContextApi(page: Page, base: string, mode: Mode): WebJourn
   }
 }
 
-function toMp4(webmPath: string, mp4Path: string): boolean {
-  const result = spawnSync('ffmpeg', [
-    '-y',
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-i',
-    webmPath,
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    '-an',
-    mp4Path,
-  ])
-  return result.status === 0 && existsSync(mp4Path)
-}
+/** One encode in flight across the registered suite (narduk-libs#114). */
+const captureEncodeLane = createEncodeLane()
 
 /**
  * Register one Playwright `test()` per web journey, one `test.step()` per
@@ -480,6 +453,9 @@ export function registerJourneys(options: RegisterJourneysOptions): void {
       world: options.world,
       workers: configuredWorkersFrom({ workers: info.config.workers }),
     })
+  })
+  test.afterAll(async () => {
+    await captureEncodeLane.idle()
   })
   const mode: Mode = options.mode ?? (process.env.JOURNEYS_MODE === 'capture' ? 'capture' : 'test')
   const commit = options.commit ?? process.env.JOURNEYS_COMMIT ?? 'uncommitted'
@@ -626,24 +602,40 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     }
   }
 
-  const generationAfter = await worldHooks.generation()
   await context.close()
 
   let video: RunManifest['video']
+  let encodeDone: Promise<RunManifest['video']> | undefined
   if (videoTmp) {
     const webm = readdirSync(videoTmp).find((file) => file.endsWith('.webm'))
     if (webm) {
       const webmPath = join(paths.attemptDirectory, 'video.webm')
-      copyFileSync(join(videoTmp, webm), webmPath)
       const mp4Path = join(paths.attemptDirectory, 'video.mp4')
-      const converted = toMp4(webmPath, mp4Path)
-      if (converted) rmSync(webmPath, { force: true })
-      const file = converted ? 'video.mp4' : 'video.webm'
-      const fullPath = join(paths.attemptDirectory, file)
-      video = { file, seconds: videoSeconds(fullPath), sha256: sha256File(fullPath) }
+      copyFileSync(join(videoTmp, webm), webmPath)
+      encodeDone = captureEncodeLane.enqueue(async () => {
+        const encoded = await encodeVideo(webmPath, mp4Path, profile.video)
+        if (encoded.ok) rmSync(webmPath, { force: true })
+        const file = encoded.ok ? 'video.mp4' : 'video.webm'
+        const fullPath = join(paths.attemptDirectory, file)
+        return {
+          file,
+          seconds: encoded.seconds,
+          sha256: sha256File(fullPath),
+          encode: {
+            ffmpeg: encoded.ffmpeg,
+            probe: encoded.probe,
+            ...(profile.video?.preset ? { preset: profile.video.preset } : {}),
+            ...(profile.video?.crf !== undefined ? { crf: profile.video.crf } : {}),
+            ...(encoded.maxBytesExceeded ? { maxBytesExceeded: true } : {}),
+          },
+        }
+      })
     }
     rmSync(videoTmp, { force: true, recursive: true })
   }
+
+  const generationAfter = await worldHooks.generation()
+  if (encodeDone) video = await encodeDone
 
   const generationInterference = generationAfter !== prepared.generation
   const manifest: RunManifest = {

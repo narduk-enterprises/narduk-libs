@@ -387,12 +387,51 @@ export interface Sequence {
   journeys: [string, ...string[]]
 }
 
+export type X264Preset =
+  | 'ultrafast'
+  | 'superfast'
+  | 'veryfast'
+  | 'faster'
+  | 'fast'
+  | 'medium'
+  | 'slow'
+  | 'slower'
+  | 'veryslow'
+  | 'placebo'
+
+export const X264_PRESETS: readonly X264Preset[] = [
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+  'veryslow',
+  'placebo',
+]
+
+/**
+ * How a web capture re-encodes Playwright's webm (narduk-libs#114).
+ * Declared so a consumer can trade encode seconds against bytes.
+ */
+export interface CaptureVideoEncode {
+  /** libx264 preset. Default `medium` (ffmpeg's own default). */
+  preset?: X264Preset
+  /** Constant rate factor, 0–51. Default 23. */
+  crf?: number
+  /** Soft budget: a larger artefact is still published, and recorded. */
+  maxBytes?: number
+}
+
 /** A named capture profile; the name joins the artefact path (§4.2, §4.3). */
 export interface WebProfile {
   kind: 'web'
   viewport: { width: number; height: number }
   dpr?: number
   colorScheme?: 'light' | 'dark'
+  video?: CaptureVideoEncode
 }
 
 export interface AppleProfile {
@@ -470,7 +509,22 @@ export interface RunManifest {
   }
   verdict: 'passed' | 'failed'
   steps: RunStep[]
-  video?: { file: string; seconds: number | null; sha256: string }
+  video?: {
+    file: string
+    seconds: number | null
+    sha256: string
+    /**
+     * How the artefact was encoded, and whether ffmpeg/ffprobe were
+     * actually present. Absent on manifests written before narduk-libs#114.
+     */
+    encode?: {
+      ffmpeg: 'ok' | 'missing' | 'failed'
+      probe: 'ok' | 'missing' | 'failed'
+      preset?: X264Preset
+      crf?: number
+      maxBytesExceeded?: boolean
+    }
+  }
 }
 
 /**

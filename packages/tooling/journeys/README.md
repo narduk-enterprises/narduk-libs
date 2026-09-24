@@ -112,6 +112,12 @@ still runs in `test.beforeAll` and at the start of each journey, from
   attempt also records `journeyDigest` (`digestJourney` of that journey) so a
   later sibling does not stale it.
 
+A web capture profile may declare `video: { preset, crf, maxBytes }` so the
+webm→mp4 encode is a known trade of seconds against bytes. The encode is async
+and single-flight — it does not `spawnSync`-block the worker, and two encodes
+never overlap a live browser (narduk-libs#114). When ffmpeg or ffprobe is
+missing, `video.encode` on the run manifest says so.
+
 The `world` hooks are repo-owned: `prepare` loads a scenario behind the loader's
 own fail-closed gate and lease, and returns the generation token the runner
 re-checks after every journey.
