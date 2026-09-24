@@ -68,6 +68,12 @@ export interface LiveProbeOptions {
    * carry these headers beyond the originally requested origin.
    */
   headers?: Record<string, string>
+  /**
+   * Native fetch redirect mode. Default `follow` (or same-origin manual hops
+   * when caller headers are present). `manual` returns the first 3xx so a
+   * caller can assert hop status and Location.
+   */
+  redirect?: 'follow' | 'manual'
 }
 
 export type LiveProbe = (url: string, options?: LiveProbeOptions) => Promise<LiveResponse>
@@ -94,9 +100,11 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
     Object.assign(headersSent, defaults.headers, options.headers)
     try {
       const originBound = Object.keys({ ...defaults.headers, ...options.headers }).length > 0
+      const redirectMode = options.redirect ?? defaults.redirect ?? 'follow'
+      const stayOnFirstHop = redirectMode === 'manual'
       const request: RequestInit = {
         method: 'GET',
-        redirect: originBound ? 'manual' : 'follow',
+        redirect: stayOnFirstHop || originBound ? 'manual' : 'follow',
         cache: noCache ? 'no-store' : 'default',
         headers: headersSent,
         signal: controller.signal,
@@ -105,6 +113,7 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       let requestUrl = url
       let redirects = 0
       while (
+        !stayOnFirstHop &&
         originBound &&
         [301, 302, 303, 307, 308].includes(response.status) &&
         response.headers.has('location')
@@ -124,9 +133,14 @@ export function createLiveProbe(defaults: LiveProbeOptions = {}): LiveProbe {
       })
       const buffer = await response.arrayBuffer().catch(() => new ArrayBuffer(0))
       const result: LiveResponse = { url, status: response.status, headers }
-      // Manual hops count too; URL normalisation alone is not a redirect.
-      if (response.url) result.finalUrl = response.url
-      if (response.redirected || redirects > 0) result.redirected = true
+      if (stayOnFirstHop && [301, 302, 303, 307, 308].includes(response.status)) {
+        result.redirected = true
+        if (headers.location) result.finalUrl = new URL(headers.location, url).href
+      } else {
+        // Manual hops count too; URL normalisation alone is not a redirect.
+        if (response.url) result.finalUrl = response.url
+        if (response.redirected || redirects > 0) result.redirected = true
+      }
       if (readBody) {
         const bytes = new Uint8Array(buffer)
         const truncated = bytes.byteLength > maxBodyBytes

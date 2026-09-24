@@ -383,7 +383,7 @@ describe('fixed-alias convergence (#47)', () => {
     expect(result.observations.filter((row) => row.matched).length).toBe(3)
   })
 
-  it('accepts consecutive missing runtime tags when inventory binds the exact UUID/SHA', async () => {
+  it('does not treat missing runtime tags as alias convergence', async () => {
     const time = clock()
     const result = await convergeFixedAliasIdentity({
       url: 'https://preview.example/api/health',
@@ -400,8 +400,25 @@ describe('fixed-alias convergence (#47)', () => {
           body: JSON.stringify({ success: true, data: { status: 'ok' } }),
         }),
     })
-    expect(result.converged).toBe(true)
+    expect(result.converged).toBe(false)
     expect(result.binding?.kind).toBe('missing-runtime-tag-accepted')
+    expect(result.observations.every((row) => row.matched === false)).toBe(true)
+  })
+
+  it('does not treat a failed probe as alias convergence', async () => {
+    const time = clock()
+    const result = await convergeFixedAliasIdentity({
+      url: 'https://preview.example/api/health',
+      expected: { sha: NEW_SHA, versionId: NEW_VERSION },
+      inventory: [version(NEW_VERSION, NEW_SHA)],
+      consecutive: 3,
+      timeoutMs: 400,
+      intervalMs: 10,
+      ...time,
+      probe: async () => live({ error: 'network failed' }),
+    })
+    expect(result.converged).toBe(false)
+    expect(result.observations.every((row) => row.matched === false)).toBe(true)
   })
 
   it('treats a stale alias that never reaches the expected SHA as a timeout', async () => {
@@ -430,6 +447,39 @@ describe('post-convergence diagnostics (#47)', () => {
       { ...response, url: new URL(path, origin).toString() },
     ]
   }
+
+  it('does not treat index as a match inside noindex', () => {
+    const mismatches = evaluatePreviewDiagnostics(
+      origin,
+      new Map([
+        page('/', {
+          url: `${origin}/`,
+          status: 200,
+          headers: { 'x-robots-tag': 'noindex, follow', 'content-type': 'text/html' },
+          body: '<html><head><meta name="robots" content="noindex, follow"></head></html>',
+        }),
+      ]),
+      { robotsHeader: 'index', robotsMeta: 'index' },
+    )
+    expect(mismatches.map((row) => row.id).sort()).toEqual(['robots-header', 'robots-meta'])
+  })
+
+  it('accepts a first-hop 302 when the probe did not follow the redirect', () => {
+    const mismatches = evaluatePreviewDiagnostics(
+      origin,
+      new Map([
+        page('/old', {
+          url: `${origin}/old`,
+          status: 302,
+          redirected: true,
+          finalUrl: `${origin}/new`,
+          headers: { location: '/new' },
+        }),
+      ]),
+      { redirects: [{ path: '/old', to: '/new', status: 302 }] },
+    )
+    expect(mismatches).toEqual([])
+  })
 
   it('keeps a matching robots header and still reports an indexable robots meta', () => {
     const mismatches = evaluatePreviewDiagnostics(
@@ -562,6 +612,42 @@ describe('provePreviewIdentity (#47)', () => {
     expect(stale.result).toBe('FAIL')
     expect(stale.mismatches.map((row) => row.id)).toEqual(['identity-convergence'])
     expect(stale.observations.length).toBeGreaterThan(0)
+  })
+
+  it('probes redirect paths without following so a 302 status is meaningful', async () => {
+    const seen: Array<{ url: string; redirect?: 'follow' | 'manual' }> = []
+    const time = clock()
+    const result = await provePreviewIdentity({
+      origin: 'https://preview.example',
+      expected: { sha: NEW_SHA, versionId: NEW_VERSION },
+      inventory: [version(NEW_VERSION, NEW_SHA)],
+      consecutive: 3,
+      timeoutMs: 1_000,
+      intervalMs: 10,
+      ...time,
+      probe: async (url, options) => {
+        seen.push({ url, redirect: options?.redirect })
+        if (url.endsWith('/old')) {
+          return live({
+            url,
+            status: 302,
+            redirected: true,
+            finalUrl: 'https://preview.example/new',
+            headers: { location: '/new' },
+          })
+        }
+        return live({
+          url,
+          status: 200,
+          headers: { 'x-build-version': NEW_SHA },
+          body: JSON.stringify({ success: true, data: { status: 'ok' } }),
+        })
+      },
+      diagnostics: { redirects: [{ path: '/old', to: '/new', status: 302 }] },
+    })
+    expect(result.converged).toBe(true)
+    expect(result.result).toBe('PASS')
+    expect(seen.some((row) => row.url.endsWith('/old') && row.redirect === 'manual')).toBe(true)
   })
 })
 

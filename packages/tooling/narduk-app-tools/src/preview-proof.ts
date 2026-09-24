@@ -12,6 +12,9 @@
  * persistence.
  */
 
+import { parse } from 'parse5'
+import type { DefaultTreeAdapterMap } from 'parse5'
+
 import { createLiveProbe, type LiveProbe, type LiveResponse } from './live-probe.js'
 import {
   bindWorkerIdentity,
@@ -56,6 +59,11 @@ export interface PreviewRouteExpectation {
 export interface PreviewRedirectExpectation {
   path: string
   to?: string
+  /**
+   * First-hop status. Diagnostic fetches for redirect paths use
+   * `redirect: 'manual'` so a 3xx expectation sees the hop, not the
+   * followed final page.
+   */
   status?: number
   none?: boolean
 }
@@ -188,7 +196,11 @@ export async function convergeFixedAliasIdentity(
     const response = await probe(options.url, { readBody: true, noCache: true })
     const runtime = readIdentity(response)
     lastBinding = convergeMatch(options.expected, runtime, options.inventory)
-    const matched = identityMatches(lastBinding)
+    // bindWorkerIdentity may accept a missing runtime tag after an exact
+    // UUID/SHA inventory bind. That is a bind rule, not an alias signal: an
+    // empty body, a failed probe, or LakeStat's null tag would otherwise
+    // increment the streak on every poll (narduk-libs#47).
+    const matched = lastBinding.kind === 'bound' && !response.error
     observations.push(sanitizeObservation(attempt, response, runtime, matched))
     streak = matched ? streak + 1 : 0
     if (streak >= consecutive) {
@@ -214,23 +226,34 @@ function header(response: LiveResponse, name: string): string | undefined {
 
 export function readRobotsMeta(html: string | undefined): string | null {
   if (!html) return null
-  for (const match of html.matchAll(/<meta\b[^>]*>/giu)) {
-    const tag = match[0]
-    const attrs: Record<string, string> = {}
-    for (const attr of tag.matchAll(/([a-z0-9:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/giu)) {
-      attrs[attr[1].toLowerCase()] = attr[2] ?? attr[3] ?? ''
+  let found: string | null = null
+  function walk(node: DefaultTreeAdapterMap['node']): void {
+    if (found !== null) return
+    if ('tagName' in node && node.tagName === 'meta') {
+      const attrs = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]))
+      const name = (attrs.name ?? attrs.property ?? '').toLowerCase()
+      if (name === 'robots') {
+        found = attrs.content ?? ''
+        return
+      }
     }
-    const name = (attrs.name ?? attrs.property ?? '').toLowerCase()
-    if (name === 'robots') return attrs.content ?? ''
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) walk(child)
+    }
   }
-  return null
+  walk(parse(html))
+  return found
 }
 
 function tokenIncludes(actual: string | undefined, expected: string): boolean {
   if (!actual) return false
-  const haystack = actual.toLowerCase()
   const needle = expected.trim().toLowerCase()
-  return haystack.split(/[\s,]+/u).includes(needle) || haystack.includes(needle)
+  if (!needle) return false
+  return actual
+    .toLowerCase()
+    .split(/[\s,]+/u)
+    .filter(Boolean)
+    .includes(needle)
 }
 
 function joinUrl(origin: string, path: string): string {
@@ -445,6 +468,7 @@ export async function provePreviewIdentity(
     for (const redirect of spec.redirects ?? []) paths.add(redirect.path)
     if (spec.health?.path) paths.add(spec.health.path)
     const responses = new Map<string, LiveResponse>()
+    const redirectPaths = new Set((spec.redirects ?? []).map((row) => row.path))
     for (const path of paths) {
       const url = joinUrl(origin, path)
       responses.set(
@@ -452,6 +476,7 @@ export async function provePreviewIdentity(
         await probe(url, {
           readBody: true,
           noCache: true,
+          ...(redirectPaths.has(path) ? { redirect: 'manual' as const } : {}),
         }),
       )
     }
