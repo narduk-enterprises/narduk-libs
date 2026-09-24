@@ -402,7 +402,8 @@ the rollback itself.
 narduk-app verify --live <url> [--expect-sha <sha>] [--health-path <p>] \
   [--smoke-path <p>] [--expect-content-type <t>] [--attempts <n>] \
   [--interval-seconds <n>] [--allow-degraded] [--no-cache-bust] \
-  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] [--json [path]]
+  [--access-client-id-env <NAME> --access-client-secret-env <NAME>] \
+  [--resolver system|public] [--json [path]]
 ```
 
 Three assertions against a running deployment, so the preview gate, the promote
@@ -449,6 +450,34 @@ halves are required together; an unset or empty variable fails the run before
 any request, naming the variable and not its value. Neither value appears in the
 report or the JSON. This proves the right build is live to a holder of the
 token; that anonymous visitors are still refused is a separate proof.
+
+#### A stale local DNS answer (`--resolver public`)
+
+After a DNS change, a workstation's resolver can keep a negative (NXDOMAIN)
+answer for a hostname that is already live, and every probe then fails "could
+not resolve host" exactly like a dead deployment (narduk-libs#783). So when the
+system lookup fails with `ENOTFOUND` or `EAI_AGAIN`, the proof asks 1.1.1.1 and
+8.8.8.8 directly (`node:dns` `Resolver`, bypassing the local cache). If they
+answer, the report carries its own assertion:
+
+```text
+[UNKN] dns: local resolver has a stale negative answer for loadtest.dev: the system
+lookup failed with ENOTFOUND, but public DNS (1.1.1.1, 8.8.8.8) resolves it to ...
+```
+
+with the hostname, the local error and the public addresses in its `evidence`.
+It is still exit 2 — this process could not read the deployment, so nothing was
+proven — but a job can tell it from a dead deployment by the `dns` assertion id.
+When public DNS has no address either, or cannot be asked, the ordinary
+unreachable verdict says so instead.
+
+Two ways out: flush the local cache (macOS:
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`), or rerun with
+`--resolver public`. That dials an address the public resolvers returned while
+keeping the real hostname in the URL, so TLS SNI, the certificate check and the
+`Host` header are unchanged — `curl --resolve` done for you — and the report
+records `resolver: "public"`. It is for a human at a workstation; CI keeps the
+default `--resolver system`, which proves what visitors' resolvers see.
 
 #### What this proves, and what it does not
 
