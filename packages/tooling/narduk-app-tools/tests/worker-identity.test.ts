@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { fetchWorkerPlainTextVars, readDeploymentList } from '../src/cloudflare.js'
+import {
+  DEPLOYMENT_PAGE_SIZE,
+  fetchWorkerPlainTextVars,
+  listWorkerDeploymentsViaApi,
+  readDeploymentList,
+} from '../src/cloudflare.js'
 import {
   DEFAULT_ALIAS_CONSECUTIVE,
   convergeFixedAliasIdentity,
@@ -122,6 +127,11 @@ describe('fetchWorkerPlainTextVars provider identity (#47)', () => {
     expect(requested.some((url) => url.includes(`/versions/${NEW_VERSION}`))).toBe(true)
     expect(requested.some((url) => url.includes(`/versions/${OLD_VERSION}`))).toBe(false)
     expect(requested.some((url) => /\/versions\?per_page=/u.test(url))).toBe(false)
+    expect(
+      requested.some((url) =>
+        url.includes(`/deployments?per_page=${String(DEPLOYMENT_PAGE_SIZE)}`),
+      ),
+    ).toBe(true)
   })
 
   it.each([
@@ -195,6 +205,78 @@ describe('fetchWorkerPlainTextVars provider identity (#47)', () => {
       }),
     ).rejects.toThrow(/split/iu)
     expect(requested.some((url) => /\/versions\/[^/?#]+/u.test(url))).toBe(false)
+  })
+
+  it('does not request a second deployments page when the envelope has no pageInfo', async () => {
+    const { fetchImpl, requested } = providerFetch({
+      versions: inventoryOldestFirst,
+      deployments: { deployments: liveNew },
+    })
+    await fetchWorkerPlainTextVars({
+      accountId: 'acc',
+      apiToken: 'token',
+      scriptName: 'fixture',
+      fetchImpl,
+    })
+    expect(requested.filter((url) => url.includes('/deployments'))).toHaveLength(1)
+  })
+
+  it('walks deployments pageInfo so a newest allocation off page 1 is still resolved', async () => {
+    const all = [
+      deployment('d-old', OLD_VERSION, '2026-07-30T00:00:00Z'),
+      deployment('d-new', NEW_VERSION, '2026-07-30T01:00:00Z'),
+    ]
+    const clamp = 1
+    const requested: string[] = []
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input)
+      requested.push(url)
+      if (url.includes('/deployments')) {
+        const asked = Number(new URL(url).searchParams.get('per_page') ?? String(clamp))
+        const page = Number(new URL(url).searchParams.get('page') ?? '1')
+        const perPage = Math.min(asked, clamp)
+        const slice = all.slice((page - 1) * perPage, page * perPage)
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: { deployments: slice },
+            result_info: {
+              page,
+              per_page: perPage,
+              count: slice.length,
+              total_count: all.length,
+              total_pages: Math.ceil(all.length / perPage),
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (/\/versions\/[^/?#]+/u.test(url)) {
+        const versionId = url.split('/versions/')[1]?.split(/[?#]/u)[0] ?? ''
+        const siteUrl = versionId === NEW_VERSION ? 'https://new.example' : 'https://old.example'
+        return cfOk(bindingsFor(decodeURIComponent(versionId), siteUrl))
+      }
+      return cfOk({})
+    }
+    const vars = await fetchWorkerPlainTextVars({
+      accountId: 'acc',
+      apiToken: 'token',
+      scriptName: 'fixture',
+      fetchImpl,
+    })
+    expect(vars.SITE_URL).toBe('https://new.example')
+    expect(requested.some((url) => url.includes('/deployments') && url.includes('page=2'))).toBe(
+      true,
+    )
+    expect(requested.some((url) => url.includes(`/versions/${NEW_VERSION}`))).toBe(true)
+    const firstPageOnly = await listWorkerDeploymentsViaApi({
+      accountId: 'acc',
+      apiToken: 'token',
+      scriptName: 'fixture',
+      fetchImpl,
+      limit: 1,
+    })
+    expect(firstPageOnly.map((row) => row.id)).toEqual(['d-old'])
   })
 
   it('does not let a duplicated inventory row override allocation', async () => {

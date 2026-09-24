@@ -77,8 +77,8 @@ export interface WorkerPlainTextOptions {
  * One Cloudflare REST read, with Cloudflare's own `success`/`errors` envelope
  * turned into a thrown `Error`, and its pagination block handed back when it
  * carried one. Exported because the promote path pages the Versions list
- * (`../promote.ts`) and a second copy of this would be a second place for the
- * error shape to diverge.
+ * (`../promote.ts`) and the deployments list below pages the same way; a
+ * second copy of this would be a second place for the error shape to diverge.
  */
 export async function fetchCloudflareEnvelope<T>(
   url: string,
@@ -132,15 +132,54 @@ export function readDeploymentList(result: unknown): WorkerDeployment[] {
   return []
 }
 
+/**
+ * One page size for the whole deployments walk. V4 page pagination computes
+ * the offset as `(page - 1) * per_page`, so shrinking `per_page` on the last
+ * page re-reads rows already seen.
+ */
+export const DEPLOYMENT_PAGE_SIZE = 100
+
+/** Bound so a missing `result_info` cannot walk forever. */
+export const DEFAULT_DEPLOYMENT_LIST_LIMIT = 500
+
+/**
+ * The bounded walk of Cloudflare's deployments list. `listWorkerVersionsViaApi`
+ * already follows `pageInfo`; this does the same so `resolveActiveWorkerVersion`
+ * can see the newest `created_on` even when that row is not on page 1
+ * (narduk-libs#47). A response with no pagination block is treated as the
+ * whole collection — this endpoint has been observed returning every row in
+ * one envelope. A short page without `result_info` is therefore the end, not
+ * a clamp to walk past.
+ */
 export async function listWorkerDeploymentsViaApi(options: {
   accountId: string
   apiToken: string
   scriptName: string
   fetchImpl?: typeof fetch
+  limit?: number
 }): Promise<WorkerDeployment[]> {
   const fetchImpl = options.fetchImpl ?? fetch
-  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}/deployments`
-  return readDeploymentList(await fetchCloudflareJson<unknown>(url, options.apiToken, fetchImpl))
+  const limit = Math.max(1, Math.trunc(options.limit ?? DEFAULT_DEPLOYMENT_LIST_LIMIT))
+  const perPage = Math.min(DEPLOYMENT_PAGE_SIZE, limit)
+  const base = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(options.accountId)}/workers/scripts/${encodeURIComponent(options.scriptName)}/deployments`
+  const deployments: WorkerDeployment[] = []
+  for (let page = 1; deployments.length < limit; page += 1) {
+    const url = `${base}?per_page=${String(perPage)}&page=${String(page)}`
+    const { result, pageInfo } = await fetchCloudflareEnvelope<unknown>(
+      url,
+      options.apiToken,
+      fetchImpl,
+    )
+    const items = readDeploymentList(result)
+    deployments.push(...items)
+    if (items.length === 0) break
+    if (!pageInfo) break
+    const { total_count: total, total_pages: totalPages, per_page: applied } = pageInfo
+    if (total !== undefined && deployments.length >= total) break
+    if (totalPages !== undefined && page >= totalPages) break
+    if (applied !== undefined && applied > 0 && items.length < applied) break
+  }
+  return deployments.slice(0, limit)
 }
 
 export async function fetchWorkerPlainTextVars(
