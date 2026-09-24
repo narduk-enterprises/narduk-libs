@@ -3,8 +3,11 @@
  *
  * deploy:dev queues the deployed commit and returns. A detached worker pushes
  * it to `narduk-validation/<sha>/<uuid>`, which alone triggers the app's
- * validation workflow, and cancels the still-running validation of any older
- * automatic request for the same target. At most one worker runs per
+ * validation workflow, cancels the still-running validation of any older
+ * automatic request for the same target, and deletes the older request's
+ * branch, so at most one automatic validation branch per repository stays on
+ * GitHub (run results outlive their branch). A push that fails twice is
+ * recorded in the history `development status` reads. At most one worker runs per
  * repository on a host; a newer queued commit replaces an older one that has
  * not been pushed yet, so the newest deployed SHA always wins.
  *
@@ -47,21 +50,32 @@ export interface DeployedValidationRequest {
 export interface ValidationHistoryEntry {
   sha: string
   buildId: string
-  validationRef: string
+  /** Absent when the push failed. */
+  validationRef?: string
   requestedAt: string
   gated: boolean
   supersededAt?: string
   cancelledRuns?: number[]
+  /** When the superseded branch was deleted from GitHub. */
+  branchDeletedAt?: string
+  /** The push never succeeded: the deploy receipt says queued, this says it was not pushed. */
+  failed?: { at: string; attempts: number; error: string }
 }
 
 export type ValidationGitHubClient = Pick<
   DevelopmentGitHub,
-  'requestDeployedValidation' | 'activeValidationRuns' | 'cancelRun'
+  'requestDeployedValidation' | 'activeValidationRuns' | 'cancelRun' | 'deleteValidationRef'
 >
 
 const HISTORY_LIMIT = 20
 const WORKER_ROUNDS = 25
 const STARTING_GRACE_MS = 60_000
+const PUSH_ATTEMPTS = 2
+const PUSH_RETRY_DELAY_MS = 5_000
+
+function pause(ms: number): void {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
 
 export function validationDirectory(stateDirectory: string, repository: string): string {
   return join(stateDirectory, 'validation', repositoryKey(repository))
@@ -312,17 +326,22 @@ export function readValidationHistory(
   return existsSync(path) ? (readPrivateJson(path) as ValidationHistoryEntry[]) : []
 }
 
-/**
- * Drain the queue: push the newest request, then cancel the unfinished runs of
- * every older automatic request it supersedes. Explicit `development validate`
- * requests are never touched. Returns the refs it pushed.
- */
-export function drainDeployedValidations(args: {
+interface DrainArgs {
   repository: string
   stateDirectory: string
   github: ValidationGitHubClient
   log: (message: string) => void
-}): string[] {
+  /** Between push attempts; tests pass 0. */
+  retryDelayMs?: number
+}
+
+/**
+ * Drain the queue: push the newest request, then cancel the unfinished runs of
+ * every older automatic request it supersedes and delete their branches.
+ * Explicit `development validate` requests are never touched. Returns the refs
+ * it pushed.
+ */
+export function drainDeployedValidations(args: DrainArgs): string[] {
   const directory = validationDirectory(args.stateDirectory, args.repository)
   const queue = join(directory, 'queue.json')
   const pushed: string[] = []
@@ -344,17 +363,7 @@ export function drainDeployedValidations(args: {
   return pushed
 }
 
-function drainOnce(
-  directory: string,
-  queue: string,
-  args: {
-    repository: string
-    stateDirectory: string
-    github: ValidationGitHubClient
-    log: (message: string) => void
-  },
-  pushed: string[],
-): void {
+function drainOnce(directory: string, queue: string, args: DrainArgs, pushed: string[]): void {
   for (let round = 0; round < WORKER_ROUNDS; round += 1) {
     if (!existsSync(queue)) break
     const taking = join(directory, 'taking.json')
@@ -362,32 +371,56 @@ function drainOnce(
     const request = readPrivateJson(taking) as DeployedValidationRequest
     rmSync(taking, { force: true })
     const history = readValidationHistory(args.stateDirectory, args.repository)
-    let validationRef: string
-    try {
-      validationRef = args.github.requestDeployedValidation(request.checkout, request.sha)
-    } catch (error) {
-      args.log(
-        `[validation] ${request.buildId} ${request.sha}: ${error instanceof Error ? error.message : String(error)}`,
-      )
+    const historyPath = join(directory, 'history.json')
+    let validationRef: string | undefined
+    let failure = ''
+    for (let attempt = 1; attempt <= PUSH_ATTEMPTS && !validationRef; attempt += 1) {
+      if (attempt > 1) pause(args.retryDelayMs ?? PUSH_RETRY_DELAY_MS)
+      try {
+        validationRef = args.github.requestDeployedValidation(request.checkout, request.sha)
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error)
+        args.log(`[validation] ${request.buildId} ${request.sha} attempt ${attempt}: ${failure}`)
+      }
+    }
+    const now = new Date().toISOString()
+    if (!validationRef) {
+      // Nothing was pushed, so nothing older is superseded.
+      history.push({
+        sha: request.sha,
+        buildId: request.buildId,
+        requestedAt: now,
+        gated: request.gated,
+        failed: { at: now, attempts: PUSH_ATTEMPTS, error: failure },
+      })
+      writePrivateJson(historyPath, history.slice(-HISTORY_LIMIT))
       continue
     }
     pushed.push(validationRef)
     args.log(
       `[validation] ${request.buildId}: full validation of ${request.sha} via ${validationRef}`,
     )
-    const now = new Date().toISOString()
     for (const older of history) {
-      if (older.supersededAt) continue
-      older.supersededAt = now
+      if (!older.validationRef || older.branchDeletedAt) continue
+      if (!older.supersededAt) {
+        older.supersededAt = now
+        try {
+          older.cancelledRuns = args.github.activeValidationRuns(older.validationRef)
+          for (const id of older.cancelledRuns) args.github.cancelRun(id)
+          if (older.cancelledRuns.length)
+            args.log(
+              `[validation] superseded ${older.sha}: cancelled run(s) ${older.cancelledRuns.join(', ')}`,
+            )
+        } catch {
+          args.log(`[validation] could not cancel runs of superseded ${older.validationRef}`)
+        }
+      }
+      // A failed delete is retried by the next drain while the entry is in history.
       try {
-        older.cancelledRuns = args.github.activeValidationRuns(older.validationRef)
-        for (const id of older.cancelledRuns) args.github.cancelRun(id)
-        if (older.cancelledRuns.length)
-          args.log(
-            `[validation] superseded ${older.sha}: cancelled run(s) ${older.cancelledRuns.join(', ')}`,
-          )
+        args.github.deleteValidationRef(request.checkout, older.validationRef)
+        older.branchDeletedAt = now
       } catch {
-        args.log(`[validation] could not cancel runs of superseded ${older.validationRef}`)
+        args.log(`[validation] could not delete superseded branch ${older.validationRef}`)
       }
     }
     history.push({
@@ -397,6 +430,6 @@ function drainOnce(
       requestedAt: now,
       gated: request.gated,
     })
-    writePrivateJson(join(directory, 'history.json'), history.slice(-HISTORY_LIMIT))
+    writePrivateJson(historyPath, history.slice(-HISTORY_LIMIT))
   }
 }

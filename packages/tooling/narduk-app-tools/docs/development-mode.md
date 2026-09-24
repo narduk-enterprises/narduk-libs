@@ -196,9 +196,11 @@ When the repository has an open issue labelled `red-main` that is more than 24
 hours old, deploy:dev refuses: red is fixed or reverted, not built on. A deploy
 that is the fix names it with `--red-main-fix <issue>`; naming an issue that is
 not an open `red-main` issue refuses too. A younger red-main issue is printed
-and does not block. If GitHub cannot be read, the receipt records
-`redMain.status: unknown` and the deploy proceeds with a warning: the guard
-stops red from accumulating, it is not the gate on one deploy.
+and does not block. The receipt's `redMain.status` is `clear` (no open red-main
+issue), `red` (one is open, blocking or not yet), or `fix` (this deploy names
+one). If GitHub cannot be read, the receipt records `redMain.status: unknown`
+and the deploy proceeds with a warning: the guard stops red from accumulating,
+it is not the gate on one deploy.
 
 The workspace is a repository of its own: the captured tree is committed there
 under a local branch with no remote, so checks written as
@@ -243,14 +245,22 @@ narduk-app development exec --operation recovery --approval-ref <ref> -- <comman
   is often the retained production database.
 
   The promote path's expand-only rule (foundation sub-check 12.9) applies here
-  too, before the command runs. A `.sql` file this run may apply (not yet
-  recorded as applied with the same bytes) that drops or renames a table, view
-  or column refuses. The one exception is a reviewed contract migration:
-  declared under `deployment.migrations.contractMigrations` with its exact
-  checksum **and** already landed byte-identical on `origin/<productionBranch>`.
-  Contract migrations are reviewed on the gated path; development mode never
-  introduces one. Each applied migration records `compatibility` (`expand-only`
-  or `contract`), which rollback reads.
+  too, before the command runs. A `.sql` file this run may apply that drops or
+  renames a table, view or column refuses. A file is judged unless it is
+  recorded as applied here with the same bytes, or it was byte-identical on the
+  production branch when development mode was entered: normal delivery shipped
+  those through the promote path's own 12.9 check, so a table rebuild in the
+  app's history does not block later development migrations. Entry records that
+  production-branch commit as `migrationBaseline` from the fetched
+  `origin/<productionBranch>` (fetch before entering; a stale ref only makes the
+  check stricter). An enrollment made before the baseline existed has none and
+  judges every tracked file; `development enter --refresh` records it once and
+  never moves it. The one exception is a reviewed contract migration: declared
+  under `deployment.migrations.contractMigrations` with its exact checksum
+  **and** already landed byte-identical on `origin/<productionBranch>`. Contract
+  migrations are reviewed on the gated path; development mode never introduces
+  one. Each applied migration records `compatibility` (`expand-only` or
+  `contract`), which rollback reads.
 
 - **Secrets**: stage runtime secrets with the provider CLI under `secret-stage`.
   Receipts carry names only. A deploy whose declared `requiredRuntimeSecrets`
@@ -276,10 +286,20 @@ pushes it to `narduk-validation/<sha>/<uuid>`, which triggers `validate.yml`:
 the full CI, e2e included, on the exact tree production serves, and that tree is
 now on GitHub. One worker runs per repository on a host. A newer deploy replaces
 a queued commit that has not been pushed yet, and once the newer one is pushed
-the worker cancels the unfinished runs of the older automatic requests, so the
-newest deployed SHA wins. Explicit `development validate` requests are never
-cancelled. `development status` shows the latest automatic request; the
-receipt's `validation` says what was queued, or why nothing was.
+the worker cancels the unfinished runs of the older automatic requests and
+deletes their branches, so the newest deployed SHA wins and at most one
+automatic `narduk-validation/*` branch per repository stays on GitHub (a failed
+delete is retried by the next drain). Run results stay after their branch is
+deleted, but the pushed commit, uncommitted edits included for a dirty deploy,
+stays fetchable by SHA until GitHub collects it. Each push starts the app's full
+`validate.yml`, e2e shards included, on the shared runners. Explicit
+`development validate` requests are never cancelled or deleted.
+
+The receipt's `validation` says what was queued, or why nothing was; the push
+happens after the receipt is written. A push that fails twice is recorded in the
+worker's history, and `development status` then shows the latest automatic
+request as `NOT PUSHED` with the error: run `development validate` for that
+commit.
 
 A red validation files nothing by itself here; the repository's red-main routing
 (and the 24 hour guard above) owns what happens next.

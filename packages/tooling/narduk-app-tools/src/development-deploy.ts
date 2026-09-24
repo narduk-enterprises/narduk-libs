@@ -195,7 +195,8 @@ export interface DevelopmentReceipt {
     gated: boolean
   }
   redMain?: {
-    status: 'clear' | 'fix' | 'unknown'
+    /** clear: no open red-main issue; red: open ones (refused once stale); fix: this deploy names one. */
+    status: 'clear' | 'red' | 'fix' | 'unknown'
     open: number[]
     stale: number[]
     fix?: number
@@ -962,7 +963,7 @@ async function guardRedMain(
   }
   const assessment = assessRedMain(issues, now(), flags.redMainFix)
   receipt.redMain = {
-    status: flags.redMainFix === undefined ? 'clear' : 'fix',
+    status: flags.redMainFix !== undefined ? 'fix' : issues.length ? 'red' : 'clear',
     open: issues.map((issue) => issue.number),
     stale: assessment.stale.map((issue) => issue.number),
     fix: flags.redMainFix,

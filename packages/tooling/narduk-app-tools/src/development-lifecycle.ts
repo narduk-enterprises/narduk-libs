@@ -68,6 +68,7 @@ export type DevelopmentGitHubClient = Pick<
   | 'requestDeployedValidation'
   | 'activeValidationRuns'
   | 'cancelRun'
+  | 'deleteValidationRef'
 > & { branchHead?: (branch: string) => string }
 export type DevelopmentBuildsClient = Pick<
   DevelopmentCloudflare,
@@ -325,6 +326,7 @@ export async function runDevelopmentEnter(
       }
       record.journal.push('verified')
     }
+    if (!record.migrationBaseline) recordMigrationBaseline(project, record, log)
     record.mode = 'active'
     record.configDigest = project.configDigest
     record.toolVersion = toolVersion()
@@ -366,6 +368,32 @@ function newRecord(
     appliedMigrations: [],
     validations: [],
     history: [],
+  }
+}
+
+/**
+ * Pin the production branch as fetched now: what normal delivery shipped
+ * before the hold. No fetch here; a stale ref only makes the 12.9 check
+ * stricter, never looser.
+ */
+function recordMigrationBaseline(
+  project: DevelopmentProject,
+  record: ActivationRecord,
+  log: (message: string) => void,
+): void {
+  const branch = project.deployment.productionBranch
+  try {
+    const commit = developmentGit(project.checkout, [
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `refs/remotes/origin/${branch}^{commit}`,
+    ])
+    record.migrationBaseline = { commit, recordedAt: new Date().toISOString() }
+  } catch {
+    log(
+      `[development] WARNING: origin/${branch} is not fetched; development migrations will re-check every tracked file. Fetch it and run enter --refresh to record the baseline`,
+    )
   }
 }
 
@@ -452,9 +480,14 @@ export function formatStatus(report: StatusReport): string {
     lines.push(
       `  last deploy ${report.lastReceipt.buildId}: ${describeOutcome(report.lastReceipt.outcome)} (base ${report.lastReceipt.baseCommit.slice(0, 12)}${report.lastReceipt.dirty ? ' + local changes' : ''})`,
     )
-  if (report.autoValidation)
+  const auto = report.autoValidation
+  if (auto?.failed)
     lines.push(
-      `  last automatic validation: ${report.autoValidation.sha.slice(0, 12)} (${report.autoValidation.buildId}) via ${report.autoValidation.validationRef}${report.autoValidation.supersededAt ? ', superseded' : ''}`,
+      `  last automatic validation: ${auto.sha.slice(0, 12)} (${auto.buildId}) NOT PUSHED after ${auto.failed.attempts} attempt(s): ${auto.failed.error}; run development validate`,
+    )
+  else if (auto)
+    lines.push(
+      `  last automatic validation: ${auto.sha.slice(0, 12)} (${auto.buildId}) via ${auto.validationRef}${auto.supersededAt ? ', superseded' : ''}`,
     )
   for (const [id, version] of Object.entries(record.expectedServing))
     lines.push(`  ${id} expected serving ${version}`)
@@ -665,9 +698,15 @@ function expandOnlyMigrations(
   commit: string,
 ): 'expand-only' | 'contract' {
   const branch = project.deployment.productionBranch
+  const baseline = record.migrationBaseline?.commit
   const assessment = assessDevelopmentMigrations({
     files,
     applied: record.appliedMigrations,
+    beforeEnrollment: (path) => {
+      if (!baseline) return false
+      const here = blobAt(project.checkout, commit, path)
+      return Boolean(here) && here === blobAt(project.checkout, baseline, path)
+    },
     read: (path) => readFileSync(join(project.checkout, path), 'utf8'),
     waivers: project.deployment.migrations?.contractMigrations ?? [],
     landed: (path) => {
@@ -679,7 +718,13 @@ function expandOnlyMigrations(
     productionBranch: branch,
   })
   if (assessment.refusals.length)
-    throw new Error(`Refusing the migration: ${assessment.refusals.join(' | ')}`)
+    throw new Error(
+      `Refusing the migration: ${assessment.refusals.join(' | ')}${
+        baseline
+          ? ''
+          : ' | This enrollment records no pre-enrollment baseline, so files normal delivery already shipped are checked too: fetch the production branch and run development enter --refresh'
+      }`,
+    )
   return assessment.contract.length ? 'contract' : 'expand-only'
 }
 

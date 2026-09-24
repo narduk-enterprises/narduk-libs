@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { DevelopmentConfig } from './development-config.js'
@@ -243,6 +243,26 @@ export class DevelopmentGitHub {
     const validationRef = `narduk-validation/${sha}/${randomUUID()}`
     this.pushValidationRef(cwd, sha, validationRef)
     return validationRef
+  }
+
+  /**
+   * Delete an automatic validation branch once a newer deploy supersedes it.
+   * Its runs and their results stay on GitHub; only the branch goes. A branch
+   * that is already gone counts as deleted.
+   */
+  deleteValidationRef(cwd: string, validationRef: string): void {
+    if (!/^narduk-validation\/[a-f0-9]{40}\/[\w-]+$/u.test(validationRef))
+      throw new Error('Only validation refs are deleted here')
+    this.assertOrigin(cwd)
+    const result = spawnSync('git', ['push', 'origin', '--delete', `refs/heads/${validationRef}`], {
+      cwd,
+      env: developmentSystemEnv(),
+      encoding: 'utf8',
+      timeout: 60_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    if (result.status === 0 || /remote ref does not exist/u.test(result.stderr ?? '')) return
+    throw new Error(`Validation-ref delete of ${validationRef} was not confirmed`)
   }
 
   /** Unfinished runs on one validation ref: bounded by live work, a few runs per ref. */

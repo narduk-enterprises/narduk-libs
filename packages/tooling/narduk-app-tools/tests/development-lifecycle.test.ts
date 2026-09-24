@@ -1565,7 +1565,7 @@ describe('deploy:dev protected paths and red main', { timeout: 30_000 }, () => {
     const refused = await deploy(h)
     expect(refused.outcome).toBe('refused')
     expect(refused.failure).toMatch(/main has been red for more than 24 h: #12 "main is red: ci"/u)
-    expect(refused.redMain).toMatchObject({ open: [12], stale: [12] })
+    expect(refused.redMain).toMatchObject({ status: 'red', open: [12], stale: [12] })
     expect(h.uploads).toBe(0)
     expect((await deploy(h, { redMainFix: 99 })).failure).toMatch(/names no open red-main issue/u)
     const fix = await deploy(h, { redMainFix: 12 })
@@ -1574,7 +1574,11 @@ describe('deploy:dev protected paths and red main', { timeout: 30_000 }, () => {
     h.github.redMain = [
       { number: 14, title: 'main is red: e2e', created_at: new Date().toISOString() },
     ]
-    expect((await deploy(h)).outcome).toBe('verified')
+    const fresh = await deploy(h)
+    expect(fresh.outcome).toBe('verified')
+    expect(fresh.redMain).toMatchObject({ status: 'red', open: [14], stale: [] })
+    h.github.redMain = []
+    expect((await deploy(h)).redMain?.status).toBe('clear')
     h.github.redMainUnavailable = true
     const unknown = await deploy(h)
     expect(unknown.outcome).toBe('verified')
@@ -1775,6 +1779,63 @@ describe('development-mode migrations are expand-only (12.9)', { timeout: 30_000
     const { record } = await runDevelopmentExec(flags, exec)
     expect(record.appliedMigrations.at(-1)?.compatibility).toBe('contract')
   })
+
+  it('does not re-judge what normal delivery shipped before enrollment', async () => {
+    const h = harness()
+    // History from before development mode: a drizzle-style table rebuild.
+    writeFileSync(join(h.root, 'migrations', '0002_rebuild.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'rebuild')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    const baseline = git(h.root, 'rev-parse', 'HEAD')
+    await enter(h)
+    expect(readActivation(REPO, h.state)!.migrationBaseline?.commit).toBe(baseline)
+    writeFileSync(join(h.root, 'migrations', '0003_add.sql'), 'alter table t add column x;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'expand')
+    const exec = { ...h.context, exec: () => 0 }
+    const run = (commit: string) =>
+      runDevelopmentExec(
+        { operation: 'migration', approvalRef: 'owner#m', commit, argv: ['apply'] },
+        exec,
+      )
+    const { record } = await run(git(h.root, 'rev-parse', 'HEAD'))
+    expect(record.appliedMigrations.at(-1)?.compatibility).toBe('expand-only')
+    // Editing a shipped file makes it pending again, and it is judged.
+    writeFileSync(join(h.root, 'migrations', '0002_rebuild.sql'), 'drop table t;\ndrop table u;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'edit shipped')
+    await expect(run(git(h.root, 'rev-parse', 'HEAD'))).rejects.toThrow(
+      /0002_rebuild\.sql:1 drops table t/u,
+    )
+  })
+
+  it('an enrollment without a baseline checks everything until enter --refresh records one', async () => {
+    const h = harness()
+    writeFileSync(join(h.root, 'migrations', '0002_rebuild.sql'), 'drop table t;\n')
+    git(h.root, 'add', '.')
+    git(h.root, 'commit', '-qm', 'rebuild')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    await enter(h)
+    const legacy = readActivation(REPO, h.state)!
+    delete legacy.migrationBaseline
+    writeActivation(legacy, h.state)
+    const flags = {
+      operation: 'migration' as const,
+      approvalRef: 'owner#m',
+      commit: git(h.root, 'rev-parse', 'HEAD'),
+      argv: ['apply'],
+    }
+    const exec = { ...h.context, exec: () => 0 }
+    await expect(runDevelopmentExec(flags, exec)).rejects.toThrow(
+      /records no pre-enrollment baseline.*enter --refresh/u,
+    )
+    await runDevelopmentEnter(
+      { approvalRef: 'owner-approval#1', publisher: 'lane-a', refresh: true, dryRun: false },
+      h.context,
+    )
+    expect((await runDevelopmentExec(flags, exec)).record.appliedMigrations).toHaveLength(1)
+  })
 })
 
 describe('background validation worker', () => {
@@ -1793,6 +1854,7 @@ describe('background validation worker', () => {
     const state = temp('dev-validation-')
     const pushed: string[] = []
     const cancelled: number[] = []
+    const deleted: string[] = []
     const github = {
       requestDeployedValidation: (_cwd: string, value: string) => {
         const ref = `narduk-validation/${value}/${pushed.length}`
@@ -1802,6 +1864,9 @@ describe('background validation worker', () => {
       activeValidationRuns: (ref: string) => (ref.includes(sha('b')) ? [77] : []),
       cancelRun: (id: number) => {
         cancelled.push(id)
+      },
+      deleteValidationRef: (_cwd: string, ref: string) => {
+        deleted.push(ref)
       },
     }
     const log = (): void => undefined
@@ -1813,11 +1878,86 @@ describe('background validation worker', () => {
     enqueueDeployedValidation(request(state, 'c', 'dev-3'), state)
     drainDeployedValidations({ repository: REPO, stateDirectory: state, github, log })
     expect(cancelled).toEqual([77])
+    // Only the newest automatic validation branch stays on GitHub.
+    expect(deleted).toEqual([`narduk-validation/${sha('b')}/0`])
     const history = readValidationHistory(state, REPO)
-    expect(history.map((entry) => [entry.buildId, Boolean(entry.supersededAt)])).toEqual([
-      ['dev-2', true],
-      ['dev-3', false],
+    expect(
+      history.map((entry) => [
+        entry.buildId,
+        Boolean(entry.supersededAt),
+        Boolean(entry.branchDeletedAt),
+      ]),
+    ).toEqual([
+      ['dev-2', true, true],
+      ['dev-3', false, false],
     ])
+  })
+
+  it('retries a failed branch delete on the next drain', () => {
+    const state = temp('dev-validation-')
+    let failDelete = true
+    const deleted: string[] = []
+    const github = {
+      requestDeployedValidation: (_cwd: string, value: string) => `narduk-validation/${value}/x`,
+      activeValidationRuns: (): number[] => [],
+      cancelRun: (): void => undefined,
+      deleteValidationRef: (_cwd: string, ref: string) => {
+        if (failDelete) throw new Error('offline')
+        deleted.push(ref)
+      },
+    }
+    const drain = () =>
+      drainDeployedValidations({ repository: REPO, stateDirectory: state, github, log: () => {} })
+    enqueueDeployedValidation(request(state, 'a', 'dev-1'), state)
+    drain()
+    enqueueDeployedValidation(request(state, 'b', 'dev-2'), state)
+    drain()
+    expect(readValidationHistory(state, REPO)[0].branchDeletedAt).toBeUndefined()
+    failDelete = false
+    enqueueDeployedValidation(request(state, 'c', 'dev-3'), state)
+    drain()
+    expect(deleted).toEqual([`narduk-validation/${sha('a')}/x`, `narduk-validation/${sha('b')}/x`])
+  })
+
+  it('records a push that never succeeds instead of dropping it', () => {
+    const state = temp('dev-validation-')
+    let attempts = 0
+    const cancelled: number[] = []
+    const github = {
+      requestDeployedValidation: (_cwd: string, value: string) => {
+        if (value === sha('b')) {
+          attempts += 1
+          throw new Error('Validation-ref push was not confirmed')
+        }
+        return `narduk-validation/${value}/x`
+      },
+      activeValidationRuns: (): number[] => [5],
+      cancelRun: (id: number) => {
+        cancelled.push(id)
+      },
+      deleteValidationRef: (): void => undefined,
+    }
+    const args = {
+      repository: REPO,
+      stateDirectory: state,
+      github,
+      log: (): void => undefined,
+      retryDelayMs: 0,
+    }
+    enqueueDeployedValidation(request(state, 'a', 'dev-1'), state)
+    drainDeployedValidations(args)
+    enqueueDeployedValidation(request(state, 'b', 'dev-2'), state)
+    expect(drainDeployedValidations(args)).toEqual([])
+    expect(attempts).toBe(2)
+    // Nothing newer was pushed, so the older validation keeps running.
+    expect(cancelled).toEqual([])
+    const history = readValidationHistory(state, REPO)
+    expect(history.at(-1)).toMatchObject({
+      buildId: 'dev-2',
+      failed: { attempts: 2, error: 'Validation-ref push was not confirmed' },
+    })
+    expect(history.at(-1)?.validationRef).toBeUndefined()
+    expect(history[0].supersededAt).toBeUndefined()
   })
 
   it('leaves the queue to a live worker', () => {
@@ -1836,6 +1976,7 @@ describe('background validation worker', () => {
       },
       activeValidationRuns: (): number[] => [],
       cancelRun: (): void => undefined,
+      deleteValidationRef: (): void => undefined,
     }
     expect(
       drainDeployedValidations({

@@ -194,7 +194,10 @@ const DESTRUCTIVE_WORDING: Record<DestructiveStatement['kind'], string> = {
 }
 
 export interface MigrationAssessment {
-  /** SQL files this run may apply: not yet recorded as applied with these bytes. */
+  /**
+   * SQL files this run may apply: not recorded as applied here with these
+   * bytes, and not shipped by normal delivery before enrollment.
+   */
   pending: string[]
   /** Pending files that drop or rename, each a reviewed contract migration on the production branch. */
   contract: string[]
@@ -213,6 +216,11 @@ export interface MigrationAssessment {
 export function assessDevelopmentMigrations(args: {
   files: ReadonlyArray<{ path: string; sha256: string }>
   applied: readonly AppliedMigration[]
+  /**
+   * Byte-identical on the production branch when development mode was entered:
+   * normal delivery shipped it through the promote path's own 12.9 check.
+   */
+  beforeEnrollment?: (path: string) => boolean
   read: (path: string) => string
   waivers: readonly ContractMigration[]
   landed: (path: string, sha256: string) => boolean
@@ -226,7 +234,11 @@ export function assessDevelopmentMigrations(args: {
   )
   const assessment: MigrationAssessment = { pending: [], contract: [], refusals: [] }
   for (const file of args.files) {
-    if (!file.path.toLowerCase().endsWith('.sql') || applied.get(file.path) === file.sha256)
+    if (
+      !file.path.toLowerCase().endsWith('.sql') ||
+      applied.get(file.path) === file.sha256 ||
+      args.beforeEnrollment?.(file.path)
+    )
       continue
     assessment.pending.push(file.path)
     const destructive = findDestructiveStatements(args.read(file.path))

@@ -65,6 +65,14 @@ export interface ActivationRecord {
   }
   pendingAttempt?: { buildId: string; receipt: string; startedAt: string }
   appliedMigrations: AppliedMigration[]
+  /**
+   * The fetched production-branch commit when entry completed. Migration files
+   * byte-identical there landed through normal delivery, whose promote path
+   * already applied the expand-only rule, so development mode does not re-judge
+   * them. Absent on records entered before it existed; `enter --refresh`
+   * records it once and never moves it.
+   */
+  migrationBaseline?: { commit: string; recordedAt: string }
   validations: Array<{ ref: string; sha: string; reason: string; requestedAt: string }>
   handoff?: { to: string; suspendedAt: string; bundle: string }
   exit?: { preparedAt: string; releaseSha?: string; validationRun?: number }
