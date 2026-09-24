@@ -86,3 +86,56 @@ describe("token layer is the only styling contract", () => {
     },
   );
 });
+
+const PAGE_Z_LAYERS = [
+  "base",
+  "content",
+  "raised",
+  "sticky",
+  "nav",
+  "dropdown",
+  "popover",
+  "overlay",
+  "modal",
+  "toast",
+  "max",
+] as const;
+
+const MAP_Z_LAYERS = [
+  "map-tiles",
+  "map-features",
+  "map-labels",
+  "map-selection",
+  "map-controls",
+] as const;
+
+describe("phase 1c token scale (narduk-libs#535)", () => {
+  const tokens = readFileSync(join(pkgRoot, "tokens.css"), "utf8");
+
+  it("ships eleven page --ns-z layers plus the named map-internal layers", () => {
+    expect(PAGE_Z_LAYERS).toHaveLength(11);
+    for (const name of PAGE_Z_LAYERS) {
+      expect(tokens).toMatch(new RegExp(`--ns-z-${name}:\\s*\\d+;`, "u"));
+    }
+    for (const name of MAP_Z_LAYERS) {
+      expect(tokens).toMatch(new RegExp(`--ns-z-${name}:\\s*\\d+;`, "u"));
+    }
+  });
+
+  it("uses Tailwind 40rem/64rem breakpoints, not 620/820/1080", () => {
+    expect(tokens).toContain("@media (width < 40rem)");
+    expect(tokens).toContain("@media (40rem <= width < 64rem)");
+    expect(tokens).not.toMatch(/620px|820px|1080px/u);
+    expect(tokens).toContain("--ns-bp-sm: 40rem;");
+    expect(tokens).toContain("--ns-bp-lg: 64rem;");
+  });
+
+  it("maps --bs-* aliases onto --ns-* so the duplicate token set is one source", () => {
+    const aliases = [...tokens.matchAll(/--bs-([a-z0-9-]+):\s*var\(--ns-\1\);/gu)].map(
+      (match) => match[1],
+    );
+    expect(aliases.length).toBeGreaterThanOrEqual(20);
+    expect(aliases).toEqual(expect.arrayContaining(["ink", "surface", "space-4", "r-md"]));
+    expect(tokens).not.toMatch(/--bs-[a-z0-9-]+:\s+(?!var\(--ns-)/u);
+  });
+});

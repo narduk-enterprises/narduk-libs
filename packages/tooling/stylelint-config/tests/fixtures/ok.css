@@ -1,0 +1,13 @@
+:root {
+  --bs-ink: var(--ns-ink);
+}
+
+.stack {
+  z-index: var(--ns-z-dropdown);
+}
+
+@media (width < 40rem) {
+  .page {
+    margin: 0;
+  }
+}

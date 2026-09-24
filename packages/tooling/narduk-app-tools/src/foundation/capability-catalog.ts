@@ -208,6 +208,12 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
     family: 'design',
     description: 'Shared build-time configuration for the five status applications.',
   },
+  {
+    id: 'stylelint-config',
+    package: '@narduk-enterprises/stylelint-config',
+    family: 'tooling',
+    description: 'Stylelint baseline and ratcheting warning budget for Narduk CSS token rules.',
+  },
 ]
 
 /** Private workspace packages deliberately left out of the catalog. */
