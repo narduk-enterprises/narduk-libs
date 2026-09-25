@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-charts",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "NardukCharts — Vue 3 SVG charting for dashboards and trading-grade market UIs (TypeScript, themable, accessible). Package: @narduk-enterprises/narduk-charts.",
   "type": "module",
   "main": "./dist/narduk-charts.umd.cjs",

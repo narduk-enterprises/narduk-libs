@@ -1,5 +1,22 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.30.1
+
+### Patch Changes
+
+- 8212ffd: `POST /api/auth/api-keys` now refuses, with 403, to let an API-key
+  caller mint a scope it does not hold itself. A key holding only
+  `auth:api-keys:write` can no longer mint a wildcard (`*`) key; `*` is mintable
+  only by a key that holds `*`. Session-authenticated users are unaffected
+  (narduk-libs#858).
+- 57cf7b8: `GET /api/auth/session/exchange` now enforces the `authLogin` rate
+  limit, like its POST twin. Before this, the GET route ran the Supabase code
+  and `token_hash` exchange without any throttle (narduk-libs#879).
+- Updated dependencies [61462de]
+- Updated dependencies [786568d]
+- Updated dependencies [776c0a1]
+  - @narduk-enterprises/narduk-core@2.14.1
+
 ## 1.30.0
 
 ### Minor Changes

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.10.1
+
+### Patch Changes
+
+- e473c74: `createMapKitFixedWindowRateLimit` no longer keeps a window for every
+  client it has ever seen. Expired windows are dropped as time passes, and a new
+  `maxKeys` option (default 10,000) caps the live windows; past the cap the
+  oldest is dropped and that client starts a fresh window. The per-client
+  `cf-connecting-ip` keying in the docs is now bounded under traffic from many
+  addresses.
+- e473c74: `<AppMapKit>` zoom-to-fit frames points either side of the
+  antimeridian the short way round. `mapKitBoundingRegion` now measures
+  longitude with the same largest-gap span as `computeCoordinateBounds`, so
+  points at 179.5 and -179.5 frame a 1-degree strip centred on 180 instead of a
+  359-degree arc centred on 0.
+
 ## 2.10.0
 
 ### Minor Changes

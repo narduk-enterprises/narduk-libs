@@ -1,5 +1,28 @@
 # @narduk-enterprises/narduk-core
 
+## 2.14.1
+
+### Patch Changes
+
+- 61462de: The canonical-host redirect now always stays on the canonical origin.
+  Before this, a raw request path such as `/.//evil.com` normalised to
+  `//evil.com`, and the middleware resolved that as a scheme-relative URL,
+  answering with a 308 to `https://evil.com/` (narduk-libs#444, CANON-1).
+- 786568d: HEAD-as-GET now carries the caller's socket address to the inner GET
+  as Nitro `_platform.clientAddress` context, not as a synthesised
+  `cf-connecting-ip` header. A route that trusts `x-forwarded-for` now resolves
+  a HEAD to the same client as its GET, where before every client behind a proxy
+  shared the proxy's bucket for HEAD. The default configuration keeps its
+  per-socket identity, and no client-settable input gains precedence
+  (narduk-libs#683).
+- 776c0a1: The legacy enforcing CSP no longer allows
+  `https://pagead2.googlesyndication.com` in `script-src` for every app. An app
+  that serves AdSense adds the origin itself with
+  `runtimeConfig.public.cspScriptSrc` / `CSP_SCRIPT_SRC`, plus the frame and
+  connect origins its ads need (narduk-libs#459).
+- Updated dependencies [31c907d]
+  - @narduk-enterprises/narduk-logging@0.4.1
+
 ## 2.14.0
 
 ### Minor Changes
