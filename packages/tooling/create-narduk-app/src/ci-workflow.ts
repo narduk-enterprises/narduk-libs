@@ -368,8 +368,8 @@ function createRunnerOnboardingJob(): string[] {
  *
  * It never waits on anything, so it holds no runner while CI runs. It
  * promotes only main's head, so an older commit cannot replace a newer one.
- * An app whose promote.yml has no `verified-sha` input gets a notice instead
- * of a failure.
+ * An app whose promote.yml is absent (a 404) or has no `verified-sha` input
+ * gets a notice instead of a failure; any other API error fails the job.
  */
 export const PROMOTE_DISPATCH_JOB_NAME = 'Start Promote for a bot-dispatched main run'
 
@@ -406,9 +406,15 @@ function createPromoteDispatchJob(visibility: AppVisibility, needs: string): str
     '          VERIFIED_SHA: ${{ github.sha }}',
     '        run: |',
     '          set -euo pipefail',
-    '          promote_workflow=$(gh api "repos/$REPO/contents/.github/workflows/promote.yml?ref=$VERIFIED_SHA" \\',
-    '            --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)',
-    '          if ! grep -Eq \'^ {6}verified-sha:[[:space:]]*$\' <<<"$promote_workflow"; then',
+    '          # Only a 404 means "no promote.yml"; any other API failure fails the',
+    '          # job rather than quietly skipping the promotion.',
+    '          if ! encoded=$(gh api "repos/$REPO/contents/.github/workflows/promote.yml?ref=$VERIFIED_SHA" \\',
+    '            --jq .content 2>"$RUNNER_TEMP/promote-lookup.err"); then',
+    '            grep -q "HTTP 404" "$RUNNER_TEMP/promote-lookup.err" || { cat "$RUNNER_TEMP/promote-lookup.err" >&2; exit 1; }',
+    '            encoded=""',
+    '          fi',
+    '          promote_workflow=$(base64 -d <<<"$encoded")',
+    '          if ! grep -Eq \'^[[:space:]]+verified-sha:[[:space:]]*$\' <<<"$promote_workflow"; then',
     '            echo "::notice::promote.yml takes no workflow_dispatch verified-sha input, so $VERIFIED_SHA reaches production only if a later commit is promoted (narduk-libs#787)."',
     '            exit 0',
     '          fi',
