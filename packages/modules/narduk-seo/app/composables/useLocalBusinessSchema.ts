@@ -4,7 +4,7 @@
 
 import { useSchemaOrg } from '#imports'
 
-interface LocalBusinessOptions {
+export interface LocalBusinessOptions {
   address: {
     addressCountry?: string
     addressLocality: string
@@ -20,6 +20,11 @@ interface LocalBusinessOptions {
   }
   image?: string
   name: string
+  /**
+   * schema.org `openingHours` text form, one entry per rule, e.g.
+   * `['Mo-Fr 09:00-17:00', 'Sa 10:00-14:00']`. Emitted as `openingHours`;
+   * `openingHoursSpecification` takes structured objects, not strings (#944).
+   */
   openingHours?: string[]
   priceRange?: string
   telephone?: string
@@ -62,7 +67,7 @@ export function useLocalBusinessSchema(options: LocalBusinessOptions) {
           longitude: geo.longitude,
         },
       }),
-      ...(openingHours?.length && { openingHoursSpecification: openingHours }),
+      ...(openingHours?.length && { openingHours }),
     },
   ])
 }
