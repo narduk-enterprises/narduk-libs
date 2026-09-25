@@ -14,7 +14,9 @@ function createChain(): Record<string, unknown> {
     'from',
     'insert',
     'limit',
+    'offset',
     'onConflictDoUpdate',
+    'orderBy',
     'returning',
     'select',
     'set',
@@ -41,6 +43,11 @@ export function createAppDatabase() {
 export async function executeDatabaseQuery<T>(query: unknown): Promise<T> {
   databaseStub.executedQueries.push(query)
   return databaseStub.rows as T
+}
+
+export async function getDatabaseRows<T>(query: unknown): Promise<T[]> {
+  databaseStub.executedQueries.push(query)
+  return databaseStub.rows as T[]
 }
 
 export async function getDatabaseRow<T>(query: unknown): Promise<T | undefined> {
