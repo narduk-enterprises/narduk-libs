@@ -613,7 +613,10 @@ export function formatCompact(
     notation: 'compact',
     compactDisplay: options.compactDisplay ?? 'short',
     minimumFractionDigits: digits.minimumFractionDigits,
-    maximumFractionDigits: digits.maximumFractionDigits ?? 1,
+    // The default ceiling of one digit rises to meet a larger minimum rather
+    // than making `Intl` throw a `RangeError` from a render path (#937).
+    maximumFractionDigits:
+      digits.maximumFractionDigits ?? Math.max(1, digits.minimumFractionDigits ?? 0),
     signDisplay: options.signDisplay,
   }).format(value)
 }
@@ -637,11 +640,15 @@ export function formatPercent(
 ): string {
   const empty = options.empty ?? DEFAULT_EMPTY
   if (typeof value !== 'number' || !Number.isFinite(value)) return empty
-  const digits = options.digits ?? 1
+  // One fraction digit by default; `digits` or the explicit pair replaces it,
+  // exactly as in the other number formatters (#937).
+  const explicit =
+    options.digits !== undefined ||
+    options.minimumFractionDigits !== undefined ||
+    options.maximumFractionDigits !== undefined
   return numberFormat(options.locale ?? DEFAULT_LOCALE, {
     style: 'percent',
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
+    ...fractionDigits(explicit ? options : { digits: 1 }),
     signDisplay: options.signDisplay,
   }).format(options.input === 'percent' ? value / 100 : value)
 }

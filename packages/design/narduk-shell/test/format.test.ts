@@ -290,6 +290,17 @@ describe('formatCompact', () => {
     expect(formatCompact(1234, { ...en, digits: 2 })).toBe('1.23K')
   })
 
+  // narduk-libs#937: a minimum above the default ceiling of 1 threw a
+  // RangeError out of a render path instead of raising the ceiling.
+  it('raises its default ceiling to a larger minimumFractionDigits instead of throwing', () => {
+    expect(formatCompact(1234, { ...en, minimumFractionDigits: 2 })).toBe('1.23K')
+    expect(formatCompact(1234, { ...en, minimumFractionDigits: 0 })).toBe('1.2K')
+    expect(formatCompact(1234, { ...en, maximumFractionDigits: 0 })).toBe('1K')
+    expect(
+      formatCompact(1_234_567, { ...en, minimumFractionDigits: 1, maximumFractionDigits: 3 }),
+    ).toBe('1.235M')
+  })
+
   it('renders zero and the placeholder distinctly', () => {
     expect(formatCompact(0, en)).toBe('0')
     expect(formatCompact(null, en)).toBe('—')
@@ -306,6 +317,16 @@ describe('formatPercent', () => {
   it('reads percentage points when the call site says so', () => {
     expect(formatPercent(5.5, { ...en, input: 'percent' })).toBe('5.5%')
     expect(formatPercent(-3.25, { ...en, input: 'percent', digits: 2 })).toBe('-3.25%')
+  })
+
+  // narduk-libs#937: the explicit pair was accepted by the type and dropped.
+  it('honours minimumFractionDigits and maximumFractionDigits like the other number formatters', () => {
+    expect(formatPercent(0.5, { ...en, maximumFractionDigits: 0 })).toBe('50%')
+    expect(
+      formatPercent(0.12345, { ...en, minimumFractionDigits: 2, maximumFractionDigits: 3 }),
+    ).toBe('12.345%')
+    expect(formatPercent(0.5, { ...en, minimumFractionDigits: 2 })).toBe('50.00%')
+    expect(formatPercent(0.5, { ...en, digits: 0, maximumFractionDigits: 3 })).toBe('50%')
   })
 
   it('takes signDisplay, and renders zero and the placeholder distinctly', () => {
