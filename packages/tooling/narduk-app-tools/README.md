@@ -57,8 +57,14 @@ For incident patches from a workstation, use `narduk-app deploy-hotfix` and the
 credentials, a clean commit snapshot, required local checks, version promotion
 and live proof. Legacy `deploy-local` is not the new hotfix procedure; it no
 longer reads Doppler `narduk/tokens` (Doppler is retired except `ne`) and takes
-its build secrets from the environment, so run it under the app's nvault config
-(`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`).
+its build secrets from the environment. `GH_PACKAGES_READ` comes from its
+registered route (nvault `github/prd/narduk-enterprises-packages-read`) and the
+app's own secrets from the app's nvault config, so run it under both:
+
+```sh
+nvault run -p github -e prd -c narduk-enterprises-packages-read -- \
+  nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes
+```
 
 For an app still being built, an owner can enroll it in **development mode**:
 one approved workstation deploys its checkout, uncommitted edits included, with
@@ -219,8 +225,8 @@ mutation, so invoking the production script locally cannot migrate a remote
 database and then fail only at the deploy step.
 
 The command never writes secret files. Registry auth writes the requested
-`.npmrc.auth` path and scopes GitHub Packages to both `@narduk-enterprises` and
-`@narduk-geo`.
+`.npmrc.auth` path and scopes GitHub Packages to `@narduk-enterprises`. It drops
+any stale route for the retired `@narduk-geo` and `@loganrenz` scopes.
 
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
@@ -847,8 +853,8 @@ Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
 `Authorization` header and no token needed. With no such line, or a route to
 `npm.pkg.github.com`, the reader uses GitHub Packages with `NODE_AUTH_TOKEN`
 (then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
-corroborates an ambiguous 404 with a scope probe. Other scopes, such as
-`@narduk-geo`, always stay on GitHub Packages.
+corroborates an ambiguous 404 with a scope probe. Other scopes always stay on
+GitHub Packages.
 
 **Sub-check 1.5 fails a D1 binding that names no real database.** Any
 `d1_databases[].database_id` in the app's wrangler config (top level or any
@@ -861,6 +867,25 @@ wrangler config. A fresh `create-narduk-app` scaffold with a database therefore
 fails 1.5, and only 1.5, until it is provisioned: the placeholder builds and
 deploys, but no request that touches the database can succeed (narduk-libs#662).
 A PASS reads the file only; it does not prove the database exists.
+
+**An app without Nuxt is not held to the Nuxt modules** (narduk-libs#157).
+`narduk-core`, `narduk-seo`, `narduk-analytics`, `narduk-auth` and
+`narduk-uploads` are Nuxt modules, so an app with no Nuxt can never register
+them. The checker counts an app as Nuxt when a `nuxt.config.*` exists at a known
+path (the root or `apps/web/`) or any `package.json` in the checkout depends on
+`nuxt`. An app with neither gets:
+
+| Sub-check       | Non-Nuxt result                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| 2.1             | checks `narduk-testkit`, `narduk-app-tools` and `eslint-config` only, and still fails on a missing one |
+| 2.1c            | `not-applicable`: `narduk-core` is a Nuxt module                                                       |
+| 2.3             | `not-applicable` when `narduk-core` is not a dependency; checked as usual when it is                   |
+| 3.1 / 3.2 / 3.3 | `not-applicable`, naming the Nuxt module each one would require                                        |
+
+Each `not-applicable` detail says `not a Nuxt app` and what was looked for, and
+none of these is ever a `pass`: the report does not claim the app registered
+modules it cannot load. 3.4 and 3.5 are unchanged. The ESLint route for such an
+app is `composeSharedConfigs()` (see the eslint-config README).
 
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;

@@ -7,7 +7,7 @@ import securityHeaders from '../runtime/server/middleware/securityHeaders'
 import { BASELINE_ALLOWLIST } from '../runtime/shared/security-headers'
 
 const { runtime } = vi.hoisted(() => ({
-  runtime: { public: { cspMediaSrc: '', cspConnectSrc: '' } },
+  runtime: { public: { cspMediaSrc: '', cspConnectSrc: '', cspScriptSrc: '' } },
 }))
 vi.mock('nitropack/runtime', () => ({ useRuntimeConfig: () => runtime }))
 
@@ -69,5 +69,30 @@ describe('GA4 Google-signals beacon (issue #472)', () => {
 
   it('covers the same host on img-src via the existing https: wildcard', async () => {
     expect(directive('img-src', await headers())).toContain('https:')
+  })
+})
+
+describe('legacy script-src baseline (issue #459)', () => {
+  const ADSENSE = 'https://pagead2.googlesyndication.com'
+
+  afterEach(() => {
+    runtime.public.cspScriptSrc = ''
+  })
+
+  it('does not grant the AdSense script origin to every app', async () => {
+    expect(directive('script-src', await headers())).not.toContain(ADSENSE)
+  })
+
+  it('lists the same script hosts as the strict preset baseline', async () => {
+    const hosts = directive('script-src', await headers())!
+      .split(' ')
+      .slice(1)
+      .filter((source) => !source.startsWith("'"))
+    expect([...hosts].sort()).toEqual([...BASELINE_ALLOWLIST.script].sort())
+  })
+
+  it('still lets an app that serves ads opt the origin back in', async () => {
+    runtime.public.cspScriptSrc = ADSENSE
+    expect(directive('script-src', await headers())).toContain(ADSENSE)
   })
 })

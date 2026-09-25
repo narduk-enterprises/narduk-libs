@@ -28,6 +28,12 @@ export interface MapKitFixedWindowOptions {
    */
   key?: (context: MapKitRateLimitContext) => string
   limit: number
+  /**
+   * Most client windows held at once (default 10,000). Expired windows are dropped as time
+   * passes; past this many LIVE windows the oldest is dropped, and that client starts a fresh
+   * window. Bounds a per-client key under traffic from many addresses (narduk-libs#869).
+   */
+  maxKeys?: number
   /** Injected so a test does not have to wait a window out. */
   now?: () => number
   windowSeconds: number
@@ -38,20 +44,39 @@ interface Window {
   resetAtMs: number
 }
 
+const DEFAULT_MAX_KEYS = 10_000
+
 export function createMapKitFixedWindowRateLimit(
   options: MapKitFixedWindowOptions,
 ): MapKitRateLimitHook {
   const now = options.now ?? Date.now
   const keyOf = options.key ?? ((context: MapKitRateLimitContext) => context.self)
   const windowMs = Math.max(1, options.windowSeconds) * 1000
+  const maxKeys = Math.max(1, options.maxKeys ?? DEFAULT_MAX_KEYS)
+  /**
+   * Insertion order is reset order: every window is the same length and a renewed window is
+   * re-inserted at the back, so expired windows are always at the front.
+   */
   const windows = new Map<string, Window>()
 
   return (context: MapKitRateLimitContext) => {
     const at = now()
+    for (const [staleKey, stale] of windows) {
+      if (at < stale.resetAtMs) break
+      windows.delete(staleKey)
+    }
+
     const key = keyOf(context)
     const window = windows.get(key)
     if (!window || at >= window.resetAtMs) {
+      // Delete first so a renewed window moves to the back (a clock that steps backwards can
+      // leave an expired window behind a live one, which the sweep above then stops at).
+      windows.delete(key)
       windows.set(key, { count: 1, resetAtMs: at + windowMs })
+      if (windows.size > maxKeys) {
+        const oldestKey = windows.keys().next().value
+        if (oldestKey !== undefined) windows.delete(oldestKey)
+      }
       return { allowed: true }
     }
     window.count += 1

@@ -6,10 +6,14 @@
 # this script or the allowed hosts change. It must exit 0 within about
 # 5 minutes, so every step is best-effort and the script never aborts.
 #
-# Layers narduk-libs needs on top of the estate baseline:
-#   1. The estate baseline: agent-infrastructure's scripts/claude-cloud-env-setup.sh
-#      (Node 24, pnpm through corepack, shellcheck, PyYAML, the estate manual
-#      at ~/.local/share/agent-infrastructure, and ~/.claude/CLAUDE.md).
+# Layers:
+#   1. The estate baseline, when it can be fetched: agent-infrastructure's
+#      scripts/claude-cloud-env-setup.sh (the estate manual at
+#      ~/.local/share/agent-infrastructure and ~/.claude/CLAUDE.md). That repo
+#      is private and the session's git proxy refuses the clone (403, #952), so
+#      nothing below depends on it: Node, pnpm and gh are installed here.
+#   1b. Node at the repo's .nvmrc pin into /opt/node24, pnpm at package.json's
+#      packageManager pin through corepack, and the GitHub CLI.
 #   2. uv at the version logging-languages.yml pins, for the narduk-logging
 #      Python quality gate.
 #   3. A warm `pnpm install --frozen-lockfile` when the repo is already on disk,
@@ -34,6 +38,8 @@
 set -uo pipefail
 
 UV_PIN="0.12.7"   # .github/workflows/logging-languages.yml setup-uv version
+NODE_PIN="24.21.0" # .nvmrc
+PNPM_PIN="10.33.4" # package.json packageManager
 AI_ROOT="${HOME}/.local/share/agent-infrastructure"
 AI_URL="https://github.com/narduk-enterprises/agent-infrastructure.git"
 REPO_DIR="/home/user/narduk-libs"
@@ -56,11 +62,41 @@ fi
 if [ -f "${AI_ROOT}/scripts/claude-cloud-env-setup.sh" ]; then
   bash "${AI_ROOT}/scripts/claude-cloud-env-setup.sh" || log "WARN: estate baseline exited nonzero"
 else
-  log "WARN: estate baseline script missing; Node 24 and pnpm may be absent"
+  log "estate baseline unavailable; installing Node, pnpm and gh directly"
+fi
+
+# --- 1b. Node, pnpm, gh (standalone) ---------------------------------------------
+if [ "$(/opt/node24/bin/node --version 2>/dev/null)" != "v${NODE_PIN}" ]; then
+  node_tar="node-v${NODE_PIN}-linux-x64.tar.xz"
+  if timeout 120 curl -fsSL "https://nodejs.org/dist/v${NODE_PIN}/${node_tar}" -o "/tmp/${node_tar}"; then
+    rm -rf /opt/node24 && mkdir -p /opt/node24 \
+      && tar -xJf "/tmp/${node_tar}" -C /opt/node24 --strip-components=1 \
+      && log "node ${NODE_PIN} installed" || log "WARN: node unpack failed"
+    rm -f "/tmp/${node_tar}"
+  else
+    log "WARN: node ${NODE_PIN} download failed"
+  fi
 fi
 export PATH="/opt/node24/bin:${PATH}"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 hash -r
+if command -v corepack >/dev/null 2>&1; then
+  corepack enable --install-directory /opt/node24/bin >/dev/null 2>&1 \
+    && timeout 60 corepack prepare "pnpm@${PNPM_PIN}" --activate >/dev/null 2>&1 \
+    && log "pnpm ${PNPM_PIN} ready" || log "WARN: corepack could not prepare pnpm"
+fi
+# Login shells must find the same node and pnpm the setup used.
+# shellcheck disable=SC2016 # expanded by the login shell, not here
+printf 'export PATH="/opt/node24/bin:${PATH}"\nexport COREPACK_ENABLE_DOWNLOAD_PROMPT=0\n' \
+  > /etc/profile.d/narduk-node24.sh 2>/dev/null || true
+# gh is installed but not authenticated: this environment holds no token, and
+# the session's GitHub access is a git proxy gh cannot use. See
+# docs/operations/claude-cloud-environment.md, "Merging from a cloud session".
+if ! command -v gh >/dev/null 2>&1; then
+  (timeout 120 apt-get install -y -qq gh >/dev/null 2>&1 \
+    || { timeout 60 apt-get update -qq >/dev/null 2>&1 && timeout 120 apt-get install -y -qq gh >/dev/null 2>&1; }) \
+    && log "gh installed" || log "WARN: gh install failed"
+fi
 
 # --- 2. uv -------------------------------------------------------------------------
 if [ "$(uv --version 2>/dev/null | awk '{print $2}')" != "$UV_PIN" ]; then
@@ -112,6 +148,9 @@ AGENTS.md first. \`pnpm run preflight\` is the cheap PR gate. uv is installed.
 Playwright Chromium usually is; if an e2e run cannot find it, run
 \`pnpm exec playwright install --with-deps chromium\`. Swift is not installed: run
 \`python3 scripts/install-swift-linux.py\` if you need the narduk-logging Swift gate.
+A cloud session cannot merge: gh is unauthenticated and verify-pr-gate.py is
+unreachable. Stop at an open PR with \`READY TO MERGE @ <sha>\` on the body's
+first line (docs/operations/claude-cloud-environment.md).
 EOF
 
 log "done"

@@ -77,6 +77,34 @@ describe('default social image', () => {
     })
   })
 
+  // narduk-libs#874: the getter runs on every SSR request, so a throw here is a
+  // 500 on every page. An app with defaultOgImage but no site URL yet (a fresh
+  // preview) must render without default social tags instead.
+  it.each([
+    ['no site URL', undefined],
+    ['an unparsable site URL', 'not a url'],
+    ['a plain-HTTP public site URL', 'http://preview.example.com'],
+  ])('renders no default social tags, without throwing, for %s', async (_label, url) => {
+    const useHead = vi.fn()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.doMock('#imports', () => ({
+      defineNuxtPlugin: <T>(plugin: T): T => plugin,
+      useHead,
+      useRoute: () => ({ path: '/' }),
+      useRuntimeConfig: () => ({
+        public: { nardukSeoDefaultImage: { url: '/og.png', alt: 'Example' } },
+      }),
+      useSiteConfig: () => ({ url, name: 'Example', description: 'App' }),
+    }))
+    const { default: plugin } = await import('../app/plugins/defaultSocialImage')
+    ;(plugin as unknown as () => void)()
+    const metadata = useHead.mock.calls[0]?.[0] as () => { meta: unknown[] }
+    expect(() => metadata()).not.toThrow()
+    expect(metadata().meta).toEqual([])
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
   it('skips malformed runtime config image values', async () => {
     const useHead = vi.fn()
     vi.doMock('#imports', () => ({

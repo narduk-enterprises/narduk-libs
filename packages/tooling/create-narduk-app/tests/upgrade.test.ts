@@ -583,17 +583,50 @@ describe('upgrade opt-outs and notices', () => {
     expect(after).toContain('This app runs its suite through a wrapper.')
   })
 
-  it('treats a missing router region as an opt-in notice, not drift', async () => {
+  // narduk-libs#377: an AGENTS.md that predates the router block gets it
+  // appended rather than being skipped; hand-written prose stays put.
+  it('appends a missing router region to an existing AGENTS.md, then is idempotent', async () => {
     const targetDir = await scaffold()
-    await edit(targetDir, 'AGENTS.md', (contents) =>
-      contents
-        .replace(REGION_MARKERS.agentsRouter.start + '\n', '')
-        .replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
-    )
+    const handWritten = '# App agent guide\n\nApp-specific guidance that upgrade never reads.\n'
+    await writeFile(join(targetDir, 'AGENTS.md'), handWritten, 'utf8')
 
-    const report = await upgradeNardukApp({ targetDir })
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('drift')
+
+    const after = await read(targetDir, 'AGENTS.md')
+    expect(
+      after.startsWith(handWritten.trimEnd() + '\n\n' + REGION_MARKERS.agentsRouter.start),
+    ).toBe(true)
+    expect(after.endsWith(REGION_MARKERS.agentsRouter.end + '\n')).toBe(true)
+    expect(after).toContain('`pnpm exec narduk-app doctor`')
+    expect(after).toContain('`@narduk-enterprises/narduk-core`')
+
+    const again = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(again, 'AGENTS.md')).toBe('clean')
+    expect(await read(targetDir, 'AGENTS.md')).toBe(after)
+  })
+
+  it('leaves an AGENTS.md with an unmanaged header and no markers alone', async () => {
+    const targetDir = await scaffold()
+    const optedOut = '<!-- narduk:unmanaged -->\n# App agent guide\n\nOwned entirely by the app.\n'
+    await writeFile(join(targetDir, 'AGENTS.md'), optedOut, 'utf8')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, 'AGENTS.md')).toBe('unmanaged')
     expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, 'AGENTS.md')).toBe(optedOut)
+  })
+
+  it('refuses to guess when only one router marker is present', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'AGENTS.md', (contents) =>
+      contents.replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
+    )
+    const before = await read(targetDir, 'AGENTS.md')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('unresolved')
+    expect(await read(targetDir, 'AGENTS.md')).toBe(before)
   })
 
   it('treats an app e2e document with no policy markers as an opt-in notice', async () => {
@@ -627,6 +660,11 @@ describe('upgrade opt-outs and notices', () => {
     const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, '.github/dependabot.yml')).toBe('create')
     expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
+    // The dry-run diff for a created file is additions only, with no phantom
+    // blank line removed from a file that never existed (#881).
+    const diff = report.changes.find((change) => change.path === '.github/dependabot.yml')?.diff
+    expect(diff).toMatch(/^@@ -0,0 \+1,\d+ @@$/mu)
+    expect(diff?.split('\n').filter((line) => /^-(?!--)/u.test(line))).toEqual([])
   })
 })
 
@@ -807,6 +845,13 @@ describe('upgrade CLI', () => {
 describe('unified diff rendering', () => {
   it('returns nothing for identical input', () => {
     expect(unifiedDiff('a.txt', 'one\ntwo\n', 'one\ntwo\n')).toBe('')
+  })
+
+  it('renders a created file as additions and an emptied one as removals (#881)', () => {
+    expect(unifiedDiff('f.txt', '', 'a\nb\n')).toBe(
+      '--- a/f.txt\n+++ b/f.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n',
+    )
+    expect(unifiedDiff('f.txt', 'a\n', '')).toBe('--- a/f.txt\n+++ b/f.txt\n@@ -1,1 +0,0 @@\n-a\n')
   })
 
   it('renders hunks with headers, context and both change markers', () => {

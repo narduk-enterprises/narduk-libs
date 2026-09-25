@@ -79,6 +79,27 @@ describe('findDestructiveStatements', () => {
     ).toEqual(['drop-table:users'])
   })
 
+  it("treats the name a rename moves a table to as the file's own (#876)", () => {
+    // The rebuild that renames the original out of the way first: only that
+    // rename touches something the serving code reads.
+    expect(
+      kinds(`
+        ALTER TABLE foo RENAME TO foo_old;
+        CREATE TABLE foo (id INTEGER PRIMARY KEY, name TEXT);
+        INSERT INTO foo (id, name) SELECT id, name FROM foo_old;
+        DROP TABLE "foo_old";
+      `),
+    ).toEqual(['rename-table:foo'])
+    // Renaming the file's own table onward keeps the new name the file's own.
+    expect(
+      kinds(`
+        CREATE TABLE tmp_a (id INTEGER);
+        ALTER TABLE tmp_a RENAME TO tmp_b;
+        DROP TABLE tmp_b;
+      `),
+    ).toEqual([])
+  })
+
   it('does not treat CREATE ... IF NOT EXISTS as proof the table is new', () => {
     expect(kinds('CREATE TABLE IF NOT EXISTS sessions (id TEXT);\nDROP TABLE sessions;')).toEqual([
       'drop-table:sessions',

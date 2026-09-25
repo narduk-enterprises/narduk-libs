@@ -548,6 +548,7 @@ export async function runDevelopmentStatus(
   }
   if (record)
     report.autoValidation = readValidationHistory(stateDirectory, project.repository).at(-1)
+  if (flags.remote && !record) report.workflows = heldElsewhere(project, github)
   if (flags.remote && record) {
     report.remote = {}
     for (const id of Object.keys(record.components)) {
@@ -572,8 +573,15 @@ export async function runDevelopmentStatus(
 }
 
 export function formatStatus(report: StatusReport): string {
-  if (!report.record)
-    return `${report.repository}: normal delivery (not enrolled in development mode on this workstation)`
+  if (!report.record) {
+    const line = `${report.repository}: normal delivery (not enrolled in development mode on this workstation)`
+    if (!report.workflows?.length) return line
+    return [
+      line,
+      `  held on GitHub: ${report.workflows.map(({ path, state }) => `${path} (${state})`).join(', ')}`,
+      '  enrolled from another workstation: pushes get no normal CI; run development validate for a full CI result',
+    ].join('\n')
+  }
   const record = report.record
   const lines = [
     `${report.repository}: development ${record.mode}`,
@@ -930,19 +938,47 @@ export async function runDevelopmentExec(
 
 // ─── explicit validation ──────────────────────────────────────────────────────
 
+/**
+ * Held workflows GitHub reports disabled. The activation record lives only on
+ * the publisher's workstation, so from any other host this is the evidence that
+ * the repository is enrolled and normal CI is not running (narduk-libs#827).
+ * Retired workflows are disabled by declaration and prove nothing.
+ */
+function heldElsewhere(
+  project: DevelopmentProject,
+  github: DevelopmentGitHubClient,
+): Array<{ path: string; state: string }> {
+  const { workflows, retiredWorkflows } = project.development.automation
+  const held = new Set(workflows.filter((path) => !retiredWorkflows.includes(path)))
+  return github
+    .workflows()
+    .filter((workflow) => held.has(workflow.path) && workflow.state.startsWith('disabled_'))
+    .map(({ path, state }) => ({ path, state }))
+}
+
 export function runDevelopmentValidate(
   flags: { ref: string; sha: string; reason: string },
   context: LifecycleContext = {},
 ): string {
   const { stateDirectory, log, project, github } = resolveContext(context)
   const record = readActivation(project.repository, stateDirectory)
-  if (!record) throw new Error('Not enrolled; normal delivery already validates pushes')
+  if (!record) {
+    const held = heldElsewhere(project, github)
+    if (!held.length)
+      throw new Error(
+        `Not enrolled: none of ${project.development.automation.workflows.join(', ')} is held on GitHub, so normal delivery CI validates pushes`,
+      )
+    log(
+      `[development] ${held.map(({ path, state }) => `${path} (${state})`).join(', ')}: CI is held by an enrollment on another workstation; requesting validation from this one`,
+    )
+  }
   const validationRef = github.requestValidation(
     project.checkout,
     flags.ref,
     flags.sha,
     flags.reason,
     (request) => {
+      if (!record) return
       record.validations.push({
         ref: request.validationRef,
         sha: request.sha,

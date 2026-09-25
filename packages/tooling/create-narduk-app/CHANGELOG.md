@@ -1,5 +1,136 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.2
+
+### Patch Changes
+
+- 2d7da38: `upgrade` now appends the `narduk:router` block to an existing
+  `AGENTS.md` that has no markers, instead of reporting it unmanaged. The rest
+  of the file is untouched, and a `<!-- narduk:unmanaged -->` header still opts
+  out. The block also names the app's shared `@narduk-enterprises/*` packages
+  and points at `narduk-app doctor` and `create-narduk-app upgrade`. A file with
+  only one marker of the pair is reported `unresolved` and left alone
+  (narduk-libs#377).
+- 8212ffd: `POST /api/auth/api-keys` now refuses, with 403, to let an API-key
+  caller mint a scope it does not hold itself. A key holding only
+  `auth:api-keys:write` can no longer mint a wildcard (`*`) key; `*` is mintable
+  only by a key that holds `*`. Session-authenticated users are unaffected
+  (narduk-libs#858).
+- 3b03a43: Make development mode survive a GitHub repository rename. The client
+  resolves the origin-named repository once through `GET repos/{owner}/{name}`,
+  which follows a rename, to its canonical name and numeric id.
+  `development exit` now accepts a validation run whose repository and head
+  repository carry that id, where it used to reject every run of a renamed
+  repository by comparing full names. Workflow holds, restores and run
+  cancellations address the canonical name, so no write goes through a redirect.
+  Activation records, receipts and validation history keep the key they were
+  created under.
+
+  `create-narduk-app` takes the patch because it pins `narduk-app-tools` in
+  generated apps.
+
+- b55dea5: The development-mode migration classifier treats the name an
+  `ALTER TABLE ... RENAME TO` moves a table to as the file's own, so the rebuild
+  that renames the original table out of the way and later drops it no longer
+  reports a spurious `drop-table` (#876). `deploy-local` now refuses a blank,
+  non-https or local `SITE_URL` before it builds, migrates or deploys, rather
+  than after production has moved (#877); `--no-probe` still skips the check.
+- 61462de: The canonical-host redirect now always stays on the canonical origin.
+  Before this, a raw request path such as `/.//evil.com` normalised to
+  `//evil.com`, and the middleware resolved that as a scheme-relative URL,
+  answering with a 308 to `https://evil.com/` (narduk-libs#444, CANON-1).
+- f43caf2: Fix two narduk-charts rendering bugs. `macd()` no longer returns
+  signal values before the MACD line exists; the signal now starts
+  `signalPeriod` samples after the line's first real value (#867).
+  `NardukBarChart` with `stacked` or `stackedPercent` on a `log` or `symlog`
+  axis now ends each stack where the axis places its total, so equal totals line
+  up regardless of how they split across series (#873). Linear stacks are
+  unchanged.
+- 71a1f22: Dependabot `safe`-lane merges now reach production.
+  `dependabot-merge.yml` starts main CI with `GITHUB_TOKEN`, and a run started
+  that way fires no `workflow_run`, so Promote never saw it (narduk-libs#787).
+  The generated `ci.yml` gains a `promote-dispatch` job for exactly that case: a
+  bot-dispatched run on `main`. After every CI job has passed, and only while
+  the commit is still main's head, it dispatches `promote.yml` with
+  `verified-sha`. The job waits on nothing. `docs/workers-builds.md` now shows
+  the `workflow_dispatch` input and a `gate` job for the app-owned
+  `promote.yml`. Whatever started the run, the gate promotes main's head once
+  the latest `ci / Required` on that commit has passed, so a queued Promote
+  replaced in the concurrency group loses nothing. An app that hasn't adopted
+  this gets a notice instead of a failure; any other API error fails the job.
+  `ci.yml` is pin-managed, so existing apps copy the job by hand.
+- bfdb770: `deploy-local` now names `GH_PACKAGES_READ`'s registered route
+  (nvault `github/prd/narduk-enterprises-packages-read`) when that key is
+  missing, rather than sending the operator to the app's config, which holds no
+  copy of it. The README shows the combined `nvault run` invocation (#333).
+- 786568d: HEAD-as-GET now carries the caller's socket address to the inner GET
+  as Nitro `_platform.clientAddress` context, not as a synthesised
+  `cf-connecting-ip` header. A route that trusts `x-forwarded-for` now resolves
+  a HEAD to the same client as its GET, where before every client behind a proxy
+  shared the proxy's bucket for HEAD. The default configuration keeps its
+  per-socket identity, and no client-settable input gains precedence
+  (narduk-libs#683).
+- 776c0a1: The legacy enforcing CSP no longer allows
+  `https://pagead2.googlesyndication.com` in `script-src` for every app. An app
+  that serves AdSense adds the origin itself with
+  `runtimeConfig.public.cspScriptSrc` / `CSP_SCRIPT_SRC`, plus the frame and
+  connect origins its ads need (narduk-libs#459).
+- 31c907d: Redact plural secret keys (`tokens`, `secrets`, `passwords`,
+  `accessTokens`, `dbPasswords`, …) in the TypeScript, Python, Go and Swift
+  sanitizers. LLM usage counts such as `inputTokens` and `total_tokens` stay
+  visible (narduk-libs#872).
+- e473c74: `createMapKitFixedWindowRateLimit` no longer keeps a window for every
+  client it has ever seen. Expired windows are dropped as time passes, and a new
+  `maxKeys` option (default 10,000) caps the live windows; past the cap the
+  oldest is dropped and that client starts a fresh window. The per-client
+  `cf-connecting-ip` keying in the docs is now bounded under traffic from many
+  addresses.
+- e473c74: `<AppMapKit>` zoom-to-fit frames points either side of the
+  antimeridian the short way round. `mapKitBoundingRegion` now measures
+  longitude with the same largest-gap span as `computeCoordinateBounds`, so
+  points at 179.5 and -179.5 frame a 1-degree strip centred on 180 instead of a
+  359-degree arc centred on 0.
+- f2869f8: `NeDetailView` decides "unavailable" from the value, not by comparing
+  the rendered text with the placeholder (narduk-libs#875). A reported `'N/A'`,
+  or a reported `'—'` against the default placeholder, now renders as a reported
+  value instead of being muted and stamped `data-ne-detail-unavailable`. A
+  present value that its `format` cannot render (a quantity with no unit, money
+  with no currency, a date with no zone, a non-number under a numeric format) is
+  still unavailable. `create-narduk-app` is a companion patch because it pins
+  narduk-shell.
+- dc6be99: The default social image plugin no longer throws from its `useHead`
+  getter (narduk-libs#874). An app with `defaultOgImage` and no usable site URL
+  (unset, unparsable, or plain HTTP on a public host) used to fail SSR on every
+  page. It now renders the page without the default `og:*` tags and logs one
+  `[narduk-seo] Default social metadata skipped: …` warning per process.
+  `defaultSocialMeta()` itself still rejects unsafe input, now with a clear
+  message when the site URL is missing.
+- 57cf7b8: `GET /api/auth/session/exchange` now enforces the `authLogin` rate
+  limit, like its POST twin. Before this, the GET route ran the Supabase code
+  and `token_hash` exchange without any throttle (narduk-libs#879).
+- e1146b4: `upgrade`'s dry-run diff renders a created managed file as additions
+  only (`@@ -0,0 +1,N @@`) and an emptied one as removals only, instead of
+  showing a phantom blank line on the empty side.
+- cc50347: `narduk-app development validate` works from a contributor host while
+  the repository is enrolled from another workstation (narduk-libs#827). Without
+  a local activation record it checks GitHub: when the held workflows are
+  disabled, it requests validation, so a PR can get its `ci / Required` result.
+  When none is held, it refuses and names them, instead of claiming that normal
+  delivery validates pushes. `development status --remote` on such a host also
+  lists the held workflows.
+
+## 0.14.1
+
+### Patch Changes
+
+- 89249cf: Development mode now proves and reports Worker script triggers
+  (narduk-libs#756). After `wrangler triggers deploy`, `deploy:dev` reads the
+  live cron schedules back and ends `unproven` instead of `verified` when the
+  declared crons are not in force. `development status --remote` shows
+  declared-vs-live crons and routes (zone routes plus custom domains) for each
+  component, and `development enter` reports the same mismatch at entry. A live
+  read that fails is reported as `unknown`, never as in sync.
+
 ## 0.14.0
 
 ### Minor Changes

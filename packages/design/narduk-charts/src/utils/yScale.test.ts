@@ -136,3 +136,11 @@ describe('createYAxisMap pinned domains', () => {
     expect(derived.domain.max).toBeGreaterThan(4_237)
   })
 })
+
+// #929: every-mode domain math used to spread all values into Math.min/max.
+describe('createYAxisMap with large inputs', () => {
+  const values = Array.from({ length: 160_000 }, (_, index) => (index % 1000) + 1)
+  it.each(['linear', 'log', 'symlog'] as const)('does not throw in %s mode', mode => {
+    expect(() => createYAxisMap(mode, values, [], 200)).not.toThrow()
+  })
+})

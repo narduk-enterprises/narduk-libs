@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 
 import {
   createApp,
@@ -14,12 +17,30 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 
 import headAsGet from '../runtime/server/middleware/01-head-as-get'
+import { getClientIp } from '../runtime/server/utils/client-ip'
 
 import type { H3Event } from 'h3'
-import type { Server } from 'node:http'
+import type { IncomingMessage, Server, ServerResponse } from 'node:http'
+
+type NodeHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void> | void
+
+// Nitro's local fetch is node-mock-http's `fetchNodeRequestHandler`. It is not a direct dependency
+// of this package, so load the copy h3 resolves -- the same 1.0.x Nitro runs.
+const requireFromH3 = createRequire(createRequire(import.meta.url).resolve('h3'))
+const { fetchNodeRequestHandler } = requireFromH3('node-mock-http') as {
+  fetchNodeRequestHandler: (
+    handler: NodeHandler,
+    input: string,
+    init?: RequestInit & { context?: unknown },
+  ) => Promise<Response>
+}
 
 /** The loop guard the middleware sets on the GET it issues. */
 const REENTRY_HEADER = 'x-narduk-head-as-get'
+
+/** A client address a proxy forwarded, and one Cloudflare attested. */
+const FORWARDED_CLIENT = '198.51.100.9'
+const CLOUDFLARE_CLIENT = '203.0.113.7'
 
 const servers: Server[] = []
 
@@ -33,6 +54,10 @@ function echoHandler(event: H3Event) {
   const echo: Record<string, string | undefined> = {
     'x-seen-accept': getRequestHeader(event, 'accept'),
     'x-seen-cf-connecting-ip': getRequestHeader(event, 'cf-connecting-ip'),
+    // What the default rate-limit and lockout identity resolves to, and what a route that trusts
+    // `x-forwarded-for` (the layer's `enforceRateLimit`) resolves to.
+    'x-seen-client-ip': getClientIp(event),
+    'x-seen-client-ip-trusted': getClientIp(event, { trustForwardedFor: true }),
     'x-seen-forwarded-for': getRequestHeader(event, 'x-forwarded-for'),
     'x-seen-method': event.method,
     'x-seen-query': String(getQuery(event).q ?? ''),
@@ -45,7 +70,7 @@ function echoHandler(event: H3Event) {
   return { ok: true, body: 'a body long enough to notice' }
 }
 
-function buildApp(options: { baseUrl: () => string; withMiddleware: boolean }) {
+function buildApp(options: { withMiddleware: boolean }) {
   const router = createRouter()
     .get('/api/echo', defineEventHandler(echoHandler))
     .get(
@@ -64,15 +89,27 @@ function buildApp(options: { baseUrl: () => string; withMiddleware: boolean }) {
     )
 
   const app = createApp()
-  // Exactly the line Nitro runs in its own `onRequest`, so the test exercises h3's real
-  // header forwarding rather than a stand-in for it.
+  // The listener reads the app's stack per request, so the handlers added below still apply.
+  const nodeHandler: NodeHandler = toNodeListener(app)
+  const localFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    fetchNodeRequestHandler(nodeHandler, String(input), init)) as typeof fetch
+  // Nitro's own `onRequest` (nitropack `runtime/internal/app`), line for line: spread the local
+  // fetch's `_platform` into the context, then install `event.fetch` over the in-process fetch.
+  // The inner GET therefore takes the same path it takes in a Nitro app, so the test exercises
+  // what actually crosses the hop -- headers and `_platform` -- rather than a stand-in for it.
   app.use(
     defineEventHandler((event) => {
-      event.fetch = (request, init) =>
-        fetchWithEvent(event, request, init, {
-          fetch: ((input: RequestInfo | URL, requestInit?: RequestInit) =>
-            fetch(new URL(String(input), options.baseUrl()), requestInit)) as typeof fetch,
-        })
+      const fetchContext = (
+        event.node.req as { __unenv__?: { _platform?: Record<string, unknown> } }
+      ).__unenv__
+      if (fetchContext?._platform) {
+        event.context = {
+          _platform: fetchContext._platform,
+          ...fetchContext._platform,
+          ...event.context,
+        }
+      }
+      event.fetch = (request, init) => fetchWithEvent(event, request, init, { fetch: localFetch })
     }),
   )
   if (options.withMiddleware) app.use(headAsGet)
@@ -93,14 +130,12 @@ function buildApp(options: { baseUrl: () => string; withMiddleware: boolean }) {
 }
 
 async function serve(withMiddleware = true) {
-  let base = ''
-  const server = createServer(toNodeListener(buildApp({ withMiddleware, baseUrl: () => base })))
+  const server = createServer(toNodeListener(buildApp({ withMiddleware })))
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
-  base = `http://127.0.0.1:${address.port}`
-  return base
+  return `http://127.0.0.1:${address.port}`
 }
 
 async function probe(
@@ -190,29 +225,79 @@ describe('head-as-get middleware', () => {
     // Without this the inner request has no identity at all and every HEAD in the deployment
     // shares the single `'unknown'` rate-limit bucket (`rate-limit/policy.ts`).
     const head = await probe('/api/echo')
-    expect(head.headers.get('x-seen-cf-connecting-ip')).toBe('127.0.0.1')
+    expect(head.headers.get('x-seen-client-ip')).toBe('127.0.0.1')
+    expect(head.headers.get('x-seen-client-ip-trusted')).toBe('127.0.0.1')
+  })
+
+  it('carries the socket as context, never as a synthesised identity header', async () => {
+    // `getClientIp` reads `cf-connecting-ip` first and unconditionally. Writing the socket there
+    // (#681) put it ahead of a trusted `x-forwarded-for`, so the inner GET of a route that trusts
+    // the forwarded header resolved to the proxy (narduk-libs#683).
+    const head = await probe('/api/echo', { headers: { 'x-forwarded-for': FORWARDED_CLIENT } })
+    expect(head.headers.get('x-seen-cf-connecting-ip')).toBeNull()
   })
 
   it('never overrides an identity header the caller already arrived with', async () => {
     const head = await probe('/api/echo', {
-      headers: { 'cf-connecting-ip': '203.0.113.7' },
+      headers: { 'cf-connecting-ip': CLOUDFLARE_CLIENT },
     })
-    expect(head.headers.get('x-seen-cf-connecting-ip')).toBe('203.0.113.7')
+    expect(head.headers.get('x-seen-cf-connecting-ip')).toBe(CLOUDFLARE_CLIENT)
+    expect(head.headers.get('x-seen-client-ip')).toBe(CLOUDFLARE_CLIENT)
   })
 
-  it('never turns a client-chosen forwarded address into the trusted identity header, and still carries the socket inward', async () => {
-    // `cf-connecting-ip` is read first and unconditionally by `getClientIp`. Synthesising it from
-    // `x-forwarded-for` would let a HEAD spend a victim's rate-limit allowance, so the forwarded
-    // value must never land there. But `getClientIp` only reads `x-forwarded-for` at all when a
-    // caller opts in with `trustForwardedFor` (off by default), so by default this request resolves
-    // through the socket on the outer GET too -- the inner request needs the same socket address,
-    // not `null`, or it falls to the shared `'unknown'` bucket while a direct GET on the same
-    // connection would not (narduk-libs#681 review).
+  it('by default resolves an x-forwarded-for request through the socket, as a direct GET does', async () => {
+    // `getClientIp` only reads `x-forwarded-for` when a caller opts in with `trustForwardedFor`
+    // (off by default), so a direct GET resolves through the socket. The inner request needs that
+    // same socket address, not `undefined`, or it falls to the shared `'unknown'` bucket
+    // (narduk-libs#681 review).
     const head = await probe('/api/echo', {
-      headers: { 'x-forwarded-for': '198.51.100.9' },
+      headers: { 'x-forwarded-for': FORWARDED_CLIENT },
     })
-    expect(head.headers.get('x-seen-cf-connecting-ip')).toBe('127.0.0.1')
-    expect(head.headers.get('x-seen-forwarded-for')).toBe('198.51.100.9')
+    expect(head.headers.get('x-seen-client-ip')).toBe('127.0.0.1')
+    expect(head.headers.get('x-seen-forwarded-for')).toBe(FORWARDED_CLIENT)
+  })
+
+  it('gives a route that trusts x-forwarded-for the same client on HEAD as on GET', async () => {
+    // Behind a proxy, off Cloudflare: the socket is the proxy, the forwarded header is the client.
+    // The GET resolves to the client, so the HEAD must too, or every client behind the proxy
+    // shares the proxy's bucket for HEAD alone (narduk-libs#683).
+    const headers = { 'x-forwarded-for': `${FORWARDED_CLIENT}, 10.0.0.2` }
+    const head = await probe('/api/echo', { headers })
+    const get = await probe('/api/echo', { headers, method: 'GET' })
+    expect(get.headers.get('x-seen-client-ip-trusted')).toBe(FORWARDED_CLIENT)
+    expect(head.headers.get('x-seen-client-ip-trusted')).toBe(FORWARDED_CLIENT)
+  })
+
+  it.each([
+    ['no identity header', {}],
+    ['cf-connecting-ip', { 'cf-connecting-ip': CLOUDFLARE_CLIENT }],
+    ['x-forwarded-for', { 'x-forwarded-for': FORWARDED_CLIENT }],
+    ['both', { 'cf-connecting-ip': CLOUDFLARE_CLIENT, 'x-forwarded-for': FORWARDED_CLIENT }],
+  ])('resolves every identity a HEAD sees exactly as its GET does: %s', async (_label, headers) => {
+    // HEAD must not change who the caller is under either resolver, and must not make the inner
+    // request carry an identity header the caller did not send.
+    const head = await probe('/api/echo', { headers })
+    const get = await probe('/api/echo', { headers, method: 'GET' })
+    for (const name of [
+      'x-seen-client-ip',
+      'x-seen-client-ip-trusted',
+      'x-seen-cf-connecting-ip',
+    ]) {
+      expect(head.headers.get(name), name).toBe(get.headers.get(name))
+    }
+  })
+
+  it('relies on a context channel the installed Nitro still has', () => {
+    // The fixture copies Nitro's `onRequest`. If a Nitro upgrade stops spreading the local fetch's
+    // `_platform` into the inner context, the socket address stops crossing and HEAD falls back to
+    // the shared `'unknown'` bucket -- fail here rather than in production (narduk-libs#683).
+    const nitroRoot = dirname(createRequire(import.meta.url).resolve('nitropack/package.json'))
+    const app = readFileSync(join(nitroRoot, 'dist/runtime/internal/app.mjs'), 'utf8')
+    expect(app).toContain('const fetchContext = event.node.req?.__unenv__;')
+    expect(app).toContain('...fetchContext._platform,')
+    expect(app).toContain(
+      'event.fetch = (req, init) => fetchWithEvent(event, req, init, { fetch: localFetch });',
+    )
   })
 
   it('forwards accept, which h3 drops from the headers it proxies', async () => {

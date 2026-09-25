@@ -44,12 +44,35 @@ export const SERIES_PARAMETERS_PER_ROW = 4
 
 export const DEFAULT_SERIES_CACHE_SIZE = 5000
 
+const UUID_HEX = /^[0-9a-f]{32}$/u
+
+/**
+ * The spelling Postgres gives a `uuid` back in: lowercase, 8-4-4-4-12.
+ *
+ * The resolve statement casts the caller's `vesselId` to `uuid`, which accepts
+ * uppercase, braces and missing hyphens, and `RETURNING` answers in canonical
+ * form. Every key a descriptor is matched by must agree with that answer, or an
+ * uppercase `UUID().uuidString` from Swift never finds its own row
+ * (narduk-libs#940). A string that is not a uuid is returned unchanged; the
+ * database rejects it on its own.
+ */
+export function canonicalVesselId(vesselId: string): string {
+  const hex = vesselId
+    .replace(/^\{(.*)\}$/u, '$1')
+    .replaceAll('-', '')
+    .toLowerCase()
+  if (!UUID_HEX.test(hex)) return vesselId
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 /**
  * Length-prefixed so the two halves cannot collide: a path may legally contain
- * any separator character an implementation might otherwise pick.
+ * any separator character an implementation might otherwise pick. The vessel
+ * half is {@link canonicalVesselId}, so every spelling of one uuid is one key.
  */
 export function seriesCacheKey(vesselId: string, path: string): string {
-  return `${vesselId.length}:${vesselId}:${path}`
+  const vessel = canonicalVesselId(vesselId)
+  return `${vessel.length}:${vessel}:${path}`
 }
 
 export function assertSeriesDescriptor(descriptor: SeriesDescriptor): SeriesDescriptor {

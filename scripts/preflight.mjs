@@ -43,25 +43,21 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * @returns {Map<string, string>}
  */
 export function trackedTreeSnapshot(repositoryRoot, execute = spawnSync) {
-  const result = execute('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-  })
+  const result = execute(
+    'git',
+    ['status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all'],
+    { cwd: repositoryRoot, encoding: 'utf8' },
+  )
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`git status failed: ${(result.stderr || '').trim() || `exit ${result.status}`}`)
   }
   const snapshot = new Map()
-  // -z records are "XY path\0", except renames, which carry the original path
-  // as a second NUL-terminated field. Consuming that field keeps a rename from
-  // being read as an extra entry with an empty status.
-  const records = result.stdout.split('\0')
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index]
-    if (!record) continue
-    const status = record.slice(0, 2)
-    snapshot.set(record.slice(3), status)
-    if (status.startsWith('R') || status.startsWith('C')) index += 1
+  // -z records are "XY path\0". `--no-renames` reports a staged rename as its
+  // deleted source and added destination, so both paths are seen (#915) and
+  // no record carries a second, original-path field.
+  for (const record of result.stdout.split('\0')) {
+    if (record) snapshot.set(record.slice(3), record.slice(0, 2))
   }
   return snapshot
 }

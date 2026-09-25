@@ -1,8 +1,6 @@
 import { defineEventHandler, getRequestHeader, getRequestIP } from 'h3'
 
-import { CF_CONNECTING_IP_HEADER } from '../utils/client-ip'
-
-import type { H3Event } from 'h3'
+import type { H3Event, H3EventContext } from 'h3'
 
 /**
  * h3's router matches the request method exactly. A `*.get.ts` file route compiles to
@@ -59,7 +57,8 @@ function isApiPath(path: string) {
  *
  * `fetchWithEvent` -- which is what `event.fetch` is -- copies the incoming request's headers
  * through `getProxyRequestHeaders`, so `cookie`, `authorization`, `origin`, the conditional
- * headers and both headers `getClientIp` reads all survive the hop untouched.
+ * headers and both headers `getClientIp` reads all survive the hop untouched. No identity header
+ * is added: see `innerRequestContext`.
  */
 function innerRequestHeaders(event: H3Event): Record<string, string> {
   const headers: Record<string, string> = { [REENTRY_HEADER]: '1' }
@@ -69,30 +68,39 @@ function innerRequestHeaders(event: H3Event): Record<string, string> {
   const accept = getRequestHeader(event, 'accept')
   if (accept) headers.accept = accept
 
-  // A caller identified by a header keeps its identity for free. A caller identified only by its
-  // socket does not: the inner request has no socket, and `event.context` is rebuilt rather than
-  // shared, so the inner `getRequestIP` returns undefined. That matters because
-  // `rate-limit/policy.ts` keys an unidentifiable caller as the literal `'unknown'` -- deliberately,
-  // so an unknown caller is limited rather than unlimited -- and every HEAD in the deployment would
-  // then share that one bucket, letting one client's HEAD traffic exhaust an allowance held in
-  // common with everyone else.
-  //
-  // So carry the socket address across, and only the socket address: `getRequestIP` without
-  // `xForwardedFor` reads `event.context.clientAddress` and the socket, neither of which the client
-  // chooses. Forwarding a client-chosen address instead would let a HEAD spend a victim's
-  // allowance. Nothing is synthesised when the request already carries `cf-connecting-ip`, so a
-  // real one is never overridden. `x-forwarded-for` alone does not count as already resolved:
-  // `getClientIp` (`client-ip.ts`) only reads it when a caller opts in with `trustForwardedFor`,
-  // which defaults off, so by default an `x-forwarded-for`-only request resolves through the
-  // socket on both the outer request and this synthesised inner one -- exactly like a direct GET
-  // -- rather than falling to `'unknown'` because the inner event has no socket of its own.
-  const carriesCfConnectingIp = Boolean(getRequestHeader(event, CF_CONNECTING_IP_HEADER)?.trim())
-  if (!carriesCfConnectingIp) {
-    const socketAddress = getRequestIP(event)
-    if (socketAddress) headers[CF_CONNECTING_IP_HEADER] = socketAddress
-  }
-
   return headers
+}
+
+/**
+ * The context the inner GET starts from, carrying the caller's socket address.
+ *
+ * A caller identified by a header keeps its identity for free. A caller identified only by its
+ * socket does not: the inner request has no socket, and `event.context` is rebuilt rather than
+ * shared, so the inner `getRequestIP` would return undefined. `rate-limit/policy.ts` keys an
+ * unidentifiable caller as the literal `'unknown'`, so every HEAD in the deployment would then
+ * share one bucket.
+ *
+ * The address travels as `_platform.clientAddress`. `fetchWithEvent` hands `init.context` to
+ * Nitro's local fetch, node-mock-http stores it on the inner request as `req.__unenv__`, and
+ * Nitro's `onRequest` spreads `__unenv__._platform` into the inner `event.context` -- the one
+ * channel known to cross (narduk-libs#683). h3's `getRequestIP` reads `event.context.clientAddress`
+ * first, so the socket lands at the socket's own precedence in `getClientIp` (`client-ip.ts`):
+ * after `cf-connecting-ip` and after a trusted `x-forwarded-for`, both of which cross as headers.
+ * The inner request therefore resolves exactly as the outer one does, for a route that trusts
+ * `x-forwarded-for` and for one that does not.
+ *
+ * This replaces synthesising `cf-connecting-ip` from the socket (#681), which `getClientIp` reads
+ * first and unconditionally, so a route trusting `x-forwarded-for` saw a HEAD as the proxy while
+ * its GET saw the client. `__unenv__` is set only by an in-process fetch; no HTTP client can reach
+ * it, so no client-chosen value gains any precedence here.
+ */
+function innerRequestContext(event: H3Event): H3EventContext {
+  const clientAddress = getRequestIP(event)
+  if (!clientAddress) return event.context
+  // `_platform` is typed for the Cloudflare fields this layer reads; Nitro spreads whatever it
+  // holds, so widen it to add the address.
+  const platform: Record<string, unknown> = { ...event.context._platform, clientAddress }
+  return { ...event.context, _platform: platform }
 }
 
 function headOnlyResponse(inner: Response): Response {
@@ -118,10 +126,13 @@ export default defineEventHandler(async (event) => {
   // returning leaves today's behaviour rather than throwing a 500 at every HEAD.
   if (typeof event.fetch !== 'function') return
 
-  const inner = await event.fetch(event.path, {
+  // `fetchWithEvent` reads `init.context`; the Workers `RequestInit` type does not declare it.
+  const init: RequestInit & { context: H3EventContext } = {
     method: 'GET',
     headers: innerRequestHeaders(event),
-  })
+    context: innerRequestContext(event),
+  }
+  const inner = await event.fetch(event.path, init)
   const response = headOnlyResponse(inner)
   try {
     await inner.body?.cancel()

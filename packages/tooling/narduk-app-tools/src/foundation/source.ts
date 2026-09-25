@@ -255,6 +255,32 @@ export function hasNuxtUiSurface(repo: AppRepo): boolean {
   return NUXT_UI_SURFACE_CANDIDATES.some((rel) => repo.exists(rel))
 }
 
+export interface NuxtPresence {
+  nuxt: boolean
+  /** The file or dependency that decided it, or what was looked for. */
+  evidence: string
+}
+
+/**
+ * Whether this checkout is a Nuxt app (narduk-libs#157). A `nuxt.config.*` at
+ * a known path decides it; a `nuxt` dependency does too, so a Nuxt app whose
+ * config lives somewhere unusual still counts as Nuxt. Only an app with
+ * neither is non-Nuxt: the Nuxt-module packages (narduk-core, narduk-seo,
+ * narduk-analytics, narduk-auth, narduk-uploads) are not-applicable there,
+ * because an app without Nuxt can never register them.
+ */
+export function detectNuxt(repo: AppRepo): NuxtPresence {
+  const config = NUXT_CONFIG_CANDIDATES.find((rel) => repo.exists(rel))
+  if (config) return { evidence: config, nuxt: true }
+  const packages = collectPackages(repo)
+  const withNuxt = packages.find((pkg) => 'nuxt' in allDeps(pkg.pkg))
+  if (withNuxt) return { evidence: `${withNuxt.rel} depends on nuxt`, nuxt: true }
+  return {
+    evidence: 'no nuxt.config.* at a known path and no nuxt dependency',
+    nuxt: false,
+  }
+}
+
 const BINDING_ARRAY_OR_MAP_KEYS = [
   'd1_databases',
   'kv_namespaces',

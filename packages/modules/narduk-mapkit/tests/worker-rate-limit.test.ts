@@ -115,3 +115,54 @@ describe('the §e.4 limiter on the Worker entry point (narduk-libs#485)', () => 
     expect(new Set(statuses)).toEqual(new Set([200]))
   })
 })
+
+describe('the limiter holds a bounded set of client windows (narduk-libs#869)', () => {
+  function perClient(options: { maxKeys?: number; now: () => number }) {
+    const limit = createMapKitFixedWindowRateLimit({
+      key: ({ request: incoming }) => incoming.headers.get('cf-connecting-ip') ?? 'none',
+      limit: 1,
+      windowSeconds: 60,
+      ...options,
+    })
+    return (clientIp: string) =>
+      limit({ origin: ROUTE, request: request(clientIp), self: 'https://maps.example.test' })
+  }
+
+  it('drops the oldest live window past maxKeys, so that client starts over', () => {
+    const hit = perClient({ maxKeys: 2, now: () => 0 })
+    void hit('198.51.100.1')
+    expect(hit('198.51.100.1')).toMatchObject({ allowed: false })
+
+    void hit('198.51.100.2')
+    void hit('198.51.100.3')
+
+    expect(hit('198.51.100.1')).toStrictEqual({ allowed: true })
+  })
+
+  it('evicts by window age: a renewed window is the newest, not the oldest', () => {
+    let now = 0
+    const hit = perClient({ maxKeys: 2, now: () => now })
+    void hit('198.51.100.1')
+    now = 30_000
+    void hit('198.51.100.2')
+    now = 60_000
+    void hit('198.51.100.1')
+    now = 61_000
+    void hit('198.51.100.3')
+
+    expect(hit('198.51.100.1')).toMatchObject({ allowed: false })
+    expect(hit('198.51.100.2')).toStrictEqual({ allowed: true })
+  })
+
+  it('renews an expired window even when a clock step left it behind a live one', () => {
+    let now = 10_000
+    const hit = perClient({ now: () => now })
+    void hit('198.51.100.1')
+    now = 0
+    void hit('198.51.100.2')
+    now = 65_000
+
+    expect(hit('198.51.100.2')).toStrictEqual({ allowed: true })
+    expect(hit('198.51.100.1')).toMatchObject({ allowed: false })
+  })
+})

@@ -1,5 +1,52 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.22.2
+
+### Patch Changes
+
+- 3b03a43: Make development mode survive a GitHub repository rename. The client
+  resolves the origin-named repository once through `GET repos/{owner}/{name}`,
+  which follows a rename, to its canonical name and numeric id.
+  `development exit` now accepts a validation run whose repository and head
+  repository carry that id, where it used to reject every run of a renamed
+  repository by comparing full names. Workflow holds, restores and run
+  cancellations address the canonical name, so no write goes through a redirect.
+  Activation records, receipts and validation history keep the key they were
+  created under.
+
+  `create-narduk-app` takes the patch because it pins `narduk-app-tools` in
+  generated apps.
+
+- b55dea5: The development-mode migration classifier treats the name an
+  `ALTER TABLE ... RENAME TO` moves a table to as the file's own, so the rebuild
+  that renames the original table out of the way and later drops it no longer
+  reports a spurious `drop-table` (#876). `deploy-local` now refuses a blank,
+  non-https or local `SITE_URL` before it builds, migrates or deploys, rather
+  than after production has moved (#877); `--no-probe` still skips the check.
+- bfdb770: `deploy-local` now names `GH_PACKAGES_READ`'s registered route
+  (nvault `github/prd/narduk-enterprises-packages-read`) when that key is
+  missing, rather than sending the operator to the app's config, which holds no
+  copy of it. The README shows the combined `nvault run` invocation (#333).
+- cc50347: `narduk-app development validate` works from a contributor host while
+  the repository is enrolled from another workstation (narduk-libs#827). Without
+  a local activation record it checks GitHub: when the held workflows are
+  disabled, it requests validation, so a PR can get its `ci / Required` result.
+  When none is held, it refuses and names them, instead of claiming that normal
+  delivery validates pushes. `development status --remote` on such a host also
+  lists the held workflows.
+
+## 0.22.1
+
+### Patch Changes
+
+- 89249cf: Development mode now proves and reports Worker script triggers
+  (narduk-libs#756). After `wrangler triggers deploy`, `deploy:dev` reads the
+  live cron schedules back and ends `unproven` instead of `verified` when the
+  declared crons are not in force. `development status --remote` shows
+  declared-vs-live crons and routes (zone routes plus custom domains) for each
+  component, and `development enter` reports the same mismatch at entry. A live
+  read that fails is reported as `unknown`, never as in sync.
+
 ## 0.22.0
 
 ### Minor Changes

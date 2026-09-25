@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  arrayMax,
+  arrayMin,
+  computeHistogramBins,
   niceScale,
   linearScale,
   formatAxisTickValue,
@@ -17,6 +20,26 @@ import {
 import type { CandleBar } from '../types'
 
 describe('niceScale', () => {
+  // #927: a range of a few ULPs made `v += step` stop advancing, so the tick
+  // loop never ended and froze the page.
+  it.each([
+    [99.98999999999998, 99.99],
+    [0.3, 0.1 + 0.2],
+    [21050, 21050.000000000004],
+    [-0.30000000000000004, -0.3],
+  ])('terminates and widens a sub-ULP range %d..%d', (lo, hi) => {
+    const s = niceScale(lo, hi)
+    expect(s.min).toBeLessThan(lo)
+    expect(s.max).toBeGreaterThan(hi)
+    expect(s.ticks.length).toBeGreaterThan(1)
+    expect(s.ticks.length).toBeLessThan(20)
+  })
+
+  it('keeps the tick count stable when accumulated steps would drift', () => {
+    const s = niceScale(0, 1)
+    expect(s.ticks).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])
+  })
+
   it('expands equal min/max', () => {
     const s = niceScale(5, 5)
     expect(s.min).toBeLessThan(5)
@@ -251,5 +274,29 @@ describe('candle time / index mapping', () => {
     const i = candleIndexAtTime(bars, 2500)
     expect(i).toBeGreaterThan(0)
     expect(i).toBeLessThan(2)
+  })
+})
+
+// #929: `Math.min(...values)` throws a RangeError past ~100k elements.
+describe('arrayMin / arrayMax', () => {
+  const large = Array.from({ length: 200_000 }, (_, index) => index - 50_000)
+
+  it('handles arrays too large to spread', () => {
+    expect(arrayMin(large)).toBe(-50_000)
+    expect(arrayMax(large)).toBe(149_999)
+  })
+
+  it('matches Math.min/max for empty and NaN input', () => {
+    expect(arrayMin([])).toBe(Infinity)
+    expect(arrayMax([])).toBe(-Infinity)
+    expect(arrayMin([1, Number.NaN, 3])).toBeNaN()
+    expect(arrayMax([1, Number.NaN, 3])).toBeNaN()
+  })
+
+  it('lets computeHistogramBins take 150k samples', () => {
+    const samples = Array.from({ length: 150_000 }, (_, index) => index % 100)
+    const bins = computeHistogramBins(samples, 10)
+    expect(bins).toHaveLength(10)
+    expect(bins.reduce((sum, bin) => sum + bin.count, 0)).toBe(150_000)
   })
 })

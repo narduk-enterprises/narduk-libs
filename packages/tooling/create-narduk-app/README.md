@@ -16,7 +16,7 @@ await createNardukApp({
 The CLI is `create-narduk-app`:
 
 ```sh
-pnpm dlx @narduk-enterprises/create-narduk-app@0.14.0 harbor-notes \
+pnpm dlx @narduk-enterprises/create-narduk-app@0.14.2 harbor-notes \
   --display-name='Harbor Notes' \
   --description='A harbor log.' \
   --site-url=https://harbor.example \
@@ -159,18 +159,31 @@ security exception's `ignore` entry (company-hq `NARDUK-APP-COMPLIANCE.md` §4)
 or a documented app-specific pin — and the reason the dry run prints the line
 count a whole-file rewrite would add and remove.
 
-The region targets work the other way round: an existing app has no
-`narduk:router` or `narduk:e2e-policy` markers, so those blocks are reported
-`unmanaged` until someone adds the two marker lines around the paragraph or
-section they should own. Apps generated from this version carry them already.
+The region targets differ. An existing `AGENTS.md` with no `narduk:router`
+markers gets the router block appended at the end, the rest of the file
+untouched (narduk-libs#377). A `<!-- narduk:unmanaged -->` header opts it out.
+The block names the app's shared packages and points at `narduk-app doctor`.
+`docs/e2e-testing.md` stays opt-in: with no `narduk:e2e-policy` markers it is
+reported `unmanaged` until someone adds the two marker lines around the section
+they should own, because an app may have replaced that document outright. A file
+with only one marker of a pair is reported `unresolved` and left alone. Apps
+generated from this version carry every marker already.
 
 ### Dependabot: two lanes
 
 The generated `.github/dependabot.yml` npm update splits into two groups by
 `update-types`, over the same packages: `safe` (minor + patch) and `majors`
 (major). `.github/workflows/dependabot-merge.yml` merges `safe` on its own once
-CI is green on its exact PR head — nobody has to touch it. `majors` always waits
-for a person or an agent: a major bump usually needs a code change, and a
+CI is green on its exact PR head — nobody has to touch it. It then starts main
+CI by `workflow_dispatch`, and a run started with `GITHUB_TOKEN` fires no
+`workflow_run`, so Promote never saw it (narduk-libs#787). The generated
+`ci.yml` therefore has a `promote-dispatch` job. For a bot-dispatched run on
+`main`, after every CI job passes, it dispatches `promote.yml` with
+`verified-sha` if the commit is still main's head. `promote.yml` is app-owned:
+the generated `docs/workers-builds.md` shows the `workflow_dispatch` input and
+the `gate` job to add. Until an app adds them, the job posts a notice and the
+bump reaches production with the next promoted commit. `majors` always waits for
+a person or an agent: a major bump usually needs a code change, and a
 workflow-file edit (the `github-actions` ecosystem lane) can never be merged by
 a workflow's own `GITHUB_TOKEN` at all, so that lane stays manual regardless.
 

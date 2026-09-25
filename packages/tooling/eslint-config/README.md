@@ -38,6 +38,25 @@ import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'
 export default composeSharedConfigs('core', 'server')
 ```
 
+### Apps without Nuxt
+
+`createAppLintConfig()` needs the app's generated `withNuxt()` wrapper and
+throws without it. An app with no Nuxt (a React + Vite Worker, a plain static
+site) uses `composeSharedConfigs()` from `./config`, which reads nothing from
+`.nuxt/` and is the supported route there (narduk-libs#157). Pick the packs that
+fit: the Vue- and Nuxt-shaped ones (`design-system`, `nuxt-ui`) have nothing to
+lint in such an app.
+
+```js
+// eslint.config.mjs in a non-Nuxt app
+import { composeSharedConfigs } from '@narduk-enterprises/eslint-config/config'
+
+export default composeSharedConfigs('core', 'server')
+```
+
+`narduk-app foundation:check` still requires this package in a non-Nuxt app
+(sub-check 2.1); see the narduk-app-tools README.
+
 A single pack can also be imported directly, e.g.
 `@narduk-enterprises/eslint-config/config/core`. A directly imported pack is
 just that pack — it carries no parser layer, no community layer, and no Prettier

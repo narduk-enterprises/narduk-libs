@@ -46,6 +46,7 @@ import {
   runDevelopmentRollback,
   runDevelopmentStatus,
   runDevelopmentUnpin,
+  runDevelopmentValidate,
   type LifecycleContext,
 } from '../src/development-lifecycle.js'
 import { DevelopmentCloudflare } from '../src/development-provider.js'
@@ -410,7 +411,10 @@ class GitHub {
     status: string
     head_sha?: string
     head_branch?: string
+    repositoryId?: number
   }> = []
+  /** What `GET repos/{origin name}` answers; a rename changes full_name, never id. */
+  identity = { id: 4242, full_name: REPO }
   calls: string[] = []
   mainHead = ''
   redMain: Array<{ number: number; title: string; created_at: string; pull_request?: object }> = []
@@ -418,7 +422,12 @@ class GitHub {
   request = (path: string, method = 'GET'): unknown => {
     this.calls.push(`${method} ${path}`)
     const url = new URL(`https://api.github.com/${path}`)
-    const route = url.pathname.replace(`/repos/${REPO}/`, '')
+    // GitHub serves the old name through a redirect and the canonical name directly.
+    if ([`/repos/${REPO}`, `/repos/${this.identity.full_name}`].includes(url.pathname))
+      return this.identity
+    const route = url.pathname
+      .replace(`/repos/${this.identity.full_name}/`, '')
+      .replace(`/repos/${REPO}/`, '')
     if (route === 'issues' && url.searchParams.get('labels') === 'red-main') {
       if (this.redMainUnavailable) throw new Error('GitHub GET request failed')
       return this.redMain
@@ -460,10 +469,16 @@ class GitHub {
         status: 'completed',
         conclusion: 'success',
         path: '.github/workflows/validate.yml',
-        html_url: `https://github.com/${REPO}/actions/runs/${run.id}`,
+        html_url: `https://github.com/${this.identity.full_name}/actions/runs/${run.id}`,
         run_attempt: 1,
-        repository: { full_name: REPO },
-        head_repository: { full_name: REPO },
+        repository: {
+          id: run.repositoryId ?? this.identity.id,
+          full_name: run.repositoryId ? 'someone-else/fixture-app' : this.identity.full_name,
+        },
+        head_repository: {
+          id: run.repositoryId ?? this.identity.id,
+          full_name: run.repositoryId ? 'someone-else/fixture-app' : this.identity.full_name,
+        },
       }
     }
     if (route === 'branches/main') return { commit: { sha: this.mainHead } }
@@ -1467,6 +1482,59 @@ describe('feedback, operations, handoff and exit', { timeout: 30_000 }, () => {
   })
 })
 
+describe('development exit after a repository rename', { timeout: 30_000 }, () => {
+  const RENAMED = 'narduk-enterprises/renamed-app'
+
+  /** Enrolled under the old name; GitHub renames the repository before exit. */
+  async function renamedExit(run: { repositoryId?: number }) {
+    const h = harness()
+    await enter(h)
+    runDevelopmentExitPrepare(h.context)
+    h.github.identity = { id: h.github.identity.id, full_name: RENAMED }
+    const release = git(h.root, 'rev-parse', 'HEAD')
+    h.github.mainHead = release
+    h.github.runs.push({
+      id: 902,
+      workflow: 3,
+      status: 'completed',
+      head_sha: release,
+      head_branch: `narduk-validation/${release}/request`,
+      ...run,
+    })
+    h.github.calls.length = 0
+    return { h, release }
+  }
+
+  it('accepts the validation run GitHub reports under the new name, keeping the record key', async () => {
+    const { h, release } = await renamedExit({})
+    // The origin still names the old repository, and so does the activation record.
+    expect(git(h.root, 'remote', 'get-url', 'origin')).toBe(`git@github.com:${REPO}.git`)
+    expect(readActivation(REPO, h.state)!.repository).toBe(REPO)
+    const closed = await runDevelopmentExitComplete(
+      { releaseSha: release, validationRun: '902' },
+      h.context,
+    )
+    expect(closed.repository).toBe(REPO)
+    expect(closed.exit?.validationRun).toBe(902)
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    expect(h.github.workflows.map((w) => w.state)).toEqual(['active', 'active', 'active', 'active'])
+    // Identity is resolved once, and every write addresses the canonical name.
+    expect(h.github.calls.filter((call) => call === `GET repos/${REPO}`)).toHaveLength(1)
+    const writes = h.github.calls.filter((call) => !call.startsWith('GET'))
+    expect(writes.length).toBeGreaterThan(0)
+    for (const call of writes) expect(call).toMatch(new RegExp(`^\\w+ repos/${RENAMED}/`, 'u'))
+  })
+
+  it('still rejects a successful run from a genuinely different repository', async () => {
+    const { h, release } = await renamedExit({ repositoryId: 9999 })
+    await expect(
+      runDevelopmentExitComplete({ releaseSha: release, validationRun: '902' }, h.context),
+    ).rejects.toThrow(/not successful explicit validation/u)
+    expect(readActivation(REPO, h.state)!.mode).toBe('exiting')
+    expect(h.github.workflows[0].state).toBe('disabled_manually')
+  })
+})
+
 // ─── receipts, guards, background validation and rollback ────────────────────
 
 function deploy(h: Harness, flags: Partial<DevelopmentDeployFlags> = {}) {
@@ -2299,5 +2367,60 @@ describe('guard building blocks', () => {
     })
     expect(() => parseDevelopmentDeployArgs(['--red-main-fix', 'soon'])).toThrow(/issue number/u)
     expect(DEVELOPMENT_USAGE.join('\n')).toMatch(/development rollback --to/u)
+  })
+})
+
+/** Records the validation push instead of running `git push`. */
+class NoPushGitHub extends DevelopmentGitHub {
+  pushed: string[] = []
+  override requestValidation(
+    _cwd: string,
+    branch: string,
+    sha: string,
+    reason: string,
+    beforePush: Parameters<DevelopmentGitHub['requestValidation']>[4],
+  ): string {
+    const validationRef = `narduk-validation/${sha}/fixture`
+    beforePush({ branch, sha, reason, validationRef })
+    this.pushed.push(validationRef)
+    return validationRef
+  }
+}
+
+describe('development validate on a host without the activation record', () => {
+  const flags = { ref: 'feature', sha: 'a'.repeat(40), reason: 'PR needs ci / Required' }
+  function noPush(h: Harness): NoPushGitHub {
+    const client = new NoPushGitHub(REPO, h.github.request)
+    h.context.github = () => client
+    return client
+  }
+
+  it('refuses, naming the evidence, while normal CI is running', async () => {
+    const h = harness()
+    const client = noPush(h)
+    expect(() => runDevelopmentValidate(flags, h.context)).toThrow(
+      /^Not enrolled: none of \.github\/workflows\/ci\.yml, \.github\/workflows\/promote\.yml is held on GitHub/u,
+    )
+    expect(client.pushed).toEqual([])
+    expect(formatStatus(await runDevelopmentStatus({ remote: true }, h.context))).toBe(
+      `${REPO}: normal delivery (not enrolled in development mode on this workstation)`,
+    )
+  })
+
+  it('validates when GitHub shows the CI held by another workstation', async () => {
+    const h = harness()
+    const client = noPush(h)
+    for (const workflow of h.github.workflows.slice(0, 2)) workflow.state = 'disabled_manually'
+    const validationRef = runDevelopmentValidate(flags, h.context)
+    expect(client.pushed).toEqual([validationRef])
+    expect(h.logs.join('\n')).toMatch(
+      /ci\.yml \(disabled_manually\), .*promote\.yml \(disabled_manually\): CI is held by an enrollment on another workstation/u,
+    )
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    const status = formatStatus(await runDevelopmentStatus({ remote: true }, h.context))
+    expect(status).toContain(
+      '  held on GitHub: .github/workflows/ci.yml (disabled_manually), .github/workflows/promote.yml (disabled_manually)',
+    )
+    expect(status).toContain('run development validate for a full CI result')
   })
 })

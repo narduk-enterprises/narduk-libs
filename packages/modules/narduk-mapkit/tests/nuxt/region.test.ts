@@ -40,6 +40,41 @@ describe('mapKitBoundingRegion', () => {
     expect(region?.center).toStrictEqual({ lat: 30, lng: -88 })
   })
 
+  describe('points either side of the antimeridian (#868)', () => {
+    it('frames the narrow strip across 180, not the 359-degree arc through 0', () => {
+      const region = mapKitBoundingRegion([
+        { lat: 30, lng: 179.5 },
+        { lat: 31, lng: -179.5 },
+      ])
+
+      expect(Math.abs(region!.center.lng)).toBeCloseTo(180, 10)
+      expect(region?.center.lat).toBe(30.5)
+      expect(region?.span.lng).toBeCloseTo(1.05, 10)
+    })
+
+    it('frames a Pacific route that crosses the line', () => {
+      const region = mapKitBoundingRegion([
+        { lat: 21, lng: 170 },
+        { lat: 21, lng: 178 },
+        { lat: 21, lng: -175 },
+        { lat: 21, lng: -170 },
+      ])
+
+      expect(Math.abs(region!.center.lng)).toBeCloseTo(180, 10)
+      expect(region?.span.lng).toBeCloseTo(20 * 1.05, 10)
+    })
+
+    it('still takes the direct span when the points straddle the prime meridian', () => {
+      const region = mapKitBoundingRegion([
+        { lat: 51, lng: -1 },
+        { lat: 51, lng: 1 },
+      ])
+
+      expect(region?.center.lng).toBeCloseTo(0, 10)
+      expect(region?.span.lng).toBeCloseTo(2.1, 10)
+    })
+  })
+
   it('distinguishes "nothing to show" from "show this"', () => {
     expect(mapKitBoundingRegion([])).toBeUndefined()
     expect(mapKitBoundingRegion([], { fallbackCenter: { lat: 30, lng: -88 } })).toStrictEqual({

@@ -35,8 +35,10 @@ function normalizeApiHost(value: string) {
   return value.replace(/\/+$/, '')
 }
 
+// HogQL string literals take backslash escapes as well as a doubled quote, so
+// a trailing backslash could otherwise end the literal early.
 function escapeHogLiteral(value: string) {
-  return value.replaceAll("'", "''")
+  return value.replaceAll('\\', '\\\\').replaceAll("'", "''")
 }
 
 export function resolvePosthogProjectConfig(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
@@ -92,13 +94,26 @@ export function resolvePosthogPeriod(period: string | undefined): ResolvedPostho
   }
 }
 
-export function buildPosthogCurrentUrlClause(domain: string) {
-  const normalized = domain.trim()
-  if (!normalized) {
-    return ''
+/**
+ * HogQL boolean: the event's `$current_url` host is the app's host or a
+ * subdomain of it, the same test `recordingStartUrlMatchesDomain` applies. A
+ * substring match counted any app whose host merely contains this one, and
+ * any URL carrying the domain in its path or query (#924). With no domain it
+ * is `false`: the shared project would otherwise return every app's data.
+ */
+export function buildPosthogCurrentUrlHostMatch(domain: string) {
+  const host = normalizePosthogDomainHost(domain)
+  if (!host) {
+    return 'false'
   }
 
-  return `AND properties.$current_url LIKE '%${escapeHogLiteral(normalized)}%'`
+  const literal = escapeHogLiteral(host)
+  const eventHost = 'lower(domain(properties.$current_url))'
+  return `(${eventHost} = '${literal}' OR endsWith(${eventHost}, '.${literal}'))`
+}
+
+export function buildPosthogCurrentUrlClause(domain: string) {
+  return `AND ${buildPosthogCurrentUrlHostMatch(domain)}`
 }
 
 export async function posthogQueryFetch<T>(

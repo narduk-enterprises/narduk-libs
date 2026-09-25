@@ -52,14 +52,122 @@ export function digestDirectory(root: string): string {
   return digestFiles(files)
 }
 
+/** A `/` after one of these opens a regular expression, not a division. */
+const REGEX_AFTER_PUNCTUATOR = new Set('(,=:[!&|?{};+-*%<>~^')
+const REGEX_AFTER_KEYWORD =
+  /\b(?:await|case|delete|do|else|in|instanceof|new|of|return|throw|typeof|void|yield)$/u
+
+/** End of the quoted string opening at `start`, past its closing quote. */
+function quotedEnd(source: string, start: number): number {
+  const quote = source[start]
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '\\') index += 1
+    else if (char === quote || char === '\n') return index + 1
+  }
+  return source.length
+}
+
+/** Past the next backtick, or past the next `${`, scanning template text. */
+function templateEnd(source: string, start: number): { end: number; opensExpression: boolean } {
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '\\') index += 1
+    else if (char === '`') return { end: index + 1, opensExpression: false }
+    else if (char === '$' && source[index + 1] === '{') {
+      return { end: index + 2, opensExpression: true }
+    }
+  }
+  return { end: source.length, opensExpression: false }
+}
+
+/** End of the regular expression opening at `start`, or -1 when it is a division. */
+function regexEnd(source: string, start: number): number {
+  let inClass = false
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '\n') return -1
+    if (char === '\\') index += 1
+    else if (char === '[') inClass = true
+    else if (char === ']') inClass = false
+    else if (char === '/' && !inClass) {
+      let end = index + 1
+      while (end < source.length && /[a-z]/iu.test(source[end] as string)) end += 1
+      return end
+    }
+  }
+  return -1
+}
+
 /**
  * Capture (Playwright) and verify (plain Node / Vitest) pretty-print the
  * same function differently: ASI semicolons, indent, and object literals
  * broken across lines. Collapse that so the digest is about the body, not
  * the loader (narduk-libs#66).
+ *
+ * Only in code, though. String, template and regex literals are the values a
+ * step types and matches, and no loader re-prints them, so they are kept
+ * verbatim: `'a;b'` and `'ab'` are different journeys (#882). A body whose
+ * literals hold no `;` and no whitespace but single spaces digests exactly as
+ * before.
  */
 function normalizeFunctionSource(source: string): string {
-  return source.replaceAll(/\s+/g, ' ').replaceAll(';', '').trim()
+  let normalized = ''
+  let code = ''
+  // Code seen since the last literal, kept whole so a regex can be told from
+  // a division by what precedes it.
+  let recent = ''
+  let braces = 0
+  const templateBraces: number[] = []
+  const takeLiteral = (start: number, end: number): number => {
+    normalized += code.replaceAll(/\s+/gu, ' ').replaceAll(';', '') + source.slice(start, end)
+    code = ''
+    recent = 'x'
+    return end
+  }
+  let index = 0
+  while (index < source.length) {
+    const char = source[index] as string
+    const next = source[index + 1]
+    if (char === '/' && (next === '/' || next === '*')) {
+      const close = next === '/' ? source.indexOf('\n', index) : source.indexOf('*/', index + 2)
+      const end = close === -1 ? source.length : next === '/' ? close : close + 2
+      code += source.slice(index, end)
+      index = end
+    } else if (char === "'" || char === '"') {
+      index = takeLiteral(index, quotedEnd(source, index))
+    } else if (char === '`' || (char === '}' && templateBraces.at(-1) === braces)) {
+      if (char === '}') templateBraces.pop()
+      const template = templateEnd(source, index + 1)
+      index = takeLiteral(index, template.end)
+      if (template.opensExpression) {
+        templateBraces.push(braces)
+        recent = '{'
+      }
+    } else if (char === '/') {
+      const before = recent.trimEnd()
+      const opensRegex =
+        before === '' ||
+        REGEX_AFTER_PUNCTUATOR.has(before.at(-1) as string) ||
+        REGEX_AFTER_KEYWORD.test(before)
+      const end = opensRegex ? regexEnd(source, index) : -1
+      if (end === -1) {
+        code += char
+        recent += char
+        index += 1
+      } else {
+        index = takeLiteral(index, end)
+      }
+    } else {
+      if (char === '{') braces += 1
+      if (char === '}') braces -= 1
+      code += char
+      recent += char
+      index += 1
+    }
+  }
+  normalized += code.replaceAll(/\s+/gu, ' ').replaceAll(';', '')
+  return normalized.trim()
 }
 
 function functionSource(value: unknown): string | null {

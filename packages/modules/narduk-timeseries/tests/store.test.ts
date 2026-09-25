@@ -128,6 +128,67 @@ describe('writeNumeric', () => {
     expect(error?.code).toBe('SERIES_UNRESOLVED')
   })
 
+  describe('vesselId spelling (#940)', () => {
+    // Swift's UUID().uuidString is uppercase; Postgres renders a uuid in
+    // lowercase canonical form, so RETURNING never echoes the caller's string.
+    const UPPER = 'E621E1F8-C36C-495A-93FC-0C247A3E6E5F'
+    const LOWER = 'e621e1f8-c36c-495a-93fc-0c247a3e6e5f'
+
+    function withCanonicalUuids(fake: ProtocolFake): ProtocolFake {
+      return fake.respondTo(/INSERT INTO series/u, (params) => {
+        const rows: unknown[] = []
+        for (let index = 0; index < params.length; index += 4) {
+          const hex = String(params[index]).replaceAll(/[{}-]/gu, '').toLowerCase()
+          rows.push({
+            path: params[index + 1],
+            series_id: 2000 + index / 4,
+            unit: params[index + 2],
+            value_kind: params[index + 3],
+            vessel_id: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
+          })
+        }
+        return rows
+      })
+    }
+
+    let canonical: ProtocolFake
+    let canonicalStore: TimescaleHistoryStore
+
+    beforeEach(() => {
+      canonical = withCanonicalUuids(createProtocolFake())
+      canonicalStore = createTimescaleHistoryStore({ executor: canonical })
+    })
+
+    it('writes an uppercase vesselId instead of throwing SERIES_UNRESOLVED', async () => {
+      const result = await canonicalStore.writeNumeric(numericPoints(10, 2, UPPER))
+      expect(result.rows).toBe(10)
+      expect(canonical.countMatching(/INSERT INTO telemetry_numeric \(/u)).toBe(1)
+    })
+
+    it('resolves every spelling Postgres accepts for the same uuid', async () => {
+      for (const vesselId of [UPPER, `{${UPPER}}`, UPPER.replaceAll('-', ''), LOWER]) {
+        const [row] = await canonicalStore.resolveSeries([
+          { path: 'a', unit: null, valueKind: 'numeric', vesselId },
+        ])
+        expect(row?.seriesId).toBe(2000)
+      }
+      // The first spelling cached the series; the rest are cache hits.
+      expect(canonical.countMatching(/INSERT INTO series/u)).toBe(1)
+    })
+
+    it('sends one upsert row when a batch spells the same vessel two ways', async () => {
+      // Two input rows for one (vessel_id, path) make Postgres reject the
+      // statement: ON CONFLICT DO UPDATE cannot affect a row a second time.
+      const batch = [...numericPoints(2, 1, UPPER), ...numericPoints(2, 1, LOWER)]
+      const result = await canonicalStore.writeNumeric(batch)
+      expect(result.seriesResolved).toBe(1)
+      const upsert = canonical.statements.find((statement) =>
+        /INSERT INTO series/u.test(statement.text),
+      )
+      expect(upsert?.params).toHaveLength(4)
+    })
+  })
+
   it('does nothing at all for an empty batch', async () => {
     const result = await store.writeNumeric([])
     expect(database.statements).toHaveLength(0)

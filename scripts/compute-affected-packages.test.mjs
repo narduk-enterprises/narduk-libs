@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { computeAffectedSet, loadWorkspace } from './compute-affected-packages.mjs'
+import {
+  changedFilesBetween,
+  computeAffectedSet,
+  loadWorkspace,
+} from './compute-affected-packages.mjs'
 import { packageJobs } from './ci-package-plan.mjs'
 
 const scope = '@narduk-enterprises/'
@@ -500,4 +505,28 @@ test('the live explorer declares its workspace inputs and is selected by a packa
   })
   assert.ok(result.affectedNames.includes(`${scope}libs-explorer`))
   assert.ok(result.browserPackages.includes(`${scope}libs-explorer`))
+})
+
+test('a file moved out of a package lists the package it left (#915)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'narduk-libs-rename-test-'))
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+  try {
+    git('init', '--quiet', '--initial-branch=main')
+    git('config', 'user.email', 'affected@example.com')
+    git('config', 'user.name', 'Affected')
+    mkdirSync(join(root, 'packages', 'a'), { recursive: true })
+    mkdirSync(join(root, 'packages', 'b'), { recursive: true })
+    writeFileSync(join(root, 'packages', 'a', 'x.ts'), 'export const x = 1\nexport const y = 2\n')
+    git('add', '-A')
+    git('commit', '--quiet', '-m', 'base')
+    git('switch', '--quiet', '-c', 'feature')
+    git('mv', 'packages/a/x.ts', 'packages/b/x.ts')
+    git('commit', '--quiet', '-m', 'move')
+    assert.deepEqual(changedFilesBetween(root, 'main', 'feature').sort(), [
+      'packages/a/x.ts',
+      'packages/b/x.ts',
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

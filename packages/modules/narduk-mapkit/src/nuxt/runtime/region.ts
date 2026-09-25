@@ -6,6 +6,8 @@
  * testable without a map, a namespace, or a DOM.
  */
 
+import { computeLongitudeSpan } from '../../geometry/longitude.js'
+
 export interface MapKitLatLng {
   lat: number
   lng: number
@@ -40,28 +42,27 @@ export function mapKitBoundingRegion(
   options: MapKitBoundsOptions = {},
 ): MapKitPlainRegion | undefined {
   let maxLat = Number.NEGATIVE_INFINITY
-  let maxLng = Number.NEGATIVE_INFINITY
   let minLat = Number.POSITIVE_INFINITY
-  let minLng = Number.POSITIVE_INFINITY
-  let seen = false
+  const longitudes: number[] = []
 
   for (const point of points) {
     if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue
-    seen = true
     if (point.lat < minLat) minLat = point.lat
     if (point.lat > maxLat) maxLat = point.lat
-    if (point.lng < minLng) minLng = point.lng
-    if (point.lng > maxLng) maxLng = point.lng
+    longitudes.push(point.lng)
   }
 
-  if (seen) {
+  if (longitudes.length > 0) {
+    // Longitude is measured the short way round, so points either side of the
+    // antimeridian frame the narrow strip between them (narduk-libs#868).
+    const { centerLng, lngDelta } = computeLongitudeSpan(longitudes)
     const padding = options.boundingPadding ?? 0.05
     const floor = options.minSpanDelta ?? 0
     return {
-      center: { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 },
+      center: { lat: (minLat + maxLat) / 2, lng: centerLng },
       span: {
         lat: Math.max((maxLat - minLat) * (1 + padding), floor, MIN_LAT_DELTA),
-        lng: Math.max((maxLng - minLng) * (1 + padding), floor, MIN_LNG_DELTA),
+        lng: Math.max(lngDelta * (1 + padding), floor, MIN_LNG_DELTA),
       },
     }
   }

@@ -321,9 +321,18 @@ const yMap = computed(() => {
     if (props.stackedPercent) {
       dataVals = props.labels.map(() => 100)
     } else {
-      dataVals = props.labels.map((_, li) =>
-        visibleSeries.value.reduce((sum, s) => sum + barValue(s.data[li]), 0),
-      )
+      // Positive and negative segments stack separately (#928), so the
+      // domain has to reach both totals, not just their net sum.
+      dataVals = props.labels.flatMap((_, li) => {
+        let positive = 0
+        let negative = 0
+        for (const s of visibleSeries.value) {
+          const v = barValue(s.data[li])
+          if (v < 0) negative += v
+          else positive += v
+        }
+        return [positive, negative]
+      })
     }
   } else {
     dataVals = visibleSeries.value.flatMap(s => s.data.map(barValue))
@@ -351,12 +360,44 @@ const yTicksForDisplay = computed(() =>
   })),
 )
 
-/** Extent along the value axis in px (bar height when vertical, bar width when horizontal). */
-function valuePixelExtent(value: number): number {
+/**
+ * The value-axis pixel span (distance from the axis origin, low and high) that
+ * a bar covering `from`..`to` occupies. Both ends are clamped into the domain
+ * so a pinned `yMin`/`yMax`, or a log axis, never extrapolates.
+ */
+function valueSpan(from: number, to: number): { hi: number; lo: number } {
   const m = yMap.value
-  const base = m.yFromBottom(m.domain.min)
-  const end = m.yFromBottom(value)
-  return Math.max(0, end - base)
+  const clamp = (v: number) => Math.min(m.domain.max, Math.max(m.domain.min, v))
+  const a = m.yFromBottom(clamp(from))
+  const b = m.yFromBottom(clamp(to))
+  return { hi: Math.max(a, b), lo: Math.min(a, b) }
+}
+
+/**
+ * Bars grow from zero, not from the domain floor (#928): a negative value
+ * extends below (or left of) the zero line. Zero is clamped into the domain,
+ * so a log axis, or a pinned domain that excludes zero, grows from its floor.
+ */
+function barSpan(value: number): { hi: number; lo: number } {
+  return valueSpan(0, value)
+}
+
+/**
+ * Stacked segments run from the stack's running total to that total plus the
+ * segment, each axis-mapped, so log and symlog stacks stay right (#873).
+ * Positive and negative segments keep separate totals and grow away from
+ * zero in opposite directions (#928).
+ */
+function createStackCursor() {
+  let positive = 0
+  let negative = 0
+  return (value: number) => {
+    const start = value < 0 ? negative : positive
+    const end = start + value
+    if (value < 0) negative = end
+    else positive = end
+    return valueSpan(start, end)
+  }
 }
 
 function yPos(value: number): number {
@@ -459,7 +500,6 @@ const bars = computed<BarRect[]>(() => {
   if (isHorizontal.value) {
     const groupHeight = plotHeight.value / n
     const innerH = groupHeight * (1 - groupGap)
-    const valueOriginX = xPosForValue(yMap.value.domain.min)
     const result: BarRect[] = []
 
     if (stackedLayout.value) {
@@ -467,15 +507,15 @@ const bars = computed<BarRect[]>(() => {
       for (let li = 0; li < n; li++) {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
         const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
-        let cumX = valueOriginX
+        const stack = createStackCursor()
         for (const s of visibleSeries.value) {
           const raw = barValue(s.data[li])
           const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
-          const w = valuePixelExtent(val)
+          const { lo, hi } = stack(val)
           result.push({
-            x: cumX,
+            x: padding.value.left + lo,
             y: rowTop,
-            width: w,
+            width: hi - lo,
             height: barH,
             color: resolveColor(s),
             value: val,
@@ -483,7 +523,6 @@ const bars = computed<BarRect[]>(() => {
             label: props.labels[li]!,
             labelIndex: li,
           })
-          cumX += w
         }
       }
     } else {
@@ -492,11 +531,11 @@ const bars = computed<BarRect[]>(() => {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
         for (const [si, s] of visibleSeries.value.entries()) {
           const val = barValue(s.data[li])
-          const w = valuePixelExtent(val)
+          const { lo, hi } = barSpan(val)
           result.push({
-            x: valueOriginX,
+            x: padding.value.left + lo,
             y: rowTop + si * (barH + barGap),
-            width: w,
+            width: hi - lo,
             height: barH,
             color: resolveColor(s),
             value: val,
@@ -520,17 +559,16 @@ const bars = computed<BarRect[]>(() => {
     for (let li = 0; li < n; li++) {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
       const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
-      let cumY = bottomY
+      const stack = createStackCursor()
       for (const s of visibleSeries.value) {
         const raw = barValue(s.data[li])
         const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
-        const barH = valuePixelExtent(val)
-        cumY -= barH
+        const { lo, hi } = stack(val)
         result.push({
           x: groupX,
-          y: cumY,
+          y: bottomY - hi,
           width: barW,
-          height: barH,
+          height: hi - lo,
           color: resolveColor(s),
           value: val,
           seriesName: s.name,
@@ -545,12 +583,12 @@ const bars = computed<BarRect[]>(() => {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
       for (const [si, s] of visibleSeries.value.entries()) {
         const val = barValue(s.data[li])
-        const barH = valuePixelExtent(val)
+        const { lo, hi } = barSpan(val)
         result.push({
           x: groupX + si * (barW + barGap),
-          y: bottomY - barH,
+          y: bottomY - hi,
           width: barW,
-          height: barH,
+          height: hi - lo,
           color: resolveColor(s),
           value: val,
           seriesName: s.name,

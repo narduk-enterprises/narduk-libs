@@ -33,6 +33,10 @@ import type { SecurityHeadersMode } from '../../shared/security-headers'
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 
+// Hosts match the strict preset's BASELINE_ALLOWLIST.script. An app that
+// loads another script origin (AdSense, say) adds it through
+// `runtimeConfig.public.cspScriptSrc` / `CSP_SCRIPT_SRC`; the baseline no
+// longer grants AdSense to every app (narduk-libs#459).
 const BASELINE_SCRIPT_SRC = [
   "'self'",
   "'unsafe-inline'",
@@ -42,7 +46,6 @@ const BASELINE_SCRIPT_SRC = [
   'https://us-assets.i.posthog.com',
   'https://static.cloudflareinsights.com',
   'https://cdn.apple-mapkit.com',
-  'https://pagead2.googlesyndication.com',
 ]
 
 const BASELINE_CONNECT_SRC = [

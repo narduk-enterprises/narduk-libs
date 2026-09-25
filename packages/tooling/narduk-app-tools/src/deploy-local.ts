@@ -18,6 +18,17 @@ const DEFAULT_SECRET_KEYS = [
   'NUXT_SESSION_PASSWORD',
 ] as const
 
+/**
+ * `GH_PACKAGES_READ` is estate-wide, not per app: its registered route is this
+ * nvault selector, so an app config holds no copy of it (narduk-libs#333).
+ */
+const PACKAGES_READ_NVAULT_SELECTOR = {
+  project: 'github',
+  environment: 'prd',
+  config: 'narduk-enterprises-packages-read',
+} as const
+const PACKAGES_READ_RUN = `nvault run -p ${PACKAGES_READ_NVAULT_SELECTOR.project} -e ${PACKAGES_READ_NVAULT_SELECTOR.environment} -c ${PACKAGES_READ_NVAULT_SELECTOR.config}`
+
 export interface DeployLocalFlags {
   dryRun: boolean
   force: boolean
@@ -160,12 +171,22 @@ export function readDeployLocalSecrets(
 ): Record<string, string> {
   const missing = keys.filter((key) => !env[key]?.trim())
   if (missing.length > 0) {
+    const appKeys = missing.filter((key) => key !== 'GH_PACKAGES_READ')
     throw new Error(
       [
         `deploy-local needs ${missing.join(', ')} in its environment.`,
         'It no longer reads Doppler narduk/tokens: Doppler is retired except the ne root store.',
-        'Run it under the app nvault config, for example',
-        '`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`,',
+        ...(missing.includes('GH_PACKAGES_READ')
+          ? [`GH_PACKAGES_READ comes from its registered route, \`${PACKAGES_READ_RUN} --\`.`]
+          : []),
+        ...(appKeys.length > 0
+          ? [
+              `${appKeys.join(', ')} come${appKeys.length === 1 ? 's' : ''} from the app nvault config.`,
+            ]
+          : []),
+        keys.includes('GH_PACKAGES_READ')
+          ? `Run it under both, for example \`${PACKAGES_READ_RUN} -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes\`,`
+          : 'Run it under the app nvault config, for example `nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`,',
         'or use `narduk-app deploy-hotfix` (docs/local-hotfix.md).',
       ].join(' '),
     )
@@ -173,12 +194,16 @@ export function readDeployLocalSecrets(
   return Object.fromEntries(keys.map((key) => [key, env[key]?.trim() ?? '']))
 }
 
-async function probeSiteUrl(siteUrl: string): Promise<void> {
+function assertProbeableSiteUrl(siteUrl: string): void {
   if (!isNonLocalHttpsUrl(siteUrl)) {
     throw new Error(
       `Refusing deploy: SITE_URL must be a non-local https URL (got ${siteUrl || '(empty)'})`,
     )
   }
+}
+
+async function probeSiteUrl(siteUrl: string): Promise<void> {
+  assertProbeableSiteUrl(siteUrl)
   const url = new URL(siteUrl)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
@@ -204,6 +229,9 @@ export async function runDeployLocal(options: DeployLocalOptions): Promise<numbe
   const scriptName = readWranglerScriptName(appDir)
   const cfVars = await fetchWorkerPlainTextVars({ accountId, apiToken, scriptName })
   const siteUrl = cfVars.SITE_URL?.trim() ?? ''
+  // The probe needs a URL it can reach, and SITE_URL is known now: refuse
+  // before building, migrating or deploying, not after production moved (#877).
+  if (!options.flags.noProbe) assertProbeableSiteUrl(siteUrl)
   const secretKeys = parseSecretKeys(env, options.secretKeys ?? DEFAULT_SECRET_KEYS)
   const secrets = readDeployLocalSecrets(env, secretKeys)
 

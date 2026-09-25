@@ -65,4 +65,15 @@ describe('macd', () => {
     expect(m.line.length).toBe(c.length)
     expect(m.signal.length).toBe(c.length)
   })
+
+  it('keeps the signal null until the MACD line has signalPeriod real samples (#867)', () => {
+    const c = Array.from({ length: 50 }, (_, i) => 50 + Math.sin(i / 5) * 2)
+    const m = macd(c)
+    const firstLine = m.line.findIndex(v => v != null)
+    expect(firstLine).toBe(25)
+    for (let i = 0; i < firstLine + 8; i++) expect(m.signal[i]).toBeNull()
+    const real = m.line.slice(firstLine) as number[]
+    expect(m.signal.slice(firstLine)).toEqual(ema(real, 9))
+    expect(m.hist[firstLine + 8]).toBeCloseTo(m.line[firstLine + 8]! - m.signal[firstLine + 8]!)
+  })
 })

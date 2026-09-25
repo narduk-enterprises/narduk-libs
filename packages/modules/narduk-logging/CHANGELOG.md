@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+### Patch Changes
+
+- 31c907d: Redact plural secret keys (`tokens`, `secrets`, `passwords`,
+  `accessTokens`, `dbPasswords`, …) in the TypeScript, Python, Go and Swift
+  sanitizers. LLM usage counts such as `inputTokens` and `total_tokens` stay
+  visible (narduk-libs#872).
+
 ## 0.4.0
 
 ### Minor Changes

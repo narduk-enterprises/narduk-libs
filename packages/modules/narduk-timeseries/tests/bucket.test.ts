@@ -155,3 +155,100 @@ describe('bucketReadings', () => {
     }
   })
 })
+
+describe('bucketReadings at a spring-forward gap (#938)', () => {
+  /** A reading every 30 minutes from `from` (inclusive) to `to` (exclusive). */
+  function halfHourly(from: string, to: string): Reading[] {
+    const rows: Reading[] = []
+    for (let ms = Date.parse(from); ms < Date.parse(to); ms += 30 * 60_000) {
+      rows.push({ at: ms, wind: 1 })
+    }
+    return rows
+  }
+
+  function bucketsFor(rows: Reading[], bucket: '1h' | '3h' | '1d', timeZone: string) {
+    return bucketReadings<Reading, 'wind'>(rows, {
+      bucket,
+      fields: { wind: fields.wind },
+      time: (row) => row.at,
+      timeZone,
+    }).buckets
+  }
+
+  /**
+   * Every way the buckets fail to tile time: a bucket with no width, one that
+   * does not end where the next starts, or a row outside the bucket that
+   * counted it. Empty means the buckets tile.
+   */
+  function tilingProblems(rows: Reading[], bucket: '1h' | '3h' | '1d', timeZone: string): string[] {
+    const problems: string[] = []
+    const buckets = bucketsFor(rows, bucket, timeZone)
+    for (const [index, current] of buckets.entries()) {
+      if (!(current.end.getTime() > current.start.getTime())) {
+        problems.push(`${current.key} has no width`)
+      }
+      const next = buckets[index + 1]
+      if (next && current.end.getTime() !== next.start.getTime()) {
+        problems.push(
+          `${current.key} ends at ${current.end.toISOString()}, not at ${next.key}'s start`,
+        )
+      }
+    }
+    for (const row of rows) {
+      const ms = row.at as number
+      // The bucket that counted this row is the one its own wall clock names.
+      const [own] = bucketsFor([row], bucket, timeZone)
+      const owner = buckets.find((b) => b.key === own?.key)
+      if (!owner || owner.start.getTime() > ms || owner.end.getTime() <= ms) {
+        problems.push(`${new Date(ms).toISOString()} lies outside ${own?.key}`)
+      }
+    }
+    if (buckets.reduce((sum, b) => sum + b.rows, 0) !== rows.length) problems.push('rows lost')
+    return problems
+  }
+
+  const chicago = halfHourly('2026-03-07T12:00:00Z', '2026-03-09T12:00:00Z')
+  const santiago = halfHourly('2026-09-04T12:00:00Z', '2026-09-07T12:00:00Z')
+
+  for (const grain of ['1h', '3h', '1d'] as const) {
+    it(`tiles America/Chicago ${grain} across the 02:00 gap`, () => {
+      expect(tilingProblems(chicago, grain, 'America/Chicago')).toEqual([])
+    })
+    it(`tiles America/Santiago ${grain} across the midnight gap`, () => {
+      expect(tilingProblems(santiago, grain, 'America/Santiago')).toEqual([])
+    })
+  }
+
+  const chicagoFallBack = halfHourly('2026-10-31T12:00:00Z', '2026-11-02T12:00:00Z')
+  for (const grain of ['1h', '3h', '1d'] as const) {
+    it(`still tiles America/Chicago ${grain} across the fall-back overlap`, () => {
+      expect(tilingProblems(chicagoFallBack, grain, 'America/Chicago')).toEqual([])
+    })
+  }
+
+  it('keeps the repeated fall-back hour in one two-hour bucket', () => {
+    const hour = bucketsFor(chicagoFallBack, '1h', 'America/Chicago').find(
+      (b) => b.key === '2026-11-01T01',
+    )
+    expect(hour?.start.toISOString()).toBe('2026-11-01T06:00:00.000Z')
+    expect(hour?.end.toISOString()).toBe('2026-11-01T08:00:00.000Z')
+    expect(hour?.rows).toBe(4)
+  })
+
+  it('ends the Chicago 01:00 hour at the transition, not on its own start', () => {
+    const hour = bucketsFor(chicago, '1h', 'America/Chicago').find((b) => b.key === '2026-03-08T01')
+    expect(hour?.start.toISOString()).toBe('2026-03-08T07:00:00.000Z')
+    expect(hour?.end.toISOString()).toBe('2026-03-08T08:00:00.000Z')
+    expect(hour?.rows).toBe(2)
+  })
+
+  it('ends the Santiago day before a midnight gap when the day really ends', () => {
+    const days = bucketsFor(santiago, '1d', 'America/Santiago')
+    const before = days.find((b) => b.key === '2026-09-05')
+    const after = days.find((b) => b.key === '2026-09-06')
+    expect(before?.end.toISOString()).toBe('2026-09-06T04:00:00.000Z')
+    expect(after?.start.toISOString()).toBe('2026-09-06T04:00:00.000Z')
+    // The day the clocks skipped midnight is 23 hours long.
+    expect((after!.end.getTime() - after!.start.getTime()) / 3_600_000).toBe(23)
+  })
+})

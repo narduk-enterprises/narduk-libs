@@ -100,3 +100,117 @@ describe('NardukBarChart thin "% of normal" bar (narduk-charts#37)', () => {
     expect(w.find('svg title').text()).toBe('Rainfall, 87% of normal')
   })
 })
+
+describe('NardukBarChart stacked on a non-linear axis (#873)', () => {
+  const series = [
+    { name: 'A', data: [30, 10, 100] },
+    { name: 'B', data: [70, 90, 0] },
+  ]
+  // The third category is one 100 segment: where the axis itself places 100.
+  const labels = ['split 30/70', 'split 10/90', 'whole 100']
+
+  function stackEnds(orientation: 'vertical' | 'horizontal', yScale: 'log' | 'symlog') {
+    const w = mount(NardukBarChart, {
+      props: {
+        series,
+        labels,
+        stacked: true,
+        yScale,
+        orientation,
+        width: 400,
+        height: 300,
+        animate: false,
+        barRadius: 0,
+      },
+    })
+    const rects = w.findAll('rect.narduk-bar-rect').map(r => r.element as SVGRectElement)
+    const n = (el: SVGRectElement, a: string) => Number(el.getAttribute(a))
+    const byCategory = new Map<number, SVGRectElement[]>()
+    for (const el of rects) {
+      const key = orientation === 'vertical' ? n(el, 'x') : n(el, 'y')
+      byCategory.set(key, [...(byCategory.get(key) ?? []), el])
+    }
+    return [...byCategory.values()].map(group =>
+      orientation === 'vertical'
+        ? Math.min(...group.map(el => n(el, 'y')))
+        : Math.max(...group.map(el => n(el, 'x') + n(el, 'width'))),
+    )
+  }
+
+  it.each([
+    ['vertical', 'log'],
+    ['horizontal', 'log'],
+    ['vertical', 'symlog'],
+    ['horizontal', 'symlog'],
+  ] as const)('%s %s: equal totals end at the same place', (orientation, yScale) => {
+    const ends = stackEnds(orientation, yScale)
+    expect(ends).toHaveLength(3)
+    expect(ends[0]).toBeCloseTo(ends[2]!, 6)
+    expect(ends[1]).toBeCloseTo(ends[2]!, 6)
+  })
+})
+
+// #928: bars grew from the domain floor, so a negative value drew as a short
+// positive bar and a positive bar included the whole negative band.
+describe('NardukBarChart signed values grow from zero (#928)', () => {
+  function rectBoxes(w: ReturnType<typeof mount>) {
+    return w.findAll('rect.narduk-bar-rect').map(r => {
+      const el = r.element as SVGRectElement
+      const n = (name: string) => Number(el.getAttribute(name))
+      return { x: n('x'), y: n('y'), width: n('width'), height: n('height') }
+    })
+  }
+
+  function mountBars(props: {
+    series: Array<{ name: string; data: number[] }>
+    labels: string[]
+    orientation?: 'horizontal' | 'vertical'
+    stacked?: boolean
+  }) {
+    return mount(NardukBarChart, {
+      props: { width: 400, height: 300, animate: false, barRadius: 0, ...props },
+    })
+  }
+
+  it('vertical: a negative bar hangs below the zero line a positive bar rises from', () => {
+    const [neg, pos] = rectBoxes(
+      mountBars({ series: [{ name: 'P&L', data: [-30, 50] }], labels: ['a', 'b'] }),
+    )
+    // Both bars meet at the zero line.
+    expect(neg!.y).toBeCloseTo(pos!.y + pos!.height, 6)
+    // Heights are proportional to |value|, not to value - domain.min.
+    expect(pos!.height / neg!.height).toBeCloseTo(50 / 30, 6)
+  })
+
+  it('horizontal: a negative bar extends left of the zero line', () => {
+    const [neg, pos] = rectBoxes(
+      mountBars({
+        series: [{ name: 'P&L', data: [-30, 50] }],
+        labels: ['a', 'b'],
+        orientation: 'horizontal',
+      }),
+    )
+    expect(neg!.x + neg!.width).toBeCloseTo(pos!.x, 6)
+    expect(pos!.width / neg!.width).toBeCloseTo(50 / 30, 6)
+  })
+
+  it('stacked: positive and negative segments stack away from zero separately', () => {
+    const [a, b, c] = rectBoxes(
+      mountBars({
+        series: [
+          { name: 'A', data: [20] },
+          { name: 'B', data: [-10] },
+          { name: 'C', data: [30] },
+        ],
+        labels: ['x'],
+        stacked: true,
+      }),
+    )
+    const zeroY = a!.y + a!.height
+    // B hangs below zero; C sits on top of A.
+    expect(b!.y).toBeCloseTo(zeroY, 6)
+    expect(c!.y + c!.height).toBeCloseTo(a!.y, 6)
+    expect(a!.height / b!.height).toBeCloseTo(2, 6)
+    expect(c!.height / b!.height).toBeCloseTo(3, 6)
+  })
+})

@@ -491,6 +491,22 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     'vue-tsc',
   ]
 
+  // The router block names the shared packages this profile installs, so an
+  // agent reading AGENTS.md sees them without opening either manifest; the
+  // list moves with the generator through `upgrade` (narduk-libs#377).
+  const sharedPackages = [
+    createRootPackageManifest(appName, capabilities, visibility, databaseBackend),
+    createWebPackageManifest(appName, capabilities, localPort, { databaseBackend }),
+  ].flatMap((manifest) => {
+    const parsed = JSON.parse(manifest) as Record<string, Record<string, string> | undefined>
+    return [...Object.keys(parsed.dependencies ?? {}), ...Object.keys(parsed.devDependencies ?? {})]
+  })
+  const sharedPackageList = [...new Set(sharedPackages)]
+    .filter((name) => name.startsWith('@narduk-enterprises/'))
+    .sort()
+    .map((name) => '`' + name + '`')
+    .join(', ')
+
   const files: GeneratedFile[] = [
     // The app's declared Node source, and the ONLY file that carries the Node
     // version as a literal outside package.json's engines/volta mirrors (which
@@ -717,12 +733,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         // The router block is the one generator-owned region of an otherwise
         // app-owned file: `create-narduk-app upgrade` refreshes what sits
         // between these markers and never reads a byte outside them. An app
-        // that deletes the markers keeps the text and opts out of the
-        // refresh; see the README's ownership table.
+        // whose AGENTS.md has no markers gets the block appended; opting out
+        // is a `<!-- narduk:unmanaged -->` header (narduk-libs#377).
         REGION_MARKERS.agentsRouter.start,
         '',
         'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries. [CONTRACT.md](CONTRACT.md) is the API surface this app promises to callers, kept current whenever a route changes. [docs/workers-builds.md](docs/workers-builds.md) covers deployment and recovery. [docs/e2e-testing.md](docs/e2e-testing.md) covers the Playwright layout and the visual QA toolkit.',
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+        '',
+        'Shared packages: ' +
+          sharedPackageList +
+          '. Fix a shared behavior in its package in narduk-libs, not with a local copy.',
+        '',
+        '`pnpm exec narduk-app doctor` checks the app-local prerequisites; run it first when something about the toolchain or Cloudflare configuration looks wrong. `pnpm dlx @narduk-enterprises/create-narduk-app upgrade .` shows what the generator would refresh, including this block.',
         '',
         REGION_MARKERS.agentsRouter.end,
       ),
@@ -1062,23 +1084,78 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           : []),
         '## Promotion, live proof and rollback',
         '',
-        'The promote job runs on `workflow_run` after the gate check goes green, resolves the version Workers Builds uploaded for **the commit that run verified**, deploys it at 100%, and then proves it:',
+        'The promote workflow runs on `workflow_run` after the gate check goes green (or on a dispatch from `ci.yml`, below), resolves the version Workers Builds uploaded for **the commit that run verified**, deploys it at 100%, and then proves it:',
         '',
         '```yaml',
         '# .github/workflows/promote.yml (excerpt)',
-        'env:',
-        '  VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}',
-        'steps:',
-        '  - id: promote',
-        '    run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --json',
-        '  - id: live-proof',
-        '    run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
-        '  # Roll back only after a completed promotion followed by failed live proof.',
-        "  - if: failure() && steps.promote.outcome == 'success' && steps.live-proof.outcome == 'failure'",
-        '    run: narduk-app deploy rollback --to "<previousVersionId>"',
+        'on:',
+        '  workflow_run:',
+        '    workflows: [CI]',
+        '    types: [completed]',
+        '    branches: [main]',
+        "  # A main CI run started with GITHUB_TOKEN fires no workflow_run; ci.yml's",
+        '  # promote-dispatch job starts this instead (narduk-libs#787).',
+        '  workflow_dispatch:',
+        '    inputs:',
+        '      verified-sha:',
+        '        description: main commit whose ci / Required passed',
+        '        required: true',
+        '        type: string',
+        'concurrency:',
+        '  group: promote-${{ github.repository }}-main',
+        '  cancel-in-progress: false',
+        'jobs:',
+        '  gate:',
+        '    if: >-',
+        "      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||",
+        "      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')",
+        "    runs-on: <the promote job's runner route>",
+        '    permissions:',
+        '      contents: read',
+        '      checks: read',
+        '    outputs:',
+        '      sha: ${{ steps.gate.outputs.sha }}',
+        '    steps:',
+        "      # Whatever started this run, promote main's head, and only once its",
+        '      # latest ci / Required passed. A pending run can be replaced in the',
+        '      # concurrency group, so the survivor must promote what the replaced',
+        '      # run would have; an older commit never replaces a newer one.',
+        '      - id: gate',
+        '        env:',
+        '          GH_TOKEN: ${{ github.token }}',
+        '          REPO: ${{ github.repository }}',
+        '          STARTED_FOR: ${{ inputs.verified-sha || github.event.workflow_run.head_sha }}',
+        '        run: |',
+        '          set -euo pipefail',
+        '          head=$(gh api "repos/$REPO/commits/main" --jq .sha)',
+        '          passed=$(gh api "repos/$REPO/commits/$head/check-runs?check_name=ci%20%2F%20Required" \\',
+        '            --jq \'[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.completed_at // "") | last | .conclusion == "success"\')',
+        '          if [ "$passed" != true ]; then',
+        '            echo "::notice::main is at $head (this run started for $STARTED_FOR) and its latest ci / Required has not passed; its own CI run promotes it."',
+        '            exit 0',
+        '          fi',
+        '          echo "sha=$head" >> "$GITHUB_OUTPUT"',
+        '  promote:',
+        '    needs: gate',
+        "    if: needs.gate.outputs.sha != ''",
+        '    env:',
+        '      VERIFIED_SHA: ${{ needs.gate.outputs.sha }}',
+        '    steps:',
+        '      # ...check out and install $VERIFIED_SHA, then:',
+        '      - id: promote',
+        '        run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --json',
+        '      - id: live-proof',
+        '        run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
+        '      # Roll back only after a completed promotion followed by failed live proof.',
+        "      - if: failure() && steps.promote.outcome == 'success' && steps.live-proof.outcome == 'failure'",
+        '        run: narduk-app deploy rollback --to "<previousVersionId>"',
         '```',
         '',
-        'Use `github.event.workflow_run.head_sha`, never `$GITHUB_SHA`. Under `on: workflow_run` `GITHUB_SHA` is the default branch head at trigger time, not the commit whose run completed, so a commit that never passed the gate check can reach production through it. `versions-promote` refuses to default `--sha` to `GITHUB_SHA` under that event for the same reason.',
+        "The `gate` job is what makes the promotion safe to trigger two ways. Whatever started the run, it promotes the current head of `main`, and only once the latest `ci / Required` on that exact commit has passed. A dispatch input or a `workflow_run` head is only a claim, and it is recorded but not trusted. A commit whose CI finished after a newer merge therefore never replaces that newer commit. The rule also covers GitHub keeping only one _pending_ run per concurrency group: a queued Promote replaced by a later one loses nothing, because the survivor promotes the same head. `workflow_run`s from pull requests are filtered out. When the head's check has not passed yet, the gate skips with a notice, and the head's own CI run promotes it. Promoting a head that is already live repeats an idempotent deploy. The checkout in front of `versions-promote` checks out `$VERIFIED_SHA` as well.",
+        '',
+        "**Dependabot merges promote by dispatch.** `dependabot-merge.yml` merges the `safe` lane with `GITHUB_TOKEN` and starts main CI by `workflow_dispatch`. GitHub fires no `workflow_run` for a run started that way, so without the `workflow_dispatch` trigger above a Dependabot bump reaches `main` but not production until the next human merge (narduk-libs#787). The generated `ci.yml` closes that gap with its `promote-dispatch` job. It runs only for a bot-dispatched run on `main`, after every CI job has passed, and dispatches this workflow with `verified-sha` set to the run's commit if that commit is still main's head. It waits on nothing, so it holds no runner. An app whose `promote.yml` does not exist (a 404) or has no `verified-sha` input gets a notice instead of a failure. Any other API error fails the job, so a promotion is never skipped quietly. To adopt this in an existing app, add the `promote-dispatch` job to `ci.yml` (the `pin`-managed `ci.yml` is not rewritten by `upgrade`; copy the job from a newly generated app) and give `promote.yml` the `workflow_dispatch` input and the `gate` job shown above.",
+        '',
+        'Promote `needs.gate.outputs.sha`, never `$GITHUB_SHA`. Under `on: workflow_run` `GITHUB_SHA` is the default branch head at trigger time, and nothing checked that it passed the gate check, so a commit that never passed it could reach production through it. `versions-promote` refuses to default `--sha` to `GITHUB_SHA` under that event for the same reason.',
         '',
         '`--gate-verified "ci / Required@$VERIFIED_SHA"` is the workflow\'s attestation that the gate check passed on that exact commit (narduk-libs#400). `versions-promote` never reads GitHub -- it holds no GitHub token -- so it binds the attestation instead: it refuses with exit 9, before touching anything, when the attested SHA is not the commit being promoted or the resolved version does not carry that commit\'s tag, and it logs the check and SHA it was given. Without the flag it still promotes, with a warning that no gate attestation was passed. Keep the job gated on the `workflow_run` conclusion being `success`; the attestation names what that gate observed, it does not replace it.',
         '',
