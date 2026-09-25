@@ -627,6 +627,11 @@ describe('upgrade opt-outs and notices', () => {
     const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, '.github/dependabot.yml')).toBe('create')
     expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
+    // The dry-run diff for a created file is additions only, with no phantom
+    // blank line removed from a file that never existed (#881).
+    const diff = report.changes.find((change) => change.path === '.github/dependabot.yml')?.diff
+    expect(diff).toMatch(/^@@ -0,0 \+1,\d+ @@$/mu)
+    expect(diff?.split('\n').filter((line) => /^-(?!--)/u.test(line))).toEqual([])
   })
 })
 
@@ -807,6 +812,13 @@ describe('upgrade CLI', () => {
 describe('unified diff rendering', () => {
   it('returns nothing for identical input', () => {
     expect(unifiedDiff('a.txt', 'one\ntwo\n', 'one\ntwo\n')).toBe('')
+  })
+
+  it('renders a created file as additions and an emptied one as removals (#881)', () => {
+    expect(unifiedDiff('f.txt', '', 'a\nb\n')).toBe(
+      '--- a/f.txt\n+++ b/f.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n',
+    )
+    expect(unifiedDiff('f.txt', 'a\n', '')).toBe('--- a/f.txt\n+++ b/f.txt\n@@ -1,1 +0,0 @@\n-a\n')
   })
 
   it('renders hunks with headers, context and both change markers', () => {
