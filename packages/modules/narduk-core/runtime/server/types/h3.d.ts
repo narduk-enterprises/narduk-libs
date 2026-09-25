@@ -24,8 +24,9 @@ declare module 'h3' {
      */
     _db?: LayerDatabase
     /**
-     * Per-request app-level Drizzle instance, memoized by createAppDatabase(),
-     * using the app’s merged D1-style schema.
+     * @deprecated No longer written. Each createAppDatabase() accessor now
+     * memoizes its own per-request instance, so one accessor's schema cannot
+     * leak into another's (#919).
      */
     _appDb?: DrizzleD1Database<Record<string, unknown>>
     /** Per-request correlation ID, set by requestLogger middleware */
