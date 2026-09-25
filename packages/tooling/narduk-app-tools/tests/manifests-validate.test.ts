@@ -263,6 +263,35 @@ binding = "STAGING_DB"
     expect(json.durableObjects).toEqual(['ROOM'])
     expect(json.d1).toEqual(['DB'])
   })
+
+  it('treats # inside a TOML string as content and skips comment lines in a cron array', () => {
+    const facts = wranglerFactsFromToml(`
+account_id = "abc#123" # trailing comment
+workers_dev = true#no space before the comment
+
+[triggers]
+crons = [
+  # "9 9 9 9 9" is commented out
+  "*/15 * * * *",
+  'literal \\ kept', # after an entry
+]
+`)
+    expect(facts.accountId).toBe('abc#123')
+    expect(facts.workersDev).toBe(true)
+    expect(facts.cron).toEqual(['*/15 * * * *', 'literal \\ kept'])
+  })
+
+  it('reads a pathological TOML line in linear time', () => {
+    const spaces = ' '.repeat(200_000)
+    const quotes = '\\"!'.repeat(100_000)
+    const started = performance.now()
+    const facts = wranglerFactsFromToml(
+      `account_id = "x"${spaces} #${' #'.repeat(100_000)}\nworkers_dev = "${quotes}\n[triggers]\ncrons = ["${quotes}]`,
+    )
+    expect(performance.now() - started).toBeLessThan(2_000)
+    expect(facts.accountId).toBe('x')
+    expect(facts.workersDev).toBeNull()
+  })
 })
 
 describe('narduk-app manifests validate', () => {

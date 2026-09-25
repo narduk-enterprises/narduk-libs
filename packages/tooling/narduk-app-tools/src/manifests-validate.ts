@@ -95,17 +95,65 @@ export function wranglerFactsFromJson(config: unknown): WranglerFacts {
   }
 }
 
+interface TomlScan {
+  /** String contents in order, escapes kept as written. */
+  strings: string[]
+  /** Everything outside strings and comments, each string replaced by `\0`. */
+  bare: string
+  unterminated: boolean
+}
+
+// One left-to-right pass instead of regexes, so a long or unterminated line
+// stays linear (CodeQL polynomial-redos on #1067), and a `#` inside a string
+// is content rather than the start of a comment.
+function scanToml(raw: string): TomlScan {
+  const strings: string[] = []
+  let bare = ''
+  let index = 0
+  while (index < raw.length) {
+    const char = raw[index]
+    if (char === '#') {
+      const newline = raw.indexOf('\n', index)
+      if (newline === -1) break
+      index = newline
+      continue
+    }
+    if (char !== '"' && char !== "'") {
+      bare += char
+      index += 1
+      continue
+    }
+    let cursor = index + 1
+    let closed = false
+    while (cursor < raw.length) {
+      const inner = raw[cursor]
+      if (inner === char) {
+        closed = true
+        break
+      }
+      // Basic ("...") strings take backslash escapes; literal ('...') do not.
+      cursor += char === '"' && inner === '\\' ? 2 : 1
+    }
+    if (!closed) return { strings, bare, unterminated: true }
+    strings.push(raw.slice(index + 1, cursor))
+    bare += '\0'
+    index = cursor + 1
+  }
+  return { strings, bare, unterminated: false }
+}
+
 function tomlScalar(raw: string): string | boolean | null {
-  const value = raw.replace(/\s+#.*$/, '').trim()
-  if (value === 'true') return true
-  if (value === 'false') return false
-  const quoted = /^"((?:[^"\\]|\\.)*)"$|^'([^']*)'$/.exec(value)
-  if (quoted) return quoted[1] ?? quoted[2] ?? ''
+  const { strings, bare, unterminated } = scanToml(raw)
+  if (unterminated) return null
+  const value = bare.trim()
+  if (strings.length === 0 && value === 'true') return true
+  if (strings.length === 0 && value === 'false') return false
+  if (strings.length === 1 && value === '\0') return strings[0]
   return null
 }
 
 function tomlStringArray(raw: string): string[] {
-  return [...raw.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)].map((m) => m[1] ?? m[2] ?? '')
+  return scanToml(raw).strings
 }
 
 /**
@@ -155,7 +203,7 @@ export function wranglerFactsFromToml(text: string): WranglerFacts {
     }
     if (table === 'triggers' && key === 'crons') {
       let raw = rawValue
-      while (!raw.includes(']') && index + 1 < lines.length) raw += lines[(index += 1)]
+      while (!raw.includes(']') && index + 1 < lines.length) raw += `\n${lines[(index += 1)]}`
       facts.cron.push(...tomlStringArray(raw))
       continue
     }
