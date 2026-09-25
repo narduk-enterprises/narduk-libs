@@ -49,6 +49,31 @@ export function niceScale(minVal: number, maxVal: number, maxTicks = 6): ScaleRe
   return { min: niceMin, max: niceMax, step: niceStep, ticks }
 }
 
+/**
+ * `Math.min(...values)` without the spread: spreading puts every element on
+ * the call stack, which throws a RangeError past ~100k elements in V8 and
+ * sooner in Safari (#929). Same result as the spread, including `Infinity`
+ * for an empty array and `NaN` when any element is `NaN`.
+ */
+export function arrayMin(values: readonly number[]): number {
+  let min = Infinity
+  for (const value of values) {
+    if (Number.isNaN(value)) return Number.NaN
+    if (value < min) min = value
+  }
+  return min
+}
+
+/** `Math.max(...values)` without the spread; see {@link arrayMin}. */
+export function arrayMax(values: readonly number[]): number {
+  let max = -Infinity
+  for (const value of values) {
+    if (Number.isNaN(value)) return Number.NaN
+    if (value > max) max = value
+  }
+  return max
+}
+
 export function linearScale(
   value: number,
   domainMin: number,
@@ -277,8 +302,8 @@ export function decimateCategoryData(
 
 export function computeHistogramBins(values: number[], binCount: number): HistogramBin[] {
   if (values.length === 0 || binCount < 1) return []
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const min = arrayMin(values)
+  const max = arrayMax(values)
   if (min === max) {
     return [{ start: min, end: max, count: values.length }]
   }
