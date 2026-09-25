@@ -2990,6 +2990,34 @@ the calendar, and days are counted in the caller's zone, so one 30-hour span
 reads `2 days ago` in Chicago and `yesterday` in Tokyo. The 23-hour day a
 spring-forward produces still reads `yesterday`.
 
+### `calendarDateIn`
+
+```ts
+calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'America/Chicago' }) // '2026-03-07'
+calendarDateIn('2026-03-08', { timeZone: 'Asia/Tokyo' }) // '2026-03-08'
+```
+
+The calendar date of an instant in a named zone, as a sortable `YYYY-MM-DD` key:
+grouping readings by the station's day, or asking "is this today on the farm's
+clock?". It replaces the `new Intl.DateTimeFormat('en-CA', …).format()` trick
+five apps hand-rolled (narduk-libs#992): that relies on `en-CA`'s formatted
+pattern, which is CLDR locale data rather than a format contract. This reads
+`Intl`'s parts instead, and its output is byte-identical to the `en-CA` form
+wherever that form is correct. `timeZone` is required, a bare `YYYY-MM-DD`
+passes through unchanged (a floating calendar date, as in `formatDate`), and an
+unknown zone throws `RangeError` rather than falling back to the host zone.
+
+### `isSameCalendarDay`
+
+```ts
+isSameCalendarDay(reading.at, now, { timeZone: farm.timeZone }) // "is this today?"
+```
+
+Whether two values fall on the same calendar day in `timeZone`, built on
+`calendarDateIn`. Absent or unparseable input on either side is never the same
+day. Choosing the zone stays with the app: the farm's recorded zone, Chicago for
+the portal. Pass `now` in explicitly, as everywhere in this module.
+
 ### `formatDuration`
 
 ```ts

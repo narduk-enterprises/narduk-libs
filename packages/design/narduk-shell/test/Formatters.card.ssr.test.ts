@@ -50,6 +50,7 @@ describe('the formatters card on the server', () => {
     expect(html).toContain('Mar 8, 2026, 3:30 AM CDT')
     expect(html).toContain('Mar 8, 2026, 5:30 PM')
     expect(html).toContain('3 hours ago')
+    expect(html).toContain('2026-03-07')
     expect(html).toContain('1,234 cfs')
     expect(html).toContain('1h 30m')
   })
