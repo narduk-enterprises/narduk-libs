@@ -2105,6 +2105,77 @@ A list route may issue at most two SQL statements per request (the
 `LIST_QUERY_STATEMENT_CEILING`): one page `SELECT`, plus one `COUNT(*)` when
 `total` is a number. Set `total: null` to stay at one statement.
 
+### Cursor mode: keyset cursors with `list-cursor`
+
+`@narduk-enterprises/narduk-core/server/list-cursor` builds and reads the
+`cursor` string that cursor mode passes around, and turns it into a tie-safe
+`WHERE` (narduk-libs#987). It is an explicit import, not an auto-import.
+
+```ts
+import {
+  encodeListCursor,
+  keysetAfter,
+  readListCursor,
+} from '@narduk-enterprises/narduk-core/server/list-cursor'
+
+export default defineEventHandler(async (event) => {
+  const query = parseListQuery(event, {
+    mode: 'cursor',
+    sortable: ['createdAt'],
+  })
+  const { orgId } = await requireOrgMember(event)
+  const scope = {
+    endpoint: 'audit.events',
+    sort: 'createdAt:desc',
+    bind: [orgId],
+  }
+
+  const after = await readListCursor<[number, string]>(event, scope, {
+    arity: 2,
+  })
+  const rows = await useDatabase(event)
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.orgId, orgId),
+        after
+          ? keysetAfter([auditEvents.createdAt, auditEvents.id], after, 'desc')
+          : undefined,
+      ),
+    )
+    .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+    .limit(query.limit + 1)
+
+  const page = rows.slice(0, query.limit)
+  const last = page.at(-1)
+  const nextCursor =
+    rows.length > query.limit && last
+      ? await encodeListCursor(scope, [last.createdAt, last.id])
+      : null
+  return listResponse(page, { query, nextCursor })
+})
+```
+
+- **Tie-safe.** `keysetAfter(columns, position, dir)` renders
+  `(a < ?) OR (a = ? AND b < ?)` (`>` for `'asc'`). A seek on the timestamp
+  alone skips rows that share it across a page boundary (#941, #974). Order by
+  the same columns in the same direction, and end on a unique column. Every
+  value is a bound parameter.
+- **Bound to the route.** A cursor is versioned base64url JSON carrying the
+  position and a hash of `endpoint`, `sort` and `bind`. Read under another
+  endpoint, sort or `bind`, with the wrong arity, over `LIST_CURSOR_MAX_LENGTH`
+  (2048) characters, malformed, or as a repeated `?cursor=`, it answers `400`
+  with `data: { code: 'cursor_invalid', reason }`. The client restarts from the
+  first page.
+- **Unsigned by design.** Put anything that changes the row set or the caller
+  (account, farm, filter) in `bind`; it is hashed, so it cannot be read back. An
+  unsigned cursor is safe when the route re-derives authorization on every
+  request, as above, because it can only move a caller within rows it may
+  already read. Sign it app-side only if the position itself is secret.
+- `decodeListCursor(cursor, scope, options)` is the same check for a cursor you
+  already hold, such as `query.cursor` from `parseListQuery`.
+
 ### Worked example: stonx `server/utils/query.ts`
 
 stonx is the first pilot (plan §3). Today it has three list shapes in
