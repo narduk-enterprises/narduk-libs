@@ -54,6 +54,12 @@ export declare function collectMapKitDrawablePoints(input: MapKitDrawableRegionI
 export declare function computeMapKitRegionForDrawables(input: MapKitDrawableRegionInput, options?: MapKitRegionOptions): MapKitRegion | null;
 export declare function hitTestLineOverlays<TData = unknown>(point: MapKitLatLng, overlays: ReadonlyArray<MapKitLineDrawable<TData>>, toleranceMetres?: number): MapKitLineHit<TData> | null;
 export declare function pointInPolygon(point: MapKitLatLng, ring: readonly MapKitLatLng[]): boolean;
+/**
+ * The first polygon whose filled area contains `point`. `rings` is
+ * `[outer, ...holes]` (GeoJSON order), and the overlay layer draws the holes
+ * empty, so containment is even-odd across rings: a point inside the outer
+ * ring and inside one hole is not on the polygon (#931).
+ */
 export declare function hitTestPolygonOverlays<TData = unknown>(point: MapKitLatLng, overlays: ReadonlyArray<MapKitPolygonDrawable<TData>>): MapKitPolygonDrawable<TData> | null;
 export declare function hitTestCircleOverlays<TData = unknown>(point: MapKitLatLng, overlays: ReadonlyArray<MapKitCircleDrawable<TData>>): MapKitCircleDrawable<TData> | null;
 export declare function buildOverlaySelection<TData = unknown>(kind: MapKitOverlaySelection<TData>['kind'], id: string, data?: TData, coordinate?: MapKitLatLng): MapKitOverlaySelection<TData>;
