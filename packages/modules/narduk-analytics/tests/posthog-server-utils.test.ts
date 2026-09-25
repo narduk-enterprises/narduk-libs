@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   buildPosthogCurrentUrlClause,
+  buildPosthogCurrentUrlHostMatch,
   buildPosthogRecordingsCacheKey,
   buildPosthogRecordingsListParams,
   posthogQueryFetch,
@@ -102,17 +103,29 @@ describe('resolvePosthogPeriod', () => {
 })
 
 describe('buildPosthogCurrentUrlClause', () => {
-  it('builds a HogQL LIKE clause and escapes single quotes', () => {
-    expect(buildPosthogCurrentUrlClause('example.com')).toBe(
-      "AND properties.$current_url LIKE '%example.com%'",
+  it('matches the event host exactly or as a subdomain, never as a substring (#924)', () => {
+    const host = 'lower(domain(properties.$current_url))'
+    expect(buildPosthogCurrentUrlClause('p.nard.uk')).toBe(
+      `AND (${host} = 'p.nard.uk' OR endsWith(${host}, '.p.nard.uk'))`,
+    )
+    expect(buildPosthogCurrentUrlClause('https://Farm.Example/app')).toBe(
+      `AND (${host} = 'farm.example' OR endsWith(${host}, '.farm.example'))`,
     )
     expect(buildPosthogCurrentUrlClause("o'reilly.com")).toBe(
-      "AND properties.$current_url LIKE '%o''reilly.com%'",
+      `AND (${host} = 'o''reilly.com' OR endsWith(${host}, '.o''reilly.com'))`,
     )
   })
 
-  it('returns an empty string for a blank domain', () => {
-    expect(buildPosthogCurrentUrlClause('  ')).toBe('')
+  it('keeps a backslash in the configured domain inside the string literal', () => {
+    const host = 'lower(domain(properties.$current_url))'
+    expect(buildPosthogCurrentUrlHostMatch("x\\' or 1=1 --")).toBe(
+      `(${host} = 'x\\\\'' or 1=1 --' OR endsWith(${host}, '.x\\\\'' or 1=1 --'))`,
+    )
+  })
+
+  it('fails closed for a blank domain rather than returning every app (#924)', () => {
+    expect(buildPosthogCurrentUrlClause('  ')).toBe('AND false')
+    expect(buildPosthogCurrentUrlHostMatch('')).toBe('false')
   })
 })
 
@@ -172,6 +185,29 @@ describe('buildPosthogRecordingsListParams', () => {
         ],
       },
     ])
+  })
+})
+
+const scopedRouteSources = ['pages', 'devices', 'entry-exit', 'referrers', 'insights'].map(
+  (name) =>
+    [
+      name,
+      readFileSync(
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          '..',
+          `server/admin/api/admin/posthog/${name}.get.ts`,
+        ),
+        'utf8',
+      ),
+    ] as const,
+)
+
+describe('HogQL and insights admin routes (#924)', () => {
+  it.each(scopedRouteSources)('%s scopes by host and never by substring', (_name, source) => {
+    expect(source).toMatch(/buildPosthogCurrentUrl(Clause|HostMatch)\(project\.domain\)/u)
+    expect(source).not.toContain('icontains')
+    expect(source).not.toMatch(/project\.domain\s*\?/u)
   })
 })
 

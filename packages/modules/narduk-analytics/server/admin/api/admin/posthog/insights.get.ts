@@ -3,6 +3,7 @@ import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { z } from 'zod'
 
 import {
+  buildPosthogCurrentUrlHostMatch,
   POSTHOG_DEFAULT_PERIOD,
   posthogQueryFetch,
   resolvePosthogProjectConfig,
@@ -51,26 +52,15 @@ export default defineEventHandler(async (event): Promise<PosthogInsightsResponse
             { kind: 'EventsNode', event: '$pageview', math: 'total', name: 'Pageviews' },
             { kind: 'EventsNode', event: '$pageview', math: 'dau', name: 'Unique Visitors' },
           ],
-          ...(project.domain
-            ? {
-                properties: {
-                  type: 'AND',
-                  values: [
-                    {
-                      type: 'AND',
-                      values: [
-                        {
-                          key: '$current_url',
-                          value: project.domain,
-                          operator: 'icontains',
-                          type: 'event',
-                        },
-                      ],
-                    },
-                  ],
-                },
-              }
-            : {}),
+          properties: {
+            type: 'AND',
+            values: [
+              {
+                type: 'AND',
+                values: [{ type: 'hogql', key: buildPosthogCurrentUrlHostMatch(project.domain) }],
+              },
+            ],
+          },
         }),
       query.noCache ? 0 : undefined,
     )
