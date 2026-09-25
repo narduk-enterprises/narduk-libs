@@ -21,11 +21,10 @@ import {
 import { establishLocalSessionUser } from './session'
 import { consumeWebauthnChallenge, issueWebauthnChallenge } from './webauthn-challenges'
 import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  isoBase64URL,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
+  type AuthenticationResponseJSON,
+  loadWebauthnServer,
+  type RegistrationResponseJSON,
+  type WebauthnServer,
 } from './webauthn-server'
 import {
   assertPasskeyManagementPrincipal,
@@ -36,7 +35,6 @@ import {
 } from './webauthn-verification'
 
 import type { AppSessionUser } from './types'
-import type { AuthenticationResponseJSON, RegistrationResponseJSON } from './webauthn-server'
 import type { H3Event } from 'h3'
 
 // Re-exported so the routes keep one import site for the passkey surface; the
@@ -149,6 +147,33 @@ export async function deletePasskey(
   useLogger(event).child('AppAuth').info('Passkey removed', { userId })
 }
 
+/**
+ * `@simplewebauthn/server`, loaded on first use. A load or initialization
+ * failure is logged with its cause here and answered 503 by the loader, so a
+ * broken bundle no longer surfaces as an opaque 500 (narduk-libs#892). Every
+ * ceremony calls this before any side effect.
+ */
+function useWebauthnServer(event: H3Event): Promise<WebauthnServer> {
+  return loadWebauthnServer((error) => {
+    useLogger(event)
+      .child('AppAuth')
+      .error('Passkeys unavailable: @simplewebauthn/server failed to load', {
+        error: describeLoadFailure(error),
+      })
+  })
+}
+
+/** The error and its `cause` chain, one line each: a bundler often wraps the real failure. */
+function describeLoadFailure(error: unknown): string {
+  const lines: string[] = []
+  let current: unknown = error
+  for (let depth = 0; current !== undefined && current !== null && depth < 5; depth += 1) {
+    lines.push(current instanceof Error ? `${current.name}: ${current.message}` : String(current))
+    current = current instanceof Error ? current.cause : undefined
+  }
+  return lines.join('\ncaused by ')
+}
+
 // ─── Registration ceremony ───────────────────────────────────
 
 export async function startPasskeyRegistration(
@@ -156,6 +181,7 @@ export async function startPasskeyRegistration(
   user: { email: string; id: string },
 ) {
   const config = requireWebauthnConfig(event)
+  const { generateRegistrationOptions } = await useWebauthnServer(event)
   const existing = await listCredentialRows(event, user.id)
   if (existing.length >= MAX_PASSKEYS_PER_USER) {
     throw createError({
@@ -206,6 +232,7 @@ export async function finishPasskeyRegistration(
   input: { name?: string | null; response: RegistrationResponseJSON },
 ): Promise<PasskeySummary> {
   const config = requireWebauthnConfig(event)
+  const { isoBase64URL, verifyRegistrationResponse } = await useWebauthnServer(event)
   const log = useLogger(event).child('AppAuth')
 
   const presented = readPresentedChallenge(input.response.response.clientDataJSON)
@@ -313,6 +340,7 @@ export async function finishPasskeyRegistration(
 
 export async function startPasskeyAuthentication(event: H3Event) {
   const config = requireWebauthnConfig(event)
+  const { generateAuthenticationOptions } = await useWebauthnServer(event)
 
   // Discoverable credentials only, and therefore no `allowCredentials`: the
   // ceremony takes no email and no user identifier, so this endpoint reveals
@@ -338,6 +366,7 @@ export async function finishPasskeyAuthentication(
   response: AuthenticationResponseJSON,
 ): Promise<{ user: AppSessionUser }> {
   const config = requireWebauthnConfig(event)
+  const { isoBase64URL, verifyAuthenticationResponse } = await useWebauthnServer(event)
   const log = useLogger(event).child('AppAuth')
   const genericFailure = createError({
     statusCode: 401,

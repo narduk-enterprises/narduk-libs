@@ -101,11 +101,21 @@ describe('Workers reflect polyfill for passkey routes (narduk-libs#786)', () => 
       readFileSync(join(packageRoot, 'server/lib/app-auth/webauthn-server.ts'), 'utf8'),
     )
     const polyfillIndex = source.indexOf("from './reflect-metadata-polyfill'")
-    const serverIndex = source.search(/from ['"]@simplewebauthn\/server(?:\/helpers)?['"]/u)
+    // The library loads lazily (narduk-libs#892): a dynamic import, reached
+    // only after this module (and so the polyfill) has evaluated.
+    const serverIndex = source.search(/import\(['"]@simplewebauthn\/server['"]\)/u)
+    const helpersIndex = source.search(/import\(['"]@simplewebauthn\/server\/helpers['"]\)/u)
     expect(polyfillIndex).toBeGreaterThan(-1)
     expect(serverIndex).toBeGreaterThan(-1)
+    expect(helpersIndex).toBeGreaterThan(-1)
     expect(polyfillIndex).toBeLessThan(serverIndex)
     expect(source).toContain('void reflectMetadataPolyfillInstalled')
+    // No static value import is left to evaluate the library at module load.
+    const withoutTypeOnly = source.replaceAll(
+      /(?:import|export) type (?:\{[^}]*\}|\* as \w+) from ['"][^'"]+['"]/gu,
+      '',
+    )
+    expect(withoutTypeOnly).not.toMatch(/from ['"]@simplewebauthn\/server(?:\/helpers)?['"]/u)
   })
 
   it('ceremony modules reach @simplewebauthn/server only through webauthn-server', () => {
