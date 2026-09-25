@@ -86,6 +86,8 @@ interface WallClock {
 
 const HOURS: Record<ReadingBucket, number> = { '1h': 1, '3h': 3, '1d': 24 }
 
+const DAY_MS = 86_400_000
+
 function assertBucket(bucket: unknown): asserts bucket is ReadingBucket {
   if (!READING_BUCKETS.includes(bucket as ReadingBucket)) {
     throw new NardukTimeseriesError(
@@ -175,12 +177,46 @@ export function bucketReadings<TRow, TField extends string>(
   const stepHours = HOURS[options.bucket]
   const fieldNames = Object.keys(options.fields) as TField[]
 
-  /** Wall clock → instant, correcting once for an offset change in between. */
+  /** `ms`'s wall clock in `timeZone`, as if that wall clock were UTC. */
+  function wallAt(ms: number): number {
+    return ms + readWall(ms).offset
+  }
+
+  /**
+   * Wall clock → the first instant whose wall clock reaches it.
+   *
+   * That is the one boundary rule that holds on every kind of day. A wall time
+   * that happens twice (fall-back) opens on its first occurrence, so the
+   * repeated hour stays in one bucket. A wall time that never happens
+   * (spring-forward: Chicago's 02:00, or Santiago's midnight) resolves
+   * **forward**, to the transition itself, which is where the bucket before
+   * it really ends (narduk-libs#938). Correcting the offset once, as this used
+   * to, resolved a skipped time backward, onto the previous bucket's start,
+   * giving zero-width and overlapping buckets.
+   *
+   * The two candidates come from the offsets two days either side, so one
+   * transition between them is found whichever way it goes. When neither
+   * candidate is a real instant for this wall time, the time is in a gap. The
+   * earlier candidate is then before the transition and the later one after
+   * it, so a bisection on "has the wall clock reached it" finds the transition
+   * to the millisecond.
+   */
   function instantOf(wall: WallClock): number {
-    const guess = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour)
-    const first = guess - readWall(guess).offset
-    const second = readWall(first).offset
-    return guess - second
+    const target = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour)
+    const candidates = [
+      target - readWall(target - 2 * DAY_MS).offset,
+      target - readWall(target + 2 * DAY_MS).offset,
+    ].sort((left, right) => left - right)
+    const real = candidates.filter((ms) => wallAt(ms) === target)
+    if (real.length > 0) return real[0]!
+    let before = candidates[0]!
+    let after = candidates[1]!
+    while (after - before > 1) {
+      const middle = Math.floor((before + after) / 2)
+      if (wallAt(middle) >= target) after = middle
+      else before = middle
+    }
+    return after
   }
 
   interface Accumulator {
