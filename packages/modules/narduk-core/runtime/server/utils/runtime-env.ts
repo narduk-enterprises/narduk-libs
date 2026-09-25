@@ -13,6 +13,35 @@ export function trimRuntimeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * An env value as a trimmed string.
+ *
+ * Wrangler `vars` can be JSON booleans and numbers, and Workers expose them on
+ * `env` as JS values, not strings. Scalars are stringified so `true` reads as
+ * `'true'` and `8080` as `'8080'`, which is what Nitro's own env overlay does.
+ * An object or array var has no string form and reads as `undefined`, so the
+ * caller falls through to its fallback (narduk-libs#935).
+ */
+function readEnvScalar(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'bigint') {
+    return String(value)
+  }
+  return undefined
+}
+
+const TRUE_WORDS = ['1', 'true', 'yes', 'on']
+const FALSE_WORDS = ['0', 'false', 'no', 'off']
+
+function parseRuntimeBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value
+  const raw = readEnvScalar(value)?.toLowerCase()
+  if (raw === undefined) return undefined
+  if (TRUE_WORDS.includes(raw)) return true
+  if (FALSE_WORDS.includes(raw)) return false
+  return undefined
+}
+
 export function hostnameFromUrl(value: string): string {
   const trimmed = trimRuntimeString(value)
   if (!trimmed) return ''
@@ -45,7 +74,10 @@ export function readRuntimeString(
   options: RuntimeReadOptions = {},
 ): string {
   const env = readRuntimeEnvOverlay(event)
-  if (hasRuntimeEnvKey(env, key)) return trimRuntimeString(env[key])
+  if (hasRuntimeEnvKey(env, key)) {
+    const fromEnv = readEnvScalar(env[key])
+    if (fromEnv !== undefined) return fromEnv
+  }
 
   const fromFallback = trimRuntimeString(options.fallback)
   if (fromFallback) return fromFallback
@@ -60,7 +92,9 @@ export function readRuntimeStringFromKeys(
 ): string {
   const env = readRuntimeEnvOverlay(event)
   for (const key of keys) {
-    if (hasRuntimeEnvKey(env, key)) return trimRuntimeString(env[key])
+    if (!hasRuntimeEnvKey(env, key)) continue
+    const fromEnv = readEnvScalar(env[key])
+    if (fromEnv !== undefined) return fromEnv
   }
 
   for (const fallback of options.fallbacks ?? []) {
@@ -77,19 +111,12 @@ export function readRuntimeBoolean(
   options: RuntimeReadOptions & { defaultValue?: boolean } = {},
 ): boolean {
   const env = readRuntimeEnvOverlay(event)
-  if (hasRuntimeEnvKey(env, key)) {
-    const raw = trimRuntimeString(env[key]).toLowerCase()
-    if (['1', 'true', 'yes', 'on'].includes(raw)) return true
-    if (['0', 'false', 'no', 'off'].includes(raw)) return false
-    return options.defaultValue ?? false
-  }
+  // A var that is not a recognisable boolean (empty, `maybe`, an object) falls
+  // through to the runtime-config fallback instead of forcing `defaultValue`.
+  const fromEnv = hasRuntimeEnvKey(env, key) ? parseRuntimeBoolean(env[key]) : undefined
+  if (fromEnv !== undefined) return fromEnv
 
-  if (typeof options.fallback === 'boolean') return options.fallback
-  const fallback = trimRuntimeString(options.fallback).toLowerCase()
-  if (['1', 'true', 'yes', 'on'].includes(fallback)) return true
-  if (['0', 'false', 'no', 'off'].includes(fallback)) return false
-
-  return options.defaultValue ?? false
+  return parseRuntimeBoolean(options.fallback) ?? options.defaultValue ?? false
 }
 
 export function readRuntimeStringList(
@@ -98,8 +125,8 @@ export function readRuntimeStringList(
   options: RuntimeReadOptions & { fallbackList?: unknown[] } = {},
 ): string[] {
   const env = readRuntimeEnvOverlay(event)
-  if (hasRuntimeEnvKey(env, key)) {
-    const raw = trimRuntimeString(env[key])
+  const raw = hasRuntimeEnvKey(env, key) ? readEnvScalar(env[key]) : undefined
+  if (raw !== undefined) {
     return raw
       .split(',')
       .map((entry) => entry.trim())
