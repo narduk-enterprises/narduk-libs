@@ -3,8 +3,8 @@ import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { z } from 'zod'
 
 import {
-  POSTHOG_DEFAULT_PERIOD,
   buildPosthogCurrentUrlHostMatch,
+  POSTHOG_DEFAULT_PERIOD,
   posthogQueryFetch,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'

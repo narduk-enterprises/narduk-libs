@@ -116,6 +116,13 @@ describe('buildPosthogCurrentUrlClause', () => {
     )
   })
 
+  it('keeps a backslash in the configured domain inside the string literal', () => {
+    const host = 'lower(domain(properties.$current_url))'
+    expect(buildPosthogCurrentUrlHostMatch("x\\' or 1=1 --")).toBe(
+      `(${host} = 'x\\\\'' or 1=1 --' OR endsWith(${host}, '.x\\\\'' or 1=1 --'))`,
+    )
+  })
+
   it('fails closed for a blank domain rather than returning every app (#924)', () => {
     expect(buildPosthogCurrentUrlClause('  ')).toBe('AND false')
     expect(buildPosthogCurrentUrlHostMatch('')).toBe('false')

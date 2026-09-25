@@ -35,8 +35,10 @@ function normalizeApiHost(value: string) {
   return value.replace(/\/+$/, '')
 }
 
+// HogQL string literals take backslash escapes as well as a doubled quote, so
+// a trailing backslash could otherwise end the literal early.
 function escapeHogLiteral(value: string) {
-  return value.replaceAll("'", "''")
+  return value.replaceAll('\\', '\\\\').replaceAll("'", "''")
 }
 
 export function resolvePosthogProjectConfig(config: AnalyticsServerRuntimeConfig, event?: H3Event) {
