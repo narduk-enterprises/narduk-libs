@@ -22,6 +22,7 @@
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/error-page.ts",
     "runtime/app/session/useUserSessionStub.ts",
+    "runtime/app/share.ts",
     "runtime/app/composables/useAppViewGate.ts",
     "runtime/app/composables/usePreferences.ts",
     "runtime/app/composables/useSsrNow.ts",

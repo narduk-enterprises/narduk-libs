@@ -2353,6 +2353,39 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Share with a clipboard fallback: `useShare`
+
+`@narduk-enterprises/narduk-core/app/share` offers the native share sheet and
+falls back to the clipboard (narduk-libs#994). It is an explicit import, not an
+auto-import, and takes no toast or UI dependency.
+
+```ts
+import { useShare } from '@narduk-enterprises/narduk-core/app/share'
+
+const { share, copy, copied, canNativeShare } = useShare({ copiedFor: 2000 })
+
+async function onShare() {
+  const outcome = await share({ title, text, url }) // fallback: 'url' by default
+  if (outcome === 'failed') toast.add({ title: 'Select the link to copy it.' })
+}
+// copied.value is true for 2 s after any successful copy
+```
+
+| Outcome       | When                                                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `'shared'`    | The share sheet completed.                                                                                        |
+| `'cancelled'` | The user dismissed the sheet (`AbortError`). The clipboard is left alone.                                         |
+| `'copied'`    | No sheet, `canShare` refused the data, or the share failed for another reason, and the clipboard write succeeded. |
+| `'failed'`    | The clipboard refused too, `fallback: false` was set, or it ran on the server.                                    |
+
+- `fallback: 'url'` (the default) copies the URL, or the text if there is no
+  URL. `'text+url'` copies both, separated by a space. `false` never copies.
+- `canNativeShare` is `false` on the server and first paint and is resolved
+  after mount, so a "Share" versus "Copy link" label hydrates cleanly.
+- `copy(text)` is the clipboard half on its own (`'copied' | 'failed'`), for
+  invite panels that only copy.
+- `createSharer()` is the Vue-free half.
+
 ## Scheduled jobs: `defineScheduledJobs`
 
 `@narduk-enterprises/narduk-core/server/scheduled-jobs` is the Cloudflare cron
