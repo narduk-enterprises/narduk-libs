@@ -50,6 +50,7 @@ import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/
 import { runBaselineCommand } from './commands/baseline.js'
 import { runOgCommand } from './commands/og.js'
 import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
+import { parseManifestsValidateArgs, runManifestsValidateCommand } from './manifests-validate.js'
 
 function usage(): string {
   return [
@@ -159,6 +160,10 @@ function usage(): string {
     "                                       Item 10: live probe of a deployment's security response headers",
     '  foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]',
     '                                       Item 11: one declared Node/pnpm source, every other site reads or matches it',
+    '  manifests validate [--checkout <dir>] [--wrangler <path>]... [--json [path]]',
+    '                                       Compare the wrangler config(s) with Config/cloudflare-app.json:',
+    '                                       bindings and crons as sorted sets, deployment.accountId, and',
+    '                                       worker.workersDev/previewUrls. Exit 1 on any disagreement.',
     '  foundation:check:deployment [--checkout <dir>] [--strict] [--json [path]]',
     '                                       Item 12: the Config/cloudflare-app.json deployment block.',
     '                                       Refuses non-production branch builds that would bind',
@@ -402,6 +407,15 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         withAppCheckout(parseDeploymentCheckArgs(rest), command),
       )
       return exitCode
+    }
+    if (command === 'manifests') {
+      const [subcommand, ...manifestArgs] = rest
+      if (subcommand !== 'validate') {
+        throw new Error('Usage: narduk-app manifests validate [--checkout <dir>] ...')
+      }
+      return runManifestsValidateCommand(
+        withAppCheckout(parseManifestsValidateArgs(manifestArgs), 'manifests validate'),
+      ).exitCode
     }
     if (command === 'foundation:check:coverage') {
       const { exitCode } = runCapabilityCoverageCheckCommand(

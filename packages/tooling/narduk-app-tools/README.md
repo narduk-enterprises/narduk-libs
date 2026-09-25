@@ -153,6 +153,41 @@ placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
 under the same credentials, then setting that binding's `database_id` to the id
 it prints.
 
+## Wrangler ↔ manifest parity (`narduk-app manifests validate`)
+
+Compares the Worker's wrangler config with `Config/cloudflare-app.json`
+(narduk-libs#996), replacing the per-app `scripts/validate-manifests.mjs`
+copies:
+
+```json
+{ "manifests:validate": "narduk-app manifests validate --checkout ../.." }
+```
+
+```
+narduk-app manifests validate [--checkout <dir>] [--wrangler <path>]... [--json [path]]
+```
+
+- **Which config.** Every `--wrangler` path given (a staging or preview config
+  too), else the manifest's `worker.wranglerConfig`, else the first wrangler
+  config at a known path. JSON/JSONC is read with `jsonc-parser`, so `//` in a
+  URL and `*/15` in a cron are string content; `wrangler.toml` is read for the
+  same top-level facts.
+- **Bindings and crons** (`bindings.d1`, `kv`, `r2`, `queues`, `cron`,
+  `durableObjects`) are compared as sorted sets on both sides, and only the
+  kinds the manifest declares. Queues read as `<binding>:producer` and
+  `<queue>:consumer`, the generator seed's shape.
+- **`account_id`.** When the manifest declares `deployment.accountId`, every
+  compared config must declare the same `account_id`; without it
+  `deploy versions-promote` falls back to wrangler's unpaged listing.
+- **Access flags.** `worker.workersDev` / `worker.previewUrls`, when declared,
+  must be stated with the same value as `workers_dev` / `preview_urls`.
+
+It prints one line per disagreement and exits 1; 0 when everything agrees. It is
+read-only and needs no credential. The same comparison is exported as
+`validateCloudflareManifest(checkout, { wranglerPaths })`. App-specific
+assertions (no scheduled triggers, an enterprise account pin, a cron source of
+truth) stay in the app, chained after it.
+
 ## Migration config
 
 `narduk-app db migrate` accepts a JSON config with explicit source names and
