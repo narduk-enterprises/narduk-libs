@@ -40,6 +40,9 @@ var sensitiveSegments = map[string]struct{}{
 	"authorization": {}, "cookie": {}, "cookies": {}, "setcookie": {},
 	"session": {}, "sessionid": {}, "privatekey": {}, "clientsecret": {},
 	"jwt": {}, "bearer": {}, "credential": {}, "credentials": {},
+	// Plurals name the same secrets, often a whole list of them (narduk-libs#872).
+	"tokens": {}, "passwords": {}, "passwds": {}, "secrets": {}, "apikeys": {},
+	"jwts": {}, "privatekeys": {}, "clientsecrets": {},
 }
 
 // Adjacent segments that together name a secret (`x-api-key` → api+key).
@@ -55,12 +58,17 @@ var sensitiveInfix = []string{"apikey", "accesskey", "privatekey", "authorizatio
 // `dbpassword`, so without this the narrowing would stop redacting names the
 // suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not
 // end in these words, and `tokencount` / `passwordless` are carved out below.
-var sensitiveSuffixes = []string{"token", "password", "secret"}
+// The plural forms catch `refreshtokens` / `dbpasswords` (narduk-libs#872).
+var sensitiveSuffixes = []string{"token", "password", "secret", "tokens", "passwords", "secrets"}
 
 // Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+// The `*tokens` entries are the LLM usage counts providers report; they are numbers,
+// and redacting them would blind AI cost and latency logs once plurals redact (#872).
 var safeNormalizedKeys = map[string]struct{}{
 	"tokencount": {}, "passwordless": {}, "authmethod": {}, "authbackend": {},
-	"authprovider": {},
+	"authprovider": {}, "inputtokens": {}, "outputtokens": {}, "prompttokens": {},
+	"completiontokens": {}, "totaltokens": {}, "maxtokens": {}, "reasoningtokens": {},
+	"cachereadinputtokens": {}, "cachecreationinputtokens": {},
 }
 
 var reservedSkip = map[string]struct{}{

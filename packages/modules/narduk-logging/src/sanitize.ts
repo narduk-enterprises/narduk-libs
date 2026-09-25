@@ -57,6 +57,15 @@ const SENSITIVE_SEGMENTS = new Set([
   'bearer',
   'credential',
   'credentials',
+  // Plurals name the same secrets, often a whole list of them (narduk-libs#872).
+  'tokens',
+  'passwords',
+  'passwds',
+  'secrets',
+  'apikeys',
+  'jwts',
+  'privatekeys',
+  'clientsecrets',
 ])
 /** Adjacent segments that together name a secret (`x-api-key` → api+key). */
 const COMPOUND_SEGMENTS = new Set([
@@ -73,16 +82,37 @@ const SENSITIVE_INFIX = ['apikey', 'accesskey', 'privatekey', 'authorization'] a
  * boundary in an all-lowercase concatenation such as `refreshtoken` or
  * `dbpassword`, so without this the narrowing would stop redacting names the
  * suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not
- * end in these words, and `tokencount` / `passwordless` are carved out above.
+ * end in these words, and `tokencount` / `passwordless` are carved out below.
+ * The plural forms catch `refreshtokens` / `dbpasswords` (narduk-libs#872).
  */
-const SENSITIVE_SUFFIXES = ['token', 'password', 'secret'] as const
-/** Metric / method flags that contain `token`, `password`, or `auth` but are not secrets. */
+const SENSITIVE_SUFFIXES = [
+  'token',
+  'password',
+  'secret',
+  'tokens',
+  'passwords',
+  'secrets',
+] as const
+/**
+ * Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+ * The `*tokens` entries are the LLM usage counts providers report; they are numbers,
+ * and redacting them would blind AI cost and latency logs once plurals redact (#872).
+ */
 const SAFE_NORMALIZED_KEYS = new Set([
   'tokencount',
   'passwordless',
   'authmethod',
   'authbackend',
   'authprovider',
+  'inputtokens',
+  'outputtokens',
+  'prompttokens',
+  'completiontokens',
+  'totaltokens',
+  'maxtokens',
+  'reasoningtokens',
+  'cachereadinputtokens',
+  'cachecreationinputtokens',
 ])
 
 /** Mark a value as private. It is redacted before any sink sees the record. */

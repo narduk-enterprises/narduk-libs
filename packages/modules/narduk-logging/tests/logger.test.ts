@@ -41,6 +41,17 @@ describe('cross-language contract', () => {
     expect(isSensitiveKey('')).toBe(false)
   })
 
+  it('redacts plural secret keys but not LLM usage counts (narduk-libs#872)', () => {
+    for (const key of ['tokens', 'secrets', 'passwords', 'accessTokens', 'refresh_tokens']) {
+      expect(isSensitiveKey(key)).toBe(true)
+    }
+    for (const key of ['inputTokens', 'total_tokens', 'maxTokens', 'tokenizers']) {
+      expect(isSensitiveKey(key)).toBe(false)
+    }
+    // narduk-analytics caches real OAuth tokens under this name, so it is no carve-out.
+    expect(isSensitiveKey('cachedTokens')).toBe(true)
+  })
+
   it('emits the canonical record and does not collapse repeated events', () => {
     const sink = createMemorySink()
     const log = createLogger({ ...options, sinks: [sink] })

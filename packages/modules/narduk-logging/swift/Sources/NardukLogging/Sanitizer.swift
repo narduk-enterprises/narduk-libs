@@ -13,6 +13,9 @@ public enum LogSanitizer {
         "password", "passwd", "secret", "token", "apikey", "authorization",
         "cookie", "cookies", "setcookie", "session", "sessionid", "privatekey",
         "clientsecret", "jwt", "bearer", "credential", "credentials",
+        // Plurals name the same secrets, often a whole list of them (narduk-libs#872).
+        "tokens", "passwords", "passwds", "secrets", "apikeys", "jwts", "privatekeys",
+        "clientsecrets",
     ]
     /// Adjacent segments that together name a secret (`x-api-key` → api+key).
     static let compoundSegments: Set<String> = [
@@ -25,11 +28,18 @@ public enum LogSanitizer {
     /// or `dbpassword`, so without this the narrowing would stop redacting
     /// names the suffix matcher already covered. `tokenizer` / `secretary` /
     /// `jwtid` do not end in these words, and `tokencount` / `passwordless`
-    /// are carved out by `safeNormalizedKeys`.
-    static let sensitiveSuffixes = ["token", "password", "secret"]
+    /// are carved out by `safeNormalizedKeys`. The plural forms catch
+    /// `refreshtokens` / `dbpasswords` (narduk-libs#872).
+    static let sensitiveSuffixes = [
+        "token", "password", "secret", "tokens", "passwords", "secrets",
+    ]
     /// Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
+    /// The `*tokens` entries are the LLM usage counts providers report; they are numbers,
+    /// and redacting them would blind AI cost and latency logs once plurals redact (#872).
     static let safeNormalizedKeys: Set<String> = [
         "tokencount", "passwordless", "authmethod", "authbackend", "authprovider",
+        "inputtokens", "outputtokens", "prompttokens", "completiontokens", "totaltokens",
+        "maxtokens", "reasoningtokens", "cachereadinputtokens", "cachecreationinputtokens",
     ]
 
     static func clean(_ value: String, limit: Int = 2048) -> String {
