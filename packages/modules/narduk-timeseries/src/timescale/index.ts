@@ -42,6 +42,8 @@ import type {
   RollupResult,
   RollupRow,
   SeriesDescriptor,
+  SeriesListQuery,
+  SeriesListResult,
   TelemetryHistoryStore,
   TrackPoint,
   TrackQuery,
@@ -51,8 +53,10 @@ import type {
 } from '../types.js'
 import {
   DEFAULT_MAX_ROLLUP_ROWS,
+  DEFAULT_MAX_SERIES_ROWS,
   DEFAULT_MAX_TRACK_POINTS,
   buildRollupQuery,
+  buildSeriesListQuery,
   clipRollupRange,
   planTrackQuery,
 } from './query.js'
@@ -137,6 +141,12 @@ export interface TimescaleStoreOptions {
    * construction.
    */
   maxTrackPoints?: number
+  /**
+   * Hard ceiling for `SeriesListQuery.maxRows`. Defaults to
+   * `DEFAULT_MAX_SERIES_ROWS` (5_000). Raise only from server-side
+   * construction.
+   */
+  maxSeriesRows?: number
 }
 
 interface RollupSqlRow {
@@ -182,6 +192,8 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
 
   #maxTrackPoints: number
 
+  #maxSeriesRows: number
+
   #retention: RetentionExecutorOptions | undefined
 
   #inFlightResolves = new Map<string, Promise<ResolvedSeries[]>>()
@@ -196,6 +208,7 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     this.#parameterBudget = options.parameterBudget
     this.#maxRollupRows = options.maxRollupRows ?? DEFAULT_MAX_ROLLUP_ROWS
     this.#maxTrackPoints = options.maxTrackPoints ?? DEFAULT_MAX_TRACK_POINTS
+    this.#maxSeriesRows = options.maxSeriesRows ?? DEFAULT_MAX_SERIES_ROWS
     this.#retention = options.retention
     if (options.retention !== undefined && options.retention.maxConnections !== 1) {
       throw new NardukTimeseriesError(
@@ -384,6 +397,19 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
       seriesId: toNumber(row.series_id),
     }))
     return { bucket: query.bucket, clipped: built.clipped, range: built.range, rows, truncated }
+  }
+
+  async listSeries(query: SeriesListQuery): Promise<SeriesListResult> {
+    // An explicit empty filter asks about no paths: the answer is empty and
+    // costs no statement. Omitting `paths` is how a caller asks for them all.
+    if (Array.isArray(query.paths) && query.paths.length === 0) {
+      return { series: [], truncated: false }
+    }
+    const built = buildSeriesListQuery(query, { maxRowsCeiling: this.#maxSeriesRows })
+    const result = await this.#executor.query<SeriesRow>(built.text, built.params)
+    const limit = Number(built.params.at(-1)) - 1
+    const series = result.rows.slice(0, limit).map((row) => toResolvedSeries(row))
+    return { series, truncated: result.rows.length > limit }
   }
 
   async queryTrack(query: TrackQuery): Promise<TrackResult> {

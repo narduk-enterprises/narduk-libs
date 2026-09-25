@@ -45,6 +45,8 @@ export {
   type RollupResult,
   type RollupRow,
   type SeriesDescriptor,
+  type SeriesListQuery,
+  type SeriesListResult,
   type TelemetryHistoryStore,
   type TierRetention,
   type TimeRange,
