@@ -216,6 +216,25 @@ describe('app-local command planning', () => {
     expect(() => readDeployLocalSecrets({}, ['A'])).toThrow('nvault run -p <app>')
   })
 
+  it('names the registered route for GH_PACKAGES_READ, not the app config (#333)', () => {
+    const missing = () =>
+      readDeployLocalSecrets({ NUXT_SESSION_PASSWORD: 'x' }, [
+        'GH_PACKAGES_READ',
+        'NUXT_OG_IMAGE_SECRET',
+        'NUXT_SESSION_PASSWORD',
+      ])
+    expect(missing).toThrow(
+      'GH_PACKAGES_READ comes from its registered route, `nvault run -p github -e prd -c narduk-enterprises-packages-read --`.',
+    )
+    expect(missing).toThrow('NUXT_OG_IMAGE_SECRET comes from the app nvault config.')
+    expect(missing).toThrow(
+      '`nvault run -p github -e prd -c narduk-enterprises-packages-read -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`',
+    )
+    expect(() => readDeployLocalSecrets({}, ['NUXT_OG_IMAGE_SECRET'])).not.toThrow(
+      'registered route',
+    )
+  })
+
   it('preserves hotfix runtime vars in generated configuration without changing source', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-config-'))
     tempDirs.push(root)

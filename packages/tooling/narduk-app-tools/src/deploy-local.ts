@@ -18,6 +18,17 @@ const DEFAULT_SECRET_KEYS = [
   'NUXT_SESSION_PASSWORD',
 ] as const
 
+/**
+ * `GH_PACKAGES_READ` is estate-wide, not per app: its registered route is this
+ * nvault selector, so an app config holds no copy of it (narduk-libs#333).
+ */
+const PACKAGES_READ_NVAULT_SELECTOR = {
+  project: 'github',
+  environment: 'prd',
+  config: 'narduk-enterprises-packages-read',
+} as const
+const PACKAGES_READ_RUN = `nvault run -p ${PACKAGES_READ_NVAULT_SELECTOR.project} -e ${PACKAGES_READ_NVAULT_SELECTOR.environment} -c ${PACKAGES_READ_NVAULT_SELECTOR.config}`
+
 export interface DeployLocalFlags {
   dryRun: boolean
   force: boolean
@@ -160,12 +171,20 @@ export function readDeployLocalSecrets(
 ): Record<string, string> {
   const missing = keys.filter((key) => !env[key]?.trim())
   if (missing.length > 0) {
+    const appKeys = missing.filter((key) => key !== 'GH_PACKAGES_READ')
     throw new Error(
       [
         `deploy-local needs ${missing.join(', ')} in its environment.`,
         'It no longer reads Doppler narduk/tokens: Doppler is retired except the ne root store.',
-        'Run it under the app nvault config, for example',
-        '`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`,',
+        ...(missing.includes('GH_PACKAGES_READ')
+          ? [`GH_PACKAGES_READ comes from its registered route, \`${PACKAGES_READ_RUN} --\`.`]
+          : []),
+        ...(appKeys.length > 0
+          ? [
+              `${appKeys.join(', ')} come${appKeys.length === 1 ? 's' : ''} from the app nvault config.`,
+            ]
+          : []),
+        `Run it under both, for example \`${PACKAGES_READ_RUN} -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes\`,`,
         'or use `narduk-app deploy-hotfix` (docs/local-hotfix.md).',
       ].join(' '),
     )

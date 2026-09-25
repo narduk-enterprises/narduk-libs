@@ -290,7 +290,8 @@ business day. The incident stays open until production and source agree.
 `deploy-hotfix` is additive. Legacy `deploy-local` and the lower-level recovery
 environment overrides remain available for existing callers. `deploy-local`
 keeps its migration behavior but no longer reads Doppler: its build secrets come
-from the environment (`nvault run -- narduk-app deploy-local`), and it is **not
-this incident procedure**. Use the documented hotfix command for new local
-recovery adoption; there is no automatic fleet rollout or continuing
-synchronization relationship.
+from the environment (`GH_PACKAGES_READ` from nvault
+`github/prd/narduk-enterprises-packages-read`, the app's secrets from its own
+nvault config; see the README), and it is **not this incident procedure**. Use
+the documented hotfix command for new local recovery adoption; there is no
+automatic fleet rollout or continuing synchronization relationship.
