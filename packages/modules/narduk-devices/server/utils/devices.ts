@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, lte } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt, lte, or } from 'drizzle-orm'
 
 import { CREDENTIAL_CLASSES, DEVICES_INTERNAL_NONCE_PREFIX } from '../../shared/types/devices'
 import { DEVICES_LOCKOUT_POLICY } from '../../shared/utils/lockout-policy'
@@ -627,8 +627,19 @@ export interface ListDevicesInput {
 }
 
 export interface ListAuditEventsInput {
-  /** Millisecond epoch; returns events strictly older than this. */
+  /**
+   * Millisecond epoch; returns events strictly older than this. To page, pass
+   * the last row's `createdAt` here **and** its `id` as `beforeId`: one
+   * operation can write several rows at the same `createdAt`, and `before`
+   * alone skips the rest of that group (narduk-libs#974).
+   */
   before?: number
+  /**
+   * The last row's `id`, with `before` set to its `createdAt`. Also returns
+   * the rows at exactly `before` that sort after it (`id` descending).
+   * Ignored without `before`.
+   */
+  beforeId?: string
   limit?: number
   orgId?: string
   subject?: { id: string; kind: string }
@@ -2644,7 +2655,18 @@ export function createDevices(
         )
       }
       if (typeof input.before === 'number') {
-        filters.push(lt(devicesAuditEvents.createdAt, input.before))
+        // The cursor matches the sort: (createdAt, id), both descending.
+        filters.push(
+          input.beforeId
+            ? or(
+                lt(devicesAuditEvents.createdAt, input.before),
+                and(
+                  eq(devicesAuditEvents.createdAt, input.before),
+                  lt(devicesAuditEvents.id, input.beforeId),
+                ),
+              )
+            : lt(devicesAuditEvents.createdAt, input.before),
+        )
       }
       return db
         .select()

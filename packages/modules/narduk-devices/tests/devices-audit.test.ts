@@ -161,4 +161,34 @@ describe('audit trail', () => {
     expect(await devices.listAuditEvents({ orgId: ORG, limit: 0 })).toHaveLength(1)
     expect((await devices.listAuditEvents({ orgId: 'other' })).length).toBe(0)
   })
+
+  it('pages through rows that share a createdAt without skipping any (#974)', async () => {
+    const harness = createTestHarness()
+    const { devices } = harness
+    // One claim writes several audit rows on the same clock tick.
+    await claimDevice(harness)
+
+    const all = await devices.listAuditEvents({ orgId: ORG, limit: AUDIT_EVENTS_MAX_LIMIT })
+    const newestAt = all[0]!.createdAt
+    expect(all.filter((event) => event.createdAt === newestAt).length).toBeGreaterThanOrEqual(2)
+
+    const paged: typeof all = []
+    let cursor: { before?: number; beforeId?: string } = {}
+    for (let guard = 0; guard <= all.length; guard += 1) {
+      const page = await devices.listAuditEvents({ orgId: ORG, limit: 1, ...cursor })
+      if (page.length === 0) break
+      paged.push(...page)
+      const last = page.at(-1)!
+      cursor = { before: last.createdAt, beforeId: last.id }
+    }
+    expect(paged.map((event) => event.id)).toEqual(all.map((event) => event.id))
+
+    // `before` alone keeps its old meaning: strictly older, the whole tie excluded.
+    const olderOnly = await devices.listAuditEvents({ orgId: ORG, before: newestAt })
+    expect(olderOnly.every((event) => event.createdAt < newestAt)).toBe(true)
+    // `beforeId` without `before` is ignored.
+    expect(await devices.listAuditEvents({ orgId: ORG, beforeId: all[0]!.id })).toHaveLength(
+      Math.min(all.length, 50),
+    )
+  })
 })
