@@ -227,6 +227,12 @@ Machine access such as `/mcp` should continue to use a scoped API key or another
 explicit machine credential; browser email sessions are not a machine-auth
 substitute.
 
+The admin routes take an admin-owned API key only where its scopes allow it.
+`GET /api/admin/users` (and its `/api/users` alias) needs
+`auth:admin:users:read` on the key, and `PUT /api/admin/users/role` is
+session-only: no API key can grant or revoke admin, whatever its scopes. Admin
+sessions need no scope.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request

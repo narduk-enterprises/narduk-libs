@@ -9,6 +9,7 @@ import {
   withValidatedBody,
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
+import { assertInteractiveSessionPrincipal } from '#narduk-auth-server/utils/interactive-principal'
 import { users } from '#narduk-core/schema'
 
 const schema = z.object({
@@ -22,6 +23,9 @@ export default defineAdminMutation(
     parseBody: withValidatedBody(schema.parse),
   },
   async ({ event, admin, body }) => {
+    // Granting admin is session-only. An admin-owned API key of any scope
+    // would otherwise make its holder an admin (narduk-libs#918).
+    assertInteractiveSessionPrincipal(admin, 'Admin role changes')
     const input = requireMutationBody(body)
     // Prevent admin from removing their own admin privileges by accident
     if (input.userId === admin.id && !input.isAdmin) {

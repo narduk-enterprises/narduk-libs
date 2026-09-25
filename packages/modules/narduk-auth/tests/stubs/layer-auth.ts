@@ -7,6 +7,10 @@
  * API-key mint tests also need the create helpers: generate a fixed token,
  * normalise scopes, and resolve expiry without the real hasher or clock.
  */
+import { createError } from 'h3'
+
+import { hasRequiredApiKeyScopes } from '../../../narduk-core/runtime/server/utils/authApiKeyText'
+
 export const AUTH_API_KEY_SCOPES = {
   read: 'auth:api-keys:read',
   write: 'auth:api-keys:write',
@@ -29,6 +33,19 @@ export async function requireAuth() {
 
 export async function requireAdmin() {
   return authStub.user
+}
+
+/** narduk-core's rule: only an API-key caller is held to the listed scopes. */
+export function requireAuthScopes(
+  user: { authMethod?: string; scopes?: readonly string[] },
+  requiredScopes: readonly string[] = [],
+) {
+  if (requiredScopes.length === 0 || user.authMethod !== 'api-key') return
+  if (hasRequiredApiKeyScopes(user.scopes ?? [], requiredScopes)) return
+  throw createError({
+    statusCode: 403,
+    message: `Forbidden — missing required API key scopes: ${requiredScopes.join(', ')}`,
+  })
 }
 
 export function normalizeAuthScopes(scopes: readonly string[]) {

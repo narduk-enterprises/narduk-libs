@@ -2,9 +2,10 @@ import { asc, desc, sql } from 'drizzle-orm'
 import { createError, defineEventHandler } from 'h3'
 import { z } from 'zod'
 
-import { requireAdmin } from '#layer/server/utils/auth'
+import { requireAdmin, requireAuthScopes } from '#layer/server/utils/auth'
 import { getDatabaseRow, getDatabaseRows, useDatabase } from '#layer/server/utils/database'
 import { listResponse, parseListQuery } from '#layer/server/utils/listQuery'
+import { AUTH_ADMIN_SCOPES } from '#narduk-auth-server/utils/admin-scopes'
 import { users } from '#narduk-core/schema'
 
 /** Page ceiling this route has always enforced; now a clamp, not a rejection. */
@@ -48,7 +49,8 @@ function resolveOffset(query: {
 }
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event)
+  // An API key must carry the read scope; a session needs none (narduk-libs#918).
+  requireAuthScopes(await requireAdmin(event), [AUTH_ADMIN_SCOPES.usersRead])
   const query = parseListQuery(event, {
     defaultLimit: DEFAULT_LIMIT,
     defaultSort: 'createdAt:desc',
