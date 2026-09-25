@@ -64,9 +64,10 @@ function sortIdsByPriority(ids, itemsById) {
 // two points are within distance D of each other and the cell size is >= D,
 // their cells can differ by at most one step on each axis). The largest
 // possible interaction distance between two nodes is bounded by twice the
-// largest pin radius the map draws (see the tier radius ranges in
-// `utils/map/marks.ts`) plus the gap.
-const MAX_MERGE_RADIUS = 24;
+// largest radius in the layer plus the gap. `radius` is caller-supplied and
+// unbounded, so `mergeLayer` sizes cells from the input (#933); this floor
+// keeps the cell size, and the pass's cost, unchanged for the usual pins.
+const MIN_MERGE_RADIUS = 24;
 class SpatialGrid {
     cellSize;
     // Numeric cell keys: a string key per lookup was the hottest allocation in
@@ -128,7 +129,11 @@ function leafNode(item) {
  * node.
  */
 function mergeLayer(ordered, gap, stats) {
-    const cellSize = MAX_MERGE_RADIUS * 2 + gap;
+    let maxRadius = MIN_MERGE_RADIUS;
+    for (const node of ordered)
+        if (node.r > maxRadius)
+            maxRadius = node.r;
+    const cellSize = maxRadius * 2 + gap;
     const grid = new SpatialGrid(cellSize, stats);
     const placed = [];
     for (const candidate of ordered) {
