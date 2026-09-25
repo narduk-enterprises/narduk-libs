@@ -221,9 +221,63 @@ the live suites are for.
 
 ## Backends
 
-`SELF_HOSTED_CAPABILITIES` describes the self-hosted backend this package
-implements. The Supabase backend of narduk-libs#112 is an interface seam with a
-single `TODO(#112)` marker and no implementation.
+Both backends hand out the same `SqlExecutor`, through the consumer's own
+driver, so health, migrations, roles and the timeseries builders do not change
+with the backend. What differs is the capability matrix:
+
+| Backend / mode                                               | `ddl` | `roleSwitching` | `timescale` |
+| ------------------------------------------------------------ | ----- | --------------- | ----------- |
+| self-hosted (`SELF_HOSTED_CAPABILITIES`)                     | yes   | yes             | yes         |
+| Supabase `direct` (`db.<ref>.supabase.co:5432`)              | yes   | yes             | no          |
+| Supabase `session` (`*.pooler.supabase.com:5432`)            | yes   | yes             | no          |
+| Supabase `transaction` (port `6543`, Supavisor or PgBouncer) | no    | no              | no          |
+
+### Supabase (`createSupabaseBackend`)
+
+narduk-libs#112's Supabase half. No `@supabase/supabase-js`, PostgREST or auth:
+Supabase is PostgreSQL, reached with the same driver as every other path.
+
+```ts
+import postgres from 'postgres'
+import { createSupabaseBackend } from '@narduk-enterprises/narduk-postgres'
+
+const backend = createSupabaseBackend({
+  connectionString: env.SUPABASE_DB_URL,
+  connect: (dsn, options) => {
+    const sql = postgres(dsn, options)
+    return {
+      query: async (text, params = []) => {
+        const rows = await sql.unsafe(text, params as never[])
+        return { rows, rowCount: rows.count }
+      },
+      end: () => sql.end(),
+    }
+  },
+})
+
+await backend.withConnection((db) => checkHealth(db))
+```
+
+- The mode is read from the host and port Supabase publishes; a custom domain or
+  a self-hosted Supabase states `mode`. A stated mode that contradicts the host
+  is refused.
+- TLS is required: `sslmode=disable|allow|prefer` is refused, and the driver
+  options always carry `ssl` (default `require`; pass `verify-full` with the
+  Supabase CA configured in the driver).
+- Transaction mode (port 6543) cannot keep session state, so its capabilities
+  say no DDL (the migration runner's advisory lock is session-scoped: migrate
+  over a direct or session connection) and no role switching; a `tuning.role`
+  there is refused before any socket opens.
+- `timescale` is false in every mode: Supabase deprecated TimescaleDB on
+  Postgres 17 projects.
+- `runtime: 'worker'` applies the Worker tuning defaults and six-socket ceiling;
+  the default is the Node tuning. Each `withConnection` opens one connection and
+  closes it afterwards, as the Worker and Node paths do.
+- Failures are `NardukPostgresError` with code `SUPABASE_CONNECTION_INVALID` (or
+  `CONNECTION_STRING_MISSING`), with the connection string redacted.
+
+`SUPABASE_BACKEND_STATUS` is deprecated and kept only so existing imports
+compile.
 
 ## Licence
 
