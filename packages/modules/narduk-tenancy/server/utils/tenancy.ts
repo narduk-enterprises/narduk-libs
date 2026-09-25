@@ -57,6 +57,27 @@ export const INVITE_DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export const SUPPORT_GRANT_MAX_TTL_SECONDS = 86_400
 export const AUDIT_EVENTS_DEFAULT_LIMIT = 50
 export const AUDIT_EVENTS_MAX_LIMIT = 200
+
+/**
+ * How many of a grantee's active grants on one org a scoped lookup reads. A
+ * support user holds a handful of time-boxed grants, so this bounds the read
+ * without being the reason a covering grant is missed in practice. Past the
+ * cap the lookup fails closed: a covering grant beyond the newest 100 is not
+ * seen and the scoped check is refused, never widened.
+ */
+const SUPPORT_GRANT_SCOPE_SCAN_LIMIT = 100
+
+/** A grant's scope list. Unparseable or non-array JSON is an empty scope. */
+export function supportGrantScopes(grant: Pick<TenancySupportGrant, 'scopeJson'>): string[] {
+  try {
+    const parsed: unknown = JSON.parse(grant.scopeJson)
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
 export const SUPPORT_GRANT_LIST_MAX_LIMIT = 200
 
 const ORG_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
@@ -285,6 +306,13 @@ export interface ClearResourceRoleOverrideInput extends MemberInput {
 export interface ResolveRoleInput {
   orgId: string
   resource?: TenancyResourceRef
+  /**
+   * When set, `supportGrant` is the latest-expiring active grant whose scope
+   * carries this string, not simply the latest-expiring one. A support user
+   * can hold several grants on one org, and the one that covers a route is
+   * not always the one that lasts longest (narduk-libs#942).
+   */
+  supportScope?: string
   userId: string
 }
 
@@ -692,23 +720,24 @@ export function createTenancy(
         )
       : isNull(tenancySupportGrants.resourceKind)
 
-    return first(
-      await db
-        .select()
-        .from(tenancySupportGrants)
-        .where(
-          and(
-            eq(tenancySupportGrants.orgId, input.orgId),
-            eq(tenancySupportGrants.granteeUserId, input.userId),
-            isNull(tenancySupportGrants.revokedAt),
-            gt(tenancySupportGrants.expiresAt, now()),
-            scopeMatch,
-          ),
-        )
-        .orderBy(desc(tenancySupportGrants.expiresAt))
-        .limit(1)
-        .all(),
-    )
+    const grants = await db
+      .select()
+      .from(tenancySupportGrants)
+      .where(
+        and(
+          eq(tenancySupportGrants.orgId, input.orgId),
+          eq(tenancySupportGrants.granteeUserId, input.userId),
+          isNull(tenancySupportGrants.revokedAt),
+          gt(tenancySupportGrants.expiresAt, now()),
+          scopeMatch,
+        ),
+      )
+      .orderBy(desc(tenancySupportGrants.expiresAt), desc(tenancySupportGrants.id))
+      .limit(input.supportScope === undefined ? 1 : SUPPORT_GRANT_SCOPE_SCAN_LIMIT)
+      .all()
+    if (input.supportScope === undefined) return first(grants)
+    const wanted = input.supportScope
+    return grants.find((grant) => supportGrantScopes(grant).includes(wanted))
   }
 
   async function findInviteByToken(token: string): Promise<TenancyInvite | undefined> {
