@@ -301,8 +301,14 @@ export function pointInPolygon(point, ring) {
     }
     return inside;
 }
+/**
+ * The first polygon whose filled area contains `point`. `rings` is
+ * `[outer, ...holes]` (GeoJSON order), and the overlay layer draws the holes
+ * empty, so containment is even-odd across rings: a point inside the outer
+ * ring and inside one hole is not on the polygon (#931).
+ */
 export function hitTestPolygonOverlays(point, overlays) {
-    return (overlays.find((overlay) => overlay.rings.some((ring) => pointInPolygon(point, ring))) ?? null);
+    return (overlays.find((overlay) => overlay.rings.reduce((inside, ring) => (pointInPolygon(point, ring) ? !inside : inside), false)) ?? null);
 }
 export function hitTestCircleOverlays(point, overlays) {
     return (overlays.find((overlay) => {
