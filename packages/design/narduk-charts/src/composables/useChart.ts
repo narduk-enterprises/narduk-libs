@@ -73,30 +73,44 @@ export function useChart(
     }
   }
 
-  onMounted(() => {
-    void nextTick(() => {
-      const el = containerRef.value
-      if (!el || props.width !== undefined) return
-      const syncFromDom = () => {
-        const node = containerRef.value
-        if (!node) return
-        const w = node.clientWidth
-        if (w < 1) return
-        if (observedWidth.value !== w) observedWidth.value = w
-      }
-      syncFromDom()
+  let mounted = false
+  let unmounted = false
 
-      if (typeof ResizeObserver === 'undefined') return
+  function syncFromDom() {
+    const node = containerRef.value
+    if (!node) return
+    const w = node.clientWidth
+    if (w < 1) return
+    if (observedWidth.value !== w) observedWidth.value = w
+  }
 
-      observer = new ResizeObserver(() => {
-        cancelResizeRaf()
-        resizeRaf = requestAnimationFrame(() => {
-          resizeRaf = 0
-          syncFromDom()
-        })
+  /**
+   * Measure the container and follow its resizes. Runs after mount, and again
+   * whenever `width` goes from set to unset (#934), so a chart that was pinned
+   * to a fixed width becomes responsive again instead of sticking at 600px.
+   */
+  function startObserving() {
+    // `nextTick` can run after unmount; never attach to a detached element.
+    if (unmounted || observer) return
+    const el = containerRef.value
+    if (!el || props.width !== undefined) return
+    syncFromDom()
+
+    if (typeof ResizeObserver === 'undefined') return
+
+    observer = new ResizeObserver(() => {
+      cancelResizeRaf()
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0
+        syncFromDom()
       })
-      observer.observe(el)
     })
+    observer.observe(el)
+  }
+
+  onMounted(() => {
+    mounted = true
+    void nextTick(startObserving)
 
     if (typeof window !== 'undefined') {
       mqlDark = window.matchMedia('(prefers-color-scheme: dark)')
@@ -116,13 +130,17 @@ export function useChart(
         cancelResizeRaf()
         observer.disconnect()
         observer = null
+      } else if (w === undefined && mounted) {
+        void nextTick(startObserving)
       }
     },
   )
 
   onUnmounted(() => {
+    unmounted = true
     cancelResizeRaf()
     observer?.disconnect()
+    observer = null
     mqlDark?.removeEventListener('change', onDarkChange)
     mqlMotion?.removeEventListener('change', onMotionChange)
   })

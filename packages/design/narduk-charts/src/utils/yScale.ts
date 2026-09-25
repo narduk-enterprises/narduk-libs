@@ -1,5 +1,5 @@
 import type { ChartYScaleMode } from '../types'
-import { linearScale, niceScale, formatValue } from './math'
+import { arrayMax, arrayMin, linearScale, niceScale, formatValue } from './math'
 
 export interface YAxisMapResult {
   /** Map data value to distance from plot bottom (px), before `padding.top`. */
@@ -128,8 +128,8 @@ export function createYAxisMap(
       low = 0
       high = 100
     } else {
-      const rawMin = Math.min(...vals)
-      const rawMax = Math.max(...vals)
+      const rawMin = arrayMin(vals)
+      const rawMax = arrayMax(vals)
       const paddingRatio = Math.max(0, options?.linearPaddingRatio ?? 0)
       const rawRange = rawMax - rawMin
       const padding =
@@ -158,8 +158,8 @@ export function createYAxisMap(
       minV = 0.1
       maxV = 10
     } else {
-      minV = Math.min(...pos)
-      maxV = Math.max(...pos)
+      minV = arrayMin(pos)
+      maxV = arrayMax(pos)
       if (minV === maxV) {
         minV = minV / 10
         maxV = maxV * 10
@@ -191,8 +191,8 @@ export function createYAxisMap(
 
   // symlog
   const transformed = all.map(v => symlogForward(v, linthresh))
-  const tMin = transformed.length ? Math.min(...transformed) : -1
-  const tMax = transformed.length ? Math.max(...transformed) : 1
+  const tMin = transformed.length ? arrayMin(transformed) : -1
+  const tMax = transformed.length ? arrayMax(transformed) : 1
 
   /*
    * Pins are stated in DATA space, so they are transformed before they can be

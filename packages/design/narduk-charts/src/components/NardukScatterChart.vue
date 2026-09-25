@@ -5,7 +5,7 @@ import { useChart } from '../composables/useChart'
 import { defaultScatterLabel } from '../utils/chartA11y'
 import { chartThemeClass } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
-import { formatValue, linearScale, niceScale } from '../utils/math'
+import { arrayMax, arrayMin, formatValue, linearScale, niceScale } from '../utils/math'
 
 import type { ChartTheme, ScatterSeries } from '../types'
 
@@ -62,10 +62,10 @@ const bounds = computed(() => {
   const xs = pts.map(p => p.x)
   const ys = pts.map(p => p.y)
   return {
-    xmin: Math.min(...xs),
-    xmax: Math.max(...xs),
-    ymin: Math.min(...ys),
-    ymax: Math.max(...ys),
+    xmin: arrayMin(xs),
+    xmax: arrayMax(xs),
+    ymin: arrayMin(ys),
+    ymax: arrayMax(ys),
   }
 })
 

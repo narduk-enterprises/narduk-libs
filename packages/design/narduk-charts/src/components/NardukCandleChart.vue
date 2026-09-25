@@ -7,6 +7,8 @@ import { candleBarSummary, defaultCandleChartLabel, zoomKeyboardHint } from '../
 import { chartThemeClass } from '../utils/chartTheme'
 import {
   aggregateCandlesDetailed,
+  arrayMax,
+  arrayMin,
   candleIndexAtTime,
   candleTimeAtIndex,
   formatAxisTickValue,
@@ -342,8 +344,8 @@ const visibleDisplayOhlcValues = computed(() => visibleOhlcValues.value.map(rawT
 const yAxisPadValues = computed(() => {
   const v = visibleDisplayOhlcValues.value
   if (v.length === 0) return []
-  const lo = Math.min(...v)
-  const hi = Math.max(...v)
+  const lo = arrayMin(v)
+  const hi = arrayMax(v)
   const r = hi - lo || Math.abs(hi) * 0.002 || 1
   const pad = r * (props.yPadFraction ?? 0.06)
   return [lo - pad, hi + pad]

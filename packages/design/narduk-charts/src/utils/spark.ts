@@ -1,4 +1,4 @@
-import { linearScale, lineSegmentsToPaths, segmentLinePoints } from './math'
+import { arrayMax, arrayMin, linearScale, lineSegmentsToPaths, segmentLinePoints } from './math'
 
 export const SPARK_WINDOWS = ['24h', '7d', '30d'] as const
 export type SparkWindowId = (typeof SPARK_WINDOWS)[number]
@@ -46,8 +46,8 @@ export function sparkAxis(
   const finite = values.filter((value): value is number => value != null && Number.isFinite(value))
   if (finite.length === 0) return { max: 1, min: 0, mode: options.mode ?? 'linear' }
 
-  const rawMin = Math.min(...finite)
-  const rawMax = Math.max(...finite)
+  const rawMin = arrayMin(finite)
+  const rawMax = arrayMax(finite)
   const padRatio = options.padRatio ?? 0.08
   const mode = options.mode ?? chooseSparkAxisMode(rawMin, rawMax)
 
@@ -109,8 +109,8 @@ export function sparkPath(
   const finiteTimes = useTimes
     ? times.filter((time): time is number => time != null && Number.isFinite(time))
     : []
-  const tMin = finiteTimes.length > 0 ? Math.min(...finiteTimes) : 0
-  const tMax = finiteTimes.length > 0 ? Math.max(...finiteTimes) : 1
+  const tMin = finiteTimes.length > 0 ? arrayMin(finiteTimes) : 0
+  const tMax = finiteTimes.length > 0 ? arrayMax(finiteTimes) : 1
 
   const series = values.map((value, index) => {
     if (value == null || Number.isNaN(value)) return null
