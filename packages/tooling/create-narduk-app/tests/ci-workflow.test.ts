@@ -146,6 +146,27 @@ describe('generated CI boundaries', () => {
     for (const action of actions) expect(action[1]).toMatch(/^[a-f0-9]{40}$/u)
   })
 
+  // narduk-libs#787: a bot-dispatched main run starts promote.yml only after
+  // the gate job, without waiting on anything, on the workflow's runner class.
+  it('starts Promote after the gate on both visibilities without waiting on a run', () => {
+    for (const [visibility, needs] of [
+      ['public', 'Required'],
+      ['private', 'ci'],
+    ] as const) {
+      const workflow = createCiWorkflow(visibility)
+      const jobs = (YAML.parse(workflow) as { jobs: Record<string, Record<string, unknown>> }).jobs
+      const dispatch = jobs['promote-dispatch']
+      expect(dispatch?.needs, visibility).toBe(needs)
+      expect(dispatch?.['timeout-minutes'], visibility).toBe(5)
+      expect(dispatch?.['runs-on'], visibility).toEqual(
+        visibility === 'public'
+          ? 'ubuntu-24.04'
+          : { group: 'linux-ci', labels: ['self-hosted', 'Linux', 'X64', 'proxmox', 'linux-ci'] },
+      )
+      expect(workflow, visibility).not.toContain('gh run watch')
+    }
+  })
+
   it('emits a visibility-independent Copilot setup workflow with concurrency and a job timeout', () => {
     const workflow = createCopilotSetupWorkflow()
     expect(workflow).toContain('on:\n  workflow_dispatch:')

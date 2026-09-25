@@ -355,6 +355,74 @@ function createRunnerOnboardingJob(): string[] {
   ]
 }
 
+/**
+ * Starts the app's `promote.yml` for a bot-dispatched main CI run.
+ *
+ * dependabot-merge.yml merges with GITHUB_TOKEN and starts main CI by
+ * `workflow_dispatch`. A run started with GITHUB_TOKEN fires no
+ * `workflow_run`, so promote.yml never saw it: Dependabot bumps reached main
+ * but not production until the next human merge (narduk-libs#787, jev and
+ * gonogo). This job runs only for that case, after every CI job passed, and
+ * dispatches promote.yml with `verified-sha` set to this run's commit.
+ * promote.yml re-checks `ci / Required` on that SHA before it deploys.
+ *
+ * It never waits on anything, so it holds no runner while CI runs. It
+ * promotes only main's head, so an older commit cannot replace a newer one.
+ * An app whose promote.yml has no `verified-sha` input gets a notice instead
+ * of a failure.
+ */
+export const PROMOTE_DISPATCH_JOB_NAME = 'Start Promote for a bot-dispatched main run'
+
+function createPromoteDispatchJob(visibility: AppVisibility, needs: string): string[] {
+  const runsOn =
+    visibility === 'public'
+      ? ['    runs-on: ubuntu-24.04']
+      : [
+          '    runs-on:',
+          '      group: linux-ci',
+          `      labels: [${LINUX_CI_RUNNER_LABELS.join(', ')}]`,
+        ]
+  return [
+    '  # A main CI run started with GITHUB_TOKEN (dependabot-merge.yml) fires no',
+    '  # workflow_run, so promote.yml never sees it (narduk-libs#787). Start it',
+    '  # here instead, naming this commit; promote.yml re-checks the gate.',
+    '  promote-dispatch:',
+    `    name: ${PROMOTE_DISPATCH_JOB_NAME}`,
+    `    needs: ${needs}`,
+    '    if: >-',
+    "      github.event_name == 'workflow_dispatch' &&",
+    "      github.ref == 'refs/heads/main' &&",
+    "      github.actor == 'github-actions[bot]'",
+    ...runsOn,
+    '    timeout-minutes: 5',
+    '    permissions:',
+    '      actions: write',
+    '      contents: read',
+    '    steps:',
+    '      - name: Dispatch promote.yml for this commit',
+    '        env:',
+    '          GH_TOKEN: ${{ github.token }}',
+    '          REPO: ${{ github.repository }}',
+    '          VERIFIED_SHA: ${{ github.sha }}',
+    '        run: |',
+    '          set -euo pipefail',
+    '          promote_workflow=$(gh api "repos/$REPO/contents/.github/workflows/promote.yml?ref=$VERIFIED_SHA" \\',
+    '            --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)',
+    '          if ! grep -Eq \'^ {6}verified-sha:[[:space:]]*$\' <<<"$promote_workflow"; then',
+    '            echo "::notice::promote.yml takes no workflow_dispatch verified-sha input, so $VERIFIED_SHA reaches production only if a later commit is promoted (narduk-libs#787)."',
+    '            exit 0',
+    '          fi',
+    '          head=$(gh api "repos/$REPO/commits/main" --jq .sha)',
+    '          if [ "$head" != "$VERIFIED_SHA" ]; then',
+    '            echo "::notice::main moved to $head during this run, so $VERIFIED_SHA is not promoted on its own; it reaches production if a later commit is promoted."',
+    '            exit 0',
+    '          fi',
+    '          gh workflow run promote.yml --repo "$REPO" --ref main -f "verified-sha=$VERIFIED_SHA"',
+    '          echo "Started Promote for $VERIFIED_SHA."',
+    '',
+  ]
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -392,6 +460,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '    with:',
       ...privateCallerInputs(),
       '',
+      ...createPromoteDispatchJob('private', 'ci'),
     ].join('\n')
   }
   // Public callers cannot call the private shared workflow. Keep all three
@@ -506,6 +575,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '          test "$BROWSER_RESULT" = success',
     '          test "$REPORT_RESULT" = success',
     '',
+    ...createPromoteDispatchJob('public', 'Required'),
   ].join('\n')
 }
 
