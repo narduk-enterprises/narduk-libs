@@ -101,6 +101,14 @@
       "types": "./dist/server/kit/managed-supabase.d.ts",
       "import": "./dist/server/kit/managed-supabase.js"
     },
+    "./server/kit/vitest": {
+      "types": "./dist/server/kit/vitest.d.ts",
+      "import": "./dist/server/kit/vitest.js"
+    },
+    "./server/kit/nitro-runtime-stub": {
+      "types": "./dist/server/kit/nitro-runtime-stub.d.ts",
+      "import": "./dist/server/kit/nitro-runtime-stub.js"
+    },
     "./server/handlers": {
       "types": "./dist/server/handlers/index.d.ts",
       "import": "./dist/server/handlers/index.js"

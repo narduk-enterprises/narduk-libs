@@ -130,6 +130,8 @@ describe('narduk-testkit runner boundaries', () => {
           "./server/kit/auth-session-refresh",
           "./server/kit/auth-session-stability",
           "./server/kit/managed-supabase",
+          "./server/kit/vitest",
+          "./server/kit/nitro-runtime-stub",
         ]
       `)
   })
