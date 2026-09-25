@@ -123,6 +123,47 @@ intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.
 
+### Build deployment target
+
+The layer reads the target from the first non-blank of `NARDUK_DEPLOY_TARGET`,
+`NUXT_PUBLIC_NARDUK_DEPLOY_TARGET` and `NUXT_PUBLIC_DEPLOYMENT_TARGET`. When
+none is set, it falls back to the build branch (narduk-libs#999): a Workers
+Builds `WORKERS_CI_BRANCH` (or Cloudflare Pages `CF_PAGES_BRANCH`) of `main` is
+`production`, and any other branch is `preview`, so a branch build is noindexed
+and a `main` build gets `hostAwareIndexing`. A build with no explicit variable
+and no branch variable, such as a local `nuxt build`, keeps an unset target
+exactly as before: indexable, with host-aware indexing off.
+
+Apps therefore no longer need the `nuxt.config.ts` write-back block that
+generated apps carry:
+
+```ts
+// No longer needed for narduk-seo:
+const buildBranch = process.env.WORKERS_CI_BRANCH
+const isBranchPreview = Boolean(buildBranch && buildBranch !== 'main')
+process.env.NARDUK_DEPLOY_TARGET ??= isBranchPreview ? 'preview' : 'production'
+```
+
+Code that needs the same answer itself imports the resolver from the config-safe
+`@narduk-enterprises/narduk-seo/shared/deploymentTarget` entry point (no Nuxt
+imports, safe in `nuxt.config.ts`):
+
+```ts
+import { resolveBuildDeploymentTarget } from '@narduk-enterprises/narduk-seo/shared/deploymentTarget'
+
+const { target, source } = resolveBuildDeploymentTarget()
+// target: 'production' | 'staging' | 'preview'
+// source: 'explicit' | 'branch' | 'default'
+```
+
+It takes an optional env record (default `process.env`) and
+`{ productionBranch?: string; default?: DeploymentTarget }` (defaults `'main'`
+and `'production'`). An explicit value counts only when it is one of the three
+targets; otherwise the branch decides, and with no branch the result is
+`options.default` with `source: 'default'`. The module itself uses only the
+explicit and branch answers and never the default, and it still passes an
+unrecognised explicit value through unchanged, as it always has.
+
 ## Host-aware indexing
 
 A production build that sets `nardukSeo: { hostAwareIndexing: true }` (or

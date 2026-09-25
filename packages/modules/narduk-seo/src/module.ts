@@ -20,6 +20,10 @@ import { defu } from 'defu'
 
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
 import {
+  DEPLOYMENT_TARGET_ENV_KEYS,
+  resolveBuildDeploymentTarget,
+} from '../shared/deploymentTarget'
+import {
   canResolveNuxtOgImage,
   isNuxtOgImageModuleRequested,
   isRuntimeOgImageGenerationEnabled,
@@ -234,11 +238,17 @@ function readBooleanEnv(key: string): boolean {
 }
 
 function readDeploymentTarget(): string {
-  return readTrimmedEnv([
-    'NARDUK_DEPLOY_TARGET',
-    'NUXT_PUBLIC_NARDUK_DEPLOY_TARGET',
-    'NUXT_PUBLIC_DEPLOYMENT_TARGET',
-  ]).toLowerCase()
+  // An explicit variable wins exactly as before, including a value that is not
+  // one of the three known targets.
+  const explicit = readTrimmedEnv([...DEPLOYMENT_TARGET_ENV_KEYS]).toLowerCase()
+  if (explicit) return explicit
+
+  // narduk-libs#999: with no explicit variable, a Workers Builds (or Pages)
+  // branch still says what this build is, so apps no longer need a nuxt.config
+  // write-back of NARDUK_DEPLOY_TARGET. Only the branch result is used: a
+  // local build with no branch keeps today's unset target.
+  const resolved = resolveBuildDeploymentTarget(process.env)
+  return resolved.source === 'branch' ? resolved.target : ''
 }
 
 function isNonProductionDeployment(): boolean {
