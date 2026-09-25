@@ -18,6 +18,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { runConsumerCommand } from './consumer-smoke-command.mjs'
+import { freeLocalPort, probeWorkerPasskeyOptions } from './consumer-smoke-passkey-probe.mjs'
 import {
   consumerSmokePhases,
   consumerSmokeTestEnv,
@@ -983,6 +984,25 @@ function packEnvironment() {
   return childEnvironment({ npm_config_ignore_scripts: 'true' })
 }
 
+// narduk-libs#786: serve the built Worker on workerd and ask for a passkey
+// sign-in challenge. Only the bundled Worker can drop the Reflect polyfill.
+async function runPasskeyWorkerProbe(generatedDirectory) {
+  const label = 'serve the generated Worker and request a passkey challenge'
+  writeLine(`\n[consumer-smoke] ${label}`)
+  const started = performance.now()
+  try {
+    await probeWorkerPasskeyOptions({
+      appDirectory: join(generatedDirectory, 'apps', 'web'),
+      env: childEnvironment(),
+      port: await freeLocalPort(),
+      writeLine,
+    })
+  } finally {
+    timings.push({ label, seconds: (performance.now() - started) / 1000 })
+    writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
+  }
+}
+
 async function proveGeneratedConsumer({
   consumerDirectory,
   packages,
@@ -1172,6 +1192,7 @@ async function proveGeneratedConsumer({
     if (!deployDryRun.includes('--dry-run: exiting now.')) {
       throw new Error('Wrangler deploy dry-run did not report a completed credential-free exit.')
     }
+    await runPasskeyWorkerProbe(generatedDirectory)
     assertNoForbiddenGeneratedReferences(generatedDirectory)
   }
 
