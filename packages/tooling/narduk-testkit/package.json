@@ -51,6 +51,10 @@
       "types": "./dist/e2e/hydration-mismatch.d.ts",
       "import": "./dist/e2e/hydration-mismatch.js"
     },
+    "./e2e/readiness": {
+      "types": "./dist/e2e/readiness.d.ts",
+      "import": "./dist/e2e/readiness.js"
+    },
     "./playwright/accessibility": {
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
