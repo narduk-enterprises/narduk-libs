@@ -479,6 +479,35 @@ directories) and `components`, it prepends an `@source` per directory to Nuxt
 UI's `ui.css` and extends the detection list, once every module is installed.
 narduk-auth uses it for its `app/` directory.
 
+## Shared-secret guard
+
+`@narduk-enterprises/narduk-core/server/utils/shared-secret` checks a static
+secret on an inbound request (an ingest token, a scheduler secret, a diagnostics
+key) in constant time (narduk-libs#979). `requireCronAuth` is a wrapper over it
+for `CRON_SECRET`.
+
+```ts
+import { requireSharedSecret } from '@narduk-enterprises/narduk-core/server/utils/shared-secret'
+
+requireSharedSecret(event, {
+  secretKey: 'RECAP_INGEST_TOKEN',
+  fallback: useRuntimeConfig(event).recapIngestToken,
+  unsetStatus: 503,
+})
+```
+
+- `secretKey` is read with `readRuntimeString`, so a Worker env binding wins
+  over `fallback`.
+- `header` defaults to `authorization`, where a case-insensitive `Bearer` scheme
+  is stripped. Any other header is read raw.
+- An unset secret passes in dev and fails closed elsewhere with `unsetStatus`
+  (default 500). A mismatch answers `rejectStatus` (default 401) with
+  `rejectMessage`.
+- `hasSharedSecret(event, options)` never throws and is `false` whenever the
+  secret is unset, for "session OR token" guards:
+  `hasSharedSecret(event, options) || (await requireAdmin(event))`.
+- `timingSafeEqualText(a, b)` is the byte-wise compare underneath.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
