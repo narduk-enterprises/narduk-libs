@@ -642,6 +642,62 @@ await runAtomicBatch(db, [
 ])
 ```
 
+### Bound-parameter chunking: `chunkD1BoundValues` and `chunkD1Rows`
+
+D1 and Durable Object SQLite both refuse a statement that binds more than 100
+parameters, with `too many SQL variables at offset N`. `node:sqlite` and
+better-sqlite3 do not enforce the limit. A unit suite on either will pass a
+statement that fails on workerd: mybo-at-v2's track backfill bound 500
+parameters, passed its tests, and failed every batch on preview.
+
+`@narduk-enterprises/narduk-core/server/utils/d1Query` (import it explicitly; it
+is not auto-imported) counts **parameters, not values** (narduk-libs#988):
+
+```ts
+import {
+  chunkD1Rows,
+  collectD1ChunkedRows,
+} from '@narduk-enterprises/narduk-core/server/utils/d1Query'
+
+// Multi-row INSERT: one parameter per column per row. The width comes from
+// the table, so adding a column narrows the chunk instead of crossing 100.
+for (const chunk of chunkD1Rows(rows, fields)) {
+  await db.insert(fields).values(chunk)
+}
+
+// IN list beside a tenant id: 1 parameter per id, 1 reserved for farmId.
+const found = await collectD1ChunkedRows(
+  ids,
+  (chunk) =>
+    db
+      .select()
+      .from(fields)
+      .where(and(eq(fields.farmId, farmId), inArray(fields.id, chunk))),
+  { reservedParameters: 1 },
+)
+```
+
+| Option               | Default | Meaning                                                             |
+| -------------------- | ------- | ------------------------------------------------------------------- |
+| `parametersPerValue` | 1       | Parameters each value binds: 2 for an `(a, b)` key, columns per row |
+| `reservedParameters` | 0       | Parameters bound outside the list: a tenant id, another predicate   |
+| `maxBoundParameters` | 100     | The ceiling, at most 100                                            |
+| `chunkSize`          | derived | Values per chunk; throws if it would overrun                        |
+
+The chunk size is
+`floor((maxBoundParameters - reservedParameters) / parametersPerValue)`, capped
+at the old default of 75 unless you pass `chunkSize`. With neither new option
+set, the helpers behave exactly as before. The following all throw at call time
+rather than at D1: an explicit `chunkSize` that would overrun once width and
+reserved parameters are counted, a single value too wide to fit, and a malformed
+option. `runD1Chunked` and `collectD1ChunkedRows` accept the same options.
+`chunkD1Rows(rows, table)` takes a Drizzle table (counting its full column
+count, which is conservative) or a plain column count, plus
+`reservedParameters`.
+
+`runD1Chunked` and `collectD1ChunkedRows` run chunks one after another; which
+statements get chunked is up to the app.
+
 ## Health endpoint
 
 Core serves `GET /api/health` for uptime monitors and deploy checks. The
