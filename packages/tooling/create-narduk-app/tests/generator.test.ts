@@ -734,10 +734,22 @@ describe('create-narduk-app generation contract', () => {
       // hand anyone `$GITHUB_SHA` to copy.
       expect(runbook, label).toContain('narduk-app deploy versions-promote --sha "$VERIFIED_SHA"')
       // narduk-libs#400: the promote binds the gate result to the same commit
-      // it promotes -- the workflow_run head SHA, never GITHUB_SHA.
+      // it promotes -- the gate's checked SHA, never GITHUB_SHA.
       expect(runbook, label).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
       expect(runbook, label).not.toContain('Required@$GITHUB_SHA')
-      expect(runbook, label).toContain('${{ github.event.workflow_run.head_sha }}')
+      expect(runbook, label).toContain('VERIFIED_SHA: ${{ needs.gate.outputs.sha }}')
+      // narduk-libs#787: the promotion can also be dispatched by ci.yml, and a
+      // pending run can be replaced in the concurrency group, so the gate
+      // ignores whichever SHA started it and promotes main's head once the
+      // latest `ci / Required` on that exact commit passed. Pull-request
+      // workflow_runs never reach it.
+      expect(runbook, label).toContain('  workflow_dispatch:\n    inputs:\n      verified-sha:')
+      expect(runbook, label).toContain("github.event.workflow_run.event != 'pull_request'")
+      expect(runbook, label).toContain('head=$(gh api "repos/$REPO/commits/main" --jq .sha)')
+      expect(runbook, label).toContain('check-runs?check_name=ci%20%2F%20Required')
+      expect(runbook, label).toContain('| last | .conclusion == "success"')
+      expect(runbook, label).toContain('echo "sha=$head" >> "$GITHUB_OUTPUT"')
+      expect(runbook, label).not.toContain('CANDIDATE')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
       // The generator writes the app's own half of Config/cloudflare-app.json
@@ -1564,6 +1576,38 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(mergeWorkflow, label).toContain('gh pr merge')
       expect(mergeWorkflow, label).toContain('gh workflow run ci.yml')
       expect(() => YAML.parse(mergeWorkflow), label).not.toThrow()
+
+      // narduk-libs#787: that dispatched CI fires no workflow_run, so the
+      // generated ci.yml starts promote.yml itself for a bot-dispatched main
+      // run -- after every CI job passed, only for main's head, and only when
+      // promote.yml takes `verified-sha`. Nothing waits.
+      expect(mergeWorkflow, label).not.toContain('gh run watch')
+      const ciWorkflow = files.get('.github/workflows/ci.yml') ?? ''
+      const ci = YAML.parse(ciWorkflow) as {
+        jobs: Record<
+          string,
+          {
+            needs?: string
+            if?: string
+            permissions?: Record<string, string>
+            steps?: Array<{ run?: string }>
+          }
+        >
+      }
+      const dispatch = ci.jobs['promote-dispatch']
+      expect(dispatch?.needs, label).toBe('ci')
+      expect(dispatch?.if, label).toBe(
+        "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'github-actions[bot]'",
+      )
+      expect(dispatch?.permissions, label).toEqual({ actions: 'write', contents: 'read' })
+      expect(ciWorkflow, label).toContain("grep -Eq '^[[:space:]]+verified-sha:[[:space:]]*$'")
+      // Only a 404 reads as "not adopted"; any other API error fails the job.
+      expect(ciWorkflow, label).toContain('grep -q "HTTP 404" "$RUNNER_TEMP/promote-lookup.err" ||')
+      expect(dispatch?.steps?.[0]?.run, label).not.toContain('|| true')
+      expect(ciWorkflow, label).toContain('if [ "$head" != "$VERIFIED_SHA" ]; then')
+      expect(ciWorkflow, label).toContain(
+        'gh workflow run promote.yml --repo "$REPO" --ref main -f "verified-sha=$VERIFIED_SHA"',
+      )
     }
   })
 
