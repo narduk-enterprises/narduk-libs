@@ -256,6 +256,48 @@ Notification mutations require the API-key scope `auth:notifications:write`.
 Account deletion, password change, profile update, and MFA enroll/verify refuse
 API-key principals entirely.
 
+## Request principal for tenancy guards
+
+Guards that choose their own answer for an anonymous caller (narduk-tenancy's
+`resolveUserId`, a route that answers 404 rather than disclose that a resource
+exists) need "who is calling, or `null`". `requireAuth` throws 401 instead, and
+reading `useRefreshedSessionUser` directly skips the restricted-session rules
+above, so a recovery-mode or MFA-step-up session would pass.
+
+```ts
+import {
+  resolveRequestPrincipal,
+  resolveTenancyUserId,
+} from '@narduk-enterprises/narduk-auth/server/utils/request-principal'
+
+// narduk-tenancy guard: sessions only, privilege rules applied.
+await requireOrgRole(event, {
+  orgId,
+  minimum: 'member',
+  tenancy,
+  resolveUserId: resolveTenancyUserId,
+})
+
+// Wider principal set, opted into per route.
+const principal = await resolveRequestPrincipal(event, {
+  allowApiKey: true, // Authorization: Bearer nk_…
+  requiredApiKeyScopes: ['farm:read'], // a key without them resolves to null
+  allowNative: true, // native-app bearer
+  refuseNeedsPasswordSetup: true,
+})
+// → { userId, email, emailVerified, method: 'session' | 'native' | 'api-key', sessionId?, apiKeyScopes } | null
+```
+
+It returns `null` for an anonymous caller, a session the recovery or MFA
+allowlist refuses for this request, a bearer the call does not accept or that
+does not authenticate, and a key missing `requiredApiKeyScopes`. As in
+`requireAuth`, an accepted bearer takes precedence over the session cookie and
+never falls back to it. `emailVerified` is narduk-auth's proof, not the raw
+session field: the Supabase confirmation on a Supabase session, otherwise the
+local `auth_verified_emails` record for the user's current address (so it is
+`false` unless `authLocalEmailVerification` is on). The 401-versus-404 choice,
+org selection and app roles stay in the app.
+
 ## Passkeys
 
 Passkeys (WebAuthn discoverable credentials) sit **beside** email + password on

@@ -53,6 +53,10 @@ export default defineConfig({
       '#auth-test-imports': join(packageRoot, 'tests/fixtures/nuxt-auto-imports.ts'),
       '#layer/server/database/schema': join(packageRoot, 'tests/stubs/layer-schema.ts'),
       '#layer/server/utils/auth': join(packageRoot, 'tests/stubs/layer-auth.ts'),
+      '#layer/server/utils/authApiKeyText': join(
+        packageRoot,
+        '../narduk-core/runtime/server/utils/authApiKeyText.ts',
+      ),
       '#layer/server/utils/database': join(packageRoot, 'tests/stubs/layer-database.ts'),
       // Resolved to the real narduk-core helper: the list-query contract is
       // what the route tests exercise, so it is never stubbed.
