@@ -385,7 +385,10 @@ class GitHub {
     status: string
     head_sha?: string
     head_branch?: string
+    repositoryId?: number
   }> = []
+  /** What `GET repos/{origin name}` answers; a rename changes full_name, never id. */
+  identity = { id: 4242, full_name: REPO }
   calls: string[] = []
   mainHead = ''
   redMain: Array<{ number: number; title: string; created_at: string; pull_request?: object }> = []
@@ -393,7 +396,12 @@ class GitHub {
   request = (path: string, method = 'GET'): unknown => {
     this.calls.push(`${method} ${path}`)
     const url = new URL(`https://api.github.com/${path}`)
-    const route = url.pathname.replace(`/repos/${REPO}/`, '')
+    // GitHub serves the old name through a redirect and the canonical name directly.
+    if ([`/repos/${REPO}`, `/repos/${this.identity.full_name}`].includes(url.pathname))
+      return this.identity
+    const route = url.pathname
+      .replace(`/repos/${this.identity.full_name}/`, '')
+      .replace(`/repos/${REPO}/`, '')
     if (route === 'issues' && url.searchParams.get('labels') === 'red-main') {
       if (this.redMainUnavailable) throw new Error('GitHub GET request failed')
       return this.redMain
@@ -435,10 +443,16 @@ class GitHub {
         status: 'completed',
         conclusion: 'success',
         path: '.github/workflows/validate.yml',
-        html_url: `https://github.com/${REPO}/actions/runs/${run.id}`,
+        html_url: `https://github.com/${this.identity.full_name}/actions/runs/${run.id}`,
         run_attempt: 1,
-        repository: { full_name: REPO },
-        head_repository: { full_name: REPO },
+        repository: {
+          id: run.repositoryId ?? this.identity.id,
+          full_name: run.repositoryId ? 'someone-else/fixture-app' : this.identity.full_name,
+        },
+        head_repository: {
+          id: run.repositoryId ?? this.identity.id,
+          full_name: run.repositoryId ? 'someone-else/fixture-app' : this.identity.full_name,
+        },
       }
     }
     if (route === 'branches/main') return { commit: { sha: this.mainHead } }
@@ -1371,6 +1385,59 @@ describe('feedback, operations, handoff and exit', { timeout: 30_000 }, () => {
     expect(readActivation(REPO, h.state)!.mode).toBe('exiting')
     expect(h.github.workflows[0].state).toBe('disabled_manually')
     expect(h.cloudflare.workers.get('fixture-app')!.triggers.size).toBe(0)
+  })
+})
+
+describe('development exit after a repository rename', { timeout: 30_000 }, () => {
+  const RENAMED = 'narduk-enterprises/renamed-app'
+
+  /** Enrolled under the old name; GitHub renames the repository before exit. */
+  async function renamedExit(run: { repositoryId?: number }) {
+    const h = harness()
+    await enter(h)
+    runDevelopmentExitPrepare(h.context)
+    h.github.identity = { id: h.github.identity.id, full_name: RENAMED }
+    const release = git(h.root, 'rev-parse', 'HEAD')
+    h.github.mainHead = release
+    h.github.runs.push({
+      id: 902,
+      workflow: 3,
+      status: 'completed',
+      head_sha: release,
+      head_branch: `narduk-validation/${release}/request`,
+      ...run,
+    })
+    h.github.calls.length = 0
+    return { h, release }
+  }
+
+  it('accepts the validation run GitHub reports under the new name, keeping the record key', async () => {
+    const { h, release } = await renamedExit({})
+    // The origin still names the old repository, and so does the activation record.
+    expect(git(h.root, 'remote', 'get-url', 'origin')).toBe(`git@github.com:${REPO}.git`)
+    expect(readActivation(REPO, h.state)!.repository).toBe(REPO)
+    const closed = await runDevelopmentExitComplete(
+      { releaseSha: release, validationRun: '902' },
+      h.context,
+    )
+    expect(closed.repository).toBe(REPO)
+    expect(closed.exit?.validationRun).toBe(902)
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    expect(h.github.workflows.map((w) => w.state)).toEqual(['active', 'active', 'active', 'active'])
+    // Identity is resolved once, and every write addresses the canonical name.
+    expect(h.github.calls.filter((call) => call === `GET repos/${REPO}`)).toHaveLength(1)
+    const writes = h.github.calls.filter((call) => !call.startsWith('GET'))
+    expect(writes.length).toBeGreaterThan(0)
+    for (const call of writes) expect(call).toMatch(new RegExp(`^\\w+ repos/${RENAMED}/`, 'u'))
+  })
+
+  it('still rejects a successful run from a genuinely different repository', async () => {
+    const { h, release } = await renamedExit({ repositoryId: 9999 })
+    await expect(
+      runDevelopmentExitComplete({ releaseSha: release, validationRun: '902' }, h.context),
+    ).rejects.toThrow(/not successful explicit validation/u)
+    expect(readActivation(REPO, h.state)!.mode).toBe('exiting')
+    expect(h.github.workflows[0].state).toBe('disabled_manually')
   })
 })
 
