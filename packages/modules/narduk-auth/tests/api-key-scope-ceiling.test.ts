@@ -23,7 +23,13 @@ const REGISTRY_READ = 'registry:read'
 const handler = (apiKeysPost as unknown as CapturedMutation).__handler
 
 function apiKeyCaller(scopes: string[]) {
-  return { authMethod: 'api-key', id: 'user-1', scopes }
+  // A never-expiring parent, so the child-lifetime bound (#920) stays out of the way.
+  return {
+    authMethod: 'api-key',
+    id: 'user-1',
+    scopes,
+    apiKey: { id: 'parent-key', expiresAt: null },
+  }
 }
 
 describe('findScopesBeyondCaller', () => {

@@ -43,3 +43,32 @@ export function resolveApiKeyMintExpiry(
 
   return { ok: true, expiresInDays: resolvedDays }
 }
+
+export type ChildApiKeyExpiryVerdict = { expiresAt: number | null; ok: true } | { ok: false }
+
+/**
+ * Bound a key minted by another API key to its parent's lifetime
+ * (narduk-libs#920). Both values are `expires_at` unix seconds, `null` for a
+ * key that never expires.
+ *
+ * A child may end no later than its parent. When the caller named no expiry,
+ * the default is clamped to the parent's; an explicit expiry past the parent,
+ * or none at all under a parent that expires, is refused. Without this, a
+ * leaked short-lived key could mint a never-expiring copy of itself, and a
+ * `*` key could renew itself for another 90 days before each expiry.
+ */
+export function boundChildApiKeyExpiry(
+  requestedExpiresAt: number | null,
+  parentExpiresAt: number | null,
+  requestedExplicitly: boolean,
+): ChildApiKeyExpiryVerdict {
+  if (parentExpiresAt === null) {
+    return { ok: true, expiresAt: requestedExpiresAt }
+  }
+
+  if (requestedExpiresAt !== null && requestedExpiresAt <= parentExpiresAt) {
+    return { ok: true, expiresAt: requestedExpiresAt }
+  }
+
+  return requestedExplicitly ? { ok: false } : { ok: true, expiresAt: parentExpiresAt }
+}

@@ -51,8 +51,21 @@ export const AUTH_API_KEY_SCOPES = {
 export type AuthMethod = 'session' | 'api-key'
 export type AuthScope = string
 
+/** The key behind an `api-key` principal. */
+export interface AuthApiKeyIdentity {
+  /** The key's `expires_at` in unix seconds; `null` when it never expires. */
+  expiresAt: number | null
+  id: string
+}
+
 /** User shape returned by requireAuth (session or API key). */
 export interface AuthUser {
+  /**
+   * The key that authenticated an `api-key` principal. A key that mints
+   * another key bounds the child's lifetime by it (narduk-libs#920). Unset
+   * for a session.
+   */
+  apiKey?: AuthApiKeyIdentity
   authMethod: AuthMethod
   email: string
   id: string
@@ -253,6 +266,10 @@ export async function destroySession(event: H3Event): Promise<void> {
   deleteCookie(event, cookieName, { path: '/' })
 }
 
+function apiKeyIdentity(key: typeof apiKeys.$inferSelect): AuthApiKeyIdentity {
+  return { id: key.id, expiresAt: key.expiresAt ?? null }
+}
+
 /**
  * Get the current user from nuxt-auth-utils session or API key. Throws 401 if not authenticated.
  * Fallback chain: explicit API key bearer auth → sealed session (nuxt-auth-utils) → API key → 401.
@@ -274,6 +291,7 @@ export async function requireAuth(event: H3Event): Promise<AuthUser> {
       isAdmin: authenticatedApiKey.user.isAdmin,
       authMethod: 'api-key',
       scopes: authenticatedApiKey.scopes,
+      apiKey: apiKeyIdentity(authenticatedApiKey.apiKey),
     }
   }
 
@@ -304,6 +322,7 @@ export async function requireAuth(event: H3Event): Promise<AuthUser> {
       isAdmin: authenticatedApiKey.user.isAdmin,
       authMethod: 'api-key',
       scopes: authenticatedApiKey.scopes,
+      apiKey: apiKeyIdentity(authenticatedApiKey.apiKey),
     }
   }
 

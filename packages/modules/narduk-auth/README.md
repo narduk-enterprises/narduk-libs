@@ -486,6 +486,12 @@ A token whose scopes include `*` is a boundary-class credential
 caps the lifetime at 90 days. Narrow machine scopes may still omit expiry. The
 unique index on `api_keys.key_hash` lives in narduk-core (migration 0007).
 
+A key minted by another API key may hold only scopes the calling key holds
+(narduk-libs#858), and may not outlive it (narduk-libs#920). With no
+`expiresInDays`, the child's expiry is clamped to the calling key's. An explicit
+expiry past the calling key's, or `null` under a key that expires, gets a 403.
+Revoking a key does not revoke the keys it minted.
+
 #### Props
 
 | Prop                    | Default | Purpose                                                                                         |

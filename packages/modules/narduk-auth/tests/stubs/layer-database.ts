@@ -1,8 +1,11 @@
 export const databaseStub = {
   executedQueries: [] as unknown[],
+  /** Every `.values(...)` payload, so a test can prove nothing was inserted. */
+  inserts: [] as unknown[],
   rows: [] as unknown[],
   reset() {
     this.executedQueries = []
+    this.inserts = []
     this.rows = []
   },
 }
@@ -19,11 +22,14 @@ function createChain(): Record<string, unknown> {
     'select',
     'set',
     'update',
-    'values',
     'where',
   ]
   for (const method of methods) {
     chain[method] = () => chain
+  }
+  chain.values = (payload: unknown) => {
+    databaseStub.inserts.push(payload)
+    return chain
   }
   return chain
 }
