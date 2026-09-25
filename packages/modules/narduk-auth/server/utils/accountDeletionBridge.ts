@@ -43,9 +43,15 @@ export interface AccountDeletionBridgeHooks {
    * local check would let `{}` through) and may be stale for a linked one
    * (narduk-libs#923). Everyone else gets the local hash check. Supply this
    * only to swap in a check of your own, e.g. when the route already
-   * re-authenticated the caller.
+   * re-authenticated the caller. `context.userId` is the account about to be
+   * deleted; passing `verifySupabaseAccountDeletionCredentials` here keeps its
+   * session-to-account binding.
    */
-  verifyCredentials?: (event: H3Event, input: DeleteAccountBridgeInput) => Promise<void>
+  verifyCredentials?: (
+    event: H3Event,
+    input: DeleteAccountBridgeInput,
+    context: { userId: string },
+  ) => Promise<void>
 }
 
 function isForeignKeyConstraintError(error: unknown): boolean {
@@ -88,7 +94,7 @@ export async function deleteCurrentUserAccountBridge(
   }
 
   if (hooks?.verifyCredentials) {
-    await hooks.verifyCredentials(event, input)
+    await hooks.verifyCredentials(event, input, { userId: user.id })
   } else if (usesSupabaseCredentials(event, user)) {
     await verifySupabaseAccountDeletionCredentials(event, input, { userId: user.id })
   } else if (dbUser.passwordHash) {

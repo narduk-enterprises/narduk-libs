@@ -13,5 +13,7 @@ API key) takes the app's backend, so on a Supabase app it fails closed with 401,
 and the Supabase session it re-authenticates must belong to the account being
 deleted: a key beside someone else's session cookie also gets 401.
 `verifySupabaseAccountDeletionCredentials` takes an optional `{ userId }` for
-the same binding.
+the same binding, and a `verifyCredentials` hook now receives
+`{ userId }` as its third argument, so passing that function as the hook keeps
+the binding.
 Supply `verifyCredentials` only to replace the check with your own.

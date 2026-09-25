@@ -298,6 +298,26 @@ describe('custom delete route built on the helper (#1051)', () => {
     expect(state.deleted).toBe(0)
   })
 
+  it('keeps the binding when the Supabase check is passed as the verifyCredentials hook', async () => {
+    // The documented custom-route pattern: the hook now receives the account id.
+    const victim = { ...SUPABASE_EMAIL_USER, id: 'victim-1', email: 'victim@example.com' }
+    const { verifySupabaseAccountDeletionCredentials } =
+      await import('../server/lib/app-auth/profile')
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+
+    state.user = { ...SUPABASE_EMAIL_USER, id: 'attacker-1', email: 'attacker@example.com' }
+    await expect(
+      deleteCurrentUserAccount(
+        { context: {} } as never,
+        victim as never,
+        { currentPassword: state.supabasePassword },
+        { verifyCredentials: verifySupabaseAccountDeletionCredentials },
+      ),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(state.signIns).toEqual([])
+    expect(state.deleted).toBe(0)
+  })
+
   it('lets a caller that re-authenticates itself opt out with its own verifyCredentials', async () => {
     const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
     await expect(
