@@ -119,6 +119,14 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'CSV download',
     'Downloads exactly the rows in view, raw values, missing as empty.',
   ),
+  shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
+  shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),
+  shell('NeCta', 'Call to action', 'A panel with a title, a description and buttons.'),
+  shell(
+    'NeMarketingFooter',
+    'Marketing footer',
+    'The site footer: left, centre and right rows, with columns in #top.',
+  ),
   {
     id: 'formatters',
     title: 'Formatters',

@@ -145,6 +145,23 @@ export type {
   NeSortHeaderProps,
 } from './runtime/components/ne-data-table-types'
 
+/**
+ * The marketing sections (components backlog item 21, narduk-libs#268):
+ * `NeHero`, `NeFeatureGrid`, `NeCta`, `NeMarketingFooter`. Types only; each
+ * is the wrapped Nuxt UI primitive's own props, so a page can type a
+ * `links` or `features` array without importing the SFC.
+ */
+export type {
+  NeCtaProps,
+  NeCtaVariant,
+  NeFeature,
+  NeFeatureGridProps,
+  NeHeroProps,
+  NeMarketingFooterProps,
+  NeMarketingLink,
+  NeMarketingOrientation,
+} from './runtime/components/ne-marketing-types'
+
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added
 // `./module`, but only for the Nuxt module definition, not for app-facing

@@ -66,4 +66,11 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
   { name: 'NeCsvDownload', filePath: './runtime/components/NeCsvDownload.vue' },
+  // Item 21 (narduk-libs#268): NeHero, NeFeatureGrid, NeCta, NeMarketingFooter —
+  // thin themed wrappers over UPageHero, UPageGrid + UPageFeature, UPageCTA
+  // and UFooter.
+  { name: 'NeHero', filePath: './runtime/components/NeHero.vue' },
+  { name: 'NeFeatureGrid', filePath: './runtime/components/NeFeatureGrid.vue' },
+  { name: 'NeCta', filePath: './runtime/components/NeCta.vue' },
+  { name: 'NeMarketingFooter', filePath: './runtime/components/NeMarketingFooter.vue' },
 ]
