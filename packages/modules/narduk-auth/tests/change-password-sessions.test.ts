@@ -71,6 +71,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
   getAuthConfig: () => ({ backend: state.config.backend }),
   createSupabaseUserClient: () => ({
     signInWithPassword: async () => ({ error: null }),
+    signOut: async () => ({ error: null }),
   }),
   readRuntimeConfigString: (value: unknown, fallback = '') =>
     typeof value === 'string' ? value : fallback,

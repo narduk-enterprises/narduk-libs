@@ -5,23 +5,17 @@ import accountDeleteRoute from '../server/api/auth/account/delete.post'
 import type { AppSessionUser } from '../server/lib/app-auth/types'
 
 /**
- * narduk-libs#923: account deletion re-authenticated only against the local
- * `users.password_hash`. Supabase-provisioned users never have one, so on the
- * Supabase backend `POST /api/auth/account/delete` with `{}` deleted the local
- * user and the upstream identity with no password at all. A linked user with a
- * stale local hash had the opposite problem: deletion demanded the old local
- * password instead of the Supabase one they sign in with.
+ * narduk-libs#1052 (the rest of #923): a social-only Supabase account has no
+ * password to prove, so account deletion needs a recent sign-in instead; an
+ * invited `email`-provider user is held to the password on purpose; and the
+ * Supabase session the password check creates is signed out.
  */
 
 const state = vi.hoisted(() => ({
-  backend: 'supabase' as 'local' | 'supabase',
   deleted: 0,
-  localHashChecks: 0,
-  localPasswordHash: null as string | null,
-  sessionCreatedAt: new Date().toISOString(),
-  signOuts: [] as Array<{ scope?: string }>,
+  sessionCreatedAt: null as string | null,
   signIns: [] as Array<{ email: string; password: string }>,
-  supabasePassword: 'right-password',
+  signOuts: [] as Array<{ scope?: string }>,
   upstreamDeletes: [] as string[],
   user: null as AppSessionUser | null,
 }))
@@ -50,21 +44,14 @@ vi.mock('#layer/server/utils/database', () => {
     executeDatabaseQuery: async () => {
       state.deleted += 1
     },
-    getDatabaseRow: async () => ({
-      id: 'user-1',
-      email: 'parent@example.com',
-      passwordHash: state.localPasswordHash,
-    }),
+    getDatabaseRow: async () => ({ id: 'user-1', email: 'parent@example.com', passwordHash: null }),
     useDatabase: () => chain,
   }
 })
 
 vi.mock('#layer/server/utils/password', () => ({
   hashUserPassword: async (value: string) => `hashed:${value}`,
-  verifyUserPassword: async (password: string) => {
-    state.localHashChecks += 1
-    return password === 'old-local-password'
-  },
+  verifyUserPassword: async () => false,
 }))
 
 vi.mock('#layer/server/utils/user-session', () => ({
@@ -87,16 +74,17 @@ vi.mock('../server/lib/app-auth/session', () => ({
   commitSupabaseSessionFromClient: vi.fn(),
   getCurrentSessionUser: async () => state.user,
   getCurrentSupabaseContext: vi.fn(),
-  loadAuthSessionRow: async () => ({ createdAt: state.sessionCreatedAt }),
+  loadAuthSessionRow: async (_event: unknown, id: string) =>
+    state.sessionCreatedAt && id === 'sess-1' ? { createdAt: state.sessionCreatedAt } : null,
   revokeUserAuthSessions: vi.fn(),
 }))
 
 vi.mock('../server/lib/app-auth/supabase-client', () => ({
-  getAuthConfig: () => ({ backend: state.backend }),
+  getAuthConfig: () => ({ backend: 'supabase' }),
   createSupabaseUserClient: () => ({
     signInWithPassword: async (credentials: { email: string; password: string }) => {
       state.signIns.push(credentials)
-      return credentials.password === state.supabasePassword
+      return credentials.password === 'right-password'
         ? { error: null }
         : { error: { message: 'Invalid login credentials' } }
     },
@@ -116,24 +104,25 @@ vi.mock('nitropack/runtime', () => ({
   useRuntimeConfig: () => ({ authNativeClients: [], public: {} }),
 }))
 
-interface CapturedMutation {
+const route = accountDeleteRoute as unknown as {
   __handler: (context: Record<string, unknown>) => Promise<unknown>
 }
 
-const route = accountDeleteRoute as unknown as CapturedMutation
-
-const SUPABASE_EMAIL_USER: AppSessionUser = {
+const BASE_USER = {
   id: 'user-1',
   email: 'parent@example.com',
   name: 'Parent',
   isAdmin: false,
   authBackend: 'supabase',
   authMethod: 'session',
-  authProviders: ['email'],
   authSessionId: 'sess-1',
   needsPasswordSetup: false,
   recoveryMode: false,
 } as AppSessionUser
+
+function minutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString()
+}
 
 function deleteAccount(body: Record<string, unknown>) {
   return route.__handler({
@@ -143,81 +132,80 @@ function deleteAccount(body: Record<string, unknown>) {
   })
 }
 
-describe('account deletion re-authentication on the Supabase backend (#923)', () => {
+describe('social-only Supabase account deletion needs a recent sign-in (#1052)', () => {
   beforeEach(() => {
-    state.backend = 'supabase'
     state.deleted = 0
-    state.localHashChecks = 0
-    state.localPasswordHash = null
-    state.sessionCreatedAt = new Date().toISOString()
+    state.sessionCreatedAt = minutesAgo(1)
     state.signIns = []
     state.signOuts = []
     state.upstreamDeletes = []
-    state.user = { ...SUPABASE_EMAIL_USER }
+    state.user = { ...BASE_USER, authProviders: ['apple'], needsPasswordSetup: true }
   })
 
-  it('refuses an email+password account that sends no current password', async () => {
+  it('deletes when the session signed in within the window', async () => {
+    await expect(deleteAccount({})).resolves.toEqual({ success: true })
+    expect(state.upstreamDeletes).toEqual(['user-1'])
+    expect(state.signIns).toEqual([])
+  })
+
+  it('refuses a session that signed in longer ago than the window', async () => {
+    state.sessionCreatedAt = minutesAgo(11)
+    await expect(deleteAccount({})).rejects.toMatchObject({
+      statusCode: 403,
+      data: { code: 'reauthentication_required' },
+    })
+    expect(state.upstreamDeletes).toEqual([])
+    expect(state.deleted).toBe(0)
+  })
+
+  it('refuses when the auth_sessions row cannot be found', async () => {
+    state.sessionCreatedAt = null
+    await expect(deleteAccount({})).rejects.toMatchObject({
+      data: { code: 'reauthentication_required' },
+    })
+    expect(state.deleted).toBe(0)
+  })
+
+  it('does not let a password stand in for the recent sign-in', async () => {
+    state.sessionCreatedAt = minutesAgo(60)
+    await expect(deleteAccount({ currentPassword: 'right-password' })).rejects.toMatchObject({
+      data: { code: 'reauthentication_required' },
+    })
+    expect(state.signIns).toEqual([])
+  })
+})
+
+describe('invited email-provider users are held to the password (#1052)', () => {
+  beforeEach(() => {
+    state.deleted = 0
+    state.sessionCreatedAt = minutesAgo(1)
+    state.signIns = []
+    state.signOuts = []
+    state.upstreamDeletes = []
+    // Supabase reports an invited / magic-link user as provider `email`, so
+    // needsPasswordSetup is false even if they never chose a password.
+    state.user = { ...BASE_USER, authProviders: ['email'] }
+  })
+
+  it('requires the current password even straight after a magic-link sign-in', async () => {
     await expect(deleteAccount({})).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: 'Current password is required to delete this account.',
     })
-    expect(state.upstreamDeletes).toEqual([])
     expect(state.deleted).toBe(0)
   })
 
-  it('refuses a wrong current password, checked against Supabase', async () => {
+  it('signs the verification session out, local scope, after the password check', async () => {
+    await expect(deleteAccount({ currentPassword: 'right-password' })).resolves.toEqual({
+      success: true,
+    })
+    expect(state.signOuts).toEqual([{ scope: 'local' }])
+  })
+
+  it('creates no verification session to sign out when the password is wrong', async () => {
     await expect(deleteAccount({ currentPassword: 'wrong' })).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: 'Invalid current password.',
     })
-    expect(state.signIns).toEqual([{ email: 'parent@example.com', password: 'wrong' }])
-    expect(state.upstreamDeletes).toEqual([])
-    expect(state.deleted).toBe(0)
-  })
-
-  it('deletes after Supabase verifies the current password', async () => {
-    await expect(deleteAccount({ currentPassword: 'right-password' })).resolves.toEqual({
-      success: true,
-    })
-    expect(state.upstreamDeletes).toEqual(['user-1'])
-    expect(state.deleted).toBe(1)
-  })
-
-  it('checks the Supabase password, not a stale local hash, for a linked user', async () => {
-    state.localPasswordHash = 'stale-local-hash'
-
-    await expect(deleteAccount({ currentPassword: 'right-password' })).resolves.toEqual({
-      success: true,
-    })
-    expect(state.localHashChecks).toBe(0)
-
-    await expect(deleteAccount({ currentPassword: 'old-local-password' })).rejects.toMatchObject({
-      statusCode: 400,
-    })
-  })
-
-  it('lets a provider-only account that just signed in delete with no password', async () => {
-    state.user = { ...SUPABASE_EMAIL_USER, authProviders: ['google'] }
-
-    await expect(deleteAccount({})).resolves.toEqual({ success: true })
-    expect(state.signIns).toEqual([])
-  })
-
-  it('keeps the local backend on the local hash check', async () => {
-    state.backend = 'local'
-    state.localPasswordHash = 'local-hash'
-    state.user = {
-      ...SUPABASE_EMAIL_USER,
-      authBackend: 'local',
-      authProviders: undefined,
-    } as AppSessionUser
-
-    await expect(deleteAccount({})).rejects.toMatchObject({ statusCode: 400 })
-    await expect(deleteAccount({ currentPassword: 'old-local-password' })).resolves.toEqual({
-      success: true,
-    })
-    expect(state.localHashChecks).toBe(1)
-    expect(state.signIns).toEqual([])
-    expect(state.upstreamDeletes).toEqual([])
+    expect(state.signOuts).toEqual([])
   })
 })

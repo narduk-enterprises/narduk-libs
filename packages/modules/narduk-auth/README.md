@@ -256,6 +256,16 @@ Notification mutations require the API-key scope `auth:notifications:write`.
 Account deletion, password change, profile update, and MFA enroll/verify refuse
 API-key principals entirely.
 
+**Account deletion re-authentication (Supabase backend).** An account with the
+`email` provider proves its current Supabase password; the sign-in that checks
+it is signed out again (`scope: 'local'`). Supabase reports an invited or
+magic-link user as `email` whether or not they chose a password, so such a user
+resets their password before deleting — deliberately, since skipping them would
+let any `email` session through unproven. A social-only account has no password,
+so its session must have signed in within the last 10 minutes
+(`RECENT_SIGN_IN_WINDOW_SECONDS`); otherwise the route answers 403
+`reauthentication_required` and the client signs the user in again and retries.
+
 ## Passkeys
 
 Passkeys (WebAuthn discoverable credentials) sit **beside** email + password on
