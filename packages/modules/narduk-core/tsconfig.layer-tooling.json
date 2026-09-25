@@ -65,6 +65,7 @@
     "runtime/server/utils/cacheProfile.ts",
     "runtime/server/utils/client-ip.ts",
     "runtime/server/utils/cron.ts",
+    "runtime/server/utils/d1Cache.ts",
     "runtime/server/rate-limit/**/*.ts",
     "runtime/server/utils/publishedDataHandler.ts",
     "runtime/server/utils/rateLimitedHandler.ts",
