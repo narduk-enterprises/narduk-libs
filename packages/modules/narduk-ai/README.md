@@ -26,6 +26,50 @@ sole ownership and installation path.
 Notable explicit exports include:
 
 - `server/utils/aiContracts`, `aiPromptResolver`, and `aiXmlEscape`
-- `server/utils/xai`, `chatModelConfig`, and `app/utils/xaiModels`
+- `server/utils/xai`, `chatCompletions`, `chatModelConfig`, and
+  `app/utils/xaiModels`
 - `app/composables/useAdminAi` and `app/components/admin/AdminAiTab`
 - the four admin route handlers
+
+## OpenAI-compatible chat client (`server/utils/chatCompletions`)
+
+`chatCompletion(messages, options)` calls any OpenAI-compatible
+`POST {baseUrl}/chat/completions` (xAI by default; OpenAI, Groq and others by
+`baseUrl`), for callers that need more than `grokChat`'s fixed request:
+
+```ts
+import {
+  chatCompletion,
+  chatCompletionJson,
+} from '@narduk-enterprises/narduk-ai/server/utils/chatCompletions'
+
+const { content, usage } = await chatCompletion(messages, {
+  apiKey: config.xaiApiKey,
+  model: 'grok-3-mini',
+  temperature: 0.2,
+  maxTokens: 800,
+})
+
+const { data } = await chatCompletionJson(messages, schema.parse, {
+  apiKey: openaiKey,
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+})
+```
+
+- Options: `apiKey`, `baseUrl` (default `https://api.x.ai/v1`), `model`,
+  `temperature`, `maxTokens`, `json` (`response_format: json_object`),
+  `timeoutMs` (default 30 000 per attempt), `retries` (default 1: a 5xx, a
+  network error or a timeout is retried; a 4xx and a caller abort are not) and
+  `signal`. Unset options are left out of the request.
+- The result is `{ content, model, usage }`, with `usage` as
+  `{ promptTokens, completionTokens, totalTokens }` or `null`.
+- Failures throw an H3 error whose message is the provider's structured error
+  message (`parseXaiError`) or a fixed fallback, never the raw upstream body,
+  which can echo the prompt or account details. A timeout is a 504.
+- `chatCompletionJson(messages, parse, options)` forces JSON mode, tolerates a
+  ` ```json ` fence, and passes the parsed value to `parse` (a zod schema's
+  `.parse` fits). Whether a failure degrades to `null` stays the caller's
+  one-line wrapper.
+
+`grokChat` and `grokChatStream` are unchanged.
