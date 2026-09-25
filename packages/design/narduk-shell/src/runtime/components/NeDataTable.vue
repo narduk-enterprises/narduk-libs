@@ -78,6 +78,7 @@ const props = withDefaults(defineProps<NeDataTableProps<T>>(), {
   missingCount: null,
   missingLabel: undefined,
   missingLast: true,
+  missingText: undefined,
   phoneColumnSets: undefined,
   rowKey: undefined,
   sort: null,
@@ -188,11 +189,22 @@ const entries = computed<Entry[]>(() => {
   return out
 })
 
-const missingNode = (): VNodeChild =>
-  h('span', { 'data-ne-missing': '', class: 'text-dimmed' }, [
+/**
+ * A missing cell. With a `missingText` (the column's, else the table's) it
+ * reads as that word, visible and dimmed; without one it keeps the em dash
+ * with "No value" for a screen reader (narduk-libs#1059).
+ */
+function missingNode(column: NeDataColumn<T>, row: T): VNodeChild {
+  const text =
+    typeof column.missingText === 'function'
+      ? column.missingText(row)
+      : (column.missingText ?? props.missingText)
+  if (text !== undefined) return h('span', { 'data-ne-missing': '', class: 'text-dimmed' }, text)
+  return h('span', { 'data-ne-missing': '', class: 'text-dimmed' }, [
     h('span', { 'aria-hidden': 'true' }, '—'),
     h('span', { class: 'sr-only' }, 'No value'),
   ])
+}
 
 function unitNode(unit: string | undefined): VNodeChild {
   return unit ? h('span', { 'data-ne-unit': '', class: 'font-normal text-dimmed' }, unit) : null
@@ -237,7 +249,7 @@ function cellNode(column: NeDataColumn<T>, entry: Entry, leaf: number): VNodeChi
   const value = readColumnValue(column, entry.row)
   const custom = slots[`${column.key}-cell`]
   if (custom) return custom({ column, row: entry.row, value })
-  if (isMissingValue(value)) return missingNode()
+  if (isMissingValue(value)) return missingNode(column, entry.row)
   return column.format ? column.format(value, entry.row) : String(value)
 }
 

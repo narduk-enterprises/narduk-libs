@@ -34,6 +34,7 @@ withDefaults(defineProps<NeDataTableProps<Reading>>(), {
   missingCount: null,
   missingLabel: undefined,
   missingLast: true,
+  missingText: undefined,
   phoneColumnSets: undefined,
   rowKey: undefined,
   sort: null,
@@ -58,6 +59,7 @@ defineEmits<{
     :loading="loading"
     :missing-count="missingCount"
     :missing-label="missingLabel"
+    :missing-text="missingText"
     :missing-last="missingLast"
     :phone-column-sets="phoneColumnSets"
     :row-key="rowKey"
