@@ -1,7 +1,5 @@
 import { createError } from 'h3'
 
-import { isoBase64URL } from './webauthn-server'
-
 import type { AuthenticatorTransportFuture } from './webauthn-server'
 
 /**
@@ -45,6 +43,18 @@ export function evaluateSignatureCounter(
 }
 
 /**
+ * Decodes base64url (padding optional) to UTF-8, as `isoBase64URL.toUTF8String`
+ * does. Done here with platform `atob` so this module never imports
+ * `@simplewebauthn/server`, which loads lazily (narduk-libs#892). Throws on
+ * characters outside the alphabet.
+ */
+function decodeBase64UrlToUtf8(value: string): string {
+  const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
+  const binary = atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '='))
+  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)))
+}
+
+/**
  * Reads the challenge out of a ceremony response's `clientDataJSON`.
  *
  * The value is untrusted — it is only used to look up a challenge row this
@@ -55,7 +65,7 @@ export function evaluateSignatureCounter(
  */
 export function readPresentedChallenge(clientDataJSON: string): string | null {
   try {
-    const parsed: unknown = JSON.parse(isoBase64URL.toUTF8String(clientDataJSON))
+    const parsed: unknown = JSON.parse(decodeBase64UrlToUtf8(clientDataJSON))
     if (typeof parsed !== 'object' || parsed === null) return null
     const challenge = (parsed as { challenge?: unknown }).challenge
     return typeof challenge === 'string' && challenge.length > 0 ? challenge : null
