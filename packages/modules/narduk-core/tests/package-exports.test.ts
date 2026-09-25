@@ -47,11 +47,13 @@ describe('narduk-core package exports', () => {
     })
   })
 
-  it('raises the narduk-lint heap so the 3072 MB lifecycle cap does not OOM (#789)', () => {
+  // #789: the ~3 GB was import-x walking node_modules, fixed in eslint-config
+  // (`import-x/ignore`). The 4096 MB stopgap is gone, and lint runs under the
+  // repo's 3072 MB lifecycle cap with about half of it to spare.
+  it('lints under the repo lifecycle heap cap, with no raised heap of its own (#789)', () => {
     const { lint } = readPackageJson().scripts
 
-    expect(lint).toContain('NARDUK_LINT_MAX_OLD_SPACE_SIZE:-4096')
-    expect(lint).toContain('narduk-lint')
+    expect(lint).toBe('narduk-lint')
   })
 
   it('declares explicit runtime imports for packed color-mode UI', () => {
