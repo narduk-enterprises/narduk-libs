@@ -52,8 +52,37 @@ async function setCache(
 }
 
 export interface D1CacheMeta {
+  /**
+   * When the served value was written. For a cache hit or a stale serve it is
+   * derived from the row's `expires_at` minus this call's `ttlSeconds`, so it
+   * is exact while the TTL is unchanged (narduk-libs#925).
+   */
   cachedAt: string
   stale: boolean
+}
+
+interface WaitUntilHost {
+  context?: {
+    cloudflare?: { context?: { waitUntil?: (promise: Promise<unknown>) => void } }
+    waitUntil?: (promise: Promise<unknown>) => void
+  }
+  waitUntil?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * Keep `task` alive past the response when the runtime allows it.
+ *
+ * On Workers, work the response does not wait on can be cancelled once it is
+ * sent, so a background refresh that is not handed to `waitUntil` can silently
+ * never finish (narduk-libs#925). Each candidate is called as a method, since
+ * an `ExecutionContext.waitUntil` detached from its context can throw.
+ */
+function keepAlive(event: H3Event, task: Promise<unknown>): void {
+  const host = event as unknown as WaitUntilHost
+  if (typeof host.waitUntil === 'function') return host.waitUntil(task)
+  const cloudflare = host.context?.cloudflare?.context
+  if (typeof cloudflare?.waitUntil === 'function') return cloudflare.waitUntil(task)
+  if (typeof host.context?.waitUntil === 'function') return host.context.waitUntil(task)
 }
 
 export interface WithD1CacheOptions {
@@ -69,6 +98,7 @@ export interface WithD1CacheOptions {
  * - Cache hit → returns cached data immediately
  * - Cache miss → calls fetcher, stores result, returns fresh data
  * - Stale-while-revalidate → returns stale data immediately, refreshes in background
+ *   (handed to `event.waitUntil` so a Worker does not cancel it)
  * - Falls back to executing the fetcher if D1 is unavailable
  */
 export async function withD1Cache<T>(
@@ -99,11 +129,15 @@ export async function withD1Cache<T>(
   const d1 = getD1CacheDB(event)
   const nowSec = Math.floor(Date.now() / 1000)
 
-  const wrap = (data: T, stale: boolean): T | { _meta: D1CacheMeta; data: T } => {
+  const wrap = (
+    data: T,
+    stale: boolean,
+    cachedAtSec: number = Math.floor(Date.now() / 1000),
+  ): T | { _meta: D1CacheMeta; data: T } => {
     if (!returnMeta) return data
     return {
       data,
-      _meta: { cachedAt: new Date().toISOString(), stale },
+      _meta: { cachedAt: new Date(cachedAtSec * 1000).toISOString(), stale },
     }
   }
 
@@ -115,22 +149,23 @@ export async function withD1Cache<T>(
       const row = await getCached(d1, cacheKey)
       if (row) {
         const isExpired = row.expiresAt <= nowSec
+        const cachedAtSec = row.expiresAt - ttlSeconds
         const withinStale = staleWindowSeconds > 0 && row.expiresAt + staleWindowSeconds > nowSec
         if (!isExpired) {
           log.debug(`Cache HIT ${cacheKey}`)
-          return wrap(JSON.parse(row.value) as T, false)
+          return wrap(JSON.parse(row.value) as T, false, cachedAtSec)
         }
         if (withinStale) {
           log.debug(`Cache STALE ${cacheKey}`)
           const parsed = JSON.parse(row.value) as T
-          // Background refresh (fire-and-forget)
-          void Promise.resolve()
+          const refresh = Promise.resolve()
             .then(() => fetcher())
             .then((fresh) => setCache(d1, cacheKey, JSON.stringify(fresh), ttlSeconds))
             .catch((err) =>
               log.error(`Background refresh failed ${cacheKey}`, { error: String(err) }),
             )
-          return wrap(parsed, true)
+          keepAlive(event, refresh)
+          return wrap(parsed, true, cachedAtSec)
         }
       }
       log.debug(`Cache MISS ${cacheKey}`)

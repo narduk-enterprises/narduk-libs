@@ -90,7 +90,7 @@ describe('createD1QueryHarness', () => {
     }
   })
 
-  it('records statements prepared on db, not on raw, and reset() empties the same array', async () => {
+  it('records statements executed on db, not on raw, and reset() empties the same array', async () => {
     const held = harness.statements
     await harness.raw.prepare('SELECT 1').all()
     expect(held).toEqual([])
@@ -127,7 +127,7 @@ describe('createD1QueryHarness', () => {
     expect(statements).toEqual(['SELECT id FROM owners ORDER BY id'])
   })
 
-  it('expectStatementBudget fails, listing the statements, when fn prepares more than max', async () => {
+  it('expectStatementBudget fails, listing the statements, when fn executes more than max', async () => {
     await seed(harness, 3, 0)
     await expect(
       expectStatementBudget(
@@ -223,5 +223,63 @@ describe('createD1QueryHarness', () => {
     ).rejects.toThrow(
       /varies across the scale matrix[\s\S]*live=1: 2 statements[\s\S]*live=3: 4 statements/u,
     )
+  })
+
+  // narduk-libs#922: a per-item query that reuses ONE prepared statement (the
+  // shape every drizzle `.prepare()`d query has) was recorded once, because
+  // only `prepare()` was counted, so both gates passed the N+1 they exist for.
+  it('scaleMatrix fails an N+1 that reuses one prepared statement', async () => {
+    await expect(
+      scaleMatrix(harness, {
+        axes: { history: [0], live: [1, 3] },
+        seed: ({ live }) => seed(harness, live, 1),
+        run: async () => {
+          const owners = await harness.db.prepare('SELECT id FROM owners').all<{ id: string }>()
+          const labels = harness.db.prepare('SELECT label FROM events WHERE owner_id = ?')
+          return Promise.all(owners.results.map((owner) => labels.bind(owner.id).all()))
+        },
+      }),
+    ).rejects.toThrow(
+      /varies across the scale matrix[\s\S]*live=1: 2 statements[\s\S]*live=3: 4 statements/u,
+    )
+  })
+
+  it('records each execution of a reused statement, and nothing for one never run', async () => {
+    await seed(harness, 3, 0)
+    const byId = harness.db.prepare('SELECT name FROM owners WHERE id = ?')
+    harness.db.prepare('SELECT 99')
+    expect(harness.statements).toEqual([])
+
+    await byId.bind('o-0').first()
+    const bound = byId.bind('o-1')
+    await bound.all()
+    await bound.raw()
+    await byId.bind('o-2').run()
+    expect(harness.statements).toEqual(
+      Array.from({ length: 4 }, () => 'SELECT name FROM owners WHERE id = ?'),
+    )
+
+    await expect(
+      expectStatementBudget(
+        harness,
+        () => Promise.all(['o-0', 'o-1', 'o-2'].map((id) => byId.bind(id).first())),
+        { max: 1 },
+      ),
+    ).rejects.toThrow(/3 statements, max 1/u)
+  })
+
+  it('records every member of a batch, including a reused statement bound twice', async () => {
+    await seed(harness, 2, 0)
+    const byId = harness.db.prepare('SELECT name FROM owners WHERE id = ?')
+    const results = await harness.db.batch([byId.bind('o-0'), byId.bind('o-1')])
+
+    expect(results.map((result) => result.results)).toEqual([
+      [{ name: 'Owner 0' }],
+      [{ name: 'Owner 1' }],
+    ])
+    expect(harness.statements).toEqual([
+      'SELECT name FROM owners WHERE id = ?',
+      'SELECT name FROM owners WHERE id = ?',
+    ])
   })
 })

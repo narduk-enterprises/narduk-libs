@@ -52,27 +52,10 @@ import {
   getFilename,
   isClientOnlyFile,
   isServerOnlyFile,
+  runsSynchronously,
   tagNameOf,
   CLIENT_ONLY_TAGS,
 } from './_internal'
-
-/** Array callbacks run synchronously in the caller's context. */
-const SYNCHRONOUS_CALLBACK_METHODS = new Set([
-  'map',
-  'filter',
-  'find',
-  'findIndex',
-  'findLast',
-  'findLastIndex',
-  'some',
-  'every',
-  'reduce',
-  'reduceRight',
-  'flatMap',
-  'forEach',
-  'sort',
-  'toSorted',
-])
 
 const FUNCTION_TYPES = new Set([
   'FunctionDeclaration',
@@ -282,21 +265,6 @@ function isComputedGetter(fn: any): boolean {
     )
   }
   return false
-}
-
-/** An inline callback that runs synchronously where it is written. */
-function runsSynchronously(fn: any): boolean {
-  const parent = fn.parent
-  if (parent?.type !== 'CallExpression') return false
-  // IIFE
-  if (parent.callee === fn) return true
-  if (!parent.arguments?.includes(fn)) return false
-  const callee = parent.callee
-  return (
-    callee?.type === 'MemberExpression' &&
-    !callee.computed &&
-    SYNCHRONOUS_CALLBACK_METHODS.has(callee.property?.name)
-  )
 }
 
 export default {

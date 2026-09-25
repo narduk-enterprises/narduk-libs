@@ -36,4 +36,19 @@ describe('import-x resolver (narduk-libs#562)', () => {
     expect(resolvers[0]).toMatchObject({ interfaceVersion: 3 })
     expect(typeof resolvers[0].resolve).toBe('function')
   })
+
+  // narduk-libs#789: walking dependencies' sources for no-cycle and the
+  // export-map rules held ~3.4 GB of narduk-core's lint heap.
+  it('keeps the export-map rules out of node_modules wherever they run', async () => {
+    const eslint = new ESLint({
+      cwd: process.cwd(),
+      overrideConfigFile: true,
+      baseConfig: composeSharedConfigs() as never,
+    })
+    for (const file of ['server/utils/a.ts', 'app/components/A.vue', 'vitest.config.mts']) {
+      const config = (await eslint.calculateConfigForFile(file)) as FlatConfig
+      expect(config.rules?.['import-x/no-cycle']?.[0], file).toBe(2)
+      expect(config.settings?.['import-x/ignore'], file).toEqual(['node_modules'])
+    }
+  })
 })

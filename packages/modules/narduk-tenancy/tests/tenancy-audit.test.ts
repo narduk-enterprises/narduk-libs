@@ -124,4 +124,38 @@ describe('audit trail', () => {
     expect(older.every((event) => event.createdAt < clock.now())).toBe(true)
     expect(await tenancy.listAuditEvents({ orgId: 'other-org' })).toEqual([])
   })
+
+  it('pages through rows that share a createdAt without skipping any (#941)', async () => {
+    const { tenancy, clock } = createTestHarness({ tokens: ['t1'] })
+    const org = await tenancy.createOrg(ACME)
+    clock.advance(1)
+    await tenancy.createInvite({
+      orgId: org.id,
+      email: 'a@example.com',
+      role: 'crew',
+      invitedByUserId: 'owner-1',
+    })
+    clock.advance(1)
+    // One accept writes invite.accept and membership.add at the same instant.
+    await tenancy.acceptInvite({ token: 't1', userId: 'user-3' })
+
+    const all = await tenancy.listAuditEvents({ orgId: org.id })
+    const acceptedAt = all[0]!.createdAt
+    expect(all.filter((event) => event.createdAt === acceptedAt).length).toBeGreaterThanOrEqual(2)
+
+    const paged: typeof all = []
+    let cursor: { before?: number; beforeId?: string } = {}
+    for (;;) {
+      const page = await tenancy.listAuditEvents({ orgId: org.id, limit: 1, ...cursor })
+      if (page.length === 0) break
+      paged.push(...page)
+      const last = page.at(-1)!
+      cursor = { before: last.createdAt, beforeId: last.id }
+    }
+    expect(paged.map((event) => event.id)).toEqual(all.map((event) => event.id))
+
+    // `before` alone keeps its old meaning: strictly older, the whole tie excluded.
+    const olderOnly = await tenancy.listAuditEvents({ orgId: org.id, before: acceptedAt })
+    expect(olderOnly.every((event) => event.createdAt < acceptedAt)).toBe(true)
+  })
 })

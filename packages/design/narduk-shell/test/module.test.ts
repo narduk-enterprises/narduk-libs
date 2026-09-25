@@ -59,7 +59,10 @@ function mockRegistry(components: readonly NeComponentRegistration[]) {
 }
 
 function makeNuxt(appConfig: Record<string, unknown> = {}, css: string[] = []) {
-  return { options: { build: { transpile: [] as unknown[] }, css, appConfig } }
+  return {
+    hook: vi.fn(),
+    options: { build: { transpile: [] as unknown[] }, css, appConfig },
+  }
 }
 
 interface ModuleOptions {

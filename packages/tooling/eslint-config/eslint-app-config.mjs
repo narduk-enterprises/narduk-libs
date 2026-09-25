@@ -279,11 +279,20 @@ const sharedCommunityPluginTailConfigs = [
     // resolver set, import-x falls back to its legacy `node` probe, which
     // crashes `import-x/no-cycle` on a `vitest.config.ts` ("node with invalid
     // interface loaded as resolver", narduk-libs#562).
+    //
+    // `import-x/ignore: ['node_modules']` stops `no-cycle`, `named`,
+    // `default` and `export` from parsing dependencies' sources and type
+    // trees. Walking them held about 3.4 GB of heap in narduk-core (5.2 GB
+    // peak RSS against 1.8 GB with it, the same messages either way), which
+    // is what pushed its lint past the 3072 MB lifecycle cap (narduk-libs#789).
+    // A cycle cannot run through an installed package, and TypeScript already
+    // checks named and default imports from one.
     name: 'narduk/imports',
     files: ['**/*.ts', '**/*.mts', '**/*.vue'],
     plugins: { 'import-x': importX },
     settings: {
       'import-x/core-modules': ['vue'],
+      'import-x/ignore': ['node_modules'],
       'import-x/resolver-next': [createNodeResolver()],
     },
     rules: {

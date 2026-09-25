@@ -50,6 +50,14 @@ async function makeTempDirectory(): Promise<string> {
   return directory
 }
 
+/** Runs the generated validate-manifests.mjs from `apps/web`, as pnpm would. */
+function runValidateManifests(webDir: string) {
+  return spawnSync(process.execPath, ['scripts/validate-manifests.mjs'], {
+    cwd: webDir,
+    encoding: 'utf8',
+  })
+}
+
 function asFileMap(files: ReturnType<typeof buildGeneratedFiles>): Map<string, string> {
   return new Map(files.map((file) => [file.path, file.contents]))
 }
@@ -918,11 +926,7 @@ describe('create-narduk-app generation contract', () => {
     await mkdir(join(webDir, 'scripts'), { recursive: true })
     await writeFile(join(webDir, 'scripts', 'validate-manifests.mjs'), script.contents)
     await writeFile(join(webDir, 'wrangler.jsonc'), wrangler.contents)
-    const run = () =>
-      spawnSync(process.execPath, ['scripts/validate-manifests.mjs'], {
-        cwd: webDir,
-        encoding: 'utf8',
-      })
+    const run = () => runValidateManifests(webDir)
 
     // Pre-onboarding: ../../Config/cloudflare-app.json does not exist yet.
     // The generator's script must no-op with exit 0, not throw.
@@ -949,6 +953,59 @@ describe('create-narduk-app generation contract', () => {
         bindings: { cron: [], d1: [{ binding: 'DB' }], kv: [], queues: [], r2: [] },
       }),
     )
+    const disagreeing = run()
+    expect(disagreeing.status).not.toBe(0)
+    expect(disagreeing.stderr).toContain('wrangler bindings disagree')
+  })
+
+  // narduk-libs#914. The generated wrangler.jsonc always carries the string
+  // "**/*.mjs"; a regex stripper read its `/*` as a comment opener and deleted
+  // everything up to the next `*/`, which a step cron such as "*/15 * * * *"
+  // supplies. And the wrangler side's crons were compared unsorted.
+  it('validate-manifests.mjs parses a step cron beside the **/*.mjs glob, and sorts both cron lists', async () => {
+    const files = buildGeneratedFiles({
+      appName: 'validate-manifests-cron-fixture',
+      capabilities: [],
+      databaseBackend: 'none',
+      noGit: true,
+      targetDir: '/tmp/validate-manifests-cron-fixture',
+    })
+    const script = files.find((file) => file.path === 'apps/web/scripts/validate-manifests.mjs')!
+    const wrangler = files.find((file) => file.path === 'apps/web/wrangler.jsonc')!
+    expect(wrangler.contents).toContain('"**/*.mjs"')
+    const root = await makeTempDirectory()
+    const webDir = join(root, 'apps', 'web')
+    await mkdir(join(webDir, 'scripts'), { recursive: true })
+    await mkdir(join(root, 'Config'), { recursive: true })
+    await writeFile(join(webDir, 'scripts', 'validate-manifests.mjs'), script.contents)
+    const withCrons = (crons: string[]) =>
+      // Appended after the glob, so a `*/` in a cron follows its `/*`. A
+      // block comment, and a string holding `,]` and `//`, ride along: none
+      // may be mistaken for comment or trailing-comma syntax.
+      wrangler.contents.replace(
+        /,?\s*\}\s*$/u,
+        `,\n  /* crons */\n  "triggers": { "crons": ${JSON.stringify(crons)} },\n  "vars": { "NOTE": "a,] b,} c // d" },\n}\n`,
+      )
+    const writeManifest = (cron: string[]) =>
+      writeFile(
+        join(root, 'Config', 'cloudflare-app.json'),
+        JSON.stringify({ bindings: { cron, d1: [], kv: [], queues: [], r2: [] } }),
+      )
+    const run = () => runValidateManifests(webDir)
+
+    await writeFile(join(webDir, 'wrangler.jsonc'), withCrons(['*/15 * * * *']))
+    await writeManifest(['*/15 * * * *'])
+    const stepCron = run()
+    expect(stepCron.status, stepCron.stderr).toBe(0)
+    expect(stepCron.stdout).toContain('agree')
+
+    await writeFile(join(webDir, 'wrangler.jsonc'), withCrons(['0 5 * * *', '0 1 * * *']))
+    await writeManifest(['0 1 * * *', '0 5 * * *'])
+    const reordered = run()
+    expect(reordered.status, reordered.stderr).toBe(0)
+    expect(reordered.stdout).toContain('agree')
+
+    await writeManifest(['0 1 * * *'])
     const disagreeing = run()
     expect(disagreeing.status).not.toBe(0)
     expect(disagreeing.stderr).toContain('wrangler bindings disagree')

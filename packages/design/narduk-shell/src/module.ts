@@ -2,6 +2,11 @@ import { addComponent, addImports, addPlugin, createResolver, defineNuxtModule }
 import { defu } from 'defu'
 
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
+import {
+  registerNuxtUiSources,
+  SHELL_NUXT_UI_COMPONENTS,
+  type NuxtUiSourcesHost,
+} from './nuxt-ui-sources'
 import { NE_SHELL_COMPONENTS } from './registry'
 
 import type {
@@ -147,6 +152,16 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // installed, because app.config.ts can set the tokens without nuxt.config;
     // with neither set it renders no style at all.
     addPlugin(resolver.resolve('./runtime/plugins/shell-brand'))
+
+    // Tailwind and Nuxt UI's detection see layers only, and this is a module:
+    // without this, utilities only the suite uses are never generated in the
+    // app (narduk-libs#978). Above the `components === false` return, since
+    // useConfirm still renders NeConfirmDialog with that option off.
+    registerNuxtUiSources(
+      nuxt as unknown as NuxtUiSourcesHost,
+      [resolver.resolve('./runtime')],
+      SHELL_NUXT_UI_COMPONENTS,
+    )
 
     // Auto-imports that do not depend on component registration. One entry per
     // exposed name, alphabetical, so two backlog items adding one conflict on

@@ -345,6 +345,21 @@ function isEagerCallbackInvocation(call: any): boolean {
   return EAGER_CALLBACK_METHODS.has(propertyName)
 }
 
+/**
+ * `new Promise(executor)` runs `executor` synchronously, during construction
+ * (narduk-libs#887), so the executor inherits the `new` expression's execution
+ * context. Only the executor argument itself: `resolve`/`reject` and anything
+ * the executor defers (`setTimeout`, `.then`) are judged on their own.
+ */
+function isPromiseExecutorArgument(expression: any, argument: any): boolean {
+  return (
+    expression?.type === 'NewExpression' &&
+    expression.callee?.type === 'Identifier' &&
+    expression.callee.name === 'Promise' &&
+    expression.arguments?.[0] === argument
+  )
+}
+
 export interface ModuleEvaluationAnalyzer {
   isExecutedDuringModuleEvaluation(node: any): boolean
 }
@@ -490,6 +505,8 @@ export function createModuleEvaluationAnalyzer(sourceCode: SourceCode): ModuleEv
       // `[cfg].map(() => new Pool())` — the callback runs synchronously inside
       // the `.map()` call, so it inherits that call's execution context.
       result = isExecutedDuringModuleEvaluation(functionNode.parent, seen)
+    } else if (isPromiseExecutorArgument(functionNode?.parent, functionNode)) {
+      result = isExecutedDuringModuleEvaluation(functionNode.parent, seen)
     } else {
       const variable = getDeclaredFunctionVariable(functionNode)
       result = variable
@@ -508,6 +525,10 @@ export function createModuleEvaluationAnalyzer(sourceCode: SourceCode): ModuleEv
               parent.arguments?.includes(identifier) &&
               isEagerCallbackInvocation(parent)
             ) {
+              return isExecutedDuringModuleEvaluation(parent, seen)
+            }
+            // Passed as a Promise executor: `new Promise(start)`.
+            if (isPromiseExecutorArgument(parent, identifier)) {
               return isExecutedDuringModuleEvaluation(parent, seen)
             }
             return false

@@ -373,7 +373,12 @@ export async function createMigrationSet(
     }
     seen.add(migration.name)
   }
-  return migrations.sort((left, right) => left.name.localeCompare(right.name))
+  // Code-unit order, the same `<`/`>` `assertOrder` compares with and the
+  // "lexical order" the README promises. `localeCompare` is ICU collation, which
+  // sorts `0002_users_email_idx.sql` before `0002_users.sql` (narduk-libs#943).
+  return migrations.sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  )
 }
 
 /**

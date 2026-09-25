@@ -251,6 +251,44 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     }
   }, 120_000)
 
+  it('keeps the newest bucket of a densely filled decimated range (#939)', async () => {
+    // One fix per second across the whole range, so every bucket has data.
+    // time_bucket aligns to 2000-01-03 unless told otherwise; a range start
+    // off that grid then touches maxPoints + 1 buckets, and the extra row
+    // used to read as truncation and cost the vessel's latest position.
+    const bucketMs = 12_000
+    const start = new Date(
+      Math.floor((Date.now() - 2 * 60 * 60 * 1000) / bucketMs) * bucketMs + 5_000,
+    )
+    const vessel = randomUUID()
+    const store = createTimescaleHistoryStore({ executor: client })
+    const count = 50 * (bucketMs / 1000)
+    await store.writeTrack(
+      Array.from({ length: count }, (_, index) => ({
+        latitude: 10 + index / 100_000,
+        longitude: 20,
+        ts: new Date(start.getTime() + index * 1000),
+        vesselId: vessel,
+      })),
+    )
+    try {
+      const result = await store.queryTrack({
+        maxPoints: 50,
+        range: { end: new Date(start.getTime() + count * 1000), start },
+        vesselId: vessel,
+      })
+
+      expect(result.decimated).toBe(true)
+      expect(result.bucketMs).toBe(bucketMs)
+      expect(result.truncated).toBe(false)
+      expect(result.rows).toHaveLength(50)
+      expect(result.rows[0]!.ts.toISOString()).toBe(start.toISOString())
+      expect(result.rows.at(-1)!.latitude).toBeCloseTo(10 + (count - 1) / 100_000, 7)
+    } finally {
+      await client.query('DELETE FROM track_points WHERE vessel_id = $1::uuid', [vessel])
+    }
+  }, 120_000)
+
   it('executes a library-emitted refresh for every level on a range narrower than 1d', async () => {
     // narduk-libs#293 M1: the unit suite proves alignment; this is the live
     // proof that each emitted CALL is a legal refresh_continuous_aggregate
