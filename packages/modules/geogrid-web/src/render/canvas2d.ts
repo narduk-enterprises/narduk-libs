@@ -2,12 +2,18 @@ import { defaultBBoxAnchor, frameCacheKey, toGridFrame } from '../core/frame.js'
 import {
   areaSampleBoundsFromUv,
   blendEncoded,
-  dataUvTransform,
   displayValueFromEncoded,
   observationWeightForZoom,
   observationSupportModulatesWeight,
   texelPositionFromUv,
+  viewportDataProjection,
+  viewportDataU,
+  viewportDataV,
+  viewportLatitudeFrame,
+  viewportScreenV,
+  viewportScreenVForDataV,
   viewportZoom,
+  type ViewportDataProjection,
 } from '../core/math.js'
 import { normalizeValue } from '../color/normalize.js'
 import {
@@ -201,7 +207,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       this.lastRasterKey = key
     }
     this.lastScreenKey = ''
-    this.blit(this.lastRaster, state.bbox, viewport, size.rect, size.dpr)
+    this.blit(this.lastRaster, state.bbox, viewport, size.dpr)
   }
 
   destroy(): void {
@@ -290,8 +296,12 @@ export class Canvas2DGridBackend implements GridRenderBackend {
   ): boolean {
     if (frame.width < 1 || frame.height < 1) return false
     const [west, south, east, north] = bbox
+    const latitudeFrame = viewportLatitudeFrame(viewport)
     const perCellX = (((east - west) / viewport.span.longitudeDelta) * rect.width) / frame.width
-    const perCellY = (((north - south) / viewport.span.latitudeDelta) * rect.height) / frame.height
+    const perCellY =
+      ((viewportScreenV(latitudeFrame, south) - viewportScreenV(latitudeFrame, north)) *
+        rect.height) /
+      frame.height
     return Math.max(perCellX, perCellY) > SCREEN_SPACE_PIXELS_PER_CELL
   }
 
@@ -327,22 +337,22 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     ].join('|')
     if (key === this.lastScreenKey) return
 
-    const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+    const projection = viewportDataProjection(viewport, bbox)
     const image = new ImageData(width, height)
     const lut = this.ensureLut()
     const style = this.referenceStyle()
     const layer = toReferenceLayer(lower)
     const blend = lower === upper ? undefined : { upper: toReferenceLayer(upper), progress }
 
-    const [pxMin, pxMax] = pixelSpan(uvOffsetX, uvScaleX, width)
-    const [pyMin, pyMax] = pixelSpan(uvOffsetY, uvScaleY, height)
+    const [pxMin, pxMax] = pixelSpan(projection.uOrigin, projection.uSpan, width)
+    const [pyMin, pyMax] = rowSpan(projection, height)
 
     for (let py = pyMin; py <= pyMax; py += 1) {
-      const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+      const v = viewportDataV(projection, (py + 0.5) / height)
       if (v < 0 || v > 1) continue
       const gy = texelPositionFromUv(v, lower.height, anchor)
       for (let px = pxMin; px <= pxMax; px += 1) {
-        const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+        const u = viewportDataU(projection, (px + 0.5) / width)
         if (u < 0 || u > 1) continue
         const gx = texelPositionFromUv(u, lower.width, anchor)
         const rgba = referenceScalarPixel(layer, lut, style, gx, gy, blend)
@@ -418,7 +428,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     ].join('|')
     if (key === this.lastScreenKey) return
 
-    const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+    const projection = viewportDataProjection(viewport, bbox)
     const image = new ImageData(width, height)
     const style: ReferenceRgbCompositionStyle = {
       observationWeight,
@@ -426,25 +436,29 @@ export class Canvas2DGridBackend implements GridRenderBackend {
       sampling: styleSampling(this.style, 'rgb'),
     }
     const blend = lower === upper ? undefined : { upper: upperLayer, progress }
-    const [pxMin, pxMax] = pixelSpan(uvOffsetX, uvScaleX, width)
-    const [pyMin, pyMax] = pixelSpan(uvOffsetY, uvScaleY, height)
+    const [pxMin, pxMax] = pixelSpan(projection.uOrigin, projection.uSpan, width)
+    const [pyMin, pyMax] = rowSpan(projection, height)
 
     for (let py = pyMin; py <= pyMax; py += 1) {
-      const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+      const v = viewportDataV(projection, (py + 0.5) / height)
       if (v < 0 || v > 1) continue
       const gy = texelPositionFromUv(v, lower.height, anchor)
+      const cssRow = Math.floor(((py + 0.5) / height) * cssHeight)
+      const areaTop = viewportDataV(projection, cssRow / cssHeight)
+      const areaBottom = viewportDataV(projection, (cssRow + 1) / cssHeight)
       for (let px = pxMin; px <= pxMax; px += 1) {
-        const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+        const u = viewportDataU(projection, (px + 0.5) / width)
         if (u < 0 || u > 1) continue
         const gx = texelPositionFromUv(u, lower.width, anchor)
         const cssColumn = Math.floor(((px + 0.5) / width) * cssWidth)
-        const cssRow = Math.floor(((py + 0.5) / height) * cssHeight)
+        const areaLeft = viewportDataU(projection, cssColumn / cssWidth)
+        const areaRight = viewportDataU(projection, (cssColumn + 1) / cssWidth)
         const overviewArea = supportModulatesWeight
           ? areaSampleBoundsFromUv(
-              uvOffsetX + (cssColumn / cssWidth) * uvScaleX,
-              uvOffsetY + (cssRow / cssHeight) * uvScaleY,
-              uvOffsetX + ((cssColumn + 1) / cssWidth) * uvScaleX,
-              uvOffsetY + ((cssRow + 1) / cssHeight) * uvScaleY,
+              areaLeft,
+              areaTop,
+              areaRight,
+              areaBottom,
               lower.width,
               lower.height,
               anchor,
@@ -452,10 +466,10 @@ export class Canvas2DGridBackend implements GridRenderBackend {
           : undefined
         const upperOverviewArea = supportModulatesWeight
           ? areaSampleBoundsFromUv(
-              uvOffsetX + (cssColumn / cssWidth) * uvScaleX,
-              uvOffsetY + (cssRow / cssHeight) * uvScaleY,
-              uvOffsetX + ((cssColumn + 1) / cssWidth) * uvScaleX,
-              uvOffsetY + ((cssRow + 1) / cssHeight) * uvScaleY,
+              areaLeft,
+              areaTop,
+              areaRight,
+              areaBottom,
               upper.width,
               upper.height,
               anchor,
@@ -501,22 +515,19 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     image: HTMLCanvasElement,
     bbox: GridBBox,
     viewport: GridViewport,
-    rect: DOMRect,
     dpr: number,
   ): void {
+    // Device pixels, so the band edges `drawMercatorBands` lays down are whole rows.
+    this.context.setTransform(1, 0, 0, 1, 0, 0)
+    this.context.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
+    drawMercatorBands(
+      this.context,
+      image,
+      viewportDataProjection(viewport, bbox),
+      this.canvasWidth,
+      this.canvasHeight,
+    )
     this.context.setTransform(dpr, 0, 0, dpr, 0, 0)
-    this.context.clearRect(0, 0, rect.width, rect.height)
-    const span = viewport.span
-    const [west, south, east, north] = bbox
-    const x =
-      ((west - (viewport.center.longitude - span.longitudeDelta / 2)) / span.longitudeDelta) *
-      rect.width
-    const y =
-      ((viewport.center.latitude + span.latitudeDelta / 2 - north) / span.latitudeDelta) *
-      rect.height
-    const width = ((east - west) / span.longitudeDelta) * rect.width
-    const height = ((north - south) / span.latitudeDelta) * rect.height
-    this.context.drawImage(image, x, y, width, height)
     this.clipToStencil(viewport)
   }
 
@@ -524,15 +535,7 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const stencil = this.stencil
     const stencilBBox = this.stencilBBox
     if (!stencil || !stencilBBox) return
-    const [stencilWest, stencilSouth, stencilEast, stencilNorth] = stencilBBox
-    const span = viewport.span
-    const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
-    const viewportNorth = viewport.center.latitude + span.latitudeDelta / 2
     const rect = this.canvas.getBoundingClientRect()
-    const sx = ((stencilWest - viewportWest) / span.longitudeDelta) * rect.width
-    const sy = ((viewportNorth - stencilNorth) / span.latitudeDelta) * rect.height
-    const sw = ((stencilEast - stencilWest) / span.longitudeDelta) * rect.width
-    const sh = ((stencilNorth - stencilSouth) / span.latitudeDelta) * rect.height
     // Match WebGL: alpha 0 everywhere outside the stencil geo bbox.
     // Build a full-viewport alpha mask that is only non-zero under the stencil.
     const mask = document.createElement('canvas')
@@ -541,11 +544,15 @@ export class Canvas2DGridBackend implements GridRenderBackend {
     const maskCtx = mask.getContext('2d')
     if (!maskCtx) return
     maskCtx.clearRect(0, 0, mask.width, mask.height)
-    if (sw > 0 && sh > 0) {
-      maskCtx.filter = 'blur(1px)'
-      maskCtx.drawImage(stencil, sx, sy, sw, sh)
-      maskCtx.filter = 'none'
-    }
+    maskCtx.filter = 'blur(1px)'
+    drawMercatorBands(
+      maskCtx,
+      stencil,
+      viewportDataProjection(viewport, stencilBBox),
+      mask.width,
+      mask.height,
+    )
+    maskCtx.filter = 'none'
     this.context.save()
     this.context.globalCompositeOperation = 'destination-in'
     this.context.drawImage(mask, 0, 0, rect.width, rect.height)
@@ -690,6 +697,71 @@ function toReferenceRgbCompositionLayer(frame: GridFrame): ReferenceRgbCompositi
     observedMask: composition.observedMask,
     width: frame.width,
     height: frame.height,
+  }
+}
+
+/** The inclusive row range whose data `v` lands inside `0…1`. */
+function rowSpan(projection: ViewportDataProjection, extent: number): [number, number] {
+  const top = viewportScreenVForDataV(projection, 0)
+  const bottom = viewportScreenVForDataV(projection, 1)
+  if (!(bottom > top)) return [0, extent - 1]
+  const low = Math.floor(top * extent - 0.5)
+  const high = Math.ceil(bottom * extent - 0.5)
+  return [Math.max(0, low), Math.min(extent - 1, high)]
+}
+
+/** Rows per `drawImage` band; the Mercator curve is effectively linear across one. */
+const MERCATOR_BAND_ROWS = 8
+
+/**
+ * Draw `image`, which spans a bbox edge to edge, where a Web-Mercator basemap
+ * shows that bbox (narduk-libs#930).
+ *
+ * `drawImage` can only scale linearly, and the basemap's rows are even in
+ * Mercator y, not in degrees. So the target is cut into horizontal bands of
+ * {@link MERCATOR_BAND_ROWS} whole rows, and each band's source rows are the
+ * data `v` of its own top and bottom edges. Neighbouring bands share an edge
+ * row exactly, so there are no seams, and the linear stretch inside one band
+ * is off the curve by a small fraction of a pixel. Only the data's own top
+ * and bottom edges land on fractional rows, as the single `drawImage` did.
+ * Coordinates are in the context's current units: `width`/`height` is the
+ * target in those units.
+ *
+ * Exported for the repository's own tests; not re-exported from the barrel.
+ */
+export function drawMercatorBands(
+  context: CanvasRenderingContext2D,
+  image: HTMLCanvasElement,
+  projection: ViewportDataProjection,
+  width: number,
+  height: number,
+): void {
+  if (!(projection.uSpan > 0) || image.width < 1 || image.height < 1) return
+  const x = (-projection.uOrigin / projection.uSpan) * width
+  const w = width / projection.uSpan
+  const top = viewportScreenVForDataV(projection, 0) * height
+  const bottom = viewportScreenVForDataV(projection, 1) * height
+  if (!(bottom > top)) return
+  const firstRow = Math.max(0, Math.floor(top))
+  const lastRow = Math.min(height, Math.ceil(bottom))
+  for (let row = firstRow; row < lastRow; row += MERCATOR_BAND_ROWS) {
+    const y0 = Math.max(top, row)
+    const y1 = Math.min(bottom, row + MERCATOR_BAND_ROWS, lastRow)
+    if (!(y1 > y0)) continue
+    const v0 = Math.max(0, viewportDataV(projection, y0 / height))
+    const v1 = Math.min(1, viewportDataV(projection, y1 / height))
+    if (!(v1 > v0)) continue
+    context.drawImage(
+      image,
+      0,
+      v0 * image.height,
+      image.width,
+      (v1 - v0) * image.height,
+      x,
+      y0,
+      w,
+      y1 - y0,
+    )
   }
 }
 

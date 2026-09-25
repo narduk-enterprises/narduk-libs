@@ -88,6 +88,24 @@ const frames = await decodeTemporalChunk(
 overlay.renderAt(frames[0]!, frames[0]!, 0, manifest.bbox)
 ```
 
+### The viewport is a Web-Mercator region
+
+Pass the region your map reports, unchanged: MapKit's `map.region`, or
+Leaflet/MapLibre's `getCenter()` with `north - south` and `east - west` of the
+visible bounds. The overlay assumes a Web-Mercator basemap, whose screen rows
+are evenly spaced in Mercator y, not in degrees. So `center.latitude` is the
+**Mercator midpoint** of the view, which is not `(north + south) / 2`, and
+`span.latitudeDelta` is `north - south` in degrees. The overlay recovers the two
+edges from those and places every row, stencil included, on the latitude the
+basemap draws there. Since 0.5.7 this also applies to both backends and to
+`viewportBBox`, which the `viewport-*` stretch modes read. Before 0.5.7 rows
+were spaced linearly in latitude, which put a continental view's data tens of
+pixels off the basemap (narduk-libs#930).
+
+`viewportDataProjection` (from `./core`) is the screen-to-data mapping the
+backends use. `dataUvTransform` is the old linear-in-latitude form. It is
+deprecated and kept only for source compatibility.
+
 Decoded sample planes are immutable. On an RGB frame, `values` is the
 scalar-compatibility view of red and is the same `Uint8Array` as `channels[0]`;
 the alias avoids retaining a duplicate plane.

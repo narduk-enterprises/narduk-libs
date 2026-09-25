@@ -15,8 +15,9 @@ import type { GridValueKind } from '../core/models.js'
  * the fragment source into a second file is how that happens.
  *
  * The two differ in **one** function: how a screen UV becomes a data UV. The
- * overlay's is an affine viewport transform; a tile's is the Web-Mercator
- * inverse. That is the `projection` parameter, and it is the only seam.
+ * overlay's maps a viewport over a Web-Mercator basemap; a tile's is the
+ * Web-Mercator inverse of its tile address. That is the `projection` parameter,
+ * and it is the only seam.
  */
 
 export type GridShaderProjection = 'viewport' | 'mercator'
@@ -31,16 +32,43 @@ void main() {
 }`
 }
 
+/**
+ * Latitude at screen `v` over a Web-Mercator viewport, less the centre row's.
+ *
+ * `merc.x` is `tanh(yc / 2)` for the centre row's Mercator y, and `merc.y` is
+ * Mercator y per unit of screen `v`. This is `viewportLatitudeOffset` in
+ * `core/math.ts`, statement for statement; read the precision note there. The
+ * denominator is `(1 + ab)^2 + ...` and never reaches zero, since `|a|, |b| < 1`.
+ */
+function viewportLatitudeSnippet(): string {
+  return `
+float viewportLatitudeOffset(float screenV, vec2 merc) {
+  float a = merc.x;
+  float b = tanh((screenV - 0.5) * merc.y * 0.5);
+  return degrees(2.0 * atan(b * (1.0 - a * a), 1.0 + a * a + 2.0 * a * b));
+}
+`
+}
+
+/**
+ * The stencil is a texture over its own bbox, drawn through the same
+ * viewport, so it takes the same Mercator row mapping as the data: `stencilU`
+ * is (u at screen u = 0, du per screen u), `stencilV` is (v at the centre
+ * row, dv per degree), and `stencilMerc` is the viewport's frame.
+ */
 export function stencilSnippet(): string {
   return `
 uniform sampler2D stencil;
 uniform int useStencil;
-uniform vec2 stencilUvOffset;
-uniform vec2 stencilUvScale;
+uniform vec2 stencilU;
+uniform vec2 stencilV;
+uniform vec2 stencilMerc;
 
 float stencilAlpha(vec2 screenUv) {
   if (useStencil == 0) return 1.0;
-  vec2 suv = stencilUvOffset + screenUv * stencilUvScale;
+  vec2 suv = vec2(
+    stencilU.x + screenUv.x * stencilU.y,
+    stencilV.x + viewportLatitudeOffset(screenUv.y, stencilMerc) * stencilV.y);
   if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return 0.0;
   return texture(stencil, suv).a;
 }
@@ -50,9 +78,10 @@ float stencilAlpha(vec2 screenUv) {
 /**
  * `dataUv` — the one function the two WebGL2 consumers do not share.
  *
- * `viewport` is the affine blit the overlay has always done: the caller's
- * `dataUvTransform` has already reduced the viewport and the bbox to an offset
- * and a scale.
+ * `viewport` places the data under a Web-Mercator basemap (narduk-libs#930):
+ * `u` is affine in longitude, and `v` follows the basemap's rows, which are
+ * even in Mercator y, not in degrees. The caller's `viewportDataProjection`
+ * has already reduced the viewport and the bbox to three pairs of constants.
  *
  * `mercator` is the tile inverse, with every term that can be differenced ahead
  * of time already differenced in double by `tileProjection` in
@@ -65,11 +94,14 @@ float stencilAlpha(vec2 screenUv) {
 function projectionSnippet(projection: GridShaderProjection): string {
   if (projection === 'viewport') {
     return `
-uniform vec2 uvOffset;
-uniform vec2 uvScale;
+uniform vec2 viewportU;    // x: data u at screenUv.x = 0, y: du/dScreenUv.x
+uniform vec2 viewportV;    // x: data v at the centre row, y: dv per degree of latitude
+uniform vec2 viewportMerc; // x: tanh(centre Mercator y / 2), y: Mercator y per screen v
 
 vec2 dataUv(vec2 screenUv) {
-  return uvOffset + screenUv * uvScale;
+  return vec2(
+    viewportU.x + screenUv.x * viewportU.y,
+    viewportV.x + viewportLatitudeOffset(screenUv.y, viewportMerc) * viewportV.y);
 }
 `
   }
@@ -147,6 +179,7 @@ uniform vec2 displayRange;
 uniform int scaleLog;
 uniform int coastal;
 uniform int anchorCenter;
+${viewportLatitudeSnippet()}
 ${projectionSnippet(projection)}
 ${stencilSnippet()}
 out vec4 color;
@@ -279,10 +312,10 @@ uniform sampler2D green1;
 uniform sampler2D blue0;
 uniform sampler2D blue1;
 uniform float progress;
-uniform vec2 uvOffset;
-uniform vec2 uvScale;
 uniform int coastal;
 uniform int anchorCenter;
+${viewportLatitudeSnippet()}
+${projectionSnippet('viewport')}
 ${stencilSnippet()}
 ${gridPositionSnippet()}
 out vec4 color;
@@ -345,7 +378,7 @@ RgbSample sampleRgb(sampler2D r, sampler2D g, sampler2D b, usampler2D mask, vec2
 }
 
 void main() {
-  vec2 uv = uvOffset + vUv * uvScale;
+  vec2 uv = dataUv(vUv);
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { color = vec4(0.0); return; }
   RgbSample sampled0 = sampleRgb(
     values0, green0, blue0, mask0,
@@ -395,10 +428,10 @@ uniform float progress;
 uniform float observationWeight;
 uniform int supportModulatesWeight;
 uniform vec2 overviewCssSize;
-uniform vec2 uvOffset;
-uniform vec2 uvScale;
 uniform int coastal;
 uniform int anchorCenter;
+${viewportLatitudeSnippet()}
+${projectionSnippet('viewport')}
 ${stencilSnippet()}
 ${gridPositionSnippet()}
 out vec4 color;
@@ -576,7 +609,7 @@ FrameSample composeFrame(
 }
 
 void main() {
-  vec2 uv = uvOffset + vUv * uvScale;
+  vec2 uv = dataUv(vUv);
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
     color = vec4(0.0);
     return;
@@ -587,8 +620,8 @@ void main() {
   vec2 cssPixel = floor(vUv * safeCssSize);
   vec2 screenUv0 = cssPixel / safeCssSize;
   vec2 screenUv1 = min((cssPixel + 1.0) / safeCssSize, vec2(1.0));
-  vec2 areaUv0 = uvOffset + screenUv0 * uvScale;
-  vec2 areaUv1 = uvOffset + screenUv1 * uvScale;
+  vec2 areaUv0 = dataUv(screenUv0);
+  vec2 areaUv1 = dataUv(screenUv1);
   FrameSample sampled0 = composeFrame(
     baseConfidence0, observedMasks0, pos0, areaUv0, areaUv1);
   FrameSample sampled1 = composeFrame(

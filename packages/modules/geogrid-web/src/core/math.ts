@@ -8,6 +8,7 @@ import type {
   GridValueRange,
   GridViewport,
 } from './models.js'
+import { WEB_MERCATOR_MAX_LATITUDE } from '../tile/mercator.js'
 
 /**
  * Normalize a display value into 0…1 for ramp lookup.
@@ -120,7 +121,15 @@ export function areaSampleBoundsFromUv(
   return { columnStart, columnStop, rowStart, rowStop }
 }
 
-/** Map screen UV → data-bbox texture UV for a viewport (same math as WebGL/Canvas blit). */
+/**
+ * Map screen UV → data-bbox texture UV for a viewport, **linearly in latitude**.
+ *
+ * @deprecated The overlay no longer renders through this. Web-Mercator hosts
+ * (MapKit, MapLibre, Leaflet) space screen rows evenly in Mercator y, not in
+ * degrees, so an affine latitude mapping misregisters the data by tens of
+ * pixels over a continental view (narduk-libs#930). Use
+ * {@link viewportDataProjection} instead.
+ */
 export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvTransform {
   const span = viewport.span
   const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
@@ -134,6 +143,160 @@ export function dataUvTransform(viewport: GridViewport, bbox: GridBBox): DataUvT
     uvOffsetX: (viewportWest - west) / bboxWidth,
     uvOffsetY: (north - viewportNorth) / bboxHeight,
   }
+}
+
+const RADIANS_PER_DEGREE = Math.PI / 180
+
+/** Web-Mercator y in radians, `asinh(tan φ)`, clamped to the square world. */
+export function mercatorY(latitude: number): number {
+  const clamped = Math.max(
+    -WEB_MERCATOR_MAX_LATITUDE,
+    Math.min(WEB_MERCATOR_MAX_LATITUDE, latitude),
+  )
+  return Math.asinh(Math.tan(clamped * RADIANS_PER_DEGREE))
+}
+
+/** Inverse of {@link mercatorY}, in degrees. */
+export function latitudeFromMercatorY(y: number): number {
+  return Math.atan(Math.sinh(y)) / RADIANS_PER_DEGREE
+}
+
+/**
+ * How a Web-Mercator host lays latitude down the screen.
+ *
+ * Screen `v` (0 at the top, 1 at the bottom) is linear in Mercator y, running
+ * from `north` to `south`. The centre row is the Mercator midpoint of the two.
+ */
+export interface ViewportLatitudeFrame {
+  north: number
+  south: number
+  /** Latitude at screen `v = 0.5`. */
+  centerLatitude: number
+  /** Mercator y at screen `v = 0.5`. */
+  centerMercatorY: number
+  /** `tanh(centerMercatorY / 2)`; the shader's constant for {@link viewportLatitudeOffset}. */
+  centerHalfTanh: number
+  /** Mercator y per unit of screen `v`. Negative: screen `v` grows southward. */
+  mercatorYPerScreenV: number
+}
+
+/**
+ * Recover the host's vertical frame from a {@link GridViewport}.
+ *
+ * Hosts report the region the way MapKit's `map.region` does: the centre is the
+ * midpoint of the visible Mercator rect, and `latitudeDelta` is `north - south`
+ * in degrees. Leaflet's `getCenter()` is the same point. The centre is therefore
+ * not `(north + south) / 2`, and `north`/`south` solve
+ * `mercatorY(south) + mercatorY(south + Δ) = 2 · mercatorY(centre)`. The left side
+ * rises monotonically with `south`, so bisection finds it. A region that would
+ * run past the Mercator poles is clamped to them.
+ */
+export function viewportLatitudeFrame(viewport: GridViewport): ViewportLatitudeFrame {
+  const limit = WEB_MERCATOR_MAX_LATITUDE
+  const delta = Math.min(viewport.span.latitudeDelta, 2 * limit)
+  const target = 2 * mercatorY(viewport.center.latitude)
+  let low = -limit
+  let high = limit - delta
+  const excess = (south: number) => mercatorY(south) + mercatorY(south + delta) - target
+  if (excess(low) >= 0) high = low
+  else if (excess(high) <= 0) low = high
+  for (let iteration = 0; iteration < 80 && high - low > 1e-12; iteration += 1) {
+    const middle = (low + high) / 2
+    if (excess(middle) < 0) low = middle
+    else high = middle
+  }
+  const south = (low + high) / 2
+  const north = south + delta
+  const northY = mercatorY(north)
+  const southY = mercatorY(south)
+  const centerMercatorY = (northY + southY) / 2
+  return {
+    north,
+    south,
+    centerLatitude: latitudeFromMercatorY(centerMercatorY),
+    centerMercatorY,
+    centerHalfTanh: Math.tanh(centerMercatorY / 2),
+    mercatorYPerScreenV: southY - northY,
+  }
+}
+
+/**
+ * Latitude at screen `v`, less the centre latitude, in degrees.
+ *
+ * Written as a difference so that it stays exact in `highp float`, where the
+ * shader evaluates the same expression. With `A = tanh(yc / 2)` and
+ * `B = tanh(t / 2)`, where `t` is the Mercator offset from the centre row, the
+ * Gudermannian identity `tan(gd(y) / 2) = tanh(y / 2)` gives
+ * `gd(yc + t) − gd(yc) = 2·atan(B(1 − A²) / (1 + A² + 2AB))`. Forming `yc + t`
+ * first, as the tile inverse does, costs ~3.7 px of registration at z20
+ * (see `tile/mercator.ts`); this form carries no such term.
+ */
+export function viewportLatitudeOffset(frame: ViewportLatitudeFrame, screenV: number): number {
+  const a = frame.centerHalfTanh
+  const b = Math.tanh(((screenV - 0.5) * frame.mercatorYPerScreenV) / 2)
+  return (2 * Math.atan2(b * (1 - a * a), 1 + a * a + 2 * a * b)) / RADIANS_PER_DEGREE
+}
+
+/** Screen `v` of a latitude: the inverse of {@link viewportLatitudeOffset}. */
+export function viewportScreenV(frame: ViewportLatitudeFrame, latitude: number): number {
+  return 0.5 + (mercatorY(latitude) - frame.centerMercatorY) / frame.mercatorYPerScreenV
+}
+
+/**
+ * Screen UV → data-bbox UV for a viewport over a Web-Mercator basemap.
+ *
+ * `u` is affine in longitude. `v` is `vCenter + offset(screenV) · vPerDegree`,
+ * where `offset` is {@link viewportLatitudeOffset}. The WebGL2 shader, the
+ * Canvas2D backend and the CPU reference all evaluate this same form.
+ */
+export interface ViewportDataProjection {
+  /** Data `u` at screen `u = 0`. */
+  uOrigin: number
+  /** Data `u` per unit of screen `u`. */
+  uSpan: number
+  /** Data `v` at the centre row's latitude. */
+  vCenter: number
+  /** Data `v` per degree of latitude: `-1 / (north - south)` of the bbox. */
+  vPerDegree: number
+  frame: ViewportLatitudeFrame
+}
+
+export function viewportDataProjection(
+  viewport: GridViewport,
+  bbox: GridBBox,
+  frame: ViewportLatitudeFrame = viewportLatitudeFrame(viewport),
+): ViewportDataProjection {
+  const span = viewport.span
+  const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
+  const [west, south, east, north] = bbox
+  const bboxWidth = Math.max(1e-9, east - west)
+  const bboxHeight = Math.max(1e-9, north - south)
+  return {
+    uOrigin: (viewportWest - west) / bboxWidth,
+    uSpan: span.longitudeDelta / bboxWidth,
+    vCenter: (north - frame.centerLatitude) / bboxHeight,
+    vPerDegree: -1 / bboxHeight,
+    frame,
+  }
+}
+
+/** Data `u` for a screen `u`. */
+export function viewportDataU(projection: ViewportDataProjection, screenU: number): number {
+  return projection.uOrigin + screenU * projection.uSpan
+}
+
+/** Data `v` for a screen `v`. */
+export function viewportDataV(projection: ViewportDataProjection, screenV: number): number {
+  return (
+    projection.vCenter + viewportLatitudeOffset(projection.frame, screenV) * projection.vPerDegree
+  )
+}
+
+/** Screen `v` of a data `v`: the inverse of {@link viewportDataV}. */
+export function viewportScreenVForDataV(projection: ViewportDataProjection, dataV: number): number {
+  const latitude =
+    projection.frame.centerLatitude + (dataV - projection.vCenter) / projection.vPerDegree
+  return viewportScreenV(projection.frame, latitude)
 }
 
 /** Slippy-map tile width used to derive zoom from a visible longitude span. */
