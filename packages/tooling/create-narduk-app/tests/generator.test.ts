@@ -930,6 +930,44 @@ describe('create-narduk-app generation contract', () => {
     expect(readme).toContain('{ "id": "GHSA-xxxx-xxxx-xxxx", "reason":')
   })
 
+  // narduk-libs#378: a D1 app starts with a seed fixture for the table its
+  // first migration creates, and a one-command credential-free `dev:seed`.
+  it('scaffolds seed fixtures and dev:seed for a D1 app only', () => {
+    const withDb = buildGeneratedFiles({
+      appName: 'seed-fixture',
+      capabilities: [],
+      noGit: true,
+      targetDir: '/tmp/seed-fixture',
+    })
+    const byPath = new Map(withDb.map((file) => [file.path, file.contents]))
+    const seed = byPath.get('apps/web/seed/d1/DB/0001_app_records.sql')
+    expect(seed).toContain('INSERT OR REPLACE INTO `app_records`')
+    expect(byPath.get('apps/web/drizzle/0000_app_records.sql')).toContain(
+      'CREATE TABLE `app_records`',
+    )
+    expect(byPath.get('apps/web/seed/README.md')).toContain('narduk-app dev:seed')
+    expect(byPath.get('apps/web/wrangler.jsonc')).toContain('"binding": "DB"')
+    const web = JSON.parse(byPath.get('apps/web/package.json')!) as {
+      scripts: Record<string, string>
+    }
+    const root = JSON.parse(byPath.get('package.json')!) as { scripts: Record<string, string> }
+    expect(web.scripts['dev:seed']).toBe('pnpm run db:migrate:local && narduk-app dev:seed')
+    expect(root.scripts['dev:seed']).toBe('pnpm --filter web run dev:seed')
+
+    const withoutDb = buildGeneratedFiles({
+      appName: 'seed-fixture',
+      capabilities: [],
+      databaseBackend: 'none',
+      noGit: true,
+      targetDir: '/tmp/seed-fixture',
+    })
+    expect(withoutDb.some((file) => file.path.startsWith('apps/web/seed/'))).toBe(false)
+    const bareWeb = JSON.parse(
+      withoutDb.find((file) => file.path === 'apps/web/package.json')!.contents,
+    ) as { scripts: Record<string, string> }
+    expect(bareWeb.scripts['dev:seed']).toBeUndefined()
+  })
+
   it('validate-manifests.mjs runs, no-ops pre-onboarding, and detects a real binding mismatch', async () => {
     const files = buildGeneratedFiles({
       appName: 'validate-manifests-fixture',
@@ -1498,11 +1536,13 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(rootPackage.scripts.dev, label).toBe('pnpm --filter web run dev')
       // No generated script invokes the wrapper at all, and nothing anywhere in
       // the scaffold carries the retired selector shape or names Doppler.
+      // `narduk-app dev:seed` (#378) is a separate, credential-free command,
+      // not the wrapper, so a `:` after `dev` is not a match.
       for (const [name, script] of Object.entries({
         ...rootPackage.scripts,
         ...webPackage.scripts,
       })) {
-        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev\b/u)
+        expect(`${name}: ${script}`, label).not.toMatch(/narduk-app dev(?![\w:-])/u)
       }
       expect(generatedText, label).not.toMatch(/narduk-app dev --project/u)
       expect(generatedText, label).not.toMatch(/doppler/iu)

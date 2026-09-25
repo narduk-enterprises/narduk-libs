@@ -4,6 +4,7 @@ import { parseGhPackagesRunArgs, runGhPackagesCommand } from './gh-packages-run.
 import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
+import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { parseHotfixArgs, runHotfix } from './deploy-hotfix.js'
 import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
@@ -60,6 +61,11 @@ function usage(): string {
     '      [--config <name>] [--dry-run] -- <command...>',
     '                                       Run local development directly, or under the',
     '                                       registered nvault credential route',
+    '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
+    '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
+    '                                       Seed local D1/KV/R2 (Wrangler --local) from',
+    '                                       seed/{d1,kv,r2}/<BINDING>/ fixtures. Cloudflare',
+    '                                       credentials are removed from the child environment.',
     '  db migrate --config <file> --database <name> --local|--remote [--reset] [--wrangler-config <file>]',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
@@ -224,6 +230,14 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'dev:seed') {
+      const flags = parseDevSeedArgs(rest)
+      const plan = runDevSeed(flags)
+      console.log(
+        flags.json ? JSON.stringify(plan, null, 2) : formatDevSeedPlan(plan, flags.dryRun),
+      )
+      return 0
+    }
     if (command === 'e2e-serve') return await runE2eServe(parseE2eServeArgs(rest))
     if (command === 'og:check' || command === 'og:generate')
       return await runOgCommand(command, rest)

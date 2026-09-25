@@ -75,6 +75,38 @@ artifact; version promotion does not. Full validation runs on request and on
 exit. Nothing enrolls automatically. See the
 [development mode runbook](docs/development-mode.md).
 
+## Seeded local development (`narduk-app dev:seed`)
+
+One command from a clean checkout to local D1/KV/R2 holding representative data,
+with no Cloudflare credential (narduk-libs#378). Run it from the app directory
+(`apps/web` in a generated app); a generated D1 app wires it as `pnpm dev:seed`,
+which applies the migrations locally first:
+
+```json
+{ "dev:seed": "pnpm run db:migrate:local && narduk-app dev:seed" }
+```
+
+Fixtures live beside the app, one directory per binding:
+
+```
+seed/
+  d1/<BINDING>/*.sql          executed in file-name order
+  kv/<BINDING>/*.json         `wrangler kv bulk put` files: [{ "key": "...", "value": "..." }]
+  r2/<BINDING>/<object key>   each file uploaded under its path as the key
+```
+
+- Every write is Wrangler local mode (`--local`, plus `--persist-to` when
+  given), and the child runs with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY`,
+  `CLOUDFLARE_EMAIL`, `CLOUDFLARE_ACCOUNT_ID` and their `CF_*` spellings
+  removed, so a seed cannot reach a remote resource even from a shell that holds
+  a token. It runs in a cloud agent container with no credential at all.
+- A binding directory must name a binding the wrangler config declares; R2
+  objects are written to that binding's `bucket_name`.
+- `--reset` removes the local D1/KV/R2 state for the kinds being seeded first.
+  `--dry-run` prints the plan; `--json` prints it as JSON. `--cwd`, `--config`
+  (a `wrangler.json`/`wrangler.jsonc`) and `--fixtures` (default `seed`) move
+  the defaults.
+
 ## Prebuilt-Worker e2e (`narduk-app e2e-serve`)
 
 ```sh
