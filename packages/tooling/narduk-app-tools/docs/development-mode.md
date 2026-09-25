@@ -94,7 +94,13 @@ narduk-app development enter --approval-ref <issue-or-decision> --publisher <id>
 narduk-app development enter --approval-ref <issue-or-decision> --publisher <id>
 ```
 
-The dry run lists what would be held and restored. Entry is journaled. If it is
+The dry run lists what would be held and restored. Both the dry run and entry
+compare each Worker's live crons and routes (zone routes plus custom domain
+hostnames) with the checkout's Wrangler config and report any mismatch, such as
+a cron a branch deploy added that `main` does not declare. Entry does not refuse
+on a mismatch; the first `deploy:dev` reconciles it.
+`development status --remote` shows the same comparison at any time. A read that
+fails is shown as `unknown`, never as in sync. Entry is journaled. If it is
 interrupted, re-run the same command and it resumes. After editing the
 declaration, `enter --refresh` re-verifies the holds.
 
@@ -139,7 +145,10 @@ Each deploy:
    when the artifact omits those keys), and proves it: exact `x-build-version`,
    health envelope and smoke path, then your `behavior` probe. Version promotion
    carries code only; without the trigger step, a cron or route change would
-   never apply;
+   never apply. The live cron schedules are then read back, and a deploy whose
+   declared crons are not in force ends `unproven`, not `verified`. Routes are
+   not read back here: custom domains need an account-level read the deployment
+   credential is not guaranteed to hold;
 7. after a `verified` or `awaiting-owner` deploy, queues full validation of the
    deployed commit and returns without waiting for it (see
    [Validation after every deploy](#validation-after-every-deploy)).

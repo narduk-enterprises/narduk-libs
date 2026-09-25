@@ -30,6 +30,7 @@ import {
   parseDeclaredScriptTriggers,
   readDeclaredScriptTriggers,
   routePattern,
+  type DeclaredWorkerRoute,
 } from '../src/development-script-triggers.js'
 import { DevelopmentGitHub } from '../src/development-github.js'
 import {
@@ -214,6 +215,8 @@ interface Worker {
   /** Script-level cron triggers (not Workers Builds triggers). */
   schedules: string[]
   routes: Array<{ pattern: string }>
+  /** Custom domain hostnames attached to the script. */
+  domains: string[]
 }
 
 class Cloudflare {
@@ -255,6 +258,7 @@ class Cloudflare {
         ]),
         schedules: [],
         routes: [],
+        domains: [],
       })
     }
   }
@@ -262,8 +266,14 @@ class Cloudflare {
     const declared = parseDeclaredScriptTriggers(config)
     const worker = this.workers.get(name)!
     if (declared.crons !== undefined) worker.schedules = [...declared.crons]
-    if (declared.routes !== undefined)
-      worker.routes = declared.routes.map((route) => ({ pattern: routePattern(route) }))
+    if (declared.routes !== undefined) {
+      const custom = (route: DeclaredWorkerRoute) =>
+        typeof route === 'object' && route.custom_domain === true
+      worker.routes = declared.routes
+        .filter((route) => !custom(route))
+        .map((route) => ({ pattern: routePattern(route) }))
+      worker.domains = declared.routes.filter(custom).map(routePattern)
+    }
   }
   deployment(version: string) {
     this.clock += 1
@@ -308,6 +318,21 @@ class Cloudflare {
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (path === '/workers/scripts')
       return ok([...this.workers].map(([id, worker]) => ({ id, tag: worker.tag })))
+    let script = /^\/workers\/scripts\/([\w-]+)\/schedules$/u.exec(path)
+    if (script && method === 'GET')
+      return ok({
+        schedules: this.workers.get(script[1])!.schedules.map((cron) => ({ cron })),
+      })
+    script = /^\/workers\/services\/([\w-]+)\/environments\/production\/routes$/u.exec(path)
+    if (script && method === 'GET') return ok(this.workers.get(script[1])!.routes)
+    if (path === '/workers/domains' && method === 'GET')
+      return ok(
+        [...this.workers].flatMap(([service, worker]) =>
+          service === url.searchParams.get('service')
+            ? worker.domains.map((hostname) => ({ hostname, service }))
+            : [],
+        ),
+      )
     let match = /^\/workers\/scripts\/([\w-]+)\/(deployments|versions)(?:\/([\w-]+))?$/u.exec(path)
     if (match) {
       const worker = this.workers.get(match[1])!
@@ -979,6 +1004,73 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
     })
   })
 
+  it('refuses to call a deploy verified when the applied crons are not live', async () => {
+    const h = harness()
+    writeFileSync(
+      join(h.root, 'apps/web/wrangler.jsonc'),
+      JSON.stringify({
+        name: 'fixture-app',
+        account_id: ACCOUNT,
+        triggers: { crons: ['20 9 * * *'] },
+      }),
+    )
+    await enter(h)
+    const upload = h.context.upload!
+    // wrangler exits 0 but the schedule never lands.
+    h.context.upload = (args, appDir, env, options) =>
+      args[0] === 'triggers-deploy' ? 0 : upload(args, appDir, env, options)
+    const receipt = await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(receipt.outcome).toBe('unproven')
+    expect(receipt.components.web.status).toBe('failed')
+    expect(receipt.failure).toMatch(/did not take effect: crons declared-only \["20 9 \* \* \*"\]/u)
+  })
+
+  it('reports declared-vs-live script triggers at entry and in remote status', async () => {
+    const h = harness()
+    writeFileSync(
+      join(h.root, 'apps/web/wrangler.jsonc'),
+      JSON.stringify({
+        name: 'fixture-app',
+        account_id: ACCOUNT,
+        triggers: { crons: ['20 9 * * *'] },
+        routes: [{ pattern: 'fixture.example.com', custom_domain: true }],
+      }),
+    )
+    git(h.root, 'commit', '-qam', 'declare triggers')
+    git(h.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    const worker = h.cloudflare.workers.get('fixture-app')!
+    worker.schedules = ['0 9 * * *', '20 9 * * *']
+    worker.domains = ['fixture.example.com']
+    await enter(h)
+    expect(h.logs).toContain(
+      '[development]   fixture-app: script triggers MISMATCH: crons declared-only [] live-only ["0 9 * * *"]',
+    )
+    const mismatched = await runDevelopmentStatus({ remote: true }, h.context)
+    expect(mismatched.remote!.web.scriptTriggers!.mismatches).toEqual([
+      { kind: 'crons', declaredOnly: [], liveOnly: ['0 9 * * *'] },
+    ])
+    expect(formatStatus(mismatched)).toContain(
+      'web script triggers MISMATCH: crons declared-only [] live-only ["0 9 * * *"]',
+    )
+    const receipt = await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    expect(receipt.outcome).toBe('verified')
+    expect(formatStatus(await runDevelopmentStatus({ remote: true }, h.context))).toContain(
+      'web script triggers match the checkout',
+    )
+  })
+
+  it('reports script triggers as unknown, not in sync, when the live read fails', async () => {
+    const h = harness()
+    await enter(h)
+    h.cloudflare.failNext.set('GET /workers/domains', 1)
+    const report = await runDevelopmentStatus({ remote: true }, h.context)
+    expect(report.remote!.web.scriptTriggers).toEqual({
+      mismatches: [],
+      unknown: expect.stringMatching(/did not complete/u) as string,
+    })
+    expect(formatStatus(report)).toMatch(/web script triggers unknown: /u)
+  })
+
   it('records trigger-apply failure as unproven with failed component status', async () => {
     const h = harness()
     await enter(h)
@@ -1179,6 +1271,7 @@ describe('deploy:dev transaction', { timeout: 30_000 }, () => {
         },
         versions: () => real.versions(),
         requiredSecrets: (id) => real.requiredSecrets(id),
+        schedules: () => real.schedules(),
         promote: async (id, message) => {
           promoted = true
           await real.promote(id, message).catch(() => null)
