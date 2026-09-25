@@ -1,6 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': patch
-'create-narduk-app': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 `withD1Cache` now hands its stale-window background refresh to the request's
