@@ -57,8 +57,14 @@ For incident patches from a workstation, use `narduk-app deploy-hotfix` and the
 credentials, a clean commit snapshot, required local checks, version promotion
 and live proof. Legacy `deploy-local` is not the new hotfix procedure; it no
 longer reads Doppler `narduk/tokens` (Doppler is retired except `ne`) and takes
-its build secrets from the environment, so run it under the app's nvault config
-(`nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`).
+its build secrets from the environment. `GH_PACKAGES_READ` comes from its
+registered route (nvault `github/prd/narduk-enterprises-packages-read`) and the
+app's own secrets from the app's nvault config, so run it under both:
+
+```sh
+nvault run -p github -e prd -c narduk-enterprises-packages-read -- \
+  nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes
+```
 
 For an app still being built, an owner can enroll it in **development mode**:
 one approved workstation deploys its checkout, uncommitted edits included, with
