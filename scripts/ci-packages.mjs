@@ -177,7 +177,7 @@ function localPlan(args) {
     ? []
     : [
         ...changedFilesBetween(root, options.base, options.head),
-        ...gitFiles(['diff', '--name-only', '-z', 'HEAD']),
+        ...gitFiles(['diff', '--name-only', '--no-renames', '-z', 'HEAD']),
         ...gitFiles(['ls-files', '--others', '--exclude-standard', '-z']),
       ]
   return { ...options, ...computeAffectedSet({ root, changedFiles, forceAll: options.all }) }

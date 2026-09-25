@@ -360,11 +360,18 @@ export function computeAffectedSet({
   }
 }
 
+// `--no-renames` everywhere a changed-file list selects packages: with rename
+// detection on, a moved file is listed only at its destination, so the package
+// it left is never selected (#915).
 export function changedFilesBetween(root, base, head) {
-  const result = spawnSync('git', ['diff', '--name-only', '-z', `${base}...${head}`], {
-    cwd: root,
-    encoding: 'utf8',
-  })
+  const result = spawnSync(
+    'git',
+    ['diff', '--name-only', '--no-renames', '-z', `${base}...${head}`],
+    {
+      cwd: root,
+      encoding: 'utf8',
+    },
+  )
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(
