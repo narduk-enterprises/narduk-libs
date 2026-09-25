@@ -563,7 +563,10 @@ export async function logoutUser(event: H3Event) {
   if (config.backend === 'supabase' && sessionUser?.authSessionId) {
     try {
       const context = await getCurrentSupabaseContext(event)
-      await context.client.signOut()
+      // `signOut()` defaults to `{ scope: 'global' }`, which revokes every
+      // session the user holds at the shared authority: their other devices and
+      // every other app on it (narduk-libs#921). Logout ends this session only.
+      await context.client.signOut({ scope: 'local' })
     } catch {
       // Clearing the app-local session is the important part; auth service logout
       // failure should not trap the user in a broken state.
