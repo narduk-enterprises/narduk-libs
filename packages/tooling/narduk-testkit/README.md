@@ -636,6 +636,62 @@ narduk-testkit ui analyze output/playwright/visual-audit
 Playwright and Vitest are peer dependencies so each app controls its test runner
 version. The analyzer uses `sharp` as a package runtime dependency.
 
+## Browser setup and the e2e runner (`narduk-testkit e2e`)
+
+`narduk-testkit e2e` replaces the `scripts/setup-playwright-browsers.mjs` and
+`scripts/run-web-e2e.mjs` copies the retired narduk-template left in apps
+(narduk-libs#997). Point the app's scripts at it:
+
+```json
+{
+  "test:e2e": "narduk-testkit e2e run",
+  "test:e2e:setup": "narduk-testkit e2e setup"
+}
+```
+
+| Command                                   | Does                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `narduk-testkit e2e check`                | Launches Chromium headless with the app's `@playwright/test`. Exit 1 with the setup hint if it cannot. |
+| `narduk-testkit e2e setup [-- <args>]`    | `playwright install chromium` (plus `<args>`, e.g. `--with-deps`) into the ambient or shared cache.    |
+| `narduk-testkit e2e run [opts] [-- args]` | `check`, then `playwright test`. Arguments it does not own go to Playwright.                           |
+
+`run` options: `--config <path>` (default: the first of `playwright.config.ts`
+and `apps/web/playwright.config.ts` that exists, else Playwright's own
+discovery; a `--config`/`-c` in the Playwright args wins),
+`--default-project <name>` (default `web`) and `--no-default-project`.
+
+The rules it enforces, each the fix for a drift found across the copies:
+
+- **One browser cache per machine.** A non-empty ambient
+  `PLAYWRIGHT_BROWSERS_PATH` (isolated CI guests export one) is used exactly;
+  otherwise Playwright's shared default cache. It never picks a per-checkout
+  `.cache/ms-playwright`, which downloaded ~500 MB per worktree.
+- **The check launches the browser.** A binary that exists can still fail to
+  start (missing shared libraries, a quarantined binary); the hint quotes the
+  launch error.
+- **`--project=web` only when you chose no project.** Playwright accumulates
+  repeated `--project` flags, so `pnpm test:e2e --project=pr` with an
+  unconditional default would run `pr` **and** the whole `web` tier and still
+  report success.
+- **`--import tsx` once**, added to `NODE_OPTIONS` only when the app has `tsx`
+  installed.
+
+An app that keeps its own runner imports the same rules from
+`playwright/config`:
+
+```ts
+import {
+  resolveBrowserCachePath,
+  withDefaultProject,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+resolveBrowserCachePath(process.env) // ambient path, or undefined = Playwright's shared cache
+withDefaultProject(process.argv.slice(2), 'web') // adds --project=web only if none was chosen
+```
+
+App-specific pre-steps (a `db:ready`, a config somewhere else) stay in the app's
+script, chained before `narduk-testkit e2e run`.
+
 ## D1 query harness
 
 `@narduk-enterprises/narduk-testkit/d1` runs code under test against a real

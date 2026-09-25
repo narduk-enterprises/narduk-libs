@@ -34,6 +34,12 @@ export {
   titleDeclaresQuarantineTag,
 } from './quarantine.js'
 
+/*
+ * Pure helpers from the `narduk-testkit e2e` runner (#997), for apps that keep
+ * a custom runner script. `e2e-runner` imports nothing from this file.
+ */
+export { resolveBrowserCachePath, withDefaultProject } from './e2e-runner.js'
+
 /** Measured on the Buoys `e2e-parallel-config` experiment, 2026-09-17. */
 export const NARDUK_PLAYWRIGHT_WORKERS = 2
 
