@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Make development mode survive a GitHub repository rename. The client resolves the
@@ -10,3 +11,5 @@ to reject every run of a renamed repository by comparing full names. Workflow
 holds, restores and run cancellations address the canonical name, so no write
 goes through a redirect. Activation records, receipts and validation history keep
 the key they were created under.
+
+`create-narduk-app` takes the patch because it pins `narduk-app-tools` in generated apps.
