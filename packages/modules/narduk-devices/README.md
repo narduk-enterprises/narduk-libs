@@ -815,4 +815,7 @@ and `security.lockout` when an account or IP crosses the escalating threshold.
 never recorded — a `session.*` row names the session's non-bearer `id`, never
 the `sessionToken`. `listAuditEvents` returns newest first with a clamped limit
 (default 50, max 200), an optional `orgId`, an optional `subject: { kind, id }`,
-and a `before` cursor.
+and a `(before, beforeId)` cursor. To fetch the next page, pass the last row's
+`createdAt` as `before` and its `id` as `beforeId`. One claim writes several
+rows with the same `createdAt`, so `before` alone skips whatever part of that
+group falls past a page boundary.
