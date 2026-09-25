@@ -173,12 +173,16 @@ export function readDeployLocalSecrets(
   return Object.fromEntries(keys.map((key) => [key, env[key]?.trim() ?? '']))
 }
 
-async function probeSiteUrl(siteUrl: string): Promise<void> {
+function assertProbeableSiteUrl(siteUrl: string): void {
   if (!isNonLocalHttpsUrl(siteUrl)) {
     throw new Error(
       `Refusing deploy: SITE_URL must be a non-local https URL (got ${siteUrl || '(empty)'})`,
     )
   }
+}
+
+async function probeSiteUrl(siteUrl: string): Promise<void> {
+  assertProbeableSiteUrl(siteUrl)
   const url = new URL(siteUrl)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
@@ -204,6 +208,9 @@ export async function runDeployLocal(options: DeployLocalOptions): Promise<numbe
   const scriptName = readWranglerScriptName(appDir)
   const cfVars = await fetchWorkerPlainTextVars({ accountId, apiToken, scriptName })
   const siteUrl = cfVars.SITE_URL?.trim() ?? ''
+  // The probe needs a URL it can reach, and SITE_URL is known now: refuse
+  // before building, migrating or deploying, not after production moved (#877).
+  if (!options.flags.noProbe) assertProbeableSiteUrl(siteUrl)
   const secretKeys = parseSecretKeys(env, options.secretKeys ?? DEFAULT_SECRET_KEYS)
   const secrets = readDeployLocalSecrets(env, secretKeys)
 

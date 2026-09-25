@@ -123,6 +123,7 @@ const DROP_OBJECT = new RegExp(
   'iu',
 )
 const ALTER_TABLE = new RegExp(String.raw`^ALTER\s+TABLE\s+${QUALIFIED}\s+(\S.*)$`, 'isu')
+const RENAME_TABLE_TO = new RegExp(String.raw`^RENAME\s+TO\s+${QUALIFIED}`, 'iu')
 // `IF NOT EXISTS` is left out on purpose: that object may well have existed
 // before this file, so dropping it later is not the file's own business.
 const CREATE_OBJECT = new RegExp(
@@ -166,9 +167,14 @@ export function findDestructiveStatements(sql: string): DestructiveStatement[] {
     const alter = ALTER_TABLE.exec(text)
     if (!alter) continue
     const object = unquote(alter[1])
+    const action = alter[2]
+    // A name a rename moves a table to is this file's own, like a CREATE:
+    // no code before this file reads it, so dropping it later breaks nothing
+    // (the 12-step rebuild that renames the old table out of the way, #876).
+    const renamedTo = RENAME_TABLE_TO.exec(action)
+    if (renamedTo) created.add(unquote(renamedTo[1]))
     // Reshaping a table this file created is the file's own business.
     if (created.has(object)) continue
-    const action = alter[2]
     // SQLite accepts `DROP [COLUMN] name`. `DROP CONSTRAINT` is not SQLite, and it
     // drops no column, so it is not reported as one.
     if (/^DROP\s+(?!CONSTRAINT\b)/iu.test(action)) {
