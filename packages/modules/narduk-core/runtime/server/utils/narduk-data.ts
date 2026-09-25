@@ -47,6 +47,7 @@ const DEFAULT_MAX_ENTRIES = 8
 const DEFAULT_MAX_CACHE_BYTES = 32 * 1024 * 1024
 const DEFAULT_FAILURE_COOLDOWN_MS = 10_000
 const REQUEST_ID_HEADER = 'x-request-id'
+const STORED_AT_HEADER = 'x-narduk-data-stored-at'
 
 /**
  * Headers a caller may never forward to the data origin.
@@ -146,6 +147,42 @@ export interface NardukDataRequestContext {
   requestId?: string
   /** Cancels this caller's read. Never cancels the shared upstream read. */
   signal?: AbortSignal
+  /**
+   * Keeps a store fill alive past the response — a Worker's
+   * `ctx.waitUntil`. Without it a fill is fire-and-forget and may be cut off
+   * when the response is sent, which costs the next cold isolate an origin
+   * read, never correctness.
+   */
+  waitUntil?: (task: Promise<unknown>) => void
+}
+
+/**
+ * A shared second-tier store for manifests and artifact bytes.
+ *
+ * It is the slice of the Workers Cache API the client uses, so
+ * `caches.default` fits as-is (see `workersEdgeStore`): a zone-level edge
+ * cache shared by every isolate in a colo, which lets a freshly started
+ * isolate skip the origin. Every use fails open — a store that throws, misses
+ * or holds a corrupt entry only costs an origin read. Artifact bytes taken
+ * from it are checksum-verified exactly like downloaded ones, and both
+ * manifest and artifact are schema-validated again on every read, so products
+ * with different contracts can share one store.
+ */
+export interface NardukDataStore {
+  delete: (key: string) => Promise<boolean>
+  match: (key: string) => Promise<Response | undefined>
+  put: (key: string, response: Response) => Promise<void>
+}
+
+/**
+ * The Workers zone cache (`caches.default`) as a `NardukDataStore`, or
+ * `undefined` where there is none (Node, tests). It is a no-op on
+ * `*.workers.dev`, which is harmless: every read then falls through to the
+ * origin.
+ */
+export function workersEdgeStore(): NardukDataStore | undefined {
+  const storage = (globalThis as { caches?: { default?: NardukDataStore } }).caches
+  return storage?.default
 }
 
 /** Transport policy shared by every request this module makes. */
@@ -219,8 +256,11 @@ export interface NardukDataFreshnessThresholds {
   freshBelowMs: number
 }
 
-/** Where a served value came from. */
-export type NardukDataSource = 'memo' | 'stale-if-error' | 'upstream'
+/**
+ * Where a served value came from. `store` means it was read from the shared
+ * `NardukDataStore` without any upstream request.
+ */
+export type NardukDataSource = 'memo' | 'stale-if-error' | 'store' | 'upstream'
 
 /**
  * Freshness metadata published beside every value this client returns.
@@ -327,6 +367,13 @@ export interface NardukDataClientOptions {
   fetch?: typeof fetch
   /** Retained artifact bytes held across all entries. Defaults to 32 MiB. */
   maxCacheBytes?: number
+  /**
+   * Opt-in shared store under the isolate memo, e.g. `workersEdgeStore()`.
+   * A manifest is reused from it for the product's `ttlMs`, measured from when
+   * it was stored; artifact bytes are keyed by release URL and checksum, so
+   * they never go stale. Omitted, every memo miss reads the origin.
+   */
+  store?: NardukDataStore
   /** Products held at once. Defaults to 8; the least recently used is evicted. */
   maxEntries?: number
   /** Epoch-millisecond clock, injected by tests. Defaults to `Date.now`. */
@@ -744,9 +791,58 @@ interface CacheEntry {
   cooldownUntilMs: number
   data: unknown
   fetchedAtMs: number
+  /** True when the entry was built with no upstream request. */
+  fromStore: boolean
   manifest: NardukDataReleaseManifest
   manifestUrl: string
   retainedBytes: number
+}
+
+type WaitUntil = (task: Promise<unknown>) => void
+
+/** Write to the store in the background; a lost fill costs one origin read later. */
+function fillStore(
+  store: NardukDataStore,
+  key: string,
+  response: Response,
+  waitUntil: WaitUntil | undefined,
+): void {
+  const task = Promise.resolve()
+    .then(() => store.put(key, response))
+    .catch(() => {})
+  try {
+    waitUntil?.(task)
+  } catch {
+    // Called outside a request context; the fill still runs, just unprotected.
+  }
+}
+
+function evict(store: NardukDataStore, key: string): Promise<void> {
+  return Promise.resolve()
+    .then(() => store.delete(key))
+    .then(
+      () => {},
+      () => {},
+    )
+}
+
+/** Stored bytes under `key`, or `null` on a miss, an oversized body or any store failure. */
+async function readStored(
+  store: NardukDataStore,
+  key: string,
+  maxBytes: number,
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; storedAtMs: number | null } | null> {
+  try {
+    const stored = await store.match(key)
+    if (!stored) return null
+    const stamp = Number(stored.headers.get(STORED_AT_HEADER))
+    return {
+      bytes: await readBoundedBody(stored, maxBytes),
+      storedAtMs: Number.isFinite(stamp) && stamp > 0 ? stamp : null,
+    }
+  } catch {
+    return null
+  }
 }
 
 function joinUrl(origin: string, ...segments: string[]): string {
@@ -895,16 +991,66 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       timeoutMs: options.timeoutMs,
       userAgent: options.userAgent,
     }
-    const manifest = await fetchNardukDataJson(manifestUrl, {
-      ...policy,
-      maxBytes: product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
-      schema: product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>),
-    })
+    const store = options.store
+    const waitUntil = context?.waitUntil
+    const ttlMs = product.ttlMs ?? DEFAULT_TTL_MS
+    const manifestMaxBytes = product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES
+    const manifestSchema =
+      product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>)
+    let upstream = false
+    let manifest: TManifest | undefined
+    // When the manifest came from the store, the pair is as old as that write.
+    let storedAtMs: number | null = null
+    if (store) {
+      const stored = await readStored(store, manifestUrl, manifestMaxBytes)
+      const at = now()
+      // The stored-at mark is our own; a store may rewrite `Date` on serve. An
+      // entry without it, or past the TTL, is never trusted. A mark ahead of
+      // this isolate's clock counts as written now, never as younger than that.
+      const writtenAt =
+        stored && stored.storedAtMs !== null ? Math.min(stored.storedAtMs, at) : null
+      if (stored && writtenAt !== null && at - writtenAt < ttlMs) {
+        try {
+          manifest = applySchema(manifestUrl, decodeJson(manifestUrl, stored.bytes), manifestSchema)
+          storedAtMs = writtenAt
+        } catch {
+          manifest = undefined
+        }
+      }
+      if (stored && manifest === undefined) await evict(store, manifestUrl)
+    }
+    if (manifest === undefined) {
+      const bytes = await requestBytes(
+        manifestUrl,
+        { ...policy, maxBytes: manifestMaxBytes },
+        'GET',
+      )
+      manifest = applySchema(manifestUrl, decodeJson(manifestUrl, bytes), manifestSchema)
+      upstream = true
+      if (store) {
+        const at = now()
+        // The raw bytes, not the parsed value: another product reading the same
+        // manifest may hold a stricter schema that needs fields this one strips.
+        fillStore(
+          store,
+          manifestUrl,
+          new Response(bytes, {
+            headers: {
+              'cache-control': `public, max-age=${Math.max(1, Math.ceil(ttlMs / 1000))}`,
+              'content-type': 'application/json',
+              [STORED_AT_HEADER]: String(at),
+            },
+          }),
+          waitUntil,
+        )
+      }
+    }
+    const checked = manifest
 
     if (product.acceptManifest) {
       const accept = product.acceptManifest
       runHook(manifestUrl, 'acceptManifest', () => {
-        accept(manifest)
+        accept(checked)
       })
     }
 
@@ -946,30 +1092,60 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
         const validate = product.validate
         const kept = previous.data as TArtifact
         runHook(artifactUrl, 'validate', () => {
-          validate(kept, manifest)
+          validate(kept, checked)
         })
       }
-      return { ...previous, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
+      return {
+        ...previous,
+        cooldownUntilMs: 0,
+        fetchedAtMs: storedAtMs ?? now(),
+        fromStore: !upstream,
+        manifest: checked,
+      }
     }
-    const bytes = await requestBytes(
-      artifactUrl,
-      { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
-      'GET',
-    )
-    const observed = await sha256Hex(bytes)
-    if (observed !== sha256) {
-      throw new NardukDataError(
-        `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
-        'checksum',
-        artifactUrl,
-      )
+    const maxBytes = product.maxBytes ?? DEFAULT_MAX_BYTES
+    // Release-immutable, and the checksum in the key means a republished id can
+    // never alias bytes.
+    const artifactKey = `${artifactUrl}?sha256=${sha256}`
+    let bytes: Uint8Array<ArrayBuffer> | undefined
+    if (store) {
+      const stored = await readStored(store, artifactKey, maxBytes)
+      // Stored bytes are re-verified exactly like downloaded ones.
+      if (stored && (await sha256Hex(stored.bytes)) === sha256) bytes = stored.bytes
+      else if (stored) await evict(store, artifactKey)
+    }
+    if (bytes === undefined) {
+      bytes = await requestBytes(artifactUrl, { ...policy, maxBytes }, 'GET')
+      upstream = true
+      const observed = await sha256Hex(bytes)
+      if (observed !== sha256) {
+        throw new NardukDataError(
+          `narduk-data artifact ${artifactUrl} does not match the SHA-256 in its immutable manifest.`,
+          'checksum',
+          artifactUrl,
+        )
+      }
+      if (store) {
+        fillStore(
+          store,
+          artifactKey,
+          new Response(bytes, {
+            headers: {
+              'cache-control': 'public, max-age=604800, immutable',
+              'content-type': 'application/json',
+              [STORED_AT_HEADER]: String(now()),
+            },
+          }),
+          waitUntil,
+        )
+      }
     }
 
     const data = applySchema(artifactUrl, decodeJson(artifactUrl, bytes), product.schema)
     if (product.validate) {
       const validate = product.validate
       runHook(artifactUrl, 'validate', () => {
-        validate(data, manifest)
+        validate(data, checked)
       })
     }
 
@@ -978,8 +1154,9 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       artifactUrl,
       cooldownUntilMs: 0,
       data,
-      fetchedAtMs: now(),
-      manifest,
+      fetchedAtMs: storedAtMs ?? now(),
+      fromStore: !upstream,
+      manifest: checked,
       manifestUrl,
       retainedBytes: bytes.byteLength,
     }
@@ -1055,7 +1232,8 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       }
 
       try {
-        return present(await withCallerSignal(flight, context?.signal, manifestUrl), 'upstream')
+        const entry = await withCallerSignal(flight, context?.signal, manifestUrl)
+        return present(entry, entry.fromStore ? 'store' : 'upstream')
       } catch (error) {
         // A caller that cancelled is told it cancelled. Handing it stale data
         // instead would answer a question it withdrew.

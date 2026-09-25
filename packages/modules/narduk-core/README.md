@@ -2175,6 +2175,17 @@ the Nitro auto-import inside an app that has the layer installed.
   `(retries + 1) x timeoutMs` per upstream leg — 30 s at the defaults for the
   manifest, 60 s if the artifact is the failing leg — paid by the first request
   of each cooldown period, not by every request.
+- **Shared store, opt in** — pass `store: workersEdgeStore()` (the Workers zone
+  cache, `caches.default`) or any Cache-API-shaped `NardukDataStore`, and a
+  freshly started isolate takes the manifest and artifact from it instead of the
+  origin. The manifest is reused for `ttlMs` from when it was stored, by the
+  client's own stored-at mark. Artifact bytes are keyed by release URL and
+  checksum, re-verified on every read, and evicted on a mismatch. Each read
+  schema-validates again, so products with different contracts can share one
+  store. Pass the Worker's `waitUntil` in the read context so fills outlive the
+  response. Every store failure falls through to the origin, and a value served
+  with no upstream request reports `source: 'store'`, with `fetchedAt` set to
+  when the manifest was stored.
 - **Freshness** — every result carries `fetchedAt`, `ageMs`, `source`,
   `releaseId`, `observedAt`/`observedAgeMs` (the newest observation in the
   release, `staleness.newest_as_of`), `evaluatedAt` (when the producer cut the
