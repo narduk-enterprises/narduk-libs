@@ -184,7 +184,9 @@ export function readDeployLocalSecrets(
               `${appKeys.join(', ')} come${appKeys.length === 1 ? 's' : ''} from the app nvault config.`,
             ]
           : []),
-        `Run it under both, for example \`${PACKAGES_READ_RUN} -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes\`,`,
+        keys.includes('GH_PACKAGES_READ')
+          ? `Run it under both, for example \`${PACKAGES_READ_RUN} -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes\`,`
+          : 'Run it under the app nvault config, for example `nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`,',
         'or use `narduk-app deploy-hotfix` (docs/local-hotfix.md).',
       ].join(' '),
     )

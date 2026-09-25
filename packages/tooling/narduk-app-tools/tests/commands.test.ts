@@ -230,9 +230,20 @@ describe('app-local command planning', () => {
     expect(missing).toThrow(
       '`nvault run -p github -e prd -c narduk-enterprises-packages-read -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`',
     )
-    expect(() => readDeployLocalSecrets({}, ['NUXT_OG_IMAGE_SECRET'])).not.toThrow(
-      'registered route',
+    const onlyPackagesRead = () =>
+      readDeployLocalSecrets({ NUXT_OG_IMAGE_SECRET: 'x' }, [
+        'GH_PACKAGES_READ',
+        'NUXT_OG_IMAGE_SECRET',
+      ])
+    expect(onlyPackagesRead).toThrow('GH_PACKAGES_READ comes from its registered route')
+    expect(onlyPackagesRead).not.toThrow('from the app nvault config')
+    // A custom key list without GH_PACKAGES_READ never mentions its route.
+    const customList = () => readDeployLocalSecrets({}, ['APP_ONLY_SECRET'])
+    expect(customList).toThrow('APP_ONLY_SECRET comes from the app nvault config.')
+    expect(customList).toThrow(
+      'Run it under the app nvault config, for example `nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`',
     )
+    expect(customList).not.toThrow('narduk-enterprises-packages-read')
   })
 
   it('preserves hotfix runtime vars in generated configuration without changing source', () => {
