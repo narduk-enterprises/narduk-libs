@@ -44,6 +44,20 @@ test('a phase that rewrites a tracked file is caught', () => {
   }
 })
 
+test('a staged rename reports both the source and the destination (#915)', () => {
+  const { directory, git, cleanup } = repository()
+  try {
+    const before = trackedTreeSnapshot(directory)
+    git('mv', 'tracked.json', 'moved.json')
+    assert.deepEqual(newlyDirtyPaths(before, trackedTreeSnapshot(directory)), [
+      'moved.json',
+      'tracked.json',
+    ])
+  } finally {
+    cleanup()
+  }
+})
+
 test('a file the phase created is caught, not only one it modified', () => {
   // The #623 report's own instance was a budget file that did not exist
   // before the gate ran, so an implementation that only diffed tracked

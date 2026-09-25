@@ -185,7 +185,7 @@ function main() {
     const mergeBase = resolvedBase.trim()
     const changedFiles = execFileSync(
       'git',
-      ['diff', '--name-only', '-z', mergeBase, options.head],
+      ['diff', '--name-only', '--no-renames', '-z', mergeBase, options.head],
       { cwd: root, encoding: 'utf8' },
     )
       .split('\0')
