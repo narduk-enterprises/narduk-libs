@@ -46,6 +46,7 @@ import {
   runDevelopmentRollback,
   runDevelopmentStatus,
   runDevelopmentUnpin,
+  runDevelopmentValidate,
   type LifecycleContext,
 } from '../src/development-lifecycle.js'
 import { DevelopmentCloudflare } from '../src/development-provider.js'
@@ -2366,5 +2367,60 @@ describe('guard building blocks', () => {
     })
     expect(() => parseDevelopmentDeployArgs(['--red-main-fix', 'soon'])).toThrow(/issue number/u)
     expect(DEVELOPMENT_USAGE.join('\n')).toMatch(/development rollback --to/u)
+  })
+})
+
+/** Records the validation push instead of running `git push`. */
+class NoPushGitHub extends DevelopmentGitHub {
+  pushed: string[] = []
+  override requestValidation(
+    _cwd: string,
+    branch: string,
+    sha: string,
+    reason: string,
+    beforePush: Parameters<DevelopmentGitHub['requestValidation']>[4],
+  ): string {
+    const validationRef = `narduk-validation/${sha}/fixture`
+    beforePush({ branch, sha, reason, validationRef })
+    this.pushed.push(validationRef)
+    return validationRef
+  }
+}
+
+describe('development validate on a host without the activation record', () => {
+  const flags = { ref: 'feature', sha: 'a'.repeat(40), reason: 'PR needs ci / Required' }
+  function noPush(h: Harness): NoPushGitHub {
+    const client = new NoPushGitHub(REPO, h.github.request)
+    h.context.github = () => client
+    return client
+  }
+
+  it('refuses, naming the evidence, while normal CI is running', async () => {
+    const h = harness()
+    const client = noPush(h)
+    expect(() => runDevelopmentValidate(flags, h.context)).toThrow(
+      /^Not enrolled: none of \.github\/workflows\/ci\.yml, \.github\/workflows\/promote\.yml is held on GitHub/u,
+    )
+    expect(client.pushed).toEqual([])
+    expect(formatStatus(await runDevelopmentStatus({ remote: true }, h.context))).toBe(
+      `${REPO}: normal delivery (not enrolled in development mode on this workstation)`,
+    )
+  })
+
+  it('validates when GitHub shows the CI held by another workstation', async () => {
+    const h = harness()
+    const client = noPush(h)
+    for (const workflow of h.github.workflows.slice(0, 2)) workflow.state = 'disabled_manually'
+    const validationRef = runDevelopmentValidate(flags, h.context)
+    expect(client.pushed).toEqual([validationRef])
+    expect(h.logs.join('\n')).toMatch(
+      /ci\.yml \(disabled_manually\), .*promote\.yml \(disabled_manually\): CI is held by an enrollment on another workstation/u,
+    )
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    const status = formatStatus(await runDevelopmentStatus({ remote: true }, h.context))
+    expect(status).toContain(
+      '  held on GitHub: .github/workflows/ci.yml (disabled_manually), .github/workflows/promote.yml (disabled_manually)',
+    )
+    expect(status).toContain('run development validate for a full CI result')
   })
 })

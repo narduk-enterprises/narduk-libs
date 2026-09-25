@@ -339,6 +339,14 @@ commit, the run's `ci / Required` counts for a pull request at that head. Use it
 before merging a PR while the mode is active, or whenever you want a full-CI
 answer. It never deploys.
 
+It works from any contributor host, not only the publisher's workstation. The
+activation record lives only on the publisher's workstation, so on another host
+`validate` asks GitHub instead: when the held workflows are disabled, the
+repository is enrolled elsewhere and pushes get no normal CI, so it requests
+validation. When none of them is held, normal delivery is running and it
+refuses, naming those workflows. `development status --remote` on such a host
+shows the held workflows too.
+
 ## Rollback
 
 ```sh
