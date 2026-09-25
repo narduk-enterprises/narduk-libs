@@ -1,5 +1,39 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.30.2
+
+### Patch Changes
+
+- 47f7131: A key minted by another API key can no longer outlive it
+  (narduk-libs#920). `POST /api/auth/api-keys` from an API-key caller clamps a
+  child with no `expiresInDays` to the calling key's expiry, and refuses with
+  403 an explicit expiry past it, or `null` under a key that expires. A `*` key
+  can no longer renew itself for another 90 days before it expires. Session
+  callers are unchanged. narduk-core's `AuthUser` gains an optional
+  `apiKey: { id, expiresAt }` naming the key behind an `api-key` principal.
+- b462046: `GET /api/admin/users` and its `/api/users` alias now accept an
+  admin-owned API key only when it carries the new `auth:admin:users:read` scope
+  (or `*`). `PUT /api/admin/users/role` is now session-only, so no API key can
+  grant or revoke admin, whatever its scopes. Admin sessions are unchanged.
+- 591863c: Closed signup can no longer be bypassed by exchanging a self-signup
+  confirmation token as `type=invite`. An exchange now counts as an invite only
+  when the verified Supabase user has `invited_at` set, which GoTrue records
+  only when an operator invites someone. A client-chosen `type` or a stored PKCE
+  `redirectType` is no longer enough.
+- Updated dependencies [47f7131]
+- Updated dependencies [f17ce87]
+- Updated dependencies [02b999f]
+- Updated dependencies [6a12081]
+- Updated dependencies [5ed9665]
+- Updated dependencies [8b0e555]
+- Updated dependencies [5de0ec4]
+- Updated dependencies [ffae997]
+- Updated dependencies [f63937e]
+- Updated dependencies [0ab6fb1]
+  - @narduk-enterprises/narduk-core@2.15.0
+  - @narduk-enterprises/narduk-platform@2.2.0
+  - @narduk-enterprises/narduk-app@1.20.2
+
 ## 1.30.1
 
 ### Patch Changes

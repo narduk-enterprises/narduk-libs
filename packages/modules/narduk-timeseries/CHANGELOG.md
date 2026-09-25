@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.4
+
+### Patch Changes
+
+- 8a254db: `bucketReadings` now ends a bucket at a spring-forward DST gap where
+  the day really changes (narduk-libs#938). A bucket edge that fell on a skipped
+  wall time (Chicago's 02:00, or midnight in America/Santiago) resolved backward
+  onto the previous edge. That gave zero-width buckets (`start === end`) and a
+  bucket whose `end` came before rows it held, overlapping the next one. Skipped
+  wall times now resolve forward to the transition instant, and a repeated
+  fall-back hour still opens on its first occurrence.
+- 757d1f7: A decimated `queryTrack` now anchors its buckets on `range.start`
+  (narduk-libs#939). `time_bucket` aligned them to TimescaleDB's 2000-01-03
+  origin, so a fully covered range almost always touched `maxPoints + 1`
+  buckets, with a partial one at each end. `queryTrack` read the extra row as
+  truncation, reported `truncated: true`, and sliced off the newest bucket,
+  which holds the vessel's latest position. It now gets at most `maxPoints`
+  buckets, and `truncated` means a real cap.
+- a374aca: `resolveSeries`, `writeNumeric` and the series cache now match a
+  `vesselId` in any spelling Postgres accepts for a uuid (narduk-libs#940). The
+  resolve statement's `RETURNING` answers in lowercase canonical form, and the
+  descriptor lookup used the caller's string as given. So an uppercase
+  `UUID().uuidString` from Swift threw `SERIES_UNRESOLVED` on every batch after
+  the upsert had run, and none of its points were written. A batch that spelled
+  one vessel two ways also sent two upsert rows for one `(vessel_id, path)`.
+  Series keys now use the canonical form.
+- Updated dependencies [ca79843]
+  - @narduk-enterprises/narduk-postgres@0.2.6
+
 ## 0.3.3
 
 ### Patch Changes

@@ -1,5 +1,53 @@
 # @narduk-enterprises/eslint-config
 
+## 2.4.1
+
+### Patch Changes
+
+- 4b85a74: `composable-primary-export` and `require-use-prefix-for-composables`
+  now check aliased named exports (`export { helper as useCartHelper }`). Both
+  rules looked the export up by its alias instead of the local declaration it
+  names, so every renamed export was skipped.
+- 6f2f1ee: `foundation:check` no longer holds an app without Nuxt to the Nuxt
+  modules (#157). An app with no `nuxt.config.*` at a known path and no `nuxt`
+  dependency gets sub-check 2.1 on `narduk-testkit`, `narduk-app-tools` and
+  `eslint-config` only, and 2.1c (`narduk-core`), 2.3 (when `narduk-core` is not
+  a dependency) and 3.1/3.2/3.3 report `not-applicable`, with "not a Nuxt app"
+  and the reason in the detail. They never report `pass`. The eslint-config
+  README names `composeSharedConfigs()` as the supported ESLint route for an app
+  without Nuxt.
+- 5de0ec4: The shared `narduk/imports` block sets
+  `import-x/ignore: ['node_modules']`, so `import-x/no-cycle`, `named`,
+  `default` and `export` no longer parse installed packages' sources and type
+  trees. In narduk-core that walk held about 3.4 GB of heap: peak RSS falls from
+  5.2 GB to 1.8 GB, lint time from about 85 s to 28 s, and the messages are
+  identical. A cycle cannot run through an installed package, and TypeScript
+  already checks named and default imports from one (#789). narduk-core's `lint`
+  script drops its 4096 MB heap stopgap and runs under the repo's 3072 MB
+  default again.
+- 4b85a74: `no-locale-date-format-in-ssr-text` now matches `no-render-clock` on
+  what counts as render code. It no longer reports locale date formatting inside
+  a `v-on` / `@event` handler, which only runs after a user event. It now
+  reports formatting inside a synchronous array callback
+  (`items.map((i) => i.at.toLocaleDateString())`) or an IIFE at the top of
+  `<script setup>` or inside `computed()`, which runs during server render.
+- 4b85a74: `narduk/no-raw-define-event-handler-in-mutation-routes` stops its
+  "composed inside an approved wrapper" exemption at a function boundary
+  (narduk-libs#886). `defineUserMutation(defineEventHandler(…))` is still the
+  wrapper's own composition, but a raw `defineEventHandler` declared inside the
+  wrapped route's callback is a new, unwrapped handler and is now reported.
+  `create-narduk-app` is a companion patch because it pins eslint-config.
+- 4b85a74: The Cloudflare Workers module-scope analyzer treats a
+  `new Promise(executor)` executor as running during module evaluation, which it
+  does: the executor runs synchronously during construction (narduk-libs#887).
+  The four rules built on it (`no-worker-global-scope-operations`,
+  `no-worker-global-scope-db-clients`, `no-supabase-client-in-global-scope`, and
+  the rest) now report a `fetch`, `new Pool` or `createClient` inside a
+  module-scope `new Promise((resolve) => …)`, whether the executor is inline or
+  a named function. Work the executor defers (`setTimeout`, `.then`) stays
+  unreported. `create-narduk-app` is a companion patch because it pins
+  eslint-config.
+
 ## 2.4.0
 
 ### Minor Changes

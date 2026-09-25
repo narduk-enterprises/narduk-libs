@@ -1,5 +1,41 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.23.0
+
+### Minor Changes
+
+- 804410d: `narduk-app doctor --audit` is the doctor's dependency-audit leg
+  (#376). One `pnpm audit --json` call, cached per `pnpm-lock.yaml` hash for up
+  to 12 hours, gives one verdict line. It FAILs only on a high or critical
+  advisory that the app has not accepted in `narduk-app.json`
+  `security.acceptedAdvisories` (`{ "id", "reason", "expiresOn"? }`), and it
+  prints the line to paste, saying first when a patched version makes the bump
+  the fix. Low and moderate advisories never count. An unreachable registry or a
+  missing lockfile is UNKNOWN and exits 0, an expired `expiresOn` is a WARN, and
+  a declaration that no longer matches is a "remove this entry" note. Bare
+  `doctor` is unchanged. `create-narduk-app` scaffolds `narduk-app.json` with an
+  empty list and adds a how-to section to the app README.
+- 8b0e555: Registry auth no longer routes the retired `@narduk-geo` scope
+  (#140). Its last consumer, farm-analytics, is retired.
+  `patchPackageRegistryNpmrcContent` (narduk-platform) and `renderRegistryAuth`
+  / `narduk-app registry-auth` (narduk-app-tools) now write only the
+  `@narduk-enterprises` route. They drop a stale `@narduk-geo:registry=` line
+  the same way they already drop `@loganrenz:registry=`. The exported constants
+  `MAPKIT_PACKAGE_REGISTRY_SCOPE` (narduk-platform) and `NARDUK_GEO_SCOPE`
+  (narduk-app-tools) are removed. A GitHub code search across narduk-enterprises
+  and loganrenz found no importer outside narduk-libs.
+
+### Patch Changes
+
+- 6f2f1ee: `foundation:check` no longer holds an app without Nuxt to the Nuxt
+  modules (#157). An app with no `nuxt.config.*` at a known path and no `nuxt`
+  dependency gets sub-check 2.1 on `narduk-testkit`, `narduk-app-tools` and
+  `eslint-config` only, and 2.1c (`narduk-core`), 2.3 (when `narduk-core` is not
+  a dependency) and 3.1/3.2/3.3 report `not-applicable`, with "not a Nuxt app"
+  and the reason in the detail. They never report `pass`. The eslint-config
+  README names `composeSharedConfigs()` as the supported ESLint route for an app
+  without Nuxt.
+
 ## 0.22.2
 
 ### Patch Changes
