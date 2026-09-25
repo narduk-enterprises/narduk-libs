@@ -2409,6 +2409,48 @@ export default defineScheduledJobs<Env>(jobs)
 It lives outside `server/utils`, so it adds no auto-imported names to an app.
 Import it explicitly.
 
+## Background work: `runInBackground` and `resolveWaitUntil`
+
+`@narduk-enterprises/narduk-core/server/wait-until` keeps work alive past the
+response (narduk-libs#991). On Workers, a promise the response does not wait on
+can be cancelled once the response is sent, so a cache write or a stale refresh
+must be handed to the runtime's `waitUntil`. Five apps resolved that function by
+hand, and their copies disagreed on lookup order, binding and the fallback.
+
+```ts
+import { runInBackground } from '@narduk-enterprises/narduk-core/server/wait-until'
+
+export default defineEventHandler(async (event) => {
+  const response = await fetchTile(event)
+  await runInBackground(event, cache.put(key, response.clone()), {
+    onError: (error) =>
+      log.warn('tile cache fill failed', { error: String(error) }),
+  })
+  return response
+})
+```
+
+- **Lookup order.** Nitro's `event.waitUntil`, then the Cloudflare
+  `ExecutionContext` at `event.context.cloudflare.context`, then
+  `event.context.waitUntil`. Reading only `context.cloudflare.context` misses
+  every preset but `cloudflare-module`.
+- **Called as a method.** A detached `ExecutionContext.waitUntil` throws on
+  Workers, so the resolver never pulls the function into a local.
+- **Nitro internal fetch.** A `$fetch` to a local route during SSR gets an event
+  with no `waitUntil` of its own. The resolver walks
+  `event.context.nuxt.ssrContext.event` to the SSR parent.
+- **No `waitUntil` at all** (dev, node presets, unit tests):
+  `fallback: 'detach'` (the default) lets the task run on with its error handler
+  attached; `fallback: 'await'` waits for it. Either way a rejection goes to
+  `onError`, or to an `error` line on the request logger, and `runInBackground`
+  itself never rejects.
+- `resolveWaitUntil(event)` returns the bound function, or `null`, for code that
+  passes a `waitUntil` into a lower layer (operator-portal's route helpers).
+
+`withD1Cache` uses the same resolver for its stale-while-revalidate refresh. It
+lives outside `server/utils`, so it adds no auto-imported names to an app (buoys
+already declares a private `resolveWaitUntil`). Import it explicitly.
+
 ## Size-capped upstream reads: `readBoundedBody`
 
 The published-data client (`fetchNardukDataJson`) reads artifact bytes through

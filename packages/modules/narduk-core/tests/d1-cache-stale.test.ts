@@ -87,6 +87,17 @@ describe('withD1Cache (narduk-libs#925)', () => {
     expect(kept).toHaveLength(1)
   })
 
+  it('keeps the refresh alive through the SSR parent of a Nitro internal fetch (#991)', async () => {
+    const { db } = createD1({ expires_at: NOW_SEC - 10, value: '"old"' })
+    const kept: Array<Promise<unknown>> = []
+    const parent = { waitUntil: (task: Promise<unknown>) => kept.push(task) }
+    const event = createEvent(db, { context: { nuxt: { ssrContext: { event: parent } } } })
+
+    await withD1Cache(event, 'k', 300, async () => 'fresh', false, { staleWindowSeconds: 600 })
+
+    expect(kept).toHaveLength(1)
+  })
+
   it('reports when the served value was cached, not the request time', async () => {
     const writtenAtSec = NOW_SEC - 310
     const { db } = createD1({ expires_at: writtenAtSec + 300, value: '"old"' })
