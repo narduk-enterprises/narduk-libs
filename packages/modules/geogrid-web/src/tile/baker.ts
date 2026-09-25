@@ -495,8 +495,6 @@ export class GridTileRenderer {
     gl.uniform1i(this.uniform(pipeline, 'scaleLog'), styleScale(style) === 'log' ? 1 : 0)
     gl.uniform1i(this.uniform(pipeline, 'coastal'), style.sampling === 'coastal' ? 1 : 0)
     gl.uniform1i(this.uniform(pipeline, 'useStencil'), 0)
-    gl.uniform2f(this.uniform(pipeline, 'stencilUvOffset'), 0, 0)
-    gl.uniform2f(this.uniform(pipeline, 'stencilUvScale'), 1, 1)
 
     const lut = this.ensureLut(tileLut(style, resolvedOpacity(style, options)))
     if (!lut) return null

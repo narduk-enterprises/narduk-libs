@@ -3,7 +3,6 @@ import { rampLut } from '../color/ramp.js'
 import {
   areaSampleBoundsFromUv,
   coastalFeather,
-  dataUvTransform,
   displayValueFromEncoded,
   linearChannelToSrgb,
   nearestMaskValid,
@@ -12,6 +11,9 @@ import {
   srgbChannelToLinear,
   texelPositionFromUv,
   validSideFeather,
+  viewportDataProjection,
+  viewportDataU,
+  viewportDataV,
   type GridAreaSampleBounds,
   type RgbSample,
   type ScalarSample,
@@ -740,8 +742,10 @@ export function referenceRenderRgbCompositionTile(
 /**
  * Render a layer as the backends blit it — through a viewport onto a screen.
  *
- * Screen pixels whose data UV falls outside `0…1` are transparent, which is the
- * `uv` bounds check both fragment shaders open with.
+ * Rows follow the Web-Mercator basemap under the overlay (`viewportDataProjection`),
+ * the same mapping the shaders' `dataUv` evaluates. Screen pixels whose data UV
+ * falls outside `0…1` are transparent, which is the `uv` bounds check both
+ * fragment shaders open with.
  */
 export function referenceRenderScalarViewport(
   layer: ReferenceScalarLayer,
@@ -750,14 +754,14 @@ export function referenceRenderScalarViewport(
 ): ReferenceRaster {
   const { viewport, bbox, width, height } = options
   const anchor = options.anchor ?? (layer.valueKind === 'float32' ? 'cell-center' : 'cell-edge')
-  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const projection = viewportDataProjection(viewport, bbox)
   const lut = referenceLut(style)
   const pixels = new Uint8ClampedArray(width * height * 4)
 
   for (let py = 0; py < height; py += 1) {
-    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    const v = viewportDataV(projection, (py + 0.5) / height)
     for (let px = 0; px < width; px += 1) {
-      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      const u = viewportDataU(projection, (px + 0.5) / width)
       if (u < 0 || u > 1 || v < 0 || v > 1) continue
       const gx = texelPositionFromUv(u, layer.width, anchor)
       const gy = texelPositionFromUv(v, layer.height, anchor)
@@ -779,13 +783,13 @@ export function referenceRenderRgbViewport(
 ): ReferenceRaster {
   const { viewport, bbox, width, height } = options
   const anchor = options.anchor ?? 'cell-edge'
-  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const projection = viewportDataProjection(viewport, bbox)
   const pixels = new Uint8ClampedArray(width * height * 4)
 
   for (let py = 0; py < height; py += 1) {
-    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    const v = viewportDataV(projection, (py + 0.5) / height)
     for (let px = 0; px < width; px += 1) {
-      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      const u = viewportDataU(projection, (px + 0.5) / width)
       if (u < 0 || u > 1 || v < 0 || v > 1) continue
       const gx = texelPositionFromUv(u, layer.width, anchor)
       const gy = texelPositionFromUv(v, layer.height, anchor)
@@ -807,16 +811,20 @@ export function referenceRenderRgbCompositionViewport(
 ): ReferenceRaster {
   const { viewport, bbox, width, height } = options
   const anchor = options.anchor ?? 'cell-edge'
-  const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, bbox)
+  const projection = viewportDataProjection(viewport, bbox)
   const pixels = new Uint8ClampedArray(width * height * 4)
 
   for (let py = 0; py < height; py += 1) {
-    const v = uvOffsetY + ((py + 0.5) / height) * uvScaleY
+    const v = viewportDataV(projection, (py + 0.5) / height)
+    const areaTop = viewportDataV(projection, py / height)
+    const areaBottom = viewportDataV(projection, (py + 1) / height)
     for (let px = 0; px < width; px += 1) {
-      const u = uvOffsetX + ((px + 0.5) / width) * uvScaleX
+      const u = viewportDataU(projection, (px + 0.5) / width)
       if (u < 0 || u > 1 || v < 0 || v > 1) continue
       const gx = texelPositionFromUv(u, layer.width, anchor)
       const gy = texelPositionFromUv(v, layer.height, anchor)
+      const areaLeft = viewportDataU(projection, px / width)
+      const areaRight = viewportDataU(projection, (px + 1) / width)
       writePixel(
         pixels,
         (py * width + px) * 4,
@@ -828,10 +836,10 @@ export function referenceRenderRgbCompositionViewport(
           options.blend,
           style.supportModulatesWeight
             ? areaSampleBoundsFromUv(
-                uvOffsetX + (px / width) * uvScaleX,
-                uvOffsetY + (py / height) * uvScaleY,
-                uvOffsetX + ((px + 1) / width) * uvScaleX,
-                uvOffsetY + ((py + 1) / height) * uvScaleY,
+                areaLeft,
+                areaTop,
+                areaRight,
+                areaBottom,
                 layer.width,
                 layer.height,
                 anchor,
@@ -839,10 +847,10 @@ export function referenceRenderRgbCompositionViewport(
             : undefined,
           style.supportModulatesWeight && options.blend
             ? areaSampleBoundsFromUv(
-                uvOffsetX + (px / width) * uvScaleX,
-                uvOffsetY + (py / height) * uvScaleY,
-                uvOffsetX + ((px + 1) / width) * uvScaleX,
-                uvOffsetY + ((py + 1) / height) * uvScaleY,
+                areaLeft,
+                areaTop,
+                areaRight,
+                areaBottom,
                 options.blend.upper.width,
                 options.blend.upper.height,
                 anchor,

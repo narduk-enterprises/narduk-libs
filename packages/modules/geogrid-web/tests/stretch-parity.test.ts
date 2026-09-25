@@ -796,13 +796,21 @@ describe('stretchDisplayRange', () => {
 })
 
 describe('viewportBBox', () => {
-  it('is the rectangle the viewport itself covers', () => {
-    expect(
-      viewportBBox({
-        center: { latitude: 28.5, longitude: -91.5 },
-        span: { latitudeDelta: 3, longitudeDelta: 7 },
-      }),
-    ).toEqual([-95, 27, -88, 30])
+  it('is the rectangle a Web-Mercator basemap shows for the viewport (#930)', () => {
+    const [west, south, east, north] = viewportBBox({
+      center: { latitude: 28.5, longitude: -91.5 },
+      span: { latitudeDelta: 3, longitudeDelta: 7 },
+    })
+    expect(west).toBe(-95)
+    expect(east).toBe(-88)
+    expect(north - south).toBeCloseTo(3, 12)
+    // The host's centre is the Mercator midpoint of the view, which lies north
+    // of the degree midpoint, so the edges sit slightly south of centre ± 1.5.
+    const mercator = (latitude: number) => Math.asinh(Math.tan((latitude * Math.PI) / 180))
+    const midpoint = (Math.atan(Math.sinh((mercator(north) + mercator(south)) / 2)) * 180) / Math.PI
+    expect(midpoint).toBeCloseTo(28.5, 12)
+    expect(south).toBeLessThan(27)
+    expect(north).toBeLessThan(30)
   })
 })
 

@@ -1,4 +1,5 @@
 import { gridBounds, type GridBinaryHeader, type GridScalarDataset } from './decode/grid.js'
+import { viewportLatitudeFrame } from './math.js'
 import type { GridBBox, GridBBoxAnchor, GridScale, GridValueRange, GridViewport } from './models.js'
 
 /**
@@ -587,16 +588,17 @@ export function stretchDisplayRange(
   }
 }
 
-/** A viewport's own `[west, south, east, north]` rectangle. */
+/**
+ * A viewport's own `[west, south, east, north]` rectangle.
+ *
+ * The north and south edges are the ones a Web-Mercator basemap shows. The
+ * host's centre is the Mercator midpoint of the view, so they are not
+ * `centre ± latitudeDelta / 2` (narduk-libs#930).
+ */
 export function viewportBBox(viewport: GridViewport): GridBBox {
   const halfLon = viewport.span.longitudeDelta / 2
-  const halfLat = viewport.span.latitudeDelta / 2
-  return [
-    viewport.center.longitude - halfLon,
-    viewport.center.latitude - halfLat,
-    viewport.center.longitude + halfLon,
-    viewport.center.latitude + halfLat,
-  ]
+  const { north, south } = viewportLatitudeFrame(viewport)
+  return [viewport.center.longitude - halfLon, south, viewport.center.longitude + halfLon, north]
 }
 
 // ---------------------------------------------------------------------------

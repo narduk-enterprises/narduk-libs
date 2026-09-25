@@ -1,9 +1,11 @@
 import { toGridFrame, defaultBBoxAnchor, frameCacheKey } from '../core/frame.js'
 import {
-  dataUvTransform,
   observationWeightForZoom,
   observationSupportModulatesWeight,
+  viewportDataProjection,
+  viewportLatitudeFrame,
   viewportZoom,
+  type ViewportLatitudeFrame,
 } from '../core/math.js'
 import {
   isUsableViewport,
@@ -258,7 +260,8 @@ export class WebGL2GridBackend implements GridRenderBackend {
       return
     }
 
-    const { uvOffsetX, uvOffsetY, uvScaleX, uvScaleY } = dataUvTransform(viewport, state.bbox)
+    const frame = viewportLatitudeFrame(viewport)
+    const projection = viewportDataProjection(viewport, state.bbox, frame)
     const anchor = state.bboxAnchor ?? defaultBBoxAnchor(lower.valueKind)
 
     const gl = this.gl
@@ -272,8 +275,13 @@ export class WebGL2GridBackend implements GridRenderBackend {
       gl.enableVertexAttribArray(position)
       gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
     }
-    gl.uniform2f(this.uniform(pipeline, 'uvOffset'), uvOffsetX, uvOffsetY)
-    gl.uniform2f(this.uniform(pipeline, 'uvScale'), uvScaleX, uvScaleY)
+    gl.uniform2f(this.uniform(pipeline, 'viewportU'), projection.uOrigin, projection.uSpan)
+    gl.uniform2f(this.uniform(pipeline, 'viewportV'), projection.vCenter, projection.vPerDegree)
+    gl.uniform2f(
+      this.uniform(pipeline, 'viewportMerc'),
+      frame.centerHalfTanh,
+      frame.mercatorYPerScreenV,
+    )
     gl.uniform1i(this.uniform(pipeline, 'anchorCenter'), anchor === 'cell-center' ? 1 : 0)
     gl.uniform1f(this.uniform(pipeline, 'progress'), Math.max(0, Math.min(1, state.progress)))
     gl.uniform1i(
@@ -333,7 +341,7 @@ export class WebGL2GridBackend implements GridRenderBackend {
       bindTexture(gl, UNIT_BLUE_0, lowerGpu.values[2]!, this.uniform(pipeline, 'blue0'))
       bindTexture(gl, UNIT_BLUE_1, upperGpu.values[2]!, this.uniform(pipeline, 'blue1'))
     }
-    this.bindStencil(pipeline, viewport, composedRgb ? UNIT_COMPOSED_STENCIL : UNIT_STENCIL)
+    this.bindStencil(pipeline, viewport, frame, composedRgb ? UNIT_COMPOSED_STENCIL : UNIT_STENCIL)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     this.hasDrawn = true
   }
@@ -470,31 +478,26 @@ export class WebGL2GridBackend implements GridRenderBackend {
     return this.lutTexture
   }
 
-  private bindStencil(pipeline: Pipeline, viewport: GridViewport, textureUnit: number): void {
+  private bindStencil(
+    pipeline: Pipeline,
+    viewport: GridViewport,
+    frame: ViewportLatitudeFrame,
+    textureUnit: number,
+  ): void {
     const gl = this.gl
     const hasStencil = Boolean(this.stencilTexture && this.stencilBBox)
     gl.uniform1i(this.uniform(pipeline, 'useStencil'), hasStencil ? 1 : 0)
     if (!hasStencil || !this.stencilTexture || !this.stencilBBox) {
-      gl.uniform2f(this.uniform(pipeline, 'stencilUvOffset'), 0, 0)
-      gl.uniform2f(this.uniform(pipeline, 'stencilUvScale'), 1, 1)
       bindTexture(gl, textureUnit, this.whiteStencil, this.uniform(pipeline, 'stencil'))
       return
     }
-    const span = viewport.span
-    const viewportWest = viewport.center.longitude - span.longitudeDelta / 2
-    const viewportNorth = viewport.center.latitude + span.latitudeDelta / 2
-    const [west, south, east, north] = this.stencilBBox
-    const width = Math.max(1e-9, east - west)
-    const height = Math.max(1e-9, north - south)
+    const projection = viewportDataProjection(viewport, this.stencilBBox, frame)
+    gl.uniform2f(this.uniform(pipeline, 'stencilU'), projection.uOrigin, projection.uSpan)
+    gl.uniform2f(this.uniform(pipeline, 'stencilV'), projection.vCenter, projection.vPerDegree)
     gl.uniform2f(
-      this.uniform(pipeline, 'stencilUvOffset'),
-      (viewportWest - west) / width,
-      (north - viewportNorth) / height,
-    )
-    gl.uniform2f(
-      this.uniform(pipeline, 'stencilUvScale'),
-      span.longitudeDelta / width,
-      span.latitudeDelta / height,
+      this.uniform(pipeline, 'stencilMerc'),
+      frame.centerHalfTanh,
+      frame.mercatorYPerScreenV,
     )
     bindTexture(gl, textureUnit, this.stencilTexture, this.uniform(pipeline, 'stencil'))
   }
