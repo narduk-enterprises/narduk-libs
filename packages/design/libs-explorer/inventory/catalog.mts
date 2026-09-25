@@ -67,6 +67,8 @@ const SHELL_DEMOS = [
   'ne-feature-grid',
   'ne-cta',
   'ne-marketing-footer',
+  'ne-data-attribution',
+  'ne-legal-page',
   'formatters',
 ]
 
@@ -194,6 +196,8 @@ export const CATALOG: Record<string, CatalogEntry> = {
       'status badge',
       'confirm dialog',
       'empty state',
+      'data attribution',
+      'legal pages',
       'formatters',
     ],
     prerequisites: ['@nuxt/ui installed as a Nuxt module.'],

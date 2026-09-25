@@ -137,6 +137,16 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'Marketing footer',
     'The site footer: left, centre and right rows, with columns in #top.',
   ),
+  shell(
+    'NeDataAttribution',
+    'Data attribution',
+    'A consistent "Data from <source>, updated <time>" credit with safe source links.',
+  ),
+  shell(
+    'NeLegalPage',
+    'Legal page',
+    'Title, last-updated date, contents and sections; template wording is placeholder-only.',
+  ),
   {
     id: 'formatters',
     title: 'Formatters',
