@@ -155,9 +155,18 @@ async function assertSupabaseCurrentPassword(
 export async function verifySupabaseAccountDeletionCredentials(
   event: H3Event,
   input: { currentPassword?: string },
+  options: {
+    /**
+     * The account about to be deleted. When the caller was resolved some other
+     * way (an API key beside a cookie), the session re-authenticated here must
+     * be that account's, or a leaked key plus the caller's own session and
+     * password would delete someone else (narduk-libs#1051).
+     */
+    userId?: string
+  } = {},
 ): Promise<void> {
   const sessionUser = await useRefreshedSessionUser(event)
-  if (!sessionUser) {
+  if (!sessionUser || (options.userId !== undefined && sessionUser.id !== options.userId)) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',

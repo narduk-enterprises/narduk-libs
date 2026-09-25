@@ -90,7 +90,7 @@ export async function deleteCurrentUserAccountBridge(
   if (hooks?.verifyCredentials) {
     await hooks.verifyCredentials(event, input)
   } else if (usesSupabaseCredentials(event, user)) {
-    await verifySupabaseAccountDeletionCredentials(event, input)
+    await verifySupabaseAccountDeletionCredentials(event, input, { userId: user.id })
   } else if (dbUser.passwordHash) {
     if (!input.currentPassword) {
       throw createError({

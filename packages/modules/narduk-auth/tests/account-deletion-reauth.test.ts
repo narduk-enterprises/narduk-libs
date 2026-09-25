@@ -274,6 +274,30 @@ describe('custom delete route built on the helper (#1051)', () => {
     expect(state.deleted).toBe(0)
   })
 
+  it("refuses when the re-authenticated session is not the principal's account", async () => {
+    // A victim's API key resolves the principal; the cookie is the attacker's
+    // own session, so the attacker's own password must not unlock the delete.
+    const victim = { ...SUPABASE_EMAIL_USER, id: 'victim-1', email: 'victim@example.com' }
+    delete (victim as { authBackend?: string }).authBackend
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+
+    state.user = { ...SUPABASE_EMAIL_USER, id: 'attacker-1', email: 'attacker@example.com' }
+    await expect(
+      deleteCurrentUserAccount({ context: {} } as never, victim as never, {
+        currentPassword: state.supabasePassword,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+
+    // An OAuth-only attacker session would otherwise need no password at all.
+    state.user = { ...state.user, authProviders: ['google'] }
+    await expect(
+      deleteCurrentUserAccount({ context: {} } as never, victim as never, {}),
+    ).rejects.toMatchObject({ statusCode: 401 })
+
+    expect(state.signIns).toEqual([])
+    expect(state.deleted).toBe(0)
+  })
+
   it('lets a caller that re-authenticates itself opt out with its own verifyCredentials', async () => {
     const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
     await expect(
