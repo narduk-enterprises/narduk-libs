@@ -8,14 +8,13 @@
  * makes it the containing block for that `fixed`; without it the card would
  * cover the gallery.
  *
- * Routing. Every rail item is a `to`, and the active row is whichever one the
- * router matches. `test/design-cards.test.ts` server-renders this card with no
- * router installed, so the card provides its own: a memory router whose
- * current location is `/example/runners`. The destinations sit under
- * `/example/`, which libs-explorer's link-crawling prerender ignores: they are
- * a demo app's routes, not the explorer's. That is what Nuxt UI's Vue-mode links
- * inject. In the prerendered gallery Nuxt's own link resolves instead, against
- * the gallery's page, so the active row there is whichever item matches it.
+ * Links. NE Base publishes a card only when every `href` in it is an in-page
+ * fragment (design-system-build `scripts/build.mts`), so the rail's items are
+ * `#…` destinations rather than a demo app's routes, and the card shows the
+ * rail's shape, not an active row: active state is the router's, which the
+ * mount tests cover. `test/design-cards.test.ts` server-renders this card with
+ * no router installed, so the card provides a catch-all memory router for
+ * Nuxt UI's Vue-mode links to resolve against.
  */
 import { provide } from 'vue'
 import {
@@ -35,37 +34,35 @@ const sections: NeAppShellSection[] = [
     id: 'operate',
     label: 'Operate',
     items: [
-      { label: 'Overview', to: '/', icon: 'i-lucide-layout-dashboard' },
-      { label: 'Runners', to: '/example/runners', icon: 'i-lucide-server', badge: 3 },
-      { label: 'Deploys', to: '/example/deploys', icon: 'i-lucide-rocket' },
+      { label: 'Overview', to: '#overview', icon: 'i-lucide-layout-dashboard' },
+      { label: 'Runners', to: '#runners', icon: 'i-lucide-server', badge: 3 },
+      { label: 'Deploys', to: '#deploys', icon: 'i-lucide-rocket' },
     ],
   },
   {
     id: 'infrastructure',
     label: 'Infrastructure',
     items: [
-      { label: 'Hosts', to: '/example/hosts', icon: 'i-lucide-hard-drive' },
-      { label: 'Networks', to: '/example/networks', icon: 'i-lucide-network' },
+      { label: 'Hosts', to: '#hosts', icon: 'i-lucide-hard-drive' },
+      { label: 'Networks', to: '#networks', icon: 'i-lucide-network' },
     ],
   },
   {
     id: 'settings',
     label: 'Settings',
-    items: [{ label: 'Access', to: '/example/settings/access', icon: 'i-lucide-key-round' }],
+    items: [{ label: 'Access', to: '#settings/access', icon: 'i-lucide-key-round' }],
   },
 ]
 
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: sections
-    .flatMap((section) => section.items)
-    .map((item) => ({ path: item.to, component: { render: () => null } })),
+  routes: [{ path: '/:path(.*)*', component: { render: () => null } }],
 })
 
 provide(routerKey, router)
 // A resolved location is what the router would load for this path; the card
 // renders synchronously, so it provides that rather than awaiting a push.
-provide(routeLocationKey, router.resolve('/example/runners') as RouteLocationNormalizedLoaded)
+provide(routeLocationKey, router.resolve('/#runners') as RouteLocationNormalizedLoaded)
 </script>
 
 <template>
