@@ -5,7 +5,7 @@
 
 narduk-charts: `niceScale` no longer loops forever when a domain spans only a few ULPs (#927). It widens such a range the same way as `min === max`, and it builds ticks by index.
 
-narduk-charts: domain and histogram math no longer spreads every value into `Math.min`/`Math.max`, which threw a RangeError past ~100k values (#929). The new `arrayMin`/`arrayMax` helpers replace those calls.
+narduk-charts: domain and histogram math no longer spreads every value into `Math.min`/`Math.max`, which threw a RangeError past ~100k values (#929). Internal `arrayMin`/`arrayMax` loop helpers replace those calls.
 
 narduk-charts: `useChart` starts observing its container again when `width` goes from set to unset (#934), so a chart that was pinned to a fixed width no longer sticks at 600px.
 
