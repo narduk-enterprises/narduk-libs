@@ -298,6 +298,25 @@ export function resolveSimulatorUdid(deviceName: string): string {
   return matches[0] as string
 }
 
+/**
+ * The pid of `bundleId`'s app in a simulator's `launchctl list` output
+ * (`PID<TAB>Status<TAB>Label`), or null when it is not running. The label is
+ * `UIKitApplication:<bundleId>`, optionally followed by `[…]` instance tags,
+ * and must match whole: `com.narduk.stonx` is not `com.narduk.stonx.watchkitapp`
+ * or `com.narduk.stonx-beta` (#883).
+ */
+export function pidFromLaunchctlList(output: string, bundleId: string): number | null {
+  const label = `UIKitApplication:${bundleId}`
+  for (const line of output.split('\n')) {
+    const fields = line.trim().split(/\s+/u)
+    const found = fields.at(-1) ?? ''
+    if (found !== label && !found.startsWith(`${label}[`)) continue
+    const pid = Number.parseInt(fields[0] as string, 10)
+    return Number.isFinite(pid) ? pid : null
+  }
+  return null
+}
+
 /** The real boundary: `xcrun simctl`, on this host, against one device. */
 export function createSimctlControl(udid: string): SimulatorControl {
   const simctl = (args: string[], label: string): string => run('xcrun', ['simctl', ...args], label)
@@ -321,13 +340,7 @@ export function createSimctlControl(udid: string): SimulatorControl {
         encoding: 'utf8',
       })
       if (result.status !== 0) return null
-      const label = `UIKitApplication:${bundleId}`
-      for (const line of (result.stdout ?? '').split('\n')) {
-        if (!line.includes(label)) continue
-        const pid = Number.parseInt(line.trim().split(/\s+/)[0] as string, 10)
-        return Number.isFinite(pid) ? pid : null
-      }
-      return null
+      return pidFromLaunchctlList(result.stdout ?? '', bundleId)
     },
     screenshot(path) {
       simctl(['io', udid, 'screenshot', path], 'simctl screenshot')

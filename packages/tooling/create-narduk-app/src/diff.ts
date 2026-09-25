@@ -10,6 +10,9 @@
  */
 
 function splitLines(value: string): string[] {
+  // An absent or emptied file has no lines, not one blank one: a created file
+  // renders as additions only (`@@ -0,0 +1,N @@`), an emptied one as removals.
+  if (value === '') return []
   const lines = value.split('\n')
   // A trailing newline yields a final empty element; drop it so an unchanged
   // file renders no phantom context line.

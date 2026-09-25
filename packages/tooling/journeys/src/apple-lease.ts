@@ -13,8 +13,15 @@
  * taken over when its pid is gone or its expiry has passed. That is
  * proportionate for a capture tool on a single Mac, and §5 says so in as many
  * words about the web side.
+ *
+ * Creating a free lease is one exclusive create, so it cannot race. Replacing
+ * a lease is a read, a decision and a write, so every replacement (takeover,
+ * renew, release) runs under `<udid>.json.lock`, itself an exclusive create,
+ * and re-reads the lease inside it: two lanes that both saw the same stale
+ * lease cannot both take it (#880). A lane that finds the lock taken refuses
+ * rather than waits, like any other contention here.
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -57,6 +64,14 @@ function defaultIsAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+function leaseIsLive(
+  record: SimulatorLeaseRecord | null,
+  now: number,
+  isAlive: (pid: number) => boolean,
+): record is SimulatorLeaseRecord {
+  return record !== null && Date.parse(record.expiresAt) > now && isAlive(record.pid)
 }
 
 function readLease(path: string): SimulatorLeaseRecord | null {
@@ -102,22 +117,70 @@ export function acquireSimulatorLease(options: AcquireLeaseOptions): SimulatorLe
     renameSync(temporary, path)
   }
 
+  const leasedBy = (existing: SimulatorLeaseRecord): Error =>
+    new Error(
+      `simulator ${options.udid} is leased by "${existing.holder}" (pid ${existing.pid}) ` +
+        `until ${existing.expiresAt}. Two lanes on one simulator film each other's builds; ` +
+        'wait for it, or run this lane on its own device.',
+    )
+
+  /**
+   * Run `body` holding the mutation lock, or return `onBusy()` without it. The
+   * lock lives for one read and one write; a lock whose pid is gone was left
+   * by a crash inside that window and is named so an operator can delete it.
+   */
+  const lockPath = `${path}.lock`
+  const withLock = <T>(onBusy: (lockPid: string) => T, body: () => T): T => {
+    try {
+      writeFileSync(lockPath, `${pid}\n`, { flag: 'wx' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      let lockPid = 'unknown'
+      try {
+        lockPid = readFileSync(lockPath, 'utf8').trim() || lockPid
+      } catch {
+        // Released between our create and our read; still busy for this call.
+      }
+      return onBusy(lockPid)
+    }
+    try {
+      return body()
+    } finally {
+      rmSync(lockPath, { force: true })
+    }
+  }
+
   let record = build()
   try {
     write(record, true)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    const existing = readLease(path)
-    const expired = !existing || Date.parse(existing.expiresAt) <= now()
-    const dead = !existing || !isAlive(existing.pid)
-    if (!expired && !dead) {
-      throw new Error(
-        `simulator ${options.udid} is leased by "${existing.holder}" (pid ${existing.pid}) ` +
-          `until ${existing.expiresAt}. Two lanes on one simulator film each other's builds; ` +
-          'wait for it, or run this lane on its own device.',
-      )
-    }
-    write(record, false)
+    const seen = readLease(path)
+    if (leaseIsLive(seen, now(), isAlive)) throw leasedBy(seen)
+    withLock(
+      (lockPid) => {
+        throw new Error(
+          `simulator ${options.udid} is being taken over by another lane (pid ${lockPid}) ` +
+            `right now. If pid ${lockPid} is gone, delete ${lockPath}.`,
+        )
+      },
+      () => {
+        // Decide again under the lock: another lane may have replaced or
+        // released the lease since `seen` was read.
+        const current = readLease(path)
+        if (leaseIsLive(current, now(), isAlive)) throw leasedBy(current)
+        record = build()
+        // Under the lock the file only appears (a free-lease create never takes
+        // it) and never disappears, so a missing file is created exclusively.
+        try {
+          write(record, !existsSync(path))
+        } catch (raced) {
+          const winner = readLease(path)
+          if ((raced as NodeJS.ErrnoException).code === 'EEXIST' && winner) throw leasedBy(winner)
+          throw raced
+        }
+      },
+    )
   }
 
   const heldByUs = (): boolean => {
@@ -130,14 +193,30 @@ export function acquireSimulatorLease(options: AcquireLeaseOptions): SimulatorLe
       return record
     },
     renew() {
-      if (!heldByUs()) {
-        throw new Error(`lost the lease on simulator ${options.udid} mid-session`)
-      }
-      record = { ...record, expiresAt: new Date(now() + ttlMs).toISOString() }
-      write(record, false)
+      const lost = (): Error => new Error(`lost the lease on simulator ${options.udid} mid-session`)
+      // A busy lock is a rival deciding whether this lease is stale. While it
+      // is ours and unexpired the rival will refuse, so skip this renewal and
+      // let the next boundary renew; otherwise the rival is taking it.
+      withLock(
+        () => {
+          if (heldByUs() && Date.parse(record.expiresAt) > now()) return
+          throw lost()
+        },
+        () => {
+          if (!heldByUs()) throw lost()
+          record = { ...record, expiresAt: new Date(now() + ttlMs).toISOString() }
+          write(record, false)
+        },
+      )
     },
     release() {
-      if (heldByUs()) rmSync(path, { force: true })
+      // Busy: another lane is taking the (expired) lease, so it is not ours to delete.
+      withLock(
+        () => {},
+        () => {
+          if (heldByUs()) rmSync(path, { force: true })
+        },
+      )
     },
   }
 }
