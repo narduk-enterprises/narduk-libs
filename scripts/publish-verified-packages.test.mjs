@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { publicationPlan, unresolvedGeneratorPins } from './publish-verified-packages.mjs'
+import {
+  pinsAwaitingThisBatch,
+  publicationPlan,
+  publishInPhases,
+  unresolvedGeneratorPins,
+} from './publish-verified-packages.mjs'
 
 const manifest = (version) => ({
   name: '@narduk-enterprises/example',
@@ -88,4 +93,95 @@ test('multiple pins report only the ones that are actually unresolved', () => {
   assert.deepEqual(unresolvedGeneratorPins(pins, [], evidence), [
     '@narduk-enterprises/narduk-shell@0.0.0',
   ])
+})
+
+// narduk-libs#926: `changeset publish` does not stop the batch when one package
+// fails, so a generator pin that is only "publishing in this batch" must be
+// proven live before the generator publishes. These are the pins that force the
+// two-phase path.
+test('a pin publishing in this batch and not yet live awaits the batch', () => {
+  const pins = new Map([
+    ['@narduk-enterprises/narduk-core', '2.15.0'],
+    ['@narduk-enterprises/narduk-shell', '0.7.1'],
+  ])
+  const pending = [
+    { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+    { name: '@narduk-enterprises/create-narduk-app', version: '0.15.0' },
+  ]
+  const evidence = {
+    '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' },
+    '@narduk-enterprises/narduk-shell': { versions: ['0.7.1'], latest: '0.7.1' },
+  }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [
+    { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+  ])
+})
+
+test('pins that are all live already need no second phase', () => {
+  const pins = new Map([['@narduk-enterprises/narduk-core', '2.14.1']])
+  const pending = [{ name: '@narduk-enterprises/create-narduk-app', version: '0.14.3' }]
+  const evidence = { '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' } }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [])
+})
+
+test('a pending release at a different version than the pin is not awaited', () => {
+  const pins = new Map([['@narduk-enterprises/narduk-core', '2.14.1']])
+  const pending = [{ name: '@narduk-enterprises/narduk-core', version: '2.15.0' }]
+  const evidence = { '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' } }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [])
+})
+
+function recordingIo() {
+  const calls = []
+  return {
+    calls,
+    io: {
+      publishHolding: (names) => calls.push(['publish holding', names]),
+      waitUntilPublished: ({ name, version }) => calls.push(['await', `${name}@${version}`]),
+    },
+  }
+}
+
+test('with no same-batch pin, one publish holds nothing back', () => {
+  const { calls, io } = recordingIo()
+  publishInPhases([{ name: '@narduk-enterprises/narduk-core', version: '2.15.0' }], [], io)
+  assert.deepEqual(calls, [['publish holding', []]])
+})
+
+test('a same-batch pin publishes the batch, awaits it, then the generator alone', () => {
+  const { calls, io } = recordingIo()
+  const pending = [
+    { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+    { name: '@narduk-enterprises/create-narduk-app', version: '0.15.0' },
+    { name: '@narduk-enterprises/narduk-seo', version: '2.7.2' },
+  ]
+  publishInPhases(pending, [{ name: '@narduk-enterprises/narduk-core', version: '2.15.0' }], io)
+  assert.deepEqual(calls, [
+    ['publish holding', ['@narduk-enterprises/create-narduk-app']],
+    ['await', '@narduk-enterprises/narduk-core@2.15.0'],
+    ['await', '@narduk-enterprises/narduk-seo@2.7.2'],
+    ['publish holding', ['@narduk-enterprises/narduk-core', '@narduk-enterprises/narduk-seo']],
+  ])
+})
+
+test('a first-phase failure stops before the generator is ever attempted', () => {
+  const calls = []
+  const io = {
+    publishHolding: (names) => {
+      calls.push(names)
+      throw new Error('Package publication failed (1)')
+    },
+    waitUntilPublished: () => calls.push('await'),
+  }
+  assert.throws(() =>
+    publishInPhases(
+      [
+        { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+        { name: '@narduk-enterprises/create-narduk-app', version: '0.15.0' },
+      ],
+      [{ name: '@narduk-enterprises/narduk-core', version: '2.15.0' }],
+      io,
+    ),
+  )
+  assert.deepEqual(calls, [['@narduk-enterprises/create-narduk-app']])
 })
