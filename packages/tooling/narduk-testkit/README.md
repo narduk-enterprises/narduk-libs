@@ -887,3 +887,79 @@ passed as `httpMetadata` into the six fields the runtime keeps.
 couple of ad-hoc canned KV/D1 stubs (`narduk-core`'s `kv-cache.test.ts` and
 `auth-api-key-d1.test.ts`); migrating those is left as follow-up work outside
 this package rather than done in this PR.
+
+## Nuxt aliases for plain Vitest
+
+Narduk apps run their unit tests under plain Vitest, without `@nuxt/test-utils`,
+so Vitest does not know the `#` aliases that Nuxt and narduk-core register:
+`#server`, `#shared`, `~`, `#layer`, `#narduk-db`, `#narduk-core/schema`,
+`#narduk-core/postgres-runtime` and the rest. `nuxtVitestAliases()` reads them
+from the table Nuxt itself writes, `.nuxt/tsconfig.json`. An alias a module adds
+or repoints is then picked up without an edit. For example,
+`#narduk-core/schema` moves to `pg-schema.ts` when `databaseBackend` is
+`postgres`. Hand-copied aliases never saw that kind of change (narduk-libs#998).
+
+```ts
+// apps/web/vitest.config.ts
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { nuxtVitestAliases } from '@narduk-enterprises/narduk-testkit/server/kit/vitest'
+import { defineConfig } from 'vitest/config'
+
+const appRoot = dirname(fileURLToPath(import.meta.url))
+
+export default defineConfig({
+  resolve: {
+    alias: [
+      ...nuxtVitestAliases({ appRoot }),
+      // app-only aliases and any h3/vue pins go after the helper
+    ],
+  },
+  test: { environment: 'node', include: ['tests/**/*.test.ts'] },
+})
+```
+
+- **`nuxt prepare` first.** The table exists only after Nuxt has written it. The
+  helper throws with that hint when `.nuxt/tsconfig.json` is missing. Use
+  `"test:unit": "nuxt prepare && vitest run"`.
+- **Only the `#` and `~` namespaces** by default (`namespaces` widens it, for
+  example `['#', '~', '@']`). A bare package name such as `h3`,
+  `nitropack/runtime` or `@unhead/vue` is never aliased, whatever the namespace,
+  because that would shadow the resolution the runtime performs.
+- **Exact and prefix keys stay distinct.** `#layer` becomes `^#layer$` and
+  `#layer/*` becomes `^#layer/(.*)$`, so any `#layer/...` path resolves, not
+  just one hand-picked file. The most specific key comes first, so `#app/types`
+  beats `#app/*`.
+- **`tsconfig`** reads a different generated file, for example
+  `.nuxt/tsconfig.server.json` for server-only aliases.
+
+### `nitropack/runtime` and `#imports`
+
+Plain Vitest runs no Nitro server, so both specifiers are pointed at
+`@narduk-enterprises/narduk-testkit/server/kit/nitro-runtime-stub`. The
+`nitropack/runtime` match is anchored, so `nitropack/runtime/internal/...` is
+left alone. Both specifiers share one runtime config. A test sets it through
+either import, and narduk-core, the app and any third-party route that reads
+`useRuntimeConfig` all see the same value:
+
+```ts
+import { afterEach } from 'vitest'
+import {
+  resetTestRuntimeConfig,
+  setTestRuntimeConfig,
+} from '@narduk-enterprises/narduk-testkit/server/kit/nitro-runtime-stub'
+
+afterEach(() => resetTestRuntimeConfig())
+
+setTestRuntimeConfig({ public: { siteUrl: 'https://example.test' } })
+```
+
+`useRuntimeConfig()` returns `{}` until a test sets something, which is the
+config of a deployment that set nothing. `useEvent()` throws, because there is
+no request context. Nothing else from Nuxt's auto-import barrel is stubbed: a
+module that needs more fails loudly instead of resolving to a silent stand-in.
+Pass `stubs: { imports: false, nitroRuntime: false }` to keep your own stubs.
+
+A module under `node_modules` that imports `#imports` (a published Nitro route)
+must be inlined with `test.server.deps.inline` so Vite applies the alias to it.
