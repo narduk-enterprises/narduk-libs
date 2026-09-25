@@ -153,6 +153,37 @@ placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
 under the same credentials, then setting that binding's `database_id` to the id
 it prints.
 
+## Agent API keys (`narduk-app auth agent-key create`)
+
+Gives an agent an API key on a narduk-auth app without hand-written D1 SQL
+(narduk-libs#782). The key belongs to its own non-login user — no password and
+an undeliverable `agent-<label>-<id>@agents.invalid` address (or `--email`), so
+nobody can sign in as it or reset its password — never to an owner's account.
+
+```sh
+narduk-app auth agent-key create --database <d1-name> --remote \
+  --name "loadtest agent" --scopes auth:api-keys:read,loadtest:write --expires-days 90 \
+  [--admin] --app-url https://app.example \
+  -- <secret sink command...>
+```
+
+- The raw `nk_` key is minted in-process and written **only to the sink
+  command's stdin** — for example the estate's guarded nvault setter. It never
+  reaches argv, stdout, stderr or a file. D1 gets its SHA-256 hash, the same
+  format narduk-core `generateApiKey` stores.
+- The sink runs first: if it fails, nothing is written to D1. If D1 then refuses
+  (for example `--email` already belongs to a user), the value already in the
+  sink is inert, because no `api_keys` row carries its hash.
+- One D1 batch inserts the `users` row with its `created_at` / `updated_at`
+  (they have no SQL default; drizzle fills them in the app) and the `api_keys`
+  row.
+- `--app-url` proves the key: `GET /api/auth/api-keys` must answer 401 without
+  it, and 200 with it (or 403 "missing required API key scopes" for a key
+  without `auth:api-keys:read`). `/api/auth/me` is session-only and answers
+  `{"user":null}` for a valid key, so it is not a proof. `--no-proof` skips the
+  step, for example against `--local`.
+- At least one scope is required, and `--expires-days` runs from 1 to 3650.
+
 ## Migration config
 
 `narduk-app db migrate` accepts a JSON config with explicit source names and
