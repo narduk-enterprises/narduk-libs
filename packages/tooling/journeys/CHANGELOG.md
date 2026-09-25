@@ -1,5 +1,23 @@
 # @narduk-enterprises/journeys
 
+## 0.4.5
+
+### Patch Changes
+
+- e1146b4: `digestJourney` keeps string, template and regex literals verbatim
+  when it normalizes a step body, so a step that types `'a;b'` no longer digests
+  the same as one that types `'ab'`. Loader semicolons and indentation in code
+  are still ignored, and a body whose literals hold no `;` and no whitespace but
+  single spaces digests exactly as before.
+- e1146b4: Make taking over a stale simulator lease compare-and-swap. Takeover,
+  renew and release now run under an exclusive `<udid>.json.lock` and re-read
+  the lease inside it, so two lanes that both saw the same expired or dead-pid
+  lease can no longer both return a lease for one simulator. A lane that meets
+  the lock refuses at once and names the lock's pid and path.
+- e1146b4: The simulator control's `pid()` matches the app's whole `launchctl`
+  label, so `com.narduk.stonx` no longer picks up the pid of
+  `com.narduk.stonx.watchkitapp` or `com.narduk.stonx-beta`.
+
 ## 0.4.4
 
 ### Patch Changes
