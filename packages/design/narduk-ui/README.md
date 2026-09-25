@@ -83,7 +83,11 @@ A classified first paint also needs `now`. The chip never reads the ambient
 clock during SSR — that is the hydration miss
 `narduk-shell/format` documents (`formatRelative` taking `now`). Omit `now`
 and the server emits a stable `ns-chip--pending` placeholder; the client
-classifies after mount. Explicit `state` still renders on the server.
+classifies after mount and then re-reads its clock every 30 seconds, so a
+source that stops publishing moves from LIVE to AGING to STALE while the page
+stays open. An injected `now` is never advanced by the chip: a caller that
+passes `now` owns that clock and must tick it. Explicit `state` still renders
+on the server.
 
 ```vue
 <script setup lang="ts">

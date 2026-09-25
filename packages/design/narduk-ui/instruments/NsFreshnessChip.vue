@@ -21,8 +21,12 @@
  *   `ns-chip--pending` placeholder on the server and on the client's first
  *   paint, then classifies in `onMounted`. Existing `state` / `now` callers
  *   are unchanged.
+ * - Without `now`, the chip's own clock ticks every 30 s after mount, so a
+ *   producer that stops publishing moves from LIVE to AGING to STALE while
+ *   the page stays open (narduk-libs#936). An injected `now` never ticks: the
+ *   caller owns that clock.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { classifySignal, formatAge, SIGNALS, type SignalState } from "../_core/signal";
 
@@ -45,16 +49,44 @@ const props = withDefaults(
 const PENDING_LABEL = "…";
 const PENDING_MEANING = "Waiting to classify this observation against a clock.";
 
-const canReadClock = ref(false);
-onMounted(() => {
-  canReadClock.value = true;
-});
+/** How often the chip's own clock advances. Signal thresholds are minutes. */
+const TICK_MS = 30_000;
 
-const clock = computed<Date | null>(() => {
-  if (props.now) return props.now;
-  if (canReadClock.value) return new Date();
-  return null;
+/** Null until mount, so the server and the first client paint agree. */
+const ownClock = ref<Date | null>(null);
+let mounted = false;
+let ticker: ReturnType<typeof setInterval> | undefined;
+
+function stopTicking(): void {
+  if (ticker === undefined) return;
+  clearInterval(ticker);
+  ticker = undefined;
+}
+
+function syncClock(): void {
+  if (props.now) {
+    stopTicking();
+    return;
+  }
+  ownClock.value = new Date();
+  ticker ??= setInterval(() => {
+    ownClock.value = new Date();
+  }, TICK_MS);
+}
+
+onMounted(() => {
+  mounted = true;
+  syncClock();
 });
+watch(
+  () => props.now,
+  () => {
+    if (mounted) syncClock();
+  },
+);
+onBeforeUnmount(stopTicking);
+
+const clock = computed<Date | null>(() => props.now ?? ownClock.value);
 
 function isDateable(value: Date | string | null | undefined): boolean {
   if (value == null) return false;
