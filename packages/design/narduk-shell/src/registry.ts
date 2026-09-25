@@ -66,6 +66,13 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
   { name: 'NeCsvDownload', filePath: './runtime/components/NeCsvDownload.vue' },
+  // Item 21 (narduk-libs#268): NeHero, NeFeatureGrid, NeCta, NeMarketingFooter —
+  // thin themed wrappers over UPageHero, UPageGrid + UPageFeature, UPageCTA
+  // and UFooter.
+  { name: 'NeHero', filePath: './runtime/components/NeHero.vue' },
+  { name: 'NeFeatureGrid', filePath: './runtime/components/NeFeatureGrid.vue' },
+  { name: 'NeCta', filePath: './runtime/components/NeCta.vue' },
+  { name: 'NeMarketingFooter', filePath: './runtime/components/NeMarketingFooter.vue' },
   // Item 18 (narduk-libs#265): NeAppShell, the sectioned rail. Registered so
   // an app can write it in a layout; nothing registers it AS a layout, and
   // nothing scaffolds it (D3: the shell is opt-in).

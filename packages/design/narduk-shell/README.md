@@ -58,14 +58,19 @@ extends `NePager` with a page-size select and a “Show more” mode;
 ships `NeMeter`, and
 [narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602)
 adds the `--ne-hatch` unreported treatment that `NeMeter` and `NeKpiTile` render
-for a figure with no producer; item 18
+for a figure with no producer. Item 18
 ([narduk-libs#265](https://github.com/narduk-enterprises/narduk-libs/issues/265))
 ships `NeAppShell`, the opt-in sectioned rail, with `useNardukShellSections()`
 and the `accent` / `structure` / `sections` module options, and deprecates
 narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
-in its favour. Components read Nuxt UI semantic tokens and `UBadge`
-colour/variant props, and do not hardcode a colour, radius, shadow or font. Each
-later item adds its own component, README section, tests and NE Base card.
+in its favour. Item 21
+([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268))
+ships the marketing sections — `NeHero`, `NeFeatureGrid`, `NeCta` and
+`NeMarketingFooter`, thin themed wrappers over `UPageHero`, `UPageGrid` +
+`UPageFeature`, `UPageCTA` and `UFooter`. Components read Nuxt UI semantic
+tokens and `UBadge` colour/variant props, and do not hardcode a colour, radius,
+shadow or font. Each later item adds its own component, README section, tests
+and NE Base card.
 
 ## Install
 
@@ -2593,6 +2598,272 @@ import type {
 narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
 are deprecated in favour of `NeAppShell` and are removed in the next narduk-core
 major. Their behaviour is unchanged until then.
+
+### NeHero
+
+The top of a landing page: a headline, the page's one `<h1>`, a description,
+call-to-action buttons and an optional media slot. Backlog item 21
+([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268)),
+the first of the four marketing sections (`NeHero`, `NeFeatureGrid`, `NeCta`,
+`NeMarketingFooter`).
+
+All four are **thin themed wrappers**. Each takes its Nuxt UI primitive's own
+props and slots under the same names and defaults — read against `@nuxt/ui`
+4.11.1 — and adds nothing but the suite's token classes, through the primitive's
+own `ui` prop. The `theme.css` bridge already carries surfaces, ink and borders
+(`text-highlighted` is `--ne-ink`, `bg-default` is `--ne-surface`), so the
+wrappers only theme what the bridge cannot reach: places where Nuxt UI reaches
+for its `primary` alias or its own radius step. A `ui` you pass merges **after**
+the suite's classes, slot by slot, so your class wins a conflict and the rest of
+the suite's look stays; a replacer function (`defaults => '…'`) replaces the
+suite's class along with Nuxt UI's. A `class` attribute falls through to the
+root.
+
+`NeHero` wraps `UPageHero`. The headline reads `--ne-accent` instead of
+`text-primary` (an eyebrow is brand chrome, which is what the accent hook is
+for) and the title's tracking reads `--ne-tracking-tight`. `UPageHero` always
+renders the title as an `<h1>`, so use one `NeHero` per page.
+
+The estate's prior art is circuit-breaker-online's `EquipmentPage.vue` /
+`IndustryPage.vue` (the "MarketingPageTemplate" of the components evidence
+survey, 12 landing pages): a breadcrumb headline, a title with one highlighted
+phrase, a description and two buttons. That is this component's `headline`,
+`#title` slot and `links`.
+
+#### Example
+
+```vue
+<NeHero
+  headline="Equipment"
+  description="Load-tested breakers from every major manufacturer, on the truck by 3pm."
+  :links="[
+    { label: 'Browse the catalog', to: '/products' },
+    {
+      label: 'Request a quote',
+      to: '/contact',
+      color: 'neutral',
+      variant: 'outline',
+    },
+  ]"
+>
+  <template #title>
+    Circuit breakers <span class="text-[var(--ne-accent)]">that ship today</span>
+  </template>
+</NeHero>
+```
+
+#### Props
+
+| Prop          | Type                         | Default      | Notes                                                                                   |
+| ------------- | ---------------------------- | ------------ | --------------------------------------------------------------------------------------- |
+| `headline`    | `string`                     | —            | Small label above the title, in `--ne-accent`.                                          |
+| `title`       | `string`                     | —            | The page's `<h1>`. The `#title` slot overrides the text, still inside the `<h1>`.       |
+| `description` | `string`                     | —            | Supporting copy under the title.                                                        |
+| `links`       | `NeMarketingLink[]`          | —            | `UButton` props (`label`, `to`, `color`, `variant`, `icon` …), rendered at `size="xl"`. |
+| `orientation` | `'vertical' \| 'horizontal'` | `'vertical'` | `vertical` centres the text; `horizontal` puts the default slot beside it.              |
+| `reverse`     | `boolean`                    | `false`      | Default slot before the text.                                                           |
+| `as`          | `string`                     | `'div'`      | Root element.                                                                           |
+| `ui`          | `Partial<Record<slot, …>>`   | —            | `UPageHero`'s slots: `root`, `container`, `wrapper`, `header`, `headline`, `title` …    |
+
+#### Slots
+
+`top`, `header`, `headline`, `title`, `description`, `body`, `footer`, `links`,
+`default` (media beside or below the text) and `bottom` — `UPageHero`'s own. A
+slot is forwarded only when you fill it, so Nuxt UI's own "is this block
+present" checks behave exactly as they do on `UPageHero`.
+
+#### Events
+
+None. Buttons are `UButton`s: pass `to` or `onClick` in a `links` entry.
+
+#### Types
+
+```ts
+import type {
+  NeHeroProps,
+  NeMarketingLink,
+  NeMarketingOrientation,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeFeatureGrid
+
+A responsive grid of feature tiles — icon, title, description, optionally a
+whole-tile link — over `UPageGrid` (the one-, two-, three-column grid) and
+`UPageFeature` (one tile). Backlog item 21
+([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268)).
+
+`features` joins the two exactly the way Nuxt UI's own `UPageSection` renders
+its `features` prop: a `<ul>` of `UPageFeature`s rendered `as="li"`, each bound
+to one entry unchanged. An empty list renders nothing rather than an empty
+`<ul>`. The default slot replaces the tiles for a grid of anything else, and the
+grid then renders as a `<div>`. Each tile's leading icon reads `--ne-accent`
+instead of `text-primary`.
+
+The grid has no heading of its own; put an `NeSectionHeader` above it.
+
+#### Example
+
+```vue
+<NeSectionHeader title="Why buy from us" as="h2" />
+<NeFeatureGrid
+  :features="[
+    {
+      title: 'Tested',
+      description: 'Every breaker is load-tested.',
+      icon: 'i-lucide-zap',
+    },
+    {
+      title: 'Same day',
+      description: 'Orders before 3pm ship today.',
+      icon: 'i-lucide-truck',
+    },
+    {
+      title: 'Support',
+      description: 'Engineers answer the phone.',
+      to: '/contact',
+    },
+  ]"
+/>
+```
+
+#### Props
+
+| Prop       | Type                   | Default          | Notes                                                                                                                        |
+| ---------- | ---------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `features` | `NeFeature[]`          | `[]`             | `UPageFeature` props per tile: `title`, `description`, `icon`, `orientation` (`'horizontal'` default), `to`, `target`, `ui`. |
+| `as`       | `string`               | `'ul'` / `'div'` | `'ul'` when `features` renders the tiles, `'div'` when the default slot does.                                                |
+| `ui`       | `{ base?: SlotClass }` | —                | `UPageGrid`'s one slot. A tile's own classes go in its entry's `ui`.                                                         |
+
+#### Slots
+
+| Slot      | When it renders                                    |
+| --------- | -------------------------------------------------- |
+| `default` | Replaces the tiles; the grid renders as a `<div>`. |
+
+#### Events
+
+None. A tile with `to` is a whole-tile link named by its title (Nuxt UI's
+`ULink`); a tile's `onClick` is `UPageFeature`'s own.
+
+#### Types
+
+```ts
+import type {
+  NeFeature,
+  NeFeatureGridProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCta
+
+A call-to-action panel — an `<h2>` title, a description, buttons, and an
+optional slot beside or below the text — over `UPageCTA`. Backlog item 21
+([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268)).
+
+The panel is rounded to `--ne-radius-panel`, the suite's one panel radius,
+instead of Nuxt UI's larger `rounded-xl`, so a CTA and an `NeCard` round alike.
+Every `variant` is `UPageCTA`'s and themes through the bridge: `outline` (the
+default) is `--ne-surface` with a `--ne-hairline` ring, `solid` is
+`--ne-surface-inverted`, `soft` and `subtle` are `--ne-surface-elevated`.
+
+#### Example
+
+```vue
+<NeCta
+  title="Need a quote?"
+  description="Tell us what you need and we will find it fast."
+  :links="[{ label: 'Get a quote', to: '/contact' }]"
+/>
+```
+
+#### Props
+
+| Prop          | Type                                                    | Default      | Notes                                                       |
+| ------------- | ------------------------------------------------------- | ------------ | ----------------------------------------------------------- |
+| `title`       | `string`                                                | —            | Rendered as an `<h2>`.                                      |
+| `description` | `string`                                                | —            |                                                             |
+| `links`       | `NeMarketingLink[]`                                     | —            | `UButton` props, rendered at `size="lg"`.                   |
+| `variant`     | `'outline' \| 'solid' \| 'soft' \| 'subtle' \| 'naked'` | `'outline'`  |                                                             |
+| `orientation` | `'vertical' \| 'horizontal'`                            | `'vertical'` | `horizontal` puts the default slot beside the text.         |
+| `reverse`     | `boolean`                                               | `false`      | Default slot before the text.                               |
+| `as`          | `string`                                                | `'div'`      | Root element.                                               |
+| `ui`          | `Partial<Record<slot, …>>`                              | —            | `UPageCTA`'s slots: `root`, `container`, `title`, `links` … |
+
+#### Slots
+
+`top`, `header`, `title`, `description`, `body`, `footer`, `links`, `default`
+and `bottom` — `UPageCTA`'s own, forwarded only when filled.
+
+#### Events
+
+None. Buttons are `UButton`s: pass `to` or `onClick` in a `links` entry.
+
+#### Types
+
+```ts
+import type { NeCtaProps, NeCtaVariant } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeMarketingFooter
+
+The footer of a public site, over `UFooter`: an optional full-width `#top` row
+(link columns), then a left / centre / right row, then an optional `#bottom`
+row. Backlog item 21
+([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268)).
+It renders a `<footer>` — the page's `contentinfo` landmark — by default, under
+a `--ne-hairline` rule.
+
+Link columns are Nuxt UI's own `UFooterColumns` placed in `#top`; the wrapper
+does not grow a `columns` prop of its own.
+
+#### Example
+
+```vue
+<NeMarketingFooter>
+  <template #top>
+    <UFooterColumns
+      :columns="[
+        { label: 'Catalog', children: [{ label: 'Breakers', to: '/products' }] },
+        { label: 'Company', children: [{ label: 'Contact', to: '/contact' }] },
+      ]"
+    />
+  </template>
+  <template #left>
+    <p class="text-sm text-muted">© 2026 Example Co.</p>
+  </template>
+  <template #right>
+    <UButton to="/contact" label="Contact" color="neutral" variant="ghost" />
+  </template>
+</NeMarketingFooter>
+```
+
+#### Props
+
+| Prop | Type                       | Default    | Notes                                                                               |
+| ---- | -------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| `as` | `string`                   | `'footer'` | Root element. Keep `footer` unless the page already has a `contentinfo`.            |
+| `ui` | `Partial<Record<slot, …>>` | —          | `UFooter`'s slots: `root`, `top`, `bottom`, `container`, `left`, `center`, `right`. |
+
+#### Slots
+
+| Slot      | When it renders                                                  |
+| --------- | ---------------------------------------------------------------- |
+| `top`     | Full-width row above the main row — typically `UFooterColumns`.  |
+| `left`    | Start of the main row on wide screens; last when the row stacks. |
+| `default` | Middle of the main row.                                          |
+| `right`   | End of the main row on wide screens; first when the row stacks.  |
+| `bottom`  | Full-width row below the main row.                               |
+
+#### Events
+
+None.
+
+#### Types
+
+```ts
+import type { NeMarketingFooterProps } from '@narduk-enterprises/narduk-shell'
+```
 
 ## Formatters (`./format`)
 

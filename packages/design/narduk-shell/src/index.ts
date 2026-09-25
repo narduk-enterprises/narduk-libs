@@ -146,6 +146,23 @@ export type {
 } from './runtime/components/ne-data-table-types'
 
 /**
+ * The marketing sections (components backlog item 21, narduk-libs#268):
+ * `NeHero`, `NeFeatureGrid`, `NeCta`, `NeMarketingFooter`. Types only; each
+ * is the wrapped Nuxt UI primitive's own props, so a page can type a
+ * `links` or `features` array without importing the SFC.
+ */
+export type {
+  NeCtaProps,
+  NeCtaVariant,
+  NeFeature,
+  NeFeatureGridProps,
+  NeHeroProps,
+  NeMarketingFooterProps,
+  NeMarketingLink,
+  NeMarketingOrientation,
+} from './runtime/components/ne-marketing-types'
+
+/**
  * The shell's shapes (components backlog item 18, narduk-libs#265): its
  * props, the `variant` union, and the section / item shapes that the
  * `nardukShell.sections` option, `app.config.nardukShell` and
