@@ -22,6 +22,7 @@ import {
   BOUNDARY_API_KEY_MAX_EXPIRY_DAYS,
   resolveApiKeyMintExpiry,
 } from '../../../shared/utils/api-key-lifetime'
+import { findScopesBeyondCaller } from '../../../shared/utils/api-key-scope-ceiling'
 
 const bodySchema = z.object({
   name: z.string().min(1).max(100),
@@ -36,7 +37,9 @@ const bodySchema = z.object({
  * A wildcard (`*`) key is a boundary-class credential (narduk-libs#168): it
  * must expire, and the lifetime is capped at
  * {@link BOUNDARY_API_KEY_MAX_EXPIRY_DAYS}. Narrow machine keys may still
- * omit expiry. The unique index on `api_keys.key_hash` lives in narduk-core
+ * omit expiry. A caller authenticated by an API key may mint only scopes it
+ * already holds (narduk-libs#858), so `auth:api-keys:write` alone cannot mint
+ * `*`. The unique index on `api_keys.key_hash` lives in narduk-core
  * 0007 — this handler stores that digest and never the raw token.
  */
 export default defineUserMutation(
@@ -52,6 +55,15 @@ export default defineUserMutation(
     const { rawKey, keyHash, keyPrefix } = await generateApiKey()
     const id = crypto.randomUUID()
     const scopes = normalizeAuthScopes(input.scopes)
+    if (user.authMethod === 'api-key') {
+      const refused = findScopesBeyondCaller(scopes, user.scopes)
+      if (refused.length > 0) {
+        throw createError({
+          statusCode: 403,
+          message: `An API key cannot mint scopes it does not hold: ${refused.join(', ')}`,
+        })
+      }
+    }
     const mintExpiry = resolveApiKeyMintExpiry(scopes, input.expiresInDays)
     if (!mintExpiry.ok) {
       throw createError({
