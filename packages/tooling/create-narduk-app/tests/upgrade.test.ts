@@ -583,17 +583,50 @@ describe('upgrade opt-outs and notices', () => {
     expect(after).toContain('This app runs its suite through a wrapper.')
   })
 
-  it('treats a missing router region as an opt-in notice, not drift', async () => {
+  // narduk-libs#377: an AGENTS.md that predates the router block gets it
+  // appended rather than being skipped; hand-written prose stays put.
+  it('appends a missing router region to an existing AGENTS.md, then is idempotent', async () => {
     const targetDir = await scaffold()
-    await edit(targetDir, 'AGENTS.md', (contents) =>
-      contents
-        .replace(REGION_MARKERS.agentsRouter.start + '\n', '')
-        .replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
-    )
+    const handWritten = '# App agent guide\n\nApp-specific guidance that upgrade never reads.\n'
+    await writeFile(join(targetDir, 'AGENTS.md'), handWritten, 'utf8')
 
-    const report = await upgradeNardukApp({ targetDir })
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('drift')
+
+    const after = await read(targetDir, 'AGENTS.md')
+    expect(
+      after.startsWith(handWritten.trimEnd() + '\n\n' + REGION_MARKERS.agentsRouter.start),
+    ).toBe(true)
+    expect(after.endsWith(REGION_MARKERS.agentsRouter.end + '\n')).toBe(true)
+    expect(after).toContain('`pnpm exec narduk-app doctor`')
+    expect(after).toContain('`@narduk-enterprises/narduk-core`')
+
+    const again = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(again, 'AGENTS.md')).toBe('clean')
+    expect(await read(targetDir, 'AGENTS.md')).toBe(after)
+  })
+
+  it('leaves an AGENTS.md with an unmanaged header and no markers alone', async () => {
+    const targetDir = await scaffold()
+    const optedOut = '<!-- narduk:unmanaged -->\n# App agent guide\n\nOwned entirely by the app.\n'
+    await writeFile(join(targetDir, 'AGENTS.md'), optedOut, 'utf8')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, 'AGENTS.md')).toBe('unmanaged')
     expect(report.driftCount).toBe(0)
+    expect(await read(targetDir, 'AGENTS.md')).toBe(optedOut)
+  })
+
+  it('refuses to guess when only one router marker is present', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'AGENTS.md', (contents) =>
+      contents.replace(REGION_MARKERS.agentsRouter.end + '\n', ''),
+    )
+    const before = await read(targetDir, 'AGENTS.md')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('unresolved')
+    expect(await read(targetDir, 'AGENTS.md')).toBe(before)
   })
 
   it('treats an app e2e document with no policy markers as an opt-in notice', async () => {

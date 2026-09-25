@@ -339,6 +339,8 @@ function resolveRegion(
   current: string | null,
   desired: string,
   region: RegionName | undefined,
+  path: string,
+  insertWhenMissing = false,
 ): Resolution {
   if (!region) {
     return { detail: 'Managed target declares no region markers.', status: 'unresolved' }
@@ -364,6 +366,31 @@ function resolveRegion(
     }
   }
   const currentRegion = regionOf(current, markers)
+  if (currentRegion === null && insertWhenMissing) {
+    // One marker without its partner is a hand edit this cannot interpret.
+    if (current.includes(markers.start) || current.includes(markers.end)) {
+      return {
+        detail:
+          'The ' +
+          markers.start +
+          ' / ' +
+          markers.end +
+          ' pair is incomplete or out of order. Fix it by hand; left untouched.',
+        status: 'unresolved',
+      }
+    }
+    return {
+      detail:
+        'No ' +
+        markers.start +
+        ' block. Appends it at the end of the file; the rest of the file is untouched. Opt out with a ' +
+        unmanagedMarkerFor(path) +
+        ' header.',
+      next:
+        current.replace(/\s*$/u, '') + '\n\n' + markers.start + desiredRegion + markers.end + '\n',
+      status: 'drift',
+    }
+  }
   if (currentRegion === null) {
     return {
       detail:
@@ -756,7 +783,7 @@ function resolveManagedTarget(
     case 'pin':
       return resolvePin(current, desired)
     case 'region':
-      return resolveRegion(current, desired, target.region)
+      return resolveRegion(current, desired, target.region, target.path, target.insertWhenMissing)
     case 'keys':
       return resolveKeys(current, desired)
     case 'jsonc-keys':

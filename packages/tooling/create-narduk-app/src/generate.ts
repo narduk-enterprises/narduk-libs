@@ -491,6 +491,22 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     'vue-tsc',
   ]
 
+  // The router block names the shared packages this profile installs, so an
+  // agent reading AGENTS.md sees them without opening either manifest; the
+  // list moves with the generator through `upgrade` (narduk-libs#377).
+  const sharedPackages = [
+    createRootPackageManifest(appName, capabilities, visibility, databaseBackend),
+    createWebPackageManifest(appName, capabilities, localPort, { databaseBackend }),
+  ].flatMap((manifest) => {
+    const parsed = JSON.parse(manifest) as Record<string, Record<string, string> | undefined>
+    return [...Object.keys(parsed.dependencies ?? {}), ...Object.keys(parsed.devDependencies ?? {})]
+  })
+  const sharedPackageList = [...new Set(sharedPackages)]
+    .filter((name) => name.startsWith('@narduk-enterprises/'))
+    .sort()
+    .map((name) => '`' + name + '`')
+    .join(', ')
+
   const files: GeneratedFile[] = [
     // The app's declared Node source, and the ONLY file that carries the Node
     // version as a literal outside package.json's engines/volta mirrors (which
@@ -717,12 +733,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         // The router block is the one generator-owned region of an otherwise
         // app-owned file: `create-narduk-app upgrade` refreshes what sits
         // between these markers and never reads a byte outside them. An app
-        // that deletes the markers keeps the text and opts out of the
-        // refresh; see the README's ownership table.
+        // whose AGENTS.md has no markers gets the block appended; opting out
+        // is a `<!-- narduk:unmanaged -->` header (narduk-libs#377).
         REGION_MARKERS.agentsRouter.start,
         '',
         'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries. [CONTRACT.md](CONTRACT.md) is the API surface this app promises to callers, kept current whenever a route changes. [docs/workers-builds.md](docs/workers-builds.md) covers deployment and recovery. [docs/e2e-testing.md](docs/e2e-testing.md) covers the Playwright layout and the visual QA toolkit.',
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+        '',
+        'Shared packages: ' +
+          sharedPackageList +
+          '. Fix a shared behavior in its package in narduk-libs, not with a local copy.',
+        '',
+        '`pnpm exec narduk-app doctor` checks the app-local prerequisites; run it first when something about the toolchain or Cloudflare configuration looks wrong. `pnpm dlx @narduk-enterprises/create-narduk-app upgrade .` shows what the generator would refresh, including this block.',
         '',
         REGION_MARKERS.agentsRouter.end,
       ),

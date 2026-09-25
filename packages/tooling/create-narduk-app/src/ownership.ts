@@ -127,6 +127,12 @@ export interface ManagedTarget {
   unit: string
   /** Which marker pair delimits the region. Required for `region` targets. */
   region?: RegionName
+  /**
+   * `region` targets only: when the file exists but carries neither marker,
+   * append the region instead of reporting the file unmanaged. Opting out is
+   * then the file's `narduk:unmanaged` header, the same as every other target.
+   */
+  insertWhenMissing?: boolean
   /** Top-level JSONC keys this target owns. Required for `jsonc-keys`. */
   jsonKeys?: readonly string[]
 }
@@ -161,7 +167,14 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
   // (narduk-libs#778). An app that routes its own workflows elsewhere disowns
   // it with a `# narduk:unmanaged` header.
   { path: '.github/actionlint.yaml', mode: 'file', unit: 'whole file' },
-  { path: 'AGENTS.md', mode: 'region', region: 'agentsRouter', unit: 'narduk:router block' },
+  // An app that predates the router block gets it appended (narduk-libs#377).
+  {
+    path: 'AGENTS.md',
+    mode: 'region',
+    region: 'agentsRouter',
+    unit: 'narduk:router block',
+    insertWhenMissing: true,
+  },
   {
     path: 'docs/e2e-testing.md',
     mode: 'region',
