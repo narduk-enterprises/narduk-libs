@@ -2324,6 +2324,62 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Scheduled jobs: `defineScheduledJobs`
+
+`@narduk-enterprises/narduk-core/server/scheduled-jobs` is the Cloudflare cron
+dispatcher (narduk-libs#990). You declare jobs with the exact cron expressions
+they answer to. Each trigger runs only the jobs that declare `controller.cron`,
+each behind its own error boundary and logged like narduk-logging's `logJob`.
+Nothing it returns rejects.
+
+```ts
+// server/plugins/scheduled-jobs.ts
+import { defineScheduledJobs } from '@narduk-enterprises/narduk-core/server/scheduled-jobs'
+
+export const jobs = [
+  {
+    name: 'estate-export',
+    cron: '0 3 * * *',
+    run: ({ env, log }) => exportEstate(env, log),
+  },
+  {
+    name: 'estate-retention',
+    cron: '0 3 * * *',
+    run: ({ env }) => pruneOldRows(env),
+  },
+]
+
+export default defineScheduledJobs<Env>(jobs)
+```
+
+- **One hook, not one per job.** Nitro runs `cloudflare:scheduled` hooks in
+  series, so the first hook that throws skips every later one: a failed export
+  silently stopped the retention prune. The dispatcher runs the matched jobs
+  under `Promise.allSettled` and resolves, so neither its jobs nor any other
+  hook get skipped.
+- **Exact match only.** A cron that no job declares is a logged no-op, never
+  "run everything". An app whose job ran on every trigger must now declare its
+  cron.
+- **Parity with wrangler.** `declaredCrons(jobs)` lists what the jobs answer to.
+  `cronParity(jobs, wrangler.triggers.crons)` returns `unscheduled` (declared,
+  but wrangler never fires it, so the job is dead) and `unhandled` (fired, but
+  no job answers). Assert both are empty in a unit test.
+- **Optional D1 lease.** `lease: { d1: (env) => env.DB, key?, ttlSeconds }`
+  takes the lease with one conditional upsert (compare-and-swap) and releases it
+  by lease id, so a cron run and a manual trigger sharing `key` cannot overlap.
+  A run that finds it held returns
+  `{ status: 'skipped', skipped: 'lease-held' }`. If the lease cannot be taken
+  (for example, the table is missing), the job fails closed and does not run.
+  Add `SCHEDULED_JOB_LEASES_SQL` (table `narduk_scheduled_job_leases`) to the
+  app's migrations.
+- **Plain Workers.** Call
+  `ctx.waitUntil(runScheduledJobs(controller, env, jobs))` from `scheduled`.
+  `runScheduledJobs` returns `{ cron, outcomes }`, one `succeeded`/`failed`/
+  `skipped` entry per matched job.
+
+It lives outside `server/utils`, so it adds no auto-imported names to an app.
+Import it explicitly.
+
 ## Size-capped upstream reads: `readBoundedBody`
 
 The published-data client (`fetchNardukDataJson`) reads artifact bytes through
