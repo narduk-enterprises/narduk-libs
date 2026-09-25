@@ -133,6 +133,22 @@ describe('canonical-host middleware', () => {
     vi.unstubAllEnvs()
   })
 
+  describe('the redirect never leaves the canonical origin (narduk-libs#444)', () => {
+    // A raw dot segment before `//` survives h3's leading-slash collapse and
+    // normalises to the pathname `//evil.com`; resolved as a relative
+    // reference against the canonical URL that is https://evil.com/.
+    it.each(['/.//evil.com', '/a/..//evil.com', '/.//evil.com/x?y=1', '/./\\\\evil.com'])(
+      'keeps %s on the canonical host',
+      async (path) => {
+        const result = await probe(path, { headers: DOCUMENT_NAVIGATION })
+
+        expect(result.status).toBe(308)
+        expect(new URL(result.location!).origin).toBe('https://www.example.com')
+        expect(result.location).toMatch(/^https:\/\/www\.example\.com\/evil\.com/)
+      },
+    )
+  })
+
   describe('top-level document navigations still canonicalise', () => {
     it('redirects a page navigation on a non-canonical host', async () => {
       const result = await probe(`${PAGE_PATH}?utm_source=gsc`, {

@@ -149,10 +149,15 @@ export default defineEventHandler((event) => {
     return
   }
 
-  const redirectUrl = new URL(
-    `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`,
-    canonicalUrl,
-  )
+  // Assign the parts onto the canonical origin rather than resolving a
+  // relative reference against it. A raw `/.//evil.com` normalises to the
+  // pathname `//evil.com`, and `new URL('//evil.com', canonical)` is the
+  // scheme-relative https://evil.com/ -- an open redirect. Leading slashes
+  // collapse to one, as h3 already does for a raw `//` path (narduk-libs#444).
+  const redirectUrl = new URL(canonicalUrl.origin)
+  redirectUrl.pathname = requestUrl.pathname.replace(/^[/\\]+/, '/')
+  redirectUrl.search = requestUrl.search
+  redirectUrl.hash = requestUrl.hash
 
   // 308 is cacheable by default; this response varies by Sec-Fetch-Dest.
   appendResponseHeader(event, 'Vary', 'Sec-Fetch-Dest')
