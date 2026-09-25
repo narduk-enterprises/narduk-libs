@@ -27,6 +27,7 @@ import {
 } from './supabase-client'
 
 import type {
+  AppSessionUser,
   ChangePasswordInput,
   MfaEnrollmentResult,
   UpdateProfileInput,
@@ -105,6 +106,69 @@ export async function updateProfile(event: H3Event, body: UpdateProfileInput) {
   return { ok: true, user: refreshedUser }
 }
 
+/**
+ * Re-authenticates a Supabase email+password session against Supabase itself.
+ * The local `users.password_hash` is never the source of truth on this
+ * backend: Supabase-provisioned users have none, and a user linked after a
+ * migration can still carry a stale one (narduk-libs#923).
+ *
+ * Sessions that have no password to prove skip the check: provider-only
+ * accounts, an invited user who has not set one yet, and a recovery session
+ * (which the session-privilege rules already confine to `change-password`).
+ */
+async function assertSupabaseCurrentPassword(
+  event: H3Event,
+  sessionUser: AppSessionUser,
+  currentPassword: string | undefined,
+  { missingMessage }: { missingMessage: string },
+): Promise<void> {
+  const requiresCurrentPassword =
+    sessionUser.authProviders?.includes('email') &&
+    !sessionUser.needsPasswordSetup &&
+    !sessionUser.recoveryMode
+
+  if (!requiresCurrentPassword) return
+
+  if (!currentPassword) {
+    throw createError({ statusCode: 400, statusMessage: missingMessage })
+  }
+
+  const verifier = createSupabaseUserClient(event)
+  const verification = await verifier.signInWithPassword({
+    email: sessionUser.email,
+    password: currentPassword,
+  })
+  if (verification.error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid current password.',
+    })
+  }
+}
+
+/**
+ * The account-deletion credential check for a Supabase session, passed to
+ * `deleteCurrentUserAccountBridge` as its `verifyCredentials` hook. It replaces
+ * the local password-hash check, which a Supabase user cannot satisfy
+ * (narduk-libs#923).
+ */
+export async function verifySupabaseAccountDeletionCredentials(
+  event: H3Event,
+  input: { currentPassword?: string },
+): Promise<void> {
+  const sessionUser = await useRefreshedSessionUser(event)
+  if (!sessionUser) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Unauthorized',
+    })
+  }
+
+  await assertSupabaseCurrentPassword(event, sessionUser, input.currentPassword, {
+    missingMessage: 'Current password is required to delete this account.',
+  })
+}
+
 export async function changePassword(event: H3Event, body: ChangePasswordInput) {
   const config = getAuthConfig(event)
   const sessionUser = await useRefreshedSessionUser(event)
@@ -116,31 +180,9 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   }
 
   if (config.backend === 'supabase' && sessionUser.authSessionId) {
-    const requiresCurrentPassword =
-      sessionUser.authProviders?.includes('email') &&
-      !sessionUser.needsPasswordSetup &&
-      !sessionUser.recoveryMode
-
-    if (requiresCurrentPassword) {
-      if (!body.currentPassword) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Current password is required for email-auth accounts.',
-        })
-      }
-
-      const verifier = createSupabaseUserClient(event)
-      const verification = await verifier.signInWithPassword({
-        email: sessionUser.email,
-        password: body.currentPassword,
-      })
-      if (verification.error) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Invalid current password.',
-        })
-      }
-    }
+    await assertSupabaseCurrentPassword(event, sessionUser, body.currentPassword, {
+      missingMessage: 'Current password is required for email-auth accounts.',
+    })
 
     const context = await getCurrentSupabaseContext(event)
     const { data, error } = await context.client.updateUser({

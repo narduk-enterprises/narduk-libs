@@ -30,6 +30,13 @@ export interface AccountDeletionBridgeHooks {
    * deletion so the two sides stay in sync.
    */
   beforeDelete?: (event: H3Event, userId: string) => Promise<void>
+  /**
+   * Replaces the local `users.password_hash` check. Supply it when the user's
+   * password lives with an external provider: a Supabase-provisioned user has
+   * no local hash (so the local check would let `{}` through), and a linked
+   * user may keep a stale one (narduk-libs#923). Throw to refuse the deletion.
+   */
+  verifyCredentials?: (event: H3Event, input: DeleteAccountBridgeInput) => Promise<void>
 }
 
 function isForeignKeyConstraintError(error: unknown): boolean {
@@ -61,7 +68,9 @@ export async function deleteCurrentUserAccountBridge(
     })
   }
 
-  if (dbUser.passwordHash) {
+  if (hooks?.verifyCredentials) {
+    await hooks.verifyCredentials(event, input)
+  } else if (dbUser.passwordHash) {
     if (!input.currentPassword) {
       throw createError({
         statusCode: 400,

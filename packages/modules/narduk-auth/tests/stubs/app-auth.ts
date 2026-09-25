@@ -18,6 +18,8 @@ export async function updateProfile() {
   return {}
 }
 
+export async function verifySupabaseAccountDeletionCredentials() {}
+
 export async function verifyMfa() {
   return {}
 }
