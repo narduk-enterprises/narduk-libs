@@ -25,14 +25,14 @@ belong on a Mac, not in a cloud session.
 1. The estate baseline, when it can be fetched. The script tries to clone
    agent-infrastructure to `~/.local/share/agent-infrastructure` and run its
    `scripts/claude-cloud-env-setup.sh`, which adds the estate `AGENTS.md` to
-   `~/.claude/CLAUDE.md`. agent-infrastructure is private, and the session's
-   git proxy refuses the clone with a 403 even when the repo is attached to the
+   `~/.claude/CLAUDE.md`. agent-infrastructure is private, and the session's git
+   proxy refuses the clone with a 403 even when the repo is attached to the
    session (#952). Nothing else in the script depends on it.
-2. Node, pnpm and the GitHub CLI, installed directly. Node comes from
-   nodejs.org at the `.nvmrc` pin into `/opt/node24`. pnpm is set up through
-   corepack at `package.json`'s `packageManager` pin. `gh` comes from Ubuntu's
-   package archive. `/etc/profile.d/narduk-node24.sh` puts `/opt/node24/bin` on
-   login shells' `PATH`. When a pin changes, change it in the script too.
+2. Node, pnpm and the GitHub CLI, installed directly. Node comes from nodejs.org
+   at the `.nvmrc` pin into `/opt/node24`. pnpm is set up through corepack at
+   `package.json`'s `packageManager` pin. `gh` comes from Ubuntu's package
+   archive. `/etc/profile.d/narduk-node24.sh` puts `/opt/node24/bin` on login
+   shells' `PATH`. When a pin changes, change it in the script too.
 3. uv, at the version `logging-languages.yml` pins, for the narduk-logging
    Python quality gate.
 4. A warm `pnpm install --frozen-lockfile` when the repo is already on disk. It
