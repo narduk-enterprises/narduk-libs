@@ -607,6 +607,19 @@ round trip carrying every statement for a `batch`. The counts reach the
 `Server-Timing` header (when phases are exposed) and the "Request completed" log
 record. Counting never fails a query.
 
+On a Worker, a nested SSR request keeps the D1 binding (narduk-libs#49). The
+global `$fetch` during SSR goes through Nitro's `localFetch` with a fresh event
+that has no `event.context.cloudflare`, so the env resolver falls back to the
+`globalThis.__env__` that Nitro's `cloudflare-module` handler sets before every
+request. `pnpm --filter @narduk-enterprises/narduk-core run test:cf-ssr-d1`
+proves that against a prebuilt Worker: it builds `tests/fixtures/cf-ssr-d1-app`
+once and serves the exact `.output` under `wrangler dev --local` with a real
+local D1. It checks the outer request and the nested `useFetch` and `$fetch`
+requests, and it reads the Worker log. It also runs a control with the fallback
+blocked, which must lose the binding, and a config with no D1, which must fail
+closed. It runs offline in about 40 s. It is not part of `quality`, because it
+needs a Nuxt build and Wrangler.
+
 With `'none'`:
 
 - `useDatabase(event)` and accessors made by `createAppDatabase` throw an HTTP
