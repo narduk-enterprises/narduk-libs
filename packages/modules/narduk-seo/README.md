@@ -399,6 +399,57 @@ after SSR.
   `NUXT_PUBLIC_TWITTER_SITE` is still accepted as public runtime config but is
   no longer read by anything.
 
+## Programmatic SEO kit
+
+An app that publishes one page per entity (a product, an article, a buoy) needs
+the same three things for every row of its listing: structured data, a social
+card, and a sitemap entry. This layer ships all three; wire them from the same
+entity data so they cannot drift apart.
+
+1. **Structured data** — the `use*Schema(...)` composables above, called in the
+   detail page's `script setup`: `useProductSchema`, `useArticleSchema`,
+   `useDatasetSchema`, `useLocalBusinessSchema`, … per entity, and
+   `useItemListSchema(items)` on the listing page.
+2. **OG image** — `useSeo({ title, description, ogImage })` renders a per-page
+   card through `nuxt-og-image` (the shipped `Default` and `Article` Takumi
+   templates, or your own `ogImage.component`), with the static `defaultOgImage`
+   as the fallback. `useOgImageData()` and the admin OG route previews below let
+   an operator review the generated cards.
+3. **Sitemap** —
+   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+   from `@narduk-enterprises/narduk-seo/shared/sitemapFromListing` turns the
+   same listing into `@nuxtjs/sitemap` rows. It is pure (no Nuxt or Nitro
+   imports), keeps input order, skips items whose `loc` builder returns a blank
+   value, keeps the first row for a repeated `loc`, and normalises `lastmod` (a
+   `Date` or epoch milliseconds becomes an ISO string; a missing or unparseable
+   value is omitted). `changefreq` and `priority` take a constant or a per-item
+   builder.
+
+```ts
+// server/api/__sitemap__/buoys.ts
+import { sitemapUrlsFromListing } from '@narduk-enterprises/narduk-seo/shared/sitemapFromListing'
+
+export default defineSitemapEventHandler(async () => {
+  const buoys = await listPublicBuoys() // your data access
+  return sitemapUrlsFromListing(buoys, {
+    loc: (buoy) => `/buoys/${buoy.slug}`,
+    lastmod: (buoy) => buoy.updatedAt,
+    changefreq: 'hourly',
+  })
+})
+```
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  sitemap: { sources: ['/api/__sitemap__/buoys'] },
+})
+```
+
+The detail page then calls `useSeo(...)` and the matching schema composable for
+the same entity, so its card, its JSON-LD and its sitemap row are built from one
+record.
+
 ## Admin OG route previews (SSR HTML)
 
 For dashboards that list every **live** `og:image` resolved from public routes
