@@ -35,7 +35,8 @@ export function macd(
       if (v != null) last = v
       filled.push(last)
     }
-    ema(filled, signalPeriod).forEach((v, j) => (signal[start + j] = v))
+    const smoothed = ema(filled, signalPeriod)
+    for (let j = 0; j < smoothed.length; j++) signal[start + j] = smoothed[j] ?? null
   }
   const hist = closes.map((_, i) => {
     const l = line[i]
