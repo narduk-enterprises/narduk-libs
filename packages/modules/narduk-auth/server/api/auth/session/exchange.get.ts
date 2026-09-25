@@ -2,6 +2,7 @@ import { createError, defineEventHandler, getRequestURL, getValidatedQuery, send
 import { useRuntimeConfig } from 'nitropack/runtime'
 import { z } from 'zod'
 
+import { enforceRateLimitPolicy, RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { exchangeSupabaseCode } from '#narduk-auth-server/utils/app-auth'
 import {
   getAuthCallbackErrorMessage,
@@ -34,7 +35,14 @@ const querySchema = z.union([
   }),
 ])
 
+/**
+ * GET /api/auth/session/exchange
+ * The email-link twin of the POST route: it runs the same Supabase exchange,
+ * so it takes the same `authLogin` throttle before any work (narduk-libs#879).
+ * Without it, GET was an unthrottled way to drive the Supabase auth backend.
+ */
 export default defineEventHandler(async (event) => {
+  await enforceRateLimitPolicy(event, RATE_LIMIT_POLICIES.authLogin)
   const query = await getValidatedQuery(event, (value) => querySchema.safeParse(value))
   if (!query.success) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid auth callback parameters.' })
