@@ -1,3 +1,4 @@
+import type * as ChildProcess from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,7 +11,7 @@ vi.mock('../src/cloudflare.js', () => ({
 }))
 const spawnSync = vi.hoisted(() => vi.fn(() => ({ status: 0, stdout: '', stderr: '' })))
 vi.mock('node:child_process', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:child_process')>()),
+  ...(await importOriginal<typeof ChildProcess>()),
   spawnSync,
 }))
 
