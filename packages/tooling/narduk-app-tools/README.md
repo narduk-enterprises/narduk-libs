@@ -619,6 +619,49 @@ It does not require a particular scheme, so an app already on its own unique ids
 app's prefix into its `wrangler.jsonc` beside a commented example binding
 (narduk-libs#433).
 
+## Dependency audit (`narduk-app doctor --audit`)
+
+`narduk-app doctor --audit [--checkout <dir>] [--json] [--no-cache]` is the
+doctor's dependency-audit leg (narduk-libs#376). It runs one `pnpm audit --json`
+at the checkout root and gives one verdict line:
+
+| Verdict   | When                                                                                | Exit |
+| --------- | ----------------------------------------------------------------------------------- | ---- |
+| `FAIL`    | a high or critical advisory that `narduk-app.json` does not accept                  | 1    |
+| `WARN`    | an accepted advisory's `expiresOn` has passed, or an entry is missing `id`/`reason` | 0    |
+| `UNKNOWN` | the audit could not run: registry or network unreachable, or no `pnpm-lock.yaml`    | 0    |
+| `PASS`    | everything else. Low and moderate advisories never fail and never need an entry     | 0    |
+
+An app accepts an advisory in one place, `narduk-app.json` at the repository
+root. `id` (the GHSA id) and `reason` are required, and `expiresOn`
+(`YYYY-MM-DD`) is optional:
+
+```json
+{
+  "security": {
+    "acceptedAdvisories": [
+      { "id": "GHSA-xxxx-xxxx-xxxx", "reason": "no patched version; dev-only" }
+    ]
+  }
+}
+```
+
+A `FAIL` prints that line for each advisory, ready to paste, with its dependency
+paths. When a patched version exists it says so first, because the bump is the
+fix. An entry that no longer matches any advisory gets a one-line "remove this
+entry" note, never a failure. An expired `expiresOn` still accepts its advisory
+and only makes the verdict `WARN`.
+
+It is fast and never waits on the network. The result is cached under
+`node_modules/.cache/narduk-app/`, keyed by the `pnpm-lock.yaml` hash, for up to
+12 hours (advisories are published against versions an app already has, so the
+hash alone would keep an old `PASS` forever). `--no-cache` skips the cache. pnpm
+runs without fetch retries, so an unreachable registry reads `UNKNOWN` in about
+a second rather than a minute. `create-narduk-app` scaffolds `narduk-app.json`
+with an empty list and the how-to in the app README.
+
+Bare `doctor` is unchanged. The audit leg is a flag, like `--adoption`.
+
 ## The deployment standard block
 
 An app declares its half of the standard in the `deployment` block of

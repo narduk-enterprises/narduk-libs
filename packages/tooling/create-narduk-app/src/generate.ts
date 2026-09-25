@@ -807,6 +807,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // The one place this app declares an accepted dependency advisory, read
+      // by `narduk-app doctor --audit` (narduk-libs#376).
+      path: 'narduk-app.json',
+      contents: text('{', '  "security": {', '    "acceptedAdvisories": []', '  }', '}'),
+    },
+    {
       path: 'README.md',
       contents: text(
         '# ' + displayName,
@@ -871,6 +877,16 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           ' and the declared site URL is ' +
           siteUrl +
           '. Cloudflare resources are represented as local configuration only; provisioning and deployment are explicit operator workflows outside this generator.',
+        '',
+        '## Dependency advisories',
+        '',
+        '`pnpm exec narduk-app doctor --audit` fails only on a high or critical advisory this app has not accepted, and prints the line to add. When a patched version exists, bump to it instead. To accept one, add it to `narduk-app.json`; `id` and `reason` are required, `expiresOn` (YYYY-MM-DD) is optional:',
+        '',
+        '```json',
+        '{ "id": "GHSA-xxxx-xxxx-xxxx", "reason": "no patched version; dev server only" }',
+        '```',
+        '',
+        'Low and moderate advisories never need an entry, and an unreachable registry reads `UNKNOWN`, never a failure.',
         '',
         '## Capabilities',
         '',

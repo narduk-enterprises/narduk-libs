@@ -903,6 +903,25 @@ describe('create-narduk-app generation contract', () => {
     }
   })
 
+  // narduk-libs#376: `narduk-app doctor --audit` reads accepted advisories
+  // from narduk-app.json, so every generated app starts with the empty list
+  // and a README that says how to add to it.
+  it('scaffolds narduk-app.json with an empty acceptedAdvisories list and the how-to', () => {
+    const files = buildGeneratedFiles({
+      appName: 'audit-fixture',
+      capabilities: [],
+      databaseBackend: 'none',
+      noGit: true,
+      targetDir: '/tmp/audit-fixture',
+    })
+    const config = files.find((file) => file.path === 'narduk-app.json')
+    expect(JSON.parse(config!.contents)).toEqual({ security: { acceptedAdvisories: [] } })
+    const readme = files.find((file) => file.path === 'README.md')!.contents
+    expect(readme).toContain('## Dependency advisories')
+    expect(readme).toContain('pnpm exec narduk-app doctor --audit')
+    expect(readme).toContain('{ "id": "GHSA-xxxx-xxxx-xxxx", "reason":')
+  })
+
   it('validate-manifests.mjs runs, no-ops pre-onboarding, and detects a real binding mismatch', async () => {
     const files = buildGeneratedFiles({
       appName: 'validate-manifests-fixture',
