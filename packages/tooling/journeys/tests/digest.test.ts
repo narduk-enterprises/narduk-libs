@@ -95,6 +95,56 @@ describe('digestJourney', () => {
     expect(digestJourney(withSource(nodeSource))).not.toBe(digestJourney(withSource(sameBody)))
   })
 
+  // #882: semicolons and whitespace are loader noise only in code. Inside a
+  // string, template or regex literal they are what the step types or matches.
+  const withBody = (source: string) => {
+    const run = async () => {}
+    run.toString = () => source
+    return webJourney({ id: 'walk', steps: [{ id: 'fill', say: 'Fill the note', do: run }] })
+  }
+
+  it("moves when only a literal's semicolons or spacing change (#882)", () => {
+    const pairs: Array<[string, string]> = [
+      [
+        "async (api) => { await api.fill('note', 'a;b') }",
+        "async (api) => { await api.fill('note', 'ab') }",
+      ],
+      [
+        'async (api) => { await api.fill("note", "a  b") }',
+        'async (api) => { await api.fill("note", "a b") }',
+      ],
+      [
+        'async (api) => { await api.fill(`note`, `${x};y`) }',
+        'async (api) => { await api.fill(`note`, `${x}y`) }',
+      ],
+      ['async (api) => { await api.must(/a;b/) }', 'async (api) => { await api.must(/ab/) }'],
+      [
+        'async (api) => { await api.must(x, /a;b/u) }',
+        'async (api) => { await api.must(x, /ab/u) }',
+      ],
+    ]
+    for (const [left, right] of pairs) {
+      expect(digestJourney(withBody(left)), left).not.toBe(digestJourney(withBody(right)))
+    }
+  })
+
+  it('still ignores loader semicolons and indent around literals, comments and divisions', () => {
+    const node =
+      "async (api) => {\n  // don't wait: it's typed\n  const half = total / 2\n  await api.fill('note', `${half};x`)\n  await api.must(/a;b/)\n}"
+    const playwright =
+      "async (api) => {\n        // don't wait: it's typed\n        const half = total / 2;\n        await api.fill('note', `${half};x`);\n        await api.must(/a;b/);\n      }"
+    expect(digestJourney(withBody(node))).toBe(digestJourney(withBody(playwright)))
+  })
+
+  it('digests a body whose literals hold no semicolons or runs of spaces as before (#882)', () => {
+    // Pinned from the pre-#882 normalizer, so promoted captures stay valid.
+    const body =
+      'async do(c) {\n  await c.goto(\'/start\');\n  await c.must("Begin now", `x ${y}`, /a b/u)\n}'
+    expect(digestJourney(withBody(body))).toBe(
+      'sha256:62caa47fe3073fdbee4b29b1655d3653cc9bc66e77e1a7a8b78090e642d413e5',
+    )
+  })
+
   it("moves when this journey's prose or step body changes", () => {
     const base = digestJourney(webJourney({ id: 'walk' }))
     expect(digestJourney(webJourney({ id: 'walk', title: 'Changed title' }))).not.toBe(base)
