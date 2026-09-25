@@ -16,6 +16,8 @@
  * ```
  */
 
+import { resolveWaitUntil } from '../wait-until'
+
 import { useLogger } from './logger'
 import { readWorkerRuntimeEnv } from './worker-env'
 
@@ -59,30 +61,6 @@ export interface D1CacheMeta {
    */
   cachedAt: string
   stale: boolean
-}
-
-interface WaitUntilHost {
-  context?: {
-    cloudflare?: { context?: { waitUntil?: (promise: Promise<unknown>) => void } }
-    waitUntil?: (promise: Promise<unknown>) => void
-  }
-  waitUntil?: (promise: Promise<unknown>) => void
-}
-
-/**
- * Keep `task` alive past the response when the runtime allows it.
- *
- * On Workers, work the response does not wait on can be cancelled once it is
- * sent, so a background refresh that is not handed to `waitUntil` can silently
- * never finish (narduk-libs#925). Each candidate is called as a method, since
- * an `ExecutionContext.waitUntil` detached from its context can throw.
- */
-function keepAlive(event: H3Event, task: Promise<unknown>): void {
-  const host = event as unknown as WaitUntilHost
-  if (typeof host.waitUntil === 'function') return host.waitUntil(task)
-  const cloudflare = host.context?.cloudflare?.context
-  if (typeof cloudflare?.waitUntil === 'function') return cloudflare.waitUntil(task)
-  if (typeof host.context?.waitUntil === 'function') return host.context.waitUntil(task)
 }
 
 export interface WithD1CacheOptions {
@@ -164,7 +142,12 @@ export async function withD1Cache<T>(
             .catch((err) =>
               log.error(`Background refresh failed ${cacheKey}`, { error: String(err) }),
             )
-          keepAlive(event, refresh)
+          // Keep the refresh alive past the response: on Workers, work the
+          // response does not wait on can be cancelled once it is sent
+          // (narduk-libs#925). `resolveWaitUntil` binds the runtime's
+          // `waitUntil` as a method and walks an internal fetch to its SSR
+          // parent (#991).
+          resolveWaitUntil(event)?.(refresh)
           return wrap(parsed, true, cachedAtSec)
         }
       }
