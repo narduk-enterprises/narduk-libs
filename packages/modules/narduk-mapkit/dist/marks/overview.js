@@ -25,6 +25,7 @@
  * Fixing the region labels upstream would retire rule 2; rule 1 stands on its
  * own as ordinary outlier discipline.
  */
+import { normalizeLongitudeDegrees } from '../geometry/longitude.js';
 /**
  * The default overview. Centred on the geographic middle of the lower 48, wide
  * enough for both coasts and the Gulf; MapKit widens whichever axis the host's
@@ -59,6 +60,30 @@ function coreRange(values) {
     return [kept[0], kept.at(-1)];
 }
 /**
+ * `lngs` on one continuous number line that starts just after their largest
+ * gap, so a set straddling the antimeridian (179, -179) reads 179..181 rather
+ * than -179..179. Same largest-gap rule as `computeLongitudeSpan`. A set whose
+ * largest gap is already the one across +/-180 comes back unchanged, so a set
+ * that does not cross is framed exactly as before.
+ */
+function unwrapLongitudes(lngs) {
+    const inRange = lngs.map((lng) => lng >= -180 && lng <= 180 ? lng : normalizeLongitudeDegrees(lng));
+    const sorted = [...inRange].sort((a, b) => a - b);
+    let largestGap = sorted[0] + 360 - sorted.at(-1);
+    let start;
+    for (let index = 1; index < sorted.length; index++) {
+        const gap = sorted[index] - sorted[index - 1];
+        if (gap > largestGap) {
+            largestGap = gap;
+            start = sorted[index];
+        }
+    }
+    if (start === undefined)
+        return inRange;
+    const seam = start;
+    return inRange.map((lng) => (lng >= seam ? lng : lng + 360));
+}
+/**
  * The camera an embed should show for `points`, or `null` when it has none and
  * the kit's own `fallbackCenter` should stand.
  */
@@ -68,12 +93,15 @@ export function mapOverviewCamera(points, { minSpan = 0.5, padding = 0.25 } = {}
     if (lats.length === 0 || lngs.length === 0)
         return null;
     const [south, north] = coreRange(lats);
-    const [west, east] = coreRange(lngs);
+    // Trimmed on the unwrapped line, so a set crossing +/-180 frames its short
+    // arc instead of spanning 360 minus it and falling back (#932).
+    const [west, east] = coreRange(unwrapLongitudes(lngs));
     if (north - south > UNUSABLE_LAT_SPAN || east - west > UNUSABLE_LNG_SPAN) {
         return NORTH_AMERICA_OVERVIEW;
     }
+    const middle = (west + east) / 2;
     return {
-        center: { lat: (south + north) / 2, lng: (west + east) / 2 },
+        center: { lat: (south + north) / 2, lng: middle > 180 ? middle - 360 : middle },
         span: {
             lat: Math.max((north - south) * (1 + padding), minSpan),
             lng: Math.max((east - west) * (1 + padding), minSpan),
