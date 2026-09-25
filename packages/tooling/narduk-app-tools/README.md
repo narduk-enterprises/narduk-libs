@@ -868,6 +868,25 @@ fails 1.5, and only 1.5, until it is provisioned: the placeholder builds and
 deploys, but no request that touches the database can succeed (narduk-libs#662).
 A PASS reads the file only; it does not prove the database exists.
 
+**An app without Nuxt is not held to the Nuxt modules** (narduk-libs#157).
+`narduk-core`, `narduk-seo`, `narduk-analytics`, `narduk-auth` and
+`narduk-uploads` are Nuxt modules, so an app with no Nuxt can never register
+them. The checker counts an app as Nuxt when a `nuxt.config.*` exists at a known
+path (the root or `apps/web/`) or any `package.json` in the checkout depends on
+`nuxt`. An app with neither gets:
+
+| Sub-check       | Non-Nuxt result                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| 2.1             | checks `narduk-testkit`, `narduk-app-tools` and `eslint-config` only, and still fails on a missing one |
+| 2.1c            | `not-applicable`: `narduk-core` is a Nuxt module                                                       |
+| 2.3             | `not-applicable` when `narduk-core` is not a dependency; checked as usual when it is                   |
+| 3.1 / 3.2 / 3.3 | `not-applicable`, naming the Nuxt module each one would require                                        |
+
+Each `not-applicable` detail says `not a Nuxt app` and what was looked for, and
+none of these is ever a `pass`: the report does not claim the app registered
+modules it cannot load. 3.4 and 3.5 are unchanged. The ESLint route for such an
+app is `composeSharedConfigs()` (see the eslint-config README).
+
 The 2026-09-16 D-WEBFOUND-2 amendment retires status-app classification.
 Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
 product names do not require `narduk-ui` or `status-runtime`. Existing

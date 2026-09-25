@@ -65,6 +65,13 @@ export function writeConformantBaseline(root: string): void {
   writeJson(root, 'renovate.json', {
     packageRules: [{ matchPackagePrefixes: ['@narduk-enterprises/'], groupName: 'estate' }],
   })
+  // A nuxt.config makes this a Nuxt app for detectNuxt() (narduk-libs#157), so
+  // the Nuxt-module checks in items 2 and 3 apply.
+  writeFile(
+    root,
+    'nuxt.config.ts',
+    'export default defineNuxtConfig({ nitro: { preset: "cloudflare_module" } })',
+  )
 }
 
 /** A Coolify/node-server app: no Workers manifest, no wrangler, node-server
