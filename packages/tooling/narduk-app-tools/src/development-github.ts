@@ -13,6 +13,12 @@ const ACTIVE_RUN_STATUSES = [
   'action_required',
 ] as const
 const workflowSchema = z.object({ id: z.number().int(), path: z.string(), state: z.string() })
+const repositorySchema = z.object({ id: z.number().int().positive(), full_name: z.string() })
+/** A repository as GitHub names it now: the numeric id survives a rename, the name does not. */
+export interface DevelopmentRepositoryIdentity {
+  id: number
+  fullName: string
+}
 export interface SavedDevelopmentWorkflow {
   id: number
   path: string
@@ -49,7 +55,17 @@ export function developmentGitHubRequest(path: string, method = 'GET'): unknown 
   }
 }
 
+/**
+ * `repository` is the name the checkout's origin gives, which keys every local
+ * record (activations, receipts, validation history) as created. GitHub may
+ * have renamed the repository since: reads through the old name follow the
+ * redirect, but identity checks compare the numeric id and writes address the
+ * canonical name, so a rename neither fails a check nor replays a write
+ * through a redirect.
+ */
 export class DevelopmentGitHub {
+  private canonical?: DevelopmentRepositoryIdentity
+
   constructor(
     readonly repository: string,
     private readonly request: DevelopmentGitHubRequest = developmentGitHubRequest,
@@ -57,8 +73,24 @@ export class DevelopmentGitHub {
     if (!/^[\w.-]+\/[\w.-]+$/u.test(repository)) throw new Error('Invalid GitHub repository')
   }
 
+  /** Resolved once per client; `GET repos/{owner}/{name}` follows a rename. */
+  identity(): DevelopmentRepositoryIdentity {
+    if (!this.canonical) {
+      const repository = repositorySchema.parse(this.request(`repos/${this.repository}`))
+      if (!/^[\w.-]+\/[\w.-]+$/u.test(repository.full_name))
+        throw new Error('GitHub returned an invalid repository name')
+      this.canonical = { id: repository.id, fullName: repository.full_name }
+    }
+    return this.canonical
+  }
+
   private path(suffix: string): string {
     return `repos/${this.repository}/${suffix}`
+  }
+
+  /** Mutations: a redirect must never decide where a write lands. */
+  private write(suffix: string, method: 'PUT' | 'POST'): unknown {
+    return this.request(`repos/${this.identity().fullName}/${suffix}`, method)
   }
 
   private pages(suffix: string, key: string): unknown[] {
@@ -152,7 +184,7 @@ export class DevelopmentGitHub {
 
   holdWorkflow(saved: SavedDevelopmentWorkflow): void {
     if (this.inspectWorkflow(saved).state === 'active')
-      this.request(this.path(`actions/workflows/${saved.id}/disable`), 'PUT')
+      this.write(`actions/workflows/${saved.id}/disable`, 'PUT')
     if (!this.inspectWorkflow(saved).state.startsWith('disabled_'))
       throw new Error(`Workflow hold was not confirmed: ${saved.path}`)
   }
@@ -175,7 +207,7 @@ export class DevelopmentGitHub {
       for (const [id, status] of runs) {
         const run = { id, status }
         if (run.status === 'completed') continue
-        if (!workflow.writes) this.request(this.path(`actions/runs/${run.id}/cancel`), 'POST')
+        if (!workflow.writes) this.write(`actions/runs/${run.id}/cancel`, 'POST')
         pending.push({ id: run.id, path: workflow.path })
       }
     }
@@ -185,10 +217,9 @@ export class DevelopmentGitHub {
   restoreWorkflow(saved: SavedDevelopmentWorkflow): void {
     const current = this.inspectWorkflow(saved).state
     if (current !== saved.desiredState) {
-      if (saved.desiredState === 'active')
-        this.request(this.path(`actions/workflows/${saved.id}/enable`), 'PUT')
+      if (saved.desiredState === 'active') this.write(`actions/workflows/${saved.id}/enable`, 'PUT')
       else if (saved.desiredState === 'disabled_manually')
-        this.request(this.path(`actions/workflows/${saved.id}/disable`), 'PUT')
+        this.write(`actions/workflows/${saved.id}/disable`, 'PUT')
       else throw new Error(`Cannot restore changed disabled state exactly: ${saved.path}`)
     }
     if (this.inspectWorkflow(saved).state !== saved.desiredState)
@@ -284,7 +315,7 @@ export class DevelopmentGitHub {
   }
 
   cancelRun(id: number): void {
-    this.request(this.path(`actions/runs/${id}/cancel`), 'POST')
+    this.write(`actions/runs/${id}/cancel`, 'POST')
   }
 
   /** Open issues labelled `red-main`: the post-merge safety net's notice per repository. */
@@ -361,10 +392,11 @@ export class DevelopmentGitHub {
         path: z.string(),
         html_url: z.url(),
         run_attempt: z.number().int(),
-        repository: z.object({ full_name: z.string() }),
-        head_repository: z.object({ full_name: z.string() }),
+        repository: z.object({ id: z.number().int() }),
+        head_repository: z.object({ id: z.number().int() }),
       })
       .parse(this.request(this.path(`actions/runs/${runId}`)))
+    const { id: repositoryId } = this.identity()
     if (
       run.id !== Number(runId) ||
       run.head_sha !== sha ||
@@ -373,8 +405,8 @@ export class DevelopmentGitHub {
       run.status !== 'completed' ||
       run.conclusion !== 'success' ||
       run.path !== automation.manualValidationWorkflow ||
-      run.repository.full_name !== this.repository ||
-      run.head_repository.full_name !== this.repository
+      run.repository.id !== repositoryId ||
+      run.head_repository.id !== repositoryId
     )
       throw new Error('Run is not successful explicit validation of this exact release candidate')
     const jobs = this.pages(`actions/runs/${runId}/attempts/${run.run_attempt}/jobs`, 'jobs').map(
