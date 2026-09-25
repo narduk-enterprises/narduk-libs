@@ -54,6 +54,7 @@ async function setupShell(options: { components?: boolean }, detection?: boolean
     addComponent: vi.fn(),
     addComponentsDir: vi.fn(),
     addImports: vi.fn(),
+    addPlugin: vi.fn(),
     createResolver: (url: string) => ({
       resolve: (path: string) => fileURLToPath(new URL(path, url)),
     }),

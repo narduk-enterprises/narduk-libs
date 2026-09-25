@@ -66,4 +66,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
   { name: 'NeCsvDownload', filePath: './runtime/components/NeCsvDownload.vue' },
+  // Item 18 (narduk-libs#265): NeAppShell, the sectioned rail. Registered so
+  // an app can write it in a layout; nothing registers it AS a layout, and
+  // nothing scaffolds it (D3: the shell is opt-in).
+  { name: 'NeAppShell', filePath: './runtime/components/NeAppShell.vue' },
 ]

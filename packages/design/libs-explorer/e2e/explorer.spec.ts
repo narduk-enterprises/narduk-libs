@@ -83,8 +83,14 @@ async function expectQuery(page: Page, expected: Record<string, string>) {
   await expect.poll(() => searchOf(page)).toEqual(expected)
 }
 
-/** Press Tab until `target` has focus: proves it is reachable by keyboard. */
-async function tabTo(page: Page, target: Locator, limit = 80) {
+/**
+ * Press Tab until `target` has focus: proves it is reachable by keyboard.
+ *
+ * `limit` only bounds the loop. The sidebar gains a link with every example,
+ * so a tight cap failed whenever a component was added, not when a control
+ * became unreachable.
+ */
+async function tabTo(page: Page, target: Locator, limit = 200) {
   for (let step = 0; step < limit; step += 1) {
     await page.keyboard.press('Tab')
     if (await target.evaluate((element) => element === document.activeElement)) return

@@ -2720,3 +2720,40 @@ async function handleSave(data: { name: string }) {
   </NeSettingsPage>
 </template>
 ```
+
+### `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell` — deprecated, removed in the next major
+
+Superseded by `NeAppShell` and `useNardukShellSections()` in
+[`@narduk-enterprises/narduk-shell`](../../design/narduk-shell/README.md#neappshell)
+(components backlog item 18,
+[narduk-libs#265](https://github.com/narduk-enterprises/narduk-libs/issues/265);
+decision D4: deprecate now, remove in the next narduk-core major).
+
+Behaviour is unchanged in this release: all three render exactly as they did,
+and core's own `app.vue` and `dashboard` layout (and narduk-auth's `auth` and
+`blank` layouts) keep using them. There is deliberately **no** runtime warning,
+unlike the other deprecations above: an app gets these shells from core's own
+`app.vue` and layouts without ever naming them, so a warning would blame apps
+that made no choice. The `@deprecated` JSDoc on each component gives editors and
+`vue-tsc` the strike-through and the pointer.
+
+`NeAppShell` is opt-in: it is not registered as a layout and nothing scaffolds
+it. An app migrates by writing it in its own layout.
+
+**Migration mapping**
+
+| Before                                      | `NeAppShell`                           | Notes                                                                                                      |
+| ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `LayerDashboardShell` `navItems`            | `sections` (or `nardukShell.sections`) | A flat list becomes one or more labelled sections: `[{ id, label, items: [{ label, to, icon }] }]`.        |
+| `app.config.dashboard.navItems`             | `useNardukShellSections()`             | Shared, SSR-safe state seeded from `nardukShell.sections`; mutate it to add a section at runtime.          |
+| `navItems[].requiresAdmin`                  | — (the app's own logic)                | The shell does no auth. Push the admin section into `useNardukShellSections()` when the session allows it. |
+| sidebar collapse / resize / `sidebarSizing` | — (dropped)                            | The rail is always expanded at a fixed 14.5rem; below `lg` it is a drawer.                                 |
+| header logo and app name                    | `#rail-top`                            |                                                                                                            |
+| `#sidebar-footer` / account menu            | `#rail-bottom`                         | Put `LayerDashboardAccountMenu` (or the app's own) here.                                                   |
+| `#sidebar-info`, `description`              | — (dropped)                            | Put copy in `#rail-bottom` if it is still needed.                                                          |
+| `#navbar-right`, `statusBadges`             | `#navbar-right`                        | Badges become the app's own markup in the slot.                                                            |
+| breadcrumbs in the navbar                   | `#navbar`                              | Render `UBreadcrumb` (or `NePageHeader`'s breadcrumbs) yourself.                                           |
+| default slot                                | default slot                           | Rendered inside the shell's `<main>`, with a skip link to it.                                              |
+| `LayerAppShell` skip link and `<main>`      | built in                               | `UApp` is not part of the shell: keep it in the app's `app.vue`.                                           |
+| `LayerAppShell` `#header` / `#footer`       | — (none today)                         | Page header / footer framing around the shell is an open question, tracked in narduk-libs#389.             |
+| `LayerChromelessShell`                      | — (no shell)                           | A chromeless layout (auth, blank) simply does not render `NeAppShell`.                                     |

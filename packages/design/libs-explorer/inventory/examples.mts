@@ -119,6 +119,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'CSV download',
     'Downloads exactly the rows in view, raw values, missing as empty.',
   ),
+  shell(
+    'NeAppShell',
+    'App shell',
+    'The opt-in sectioned left rail, navbar row and page frame; a slide-over below lg.',
+  ),
   {
     id: 'formatters',
     title: 'Formatters',
