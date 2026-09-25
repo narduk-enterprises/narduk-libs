@@ -204,7 +204,7 @@ describe('series list query', () => {
       "SELECT series_id, vessel_id, path, unit, value_kind
         FROM series
        WHERE vessel_id = $1::uuid
-         AND ($2::jsonb IS NULL OR path IN (SELECT jsonb_array_elements_text($2::jsonb)))
+         AND ($2::text IS NULL OR path IN (SELECT jsonb_array_elements_text($2::text::jsonb)))
        ORDER BY path ASC
        LIMIT $3"
     `)
@@ -214,6 +214,11 @@ describe('series list query', () => {
       '["navigation.speedOverGround","environment.depth.belowTransducer","a,b"]',
       101,
     ])
+  })
+
+  it('never binds a parameter as json or jsonb, which postgres.js would encode a second time', () => {
+    const built = buildSeriesListQuery({ paths: ['x'], vesselId: VESSEL })
+    expect(built.text).not.toMatch(/\$\d+::jsonb?\b/u)
   })
 
   it('binds a null filter when every series is asked for, with the same text', () => {

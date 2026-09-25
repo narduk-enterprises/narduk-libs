@@ -564,7 +564,12 @@ export function buildSeriesListQuery(
       `SELECT series_id, vessel_id, path, unit, value_kind`,
       `  FROM ${SERIES_TABLE}`,
       ` WHERE vessel_id = $1::uuid`,
-      `   AND ($2::jsonb IS NULL OR path IN (SELECT jsonb_array_elements_text($2::jsonb)))`,
+      // `$2` is bound as TEXT and cast to jsonb in SQL, never bound as jsonb. postgres.js -- the
+      // Worker driver behind Hyperdrive -- asks the server for each parameter's type and
+      // JSON-encodes any value bound to a json/jsonb parameter, so the already-serialized
+      // filter arrived as a JSON *string* and failed with "cannot extract elements from a
+      // scalar". node-postgres sends strings as-is, which is why the live suite never saw it.
+      `   AND ($2::text IS NULL OR path IN (SELECT jsonb_array_elements_text($2::text::jsonb)))`,
       ` ORDER BY path ASC`,
       ` LIMIT $3`,
     ].join('\n'),
