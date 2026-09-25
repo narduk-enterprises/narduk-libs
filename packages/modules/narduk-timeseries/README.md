@@ -37,6 +37,7 @@ const store = createTimescaleHistoryStore({ executor })
 await store.writeNumeric(points) // resolve + bounded multi-row INSERTs
 await store.writeTrack(positions) // ST_MakePoint(lon, lat), lon first
 await store.resolveSeries(descriptors) // cached, coalesced, one statement
+await store.listSeries({ vesselId, paths }) // read-only: SELECT, creates nothing
 await store.queryRollup({ vesselId, seriesIds, bucket: '1h', range })
 await store.queryTrack({ vesselId, range, maxPoints: 5000 })
 await store.applyRetention(policy)

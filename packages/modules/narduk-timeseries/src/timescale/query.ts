@@ -18,11 +18,12 @@
 import { clampQueryNowMs } from '../clock.js'
 import { NardukTimeseriesError } from '../errors.js'
 import { ROLLUP_BUCKETS } from '../types.js'
-import type { RollupBucket, RollupQuery, TimeRange, TrackQuery } from '../types.js'
-import { ROLLUP_BUCKET_MS, TRACK_TABLE, rollupTable } from './tables.js'
+import type { RollupBucket, RollupQuery, SeriesListQuery, TimeRange, TrackQuery } from '../types.js'
+import { ROLLUP_BUCKET_MS, SERIES_TABLE, TRACK_TABLE, rollupTable } from './tables.js'
 
 export const DEFAULT_MAX_ROLLUP_ROWS = 50_000
 export const DEFAULT_MAX_TRACK_POINTS = 5000
+export const DEFAULT_MAX_SERIES_ROWS = 5000
 /** Below this the decimation buckets are finer than the data, so read it raw. */
 export const MIN_TRACK_BUCKET_MS = 1000
 
@@ -88,6 +89,10 @@ export interface RollupQueryLimits {
 
 export interface TrackQueryLimits {
   maxPointsCeiling?: number
+}
+
+export interface SeriesListQueryLimits {
+  maxRowsCeiling?: number
 }
 
 export interface RollupRangePlan {
@@ -500,5 +505,68 @@ export function planTrackQuery(query: TrackQuery, limits?: TrackQueryLimits): Tr
         ` LIMIT $5`,
       ].join('\n'),
     },
+  }
+}
+
+/**
+ * The series catalogue read: a vessel's series, or the named subset of them.
+ *
+ * Three parameters whatever the path count. The path filter goes in as one
+ * JSON text parameter expanded server-side, never as a bare array (an
+ * unprepared Hyperdrive connection sends a JS array as untyped text and
+ * Postgres answers 22P02, narduk-libs#311) and never as a comma-joined string
+ * (a SignalK path may legally contain a comma, and splitting one path into two
+ * would widen the read). `$2` is null when the caller asked for every series,
+ * so the statement text is the same either way.
+ *
+ * It is a SELECT and only a SELECT: `history_reader` can run it, and asking
+ * about a path the vessel never recorded creates nothing. `resolveSeries` is
+ * the write path's lookup and upserts.
+ */
+export function buildSeriesListQuery(
+  query: SeriesListQuery,
+  limits?: SeriesListQueryLimits,
+): BuiltQuery {
+  if (typeof query.vesselId !== 'string' || query.vesselId.length === 0) {
+    throw new NardukTimeseriesError('SERIES_DESCRIPTOR_INVALID', 'A series list needs a vesselId.')
+  }
+  const maxRows = assertWorkingSetSize(
+    'maxRows',
+    query.maxRows,
+    DEFAULT_MAX_SERIES_ROWS,
+    limits?.maxRowsCeiling ?? DEFAULT_MAX_SERIES_ROWS,
+  )
+  let paths: string | null = null
+  if (query.paths !== undefined) {
+    if (!Array.isArray(query.paths) || query.paths.length === 0) {
+      throw new NardukTimeseriesError(
+        'SERIES_DESCRIPTOR_INVALID',
+        'A series list path filter must name at least one path; omit `paths` to list every series.',
+        { vesselId: query.vesselId },
+      )
+    }
+    for (const path of query.paths) {
+      if (typeof path !== 'string' || path.length === 0) {
+        throw new NardukTimeseriesError(
+          'SERIES_DESCRIPTOR_INVALID',
+          'Every path in a series list filter must be a non-empty string.',
+          { vesselId: query.vesselId },
+        )
+      }
+    }
+    paths = JSON.stringify([...new Set(query.paths)])
+  }
+
+  return {
+    // maxRows + 1 so a full page is distinguishable from an exact fit.
+    params: [query.vesselId, paths, maxRows + 1],
+    text: [
+      `SELECT series_id, vessel_id, path, unit, value_kind`,
+      `  FROM ${SERIES_TABLE}`,
+      ` WHERE vessel_id = $1::uuid`,
+      `   AND ($2::jsonb IS NULL OR path IN (SELECT jsonb_array_elements_text($2::jsonb)))`,
+      ` ORDER BY path ASC`,
+      ` LIMIT $3`,
+    ].join('\n'),
   }
 }

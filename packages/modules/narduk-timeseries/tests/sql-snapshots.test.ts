@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildRollupQuery,
+  buildSeriesListQuery,
   planTrackQuery,
   REFRESH_MAX_WINDOW_MS,
   refreshRollupsStatements,
@@ -188,6 +189,49 @@ describe('rollup query', () => {
         vesselId: VESSEL,
       }),
     ).toThrow(/BUCKET_UNKNOWN/u)
+  })
+})
+
+describe('series list query', () => {
+  it('binds three parameters whatever the path count, and only SELECTs', () => {
+    const built = buildSeriesListQuery({
+      maxRows: 100,
+      paths: ['navigation.speedOverGround', 'environment.depth.belowTransducer', 'a,b'],
+      vesselId: VESSEL,
+    })
+
+    expect(built.text).toMatchInlineSnapshot(`
+      "SELECT series_id, vessel_id, path, unit, value_kind
+        FROM series
+       WHERE vessel_id = $1::uuid
+         AND ($2::jsonb IS NULL OR path IN (SELECT jsonb_array_elements_text($2::jsonb)))
+       ORDER BY path ASC
+       LIMIT $3"
+    `)
+    // A comma inside a path stays one path: the filter is JSON, not a split string.
+    expect(built.params).toEqual([
+      VESSEL,
+      '["navigation.speedOverGround","environment.depth.belowTransducer","a,b"]',
+      101,
+    ])
+  })
+
+  it('binds a null filter when every series is asked for, with the same text', () => {
+    const all = buildSeriesListQuery({ vesselId: VESSEL })
+    const some = buildSeriesListQuery({ paths: ['x'], vesselId: VESSEL })
+    expect(all.text).toBe(some.text)
+    expect(all.params).toEqual([VESSEL, null, 5001])
+  })
+
+  it('refuses an empty filter, an empty path, a missing vessel and an oversized page', () => {
+    expect(() => buildSeriesListQuery({ paths: [], vesselId: VESSEL })).toThrow(
+      /at least one path/u,
+    )
+    expect(() => buildSeriesListQuery({ paths: [''], vesselId: VESSEL })).toThrow(
+      /non-empty string/u,
+    )
+    expect(() => buildSeriesListQuery({ vesselId: '' })).toThrow(/needs a vesselId/u)
+    expect(() => buildSeriesListQuery({ maxRows: 5001, vesselId: VESSEL })).toThrow(/at most 5000/u)
   })
 })
 
