@@ -665,6 +665,13 @@ describe('requirements that stay honest about what they proved', () => {
         writeJson(root, 'apps/web/package.json', {
           dependencies: { '@narduk-enterprises/narduk-mapkit': '2.7.0' },
         })
+        // The baseline is a Nuxt app, so provenance also needs the entry
+        // registered; only the functional half is left unproved.
+        writeFile(
+          root,
+          'nuxt.config.ts',
+          "export default defineNuxtConfig({ modules: ['@narduk-enterprises/narduk-mapkit/nuxt'] })\n",
+        )
       },
       { reality: baselineReality({ '@narduk-enterprises/narduk-mapkit': '2.7.0' }) },
     )

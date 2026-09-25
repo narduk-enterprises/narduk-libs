@@ -225,17 +225,17 @@ function evaluate35(repo: AppRepo, merged: Record<string, string>): FoundationSu
  * 2026-09-25: "Not-applicable (Recommended)").
  */
 function nonNuxtCapabilityChecks(nuxt: NuxtPresence): FoundationSubCheck[] {
-  const reason = (pkgs: string) =>
-    `not a Nuxt app (${nuxt.evidence}); ${pkgs} are Nuxt modules this app cannot register`
+  const reason = (pkgs: string, plural: boolean) =>
+    `not a Nuxt app (${nuxt.evidence}); ${pkgs} ${plural ? 'are Nuxt modules' : 'is a Nuxt module'} this app cannot register`
   return [
     check(
       '3.1',
       'public site: narduk-seo + narduk-analytics',
       STATUS_NA,
-      reason('narduk-seo and narduk-analytics'),
+      reason('narduk-seo and narduk-analytics', true),
     ),
-    check('3.2', 'has a login: narduk-auth', STATUS_NA, reason('narduk-auth and its peers')),
-    check('3.3', 'writes R2: narduk-uploads', STATUS_NA, reason('narduk-uploads and its peers')),
+    check('3.2', 'has a login: narduk-auth', STATUS_NA, reason('narduk-auth', false)),
+    check('3.3', 'writes R2: narduk-uploads', STATUS_NA, reason('narduk-uploads', false)),
   ]
 }
 
