@@ -59,6 +59,15 @@ _SENSITIVE_SEGMENTS = {
     "bearer",
     "credential",
     "credentials",
+    # Plurals name the same secrets, often a whole list of them (narduk-libs#872).
+    "tokens",
+    "passwords",
+    "passwds",
+    "secrets",
+    "apikeys",
+    "jwts",
+    "privatekeys",
+    "clientsecrets",
 }
 # Adjacent segments that together name a secret (`x-api-key` → api+key).
 _COMPOUND_SEGMENTS = {"apikey", "accesskey", "privatekey", "clientsecret", "setcookie"}
@@ -68,10 +77,28 @@ _SENSITIVE_INFIX = ("apikey", "accesskey", "privatekey", "authorization")
 # boundary in an all-lowercase concatenation such as `refreshtoken` or
 # `dbpassword`, so without this the narrowing would stop redacting names the
 # suffix matcher already covered. `tokenizer` / `secretary` / `jwtid` do not end
-# in these words, and `tokencount` / `passwordless` are carved out below.
-_SENSITIVE_SUFFIXES = ("token", "password", "secret")
+# in these words, and `tokencount` / `passwordless` are carved out below. The
+# plural forms catch `refreshtokens` / `dbpasswords` (narduk-libs#872).
+_SENSITIVE_SUFFIXES = ("token", "password", "secret", "tokens", "passwords", "secrets")
 # Metric / method flags that contain `token`, `password`, or `auth` but are not secrets.
-_SAFE_NORMALIZED_KEYS = {"tokencount", "passwordless", "authmethod", "authbackend", "authprovider"}
+# The `*tokens` entries are the LLM usage counts providers report; they are numbers,
+# and redacting them would blind AI cost and latency logs once plurals redact (#872).
+_SAFE_NORMALIZED_KEYS = {
+    "tokencount",
+    "passwordless",
+    "authmethod",
+    "authbackend",
+    "authprovider",
+    "inputtokens",
+    "outputtokens",
+    "prompttokens",
+    "completiontokens",
+    "totaltokens",
+    "maxtokens",
+    "reasoningtokens",
+    "cachereadinputtokens",
+    "cachecreationinputtokens",
+}
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 

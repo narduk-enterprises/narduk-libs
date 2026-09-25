@@ -194,5 +194,58 @@
       "keyboard": "qwerty",
       "passport": "A123"
     }
+  },
+  {
+    "name": "plural secret keys stay redacted and LLM token counts stay visible",
+    "input": {
+      "tokens": ["synthetic-a", "synthetic-b"],
+      "secrets": {
+        "db": "synthetic"
+      },
+      "passwords": ["synthetic"],
+      "apiKeys": ["synthetic"],
+      "jwts": ["synthetic"],
+      "privateKeys": ["synthetic"],
+      "clientSecrets": ["synthetic"],
+      "accessTokens": ["synthetic"],
+      "refreshtokens": ["synthetic"],
+      "userTokens": ["synthetic"],
+      "dbPasswords": ["synthetic"],
+      "appSecrets": ["synthetic"],
+      "inputTokens": 120,
+      "output_tokens": 45,
+      "promptTokens": 120,
+      "completion_tokens": 45,
+      "totalTokens": 165,
+      "max_tokens": 1024,
+      "reasoningTokens": 8,
+      "cacheReadInputTokens": 64,
+      "cache_creation_input_tokens": 32,
+      "cached_tokens": 10
+    },
+    "expected": {
+      "tokens": "[REDACTED]",
+      "secrets": "[REDACTED]",
+      "passwords": "[REDACTED]",
+      "apiKeys": "[REDACTED]",
+      "jwts": "[REDACTED]",
+      "privateKeys": "[REDACTED]",
+      "clientSecrets": "[REDACTED]",
+      "accessTokens": "[REDACTED]",
+      "refreshtokens": "[REDACTED]",
+      "userTokens": "[REDACTED]",
+      "dbPasswords": "[REDACTED]",
+      "appSecrets": "[REDACTED]",
+      "inputTokens": 120,
+      "output_tokens": 45,
+      "promptTokens": 120,
+      "completion_tokens": 45,
+      "totalTokens": 165,
+      "max_tokens": 1024,
+      "reasoningTokens": 8,
+      "cacheReadInputTokens": 64,
+      "cache_creation_input_tokens": 32,
+      "cached_tokens": "[REDACTED]"
+    }
   }
 ]
