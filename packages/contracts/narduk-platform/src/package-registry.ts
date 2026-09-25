@@ -6,7 +6,8 @@ export interface PackageRegistryConfig {
 }
 
 export const DEFAULT_PACKAGE_REGISTRY_SCOPE = '@narduk-enterprises'
-export const MAPKIT_PACKAGE_REGISTRY_SCOPE = '@narduk-geo'
+// Scopes whose packages no longer exist; a stale route for either is dropped.
+const RETIRED_PACKAGE_SCOPES = ['@narduk-geo', '@loganrenz']
 export const GITHUB_PACKAGE_REGISTRY_URL = 'https://npm.pkg.github.com'
 export const GITHUB_PACKAGE_REGISTRY_READ_ENV_VAR = 'GH_PACKAGES_READ'
 export const GITHUB_PACKAGE_REGISTRY_WRITE_ENV_VAR = 'NARDUK_PLATFORM_GH_PACKAGES_WRITE'
@@ -116,8 +117,7 @@ export function patchPackageRegistryNpmrcContent(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const config = getPackageRegistryConfig(env)
-  const registryScopes = [config.scope, MAPKIT_PACKAGE_REGISTRY_SCOPE]
-  const registryLines = registryScopes.map((scope) => `${scope}:registry=${config.registryUrl}`)
+  const registryLine = `${config.scope}:registry=${config.registryUrl}`
 
   const retainedLines = content
     .split('\n')
@@ -126,11 +126,12 @@ export function patchPackageRegistryNpmrcContent(
     .filter((line) => !line.includes('Auth token injected via CI env'))
     .filter(
       (line) =>
-        !registryScopes.some((scope) => line.startsWith(`${scope}:registry=`)) &&
-        !line.startsWith('@loganrenz:registry='),
+        ![config.scope, ...RETIRED_PACKAGE_SCOPES].some((scope) =>
+          line.startsWith(`${scope}:registry=`),
+        ),
     )
 
-  const finalLines = [...registryLines, ...normalizeBlankLines(retainedLines)]
+  const finalLines = [registryLine, ...normalizeBlankLines(retainedLines)]
 
   return `${finalLines.join('\n').trimEnd()}\n`
 }

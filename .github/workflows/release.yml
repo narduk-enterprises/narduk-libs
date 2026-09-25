@@ -137,7 +137,6 @@ jobs:
           umask 077
           cat > "${NPM_CONFIG_USERCONFIG}" <<EOF
           @narduk-enterprises:registry=https://npm.pkg.github.com
-          @narduk-geo:registry=https://npm.pkg.github.com
           //npm.pkg.github.com/:_authToken=${PACKAGE_WRITE_TOKEN}
           EOF
 

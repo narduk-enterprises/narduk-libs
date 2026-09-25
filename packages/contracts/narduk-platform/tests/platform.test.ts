@@ -91,18 +91,20 @@ describe('neutral platform contracts', () => {
     expect(merged.requirements.every((requirement) => requirement.managedBy === 'app')).toBe(true)
   })
 
-  it('routes both package scopes to GitHub Packages', () => {
+  it('routes the package scope to GitHub Packages and drops retired scopes', () => {
     const patched = patchPackageRegistryNpmrcContent(
       [
         '@narduk-geo:registry=https://registry.npmjs.org',
         '@narduk-enterprises:registry=https://old.example.test',
+        '@loganrenz:registry=https://npm.pkg.github.com',
+        'auto-install-peers=false',
         '',
       ].join('\n'),
     )
 
-    expect(patched).toContain('@narduk-geo:registry=https://npm.pkg.github.com')
-    expect(patched).toContain('@narduk-enterprises:registry=https://npm.pkg.github.com')
-    expect(patched).not.toContain('@narduk-geo:registry=https://registry.npmjs.org')
+    expect(patched).toBe(
+      '@narduk-enterprises:registry=https://npm.pkg.github.com\nauto-install-peers=false\n',
+    )
   })
 
   it('records that public analytics keys are request-time, not wrangler-to-build', () => {
