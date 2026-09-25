@@ -25,7 +25,9 @@ import {
   isRecord,
   mergedDeps,
   collectPackages,
+  detectNuxt,
   type AppRepo,
+  type NuxtPresence,
 } from '../source.js'
 import { readCloudflareApp, readCloudflareAppExposureClass } from './item-1-scaffold-parity.js'
 import {
@@ -216,9 +218,34 @@ function evaluate35(repo: AppRepo, merged: Record<string, string>): FoundationSu
   )
 }
 
+/**
+ * narduk-seo, narduk-analytics, narduk-auth and narduk-uploads are Nuxt
+ * modules. In an app with no Nuxt they can never be registered, so 3.1-3.3 are
+ * not-applicable there, with the reason, never pass (narduk-libs#157, Logan
+ * 2026-09-25: "Not-applicable (Recommended)").
+ */
+function nonNuxtCapabilityChecks(nuxt: NuxtPresence): FoundationSubCheck[] {
+  const reason = (pkgs: string) =>
+    `not a Nuxt app (${nuxt.evidence}); ${pkgs} are Nuxt modules this app cannot register`
+  return [
+    check(
+      '3.1',
+      'public site: narduk-seo + narduk-analytics',
+      STATUS_NA,
+      reason('narduk-seo and narduk-analytics'),
+    ),
+    check('3.2', 'has a login: narduk-auth', STATUS_NA, reason('narduk-auth and its peers')),
+    check('3.3', 'writes R2: narduk-uploads', STATUS_NA, reason('narduk-uploads and its peers')),
+  ]
+}
+
 export function evaluateItem3(repo: AppRepo): FoundationSubCheck[] {
   const packages = collectPackages(repo)
   const merged = mergedDeps(packages)
+  const nuxt = detectNuxt(repo)
+  if (!nuxt.nuxt) {
+    return [...nonNuxtCapabilityChecks(nuxt), evaluate34(), evaluate35(repo, merged)]
+  }
   const exposureClass = readCloudflareAppExposureClass(repo)
   return [
     ...evaluate31And32(repo, exposureClass, merged),

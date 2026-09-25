@@ -9,9 +9,15 @@
  */
 
 import { check } from '../schema.js'
-import { collectPackages, mergedDeps, type AppRepo } from '../source.js'
+import { collectPackages, detectNuxt, mergedDeps, type AppRepo } from '../source.js'
 import type { RegistryReality } from '../npm-registry.js'
-import { STATUS_FAIL, STATUS_PASS, STATUS_UNKNOWN, type FoundationSubCheck } from '../types.js'
+import {
+  STATUS_FAIL,
+  STATUS_NA,
+  STATUS_PASS,
+  STATUS_UNKNOWN,
+  type FoundationSubCheck,
+} from '../types.js'
 
 const ESTATE_SCOPE = '@narduk-enterprises/'
 const EXACT_PIN_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Z.-]+)?$/i
@@ -23,6 +29,10 @@ const MANDATORY_PACKAGES = [
   '@narduk-enterprises/narduk-app-tools',
   '@narduk-enterprises/eslint-config',
 ] as const
+
+/** Nuxt modules (`peerDependencies.nuxt`): not-applicable in a non-Nuxt app
+ * (narduk-libs#157, Logan 2026-09-25: "Not-applicable (Recommended)"). */
+const NUXT_ONLY_MANDATORY = new Set<string>(['@narduk-enterprises/narduk-core'])
 
 const ESLINT_CONFIG_PACKAGE = '@narduk-enterprises/eslint-config'
 const NARDUK_CORE_PACKAGE = '@narduk-enterprises/narduk-core'
@@ -53,18 +63,40 @@ export async function evaluateItem2(
   const merged = mergedDeps(packages)
   const where = packages.map((p) => p.rel).join(', ')
 
-  const missing = MANDATORY_PACKAGES.filter((p) => !(p in merged))
-  const checks: FoundationSubCheck[] = [
-    check(
-      '2.1',
-      'narduk-core, narduk-testkit, narduk-app-tools, eslint-config',
-      missing.length > 0 ? STATUS_FAIL : STATUS_PASS,
-      missing.length > 0
-        ? `missing ${JSON.stringify(missing)}`
-        : 'all four mandatory packages are depended on',
-      where,
-    ),
-  ]
+  const nuxt = detectNuxt(repo)
+  const required = nuxt.nuxt
+    ? MANDATORY_PACKAGES
+    : MANDATORY_PACKAGES.filter((p) => !NUXT_ONLY_MANDATORY.has(p))
+  const missing = required.filter((p) => !(p in merged))
+  const checks: FoundationSubCheck[] = nuxt.nuxt
+    ? [
+        check(
+          '2.1',
+          'narduk-core, narduk-testkit, narduk-app-tools, eslint-config',
+          missing.length > 0 ? STATUS_FAIL : STATUS_PASS,
+          missing.length > 0
+            ? `missing ${JSON.stringify(missing)}`
+            : 'all four mandatory packages are depended on',
+          where,
+        ),
+      ]
+    : [
+        check(
+          '2.1',
+          'narduk-testkit, narduk-app-tools, eslint-config (non-Nuxt app)',
+          missing.length > 0 ? STATUS_FAIL : STATUS_PASS,
+          missing.length > 0
+            ? `missing ${JSON.stringify(missing)}`
+            : 'all three framework-independent mandatory packages are depended on',
+          where,
+        ),
+        check(
+          '2.1c',
+          'narduk-core (a Nuxt module)',
+          STATUS_NA,
+          `not a Nuxt app (${nuxt.evidence}); narduk-core is a Nuxt module that this app cannot register`,
+        ),
+      ]
 
   const loose = Object.entries(merged)
     .filter(([name, spec]) => name.startsWith(ESTATE_SCOPE) && !EXACT_PIN_RE.test(spec))
@@ -82,7 +114,16 @@ export async function evaluateItem2(
     ),
   )
 
-  checks.push(await evaluateN1Window(reality, merged))
+  checks.push(
+    !nuxt.nuxt && !(NARDUK_CORE_PACKAGE in merged)
+      ? check(
+          '2.3',
+          'narduk-core inside its N-1 window (D-PKG-2)',
+          STATUS_NA,
+          `not a Nuxt app (${nuxt.evidence}) and narduk-core is not a dependency`,
+        )
+      : await evaluateN1Window(reality, merged),
+  )
 
   const nonRegistry = Object.entries(merged)
     .filter(([name, spec]) => name.startsWith(ESTATE_SCOPE) && NON_REGISTRY_SPEC_RE.test(spec))
