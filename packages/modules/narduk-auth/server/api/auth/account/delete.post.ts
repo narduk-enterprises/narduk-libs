@@ -7,7 +7,11 @@ import {
 } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { deleteCurrentUserAccountBridge } from '#narduk-auth-server/utils/accountDeletionBridge'
-import { type AppSessionUser, deleteSupabaseAuthUser } from '#narduk-auth-server/utils/app-auth'
+import {
+  type AppSessionUser,
+  deleteSupabaseAuthUser,
+  verifySupabaseAccountDeletionCredentials,
+} from '#narduk-auth-server/utils/app-auth'
 import { assertInteractiveSessionPrincipal } from '#narduk-auth-server/utils/interactive-principal'
 
 const deleteAccountSchema = z.object({
@@ -21,9 +25,12 @@ export default defineUserMutation(
   },
   async ({ event, user, body }) => {
     assertInteractiveSessionPrincipal(user, 'Account deletion')
+    const supabaseSession = (user as AppSessionUser).authBackend === 'supabase'
     await deleteCurrentUserAccountBridge(event, user, requireMutationBody(body), {
+      // A Supabase user's password lives upstream; the local hash is null or stale (#923).
+      ...(supabaseSession ? { verifyCredentials: verifySupabaseAccountDeletionCredentials } : {}),
       beforeDelete: async (evt, userId) => {
-        if ((user as AppSessionUser).authBackend === 'supabase') {
+        if (supabaseSession) {
           await deleteSupabaseAuthUser(evt, userId)
         }
       },

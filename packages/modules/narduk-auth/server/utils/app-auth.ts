@@ -29,6 +29,7 @@ export { completeLocalEmailPassword } from '#narduk-auth-server/lib/app-auth/loc
 export {
   updateProfile,
   changePassword,
+  verifySupabaseAccountDeletionCredentials,
   enrollMfa,
   verifyMfa,
 } from '#narduk-auth-server/lib/app-auth/profile'
