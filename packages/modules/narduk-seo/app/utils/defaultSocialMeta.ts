@@ -27,7 +27,14 @@ export function defaultSocialMeta(input: {
   siteName: string
   siteUrl: string
 }): DefaultSocialMetaTag[] {
-  const site = new URL(input.siteUrl)
+  let site: URL
+  try {
+    site = new URL(input.siteUrl)
+  } catch {
+    throw new Error(
+      'Default social metadata requires an absolute site URL (site.url or runtimeConfig.public.appUrl)',
+    )
+  }
   const image = new URL(input.image.url, site)
   const canonical = new URL(
     resolveSafeCanonicalUrl(input.path, input.siteUrl) ?? new URL('/', site).href,
