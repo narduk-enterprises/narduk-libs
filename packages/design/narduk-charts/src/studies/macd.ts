@@ -10,7 +10,10 @@ function macdLine(closes: number[], fastPeriod: number, slowPeriod: number): Arr
   })
 }
 
-/** MACD line, signal (EMA of line), histogram. Missing line samples forward-fill for signal input. */
+/**
+ * MACD line, signal (EMA of line), histogram. The signal starts from the
+ * line's first real sample; a missing sample after that forward-fills (#867).
+ */
 export function macd(
   closes: number[],
   fastPeriod = 12,
@@ -22,14 +25,18 @@ export function macd(
   hist: Array<number | null>
 } {
   const line = macdLine(closes, fastPeriod, slowPeriod)
-  const filled: number[] = []
-  let last = 0
-  for (let i = 0; i < line.length; i++) {
-    const v = line[i]
-    if (v != null) last = v
-    filled.push(last)
+  const start = line.findIndex(v => v != null)
+  const signal: Array<number | null> = new Array(closes.length).fill(null)
+  if (start >= 0) {
+    const filled: number[] = []
+    let last = line[start]!
+    for (let i = start; i < line.length; i++) {
+      const v = line[i]
+      if (v != null) last = v
+      filled.push(last)
+    }
+    ema(filled, signalPeriod).forEach((v, j) => (signal[start + j] = v))
   }
-  const signal = ema(filled, signalPeriod)
   const hist = closes.map((_, i) => {
     const l = line[i]
     const s = signal[i]

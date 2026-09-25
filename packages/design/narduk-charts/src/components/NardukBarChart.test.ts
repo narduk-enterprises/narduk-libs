@@ -100,3 +100,52 @@ describe('NardukBarChart thin "% of normal" bar (narduk-charts#37)', () => {
     expect(w.find('svg title').text()).toBe('Rainfall, 87% of normal')
   })
 })
+
+describe('NardukBarChart stacked on a non-linear axis (#873)', () => {
+  const series = [
+    { name: 'A', data: [30, 10, 100] },
+    { name: 'B', data: [70, 90, 0] },
+  ]
+  // The third category is one 100 segment: where the axis itself places 100.
+  const labels = ['split 30/70', 'split 10/90', 'whole 100']
+
+  function stackEnds(orientation: 'vertical' | 'horizontal', yScale: 'log' | 'symlog') {
+    const w = mount(NardukBarChart, {
+      props: {
+        series,
+        labels,
+        stacked: true,
+        yScale,
+        orientation,
+        width: 400,
+        height: 300,
+        animate: false,
+        barRadius: 0,
+      },
+    })
+    const rects = w.findAll('rect.narduk-bar-rect').map(r => r.element as SVGRectElement)
+    const n = (el: SVGRectElement, a: string) => Number(el.getAttribute(a))
+    const byCategory = new Map<number, SVGRectElement[]>()
+    for (const el of rects) {
+      const key = orientation === 'vertical' ? n(el, 'x') : n(el, 'y')
+      byCategory.set(key, [...(byCategory.get(key) ?? []), el])
+    }
+    return [...byCategory.values()].map(group =>
+      orientation === 'vertical'
+        ? Math.min(...group.map(el => n(el, 'y')))
+        : Math.max(...group.map(el => n(el, 'x') + n(el, 'width'))),
+    )
+  }
+
+  it.each([
+    ['vertical', 'log'],
+    ['horizontal', 'log'],
+    ['vertical', 'symlog'],
+    ['horizontal', 'symlog'],
+  ] as const)('%s %s: equal totals end at the same place', (orientation, yScale) => {
+    const ends = stackEnds(orientation, yScale)
+    expect(ends).toHaveLength(3)
+    expect(ends[0]).toBeCloseTo(ends[2]!, 6)
+    expect(ends[1]).toBeCloseTo(ends[2]!, 6)
+  })
+})

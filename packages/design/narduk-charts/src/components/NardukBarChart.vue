@@ -359,6 +359,17 @@ function valuePixelExtent(value: number): number {
   return Math.max(0, end - base)
 }
 
+/**
+ * A stacked segment's extent: the distance between where the axis places the
+ * running total before and after it. Summing per-segment extents is only
+ * right on a linear axis, so log and symlog stacks measure the cumulative
+ * total instead (#873).
+ */
+function stackSegmentExtent(before: number, value: number): number {
+  if (props.yScale === 'linear') return valuePixelExtent(value)
+  return Math.max(0, valuePixelExtent(before + value) - valuePixelExtent(before))
+}
+
 function yPos(value: number): number {
   return padding.value.top + plotHeight.value - yMap.value.yFromBottom(value)
 }
@@ -468,10 +479,12 @@ const bars = computed<BarRect[]>(() => {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
         const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
         let cumX = valueOriginX
+        let total = 0
         for (const s of visibleSeries.value) {
           const raw = barValue(s.data[li])
           const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
-          const w = valuePixelExtent(val)
+          const w = stackSegmentExtent(total, val)
+          total += val
           result.push({
             x: cumX,
             y: rowTop,
@@ -521,10 +534,12 @@ const bars = computed<BarRect[]>(() => {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
       const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
       let cumY = bottomY
+      let total = 0
       for (const s of visibleSeries.value) {
         const raw = barValue(s.data[li])
         const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
-        const barH = valuePixelExtent(val)
+        const barH = stackSegmentExtent(total, val)
+        total += val
         cumY -= barH
         result.push({
           x: groupX,
