@@ -17,6 +17,26 @@ import {
 import type { CandleBar } from '../types'
 
 describe('niceScale', () => {
+  // #927: a range of a few ULPs made `v += step` stop advancing, so the tick
+  // loop never ended and froze the page.
+  it.each([
+    [99.98999999999998, 99.99],
+    [0.3, 0.1 + 0.2],
+    [21050, 21050.000000000004],
+    [-0.30000000000000004, -0.3],
+  ])('terminates and widens a sub-ULP range %d..%d', (lo, hi) => {
+    const s = niceScale(lo, hi)
+    expect(s.min).toBeLessThan(lo)
+    expect(s.max).toBeGreaterThan(hi)
+    expect(s.ticks.length).toBeGreaterThan(1)
+    expect(s.ticks.length).toBeLessThan(20)
+  })
+
+  it('keeps the tick count stable when accumulated steps would drift', () => {
+    const s = niceScale(0, 1)
+    expect(s.ticks).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])
+  })
+
   it('expands equal min/max', () => {
     const s = niceScale(5, 5)
     expect(s.min).toBeLessThan(5)

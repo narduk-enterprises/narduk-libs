@@ -13,9 +13,15 @@ export interface ScaleResult {
  * from {1, 2, 5} × 10^n so labels read naturally.
  */
 export function niceScale(minVal: number, maxVal: number, maxTicks = 6): ScaleResult {
-  if (minVal === maxVal) {
-    const offset = minVal === 0 ? 1 : Math.abs(minVal) * 0.1
-    return niceScale(minVal - offset, maxVal + offset, maxTicks)
+  // A range of only a few ULPs (e.g. `0.3` vs `0.1 + 0.2`, or an SMA that
+  // drifted by one rounding step) yields a step below half an ULP of the
+  // bounds, so `v += step` would never advance (#927). Treat it as a single
+  // value, the same as exact equality.
+  const span = Math.max(Math.abs(minVal), Math.abs(maxVal))
+  if (maxVal - minVal <= span * Number.EPSILON * 16) {
+    const center = minVal === maxVal ? minVal : (minVal + maxVal) / 2
+    const offset = center === 0 ? 1 : Math.abs(center) * 0.1
+    return niceScale(center - offset, center + offset, maxTicks)
   }
 
   const range = maxVal - minVal
@@ -32,9 +38,12 @@ export function niceScale(minVal: number, maxVal: number, maxTicks = 6): ScaleRe
   const niceMin = Math.floor(minVal / niceStep) * niceStep
   const niceMax = Math.ceil(maxVal / niceStep) * niceStep
 
+  // Iterate by index, never by accumulating `v += step`: the count is fixed
+  // up front, so the loop always terminates.
+  const count = Math.round((niceMax - niceMin) / niceStep)
   const ticks: number[] = []
-  for (let v = niceMin; v <= niceMax + niceStep * 0.5; v += niceStep) {
-    ticks.push(Number.parseFloat(v.toFixed(10)))
+  for (let index = 0; index <= count; index += 1) {
+    ticks.push(Number.parseFloat((niceMin + index * niceStep).toFixed(10)))
   }
 
   return { min: niceMin, max: niceMax, step: niceStep, ticks }
