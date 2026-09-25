@@ -12,8 +12,8 @@ and a **CPU fallback**.
 | GPU     | WebGL2 + Canvas2D / CPU fallback                                                                 |
 | WebGPU  | Not in v0.x                                                                                      |
 
-The standalone `narduk-enterprises/GeoGridWeb` repository is a superseded
-duplicate pending retirement; do not treat it as a source.
+The standalone `narduk-enterprises/GeoGridWeb` repository is archived; do not
+treat it as a source.
 
 ## Two render paths
 
