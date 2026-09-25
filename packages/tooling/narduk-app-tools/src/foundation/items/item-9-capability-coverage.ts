@@ -27,8 +27,8 @@
  * never a pass, and never a decided failure. A *confirmed* match is a `fail`
  * rendered as **FAIL**, naming the exact file path and the owning package.
  *
- * TWO PARTS, SEVEN SUB-CHECKS
- * ---------------------------
+ * TWO PARTS, THE SUB-CHECKS
+ * --------------------------
  *   9.0  the app has a readable manifest (gate)
  *   9.1  inventory: every `@narduk-enterprises/*` pin, and catalog coverage
  *   9.2  every estate pin resolves to a published capability
@@ -37,6 +37,7 @@
  *   9.5  no direct posthog-js use   -> @narduk-enterprises/narduk-analytics
  *   9.6  no hand-rolled health route-> @narduk-enterprises/narduk-core
  *   9.7  no duplicate error plugin  -> @narduk-enterprises/narduk-logging
+ *   9.8  no hand-rolled data.nard.uk reader -> @narduk-enterprises/narduk-core
  */
 
 import {
@@ -56,6 +57,7 @@ import {
   detectDirectPosthogUse,
   detectDuplicateErrorPlugins,
   detectHandRolledHealthRoute,
+  detectHandRolledNardukDataReader,
   hasNitroPluginSurface,
   hasServerApiSurface,
   scanAppSource,
@@ -335,6 +337,15 @@ export function evaluateItem9(repo: AppRepo): CapabilityCoverageEvaluation {
       run: (s) => detectDuplicateErrorPlugins(s.files),
       applicable: hasNitroPluginSurface(repo, scan.files),
       notApplicableDetail: 'no server/plugins directory and no defineNitroPlugin in the scan',
+    },
+    {
+      id: '9.8',
+      name: 'no hand-rolled narduk-data product reader',
+      capability: 'core',
+      owners: [NARDUK_CORE],
+      ownedBy: NARDUK_CORE,
+      run: (s) => detectHandRolledNardukDataReader(s.files),
+      applicable: true,
     },
   ]
 

@@ -549,3 +549,93 @@ describe('item 9.7 -- duplicate error plugin / response finish listener', () => 
     expect(statusOf(repo, '9.7')).toBe('not-applicable')
   })
 })
+
+describe('item 9.8 -- hand-rolled narduk-data reader (narduk-libs#373)', () => {
+  // The Buoys shape the issue names: its own origin constant, manifest fetch
+  // and schema, none of the shared client's timeout/checksum/freshness policy.
+  const HAND_ROLLED = [
+    "const DATA_ORIGIN = 'https://data.nard.uk'",
+    'export async function readBuoyStatus() {',
+    '  const manifest = await $fetch(`${DATA_ORIGIN}/buoy-status-v1/manifest.json`)',
+    '  return manifest',
+    '}',
+  ].join('\n')
+
+  it('fails a server util that fetches data.nard.uk itself when narduk-core is pinned', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(root, 'server/utils/buoy-status-product.ts', HAND_ROLLED)
+    })
+    expect(statusOf(repo, '9.8')).toBe('fail')
+    expect(detailOf(repo, '9.8')).toContain('server/utils/buoy-status-product.ts')
+    expect(detailOf(repo, '9.8')).toContain('@narduk-enterprises/narduk-core')
+  })
+
+  it('catches a template-literal URL and a plain fetch', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(
+        root,
+        'apps/web/src/worker/obs/ndbc.ts',
+        'export const read = () => fetch(`https://data.nard.uk/${product}/current/data.json`)\n',
+      )
+    })
+    expect(statusOf(repo, '9.8')).toBe('fail')
+  })
+
+  it('warns rather than fails when narduk-core is not a dependency', () => {
+    const repo = repoWith((root) => {
+      writeJson(root, 'package.json', { name: 'worker-only', dependencies: {} })
+      writeFile(root, 'src/border.ts', HAND_ROLLED)
+    })
+    expect(statusOf(repo, '9.8')).toBe('unknown')
+  })
+
+  it('does not flag an app configuring the shared client, auto-imported or imported', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(
+        root,
+        'server/utils/lake-data.ts',
+        [
+          "const client = createNardukDataClient({ origin: 'https://data.nard.uk' })",
+          'export const readLake = () => client.read({ productId: "lakes-v1" })',
+        ].join('\n'),
+      )
+      writeFile(
+        root,
+        'server/utils/news.ts',
+        [
+          "import { fetchNardukDataJson } from '@narduk-enterprises/narduk-core/server/utils/narduk-data'",
+          "export const news = () => fetchNardukDataJson('https://data.nard.uk/news-v1/latest.json')",
+        ].join('\n'),
+      )
+    })
+    expect(statusOf(repo, '9.8')).toBe('pass')
+  })
+
+  it('does not flag a link to data.nard.uk that is never fetched', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(
+        root,
+        'app/components/Attribution.vue',
+        '<template><a href="https://data.nard.uk">Data: narduk-data</a></template>\n',
+      )
+      writeFile(root, 'app/utils/source.ts', "export const SOURCE = 'https://data.nard.uk'\n")
+    })
+    expect(statusOf(repo, '9.8')).toBe('pass')
+  })
+
+  it('does not match a look-alike host', () => {
+    const repo = repoWith((root) => {
+      baseline(root)
+      writeFile(
+        root,
+        'server/utils/other.ts',
+        "export const read = () => fetch('https://data.nard.uk.example.com/x')\n",
+      )
+    })
+    expect(statusOf(repo, '9.8')).toBe('pass')
+  })
+})
