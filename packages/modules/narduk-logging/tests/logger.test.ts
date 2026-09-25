@@ -48,8 +48,11 @@ describe('cross-language contract', () => {
     for (const key of ['inputTokens', 'total_tokens', 'maxTokens', 'tokenizers']) {
       expect(isSensitiveKey(key)).toBe(false)
     }
-    // narduk-analytics caches real OAuth tokens under this name, so it is no carve-out.
+    // A `cachedTokens` key can name a cached credential blob (narduk-analytics
+    // keeps its Google OAuth tokens in a variable of that name), so it is no
+    // carve-out even though OpenAI-style usage reports a numeric `cached_tokens`.
     expect(isSensitiveKey('cachedTokens')).toBe(true)
+    expect(isSensitiveKey('cached_tokens')).toBe(true)
   })
 
   it('emits the canonical record and does not collapse repeated events', () => {
