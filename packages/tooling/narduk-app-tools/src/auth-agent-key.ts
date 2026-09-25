@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, webcrypto } from 'node:crypto'
 import { resolve } from 'node:path'
 
 import { spawnWranglerSync } from './package-manager.js'
@@ -206,12 +206,22 @@ export interface MintedAgentKey {
   rawKey: string
 }
 
+/**
+ * narduk-core's `hashApiKeyText`, byte for byte: WebCrypto SHA-256 of the key,
+ * hex. The key is 256 random bits, not a password, so a fast digest is the
+ * right lookup hash — and it must match what the app computes per request.
+ */
+export async function hashAgentKey(rawKey: string): Promise<string> {
+  const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(rawKey))
+  return Buffer.from(digest).toString('hex')
+}
+
 /** The same key format and hash as narduk-core `generateApiKey`. */
-export function mintAgentKey(): MintedAgentKey {
+export async function mintAgentKey(): Promise<MintedAgentKey> {
   const rawKey = `${API_KEY_PREFIX}${randomBytes(32).toString('hex')}`
   return {
     rawKey,
-    keyHash: createHash('sha256').update(rawKey).digest('hex'),
+    keyHash: await hashAgentKey(rawKey),
     keyPrefix: rawKey.slice(0, KEY_PREFIX_LENGTH),
   }
 }
@@ -289,7 +299,7 @@ export type AgentKeyFetch = (
 export interface AgentKeyDependencies {
   executeD1: AgentKeyD1Executor
   fetch: AgentKeyFetch
-  mint: () => MintedAgentKey
+  mint: () => Promise<MintedAgentKey>
   now: () => Date
   runSink: AgentKeySinkRunner
 }
@@ -366,7 +376,7 @@ export async function runAgentKeyCreate(
   flags: AgentKeyCreateFlags,
   dependencies: AgentKeyDependencies = defaultAgentKeyDependencies,
 ): Promise<AgentKeyCreateResult> {
-  const minted = dependencies.mint()
+  const minted = await dependencies.mint()
   const createdAt = dependencies.now().toISOString()
   const userId = randomUUID()
   const record: AgentKeyRecord = {
