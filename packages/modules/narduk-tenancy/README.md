@@ -283,6 +283,7 @@ SQLite behind one documented type adapter.
 ## Guards
 
 ```ts
+import { resolveTenancyUserId } from '@narduk-enterprises/narduk-auth/server/utils/request-principal'
 import { requireOrgRole } from '@narduk-enterprises/narduk-tenancy/server/utils/guards'
 
 export default defineEventHandler(async (event) => {
@@ -291,7 +292,7 @@ export default defineEventHandler(async (event) => {
     minimum: 'operator',
     resource: { kind: 'vessel', id: vesselId },
     tenancy,
-    resolveUserId: (e) => getSessionUserId(e),
+    resolveUserId: resolveTenancyUserId,
   })
 })
 ```
@@ -304,7 +305,10 @@ role is below `minimum`. A support grant never satisfies it.
 the named `scope`. Use it on read paths only; mutations keep `requireOrgRole`.
 
 Both guards take the tenancy service and the user resolver as arguments — they
-depend on no session package and no ambient state.
+depend on no session package and no ambient state. On a narduk-auth app, use
+narduk-auth's `resolveTenancyUserId` (or `resolveRequestPrincipal` for API keys
+and native bearers): it returns `null` for a recovery-mode or MFA-step-up
+session outside its allowlist, which reading the session user directly does not.
 
 ## Audit
 
