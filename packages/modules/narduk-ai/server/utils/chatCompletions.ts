@@ -52,7 +52,11 @@ export const DEFAULT_CHAT_COMPLETION_TIMEOUT_MS = 30_000
 const FALLBACK_ERROR_MESSAGE = 'Failed to reach the chat completion provider.'
 
 function chatCompletionsUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/u, '')}/chat/completions`
+  // A loop, not /\/+$/: that pattern backtracks polynomially on a long run of
+  // slashes, and the base URL can come from configuration.
+  let end = baseUrl.length
+  while (end > 0 && baseUrl[end - 1] === '/') end -= 1
+  return `${baseUrl.slice(0, end)}/chat/completions`
 }
 
 function readUsage(value: unknown): ChatCompletionUsage | null {
