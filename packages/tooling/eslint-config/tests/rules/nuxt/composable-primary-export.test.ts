@@ -43,6 +43,15 @@ ts.run('composable-primary-export', rule, {
     {
       filename: 'tests/composables/useCart.test.ts',
       code: 'export function useOther() { return {} }',
+    },    // #885: an aliased export resolves through its local declaration.
+    {
+      filename: 'app/composables/useCart.ts',
+      code: 'function cartImpl() { return {} }\nexport { cartImpl as useCart }',
+    },
+    // An aliased non-function is not a composable candidate.
+    {
+      filename: 'app/composables/useCart.ts',
+      code: 'export function useCart() { return {} }\nconst settings = {}\nexport { settings as useCartSettings }',
     },
   ],
   invalid: [
@@ -59,6 +68,17 @@ ts.run('composable-primary-export', rule, {
     {
       filename: '/repo/myapp/app/composables/useCart.ts',
       code: 'export default useBasket\n\nfunction useBasket() { return {} }',
+      errors: [{ messageId: 'composableNameMatchesFile', data: { expectedName: 'useCart' } }],
+    },
+    // #885: the aliased second export was looked up by its alias and dropped.
+    {
+      filename: 'app/composables/useCart.ts',
+      code: 'export function useCart() { return {} }\nfunction helper() { const items = ref([]); return items }\nexport { helper as useCartHelper }',
+      errors: [{ messageId: 'singlePrimaryExport', data: { name: 'useCartHelper' } }],
+    },
+    {
+      filename: 'app/composables/useCart.ts',
+      code: 'const basket = () => ({})\nexport { basket as useBasket }',
       errors: [{ messageId: 'composableNameMatchesFile', data: { expectedName: 'useCart' } }],
     },
   ],

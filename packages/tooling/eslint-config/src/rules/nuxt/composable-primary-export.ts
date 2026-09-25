@@ -56,11 +56,25 @@ export default {
     /** Names declared anywhere in the module — collected before any verdict (hoisting). */
     const declaredFunctionNames = new Set<string>()
     /** Exported composable candidates, resolved at Program:exit. */
-    const exportCandidates: Array<{ name: string; node: any; requiresDeclaration: boolean }> = []
+    const exportCandidates: Array<{
+      name: string
+      localName: string
+      node: any
+      requiresDeclaration: boolean
+    }> = []
 
-    function trackExport(name: string | null | undefined, node: any, requiresDeclaration = false) {
-      if (!name || !name.startsWith('use')) return
-      exportCandidates.push({ name, node, requiresDeclaration })
+    /**
+     * `name` is what Nuxt auto-imports; `localName` is the declaration it points
+     * at, which differs for `export { helper as useCartHelper }` (#885).
+     */
+    function trackExport(
+      name: string | null | undefined,
+      node: any,
+      requiresDeclaration = false,
+      localName = name,
+    ) {
+      if (!name || !localName || !name.startsWith('use')) return
+      exportCandidates.push({ name, localName, node, requiresDeclaration })
     }
 
     return {
@@ -100,14 +114,14 @@ export default {
             specifier.local?.type === 'Identifier' &&
             specifier.exported?.type === 'Identifier'
           ) {
-            trackExport(specifier.exported.name, specifier.exported, true)
+            trackExport(specifier.exported.name, specifier.exported, true, specifier.local.name)
           }
         }
       },
       'Program:exit'() {
         const resolved = exportCandidates.filter(
           (candidate) =>
-            !candidate.requiresDeclaration || declaredFunctionNames.has(candidate.name),
+            !candidate.requiresDeclaration || declaredFunctionNames.has(candidate.localName),
         )
         if (resolved.length === 0) return
 
