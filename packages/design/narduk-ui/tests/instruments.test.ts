@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 
 import { MISSING, SIGNALS } from "../_core";
@@ -60,6 +60,53 @@ describe("NsFreshnessChip", () => {
     });
     await w.vm.$nextTick();
     expect(w.find(".ns-chip").classes()).toContain("ns-chip--live");
+  });
+});
+
+// narduk-libs#936: without `now`, the chip read the clock once at mount and
+// cached it, so a producer that stopped publishing stayed LIVE forever.
+describe("NsFreshnessChip without an injected clock", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reclassifies as time passes, so a stalled source ages and goes stale", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-30T12:00:00Z"));
+    const w = mount(NsFreshnessChip, {
+      props: { observedAt: "2026-07-30T11:59:00Z", intervalMinutes: 5, showAge: true },
+    });
+    await w.vm.$nextTick();
+    expect(w.find(".ns-chip").classes()).toContain("ns-chip--live");
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(w.find(".ns-chip").classes()).toContain("ns-chip--aging");
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(w.find(".ns-chip").classes()).toContain("ns-chip--stale");
+    expect(w.find(".ns-chip__age").text()).not.toBe("· 1 min");
+    w.unmount();
+  });
+
+  it("stops ticking once unmounted", async () => {
+    vi.useFakeTimers();
+    const w = mount(NsFreshnessChip, {
+      props: { observedAt: new Date().toISOString(), intervalMinutes: 5 },
+    });
+    await w.vm.$nextTick();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    w.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not tick when the caller injects now", async () => {
+    vi.useFakeTimers();
+    const w = mount(NsFreshnessChip, {
+      props: { observedAt: "2026-07-30T11:55:00Z", intervalMinutes: 10, now },
+    });
+    await w.vm.$nextTick();
+    expect(vi.getTimerCount()).toBe(0);
+    w.unmount();
   });
 });
 
