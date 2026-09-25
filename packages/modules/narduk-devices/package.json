@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-devices",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": false,
   "type": "module",
   "description": "Generic device identity, claim ceremony, class-separated credentials, signed device sessions, and lockouts for Narduk Nuxt apps on D1.",

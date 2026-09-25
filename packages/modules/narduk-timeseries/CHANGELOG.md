@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- 3ddf49c: Add
+  `TelemetryHistoryStore.listSeries({ vesselId, paths?, maxRows? })`, the
+  read-only lookup of a vessel's series catalogue. Until now the only way to
+  turn a path into the `seriesId` that `queryRollup` takes was `resolveSeries`,
+  the write path's upsert: a reader using it created an empty series for every
+  path it asked about, and needed the writer's grants to do it. `listSeries` is
+  one `SELECT` that `history_reader` can run, binds three parameters whatever
+  the path count (the filter is one JSON text parameter, so a comma inside a
+  SignalK path stays one path and an unprepared Hyperdrive connection never sees
+  a bare array), orders by path, and reports `truncated` against a `maxRows`
+  ceiling (`DEFAULT_MAX_SERIES_ROWS`, 5_000; raise it with `maxSeriesRows` on
+  the store). A path the vessel never recorded is absent from the answer, never
+  created. Minor rather than patch because it adds a method to the interface:
+  another implementation of `TelemetryHistoryStore` must add it too.
+
+### Patch Changes
+
+- 9cdca84: `listSeries` binds its path filter as text and casts it to jsonb in
+  SQL. Bound as jsonb, postgres.js (the Worker driver behind Hyperdrive)
+  JSON-encoded the already-serialized filter a second time and every filtered
+  lookup failed with "cannot extract elements from a scalar".
+- Updated dependencies [86eaa79]
+  - @narduk-enterprises/narduk-postgres@0.3.0
+
 ## 0.3.4
 
 ### Patch Changes

@@ -1,5 +1,37 @@
 # @narduk-enterprises/narduk-tenancy
 
+## 0.7.0
+
+### Minor Changes
+
+- 7089ef9: Add `server/utils/tenancy-http`: `TENANCY_HTTP_STATUS`,
+  `TENANCY_DEFAULT_MESSAGES`, `toTenancyHttpError` and `withTenancyErrors`, so
+  apps stop hand-writing the `TenancyError`-to-HTTP mapping (narduk-libs#981).
+  The table answers `expired` with 410 and `last_owner` with 409, and never
+  forwards `TenancyError.message`, which embeds raw org and user ids. Options
+  cover per-call sentences (`messages`), existence hiding (`hideAsNotFound`) and
+  an app envelope (`toError`).
+
+  `requireOrgRole` and `requireSupportGrantOrRole` accept optional
+  `unauthenticatedMessage` and `deniedMessage`; when set, the 401 or 403 carries
+  the sentence as `data.message` beside the unchanged `errorCode`. Without them
+  the guards answer exactly as before.
+
+### Patch Changes
+
+- 918cbe1: narduk-auth: add `server/utils/request-principal` (narduk-libs#980).
+  `resolveRequestPrincipal(event, options)` returns the caller, or `null` for an
+  anonymous caller or a recovery-mode / MFA-step-up session that the
+  restricted-session allowlists refuse for this request, so tenancy guards keep
+  their own 401/404 choice without skipping the rules `requireAuth` applies. API
+  keys (`allowApiKey`, with optional `requiredApiKeyScopes`) and native bearers
+  (`allowNative`) are opt-in; `emailVerified` comes from narduk-auth's proof,
+  not the raw session field. `resolveTenancyUserId` is a ready-made
+  narduk-tenancy `resolveUserId`. `session-privilege` also exports
+  `sessionPrivilegeRefusal`, the non-throwing form of
+  `assertSessionPrivilegeAllowsRequest`. The narduk-tenancy README's guard
+  example now uses `resolveTenancyUserId`.
+
 ## 0.6.0
 
 ### Minor Changes

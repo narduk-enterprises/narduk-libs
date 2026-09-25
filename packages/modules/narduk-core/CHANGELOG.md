@@ -1,5 +1,44 @@
 # @narduk-enterprises/narduk-core
 
+## 2.16.0
+
+### Minor Changes
+
+- abb9b15: narduk-core: D1 bound-parameter chunking counts parameters, not
+  values (narduk-libs#988). `chunkD1BoundValues`, `runD1Chunked` and
+  `collectD1ChunkedRows` take `parametersPerValue` and `reservedParameters`,
+  derive the chunk size from them, and throw at call time when an explicit
+  `chunkSize` would overrun. New `chunkD1Rows(rows, table)` sizes multi-row
+  `INSERT` chunks from the table's column count. With no new option set,
+  behaviour is unchanged.
+- 4276bf3: narduk-core: keyset cursors for cursor-mode list routes
+  (narduk-libs#987). New explicit export
+  `@narduk-enterprises/narduk-core/server/list-cursor`: `encodeListCursor`
+  renders a versioned base64url cursor bound to the route's endpoint, sort and
+  hashed `bind` values; `readListCursor` / `decodeListCursor` read it back and
+  refuse any mismatch with one `400 cursor_invalid`; and `keysetAfter` is the
+  tie-safe seek predicate (`(a > ?) OR (a = ? AND b > ?) ...`) that stops rows
+  sharing a timestamp from being skipped across a page boundary. Nothing is
+  auto-imported.
+- b3c821f: New `@narduk-enterprises/narduk-core/server/wait-until`, the
+  background-work helper five apps hand-rolled (#991). `resolveWaitUntil(event)`
+  returns the runtime's `waitUntil` bound to its owner, looking at
+  `event.waitUntil`, then the Cloudflare `ExecutionContext`, then
+  `event.context.waitUntil`, and walks a Nitro internal fetch to its SSR parent
+  event. `runInBackground(event, task, { onError, fallback })` hands the task to
+  it with its rejection observed, and detaches or awaits it when no `waitUntil`
+  exists; it never rejects. `withD1Cache` now uses the same resolver for its
+  stale refresh, so the refresh also survives an internal fetch.
+
+### Patch Changes
+
+- 39046cb: Deprecate `LayerAppShell`, `LayerChromelessShell` and
+  `LayerDashboardShell` in favour of narduk-shell's `NeAppShell` (components
+  backlog item 18, narduk-libs#265). They will be removed in the next
+  narduk-core major. Behaviour is unchanged: this adds `@deprecated` JSDoc and a
+  README migration mapping only, with no runtime warning, since core's own
+  `app.vue` and `dashboard` layout still render them.
+
 ## 2.15.0
 
 ### Minor Changes

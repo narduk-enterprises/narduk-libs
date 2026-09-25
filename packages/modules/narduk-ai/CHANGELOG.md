@@ -1,5 +1,23 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.0
+
+### Minor Changes
+
+- cbfcc73: Add `server/utils/chatCompletions`: `chatCompletion` /
+  `chatCompletionJson`, a provider-neutral OpenAI-compatible chat client with
+  `baseUrl`, `maxTokens`, JSON mode, a per-attempt timeout, a 5xx/network retry,
+  usage in the result and sanitized H3 errors that never carry the raw provider
+  body (#985). `grokChat` is unchanged.
+
+### Patch Changes
+
+- Updated dependencies [abb9b15]
+- Updated dependencies [39046cb]
+- Updated dependencies [4276bf3]
+- Updated dependencies [b3c821f]
+  - @narduk-enterprises/narduk-core@2.16.0
+
 ## 0.3.25
 
 ### Patch Changes
