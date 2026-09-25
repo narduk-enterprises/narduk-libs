@@ -410,6 +410,51 @@ defineProps<{ error: NuxtError }>()
 </template>
 ```
 
+#### Wrapping it instead of forking it
+
+The page takes props and a slot, so an app that needs its own words, links,
+layout or colours wraps it rather than copying it (narduk-libs#976). A fork
+tends to drop the parts that matter: it echoes `error.message` to production,
+loses `noindex`, and loses the request id. None of the props below can change
+those three.
+
+```vue
+<script setup lang="ts">
+import EstateErrorPage from '@narduk-enterprises/narduk-core/app/error-page'
+import type { NuxtError } from '#app'
+
+defineProps<{ error: NuxtError }>()
+</script>
+
+<template>
+  <EstateErrorPage
+    :error="error"
+    layout="auth"
+    :copy="{ 404: { title: 'No screen lives at that address.' } }"
+    :links="[{ label: 'Stations', to: '/stations', icon: 'i-lucide-search' }]"
+    home-label="Back to Today"
+    :ui="{ status: 'text-sky-700', title: 'text-sky-900', home: 'bg-sky-600' }"
+    :on-before-clear="(err, action) => logClientError(err, action)"
+  >
+    <template #actions><!-- extra buttons after the links --></template>
+  </EstateErrorPage>
+</template>
+```
+
+| Prop            | Default       | Meaning                                                                                                  |
+| --------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `copy`          | —             | `{ [status]: { title?, description? }, default?: {…} }`. Status entry, then `default`, then estate copy. |
+| `links`         | `[]`          | Extra recovery links (`label`, `to`, `icon?`), test id `error-page-link`.                                |
+| `homeLabel`     | `'Go Home'`   | Go Home's label.                                                                                         |
+| `homeTo`        | `'/'`         | Where Go Home clears the error to.                                                                       |
+| `retryLabel`    | `'Try Again'` | Try Again's label. It still calls `reloadNuxtApp()`.                                                     |
+| `layout`        | `false`       | A Nuxt layout name to render the page inside.                                                            |
+| `ui`            | `{}`          | Classes for `root`, `status`, `title` (each replaces its default colours) and `home` (merged).           |
+| `onBeforeClear` | —             | `(error, 'home' \| 'retry')`, awaited before either action. A throw or rejection is ignored.             |
+
+To put the page inside an app shell component rather than a layout, render it as
+the shell's child, the way buoys does with `<MarineAppShell>`.
+
 ### Exception capture
 
 One seam, `narduk:exception`, carried on the runtime's own hook bus. Three
