@@ -482,6 +482,7 @@ describe('useConfirm() reachability', () => {
       addComponent: vi.fn(),
       addComponentsDir: vi.fn(),
       addImports,
+      addPlugin: vi.fn(),
       createResolver: (url: string) => ({
         resolve: (path: string) => new URL(path, url).pathname,
       }),

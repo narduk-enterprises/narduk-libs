@@ -1,4 +1,17 @@
 <script setup lang="ts">
+/**
+ * The shared dashboard frame behind narduk-core's `dashboard` layout: a
+ * collapsible `UDashboardSidebar` of `navItems`, a navbar with breadcrumbs and
+ * status badges, and the account menu.
+ *
+ * @deprecated Use `NeAppShell` from `@narduk-enterprises/narduk-shell`
+ * instead (components backlog item 18, narduk-libs#265). Deprecated
+ * 2026-09-25 under decision D4 and removed in the next narduk-core major;
+ * behaviour is unchanged until then. No runtime warning: narduk-core's own
+ * `dashboard` layout renders it, so a warning would fire in apps that never
+ * chose this component. The migration mapping is in this package's README
+ * under "Deprecated components".
+ */
 import { readRuntimeConfigString } from '../../utils/readRuntimeConfigString'
 
 interface DashboardNavItem {
