@@ -1,5 +1,195 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.3
+
+### Patch Changes
+
+- 47f7131: A key minted by another API key can no longer outlive it
+  (narduk-libs#920). `POST /api/auth/api-keys` from an API-key caller clamps a
+  child with no `expiresInDays` to the calling key's expiry, and refuses with
+  403 an explicit expiry past it, or `null` under a key that expires. A `*` key
+  can no longer renew itself for another 90 days before it expires. Session
+  callers are unchanged. narduk-core's `AuthUser` gains an optional
+  `apiKey: { id, expiresAt }` naming the key behind an `api-key` principal.
+- f17ce87: Each `createAppDatabase()` accessor now memoizes its own per-request
+  Drizzle instance. They used to share one `event.context._appDb` slot, so
+  whichever accessor ran first on a request fixed the schema for every later
+  one. On signed-in requests that was narduk-auth's `useAuthBridgeDatabase`,
+  from its session middleware, so the app's `useAppDatabase(event)` got auth's
+  schema and its relational queries could not see the app's tables (#919).
+  `event.context._appDb` is no longer written; the type stays, marked
+  deprecated.
+- b462046: `GET /api/admin/users` and its `/api/users` alias now accept an
+  admin-owned API key only when it carries the new `auth:admin:users:read` scope
+  (or `*`). `PUT /api/admin/users/role` is now session-only, so no API key can
+  grant or revoke admin, whatever its scopes. Admin sessions are unchanged.
+- 591863c: Closed signup can no longer be bypassed by exchanging a self-signup
+  confirmation token as `type=invite`. An exchange now counts as an invite only
+  when the verified Supabase user has `invited_at` set, which GoTrue records
+  only when an operator invites someone. A client-chosen `type` or a stored PKCE
+  `redirectType` is no longer enough.
+- b565b01: narduk-charts: `niceScale` no longer loops forever when a domain
+  spans only a few ULPs (#927). It widens such a range the same way as
+  `min === max`, and it builds ticks by index.
+
+  narduk-charts: domain and histogram math no longer spreads every value into
+  `Math.min`/`Math.max`, which threw a RangeError past ~100k values (#929).
+  Internal `arrayMin`/`arrayMax` loop helpers replace those calls.
+
+  narduk-charts: `useChart` starts observing its container again when `width`
+  goes from set to unset (#934), so a chart that was pinned to a fixed width no
+  longer sticks at 600px.
+
+  narduk-charts: `NardukBarChart` bars grow from zero instead of the domain
+  floor (#928), so negative values hang below (or left of) the zero line.
+  Stacked bars keep separate positive and negative totals, and the stacked
+  domain covers both.
+
+- 4b85a74: `composable-primary-export` and `require-use-prefix-for-composables`
+  now check aliased named exports (`export { helper as useCartHelper }`). Both
+  rules looked the export up by its alias instead of the local declaration it
+  names, so every renamed export was skipped.
+- 02b999f: New `@narduk-enterprises/narduk-core/server/utils/shared-secret`:
+  `requireSharedSecret(event, { secretKey, fallback?, header?, unsetStatus?, rejectStatus?, rejectMessage? })`
+  checks any static inbound secret in constant time, `hasSharedSecret` is its
+  non-throwing twin for "session OR token" guards, and `timingSafeEqualText` is
+  exported (narduk-libs#979). `requireCronAuth` is now a wrapper over it and
+  behaves as before.
+- 6a12081: `requireCronAuth` now compares the bearer token with `CRON_SECRET` in
+  constant time instead of with `!==`, which exits at the first differing
+  character (narduk-libs#871).
+- 5ed9665: `withD1Cache` now hands its stale-window background refresh to the
+  request's `waitUntil`, trying `event.waitUntil`, then the Cloudflare
+  `ExecutionContext`, then `event.context.waitUntil`. Before, a Worker could
+  cancel the refresh once the response was sent, so the row stayed stale and
+  every request in the window started another refresh that could also be
+  dropped. `_meta.cachedAt` now reports when the served value was written
+  (`expires_at` minus `ttlSeconds`) instead of the time of the current request.
+- 804410d: `narduk-app doctor --audit` is the doctor's dependency-audit leg
+  (#376). One `pnpm audit --json` call, cached per `pnpm-lock.yaml` hash for up
+  to 12 hours, gives one verdict line. It FAILs only on a high or critical
+  advisory that the app has not accepted in `narduk-app.json`
+  `security.acceptedAdvisories` (`{ "id", "reason", "expiresOn"? }`), and it
+  prints the line to paste, saying first when a patched version makes the bump
+  the fix. Low and moderate advisories never count. An unreachable registry or a
+  missing lockfile is UNKNOWN and exits 0, an expired `expiresOn` is a WARN, and
+  a declaration that no longer matches is a "remove this entry" note. Bare
+  `doctor` is unchanged. `create-narduk-app` scaffolds `narduk-app.json` with an
+  empty list and adds a how-to section to the app README.
+- 8b0e555: Registry auth no longer routes the retired `@narduk-geo` scope
+  (#140). Its last consumer, farm-analytics, is retired.
+  `patchPackageRegistryNpmrcContent` (narduk-platform) and `renderRegistryAuth`
+  / `narduk-app registry-auth` (narduk-app-tools) now write only the
+  `@narduk-enterprises` route. They drop a stale `@narduk-geo:registry=` line
+  the same way they already drop `@loganrenz:registry=`. The exported constants
+  `MAPKIT_PACKAGE_REGISTRY_SCOPE` (narduk-platform) and `NARDUK_GEO_SCOPE`
+  (narduk-app-tools) are removed. A GitHub code search across narduk-enterprises
+  and loganrenz found no importer outside narduk-libs.
+- 6f2f1ee: `foundation:check` no longer holds an app without Nuxt to the Nuxt
+  modules (#157). An app with no `nuxt.config.*` at a known path and no `nuxt`
+  dependency gets sub-check 2.1 on `narduk-testkit`, `narduk-app-tools` and
+  `eslint-config` only, and 2.1c (`narduk-core`), 2.3 (when `narduk-core` is not
+  a dependency) and 3.1/3.2/3.3 report `not-applicable`, with "not a Nuxt app"
+  and the reason in the detail. They never report `pass`. The eslint-config
+  README names `composeSharedConfigs()` as the supported ESLint route for an app
+  without Nuxt.
+- 5de0ec4: The shared `narduk/imports` block sets
+  `import-x/ignore: ['node_modules']`, so `import-x/no-cycle`, `named`,
+  `default` and `export` no longer parse installed packages' sources and type
+  trees. In narduk-core that walk held about 3.4 GB of heap: peak RSS falls from
+  5.2 GB to 1.8 GB, lint time from about 85 s to 28 s, and the messages are
+  identical. A cycle cannot run through an installed package, and TypeScript
+  already checks named and default imports from one (#789). narduk-core's `lint`
+  script drops its 4096 MB heap stopgap and runs under the repo's 3072 MB
+  default again.
+- 4b85a74: `no-locale-date-format-in-ssr-text` now matches `no-render-clock` on
+  what counts as render code. It no longer reports locale date formatting inside
+  a `v-on` / `@event` handler, which only runs after a user event. It now
+  reports formatting inside a synchronous array callback
+  (`items.map((i) => i.at.toLocaleDateString())`) or an IIFE at the top of
+  `<script setup>` or inside `computed()`, which runs during server render.
+- 4b85a74: `narduk/no-raw-define-event-handler-in-mutation-routes` stops its
+  "composed inside an approved wrapper" exemption at a function boundary
+  (narduk-libs#886). `defineUserMutation(defineEventHandler(…))` is still the
+  wrapper's own composition, but a raw `defineEventHandler` declared inside the
+  wrapped route's callback is a new, unwrapped handler and is now reported.
+  `create-narduk-app` is a companion patch because it pins eslint-config.
+- 9ff6496: The admin PostHog pages, devices, entry-exit, referrers and insights
+  routes now scope the shared project to this app by host: the `$current_url`
+  host must equal the configured domain's host or be a subdomain of it, the same
+  test recordings uses. A `$current_url` substring match used to count any app
+  whose host contains this one, and any URL carrying the domain in its path or
+  query. With no domain configured these routes now return no data, as
+  recordings does, instead of dropping the filter and returning every app's
+  traffic (#924). `buildPosthogCurrentUrlClause` returns `AND false` for a blank
+  domain, and the new `buildPosthogCurrentUrlHostMatch` gives the bare HogQL
+  expression.
+- 4b85a74: The Cloudflare Workers module-scope analyzer treats a
+  `new Promise(executor)` executor as running during module evaluation, which it
+  does: the executor runs synchronously during construction (narduk-libs#887).
+  The four rules built on it (`no-worker-global-scope-operations`,
+  `no-worker-global-scope-db-clients`, `no-supabase-client-in-global-scope`, and
+  the rest) now report a `fetch`, `new Pool` or `createClient` inside a
+  module-scope `new Promise((resolve) => …)`, whether the executor is inline or
+  a named function. Work the executor defers (`setTimeout`, `.then`) stays
+  unreported. `create-narduk-app` is a companion patch because it pins
+  eslint-config.
+- ffae997: The runtime-env readers now accept wrangler `vars` that are JSON
+  booleans or numbers. Workers expose those on `env` as JS values, not strings,
+  and the readers used to treat them as empty.
+
+  - `"NUXT_PUBLIC_ALLOW_GEOLOCATION": true` now reads as `true`. It used to read
+    as `false` and skip the runtime-config fallback.
+  - A number now reads as its string form.
+  - An object or array var, or a value `readRuntimeBoolean` cannot recognise,
+    now falls through to the runtime-config fallback instead of returning
+    `defaultValue` or an empty string.
+
+- f63937e: New `@narduk-enterprises/narduk-core/server/scheduled-jobs`, the
+  Cloudflare cron dispatcher that seven apps hand-rolled (#990).
+  `defineScheduledJobs()` is one Nitro `cloudflare:scheduled` plugin,
+  `runScheduledJobs()` serves a plain Worker's `scheduled`, and
+  `declaredCrons()` / `cronParity()` check the jobs against wrangler
+  `triggers.crons`. A job runs only on a cron it declares, and each job runs
+  behind its own error boundary under `Promise.allSettled`. One failing job
+  therefore no longer skips the others, as Nitro's serial hooks did when
+  operator-portal's export stopped its retention prune. An optional D1 lease
+  (compare-and-swap upsert, released by lease id; `SCHEDULED_JOB_LEASES_SQL`)
+  keeps a cron run and a manual trigger from overlapping.
+- fcc7c01: The narduk-shell module now registers `src/runtime` with Tailwind
+  through Nuxt UI's `ui.css` `@source` lines. When an app turns
+  `ui.experimental.componentDetection` on, it also adds the `U*` components the
+  suite renders (narduk-libs#978). narduk-shell is a module, not a layer, so
+  before this a utility that only a `Ne*` component used was never generated in
+  a consuming app, and with detection on the suite's `U*` components lost their
+  themes. This is the same fix narduk-auth got in #700.
+- 0ab6fb1: `broadcastSSE` now removes a connection whose write rejects, which is
+  how a closed or errored stream reports a client that went away. It used to
+  catch only a synchronous throw, so a dead connection stayed on its channel and
+  every later broadcast raised another unhandled rejection.
+- 0a28489: `createFakeR2Bucket().put()` no longer ignores what a real bucket
+  enforces (#916). It honours the `R2Conditional` form of `onlyIf`: it resolves
+  `null` and writes nothing when the condition fails, so create-if-absent via
+  `etagDoesNotMatch: '*'` works. It throws on the `onlyIf` forms it does not
+  emulate (a `Headers` object, a weak `W/` etag). It rejects an `md5`/`sha*`
+  checksum that does not match the body, and parses a `Headers` passed as
+  `httpMetadata`. `writeHttpMetadata()` writes all six stored fields, not only
+  content-type and cache-control.
+
+  The `narduk-testkit/d1` harness records statements when they execute, not when
+  they are prepared (#922). A per-item loop over one reused prepared statement,
+  which is the shape of every drizzle `.prepare()`d query, now counts once per
+  item, so `expectStatementBudget` and `scaleMatrix` catch that N+1. Each
+  `batch()` member counts as one statement, and a statement prepared but never
+  run no longer counts.
+
+- 5187a1e: The generated `apps/web/scripts/validate-manifests.mjs` strips
+  `wrangler.jsonc` comments and trailing commas with a string-aware scanner
+  instead of a regex, so a `"*/15 * * * *"` cron no longer pairs with the
+  `"**/*.mjs"` glob to crash `manifests:validate`. It also sorts the wrangler
+  crons before comparing them with the manifest's (#914). The file is a seed: an
+  existing app picks up the fix by copying the new script from a fresh scaffold.
+
 ## 0.14.2
 
 ### Patch Changes
