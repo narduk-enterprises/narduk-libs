@@ -34,7 +34,6 @@ const QUERY_PROMISE_METHODS = new Set(['then', 'catch', 'finally'])
 const pgCompatCache = new WeakMap<object, object>()
 
 interface LayerRequestContext {
-  _appDb?: AppDatabase<Record<string, unknown>>
   _db?: LayerDatabase
 }
 
@@ -275,10 +274,15 @@ export function createAppDatabase<
   TD1 extends Record<string, unknown>,
   TPG extends Record<string, unknown> = TD1,
 >(appSchema: TD1 | AppSchemaMap<TD1, TPG>) {
+  // Each accessor memoizes its own instance per request. One shared context
+  // slot let whichever accessor ran first on a request (narduk-auth's, from
+  // its session middleware) hand its schema to every later accessor (#919).
+  const instances = new WeakMap<object, AppDatabase<TD1>>()
   return (event: H3Event): AppDatabase<TD1> => {
     const context = getLayerRequestContext(event)
-    if (context._appDb) {
-      return context._appDb as AppDatabase<TD1>
+    const memoized = instances.get(context)
+    if (memoized) {
+      return memoized
     }
 
     const backend = resolveDatabaseBackend(event)
@@ -301,7 +305,7 @@ export function createAppDatabase<
           logger: makeLogger(event, 'PG'),
         }),
       )
-      context._appDb = db as unknown as AppDatabase<TD1>
+      instances.set(context, db as unknown as AppDatabase<TD1>)
       return db as unknown as AppDatabase<TD1>
     }
 
@@ -318,7 +322,7 @@ export function createAppDatabase<
       schema: resolvedSchema.d1,
       logger: makeLogger(event, 'D1'),
     })
-    context._appDb = db
+    instances.set(context, db)
     return db
   }
 }
