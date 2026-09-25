@@ -27,6 +27,12 @@ export interface MapKitFixedWindowOptions {
      */
     key?: (context: MapKitRateLimitContext) => string;
     limit: number;
+    /**
+     * Most client windows held at once (default 10,000). Expired windows are dropped as time
+     * passes; past this many LIVE windows the oldest is dropped, and that client starts a fresh
+     * window. Bounds a per-client key under traffic from many addresses (narduk-libs#869).
+     */
+    maxKeys?: number;
     /** Injected so a test does not have to wait a window out. */
     now?: () => number;
     windowSeconds: number;
