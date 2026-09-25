@@ -20,6 +20,7 @@ import { apiKeys } from '#narduk-core/schema'
 
 import {
   BOUNDARY_API_KEY_MAX_EXPIRY_DAYS,
+  boundChildApiKeyExpiry,
   resolveApiKeyMintExpiry,
 } from '../../../shared/utils/api-key-lifetime'
 import { findScopesBeyondCaller } from '../../../shared/utils/api-key-scope-ceiling'
@@ -39,7 +40,8 @@ const bodySchema = z.object({
  * {@link BOUNDARY_API_KEY_MAX_EXPIRY_DAYS}. Narrow machine keys may still
  * omit expiry. A caller authenticated by an API key may mint only scopes it
  * already holds (narduk-libs#858), so `auth:api-keys:write` alone cannot mint
- * `*`. The unique index on `api_keys.key_hash` lives in narduk-core
+ * `*`, and the key it mints may not outlive the calling key (narduk-libs#920).
+ * The unique index on `api_keys.key_hash` lives in narduk-core
  * 0007 — this handler stores that digest and never the raw token.
  */
 export default defineUserMutation(
@@ -55,7 +57,15 @@ export default defineUserMutation(
     const { rawKey, keyHash, keyPrefix } = await generateApiKey()
     const id = crypto.randomUUID()
     const scopes = normalizeAuthScopes(input.scopes)
+    const callingKey = user.authMethod === 'api-key' ? user.apiKey : undefined
     if (user.authMethod === 'api-key') {
+      if (!callingKey) {
+        // Without the calling key's own expiry the child cannot be bounded by it.
+        throw createError({
+          statusCode: 403,
+          message: 'An API key cannot mint keys when its own lifetime is unknown.',
+        })
+      }
       const refused = findScopesBeyondCaller(scopes, user.scopes)
       if (refused.length > 0) {
         throw createError({
@@ -74,7 +84,21 @@ export default defineUserMutation(
             : `A wildcard API key cannot expire more than ${BOUNDARY_API_KEY_MAX_EXPIRY_DAYS} days from now.`,
       })
     }
-    const expiresAt = resolveApiKeyExpiry(mintExpiry.expiresInDays)
+    let expiresAt = resolveApiKeyExpiry(mintExpiry.expiresInDays)
+    if (callingKey) {
+      const bounded = boundChildApiKeyExpiry(
+        expiresAt,
+        callingKey.expiresAt,
+        input.expiresInDays !== undefined,
+      )
+      if (!bounded.ok) {
+        throw createError({
+          statusCode: 403,
+          message: 'An API key cannot mint a key that outlives it.',
+        })
+      }
+      expiresAt = bounded.expiresAt
+    }
 
     await db.insert(apiKeys).values({
       id,

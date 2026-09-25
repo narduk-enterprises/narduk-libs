@@ -227,6 +227,12 @@ Machine access such as `/mcp` should continue to use a scoped API key or another
 explicit machine credential; browser email sessions are not a machine-auth
 substitute.
 
+The admin routes take an admin-owned API key only where its scopes allow it.
+`GET /api/admin/users` (and its `/api/users` alias) needs
+`auth:admin:users:read` on the key, and `PUT /api/admin/users/role` is
+session-only: no API key can grant or revoke admin, whatever its scopes. Admin
+sessions need no scope.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request
@@ -485,6 +491,12 @@ A token whose scopes include `*` is a boundary-class credential
 (narduk-libs#168): `POST /api/auth/api-keys` refuses `expiresInDays: null` and
 caps the lifetime at 90 days. Narrow machine scopes may still omit expiry. The
 unique index on `api_keys.key_hash` lives in narduk-core (migration 0007).
+
+A key minted by another API key may hold only scopes the calling key holds
+(narduk-libs#858), and may not outlive it (narduk-libs#920). With no
+`expiresInDays`, the child's expiry is clamped to the calling key's. An explicit
+expiry past the calling key's, or `null` under a key that expires, gets a 403.
+Revoking a key does not revoke the keys it minted.
 
 #### Props
 

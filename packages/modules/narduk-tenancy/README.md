@@ -312,4 +312,7 @@ Every mutation writes one `tenancy_audit_events` row: `org.create`,
 `membership.add|change|remove`, `override.set|clear`,
 `invite.create|accept|revoke`, `support_grant.create|revoke`. Raw invite tokens
 are never recorded. `listAuditEvents` returns newest first with a clamped limit
-(default 50, max 200) and a `before` cursor.
+(default 50, max 200) and a `(before, beforeId)` cursor. To fetch the next page,
+pass the last row's `createdAt` as `before` and its `id` as `beforeId`.
+`acceptInvite` writes two or three rows with the same `createdAt`, so `before`
+alone skips whatever part of that group falls past a page boundary.

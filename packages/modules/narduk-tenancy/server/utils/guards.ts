@@ -2,6 +2,8 @@ import { createError } from 'h3'
 
 import { roleAtLeast, type TenancyRole } from '../../shared/utils/roles'
 
+import { supportGrantScopes } from './tenancy'
+
 import type { TenancyResourceRef, TenancySupportGrant } from '../../shared/types/tenancy'
 import type { TenancyService } from './tenancy'
 import type { H3Event } from 'h3'
@@ -62,15 +64,6 @@ async function requireUserId(event: H3Event, resolveUserId: TenancyUserResolver)
   return userId
 }
 
-function grantScopes(grant: TenancySupportGrant): string[] {
-  try {
-    const parsed: unknown = JSON.parse(grant.scopeJson)
-    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 /**
  * Entitlement gate: the caller must be a member of `orgId` whose effective role
  * (org role, narrowed by a resource override when `resource` is given) is at
@@ -100,10 +93,13 @@ export async function requireSupportGrantOrRole(
   options: RequireSupportGrantOrRoleOptions,
 ): Promise<TenancyGuardResult> {
   const userId = await requireUserId(event, options.resolveUserId)
+  // Asking for the scope means the resolver returns a grant that covers it,
+  // not merely the latest-expiring one (narduk-libs#942).
   const resolution = await options.tenancy.resolveRole({
     orgId: options.orgId,
     userId,
     resource: options.resource,
+    supportScope: options.scope,
   })
 
   if (resolution.role && roleAtLeast(resolution.role, options.minimum)) {
@@ -113,7 +109,7 @@ export async function requireSupportGrantOrRole(
   const { supportGrant } = resolution
   const scopeSatisfied =
     supportGrant !== undefined &&
-    (options.scope === undefined || grantScopes(supportGrant).includes(options.scope))
+    (options.scope === undefined || supportGrantScopes(supportGrant).includes(options.scope))
   if (!scopeSatisfied) throw denied()
 
   return { userId, role: resolution.role, supportGrant }

@@ -102,6 +102,51 @@ export function isInsideClientOnly(node: any): boolean {
   return false
 }
 
+/** Array callbacks run synchronously in the caller's context. */
+const SYNCHRONOUS_CALLBACK_METHODS = new Set([
+  'map',
+  'filter',
+  'find',
+  'findIndex',
+  'findLast',
+  'findLastIndex',
+  'some',
+  'every',
+  'reduce',
+  'reduceRight',
+  'flatMap',
+  'forEach',
+  'sort',
+  'toSorted',
+])
+
+/** An inline callback that runs synchronously where it is written. */
+export function runsSynchronously(fn: any): boolean {
+  const parent = fn.parent
+  if (parent?.type !== 'CallExpression') return false
+  // IIFE
+  if (parent.callee === fn) return true
+  if (!parent.arguments?.includes(fn)) return false
+  const callee = parent.callee
+  return (
+    callee?.type === 'MemberExpression' &&
+    !callee.computed &&
+    SYNCHRONOUS_CALLBACK_METHODS.has(callee.property?.name)
+  )
+}
+
+/** Inside a `v-on` / `@event` expression, which runs only after a user event. */
+export function isInsideEventHandler(node: any): boolean {
+  let current: any = node?.parent
+  while (current) {
+    if (current.type === 'VAttribute' && current.directive && current.key?.name?.name === 'on') {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
 /**
  * Registers a template-body visitor when running under `vue-eslint-parser`, and
  * degrades to the script visitor alone under any other parser.

@@ -11,6 +11,8 @@ import type { H3Event } from 'h3'
 
 const RESET_PATH = '/reset-password'
 const PARENT_EMAIL = 'parent@example.com'
+/** The Supabase user id the PKCE `exchangeCodeForSession` stub verifies to. */
+const PKCE_AUTH_USER_ID = 'auth-attacker'
 
 interface UserRow {
   appleId?: string | null
@@ -51,6 +53,8 @@ const persistCalls = vi.hoisted(() => [] as Array<{ recoveryMode?: boolean }>)
 const authConfig = vi.hoisted(() => ({ publicSignup: false }))
 /** What the server-side PKCE exchange itself reports, independent of the client body. */
 const exchangeResult = vi.hoisted(() => ({ redirectType: null as string | null }))
+/** `invited_at` on the Supabase user an exchange verifies to (token_hash or PKCE); null for a self-signup. */
+const verifiedUser = vi.hoisted(() => ({ invitedAt: null as string | null }))
 
 vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: <T>(plugin: T) => plugin,
@@ -196,16 +200,17 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
       data: {
         redirectType: exchangeResult.redirectType,
         user: {
-          id: 'auth-attacker',
+          id: PKCE_AUTH_USER_ID,
           email: PARENT_EMAIL,
           app_metadata: {},
           user_metadata: {},
+          invited_at: verifiedUser.invitedAt ?? undefined,
         },
         session: {
           access_token: 't',
           refresh_token: 'r',
           expires_in: 3600,
-          user: { id: 'auth-attacker' },
+          user: { id: PKCE_AUTH_USER_ID },
         },
       },
       error: null,
@@ -217,6 +222,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
           email: PARENT_EMAIL,
           app_metadata: {},
           user_metadata: {},
+          invited_at: verifiedUser.invitedAt ?? undefined,
         },
         session: {
           access_token: 't',
@@ -280,6 +286,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     persistCalls.length = 0
     authConfig.publicSignup = false
     exchangeResult.redirectType = null
+    verifiedUser.invitedAt = null
   })
 
   it('refuses POST {code, redirectType:"invite"} and does not INSERT a users row', async () => {
@@ -310,13 +317,64 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
     expect(persistCalls).toEqual([])
   })
 
-  it('still provisions an invited user when the server-side token_hash type is invite', async () => {
+  it('refuses a self-signup confirmation token exchanged as type=invite', async () => {
+    // GoTrue verifies a signup token as `invite` too; the user has no invited_at.
+    await expect(
+      postExchange({ tokenHash: 'signup-digest', verificationType: 'invite' }),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      statusMessage: 'Public signup is disabled for this app.',
+    })
+
+    expect(db.userInserts).toEqual([])
+    expect(db.linkInserts).toEqual([])
+    expect(persistCalls).toEqual([])
+  })
+
+  it('refuses GET ?token_hash=&type=invite for a self-signup token', async () => {
+    const event = requestEvent('/api/auth/session/exchange?token_hash=signup-digest&type=invite')
+    await exchangeGet(event)
+
+    expect(event.node.res.statusCode).toBe(302)
+    expect(String(event.node.res.getHeader?.('location') ?? '')).toContain(
+      'error=callback_exchange_failed',
+    )
+    expect(db.userInserts).toEqual([])
+    expect(db.linkInserts).toEqual([])
+  })
+
+  it('refuses a PKCE exchange whose stored redirectType claims invite', async () => {
+    // supabase-js reads `redirectType` back from the code-verifier storage,
+    // which the client controls.
+    exchangeResult.redirectType = 'invite'
+    await expect(postExchange({ code: 'pkce-code' })).rejects.toMatchObject({ statusCode: 403 })
+
+    expect(db.userInserts).toEqual([])
+    expect(db.linkInserts).toEqual([])
+  })
+
+  it('still provisions a user an operator invited when the token_hash type is invite', async () => {
+    verifiedUser.invitedAt = '2026-09-25T12:00:00Z'
     await postExchange({ tokenHash: 'digest', verificationType: 'invite' })
 
     expect(db.userInserts).toHaveLength(1)
     expect(db.userInserts[0]?.email).toBe(PARENT_EMAIL)
     expect(db.linkInserts).toHaveLength(1)
     expect(db.linkInserts[0]?.authUserId).toBe('auth-invitee')
+    expect(persistCalls).toEqual([{ recoveryMode: false }])
+  })
+
+  it('still provisions a user an operator invited on a PKCE invite exchange', async () => {
+    // The invite email's callback carries a PKCE code; the exchange reports
+    // `redirectType: 'invite'` and a user GoTrue invited.
+    exchangeResult.redirectType = 'invite'
+    verifiedUser.invitedAt = '2026-09-25T12:00:00Z'
+    await postExchange({ code: 'pkce-code' })
+
+    expect(db.userInserts).toHaveLength(1)
+    expect(db.userInserts[0]?.email).toBe(PARENT_EMAIL)
+    expect(db.linkInserts).toHaveLength(1)
+    expect(db.linkInserts[0]?.authUserId).toBe(PKCE_AUTH_USER_ID)
     expect(persistCalls).toEqual([{ recoveryMode: false }])
   })
 
@@ -365,7 +423,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
       isAdmin: false,
     })
     db.links.push({
-      authUserId: 'auth-attacker',
+      authUserId: PKCE_AUTH_USER_ID,
       localUserId: 'local-1',
       primaryEmail: PARENT_EMAIL,
     })
@@ -386,7 +444,7 @@ describe('closed signup: client cannot forge invite or recovery on ?code=', () =
       isAdmin: false,
     })
     db.links.push({
-      authUserId: 'auth-attacker',
+      authUserId: PKCE_AUTH_USER_ID,
       localUserId: 'local-1',
       primaryEmail: PARENT_EMAIL,
     })

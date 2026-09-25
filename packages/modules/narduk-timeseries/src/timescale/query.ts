@@ -424,7 +424,9 @@ export interface TrackPlan {
  *
  * The rule is deterministic and stated: `bucketMs = ceil(rangeMs / maxPoints)`,
  * and anything below `MIN_TRACK_BUCKET_MS` reads raw because the buckets would
- * be finer than the data. A caller asking for 5000 points over a year gets
+ * be finer than the data. Decimated buckets start at `range.start`, so a fully
+ * covered range yields at most `maxPoints` of them and `truncated` is never
+ * set by bucket alignment alone. A caller asking for 5000 points over a year gets
  * about 5000 rows; the same caller over ten minutes gets every point.
  */
 export function planTrackQuery(query: TrackQuery, limits?: TrackQueryLimits): TrackPlan {
@@ -468,6 +470,12 @@ export function planTrackQuery(query: TrackQuery, limits?: TrackQueryLimits): Tr
     query: {
       // `last(geom, ts)` keeps a real recorded position for the bucket rather
       // than averaging two fixes into a point the vessel never occupied.
+      // The buckets are anchored on `range.start` ($2): Timescale's default
+      // origin is 2000-01-03, and a range off that grid touches
+      // `maxPoints + 1` buckets (a partial one at each end). The extra row
+      // then read as truncation and the slice dropped the newest bucket, the
+      // vessel's latest position (narduk-libs#939). From `range.start`,
+      // `ceil(rangeMs / bucketMs) <= maxPoints` buckets cover the range.
       params: [
         query.vesselId,
         query.range.start,
@@ -476,7 +484,7 @@ export function planTrackQuery(query: TrackQuery, limits?: TrackQueryLimits): Tr
         maxPoints + 1,
       ],
       text: [
-        `SELECT time_bucket($4::interval, ts) AS ts,`,
+        `SELECT time_bucket($4::interval, ts, $2::timestamptz) AS ts,`,
         `       ST_Y(last(geom, ts)::geometry) AS latitude,`,
         `       ST_X(last(geom, ts)::geometry) AS longitude,`,
         `       avg(sog)::real     AS sog,`,

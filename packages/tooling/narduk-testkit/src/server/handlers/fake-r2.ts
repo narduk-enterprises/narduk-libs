@@ -94,6 +94,132 @@ function resolveRange(range: Headers | R2Range | undefined, size: number): Resol
   return { length: Math.min(requested, size - offset), offset }
 }
 
+/** The `R2HTTPMetadata` string fields, by the header each one is parsed from and written to. */
+const HTTP_METADATA_HEADERS = [
+  ['content-type', 'contentType'],
+  ['content-language', 'contentLanguage'],
+  ['content-disposition', 'contentDisposition'],
+  ['content-encoding', 'contentEncoding'],
+  ['cache-control', 'cacheControl'],
+] as const
+
+function isHeaders(value: object): value is Headers {
+  return typeof (value as Headers).get === 'function'
+}
+
+/**
+ * `put(key, body, { httpMetadata: request.headers })` is the pattern
+ * Cloudflare's R2 docs use. The runtime parses the five content headers and
+ * `expires` (as `cacheExpiry`) out of a `Headers` and drops the rest; storing
+ * the `Headers` object itself would leave every field undefined.
+ */
+function normalizeHttpMetadata(
+  value: Headers | R2HTTPMetadata | undefined,
+): R2HTTPMetadata | undefined {
+  if (value === undefined || !isHeaders(value)) return value
+  const metadata: R2HTTPMetadata = {}
+  for (const [header, field] of HTTP_METADATA_HEADERS) {
+    const headerValue = value.get(header)
+    if (headerValue !== null) metadata[field] = headerValue
+  }
+  const expires = value.get('expires')
+  if (expires !== null) metadata.cacheExpiry = new Date(expires)
+  return metadata
+}
+
+/** An `etagMatches` / `etagDoesNotMatch` value: `*`, or one bare etag. */
+function parseConditionalEtag(value: string): string {
+  if (value === '*') return value
+  if (value.startsWith('"')) {
+    // The runtime's own message: R2Conditional takes bare etags.
+    throw new Error(`Conditional ETag should not be wrapped in quotes (${value}).`)
+  }
+  if (value.startsWith('W/')) {
+    throw new Error(
+      `createFakeR2Bucket: put() does not emulate weak conditional etags (${value}). Pass the bare etag.`,
+    )
+  }
+  return value
+}
+
+function etagIn(condition: string, etag: string): boolean {
+  return condition === '*' || condition === etag
+}
+
+/**
+ * Whether a `put`'s `onlyIf` holds for the object currently at the key -- the
+ * rule miniflare's R2 applies (verified against 4.20260701.0). With no object,
+ * only `etagMatches` and `uploadedAfter` can fail, so `etagDoesNotMatch: '*'`
+ * is create-if-absent. An `uploaded*` condition is waived when the matching
+ * etag condition holds, as RFC 9110 orders them.
+ */
+function preconditionHolds(onlyIf: Headers | R2Conditional, stored: StoredObject | undefined) {
+  if (isHeaders(onlyIf)) {
+    throw new Error(
+      'createFakeR2Bucket: put() does not emulate an `onlyIf` Headers object — pass the R2Conditional form (`{ etagMatches, etagDoesNotMatch, uploadedBefore, uploadedAfter }`).',
+    )
+  }
+  // The runtime parses both etags before it looks at the object.
+  const matches =
+    onlyIf.etagMatches === undefined ? undefined : parseConditionalEtag(onlyIf.etagMatches)
+  const doesNotMatch =
+    onlyIf.etagDoesNotMatch === undefined
+      ? undefined
+      : parseConditionalEtag(onlyIf.etagDoesNotMatch)
+  if (stored === undefined) return matches === undefined && onlyIf.uploadedAfter === undefined
+  const truncate = onlyIf.secondsGranularity
+    ? (ms: number) => Math.floor(ms / 1000) * 1000
+    : (ms: number) => ms
+  const uploaded = truncate(stored.uploaded.getTime())
+  const ifMatch = matches === undefined || etagIn(matches, stored.etag)
+  const ifNoneMatch = doesNotMatch === undefined || !etagIn(doesNotMatch, stored.etag)
+  const ifModifiedSince =
+    onlyIf.uploadedAfter === undefined ||
+    truncate(onlyIf.uploadedAfter.getTime()) < uploaded ||
+    (doesNotMatch !== undefined && ifNoneMatch)
+  const ifUnmodifiedSince =
+    onlyIf.uploadedBefore === undefined ||
+    uploaded < truncate(onlyIf.uploadedBefore.getTime()) ||
+    (matches !== undefined && ifMatch)
+  return ifMatch && ifNoneMatch && ifModifiedSince && ifUnmodifiedSince
+}
+
+const CHECKSUM_OPTIONS = [
+  ['md5', 'MD5', 'md5'],
+  ['sha1', 'SHA-1', 'sha1'],
+  ['sha256', 'SHA-256', 'sha256'],
+  ['sha384', 'SHA-384', 'sha384'],
+  ['sha512', 'SHA-512', 'sha512'],
+] as const
+
+function checksumHex(value: ArrayBuffer | ArrayBufferView | string): string {
+  if (typeof value === 'string') return value.toLowerCase()
+  const bytes = ArrayBuffer.isView(value)
+    ? Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    : Buffer.from(value)
+  return bytes.toString('hex')
+}
+
+/**
+ * A supplied checksum is checked against the body, and a mismatch rejects the
+ * put with the runtime's own message and code, as a real bucket does. A
+ * fake that ignored it would pass the upload production refuses.
+ */
+function verifyChecksum(body: Buffer, putOptions: R2PutOptions | undefined): void {
+  const given = CHECKSUM_OPTIONS.filter(([field]) => putOptions?.[field] !== undefined)
+  if (given.length > 1) throw new Error('You cannot specify multiple hashing algorithms.')
+  const [option] = given
+  if (!option) return
+  const [field, name, algorithm] = option
+  const provided = checksumHex(putOptions?.[field] as ArrayBuffer | string)
+  const actual = createHash(algorithm).update(body).digest('hex')
+  if (provided !== actual) {
+    throw new Error(
+      `put: The ${name} checksum you specified did not match what we received.\nYou provided a ${name} checksum with value: ${provided}\nActual ${name} was: ${actual} (10037)`,
+    )
+  }
+}
+
 function toR2Object(key: string, stored: StoredObject, range?: ResolvedRange): R2Object {
   return {
     checksums: { toJSON: () => ({ md5: stored.etag }) } as unknown as R2Object['checksums'],
@@ -112,10 +238,12 @@ function toR2Object(key: string, stored: StoredObject, range?: ResolvedRange): R
     uploaded: stored.uploaded,
     version: stored.etag,
     writeHttpMetadata(headers: Headers) {
-      if (stored.httpMetadata?.contentType)
-        headers.set('content-type', stored.httpMetadata.contentType)
-      if (stored.httpMetadata?.cacheControl)
-        headers.set('cache-control', stored.httpMetadata.cacheControl)
+      const metadata = stored.httpMetadata ?? {}
+      for (const [header, field] of HTTP_METADATA_HEADERS) {
+        const value = metadata[field]
+        if (value) headers.set(header, value)
+      }
+      if (metadata.cacheExpiry) headers.set('expires', metadata.cacheExpiry.toUTCString())
     },
   } as unknown as R2Object
 }
@@ -176,10 +304,16 @@ function toR2ObjectBody(key: string, stored: StoredObject, range: ResolvedRange)
  * does, because each is a place where a more permissive fake would turn a
  * broken handler into a green test.
  *
+ * `put` honours the `R2Conditional` form of `onlyIf` (resolving `null` when
+ * it fails, so create-if-absent via `etagDoesNotMatch: '*'` works), rejects a
+ * supplied `md5`/`sha*` checksum that does not match the body, and parses a
+ * `Headers` passed as `httpMetadata`, all as the runtime does.
+ *
  * Not emulated: multipart uploads (`createMultipartUpload` and friends),
- * conditional requests (`onlyIf` — `get` throws rather than quietly ignoring
- * it), R2's real per-region consistency behavior, and `list`'s `delimiter`
- * beyond a flat `prefix` + `cursor` page.
+ * conditional reads (`get`'s `onlyIf` throws rather than being quietly
+ * ignored), `put`'s `onlyIf` as a `Headers` object or with a weak `W/` etag
+ * (both throw), R2's real per-region consistency behavior, and `list`'s
+ * `delimiter` beyond a flat `prefix` + `cursor` page.
  */
 export function createFakeR2Bucket(options: CreateFakeR2Options = {}): R2Bucket {
   const now = options.now ?? (() => new Date())
@@ -245,13 +379,22 @@ export function createFakeR2Bucket(options: CreateFakeR2Options = {}): R2Bucket 
       key: string,
       value: ArrayBuffer | ArrayBufferView | Blob | ReadableStream | string | null,
       putOptions?: R2PutOptions,
-    ): Promise<R2Object> {
+    ): Promise<R2Object | null> {
       const body = await normalizeBody(value)
+      // As in the runtime: a failed precondition resolves `null` before any
+      // checksum is looked at, and stores nothing.
+      if (
+        putOptions?.onlyIf !== undefined &&
+        !preconditionHolds(putOptions.onlyIf, store.get(key))
+      ) {
+        return null
+      }
+      verifyChecksum(body, putOptions)
       const stored: StoredObject = {
         body,
         customMetadata: putOptions?.customMetadata,
         etag: computeEtag(body),
-        httpMetadata: putOptions?.httpMetadata as R2HTTPMetadata | undefined,
+        httpMetadata: normalizeHttpMetadata(putOptions?.httpMetadata),
         uploaded: now(),
       }
       store.set(key, stored)

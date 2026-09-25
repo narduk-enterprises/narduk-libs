@@ -219,7 +219,7 @@ describe('track query', () => {
     expect(plan.decimated).toBe(true)
     expect(plan.bucketMs).toBe(86_400)
     expect(plan.query.text).toMatchInlineSnapshot(`
-      "SELECT time_bucket($4::interval, ts) AS ts,
+      "SELECT time_bucket($4::interval, ts, $2::timestamptz) AS ts,
              ST_Y(last(geom, ts)::geometry) AS latitude,
              ST_X(last(geom, ts)::geometry) AS longitude,
              avg(sog)::real     AS sog,

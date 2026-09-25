@@ -1,3 +1,4 @@
+import * as tsParser from '@typescript-eslint/parser'
 import { RuleTester } from 'eslint'
 import { describe, it } from 'vitest'
 
@@ -102,9 +103,30 @@ ruleTester.run('no-raw-define-event-handler-in-mutation-routes', rule, {
           return null
         })`,
     },
+    {
+      name: 'a raw handler behind a TS cast inside an approved wrapper is composition',
+      filename: 'server/api/things.post.ts',
+      code: `export default defineWebhookMutation(defineEventHandler(async (event) => save(event)) as any)`,
+      languageOptions: { parser: tsParser },
+    },
   ],
 
   invalid: [
+    {
+      name: 'a raw handler declared inside a wrapped route callback is not composition (#886)',
+      filename: 'server/api/things.post.ts',
+      code: `export default defineUserMutation(async (event) => {
+        const legacy = defineEventHandler(async (e) => deleteEverything(e))
+        return legacy(event)
+      })`,
+      errors: [{ messageId: 'useMutationWrapper' }],
+    },
+    {
+      name: 'a raw handler returned from a function passed to an approved wrapper is reported (#886)',
+      filename: 'server/api/things.post.ts',
+      code: `export default defineUserMutation(function build() { return defineEventHandler(save) })`,
+      errors: [{ messageId: 'useMutationWrapper' }],
+    },
     {
       name: 'raw defineEventHandler in a POST route',
       filename: 'server/api/things.post.ts',

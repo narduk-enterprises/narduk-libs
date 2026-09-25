@@ -63,6 +63,17 @@ function isInviteRedirectType(value: string | null | undefined) {
   return value?.trim().toLowerCase() === 'invite'
 }
 
+/**
+ * Whether an operator invited this user. GoTrue sets `invited_at` only when it
+ * sends an invite; a self-signup never has it. The requested exchange type
+ * cannot stand in for it: GoTrue checks `type=invite` and `type=signup` against
+ * the same confirmation token, so a self-signup's token also verifies as an
+ * invite (narduk-libs#917).
+ */
+function wasInvitedByOperator(user: { invited_at?: string | null }) {
+  return typeof user.invited_at === 'string' && user.invited_at.length > 0
+}
+
 function normalizeAppPath(path: string): string {
   const pathname = (path.split('?')[0] ?? path).trim()
   if (!pathname || pathname === '/') return '/'
@@ -446,10 +457,12 @@ export async function exchangeSupabaseCode(
     })
   }
 
-  // Invite is the closed-signup door and must come from the server-side
-  // exchange, never from a client-supplied `redirectType`. Client
-  // `redirectType` / `next` may only feed recovery detection, which
-  // restricts the session; it cannot open signup.
+  // Invite is the closed-signup door. The exchange's own type is not enough to
+  // open it: on the token_hash path it is the client's `verificationType`, and
+  // a PKCE `redirectType` is read back from client storage. `isInvite` also
+  // needs the invite GoTrue recorded on the user. Client `redirectType` /
+  // `next` may only feed recovery detection, which restricts the session; it
+  // cannot open signup.
   const serverRedirectType =
     (data as { redirectType?: string | null }).redirectType ??
     (!hasAuthCode ? body.verificationType : null)
@@ -466,7 +479,7 @@ export async function exchangeSupabaseCode(
     resetPath: config.resetPath,
     hasAuthCode,
   })
-  const isInvite = isInviteRedirectType(serverRedirectType)
+  const isInvite = isInviteRedirectType(serverRedirectType) && wasInvitedByOperator(data.user)
   const localUser = await ensureLinkedLocalUser(
     event,
     data.user,

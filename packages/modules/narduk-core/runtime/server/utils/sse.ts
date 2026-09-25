@@ -72,7 +72,8 @@ export function removeSSE(channelId: string, conn: SSEConnection): void {
 
 /**
  * Broadcast an SSE event to all connections on a channel.
- * Dead connections (write throws) are automatically removed.
+ * A connection whose write fails -- a synchronous throw, or the rejected write
+ * promise a closed or errored stream reports -- is removed from the channel.
  *
  * @param channelId - Channel to broadcast on (e.g. userId, roomId)
  * @param event     - SSE event name (appears as `event:` line)
@@ -87,11 +88,18 @@ export function broadcastSSE(channelId: string, event: string, data: unknown): v
 
   const dead: SSEConnection[] = []
   for (const conn of set) {
+    let written: Promise<void>
     try {
-      void conn.writer.write(encoded)
+      written = conn.writer.write(encoded)
     } catch {
       dead.push(conn)
+      continue
     }
+    // A client that went away errors the stream, and `write()` then rejects
+    // after this loop has returned rather than throwing inside it. Removing by
+    // connection identity leaves a later registration on the channel alone
+    // (narduk-libs#870).
+    written.catch(() => removeSSE(channelId, conn))
   }
 
   for (const conn of dead) {

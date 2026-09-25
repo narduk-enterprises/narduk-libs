@@ -86,7 +86,14 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
     }),
     verifyOtp: async () => ({
       data: {
-        user: { id: 'auth-1', email: 'parent@example.com', app_metadata: {}, user_metadata: {} },
+        // An operator invite: only a user with `invited_at` opens closed signup (narduk-libs#917).
+        user: {
+          id: 'auth-1',
+          email: 'parent@example.com',
+          app_metadata: {},
+          user_metadata: {},
+          invited_at: '2026-09-25T00:00:00Z',
+        },
         session: {
           access_token: 't',
           refresh_token: 'r',

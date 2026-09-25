@@ -493,7 +493,7 @@ describe('useConfirm() reachability', () => {
     }
     await loaded.setup(
       { components: false },
-      { options: { build: { transpile: [] }, css: [], appConfig: {} } },
+      { hook: vi.fn(), options: { build: { transpile: [] }, css: [], appConfig: {} } },
     )
 
     const names = addImports.mock.calls.map(([call]) => (call as { name: string }).name)

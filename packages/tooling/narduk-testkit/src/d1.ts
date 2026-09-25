@@ -1,7 +1,7 @@
 /**
  * A real-D1 query harness for Vitest: Miniflare's D1 (the workerd SQLite the
  * platform runs), created from a package's own migration files, with every
- * statement the code under test prepares recorded.
+ * statement the code under test executes recorded.
  *
  * What it proves is query SHAPE — how many statements a route emits, whether
  * that count holds as data grows, which index SQLite picks, how many bytes the
@@ -34,13 +34,16 @@ export interface D1QueryHarnessOptions {
 
 export interface D1QueryHarness {
   /**
-   * The recording binding. Hand it to the code under test (`drizzle(db)`);
-   * every `prepare()` and `exec()` on it is appended to `statements`.
+   * The recording binding. Hand it to the code under test (`drizzle(db)`).
+   * Every execution on it is appended to `statements`: each `first()`,
+   * `all()`, `run()` and `raw()` of a statement prepared here (a reused
+   * statement counts once per run), each member of a `batch()`, and each
+   * `exec()`. A statement prepared but never run is not recorded.
    */
   db: D1Binding
   /** The same database, unrecorded — for seeding and for assertions of your own. */
   raw: D1Binding
-  /** SQL text of every statement prepared on `db` since the last `reset()`. */
+  /** SQL text of every statement executed on `db` since the last `reset()`. */
   statements: string[]
   /** Empty `statements` (in place, so held references see it). */
   reset: () => void
@@ -75,13 +78,65 @@ export function splitSqlStatements(sql: string): string[] {
     .filter(Boolean)
 }
 
+type D1Statement = ReturnType<D1Binding['prepare']>
+
+/** A recording wrapper's real statement and SQL, for `batch` to unwrap. */
+type Recorded = WeakMap<object, { sql: string; statement: D1Statement }>
+
+const EXECUTE_METHODS = new Set<PropertyKey>(['all', 'first', 'raw', 'run'])
+
+/**
+ * Recording is at EXECUTION, not at `prepare()` (narduk-libs#922). A per-item
+ * query that reuses one prepared statement -- the shape of every drizzle
+ * `.prepare()`d query, whose driver calls `prepare` once and then
+ * `bind(...).all()` per execution -- is one D1 round trip per item, and has to
+ * count as one statement per item or the N+1 gates cannot see it.
+ */
+function recordingStatement(
+  statement: D1Statement,
+  sql: string,
+  statements: string[],
+  recorded: Recorded,
+): D1Statement {
+  const wrapper = new Proxy(statement, {
+    get(target, property) {
+      if (property === 'bind') {
+        return (...values: unknown[]) =>
+          recordingStatement(target.bind(...values), sql, statements, recorded)
+      }
+      const value = Reflect.get(target, property, target) as unknown
+      if (typeof value !== 'function') return value
+      const method = value as (...args: unknown[]) => unknown
+      if (!EXECUTE_METHODS.has(property)) return method.bind(target)
+      return (...args: unknown[]) => {
+        statements.push(sql)
+        return method.apply(target, args)
+      }
+    },
+  })
+  recorded.set(wrapper, { sql, statement })
+  return wrapper
+}
+
 function recordingBinding(binding: D1Binding, statements: string[]): D1Binding {
+  const recorded: Recorded = new WeakMap()
   return new Proxy(binding, {
     get(target, property) {
       if (property === 'prepare') {
-        return (sql: string) => {
-          statements.push(sql)
-          return target.prepare(sql)
+        return (sql: string) => recordingStatement(target.prepare(sql), sql, statements, recorded)
+      }
+      if (property === 'batch') {
+        // Every member is one statement executed, as in production: a batch
+        // built per item still grows with the data. A member prepared on
+        // `raw` is passed through unrecorded, like any other `raw` call.
+        return (members: D1Statement[]) => {
+          const real = members.map((member) => {
+            const entry = recorded.get(member)
+            if (!entry) return member
+            statements.push(entry.sql)
+            return entry.statement
+          })
+          return target.batch(real)
         }
       }
       if (property === 'exec') {
@@ -168,7 +223,7 @@ export interface StatementBudgetResult<T> {
 }
 
 /**
- * Run `fn` and fail if it prepared more than `max` statements on `harness.db`.
+ * Run `fn` and fail if it executed more than `max` statements on `harness.db`.
  * Resets the recorder first; returns what `fn` returned and the statements.
  */
 export async function expectStatementBudget<T>(
@@ -230,7 +285,7 @@ export interface ScaleAxes {
 export interface ScaleCell<T> {
   history: number
   live: number
-  /** Statements `run()` prepared on `harness.db` for this cell. */
+  /** Statements `run()` executed on `harness.db` for this cell. */
   statements: number
   /** UTF-8 bytes of the result: a string or bytes as-is, anything else as JSON. */
   bytes: number
@@ -246,7 +301,7 @@ function byteLength(value: unknown): number {
 
 /**
  * Run `run()` once per (history, live) cell and fail unless every cell
- * prepared the same number of statements — the count must not grow with
+ * executed the same number of statements — the count must not grow with
  * either axis, which is what "no per-item query" means.
  *
  * Before each cell the harness's rows are cleared and `seed(cell)` fills the

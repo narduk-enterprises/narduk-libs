@@ -97,8 +97,10 @@ and asserts exactly that.
 
 A read never silently truncates. `queryRollup` asks for `maxRows + 1` and
 reports `truncated: true`; `queryTrack` decimates with `time_bucket` and reports
-the `bucketMs` it used. Client-supplied `maxRows` / `maxPoints` cannot exceed
-the published defaults (50_000 / 5_000); a value of `1e12` is `RANGE_INVALID`. A
+the `bucketMs` it used. Its buckets start at `range.start`, so a fully covered
+range fills at most `maxPoints` of them, and `truncated` on a track means a real
+cap (narduk-libs#939). Client-supplied `maxRows` / `maxPoints` cannot exceed the
+published defaults (50_000 / 5_000); a value of `1e12` is `RANGE_INVALID`. A
 store may raise those ceilings via `TimescaleStoreOptions.maxRollupRows` /
 `maxTrackPoints` — that option is server-side construction, not a field on the
 client query.
@@ -279,6 +281,11 @@ from a zero database — two hypertables, four continuous aggregates, six policy
 jobs, `segmentby` carrying `installation_role`, replay idempotency, the shadow
 row excluded from the 1m average, and a retention sweep through a session-pinned
 connection.
+
+Also run on 2026-09-25 for narduk-libs#939: PostgreSQL 16.13 + TimescaleDB
+2.30.1 + PostGIS 3.4.2, 9/9 passing, including the densely filled decimated
+track range. The three roles were created beforehand, as the instance's initdb
+does.
 
 Two things only that run could have caught:
 
