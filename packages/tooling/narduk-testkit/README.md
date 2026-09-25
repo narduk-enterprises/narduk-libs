@@ -640,7 +640,7 @@ version. The analyzer uses `sharp` as a package runtime dependency.
 
 `@narduk-enterprises/narduk-testkit/d1` runs code under test against a real
 Miniflare D1 database (the workerd SQLite the platform runs) created from your
-own migration files, and records every statement it prepares. It is a Vitest
+own migration files, and records every statement it executes. It is a Vitest
 helper; it installs no matchers and fails by throwing.
 
 It proves query **shape**: how many statements a route emits, whether that count
@@ -710,10 +710,16 @@ expect(Math.max(...cells.map((c) => c.bytes))).toBeLessThan(64_000)
 | Export                                                        | Does                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `createD1QueryHarness({ migrations, compatibilityDate? })`    | Applies `migrations` (a list of `.sql` paths, or one directory whose numbered files are applied in lexical order, skipping utility SQL such as `seed.sql` — the discovery `narduk-app db migrate` uses). Returns `{ db, raw, statements, reset(), clearData(), dispose() }`.                   |
-| `expectStatementBudget(harness, fn, { max })`                 | Resets the recorder, runs `fn`, throws if it prepared more than `max` statements. Returns `{ result, statements }` so a test can also pin the exact count.                                                                                                                                     |
+| `expectStatementBudget(harness, fn, { max })`                 | Resets the recorder, runs `fn`, throws if it executed more than `max` statements. Returns `{ result, statements }` so a test can also pin the exact count.                                                                                                                                     |
 | `expectQueryPlan(harness, sql, params, { forbidFullScanOf })` | Runs `EXPLAIN QUERY PLAN` and throws on a `SCAN <table>` step for any named table (including `SCAN … USING COVERING INDEX`, which still reads every entry). Returns the plan lines. Tables match the name the plan prints, which is the alias when the query aliases one.                      |
-| `scaleMatrix(harness, { axes, seed, run })`                   | For each `history` × `live` cell: `clearData()`, `seed(cell)`, then `run()` recorded. Throws unless every cell prepared the same number of statements. Returns `{ history, live, statements, bytes, result }[]`; `bytes` is the UTF-8 size of a string/bytes result, or of its JSON otherwise. |
+| `scaleMatrix(harness, { axes, seed, run })`                   | For each `history` × `live` cell: `clearData()`, `seed(cell)`, then `run()` recorded. Throws unless every cell executed the same number of statements. Returns `{ history, live, statements, bytes, result }[]`; `bytes` is the UTF-8 size of a string/bytes result, or of its JSON otherwise. |
 | `splitSqlStatements(sql)`                                     | Strips `--` and `/* */` comments and splits on `;`. It does not parse SQL: a `;` inside a string literal or a trigger body is not supported.                                                                                                                                                   |
+
+A statement is recorded when it runs, not when it is prepared (narduk-libs#922):
+each `first()`/`all()`/`run()`/`raw()` on `db`, each member of `db.batch()`, and
+each `db.exec()`. A per-item loop over one reused prepared statement, which is
+what a drizzle `.prepare()`d query does, therefore counts once per item, so the
+budget and the scale matrix catch that N+1 too.
 
 `statements` is emptied in place by `reset()`, so a held reference stays live.
 `clearData()` deletes every row of every migrated table in one batch with
@@ -842,11 +848,15 @@ and the real Worker runtime matters more than a longer feature list:
   in the same test, which is not how KV behaves in production across regions.
   The 25 MiB value and 1 KiB metadata size limits are not enforced either.
 - **R2**: no multipart uploads (`createMultipartUpload` and friends) and no
-  conditional requests — `get()` **throws** on `onlyIf` rather than quietly
+  conditional reads — `get()` **throws** on `onlyIf` rather than quietly
   ignoring it, because a real bucket answers a failed precondition with a
   body-less `R2Object` and a fake that returned the body would make a broken
-  handler green. `list()` supports `prefix`, `cursor`, `limit` and `include` but
-  not `delimiter`.
+  handler green. `put()` does honour the `R2Conditional` form of `onlyIf`: it
+  resolves `null` and writes nothing when the condition fails, so
+  create-if-absent (`{ etagDoesNotMatch: '*' }`) and a stale-etag write both
+  behave as in production. It **throws** on the forms it does not emulate: an
+  `onlyIf` `Headers` object and a weak `W/` etag (narduk-libs#916). `list()`
+  supports `prefix`, `cursor`, `limit` and `include` but not `delimiter`.
 - **Nitro's hooks**: this harness calls a handler directly, so nothing that runs
   in a Nitro lifecycle hook runs here — including narduk-logging's
   `Server-Timing` header, which is set in `beforeResponse`. A handler that sets
@@ -867,8 +877,10 @@ D1's plain byte arrays rather than a `Uint8Array`, and `exec()` counts
 statements by line the way D1 does. KV stores bytes rather than a decoded string
 (so a binary value survives a round trip) and enforces the key rules (no
 empty/`.`/`..`/over-512-byte keys) and the 60-second expiration floor. R2
-honours `range`, gates `list`'s two metadata maps behind `include`, and makes an
-object body single-use.
+honours `range`, gates `list`'s two metadata maps behind `include`, makes an
+object body single-use, rejects a `put()` whose `md5`/`sha*` checksum does not
+match the body (with the runtime's `10037` message), and parses a `Headers`
+passed as `httpMetadata` into the six fields the runtime keeps.
 
 **Follow-ups.** Several packages already hand-roll the `IncomingMessage`/
 `ServerResponse` construction this harness's `createFakeEvent` replaces, plus a
