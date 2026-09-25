@@ -332,8 +332,19 @@ export interface ListSupportGrantsInput {
 }
 
 export interface ListAuditEventsInput {
-  /** Millisecond epoch; returns events strictly older than this. */
+  /**
+   * Millisecond epoch; returns events strictly older than this. To page, pass
+   * the last row's `createdAt` here **and** its `id` as `beforeId`: one
+   * mutation can write several rows at the same `createdAt`, and `before`
+   * alone skips the rest of that group (narduk-libs#941).
+   */
   before?: number
+  /**
+   * The last row's `id`, with `before` set to its `createdAt`. Also returns
+   * the rows at exactly `before` that sort after it (`id` descending).
+   * Ignored without `before`.
+   */
+  beforeId?: string
   limit?: number
   orgId: string
 }
@@ -1301,7 +1312,18 @@ export function createTenancy(
       )
       const filters: Array<SQL | undefined> = [eq(tenancyAuditEvents.orgId, input.orgId)]
       if (typeof input.before === 'number') {
-        filters.push(lt(tenancyAuditEvents.createdAt, input.before))
+        // The cursor matches the sort: (createdAt, id), both descending.
+        filters.push(
+          input.beforeId
+            ? or(
+                lt(tenancyAuditEvents.createdAt, input.before),
+                and(
+                  eq(tenancyAuditEvents.createdAt, input.before),
+                  lt(tenancyAuditEvents.id, input.beforeId),
+                ),
+              )
+            : lt(tenancyAuditEvents.createdAt, input.before),
+        )
       }
 
       return db
