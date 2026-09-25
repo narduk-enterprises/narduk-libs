@@ -34,6 +34,10 @@
  * `variant` is `'rail'` and nothing else today (D3); see
  * `ne-app-shell-types.ts`.
  *
+ * The skip link is `NeSkipLink` (narduk-libs#977), aimed at the shell's own
+ * `<main>`, so activating it moves focus into the page rather than only
+ * scrolling there.
+ *
  * Styling contract: tokens only. The rail reads `--ne-accent` for the active
  * row's marker, and the section labels read the NE label type tokens.
  */
@@ -45,6 +49,8 @@ import UNavigationMenu from '@nuxt/ui/components/NavigationMenu.vue'
 import { computed, useId } from 'vue'
 
 import { useNardukShellSections } from '../composables/use-narduk-shell-sections'
+
+import NeSkipLink from './NeSkipLink.vue'
 
 import type { NeAppShellItem, NeAppShellProps, NeAppShellSection } from './ne-app-shell-types'
 
@@ -126,7 +132,7 @@ function onRailKeydown(event: KeyboardEvent) {
 
 <template>
   <UDashboardGroup class="ne-app-shell" :data-variant="variant" unit="rem" :persistent="false">
-    <a class="ne-app-shell__skip" :href="`#${mainId}`">{{ skipLinkLabel }}</a>
+    <NeSkipLink class="ne-app-shell__skip" :target="mainId" :label="skipLinkLabel" />
 
     <UDashboardSidebar
       class="ne-app-shell__rail"
@@ -217,23 +223,6 @@ function onRailKeydown(event: KeyboardEvent) {
  * Tokens only (README § Styling contract). Everything here reads an `--ne-*`
  * token or is layout; colour, radius, shadow and type size come from tokens.
  */
-.ne-app-shell__skip {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 50;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--ne-radius-control);
-  background-color: var(--ne-surface);
-  color: var(--ne-ink);
-  outline: 2px solid var(--ne-accent);
-  transform: translateY(-200%);
-}
-
-.ne-app-shell__skip:focus {
-  transform: none;
-}
-
 .ne-app-shell__nav {
   display: flex;
   flex-direction: column;

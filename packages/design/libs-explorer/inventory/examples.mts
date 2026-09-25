@@ -124,6 +124,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'App shell',
     'The opt-in sectioned left rail, navbar row and page frame; a slide-over below lg.',
   ),
+  shell(
+    'NeSkipLink',
+    'Skip link',
+    'Skip to content that moves keyboard focus to the target, not only the scroll position.',
+  ),
   shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
   shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),
   shell('NeCta', 'Call to action', 'A panel with a title, a description and buttons.'),

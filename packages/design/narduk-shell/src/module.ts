@@ -178,6 +178,14 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // and `components: false` cannot leave it mounting an unregistered
     // component. `test/use-confirm.test.ts` mounts it with no `Ne*`
     // registration at all, which is that claim's standing proof.
+    // The skip link's target id (narduk-libs#977), for `<main :id="NE_MAIN_ID">`
+    // in a layout. Auto-imported because app code cannot value-import it from
+    // `.`: Nuxt's import protection refuses a bare import of an installed
+    // module's entry path. The source is a plain module with no SFC in it.
+    addImports({
+      name: 'NE_MAIN_ID',
+      from: resolver.resolve('./runtime/components/ne-skip-link-types'),
+    })
     addImports({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
