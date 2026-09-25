@@ -57,6 +57,53 @@ beforeEach(() => {
   webauthnMock.browserSupportsWebAuthn.mockReturnValue(false)
 })
 
+describe('Sign in with Apple affordance (narduk-libs#164)', () => {
+  it('shows Continue with Apple on the local backend when the server reports appleEnabled', async () => {
+    authRuntimeData.value = {
+      appleEnabled: true,
+      authBackend: 'local',
+      authProviders: ['email', 'apple'],
+      passkeysEnabled: false,
+    }
+    authMocks.startOAuth.mockResolvedValue({ url: '/api/auth/apple/start?next=%2Fdashboard%2F' })
+    const wrapper = mountAuthCard(AuthLoginCard)
+    const button = wrapper.findAll('button').find((node) => node.text() === 'Continue with Apple')
+    expect(button).toBeDefined()
+    await button!.trigger('click')
+    await flushPromises()
+    expect(authMocks.startOAuth).toHaveBeenCalledWith({ provider: 'apple', next: DASHBOARD_PATH })
+    expect(navigateToMock).toHaveBeenCalledWith('/api/auth/apple/start?next=%2Fdashboard%2F', {
+      external: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('hides it when apple is advertised on local but not configured', () => {
+    authRuntimeData.value = {
+      appleEnabled: false,
+      authBackend: 'local',
+      authProviders: ['email', 'apple'],
+      passkeysEnabled: false,
+    }
+    for (const card of [AuthLoginCard, AuthRegisterCard]) {
+      const wrapper = mountAuthCard(card)
+      expect(wrapper.text()).not.toContain('Continue with Apple')
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps the Supabase rule when the runtime answer has no appleEnabled', () => {
+    authRuntimeData.value = {
+      authBackend: 'supabase',
+      authProviders: ['email', 'apple'],
+      passkeysEnabled: false,
+    }
+    const wrapper = mountAuthCard(AuthLoginCard)
+    expect(wrapper.text()).toContain('Continue with Apple')
+    wrapper.unmount()
+  })
+})
+
 describe('AuthLoginCard mount', () => {
   it('renders the default title and credential fields', () => {
     const wrapper = mountAuthCard(AuthLoginCard)

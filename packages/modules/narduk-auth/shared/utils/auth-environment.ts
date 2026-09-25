@@ -41,9 +41,10 @@ function parseAuthProviders(value: string | undefined) {
 }
 
 // Providers the local backend may opt into advertising alongside the always-on
-// `email` provider. This is an advertisement allowlist only: it does not
-// itself implement passkey or Apple sign-in for the local backend, and it
-// must never grow to include a name the package cannot yet authenticate.
+// `email` provider. This is an advertisement allowlist only: whether a
+// ceremony can complete is answered separately (`passkeysEnabled`,
+// `appleEnabled`: `apple` also needs AUTH_APPLE_SERVICES_ID, narduk-libs#164),
+// and it must never grow to include a name the package cannot authenticate.
 const LOCAL_AUTH_PROVIDER_ALLOWLIST = ['apple', 'passkey'] as const
 
 function parseLocalAuthProviders(value: string | undefined) {
