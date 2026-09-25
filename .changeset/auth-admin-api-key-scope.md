@@ -3,4 +3,4 @@
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
-The admin routes no longer take any API key whose owner is an admin. `PUT /api/admin/users/role` is now session-only, so an admin-owned key can't grant or revoke admin whatever its scopes. `GET /api/admin/users` and its `/api/users` alias now need the new `auth:admin:users:read` scope on an API key. Admin sessions are unchanged.
+`GET /api/admin/users` and its `/api/users` alias now accept an admin-owned API key only when it carries the new `auth:admin:users:read` scope (or `*`). `PUT /api/admin/users/role` is now session-only, so no API key can grant or revoke admin, whatever its scopes. Admin sessions are unchanged.

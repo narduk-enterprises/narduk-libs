@@ -89,6 +89,11 @@ describe.each([
     expect(await status(handler, path)).toBe(200)
   })
 
+  it('serves an admin-owned API key with the wildcard scope', async () => {
+    authStub.user = apiKeyAdmin(['*'])
+    expect(await status(handler, path)).toBe(200)
+  })
+
   it('serves an admin session without any scope', async () => {
     expect(await status(handler, path)).toBe(200)
   })
