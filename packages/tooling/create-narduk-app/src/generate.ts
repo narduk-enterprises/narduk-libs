@@ -1432,6 +1432,32 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
             ),
           },
           {
+            // Local seed fixtures for `pnpm dev:seed` (narduk-libs#378): rows
+            // for the tables the migrations create, loaded into Wrangler's
+            // local D1 with no Cloudflare credential. One directory per
+            // binding; the app extends these with its own domain data.
+            path: 'apps/web/seed/README.md',
+            contents: text(
+              '# Local seed fixtures',
+              '',
+              '`pnpm dev:seed` applies the migrations to the local D1 database, then loads these fixtures through Wrangler local mode (`narduk-app dev:seed`). It needs no Cloudflare credential and never touches a remote resource.',
+              '',
+              '- `d1/<BINDING>/*.sql` runs in file-name order.',
+              '- `kv/<BINDING>/*.json` holds `wrangler kv bulk put` files (`[{ "key": "...", "value": "..." }]`).',
+              '- `r2/<BINDING>/<key>` uploads each file under its path as the object key.',
+              '',
+              'Add a binding directory only for a binding `wrangler.jsonc` declares. `narduk-app dev:seed --reset` clears the local state first.',
+            ),
+          },
+          {
+            path: 'apps/web/seed/d1/DB/0001_app_records.sql',
+            contents: text(
+              'INSERT OR REPLACE INTO `app_records` (`id`, `label`, `created_at`) VALUES',
+              "  ('seed-1', 'First seeded record', 1767225600000),",
+              "  ('seed-2', 'Second seeded record', 1767225660000);",
+            ),
+          },
+          {
             path: 'apps/web/drizzle/0000_app_records.sql',
             contents: text(
               'CREATE TABLE `app_records` (',

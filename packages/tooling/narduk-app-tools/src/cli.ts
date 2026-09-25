@@ -4,6 +4,7 @@ import { parseGhPackagesRunArgs, runGhPackagesCommand } from './gh-packages-run.
 import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
+import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { parseHotfixArgs, runHotfix } from './deploy-hotfix.js'
 import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
@@ -50,6 +51,7 @@ import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/
 import { runBaselineCommand } from './commands/baseline.js'
 import { runOgCommand } from './commands/og.js'
 import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
+import { parseManifestsValidateArgs, runManifestsValidateCommand } from './manifests-validate.js'
 
 function usage(): string {
   return [
@@ -60,6 +62,11 @@ function usage(): string {
     '      [--config <name>] [--dry-run] -- <command...>',
     '                                       Run local development directly, or under the',
     '                                       registered nvault credential route',
+    '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
+    '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
+    '                                       Seed local D1/KV/R2 (Wrangler --local) from',
+    '                                       seed/{d1,kv,r2}/<BINDING>/ fixtures. Cloudflare',
+    '                                       credentials are removed from the child environment.',
     '  db migrate --config <file> --database <name> --local|--remote [--reset] [--wrangler-config <file>]',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
@@ -159,6 +166,10 @@ function usage(): string {
     "                                       Item 10: live probe of a deployment's security response headers",
     '  foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]',
     '                                       Item 11: one declared Node/pnpm source, every other site reads or matches it',
+    '  manifests validate [--checkout <dir>] [--wrangler <path>]... [--json [path]]',
+    '                                       Compare the wrangler config(s) with Config/cloudflare-app.json:',
+    '                                       bindings and crons as sorted sets, deployment.accountId, and',
+    '                                       worker.workersDev/previewUrls. Exit 1 on any disagreement.',
     '  foundation:check:deployment [--checkout <dir>] [--strict] [--json [path]]',
     '                                       Item 12: the Config/cloudflare-app.json deployment block.',
     '                                       Refuses non-production branch builds that would bind',
@@ -224,6 +235,14 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'dev:seed') {
+      const flags = parseDevSeedArgs(rest)
+      const plan = runDevSeed(flags)
+      console.log(
+        flags.json ? JSON.stringify(plan, null, 2) : formatDevSeedPlan(plan, flags.dryRun),
+      )
+      return 0
+    }
     if (command === 'e2e-serve') return await runE2eServe(parseE2eServeArgs(rest))
     if (command === 'og:check' || command === 'og:generate')
       return await runOgCommand(command, rest)
@@ -402,6 +421,15 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         withAppCheckout(parseDeploymentCheckArgs(rest), command),
       )
       return exitCode
+    }
+    if (command === 'manifests') {
+      const [subcommand, ...manifestArgs] = rest
+      if (subcommand !== 'validate') {
+        throw new Error('Usage: narduk-app manifests validate [--checkout <dir>] ...')
+      }
+      return runManifestsValidateCommand(
+        withAppCheckout(parseManifestsValidateArgs(manifestArgs), 'manifests validate'),
+      ).exitCode
     }
     if (command === 'foundation:check:coverage') {
       const { exitCode } = runCapabilityCoverageCheckCommand(

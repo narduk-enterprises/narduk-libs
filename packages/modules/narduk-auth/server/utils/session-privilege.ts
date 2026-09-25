@@ -84,8 +84,28 @@ export function sessionRequiresMfaStepUp(event: H3Event, user: AppSessionUser): 
   return user.aal !== 'aal2'
 }
 
+export type SessionPrivilegeRefusal = 'recovery_mode' | 'mfa_required'
+
+/**
+ * The same rule as `assertSessionPrivilegeAllowsRequest`, as a value: the code
+ * the restricted-session allowlists refuse this request with, or `null` when
+ * the session may make it. For callers that answer a refusal themselves, such
+ * as a principal resolver that must return `null` rather than throw.
+ */
+export function sessionPrivilegeRefusal(
+  event: H3Event,
+  user: AppSessionUser,
+): SessionPrivilegeRefusal | null {
+  if (user.recoveryMode && !isRecoverySessionAllowedRequest(event)) return 'recovery_mode'
+  if (sessionRequiresMfaStepUp(event, user) && !isMfaStepUpAllowedRequest(event)) {
+    return 'mfa_required'
+  }
+  return null
+}
+
 export function assertSessionPrivilegeAllowsRequest(event: H3Event, user: AppSessionUser): void {
-  if (user.recoveryMode && !isRecoverySessionAllowedRequest(event)) {
+  const refusal = sessionPrivilegeRefusal(event, user)
+  if (refusal === 'recovery_mode') {
     throw createError({
       statusCode: 403,
       statusMessage: 'This session can only change the password or sign out.',
@@ -93,7 +113,7 @@ export function assertSessionPrivilegeAllowsRequest(event: H3Event, user: AppSes
     })
   }
 
-  if (sessionRequiresMfaStepUp(event, user) && !isMfaStepUpAllowedRequest(event)) {
+  if (refusal === 'mfa_required') {
     throw createError({
       statusCode: 403,
       statusMessage: 'Complete multi-factor authentication to continue.',

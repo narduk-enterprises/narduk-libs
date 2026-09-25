@@ -174,6 +174,24 @@ describe('declutter absorption reach', () => {
       { absorbed: [], id: 'l1', kind: 'dot', radius: 6, x: 126, y: 100 },
     ])
   })
+  // #933: the merge grid's cell size once assumed no radius above 24, so two
+  // overlapping radius-30 discs two cells apart were never compared and
+  // merging depended on where the pair sat on the grid.
+  it('merges overlapping discs above the old 24 px radius cap wherever they sit on screen', () => {
+    for (const offset of [0, 11, 23, 37, 49]) {
+      const result = declutter(
+        makeInput({
+          gap: 2,
+          items: [
+            makeItem({ id: 'a', priority: 2, radius: 30, x: offset, y: 0 }),
+            // need = 30 + 30 + 2 = 62; distance 52 -> absorbed
+            makeItem({ id: 'b', priority: 1, radius: 30, x: offset + 52, y: 0 }),
+          ],
+        }),
+      )
+      expect(result.marks.map((mark) => [mark.id, mark.absorbed])).toEqual([['a', ['b']]])
+    }
+  })
 })
 
 // ---------- background ----------

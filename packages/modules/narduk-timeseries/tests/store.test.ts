@@ -327,6 +327,48 @@ describe('queryRollup', () => {
   })
 })
 
+describe('listSeries', () => {
+  it('reads the catalogue in one statement and reports truncation', async () => {
+    const database = createProtocolFake().respondTo(/FROM series/u, [
+      { path: 'a', series_id: '7', unit: 'm', value_kind: 'numeric', vessel_id: VESSEL },
+      { path: 'b', series_id: '8', unit: null, value_kind: 'numeric', vessel_id: VESSEL },
+      { path: 'c', series_id: '9', unit: null, value_kind: 'numeric', vessel_id: VESSEL },
+    ])
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    const result = await store.listSeries({ maxRows: 2, vesselId: VESSEL })
+
+    expect(database.statements).toHaveLength(1)
+    expect(result.truncated).toBe(true)
+    expect(result.series).toEqual([
+      { path: 'a', seriesId: 7, unit: 'm', valueKind: 'numeric', vesselId: VESSEL },
+      { path: 'b', seriesId: 8, unit: null, valueKind: 'numeric', vesselId: VESSEL },
+    ])
+  })
+
+  it('answers an empty path filter without a statement and never upserts', async () => {
+    const database = createProtocolFake()
+    const store = createTimescaleHistoryStore({ executor: database })
+
+    expect(await store.listSeries({ paths: [], vesselId: VESSEL })).toEqual({
+      series: [],
+      truncated: false,
+    })
+    await store.listSeries({ paths: ['never.recorded'], vesselId: VESSEL })
+
+    expect(database.statements).toHaveLength(1)
+    expect(database.statements[0]?.text).not.toMatch(/INSERT|UPDATE/u)
+  })
+
+  it('holds a client page size to the store ceiling', async () => {
+    const store = createTimescaleHistoryStore({
+      executor: createProtocolFake(),
+      maxSeriesRows: 10,
+    })
+    await expect(store.listSeries({ maxRows: 11, vesselId: VESSEL })).rejects.toThrow(/at most 10/u)
+  })
+})
+
 describe('queryTrack', () => {
   it('reports the decimation it asked the database for', async () => {
     const database = createProtocolFake().respondTo(/FROM track_points/u, [

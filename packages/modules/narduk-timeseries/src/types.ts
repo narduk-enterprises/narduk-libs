@@ -40,6 +40,38 @@ export interface ResolvedSeries extends SeriesDescriptor {
   seriesId: number
 }
 
+/**
+ * A read of the series catalogue: which series a vessel has, without creating
+ * any.
+ *
+ * `resolveSeries` is the write path's lookup and it upserts, so a reader that
+ * used it to turn a path into a `seriesId` would create an empty series for
+ * every path it asked about -- and would need the writer's grants to do it.
+ * This is the read-only counterpart a route handler needs before it can call
+ * `queryRollup`, which takes ids.
+ */
+export interface SeriesListQuery {
+  /**
+   * Cap on returned series. The store reports truncation rather than lying.
+   * Values above `DEFAULT_MAX_SERIES_ROWS` (5_000) are `RANGE_INVALID` unless
+   * the store was constructed with a higher `maxSeriesRows` ceiling.
+   */
+  maxRows?: number
+  /**
+   * Only these paths. Omitted lists every series the vessel has. A path the
+   * vessel has no series for is simply absent from the answer -- never
+   * created, never an error.
+   */
+  paths?: readonly string[]
+  vesselId: string
+}
+
+export interface SeriesListResult {
+  /** Ordered by `path`. */
+  series: ResolvedSeries[]
+  truncated: boolean
+}
+
 export interface NumericPoint {
   /** 0 primary, 1 shadow -- docs/04 `installation_role`. */
   installationRole?: number
@@ -204,6 +236,7 @@ export interface RetentionResult {
 
 export interface TelemetryHistoryStore {
   applyRetention(policy: RetentionPolicyInput): Promise<RetentionResult>
+  listSeries(query: SeriesListQuery): Promise<SeriesListResult>
   queryRollup(query: RollupQuery): Promise<RollupResult>
   queryTrack(query: TrackQuery): Promise<TrackResult>
   resolveSeries(descriptors: readonly SeriesDescriptor[]): Promise<ResolvedSeries[]>

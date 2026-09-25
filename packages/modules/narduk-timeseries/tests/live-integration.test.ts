@@ -215,6 +215,31 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     expect(result.droppedRollupsOlderThan['1m']).toBeInstanceOf(Date)
   }, 120_000)
 
+  it('lists the series a write created, and creates none for a path it is asked about', async () => {
+    const store = createTimescaleHistoryStore({ executor: client })
+    await store.writeNumeric([
+      {
+        path: 'environment.depth.belowTransducer',
+        ts: new Date(Date.now() - 60_000),
+        unit: 'm',
+        value: 4.2,
+        vesselId,
+      },
+    ])
+
+    const all = await store.listSeries({ vesselId })
+    expect(all.series.map((series) => series.path)).toContain('environment.depth.belowTransducer')
+    expect(all.truncated).toBe(false)
+
+    const some = await store.listSeries({
+      paths: ['environment.depth.belowTransducer', 'never.recorded'],
+      vesselId: vesselId.toUpperCase(),
+    })
+    expect(some.series.map((series) => series.path)).toEqual(['environment.depth.belowTransducer'])
+    const after = await store.listSeries({ vesselId })
+    expect(after.series.map((series) => series.path)).not.toContain('never.recorded')
+  }, 60_000)
+
   it('round-trips a track batch through a decimated read', async () => {
     const store = createTimescaleHistoryStore({ executor: client })
     const start = new Date(Date.now() - 60 * 60 * 1000)

@@ -276,6 +276,7 @@ export function createRootPackageManifest(
         : {
             'db:migrate:local': 'pnpm --filter web run db:migrate:local',
             'db:migrate:remote': 'pnpm --filter web run db:migrate:remote',
+            'dev:seed': 'pnpm --filter web run dev:seed',
             'db:status:production': 'pnpm --filter web run db:status:production',
             'db:status:preview': 'pnpm --filter web run db:status:preview',
           }),
@@ -581,6 +582,9 @@ export function createWebPackageManifest(
               'narduk-app db migrate --config migrations.sources.json --database ' +
               appName +
               '-db --remote',
+            // Local only and credential-free (narduk-libs#378): migrate the
+            // local D1, then load seed/ through Wrangler local mode.
+            'dev:seed': 'pnpm run db:migrate:local && narduk-app dev:seed',
           }),
       deploy: 'narduk-app deploy deploy',
       'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
