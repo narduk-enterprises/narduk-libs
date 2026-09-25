@@ -65,11 +65,16 @@ describe('requireCronAuth', () => {
   })
 
   it('does not compare the secret with a short-circuiting operator', () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../runtime/server/utils/cron.ts'),
-      'utf8',
-    )
-    expect(source).not.toMatch(/token\s*!==?\s*cronSecret|cronSecret\s*!==?\s*token/)
-    expect(source).toContain('timingSafeEqualText(token, cronSecret)')
+    const utils = join(dirname(fileURLToPath(import.meta.url)), '../runtime/server/utils')
+    // requireCronAuth delegates to the shared-secret guard (#979).
+    expect(readFileSync(join(utils, 'cron.ts'), 'utf8')).toContain('requireSharedSecret(event, {')
+    const source = readFileSync(join(utils, 'shared-secret.ts'), 'utf8')
+    expect(source).not.toMatch(/presented\s*!==?\s*secret|secret\s*!==?\s*presented/)
+    expect(source).toContain('timingSafeEqualText(presented, secret)')
+  })
+
+  it('answers 500 when CRON_SECRET is unset outside dev', () => {
+    runtime.cronSecret = ''
+    expect(statusOf(`Bearer ${SECRET}`)).toBe(500)
   })
 })

@@ -1,5 +1,81 @@
 # @narduk-enterprises/narduk-core
 
+## 2.15.0
+
+### Minor Changes
+
+- f63937e: New `@narduk-enterprises/narduk-core/server/scheduled-jobs`, the
+  Cloudflare cron dispatcher that seven apps hand-rolled (#990).
+  `defineScheduledJobs()` is one Nitro `cloudflare:scheduled` plugin,
+  `runScheduledJobs()` serves a plain Worker's `scheduled`, and
+  `declaredCrons()` / `cronParity()` check the jobs against wrangler
+  `triggers.crons`. A job runs only on a cron it declares, and each job runs
+  behind its own error boundary under `Promise.allSettled`. One failing job
+  therefore no longer skips the others, as Nitro's serial hooks did when
+  operator-portal's export stopped its retention prune. An optional D1 lease
+  (compare-and-swap upsert, released by lease id; `SCHEDULED_JOB_LEASES_SQL`)
+  keeps a cron run and a manual trigger from overlapping.
+
+### Patch Changes
+
+- 47f7131: A key minted by another API key can no longer outlive it
+  (narduk-libs#920). `POST /api/auth/api-keys` from an API-key caller clamps a
+  child with no `expiresInDays` to the calling key's expiry, and refuses with
+  403 an explicit expiry past it, or `null` under a key that expires. A `*` key
+  can no longer renew itself for another 90 days before it expires. Session
+  callers are unchanged. narduk-core's `AuthUser` gains an optional
+  `apiKey: { id, expiresAt }` naming the key behind an `api-key` principal.
+- f17ce87: Each `createAppDatabase()` accessor now memoizes its own per-request
+  Drizzle instance. They used to share one `event.context._appDb` slot, so
+  whichever accessor ran first on a request fixed the schema for every later
+  one. On signed-in requests that was narduk-auth's `useAuthBridgeDatabase`,
+  from its session middleware, so the app's `useAppDatabase(event)` got auth's
+  schema and its relational queries could not see the app's tables (#919).
+  `event.context._appDb` is no longer written; the type stays, marked
+  deprecated.
+- 02b999f: New `@narduk-enterprises/narduk-core/server/utils/shared-secret`:
+  `requireSharedSecret(event, { secretKey, fallback?, header?, unsetStatus?, rejectStatus?, rejectMessage? })`
+  checks any static inbound secret in constant time, `hasSharedSecret` is its
+  non-throwing twin for "session OR token" guards, and `timingSafeEqualText` is
+  exported (narduk-libs#979). `requireCronAuth` is now a wrapper over it and
+  behaves as before.
+- 6a12081: `requireCronAuth` now compares the bearer token with `CRON_SECRET` in
+  constant time instead of with `!==`, which exits at the first differing
+  character (narduk-libs#871).
+- 5ed9665: `withD1Cache` now hands its stale-window background refresh to the
+  request's `waitUntil`, trying `event.waitUntil`, then the Cloudflare
+  `ExecutionContext`, then `event.context.waitUntil`. Before, a Worker could
+  cancel the refresh once the response was sent, so the row stayed stale and
+  every request in the window started another refresh that could also be
+  dropped. `_meta.cachedAt` now reports when the served value was written
+  (`expires_at` minus `ttlSeconds`) instead of the time of the current request.
+- 5de0ec4: The shared `narduk/imports` block sets
+  `import-x/ignore: ['node_modules']`, so `import-x/no-cycle`, `named`,
+  `default` and `export` no longer parse installed packages' sources and type
+  trees. In narduk-core that walk held about 3.4 GB of heap: peak RSS falls from
+  5.2 GB to 1.8 GB, lint time from about 85 s to 28 s, and the messages are
+  identical. A cycle cannot run through an installed package, and TypeScript
+  already checks named and default imports from one (#789). narduk-core's `lint`
+  script drops its 4096 MB heap stopgap and runs under the repo's 3072 MB
+  default again.
+- ffae997: The runtime-env readers now accept wrangler `vars` that are JSON
+  booleans or numbers. Workers expose those on `env` as JS values, not strings,
+  and the readers used to treat them as empty.
+
+  - `"NUXT_PUBLIC_ALLOW_GEOLOCATION": true` now reads as `true`. It used to read
+    as `false` and skip the runtime-config fallback.
+  - A number now reads as its string form.
+  - An object or array var, or a value `readRuntimeBoolean` cannot recognise,
+    now falls through to the runtime-config fallback instead of returning
+    `defaultValue` or an empty string.
+
+- 0ab6fb1: `broadcastSSE` now removes a connection whose write rejects, which is
+  how a closed or errored stream reports a client that went away. It used to
+  catch only a synchronous throw, so a dead connection stayed on its channel and
+  every later broadcast raised another unhandled rejection.
+- Updated dependencies [8b0e555]
+  - @narduk-enterprises/narduk-platform@2.2.0
+
 ## 2.14.1
 
 ### Patch Changes

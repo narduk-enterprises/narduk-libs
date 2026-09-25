@@ -15,6 +15,7 @@ interface NuxtKitMocks {
   addComponent: ReturnType<typeof vi.fn>
   addComponentsDir: ReturnType<typeof vi.fn>
   addImports: ReturnType<typeof vi.fn>
+  addPlugin: ReturnType<typeof vi.fn>
 }
 
 /**
@@ -37,18 +38,20 @@ function mockNuxtKit(): NuxtKitMocks {
   // reads as a different failure than the one that matters.
   const addComponentsDir = vi.fn()
   const addImports = vi.fn()
+  const addPlugin = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
     addComponent,
     addComponentsDir,
     addImports,
+    addPlugin,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
   }))
 
-  return { addComponent, addComponentsDir, addImports }
+  return { addComponent, addComponentsDir, addImports, addPlugin }
 }
 
 function mockRegistry(components: readonly NeComponentRegistration[]) {
@@ -63,7 +66,10 @@ function makeNuxt(appConfig: Record<string, unknown> = {}, css: string[] = []) {
 }
 
 interface ModuleOptions {
+  accent?: string
   components?: boolean
+  sections?: unknown[]
+  structure?: string
   theme?: boolean
 }
 
@@ -381,5 +387,76 @@ describe('narduk-shell theme wiring', () => {
     expect(manifest.exports['./theme.css']).toBe('./theme.css')
     expect(manifest.files).toContain('theme.css')
     expect(statSync(join(packageRoot, 'theme.css')).size).toBeGreaterThan(0)
+  })
+})
+
+describe('narduk-shell NeAppShell options (item 18, narduk-libs#265)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.doUnmock('../src/registry')
+  })
+
+  const SECTIONS = [{ id: 'operate', label: 'Operate', items: [{ label: 'Overview', to: '/' }] }]
+
+  it('merges accent, structure and sections into app.config.nardukShell', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup(
+      { accent: '#7c3aed', sections: SECTIONS, structure: '#111827', theme: false },
+      nuxt,
+    )
+
+    expect(nuxt.options.appConfig).toEqual({
+      nardukShell: { accent: '#7c3aed', sections: SECTIONS, structure: '#111827' },
+    })
+  })
+
+  it('merges them as a default: a value already in app.config wins', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt({ nardukShell: { accent: '#be123c' } })
+
+    await module_.setup({ accent: '#7c3aed', structure: '#111827', theme: false }, nuxt)
+
+    expect(nuxt.options.appConfig).toEqual({
+      nardukShell: { accent: '#be123c', structure: '#111827' },
+    })
+  })
+
+  it('writes no nardukShell key when none of the options is set', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup({ theme: false }, nuxt)
+
+    expect(nuxt.options.appConfig).toEqual({})
+  })
+
+  it('registers the brand plugin, which renders nothing when no brand is set', async () => {
+    const { addPlugin } = mockNuxtKit()
+    const module_ = await loadModule()
+
+    await module_.setup({ components: true }, makeNuxt())
+
+    expect(addPlugin).toHaveBeenCalledTimes(1)
+    const [path] = addPlugin.mock.calls[0] as [string]
+    expect(path.startsWith('/')).toBe(true)
+    expect(path).toContain('/src/runtime/plugins/shell-brand')
+  })
+
+  it('auto-imports useNardukShellSections, even with components disabled', async () => {
+    for (const components of [true, false]) {
+      vi.resetModules()
+      const { addImports } = mockNuxtKit()
+      const module_ = await loadModule()
+
+      await module_.setup({ components }, makeNuxt())
+
+      const call = importCall(addImports, 'useNardukShellSections')
+      expect(call.from).toContain('/src/runtime/composables/use-narduk-shell-sections')
+    }
   })
 })

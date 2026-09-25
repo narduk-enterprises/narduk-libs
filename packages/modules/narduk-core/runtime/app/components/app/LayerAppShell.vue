@@ -2,6 +2,14 @@
 /**
  * A highly configurable application shell that provides the default layout structure.
  * Wraps content in a Nuxt UI <UApp> and provides slots for the header, main content, and footer.
+ *
+ * @deprecated Use `NeAppShell` from `@narduk-enterprises/narduk-shell`
+ * instead (components backlog item 18, narduk-libs#265). Deprecated
+ * 2026-09-25 under decision D4 and removed in the next narduk-core major;
+ * behaviour is unchanged until then. No runtime warning: narduk-core's own
+ * `app.vue` renders it, so a warning would fire in apps that never chose
+ * this component. The migration mapping is in this package's README under
+ * "Deprecated components".
  */
 </script>
 

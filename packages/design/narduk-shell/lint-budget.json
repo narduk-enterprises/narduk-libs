@@ -3,6 +3,7 @@
   "rules": {
     "@typescript-eslint/array-type": 11,
     "@typescript-eslint/consistent-type-definitions": 1,
+    "narduk/require-client-only-hydration-sensitive": 1,
     "perfectionist/sort-imports": 1,
     "perfectionist/sort-interfaces": 1,
     "perfectionist/sort-object-types": 1,

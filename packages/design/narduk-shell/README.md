@@ -58,7 +58,12 @@ extends `NePager` with a page-size select and a “Show more” mode;
 ships `NeMeter`, and
 [narduk-libs#602](https://github.com/narduk-enterprises/narduk-libs/issues/602)
 adds the `--ne-hatch` unreported treatment that `NeMeter` and `NeKpiTile` render
-for a figure with no producer. Item 21
+for a figure with no producer. Item 18
+([narduk-libs#265](https://github.com/narduk-enterprises/narduk-libs/issues/265))
+ships `NeAppShell`, the opt-in sectioned rail, with `useNardukShellSections()`
+and the `accent` / `structure` / `sections` module options, and deprecates
+narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
+in its favour. Item 21
 ([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268))
 ships the marketing sections — `NeHero`, `NeFeatureGrid`, `NeCta` and
 `NeMarketingFooter`, thin themed wrappers over `UPageHero`, `UPageGrid` +
@@ -101,9 +106,43 @@ export default defineNuxtConfig({
     // `false` leaves the app on Nuxt UI's own look and is the escape hatch for
     // an app with a finished design era of its own that only wants the markup.
     theme: true,
+    // The two brand hooks, as config. Each sets its token app-wide, teleported
+    // overlays included; unset sets nothing. See "Overriding: the two brand
+    // hooks" below.
+    accent: '#1f7a76',
+    structure: '#10343a',
+    // NeAppShell's rail. Seeds useNardukShellSections(); see NeAppShell below.
+    sections: [
+      {
+        id: 'operate',
+        label: 'Operate',
+        items: [{ label: 'Overview', to: '/' }],
+      },
+    ],
   },
 })
 ```
+
+`accent`, `structure` and `sections` reach the runtime through `app.config`,
+under the `nardukShell` key, merged as a default (`defu`) — so the app's own
+`app/app.config.ts` wins over the module option:
+
+```ts
+// app/app.config.ts
+export default defineAppConfig({
+  nardukShell: { accent: '#7c3aed' },
+})
+```
+
+Scalars (`accent`, `structure`) are replaced by the app's value. `sections` is
+an array, and Nuxt merges array values in `app.config` by concatenating them:
+sections set both in `nuxt.config.ts` and in `app.config.ts` all render, the
+app's first. To replace the module's sections instead, give `app.config.ts` the
+function form, which Nuxt treats as a replacement:
+`nardukShell: { sections: () => [...] }`. Setting the rail in one place avoids
+the question. Only the options you set are written; an app that sets none gets
+no `nardukShell` key. These three are independent of `theme` and `components`,
+and `useNardukShellSections()` is auto-imported even with `components: false`.
 
 With `theme` on, the module does exactly two things:
 
@@ -324,6 +363,47 @@ what happens when nobody does).
 To follow Nuxt UI's `primary` alias instead of a literal, write
 `--ne-accent: var(--ui-primary)` and set `ui.colors.primary` in
 `app/app.config.ts`.
+
+#### The config form: `nardukShell.accent` / `.structure`
+
+When one value per token is enough, set it as a module option (or in
+`app.config.nardukShell`) instead of writing CSS:
+
+```ts
+nardukShell: { accent: '#1f7a76', structure: '#10343a' }
+```
+
+The module's brand plugin reads the values from `app.config` and puts one
+`<style>` in the document head, in the server's first paint:
+
+```css
+:root:root:root,
+:root .light,
+:root .dark {
+  --ne-accent: #1f7a76;
+  --ne-structure: #10343a;
+}
+```
+
+- **Why the head.** Nuxt UI teleports overlays (`UModal`, `USlideover`, the
+  shell's own mobile drawer) to `<body>`, outside every component. A rule on the
+  document root reaches them; a style on a component's root would stop at that
+  component.
+- **Why that selector.** `:root:root:root` (specificity 0,3,0) outranks every
+  `theme.css` selector that can match `<html>` — `:root`, `.light`, `.dark` and
+  `:root[data-ne-scheme='auto']` — without `!important`, and `:root .light` /
+  `:root .dark` outrank a scheme-pinned subtree's own class. An app stylesheet
+  can still beat it with a more specific selector.
+- **One value for both schemes.** The option is a single colour and serves light
+  and dark alike; `--ne-accent-soft` and `--ne-accent-ink` are not touched. For
+  a separate dark-mode value, or to set the soft and ink tokens, use the CSS
+  form above. The contrast floor applies either way.
+- **Values are colour values only**: hex, a colour function (`oklch()`,
+  `color-mix()`), a `var()` or a keyword. A value containing `;`, braces,
+  quotes, `<` / `>` or a backslash is ignored (with a warning in development)
+  rather than written into the stylesheet.
+- **Neither set, nothing set.** With no `accent` or `structure`, the plugin
+  writes no style at all and `theme.css`'s defaults stand.
 
 ### What is deliberately not themed
 
@@ -2371,6 +2451,153 @@ import type {
   NeMeterVariant,
 } from '@narduk-enterprises/narduk-shell'
 ```
+
+### NeAppShell
+
+The application frame: a left rail of labelled sections, a navbar row, and the
+page. Promoted from operator-portal's `app/layouts/default.vue` (plan decision
+D2) and built on Nuxt UI's dashboard primitives — `UDashboardGroup`,
+`UDashboardSidebar`, `UDashboardPanel`, `UDashboardNavbar` and one
+`UNavigationMenu` per section.
+
+- **Sections are labelled and always expanded.** Not a tree, not icon-only, and
+  nothing collapses. The rail is one `nav` landmark (`navLabel`), and each
+  section is a `role="group"` named by its label.
+- **Active comes from the router.** Every item is a `to`; the item that lights
+  is the one vue-router matches against the current route (the link's own active
+  state, surfaced as `aria-current="page"` and `data-active`). A parent route
+  stays active on its nested child routes. There is no `active` input.
+- **The drawer exists only below the breakpoint.** At Nuxt UI's `lg` (1024px)
+  and up the rail is a fixed 14.5rem column. Below it the rail is hidden and a
+  toggle in the navbar row opens the same rail in a slide-over, which closes on
+  navigation.
+- **Arrow keys walk the rail.** With focus on a rail link, ArrowDown / ArrowUp
+  move to the next / previous link across section boundaries, wrapping; Home /
+  End go to the first / last. Focus only: every link stays in the Tab order and
+  nothing navigates until Enter.
+- **One `main`.** The page renders inside the shell's `<main>`, and a skip link
+  (visible on focus) jumps to it.
+
+The shell is **opt-in** (plan decision D3). The module registers the component
+but no layout, and `create-narduk-app` scaffolds nothing: an app that wants it
+writes it in its own layout. It does no auth and no route guarding.
+
+#### Example
+
+```vue
+<!-- app/layouts/default.vue -->
+<template>
+  <NeAppShell nav-label="Portal">
+    <template #rail-top>
+      <AppWordmark />
+    </template>
+    <template #rail-bottom>
+      <AccountMenu />
+    </template>
+    <template #navbar>
+      <UBreadcrumb :items="crumbs" />
+    </template>
+    <template #navbar-right>
+      <UButton
+        icon="i-lucide-search"
+        color="neutral"
+        variant="ghost"
+        aria-label="Search"
+      />
+    </template>
+
+    <slot />
+  </NeAppShell>
+</template>
+```
+
+```ts
+// nuxt.config.ts
+nardukShell: {
+  sections: [
+    {
+      id: 'operate',
+      label: 'Operate',
+      items: [
+        { label: 'Overview', to: '/', icon: 'i-lucide-layout-dashboard' },
+        { label: 'Runners', to: '/runners', icon: 'i-lucide-server', badge: 3 },
+      ],
+    },
+    { id: 'settings', label: 'Settings', items: [{ label: 'Access', to: '/settings/access' }] },
+  ],
+}
+```
+
+#### Props
+
+| Prop            | Type                           | Default             | Description                                                                                   |
+| --------------- | ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------- |
+| `variant`       | `'rail'`                       | `'rail'`            | The shell's shape. `'rail'` is the only value today; reflected as `data-variant` on the root. |
+| `sections`      | `readonly NeAppShellSection[]` | shared state        | The rail's sections. Omitted, the shell renders `useNardukShellSections()`.                   |
+| `navLabel`      | `string`                       | `'Main'`            | The rail `nav`'s accessible name.                                                             |
+| `skipLinkLabel` | `string`                       | `'Skip to content'` | Text of the skip link to the page's `<main>`.                                                 |
+
+#### Slots
+
+| Slot           | Description                                                                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
+| `default`      | The page, rendered inside the shell's `<main>`.                                                           |
+| `rail-top`     | Top of the rail: the logo or app switcher. No header is drawn when empty.                                 |
+| `rail-bottom`  | Bottom of the rail: the user / account control. No footer is drawn when empty.                            |
+| `navbar`       | Left of the navbar row: breadcrumbs, a context line. The page's `h1` belongs to the page, not the navbar. |
+| `navbar-right` | Right of the navbar row: search, page actions. With neither navbar slot, the row shows only below `lg`.   |
+
+The rail slots render in the desktop column and again in the mobile slide-over
+while it is open, so their content should not carry element ids.
+
+#### Events
+
+None.
+
+#### `useNardukShellSections()`
+
+Auto-imported. Returns the rail's sections as `Ref<NeAppShellSection[]>`: Nuxt
+`useState`, so it is shared by every caller in a request, serialised into the
+payload, and hydrated on the client without being re-seeded. It is seeded once
+per request from `app.config.nardukShell.sections` (a copy — mutating the state
+never edits the config), and after that it is the app's: pushing, removing or
+editing a section re-renders the rail.
+
+```ts
+// app/plugins/admin-rail.ts
+export default defineNuxtPlugin(() => {
+  const { isAdmin } = useSession()
+  if (isAdmin.value) {
+    useNardukShellSections().value.push({
+      id: 'admin',
+      label: 'Admin',
+      items: [{ label: 'Users', to: '/admin/users' }],
+    })
+  }
+})
+```
+
+A `sections` prop overrides the shared state for that one shell instance.
+
+#### Types
+
+Exported from the package root:
+
+```ts
+import type {
+  NeAppShellAppConfig, // app.config.nardukShell: { accent?, structure?, sections? }
+  NeAppShellItem, // { label: string; to: string; icon?: string; badge?: string | number }
+  NeAppShellProps,
+  NeAppShellSection, // { id: string; label: string; items: NeAppShellItem[] }
+  NeAppShellVariant, // 'rail'
+} from '@narduk-enterprises/narduk-shell'
+```
+
+#### Supersedes
+
+narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
+are deprecated in favour of `NeAppShell` and are removed in the next narduk-core
+major. Their behaviour is unchanged until then.
 
 ### NeHero
 

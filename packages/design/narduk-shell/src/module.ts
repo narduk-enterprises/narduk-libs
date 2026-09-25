@@ -1,4 +1,4 @@
-import { addComponent, addImports, createResolver, defineNuxtModule } from '@nuxt/kit'
+import { addComponent, addImports, addPlugin, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { defu } from 'defu'
 
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
@@ -8,6 +8,11 @@ import {
   type NuxtUiSourcesHost,
 } from './nuxt-ui-sources'
 import { NE_SHELL_COMPONENTS } from './registry'
+
+import type {
+  NeAppShellAppConfig,
+  NeAppShellSection,
+} from './runtime/components/ne-app-shell-types'
 
 /**
  * The Nuxt module definition — narduk-libs#295.
@@ -53,6 +58,22 @@ export interface NardukShellModuleOptions {
    * has its own finished design era and only wants the markup.
    */
   theme?: boolean
+  /**
+   * Sets the `--ne-accent` brand token app-wide — one CSS colour value, e.g.
+   * `'#1f7a76'` or `'var(--ui-primary)'`. Unset (the default) overrides
+   * nothing. Reaches teleported overlays too: see the README's "Brand
+   * overrides" for the mechanism. Components backlog item 18
+   * (narduk-libs#265).
+   */
+  accent?: string
+  /** Sets the `--ne-structure` brand token app-wide. Same rules as `accent`. */
+  structure?: string
+  /**
+   * The `NeAppShell` rail's sections. Seeds `useNardukShellSections()`, which
+   * the app can then mutate at runtime. Unset means an empty rail until the
+   * app adds sections itself.
+   */
+  sections?: NeAppShellSection[]
 }
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
@@ -110,6 +131,28 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       )
     }
 
+    // The shell's runtime options (item 18, narduk-libs#265) travel to the app
+    // through app.config under `nardukShell`, merged as a DEFAULT exactly like
+    // the preset above: Nuxt merges the app's own `app/app.config.ts` over
+    // this inline config, so the app's file wins. Independent of `theme`:
+    // `sections` is navigation, not styling. Only keys the app actually set
+    // are written, so an app that uses none of them gets no `nardukShell` key.
+    const shellAppConfig: NeAppShellAppConfig = {}
+    if (options.accent !== undefined) shellAppConfig.accent = options.accent
+    if (options.structure !== undefined) shellAppConfig.structure = options.structure
+    if (options.sections !== undefined) shellAppConfig.sections = options.sections
+    if (Object.keys(shellAppConfig).length > 0) {
+      nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {
+        nardukShell: shellAppConfig,
+      })
+    }
+
+    // Applies `accent` / `structure` as one head <style> on `:root`, read from
+    // app.config at runtime so an app.config.ts override is honoured. Always
+    // installed, because app.config.ts can set the tokens without nuxt.config;
+    // with neither set it renders no style at all.
+    addPlugin(resolver.resolve('./runtime/plugins/shell-brand'))
+
     // Tailwind and Nuxt UI's detection see layers only, and this is a module:
     // without this, utilities only the suite uses are never generated in the
     // app (narduk-libs#978). Above the `components === false` return, since
@@ -146,6 +189,13 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     addImports({
       name: 'useConfirm',
       from: resolver.resolve('./runtime/composables/use-confirm'),
+    })
+    // Plain shared state (useState), no component involved: an app can seed
+    // or mutate the rail's sections even with `components: false` and its own
+    // import of NeAppShell.
+    addImports({
+      name: 'useNardukShellSections',
+      from: resolver.resolve('./runtime/composables/use-narduk-shell-sections'),
     })
 
     if (options.components === false) return

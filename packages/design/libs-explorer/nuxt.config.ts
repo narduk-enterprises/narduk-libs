@@ -15,7 +15,15 @@ export default defineNuxtConfig({
   ui: { fonts: false },
   nitro: {
     preset: 'static',
-    prerender: { routes: ['/'], crawlLinks: true, failOnError: true },
+    prerender: {
+      routes: ['/'],
+      crawlLinks: true,
+      failOnError: true,
+      // A demo's own destinations (NeAppShell's rail) live under /example/:
+      // they are the demo app's routes, not the explorer's, so the dead-link
+      // crawl skips them rather than failing on them.
+      ignore: ['/example/'],
+    },
   },
   app: {
     head: {

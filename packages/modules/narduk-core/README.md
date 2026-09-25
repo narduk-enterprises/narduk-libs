@@ -479,6 +479,35 @@ directories) and `components`, it prepends an `@source` per directory to Nuxt
 UI's `ui.css` and extends the detection list, once every module is installed.
 narduk-auth uses it for its `app/` directory.
 
+## Shared-secret guard
+
+`@narduk-enterprises/narduk-core/server/utils/shared-secret` checks a static
+secret on an inbound request (an ingest token, a scheduler secret, a diagnostics
+key) in constant time (narduk-libs#979). `requireCronAuth` is a wrapper over it
+for `CRON_SECRET`.
+
+```ts
+import { requireSharedSecret } from '@narduk-enterprises/narduk-core/server/utils/shared-secret'
+
+requireSharedSecret(event, {
+  secretKey: 'RECAP_INGEST_TOKEN',
+  fallback: useRuntimeConfig(event).recapIngestToken,
+  unsetStatus: 503,
+})
+```
+
+- `secretKey` is read with `readRuntimeString`, so a Worker env binding wins
+  over `fallback`.
+- `header` defaults to `authorization`, where a case-insensitive `Bearer` scheme
+  is stripped. Any other header is read raw.
+- An unset secret passes in dev and fails closed elsewhere with `unsetStatus`
+  (default 500). A mismatch answers `rejectStatus` (default 401) with
+  `rejectMessage`.
+- `hasSharedSecret(event, options)` never throws and is `false` whenever the
+  secret is unset, for "session OR token" guards:
+  `hasSharedSecret(event, options) || (await requireAdmin(event))`.
+- `timingSafeEqualText(a, b)` is the byte-wise compare underneath.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
@@ -2324,6 +2353,62 @@ const data = listPublishedStations(product, result.data)
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
 
+## Scheduled jobs: `defineScheduledJobs`
+
+`@narduk-enterprises/narduk-core/server/scheduled-jobs` is the Cloudflare cron
+dispatcher (narduk-libs#990). You declare jobs with the exact cron expressions
+they answer to. Each trigger runs only the jobs that declare `controller.cron`,
+each behind its own error boundary and logged like narduk-logging's `logJob`.
+Nothing it returns rejects.
+
+```ts
+// server/plugins/scheduled-jobs.ts
+import { defineScheduledJobs } from '@narduk-enterprises/narduk-core/server/scheduled-jobs'
+
+export const jobs = [
+  {
+    name: 'estate-export',
+    cron: '0 3 * * *',
+    run: ({ env, log }) => exportEstate(env, log),
+  },
+  {
+    name: 'estate-retention',
+    cron: '0 3 * * *',
+    run: ({ env }) => pruneOldRows(env),
+  },
+]
+
+export default defineScheduledJobs<Env>(jobs)
+```
+
+- **One hook, not one per job.** Nitro runs `cloudflare:scheduled` hooks in
+  series, so the first hook that throws skips every later one: a failed export
+  silently stopped the retention prune. The dispatcher runs the matched jobs
+  under `Promise.allSettled` and resolves, so neither its jobs nor any other
+  hook get skipped.
+- **Exact match only.** A cron that no job declares is a logged no-op, never
+  "run everything". An app whose job ran on every trigger must now declare its
+  cron.
+- **Parity with wrangler.** `declaredCrons(jobs)` lists what the jobs answer to.
+  `cronParity(jobs, wrangler.triggers.crons)` returns `unscheduled` (declared,
+  but wrangler never fires it, so the job is dead) and `unhandled` (fired, but
+  no job answers). Assert both are empty in a unit test.
+- **Optional D1 lease.** `lease: { d1: (env) => env.DB, key?, ttlSeconds }`
+  takes the lease with one conditional upsert (compare-and-swap) and releases it
+  by lease id, so a cron run and a manual trigger sharing `key` cannot overlap.
+  A run that finds it held returns
+  `{ status: 'skipped', skipped: 'lease-held' }`. If the lease cannot be taken
+  (for example, the table is missing), the job fails closed and does not run.
+  Add `SCHEDULED_JOB_LEASES_SQL` (table `narduk_scheduled_job_leases`) to the
+  app's migrations.
+- **Plain Workers.** Call
+  `ctx.waitUntil(runScheduledJobs(controller, env, jobs))` from `scheduled`.
+  `runScheduledJobs` returns `{ cron, outcomes }`, one `succeeded`/`failed`/
+  `skipped` entry per matched job.
+
+It lives outside `server/utils`, so it adds no auto-imported names to an app.
+Import it explicitly.
+
 ## Size-capped upstream reads: `readBoundedBody`
 
 The published-data client (`fetchNardukDataJson`) reads artifact bytes through
@@ -2635,3 +2720,40 @@ async function handleSave(data: { name: string }) {
   </NeSettingsPage>
 </template>
 ```
+
+### `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell` — deprecated, removed in the next major
+
+Superseded by `NeAppShell` and `useNardukShellSections()` in
+[`@narduk-enterprises/narduk-shell`](../../design/narduk-shell/README.md#neappshell)
+(components backlog item 18,
+[narduk-libs#265](https://github.com/narduk-enterprises/narduk-libs/issues/265);
+decision D4: deprecate now, remove in the next narduk-core major).
+
+Behaviour is unchanged in this release: all three render exactly as they did,
+and core's own `app.vue` and `dashboard` layout (and narduk-auth's `auth` and
+`blank` layouts) keep using them. There is deliberately **no** runtime warning,
+unlike the other deprecations above: an app gets these shells from core's own
+`app.vue` and layouts without ever naming them, so a warning would blame apps
+that made no choice. The `@deprecated` JSDoc on each component gives editors and
+`vue-tsc` the strike-through and the pointer.
+
+`NeAppShell` is opt-in: it is not registered as a layout and nothing scaffolds
+it. An app migrates by writing it in its own layout.
+
+**Migration mapping**
+
+| Before                                      | `NeAppShell`                           | Notes                                                                                                      |
+| ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `LayerDashboardShell` `navItems`            | `sections` (or `nardukShell.sections`) | A flat list becomes one or more labelled sections: `[{ id, label, items: [{ label, to, icon }] }]`.        |
+| `app.config.dashboard.navItems`             | `useNardukShellSections()`             | Shared, SSR-safe state seeded from `nardukShell.sections`; mutate it to add a section at runtime.          |
+| `navItems[].requiresAdmin`                  | — (the app's own logic)                | The shell does no auth. Push the admin section into `useNardukShellSections()` when the session allows it. |
+| sidebar collapse / resize / `sidebarSizing` | — (dropped)                            | The rail is always expanded at a fixed 14.5rem; below `lg` it is a drawer.                                 |
+| header logo and app name                    | `#rail-top`                            |                                                                                                            |
+| `#sidebar-footer` / account menu            | `#rail-bottom`                         | Put `LayerDashboardAccountMenu` (or the app's own) here.                                                   |
+| `#sidebar-info`, `description`              | — (dropped)                            | Put copy in `#rail-bottom` if it is still needed.                                                          |
+| `#navbar-right`, `statusBadges`             | `#navbar-right`                        | Badges become the app's own markup in the slot.                                                            |
+| breadcrumbs in the navbar                   | `#navbar`                              | Render `UBreadcrumb` (or `NePageHeader`'s breadcrumbs) yourself.                                           |
+| default slot                                | default slot                           | Rendered inside the shell's `<main>`, with a skip link to it.                                              |
+| `LayerAppShell` skip link and `<main>`      | built in                               | `UApp` is not part of the shell: keep it in the app's `app.vue`.                                           |
+| `LayerAppShell` `#header` / `#footer`       | — (none today)                         | Page header / footer framing around the shell is an open question, tracked in narduk-libs#389.             |
+| `LayerChromelessShell`                      | — (no shell)                           | A chromeless layout (auth, blank) simply does not render `NeAppShell`.                                     |

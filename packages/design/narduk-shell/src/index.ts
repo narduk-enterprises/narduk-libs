@@ -162,6 +162,21 @@ export type {
   NeMarketingOrientation,
 } from './runtime/components/ne-marketing-types'
 
+/**
+ * The shell's shapes (components backlog item 18, narduk-libs#265): its
+ * props, the `variant` union, and the section / item shapes that the
+ * `nardukShell.sections` option, `app.config.nardukShell` and
+ * `useNardukShellSections()` all share. Types only; `useNardukShellSections`
+ * reaches app code through `addImports`, like `useConfirm`.
+ */
+export type {
+  NeAppShellAppConfig,
+  NeAppShellItem,
+  NeAppShellProps,
+  NeAppShellSection,
+  NeAppShellVariant,
+} from './runtime/components/ne-app-shell-types'
+
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added
 // `./module`, but only for the Nuxt module definition, not for app-facing
