@@ -3024,7 +3024,9 @@ formatCompact(1_234_567) // '1.2M'
 `Intl`'s own compact notation, not stonx's hand-rolled `K`/`M`/`B`/`T` ladder —
 the ladder is English-only. One visible consequence of the plan's signature
 winning: the default is one fraction digit where stonx's was two, so a call site
-that needs the old shape passes `{ digits: 2 }`.
+that needs the old shape passes `{ digits: 2 }`. A `minimumFractionDigits` above
+one raises that default ceiling to match (`{ minimumFractionDigits: 2 }` gives
+`1.23K`) rather than throwing.
 
 ### `formatPercent`
 
@@ -3038,6 +3040,10 @@ formatter defaults the other way, behind a `fromDecimal` flag, so an adoption
 that silently inherited a default would be wrong by a factor of 100 in a
 direction nothing catches. `input` is therefore spelled out at the call site
 rather than inferred.
+
+One fraction digit by default. `digits`, or `minimumFractionDigits` /
+`maximumFractionDigits`, replaces that default, as in the other number
+formatters: `formatPercent(0.5, { maximumFractionDigits: 0 })` is `'50%'`.
 
 ### `formatMoney`
 
