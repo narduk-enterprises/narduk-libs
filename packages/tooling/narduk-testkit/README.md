@@ -636,6 +636,43 @@ narduk-testkit ui analyze output/playwright/visual-audit
 Playwright and Vitest are peer dependencies so each app controls its test runner
 version. The analyzer uses `sharp` as a package runtime dependency.
 
+## Readiness setup test (`e2e/readiness`)
+
+`createNardukPlaywrightPreset` declares a `setup` project matching
+`global.setup.*` that `pr` and `web` depend on. `registerReadinessSetup` is the
+body of that file (narduk-libs#1000), so no spec file needs its own
+`beforeAll(waitForBaseUrlReady + warmUpApp)` guard — the spec files that forget
+it are the ones that flake.
+
+```ts
+// tests/e2e/global.setup.ts
+import { registerReadinessSetup } from '@narduk-enterprises/narduk-testkit/e2e/readiness'
+
+registerReadinessSetup()
+```
+
+It registers one test, `app is ready for e2e navigation`, which:
+
+1. waits for the base URL to answer (`waitForBaseUrlReady`);
+2. polls `GET /api/health` until it answers 200 with JSON whose status (the
+   narduk-core `{ data: { status } }` envelope, or a bare `{ status }`) is `ok`
+   or `degraded`, then runs `expectHealth`;
+3. loads each warm path once (`warmUpApp`), outside any test clock.
+
+| Option           | Default         | Meaning                                                             |
+| ---------------- | --------------- | ------------------------------------------------------------------- |
+| `healthPath`     | `'/api/health'` | Health route; `false` skips the health read.                        |
+| `acceptDegraded` | `true`          | `false` requires `status: 'ok'`.                                    |
+| `expectHealth`   | none            | `(body) => void`; throw to fail (e.g. a publication check).         |
+| `warmPaths`      | `['/']`         | Routes to compile before any test; the first cold load can take 8s. |
+| `timeoutMs`      | `150_000`       | Budget for base URL + health; warm loads get their own time.        |
+
+An app not on the preset adds a `setup` project matching `global.setup.ts` and
+lists it in its projects' `dependencies` by hand. With a setup project, a
+failing health check skips every test instead of failing them one by one. An app
+that keeps its own setup test can call
+`runReadinessChecks({ baseURL, browser }, options)` for the same sequence.
+
 ## Browser setup and the e2e runner (`narduk-testkit e2e`)
 
 `narduk-testkit e2e` replaces the `scripts/setup-playwright-browsers.mjs` and
