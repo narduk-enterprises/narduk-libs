@@ -248,6 +248,39 @@ Failures throw `TenancyError` with `code` in
 owner of an org can be neither demoted nor removed, including concurrent changes
 to different owners. The final-owner predicate executes inside the mutation.
 
+`TenancyError.message` is log text: it embeds raw org and user ids. **Never
+forward it to a client.** Map the error with
+`@narduk-enterprises/narduk-tenancy/server/utils/tenancy-http` instead:
+
+```ts
+import { withTenancyErrors } from '@narduk-enterprises/narduk-tenancy/server/utils/tenancy-http'
+
+await withTenancyErrors(() => tenancy.createOrg(input), {
+  messages: { conflict: 'That web address is taken.' },
+})
+```
+
+| Code         | Status | `TENANCY_DEFAULT_MESSAGES` sentence             |
+| ------------ | ------ | ----------------------------------------------- |
+| `not_found`  | 404    | That no longer exists. Reload the page and …    |
+| `forbidden`  | 403    | You are not allowed to do that.                 |
+| `conflict`   | 409    | Something changed while you were working. …     |
+| `invalid`    | 400    | That request was not valid.                     |
+| `expired`    | 410    | That has expired.                               |
+| `last_owner` | 409    | An organization must keep at least one owner. … |
+
+`withTenancyErrors(operation, options)` rethrows a `TenancyError` as
+`toTenancyHttpError(error, options)` and passes every other error through. The
+default error is
+`createError({ statusCode, statusMessage: <reason phrase>, message, data: { errorCode: <code>, message } })`.
+Options:
+
+- `messages` — per-call sentences by code, over the defaults;
+- `hideAsNotFound` — codes answered as `not_found` (status and sentence), for a
+  route that must not disclose that something exists
+  (`['forbidden', 'invalid', 'expired']`);
+- `toError(status, code, message)` — build the app's own envelope instead.
+
 ### Invites
 
 `createInvite` returns `{ invite, token }`; the raw token is returned exactly
@@ -300,6 +333,10 @@ export default defineEventHandler(async (event) => {
 `requireOrgRole` throws 401 `{ errorCode: 'unauthenticated' }` when the resolver
 returns no user and 403 `{ errorCode: 'entitlement_denied' }` when the effective
 role is below `minimum`. A support grant never satisfies it.
+
+Both guards accept `unauthenticatedMessage` and `deniedMessage`. When set, the
+401 or 403 also carries that sentence as `data.message` and as the error's
+`message`; the `errorCode` is unchanged.
 
 `requireSupportGrantOrRole` additionally passes an active support grant carrying
 the named `scope`. Use it on read paths only; mutations keep `requireOrgRole`.

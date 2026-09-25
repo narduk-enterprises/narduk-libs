@@ -19,8 +19,10 @@ const DIAGNOSTICS_SCOPE = 'diagnostics:read'
 const VESSEL = { kind: 'vessel', id: 'vessel-1' } as const
 
 interface ThrownH3Error {
-  data?: { errorCode?: string }
+  data?: { errorCode?: string; message?: string }
+  message?: string
   statusCode: number
+  statusMessage?: string
 }
 
 async function thrown(promise: Promise<unknown>): Promise<ThrownH3Error> {
@@ -384,5 +386,72 @@ describe('requireSupportGrantOrRole', () => {
       )
       expect(refused.statusCode).toBe(403)
     }
+  })
+})
+
+describe('guard messages (#981)', () => {
+  it('keeps the bare 401 and 403 when no message is named', async () => {
+    const { org, tenancy } = await seed()
+    const anonymous = await thrown(
+      requireOrgRole(event, {
+        orgId: org.id,
+        minimum: 'viewer',
+        tenancy,
+        resolveUserId: () => null,
+      }),
+    )
+    expect(anonymous.statusMessage).toBe('Unauthorized')
+    expect(anonymous.data).toEqual({ errorCode: TENANCY_UNAUTHENTICATED_ERROR_CODE })
+
+    const denied = await thrown(
+      requireOrgRole(event, {
+        orgId: org.id,
+        minimum: 'admin',
+        tenancy,
+        resolveUserId: () => 'crew-1',
+      }),
+    )
+    expect(denied.statusMessage).toBe('Forbidden')
+    expect(denied.data).toEqual({ errorCode: TENANCY_DENIED_ERROR_CODE })
+  })
+
+  it('carries a named sentence on the 401 and the 403, keeping the error code', async () => {
+    const { org, tenancy } = await seed()
+    const messages = {
+      unauthenticatedMessage: 'Sign in to continue.',
+      deniedMessage: 'Only an admin can change billing.',
+    }
+
+    const anonymous = await thrown(
+      requireOrgRole(event, {
+        orgId: org.id,
+        minimum: 'viewer',
+        tenancy,
+        resolveUserId: () => null,
+        ...messages,
+      }),
+    )
+    expect(anonymous.statusCode).toBe(401)
+    expect(anonymous.statusMessage).toBe('Unauthorized')
+    expect(anonymous.message).toBe('Sign in to continue.')
+    expect(anonymous.data).toEqual({
+      errorCode: TENANCY_UNAUTHENTICATED_ERROR_CODE,
+      message: 'Sign in to continue.',
+    })
+
+    const denied = await thrown(
+      requireSupportGrantOrRole(event, {
+        orgId: org.id,
+        minimum: 'admin',
+        tenancy,
+        resolveUserId: () => 'crew-1',
+        ...messages,
+      }),
+    )
+    expect(denied.statusCode).toBe(403)
+    expect(denied.data).toEqual({
+      errorCode: TENANCY_DENIED_ERROR_CODE,
+      message: 'Only an admin can change billing.',
+    })
   })
 })

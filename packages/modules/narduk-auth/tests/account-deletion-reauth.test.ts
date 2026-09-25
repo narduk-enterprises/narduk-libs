@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   deleted: 0,
   localHashChecks: 0,
   localPasswordHash: null as string | null,
+  sessionCreatedAt: new Date().toISOString(),
+  signOuts: [] as Array<{ scope?: string }>,
   signIns: [] as Array<{ email: string; password: string }>,
   supabasePassword: 'right-password',
   upstreamDeletes: [] as string[],
@@ -85,6 +87,7 @@ vi.mock('../server/lib/app-auth/session', () => ({
   commitSupabaseSessionFromClient: vi.fn(),
   getCurrentSessionUser: async () => state.user,
   getCurrentSupabaseContext: vi.fn(),
+  loadAuthSessionRow: async () => ({ createdAt: state.sessionCreatedAt }),
   revokeUserAuthSessions: vi.fn(),
 }))
 
@@ -96,6 +99,10 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
       return credentials.password === state.supabasePassword
         ? { error: null }
         : { error: { message: 'Invalid login credentials' } }
+    },
+    signOut: async (options: { scope?: string }) => {
+      state.signOuts.push(options)
+      return { error: null }
     },
   }),
   readRuntimeConfigString: (value: unknown, fallback = '') =>
@@ -142,7 +149,9 @@ describe('account deletion re-authentication on the Supabase backend (#923)', ()
     state.deleted = 0
     state.localHashChecks = 0
     state.localPasswordHash = null
+    state.sessionCreatedAt = new Date().toISOString()
     state.signIns = []
+    state.signOuts = []
     state.upstreamDeletes = []
     state.user = { ...SUPABASE_EMAIL_USER }
   })
@@ -187,7 +196,7 @@ describe('account deletion re-authentication on the Supabase backend (#923)', ()
     })
   })
 
-  it('keeps provider-only Supabase accounts on the no-password path', async () => {
+  it('lets a provider-only account that just signed in delete with no password', async () => {
     state.user = { ...SUPABASE_EMAIL_USER, authProviders: ['google'] }
 
     await expect(deleteAccount({})).resolves.toEqual({ success: true })

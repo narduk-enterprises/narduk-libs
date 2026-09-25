@@ -146,7 +146,7 @@ export async function waitForBaseUrlReady(baseUrl: string, timeoutMs = 60_000) {
   throw new Error(`Server at ${baseUrl} did not become ready within ${timeoutMs}ms`)
 }
 
-export async function warmUpApp(browser: Browser, baseUrl: string, path = '/') {
+export async function warmUpApp(browser: Pick<Browser, 'newPage'>, baseUrl: string, path = '/') {
   const page = await browser.newPage()
 
   try {
