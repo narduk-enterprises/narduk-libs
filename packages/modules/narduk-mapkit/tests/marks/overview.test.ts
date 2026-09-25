@@ -61,6 +61,44 @@ describe('mapOverviewCamera (buoys#142)', () => {
     expect(camera?.center.lng).toBeCloseTo(-139.9, 0)
   })
 
+  // narduk-libs#932: a plain min/max put every set straddling +/-180 at a
+  // span of 360 minus its short arc, so it always fell back to Kansas.
+  it('frames a tight cluster that straddles the antimeridian on its own data', () => {
+    const camera = mapOverviewCamera([
+      { lat: -17, lng: 179 },
+      { lat: -18, lng: -179 },
+      { lat: -16, lng: 178 },
+      { lat: -17.5, lng: -178 },
+    ])
+    expect(camera).not.toEqual(NORTH_AMERICA_OVERVIEW)
+    expect(Math.abs(camera!.center.lng)).toBeCloseTo(180, 5)
+    expect(camera!.span.lng).toBeCloseTo(4 * 1.25, 5)
+  })
+
+  it('reports the short arc and a normalised centre for a 20-degree crossing set', () => {
+    const camera = mapOverviewCamera([
+      { lat: 50, lng: 170 },
+      { lat: 52, lng: -170 },
+    ])
+    expect(camera).not.toEqual(NORTH_AMERICA_OVERVIEW)
+    expect(camera!.span.lng).toBeCloseTo(20 * 1.25, 5)
+    expect(camera!.center.lng).toBeGreaterThanOrEqual(-180)
+    expect(camera!.center.lng).toBeLessThanOrEqual(180)
+    expect(Math.abs(camera!.center.lng)).toBeCloseTo(180, 5)
+  })
+
+  it('centres a crossing set off the seam on its own middle', () => {
+    // Eight stations from 170E to 176W (a 14-degree arc); the middle is 177E.
+    const camera = mapOverviewCamera(
+      Array.from({ length: 8 }, (_, index) => ({
+        lat: 0,
+        lng: ((170 + index * 2 + 180) % 360) - 180,
+      })),
+    )
+    expect(camera!.center.lng).toBeCloseTo(177, 5)
+    expect(camera!.span.lng).toBeCloseTo(14 * 1.25, 5)
+  })
+
   it('keeps a single station from zooming to a street', () => {
     const camera = mapOverviewCamera([{ lat: 27.5, lng: -84.2 }])
     expect(camera?.center).toEqual({ lat: 27.5, lng: -84.2 })
