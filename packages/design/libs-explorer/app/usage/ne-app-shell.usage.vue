@@ -9,13 +9,13 @@ const sections: NeAppShellSection[] = [
     label: 'Operations',
     items: [
       { label: 'Overview', to: '/', icon: 'i-lucide-layout-dashboard' },
-      { label: 'Alerts', to: '/alerts', icon: 'i-lucide-bell', badge: 3 },
+      { label: 'Alerts', to: '/example/alerts', icon: 'i-lucide-bell', badge: 3 },
     ],
   },
   {
     id: 'settings',
     label: 'Settings',
-    items: [{ label: 'Account', to: '/settings', icon: 'i-lucide-user' }],
+    items: [{ label: 'Account', to: '/example/settings', icon: 'i-lucide-user' }],
   },
 ]
 </script>
