@@ -115,14 +115,17 @@ baseline 190 drained, and the count admitted since the freeze.
   repo only): this repo is public, its CI runs on GitHub-hosted runners, and the
   ruleset makes CI a merge gate, so a local preflight re-runs checks CI will run
   anyway. Before every push, run the affected packages'
-  `pnpm --filter <package> run quality`. Run the full `pnpm run preflight`
-  before pushing only when the diff touches release or CI topology (`.github/`,
-  `scripts/` used by CI, `.changeset/config.json`), the root `package.json`, or
-  the lockfile. Otherwise CI is the full proof: say "full preflight deferred to
-  CI" in the PR body with the package results and timings. The merge gate is
-  unchanged — `verify-pr-gate.py` must print `verdict=GREEN`. Revisit this if
-  the delivery tiers (E9) stop CI from gating merges here, because the local
-  check would then be the only proof.
+  `pnpm --filter <package> run quality`, plus
+  `pnpm --filter <package> run build` for a package that commits its `dist/`
+  (`narduk-mapkit`, `narduk-realtime`): `quality` does not build, and CI fails a
+  stale committed `dist/` on its dist-clean check. Run the full
+  `pnpm run preflight` before pushing only when the diff touches release or CI
+  topology (`.github/`, `scripts/` used by CI, `.changeset/config.json`), the
+  root `package.json`, or the lockfile. Otherwise CI is the full proof: say
+  "full preflight deferred to CI" in the PR body with the package results and
+  timings. The merge gate is unchanged — `verify-pr-gate.py` must print
+  `verdict=GREEN`. Revisit this if the delivery tiers (E9) stop CI from gating
+  merges here, because the local check would then be the only proof.
 - `pnpm install`
 - `pnpm run quality`
 - `pnpm run surface:check` (inside `quality:artifacts`): every component
