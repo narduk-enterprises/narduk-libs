@@ -7,6 +7,9 @@ import { verifyUserPassword } from '#layer/server/utils/password'
 import { clearLayerUserSession } from '#layer/server/utils/user-session'
 import { users } from '#narduk-core/schema'
 
+import { verifySupabaseAccountDeletionCredentials } from '../lib/app-auth/profile'
+import { getAuthConfig } from '../lib/app-auth/supabase-client'
+
 import type { AuthUser } from '#layer/server/utils/auth'
 import type { H3Event } from 'h3'
 
@@ -31,10 +34,16 @@ export interface AccountDeletionBridgeHooks {
    */
   beforeDelete?: (event: H3Event, userId: string) => Promise<void>
   /**
-   * Replaces the local `users.password_hash` check. Supply it when the user's
-   * password lives with an external provider: a Supabase-provisioned user has
-   * no local hash (so the local check would let `{}` through), and a linked
-   * user may keep a stale one (narduk-libs#923). Throw to refuse the deletion.
+   * Replaces the default credential check. Throw to refuse the deletion.
+   *
+   * Without it, a Supabase caller (a Supabase session, or any caller on a
+   * Supabase-backend app) is re-authenticated against Supabase with
+   * `verifySupabaseAccountDeletionCredentials` (narduk-libs#1051): the local
+   * `users.password_hash` is absent for a Supabase-provisioned user (so the
+   * local check would let `{}` through) and may be stale for a linked one
+   * (narduk-libs#923). Everyone else gets the local hash check. Supply this
+   * only to swap in a check of your own, e.g. when the route already
+   * re-authenticated the caller.
    */
   verifyCredentials?: (event: H3Event, input: DeleteAccountBridgeInput) => Promise<void>
 }
@@ -47,6 +56,16 @@ function isForeignKeyConstraintError(error: unknown): boolean {
     typeof error.message === 'string' &&
     /foreign key/i.test(error.message)
   )
+}
+
+function usesSupabaseCredentials(event: H3Event, user: AuthUser): boolean {
+  // A session names its backend; a principal that does not (an API key) takes
+  // the app's, so a Supabase app never falls through to the local hash check.
+  const sessionBackend = (user as { authBackend?: unknown }).authBackend
+  if (sessionBackend === 'supabase' || sessionBackend === 'local') {
+    return sessionBackend === 'supabase'
+  }
+  return getAuthConfig(event).backend === 'supabase'
 }
 
 export async function deleteCurrentUserAccountBridge(
@@ -70,6 +89,8 @@ export async function deleteCurrentUserAccountBridge(
 
   if (hooks?.verifyCredentials) {
     await hooks.verifyCredentials(event, input)
+  } else if (usesSupabaseCredentials(event, user)) {
+    await verifySupabaseAccountDeletionCredentials(event, input)
   } else if (dbUser.passwordHash) {
     if (!input.currentPassword) {
       throw createError({
