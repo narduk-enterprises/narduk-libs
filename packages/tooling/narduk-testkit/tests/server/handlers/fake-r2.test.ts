@@ -359,4 +359,155 @@ describe('createFakeR2Bucket', () => {
       expect(headers.get('cache-control')).toBeNull()
     })
   })
+
+  // narduk-libs#916. Every expectation below was first observed on a real
+  // binding: miniflare 4.20260701.0's R2 (workerd), driven from inside a
+  // Worker for the Headers cases.
+  describe('put() conditions, checksums and Headers metadata', () => {
+    const MD5_OF_BODY = '841a2d689ad86bd1611447453c22c6fc' // md5('body')
+
+    it('treats etagDoesNotMatch "*" as create-if-absent: null, and no write, once the key exists', async () => {
+      const bucket = createFakeR2Bucket()
+      const created = await bucket.put('key', 'one', { onlyIf: { etagDoesNotMatch: '*' } })
+      expect(created?.size).toBe(3)
+
+      await expect(
+        bucket.put('key', 'two', { onlyIf: { etagDoesNotMatch: '*' } }),
+      ).resolves.toBeNull()
+      await expect((await bucket.get('key'))?.text()).resolves.toBe('one')
+    })
+
+    it('writes on a matching etag and resolves null on a stale one', async () => {
+      const bucket = createFakeR2Bucket()
+      const first = (await bucket.put('key', 'one'))!
+
+      await expect(bucket.put('key', 'x', { onlyIf: { etagMatches: 'stale' } })).resolves.toBeNull()
+      const second = await bucket.put('key', 'two', { onlyIf: { etagMatches: first.etag } })
+      expect(second?.etag).not.toBe(first.etag)
+      await expect(
+        bucket.put('key', 'x', { onlyIf: { etagDoesNotMatch: second!.etag } }),
+      ).resolves.toBeNull()
+      await expect((await bucket.get('key'))?.text()).resolves.toBe('two')
+    })
+
+    it.each([
+      ['etagMatches "abc"', { etagMatches: 'abc' }, false],
+      ['etagMatches "*"', { etagMatches: '*' }, false],
+      ['etagDoesNotMatch "abc"', { etagDoesNotMatch: 'abc' }, true],
+      ['uploadedBefore the epoch', { uploadedBefore: new Date(0) }, true],
+      ['uploadedAfter the future', { uploadedAfter: new Date(Date.now() + 1e9) }, false],
+    ] as const)(
+      'decides %s against a missing key as the runtime does',
+      async (_label, onlyIf, writes) => {
+        const bucket = createFakeR2Bucket()
+        const result = await bucket.put('missing', 'x', { onlyIf })
+        expect(result !== null).toBe(writes)
+        expect((await bucket.head('missing')) !== null).toBe(writes)
+      },
+    )
+
+    it('decides uploadedBefore/uploadedAfter against the stored upload time', async () => {
+      const bucket = createFakeR2Bucket({ now: () => new Date('2026-09-25T12:00:00.000Z') })
+      await bucket.put('key', 'one')
+
+      await expect(
+        bucket.put('key', 'x', { onlyIf: { uploadedBefore: new Date(0) } }),
+      ).resolves.toBeNull()
+      await expect(
+        bucket.put('key', 'x', { onlyIf: { uploadedAfter: new Date('2026-09-25T13:00:00.000Z') } }),
+      ).resolves.toBeNull()
+      await expect(
+        bucket.put('key', 'two', { onlyIf: { uploadedAfter: new Date(0) } }),
+      ).resolves.not.toBeNull()
+    })
+
+    it('refuses a quoted etag with the runtime message, and the forms it does not emulate', async () => {
+      const bucket = createFakeR2Bucket()
+      await expect(bucket.put('key', 'x', { onlyIf: { etagMatches: '"abc"' } })).rejects.toThrow(
+        'Conditional ETag should not be wrapped in quotes ("abc").',
+      )
+      await expect(bucket.put('key', 'x', { onlyIf: { etagMatches: 'W/"abc"' } })).rejects.toThrow(
+        /weak conditional etags/,
+      )
+      await expect(
+        bucket.put('key', 'x', { onlyIf: new Headers({ 'if-none-match': '*' }) }),
+      ).rejects.toThrow(/Headers object/)
+      expect(await bucket.head('key')).toBeNull()
+    })
+
+    it('rejects a checksum that does not match the body, with the runtime message and code', async () => {
+      const bucket = createFakeR2Bucket()
+      await expect(bucket.put('key', 'body', { md5: '0'.repeat(32) })).rejects.toThrow(
+        `put: The MD5 checksum you specified did not match what we received.\nYou provided a MD5 checksum with value: ${'0'.repeat(32)}\nActual MD5 was: ${MD5_OF_BODY} (10037)`,
+      )
+      await expect(bucket.put('key', 'body', { sha256: '0'.repeat(64) })).rejects.toThrow(
+        /The SHA-256 checksum you specified did not match[\s\S]*\(10037\)$/u,
+      )
+      await expect(bucket.put('key', 'body', { md5: new Uint8Array(16).buffer })).rejects.toThrow(
+        /MD5 checksum you specified did not match/,
+      )
+      expect(await bucket.head('key')).toBeNull()
+    })
+
+    it('stores the body when the checksum matches, as hex or as bytes', async () => {
+      const bucket = createFakeR2Bucket()
+      await expect(bucket.put('hex', 'body', { md5: MD5_OF_BODY })).resolves.not.toBeNull()
+      await expect(
+        bucket.put('bytes', 'body', { md5: Buffer.from(MD5_OF_BODY, 'hex') }),
+      ).resolves.not.toBeNull()
+      await expect(
+        bucket.put('upper', 'body', { md5: MD5_OF_BODY.toUpperCase() }),
+      ).resolves.not.toBeNull()
+    })
+
+    it('refuses more than one checksum algorithm', async () => {
+      const bucket = createFakeR2Bucket()
+      await expect(bucket.put('key', 'body', { md5: MD5_OF_BODY, sha1: 'x' })).rejects.toThrow(
+        'You cannot specify multiple hashing algorithms.',
+      )
+    })
+
+    it('checks the precondition before the checksum', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'one')
+      await expect(
+        bucket.put('key', 'body', { md5: '0'.repeat(32), onlyIf: { etagDoesNotMatch: '*' } }),
+      ).resolves.toBeNull()
+    })
+
+    it('parses a Headers httpMetadata into R2HTTPMetadata and writes it back', async () => {
+      const bucket = createFakeR2Bucket()
+      await bucket.put('key', 'x', {
+        httpMetadata: new Headers({
+          'cache-control': 'no-store',
+          'content-disposition': 'inline',
+          'content-encoding': 'identity',
+          'content-language': 'en',
+          'content-type': 'text/plain',
+          expires: 'Wed, 21 Oct 2015 07:28:00 GMT',
+          'x-other': 'y',
+        }),
+      })
+
+      const object = await bucket.head('key')
+      expect(object?.httpMetadata).toEqual({
+        cacheControl: 'no-store',
+        cacheExpiry: new Date('2015-10-21T07:28:00.000Z'),
+        contentDisposition: 'inline',
+        contentEncoding: 'identity',
+        contentLanguage: 'en',
+        contentType: 'text/plain',
+      })
+      const headers = new Headers()
+      object?.writeHttpMetadata(headers)
+      expect([...headers]).toEqual([
+        ['cache-control', 'no-store'],
+        ['content-disposition', 'inline'],
+        ['content-encoding', 'identity'],
+        ['content-language', 'en'],
+        ['content-type', 'text/plain'],
+        ['expires', 'Wed, 21 Oct 2015 07:28:00 GMT'],
+      ])
+    })
+  })
 })
