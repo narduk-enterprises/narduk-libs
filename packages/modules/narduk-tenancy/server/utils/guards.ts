@@ -21,11 +21,19 @@ export type TenancyRoleResolver = Pick<TenancyService, 'resolveRole'>
 export type TenancyUserResolver = (event: H3Event) => Promise<string | null> | string | null
 
 export interface RequireOrgRoleOptions {
+  /**
+   * A sentence for the 403, carried as `data.message` (and the error's
+   * `message`) beside `errorCode: 'entitlement_denied'`. Without it the 403 has
+   * no sentence, as before.
+   */
+  deniedMessage?: string
   minimum: TenancyRole
   orgId: string
   resolveUserId: TenancyUserResolver
   resource?: TenancyResourceRef
   tenancy: TenancyRoleResolver
+  /** As `deniedMessage`, for the 401 an anonymous caller gets. */
+  unauthenticatedMessage?: string
 }
 
 export interface RequireSupportGrantOrRoleOptions extends RequireOrgRoleOptions {
@@ -42,25 +50,32 @@ export interface TenancyGuardResult {
   userId: string
 }
 
-function unauthenticated(): Error {
+function guardError(
+  statusCode: 401 | 403,
+  statusMessage: string,
+  errorCode: string,
+  message: string | undefined,
+): Error {
   return createError({
-    statusCode: 401,
-    statusMessage: 'Unauthorized',
-    data: { errorCode: TENANCY_UNAUTHENTICATED_ERROR_CODE },
+    statusCode,
+    statusMessage,
+    ...(message === undefined
+      ? { data: { errorCode } }
+      : { message, data: { errorCode, message } }),
   })
 }
 
-function denied(): Error {
-  return createError({
-    statusCode: 403,
-    statusMessage: 'Forbidden',
-    data: { errorCode: TENANCY_DENIED_ERROR_CODE },
-  })
+function unauthenticated(message?: string): Error {
+  return guardError(401, 'Unauthorized', TENANCY_UNAUTHENTICATED_ERROR_CODE, message)
 }
 
-async function requireUserId(event: H3Event, resolveUserId: TenancyUserResolver): Promise<string> {
-  const userId = await resolveUserId(event)
-  if (!userId) throw unauthenticated()
+function denied(message?: string): Error {
+  return guardError(403, 'Forbidden', TENANCY_DENIED_ERROR_CODE, message)
+}
+
+async function requireUserId(event: H3Event, options: RequireOrgRoleOptions): Promise<string> {
+  const userId = await options.resolveUserId(event)
+  if (!userId) throw unauthenticated(options.unauthenticatedMessage)
   return userId
 }
 
@@ -73,13 +88,15 @@ export async function requireOrgRole(
   event: H3Event,
   options: RequireOrgRoleOptions,
 ): Promise<TenancyGuardResult> {
-  const userId = await requireUserId(event, options.resolveUserId)
+  const userId = await requireUserId(event, options)
   const resolution = await options.tenancy.resolveRole({
     orgId: options.orgId,
     userId,
     resource: options.resource,
   })
-  if (!resolution.role || !roleAtLeast(resolution.role, options.minimum)) throw denied()
+  if (!resolution.role || !roleAtLeast(resolution.role, options.minimum)) {
+    throw denied(options.deniedMessage)
+  }
   return { userId, role: resolution.role, supportGrant: resolution.supportGrant }
 }
 
@@ -92,7 +109,7 @@ export async function requireSupportGrantOrRole(
   event: H3Event,
   options: RequireSupportGrantOrRoleOptions,
 ): Promise<TenancyGuardResult> {
-  const userId = await requireUserId(event, options.resolveUserId)
+  const userId = await requireUserId(event, options)
   // Asking for the scope means the resolver returns a grant that covers it,
   // not merely the latest-expiring one (narduk-libs#942).
   const resolution = await options.tenancy.resolveRole({
@@ -110,7 +127,7 @@ export async function requireSupportGrantOrRole(
   const scopeSatisfied =
     supportGrant !== undefined &&
     (options.scope === undefined || supportGrantScopes(supportGrant).includes(options.scope))
-  if (!scopeSatisfied) throw denied()
+  if (!scopeSatisfied) throw denied(options.deniedMessage)
 
   return { userId, role: resolution.role, supportGrant }
 }
