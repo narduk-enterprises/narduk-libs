@@ -63,6 +63,19 @@ describe('migration sources', () => {
     )
   })
 
+  it('sorts in code-unit order, the order assertOrder enforces', async () => {
+    // ICU collation (localeCompare) puts each underscore-extended name first;
+    // a fresh database would then index `users` before creating it.
+    const names = ['0003_a_b.sql', '0002_users_email_idx.sql', '0003_a1.sql', '0002_users.sql']
+    const set = await createMigrationSet(names.map((name) => ({ name, sql: 'SELECT 1;' })))
+    expect(set.map((migration) => migration.name)).toEqual([
+      '0002_users.sql',
+      '0002_users_email_idx.sql',
+      '0003_a1.sql',
+      '0003_a_b.sql',
+    ])
+  })
+
   it('reads the no-transaction directive', () => {
     expect(parseMigrationDirectives('SELECT 1').transactional).toBe(true)
     expect(
