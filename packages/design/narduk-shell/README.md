@@ -2452,6 +2452,117 @@ import type {
 } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeProse
+
+A markdown document rendered in the suite's type scale
+([narduk-libs#1005](https://github.com/narduk-enterprises/narduk-libs/issues/1005)):
+a runbook, a help page, a changelog entry. Body copy reads `--ne-text-body` at
+`--ne-leading-body`, h2 the section-heading size (`--ne-text-heading`), h3 the
+body size at weight 600, code and tables `--ne-text-small` and `--ne-font-mono`,
+links `--ne-accent`.
+
+The page header owns the page's h1, so **NeProse never renders an h1**: a `#`
+heading is demoted to h2 (its text is kept, not dropped), and `####`–`######`
+clamp to h3. Every heading carries a slug `id` — GitHub's rule: lowercase,
+punctuation dropped, spaces to `-`, repeats suffixed `-1`, `-2` — so a table of
+contents can link to `#install`. `parseProse()` and `proseOutline()` are
+exported from the package root, so a page parses once and builds its TOC from
+the same AST it renders.
+
+It is XSS-safe by construction, not by sanitising. There is no `v-html` on the
+path: `parseProse()` (a small pure parser in `src/runtime/utils/prose.ts`, no
+dependency) produces a plain-data AST, and the component renders each node as an
+element with the source text as text nodes. Raw HTML in the source is shown as
+text. A link's `href` is the only attribute that carries source content, and it
+is kept only when it is `http:`, `https:`, `mailto:` or has no scheme at all
+(relative, `/root`, `#fragment`, `?query`); `javascript:`, `data:`, `vbscript:`
+and every other scheme drop the anchor and keep the link text. The href is
+checked again at render time, so a hand-built `blocks` AST gets the same rule.
+
+#### The subset
+
+| Construct             | Syntax                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headings              | `#`–`######` (ATX, optional closing hashes) and `===` / `---` underlines                                                                    |
+| Paragraphs and breaks | blank-line separated; two trailing spaces or a trailing `\` is a `<br>`                                                                     |
+| Lists                 | `-` `*` `+` and `1.` / `1)`, nested by indentation, keeping an ordered start                                                                |
+| Fenced code           | ` ``` ` or `~~~`, with the info string's first word as the language                                                                         |
+| Tables                | GFM pipes with a `:--` / `:-:` / `--:` delimiter row                                                                                        |
+| Blockquotes and rules | `>` (nesting any block) and `---` / `***` / `___`                                                                                           |
+| Inline                | `` `code` ``, `**bold**` / `__bold__`, `*italic*` / `_italic_`, `[text](href)`, `<https://…>`, `<a@b.c>`, bare `https://` URLs, `\` escapes |
+
+Deliberately left out: raw HTML (rendered as text), images (`![alt](src)`
+renders its alt text), indented code blocks, reference-style links,
+strikethrough, task lists and footnotes. A document that needs them wants a full
+markdown pipeline, not this component.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+
+const props = defineProps<{ markdown: string }>()
+const blocks = computed(() => parseProse(props.markdown))
+const toc = computed(() =>
+  proseOutline(blocks.value).filter((h) => h.level === 2),
+)
+</script>
+
+<template>
+  <NePageHeader title="Runbook" />
+  <nav>
+    <a v-for="entry in toc" :key="entry.id" :href="`#${entry.id}`">{{
+      entry.text
+    }}</a>
+  </nav>
+  <NeProse :blocks="blocks" />
+  <!-- Or, with no TOC: <NeProse :source="markdown" /> -->
+</template>
+```
+
+#### Props
+
+| Prop     | Type             | Default     | What it does                                                                                                                                      |
+| -------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source` | `string`         | `''`        | The markdown to render, parsed with `parseProse()`.                                                                                               |
+| `blocks` | `NeProseBlock[]` | `undefined` | A pre-parsed document — from `parseProse()` or built by hand — rendered as given (hrefs are still checked). Wins over `source` when both are set. |
+
+#### Slots
+
+None. The document is the content; a page that needs its own markup around a
+section splits the document.
+
+#### Events
+
+None. A table of contents comes from `proseOutline()`, not from an event, so it
+exists on the server's first paint too.
+
+#### Helpers
+
+- `parseProse(source: string): NeProseBlock[]` — the parser. Pure: no Vue, no
+  DOM. Heading ids are unique within one call and stable for a given source.
+- `proseOutline(input: string | NeProseBlock[]): NeProseHeading[]` — the
+  document's top-level headings as `{ id, level, text }` in order (a heading
+  inside a blockquote or list is not a section and is left out).
+
+Two NeProse documents on one page share the document's id namespace; give the
+second one headings that do not collide, or render it without a TOC.
+
+#### Types
+
+```ts
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseHeading,
+  NeProseInline,
+  NeProseListItem,
+  NeProseProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
 ### NeAppShell
 
 The application frame: a left rail of labelled sections, a navbar row, and the
