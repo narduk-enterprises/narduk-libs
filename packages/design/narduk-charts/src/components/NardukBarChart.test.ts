@@ -161,7 +161,12 @@ describe('NardukBarChart signed values grow from zero (#928)', () => {
     })
   }
 
-  function mountBars(props: Record<string, unknown>) {
+  function mountBars(props: {
+    series: Array<{ name: string; data: number[] }>
+    labels: string[]
+    orientation?: 'horizontal' | 'vertical'
+    stacked?: boolean
+  }) {
     return mount(NardukBarChart, {
       props: { width: 400, height: 300, animate: false, barRadius: 0, ...props },
     })
