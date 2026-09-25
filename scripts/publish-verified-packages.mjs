@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -78,6 +78,22 @@ export function unresolvedGeneratorPins(pins, pending, records) {
     .map(([name, version]) => `${name}@${version}`)
 }
 
+// `changeset publish` runs a batch concurrently and does not stop when one
+// package fails: the rest still publish and get tagged, and it exits 1 only
+// afterwards. So a generator whose pin is "publishing in this batch" could land
+// on the registry while the pinned package's own publish failed, and a
+// published version cannot be withdrawn (narduk-libs#926). These are the pins
+// that must be live before the generator may publish.
+export function pinsAwaitingThisBatch(pins, pending, records) {
+  const releasing = new Map(pending.map((manifest) => [manifest.name, manifest.version]))
+  return [...pins]
+    .filter(
+      ([name, version]) =>
+        releasing.get(name) === version && !records[name]?.versions?.includes(version),
+    )
+    .map(([name, version]) => ({ name, version }))
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', ...options })
   if (result.error) throw result.error
@@ -99,6 +115,46 @@ function registryField(name, field, missingAllowed = false) {
     throw new Error(`Registry metadata for ${name} failed (${result.status})`)
   }
   return value
+}
+
+function pause(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+// GitHub Packages can take a few seconds to list a version it just accepted.
+function waitUntilPublished({ name, version }, attempts = 12, intervalMs = 10_000) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const versions = registryField(name, 'versions', true)
+    const listed =
+      versions === undefined ? [] : typeof versions === 'string' ? [versions] : versions
+    if (listed.includes(version)) return
+    if (attempt < attempts) pause(intervalMs)
+  }
+  throw new Error(
+    `${name}@${version} is not on the registry after its publish, so ${generatorName} was not published. Re-run the release once ${name}@${version} publishes.`,
+  )
+}
+
+function changesetPublish() {
+  const result = run('pnpm', ['exec', 'changeset', 'publish'], { stdio: 'inherit' })
+  if (result.status !== 0) throw new Error(`Package publication failed (${result.status})`)
+}
+
+// Changesets skips a private package, so marking the generator private for one
+// run holds it back while everything else in the batch publishes. The bytes are
+// restored whatever happens; CI's checkout is thrown away after the job anyway.
+function publishWithGeneratorHeld(generatorDirectory) {
+  const manifestPath = join(generatorDirectory, 'package.json')
+  const original = readFileSync(manifestPath, 'utf8')
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify({ ...JSON.parse(original), private: true }, null, 2)}\n`,
+  )
+  try {
+    changesetPublish()
+  } finally {
+    writeFileSync(manifestPath, original)
+  }
 }
 
 function main() {
@@ -131,17 +187,33 @@ function main() {
     console.log('All verified package versions are already published.')
     return
   }
+  let awaiting = []
   if (pending.some((manifest) => manifest.name === generatorName)) {
-    const unresolved = unresolvedGeneratorPins(loadGeneratorPins(workspace), pending, records)
+    const pins = loadGeneratorPins(workspace)
+    const unresolved = unresolvedGeneratorPins(pins, pending, records)
     if (unresolved.length > 0)
       throw new Error(
         `${generatorName} would publish with an unresolvable pin: ${unresolved.join(', ')}. Publish the pinned package first, or repin it to a version that is already published.`,
       )
+    awaiting = pinsAwaitingThisBatch(pins, pending, records)
   }
   // The workflow serializes publishers. Check every version before any write;
   // the Changesets action retains ownership of tag and GitHub release creation.
-  const result = run('pnpm', ['exec', 'changeset', 'publish'], { stdio: 'inherit' })
-  if (result.status !== 0) throw new Error(`Package publication failed (${result.status})`)
+  // It reads both phases' "New tag:" lines from this process's output.
+  if (awaiting.length === 0) {
+    changesetPublish()
+    return
+  }
+  // Two phases: everything but the generator, then proof that each pin it
+  // carries is live, then the generator on its own (narduk-libs#926). Every
+  // first-phase package is awaited, not only the pins: one the registry has
+  // not listed yet would look unpublished to the second run, which would try
+  // it again and fail on the conflict.
+  publishWithGeneratorHeld(workspace.byName.get(generatorName).directory)
+  for (const manifest of pending) {
+    if (manifest.name !== generatorName) waitUntilPublished(manifest)
+  }
+  changesetPublish()
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()

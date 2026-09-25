@@ -32,6 +32,16 @@ runbook and evidence exemplar.
    refuses unpublished versions that would move `latest` backwards. A commit
    with pending changesets may prepare a version PR only while it is current
    main.
+
+   When `create-narduk-app` pins a version that is publishing in the same batch,
+   `release:publish` works in two phases. `changeset publish` runs a batch
+   concurrently and does not stop when one package fails, so the script first
+   publishes everything except the generator, which it holds back by marking it
+   private for that one run. It then waits until GitHub Packages lists every one
+   of those versions, and publishes the generator on its own last. If a pinned
+   package's publish fails, the generator stays unpublished instead of going
+   live with a pin that cannot install (narduk-libs#926).
+
 5. For a publication commit, including retries, the workflow waits for registry
    propagation, resolves every publishable manifest at its exact version, and
    performs both an initial and frozen external consumer install. A release is
@@ -246,7 +256,9 @@ publishes (narduk-libs#589).
 - Do not change, delete, or reuse a version that may have reached the registry.
 - Fix authentication, registry availability, or the failing package metadata,
   then rerun the failed release job. Changesets leaves already-published exact
-  versions intact and publishes the remaining planned versions.
+  versions intact and publishes the remaining planned versions. That includes a
+  `create-narduk-app` held back by the two-phase publish: the rerun publishes
+  the missing pinned package, then the generator.
 - Confirm the current manifests with `pnpm run release:verify-published` using a
   temporary authenticated npm config. Do not place tokens in the repository.
 - If package manifests had to change, create a new Changeset and publish higher

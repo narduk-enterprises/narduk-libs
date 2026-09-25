@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { publicationPlan, unresolvedGeneratorPins } from './publish-verified-packages.mjs'
+import {
+  pinsAwaitingThisBatch,
+  publicationPlan,
+  unresolvedGeneratorPins,
+} from './publish-verified-packages.mjs'
 
 const manifest = (version) => ({
   name: '@narduk-enterprises/example',
@@ -88,4 +92,40 @@ test('multiple pins report only the ones that are actually unresolved', () => {
   assert.deepEqual(unresolvedGeneratorPins(pins, [], evidence), [
     '@narduk-enterprises/narduk-shell@0.0.0',
   ])
+})
+
+// narduk-libs#926: `changeset publish` does not stop the batch when one package
+// fails, so a generator pin that is only "publishing in this batch" must be
+// proven live before the generator publishes. These are the pins that force the
+// two-phase path.
+test('a pin publishing in this batch and not yet live awaits the batch', () => {
+  const pins = new Map([
+    ['@narduk-enterprises/narduk-core', '2.15.0'],
+    ['@narduk-enterprises/narduk-shell', '0.7.1'],
+  ])
+  const pending = [
+    { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+    { name: '@narduk-enterprises/create-narduk-app', version: '0.15.0' },
+  ]
+  const evidence = {
+    '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' },
+    '@narduk-enterprises/narduk-shell': { versions: ['0.7.1'], latest: '0.7.1' },
+  }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [
+    { name: '@narduk-enterprises/narduk-core', version: '2.15.0' },
+  ])
+})
+
+test('pins that are all live already need no second phase', () => {
+  const pins = new Map([['@narduk-enterprises/narduk-core', '2.14.1']])
+  const pending = [{ name: '@narduk-enterprises/create-narduk-app', version: '0.14.3' }]
+  const evidence = { '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' } }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [])
+})
+
+test('a pending release at a different version than the pin is not awaited', () => {
+  const pins = new Map([['@narduk-enterprises/narduk-core', '2.14.1']])
+  const pending = [{ name: '@narduk-enterprises/narduk-core', version: '2.15.0' }]
+  const evidence = { '@narduk-enterprises/narduk-core': { versions: ['2.14.1'], latest: '2.14.1' } }
+  assert.deepEqual(pinsAwaitingThisBatch(pins, pending, evidence), [])
 })
