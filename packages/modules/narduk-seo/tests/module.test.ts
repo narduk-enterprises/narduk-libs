@@ -555,6 +555,33 @@ describe('narduk-seo module', () => {
       expect(addPlugin).not.toHaveBeenCalled()
     })
 
+    it('honours a productionBranch option for apps that deploy from master', async () => {
+      clearDeployTargetEnv()
+      vi.stubEnv('WORKERS_CI_BRANCH', 'master')
+
+      const withOption = await setupModule({
+        moduleOptions: { hostAwareIndexing: true, productionBranch: 'master' },
+      })
+
+      expect(withOption.nuxt.options.site).not.toHaveProperty('indexable')
+      expect(withOption.extendRouteRules).not.toHaveBeenCalledWith(
+        '/**',
+        expect.anything(),
+        expect.anything(),
+      )
+      expect(
+        (withOption.nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+          ?.nardukSeoHostAwareIndexing,
+      ).toBe(true)
+
+      vi.resetModules()
+      vi.clearAllMocks()
+
+      // Without the option, `master` is not the default production branch.
+      const withoutOption = await setupModule()
+      expect(withoutOption.nuxt.options.site).toMatchObject({ env: 'preview', indexable: false })
+    })
+
     it('lets an explicit target win over the branch', async () => {
       clearDeployTargetEnv()
       vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')

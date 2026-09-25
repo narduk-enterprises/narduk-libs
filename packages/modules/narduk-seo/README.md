@@ -134,6 +134,12 @@ and a `main` build gets `hostAwareIndexing`. A build with no explicit variable
 and no branch variable, such as a local `nuxt build`, keeps an unset target
 exactly as before: indexable, with host-aware indexing off.
 
+**If production deploys from a branch other than `main`** (for example `master`)
+and the app sets no `NARDUK_DEPLOY_TARGET`, its production build would now be
+treated as `preview` and noindexed. Set
+`nardukSeo: { productionBranch: 'master' }` (or an explicit
+`NARDUK_DEPLOY_TARGET`) so that branch builds as `production`.
+
 Apps therefore no longer need the `nuxt.config.ts` write-back block that
 generated apps carry:
 
