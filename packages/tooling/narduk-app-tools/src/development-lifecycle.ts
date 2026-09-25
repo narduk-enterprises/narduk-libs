@@ -27,6 +27,12 @@ import {
 import { readDevelopmentSecret } from './development-process.js'
 import { DevelopmentCloudflare } from './development-provider.js'
 import {
+  describeScriptTriggerMismatch,
+  readSourceScriptTriggers,
+  scriptTriggerMismatch,
+  type ScriptTriggerMismatch,
+} from './development-script-triggers.js'
+import {
   activationPath,
   assertPublisher,
   developmentGit,
@@ -79,6 +85,7 @@ export type DevelopmentBuildsClient = Pick<
   | 'createTrigger'
   | 'restoreVariables'
   | 'inspect'
+  | 'scriptTriggers'
 >
 
 export interface LifecycleContext extends DevelopmentContext {
@@ -119,6 +126,33 @@ function resolveContext(context: LifecycleContext): Resolved {
       return cache.get(id)!
     },
   }
+}
+
+export interface ScriptTriggerCheck {
+  mismatches: ScriptTriggerMismatch[]
+  /** Why declared or live triggers could not be read; a mismatch is then unknown, not absent. */
+  unknown?: string
+}
+
+/** The checkout's declared crons/routes against the live script (narduk-libs#756). */
+async function checkScriptTriggers(
+  project: DevelopmentProject,
+  id: string,
+  client: DevelopmentBuildsClient,
+): Promise<ScriptTriggerCheck> {
+  const component = project.development.components[id]
+  try {
+    const declared = readSourceScriptTriggers(join(project.checkout, component.wranglerConfig))
+    return { mismatches: scriptTriggerMismatch(declared, await client.scriptTriggers()) }
+  } catch (error) {
+    return { mismatches: [], unknown: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function describeScriptTriggerCheck(check: ScriptTriggerCheck): string {
+  if (check.unknown) return `script triggers unknown: ${check.unknown}`
+  if (!check.mismatches.length) return 'script triggers match the checkout'
+  return `script triggers MISMATCH: ${check.mismatches.map(describeScriptTriggerMismatch).join('; ')}`
 }
 
 function lockTargets(record: ActivationRecord, operation: string, stateDirectory: string) {
@@ -230,6 +264,9 @@ export async function runDevelopmentEnter(
           .map((trigger) => trigger.definition.trigger_name)
           .join(', ')}]`,
       )
+      log(
+        `[development]   ${target.workerName}: ${describeScriptTriggerCheck(await checkScriptTriggers(project, id, client))}`,
+      )
     }
     log('[development] dry run: no provider state was changed')
     return existing ?? newRecord(project, targetSet, flags)
@@ -338,6 +375,11 @@ export async function runDevelopmentEnter(
       record.journal.push('verified')
     }
     if (!record.migrationBaseline) recoverMigrationBaseline(project, record, log)
+    // Report, not refuse: a mismatch predates enrollment, and the first deploy applies the declared triggers.
+    for (const { id, target } of targets)
+      log(
+        `[development]   ${target.workerName}: ${describeScriptTriggerCheck(await checkScriptTriggers(project, id, builds(id)))}`,
+      )
     record.mode = 'active'
     record.configDigest = project.configDigest
     record.toolVersion = toolVersion()
@@ -470,7 +512,13 @@ export interface StatusReport {
   lastReceipt?: Pick<DevelopmentReceipt, 'buildId' | 'outcome' | 'baseCommit' | 'dirty' | 'timings'>
   remote?: Record<
     string,
-    { servingVersionId: string; expected?: string; unexpected: boolean; triggers?: number }
+    {
+      servingVersionId: string
+      expected?: string
+      unexpected: boolean
+      triggers?: number
+      scriptTriggers?: ScriptTriggerCheck
+    }
   >
   workflows?: Array<{ path: string; state: string }>
   /** The newest automatic validation push after a verified deploy. */
@@ -512,6 +560,7 @@ export async function runDevelopmentStatus(
         triggers: record.components[id].tag
           ? (await client.triggers(record.components[id].tag)).length
           : undefined,
+        scriptTriggers: await checkScriptTriggers(project, id, client),
       }
     }
     report.workflows = record.workflows.map((workflow) => ({
@@ -555,10 +604,13 @@ export function formatStatus(report: StatusReport): string {
     )
   for (const [id, version] of Object.entries(record.expectedServing))
     lines.push(`  ${id} expected serving ${version}`)
-  for (const [id, remote] of Object.entries(report.remote ?? {}))
+  for (const [id, remote] of Object.entries(report.remote ?? {})) {
     lines.push(
       `  ${id} actually serving ${remote.servingVersionId}${remote.unexpected ? ' — UNEXPECTED' : ''}; build triggers ${String(remote.triggers ?? '?')}`,
     )
+    if (remote.scriptTriggers)
+      lines.push(`  ${id} ${describeScriptTriggerCheck(remote.scriptTriggers)}`)
+  }
   for (const workflow of report.workflows ?? [])
     lines.push(`  workflow ${workflow.path}: ${workflow.state}`)
   for (const workflow of record.workflows) {

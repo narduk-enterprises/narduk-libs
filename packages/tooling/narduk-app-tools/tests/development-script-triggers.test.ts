@@ -9,6 +9,7 @@ import {
   parseDeclaredScriptTriggers,
   readDeclaredScriptTriggers,
   routePattern,
+  scriptTriggerMismatch,
 } from '../src/development-script-triggers.js'
 
 describe('declared Worker script triggers', () => {
@@ -92,5 +93,32 @@ describe('declared Worker script triggers', () => {
       routes: ['new.example.com/*'],
     })
     expect(merged).not.toHaveProperty('route')
+  })
+})
+
+describe('script trigger mismatch', () => {
+  const live = { crons: ['0 9 * * *', '20 9 * * *'], routes: ['app.example.com'] }
+
+  it('does not call an unmanaged key a mismatch', () => {
+    expect(scriptTriggerMismatch({}, live)).toEqual([])
+  })
+
+  it('names both directions, with custom domains compared by hostname', () => {
+    expect(
+      scriptTriggerMismatch(
+        {
+          crons: ['20 9 * * *', '*/5 * * * *'],
+          routes: [{ pattern: 'app.example.com', custom_domain: true }],
+        },
+        live,
+      ),
+    ).toEqual([{ kind: 'crons', declaredOnly: ['*/5 * * * *'], liveOnly: ['0 9 * * *'] }])
+  })
+
+  it('treats an empty declared list as removing every live trigger', () => {
+    expect(scriptTriggerMismatch({ crons: [], routes: [] }, live)).toEqual([
+      { kind: 'crons', declaredOnly: [], liveOnly: ['0 9 * * *', '20 9 * * *'] },
+      { kind: 'routes', declaredOnly: [], liveOnly: ['app.example.com'] },
+    ])
   })
 })

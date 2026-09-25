@@ -49,7 +49,12 @@ import {
   type DevelopmentOutcome,
   type DevelopmentProject,
 } from './development-records.js'
-import { readDeclaredScriptTriggers, routePattern } from './development-script-triggers.js'
+import {
+  describeScriptTriggerMismatch,
+  readDeclaredScriptTriggers,
+  routePattern,
+  scriptTriggerMismatch,
+} from './development-script-triggers.js'
 import {
   assertCapturedInputs,
   captureDevelopmentSource,
@@ -115,7 +120,7 @@ export function parseDevelopmentDeployArgs(args: string[]): DevelopmentDeployFla
 /** Provider seam: the real client or an offline fake with the same surface. */
 export type DevelopmentProviderClient = Pick<
   DevelopmentCloudflare,
-  'inspect' | 'versions' | 'requiredSecrets' | 'promote'
+  'inspect' | 'versions' | 'requiredSecrets' | 'promote' | 'schedules'
 >
 
 /** The one GitHub read deploy:dev makes. */
@@ -782,6 +787,22 @@ export async function runDevelopmentDeploy(
       log(
         `[deploy:dev]   ${id} script triggers from ${declared.source}: crons=${JSON.stringify(declared.triggers.crons ?? '(unchanged)')} routes=${JSON.stringify(receipt.components[id].triggers.routes ?? '(unchanged)')}`,
       )
+      // A zero exit is wrangler's claim; the live schedules are the proof (#756).
+      // Routes are not read back: custom domains need an account-level read
+      // the deployment credential is not guaranteed to hold.
+      if (declared.triggers.crons !== undefined) {
+        const crons = await step(`triggers-proof:${id}`, () => provider.schedules())
+        const mismatches = scriptTriggerMismatch(
+          { crons: declared.triggers.crons },
+          { crons, routes: [] },
+        )
+        if (mismatches.length) {
+          receipt.components[id].status = 'failed'
+          throw new Error(
+            `${id} trigger apply did not take effect: ${mismatches.map(describeScriptTriggerMismatch).join('; ')}`,
+          )
+        }
+      }
       const actual = await provider.inspect()
       receipt.components[id].servingVersionId = actual.versionId
       record.expectedServing[id] = actual.versionId

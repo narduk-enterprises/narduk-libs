@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { DevelopmentComponent, DevelopmentVaultSelector } from './development-config.js'
 import { readDevelopmentSecret, type DevelopmentSecretReader } from './development-process.js'
+import type { LiveScriptTriggers } from './development-script-triggers.js'
 import {
   currentDeployment,
   soleDeployedVersionId,
@@ -174,6 +175,37 @@ export class DevelopmentCloudflare {
       versions: [{ version_id: versionId, percentage: 100 }],
       annotations: { 'workers/message': message },
     })
+  }
+
+  /** Live script cron schedules, sorted (narduk-libs#756). */
+  async schedules(): Promise<string[]> {
+    const result = z
+      .object({ schedules: z.array(z.object({ cron: z.string() })) })
+      .parse(await this.request(`${this.scriptPath()}/schedules`, false))
+    return result.schedules.map((schedule) => schedule.cron).sort()
+  }
+
+  /**
+   * Live script crons and routes. Routes are zone route patterns plus custom
+   * domain hostnames, the same set `wrangler triggers deploy` replaces.
+   */
+  async scriptTriggers(): Promise<LiveScriptTriggers> {
+    const name = encodeURIComponent(this.component.workerName)
+    const routes = z
+      .array(z.object({ pattern: z.string() }))
+      .parse(await this.request(`/workers/services/${name}/environments/production/routes`, false))
+    const domains = z
+      .array(z.object({ hostname: z.string(), service: z.string() }))
+      .parse(await this.request(`/workers/domains?service=${name}&environment=production`, false))
+    return {
+      crons: await this.schedules(),
+      routes: [
+        ...routes.map((route) => route.pattern),
+        ...domains
+          .filter((domain) => domain.service === this.component.workerName)
+          .map((domain) => domain.hostname),
+      ].sort(),
+    }
   }
 
   async triggers(

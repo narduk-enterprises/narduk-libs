@@ -160,3 +160,49 @@ export function mergeArtifactScriptTriggers(
   }
   return result
 }
+
+/** A checkout's own Wrangler config: what its next development deploy declares. */
+export function readSourceScriptTriggers(wranglerConfigPath: string): DeclaredScriptTriggers {
+  return parseDeclaredScriptTriggers(readJsonc(wranglerConfigPath))
+}
+
+/** Live script triggers; routes are zone route patterns plus custom domain hostnames. */
+export interface LiveScriptTriggers {
+  crons: string[]
+  routes: string[]
+}
+
+export interface ScriptTriggerMismatch {
+  kind: 'crons' | 'routes'
+  declaredOnly: string[]
+  liveOnly: string[]
+}
+
+function difference(left: string[], right: string[]): string[] {
+  const other = new Set(right)
+  return [...new Set(left)].filter((item) => !other.has(item)).sort()
+}
+
+/**
+ * Where declared and live disagree. A key the config does not name is not
+ * managed (`wrangler triggers deploy` leaves it in place), so it cannot mismatch.
+ */
+export function scriptTriggerMismatch(
+  declared: DeclaredScriptTriggers,
+  live: LiveScriptTriggers,
+): ScriptTriggerMismatch[] {
+  const mismatches: ScriptTriggerMismatch[] = []
+  const compare = (kind: ScriptTriggerMismatch['kind'], wanted: string[] | undefined) => {
+    if (wanted === undefined) return
+    const declaredOnly = difference(wanted, live[kind])
+    const liveOnly = difference(live[kind], wanted)
+    if (declaredOnly.length || liveOnly.length) mismatches.push({ kind, declaredOnly, liveOnly })
+  }
+  compare('crons', declared.crons)
+  compare('routes', declared.routes?.map(routePattern))
+  return mismatches
+}
+
+export function describeScriptTriggerMismatch(mismatches: ScriptTriggerMismatch): string {
+  return `${mismatches.kind} declared-only ${JSON.stringify(mismatches.declaredOnly)} live-only ${JSON.stringify(mismatches.liveOnly)}`
+}
