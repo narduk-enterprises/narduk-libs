@@ -4,8 +4,8 @@
     <template #top>
       <UFooterColumns
         :columns="[
-          { label: 'Catalog', children: [{ label: 'Breakers', to: '/products' }] },
-          { label: 'Company', children: [{ label: 'About', to: '/about' }] },
+          { label: 'Catalog', children: [{ label: 'Breakers', to: '#products' }] },
+          { label: 'Company', children: [{ label: 'About', to: '#about' }] },
         ]"
       />
     </template>
@@ -13,7 +13,7 @@
       <p>© 2026 Circuit Breaker</p>
     </template>
     <template #right>
-      <UButton label="Contact" to="/contact" variant="ghost" color="neutral" />
+      <UButton label="Contact" to="#contact" variant="ghost" color="neutral" />
     </template>
   </NeMarketingFooter>
 </template>
