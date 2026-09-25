@@ -43,7 +43,7 @@ ts.run('composable-primary-export', rule, {
     {
       filename: 'tests/composables/useCart.test.ts',
       code: 'export function useOther() { return {} }',
-    },    // #885: an aliased export resolves through its local declaration.
+    }, // #885: an aliased export resolves through its local declaration.
     {
       filename: 'app/composables/useCart.ts',
       code: 'function cartImpl() { return {} }\nexport { cartImpl as useCart }',
