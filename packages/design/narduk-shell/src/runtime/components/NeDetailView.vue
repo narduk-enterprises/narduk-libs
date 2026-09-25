@@ -42,68 +42,75 @@ function isBlank(value: NeDetailItem['value']): boolean {
   )
 }
 
-function asNumber(value: unknown, empty: string, format: (n: number) => string): string {
-  return typeof value === 'number' ? format(value) : empty
+function asNumber(value: unknown, format: (n: number) => string): string | null {
+  return typeof value === 'number' ? format(value) : null
 }
 
 function asZonedDate(
   value: unknown,
   timeZone: string | undefined,
-  empty: string,
   format: (input: NeDateInput, options: { timeZone: string }) => string,
-): string {
-  if (!timeZone) return empty
-  return format(value as NeDateInput, { timeZone })
+): string | null {
+  return timeZone ? format(value as NeDateInput, { timeZone }) : null
 }
 
+/** Each formatter returns `null` when it cannot render the value it was given. */
 const FORMATTERS: Record<
   NeDetailFormat,
-  (item: NeDetailItem, value: unknown, empty: string, timeZone: string | undefined) => string
+  (item: NeDetailItem, value: unknown, timeZone: string | undefined) => string | null
 > = {
-  compact: (_item, value, empty) => asNumber(value, empty, formatCompact),
-  date: (item, value, empty, timeZone) =>
-    asZonedDate(value, item.timeZone ?? timeZone, empty, formatDate),
-  datetime: (item, value, empty, timeZone) =>
-    asZonedDate(value, item.timeZone ?? timeZone, empty, formatDateTime),
-  duration: (_item, value, empty) => asNumber(value, empty, formatDuration),
-  money: (item, value, empty) =>
+  compact: (_item, value) => asNumber(value, formatCompact),
+  date: (item, value, timeZone) => asZonedDate(value, item.timeZone ?? timeZone, formatDate),
+  datetime: (item, value, timeZone) =>
+    asZonedDate(value, item.timeZone ?? timeZone, formatDateTime),
+  duration: (_item, value) => asNumber(value, formatDuration),
+  money: (item, value) =>
     typeof value === 'number' && item.currency
       ? formatMoney(value, { currency: item.currency })
-      : empty,
-  number: (_item, value, empty) => asNumber(value, empty, formatNumber),
-  percent: (_item, value, empty) => asNumber(value, empty, formatPercent),
-  quantity: (item, value, empty) =>
-    typeof value === 'number' && item.unit ? formatQuantity(value, { unit: item.unit }) : empty,
+      : null,
+  number: (_item, value) => asNumber(value, formatNumber),
+  percent: (_item, value) => asNumber(value, formatPercent),
+  quantity: (item, value) =>
+    typeof value === 'number' && item.unit ? formatQuantity(value, { unit: item.unit }) : null,
 }
 
-function displayValue(item: NeDetailItem): string {
-  const empty = item.empty ?? fallback.value
-  if (isBlank(item.value)) return empty
+function formatted(item: NeDetailItem): string | null {
+  if (isBlank(item.value)) return null
   if (item.format === undefined) {
     return typeof item.value === 'number' ? formatNumber(item.value) : String(item.value)
   }
-  return FORMATTERS[item.format](item, item.value, empty, props.timeZone)
+  return FORMATTERS[item.format](item, item.value, props.timeZone)
 }
 
-function isUnavailable(item: NeDetailItem): boolean {
-  return displayValue(item) === (item.empty ?? fallback.value)
-}
+/*
+ * "Unavailable" is decided from the value, never by comparing the rendered
+ * text with the placeholder: a reported "N/A" or "—" is still a reported
+ * value (narduk-libs#875).
+ */
+const rows = computed(() =>
+  props.items.map((item) => {
+    const text = formatted(item)
+    return text === null
+      ? { item, text: item.empty ?? fallback.value, unavailable: true }
+      : { item, text, unavailable: false }
+  }),
+)
 </script>
 
 <template>
   <dl data-ne-detail-view data-testid="ne-detail-view" class="ne-detail-view space-y-2">
     <div
-      v-for="item in items"
-      :key="item.label"
+      v-for="row in rows"
+      :key="row.item.label"
       class="ne-detail-view__row flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
-      :data-ne-detail-unavailable="isUnavailable(item) ? 'true' : undefined"
+      :data-ne-detail-unavailable="row.unavailable ? 'true' : undefined"
     >
-      <dt class="ne-detail-view__label text-sm text-muted">{{ item.label }}</dt>
+      <dt class="ne-detail-view__label text-sm text-muted">{{ row.item.label }}</dt>
       <dd
         class="ne-detail-view__value text-sm"
-        :class="isUnavailable(item) ? 'text-muted' : 'font-mono tabular-nums text-highlighted'"
+        :class="row.unavailable ? 'text-muted' : 'font-mono tabular-nums text-highlighted'"
       >
-        {{ displayValue(item) }}
+        {{ row.text }}
       </dd>
     </div>
   </dl>

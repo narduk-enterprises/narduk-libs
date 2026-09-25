@@ -81,3 +81,40 @@ describe('NeDetailView: a missing reading is not a zero', () => {
     expect(wrapper.text()).toContain('Major flood')
   })
 })
+
+/*
+ * narduk-libs#875: "unavailable" means nothing renderable was reported, not
+ * "the rendered text happens to equal the placeholder". A reported string
+ * that reads like the placeholder is still a reported value.
+ */
+describe('NeDetailView: a reported value that reads like the placeholder', () => {
+  it('keeps a reported string equal to the row placeholder available', () => {
+    const wrapper = render({
+      items: [
+        { empty: 'N/A', label: 'Priority', value: 'N/A' },
+        { empty: 'N/A', label: 'Owner', value: null },
+      ],
+    })
+    const rows = wrapper.findAll('.ne-detail-view__row')
+    expect(rows[0]!.attributes('data-ne-detail-unavailable')).toBeUndefined()
+    expect(rows[0]!.get('dd').classes()).not.toContain('text-muted')
+    expect(rows[1]!.attributes('data-ne-detail-unavailable')).toBe('true')
+  })
+
+  it('keeps a reported em dash available against the default placeholder', () => {
+    const wrapper = render({ items: [{ label: 'Change', value: '—' }] })
+    expect(wrapper.find('[data-ne-detail-unavailable]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('—')
+  })
+
+  it('still marks a present value its format cannot render as unavailable', () => {
+    const wrapper = render({
+      items: [
+        { format: 'quantity', label: 'Stage', value: 5 },
+        { format: 'number', label: 'Count', value: 'many' },
+        { format: 'date', label: 'Seen', value: '2026-09-25' },
+      ],
+    })
+    expect(wrapper.findAll('[data-ne-detail-unavailable]')).toHaveLength(3)
+  })
+})
