@@ -613,6 +613,32 @@ await runAtomicBatch(db, [
 ])
 ```
 
+### Bound-parameter chunking on D1 and Durable Object SQLite
+
+D1 and Durable Object SQLite refuse a statement that binds more than 100
+parameters. `node:sqlite` and better-sqlite3 do not enforce that limit, so a
+unit suite can pass a statement that workerd refuses in production. Chunk long
+lists with `chunkD1BoundValues`, `runD1Chunked` or `collectD1ChunkedRows`. Each
+one budgets **parameters, not values**:
+`floor((maxBoundParameters - reservedParameters) / parametersPerValue)` values
+go in one statement.
+
+```ts
+// Composite (vessel_id, id) keys, plus the tenant id bound outside the list.
+await runD1Chunked(keys, (chunk) => readKeys(orgId, chunk), {
+  parametersPerValue: 2,
+  reservedParameters: 1,
+})
+
+// A multi-row INSERT binds one parameter per column per row; the table sets the width.
+for (const rows of chunkD1Rows(trackRows, trackPoints)) {
+  await db.insert(trackPoints).values(rows)
+}
+```
+
+An explicit `chunkSize` above the budget throws at call time rather than at D1.
+With no width options, the defaults are unchanged: 75 values per chunk.
+
 ## Health endpoint
 
 Core serves `GET /api/health` for uptime monitors and deploy checks. The
