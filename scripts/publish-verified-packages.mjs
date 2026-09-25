@@ -122,9 +122,16 @@ function pause(milliseconds) {
 }
 
 // GitHub Packages can take a few seconds to list a version it just accepted.
+// A failed read (a 5xx, a timeout) is one more "not listed yet", not a reason to
+// abandon the wait.
 function waitUntilPublished({ name, version }, attempts = 12, intervalMs = 10_000) {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const versions = registryField(name, 'versions', true)
+    let versions
+    try {
+      versions = registryField(name, 'versions', true)
+    } catch {
+      versions = undefined
+    }
     const listed =
       versions === undefined ? [] : typeof versions === 'string' ? [versions] : versions
     if (listed.includes(version)) return
@@ -140,21 +147,48 @@ function changesetPublish() {
   if (result.status !== 0) throw new Error(`Package publication failed (${result.status})`)
 }
 
-// Changesets skips a private package, so marking the generator private for one
-// run holds it back while everything else in the batch publishes. The bytes are
-// restored whatever happens; CI's checkout is thrown away after the job anyway.
-function publishWithGeneratorHeld(generatorDirectory) {
-  const manifestPath = join(generatorDirectory, 'package.json')
-  const original = readFileSync(manifestPath, 'utf8')
-  writeFileSync(
-    manifestPath,
-    `${JSON.stringify({ ...JSON.parse(original), private: true }, null, 2)}\n`,
-  )
+// Changesets skips a private package, so marking a package private for one run
+// holds it back while the rest of the batch publishes. The bytes are restored
+// whatever happens; CI's checkout is thrown away after the job anyway.
+function publishHolding(directories) {
+  const originals = directories.map((directory) => {
+    const manifestPath = join(directory, 'package.json')
+    return { manifestPath, original: readFileSync(manifestPath, 'utf8') }
+  })
   try {
+    for (const { manifestPath, original } of originals) {
+      writeFileSync(
+        manifestPath,
+        `${JSON.stringify({ ...JSON.parse(original), private: true }, null, 2)}\n`,
+      )
+    }
     changesetPublish()
   } finally {
-    writeFileSync(manifestPath, original)
+    for (const { manifestPath, original } of originals) writeFileSync(manifestPath, original)
   }
+}
+
+/**
+ * Publish `pending`, the generator last when any of its pins is in `awaiting`
+ * (narduk-libs#926). Two phases:
+ *
+ * 1. Everything but the generator, with the generator held back.
+ * 2. Once the registry lists every first-phase version, the generator alone,
+ *    with every first-phase package held back. The second run then cannot
+ *    re-attempt a package a stale registry read still shows as unpublished:
+ *    GitHub Packages answers that with a 409 Changesets counts as a failure.
+ *
+ * `io` is injected so the ordering is testable without a registry.
+ */
+export function publishInPhases(pending, awaiting, io) {
+  if (awaiting.length === 0) {
+    io.publishHolding([])
+    return
+  }
+  const firstPhase = pending.filter((manifest) => manifest.name !== generatorName)
+  io.publishHolding([generatorName])
+  for (const manifest of firstPhase) io.waitUntilPublished(manifest)
+  io.publishHolding(firstPhase.map((manifest) => manifest.name))
 }
 
 function main() {
@@ -200,20 +234,11 @@ function main() {
   // The workflow serializes publishers. Check every version before any write;
   // the Changesets action retains ownership of tag and GitHub release creation.
   // It reads both phases' "New tag:" lines from this process's output.
-  if (awaiting.length === 0) {
-    changesetPublish()
-    return
-  }
-  // Two phases: everything but the generator, then proof that each pin it
-  // carries is live, then the generator on its own (narduk-libs#926). Every
-  // first-phase package is awaited, not only the pins: one the registry has
-  // not listed yet would look unpublished to the second run, which would try
-  // it again and fail on the conflict.
-  publishWithGeneratorHeld(workspace.byName.get(generatorName).directory)
-  for (const manifest of pending) {
-    if (manifest.name !== generatorName) waitUntilPublished(manifest)
-  }
-  changesetPublish()
+  publishInPhases(pending, awaiting, {
+    publishHolding: (names) =>
+      publishHolding(names.map((name) => workspace.byName.get(name).directory)),
+    waitUntilPublished,
+  })
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()
