@@ -289,6 +289,19 @@ const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: Re
   },
   { label: 'REINDEX ... CONCURRENTLY', pattern: /^REINDEX\b[\s\S]+\bCONCURRENTLY\b/iu },
   { label: 'VACUUM', pattern: /^VACUUM\b/iu },
+  { label: 'CREATE DATABASE', pattern: /^CREATE\s+DATABASE\b/iu },
+  { label: 'DROP DATABASE', pattern: /^DROP\s+DATABASE\b/iu },
+  { label: 'ALTER SYSTEM', pattern: /^ALTER\s+SYSTEM\b/iu },
+  { label: 'CREATE TABLESPACE', pattern: /^CREATE\s+TABLESPACE\b/iu },
+  { label: 'DROP TABLESPACE', pattern: /^DROP\s+TABLESPACE\b/iu },
+  {
+    // TimescaleDB refuses to materialize a continuous aggregate inside a
+    // transaction block. `WITH NO DATA` skips that refresh and is allowed, so
+    // only the default (`WITH DATA`, stated or implied) form is rejected.
+    label: 'CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)',
+    pattern:
+      /^CREATE\s+MATERIALIZED\s+VIEW\b[\s\S]+?\bWITH\s*\([^)]*\btimescaledb\.continuous\b(?![\s\S]+\bWITH\s+NO\s+DATA\s*$)/iu,
+  },
 ]
 
 // `ALTER TYPE ... ADD VALUE` is deliberately absent: Postgres 12 and later
@@ -296,10 +309,10 @@ const TRANSACTION_FORBIDDEN_PATTERNS: ReadonlyArray<{ label: string; pattern: Re
 // transaction is barred), and 11 is long out of support. Rejecting it would
 // fail a consumer's working migration on a patch release.
 
-// This list is the common set, not a proof of completeness. `CREATE DATABASE`,
-// `ALTER SYSTEM`, and a TimescaleDB continuous aggregate are also
-// non-transactional and are not detected; they fail with the raw Postgres
-// error instead of the named one. See the changeset's operator note.
+// This list is the common set, not a proof of completeness. A statement that
+// is missing here (for example `ALTER DATABASE ... SET TABLESPACE`, or a
+// TimescaleDB `CALL refresh_continuous_aggregate(...)`) still fails, just with
+// the raw Postgres error instead of the named one.
 
 /**
  * Statements Postgres rejects inside a transaction. Default-transactional

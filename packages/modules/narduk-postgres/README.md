@@ -124,11 +124,15 @@ const result = await applyMigrations(connection, migrations, { dryRun: true })
   reject exactly the DDL the directive exists for.
 - Files without that directive now run in a real `BEGIN`/`COMMIT` on a plain
   `SqlExecutor` (the package's own connections have no `.transaction`). If a
-  default-transactional file contains `CREATE INDEX CONCURRENTLY`, `VACUUM`, or
-  `ALTER TYPE … ADD VALUE`, `applyMigrations` fails **before running the file**
-  with `MIGRATION_TRANSACTION_FORBIDDEN` and names the directive. It does not
+  default-transactional file contains `CREATE`/`DROP INDEX CONCURRENTLY`,
+  `REINDEX … CONCURRENTLY`, `VACUUM`, `CREATE`/`DROP DATABASE`, `ALTER SYSTEM`,
+  `CREATE`/`DROP TABLESPACE`, or a TimescaleDB continuous aggregate created with
+  data (`CREATE MATERIALIZED VIEW … WITH (timescaledb.continuous)` without
+  `WITH NO DATA`), `applyMigrations` fails **before running the file** with
+  `MIGRATION_TRANSACTION_FORBIDDEN` and names the directive. It does not
   silently opt the file out. Put `-- narduk:no-transaction` on line 1 for those
-  statements.
+  statements. `ALTER TYPE … ADD VALUE` is allowed: Postgres 12 and later run it
+  inside a transaction.
 - `applyMigrations(connection, migrations, { table })` puts a set in its own
   ledger table (default `schema_migrations`), so two independent migration sets
   can share a database without either seeing the other's history. The table name
