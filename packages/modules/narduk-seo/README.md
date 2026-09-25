@@ -331,7 +331,9 @@ Available as auto-imported helpers in app `<script setup>`:
 - `useArticleSchema(...)` — Article JSON-LD for blog posts.
 - `useBreadcrumbSchema(...)` — BreadcrumbList JSON-LD.
 - `useFAQSchema(...)` — FAQPage JSON-LD.
-- `useLocalBusinessSchema(...)` — LocalBusiness JSON-LD.
+- `useLocalBusinessSchema(...)` — LocalBusiness JSON-LD. `openingHours` takes
+  the schema.org text form (`['Mo-Fr 09:00-17:00']`) and is emitted as
+  `openingHours`.
 - `useProductSchema(...)` — Product JSON-LD.
 - `useItemListSchema(items, options?)` — ItemList JSON-LD for catalog pages.
 - `useDatasetSchema(input)` — Dataset JSON-LD for pages that publish a data
