@@ -2,7 +2,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export const NARDUK_SCOPE = '@narduk-enterprises'
-export const NARDUK_GEO_SCOPE = '@narduk-geo'
 export const NARDUK_REGISTRY = 'https://npm.pkg.github.com'
 
 export interface RegistryAuthConfig {
@@ -40,6 +39,9 @@ export function resolveRegistryConfig(env: NodeJS.ProcessEnv = process.env): Reg
   }
 }
 
+// Scopes whose packages no longer exist; a stale route for either is dropped.
+const RETIRED_SCOPES = ['@narduk-geo', '@loganrenz']
+
 function stripManagedAuthLines(content: string): string[] {
   return content
     .split('\n')
@@ -56,9 +58,7 @@ export function renderRegistryAuth(
   existingContent: string,
   config: RegistryAuthConfig,
 ): string {
-  const registryLines = [NARDUK_SCOPE, NARDUK_GEO_SCOPE].map(
-    (scope) => `${scope}:registry=${config.registryUrl}`,
-  )
+  const registryLine = `${NARDUK_SCOPE}:registry=${config.registryUrl}`
   const authLine = `//npm.pkg.github.com/:_authToken=\${${config.authTokenEnvVar}}`
   const lines: string[] = []
   const seen = new Set<string>()
@@ -67,9 +67,7 @@ export function renderRegistryAuth(
       const line = rawLine.trimEnd()
       if (!line) continue
       if (
-        line.startsWith(`${NARDUK_SCOPE}:registry=`) ||
-        line.startsWith(`${NARDUK_GEO_SCOPE}:registry=`) ||
-        line.startsWith('@loganrenz:registry=')
+        [NARDUK_SCOPE, ...RETIRED_SCOPES].some((scope) => line.startsWith(`${scope}:registry=`))
       ) {
         continue
       }
@@ -78,7 +76,7 @@ export function renderRegistryAuth(
       lines.push(line)
     }
   }
-  return `${[...registryLines, ...lines, authLine].join('\n').trimEnd()}\n`
+  return `${[registryLine, ...lines, authLine].join('\n').trimEnd()}\n`
 }
 
 export function configureRegistryAuth(

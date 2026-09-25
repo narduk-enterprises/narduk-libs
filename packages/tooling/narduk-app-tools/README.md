@@ -219,8 +219,8 @@ mutation, so invoking the production script locally cannot migrate a remote
 database and then fail only at the deploy step.
 
 The command never writes secret files. Registry auth writes the requested
-`.npmrc.auth` path and scopes GitHub Packages to both `@narduk-enterprises` and
-`@narduk-geo`.
+`.npmrc.auth` path and scopes GitHub Packages to `@narduk-enterprises`. It drops
+any stale route for the retired `@narduk-geo` and `@loganrenz` scopes.
 
 `narduk-app assets favicons` creates ordinary browser favicon files only. It
 does not create a web manifest, service worker, install UI, or PWA icon set.
@@ -847,8 +847,8 @@ Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
 `Authorization` header and no token needed. With no such line, or a route to
 `npm.pkg.github.com`, the reader uses GitHub Packages with `NODE_AUTH_TOKEN`
 (then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
-corroborates an ambiguous 404 with a scope probe. Other scopes, such as
-`@narduk-geo`, always stay on GitHub Packages.
+corroborates an ambiguous 404 with a scope probe. Other scopes always stay on
+GitHub Packages.
 
 **Sub-check 1.5 fails a D1 binding that names no real database.** Any
 `d1_databases[].database_id` in the app's wrangler config (top level or any
