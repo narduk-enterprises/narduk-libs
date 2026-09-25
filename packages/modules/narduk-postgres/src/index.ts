@@ -11,6 +11,9 @@
  *  - `./node`   -- a direct connection, plus loading migrations from disk;
  *  - `./migrate`-- the immutable-file migrations runner;
  *  - `./testing`-- the protocol fake the unit suites run against.
+ *
+ * The Supabase backend (`createSupabaseBackend`) is root-level: it opens no
+ * file and imports no driver, so it is safe in a Worker bundle.
  */
 
 export {
@@ -42,6 +45,19 @@ export {
   placeholderTuples,
   placeholderTuplesWithCasts,
 } from './parameters.js'
+export {
+  SUPABASE_CAPABILITIES,
+  SUPABASE_TRANSACTION_POOLER_PORT,
+  createSupabaseBackend,
+  parseSupabaseConnectionString,
+  type SupabaseBackend,
+  type SupabaseBackendOptions,
+  type SupabaseConnect,
+  type SupabaseConnectionInfo,
+  type SupabaseConnectionMode,
+  type SupabasePostgresJsOptions,
+  type SupabaseSsl,
+} from './supabase.js'
 export { REDACTED, getUnredactedCause, redactConnectionString, redactSecrets } from './redact.js'
 export {
   POSTGRES_ROLES,

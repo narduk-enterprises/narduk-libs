@@ -50,6 +50,9 @@
     "./server/utils/aiXmlEscape": {
       "import": "./server/utils/aiXmlEscape.ts"
     },
+    "./server/utils/chatCompletions": {
+      "import": "./server/utils/chatCompletions.ts"
+    },
     "./server/utils/chatModelConfig": {
       "import": "./server/utils/chatModelConfig.ts"
     },

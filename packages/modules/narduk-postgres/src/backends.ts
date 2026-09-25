@@ -4,16 +4,14 @@
  * narduk-libs #112 charters this package as the "seamless Supabase and
  * non-Supabase backend" library. Logan's round-20 answer on mybo-at-v2#63
  * activated the non-Supabase half -- a self-hosted PostgreSQL reached from
- * Workers through a Hyperdrive binding -- and said nothing about the other. So
- * the Supabase backend is a named shape here and nothing more: no client, no
- * auth, no PostgREST, no dependency.
+ * Workers through a Hyperdrive binding -- and his 2026-09-25 answer on #112
+ * ("Build Supabase half") activated the other, which lives in `./supabase`.
  *
- * That is deliberate. A half-built Supabase path would be a second connection
- * story every consumer has to read, for a backend no product on this estate has
- * asked for yet. The interface exists so adding one later is an implementation
- * rather than a redesign: everything above this line -- health, migrations,
- * roles, the timeseries builders -- already speaks `SqlExecutor` and does not
- * know which backend produced it.
+ * Both halves speak `SqlExecutor` through the consumer's own driver, so
+ * everything above this line -- health, migrations, roles, the timeseries
+ * builders -- does not know which backend produced the executor. The
+ * capability matrix is what differs, and callers that need DDL, `SET ROLE` or
+ * TimescaleDB read it instead of the kind.
  */
 
 import type { SqlExecutor } from './types.js'
@@ -41,9 +39,9 @@ export const SELF_HOSTED_CAPABILITIES: PostgresBackendCapabilities = {
   timescale: true,
 }
 
-// TODO(#112): implement the Supabase backend (connection, pooler mode, and the
-// capability matrix above) when a product on this estate needs it. Until then
-// `PostgresBackend` is the whole of the seam and `self-hosted` is the only kind
-// any factory here returns.
+/**
+ * @deprecated The Supabase backend is implemented: see `createSupabaseBackend`
+ * and `SUPABASE_CAPABILITIES`. Kept so existing imports still compile.
+ */
 export const SUPABASE_BACKEND_STATUS =
-  'Charter item in narduk-libs#112; not implemented in 0.1.0.' as const
+  'Implemented: createSupabaseBackend (narduk-libs#112).' as const
