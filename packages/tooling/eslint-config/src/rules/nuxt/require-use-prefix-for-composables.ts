@@ -52,11 +52,15 @@ export default {
     /** name -> function node, for every function declared in the module. */
     const declaredFunctions = new Map<string, any>()
     /** Exported names that still need a verdict at Program:exit (hoisting-safe). */
-    const exported: Array<{ name: string; node: any }> = []
+    const exported: Array<{ name: string; localName: string; node: any }> = []
 
-    function trackExport(name: string | null | undefined, node: any) {
-      if (!name) return
-      exported.push({ name, node })
+    /**
+     * `name` is the public name; `localName` is the declaration it points at,
+     * which differs for `export { cartState as cartStatePublic }` (#885).
+     */
+    function trackExport(name: string | null | undefined, node: any, localName = name) {
+      if (!name || !localName) return
+      exported.push({ name, localName, node })
     }
 
     return {
@@ -95,14 +99,14 @@ export default {
             specifier.local?.type === 'Identifier' &&
             specifier.exported?.type === 'Identifier'
           ) {
-            trackExport(specifier.exported.name, specifier.exported)
+            trackExport(specifier.exported.name, specifier.exported, specifier.local.name)
           }
         }
       },
       'Program:exit'() {
         for (const entry of exported) {
           if (entry.name.startsWith('use')) continue
-          const fn = declaredFunctions.get(entry.name)
+          const fn = declaredFunctions.get(entry.localName)
           if (!fn || !callsReactiveApi(fn)) continue
 
           context.report({

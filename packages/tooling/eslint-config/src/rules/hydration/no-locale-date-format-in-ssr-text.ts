@@ -27,10 +27,12 @@ import {
   isAppRuntimeFile,
   isClientOnlyFile,
   isInsideClientOnly,
+  isInsideEventHandler,
   isServerOnlyFile,
   isSsrGuarded,
   isTestOrFixturePath,
   resolveBindingInit,
+  runsSynchronously,
   templateBodyVisitor,
 } from './_internal'
 
@@ -76,6 +78,12 @@ function isRenderEvaluated(node: any): boolean {
       parent.type === 'FunctionExpression' ||
       parent.type === 'FunctionDeclaration'
     ) {
+      // An array callback or IIFE runs where it is written, so keep climbing
+      // (narduk-libs#884).
+      if (runsSynchronously(parent)) {
+        parent = parent.parent
+        continue
+      }
       const call = parent.parent
       const calleeName =
         call?.type === 'CallExpression' && call.callee?.type === 'Identifier'
@@ -152,6 +160,8 @@ export default {
       const name = localeFormatNameOf(node)
       if (!name) return
       if (isInsideClientOnly(node)) return
+      // A v-on handler runs after a user event, never during render (#884).
+      if (isInsideEventHandler(node)) return
       context.report({ node, messageId: 'localeDateFormat', data: { name } })
     }
 

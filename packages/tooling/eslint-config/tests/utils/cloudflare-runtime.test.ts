@@ -199,6 +199,29 @@ describe('createModuleEvaluationAnalyzer', () => {
     ).toEqual(['new Pool'])
   })
 
+  it('detects a new Promise executor, which runs synchronously during construction (#887)', () => {
+    expect(
+      moduleEvalMarkers('const ready = new Promise((resolve) => { resolve(new Pool()) })'),
+    ).toContain('new Pool')
+    expect(
+      moduleEvalMarkers(
+        'function start(resolve) { resolve(new Pool()) }\nconst ready = new Promise(start)',
+      ),
+    ).toContain('new Pool')
+  })
+
+  it('does NOT flag a Promise executor that is itself deferred, or work its executor defers (#887)', () => {
+    expect(
+      moduleEvalMarkers('export function later() { return new Promise(() => new Pool()) }'),
+    ).toEqual([])
+    expect(
+      moduleEvalMarkers('const ready = new Promise((resolve) => setTimeout(() => new Pool(), 0))'),
+    ).not.toContain('new Pool')
+    expect(moduleEvalMarkers('const p = new Promise.Custom(() => new Pool())')).not.toContain(
+      'new Pool',
+    )
+  })
+
   it('does NOT flag deferred callbacks', () => {
     expect(moduleEvalMarkers('setTimeout(() => new Pool(), 0)')).toEqual([])
     expect(moduleEvalMarkers('queueMicrotask(() => { marker1() })')).toEqual([])

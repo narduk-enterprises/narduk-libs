@@ -80,6 +80,14 @@ ruleTester.run('no-worker-global-scope-operations', rule, {
 
   invalid: [
     {
+      name: 'fetch inside a module-scope new Promise executor (#887)',
+      filename: 'server/utils/warmup.ts',
+      code: `export const ready = new Promise((resolve) => {
+        resolve(fetch('https://example.com/warmup'))
+      })`,
+      errors: [{ messageId: 'disallowedGlobalScopeOperation' }],
+    },
+    {
       name: 'global fetch at module scope',
       filename: 'server/plugins/warmup.ts',
       code: `export const config = await fetch('https://example.com/config')`,

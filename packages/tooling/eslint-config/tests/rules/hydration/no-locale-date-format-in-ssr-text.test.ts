@@ -61,6 +61,20 @@ vue.run('no-locale-date-format-in-ssr-text', rule, {
       filename: 'app/composables/useDateLabel.client.ts',
       code: 'export const label = (d: Date) => d.toLocaleDateString()',
     },
+    // #884: a v-on handler runs only after a user event, never during render.
+    {
+      filename: VUE_FILE,
+      code: '<template><button @click="label = d.toLocaleDateString()">Format</button></template>',
+    },
+    {
+      filename: VUE_FILE,
+      code: '<template><button v-on:click="() => show(d.toLocaleDateString())">Format</button></template>',
+    },
+    // #884: a synchronous array callback inside a deferred callback is still deferred.
+    {
+      filename: VUE_FILE,
+      code: '<script setup>\nwatch(items, () => { labels.value = items.value.map((i) => i.at.toLocaleDateString()) })\n</script>\n<template><div /></template>',
+    },
     // Documented boundary: a formatter helper is only a hazard at its call site,
     // which the rule reports there. The helper body itself is not judged, because
     // whether it runs during render is not knowable from this file.
@@ -101,6 +115,29 @@ vue.run('no-locale-date-format-in-ssr-text', rule, {
     {
       filename: VUE_FILE,
       code: '<script setup>\nconst label = new Date(iso).toLocaleString()\n</script>\n<template><div>{{ label }}</div></template>',
+      errors: [{ messageId: 'localeDateFormat' }],
+    },
+    // #884: a synchronous array callback at the top of <script setup> runs
+    // during server render, exactly like a bare statement.
+    {
+      filename: VUE_FILE,
+      code: '<script setup>\nconst labels = items.value.map((i) => i.at.toLocaleDateString())\n</script>\n<template><div>{{ labels }}</div></template>',
+      errors: [{ messageId: 'localeDateFormat' }],
+    },
+    {
+      filename: VUE_FILE,
+      code: '<script setup>\nconst labels = computed(() => items.value.map((i) => i.at.toLocaleDateString()))\n</script>\n<template><div>{{ labels }}</div></template>',
+      errors: [{ messageId: 'localeDateFormat' }],
+    },
+    {
+      filename: VUE_FILE,
+      code: '<script setup>\nconst label = (() => d.toLocaleDateString())()\n</script>\n<template><div>{{ label }}</div></template>',
+      errors: [{ messageId: 'localeDateFormat' }],
+    },
+    // A v-bind beside a v-on is still render output.
+    {
+      filename: VUE_FILE,
+      code: '<template><button :title="d.toLocaleDateString()" @click="show">x</button></template>',
       errors: [{ messageId: 'localeDateFormat' }],
     },
     {

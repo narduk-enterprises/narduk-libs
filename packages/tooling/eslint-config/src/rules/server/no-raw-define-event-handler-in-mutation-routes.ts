@@ -50,6 +50,13 @@ const RAW_HANDLER_NAMES = new Set([
   'defineCachedEventHandler',
 ])
 
+/** Crossing one of these while climbing leaves the wrapper's own argument list. */
+const FUNCTION_BOUNDARIES = new Set([
+  'ArrowFunctionExpression',
+  'FunctionDeclaration',
+  'FunctionExpression',
+])
+
 export default {
   meta: {
     type: 'problem' as const,
@@ -106,8 +113,12 @@ export default {
 
         // A raw handler nested inside an approved wrapper is the wrapper's own
         // composition (`defineUserMutation(defineEventHandler(…))`) and is fine.
+        // The climb stops at a function boundary: a raw handler declared inside
+        // the wrapped route's callback is a new handler, not the composition
+        // (narduk-libs#886).
         let parent = node.parent
         for (let depth = 0; parent && depth < 16; depth += 1) {
+          if (FUNCTION_BOUNDARIES.has(parent.type)) break
           if (parent.type === 'CallExpression') {
             const outer = resolveAliasedName(
               unwrapTsWrappers(parent.callee),
