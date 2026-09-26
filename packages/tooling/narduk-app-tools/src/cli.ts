@@ -70,6 +70,9 @@ function usage(): string {
   return [
     'Usage: narduk-app <command> [options]',
     '',
+    '  --help, -h                       Print this help and exit 0. Accepted on every',
+    '                                   command. A --help after -- is left for the child.',
+    '',
     'Commands:',
     '  dev [--credentials <none|nvault>] [--project <name>] [--environment <name>]',
     '      [--config <name>] [--dry-run] -- <command...>',
@@ -255,10 +258,19 @@ export function parseMigrationArgs(args: string[]): {
   }
 }
 
+/** `--help` / `-h` before a `--` separator asks for help and must not run the command. */
+export function argsRequestHelp(args: readonly string[]): boolean {
+  for (const arg of args) {
+    if (arg === '--') return false
+    if (arg === '--help' || arg === '-h') return true
+  }
+  return false
+}
+
 export async function main(args = process.argv.slice(2)): Promise<number> {
   const [command, ...rest] = args
   try {
-    if (!command || command === '--help' || command === '-h') {
+    if (!command || argsRequestHelp(args)) {
       console.log(usage())
       return 0
     }

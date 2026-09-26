@@ -274,6 +274,7 @@ describe('crawler-visible delivery', () => {
     expect(report.errors.join(' ')).toContain('exactly one')
   })
 
+  // The head is 1MB. Under a full v8 coverage run this sits past vitest's 5s default.
   it('keeps the byte ceiling on the head itself', async () => {
     await serve((path) =>
       path.endsWith('.png')
@@ -285,7 +286,7 @@ describe('crawler-visible delivery', () => {
     const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
     expect(report.ok).toBe(false)
     expect(report.errors.join(' ')).toContain('head exceeds byte limit')
-  })
+  }, 20_000)
 
   it('bounds concurrent requests and cancels a stalled run within its total budget', async () => {
     await serve()

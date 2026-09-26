@@ -8,6 +8,9 @@ verify actual server-rendered metadata and downloaded images as crawlers. New
 app scaffolds wire these into builds and browser CI. Existing apps adopt them
 using the [social preview guide](docs/social-previews.md).
 
+`narduk-app <command> --help` and `-h` print the command list and exit 0.
+`--help` after `--` is left for the child command.
+
 Focused app-local tooling exposed as `narduk-app`. It operates on the current
 application only: local development, prebuilt-Worker e2e serving, source-owned
 D1 migrations, guarded Wrangler deployment, registry authentication,
