@@ -698,6 +698,68 @@ describe('requirements that stay honest about what they proved', () => {
     expect(req(artefact, 'R10').enforcement).toBe('partially-enforced')
   })
 
+  function legacyDeployment(root: string, wrangler: Record<string, unknown>): void {
+    writeAdoptionBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      access: { exposureClass: 'public' },
+      bindings: { r2: [] },
+      deployment: {
+        strategy: 'build-once-promote',
+        promotion: { mode: 'manual-dispatch' },
+      },
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      schemaVersion: 1,
+      worker: { nitroPreset: 'cloudflare_module' },
+    })
+    writeJson(root, 'wrangler.json', { name: 'fixture', workers_dev: false, ...wrangler })
+  }
+
+  it('names R4 as items 1-9 rather than complete foundation evidence', async () => {
+    const r4 = req(await run(), 'R4')
+    expect(r4.title).toContain('items 1-9')
+    expect(r4.title.toLowerCase()).not.toContain('complete')
+    expect(r4.detail).toContain('items 1-9 only')
+  })
+
+  it('does not copy one deployment parse error onto R1, R5, R6, and R7', async () => {
+    const artefact = await run((root) => legacyDeployment(root, {}))
+    const rows = ['R1', 'R5', 'R6', 'R7'].map((id) => req(artefact, id))
+    expect(new Set(rows.map((row) => row.detail)).size).toBe(rows.length)
+    expect(req(artefact, 'R6')).toMatchObject({
+      verdict: 'not-applicable',
+      detail: 'no D1 binding is declared',
+    })
+    expect(req(artefact, 'R7')).toMatchObject({
+      verdict: 'not-applicable',
+      detail: 'no production D1, KV, or R2 binding to isolate',
+    })
+    for (const id of ['R5', 'R6', 'R7']) {
+      expect(req(artefact, id).detail).not.toContain('Invalid input')
+    }
+    expect(req(artefact, 'R5').verdict).toBe('fail')
+    expect(req(artefact, 'R1').verdict).toBe('fail')
+  })
+
+  it('fails database ownership on its own when a D1 binding exists and the block has no standard', async () => {
+    const artefact = await run((root) =>
+      legacyDeployment(root, {
+        d1_databases: [
+          {
+            binding: 'DB',
+            database_name: 'fixture',
+            database_id: '00000000-0000-0000-0000-000000000001',
+          },
+        ],
+      }),
+    )
+    const r1 = req(artefact, 'R1')
+    const r6 = req(artefact, 'R6')
+    expect(r6.verdict).toBe('fail')
+    expect(r6.detail).toContain('database ownership')
+    expect(r6.detail).not.toBe(r1.detail)
+    expect(r6.detail).not.toContain('Invalid input')
+  })
+
   it('counts every verdict exactly once', async () => {
     const artefact = await run()
     const { pass, fail, unknown, notApplicable, deviation } = artefact.score
@@ -771,5 +833,30 @@ describe('the doctor --adoption flags', () => {
       expect(report).not.toHaveProperty('requirements')
     },
     DOCTOR_SPAWN_BUDGET_MS,
+  )
+
+  it(
+    'does not report clean when a codemod-owned script is missing',
+    () => {
+      const root = makeTempRepo()
+      tempDirs.push(root)
+      writeJson(root, 'package.json', {
+        name: 'fixture-app',
+        scripts: { 'cf:build': 'nuxt build' },
+      })
+      writeJson(root, 'wrangler.json', { name: 'fixture' })
+      const report = runDoctor(root)
+      expect(
+        report.checks.find((check) => check.name === 'script:db:migrate:remote'),
+      ).toMatchObject({ status: 'warn' })
+      expect(report.clean).toBe(false)
+
+      writeJson(root, 'package.json', {
+        name: 'fixture-app',
+        scripts: { 'cf:build': 'nuxt build', 'db:migrate:remote': 'narduk-app db migrate' },
+      })
+      expect(runDoctor(root).clean).toBe(true)
+    },
+    DOCTOR_SPAWN_BUDGET_MS * 2,
   )
 })

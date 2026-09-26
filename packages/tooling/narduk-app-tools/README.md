@@ -827,7 +827,22 @@ directory with a `pnpm-lock.yaml`, walking up from where `doctor` runs but not
 out of the git repository, so a generated app's `pnpm run doctor` (which runs in
 `apps/web`) audits the root lockfile. `--json` keeps the old fields (`checks`,
 `clean`, `rootDir`) at the top level and adds `verdict`, `line`, `exitCode` and
-`audit`.
+`audit`. `clean` is false when a prerequisite fails, and also when `cf:build` or
+`db:migrate:remote` is missing. A missing script stays a warning, so the verdict
+stays `DOCTOR WARN` and the exit stays 0. `clean: true` means those scripts are
+present and nothing failed.
+
+## Adoption report (`narduk-app doctor --adoption`)
+
+R4 is foundation evidence for items 1-9 (`foundation:check`, shared-UI pins, and
+capability coverage). Its title says `items 1-9`. Items 10, 11, and 12 are R8,
+R3, and the deployment requirements; a passing R4 does not mean those passed.
+
+When the deployment block is present but not a valid `narduk-v1` declaration, R1
+reports check 12.0. R5, R6, and R7 each say what they could not decide, so one
+parse error is not copied onto every row. R6 is not-applicable when the wrangler
+config declares no D1 binding. R7 is not-applicable when it declares no D1, KV,
+or R2 binding.
 
 ## The deployment standard block
 

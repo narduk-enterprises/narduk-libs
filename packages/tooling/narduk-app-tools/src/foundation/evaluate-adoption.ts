@@ -449,6 +449,10 @@ const OWNER_LIBS = 'narduk-enterprises/narduk-libs'
  *     asserting a delivery path nobody wrote down.
  *   - `exempt`: the block declares a different standard. That is a deliberate,
  *     recorded departure, which is what the `deviation` verdict is for.
+ *   - `invalid`: the block is present and does not parse. R1 carries check
+ *     12.0. R5, R6, and R7 each say what they could not decide. R6 and R7 are
+ *     not-applicable when the wrangler config has no D1 binding, or no D1, KV,
+ *     or R2 binding, so one parse error is not copied onto every row.
  *
  * Every deployment-backed requirement routes through this first, so none of
  * them can read a rollout N/A as an answer.
@@ -473,11 +477,46 @@ function gateOnDeploymentAdoption(
     }
   }
   if (deployment.adoption === 'invalid') {
+    const bindings = deployment.productionBindings
+    if (id === 'R6' && bindings.d1.length === 0) {
+      return {
+        detail: 'no D1 binding is declared',
+        enforcement: 'enforced',
+        evidence,
+        id,
+        owner,
+        title,
+        verdict: 'not-applicable',
+      }
+    }
+    if (
+      id === 'R7' &&
+      bindings.d1.length === 0 &&
+      bindings.kv.length === 0 &&
+      bindings.r2.length === 0
+    ) {
+      return {
+        detail: 'no production D1, KV, or R2 binding to isolate',
+        enforcement: 'enforced',
+        evidence,
+        id,
+        owner,
+        title,
+        verdict: 'not-applicable',
+      }
+    }
+    const distinct: Record<string, string> = {
+      R5: 'the delivery path is not decided because the deployment block is not a valid narduk-v1 declaration',
+      R6: 'database ownership cannot be decided because the deployment block is not a valid narduk-v1 declaration',
+      R7: 'preview isolation cannot be decided because the deployment block is not a valid narduk-v1 declaration',
+    }
     return {
-      detail: deployment.item.checks
-        .filter((check) => check.id === '12.0')
-        .map((check) => check.detail)
-        .join('; '),
+      detail:
+        distinct[id] ??
+        deployment.item.checks
+          .filter((check) => check.id === '12.0')
+          .map((check) => check.detail)
+          .join('; '),
       enforcement: 'enforced',
       evidence,
       id,
@@ -577,7 +616,7 @@ function requirement4(
         ? `failing: ${failed.map((item) => `item ${item.id}`).join(', ')}`
         : unknown.length > 0
           ? `undecided: ${unknown.map((item) => `item ${item.id}`).join(', ')}`
-          : 'items 1-7, 8 and 9 all pass or are not applicable',
+          : 'items 1-9 only; all pass or are not applicable',
     enforcement: 'enforced',
     evidence: [
       'narduk-app foundation:check',
@@ -586,7 +625,9 @@ function requirement4(
     ],
     id: 'R4',
     owner: OWNER_APP,
-    title: 'Complete foundation evidence',
+    // Items 10-12 are R8, R3, and the deployment rows. This requirement does
+    // not include them, so the label must not say the foundation evidence is complete.
+    title: 'Foundation evidence (items 1-9)',
     verdict: failed.length > 0 ? 'fail' : unknown.length > 0 ? 'unknown' : 'pass',
   }
 }
