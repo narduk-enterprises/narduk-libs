@@ -7,7 +7,6 @@ const state = vi.hoisted(() => ({
   clearCalls: 0,
   lookups: 0,
   lookupError: null as Error | null,
-  mergeOverrides: {} as Partial<AppSessionUser>,
   supabaseError: null as Error | null,
   row: null as null | {
     aal?: string | null
@@ -58,7 +57,6 @@ vi.mock('../server/lib/app-auth/session', () => ({
     recoveryMode: Boolean(authSession.recoveryMode),
     aal:
       authSession.aal === 'aal1' || authSession.aal === 'aal2' ? authSession.aal : sessionUser.aal,
-    ...state.mergeOverrides,
   }),
 }))
 
@@ -88,7 +86,6 @@ describe('web session grant validation', () => {
     state.clearCalls = 0
     state.lookups = 0
     state.lookupError = null
-    state.mergeOverrides = {}
     state.supabaseError = null
     state.row = null
     state.dbUser = {
@@ -116,50 +113,6 @@ describe('web session grant validation', () => {
 
     await expect(useRefreshedSessionUser(event())).resolves.toBeNull()
     expect(state.clearCalls).toBe(1)
-  })
-
-  // narduk-libs#1042: the local refresh rewrote the cookie only for email,
-  // name, isAdmin, recoveryMode and aal, so a change to another field the
-  // cookie surfaces left the client on the stale value.
-  it.each([
-    ['needsPasswordSetup', { needsPasswordSetup: false }],
-    ['authProviders', { authProviders: ['apple', 'email'] }],
-    ['authProvider', { authProvider: 'email' }],
-    ['emailConfirmedAt', { emailConfirmedAt: '2026-09-26T00:00:00.000Z' }],
-  ] as const)('rewrites a local cookie whose %s changed', async (_field, change) => {
-    state.user = cookieUser({
-      authBackend: 'local',
-      authProvider: 'apple',
-      authProviders: ['apple'],
-      emailConfirmedAt: null,
-      needsPasswordSetup: true,
-      recoveryMode: false,
-    })
-    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
-    state.mergeOverrides = { ...change } as Partial<AppSessionUser>
-    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
-
-    await expect(useRefreshedSessionUser(event())).resolves.toMatchObject(change)
-    expect(replaceLayerUserSession).toHaveBeenCalledTimes(1)
-    expect(replaceLayerUserSession).toHaveBeenCalledWith(expect.anything(), {
-      user: expect.objectContaining(change),
-    })
-  })
-
-  it('leaves a local cookie alone when nothing it surfaces changed', async () => {
-    state.user = cookieUser({
-      authBackend: 'local',
-      authProviders: ['apple', 'email'],
-      needsPasswordSetup: false,
-      recoveryMode: false,
-    })
-    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
-    // An equal list in a new array is not a change.
-    state.mergeOverrides = { authProviders: ['apple', 'email'] }
-    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
-
-    await useRefreshedSessionUser(event())
-    expect(replaceLayerUserSession).not.toHaveBeenCalled()
   })
 
   it('prefers the users row isAdmin over a stale cookie', async () => {

@@ -249,6 +249,27 @@ export async function loadAuthUserRow(event: H3Event, userId: string): Promise<L
   return pending
 }
 
+/**
+ * Local-backend sign-in methods the users row now proves: a password set, or
+ * an Apple ID linked, since this cookie was issued (narduk-libs#1042). Only
+ * adds what the row proves; the cookie's own providers (a passkey sign-in)
+ * are kept. The Supabase backend takes its providers from Supabase.
+ */
+function mergeLocalSignInMethods(
+  sessionUser: AppSessionUser,
+  dbUser: LocalUser,
+): Partial<Pick<AppSessionUser, 'authProviders' | 'needsPasswordSetup'>> {
+  const providers = sessionUser.authProviders ?? []
+  const added = [
+    ...(dbUser.appleId && !providers.includes('apple') ? ['apple'] : []),
+    ...(dbUser.passwordHash && !providers.includes('email') ? ['email'] : []),
+  ]
+  return {
+    ...(added.length ? { authProviders: [...providers, ...added] } : {}),
+    ...(sessionUser.needsPasswordSetup && dbUser.passwordHash ? { needsPasswordSetup: false } : {}),
+  }
+}
+
 export function mergeAuthoritativeSessionUser(
   sessionUser: AppSessionUser,
   authSession: Pick<AuthSessionRow, 'aal' | 'recoveryMode'>,
@@ -256,6 +277,7 @@ export function mergeAuthoritativeSessionUser(
 ): AppSessionUser {
   return {
     ...sessionUser,
+    ...(sessionUser.authBackend === 'local' ? mergeLocalSignInMethods(sessionUser, dbUser) : {}),
     email: dbUser.email,
     name: dbUser.name,
     isAdmin: dbUser.isAdmin,
