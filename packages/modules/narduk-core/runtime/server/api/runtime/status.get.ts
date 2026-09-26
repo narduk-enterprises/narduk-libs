@@ -48,9 +48,12 @@ function resolveRuntimeModules(event: H3Event): FleetModuleId[] {
   return modules.length > 0 ? modules : CORE_RUNTIME_MODULES
 }
 
+/** The API-key scope this route opts into (narduk-libs#971). */
+const RUNTIME_STATUS_READ_SCOPE = 'runtime:status:read'
+
 export default defineEventHandler(async (event) => {
-  const { requireAdmin } = await import('../../utils/auth')
-  await requireAdmin(event)
+  const { requireAdmin, requireAdminRouteScopes } = await import('../../utils/auth')
+  requireAdminRouteScopes(await requireAdmin(event), [RUNTIME_STATUS_READ_SCOPE])
   setResponseHeader(event, 'Cache-Control', 'private, no-store')
   const env = readCloudflareRuntimeEnv(event)
   const modules = resolveRuntimeModules(event)
