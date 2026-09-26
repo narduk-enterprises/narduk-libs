@@ -353,7 +353,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         check: 'script/check.sh',
       }),
       'apps/web/script/check.sh':
-        '# never set NARDUK_ALLOW_MANUAL_PROMOTE=1 here\necho "or NARDUK_ALLOW_MANUAL_PROMOTE=1"\n',
+        '# never set NARDUK_ALLOW_MANUAL_PROMOTE=1 here\necho "or NARDUK_ALLOW_MANUAL_PROMOTE=1" >&2\n',
       'scripts/toolchain.mjs': [
         "// NARDUK_ALLOW_MANUAL_PROMOTE: '1' is never set here",
         "if (env.NARDUK_ALLOW_MANUAL_PROMOTE === '1') run()",
@@ -449,6 +449,116 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'zb',
       'zc',
     ])
+  })
+
+  describe('message excuses', () => {
+    const X = 'NARDUK_ALLOW_MANUAL_PROMOTE'
+    const RUN = `${X}=1 narduk-app deploy versions-promote`
+    const inline = (command: string) => ({ 'apps/web/package.json': pkg({ x: command }) })
+    const withFile = (command: string, path: string, body: string) => ({
+      'apps/web/package.json': pkg({ x: command }),
+      [`apps/web/${path}`]: body,
+    })
+
+    it('excuses only a guard message printed straight to stderr', () => {
+      const guards: Array<Record<string, string>> = [
+        inline(`test -n "$${X}" || { echo "Set ${X}=1 after reviewing" >&2; exit 1; }`),
+        inline(`{ { echo "set ${X}=1" >&2; } }`),
+        inline(`case "$A" in 1) ;; *) echo "set ${X}=1 for recovery" >&2; exit 1 ;; esac`),
+        inline(`echo "set ${X}=1" 1>&2 # don't`),
+        inline(`[ $${X}=1 ] && narduk-app deploy versions-promote`),
+        {
+          'apps/web/package.json': pkg({
+            x: `echo "set ${X}=1" >&2; exit 1`,
+            lint: 'eslint . >/dev/null 2>&1',
+          }),
+        },
+        withFile('bash script/guard.sh', 'script/guard.sh', `echo "set ${X}=1" >&2\nexit 1\n`),
+        withFile('node script/guard.mjs', 'script/guard.mjs', `console.error('set ${X}=1')\n`),
+        withFile('node script/guard.mjs', 'script/guard.mjs', `console.warn("set ${X}=1")\n`),
+        withFile(
+          'node script/guard.mjs',
+          'script/guard.mjs',
+          `if (!armed) throw new Error('set ${X}=1 first')\n`,
+        ),
+      ]
+      for (const files of guards) expect(found(checkout(files)), JSON.stringify(files)).toEqual([])
+    })
+
+    it('counts a message that can be captured, redirected or run', () => {
+      const setters: Array<Record<string, string>> = [
+        // Shell: output that is not plainly stderr, or a group or caller that can capture it.
+        withFile('eval "$(bash script/p.sh)"', 'script/p.sh', `echo "export ${X}=1"\n`),
+        withFile('bash script/p.sh 2>&1 | sh', 'script/p.sh', `echo "${RUN}" >&2\n`),
+        inline(`echo "${RUN}" >&2 2>&1 | sh`),
+        inline(`{ echo "${RUN}" >&2; } 2>&1 | sh`),
+        inline(`( echo "${RUN}" ) | sh`),
+        inline(`{ echo "${RUN}" >&2; } | sh`),
+        inline(`true | ( echo "${RUN}" >&2 )`),
+        inline(`m() { echo "${RUN}" >&2; }; m`),
+        inline(`x=$(echo "${RUN}" >&2)`),
+        inline(`if true; then echo "${RUN}" >&2; fi 2>&1 | sh`),
+        inline(`for i in 1; do echo "${RUN}" >&2; done 2>&1 | sh`),
+        inline(`m() { echo "${RUN}" >&2; }; m 2>&1 | sh`),
+        inline(`$(printf eval) echo "; ${RUN}" >&2`),
+        inline(`echo "${RUN}" > /dev/stderr`),
+        inline(`printf -v V '%s' "${X}=1" >&2`),
+        inline(`echo "$[${X}=1]" >&2`),
+        inline(`: "\${${X}=1}"; export ${X}`),
+        inline(`: "\${${X}:=1}"; export ${X}`),
+        inline(`echo() { eval "$*"; }; echo "; ${RUN}" >&2`),
+        withFile('bash script/p.sh', 'script/p.sh', `sh <<'EOF'\necho "\nEOF\n${RUN}\n" >&2\n`),
+        withFile('bash script/p.sh', 'script/p.sh', `exec 2>&1\necho "${RUN}" >&2\n`),
+        withFile('bash script/p.sh', 'script/p.sh', `{\n  echo "${RUN}" >&2\n} 2>&1 | sh\n`),
+        withFile('. ./lib.sh && bash script/p.sh', 'script/p.sh', `echo "${RUN}" >&2\n`),
+        {
+          'apps/web/package.json': pkg({ a: `echo "${RUN}" >&2`, b: 'pnpm run a 2>&1 | sh' }),
+        },
+        { ...inline(`echo "${RUN}" >&2`), 'pnpm-workspace.yaml': 'scriptShell: ./wrap.sh\n' },
+        { ...inline(`echo "${RUN}" >&2`), 'apps/web/.npmrc': 'script-shell=./wrap.sh\n' },
+        {
+          'apps/web/package.json': pkg({ a: `echo "${RUN}" >&2`, b: 'node script/run.mjs a' }),
+          'apps/web/script/run.mjs':
+            "exec('pnpm run ' + process.argv[2], (e, o, x) => execSync(x))\n",
+        },
+        // JS: only console.error/warn and a directly thrown Error, in a file that loads and rewires nothing.
+        withFile('eval "$(node script/p.mjs)"', 'script/p.mjs', `console.log('export ${X}=1')\n`),
+        withFile('node script/p.mjs 2>&1 | sh', 'script/p.mjs', `console.error('${RUN}')\n`),
+        withFile(
+          'node script/p.mjs',
+          'script/p.mjs',
+          `const log = (c) => execSync(c)\nlog('${RUN}')\n`,
+        ),
+        withFile('node script/p.mjs', 'script/p.mjs', `info("${RUN}")\n`),
+        withFile(
+          'node script/p.mjs',
+          'script/p.mjs',
+          `const e = new Error('${RUN}'); execSync(e.message)\n`,
+        ),
+        withFile(
+          'node script/p.mjs',
+          'script/p.mjs',
+          `try { throw new Error('${RUN}') } catch (e) { execSync(e.message) }\n`,
+        ),
+        withFile(
+          'node script/p.mjs',
+          'script/p.mjs',
+          `import './patch.mjs'\nconsole.error('${RUN}')\n`,
+        ),
+        withFile(
+          'node script/p.mjs',
+          'script/p.mjs',
+          `console.error = (m) => execSync(m)\nconsole.error('${RUN}')\n`,
+        ),
+        withFile(
+          'node --require ./p.cjs script/p.mjs',
+          'script/p.mjs',
+          `console.error('${RUN}')\n`,
+        ),
+      ]
+      for (const files of setters)
+        expect(found(checkout(files)), JSON.stringify(files)).toHaveLength(1)
+    })
   })
 
   it('does not follow a script path out of the checkout', () => {

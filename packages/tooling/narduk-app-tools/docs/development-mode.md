@@ -120,11 +120,13 @@ on:
   (`pnpm --filter web run deploy:dev`, or `pnpm -C <appDir> run deploy:dev`). A
   `--filter` forward names one package or one `./directory` (no glob or graph
   selector), and entry asks pnpm itself what it selects
-  (`pnpm --filter <value> ls --json --depth -1`, read only). It passes only when
-  pnpm selects exactly one package and that package is the enrolled component: a
-  second package named `web` would also run, so it refuses. If pnpm is missing,
-  times out or answers in a shape the check cannot read, the forward refuses
-  too;
+  (`pnpm --filter <value> ls --json --depth -1` in the checkout). It passes only
+  when pnpm selects exactly one package and that package is the enrolled
+  component: a second package named `web` would also run, so it refuses. If pnpm
+  is missing, times out or answers in a shape the check cannot read, the forward
+  refuses too. Asking pnpm loads the checkout's `.pnpmfile.cjs` and pnpmfile
+  settings and may fetch its `configDependencies`, the same trust the owner
+  already extends by running `pnpm install` there;
 - a `deploy:dev` key declared more than once. Merging `main` into a branch that
   predates the conversion keeps both keys without a conflict, and JSON keeps the
   last one, so the check reads the resolved value and the duplicate, never a
@@ -134,13 +136,31 @@ on:
   `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` to a truthy value (`NAME=1 cmd`,
   `export`, `env`, `cross-env`, `sh -c '…'`, `NAME: '1'` in a spawned
   environment), itself or in a checkout file it runs (such as
-  `script/dev/deploy_dev.sh`). Anything shaped like an assignment counts, except
-  a reader (`$NAME`, `${NAME…}`) and a message: a quoted `echo` or `printf`
-  argument whose output reaches the terminal, or a JS string passed first to
-  `console.*`, an `Error` or a log helper. A string that is run
-  (`sh -c "npx cross-env NAME=1 …"`, `execSync("…")`) or printed into a pipe, a
-  file or `$(…)` counts. A full-line comment (`#` in shell, `//` in JS) is
-  skipped.
+  `script/dev/deploy_dev.sh`). Anything shaped like an assignment counts,
+  including `${NAME=1}` and `${NAME:=1}`, except a reader (`$NAME`,
+  `${NAME:-…}`) and a guard's message printed to stderr:
+  - in shell, a quoted `echo`/`printf` argument with an explicit `>&2` or `1>&2`
+    and no other redirection, in no pipeline, function body, `$(…)` or
+    backticks, and in no `{ }`, `( )`, `if`, loop or `case` whose own output is
+    piped or redirected (so `test … || { echo "Set NAME=1 …" >&2; exit 1; }`
+    passes). A plain-stdout `echo` always counts, since a caller can
+    `eval "$(…)"`, `source <(…)` or pipe it into `sh`;
+  - in JS, a string literal passed first to `console.error`/`console.warn` or to
+    a directly thrown `new Error(…)`, in a file that imports, requires, catches
+    and rewires nothing (`console.log`, log helpers and an `Error` kept in a
+    variable count).
+
+  No message is excused anywhere in scope when a script or scanned shell file
+  captures stderr (`2>&1`, `2>file`, `&>`, `|&`, descriptor juggling;
+  `>/dev/null 2>&1` and `2>/dev/null` only discard), sources code, sets a trap,
+  redefines `echo`/`printf` or exports a function, or when the checkout's
+  `.npmrc` or `pnpm-workspace.yaml` sets a script shell; a JS message is not
+  excused when a script preloads node code (`NODE_OPTIONS`, `--require`,
+  `--import`). A JS file that can read a child's stderr withdraws the excuse
+  from any script or file it, or the script that runs it, names. A string that
+  is run (`sh -c "npx cross-env NAME=1 …"`, `execSync("…")`), a here-document
+  body and a string spanning lines always count. A full-line comment (`#` in
+  shell, `//` in JS) is skipped.
 
 Entry never edits the app to disarm it: it cannot find an app's own
 authorization record, and an edit in the integration checkout would reach no

@@ -19,7 +19,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { parse, visit, type ParseError } from 'jsonc-parser'
 
@@ -59,20 +59,12 @@ const TRUTHY = `['"]?(?:1|true|yes|on)\\b`
 /**
  * Anything that looks like the override taking a truthy value: `NAME=1`,
  * `NAME="1"`, `NAME: '1'`, `'NAME': '1'`, `env.NAME = 1`, `env['NAME'] = 1`.
- * This broad net is the floor; `lineSetsOverride` excuses only a reader and a
- * message.
+ * This broad net is the floor; `setterIn` excuses only a reader and a message
+ * printed to stderr.
  */
 const OVERRIDE_VALUE = new RegExp(`(${OVERRIDE})['"]?\\]?\\s*[:=]\\s*${TRUTHY}`, 'giu')
-
-/** Words that open a compound command; the simple command starts after them. */
-const KEYWORDS = new Set(['!', 'do', 'elif', 'else', 'if', 'then', 'until', 'while'])
-/** Shell commands whose quoted arguments are only printed. */
-const PRINTERS = new Set(['echo', 'printf'])
-/** A redirection that only sends a printer's output to stdout or stderr. */
-const TERMINAL_REDIRECT = /^[12]?>&[12]$/u
-/** A JS call whose first string argument is only a message. */
-const MESSAGE_CALL =
-  /(?:\bconsole\s*\.\s*\w+|\bnew\s+\w*Error|\blogger\s*\.\s*\w+|\b(?:log|warn|fail|die|abort|info|debug|error))\s*\(\s*$|\bthrow\s+$/u
+/** A shell default-assignment (`${NAME=1}`, `${NAME:=1}`) sets the variable wherever it expands. */
+const DEFAULT_ASSIGN = new RegExp(`\\$\\{(${OVERRIDE}):?=\\s*${TRUTHY}`, 'iu')
 
 const JAVASCRIPT = /\.(?:mjs|cjs|js|ts|mts|cts)$/u
 const MAX_SCANNED_FILE_BYTES = 1024 * 1024
@@ -114,130 +106,413 @@ function javascriptStrings(line: string): QuotedSegment[] {
   return segments
 }
 
-interface ShellWord {
-  text: string
-  start: number
+/*
+ * Messages. A guard that refuses prints the override's name to stderr
+ * (`echo "Set NAME=1 after reviewing" >&2`), and flagging that text would
+ * refuse the guard itself. A printed string is excused only where nothing in
+ * scope can turn it back into a command: shell output that reaches stderr
+ * directly, and JS console.error/console.warn or a thrown Error in a file that
+ * cannot rewire them. A script or shell file in scope that captures stderr,
+ * sources code or redefines a printer, or a pnpm script-shell setting,
+ * withdraws every excuse; a JS file that can read a child's stderr withdraws
+ * the excuse from what it names.
+ */
+
+/** Shell commands whose quoted arguments are only printed. */
+const PRINTERS = new Set(['echo', 'printf'])
+/** The one redirection a printed message may carry: stdout onto stderr. */
+const TO_STDERR = /^1?>&2$/u
+/** Words that begin a command list without being its command. */
+const LIST_WORDS = new Set(['!', 'then', 'else', 'elif', 'do'])
+const COMPOUND_OPENERS: Record<string, ShellGroupKind> = {
+  if: 'if',
+  while: 'loop',
+  until: 'loop',
+  for: 'loop',
+  select: 'loop',
+  case: 'case',
+}
+const COMPOUND_CLOSERS: Record<string, ShellGroupKind> = { fi: 'if', done: 'loop', esac: 'case' }
+/** Groups whose output goes wherever the group's own output goes. */
+const TRANSPARENT_GROUPS = new Set<ShellGroupKind>(['{', '(', 'if', 'loop', 'case'])
+const QUOTED_PART = /'[^']*'|"(?:\\.|[^"\\])*"|\\./gu
+
+/** Output thrown away for good: `>/dev/null 2>&1`, `2>/dev/null`, `&>/dev/null`. */
+const DISCARD = /(?:[12]?>|&>)\s*\/dev\/null(?:\s+2>&1)?/gu
+/** stderr sent anywhere but the terminal, or a descriptor juggled so it can be. */
+const STDERR_CAPTURE = /(?<![\w-])(?:2|[3-9]\d*)[<>]|&>|\|&|>&\s*(?!2\b)[\w$-]/u
+/** Code that can make `echo`/`printf` do something other than print. */
+const SHELL_REWIRING = new RegExp(
+  [
+    `(?:^|[;&|({!'"\`]|[)}]\\s|\\b(?:then|do|else))\\s*(?:source|\\.|trap|alias|enable|shopt|hash)\\s`,
+    `\\b(?:export|declare|typeset|local|readonly)\\s+-\\w*f`,
+    `\\b(?:echo|printf)\\s*\\(\\s*\\)`,
+    `\\bfunction\\s+(?:echo|printf)\\b`,
+    `\\bBASH_(?:ENV|FUNC)`,
+    `(?:^|[\\s;&|'"])ENV=`,
+  ].join('|'),
+  'mu',
+)
+/** A caller that preloads code into node, which can rewire console or Error. */
+const NODE_PRELOAD =
+  /\bNODE_OPTIONS\b|--(?:require|import|loader|experimental-loader)\b|(?:^|\s)-r\s/mu
+/** A JS file that can read another process's stderr. */
+const JAVASCRIPT_CAPTURE =
+  /\bstderr\b|\bstdio\b|\.output\b|\b(?:exec|execFile|spawn|fork)\s*\(|\bcatch\b/u
+/** A JS file that can load other code or rewire console, Error or stderr. */
+const JAVASCRIPT_REWIRING =
+  /\b(?:import|require|eval|Function|globalThis|global|Reflect|Proxy|defineProperty|defineProperties|setPrototypeOf|prototype|__proto__|assign|catch|uncaughtException|unhandledRejection|setUncaughtExceptionCaptureCallback|prepareStackTrace|Console|stderr|stdio|output)\b|\bprocess\s*(?:\[|\.\s*(?:on|once|addListener|prependListener|prependOnceListener)\b)/u
+const CONSOLE_USE = /\bconsole\b/gu
+const CONSOLE_CALL = /(?<![\w$.])console\s*\.\s*(?:error|warn|log|info|debug)\s*\(/gu
+/** Where a JS message literal may sit: first argument of console.error/warn or of a directly thrown Error. */
+const MESSAGE_CALL = /(?:\bconsole\s*\.\s*(?:error|warn)|\bthrow\s+new\s+\w*Error)\s*\(\s*$/u
+/** A pnpm setting that replaces the shell scripts run in. */
+const SCRIPT_SHELL = /script-?shell|shell-?emulator/iu
+
+/** The `)` of a function definition's `name()`. */
+const FUNCTION_PARENS = /\s*\)/uy
+
+function emptyParensAt(text: string, index: number): boolean {
+  FUNCTION_PARENS.lastIndex = index
+  return FUNCTION_PARENS.test(text)
+}
+
+type ShellGroupKind = '{' | '(' | '$(' | '`' | 'if' | 'loop' | 'case'
+
+interface ShellGroup {
+  kind: ShellGroupKind
+  /** A function body, whose output every call site can redirect. */
+  functionBody: boolean
+  /** The group itself sits in a pipeline. */
+  piped: boolean
+  /** Words after the closer (its redirections); undefined while still open. */
+  tail?: string[]
 }
 
 interface ShellCommand {
-  words: ShellWord[]
+  words: string[]
   segments: QuotedSegment[]
-  /** The separator before the command (`''` at the start of the line). */
-  opener: string
-  /** The separator after it (`''` at the end of the line). */
-  closer: string
+  /** Enclosing groups, outermost first. */
+  groups: ShellGroup[]
+  /** Reads from or writes to a pipe. */
+  piped: boolean
+  /** Set when this command is the redirection tail of a group just closed. */
+  tailOf?: ShellGroup
+  /** Words run on from a command substitution (`$(…) echo`), so the first is not the command. */
+  continued?: boolean
 }
 
 /**
- * One shell line split into simple commands. A backslash escapes the next
- * character, so `\"` opens no string; a backtick is a command substitution and
- * a separator; an unclosed quote runs to the end of the line as plain text.
+ * A shell text split into simple commands, tracking the groups around each:
+ * `{ }`, `( )`, `$( )`, `<( )`, backticks, if/fi, loops and case/esac. A
+ * backslash escapes the next character (so `\"` opens no string); `#` at a
+ * word start runs to the end of the line; a here-document body is skipped, so
+ * nothing in it is a message; an unclosed quote ends the scan.
  */
-function shellCommands(line: string): ShellCommand[] {
+function shellCommands(text: string): ShellCommand[] {
   const commands: ShellCommand[] = []
-  let current: ShellCommand = { words: [], segments: [], opener: '', closer: '' }
-  let word: ShellWord | undefined
-  const flush = () => {
-    if (word) current.words.push(word)
+  const stack: ShellGroup[] = []
+  const heredocs: Array<{ delimiter: string; strip: boolean }> = []
+  let current: ShellCommand = { words: [], segments: [], groups: [], piped: false }
+  let word: string | undefined
+  let functionNext = false
+
+  const start = (piped: boolean, tailOf?: ShellGroup) => {
+    current = { words: [], segments: [], groups: [...stack], piped, tailOf }
+  }
+  const end = (pipe: boolean) => {
+    flushWord()
+    if (pipe) current.piped = true
+    if (current.tailOf) {
+      current.tailOf.tail = current.words
+      if (current.piped) current.tailOf.piped = true
+    }
+    commands.push(current)
+    start(pipe)
+  }
+  const open = (kind: ShellGroupKind) => {
+    flushWord()
+    const piped = current.piped
+    if (current.words.length || current.segments.length) end(false)
+    stack.push({ kind, functionBody: functionNext, piped })
+    functionNext = false
+    start(false)
+  }
+  const close = (kind: ShellGroupKind): boolean => {
+    if (stack.at(-1)?.kind !== kind) return false
+    end(false)
+    const group = stack.pop()!
+    start(false, group)
+    return true
+  }
+  function flushWord() {
+    if (word === undefined) return
+    const text = word
     word = undefined
+    const empty = current.words.length === 0
+    if (empty) {
+      if (text === '}' && close('{')) return
+      const closer = COMPOUND_CLOSERS[text]
+      if (closer && close(closer)) return
+    }
+    const first = empty && !current.tailOf
+    if (text === '{' && (first || functionNext)) return open('{')
+    if (first) {
+      const opener = COMPOUND_OPENERS[text]
+      if (opener) return open(opener)
+      if (LIST_WORDS.has(text)) return
+      if (text === 'function') {
+        functionNext = true
+        return
+      }
+    }
+    current.words.push(text)
   }
-  const extend = (index: number, text: string) => {
-    word ??= { text: '', start: index }
-    word.text += text
+  const extend = (text: string) => {
+    word = (word ?? '') + text
   }
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]!
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]!
+    const next = text[index + 1]
     if (char === '\\') {
-      extend(index, line.slice(index, index + 2))
+      if (next === '\n') flushWord()
+      else extend(text.slice(index, index + 2))
       index += 1
+    } else if (char === '#' && word === undefined) {
+      const eol = text.indexOf('\n', index)
+      index = (eol === -1 ? text.length : eol) - 1
     } else if (char === '"' || char === "'") {
-      const segment = quotedAt(line, index)
+      const segment = quotedAt(text, index)
       if (!segment) {
-        extend(index, line.slice(index))
+        extend(text.slice(index))
         break
       }
       current.segments.push(segment)
-      extend(index, line.slice(index, segment.end + 1))
+      extend(text.slice(index, segment.end + 1))
       index = segment.end
-    } else if (char === '&' && (/[<>]/u.test(line[index - 1] ?? '') || line[index + 1] === '>')) {
-      extend(index, char) // `>&2`, `<&0` and `&>file` are redirections, not separators
-    } else if (/[;&|(){}`\n]/u.test(char)) {
-      flush()
-      const separator = char === '(' && line[index - 1] === '$' ? '$(' : char
-      current.closer =
-        char === '|' && line[index + 1] !== '|' && line[index - 1] !== '|' ? '|' : char
-      commands.push(current)
-      current = { words: [], segments: [], opener: separator, closer: '' }
-    } else if (/\s/u.test(char)) flush()
-    else extend(index, char)
+    } else if (char === '<' && next === '<' && text[index + 2] !== '<') {
+      let cursor = index + 2
+      const strip = text[cursor] === '-'
+      if (strip) cursor += 1
+      while (text[cursor] === ' ' || text[cursor] === '\t') cursor += 1
+      const from = cursor
+      while (cursor < text.length && !/[\s;&|()<>]/u.test(text[cursor]!)) cursor += 1
+      heredocs.push({ delimiter: text.slice(from, cursor).replaceAll(/['"\\]/gu, ''), strip })
+      extend(text.slice(index, cursor))
+      index = cursor - 1
+    } else if (char === '&' && (/[<>]/u.test(text[index - 1] ?? '') || next === '>')) {
+      extend(char) // `>&2`, `<&0` and `&>file` are redirections, not separators
+    } else if (char === '(') {
+      if (word !== undefined && /[$<>]$/u.test(word)) {
+        end(false)
+        open('$(')
+      } else if (word !== undefined && emptyParensAt(text, index + 1)) {
+        end(false)
+        functionNext = true
+        index = text.indexOf(')', index)
+      } else open('(')
+    } else if (char === ')') {
+      flushWord()
+      const top = stack.at(-1)?.kind
+      if (top === '(') close('(')
+      else if (top === '$(') {
+        end(false)
+        stack.pop()
+        start(false)
+        current.continued = true
+      } else end(false) // a case pattern
+    } else if (char === '`') {
+      if (stack.at(-1)?.kind === '`') {
+        end(false)
+        stack.pop()
+        start(false)
+        current.continued = true
+      } else open('`')
+    } else if (char === '|') {
+      if (next === '|') end(false)
+      else end(true)
+      if (next === '|' || next === '&') index += 1
+    } else if (char === ';' || char === '&') {
+      end(false)
+      if (next === char) index += 1
+    } else if (char === '\n') {
+      end(false)
+      let cursor = index + 1
+      for (const heredoc of heredocs.splice(0)) {
+        for (;;) {
+          if (cursor >= text.length) break
+          const eol = text.indexOf('\n', cursor)
+          const lineEnd = eol === -1 ? text.length : eol
+          const line = text.slice(cursor, lineEnd)
+          cursor = lineEnd + 1
+          if ((heredoc.strip ? line.replace(/^\t+/u, '') : line) === heredoc.delimiter) break
+        }
+      }
+      index = cursor - 1
+    } else if (/\s/u.test(char)) flushWord()
+    else extend(char)
   }
-  flush()
-  commands.push(current)
+  end(false)
   return commands
 }
 
-/**
- * Whether a quoted shell string is only printed: an argument of `echo` or
- * `printf` whose output reaches the terminal. Output piped on, redirected to a
- * file or captured by `$(…)`/backticks can be run or loaded, so it counts, and
- * so does a double-quoted string that itself substitutes a command.
- */
-function shellMessage(command: ShellCommand, segment: QuotedSegment): boolean {
-  if (segment.quote === '"' && /\$\(|`/u.test(segment.content)) return false
-  if (command.opener === '$(' || command.opener === '`' || command.closer === '|') return false
-  const words = command.words.map((word) => word.text)
-  while (words.length && KEYWORDS.has(words[0]!)) words.shift()
-  if (!PRINTERS.has(words[0] ?? '')) return false
-  return command.words.every((word) => {
-    const bare = word.text.replaceAll(/'[^']*'|"(?:\\.|[^"\\])*"|\\./gu, '')
-    return !/[<>]/u.test(bare) || TERMINAL_REDIRECT.test(bare)
-  })
-}
-
-/** Whether a JS string literal is only a message: the first argument of console.*, an Error or a log helper. */
-function javascriptMessage(line: string, segment: QuotedSegment): boolean {
-  if (segment.quote === '`' && segment.content.includes('${')) return false
-  return MESSAGE_CALL.test(line.slice(0, segment.start))
-}
+const redirectsOnlyToStderr = (words: readonly string[]) =>
+  words.every((word) => TO_STDERR.test(word.replaceAll(QUOTED_PART, '')))
 
 /**
- * The override set on this line. Every match of the broad net counts except a
- * reader (`$NAME`, `${NAME…}`) and a match wholly inside a quoted string that
- * is only a message: an `echo`/`printf` argument in shell, the first argument
- * of console.*, an Error or a log helper in JS. A string run as a command
- * (`sh -c '…'`, `execSync("…")`) is not a message, so any setter in it counts.
+ * Whether a command's quoted arguments reach stderr and nothing else: `echo`
+ * or `printf` with an explicit `>&2`/`1>&2`, no other redirection, in no
+ * pipeline, and inside no function body, command substitution or group whose
+ * own output is piped or redirected elsewhere.
  */
-function lineSetsOverride(line: string, javascript: boolean): string | undefined {
-  const commands = javascript ? [] : shellCommands(line)
-  const strings = javascript ? javascriptStrings(line) : []
+function printsOnlyToStderr(command: ShellCommand): boolean {
+  const [printer, ...rest] = command.words
+  if (!PRINTERS.has(printer ?? '') || command.piped || command.tailOf || command.continued)
+    return false
+  if (printer === 'printf' && rest.some((word) => /^-\w*v/u.test(word))) return false // `printf -v NAME` assigns
+  let toStderr = false
+  for (const word of command.words) {
+    const bare = word.replaceAll(QUOTED_PART, '')
+    if (TO_STDERR.test(bare)) toStderr = true
+    else if (/[<>]/u.test(bare)) return false
+  }
+  return (
+    toStderr &&
+    command.groups.every(
+      (group) =>
+        TRANSPARENT_GROUPS.has(group.kind) &&
+        !group.functionBody &&
+        !group.piped &&
+        group.tail !== undefined &&
+        redirectsOnlyToStderr(group.tail),
+    )
+  )
+}
+
+/** Quoted shell strings that are only printed to stderr; a string that expands code or spans lines is not one. */
+function shellMessages(text: string): QuotedSegment[] {
+  return shellCommands(text)
+    .filter(printsOnlyToStderr)
+    .flatMap((command) => command.segments)
+    .filter(
+      (segment) =>
+        !segment.content.includes('\n') &&
+        !(segment.quote === '"' && /`|\$[([{]/u.test(segment.content)),
+    )
+}
+
+/** Whether a JS file's message literals can only be printed: it loads nothing and rewires nothing. */
+function javascriptFileMessages(text: string): boolean {
+  if (JAVASCRIPT_REWIRING.test(text)) return false
+  return (text.match(CONSOLE_USE)?.length ?? 0) === (text.match(CONSOLE_CALL)?.length ?? 0)
+}
+
+/** JS message literals on one line: the first argument of console.error/warn or `throw new Error(…)`. */
+function javascriptMessages(line: string, offset: number): QuotedSegment[] {
+  return javascriptStrings(line)
+    .filter(
+      (segment) =>
+        !(segment.quote === '`' && segment.content.includes('${')) &&
+        MESSAGE_CALL.test(line.slice(0, segment.start)),
+    )
+    .map((segment) => ({ ...segment, start: segment.start + offset, end: segment.end + offset }))
+}
+
+interface MessageScope {
+  shell: boolean
+  javascript: boolean
+  /** Whether something that can read a child's stderr may run this script name or file. */
+  capturable: (token: string) => boolean
+}
+
+const NO_MESSAGES: MessageScope = { shell: false, javascript: false, capturable: () => true }
+
+/**
+ * Whether messages in this scope can be excused at all. Every script and
+ * scanned file is a possible caller: a script that captures stderr, sources
+ * code, redefines a printer or preloads node code could run what a message
+ * prints, and a pnpm script-shell setting replaces the shell every script
+ * runs in. A JS file that can read a child's stderr withdraws the excuse from
+ * any script or file it, or the script running it, names.
+ */
+function messageScope(
+  configs: readonly string[],
+  texts: ReadonlyMap<string, string>,
+  runs: ReadonlyArray<{ command: string; files: readonly string[] }>,
+): MessageScope {
+  if (configs.some((text) => SCRIPT_SHELL.test(text))) return NO_MESSAGES
+  const shell: string[] = []
+  const capturing = new Map<string, string>()
+  for (const [origin, text] of texts) {
+    const stderrCaptured = STDERR_CAPTURE.test(text.replaceAll(DISCARD, ''))
+    if (!JAVASCRIPT.test(origin)) {
+      if (stderrCaptured) return NO_MESSAGES
+      shell.push(text)
+    } else if (stderrCaptured || JAVASCRIPT_CAPTURE.test(text)) capturing.set(origin, text)
+  }
+  const callers = [
+    ...capturing.values(),
+    ...runs
+      .filter((run) => run.files.some((file) => capturing.has(file)))
+      .map((run) => run.command),
+  ]
+  return {
+    shell: !shell.some((text) => SHELL_REWIRING.test(text)),
+    javascript: !shell.some((text) => NODE_PRELOAD.test(text)),
+    capturable: (token) => {
+      const escaped = token.replaceAll(/[$()*+.?[\\\]^{|}]/gu, String.raw`\$&`)
+      const mention = new RegExp(`(?<![\\w:.-])${escaped}(?![\\w:-])`, 'u')
+      return callers.some((text) => mention.test(text))
+    },
+  }
+}
+
+/** The name an override setter on this line arms, if any. */
+function setterIn(
+  line: string,
+  offset: number,
+  messages: readonly QuotedSegment[],
+): string | undefined {
+  const assignment = DEFAULT_ASSIGN.exec(line)
+  if (assignment) return assignment[1]
   for (const match of line.matchAll(OVERRIDE_VALUE)) {
-    const start = match.index
+    if (/\$\{?$/u.test(line.slice(0, match.index))) continue // a reader: `$NAME`, `${NAME:-…}`
+    const start = offset + match.index
     const end = start + match[0].length
-    if (/\$\{?$/u.test(line.slice(0, start))) continue
-    const within = (segment: QuotedSegment) => segment.start < start && end <= segment.end
-    if (javascript) {
-      const segment = strings.find(within)
-      if (segment && javascriptMessage(line, segment)) continue
-    } else {
-      const command = commands.find((candidate) => candidate.segments.some(within))
-      const segment = command?.segments.find(within)
-      if (command && segment && shellMessage(command, segment)) continue
-    }
+    if (messages.some((segment) => segment.start < start && end <= segment.end)) continue
     return match[1]
   }
   return undefined
 }
 
-/** The first line that sets an override, skipping whole-line comments. */
+/**
+ * The first line that sets an override, skipping whole-line comments. Every
+ * match of the broad net counts except a reader and, when `messages` allows,
+ * a match wholly inside a message printed to stderr. A string run as a
+ * command (`sh -c '…'`, `execSync("…")`) is never a message.
+ */
 function armedOverride(
   text: string,
   javascript: boolean,
+  messages: boolean,
 ): { name: string; line: number } | undefined {
+  const exempt = messages && !javascript ? shellMessages(text) : []
+  let offset = 0
   for (const [index, raw] of text.split('\n').entries()) {
-    const line = javascript ? raw.replaceAll(/\/\*.*?\*\//gu, '') : raw
+    const lineOffset = offset
+    offset += raw.length + 1
+    const line = javascript
+      ? raw.replaceAll(/\/\*.*?\*\//gu, (comment) => ' '.repeat(comment.length))
+      : raw
     const trimmed = line.trimStart()
     if (javascript ? trimmed.startsWith('//') : trimmed.startsWith('#')) continue
-    const name = lineSetsOverride(line, javascript)
+    const lineMessages = javascript
+      ? messages
+        ? javascriptMessages(line, lineOffset)
+        : []
+      : exempt
+    const name = setterIn(line, lineOffset, lineMessages)
     if (name) return { name: name.toUpperCase(), line: index + 1 }
   }
   return undefined
@@ -458,22 +733,43 @@ export function findLegacyPublishPaths(
     for (const name of LIFECYCLE_SCRIPTS)
       if (pkg.scripts[name] !== undefined)
         at(name, 'runs automatically around deploy:dev; development deploy owns that path')
+  }
+  const runs: Array<{ pkg: WorkspacePackage; name: string; command: string; files: string[] }> = []
+  const texts = new Map<string, string>()
+  for (const pkg of packages)
     for (const [name, command] of Object.entries(pkg.scripts)) {
       if (typeof command !== 'string') continue
-      const inline = armedOverride(command, false)
-      if (inline) {
-        at(name, `sets ${inline.name}, a workstation publish override`)
-        continue
-      }
-      for (const file of referencedFiles(command, pkg.directory, checkout)) {
-        const armed = armedOverride(readFileSync(file, 'utf8'), JAVASCRIPT.test(file))
-        if (!armed) continue
-        at(
-          name,
-          `runs ${relative(checkout, file).split(sep).join('/')}, which sets ${armed.name} (line ${armed.line})`,
-        )
-        break
-      }
+      const files = referencedFiles(command, pkg.directory, checkout)
+      runs.push({ pkg, name, command, files })
+      texts.set(`${pkg.rel}#${name}`, command)
+      for (const file of files) texts.set(file, readFileSync(file, 'utf8'))
+    }
+  const configs = [resolve(checkout), ...packages.map((pkg) => pkg.directory)]
+    .flatMap((directory) =>
+      ['.npmrc', 'pnpm-workspace.yaml'].map((file) => resolve(directory, file)),
+    )
+    .filter((file) => existsSync(file) && statSync(file).isFile())
+    .map((file) => readFileSync(file, 'utf8'))
+  const scope = messageScope(configs, texts, runs)
+  for (const { pkg, name, command, files } of runs) {
+    const at = (reason: string) => findings.push({ packageJson: pkg.rel, script: name, reason })
+    const inline = armedOverride(command, false, scope.shell && !scope.capturable(name))
+    if (inline) {
+      at(`sets ${inline.name}, a workstation publish override`)
+      continue
+    }
+    for (const file of files) {
+      const text = texts.get(file)!
+      const javascript = JAVASCRIPT.test(file)
+      const messages =
+        (javascript ? scope.javascript && javascriptFileMessages(text) : scope.shell) &&
+        !scope.capturable(basename(file))
+      const armed = armedOverride(text, javascript, messages)
+      if (!armed) continue
+      at(
+        `runs ${relative(checkout, file).split(sep).join('/')}, which sets ${armed.name} (line ${armed.line})`,
+      )
+      break
     }
   }
   return findings
