@@ -636,11 +636,13 @@ export async function logoutUser(event: H3Event) {
 }
 
 /**
- * Log out everywhere (narduk-libs#1043): end this browser's session like
- * `logoutUser`, then delete every other `auth_sessions` row the user holds and
- * revoke their native-client tokens. On the supabase backend this stays
- * app-local, like logout: `signOut({ scope: 'global' })` would also end the
- * user's sessions in every other app on the shared authority (#921).
+ * Log out everywhere (narduk-libs#1043): revoke the user's native-client tokens
+ * and every other `auth_sessions` row, then end this browser's session like
+ * `logoutUser`. The revokes run first so a failure leaves this browser signed in
+ * to retry, and because the Supabase sign-out below reads this session's row.
+ * That sign-out stays app-local, like logout: `signOut({ scope: 'global' })`
+ * would also end the user's sessions in every other app on the shared
+ * authority (#921).
  */
 export async function logoutEverywhere(event: H3Event) {
   const sessionUser = await getCurrentSessionUser(event)
@@ -648,12 +650,13 @@ export async function logoutEverywhere(event: H3Event) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
   }
 
-  await logoutUser(event)
   if (useRuntimeConfig(event).authNativeClients?.length) {
     await useNativeAuth(event).revokeUser(sessionUser.id)
   }
-  await revokeUserAuthSessions(event, sessionUser.id)
-  return { success: true }
+  await revokeUserAuthSessions(event, sessionUser.id, {
+    exceptSessionId: sessionUser.authSessionId,
+  })
+  return logoutUser(event)
 }
 
 /**

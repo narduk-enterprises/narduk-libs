@@ -5,15 +5,19 @@ import { logoutEverywhere } from '../server/lib/app-auth/auth-flows'
 import type { H3Event } from 'h3'
 
 /**
- * narduk-libs#1043: "log out everywhere" ends this browser's session like
- * logout, then deletes every other `auth_sessions` row the user holds and
- * revokes their native-client tokens. Upstream it stays app-local (#921).
+ * narduk-libs#1043: "log out everywhere" revokes the user's native-client tokens
+ * and every other `auth_sessions` row, then ends this browser's session like
+ * logout. Upstream it stays app-local (#921).
  */
+
+const CLEAR_CURRENT = vi.hoisted(() => 'clear-current')
+const REVOKE_OTHERS = 'revoke:user-1:except=sess-1'
 
 const state = vi.hoisted(() => ({
   backend: 'supabase' as 'local' | 'supabase',
   nativeClients: [] as string[],
   calls: [] as string[],
+  revokeFails: false,
   signOutCalls: [] as unknown[][],
   sessionUser: { id: 'user-1', authSessionId: 'sess-1' } as Record<string, unknown> | null,
 }))
@@ -32,7 +36,7 @@ vi.mock('../server/utils/native-auth', () => ({
 
 vi.mock('../server/lib/app-auth/session', () => ({
   clearCurrentSession: async () => {
-    state.calls.push('clear-current')
+    state.calls.push(CLEAR_CURRENT)
   },
   establishLocalSessionUser: vi.fn(),
   getCurrentSessionUser: async () => state.sessionUser,
@@ -50,6 +54,7 @@ vi.mock('../server/lib/app-auth/session', () => ({
     userId: string,
     options: { exceptSessionId?: string | null } = {},
   ) => {
+    if (state.revokeFails) throw new Error('database down')
     state.calls.push(`revoke:${userId}:except=${options.exceptSessionId ?? 'none'}`)
   },
   setCurrentSessionUser: vi.fn(),
@@ -72,14 +77,23 @@ describe('logoutEverywhere (#1043)', () => {
     state.backend = 'supabase'
     state.nativeClients = []
     state.calls = []
+    state.revokeFails = false
     state.signOutCalls = []
     state.sessionUser = { id: 'user-1', authSessionId: 'sess-1' }
   })
 
-  it('ends this session, then every session the user holds, keeping none', async () => {
+  it('ends every other session, then this one, so no session survives', async () => {
     await expect(logoutEverywhere(event)).resolves.toEqual({ success: true })
 
-    expect(state.calls).toEqual(['clear-current', 'revoke:user-1:except=none'])
+    expect(state.calls).toEqual([REVOKE_OTHERS, CLEAR_CURRENT])
+  })
+
+  it('leaves this browser signed in to retry when a revoke fails', async () => {
+    state.revokeFails = true
+
+    await expect(logoutEverywhere(event)).rejects.toThrow('database down')
+    expect(state.calls).not.toContain(CLEAR_CURRENT)
+    expect(state.signOutCalls).toEqual([])
   })
 
   it('stays app-local upstream: never the global Supabase sign-out (#921)', async () => {
@@ -93,7 +107,7 @@ describe('logoutEverywhere (#1043)', () => {
 
     await logoutEverywhere(event)
 
-    expect(state.calls).toEqual(['clear-current', 'native:user-1', 'revoke:user-1:except=none'])
+    expect(state.calls).toEqual(['native:user-1', REVOKE_OTHERS, CLEAR_CURRENT])
   })
 
   it('works on the local backend without calling Supabase', async () => {
@@ -102,7 +116,7 @@ describe('logoutEverywhere (#1043)', () => {
     await logoutEverywhere(event)
 
     expect(state.signOutCalls).toEqual([])
-    expect(state.calls).toEqual(['clear-current', 'revoke:user-1:except=none'])
+    expect(state.calls).toEqual([REVOKE_OTHERS, CLEAR_CURRENT])
   })
 
   it('is 401 without a session, and revokes nothing', async () => {
