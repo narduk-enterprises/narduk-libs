@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-app
 
+## 1.20.3
+
+### Patch Changes
+
+- 9ed976d: README: state narduk-app's scope as a standalone package (#1032).
+  This is a docs-only change.
+
 ## 1.20.2
 
 ### Patch Changes

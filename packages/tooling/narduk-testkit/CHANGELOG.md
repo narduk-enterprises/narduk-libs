@@ -1,5 +1,36 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.9.0
+
+### Minor Changes
+
+- 1e4b5fe: Add `narduk-testkit e2e check|setup|run` (narduk-libs#997), the
+  shared replacement for the `scripts/setup-playwright-browsers.mjs` and
+  `scripts/run-web-e2e.mjs` copies in 13 apps. `check` launches Chromium
+  headless (an existing executable is not proof it starts) and quotes the launch
+  error; `setup` runs the app's `playwright install chromium` into the ambient
+  `PLAYWRIGHT_BROWSERS_PATH` or Playwright's shared machine cache, never a
+  per-checkout one; `run` checks, then runs `playwright test` with the default
+  config, `--project=web` only when the caller chose no project (Playwright
+  accumulates repeated `--project` flags), and `--import tsx` once when the app
+  has tsx. `playwright/config` also exports `resolveBrowserCachePath(env)` and
+  `withDefaultProject(args, project)` for apps that keep a custom runner.
+- 471374e: Add `server/kit/vitest` with `nuxtVitestAliases({ appRoot })` and
+  `server/kit/nitro-runtime-stub` (narduk-libs#998). The helper builds Vite
+  `resolve.alias` entries for Nuxt's `#` and `~` aliases from the table Nuxt
+  writes (`.nuxt/tsconfig.json`), so `#layer`, `#narduk-core/schema` and
+  `#narduk-core/postgres-runtime` follow narduk-core's `module.ts` (including
+  the postgres backend) instead of hand-copied paths. It never aliases a bare
+  package name, keeps exact and prefix keys distinct, and throws naming
+  `nuxt prepare` when the table is missing. `nitropack/runtime` (anchored) and
+  `#imports` point at one stub with `useRuntimeConfig`, `setTestRuntimeConfig`,
+  `resetTestRuntimeConfig` and a throwing `useEvent`.
+- 5d93591: Add `@narduk-enterprises/narduk-testkit/e2e/readiness`:
+  `registerReadinessSetup` is the body of the preset's `setup` project (base URL
+  → `/api/health` status `ok|degraded` plus optional app assertions → warm each
+  listed route once), so apps stop repeating per-spec `beforeAll` readiness
+  guards (#1000).
+
 ## 1.8.1
 
 ### Patch Changes

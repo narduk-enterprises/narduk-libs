@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.8
+
+### Patch Changes
+
+- 9b85e7d: The package README now says the standalone
+  `narduk-enterprises/GeoGridWeb` repository is archived, rather than pending
+  retirement. It is still not a source for this package.
+
 ## 0.5.7
 
 ### Patch Changes

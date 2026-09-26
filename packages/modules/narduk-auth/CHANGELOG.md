@@ -1,5 +1,72 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.31.0
+
+### Minor Changes
+
+- 918cbe1: narduk-auth: add `server/utils/request-principal` (narduk-libs#980).
+  `resolveRequestPrincipal(event, options)` returns the caller, or `null` for an
+  anonymous caller or a recovery-mode / MFA-step-up session that the
+  restricted-session allowlists refuse for this request, so tenancy guards keep
+  their own 401/404 choice without skipping the rules `requireAuth` applies. API
+  keys (`allowApiKey`, with optional `requiredApiKeyScopes`) and native bearers
+  (`allowNative`) are opt-in; `emailVerified` comes from narduk-auth's proof,
+  not the raw session field. `resolveTenancyUserId` is a ready-made
+  narduk-tenancy `resolveUserId`. `session-privilege` also exports
+  `sessionPrivilegeRefusal`, the non-throwing form of
+  `assertSessionPrivilegeAllowsRequest`. The narduk-tenancy README's guard
+  example now uses `resolveTenancyUserId`.
+
+### Patch Changes
+
+- 830f3ed: Supabase account deletion (narduk-libs#1052, the rest of #923): a
+  social-only account (no `email` provider) now needs a recent sign-in — its
+  `auth_sessions` row created within `RECENT_SIGN_IN_WINDOW_SECONDS` (10
+  minutes) — or the delete answers 403 `reauthentication_required`; it used to
+  delete with no re-authentication at all. The upstream session created by the
+  current-password check (deletion and password change) is signed out with
+  `scope: 'local'` once the check passes. Invited or magic-link users with the
+  `email` provider are held to the password on purpose, and the comment and
+  README now say so.
+- a703b1b: Passkey routes now answer 503 "Passkeys unavailable: server
+  misconfiguration" and log the cause when `@simplewebauthn/server` fails to
+  load, instead of an opaque 500 (narduk-libs#892). The library, including its
+  `helpers` entry, is now imported lazily on the first ceremony rather than at
+  module load, so a load failure such as #786's missing Reflect polyfill rejects
+  where it can be answered. The error and its `cause` chain are logged under
+  `AppAuth`; the cause never reaches the response. `readPresentedChallenge`
+  decodes base64url with the platform `atob`, so the pure ceremony checks no
+  longer import the library at all. Successful ceremonies behave as before.
+- 591f07c: Account deletion now re-authenticates Supabase email+password users
+  against Supabase. `POST /api/auth/account/delete` only checked the local
+  `users.password_hash`, which Supabase-provisioned users never have, so on the
+  Supabase backend a request with `{}` deleted the local user and the upstream
+  identity with no password. A linked user with a stale local hash had the
+  opposite problem: deletion demanded the old local password. On a Supabase
+  session the route now verifies `currentPassword` with `signInWithPassword`,
+  the same check password change uses, and never consults the local hash
+  (narduk-libs#923).
+
+  `deleteCurrentUserAccountBridge` (and its `deleteCurrentUserAccount` alias)
+  accepts a new optional `verifyCredentials` hook that replaces the local hash
+  check; the new `verifySupabaseAccountDeletionCredentials` export is the
+  Supabase one. Provider-only accounts and the local backend behave as before.
+
+- 9e0f2f2: Supabase logout now revokes only the current session upstream.
+  `POST /api/auth/logout` called `signOut()` with no options, and
+  `@supabase/auth-js` defaults that to `{ scope: 'global' }`, which revoked
+  every session the user held at the authority: their other devices, and every
+  other app on the same Supabase project, were signed out within one
+  revalidation window. It now calls `signOut({ scope: 'local' })`
+  (narduk-libs#921). The local backend is unchanged.
+- Updated dependencies [abb9b15]
+- Updated dependencies [39046cb]
+- Updated dependencies [4276bf3]
+- Updated dependencies [9ed976d]
+- Updated dependencies [b3c821f]
+  - @narduk-enterprises/narduk-core@2.16.0
+  - @narduk-enterprises/narduk-app@1.20.3
+
 ## 1.30.2
 
 ### Patch Changes

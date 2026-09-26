@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.10.2
+
+### Patch Changes
+
+- b5932aa: `declutter()` (`./marks`) now sizes its merge grid from the largest
+  item radius, so overlapping discs with a radius above 24 px merge wherever
+  they sit on screen instead of depending on grid position (#933).
+- 9f8e206: `mapOverviewCamera` (`./marks`) frames a point set that straddles the
+  antimeridian on its own data. It used a plain min/max of longitudes, so any
+  crossing set spanned 360 degrees minus its short arc and always fell back to
+  `NORTH_AMERICA_OVERVIEW`. Longitudes are now unwrapped around their largest
+  gap before the outlier trim (the rule `computeLongitudeSpan` uses); `span.lng`
+  is the short arc and `center.lng` is normalised to -180..180. A set whose
+  largest gap already sits across +/-180 is framed exactly as before
+  (narduk-libs#932).
+- 1ad30f8: `hitTestPolygonOverlays` no longer reports a hit for a point inside a
+  polygon's hole. A drawable's `rings` are `[outer, ...holes]` and the overlay
+  layer draws the holes empty, so containment is now even-odd across rings; a
+  tap on the empty water of a lake no longer selects the surrounding polygon,
+  and falls through to a polygon drawn inside the hole (narduk-libs#931).
+
 ## 2.10.1
 
 ### Patch Changes
