@@ -233,6 +233,17 @@ The admin routes take an admin-owned API key only where its scopes allow it.
 session-only: no API key can grant or revoke admin, whatever its scopes. Admin
 sessions need no scope.
 
+## nuxt-auth-utils' session route
+
+nuxt-auth-utils serves `GET /api/_auth/session`, which
+`useUserSession().fetch()` calls, straight from the sealed cookie, without the
+session-grant validator. narduk-auth's `auth-session-refresh` middleware checks
+the grant first: when the cookie carries a user whose `auth_sessions` row is
+gone, expired or unreadable, the route answers `{}` (signed out) instead of that
+user. A live session, a cookie with no user, and `DELETE /api/_auth/session` are
+left to nuxt-auth-utils. The route is a client display hint, never a grant:
+server authorization goes through `requireAuth`, which asks the validator.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request
