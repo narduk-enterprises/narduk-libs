@@ -2,7 +2,10 @@ import { rmSync } from 'node:fs'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { runSharedUiPinnedCheck } from '../../src/foundation/evaluate-shared-ui-pinned.js'
+import {
+  formatSharedUiPinnedSummary,
+  runSharedUiPinnedCheck,
+} from '../../src/foundation/evaluate-shared-ui-pinned.js'
 import {
   evaluateItem8,
   PRESENCE_REQUIRED,
@@ -401,5 +404,59 @@ describe('item 8 -- shared-ui-pinned artefact runner', () => {
     expect(artefact.item.status).toBe('unknown')
     expect(artefact.result).toBe('UNKNOWN')
     expect(artefact.exitCode).toBe(2)
+  })
+})
+
+describe('item 8 -- @nuxt/ui pin advisory (narduk-libs#1033, warn first)', () => {
+  async function run(root: string) {
+    return runSharedUiPinnedCheck({
+      root,
+      toolVersion: '0.0.0-test',
+      reality: reality(),
+      appOverrides: { repo: 'x/y', commit: 'a'.repeat(40) },
+    })
+  }
+
+  it('warns on a ranged @nuxt/ui without changing the verdict or the exit code', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeUiApp(root, { '@nuxt/ui': '^4.11.1', [SHELL]: '0.11.0' })
+
+    const artefact = await run(root)
+
+    expect(artefact.result).toBe('PASS')
+    expect(artefact.exitCode).toBe(0)
+    expect(artefact.advisories).toHaveLength(1)
+    expect(artefact.advisories[0]).toContain('@nuxt/ui is pinned as "^4.11.1"')
+    expect(artefact.item.checks.map((check) => check.id)).toEqual(['8.0', '8.1', '8.2', '8.3'])
+    expect(formatSharedUiPinnedSummary(artefact)).toMatch(/\[WARN\] @nuxt\/ui is pinned as/)
+  })
+
+  it('says nothing for an exact @nuxt/ui, an app without it, or an API-only app', async () => {
+    const exact = makeTempRepo()
+    const absent = makeTempRepo()
+    const apiOnly = makeTempRepo()
+    tempDirs.push(exact, absent, apiOnly)
+    writeUiApp(exact, { '@nuxt/ui': '4.11.1' })
+    writeUiApp(absent, {})
+    writeJson(apiOnly, 'package.json', { name: 'api', dependencies: { '@nuxt/ui': '^4.0.0' } })
+
+    for (const root of [exact, absent, apiOnly]) {
+      const artefact = await run(root)
+      expect(artefact.advisories).toEqual([])
+      expect(formatSharedUiPinnedSummary(artefact)).not.toContain('[WARN]')
+    }
+  })
+
+  it('still fails a ranged shared-UI pin: the advisory adds, never softens', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeUiApp(root, { '@nuxt/ui': '^4.11.1', [SHELL]: '^0.11.0' })
+
+    const artefact = await run(root)
+
+    expect(artefact.result).toBe('FAIL')
+    expect(artefact.exitCode).toBe(1)
+    expect(artefact.advisories).toHaveLength(1)
   })
 })

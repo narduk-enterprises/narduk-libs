@@ -196,3 +196,32 @@ export async function evaluateItem8(
   }
   return checks
 }
+
+export const NUXT_UI_PACKAGE = '@nuxt/ui'
+
+/**
+ * Advisories: warnings that never change a status or the exit code
+ * (narduk-libs#1033). narduk-auth, narduk-seo, narduk-analytics and narduk-ai
+ * render Nuxt UI components and declare `@nuxt/ui` as an exact peer, as
+ * narduk-core and narduk-shell pin it. An app that depends on `@nuxt/ui`
+ * through a range can resolve a different version from the one those
+ * components were built against.
+ *
+ * Logan, 2026-09-26 (askme, verbatim): "Peers + warn-level check
+ * (Recommended)" -- warn first, then ratchet, as his #973 answer set. Statuses
+ * keep D-WEBFOUND-2 Q9 (a)'s "no warning tier", so the warning lives beside
+ * the sub-checks rather than as one. Ratcheting it means adding
+ * `{ id: '8.4', pkg: NUXT_UI_PACKAGE }` to `SHARED_UI_PACKAGES` and dropping
+ * this function.
+ */
+export function nuxtUiPinAdvisories(repo: AppRepo): string[] {
+  const packages = collectPackages(repo)
+  if (packages.length === 0 || !hasNuxtUiSurface(repo)) return []
+  const spec = mergedDeps(packages)[NUXT_UI_PACKAGE]
+  if (spec === undefined || EXACT_PIN_RE.test(spec)) return []
+  return [
+    `${NUXT_UI_PACKAGE} is pinned as ${JSON.stringify(spec)}, not an exact version. ` +
+      'Narduk modules render Nuxt UI and peer on an exact version; pin it exactly, ' +
+      'e.g. "4.11.1". A warning today; it becomes a failing sub-check later (narduk-libs#1033).',
+  ]
+}
