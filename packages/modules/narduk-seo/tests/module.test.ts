@@ -496,6 +496,104 @@ describe('narduk-seo module', () => {
     )
   })
 
+  describe('build branch fallback when no deploy target is set (narduk-libs#999)', () => {
+    function clearDeployTargetEnv(): void {
+      vi.stubEnv('NARDUK_DEPLOY_TARGET', '')
+      vi.stubEnv('NUXT_PUBLIC_NARDUK_DEPLOY_TARGET', '')
+      vi.stubEnv('NUXT_PUBLIC_DEPLOYMENT_TARGET', '')
+      vi.stubEnv('WORKERS_CI_BRANCH', '')
+      vi.stubEnv('CF_PAGES_BRANCH', '')
+    }
+
+    it('treats a Workers Builds branch build as preview and forces noindex', async () => {
+      clearDeployTargetEnv()
+      vi.stubEnv('WORKERS_CI_BRANCH', 'feature/login')
+
+      const { extendRouteRules, nuxt } = await setupModule()
+
+      expect(nuxt.options.site).toMatchObject({ env: 'preview', indexable: false })
+      expect(nuxt.options.sitemap).toMatchObject({ enabled: false })
+      expect(extendRouteRules).toHaveBeenCalledWith(
+        '/**',
+        expect.objectContaining({ site: { env: 'preview', indexable: false } }),
+        { override: true },
+      )
+    })
+
+    it('treats a production-branch build as production for host-aware indexing', async () => {
+      clearDeployTargetEnv()
+      vi.stubEnv('WORKERS_CI_BRANCH', 'main')
+
+      const { addPlugin, extendRouteRules, nuxt } = await setupModule({
+        moduleOptions: { hostAwareIndexing: true },
+      })
+
+      expect(nuxt.options.site).not.toHaveProperty('indexable')
+      expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
+      expect(
+        (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+          ?.nardukSeoHostAwareIndexing,
+      ).toBe(true)
+      expect(addPlugin).toHaveBeenCalledWith(
+        expect.stringContaining('/app/plugins/hostAwareIndexing'),
+      )
+    })
+
+    it('keeps an unset target unset when no branch variable is present', async () => {
+      clearDeployTargetEnv()
+
+      const { addPlugin, extendRouteRules, nuxt } = await setupModule({
+        moduleOptions: { hostAwareIndexing: true },
+      })
+
+      expect(nuxt.options.site).not.toHaveProperty('indexable')
+      expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
+      expect(
+        (nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+          ?.nardukSeoHostAwareIndexing,
+      ).toBe(false)
+      expect(addPlugin).not.toHaveBeenCalled()
+    })
+
+    it('honours a productionBranch option for apps that deploy from master', async () => {
+      clearDeployTargetEnv()
+      vi.stubEnv('WORKERS_CI_BRANCH', 'master')
+
+      const withOption = await setupModule({
+        moduleOptions: { hostAwareIndexing: true, productionBranch: 'master' },
+      })
+
+      expect(withOption.nuxt.options.site).not.toHaveProperty('indexable')
+      expect(withOption.extendRouteRules).not.toHaveBeenCalledWith(
+        '/**',
+        expect.anything(),
+        expect.anything(),
+      )
+      expect(
+        (withOption.nuxt.options.runtimeConfig as { public?: Record<string, unknown> }).public
+          ?.nardukSeoHostAwareIndexing,
+      ).toBe(true)
+
+      vi.resetModules()
+      vi.clearAllMocks()
+
+      // Without the option, `master` is not the default production branch.
+      const withoutOption = await setupModule()
+      expect(withoutOption.nuxt.options.site).toMatchObject({ env: 'preview', indexable: false })
+    })
+
+    it('lets an explicit target win over the branch', async () => {
+      clearDeployTargetEnv()
+      vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+      vi.stubEnv('WORKERS_CI_BRANCH', 'feature/login')
+
+      const { extendRouteRules, nuxt } = await setupModule()
+
+      expect(nuxt.options.site).not.toHaveProperty('indexable')
+      expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
+    })
+  })
+
   it('keeps production robots.txt defaults unchanged when aiCrawlers is unset', async () => {
     const { addServerHandler, installSnapshots, nuxt } = await setupModule()
 

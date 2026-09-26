@@ -20,6 +20,10 @@ import { defu } from 'defu'
 
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
 import {
+  DEPLOYMENT_TARGET_ENV_KEYS,
+  resolveBuildDeploymentTarget,
+} from '../shared/deploymentTarget'
+import {
   canResolveNuxtOgImage,
   isNuxtOgImageModuleRequested,
   isRuntimeOgImageGenerationEnabled,
@@ -165,6 +169,13 @@ export interface NardukSeoModuleOptions {
    */
   networkDirectoryUrl?: string
   /**
+   * Branch whose Workers Builds (or Pages) builds are production when no
+   * `NARDUK_DEPLOY_TARGET` is set; every other branch builds as `preview` and
+   * is noindexed. Default `'main'`. An app that deploys production from
+   * another branch (e.g. `master`) must set this or an explicit target.
+   */
+  productionBranch?: string
+  /**
    * RFC 9116 `security.txt`. Disabled unless the app sets `contact` — this
    * package never invents a reporting address. `expires` is build time plus
    * `expiresDays` (default 365, max 365).
@@ -233,16 +244,23 @@ function readBooleanEnv(key: string): boolean {
   return ['1', 'true', 'yes', 'on'].includes((process.env[key] || '').trim().toLowerCase())
 }
 
-function readDeploymentTarget(): string {
-  return readTrimmedEnv([
-    'NARDUK_DEPLOY_TARGET',
-    'NUXT_PUBLIC_NARDUK_DEPLOY_TARGET',
-    'NUXT_PUBLIC_DEPLOYMENT_TARGET',
-  ]).toLowerCase()
+function readDeploymentTarget(options: NardukSeoModuleOptions): string {
+  // An explicit variable wins exactly as before, including a value that is not
+  // one of the three known targets.
+  const explicit = readTrimmedEnv([...DEPLOYMENT_TARGET_ENV_KEYS]).toLowerCase()
+  if (explicit) return explicit
+
+  // narduk-libs#999: with no explicit variable, a Workers Builds (or Pages)
+  // branch still says what this build is, so apps no longer need a nuxt.config
+  // write-back of NARDUK_DEPLOY_TARGET. Only the branch result is used: a
+  // local build with no branch keeps today's unset target.
+  const productionBranch = options.productionBranch?.trim() || undefined
+  const resolved = resolveBuildDeploymentTarget(process.env, { productionBranch })
+  return resolved.source === 'branch' ? resolved.target : ''
 }
 
-function isNonProductionDeployment(): boolean {
-  const deploymentTarget = readDeploymentTarget()
+function isNonProductionDeployment(options: NardukSeoModuleOptions): boolean {
+  const deploymentTarget = readDeploymentTarget(options)
 
   return nonProductionDeploymentTargets.has(deploymentTarget)
 }
@@ -252,7 +270,7 @@ function shouldForceNonProductionNoindex(options: NardukSeoModuleOptions): boole
     return false
   }
 
-  return isNonProductionDeployment()
+  return isNonProductionDeployment(options)
 }
 
 function shouldEnableHostAwareIndexing(options: NardukSeoModuleOptions): boolean {
@@ -260,11 +278,14 @@ function shouldEnableHostAwareIndexing(options: NardukSeoModuleOptions): boolean
     return false
   }
 
-  return readDeploymentTarget() === 'production'
+  return readDeploymentTarget(options) === 'production'
 }
 
-function applyNonProductionSeoSafety(nuxtOptions: MutableNuxtOptionsRecord): void {
-  const deploymentTarget = readDeploymentTarget()
+function applyNonProductionSeoSafety(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  options: NardukSeoModuleOptions,
+): void {
+  const deploymentTarget = readDeploymentTarget(options)
   const nonProductionRouteRule = {
     headers: {
       'X-Robots-Tag': nonProductionRobotsRule,
@@ -524,7 +545,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       disallow: nonPublicRobotsDisallow,
     })
     if (shouldForceNonProductionNoindex(options)) {
-      applyNonProductionSeoSafety(nuxtOptions)
+      applyNonProductionSeoSafety(nuxtOptions, options)
     } else {
       nuxtOptions.robots = mergeAiCrawlerRobotsGroups(
         (nuxtOptions.robots ?? {}) as Record<string, unknown>,
