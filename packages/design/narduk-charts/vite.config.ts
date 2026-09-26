@@ -10,7 +10,12 @@ export default defineConfig({
     tailwindcss(),
     dts({
       include: ['src'],
-      exclude: ['src/**/*.story.vue', 'src/stories/**', 'src/entries/**'],
+      exclude: ['src/**/*.story.vue', 'src/**/*.test.ts', 'src/stories/**', 'src/entries/**'],
+      // TypeScript 6 infers rootDir as the package root, so declarations land in
+      // dist/src and the public dist/index.d.ts entry is left as `export {}`.
+      compilerOptions: {
+        rootDir: resolve(__dirname, 'src'),
+      },
       insertTypesEntry: true,
     }),
   ],
