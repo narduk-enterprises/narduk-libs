@@ -8,6 +8,12 @@ when the composable, component, or admin routes should be auto-wired. The module
 accepts `app: false` and/or `server: false` for consumers that only want the
 explicit imports.
 
+## Peer: `@nuxt/ui` at `4.11.1`
+
+The admin components this package ships (`AdminAiTab`) render Nuxt UI, so
+`@nuxt/ui` is a peer at exactly `4.11.1`, the version narduk-core and
+narduk-shell pin (narduk-libs#1033). An app on narduk-core already installs it.
+
 Package-internal server imports are deliberately relative. Nuxt's native
 `#server` alias belongs to the consuming app, so binding packaged route handlers
 to it would resolve AI utilities from the wrong repository. The package's scoped

@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-auth
 
+## Peer: `@nuxt/ui` at `4.11.1`
+
+The components and pages this package ships (the auth cards and panels,
+`AdminUsersTab`, `AppUserMenu`, the sign-in pages) render Nuxt UI, so `@nuxt/ui`
+is a peer at exactly `4.11.1`, the version narduk-core and narduk-shell pin
+(narduk-libs#1033). An app on narduk-core already installs it.
+
 ## Native app sign-in (opt-in, local backend)
 
 Apply `drizzle/0004_native_auth.sql` after the existing auth migrations, then
