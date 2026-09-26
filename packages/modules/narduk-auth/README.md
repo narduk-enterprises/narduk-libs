@@ -251,6 +251,31 @@ user. A live session, a cookie with no user, and `DELETE /api/_auth/session` are
 left to nuxt-auth-utils. The route is a client display hint, never a grant:
 server authorization goes through `requireAuth`, which asks the validator.
 
+## Log out everywhere
+
+`POST /api/auth/logout-everywhere` (`useAuth().logoutEverywhere()`) signs this
+browser out like `POST /api/auth/logout`, then deletes every `auth_sessions` row
+the user holds and, when native clients are configured, revokes their native
+sessions. Other browsers are signed out on their next request: the session-grant
+validator reads the row before anything else. On the Supabase backend the
+upstream sign-out stays `scope: 'local'`, as logout does (#921): a global
+sign-out would also end the user's sessions in every other app on the shared
+authority. The route refuses API-key principals and is not on the recovery or
+MFA step-up allowlists, so a restricted session cannot sign the user out of
+their full sessions.
+
+The same revocation runs where a credential changes:
+
+- A password change or reset ends every other session and native session.
+- Completing an MFA enrollment (`POST /api/auth/mfa/verify` on a factor that was
+  still `unverified`) ends every other session and native session; this browser
+  keeps its session, now at AAL2. A sign-in step-up on an enrolled factor ends
+  nothing. When the factor list cannot be read the verify counts as an
+  enrollment.
+- narduk-auth has no email-change or MFA-unenroll route. One added later must
+  call `revokeUserAuthSessions` (and `useNativeAuth(event).revokeUser` when
+  native clients are configured) the same way.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request

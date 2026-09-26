@@ -40,6 +40,13 @@ export function useAuth() {
     await fetchSession()
   }
 
+  /** Signs this browser out and ends every other session the user holds (#1043). */
+  async function logoutEverywhere() {
+    await api.logoutEverywhere()
+    await clear()
+    await fetchSession()
+  }
+
   async function startOAuth(payload: { next?: string; provider: 'apple' }) {
     return api.startOAuth(payload)
   }
@@ -132,6 +139,7 @@ export function useAuth() {
     register,
     signup: register,
     logout,
+    logoutEverywhere,
     startOAuth,
     exchangeSession,
     updateProfile,
