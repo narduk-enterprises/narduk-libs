@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "source": "company-hq docs/PACKAGE-STRATEGY.md §2 (narduk-core breaking changes), stated for every published narduk-libs package by narduk-libs#1034. Prose: docs/package-support-window.md.",
+  "rule": {
+    "id": "n-and-n-minus-1",
+    "minimumDays": 90,
+    "statement": "When a package publishes a new major version N, major N-1 keeps security and critical-bugfix backports until every consumer that was on N-1 when N shipped has migrated to N, or for 90 days after N is published, whichever is longer."
+  },
+  "packages": {
+    "@narduk-enterprises/create-narduk-app": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/eslint-config": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/geogrid-web": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/journeys": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-ai": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-analytics": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-app": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-app-tools": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-auth": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-charts": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-core": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-devices": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-logging": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-mapkit": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-mapkit-nuxt": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-platform": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-postgres": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-realtime": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-seo": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-shell": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-tenancy": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-testkit": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-timeseries": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-ui": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/narduk-uploads": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/status-runtime": {
+      "compatibility": "n-and-n-minus-1"
+    },
+    "@narduk-enterprises/stylelint-config": {
+      "compatibility": "n-and-n-minus-1"
+    }
+  }
+}
