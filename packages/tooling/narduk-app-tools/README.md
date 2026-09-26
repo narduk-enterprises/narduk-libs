@@ -785,7 +785,7 @@ runs without fetch retries, so an unreachable registry reads `UNKNOWN` in about
 a second rather than a minute. `create-narduk-app` scaffolds `narduk-app.json`
 with an empty list and the how-to in the app README.
 
-Bare `doctor` is unchanged. The audit leg is a flag, like `--adoption`.
+Bare `doctor` runs this leg too (below); `--audit` runs it alone.
 
 ## One verdict (`narduk-app doctor --all`)
 
@@ -805,8 +805,29 @@ build probes when `--live` is given) and `doctor --audit`.
 The line names every leg behind the verdict, for example
 `DOCTOR FAIL -- prerequisites: wrangler config; audit: FAIL 1 undeclared high/critical advisory`.
 `--json` prints one object: `verdict`, `line`, `exitCode`, and the three leg
-reports under `prerequisites`, `adoption` and `audit`. Bare `doctor`,
-`--adoption` and `--audit` keep their exact output and exit codes.
+reports under `prerequisites`, `adoption` and `audit`. `--adoption` and
+`--audit` keep their exact output and exit codes.
+
+## Bare `narduk-app doctor`
+
+`narduk-app doctor [--json] [--no-cache]` runs the prerequisites and the
+dependency audit and prints one verdict line first, then both reports
+(narduk-libs#376; Logan, 2026-09-26: "Bare = prereqs + audit"). It is `--all`
+without the adoption leg:
+
+| Verdict       | When                                                                      | Exit |
+| ------------- | ------------------------------------------------------------------------- | ---- |
+| `DOCTOR FAIL` | a prerequisite fails, or an undeclared high/critical advisory             | 1    |
+| `DOCTOR WARN` | nothing fails, but a prerequisite warns, or the audit warns or is offline | 0    |
+| `DOCTOR PASS` | both pass                                                                 | 0    |
+
+The undeclared advisory is the one new way for bare `doctor` to exit 1; accept
+or bump it as described under `doctor --audit`. The audit runs at the nearest
+directory with a `pnpm-lock.yaml`, walking up from where `doctor` runs but not
+out of the git repository, so a generated app's `pnpm run doctor` (which runs in
+`apps/web`) audits the root lockfile. `--json` keeps the old fields (`checks`,
+`clean`, `rootDir`) at the top level and adds `verdict`, `line`, `exitCode` and
+`audit`.
 
 ## The deployment standard block
 

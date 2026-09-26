@@ -9,10 +9,9 @@
  *                    header probe and the live build probe (`runAdoptionCheck`);
  *   - audit          `doctor --audit`'s high/critical advisory leg (`runAudit`).
  *
- * WHY A FLAG AND NOT BARE `doctor`. Bare `doctor`'s output and exit code have
- * callers, and whether it should grow the aggregation is an open maintainer
- * call. `--all` is additive: bare `doctor`, `--adoption` and `--audit` all keep
- * their exact behaviour.
+ * Bare `doctor` uses the same verdict over prerequisites and the audit only
+ * (`./doctor-bare.ts`, Logan 2026-09-26: "Bare = prereqs + audit"). `--all`
+ * adds the adoption leg.
  *
  * The verdict line comes first, then each leg's own report unchanged:
  *   DOCTOR FAIL  any leg fails: a prerequisite, an adoption requirement, or an
@@ -102,15 +101,20 @@ function namesWith(report: DoctorReport, status: 'warn' | 'fail'): string[] {
   return report.checks.filter((check) => check.status === status).map((check) => check.name)
 }
 
-/** The single answer across the three legs. Pure, so every combination is testable. */
-export function aggregateDoctorVerdict(legs: DoctorAllLegs): DoctorAllVerdict {
+/**
+ * The single answer across the legs. Pure, so every combination is testable.
+ * Without `adoption` (bare `doctor`) the verdict covers prerequisites and audit.
+ */
+export function aggregateDoctorVerdict(
+  legs: Omit<DoctorAllLegs, 'adoption'> & { adoption?: AdoptionArtefact },
+): DoctorAllVerdict {
   const { adoption, audit, prerequisites } = legs
   const failing: string[] = []
   const prerequisiteFailures = namesWith(prerequisites, 'fail')
   if (prerequisiteFailures.length > 0) {
     failing.push(`prerequisites: ${prerequisiteFailures.join(', ')}`)
   }
-  if (adoption.result === 'FAIL') failing.push(`adoption FAIL (${adoption.score.fail} failing)`)
+  if (adoption?.result === 'FAIL') failing.push(`adoption FAIL (${adoption.score.fail} failing)`)
   if (audit.status === 'fail') failing.push(`audit: ${audit.summary}`)
   if (failing.length > 0) {
     return { exitCode: 1, line: `DOCTOR FAIL -- ${failing.join('; ')}`, verdict: 'FAIL' }
@@ -121,9 +125,9 @@ export function aggregateDoctorVerdict(legs: DoctorAllLegs): DoctorAllVerdict {
   if (prerequisiteWarnings.length > 0) {
     warning.push(`prerequisites: ${prerequisiteWarnings.join(', ')}`)
   }
-  if (adoption.result === 'UNKNOWN') {
+  if (adoption?.result === 'UNKNOWN') {
     warning.push(`adoption UNKNOWN (${adoption.score.unknown} undecided)`)
-  } else if (adoption.result === 'DEVIATION') {
+  } else if (adoption?.result === 'DEVIATION') {
     warning.push(`adoption DEVIATION (${adoption.score.deviation} declared)`)
   }
   if (audit.status === 'warn' || audit.status === 'unknown') {
@@ -134,7 +138,9 @@ export function aggregateDoctorVerdict(legs: DoctorAllLegs): DoctorAllVerdict {
   }
   return {
     exitCode: 0,
-    line: 'DOCTOR PASS -- prerequisites, adoption and audit all pass',
+    line: adoption
+      ? 'DOCTOR PASS -- prerequisites, adoption and audit all pass'
+      : 'DOCTOR PASS -- prerequisites and audit pass',
     verdict: 'PASS',
   }
 }
