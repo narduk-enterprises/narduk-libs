@@ -264,11 +264,14 @@ authority. The route refuses API-key principals and is not on the recovery or
 MFA step-up allowlists, so a restricted session cannot sign the user out of
 their full sessions.
 
-The same revocation runs where a credential changes:
+The same revocation runs where a credential changes. Native sessions exist only
+on the local backend (`POST /api/auth/native/authorize` refuses any other
+session), so on Supabase only `auth_sessions` rows are revoked:
 
-- A password change or reset ends every other session and native session.
+- A password change or reset ends every other session, and on the local backend
+  every native session.
 - Completing an MFA enrollment (`POST /api/auth/mfa/verify` on a factor that was
-  still `unverified`) ends every other session and native session; this browser
+  still `unverified`, Supabase only) ends every other session; this browser
   keeps its session, now at AAL2. A sign-in step-up on an enrolled factor ends
   nothing. When the factor list cannot be read the verify counts as an
   enrollment.
