@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-seo",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "private": false,
   "type": "module",
   "description": "SEO, structured data, sitemap, robots, and OpenGraph Nuxt module for Narduk Cloudflare apps.",
