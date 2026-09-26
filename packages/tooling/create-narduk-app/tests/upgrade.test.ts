@@ -16,6 +16,7 @@ import {
   unifiedDiff,
   upgradeNardukApp,
 } from '../src/index.js'
+import { NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS } from '../src/workflow-pin.js'
 import { findTopLevelValue, scanJsonc, stripJsonc } from '../src/jsonc.js'
 import type { UpgradeReport } from '../src/index.js'
 
@@ -107,12 +108,14 @@ describe('upgrade ownership contract', () => {
       dependabot: await read(targetDir, '.github/dependabot.yml'),
     }
 
-    // Managed drift: a stale shared-workflow pin, a gutted contract script,
-    // a stale router paragraph, and two files rolled back wholesale.
+    // Managed drift: an older pin this generator shipped, a gutted contract
+    // script, a stale router paragraph, and two files rolled back wholesale.
+    // A SHA this generator never shipped is not rewritten: that is how a
+    // newer workflows pin is kept.
     await edit(targetDir, '.github/workflows/ci.yml', (contents) =>
       contents.replace(
         /nuxt-cloudflare\.yml@[0-9a-f]{40}/u,
-        'nuxt-cloudflare.yml@' + '0'.repeat(40),
+        'nuxt-cloudflare.yml@' + NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0],
       ),
     )
     await edit(targetDir, 'package.json', (contents) =>
