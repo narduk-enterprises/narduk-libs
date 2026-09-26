@@ -69,6 +69,13 @@ export function useAuthApi() {
     })
   }
 
+  function logoutEverywhere() {
+    return csrfFetch<{ success: boolean }>('/api/auth/logout-everywhere', {
+      method: 'POST',
+      headers: csrfHeaders,
+    })
+  }
+
   function startOAuth(payload: { next?: string; provider: 'apple' }) {
     return csrfFetch<{ url: string }>('/api/auth/oauth/start', {
       method: 'POST',
@@ -212,6 +219,7 @@ export function useAuthApi() {
     login,
     register,
     logout,
+    logoutEverywhere,
     startOAuth,
     exchangeSession,
     updateProfile,
