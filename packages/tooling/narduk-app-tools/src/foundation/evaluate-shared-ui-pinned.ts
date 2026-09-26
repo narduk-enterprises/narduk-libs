@@ -20,7 +20,7 @@
  * GitHub Packages token out of the ambient job environment.
  */
 
-import { evaluateItem8 } from './items/item-8-shared-ui-pinned.js'
+import { evaluateItem8, nuxtUiPinAdvisories } from './items/item-8-shared-ui-pinned.js'
 import { FilesystemRegistryReality, type RegistryReality } from './npm-registry.js'
 import { rollUp } from './schema.js'
 import { resolveAppInfo } from './evaluate.js'
@@ -45,6 +45,8 @@ export interface SharedUiPinnedArtefact {
   item: FoundationItemResult
   result: FoundationResult
   exitCode: 0 | 1 | 2
+  /** Warnings that change neither `result` nor `exitCode` (narduk-libs#1033). */
+  advisories: string[]
 }
 
 export interface RunSharedUiPinnedCheckOptions {
@@ -81,6 +83,7 @@ export async function runSharedUiPinnedCheck(
     item,
     result,
     exitCode,
+    advisories: nuxtUiPinAdvisories(repo),
   }
 }
 
@@ -102,6 +105,7 @@ export function formatSharedUiPinnedSummary(artefact: SharedUiPinnedArtefact): s
     const subMark = sub.status === 'fail' ? 'FAIL' : sub.status === 'unknown' ? 'UNKN' : 'N/A '
     lines.push(`         [${subMark}] ${sub.id} ${sub.name}: ${sub.detail}`)
   }
+  for (const advisory of artefact.advisories) lines.push(`  [WARN] ${advisory}`)
   lines.push('')
   lines.push(`RESULT: ${artefact.result}`)
   return lines.join('\n')

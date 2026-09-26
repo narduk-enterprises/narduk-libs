@@ -1195,6 +1195,15 @@ would be recorded; it is empty because no dated decision names a shared-UI
 package as required of every UI app, and a test pins it empty so an addition
 cannot land silently.
 
+**`@nuxt/ui` advisory (warn first,
+[narduk-libs#1033](https://github.com/narduk-enterprises/narduk-libs/issues/1033)).**
+narduk-core, narduk-shell, narduk-auth, narduk-seo, narduk-analytics and
+narduk-ai render Nuxt UI and pin `@nuxt/ui` exactly. A UI app that depends on
+`@nuxt/ui` through a range gets a `[WARN]` line in the summary and an entry in
+the artefact's `advisories` array. It changes neither `result` nor the exit
+code: sub-check statuses keep D-WEBFOUND-2's "no warning tier". The ratchet is
+to make it sub-check 8.4, a failing exact-pin check like 8.1-8.3.
+
 **No registry credential is needed.** Exact-pin discipline is a manifest fact,
 so this item never needs a registry read to reach a verdict and a missing
 `NODE_AUTH_TOKEN` can no longer turn the command into exit `2`; `unknown` now
