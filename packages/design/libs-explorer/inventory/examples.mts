@@ -93,6 +93,21 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'Settings page',
     'The settings screen layout: page header, form sections and a save bar.',
   ),
+  shell(
+    'NeAdminListPage',
+    'Admin list page',
+    'Header, search, filters, table and pager, all on one useCollection().',
+  ),
+  shell(
+    'NeAdminDetailPage',
+    'Admin detail page',
+    'One record under a page header, with a delete that asks through useConfirm() first.',
+  ),
+  shell(
+    'NeAdminEditPage',
+    'Admin edit page',
+    'A sticky-save form with a cancel action, held back until the record has loaded.',
+  ),
   shell('NeKpiTile', 'KPI tile', 'A headline number with a signed, glyph-marked delta.'),
   shell('NeKpiBand', 'KPI band', 'A responsive row of KPI tiles.'),
   shell('NeCard', 'Card', 'One entity card: media, title, badge, stat rows and actions.'),

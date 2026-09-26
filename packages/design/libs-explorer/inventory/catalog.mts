@@ -191,6 +191,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
       'search',
       'forms',
       'settings page',
+      'admin pages',
       'KPI',
       'meter',
       'status badge',
