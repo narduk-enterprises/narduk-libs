@@ -79,6 +79,14 @@ describe('auth-session-refresh middleware', () => {
       )
     })
 
+    it('answers the trailing-slash spelling Nitro routes to the same handler', async () => {
+      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/' })).resolves.toEqual({})
+      await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/?x=1' })).resolves.toEqual(
+        {},
+      )
+    })
+
     it('answers an empty session when the grant lookup throws', async () => {
       getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
       useRefreshedSessionUser.mockRejectedValueOnce(new Error('D1 unavailable'))

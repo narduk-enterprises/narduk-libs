@@ -10,7 +10,9 @@ import type { H3Event } from 'h3'
 const NUXT_AUTH_UTILS_SESSION_PATH = '/api/_auth/session'
 
 function isNuxtAuthUtilsSessionRead(event: H3Event): boolean {
-  const pathname = event.path.split('?')[0] ?? event.path
+  // Nitro's router ignores a trailing slash, so `/api/_auth/session/` reaches
+  // the same nuxt-auth-utils handler and must be answered here too.
+  const pathname = (event.path.split('?')[0] ?? event.path).replace(/\/+$/u, '')
   return pathname === NUXT_AUTH_UTILS_SESSION_PATH && event.method === 'GET'
 }
 
