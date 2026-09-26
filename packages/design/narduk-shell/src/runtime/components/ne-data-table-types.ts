@@ -86,6 +86,12 @@ export interface NeDataColumn<TRow = Record<string, unknown>> {
   /** How to print a present value. Missing values never reach it. */
   format?: (value: unknown, row: TRow) => string
   /**
+   * What a missing cell in this column reads, drawn as visible dimmed text:
+   * `'unreported'`, `'unset'`, or per row. Overrides the table's
+   * `missingText`.
+   */
+  missingText?: string | ((row: TRow) => string)
+  /**
    * Makes the header a `NeSortHeader` for this wire key. The table never
    * reorders rows itself: it emits `update:sort` and draws what arrives.
    */
@@ -128,6 +134,12 @@ export interface NeDataTableProps<TRow = Record<string, unknown>> {
   missingCount?: number | null
   /** Replaces the break row's text entirely. */
   missingLabel?: string
+  /**
+   * What every missing cell reads, drawn as visible dimmed text instead of
+   * the em dash (`'unreported'`, say). A column's own `missingText` wins.
+   * Unset keeps the em dash with "No value" for a screen reader.
+   */
+  missingText?: string
   /** Dims the rows under a 2 px bar. The rows stay; nothing jumps. */
   loading?: boolean
   /** Drops a non-sticky column whose every row is missing. */

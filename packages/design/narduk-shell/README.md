@@ -1611,6 +1611,7 @@ const groups = [
 | `missingLast`      | `boolean`                 | `true`      | Draws a break row before the first row with no value in the sorted column.                                       |
 | `missingCount`     | `number \| null`          | page count  | The whole set’s count of rows with no value, for the break row’s text.                                           |
 | `missingLabel`     | `string`                  | —           | Replaces the break row’s text entirely.                                                                          |
+| `missingText`      | `string`                  | —           | What every missing cell reads (`'unreported'`), as visible dimmed text. Unset keeps the em dash.                 |
 | `loading`          | `boolean`                 | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                    |
 | `dropEmptyColumns` | `boolean`                 | `false`     | Drops a non-sticky column whose every row is missing.                                                            |
 | `columnSet`        | `string \| null`          | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                     |
@@ -1633,6 +1634,7 @@ const groups = [
 | `width`          | `string`                    | Any CSS length, set on the header cell. See “Overflow and column widths” below.            |
 | `value`          | `(row) => unknown`          | How to read the cell. Defaults to `row[key]`.                                              |
 | `format`         | `(value, row) => string`    | How to print a present value. Missing values never reach it.                               |
+| `missingText`    | `string \| (row) => string` | What a missing cell in this column reads. Overrides the table’s `missingText`.             |
 | `sortKey`        | `string`                    | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself. |
 | `firstDirection` | `'asc' \| 'desc'`           | First-click direction for `sortKey`. Defaults to `'asc'`.                                  |
 | `csv`            | `false \| (row) => unknown` | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.  |
@@ -1641,7 +1643,10 @@ const groups = [
 
 `0` and `false` are values. `null`, `undefined`, `''` and a non-finite number
 are missing: an em dash in `text-dimmed` with “No value” for a screen reader,
-never `0`.
+never `0`. Set `missingText` on the table, or on a column, to make a missing
+cell read as a word instead (“unreported”, “unset”, “not claimed”): it is drawn
+as visible `text-dimmed` text, so sighted readers and screen readers get the
+same word. A column's `missingText` can be a function of the row.
 
 #### Slots and events
 

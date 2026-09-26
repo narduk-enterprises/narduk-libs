@@ -122,6 +122,34 @@ describe('NeDataTable: cells', () => {
     expect(missing.get('.sr-only').text()).toBe('No value')
   })
 
+  it('reads a missing cell as the table-wide missingText, visible and dimmed (#1059)', () => {
+    const wrapper = render({ missingText: 'unreported' })
+    const third = bodyRows(wrapper)[2]!
+    const missing = third.findAll('td')[1]!.get('[data-ne-missing]')
+    expect(missing.text()).toBe('unreported')
+    expect(missing.classes()).toContain('text-dimmed')
+    expect(missing.find('[aria-hidden="true"]').exists()).toBe(false)
+    expect(missing.find('.sr-only').exists()).toBe(false)
+    expect(cellTexts(bodyRows(wrapper)[1]!)[1]).toBe('0')
+  })
+
+  it("lets a column's missingText, string or per row, override the table's (#1059)", () => {
+    const wrapper = render({
+      columns: columns.map((column) =>
+        column.key === 'gust'
+          ? { ...column, missingText: 'unset' }
+          : column.key === 'visibility'
+            ? { ...column, missingText: (row: Reading) => `not claimed ${row.time}` }
+            : column,
+      ),
+      missingText: 'unreported',
+    })
+    const cells = bodyRows(wrapper)[2]!.findAll('td')
+    expect(cells[1]!.get('[data-ne-missing]').text()).toBe('unreported')
+    expect(cells[2]!.get('[data-ne-missing]').text()).toBe('unset')
+    expect(cells[4]!.get('[data-ne-missing]').text()).toBe('not claimed 6:50 PM')
+  })
+
   it('formats present values only, right-aligned in tabular mono, headline at emphasis', () => {
     const wrapper = render()
     const cells = bodyRows(wrapper)[0]!.findAll('td')
