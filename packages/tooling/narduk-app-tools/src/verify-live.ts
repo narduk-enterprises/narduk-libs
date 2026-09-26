@@ -106,7 +106,10 @@ export interface VerifyAssertion {
   id: VerifyAssertionId
   status: VerifyAssertionStatus
   detail: string
-  /** The exit code this assertion owns when it is the one that failed. */
+  /**
+   * 0 when `status` is `pass`. Otherwise the exit code this assertion
+   * contributes when it is the one that failed.
+   */
   exitCode: number
   evidence?: Record<string, unknown>
 }
@@ -465,6 +468,7 @@ export function assessHealth(
     return {
       ...base,
       status: 'pass',
+      exitCode: VERIFY_EXIT.pass,
       detail: 'health status ok, every required check passing',
       evidence,
     }
@@ -491,6 +495,7 @@ export function assessHealth(
       ? {
           ...base,
           status: 'pass',
+          exitCode: VERIFY_EXIT.pass,
           detail: 'health status degraded, accepted by --allow-degraded (optional check failing)',
           evidence,
         }
@@ -541,6 +546,7 @@ export function assessBuildVersion(
     ? {
         ...base,
         status: 'pass',
+        exitCode: VERIFY_EXIT.pass,
         detail: `${header} ${actual} matches ${expectedSha}`,
         evidence: { header, actual, expected: expectedSha },
       }
@@ -582,6 +588,7 @@ export function assessSmoke(response: LiveResponse, expectContentType: string): 
   return {
     ...base,
     status: 'pass',
+    exitCode: VERIFY_EXIT.pass,
     detail: `${response.url} ${String(response.status)} ${contentType}`,
     evidence: { httpStatus: response.status, contentType },
   }
@@ -659,6 +666,7 @@ export function assessEdgeCache(first: LiveResponse, second: LiveResponse): Veri
     return {
       ...base,
       status: 'pass',
+      exitCode: VERIFY_EXIT.pass,
       detail: `${second.url} second GET served from the edge cache (Cf-Cache-Status: ${statuses[1]})`,
       evidence,
     }
@@ -708,6 +716,7 @@ export function assessEdgeUncached(first: LiveResponse, second: LiveResponse): V
   return {
     ...base,
     status: 'pass',
+    exitCode: VERIFY_EXIT.pass,
     detail: `${second.url} not served from cache (Cf-Cache-Status: ${statuses[1] ?? '(absent)'})`,
     evidence,
   }
