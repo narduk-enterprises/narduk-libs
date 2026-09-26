@@ -7,8 +7,7 @@
  * is Apple's is proved by a live run on a Mac, and cannot be faked into being
  * true here.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -27,6 +26,7 @@ import { promoteRun, runPaths, verifyRun } from '../src/verify.js'
 import { buildWalkthrough } from '../src/walkthrough.js'
 import { createFakeClock, createFakeDevice } from './fixtures/fake-simulator.js'
 import type { FakeDeviceOptions } from './fixtures/fake-simulator.js'
+import { tempDir } from './fixtures/temp-dir.js'
 
 const DIGEST = 'sha256:apple-fixture'
 
@@ -126,7 +126,7 @@ const world: AppleWorldHooks = {
 }
 
 function fakeApp(): string {
-  const root = mkdtempSync(join(tmpdir(), 'njr-app-'))
+  const root = tempDir('njr-app-')
   const app = join(root, 'PaccTrac.app')
   mkdirSync(app, { recursive: true })
   writeFileSync(join(app, 'Info.plist'), '<plist><dict/></plist>')
@@ -147,7 +147,7 @@ function harness(
 ): Harness {
   const device = createFakeDevice(deviceOptions)
   const clock = createFakeClock()
-  const outRoot = mkdtempSync(join(tmpdir(), 'njr-apple-out-'))
+  const outRoot = tempDir('njr-apple-out-')
   return {
     device,
     outRoot,
@@ -165,7 +165,7 @@ function harness(
       commit: 'abc1234567',
       mode,
       settleTimeoutMs: 2_000,
-      lease: { dir: mkdtempSync(join(tmpdir(), 'njr-lease-')) },
+      lease: { dir: tempDir('njr-lease-') },
       throwOnFailure: false,
       now: clock.now,
       sleep: clock.sleep,
@@ -444,7 +444,7 @@ describe('the Apple adapter, driven', () => {
     await expect(runAppleJourneys({ ...options, appPath: '/nope/Missing.app' })).rejects.toThrow(
       /does not exist/,
     )
-    const notABundle = mkdtempSync(join(tmpdir(), 'njr-notapp-'))
+    const notABundle = tempDir('njr-notapp-')
     await expect(runAppleJourneys({ ...options, appPath: notABundle })).rejects.toThrow(
       /not a \.app bundle/,
     )

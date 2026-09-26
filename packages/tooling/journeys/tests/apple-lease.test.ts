@@ -1,15 +1,15 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import { acquireSimulatorLease, type SimulatorLease } from '../src/apple-lease.js'
+import { tempDir } from './fixtures/temp-dir.js'
 
 const UDID = 'ABCD-1234'
 
 function leaseDir(): string {
-  return mkdtempSync(join(tmpdir(), 'njr-lease-'))
+  return tempDir('njr-lease-')
 }
 
 describe('the simulator lease', () => {

@@ -1,5 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -13,13 +12,14 @@ import {
   webJourney,
   writeAttempt,
 } from './helpers.js'
+import { tempDir } from './fixtures/temp-dir.js'
 
 const DIGEST = 'sha256:current'
 
 function freshAttempt(
   manifestMutation: (m: ReturnType<typeof passedCaptureManifest>) => void = () => {},
 ) {
-  const directory = mkdtempSync(join(tmpdir(), 'njr-attempt-'))
+  const directory = tempDir('njr-attempt-')
   const manifest = passedCaptureManifest(DIGEST)
   manifestMutation(manifest)
   writeAttempt(directory, manifest, attemptFiles)
@@ -138,7 +138,7 @@ describe('verifyRun', () => {
   })
 
   it('requires no artefacts of a test-mode run', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'njr-attempt-'))
+    const directory = tempDir('njr-attempt-')
     const manifest = passedCaptureManifest(DIGEST)
     manifest.mode = 'test'
     for (const step of manifest.steps) {
