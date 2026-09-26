@@ -30,12 +30,14 @@ export interface CheckoutFacts {
   devServerPort: number | null
 }
 
-const WRANGLER_CANDIDATES = [
+const WRANGLER_JSON_CANDIDATES = [
   'apps/web/wrangler.jsonc',
   'apps/web/wrangler.json',
   'wrangler.jsonc',
   'wrangler.json',
 ] as const
+
+const WRANGLER_TOML_CANDIDATES = ['apps/web/wrangler.toml', 'wrangler.toml'] as const
 
 const SAFE_DATABASE_NAME = /^[\w-]+$/
 
@@ -58,6 +60,13 @@ function parseJsonOrNull(contents: string | null): Record<string, unknown> | nul
   } catch {
     return null
   }
+}
+
+function rootScript(facts: CheckoutFacts, key: string): string | null {
+  const scripts = facts.rootManifest?.scripts
+  if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) return null
+  const value = (scripts as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.trim() ? value : null
 }
 
 function scriptsOf(manifest: Record<string, unknown> | null): Record<string, string> {
@@ -89,17 +98,189 @@ function databaseNameFromList(list: readonly unknown[], key: string): string | n
   return typeof name === 'string' && SAFE_DATABASE_NAME.test(name) ? name : null
 }
 
+function isIdentStart(character: string): boolean {
+  return /[A-Za-z_$]/u.test(character)
+}
+
+function isIdentPart(character: string): boolean {
+  return /[\w$]/u.test(character)
+}
+
+function skipLineComment(source: string, index: number): number {
+  const newline = source.indexOf('\n', index)
+  return newline === -1 ? source.length : newline + 1
+}
+
+function skipBlockComment(source: string, index: number): number {
+  const end = source.indexOf('*/', index + 2)
+  return end === -1 ? source.length : end + 2
+}
+
+function skipQuoted(source: string, index: number, quote: string): number {
+  let cursor = index + 1
+  while (cursor < source.length) {
+    const character = source[cursor]
+    if (character === '\\') {
+      cursor += 2
+      continue
+    }
+    if (character === quote) return cursor + 1
+    if (quote !== '`' && character === '\n') return cursor
+    cursor += 1
+  }
+  return source.length
+}
+
+function skipWhitespaceAndComments(source: string, index: number): number {
+  let cursor = index
+  while (cursor < source.length) {
+    const character = source[cursor]
+    if (character === ' ' || character === '\t' || character === '\n' || character === '\r') {
+      cursor += 1
+      continue
+    }
+    if (character === '/' && source[cursor + 1] === '/') {
+      cursor = skipLineComment(source, cursor)
+      continue
+    }
+    if (character === '/' && source[cursor + 1] === '*') {
+      cursor = skipBlockComment(source, cursor)
+      continue
+    }
+    break
+  }
+  return cursor
+}
+
+function readIdentifier(source: string, index: number): string {
+  let cursor = index + 1
+  while (cursor < source.length && isIdentPart(source[cursor] ?? '')) cursor += 1
+  return source.slice(index, cursor)
+}
+
 /**
- * Literal `devServer.port` only. `port: resolvedLocalNuxtPort` is not a
- * number this can read, and Playwright's port is a different server.
+ * Literal top-level `devServer.port`. A comment, a string, and a nested
+ * object do not supply it: `// devServer: { port: 4000 }` is ignored, and
+ * `devServer: { https: { port: 1 }, port: 4000 }` is 4000.
+ * `port: resolvedLocalNuxtPort` is not a number this can read.
  */
 export function readDevServerPort(nuxtConfig: string): number | null {
-  const block = /devServer\s*:\s*\{([^{}]*)\}/u.exec(nuxtConfig)
-  if (!block?.[1]) return null
-  const port = /\bport\s*:\s*(\d{1,5})\b/u.exec(block[1])
-  if (!port?.[1]) return null
-  const value = Number(port[1])
-  return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : null
+  let index = 0
+  let depth = 0
+  let devServerDepth: number | null = null
+  while (index < nuxtConfig.length) {
+    const character = nuxtConfig[index] ?? ''
+    if (character === '/' && nuxtConfig[index + 1] === '/') {
+      index = skipLineComment(nuxtConfig, index)
+      continue
+    }
+    if (character === '/' && nuxtConfig[index + 1] === '*') {
+      index = skipBlockComment(nuxtConfig, index)
+      continue
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      index = skipQuoted(nuxtConfig, index, character)
+      continue
+    }
+    if (character === '{') {
+      depth += 1
+      index += 1
+      continue
+    }
+    if (character === '}') {
+      if (devServerDepth !== null && depth === devServerDepth) devServerDepth = null
+      depth -= 1
+      index += 1
+      continue
+    }
+    if (isIdentStart(character)) {
+      const identifier = readIdentifier(nuxtConfig, index)
+      const after = skipWhitespaceAndComments(nuxtConfig, index + identifier.length)
+      if (identifier === 'devServer' && devServerDepth === null && nuxtConfig[after] === ':') {
+        const value = skipWhitespaceAndComments(nuxtConfig, after + 1)
+        if (nuxtConfig[value] === '{') {
+          devServerDepth = depth + 1
+          depth += 1
+          index = value + 1
+          continue
+        }
+      }
+      if (
+        identifier === 'port' &&
+        devServerDepth !== null &&
+        depth === devServerDepth &&
+        nuxtConfig[after] === ':'
+      ) {
+        const valueAt = skipWhitespaceAndComments(nuxtConfig, after + 1)
+        const match = /^(\d{1,5})(?!\d)/u.exec(nuxtConfig.slice(valueAt))
+        if (!match?.[1]) return null
+        const value = Number(match[1])
+        return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : null
+      }
+      index += identifier.length
+      continue
+    }
+    index += 1
+  }
+  return null
+}
+
+function stripTomlComment(line: string): string {
+  let quote: string | null = null
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    if (quote) {
+      if (character === '\\') {
+        index += 1
+        continue
+      }
+      if (character === quote) quote = null
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === '#') return line.slice(0, index)
+  }
+  return line
+}
+
+/** `[[d1_databases]]` or an inline `d1_databases` array. Comments do not count. */
+function d1FromToml(contents: string | null): { present: boolean; databaseName: string | null } {
+  if (!contents) return { databaseName: null, present: false }
+  let present = false
+  let databaseName: string | null = null
+  let inTable = false
+  for (const raw of contents.split('\n')) {
+    const line = stripTomlComment(raw).trim()
+    if (!line) continue
+    if (/^\[\[?\s*d1_databases\s*\]\]?$/u.test(line)) {
+      present = true
+      inTable = true
+      continue
+    }
+    if (/^\[[^\]]+\]$/u.test(line)) {
+      inTable = false
+      continue
+    }
+    const named = /\bdatabase_name\s*=\s*["']([\w-]+)["']/u.exec(line)
+    if (named?.[1] && (inTable || line.includes('d1_databases'))) {
+      present = true
+      if (!databaseName) databaseName = named[1]
+    }
+  }
+  return { databaseName, present }
+}
+
+async function firstExisting(
+  targetDir: string,
+  candidates: readonly string[],
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    if ((await readIfExists(resolve(targetDir, candidate))) !== null) return candidate
+  }
+  return null
 }
 
 function declaredDatabase(nuxtConfig: string): GeneratedDatabaseBackend | null {
@@ -121,17 +302,21 @@ export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFact
   const namedWrangler = relativePath(
     (lifecycle?.nativeManifests as { wrangler?: unknown } | undefined)?.wrangler,
   )
-  let wranglerPath: string | null = null
-  if (namedWrangler && (await readIfExists(resolve(targetDir, namedWrangler))) !== null) {
-    wranglerPath = namedWrangler
-  } else {
-    for (const candidate of WRANGLER_CANDIDATES) {
-      if ((await readIfExists(resolve(targetDir, candidate))) !== null) {
-        wranglerPath = candidate
-        break
-      }
-    }
-  }
+  const namedExists =
+    namedWrangler !== null && (await readIfExists(resolve(targetDir, namedWrangler))) !== null
+  const namedIsToml = namedWrangler?.endsWith('.toml') === true
+  const jsonWrangler =
+    namedExists && namedWrangler && !namedIsToml
+      ? namedWrangler
+      : await firstExisting(targetDir, WRANGLER_JSON_CANDIDATES)
+  const tomlWrangler =
+    namedExists && namedWrangler && namedIsToml
+      ? namedWrangler
+      : await firstExisting(targetDir, WRANGLER_TOML_CANDIDATES)
+  // JSONC is the file upgrade can edit. Toml is read for D1 only; when it is
+  // the only wrangler file, reporting it leaves the JSONC editor unresolved
+  // instead of rewriting Toml as JSON.
+  const wranglerPath = jsonWrangler ?? tomlWrangler
 
   const nuxtConfig = appsWebNuxt ?? rootNuxt ?? ''
   const nuxtConfigPath =
@@ -139,7 +324,10 @@ export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFact
   const layout: AppLayout =
     appsWebNuxt !== null || webManifest !== null || wranglerPath?.startsWith('apps/web/')
       ? 'apps-web'
-      : rootNuxt !== null || wranglerPath === 'wrangler.json' || wranglerPath === 'wrangler.jsonc'
+      : rootNuxt !== null ||
+          wranglerPath === 'wrangler.json' ||
+          wranglerPath === 'wrangler.jsonc' ||
+          wranglerPath === 'wrangler.toml'
         ? 'root'
         : 'apps-web'
 
@@ -147,19 +335,23 @@ export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFact
     await readIfExists(resolve(targetDir, 'Config/cloudflare-app.json')),
   )
   const wrangler = parseJsoncObject(
-    wranglerPath ? await readIfExists(resolve(targetDir, wranglerPath)) : null,
+    jsonWrangler ? await readIfExists(resolve(targetDir, jsonWrangler)) : null,
+  )
+  const tomlD1 = d1FromToml(
+    tomlWrangler ? await readIfExists(resolve(targetDir, tomlWrangler)) : null,
   )
   const cloudflareD1 = bindingList((cloudflareApp?.bindings as { d1?: unknown } | undefined)?.d1)
   const wranglerD1 = bindingList(wrangler?.d1_databases)
   const declared = declaredDatabase(nuxtConfig)
   const databaseBackend: GeneratedDatabaseBackend =
-    declared ?? (cloudflareD1.length > 0 || wranglerD1.length > 0 ? 'd1' : 'none')
+    declared ?? (cloudflareD1.length > 0 || wranglerD1.length > 0 || tomlD1.present ? 'd1' : 'none')
 
   return {
     databaseBackend,
     databaseName:
       databaseNameFromList(wranglerD1, 'database_name') ??
-      databaseNameFromList(cloudflareD1, 'databaseName'),
+      databaseNameFromList(cloudflareD1, 'databaseName') ??
+      tomlD1.databaseName,
     devServerPort: readDevServerPort(nuxtConfig),
     layout,
     nuxtConfig,
@@ -202,6 +394,12 @@ export function adaptManagedPackageJson(
     if (!rootLayout) {
       const callee = facts.webScripts[key]
       if (typeof callee !== 'string' || !callee.trim()) delete scripts[key]
+      continue
+    }
+    // Same rule as apps/web: a command the checkout already has is left
+    // alone. Wrangler is only proposed when the key is missing.
+    if (rootScript(facts, key)) {
+      delete scripts[key]
       continue
     }
     const database =

@@ -429,11 +429,7 @@ function createPromoteDispatchJob(visibility: AppVisibility, needs: string): str
   ]
 }
 
-export function createCiWorkflow(
-  visibility: AppVisibility,
-  options: { includeSessionPassword?: boolean } = {},
-): string {
-  const includeSessionPassword = options.includeSessionPassword ?? true
+export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
     '',
@@ -492,9 +488,7 @@ export function createCiWorkflow(
     // when NUXT_OG_IMAGE_SECRET is empty, and a fresh repo has no Actions
     // secret. These match Playwright's committed test-only placeholders.
     `      NUXT_OG_IMAGE_SECRET: ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}`,
-    ...(includeSessionPassword
-      ? [`      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`]
-      : []),
+    `      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`,
     '    steps:',
     ...setupSteps(),
     '      - run: pnpm run quality:static',
@@ -516,9 +510,7 @@ export function createCiWorkflow(
     '      NODE_OPTIONS: --max-old-space-size=3072',
     '      PLAYWRIGHT_HTML_OPEN: never',
     `      NUXT_OG_IMAGE_SECRET: ${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET}`,
-    ...(includeSessionPassword
-      ? [`      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`]
-      : []),
+    `      NUXT_SESSION_PASSWORD: ${CI_TEST_ONLY_NUXT_SESSION_PASSWORD}`,
     '    steps:',
     ...setupSteps(),
     '      - name: Install Chromium on the hosted runner',

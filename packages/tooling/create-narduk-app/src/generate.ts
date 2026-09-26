@@ -588,9 +588,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     ...(databaseBackend === 'd1' ? createMigrationWorkflowFiles(visibility) : []),
     {
       path: '.github/workflows/ci.yml',
-      contents: createCiWorkflow(visibility, {
-        includeSessionPassword: capabilities.includes('auth'),
-      }),
+      contents: createCiWorkflow(visibility),
     },
     {
       // Merges the safe (minor + patch) Dependabot lane below once CI is
