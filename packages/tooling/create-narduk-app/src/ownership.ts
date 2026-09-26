@@ -175,11 +175,15 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     unit: 'narduk:router block',
     insertWhenMissing: true,
   },
+  // Same rule as the router: an app that has never had the markers gets the
+  // block appended. Opting out is the unmanaged header, not the absence of
+  // markers (an app cannot adopt the policy by dry-run otherwise).
   {
     path: 'docs/e2e-testing.md',
     mode: 'region',
     region: 'e2eFlakePolicy',
     unit: 'narduk:e2e-policy block',
+    insertWhenMissing: true,
   },
   {
     path: 'package.json',
