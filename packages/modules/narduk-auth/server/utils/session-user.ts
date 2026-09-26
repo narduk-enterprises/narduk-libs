@@ -8,6 +8,7 @@ import {
   loadAuthUserRow,
   mergeAuthoritativeSessionUser,
 } from '../lib/app-auth/session'
+import { isAuthSessionRowExpired } from '../lib/app-auth/session-expiry'
 
 import {
   isRecoverableSupabaseSessionFailure,
@@ -106,7 +107,7 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
   // left to the login sweep. A Supabase row used to be accepted past it while
   // the cookie was inside its revalidation window, or when the refresh failed
   // recoverably (narduk-libs#1043).
-  if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
+  if (isAuthSessionRowExpired(authSession)) {
     await clearLayerUserSession(event)
     return null
   }
