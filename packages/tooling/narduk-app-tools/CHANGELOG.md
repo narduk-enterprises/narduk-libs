@@ -1,5 +1,50 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.26.1
+
+### Patch Changes
+
+- ce41177: `narduk-app development enter` refuses while an app-owned publish
+  path is still armed against the target it would enroll
+  (agent-infrastructure#1679): a component `deploy:dev` that runs anything but
+  `narduk-app development deploy` (the template's root
+  `pnpm --filter web run deploy:dev` forward to it passes when pnpm itself,
+  asked with `pnpm --filter web ls`, selects exactly that one package), a
+  `deploy:dev` key declared more than once (a merge of `main` into a
+  pre-conversion branch keeps both and JSON keeps the last), a
+  `predeploy:dev`/`postdeploy:dev`, or any script in the root or a component's
+  `package.json` that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` itself or through a checkout file it runs
+  (guards that only read it, or name it in a message printed straight to stderr
+  — an `echo`/`printf … >&2` outside any pipe, capture or function, or a JS
+  `console.error`/`console.warn`/`throw new Error(…)` literal — pass, unless
+  something in scope can capture, redirect or rewire that output — `2>&1` after
+  anything but a stdout discard, a pipe into an interpreter that reads stdin,
+  any `eval`, or a JS file that reads a child's stderr and names the excused
+  file or a script whose chain reaches it; a plain-stdout `echo`, `${NAME:=1}`
+  and any string that is run, such as `sh -c "npx cross-env …"`, count). The dry
+  run names each one; `enter --refresh` and a resumed entry refuse too;
+  `development status` shows one that a later merge re-armed. Entry reads the
+  checkout and never edits it, so a refusal leaves the app byte for byte as it
+  was and exit has nothing to restore.
+- 9f180e2: Add the admin page blocks (components backlog item 20,
+  narduk-libs#267): `NeAdminListPage` (page header, search, filters slot,
+  `NeDataTable` and `NePager`, all reading and writing one `useCollection()`),
+  `NeAdminDetailPage` (`NeDetailView` under a page header, gated by
+  `NeStatePanel`, with an optional delete that asks through `useConfirm()`
+  before `onDelete` runs) and `NeAdminEditPage` (a sticky-save `NeForm` with a
+  cancel action, held behind `NeStatePanel` until the record has loaded). They
+  compose the existing pieces with no behaviour of their own. Their prop types
+  are exported from the package root.
+
+  The eslint-config and narduk-app-tools shared-component lists name the three
+  so the drift and item-13 tests match `narduk-shell`'s registry. Explorer
+  inventory, catalog and usage ship beside the components.
+
+  `create-narduk-app` takes the patch because it pins `narduk-shell` in
+  generated apps; its `PACKAGE_VERSIONS` literal is not hand-edited. The
+  generator's `admin` capability scaffold is not part of this change.
+
 ## 0.26.0
 
 ### Minor Changes
