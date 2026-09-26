@@ -290,7 +290,17 @@ const sharedCommunityPluginTailConfigs = [
     // `import-x/resolver-next` pins the plugin's own Node resolver. With no
     // resolver set, import-x falls back to its legacy `node` probe, which
     // crashes `import-x/no-cycle` on a `vitest.config.ts` ("node with invalid
-    // interface loaded as resolver", narduk-libs#562).
+    // interface loaded as resolver", narduk-libs#562). With default options
+    // that resolver found `./b.ts` but not `./b` or `./b.js` from a `.ts`
+    // file -- how every TypeScript source spells a local import -- so
+    // `no-cycle`, `named`, `default` and `export` never followed one
+    // (narduk-libs#973). TypeScript extensions and the `.js` -> `.ts` alias
+    // (NodeNext spelling) make them check local code.
+    //
+    // Those four rules ship at `warn` because they now report findings the
+    // estate has never been held to (Logan, 2026-09-25: "Warn first,
+    // ratchet"). Packages record them in `lint-budget.json`, and moving them
+    // to `error` is a follow-up once the budgets reach zero.
     //
     // `import-x/ignore: ['node_modules']` stops `no-cycle`, `named`,
     // `default` and `export` from parsing dependencies' sources and type
@@ -304,8 +314,36 @@ const sharedCommunityPluginTailConfigs = [
     plugins: { 'import-x': importX },
     settings: {
       'import-x/core-modules': ['vue'],
+      // Which resolved files import-x parses for exports. Its default is the
+      // JavaScript extensions only, so a resolved `.ts` file was still skipped.
+      // `.vue` stays out: a `<script setup>` SFC has no `export default` in
+      // its source, so every `import X from './X.vue'` would read as missing.
+      'import-x/extensions': ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'],
       'import-x/ignore': ['node_modules'],
-      'import-x/resolver-next': [createNodeResolver()],
+      'import-x/resolver-next': [
+        createNodeResolver({
+          extensions: [
+            '.ts',
+            '.tsx',
+            '.mts',
+            '.cts',
+            '.d.ts',
+            '.vue',
+            '.js',
+            '.jsx',
+            '.mjs',
+            '.cjs',
+            '.json',
+            '.node',
+          ],
+          extensionAlias: {
+            '.js': ['.ts', '.tsx', '.d.ts', '.js'],
+            '.jsx': ['.tsx', '.jsx'],
+            '.mjs': ['.mts', '.d.mts', '.mjs'],
+            '.cjs': ['.cts', '.d.cts', '.cjs'],
+          },
+        }),
+      ],
     },
     rules: {
       'import-x/no-duplicates': 'error',
@@ -314,10 +352,10 @@ const sharedCommunityPluginTailConfigs = [
       'import-x/first': 'warn',
       'import-x/newline-after-import': 'warn',
       'import-x/no-mutable-exports': 'error',
-      'import-x/named': 'error',
-      'import-x/default': 'error',
-      'import-x/export': 'error',
-      'import-x/no-cycle': 'error',
+      'import-x/named': 'warn',
+      'import-x/default': 'warn',
+      'import-x/export': 'warn',
+      'import-x/no-cycle': 'warn',
     },
   },
 

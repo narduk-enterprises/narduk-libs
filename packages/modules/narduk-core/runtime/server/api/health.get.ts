@@ -7,6 +7,52 @@ import {
   type HealthReportConfig,
 } from '../health/report'
 import { useLogger } from '../utils/logger'
+import { readWorkerIdentity, type WorkerIdentity } from '../utils/worker-identity'
+
+import type { H3Event } from 'h3'
+
+/** `runtimeConfig.nardukHealth.identity`: opt-in deploy identity on this route. */
+interface HealthIdentityConfig {
+  binding?: unknown
+  body?: unknown
+  revisionHeader?: unknown
+  workerVersionHeader?: unknown
+}
+
+function readHeaderName(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
+function readIdentityConfig(config: HealthReportConfig): HealthIdentityConfig | undefined {
+  const health = config.nardukHealth
+  if (!health || typeof health !== 'object') return undefined
+  const identity = (health as { identity?: unknown }).identity
+  return identity && typeof identity === 'object' ? (identity as HealthIdentityConfig) : undefined
+}
+
+/**
+ * Stamp the configured identity headers and return the identity when the body
+ * should carry it. Nothing is read unless the app opted in.
+ */
+function applyIdentity(event: H3Event, config: HealthReportConfig): WorkerIdentity | undefined {
+  const identityConfig = readIdentityConfig(config)
+  if (!identityConfig) return undefined
+  const revisionHeader = readHeaderName(identityConfig.revisionHeader)
+  const workerVersionHeader = readHeaderName(identityConfig.workerVersionHeader)
+  const includeBody = identityConfig.body === true
+  if (!revisionHeader && !workerVersionHeader && !includeBody) return undefined
+
+  const identity = readWorkerIdentity(event, {
+    binding: typeof identityConfig.binding === 'string' ? identityConfig.binding : undefined,
+  })
+  if (revisionHeader && identity.sourceRevision) {
+    setHeader(event, revisionHeader, identity.sourceRevision)
+  }
+  if (workerVersionHeader && identity.workerVersion) {
+    setHeader(event, workerVersionHeader, identity.workerVersion.id)
+  }
+  return includeBody ? identity : undefined
+}
 
 /**
  * Health endpoint for uptime monitoring and deployment verification.
@@ -45,9 +91,11 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event) as HealthReportConfig
   const report = await buildHealthReport(event, config, useLogger(event).child('Health'))
 
+  const identity = applyIdentity(event, config)
+
   setHeader(event, 'Cache-Control', 'no-store')
   if (report.status === 'error') {
     setResponseStatus(event, HEALTH_ERROR_STATUS_CODE)
   }
-  return { success: true as const, data: report }
+  return { success: true as const, data: identity ? { ...report, identity } : report }
 })
