@@ -90,6 +90,24 @@ describe('build:ci output cannot be published', () => {
       }
     })
 
+    it('refuses a --dry-run that Wrangler would parse as a real upload', () => {
+      const { appDir } = fixture(layout, true)
+      for (const args of [
+        ['deploy', '--dry-run', 'false'],
+        ['deploy', '--dry-run=false'],
+        ['deploy', '--dry-run', '--no-dry-run'],
+        ['deploy', '--dryRun', 'false'],
+        ['versions-upload', '--dry-run', 'false'],
+        ['versions-upload', '--dry-run', '--noDryRun'],
+      ] as const) {
+        spawnSync.mockClear()
+        errorSpy.mockClear()
+        expect(runDeploy([...args], appDir, allowLocal)).toBe(1)
+        expect(spawnSync).not.toHaveBeenCalled()
+        expect(stderrLines().join('\n')).toContain('refusing to publish')
+      }
+    })
+
     it('dry-run prints the notice and exits 0', () => {
       const { appDir } = fixture(layout, true)
       for (const args of [

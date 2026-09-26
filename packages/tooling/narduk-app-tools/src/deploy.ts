@@ -68,8 +68,32 @@ export function parseDeployArgs(args: string[]): {
   throw new Error('Usage: narduk-app deploy <deploy|versions-upload|triggers-deploy> [args...]')
 }
 
+/**
+ * True only when Wrangler itself will parse a dry run. Wrangler reads
+ * `dry-run` as a yargs boolean: `--dry-run false`, `--dry-run=false`, a later
+ * `--no-dry-run` and the camel-case spellings all count, and the last one
+ * wins. Anything that is not certainly a dry run is treated as a publish, so
+ * the publish guards apply.
+ */
 export function isDryRunDeploy(args: readonly string[]): boolean {
-  return args.includes('--dry-run')
+  let dryRun = false
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === '--no-dry-run' || arg === '--noDryRun') {
+      dryRun = false
+    } else if (arg === '--dry-run' || arg === '--dryRun') {
+      const next = args[index + 1]
+      if (next === 'true' || next === 'false') {
+        dryRun = next === 'true'
+        index += 1
+      } else {
+        dryRun = true
+      }
+    } else if (arg.startsWith('--dry-run=') || arg.startsWith('--dryRun=')) {
+      dryRun = arg.slice(arg.indexOf('=') + 1) === 'true'
+    }
+  }
+  return dryRun
 }
 
 /**
