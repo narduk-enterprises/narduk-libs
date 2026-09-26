@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
+import { pendingChangesetNames } from './pending-changesets.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const registry = 'https://npm.pkg.github.com'
@@ -192,12 +193,9 @@ export function publishInPhases(pending, awaiting, io) {
 }
 
 function main() {
-  if (
-    readdirSync(resolve(root, '.changeset')).some(
-      (name) => name.endsWith('.md') && name !== 'README.md',
-    )
-  )
-    throw new Error('Pending changesets must be versioned before publication')
+  // release.yml sets pending Changesets aside before this runs (narduk-libs#1102).
+  if (pendingChangesetNames(resolve(root, '.changeset')).length > 0)
+    throw new Error('Pending changesets must be versioned or set aside before publication')
   const workspace = loadWorkspace(root)
   const packages = workspace.packages
     .map(({ manifest }) => manifest)
