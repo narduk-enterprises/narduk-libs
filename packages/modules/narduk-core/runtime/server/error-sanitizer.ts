@@ -99,19 +99,6 @@ export function readErrorRequestId(
 }
 
 /**
- * Nitro 2.13's generated wrapper imports these paths in order. Prepend so the
- * sanitizer runs before Nuxt's Vue error handler (already on the array after
- * `createNitro`) without replacing it.
- */
-export function prependNitroErrorHandler(
-  errorHandler: string | string[] | undefined,
-  handlerPath: string,
-): string[] {
-  const existing = Array.isArray(errorHandler) ? errorHandler : errorHandler ? [errorHandler] : []
-  return [handlerPath, ...existing.filter((entry) => entry !== handlerPath)]
-}
-
-/**
  * Overwrite one field, whatever shape the error is. A plain assignment throws
  * in strict mode (all ESM) when the property resolves to a getter with no
  * setter, or to a non-writable own value -- and the throw escapes into Nitro's

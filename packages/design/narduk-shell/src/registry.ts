@@ -83,4 +83,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // legal templates carry placeholders only; wording waits for Logan.
   { name: 'NeDataAttribution', filePath: './runtime/components/NeDataAttribution.vue' },
   { name: 'NeLegalPage', filePath: './runtime/components/NeLegalPage.vue' },
+  // narduk-libs#977: NeSkipLink, a fragment skip link that moves focus, not
+  // only the scroll position. NeAppShell renders one; a layout without the
+  // shell writes its own.
+  { name: 'NeSkipLink', filePath: './runtime/components/NeSkipLink.vue' },
 ]

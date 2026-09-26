@@ -59,6 +59,12 @@ import {
   runAgentKeyCreate,
 } from './auth-agent-key.js'
 import { parseManifestsValidateArgs, runManifestsValidateCommand } from './manifests-validate.js'
+import {
+  parseEnsureGeneratedArgs,
+  parseStarterIdentityArgs,
+  runEnsureGenerated,
+  runStarterIdentityCheck,
+} from './app-scripts.js'
 
 function usage(): string {
   return [
@@ -74,6 +80,12 @@ function usage(): string {
     '      (--app-url <origin> | --no-proof) -- <secret sink command...>',
     '                                       Create a non-login user and API key; the key goes',
     '                                       only to the sink stdin, D1 gets its hash',
+    '  ensure-generated <file...> -- <command...>',
+    '                                       Run the command only when a generated file is',
+    '                                       missing or imports a pnpm store path that is gone',
+    '  check-starter-identity [--cwd <dir>]',
+    '                                       Fail when generator placeholders such as',
+    '                                       __APP_NAME__ remain on identity surfaces',
     '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
     '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
     '                                       Seed local D1/KV/R2 (Wrangler --local) from',
@@ -251,6 +263,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'ensure-generated') return runEnsureGenerated(parseEnsureGeneratedArgs(rest))
+    if (command === 'check-starter-identity') {
+      return runStarterIdentityCheck(parseStarterIdentityArgs(rest))
+    }
     if (command === 'dev:seed') {
       const flags = parseDevSeedArgs(rest)
       const plan = runDevSeed(flags)

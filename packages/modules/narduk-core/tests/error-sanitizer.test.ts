@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applyProductionErrorSanitizer,
   GENERIC_SERVER_ERROR_MESSAGE,
-  prependNitroErrorHandler,
   readErrorRequestId,
   readErrorStatusCode,
   readPreviewSafeModeFlag,
@@ -17,6 +16,7 @@ import {
 } from '../runtime/server/error-sanitizer'
 import { installServerExceptionCapture } from '../runtime/shared/exception-capture'
 import { onNardukException } from '../runtime/shared/exception-report'
+import { prependNitroErrorHandlers } from '../src/nitro-error-handler'
 
 import type {
   ProductionErrorSanitizerEvent,
@@ -204,23 +204,33 @@ describe('production error sanitizer policy', () => {
 })
 
 describe('prepended Nitro errorHandler contract', () => {
+  const NO_STORE_RUNTIME_PATH = '/runtime/server/json-error-no-store'
+
   it('puts the sanitizer first so Nuxt still runs after it', () => {
     const nuxtHandler = NUXT_ERROR_HANDLER
     const builtin = '/node_modules/nitropack/dist/runtime/internal/error/prod'
-    expect(prependNitroErrorHandler([nuxtHandler, builtin], SANITIZER_RUNTIME_PATH)).toEqual([
-      SANITIZER_RUNTIME_PATH,
-      nuxtHandler,
-      builtin,
-    ])
+    expect(
+      prependNitroErrorHandlers(
+        [nuxtHandler, builtin],
+        [SANITIZER_RUNTIME_PATH, NO_STORE_RUNTIME_PATH],
+      ),
+    ).toEqual([SANITIZER_RUNTIME_PATH, NO_STORE_RUNTIME_PATH, nuxtHandler, builtin])
   })
 
   it('normalizes Nuxt string errorHandler into an array without dropping it', () => {
-    expect(prependNitroErrorHandler(NUXT_ERROR_HANDLER, SANITIZER_RUNTIME_PATH)[0]).toBe(
+    expect(prependNitroErrorHandlers(NUXT_ERROR_HANDLER, [SANITIZER_RUNTIME_PATH])).toEqual([
       SANITIZER_RUNTIME_PATH,
-    )
-    expect(prependNitroErrorHandler(NUXT_ERROR_HANDLER, SANITIZER_RUNTIME_PATH)[1]).toBe(
       NUXT_ERROR_HANDLER,
-    )
+    ])
+  })
+
+  it('moves an already-registered handler to the front instead of running it twice', () => {
+    expect(
+      prependNitroErrorHandlers(
+        [NUXT_ERROR_HANDLER, SANITIZER_RUNTIME_PATH],
+        [SANITIZER_RUNTIME_PATH, NO_STORE_RUNTIME_PATH],
+      ),
+    ).toEqual([SANITIZER_RUNTIME_PATH, NO_STORE_RUNTIME_PATH, NUXT_ERROR_HANDLER])
   })
 })
 

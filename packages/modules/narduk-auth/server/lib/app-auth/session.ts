@@ -47,8 +47,7 @@ const AUTH_SESSION_ROTATION_RETRY_DELAYS_MS = [100, 250, 650] as const
 const LOCAL_AUTH_SESSION_DAYS = 30
 /** Bounded opportunistic purge of expired rows. Login only — never the request path. */
 export const EXPIRED_AUTH_SESSION_SWEEP_LIMIT = 50
-const AUTH_SESSION_ROW_CACHE_KEY = '_nardukAuthSessionRowCache'
-const AUTH_USER_ROW_CACHE_KEY = '_nardukAuthUserRowCache'
+const AUTH_ROW_CACHE_KEY = '_nardukAuthRowCache'
 
 function absoluteAuthSessionExpiry(nowSeconds = Math.floor(Date.now() / 1000)): number {
   return nowSeconds + LOCAL_AUTH_SESSION_DAYS * 86400
@@ -78,8 +77,8 @@ export async function sweepExpiredAuthSessions(event: H3Event): Promise<void> {
 }
 
 type AuthSessionRow = typeof authSessions.$inferSelect
-type AuthSessionRowCache = Map<string, Promise<AuthSessionRow | null>>
-type AuthUserRowCache = Map<string, Promise<LocalUser | null>>
+/** Per-request row reads, keyed `session:<id>` or `user:<id>`. */
+type AuthRowCache = Map<string, Promise<unknown>>
 
 interface SupabaseSetSessionResult {
   data: {
@@ -194,41 +193,42 @@ async function getAuthSessionById(
   )
 }
 
-function authSessionRowCache(event: H3Event): AuthSessionRowCache {
+function authRowCache(event: H3Event): AuthRowCache {
   const context = event.context as H3Event['context'] & {
-    [AUTH_SESSION_ROW_CACHE_KEY]?: AuthSessionRowCache
+    [AUTH_ROW_CACHE_KEY]?: AuthRowCache
   }
-  return (context[AUTH_SESSION_ROW_CACHE_KEY] ??= new Map())
+  return (context[AUTH_ROW_CACHE_KEY] ??= new Map())
+}
+
+function memoizeAuthRow<T>(event: H3Event, key: string, load: () => Promise<T>): Promise<T> {
+  const cache = authRowCache(event)
+  const existing = cache.get(key)
+  if (existing) {
+    return existing as Promise<T>
+  }
+
+  const pending = load()
+  cache.set(key, pending)
+  return pending
 }
 
 /**
  * Look up an `auth_sessions` row by id. Memoized on the event so requireAuth,
  * session refresh, and grant validation share one D1 read per session per request.
  */
+// `async` keeps a throwing database accessor a rejected promise, not a
+// synchronous throw; both loaders are auto-imported into apps.
 export async function loadAuthSessionRow(
   event: H3Event,
   authSessionId: string,
 ): Promise<AuthSessionRow | null> {
-  const cache = authSessionRowCache(event)
-  const existing = cache.get(authSessionId)
-  if (existing) {
-    return existing
-  }
-
-  const pending = getAuthSessionById(useAuthBridgeDatabase(event), authSessionId)
-  cache.set(authSessionId, pending)
-  return pending
+  return memoizeAuthRow(event, `session:${authSessionId}`, () =>
+    getAuthSessionById(useAuthBridgeDatabase(event), authSessionId),
+  )
 }
 
 function forgetCachedAuthSessionRow(event: H3Event, authSessionId: string): void {
-  authSessionRowCache(event).delete(authSessionId)
-}
-
-function authUserRowCache(event: H3Event): AuthUserRowCache {
-  const context = event.context as H3Event['context'] & {
-    [AUTH_USER_ROW_CACHE_KEY]?: AuthUserRowCache
-  }
-  return (context[AUTH_USER_ROW_CACHE_KEY] ??= new Map())
+  authRowCache(event).delete(`session:${authSessionId}`)
 }
 
 /**
@@ -236,17 +236,13 @@ function authUserRowCache(event: H3Event): AuthUserRowCache {
  * Memoized on the event so grant validation and session refresh share one read.
  */
 export async function loadAuthUserRow(event: H3Event, userId: string): Promise<LocalUser | null> {
-  const cache = authUserRowCache(event)
-  const existing = cache.get(userId)
-  if (existing) {
-    return existing
-  }
-
-  const pending = Promise.resolve(
-    getDatabaseRow<LocalUser>(useDatabase(event).select().from(users).where(eq(users.id, userId))),
-  ).then((row) => row ?? null)
-  cache.set(userId, pending)
-  return pending
+  return memoizeAuthRow(event, `user:${userId}`, () =>
+    Promise.resolve(
+      getDatabaseRow<LocalUser>(
+        useDatabase(event).select().from(users).where(eq(users.id, userId)),
+      ),
+    ).then((row) => row ?? null),
+  )
 }
 
 export function mergeAuthoritativeSessionUser(
