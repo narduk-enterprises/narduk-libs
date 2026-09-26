@@ -9,6 +9,7 @@ import {
   detectPackageRegistry,
   githubPackagesDependabot,
   hasExplicitZeroCooldown,
+  hasNpmUpdateBlock,
 } from '../src/dependabot-registry.js'
 import { createNardukApp, upgradeNardukApp } from '../src/index.js'
 
@@ -105,6 +106,20 @@ describe('package registry detection', () => {
       'github-packages',
     )
     expect(detectPackageRegistry(null, null)).toBe('unknown')
+    expect(detectPackageRegistry('registry=https://npm.pkg.github.com\n', null)).toBe(
+      'github-packages',
+    )
+    expect(
+      detectPackageRegistry(
+        'registry=https://registry.npmjs.org\n@narduk-enterprises:registry=https://npm.pkg.github.com\n',
+        null,
+      ),
+    ).toBe('github-packages')
+    expect(detectPackageRegistry(null, 'https://evil.example/npm.pkg.github.com\n')).toBe('unknown')
+    expect(detectPackageRegistry(null, 'https://not-npm.pkg.github.com/download/x\n')).toBe(
+      'unknown',
+    )
+    expect(detectPackageRegistry(null, 'https://npm.nard.uk.evil.example/x\n')).toBe('unknown')
   })
 
   it('treats cooldown 0 plus the matching registry as already working', () => {
@@ -114,6 +129,26 @@ describe('package registry detection', () => {
     expect(dependabotMatchesRegistry(mirrorWorking, 'narduk-mirror')).toBe(true)
     expect(githubPackagesDependabot()).not.toContain(PLACEHOLDER)
     expect(githubPackagesDependabot()).toContain('https://npm.pkg.github.com')
+  })
+
+  it('requires an npm update block before calling a mirror file clean', () => {
+    const actionsOnly = [
+      'version: 2',
+      'registries:',
+      '  npm-nard-uk:',
+      '    type: npm-registry',
+      '    url: https://npm.nard.uk',
+      'updates:',
+      '  - package-ecosystem: github-actions',
+      '    directory: /',
+      '    cooldown:',
+      '      default-days: 0',
+      '',
+    ].join('\n')
+    expect(hasExplicitZeroCooldown(actionsOnly)).toBe(true)
+    expect(hasNpmUpdateBlock(actionsOnly)).toBe(false)
+    expect(hasNpmUpdateBlock(mirrorWorking)).toBe(true)
+    expect(dependabotMatchesRegistry(actionsOnly, 'narduk-mirror')).toBe(false)
   })
 })
 
@@ -178,6 +213,54 @@ describe('upgrade dependabot registry', () => {
     expect(after).toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     expect(after).not.toContain(PLACEHOLDER)
     expect(after).not.toContain('npm.nard.uk')
+  })
+
+  it('rewrites a mirror file that has no npm update block', async () => {
+    const targetDir = await checkout()
+    const actionsOnly = [
+      'version: 2',
+      'registries:',
+      '  npm-nard-uk:',
+      '    type: npm-registry',
+      '    url: https://npm.nard.uk',
+      'updates:',
+      '  - package-ecosystem: github-actions',
+      '    directory: /',
+      '    cooldown:',
+      '      default-days: 0',
+      '',
+    ].join('\n')
+    await write(targetDir, '.npmrc', '@narduk-enterprises:registry=https://npm.nard.uk\n')
+    await write(targetDir, '.github/dependabot.yml', actionsOnly)
+    await write(targetDir, 'package.json', '{ "name": "riverstatus", "private": true }\n')
+
+    const report = await upgradeNardukApp({
+      only: ['.github/dependabot.yml'],
+      targetDir,
+      write: true,
+    })
+    const after = await readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')
+    expect(report.changes.find((entry) => entry.path === '.github/dependabot.yml')?.status).toBe(
+      'drift',
+    )
+    expect(after).toContain("package-ecosystem: 'npm'")
+    expect(after).not.toBe(actionsOnly)
+  })
+
+  it('does not create a placeholder-token file when the registry is unknown', async () => {
+    const targetDir = await checkout()
+    await write(targetDir, 'package.json', '{ "name": "unknown-app", "private": true }\n')
+
+    const report = await upgradeNardukApp({
+      only: ['.github/dependabot.yml'],
+      targetDir,
+      write: true,
+    })
+    const change = report.changes.find((entry) => entry.path === '.github/dependabot.yml')
+    expect(change?.status).toBe('unresolved')
+    expect(change?.diff).toBe('')
+    expect(change?.applied).toBe(false)
+    await expect(readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')).rejects.toThrow()
   })
 
   it('still matches a freshly generated npm.nard.uk app', async () => {

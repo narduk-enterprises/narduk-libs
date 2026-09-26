@@ -20,26 +20,55 @@ interface RegistryEntry {
 }
 
 const PLACEHOLDER_SECRET = 'NPM_NARD_UK_PLACEHOLDER'
+const GITHUB_PACKAGES_HOST = 'npm.pkg.github.com'
+const NARDUK_MIRROR_HOST = 'npm.nard.uk'
+
+function registryHost(value: string): string | null {
+  const trimmed = value.trim().replaceAll(/^['"]|['"]$/gu, '')
+  try {
+    return new URL(trimmed).host.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function classifyHost(host: string | null): PackageRegistry | null {
+  if (host === GITHUB_PACKAGES_HOST) return 'github-packages'
+  if (host === NARDUK_MIRROR_HOST) return 'narduk-mirror'
+  return null
+}
+
+function hostsIn(text: string): Set<string> {
+  const hosts = new Set<string>()
+  for (const match of text.matchAll(/https?:\/\/[^\s'")\]]+/gu)) {
+    const host = registryHost(match[0] ?? '')
+    if (host) hosts.add(host)
+  }
+  return hosts
+}
 
 export function detectPackageRegistry(
   npmrc: string | null,
   lockfile: string | null,
 ): PackageRegistry {
   if (npmrc) {
+    let unscoped: PackageRegistry | null = null
     for (const line of npmrc.split('\n')) {
       const trimmed = line.trim()
       if (!trimmed || trimmed.startsWith('#')) continue
-      const match = /^@narduk-enterprises:registry\s*=\s*['"]?(\S+?)['"]?\s*$/u.exec(trimmed)
-      const url = match?.[1]
-      if (!url) continue
-      if (url.includes('npm.pkg.github.com')) return 'github-packages'
-      if (url.includes('npm.nard.uk')) return 'narduk-mirror'
-      return 'unknown'
+      const scoped = /^@narduk-enterprises:registry\s*=\s*['"]?(\S+?)['"]?\s*$/u.exec(trimmed)
+      if (scoped?.[1]) return classifyHost(registryHost(scoped[1])) ?? 'unknown'
+      const plain = /^registry\s*=\s*['"]?(\S+?)['"]?\s*$/u.exec(trimmed)
+      if (plain?.[1] && unscoped === null) {
+        const classified = classifyHost(registryHost(plain[1]))
+        if (classified) unscoped = classified
+      }
     }
+    if (unscoped) return unscoped
   }
-  const lock = lockfile ?? ''
-  const github = lock.includes('npm.pkg.github.com')
-  const mirror = lock.includes('npm.nard.uk')
+  const hosts = hostsIn(lockfile ?? '')
+  const github = hosts.has(GITHUB_PACKAGES_HOST)
+  const mirror = hosts.has(NARDUK_MIRROR_HOST)
   if (github && !mirror) return 'github-packages'
   if (mirror && !github) return 'narduk-mirror'
   return 'unknown'
@@ -72,6 +101,13 @@ export function hasExplicitZeroCooldown(contents: string): boolean {
   }
   if (defaultDays !== '0') return false
   return majorDays === null || majorDays === '0'
+}
+
+/** An `updates` entry whose package-ecosystem is npm. github-actions alone is not one. */
+export function hasNpmUpdateBlock(contents: string): boolean {
+  return /^[ \t]*(?:-[ \t]*)?package-ecosystem:[ \t]*['"]?npm['"]?\s*$/mu.test(
+    uncommented(contents),
+  )
 }
 
 /** Registry entries under the top-level `registries:` block. Comments and prose do not count. */
@@ -108,18 +144,25 @@ export function registryEntries(contents: string): RegistryEntry[] {
  * scope-bearing GitHub Packages block on an `npm.nard.uk` app.
  */
 export function dependabotMatchesRegistry(contents: string, registry: PackageRegistry): boolean {
-  if (registry === 'unknown' || !hasExplicitZeroCooldown(contents)) return false
+  if (
+    registry === 'unknown' ||
+    !hasExplicitZeroCooldown(contents) ||
+    !hasNpmUpdateBlock(contents)
+  ) {
+    return false
+  }
   const entries = registryEntries(contents)
+  const hosts = entries.map((entry) => registryHost(entry.url))
   if (registry === 'github-packages') {
     return (
-      entries.some((entry) => entry.url.includes('npm.pkg.github.com')) &&
-      !entries.some((entry) => entry.url.includes('npm.nard.uk')) &&
+      hosts.includes(GITHUB_PACKAGES_HOST) &&
+      !hosts.includes(NARDUK_MIRROR_HOST) &&
       !contents.includes(PLACEHOLDER_SECRET)
     )
   }
   return (
-    entries.some((entry) => entry.url.includes('npm.nard.uk') && !entry.scope) &&
-    !entries.some((entry) => entry.url.includes('npm.pkg.github.com'))
+    entries.some((entry) => registryHost(entry.url) === NARDUK_MIRROR_HOST && !entry.scope) &&
+    !hosts.includes(GITHUB_PACKAGES_HOST)
   )
 }
 
@@ -190,6 +233,13 @@ export function resolveDependabot(
   if (desired.includes(PLACEHOLDER_SECRET) && registry === 'github-packages') {
     return {
       detail: 'Refusing to add a placeholder-token registry to a GitHub Packages app.',
+      status: 'unresolved',
+    }
+  }
+  if (current === null && registry === 'unknown') {
+    return {
+      detail:
+        'Could not tell which registry this app uses, so upgrade will not create a placeholder-token Dependabot file.',
       status: 'unresolved',
     }
   }
