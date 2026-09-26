@@ -1,5 +1,204 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.6
+
+### Patch Changes
+
+- 24a81ad: `narduk-app development` deploys: a Cloudflare request that never
+  completed now says which request and why, e.g.
+  `Cloudflare GET /workers/scripts did not complete (TimeoutError: …; cause none)`,
+  and keeps the original error as `cause`. The deploy receipt's `failure`
+  records the same text, so a timeout, a DNS failure and a reset connection can
+  be told apart (narduk-libs#1096). No token, account id or response body is
+  included, and writes are still never retried.
+- 1300651: Add `narduk-app doctor --all`: one command with one verdict line,
+  `DOCTOR PASS|WARN|FAIL -- <reason>`, followed by each leg's own report. It
+  composes the existing legs and reimplements none of them: bare `doctor`'s
+  prerequisites, `doctor --adoption` (foundation, toolchain, shared-UI, coverage
+  and deployment checks, plus the security-header and live probes with
+  `--live`), and `doctor --audit`. Exit 1 only on FAIL. An undecided adoption
+  requirement or an unreachable registry reads WARN, never red. `--json` prints
+  the verdict and all three leg reports as one object. Bare `doctor`,
+  `--adoption` and `--audit` are unchanged (#376).
+- c0e54c4: Add `narduk-app ensure-generated <file...> -- <command...>` and
+  `narduk-app check-starter-identity`, the shared versions of the
+  `ensure-generated-files.sh` and `check-starter-identity.mjs` copies
+  template-derived apps carry, with the same rules (#1019).
+- 881452e: Supabase backend: a social-only session (no `email` provider) must
+  have signed in within `RECENT_SIGN_IN_WINDOW_SECONDS` (10 minutes) to set its
+  first password through `POST /api/auth/change-password`; an older session gets
+  403 `reauthentication_required`. Before, it could set a password with no
+  proof, sign in with it, and so satisfy the recent-sign-in window that account
+  deletion relies on (narduk-libs#1075). Recovery sessions are exempt.
+- 5c87827: narduk-auth: `POST /api/auth/mfa/enroll` and
+  `POST /api/auth/mfa/verify` answer
+  `501 MFA is only available when Supabase auth is enabled.` on the local
+  backend (#1048). They used to answer the Supabase-session 401, which reads as
+  an expired session and sends the user to sign in again for nothing.
+- d062de8: narduk-auth (#1060):
+
+  - `resolveRequestPrincipal(event, { allowNative: true })` no longer throws 404
+    or 503 on an app without native sign-in (no native clients, or not the local
+    backend). A request carrying a bearer that is not an `nk_` key now resolves
+    the session, or `null`, as the README says.
+  - Starting a passkey ceremony answers the fixed 503 and logs the cause when
+    `@simplewebauthn/server` throws while generating options, not only when it
+    fails to load. Before, the caller got an opaque 500.
+  - The `clientDataJSON` decoder is strict base64url. Whitespace, standard
+    base64's `+` and `/`, a lone trailing character and surplus padding are
+    refused. Both decoders already failed closed, and tests now pin this one.
+  - Tests cover the 503 on both finish ceremonies and on a failed
+    `@simplewebauthn/server/helpers` load.
+
+- f6bcea4: narduk-auth: a local-backend session now follows the users row's
+  sign-in methods (#1042). When a password has been set, or an Apple ID linked,
+  since the cookie was issued, the next request clears `needsPasswordSetup` and
+  adds `email` or `apple` to `authProviders`, and the refresh rewrites the
+  cookie. In practice this reaches other live sessions through Apple linking;
+  setting a first password by email link already signs every other session out.
+  The refresh now compares `needsPasswordSetup`, `authProvider`, `authProviders`
+  and `emailConfirmedAt` as well as email, name, isAdmin, recoveryMode and aal.
+  Providers the row cannot see, such as a passkey sign-in, are kept;
+  Supabase-backend sessions are unchanged.
+- 78527a7: narduk-auth: an `auth_sessions` row's expiry is now enforced on the
+  Supabase backend as well as the local one (#1043, part). That covers every
+  session read path and `getCurrentSupabaseContext`, which could otherwise
+  refresh an expired row back to life. Before, a Supabase cookie was accepted on
+  an expired row while it was inside its revalidation window or when the
+  Supabase refresh failed recoverably, until a login sweep happened to delete
+  the row. A Supabase session that made no request for 30 days (the row's
+  window, which a refresh slides) now signs in again.
+
+  Upgrading from narduk-auth below 1.28.0: a Supabase row written before 1.28.0
+  holds the access token's expiry, about an hour, not the 30-day lifetime, and
+  is refused once that hour has passed. On an app that upgrades straight from
+  below 1.28.0, every Supabase user not active in the hour before the deploy
+  signs in again, once; the new sign-in writes a 30-day row. From 1.28.0 a row
+  is rewritten at its next refresh, so only users idle since that upgrade are
+  affected, and the login sweep was already deleting their rows.
+
+- b10dad2: narduk-auth: the session-grant validator plugin refuses to start
+  while `runtimeConfig.nardukSessionGrantRequired` resolves to anything but
+  `true` (#1040). The module sets the flag at build time, but
+  `NUXT_NARDUK_SESSION_GRANT_REQUIRED=false` could override it at runtime
+  without anything noticing. The validator is still attached to every request
+  whatever the per-request config says, so an override that only reaches
+  request-time config (possible on Cloudflare with older compatibility dates)
+  still fails closed.
+- ee59247: narduk-auth: `GET /api/_auth/session` (nuxt-auth-utils' own route) no
+  longer returns the user of a revoked session (#1041). The route read the
+  sealed cookie and never asked the session-grant validator, and clearing the
+  session did not stop it, because h3 re-reads the request's cookie. The
+  `auth-session-refresh` middleware now answers `{}` for a cookie whose grant is
+  revoked, expired or unreadable.
+- 97b3cec: narduk-core: new `requireAdminRouteScopes(admin, scopes)` lets an
+  admin route opt into an API-key scope (#971, "scopes per route, opt-in"). A
+  key that carries scopes must hold the ones the route names, or `*`. A key with
+  no scopes keeps its full admin reach, and admin sessions are unchanged. The
+  helper refuses a non-admin itself. A narrow key holding `auth:api-keys:write`
+  can still mint an unscoped key (#1122). `GET /api/runtime/status` now names
+  `runtime:status:read`, so an admin-owned key minted for another purpose (for
+  example `['registry:read']`) is refused there with 403.
+- 48048b9: `shared/utils/units` adds `formatLatitude`, `formatLongitude` and
+  `formatCoordinate`: a position with hemisphere letters in decimal degrees,
+  degrees and decimal minutes, or degrees-minutes-seconds, rounded once and
+  carried so it never prints `60′`. `useFormatters()` binds it as
+  `format.coordinate` (narduk-libs#995).
+- 01090c4: Add `readWorkerIdentity(event)`, which reports the deployed source
+  revision and the Worker version from the `version_metadata` binding (default
+  `CF_VERSION_METADATA`), and let `/api/health` surface it through
+  `runtimeConfig.nardukHealth.identity` (app-named response headers, and an
+  optional `identity` body field) so apps stop overriding the route to add
+  deploy identity (#1022).
+- 6530d76: The shared `narduk/ignores` baseline now also ignores generated test
+  output at the lint root (`coverage/`, `playwright-report/`, `test-results/`),
+  so `narduk-lint` no longer lints `vitest --coverage` output and a second
+  `quality` run no longer fails on unbudgeted warnings (#902).
+- 2c5e67a: `import-x/no-cycle`, `import-x/named`, `import-x/default` and
+  `import-x/export` now check local TypeScript code (#973). The pinned import-x
+  resolver used to resolve `./b.ts` but not `./b` or `./b.js` from a `.ts` file,
+  which is how TypeScript sources spell local imports, so these four rules never
+  followed a local import. It now resolves TypeScript extensions and the `.js` →
+  `.ts` alias, and `import-x/extensions` lets the export map parse the resolved
+  `.ts` file.
+
+  The four rules move from `error` to `warn`, so the bump turns no consumer red.
+  New findings land in `lint-budget.json` and ratchet down from there, and
+  making the rules `error` again is a follow-up. A strict budget needs
+  `narduk-lint --accept-new-rules` once to record the new counts. `.vue` files
+  are resolved but not parsed for exports. On narduk-core, lint heap and time
+  are unchanged: about 2.1 GB peak RSS and about 25 s both before and after.
+
+- 70c0170: Minimal-code pass (#1037), no behavior change in any route or policy.
+  Two exports are removed: `isLinkLocalIPv6Hextet` (a Nitro server auto-import
+  in apps) and `prependNitroErrorHandler` (importable from
+  `@narduk-enterprises/narduk-core/server/error-sanitizer`); nothing in
+  narduk-libs uses either. narduk-core drops `isLinkLocalIPv6Hextet`, moves the
+  Nitro error-handler prepend into one module-side helper that orders the
+  sanitizer and the JSON no-store handler in a single call (the runtime
+  `prependNitroErrorHandler` copy, used only by tests, is gone), and marks the
+  unused `getSessionGrantValidator` deprecated. narduk-auth keeps its
+  per-request session and user row reads in one keyed cache.
+- f65e0ba: Add `NeProse` (narduk-libs#1005): a markdown document rendered in the
+  suite's type scale — h2/h3 headings (a `#` h1 is demoted to h2, since the page
+  header owns the h1), paragraphs, nested ordered and unordered lists, fenced
+  code with its language, aligned tables, blockquotes, rules, and inline code,
+  bold, italic and links. Takes `source` (markdown) or a pre-parsed `blocks`
+  AST.
+
+  The markdown subset is parsed by a small, pure, dependency-free parser
+  exported from the package root as `parseProse()`, with `proseOutline()` to
+  build a table of contents: every heading gets a unique slug `id`. Rendering is
+  element by element with no `v-html`, so raw HTML in the source is text, and a
+  link keeps its `href` only for `http(s):`, `mailto:` or a scheme-less
+  (relative, `#`, `?`) target; `javascript:` and every other scheme render the
+  text alone. The AST and prop types (`NeProseProps`, `NeProseBlock`,
+  `NeProseInline`, `NeProseHeading`, …) are exported for the design kit to
+  mirror.
+
+  The eslint-config and narduk-app-tools shared-component lists name `NeProse`
+  so the drift and item-13 tests match `narduk-shell`'s registry. The libs
+  explorer gains the `ne-prose` example its coverage check requires.
+  `create-narduk-app` takes the patch because it pins `narduk-shell`.
+
+- 9a99983: Add `NeSkipLink` and `NE_MAIN_ID` (narduk-libs#977). `NeSkipLink` is
+  a plain `<a href="#main-content">`, never a RouterLink, that moves keyboard
+  focus to its target when followed: it adds `tabindex="-1"` to a target with no
+  tabindex, keeps one it already has, and leaves native fragment navigation
+  alone. It is hidden until focused and styled from the NE tokens. `NE_MAIN_ID`
+  (`'main-content'`) is its default target, auto-imported by the module for
+  `<main :id="NE_MAIN_ID">` and exported from the package root. `NeAppShell`'s
+  own skip link is now an `NeSkipLink`, so following it moves focus into the
+  shell's `<main>`.
+
+  The eslint-config and narduk-app-tools shared-component lists name
+  `NeSkipLink`, so an app-local component of that name is reported as shadowing
+  the shared one.
+
+  The Libs Explorer gains an `NeSkipLink` usage page.
+
+- 672f77a: narduk-auth, narduk-seo, narduk-analytics and narduk-ai now declare
+  `@nuxt/ui` as a peer at exactly `4.11.1` (#1033). Each package renders Nuxt UI
+  components and none declared it. This is the version narduk-core already
+  depends on and narduk-shell already requires as a peer, so an app on
+  narduk-core already installs it. An app on another `@nuxt/ui` version now gets
+  pnpm's peer warning.
+- 486d76a: Add `NeDataAttribution`, a consistent "Data from <source>, updated
+  <time>" credit driven by a structural `NeDataSource` (name, http(s)-only href,
+  licence, publish time) and formatted through `./format` with a required zone
+  and a caller-supplied `now`, and `NeLegalPage`, a legal-page layout with a
+  formatted "Last updated" date and a table of contents.
+  `privacyPolicyTemplate()` and `termsOfServiceTemplate()` return section
+  structure whose every body is a marked placeholder — no legal wording ships
+  (narduk-libs#388, "Build, wording later"). A page stays a visible,
+  `data-ne-legal-status="draft"` draft until the app sets `wordingApproved` and
+  no placeholder remains; `hasLegalPlaceholders()` lets an app's own test guard
+  the launch.
+
+  `NeDataAttribution` and `NeLegalPage` join the eslint-config and
+  narduk-app-tools shared-component lists and the libs-explorer inventory, and
+  the legal-template helpers are auto-imported by the module.
+
 ## 0.14.5
 
 ### Patch Changes

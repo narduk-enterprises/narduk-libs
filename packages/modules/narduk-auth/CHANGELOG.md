@@ -1,5 +1,99 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.32.1
+
+### Patch Changes
+
+- 881452e: Supabase backend: a social-only session (no `email` provider) must
+  have signed in within `RECENT_SIGN_IN_WINDOW_SECONDS` (10 minutes) to set its
+  first password through `POST /api/auth/change-password`; an older session gets
+  403 `reauthentication_required`. Before, it could set a password with no
+  proof, sign in with it, and so satisfy the recent-sign-in window that account
+  deletion relies on (narduk-libs#1075). Recovery sessions are exempt.
+- 5c87827: narduk-auth: `POST /api/auth/mfa/enroll` and
+  `POST /api/auth/mfa/verify` answer
+  `501 MFA is only available when Supabase auth is enabled.` on the local
+  backend (#1048). They used to answer the Supabase-session 401, which reads as
+  an expired session and sends the user to sign in again for nothing.
+- d062de8: narduk-auth (#1060):
+
+  - `resolveRequestPrincipal(event, { allowNative: true })` no longer throws 404
+    or 503 on an app without native sign-in (no native clients, or not the local
+    backend). A request carrying a bearer that is not an `nk_` key now resolves
+    the session, or `null`, as the README says.
+  - Starting a passkey ceremony answers the fixed 503 and logs the cause when
+    `@simplewebauthn/server` throws while generating options, not only when it
+    fails to load. Before, the caller got an opaque 500.
+  - The `clientDataJSON` decoder is strict base64url. Whitespace, standard
+    base64's `+` and `/`, a lone trailing character and surplus padding are
+    refused. Both decoders already failed closed, and tests now pin this one.
+  - Tests cover the 503 on both finish ceremonies and on a failed
+    `@simplewebauthn/server/helpers` load.
+
+- f6bcea4: narduk-auth: a local-backend session now follows the users row's
+  sign-in methods (#1042). When a password has been set, or an Apple ID linked,
+  since the cookie was issued, the next request clears `needsPasswordSetup` and
+  adds `email` or `apple` to `authProviders`, and the refresh rewrites the
+  cookie. In practice this reaches other live sessions through Apple linking;
+  setting a first password by email link already signs every other session out.
+  The refresh now compares `needsPasswordSetup`, `authProvider`, `authProviders`
+  and `emailConfirmedAt` as well as email, name, isAdmin, recoveryMode and aal.
+  Providers the row cannot see, such as a passkey sign-in, are kept;
+  Supabase-backend sessions are unchanged.
+- 78527a7: narduk-auth: an `auth_sessions` row's expiry is now enforced on the
+  Supabase backend as well as the local one (#1043, part). That covers every
+  session read path and `getCurrentSupabaseContext`, which could otherwise
+  refresh an expired row back to life. Before, a Supabase cookie was accepted on
+  an expired row while it was inside its revalidation window or when the
+  Supabase refresh failed recoverably, until a login sweep happened to delete
+  the row. A Supabase session that made no request for 30 days (the row's
+  window, which a refresh slides) now signs in again.
+
+  Upgrading from narduk-auth below 1.28.0: a Supabase row written before 1.28.0
+  holds the access token's expiry, about an hour, not the 30-day lifetime, and
+  is refused once that hour has passed. On an app that upgrades straight from
+  below 1.28.0, every Supabase user not active in the hour before the deploy
+  signs in again, once; the new sign-in writes a 30-day row. From 1.28.0 a row
+  is rewritten at its next refresh, so only users idle since that upgrade are
+  affected, and the login sweep was already deleting their rows.
+
+- b10dad2: narduk-auth: the session-grant validator plugin refuses to start
+  while `runtimeConfig.nardukSessionGrantRequired` resolves to anything but
+  `true` (#1040). The module sets the flag at build time, but
+  `NUXT_NARDUK_SESSION_GRANT_REQUIRED=false` could override it at runtime
+  without anything noticing. The validator is still attached to every request
+  whatever the per-request config says, so an override that only reaches
+  request-time config (possible on Cloudflare with older compatibility dates)
+  still fails closed.
+- ee59247: narduk-auth: `GET /api/_auth/session` (nuxt-auth-utils' own route) no
+  longer returns the user of a revoked session (#1041). The route read the
+  sealed cookie and never asked the session-grant validator, and clearing the
+  session did not stop it, because h3 re-reads the request's cookie. The
+  `auth-session-refresh` middleware now answers `{}` for a cookie whose grant is
+  revoked, expired or unreadable.
+- 70c0170: Minimal-code pass (#1037), no behavior change in any route or policy.
+  Two exports are removed: `isLinkLocalIPv6Hextet` (a Nitro server auto-import
+  in apps) and `prependNitroErrorHandler` (importable from
+  `@narduk-enterprises/narduk-core/server/error-sanitizer`); nothing in
+  narduk-libs uses either. narduk-core drops `isLinkLocalIPv6Hextet`, moves the
+  Nitro error-handler prepend into one module-side helper that orders the
+  sanitizer and the JSON no-store handler in a single call (the runtime
+  `prependNitroErrorHandler` copy, used only by tests, is gone), and marks the
+  unused `getSessionGrantValidator` deprecated. narduk-auth keeps its
+  per-request session and user row reads in one keyed cache.
+- 672f77a: narduk-auth, narduk-seo, narduk-analytics and narduk-ai now declare
+  `@nuxt/ui` as a peer at exactly `4.11.1` (#1033). Each package renders Nuxt UI
+  components and none declared it. This is the version narduk-core already
+  depends on and narduk-shell already requires as a peer, so an app on
+  narduk-core already installs it. An app on another `@nuxt/ui` version now gets
+  pnpm's peer warning.
+- Updated dependencies [97b3cec]
+- Updated dependencies [48048b9]
+- Updated dependencies [01090c4]
+- Updated dependencies [70c0170]
+  - @narduk-enterprises/narduk-core@2.18.0
+  - @narduk-enterprises/narduk-app@1.20.3
+
 ## 1.32.0
 
 ### Minor Changes

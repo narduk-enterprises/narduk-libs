@@ -1,5 +1,86 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.26.0
+
+### Minor Changes
+
+- 1300651: Add `narduk-app doctor --all`: one command with one verdict line,
+  `DOCTOR PASS|WARN|FAIL -- <reason>`, followed by each leg's own report. It
+  composes the existing legs and reimplements none of them: bare `doctor`'s
+  prerequisites, `doctor --adoption` (foundation, toolchain, shared-UI, coverage
+  and deployment checks, plus the security-header and live probes with
+  `--live`), and `doctor --audit`. Exit 1 only on FAIL. An undecided adoption
+  requirement or an unreachable registry reads WARN, never red. `--json` prints
+  the verdict and all three leg reports as one object. Bare `doctor`,
+  `--adoption` and `--audit` are unchanged (#376).
+- c0e54c4: Add `narduk-app ensure-generated <file...> -- <command...>` and
+  `narduk-app check-starter-identity`, the shared versions of the
+  `ensure-generated-files.sh` and `check-starter-identity.mjs` copies
+  template-derived apps carry, with the same rules (#1019).
+
+### Patch Changes
+
+- 24a81ad: `narduk-app development` deploys: a Cloudflare request that never
+  completed now says which request and why, e.g.
+  `Cloudflare GET /workers/scripts did not complete (TimeoutError: …; cause none)`,
+  and keeps the original error as `cause`. The deploy receipt's `failure`
+  records the same text, so a timeout, a DNS failure and a reset connection can
+  be told apart (narduk-libs#1096). No token, account id or response body is
+  included, and writes are still never retried.
+- f65e0ba: Add `NeProse` (narduk-libs#1005): a markdown document rendered in the
+  suite's type scale — h2/h3 headings (a `#` h1 is demoted to h2, since the page
+  header owns the h1), paragraphs, nested ordered and unordered lists, fenced
+  code with its language, aligned tables, blockquotes, rules, and inline code,
+  bold, italic and links. Takes `source` (markdown) or a pre-parsed `blocks`
+  AST.
+
+  The markdown subset is parsed by a small, pure, dependency-free parser
+  exported from the package root as `parseProse()`, with `proseOutline()` to
+  build a table of contents: every heading gets a unique slug `id`. Rendering is
+  element by element with no `v-html`, so raw HTML in the source is text, and a
+  link keeps its `href` only for `http(s):`, `mailto:` or a scheme-less
+  (relative, `#`, `?`) target; `javascript:` and every other scheme render the
+  text alone. The AST and prop types (`NeProseProps`, `NeProseBlock`,
+  `NeProseInline`, `NeProseHeading`, …) are exported for the design kit to
+  mirror.
+
+  The eslint-config and narduk-app-tools shared-component lists name `NeProse`
+  so the drift and item-13 tests match `narduk-shell`'s registry. The libs
+  explorer gains the `ne-prose` example its coverage check requires.
+  `create-narduk-app` takes the patch because it pins `narduk-shell`.
+
+- 9a99983: Add `NeSkipLink` and `NE_MAIN_ID` (narduk-libs#977). `NeSkipLink` is
+  a plain `<a href="#main-content">`, never a RouterLink, that moves keyboard
+  focus to its target when followed: it adds `tabindex="-1"` to a target with no
+  tabindex, keeps one it already has, and leaves native fragment navigation
+  alone. It is hidden until focused and styled from the NE tokens. `NE_MAIN_ID`
+  (`'main-content'`) is its default target, auto-imported by the module for
+  `<main :id="NE_MAIN_ID">` and exported from the package root. `NeAppShell`'s
+  own skip link is now an `NeSkipLink`, so following it moves focus into the
+  shell's `<main>`.
+
+  The eslint-config and narduk-app-tools shared-component lists name
+  `NeSkipLink`, so an app-local component of that name is reported as shadowing
+  the shared one.
+
+  The Libs Explorer gains an `NeSkipLink` usage page.
+
+- 486d76a: Add `NeDataAttribution`, a consistent "Data from <source>, updated
+  <time>" credit driven by a structural `NeDataSource` (name, http(s)-only href,
+  licence, publish time) and formatted through `./format` with a required zone
+  and a caller-supplied `now`, and `NeLegalPage`, a legal-page layout with a
+  formatted "Last updated" date and a table of contents.
+  `privacyPolicyTemplate()` and `termsOfServiceTemplate()` return section
+  structure whose every body is a marked placeholder — no legal wording ships
+  (narduk-libs#388, "Build, wording later"). A page stays a visible,
+  `data-ne-legal-status="draft"` draft until the app sets `wordingApproved` and
+  no placeholder remains; `hasLegalPlaceholders()` lets an app's own test guard
+  the launch.
+
+  `NeDataAttribution` and `NeLegalPage` join the eslint-config and
+  narduk-app-tools shared-component lists and the libs-explorer inventory, and
+  the legal-template helpers are auto-imported by the module.
+
 ## 0.25.0
 
 ### Minor Changes

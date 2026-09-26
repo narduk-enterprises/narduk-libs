@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.2
+
+### Patch Changes
+
+- 672f77a: narduk-auth, narduk-seo, narduk-analytics and narduk-ai now declare
+  `@nuxt/ui` as a peer at exactly `4.11.1` (#1033). Each package renders Nuxt UI
+  components and none declared it. This is the version narduk-core already
+  depends on and narduk-shell already requires as a peer, so an app on
+  narduk-core already installs it. An app on another `@nuxt/ui` version now gets
+  pnpm's peer warning.
+- Updated dependencies [97b3cec]
+- Updated dependencies [48048b9]
+- Updated dependencies [01090c4]
+- Updated dependencies [70c0170]
+  - @narduk-enterprises/narduk-core@2.18.0
+
 ## 0.4.1
 
 ### Patch Changes

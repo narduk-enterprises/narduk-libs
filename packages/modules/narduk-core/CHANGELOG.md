@@ -1,5 +1,42 @@
 # @narduk-enterprises/narduk-core
 
+## 2.18.0
+
+### Minor Changes
+
+- 97b3cec: narduk-core: new `requireAdminRouteScopes(admin, scopes)` lets an
+  admin route opt into an API-key scope (#971, "scopes per route, opt-in"). A
+  key that carries scopes must hold the ones the route names, or `*`. A key with
+  no scopes keeps its full admin reach, and admin sessions are unchanged. The
+  helper refuses a non-admin itself. A narrow key holding `auth:api-keys:write`
+  can still mint an unscoped key (#1122). `GET /api/runtime/status` now names
+  `runtime:status:read`, so an admin-owned key minted for another purpose (for
+  example `['registry:read']`) is refused there with 403.
+- 48048b9: `shared/utils/units` adds `formatLatitude`, `formatLongitude` and
+  `formatCoordinate`: a position with hemisphere letters in decimal degrees,
+  degrees and decimal minutes, or degrees-minutes-seconds, rounded once and
+  carried so it never prints `60′`. `useFormatters()` binds it as
+  `format.coordinate` (narduk-libs#995).
+- 01090c4: Add `readWorkerIdentity(event)`, which reports the deployed source
+  revision and the Worker version from the `version_metadata` binding (default
+  `CF_VERSION_METADATA`), and let `/api/health` surface it through
+  `runtimeConfig.nardukHealth.identity` (app-named response headers, and an
+  optional `identity` body field) so apps stop overriding the route to add
+  deploy identity (#1022).
+
+### Patch Changes
+
+- 70c0170: Minimal-code pass (#1037), no behavior change in any route or policy.
+  Two exports are removed: `isLinkLocalIPv6Hextet` (a Nitro server auto-import
+  in apps) and `prependNitroErrorHandler` (importable from
+  `@narduk-enterprises/narduk-core/server/error-sanitizer`); nothing in
+  narduk-libs uses either. narduk-core drops `isLinkLocalIPv6Hextet`, moves the
+  Nitro error-handler prepend into one module-side helper that orders the
+  sanitizer and the JSON no-store handler in a single call (the runtime
+  `prependNitroErrorHandler` copy, used only by tests, is gone), and marks the
+  unused `getSessionGrantValidator` deprecated. narduk-auth keeps its
+  per-request session and user row reads in one keyed cache.
+
 ## 2.17.0
 
 ### Minor Changes

@@ -1,5 +1,84 @@
 # @narduk-enterprises/eslint-config
 
+## 2.5.0
+
+### Minor Changes
+
+- 2c5e67a: `import-x/no-cycle`, `import-x/named`, `import-x/default` and
+  `import-x/export` now check local TypeScript code (#973). The pinned import-x
+  resolver used to resolve `./b.ts` but not `./b` or `./b.js` from a `.ts` file,
+  which is how TypeScript sources spell local imports, so these four rules never
+  followed a local import. It now resolves TypeScript extensions and the `.js` →
+  `.ts` alias, and `import-x/extensions` lets the export map parse the resolved
+  `.ts` file.
+
+  The four rules move from `error` to `warn`, so the bump turns no consumer red.
+  New findings land in `lint-budget.json` and ratchet down from there, and
+  making the rules `error` again is a follow-up. A strict budget needs
+  `narduk-lint --accept-new-rules` once to record the new counts. `.vue` files
+  are resolved but not parsed for exports. On narduk-core, lint heap and time
+  are unchanged: about 2.1 GB peak RSS and about 25 s both before and after.
+
+### Patch Changes
+
+- 6530d76: The shared `narduk/ignores` baseline now also ignores generated test
+  output at the lint root (`coverage/`, `playwright-report/`, `test-results/`),
+  so `narduk-lint` no longer lints `vitest --coverage` output and a second
+  `quality` run no longer fails on unbudgeted warnings (#902).
+- f65e0ba: Add `NeProse` (narduk-libs#1005): a markdown document rendered in the
+  suite's type scale — h2/h3 headings (a `#` h1 is demoted to h2, since the page
+  header owns the h1), paragraphs, nested ordered and unordered lists, fenced
+  code with its language, aligned tables, blockquotes, rules, and inline code,
+  bold, italic and links. Takes `source` (markdown) or a pre-parsed `blocks`
+  AST.
+
+  The markdown subset is parsed by a small, pure, dependency-free parser
+  exported from the package root as `parseProse()`, with `proseOutline()` to
+  build a table of contents: every heading gets a unique slug `id`. Rendering is
+  element by element with no `v-html`, so raw HTML in the source is text, and a
+  link keeps its `href` only for `http(s):`, `mailto:` or a scheme-less
+  (relative, `#`, `?`) target; `javascript:` and every other scheme render the
+  text alone. The AST and prop types (`NeProseProps`, `NeProseBlock`,
+  `NeProseInline`, `NeProseHeading`, …) are exported for the design kit to
+  mirror.
+
+  The eslint-config and narduk-app-tools shared-component lists name `NeProse`
+  so the drift and item-13 tests match `narduk-shell`'s registry. The libs
+  explorer gains the `ne-prose` example its coverage check requires.
+  `create-narduk-app` takes the patch because it pins `narduk-shell`.
+
+- 9a99983: Add `NeSkipLink` and `NE_MAIN_ID` (narduk-libs#977). `NeSkipLink` is
+  a plain `<a href="#main-content">`, never a RouterLink, that moves keyboard
+  focus to its target when followed: it adds `tabindex="-1"` to a target with no
+  tabindex, keeps one it already has, and leaves native fragment navigation
+  alone. It is hidden until focused and styled from the NE tokens. `NE_MAIN_ID`
+  (`'main-content'`) is its default target, auto-imported by the module for
+  `<main :id="NE_MAIN_ID">` and exported from the package root. `NeAppShell`'s
+  own skip link is now an `NeSkipLink`, so following it moves focus into the
+  shell's `<main>`.
+
+  The eslint-config and narduk-app-tools shared-component lists name
+  `NeSkipLink`, so an app-local component of that name is reported as shadowing
+  the shared one.
+
+  The Libs Explorer gains an `NeSkipLink` usage page.
+
+- 486d76a: Add `NeDataAttribution`, a consistent "Data from <source>, updated
+  <time>" credit driven by a structural `NeDataSource` (name, http(s)-only href,
+  licence, publish time) and formatted through `./format` with a required zone
+  and a caller-supplied `now`, and `NeLegalPage`, a legal-page layout with a
+  formatted "Last updated" date and a table of contents.
+  `privacyPolicyTemplate()` and `termsOfServiceTemplate()` return section
+  structure whose every body is a marked placeholder — no legal wording ships
+  (narduk-libs#388, "Build, wording later"). A page stays a visible,
+  `data-ne-legal-status="draft"` draft until the app sets `wordingApproved` and
+  no placeholder remains; `hasLegalPlaceholders()` lets an app's own test guard
+  the launch.
+
+  `NeDataAttribution` and `NeLegalPage` join the eslint-config and
+  narduk-app-tools shared-component lists and the libs-explorer inventory, and
+  the legal-template helpers are auto-imported by the module.
+
 ## 2.4.2
 
 ### Patch Changes
