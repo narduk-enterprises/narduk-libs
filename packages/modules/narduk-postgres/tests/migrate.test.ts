@@ -421,6 +421,51 @@ describe('applyMigrations', () => {
     }
   })
 
+  it('refuses CREATE/DROP DATABASE, ALTER SYSTEM, tablespaces and a continuous aggregate (#1039)', async () => {
+    for (const [name, sql, label] of [
+      ['0001_create_db.sql', 'CREATE DATABASE tenant_two;', 'CREATE DATABASE'],
+      ['0001_drop_db.sql', 'DROP DATABASE IF EXISTS tenant_two;', 'DROP DATABASE'],
+      ['0001_alter_system.sql', "ALTER SYSTEM SET work_mem = '64MB';", 'ALTER SYSTEM'],
+      [
+        '0001_create_tablespace.sql',
+        "CREATE TABLESPACE fast LOCATION '/ssd';",
+        'CREATE TABLESPACE',
+      ],
+      ['0001_drop_tablespace.sql', 'DROP TABLESPACE fast;', 'DROP TABLESPACE'],
+      [
+        '0001_cagg.sql',
+        "CREATE MATERIALIZED VIEW daily\n  WITH (timescaledb.continuous) AS\n  SELECT time_bucket('1 day', ts) AS day, count(*) FROM readings GROUP BY 1;",
+        'CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)',
+      ],
+      [
+        '0001_cagg_with_data.sql',
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS daily WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS SELECT time_bucket('1 day', ts) AS day FROM readings GROUP BY 1 WITH DATA;",
+        'CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)',
+      ],
+    ] as const) {
+      const executor = plainLockingExecutor()
+      const set = await createMigrationSet([{ name, sql }])
+      await expect(applyMigrations(executor, set)).rejects.toMatchObject({
+        code: 'MIGRATION_TRANSACTION_FORBIDDEN',
+        details: { name, statement: label },
+      })
+      expect(executor.texts.join('\n')).not.toMatch(/\bBEGIN\b/u)
+    }
+  })
+
+  it('allows a continuous aggregate created WITH NO DATA and a plain materialized view', async () => {
+    for (const sql of [
+      "CREATE MATERIALIZED VIEW daily WITH (timescaledb.continuous) AS SELECT time_bucket('1 day', ts) AS day FROM readings GROUP BY 1 WITH NO DATA;",
+      'CREATE MATERIALIZED VIEW totals AS SELECT count(*) FROM readings;',
+      "COMMENT ON TABLE t IS 'see ALTER SYSTEM docs';",
+    ]) {
+      const executor = plainLockingExecutor()
+      const set = await createMigrationSet([{ name: '0001_ok.sql', sql }])
+      await expect(applyMigrations(executor, set)).resolves.toBeDefined()
+      expect(executor.texts.join('\n')).toMatch(/\bBEGIN\b/u)
+    }
+  })
+
   it('still applies CONCURRENTLY when the file opts out on the first line', async () => {
     const executor = plainLockingExecutor()
     const set = await createMigrationSet([
