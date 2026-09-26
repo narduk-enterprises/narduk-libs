@@ -271,9 +271,17 @@ export interface TierRetention {
   /** Track-point window in ms. Omitted means not swept. */
   trackWindowMs?: number
   /**
-   * Raw window in ms for this tier, when it is SHORTER than the global raw
-   * window. Round 20: Free writes raw and keeps it 24 h, inside the 7-day
-   * global window. Omitted means the global window governs.
+   * Raw READ depth in ms for this tier, when it is SHORTER than the global raw
+   * window. Round 20: Free sees 24 h of raw inside the 7-day global window.
+   * Omitted means the global window governs.
+   *
+   * This is not a delete (narduk-libs#1081). A per-vessel raw DELETE
+   * invalidates the continuous aggregates, and their next refresh empties
+   * the tier's rollups inside the refresh window. Raw is kept for the global
+   * window for every vessel; a consumer reading raw for this tier clips the
+   * range start to `now - rawWindowMs`, as `RollupQuery.tierWindowMs` does
+   * for rollups. The validator still refuses a tier deeper than the global
+   * window.
    */
   rawWindowMs?: number
 }

@@ -288,7 +288,7 @@ describe('track query', () => {
 })
 
 describe('retention plan', () => {
-  it('drops raw and rollup chunks globally and deletes only track and raw per tier', () => {
+  it('drops raw and rollup chunks globally and deletes only track per tier', () => {
     const now = new Date('2026-09-12T03:15:00.000Z')
     const statements = buildRetentionStatements({
       globalRawWindowMs: 7 * 86_400_000,
@@ -326,11 +326,12 @@ describe('retention plan', () => {
       'global drop_chunks telemetry_numeric_15m',
       'global drop_chunks telemetry_numeric_1h',
       'free delete track_points',
-      'free delete telemetry_numeric',
       'cruiser delete track_points',
     ])
+    // narduk-libs#1081: no per-tier raw DELETE. It invalidated the continuous
+    // aggregates, and their next refresh emptied the tier's rollups.
     expect(
-      statements.some((statement) => /DELETE FROM telemetry_numeric_1/u.test(statement.text)),
+      statements.some((statement) => /DELETE FROM telemetry_numeric/u.test(statement.text)),
     ).toBe(false)
     expect(statements[0]!.text).toBe(
       "SELECT drop_chunks('telemetry_numeric', older_than => $1::timestamptz)",
@@ -342,9 +343,8 @@ describe('retention plan', () => {
     expect(statements[1]!.params).toEqual([new Date('2026-08-13T03:15:00.000Z')])
     // 1d has no global window, so it is never swept -- reported, not guessed.
     expect(statements.some((statement) => statement.rollup === '1d')).toBe(false)
-    // The Free raw sweep exists only because round 20 chose both a 7-day global
-    // raw window (1A) and a 24-hour Free raw window (2B).
-    expect(statements[5]!.params).toEqual([VESSEL, new Date('2026-09-11T03:15:00.000Z')])
+    // The 24-hour Free raw window (round 20, 2B) is enforced where reads clip
+    // to it, so Free keeps its full 7-day raw rows on disk (#1081).
   })
 
   it('builds the explicit backfill refresh a late batch needs', () => {
