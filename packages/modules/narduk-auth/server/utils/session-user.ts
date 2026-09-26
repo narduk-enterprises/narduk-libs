@@ -26,6 +26,36 @@ function isUnauthorizedError(error: unknown) {
   )
 }
 
+/**
+ * The session-user fields the cookie surfaces to the client. A change to any of
+ * them rewrites the cookie; before narduk-libs#1042 only the first five did, so
+ * `needsPasswordSetup` and `authProviders` could stay stale until re-login.
+ */
+const SURFACED_SESSION_USER_FIELDS = [
+  'email',
+  'name',
+  'isAdmin',
+  'recoveryMode',
+  'aal',
+  'needsPasswordSetup',
+  'authProvider',
+  'authProviders',
+  'emailConfirmedAt',
+] as const satisfies readonly (keyof AppSessionUser)[]
+
+function sameSurfacedValue(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((value, index) => value === right[index])
+  }
+  return left === right
+}
+
+function surfacedSessionUserChanged(cookie: AppSessionUser, principal: AppSessionUser): boolean {
+  return SURFACED_SESSION_USER_FIELDS.some(
+    (field) => !sameSurfacedValue(cookie[field], principal[field]),
+  )
+}
+
 async function refreshLocalSessionUser(
   event: H3Event,
   sessionUser: AppSessionUser,
@@ -36,13 +66,7 @@ async function refreshLocalSessionUser(
     await clearLayerUserSession(event)
     return null
   }
-  if (
-    principal.email !== sessionUser.email ||
-    principal.name !== sessionUser.name ||
-    principal.isAdmin !== sessionUser.isAdmin ||
-    principal.recoveryMode !== sessionUser.recoveryMode ||
-    principal.aal !== sessionUser.aal
-  ) {
+  if (surfacedSessionUserChanged(sessionUser, principal)) {
     await replaceLayerUserSession(event, { user: principal })
   }
   return principal
