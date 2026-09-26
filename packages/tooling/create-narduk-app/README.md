@@ -159,15 +159,14 @@ security exception's `ignore` entry (company-hq `NARDUK-APP-COMPLIANCE.md` §4)
 or a documented app-specific pin — and the reason the dry run prints the line
 count a whole-file rewrite would add and remove.
 
-The region targets differ. An existing `AGENTS.md` with no `narduk:router`
-markers gets the router block appended at the end, the rest of the file
-untouched (narduk-libs#377). A `<!-- narduk:unmanaged -->` header opts it out.
-The block names the app's shared packages and points at `narduk-app doctor`.
-`docs/e2e-testing.md` stays opt-in: with no `narduk:e2e-policy` markers it is
-reported `unmanaged` until someone adds the two marker lines around the section
-they should own, because an app may have replaced that document outright. A file
-with only one marker of a pair is reported `unresolved` and left alone. Apps
-generated from this version carry every marker already.
+The region targets follow one rule. An existing `AGENTS.md` with no
+`narduk:router` markers gets the router block appended at the end, and
+`docs/e2e-testing.md` with no `narduk:e2e-policy` markers gets the flake-policy
+block appended the same way. The rest of each file is untouched. A
+`<!-- narduk:unmanaged -->` header opts either file out. The router block names
+the app's shared packages and points at `narduk-app doctor`. A file with only
+one marker of a pair is reported `unresolved` and left alone. Apps generated
+from this version carry every marker already.
 
 ### Dependabot: two lanes
 

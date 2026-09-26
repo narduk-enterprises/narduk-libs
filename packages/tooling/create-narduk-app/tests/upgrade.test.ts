@@ -148,12 +148,12 @@ describe('upgrade ownership contract', () => {
     await writeFile(join(targetDir, 'docs/e2e-testing.md'), appOwnedDoc, 'utf8')
 
     const dryRun = await upgradeNardukApp({ targetDir })
-    expect(dryRun.driftCount).toBe(5)
+    expect(dryRun.driftCount).toBe(6)
     expect(await read(targetDir, '.github/dependabot.yml')).toBe('version: 2\n')
 
     const applied = await upgradeNardukApp({ targetDir, write: true })
     expect(applied.mode).toBe('write')
-    expect(applied.changes.filter((change) => change.applied)).toHaveLength(5)
+    expect(applied.changes.filter((change) => change.applied)).toHaveLength(6)
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
@@ -174,8 +174,10 @@ describe('upgrade ownership contract', () => {
     expect(await read(targetDir, 'AGENTS.md')).toContain('App prose.')
     expect(await read(targetDir, 'package.json')).toContain('"marine:ingest": "node bin/x.mjs"')
     expect(await read(targetDir, 'package.json')).toContain('"quality:static"')
-    // Seeded: not in the managed table, so upgrade never reads or writes it.
-    expect(await read(targetDir, 'docs/e2e-testing.md')).toBe(appOwnedDoc)
+    const e2e = await read(targetDir, 'docs/e2e-testing.md')
+    expect(e2e).toContain('This app replaced the generated layout.')
+    expect(e2e).toContain(REGION_MARKERS.e2eFlakePolicy.start)
+    expect(e2e).toContain(REGION_MARKERS.e2eFlakePolicy.end)
   })
 
   it('is idempotent: a second write run reports no drift', async () => {
@@ -629,18 +631,30 @@ describe('upgrade opt-outs and notices', () => {
     expect(await read(targetDir, 'AGENTS.md')).toBe(before)
   })
 
-  it('treats an app e2e document with no policy markers as an opt-in notice', async () => {
+  it('appends the e2e policy when the markers are missing', async () => {
     const targetDir = await scaffold()
-    await writeFile(
-      join(targetDir, 'docs/e2e-testing.md'),
-      '# E2E Testing\n\nThis app replaced the generated layout entirely.\n',
-      'utf8',
-    )
+    const prose = '# E2E Testing\n\nThis app replaced the generated layout entirely.\n'
+    await writeFile(join(targetDir, 'docs/e2e-testing.md'), prose, 'utf8')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    const after = await read(targetDir, 'docs/e2e-testing.md')
+    expect(statusOf(report, 'docs/e2e-testing.md')).toBe('drift')
+    expect(after.startsWith(prose.trimEnd())).toBe(true)
+    expect(after).toContain(REGION_MARKERS.e2eFlakePolicy.start)
+    expect(after).toContain(REGION_MARKERS.e2eFlakePolicy.end)
+
+    const again = await upgradeNardukApp({ targetDir })
+    expect(statusOf(again, 'docs/e2e-testing.md')).toBe('clean')
+  })
+
+  it('leaves an e2e document with an unmanaged header alone', async () => {
+    const targetDir = await scaffold()
+    const optedOut = '<!-- narduk:unmanaged -->\n# E2E Testing\n\nOwned entirely by the app.\n'
+    await writeFile(join(targetDir, 'docs/e2e-testing.md'), optedOut, 'utf8')
 
     const report = await upgradeNardukApp({ targetDir, write: true })
     expect(statusOf(report, 'docs/e2e-testing.md')).toBe('unmanaged')
-    expect(report.driftCount).toBe(0)
-    expect(await read(targetDir, 'docs/e2e-testing.md')).toContain('replaced the generated layout')
+    expect(await read(targetDir, 'docs/e2e-testing.md')).toBe(optedOut)
   })
 
   it('reports an absent pin host rather than scaffolding one', async () => {
