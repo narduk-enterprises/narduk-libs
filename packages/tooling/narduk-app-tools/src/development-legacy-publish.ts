@@ -14,14 +14,14 @@
  *
  * Read only: the root `package.json` and each enrolled component's
  * `appDir/package.json`, plus any checkout file a script there runs directly.
+ * A `pnpm --filter` forward asks pnpm itself which packages it selects
+ * (`pnpm --filter <value> ls --json --depth -1`).
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { parse, visit, type ParseError } from 'jsonc-parser'
-import { parse as parseYaml } from 'yaml'
-
-import { globToRegExp } from './development-guards.js'
 
 export interface LegacyPublishPath {
   /** Checkout-relative package.json. */
@@ -58,36 +58,21 @@ const TRUTHY = `['"]?(?:1|true|yes|on)\\b`
 
 /**
  * Anything that looks like the override taking a truthy value: `NAME=1`,
- * `NAME="1"`, `NAME: '1'`, `'NAME': '1'`, `env.NAME = 1`, `env['NAME'] = 1`. The broad net; `isSetter` then
- * excuses the two shapes that only read or mention the variable.
+ * `NAME="1"`, `NAME: '1'`, `'NAME': '1'`, `env.NAME = 1`, `env['NAME'] = 1`.
+ * This broad net is the floor; `lineSetsOverride` excuses only a reader and a
+ * message.
  */
 const OVERRIDE_VALUE = new RegExp(`(${OVERRIDE})['"]?\\]?\\s*[:=]\\s*${TRUTHY}`, 'giu')
 
-/** A shell word that assigns the override a truthy value (quotes already removed). */
-const OVERRIDE_WORD = new RegExp(`^(${OVERRIDE})=${TRUTHY}`, 'iu')
-const ASSIGNMENT_WORD = /^[a-z_]\w*=/iu
-
-/** Commands whose later words may set the environment of what they run. */
-const WRAPPERS = new Set([
-  'command',
-  'cross-env',
-  'cross-env-shell',
-  'declare',
-  'dotenv',
-  'env',
-  'eval',
-  'exec',
-  'export',
-  'local',
-  'nice',
-  'nohup',
-  'readonly',
-  'sudo',
-  'time',
-  'typeset',
-])
 /** Words that open a compound command; the simple command starts after them. */
 const KEYWORDS = new Set(['!', 'do', 'elif', 'else', 'if', 'then', 'until', 'while'])
+/** Shell commands whose quoted arguments are only printed. */
+const PRINTERS = new Set(['echo', 'printf'])
+/** A redirection that only sends a printer's output to stdout or stderr. */
+const TERMINAL_REDIRECT = /^[12]?>&[12]$/u
+/** A JS call whose first string argument is only a message. */
+const MESSAGE_CALL =
+  /(?:\bconsole\s*\.\s*\w+|\bnew\s+\w*Error|\blogger\s*\.\s*\w+|\b(?:log|warn|fail|die|abort|info|debug|error))\s*\(\s*$|\bthrow\s+$/u
 
 const JAVASCRIPT = /\.(?:mjs|cjs|js|ts|mts|cts)$/u
 const MAX_SCANNED_FILE_BYTES = 1024 * 1024
@@ -98,99 +83,146 @@ function inside(root: string, path: string): boolean {
 }
 
 interface QuotedSegment {
+  quote: string
   /** Index of the opening quote. */
   start: number
-  /** Index of the closing quote, or the text length when it never closes. */
+  /** Index of the closing quote; an unclosed quote is not a segment. */
   end: number
   content: string
 }
 
-/** Top-level quoted segments: '…', "…" (with backslash escapes) and `…`. */
-function quotedSegments(text: string): QuotedSegment[] {
+/** The quoted string starting at `start`, or undefined when it never closes. */
+function quotedAt(text: string, start: number): QuotedSegment | undefined {
+  const quote = text[start]!
+  let end = start + 1
+  while (end < text.length && text[end] !== quote)
+    end += quote !== "'" && text[end] === '\\' ? 2 : 1
+  if (end >= text.length) return undefined
+  return { quote, start, end, content: text.slice(start + 1, end) }
+}
+
+/** JS string literals on one line: '…', "…" and `…`. */
+function javascriptStrings(line: string): QuotedSegment[] {
   const segments: QuotedSegment[] = []
-  for (let index = 0; index < text.length; index += 1) {
-    const quote = text[index]!
-    if (quote !== '"' && quote !== "'" && quote !== '`') continue
-    let end = index + 1
-    while (end < text.length && text[end] !== quote)
-      end += quote === "'" ? 1 : text[end] === '\\' ? 2 : 1
-    end = Math.min(end, text.length)
-    segments.push({ start: index, end, content: text.slice(index + 1, end) })
-    index = end
+  for (let index = 0; index < line.length; index += 1) {
+    if (!`'"\``.includes(line[index]!)) continue
+    const segment = quotedAt(line, index)
+    if (!segment) break
+    segments.push(segment)
+    index = segment.end
   }
   return segments
 }
 
-/** Shell words of one command line, split into simple commands; quotes stay in the words. */
-function simpleCommands(text: string): string[][] {
-  const commands: string[][] = [[]]
-  let word = ''
-  const flush = () => {
-    if (word) commands.at(-1)!.push(word)
-    word = ''
-  }
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]!
-    if (char === '"' || char === "'") {
-      const segment = quotedSegments(text.slice(index))[0]!
-      word += text.slice(index, index + segment.end + 1)
-      index += segment.end
-    } else if (char === '\\') {
-      word += text.slice(index, index + 2)
-      index += 1
-    } else if (/[;&|(){}`\n]/u.test(char)) {
-      flush()
-      commands.push([])
-    } else if (/\s/u.test(char)) flush()
-    else word += char
-  }
-  flush()
-  return commands.filter((command) => command.length)
+interface ShellWord {
+  text: string
+  start: number
 }
 
-function unquote(word: string): string {
-  return word.replaceAll(/["'`\\]/gu, '')
+interface ShellCommand {
+  words: ShellWord[]
+  segments: QuotedSegment[]
+  /** The separator before the command (`''` at the start of the line). */
+  opener: string
+  /** The separator after it (`''` at the end of the line). */
+  closer: string
 }
 
 /**
- * Whether a command line, read on its own, sets the override: an assignment
- * word at the start of a simple command (after other assignments), any such
- * word after a wrapper such as `env`, `export`, `sudo` or `declare` (their own
- * options skipped), or the same inside any string the line quotes, since
- * `sh -c "…"`, `eval "…"` and `execSync("…")` run their string as a command.
- * `echo "…set NAME=1 for recovery"` stays clean: there the word is an argument.
+ * One shell line split into simple commands. A backslash escapes the next
+ * character, so `\"` opens no string; a backtick is a command substitution and
+ * a separator; an unclosed quote runs to the end of the line as plain text.
  */
-function commandSetsOverride(text: string): string | undefined {
-  for (const command of simpleCommands(text)) {
-    const words = command.map(unquote)
-    while (words.length && KEYWORDS.has(words[0]!)) words.shift()
-    const wrapped = WRAPPERS.has(words[0] ?? '')
-    for (const [index, word] of words.entries()) {
-      const match = OVERRIDE_WORD.exec(word)
-      if (match && (wrapped || words.slice(0, index).every((w) => ASSIGNMENT_WORD.test(w))))
-        return match[1]
-    }
+function shellCommands(line: string): ShellCommand[] {
+  const commands: ShellCommand[] = []
+  let current: ShellCommand = { words: [], segments: [], opener: '', closer: '' }
+  let word: ShellWord | undefined
+  const flush = () => {
+    if (word) current.words.push(word)
+    word = undefined
   }
-  for (const segment of quotedSegments(text)) {
-    const nested = commandSetsOverride(segment.content)
-    if (nested) return nested
+  const extend = (index: number, text: string) => {
+    word ??= { text: '', start: index }
+    word.text += text
   }
-  return undefined
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!
+    if (char === '\\') {
+      extend(index, line.slice(index, index + 2))
+      index += 1
+    } else if (char === '"' || char === "'") {
+      const segment = quotedAt(line, index)
+      if (!segment) {
+        extend(index, line.slice(index))
+        break
+      }
+      current.segments.push(segment)
+      extend(index, line.slice(index, segment.end + 1))
+      index = segment.end
+    } else if (char === '&' && (/[<>]/u.test(line[index - 1] ?? '') || line[index + 1] === '>')) {
+      extend(index, char) // `>&2`, `<&0` and `&>file` are redirections, not separators
+    } else if (/[;&|(){}`\n]/u.test(char)) {
+      flush()
+      const separator = char === '(' && line[index - 1] === '$' ? '$(' : char
+      current.closer =
+        char === '|' && line[index + 1] !== '|' && line[index - 1] !== '|' ? '|' : char
+      commands.push(current)
+      current = { words: [], segments: [], opener: separator, closer: '' }
+    } else if (/\s/u.test(char)) flush()
+    else extend(index, char)
+  }
+  flush()
+  commands.push(current)
+  return commands
+}
+
+/**
+ * Whether a quoted shell string is only printed: an argument of `echo` or
+ * `printf` whose output reaches the terminal. Output piped on, redirected to a
+ * file or captured by `$(…)`/backticks can be run or loaded, so it counts, and
+ * so does a double-quoted string that itself substitutes a command.
+ */
+function shellMessage(command: ShellCommand, segment: QuotedSegment): boolean {
+  if (segment.quote === '"' && /\$\(|`/u.test(segment.content)) return false
+  if (command.opener === '$(' || command.opener === '`' || command.closer === '|') return false
+  const words = command.words.map((word) => word.text)
+  while (words.length && KEYWORDS.has(words[0]!)) words.shift()
+  if (!PRINTERS.has(words[0] ?? '')) return false
+  return command.words.every((word) => {
+    const bare = word.text.replaceAll(/'[^']*'|"(?:\\.|[^"\\])*"|\\./gu, '')
+    return !/[<>]/u.test(bare) || TERMINAL_REDIRECT.test(bare)
+  })
+}
+
+/** Whether a JS string literal is only a message: the first argument of console.*, an Error or a log helper. */
+function javascriptMessage(line: string, segment: QuotedSegment): boolean {
+  if (segment.quote === '`' && segment.content.includes('${')) return false
+  return MESSAGE_CALL.test(line.slice(0, segment.start))
 }
 
 /**
  * The override set on this line. Every match of the broad net counts except a
- * reader (`$NAME`, `${NAME…}`) and a match that lies wholly inside one quoted
- * string that does not itself set the override when run as a command.
+ * reader (`$NAME`, `${NAME…}`) and a match wholly inside a quoted string that
+ * is only a message: an `echo`/`printf` argument in shell, the first argument
+ * of console.*, an Error or a log helper in JS. A string run as a command
+ * (`sh -c '…'`, `execSync("…")`) is not a message, so any setter in it counts.
  */
-function lineSetsOverride(line: string): string | undefined {
-  const segments = quotedSegments(line)
+function lineSetsOverride(line: string, javascript: boolean): string | undefined {
+  const commands = javascript ? [] : shellCommands(line)
+  const strings = javascript ? javascriptStrings(line) : []
   for (const match of line.matchAll(OVERRIDE_VALUE)) {
     const start = match.index
     const end = start + match[0].length
     if (/\$\{?$/u.test(line.slice(0, start))) continue
-    const segment = segments.find((candidate) => candidate.start < start && end <= candidate.end)
-    if (segment && !commandSetsOverride(segment.content)) continue
+    const within = (segment: QuotedSegment) => segment.start < start && end <= segment.end
+    if (javascript) {
+      const segment = strings.find(within)
+      if (segment && javascriptMessage(line, segment)) continue
+    } else {
+      const command = commands.find((candidate) => candidate.segments.some(within))
+      const segment = command?.segments.find(within)
+      if (command && segment && shellMessage(command, segment)) continue
+    }
     return match[1]
   }
   return undefined
@@ -204,8 +236,8 @@ function armedOverride(
   for (const [index, raw] of text.split('\n').entries()) {
     const line = javascript ? raw.replaceAll(/\/\*.*?\*\//gu, '') : raw
     const trimmed = line.trimStart()
-    if (trimmed.startsWith('#') || trimmed.startsWith('//')) continue
-    const name = lineSetsOverride(line)
+    if (javascript ? trimmed.startsWith('//') : trimmed.startsWith('#')) continue
+    const name = lineSetsOverride(line, javascript)
     if (name) return { name: name.toUpperCase(), line: index + 1 }
   }
   return undefined
@@ -293,65 +325,74 @@ function enrolledDeploy(pkg: WorkspacePackage): boolean {
   )
 }
 
-interface WorkspaceMember {
-  directory: string
-  rel: string
+/** A package a pnpm filter selects: its name and absolute directory. */
+export interface WorkspaceSelection {
   name?: string
+  path: string
 }
 
-const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules', 'bower_components'])
-const MAX_WORKSPACE_DEPTH = 8
+const PNPM_TIMEOUT_MS = 20_000
+/** A filter that names one package (`web`, `@scope/web`) or one directory (`./apps/web`). */
+const FILTER_VALUE =
+  /^(?:(?:@[\w-]+(?:\.[\w-]+)*\/)?[\w-]+(?:\.[\w-]+)*|\.\.?(?:\/[\w-]+(?:\.[\w-]+)*)+\/?)$/u
 
 /**
- * Every package pnpm counts as a workspace member: the root plus each
- * directory matching `pnpm-workspace.yaml`'s `packages` globs (a leading `!`
- * excludes). A string is why they cannot be known; a forward by `--filter`
- * is then refused, because what it selects is unknown.
+ * Asks pnpm which workspace packages `pnpm --filter <filter>` selects when run
+ * from `cwd`, with `pnpm --filter <filter> ls --json --depth -1` (read only).
+ * pnpm's own answer, so its globs, symlinks, package.yaml and filter syntax
+ * are never re-implemented. A string is why pnpm could not say.
  */
-function workspaceMembers(checkout: string): WorkspaceMember[] | string {
-  const manifest = resolve(checkout, 'pnpm-workspace.yaml')
-  if (!existsSync(manifest)) return 'there is no pnpm-workspace.yaml'
-  let globs: unknown
+function pnpmSelection(cwd: string, filter: string): WorkspaceSelection[] | string {
+  const execPath = process.env.npm_execpath
+  const viaNode = execPath && /pnpm/u.test(execPath) && /\.c?js$/u.test(execPath)
+  const [command, prefix] = viaNode ? [process.execPath, [execPath]] : ['pnpm', []]
+  const result = spawnSync(
+    command,
+    [...prefix, '--filter', filter, 'ls', '--json', '--depth', '-1'],
+    {
+      cwd,
+      encoding: 'utf8',
+      timeout: PNPM_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, npm_config_manage_package_manager_versions: 'false' },
+    },
+  )
+  if (result.error) return `pnpm could not be asked what it selects (${result.error.message})`
+  if (result.status !== 0)
+    return `pnpm could not list what it selects (exit ${result.status ?? result.signal})`
   try {
-    globs = (parseYaml(readFileSync(manifest, 'utf8')) as { packages?: unknown } | null)?.packages
-  } catch (error) {
-    return `pnpm-workspace.yaml does not parse (${error instanceof Error ? error.message : String(error)})`
+    // Outside a workspace pnpm prints one array per selected package.
+    const listed: unknown = JSON.parse(result.stdout.trim().replaceAll(/\]\s*\[/gu, ',') || '[]')
+    if (
+      Array.isArray(listed) &&
+      listed.every((entry) => entry && typeof (entry as { path?: unknown }).path === 'string')
+    )
+      return (listed as Array<{ name?: unknown; path: string }>).map((entry) => ({
+        name: typeof entry.name === 'string' ? entry.name : undefined,
+        path: entry.path,
+      }))
+  } catch {
+    // falls through to the refusal below
   }
-  if (!Array.isArray(globs) || !globs.every((glob) => typeof glob === 'string'))
-    return 'pnpm-workspace.yaml declares no packages list'
-  const clean = (glob: string) => glob.replace(/^!/u, '').replace(/^\.\//u, '').replace(/\/$/u, '')
-  const include = globs.filter((glob) => !glob.startsWith('!')).map((g) => globToRegExp(clean(g)))
-  const exclude = globs.filter((glob) => glob.startsWith('!')).map((g) => globToRegExp(clean(g)))
-  const members: WorkspaceMember[] = []
-  const visit = (directory: string, depth: number) => {
-    const rel = relative(checkout, directory).split(sep).join('/')
-    const selected =
-      rel === '' ||
-      (include.some((glob) => glob.test(rel)) && !exclude.some((glob) => glob.test(rel)))
-    if (selected && existsSync(resolve(directory, 'package.json'))) {
-      const pkg = parse(readFileSync(resolve(directory, 'package.json'), 'utf8')) as {
-        name?: unknown
-      } | null
-      members.push({
-        directory,
-        rel: rel || '.',
-        name: typeof pkg?.name === 'string' ? pkg.name : undefined,
-      })
-    }
-    if (depth >= MAX_WORKSPACE_DEPTH) return
-    for (const entry of readdirSync(directory, { withFileTypes: true }))
-      if (entry.isDirectory() && !SKIPPED_DIRECTORIES.has(entry.name))
-        visit(resolve(directory, entry.name), depth + 1)
+  return 'pnpm listed what it selects in a shape this check cannot read'
+}
+
+/** The pnpm query; tests replace `select` to run without pnpm. */
+export const workspaceFilter = { select: pnpmSelection }
+
+function sameDirectory(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return resolve(left) === resolve(right)
   }
-  visit(checkout, 0)
-  return members
 }
 
 /** Why a `deploy:dev` is not the enrolled command or a forward to it, or undefined when it is. */
 function deployDevProblem(
   pkg: WorkspacePackage,
   packages: readonly WorkspacePackage[],
-  members: () => WorkspaceMember[] | string,
 ): string | undefined {
   const command = pkg.scripts['deploy:dev']
   if (typeof command === 'string' && ENROLLED_DEPLOY.test(command)) return undefined
@@ -359,28 +400,29 @@ function deployDevProblem(
   if (!forward) return `runs ${JSON.stringify(command)}, not narduk-app development deploy`
   const [, flag, value] = forward as unknown as [string, string, string]
   let directory: string
+  let exact = true
   if (flag === '-C' || flag === '--dir') directory = resolve(pkg.directory, value)
+  else if (!FILTER_VALUE.test(value))
+    return `forwards with ${flag} ${value}; a forward names one package or one ./directory, with no glob or graph selector`
   else {
-    // `--filter <name>` runs every member with that name, and `--filter ./dir`
-    // every member under that directory: exactly one may be selected.
-    const known = members()
-    if (typeof known === 'string')
-      return `forwards with ${flag} ${value}, but ${known}, so which packages it runs is unknown`
-    const byPath = /^[./]/u.test(value)
-    const selected = known.filter((member) =>
-      byPath
-        ? member.directory === resolve(pkg.directory, value) ||
-          inside(resolve(pkg.directory, value), member.directory)
-        : member.name === value,
-    )
+    exact = false
+    // `--filter web` runs every package pnpm selects: exactly one may be.
+    const selected = workspaceFilter.select(pkg.directory, value)
+    if (typeof selected === 'string')
+      return `forwards with ${flag} ${value}, but ${selected}, so which packages it runs is unknown`
     if (selected.length !== 1)
-      return `forwards with ${flag} ${value}, which selects ${selected.length} workspace packages${
-        selected.length ? ` (${selected.map((member) => member.rel).join(', ')})` : ''
+      return `forwards with ${flag} ${value}, which pnpm resolves to ${selected.length} workspace packages${
+        selected.length
+          ? ` (${selected.map((member) => relative(pkg.directory, member.path).split(sep).join('/') || '.').join(', ')})`
+          : ''
       }; a forward must select exactly one enrolled component`
-    directory = selected[0]!.directory
+    directory = selected[0]!.path
   }
   const target = packages.find(
-    (candidate) => candidate.component && candidate !== pkg && candidate.directory === directory,
+    (candidate) =>
+      candidate.component &&
+      candidate !== pkg &&
+      (exact ? candidate.directory === directory : sameDirectory(candidate.directory, directory)),
   )
   if (!target) return `forwards to ${JSON.stringify(value)}, which is not an enrolled component`
   if (!enrolledDeploy(target))
@@ -401,8 +443,6 @@ export function findLegacyPublishPaths(
     const pkg = readPackage(checkout, directory, components.has(directory), findings)
     if (pkg) packages.push(pkg)
   }
-  let members: WorkspaceMember[] | string | undefined
-  const workspace = () => (members ??= workspaceMembers(checkout))
   for (const pkg of packages) {
     const at = (script: string, reason: string) =>
       findings.push({ packageJson: pkg.rel, script, reason })
@@ -412,7 +452,7 @@ export function findLegacyPublishPaths(
         `is declared ${pkg.deployDevDeclarations} times; JSON keeps the last, so a merge can re-arm a retired script`,
       )
     if (pkg.scripts['deploy:dev'] !== undefined) {
-      const problem = deployDevProblem(pkg, packages, workspace)
+      const problem = deployDevProblem(pkg, packages)
       if (problem) at('deploy:dev', problem)
     }
     for (const name of LIFECYCLE_SCRIPTS)

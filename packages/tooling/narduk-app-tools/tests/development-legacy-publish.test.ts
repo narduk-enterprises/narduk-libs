@@ -1,17 +1,20 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   describeLegacyPublishPath,
   findLegacyPublishPaths,
   legacyPublishRefusal,
+  workspaceFilter,
 } from '../src/development-legacy-publish.js'
 
 const roots: string[] = []
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -28,6 +31,8 @@ function checkout(files: Record<string, string>): string {
 
 const pkg = (scripts: Record<string, string>, name = 'web') =>
   JSON.stringify({ name, scripts }, null, 2)
+/** Whether a real pnpm answers here; the pnpm-backed cases skip without one. */
+const PNPM = spawnSync('pnpm', ['--version'], { encoding: 'utf8', timeout: 20_000 }).status === 0
 const WORKSPACE = { 'pnpm-workspace.yaml': 'packages:\n  - apps/*\n' }
 const found = (root: string) =>
   findLegacyPublishPaths(root, ['apps/web']).map(describeLegacyPublishPath)
@@ -113,105 +118,172 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
     expect(found(root)).toHaveLength(1)
   })
 
-  it('accepts the template root that only forwards to an enrolled component', () => {
+  it('accepts -C and --dir forwards to an enrolled component without asking pnpm', () => {
+    const select = vi.spyOn(workspaceFilter, 'select')
     for (const forward of [
-      'pnpm --filter web run deploy:dev',
-      'pnpm --filter=web run deploy:dev',
-      'pnpm -F web run deploy:dev -- --gated',
-      'pnpm --filter ./apps/web run deploy:dev',
       'pnpm -C apps/web run deploy:dev',
       'pnpm --dir apps/web run deploy:dev',
     ]) {
       const root = checkout({
-        ...WORKSPACE,
         'package.json': pkg({ 'deploy:dev': forward }, 'root'),
         'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
-        'apps/api/package.json': pkg({ build: 'x' }, 'api'),
       })
       expect(found(root), forward).toEqual([])
     }
+    expect(select).not.toHaveBeenCalled()
   })
 
-  it('refuses a name forward unless exactly one workspace package has that name', () => {
-    const enrolled = pkg({ 'deploy:dev': 'narduk-app development deploy' })
-    const collision = checkout({
-      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n  - "packages/*"\n',
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
-      'apps/web/package.json': enrolled,
-      'packages/web2/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
-    })
-    expect(found(collision)).toEqual([
-      'package.json "deploy:dev" forwards with --filter web, which selects 2 workspace packages (apps/web, packages/web2); a forward must select exactly one enrolled component',
-    ])
-    const nested = checkout({
-      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n',
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter ./apps/web run deploy:dev' }, 'root'),
-      'apps/web/package.json': enrolled,
-      'apps/web/legacy/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }, 'old'),
-    })
-    expect(found(nested)).toHaveLength(1)
-    const rootNamedWeb = checkout({
+  it('refuses a filter forward when pnpm cannot say what it selects', () => {
+    vi.spyOn(workspaceFilter, 'select').mockReturnValue(
+      'pnpm could not be asked (spawn pnpm ENOENT)',
+    )
+    const root = checkout({
       ...WORKSPACE,
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }),
-      'apps/web/package.json': enrolled,
-    })
-    expect(found(rootNamedWeb)).toHaveLength(1)
-    const excluded = checkout({
-      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n  - "packages/*"\n  - "!packages/web2"\n',
       'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
-      'apps/web/package.json': enrolled,
-      'packages/web2/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
-      'tools/web/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
+      'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
     })
-    expect(found(excluded)).toEqual([])
+    expect(found(root)).toEqual([
+      'package.json "deploy:dev" forwards with --filter web, but pnpm could not be asked (spawn pnpm ENOENT), so which packages it runs is unknown',
+    ])
   })
 
-  it('refuses a filter forward when the workspace file is missing or unreadable', () => {
-    const enrolled = pkg({ 'deploy:dev': 'narduk-app development deploy' })
-    const workspaces: Array<Record<string, string>> = [{}, { 'pnpm-workspace.yaml': 'packages: [' }]
-    for (const workspace of workspaces) {
+  it('refuses a filter forward that selects anything but exactly one enrolled component', () => {
+    const select = vi.spyOn(workspaceFilter, 'select')
+    const root = checkout({
+      ...WORKSPACE,
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+      'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
+    })
+    const web = { name: 'web', path: join(root, 'apps/web') }
+    select.mockReturnValue([web, { name: 'web', path: join(root, 'packages/w2') }])
+    expect(found(root)).toEqual([
+      'package.json "deploy:dev" forwards with --filter web, which pnpm resolves to 2 workspace packages (apps/web, packages/w2); a forward must select exactly one enrolled component',
+    ])
+    select.mockReturnValue([])
+    expect(found(root)[0]).toContain('which pnpm resolves to 0 workspace packages')
+    select.mockReturnValue([{ name: 'web', path: join(root, 'legacy') }])
+    expect(found(root)).toEqual([
+      'package.json "deploy:dev" forwards to "web", which is not an enrolled component',
+    ])
+    select.mockReturnValue([web])
+    expect(found(root)).toEqual([])
+  })
+
+  it('refuses a filter with a glob or graph selector before asking pnpm', () => {
+    const select = vi.spyOn(workspaceFilter, 'select')
+    for (const filter of ['web...', '...web', 'w*', '{apps/web}', './apps/*', 'web^...']) {
       const root = checkout({
-        ...workspace,
-        'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+        ...WORKSPACE,
+        'package.json': pkg({ 'deploy:dev': `pnpm --filter ${filter} run deploy:dev` }, 'root'),
+        'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
+      })
+      expect(found(root), filter).toHaveLength(1)
+    }
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  describe.skipIf(!PNPM)('with the real pnpm', () => {
+    const enrolled = pkg({ 'deploy:dev': 'narduk-app development deploy' })
+    const legacy = pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' })
+    const forwarding = (workspace: string, files: Record<string, string>, filter = 'web') =>
+      checkout({
+        'pnpm-workspace.yaml': workspace,
+        'package.json': pkg({ 'deploy:dev': `pnpm --filter ${filter} run deploy:dev` }, 'root'),
+        'apps/web/package.json': enrolled,
+        ...files,
+      })
+
+    it('accepts the template root and its filter forms', { timeout: 120_000 }, () => {
+      for (const forward of [
+        'pnpm --filter web run deploy:dev',
+        'pnpm --filter=web run deploy:dev',
+        'pnpm -F web run deploy:dev -- --gated',
+        'pnpm --filter ./apps/web run deploy:dev',
+      ]) {
+        const root = checkout({
+          ...WORKSPACE,
+          'package.json': pkg({ 'deploy:dev': forward }, 'root'),
+          'apps/web/package.json': enrolled,
+          'apps/api/package.json': pkg({ build: 'x' }, 'api'),
+        })
+        expect(found(root), forward).toEqual([])
+      }
+      const excluded = forwarding(
+        'packages:\n  - "apps/**"\n  - "packages/*"\n  - "!packages/w2"\n',
+        {
+          'packages/w2/package.json': legacy,
+          'tools/web/package.json': legacy,
+        },
+      )
+      expect(found(excluded)).toEqual([])
+    })
+
+    it('refuses every second package pnpm would also run', { timeout: 120_000 }, () => {
+      const shapes: Array<[string, Record<string, string>, ((root: string) => void)?]> = [
+        ['packages:\n  - "apps/*"\n  - "packages/*"\n', { 'packages/w2/package.json': legacy }],
+        ['packages:\n  - "apps/**"\n', { 'apps/a/b/c/d/e/f/g/h/package.json': legacy }],
+        ['packages:\n  - "apps/*"\n  - "legacy/{a,b}"\n', { 'legacy/a/package.json': legacy }],
+        ['packages:\n  - "apps/*"\n  - "legacy/[ab]"\n', { 'legacy/a/package.json': legacy }],
+        [
+          'packages:\n  - "apps/*"\n',
+          { 'apps/w2/package.yaml': 'name: web\nscripts:\n  deploy:dev: x\n' },
+        ],
+        [
+          'packages:\n  - "apps/*"\n',
+          { 'elsewhere/w2/package.json': legacy },
+          (root) => symlinkSync(join(root, 'elsewhere/w2'), join(root, 'apps/w2'), 'junction'),
+        ],
+        // No workspace file: pnpm still runs every package named web below the root.
+        ['', { 'packages/w2/package.json': legacy }],
+      ]
+      for (const [workspace, files, setup] of shapes) {
+        const root = forwarding(workspace, files)
+        if (!workspace) rmSync(join(root, 'pnpm-workspace.yaml'))
+        setup?.(root)
+        const findings = found(root)
+        expect(findings, JSON.stringify(files)).toHaveLength(1)
+        expect(findings[0]).toContain('which pnpm resolves to 2 workspace packages')
+      }
+      const rootNamedWeb = checkout({
+        ...WORKSPACE,
+        'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }),
         'apps/web/package.json': enrolled,
       })
-      expect(found(root), JSON.stringify(workspace)).toHaveLength(1)
-      expect(found(root)[0]).toContain('so which packages it runs is unknown')
-    }
-    const byDirectory = checkout({
-      'package.json': pkg({ 'deploy:dev': 'pnpm -C apps/web run deploy:dev' }, 'root'),
-      'apps/web/package.json': enrolled,
+      expect(found(rootNamedWeb)[0]).toContain(
+        'which pnpm resolves to 2 workspace packages (., apps/web)',
+      )
+      const unreadable = forwarding('packages: [', {})
+      expect(found(unreadable)[0]).toContain('so which packages it runs is unknown')
     })
-    expect(found(byDirectory)).toEqual([])
+
+    it(
+      'refuses a root forward to anything but an enrolled component running the tool',
+      { timeout: 120_000 },
+      () => {
+        const elsewhere = forwarding(
+          WORKSPACE['pnpm-workspace.yaml'],
+          {
+            'apps/legacy/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }, 'legacy'),
+          },
+          'legacy',
+        )
+        expect(found(elsewhere)).toEqual([
+          'package.json "deploy:dev" forwards to "legacy", which is not an enrolled component',
+        ])
+        const legacyComponent = checkout({
+          ...WORKSPACE,
+          'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+          'apps/web/package.json': legacy,
+        })
+        expect(found(legacyComponent)).toEqual([
+          'package.json "deploy:dev" forwards to apps/web/package.json, whose deploy:dev is not exactly narduk-app development deploy',
+          'apps/web/package.json "deploy:dev" runs "script/dev/deploy_dev.sh", not narduk-app development deploy',
+        ])
+      },
+    )
   })
 
-  it('refuses a root forward to anything but an enrolled component running the tool', () => {
-    const elsewhere = checkout({
-      ...WORKSPACE,
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter legacy run deploy:dev' }, 'root'),
-      'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
-      'apps/legacy/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }, 'legacy'),
-    })
-    expect(found(elsewhere)).toEqual([
-      'package.json "deploy:dev" forwards to "legacy", which is not an enrolled component',
-    ])
-    const nowhere = checkout({
-      ...WORKSPACE,
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter legacy run deploy:dev' }, 'root'),
-      'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
-    })
-    expect(found(nowhere)).toEqual([
-      'package.json "deploy:dev" forwards with --filter legacy, which selects 0 workspace packages; a forward must select exactly one enrolled component',
-    ])
-    const legacyComponent = checkout({
-      ...WORKSPACE,
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
-      'apps/web/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
-    })
-    expect(found(legacyComponent)).toEqual([
-      'package.json "deploy:dev" forwards to apps/web/package.json, whose deploy:dev is not exactly narduk-app development deploy',
-      'apps/web/package.json "deploy:dev" runs "script/dev/deploy_dev.sh", not narduk-app development deploy',
-    ])
+  it('refuses a forward composed with anything else', () => {
     const composed = checkout({
       'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev && ./ship.sh' }),
       'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
@@ -277,7 +349,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         'db:migrate:staging:remote:bootstrap': bootstrap,
         'single-quoted': "echo 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 by hand' >&2; exit 1",
         'unquoted-reader': '[ $NARDUK_ALLOW_MANUAL_PROMOTE = 1 ] && echo armed',
-        'nested-message': `sh -c "echo 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 first'"`,
+        printf: "printf '%s\\n' 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 by hand' 1>&2",
         check: 'script/check.sh',
       }),
       'apps/web/script/check.sh':
@@ -287,6 +359,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         "if (env.NARDUK_ALLOW_MANUAL_PROMOTE === '1') run()",
         'if (env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY == 1) run()',
         "console.error('set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for recovery work')",
+        'if (!armed) throw new Error("set NARDUK_ALLOW_MANUAL_PROMOTE=1 by hand first")',
         '/* NARDUK_ALLOW_MANUAL_PROMOTE=1 is never set here */ run()',
         '',
       ].join('\n'),
@@ -315,6 +388,17 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         p: 'echo set NARDUK_ALLOW_MANUAL_PROMOTE=1 to recover',
         q: 'node script/exec.mjs',
         r: 'node script/comment.mjs',
+        s: `sh -c "npx cross-env NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote"`,
+        t: `sh -c "echo | xargs env NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote"`,
+        u: `sh -c "timeout 60 env NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote"`,
+        v: `sh -c "caffeinate -i env NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote"`,
+        w: 'echo \\"; npx cross-env NARDUK_ALLOW_MANUAL_PROMOTE=1 wrangler deploy #\\"',
+        x: `sh -c "echo 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 first'"`,
+        y: 'echo "NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote" | sh',
+        z: 'echo "NARDUK_ALLOW_MANUAL_PROMOTE=1" > .env && narduk-app deploy versions-promote',
+        za: 'eval $(echo "NARDUK_ALLOW_MANUAL_PROMOTE=1")',
+        zb: 'node script/wrapped.mjs',
+        zc: 'node script/field.mjs',
       }),
       'apps/web/script/ship.sh':
         'set -e\n  NARDUK_ALLOW_MANUAL_PROMOTE=1 pnpm exec narduk-app deploy versions-promote\n',
@@ -326,6 +410,13 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'apps/web/script/exec.mjs':
         'execSync("export NARDUK_ALLOW_MANUAL_PROMOTE=1; narduk-app deploy versions-promote")\n',
       'apps/web/script/comment.mjs': "/* c */ process.env.NARDUK_ALLOW_MANUAL_PROMOTE = '1'\n",
+      'apps/web/script/wrapped.mjs': [
+        "console.log('deploying')",
+        'execSync("pnpm exec cross-env NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote")',
+        '',
+      ].join('\n'),
+      'apps/web/script/field.mjs':
+        "class Ship {\n  #env = { NARDUK_ALLOW_MANUAL_PROMOTE: '1' }\n}\n",
     })
     expect(found(root).map((line) => line.split('"')[1])).toEqual([
       'a',
@@ -346,6 +437,17 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'p',
       'q',
       'r',
+      's',
+      't',
+      'u',
+      'v',
+      'w',
+      'x',
+      'y',
+      'z',
+      'za',
+      'zb',
+      'zc',
     ])
   })
 

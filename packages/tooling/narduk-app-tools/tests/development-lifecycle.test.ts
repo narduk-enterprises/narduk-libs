@@ -13,7 +13,7 @@ import {
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import { DEVELOPMENT_USAGE } from '../src/development-cli.js'
@@ -49,6 +49,7 @@ import {
   runDevelopmentValidate,
   type LifecycleContext,
 } from '../src/development-lifecycle.js'
+import { workspaceFilter } from '../src/development-legacy-publish.js'
 import { DevelopmentCloudflare } from '../src/development-provider.js'
 import { readActivation, writeActivation } from '../src/development-records.js'
 import { acquireTargetLocks, readPrivateJson, writePrivateJson } from '../src/development-state.js'
@@ -65,7 +66,25 @@ const ACCOUNT = 'a'.repeat(32)
 const REPO = 'narduk-enterprises/fixture-app'
 const SECRET = 'fixture-secret-value-that-is-long-enough-000'
 const roots: string[] = []
+// The template root forwards with `pnpm --filter web`; answer pnpm's
+// selection from the fixture instead of spawning pnpm for every entry.
+// tests/development-legacy-publish.test.ts asks the real pnpm.
+let pnpmSelection: MockInstance<typeof workspaceFilter.select> | undefined
+beforeEach(() => {
+  pnpmSelection = vi.spyOn(workspaceFilter, 'select').mockImplementation((cwd, filter) =>
+    ['apps/web', 'apps/api']
+      .map((dir) => join(cwd, dir))
+      .filter(
+        (dir) =>
+          existsSync(join(dir, 'package.json')) &&
+          (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string })
+            .name === filter,
+      )
+      .map((path) => ({ name: filter, path })),
+  )
+})
 afterEach(() => {
+  pnpmSelection?.mockRestore()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
