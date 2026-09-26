@@ -2,7 +2,9 @@
 /*
  * NE Base design card for NeDataAttribution (narduk-libs#388): the one
  * "Data from <source>, updated <time>" credit. Fixed `now` and zone, so the
- * prerendered card reads the same every build.
+ * prerendered card reads the same every build. No `href` here: NE Base cards
+ * may not carry external links (design-system-build refuses them), so the
+ * linked form is shown in the Explorer's usage page instead.
  */
 import NeDataAttribution from '../runtime/components/NeDataAttribution.vue'
 </script>
@@ -22,7 +24,7 @@ import NeDataAttribution from '../runtime/components/NeDataAttribution.vue'
 
     <div class="preview-row">
       <NeDataAttribution
-        :sources="{ name: 'NOAA NDBC', href: 'https://www.ndbc.noaa.gov/' }"
+        :sources="{ name: 'NOAA NDBC' }"
         updated-at="2026-03-08T09:00:00Z"
         now="2026-03-08T12:00:00Z"
         time-zone="America/Chicago"

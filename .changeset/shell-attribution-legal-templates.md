@@ -1,5 +1,8 @@
 ---
 '@narduk-enterprises/narduk-shell': minor
+'@narduk-enterprises/eslint-config': patch
+'@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/libs-explorer': patch
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
@@ -13,3 +16,7 @@ placeholder — no legal wording ships (narduk-libs#388, "Build, wording later")
 A page stays a visible, `data-ne-legal-status="draft"` draft until the app sets
 `wordingApproved` and no placeholder remains; `hasLegalPlaceholders()` lets an
 app's own test guard the launch.
+
+`NeDataAttribution` and `NeLegalPage` join the eslint-config and narduk-app-tools
+shared-component lists and the libs-explorer inventory, and the legal-template
+helpers are auto-imported by the module.

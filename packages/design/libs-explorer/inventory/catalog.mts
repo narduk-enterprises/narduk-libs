@@ -204,7 +204,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
     demos: SHELL_DEMOS,
     setup: {
       nuxtModule: '@narduk-enterprises/narduk-shell',
-      note: 'With the default `theme: true` the module adds `@narduk-enterprises/narduk-shell/theme.css` to the app itself; no stylesheet import is needed. Components, `useCollection`, `useConfirm` and `defineStatusMap` are auto-imported.',
+      note: 'With the default `theme: true` the module adds `@narduk-enterprises/narduk-shell/theme.css` to the app itself; no stylesheet import is needed. Components, `useCollection`, `useConfirm`, `defineStatusMap` and the legal-template helpers are auto-imported.',
     },
   },
   '@narduk-enterprises/narduk-tenancy': {

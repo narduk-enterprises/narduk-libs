@@ -123,6 +123,31 @@ describe('narduk-shell module', () => {
     expect(call.from).toContain('/src/runtime/utils/status-map')
   })
 
+  // narduk-libs#388: Nuxt's import protection refuses app code that imports
+  // the module's own entry specifier, so the legal-template helpers reach an
+  // app page the way defineStatusMap does: as auto-imports.
+  it('wires the legal-template helpers through addImports', async () => {
+    const { addImports } = mockNuxtKit()
+    mockRegistry([])
+
+    const module_ = await loadModule()
+    await module_.setup({ components: false }, makeNuxt())
+
+    for (const name of [
+      'hasLegalPlaceholders',
+      'isLegalPlaceholder',
+      'legalPlaceholder',
+      'privacyPolicyTemplate',
+      'termsOfServiceTemplate',
+    ]) {
+      const call = importCall(addImports, name)
+      expect(call.from.startsWith('/')).toBe(true)
+      expect(call.from).toMatch(
+        /\/src\/runtime\/(utils\/legal-templates|components\/ne-legal-page-types)$/,
+      )
+    }
+  })
+
   it('re-exports defineStatusMap from the package root (src/index.ts)', async () => {
     // No mockNuxtKit() here, deliberately: src/index.ts is the `.` barrel and
     // has no legitimate reason to touch '@nuxt/kit' at all (narduk-libs#295),

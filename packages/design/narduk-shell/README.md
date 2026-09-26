@@ -3093,8 +3093,7 @@ development-only console warning. A section is a placeholder when it sets
 
 ```vue
 <script setup lang="ts">
-import { privacyPolicyTemplate } from '@narduk-enterprises/narduk-shell'
-
+// privacyPolicyTemplate is auto-imported by the module.
 // A draft: every section is a placeholder until approved wording replaces it.
 const privacy = privacyPolicyTemplate({
   appName: 'Buoys',
@@ -3144,6 +3143,12 @@ expect(hasLegalPlaceholders(privacySections)).toBe(false)
 #### Events
 
 None.
+
+The five helpers — `privacyPolicyTemplate`, `termsOfServiceTemplate`,
+`hasLegalPlaceholders`, `isLegalPlaceholder` and `legalPlaceholder` — are
+auto-imported in app code, like `defineStatusMap`: Nuxt's import protection
+refuses a page that imports this package's own module specifier. The root export
+below is for tests and plain Node scripts.
 
 #### Types
 

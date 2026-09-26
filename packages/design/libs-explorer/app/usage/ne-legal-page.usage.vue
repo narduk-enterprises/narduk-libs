@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { privacyPolicyTemplate } from '@narduk-enterprises/narduk-shell'
-
+// `privacyPolicyTemplate` is auto-imported by the narduk-shell module.
 // Placeholder sections only: the page stays a draft until approved wording
 // replaces every one of them.
 const privacy = privacyPolicyTemplate({
