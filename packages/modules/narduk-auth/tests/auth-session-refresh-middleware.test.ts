@@ -2,17 +2,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const useRefreshedSessionUser = vi.hoisted(() => vi.fn(async () => null))
 
+const getCurrentSessionUser = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null))
+
 vi.mock('#narduk-auth-server/utils/session-user', () => ({
   useRefreshedSessionUser,
 }))
 
+vi.mock('#narduk-auth-server/lib/app-auth/session', () => ({
+  getCurrentSessionUser,
+}))
+
 describe('auth-session-refresh middleware', () => {
-  let handler: (event: { path: string }) => Promise<void>
+  let handler: (event: { method?: string; path: string }) => Promise<unknown>
 
   beforeEach(async () => {
     vi.resetModules()
-    useRefreshedSessionUser.mockClear()
-    vi.stubGlobal('defineEventHandler', (fn: (event: { path: string }) => Promise<void>) => fn)
+    useRefreshedSessionUser.mockReset()
+    useRefreshedSessionUser.mockResolvedValue(null)
+    getCurrentSessionUser.mockReset()
+    getCurrentSessionUser.mockResolvedValue(null)
+    vi.stubGlobal('defineEventHandler', (fn: (event: { path: string }) => Promise<unknown>) => fn)
     const loaded = await import('../server/middleware/auth-session-refresh')
     handler = loaded.default
   })
@@ -53,5 +62,52 @@ describe('auth-session-refresh middleware', () => {
     useRefreshedSessionUser.mockRejectedValueOnce(new Error('D1 unavailable'))
     await expect(handler({ path: '/dashboard' })).resolves.toBeUndefined()
     expect(useRefreshedSessionUser).toHaveBeenCalledTimes(1)
+  })
+
+  // narduk-libs#1041: nuxt-auth-utils serves `GET /api/_auth/session` from the
+  // sealed cookie. Clearing the session does not stop it: h3 re-reads the
+  // request's cookie, so a revoked session still answered with its user.
+  describe('GET /api/_auth/session', () => {
+    const SESSION_READ = { method: 'GET', path: '/api/_auth/session' }
+    const COOKIE_USER = { id: 'user-1', email: 'parent@example.com' }
+
+    it('answers an empty session for a cookie whose grant is revoked', async () => {
+      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      await expect(handler(SESSION_READ)).resolves.toEqual({})
+      await expect(handler({ ...SESSION_READ, path: '/api/_auth/session?x=1' })).resolves.toEqual(
+        {},
+      )
+    })
+
+    it('answers the trailing-slash spelling Nitro routes to the same handler', async () => {
+      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/' })).resolves.toEqual({})
+      await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/?x=1' })).resolves.toEqual(
+        {},
+      )
+    })
+
+    it('answers an empty session when the grant lookup throws', async () => {
+      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      useRefreshedSessionUser.mockRejectedValueOnce(new Error('D1 unavailable'))
+      await expect(handler(SESSION_READ)).resolves.toEqual({})
+    })
+
+    it('leaves a live session, and a cookie with no user, to nuxt-auth-utils', async () => {
+      useRefreshedSessionUser.mockResolvedValue(COOKIE_USER as never)
+      await expect(handler(SESSION_READ)).resolves.toBeUndefined()
+
+      useRefreshedSessionUser.mockResolvedValue(null)
+      getCurrentSessionUser.mockResolvedValue(null)
+      await expect(handler(SESSION_READ)).resolves.toBeUndefined()
+    })
+
+    it('leaves sign-out and every other path alone', async () => {
+      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      await expect(
+        handler({ method: 'DELETE', path: '/api/_auth/session' }),
+      ).resolves.toBeUndefined()
+      await expect(handler({ method: 'GET', path: '/api/notifications' })).resolves.toBeUndefined()
+    })
   })
 })
