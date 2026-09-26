@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { H3Event } from 'h3'
 
 /**
- * narduk-libs#892: when `@simplewebauthn/server` fails to load (#786 was
- * tsyringe throwing at module evaluation without a Reflect polyfill), every
- * passkey route answered an opaque 500 and nothing named the cause. The
- * library now loads lazily; a load failure answers 503 with a fixed message
- * and logs the cause.
+ * narduk-libs#1060: `webauthn-load-failure.test.ts` with the failure moved to
+ * the second entry the loader imports, `@simplewebauthn/server/helpers`. It
+ * reaches the same `@peculiar/x509` → `tsyringe` chain, so it can fail the
+ * same way, and must answer the same 503.
  */
 
 const LOAD_FAILURE = vi.hoisted(
@@ -17,7 +16,7 @@ const LOAD_FAILURE = vi.hoisted(
 
 const logMocks = vi.hoisted(() => ({ error: vi.fn() }))
 
-vi.mock('@simplewebauthn/server', () => {
+vi.mock('@simplewebauthn/server/helpers', () => {
   throw new Error(LOAD_FAILURE)
 })
 
@@ -56,7 +55,7 @@ vi.mock('../server/lib/app-auth/session', () => ({
 
 const event = { context: {}, path: '/api/auth/passkeys/authentication/options' } as H3Event
 
-describe('passkey routes when @simplewebauthn/server fails to load (#892)', () => {
+describe('passkey routes when @simplewebauthn/server/helpers fails to load (#1060)', () => {
   beforeEach(() => {
     logMocks.error.mockReset()
   })

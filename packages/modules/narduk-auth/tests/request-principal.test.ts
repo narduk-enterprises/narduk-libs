@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   },
   backend: 'supabase' as 'local' | 'supabase',
   native: null as null | { sessionId: string; userId: string },
+  nativeClients: [] as unknown[],
   nativeUser: null as null | { email: string; id: string },
   requireMfa: false,
   user: null as AppSessionUser | null,
@@ -20,8 +21,20 @@ vi.mock('../server/utils/session-user', () => ({
   useRefreshedSessionUser: async () => state.user,
 }))
 
+// Mirrors `nativeAuthClients`: without native clients, or off the local
+// backend, reading a native session throws rather than answering null.
 vi.mock('../server/utils/native-auth', () => ({
-  getNativeAuthSession: async () => state.native,
+  getNativeAuthSession: async () => {
+    if (state.nativeClients.length === 0) {
+      throw Object.assign(new Error('Native sign-in is not enabled.'), { statusCode: 404 })
+    }
+    if (state.backend !== 'local') {
+      throw Object.assign(new Error('Native sessions currently require local authentication.'), {
+        statusCode: 503,
+      })
+    }
+    return state.native
+  },
 }))
 
 vi.mock('../server/lib/app-auth/session', () => ({
@@ -41,6 +54,7 @@ vi.mock('#layer/server/utils/auth', () => ({
 vi.mock('nitropack/runtime', () => ({
   useRuntimeConfig: () => ({
     authBackend: state.backend,
+    authNativeClients: state.nativeClients,
     public: { authBackend: state.backend, authRequireMfa: state.requireMfa },
   }),
 }))
@@ -81,6 +95,7 @@ describe('resolveRequestPrincipal (narduk-libs#980)', () => {
     state.apiKey = null
     state.backend = 'supabase'
     state.native = null
+    state.nativeClients = []
     state.nativeUser = null
     state.requireMfa = false
     state.user = null
@@ -230,6 +245,8 @@ describe('resolveRequestPrincipal (narduk-libs#980)', () => {
 
   describe('native bearers', () => {
     beforeEach(() => {
+      state.backend = 'local'
+      state.nativeClients = [{ id: 'ios', name: 'iOS', redirectUris: ['app://callback'] }]
       state.native = { sessionId: 'native-1', userId: 'user-2' }
       state.nativeUser = { email: 'app@example.com', id: 'user-2' }
       state.user = sessionUser()
@@ -267,5 +284,28 @@ describe('resolveRequestPrincipal (narduk-libs#980)', () => {
         }),
       ).resolves.toBeNull()
     })
+
+    // narduk-libs#1060: an app without native sign-in, or off the local
+    // backend, has no native bearer to read, so allowNative must not turn a
+    // stray bearer into a thrown 404 or 503.
+    it.each([
+      ['no native clients', 'local', []],
+      ['native clients off the local backend', 'supabase', [{ id: 'ios' }]],
+    ] as const)(
+      'falls through to the session with allowNative when there are %s',
+      async (_label, backend, clients) => {
+        state.backend = backend
+        state.nativeClients = [...clients]
+        const { resolveRequestPrincipal } = await load()
+        const bearer = event('/x', 'GET', `Bearer ${NATIVE_TOKEN}`)
+
+        await expect(resolveRequestPrincipal(bearer, { allowNative: true })).resolves.toMatchObject(
+          { method: 'session', userId: 'user-1' },
+        )
+
+        state.user = null
+        await expect(resolveRequestPrincipal(bearer, { allowNative: true })).resolves.toBeNull()
+      },
+    )
   })
 })
