@@ -41,7 +41,7 @@ const SURFACED_SESSION_USER_FIELDS = [
   'authProvider',
   'authProviders',
   'emailConfirmedAt',
-] as const satisfies readonly (keyof AppSessionUser)[]
+] as const satisfies ReadonlyArray<keyof AppSessionUser>
 
 function sameSurfacedValue(left: unknown, right: unknown): boolean {
   if (Array.isArray(left) && Array.isArray(right)) {
