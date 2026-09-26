@@ -119,9 +119,8 @@ export function requireAuthScopes(user: AuthUser, requiredScopes: readonly strin
  *
  * - A session passes: the scope is a key-only restriction.
  * - A key that carries scopes must hold every one named, or `*`, so an
- *   admin-owned key minted for something narrow cannot use this route. Such a
- *   key can still mint an unscoped one if it holds `auth:api-keys:write`
- *   (narduk-libs#1122).
+ *   admin-owned key minted for something narrow cannot use this route, and
+ *   narduk-auth's mint ceiling refuses it an unscoped child (narduk-libs#1122).
  * - A key with no scopes at all passes. Unscoped admin keys keep their full
  *   admin reach until every admin route names a scope; this is where the
  *   helper differs from `requireAuthScopes`, which refuses them.
