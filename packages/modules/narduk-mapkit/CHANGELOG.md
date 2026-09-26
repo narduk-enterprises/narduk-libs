@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.3
+
+### Patch Changes
+
+- 8d88b3d: `<AppMapKit>` no longer throws a `TypeError` when `createPinElement`
+  or `itemLabel` is set at mount and later becomes `undefined`. The pin layer's
+  wrappers read the live prop with optional chaining, the same way `pinGeometry`
+  and `itemKey` already did: a missing glyph renders an empty one, and a missing
+  label writes the empty accessible name the pin layer defaults to (#1038).
+
 ## 2.10.2
 
 ### Patch Changes

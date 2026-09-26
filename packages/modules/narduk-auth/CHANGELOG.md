@@ -1,5 +1,51 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.32.0
+
+### Minor Changes
+
+- 0f2e149: narduk-auth: Sign in with Apple on the local D1 backend
+  (narduk-libs#164, library side). New `GET /api/auth/apple/start` and
+  `POST /api/callbacks/auth/apple` run Apple's web flow (`form_post`, state
+  cookie, SHA-256 nonce) and verify the identity token natively against Apple's
+  JWKS (`iss`, `aud`, `exp`, nonce), with no hosted auth and no client-secret
+  JWT. `startOAuthFlow` and `signInWithNativeApple` no longer 501 on the local
+  backend when `AUTH_APPLE_SERVICES_ID` / `AUTH_APPLE_NATIVE_CLIENT_IDS` are
+  set, and `users.apple_id` is populated. `/api/auth/runtime-public` reports
+  `appleEnabled`, which the login and register cards use instead of requiring
+  the Supabase backend. An existing account links to an Apple ID only when the
+  app has proven its email.
+
+### Patch Changes
+
+- 60a0fa6: narduk-app-tools: add `narduk-app auth agent-key create`
+  (narduk-libs#782). It creates a non-login user (no password, an undeliverable
+  `.invalid` address) and an API key for it in one D1 batch, writing the `users`
+  timestamps that hand SQL left out. The raw key goes only to the stdin of the
+  secret-sink command after `--` (such as the guarded nvault setter), never to
+  argv, stdout or a file, and D1 stores its SHA-256 hash. `--app-url` proves the
+  key with `GET /api/auth/api-keys` (401 without it, 200 or a missing-scope 403
+  with it). narduk-auth's README now says `GET /api/auth/me` is session-only and
+  names the endpoint that proves a key.
+- d65a7a8: `deleteCurrentUserAccount` / `deleteCurrentUserAccountBridge` now
+  re-authenticate a Supabase caller against Supabase
+  (`verifySupabaseAccountDeletionCredentials`) when the caller passes no
+  `verifyCredentials` hook (narduk-libs#1051). An app that built its own delete
+  route on the public helper used to fall through to the local password-hash
+  check, which a Supabase-provisioned user (no local hash) skipped, so `{}`
+  deleted the account. A principal without a session backend (an API key) takes
+  the app's backend, so on a Supabase app it fails closed with 401, and the
+  Supabase session it re-authenticates must belong to the account being deleted:
+  a key beside someone else's session cookie also gets 401.
+  `verifySupabaseAccountDeletionCredentials` takes an optional `{ userId }` for
+  the same binding, and a `verifyCredentials` hook now receives `{ userId }` as
+  its third argument, so passing that function as the hook keeps the binding.
+  Supply `verifyCredentials` only to replace the check with your own.
+- Updated dependencies [e4c5dcb]
+- Updated dependencies [6e7286c]
+- Updated dependencies [9434163]
+  - @narduk-enterprises/narduk-core@2.17.0
+
 ## 1.31.0
 
 ### Minor Changes

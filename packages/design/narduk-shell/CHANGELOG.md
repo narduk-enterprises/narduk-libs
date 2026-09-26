@@ -1,5 +1,22 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.9.0
+
+### Minor Changes
+
+- a29099c: `./format` adds `calendarDateIn` and `isSameCalendarDay`: the
+  calendar date of an instant in a named zone as a sortable `YYYY-MM-DD` key,
+  read from `Intl`'s parts rather than the `en-CA` formatted-string trick five
+  apps hand-rolled. Both are also on `createFormatters()`'s bound set
+  (narduk-libs#992).
+- adcaf7a: `NeDataTable` can make a missing cell read as a word instead of a
+  fixed em dash. `missingText` on the table sets it for every cell, and
+  `missingText` on a `NeDataColumn` (a string, or a function of the row)
+  overrides it for that column. The text is drawn visible and `text-dimmed`, so
+  sighted and screen-reader users read the same word ("unreported", "unset",
+  "not claimed"). With neither set, the table keeps the em dash with "No value"
+  for a screen reader, as before (#1059).
+
 ## 0.8.0
 
 ### Minor Changes

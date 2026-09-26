@@ -1,5 +1,25 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.25.0
+
+### Minor Changes
+
+- 60a0fa6: narduk-app-tools: add `narduk-app auth agent-key create`
+  (narduk-libs#782). It creates a non-login user (no password, an undeliverable
+  `.invalid` address) and an API key for it in one D1 batch, writing the `users`
+  timestamps that hand SQL left out. The raw key goes only to the stdin of the
+  secret-sink command after `--` (such as the guarded nvault setter), never to
+  argv, stdout or a file, and D1 stores its SHA-256 hash. `--app-url` proves the
+  key with `GET /api/auth/api-keys` (401 without it, 200 or a missing-scope 403
+  with it). narduk-auth's README now says `GET /api/auth/me` is session-only and
+  names the endpoint that proves a key.
+- f5e3293: narduk-app-tools: `foundation:check:coverage` sub-check 9.8 flags a
+  file that fetches `https://data.nard.uk` directly instead of through
+  narduk-core's `createNardukDataClient` / `fetchNardukDataJson`
+  (narduk-libs#373). It fails when narduk-core is a dependency and warns
+  (`unknown`) otherwise. A file that names either shared entry point, or only
+  links to the origin, is not reported.
+
 ## 0.24.0
 
 ### Minor Changes
