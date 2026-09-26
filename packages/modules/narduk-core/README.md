@@ -553,6 +553,29 @@ requireSharedSecret(event, {
   `hasSharedSecret(event, options) || (await requireAdmin(event))`.
 - `timingSafeEqualText(a, b)` is the byte-wise compare underneath.
 
+## Admin route API-key scopes (opt-in)
+
+`requireAdmin` accepts a bearer API key whose owner is an admin. An admin route
+that a machine client calls names its own scope with `requireAdminRouteScopes`
+(narduk-libs#971):
+
+```ts
+const admin = await requireAdmin(event)
+requireAdminRouteScopes(admin, ['runtime:status:read'])
+```
+
+- A non-admin gets 403 from the helper itself, not only from `requireAdmin`.
+- An admin session passes. The scope restricts keys only.
+- A key that carries scopes must hold every scope named, or `*`, or it gets 403.
+  An admin-owned key minted for something narrow cannot use that route. It can
+  still mint an unscoped key if it holds `auth:api-keys:write`, until
+  narduk-libs#1122 closes that path.
+- A key with no scopes keeps its full admin reach. That lasts until every admin
+  route names a scope, and it is what separates this helper from
+  `requireAuthScopes`, which refuses such a key.
+
+`GET /api/runtime/status` names `runtime:status:read`.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
@@ -869,6 +892,43 @@ export default defineNitroPlugin(() => {
 
 A failed check publishes fixed text such as `Check failed.`; the thrown error
 goes only to the server log.
+
+### Reporting deploy identity
+
+`readWorkerIdentity(event)` is auto-imported in server code, or import it from
+`@narduk-enterprises/narduk-core/server/utils/worker-identity`. It returns
+`{ sourceRevision, workerVersion }`:
+
+- `sourceRevision`: `runtimeConfig.public.buildVersion` (the value in
+  `x-build-version`) when it is a 7-40 character hex SHA, lower-cased; `null`
+  when the build fell back to the app version. Pass `sourceRevision` to report
+  another value.
+- `workerVersion`: `{ id, tag, timestamp }` from the Worker's `version_metadata`
+  binding, read from `event.context.cloudflare.env` or
+  `event.context._platform.cloudflare.env`; `null` outside a Worker or without
+  the binding. The binding is `CF_VERSION_METADATA` unless `binding` names
+  another.
+
+`/api/health` surfaces it when the app opts in, so an app keeps its header names
+without overriding the route and losing the database probe and registered
+checks:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  runtimeConfig: {
+    nardukHealth: {
+      identity: {
+        revisionHeader: 'x-myapp-revision',
+        workerVersionHeader: 'x-myapp-worker-version',
+        body: true, // appends data.identity after data.checks
+      },
+    },
+  },
+})
+```
+
+A header whose value is unknown is left off rather than sent empty.
 
 ### Reporting data freshness
 

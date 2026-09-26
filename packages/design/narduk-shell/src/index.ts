@@ -194,6 +194,55 @@ export type {
   NeAppShellVariant,
 } from './runtime/components/ne-app-shell-types'
 
+/**
+ * Data attribution and legal pages (narduk-libs#388). `NeDataSource` is
+ * structural, so a caller maps its own `narduk-data` manifest onto it without
+ * this package depending on one. `safeAttributionHref` is the http(s)-only
+ * link rule the component applies.
+ */
+export { safeAttributionHref } from './runtime/components/ne-data-attribution-types'
+export type {
+  NeDataAttributionProps,
+  NeDataLicense,
+  NeDataSource,
+} from './runtime/components/ne-data-attribution-types'
+
+/**
+ * The legal templates and their placeholder vocabulary are values on purpose:
+ * an app builds a draft page from `privacyPolicyTemplate(options)` and its own
+ * pre-launch test asserts `hasLegalPlaceholders(sections)` is false. Both
+ * files are plain modules, so no SFC enters the barrel's value-import graph.
+ * The templates contain placeholders only — no legal wording — by decision
+ * on #388.
+ */
+export {
+  hasLegalPlaceholders,
+  isLegalPlaceholder,
+  legalPlaceholder,
+  NE_LEGAL_PLACEHOLDER_MARK,
+} from './runtime/components/ne-legal-page-types'
+export type {
+  NeLegalDocument,
+  NeLegalPageProps,
+  NeLegalProcessor,
+  NeLegalSection,
+  NeLegalTemplateOptions,
+} from './runtime/components/ne-legal-page-types'
+export { privacyPolicyTemplate, termsOfServiceTemplate } from './runtime/utils/legal-templates'
+
+/**
+ * The skip link's target id and props (narduk-libs#977). `NE_MAIN_ID` is a
+ * value on purpose: the layout writes `<main :id="NE_MAIN_ID">` and
+ * `NeSkipLink` defaults to it, so the two ends of the link are one constant.
+ * Inside a Nuxt app it arrives through the module's `addImports`, since import
+ * protection refuses app code a bare import of this specifier; this export is
+ * for code outside that build (a unit test, a non-Nuxt consumer). The types
+ * file is a plain module, so this adds no SFC to the barrel's value-import
+ * graph.
+ */
+export { NE_MAIN_ID } from './runtime/components/ne-skip-link-types'
+export type { NeSkipLinkProps } from './runtime/components/ne-skip-link-types'
+
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added
 // `./module`, but only for the Nuxt module definition, not for app-facing

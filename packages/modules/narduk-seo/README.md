@@ -11,6 +11,13 @@ instead.
 This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.
 
+## Peer: `@nuxt/ui` at `4.11.1`
+
+The admin components this package ships (`AdminOgImagesTab` and its siblings)
+render Nuxt UI, so `@nuxt/ui` is a peer at exactly `4.11.1`, the version
+narduk-core and narduk-shell pin (narduk-libs#1033). An app on narduk-core
+already installs it.
+
 Dynamic OG images are enabled by default for crawlable pages that call
 `useSeo(...)`. Explicit `noindex` callers skip automatic generation; public
 unlisted pages can still request it with an explicit `ogImage` object. A page

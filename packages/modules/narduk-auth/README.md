@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-auth
 
+## Peer: `@nuxt/ui` at `4.11.1`
+
+The components and pages this package ships (the auth cards and panels,
+`AdminUsersTab`, `AppUserMenu`, the sign-in pages) render Nuxt UI, so `@nuxt/ui`
+is a peer at exactly `4.11.1`, the version narduk-core and narduk-shell pin
+(narduk-libs#1033). An app on narduk-core already installs it.
+
 ## Native app sign-in (opt-in, local backend)
 
 Apply `drizzle/0004_native_auth.sql` after the existing auth migrations, then
@@ -233,6 +240,17 @@ The admin routes take an admin-owned API key only where its scopes allow it.
 session-only: no API key can grant or revoke admin, whatever its scopes. Admin
 sessions need no scope.
 
+## nuxt-auth-utils' session route
+
+nuxt-auth-utils serves `GET /api/_auth/session`, which
+`useUserSession().fetch()` calls, straight from the sealed cookie, without the
+session-grant validator. narduk-auth's `auth-session-refresh` middleware checks
+the grant first: when the cookie carries a user whose `auth_sessions` row is
+gone, expired or unreadable, the route answers `{}` (signed out) instead of that
+user. A live session, a cookie with no user, and `DELETE /api/_auth/session` are
+left to nuxt-auth-utils. The route is a client display hint, never a grant:
+server authorization goes through `requireAuth`, which asks the validator.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request
@@ -312,11 +330,14 @@ It returns `null` for an anonymous caller, a session the recovery or MFA
 allowlist refuses for this request, a bearer the call does not accept or that
 does not authenticate, and a key missing `requiredApiKeyScopes`. As in
 `requireAuth`, an accepted bearer takes precedence over the session cookie and
-never falls back to it. `emailVerified` is narduk-auth's proof, not the raw
-session field: the Supabase confirmation on a Supabase session, otherwise the
-local `auth_verified_emails` record for the user's current address (so it is
-`false` unless `authLocalEmailVerification` is on). The 401-versus-404 choice,
-org selection and app roles stay in the app.
+never falls back to it. On an app without native sign-in (no native clients, or
+not the local backend) `allowNative` has no bearer to accept, so a request
+carrying one resolves the session, or `null`, as it would without the option.
+`emailVerified` is narduk-auth's proof, not the raw session field: the Supabase
+confirmation on a Supabase session, otherwise the local `auth_verified_emails`
+record for the user's current address (so it is `false` unless
+`authLocalEmailVerification` is on). The 401-versus-404 choice, org selection
+and app roles stay in the app.
 
 ## Sign in with Apple on the local backend
 
@@ -444,6 +465,10 @@ in the zone**, including any future or compromised subdomain. Do not do it
   on the client IP — so a caller rotating addresses is otherwise bounded only by
   how many they hold. Past 5,000 live challenges, ceremonies refuse with 503;
   email + password login touches neither table and keeps working.
+- **A broken library answers 503.** When `@simplewebauthn/server` fails to load,
+  or throws while generating a ceremony's options, every ceremony answers
+  `503 Passkeys unavailable: server misconfiguration` and the cause goes to the
+  log, never to the response.
 - **Clone detection fails closed.** A signature counter that does not strictly
   increase is refused, except for the authenticator that reports `0` always; the
   new counter is written conditionally on the counter that was verified against.

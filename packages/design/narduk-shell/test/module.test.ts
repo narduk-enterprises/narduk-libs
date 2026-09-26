@@ -123,6 +123,31 @@ describe('narduk-shell module', () => {
     expect(call.from).toContain('/src/runtime/utils/status-map')
   })
 
+  // narduk-libs#388: Nuxt's import protection refuses app code that imports
+  // the module's own entry specifier, so the legal-template helpers reach an
+  // app page the way defineStatusMap does: as auto-imports.
+  it('wires the legal-template helpers through addImports', async () => {
+    const { addImports } = mockNuxtKit()
+    mockRegistry([])
+
+    const module_ = await loadModule()
+    await module_.setup({ components: false }, makeNuxt())
+
+    for (const name of [
+      'hasLegalPlaceholders',
+      'isLegalPlaceholder',
+      'legalPlaceholder',
+      'privacyPolicyTemplate',
+      'termsOfServiceTemplate',
+    ]) {
+      const call = importCall(addImports, name)
+      expect(call.from.startsWith('/')).toBe(true)
+      expect(call.from).toMatch(
+        /\/src\/runtime\/(utils\/legal-templates|components\/ne-legal-page-types)$/,
+      )
+    }
+  })
+
   it('re-exports defineStatusMap from the package root (src/index.ts)', async () => {
     // No mockNuxtKit() here, deliberately: src/index.ts is the `.` barrel and
     // has no legitimate reason to touch '@nuxt/kit' at all (narduk-libs#295),
@@ -457,6 +482,25 @@ describe('narduk-shell NeAppShell options (item 18, narduk-libs#265)', () => {
 
       const call = importCall(addImports, 'useNardukShellSections')
       expect(call.from).toContain('/src/runtime/composables/use-narduk-shell-sections')
+    }
+  })
+
+  /*
+   * narduk-libs#977. A layout needs the id on its `<main>`, and app code cannot
+   * value-import it from the package root: Nuxt's import protection refuses a
+   * bare import of any installed module's entry path
+   * ("Importing directly from module entry-points is not allowed").
+   */
+  it('auto-imports NE_MAIN_ID from the plain types module, even with components disabled', async () => {
+    for (const components of [true, false]) {
+      vi.resetModules()
+      const { addImports } = mockNuxtKit()
+      const module_ = await loadModule()
+
+      await module_.setup({ components }, makeNuxt())
+
+      const call = importCall(addImports, 'NE_MAIN_ID')
+      expect(call.from).toContain('/src/runtime/components/ne-skip-link-types')
     }
   })
 })

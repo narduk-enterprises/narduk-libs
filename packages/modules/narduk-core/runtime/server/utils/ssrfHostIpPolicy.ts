@@ -45,15 +45,6 @@ export function isPrivateIPv4(address: string): boolean {
   return false
 }
 
-/** @internal Exported for focused SSRF range tests; production callers use `isPrivateIPv6`. */
-export function isLinkLocalIPv6Hextet(normalized: string): boolean {
-  const firstGroup = normalized.split(':', 1)[0]
-  if (!firstGroup) return false
-  const value = Number.parseInt(firstGroup, 16)
-  if (!Number.isFinite(value)) return false
-  return value >= 0xfe80 && value <= 0xfebf
-}
-
 const HEXTETS_PER_ADDRESS = 8
 const BITS_PER_HEXTET = 16
 

@@ -1,4 +1,6 @@
 {
   "strict": true,
-  "rules": {}
+  "rules": {
+    "import-x/export": 14
+  }
 }

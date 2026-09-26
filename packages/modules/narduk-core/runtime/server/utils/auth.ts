@@ -113,6 +113,33 @@ export function requireAuthScopes(user: AuthUser, requiredScopes: readonly strin
 }
 
 /**
+ * The opt-in API-key scope an admin route names (narduk-libs#971, decided
+ * 2026-09-25: "scopes per route, opt-in"). Pass it `requireAdmin`'s result; it
+ * refuses a non-admin itself, so it never stands in for a missing admin check.
+ *
+ * - A session passes: the scope is a key-only restriction.
+ * - A key that carries scopes must hold every one named, or `*`, so an
+ *   admin-owned key minted for something narrow cannot use this route. Such a
+ *   key can still mint an unscoped one if it holds `auth:api-keys:write`
+ *   (narduk-libs#1122).
+ * - A key with no scopes at all passes. Unscoped admin keys keep their full
+ *   admin reach until every admin route names a scope; this is where the
+ *   helper differs from `requireAuthScopes`, which refuses them.
+ */
+export function requireAdminRouteScopes(user: AuthUser, routeScopes: readonly string[]): void {
+  if (!user.isAdmin) {
+    throw createError({
+      statusCode: 403,
+      message: 'Forbidden — admin access required',
+    })
+  }
+  if (user.authMethod !== 'api-key' || normalizeAuthScopes(user.scopes).length === 0) {
+    return
+  }
+  requireAuthScopes(user, routeScopes)
+}
+
+/**
  * Create a D1-backed session for a user and set the session cookie.
  * @optional Use when you need server-side session listing/revocation alongside nuxt-auth-utils.
  */

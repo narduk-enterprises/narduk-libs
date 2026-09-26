@@ -44,6 +44,7 @@ import {
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
+import { prependNitroErrorHandlers } from './nitro-error-handler'
 import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 import { registerNuxtUiSources } from './nuxt-ui-sources'
 import {
@@ -503,23 +504,6 @@ function registerTypeReference(options: TypePrepareOptions, path: string): void 
   }
 }
 
-/**
- * Nitro 2.13's generated wrapper imports `errorHandler` paths in array order
- * and stops only when `event.handled`. Nuxt already pushed its Vue renderer
- * before `nitro:init`; prepending our sanitizer mutates the error first and
- * then returns so that renderer (and the estate error.vue) still run.
- *
- * Kept local so `src/module.ts` does not import the runtime handler (that
- * file loads `nitropack/runtime`, which is only safe inside a Nitro app).
- */
-function prependNitroErrorHandler(
-  errorHandler: string | string[] | undefined,
-  handlerPath: string,
-): string[] {
-  const existing = Array.isArray(errorHandler) ? errorHandler : errorHandler ? [errorHandler] : []
-  return [handlerPath, ...existing.filter((entry) => entry !== handlerPath)]
-}
-
 interface NitroErrorHandlerHost {
   options: {
     errorHandler?: string | string[]
@@ -936,13 +920,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           // Then the JSON no-store handler (narduk-libs#493): Nuxt hands a
           // JSON error to Nitro's builtin, which answers `no-cache`.
           // Resulting chain: sanitizer, json-error-no-store, Nuxt, builtin.
-          nitro.options.errorHandler = prependNitroErrorHandler(
-            prependNitroErrorHandler(
-              nitro.options.errorHandler,
-              resolver.resolve('../runtime/server/json-error-no-store'),
-            ),
+          nitro.options.errorHandler = prependNitroErrorHandlers(nitro.options.errorHandler, [
             resolver.resolve('../runtime/server/error-sanitizer'),
-          )
+            resolver.resolve('../runtime/server/json-error-no-store'),
+          ])
         },
       )
     },

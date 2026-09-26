@@ -83,11 +83,19 @@ Parser layer, `eslint-config-prettier`, and the baseline tail still apply:
 `narduk/ignores` (`.nuxt/**`, `.output/**`, `dist/**`, …), the
 `@typescript-eslint` project rules, console hygiene, rule-authoring relaxations,
 and the composable-helpers bypass. Turning the plugin tail back on later is when
-those `error`-severity community rules (`import-x/no-cycle`, `import-x/named`,
+those community rules (`import-x/no-cycle`, `import-x/named`,
 `unicorn/no-instanceof-builtins`, `unicorn/throw-new-error`,
 `promise/no-return-wrap`, `regexp` recommended,
 `@eslint-community/eslint-comments/no-unused-disable`) will surface pre-existing
 findings; budget triage then, not on the first pack.
+
+`import-x/no-cycle`, `import-x/named`, `import-x/default` and `import-x/export`
+are `warn`. Since narduk-libs#973 the import-x resolver follows extensionless
+and `.js`-spelled TypeScript imports (`./b`, `./b.js` → `./b.ts`), so these
+rules check local code for the first time. They report through
+`lint-budget.json` and ratchet from there; moving them to `error` is a follow-up
+once budgets reach zero. `.vue` files are resolved but not parsed for exports,
+because a `<script setup>` SFC has no `export default` in its source.
 
 ## Capability packs
 

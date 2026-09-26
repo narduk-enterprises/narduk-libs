@@ -89,6 +89,30 @@ describe('passkey routes when @simplewebauthn/server fails to load (#892)', () =
     expect(JSON.stringify(details)).toContain('tsyringe requires a reflect polyfill')
   })
 
+  // narduk-libs#1060: the finish ceremonies load the library before reading
+  // the response, so a load failure answers 503 before anything else runs.
+  it('answers 503 on both finish ceremonies too', async () => {
+    const { finishPasskeyAuthentication, finishPasskeyRegistration } =
+      await import('../server/lib/app-auth/webauthn-core')
+    const unavailable = {
+      statusCode: 503,
+      statusMessage: 'Passkeys unavailable: server misconfiguration',
+    }
+    const response = { id: 'cred-1', response: { clientDataJSON: 'e30' } }
+
+    await expect(finishPasskeyAuthentication(event, response as never)).rejects.toMatchObject(
+      unavailable,
+    )
+    await expect(
+      finishPasskeyRegistration(
+        event,
+        { email: 'parent@example.com', id: 'user-1' },
+        { response: response as never },
+      ),
+    ).rejects.toMatchObject(unavailable)
+    expect(logMocks.error).toHaveBeenCalledTimes(2)
+  })
+
   it('still loads the pure ceremony helpers, which never touch the library', async () => {
     const { readPresentedChallenge } = await import('../server/lib/app-auth/webauthn-verification')
     const clientDataJSON = Buffer.from(JSON.stringify({ challenge: 'Q0hBTExFTkdF' }))

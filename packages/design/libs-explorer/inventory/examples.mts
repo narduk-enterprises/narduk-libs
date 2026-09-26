@@ -129,6 +129,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'App shell',
     'The opt-in sectioned left rail, navbar row and page frame; a slide-over below lg.',
   ),
+  shell(
+    'NeSkipLink',
+    'Skip link',
+    'Skip to content that moves keyboard focus to the target, not only the scroll position.',
+  ),
   shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
   shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),
   shell('NeCta', 'Call to action', 'A panel with a title, a description and buttons.'),
@@ -136,6 +141,16 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'NeMarketingFooter',
     'Marketing footer',
     'The site footer: left, centre and right rows, with columns in #top.',
+  ),
+  shell(
+    'NeDataAttribution',
+    'Data attribution',
+    'A consistent "Data from <source>, updated <time>" credit with safe source links.',
+  ),
+  shell(
+    'NeLegalPage',
+    'Legal page',
+    'Title, last-updated date, contents and sections; template wording is placeholder-only.',
   ),
   {
     id: 'formatters',
