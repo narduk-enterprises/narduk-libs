@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  calendarDateIn,
   createFormatters,
   formatCompact,
   formatDate,
@@ -25,6 +26,7 @@ import {
   formatPercent,
   formatQuantity,
   formatRelative,
+  isSameCalendarDay,
 } from '../src/format'
 
 const CHICAGO = 'America/Chicago'
@@ -211,6 +213,95 @@ describe('formatRelative', () => {
   it('renders the placeholder when either instant is missing', () => {
     expect(formatRelative(null, { ...en, now, timeZone: CHICAGO })).toBe('—')
     expect(formatRelative(now, { ...en, now: null, timeZone: CHICAGO })).toBe('—')
+  })
+})
+
+describe('calendarDateIn', () => {
+  it('is the calendar date of an instant in the named zone, as YYYY-MM-DD', () => {
+    // 04:30 UTC on the 8th is still the evening of the 7th in Chicago.
+    expect(calendarDateIn('2026-03-08T04:30:00Z', { timeZone: CHICAGO })).toBe('2026-03-07')
+    expect(calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'UTC' })).toBe('2026-03-08')
+    expect(calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'Asia/Tokyo' })).toBe('2026-03-08')
+    expect(calendarDateIn(Date.UTC(2026, 0, 1, 5, 59), { timeZone: CHICAGO })).toBe('2025-12-31')
+    expect(calendarDateIn(new Date(Date.UTC(2026, 0, 1, 6)), { timeZone: CHICAGO })).toBe(
+      '2026-01-01',
+    )
+  })
+
+  it('counts a daylight-saving day as one day on each side of the jump', () => {
+    // Chicago springs forward at 08:00Z on 2026-03-08 and falls back at 07:00Z on 2026-11-01.
+    expect(calendarDateIn('2026-03-08T05:59:00Z', { timeZone: CHICAGO })).toBe('2026-03-07')
+    expect(calendarDateIn('2026-03-08T06:00:00Z', { timeZone: CHICAGO })).toBe('2026-03-08')
+    expect(calendarDateIn('2026-11-02T05:59:00Z', { timeZone: CHICAGO })).toBe('2026-11-01')
+    expect(calendarDateIn('2026-11-02T06:00:00Z', { timeZone: CHICAGO })).toBe('2026-11-02')
+  })
+
+  it('passes a bare YYYY-MM-DD through unchanged, in every zone', () => {
+    for (const timeZone of ['UTC', CHICAGO, 'Asia/Tokyo', 'Pacific/Kiritimati']) {
+      expect(calendarDateIn('2026-03-08', { timeZone })).toBe('2026-03-08')
+    }
+  })
+
+  it('pads to a sortable key and writes out-of-range years in the expanded ISO form', () => {
+    expect(calendarDateIn('0987-06-05T12:00:00Z', { timeZone: 'UTC' })).toBe('0987-06-05')
+    expect(calendarDateIn(Date.UTC(-1, 0, 1, 12), { timeZone: 'UTC' })).toBe('-000001-01-01')
+    // `Date.UTC` maps years 0-99 onto 1900-1999, so year 0 is set explicitly.
+    const yearZero = new Date(Date.UTC(2000, 0, 1, 12))
+    yearZero.setUTCFullYear(0)
+    expect(calendarDateIn(yearZero, { timeZone: 'UTC' })).toBe('0000-01-01')
+    expect(calendarDateIn(8.64e15, { timeZone: 'UTC' })).toBe('+275760-09-13')
+  })
+
+  it('renders the empty placeholder for absent or unparseable input', () => {
+    expect(calendarDateIn(null, { timeZone: 'UTC' })).toBe('—')
+    expect(calendarDateIn(undefined, { timeZone: 'UTC' })).toBe('—')
+    expect(calendarDateIn('not a date', { timeZone: 'UTC' })).toBe('—')
+    expect(calendarDateIn(Number.NaN, { timeZone: 'UTC', empty: '' })).toBe('')
+    expect(calendarDateIn('2026-13-45', { timeZone: 'UTC' })).toBe('—')
+  })
+
+  it('throws on an unknown zone rather than falling back to the host zone', () => {
+    expect(() => calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'Mars/Olympus' })).toThrow(
+      RangeError,
+    )
+  })
+
+  it('matches the en-CA formatted-string trick it replaces, wherever that trick is correct', () => {
+    const at = new Date('2026-07-04T03:15:00Z')
+    for (const timeZone of ['UTC', CHICAGO, 'America/Los_Angeles', 'Asia/Kolkata']) {
+      const legacy = new Intl.DateTimeFormat('en-CA', {
+        day: '2-digit',
+        month: '2-digit',
+        timeZone,
+        year: 'numeric',
+      }).format(at)
+      expect(calendarDateIn(at, { timeZone })).toBe(legacy)
+    }
+  })
+})
+
+describe('isSameCalendarDay', () => {
+  it('compares calendar days in the named zone, not UTC days', () => {
+    const lateEvening = '2026-03-08T04:30:00Z' // Mar 7, 22:30 in Chicago
+    const earlyMorning = '2026-03-07T15:00:00Z' // Mar 7, 09:00 in Chicago
+    expect(isSameCalendarDay(lateEvening, earlyMorning, { timeZone: CHICAGO })).toBe(true)
+    expect(isSameCalendarDay(lateEvening, earlyMorning, { timeZone: 'UTC' })).toBe(false)
+  })
+
+  it('treats a bare YYYY-MM-DD as the calendar day it names', () => {
+    expect(isSameCalendarDay('2026-03-07', '2026-03-08T04:30:00Z', { timeZone: CHICAGO })).toBe(
+      true,
+    )
+    expect(isSameCalendarDay('2026-03-08', '2026-03-08T04:30:00Z', { timeZone: CHICAGO })).toBe(
+      false,
+    )
+  })
+
+  it('is false when either side is absent or unparseable, even if both are', () => {
+    expect(isSameCalendarDay(null, '2026-03-08', { timeZone: 'UTC' })).toBe(false)
+    expect(isSameCalendarDay('2026-03-08', undefined, { timeZone: 'UTC' })).toBe(false)
+    expect(isSameCalendarDay(null, null, { timeZone: 'UTC' })).toBe(false)
+    expect(isSameCalendarDay('nope', 'nope', { timeZone: 'UTC' })).toBe(false)
   })
 })
 
@@ -431,6 +522,15 @@ describe('createFormatters', () => {
     const locale: string | undefined = undefined
     expect(german.formatNumber(1234.5, { locale })).toBe('1.234,5')
     expect(german.formatDate(null, { empty: undefined })).toBe('unbekannt')
+  })
+
+  it('binds the zone for the calendar-day helpers too', () => {
+    const at = '2026-03-08T04:30:00Z'
+    expect(bound.calendarDateIn(at)).toBe('2026-03-07')
+    expect(bound.calendarDateIn(at, { timeZone: TOKYO })).toBe('2026-03-08')
+    expect(bound.calendarDateIn(null)).toBe('—')
+    expect(bound.isSameCalendarDay(at, '2026-03-07')).toBe(true)
+    expect(bound.isSameCalendarDay(at, '2026-03-07', { timeZone: TOKYO })).toBe(false)
   })
 
   it('is frozen, so one surface cannot quietly repoint another surface’s formatter', () => {

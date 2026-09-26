@@ -121,6 +121,13 @@ export interface NeRelativeOptions extends NeFormatterDefaults {
   numeric?: 'always' | 'auto'
 }
 
+/**
+ * {@link calendarDateIn}'s and {@link isSameCalendarDay}'s options. `locale`
+ * is accepted so one bound bag fits every formatter, and ignored: the
+ * `YYYY-MM-DD` key does not vary by locale.
+ */
+export type NeCalendarDateOptions = NeFormatterDefaults
+
 /** The units {@link formatDuration} renders. Nothing above a day — see its docs. */
 export type NeDurationUnit = 'day' | 'hour' | 'minute' | 'second'
 
@@ -211,6 +218,12 @@ export interface NeFormatters {
     value: number | null | undefined,
     options: Partial<NeQuantityOptions> & Pick<NeQuantityOptions, 'unit'>,
   ) => string
+  calendarDateIn: (value: NeDateInput, options?: Partial<NeCalendarDateOptions>) => string
+  isSameCalendarDay: (
+    a: NeDateInput,
+    b: NeDateInput,
+    options?: Partial<NeCalendarDateOptions>,
+  ) => boolean
 }
 
 /* -------------------------------------------------------------------------- */
@@ -404,6 +417,57 @@ export function formatDate(value: NeDateInput, options: NeDateOptions): string {
     timeZone: floating ? 'UTC' : options.timeZone,
     dateStyle: options.style ?? 'medium',
   }).format(new Date(instant))
+}
+
+/**
+ * The calendar date of an instant as seen from `timeZone`, as a sortable
+ * `YYYY-MM-DD` key: "is this today on the farm's clock?", "group readings by
+ * Chicago day".
+ *
+ * ```ts
+ * calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'America/Chicago' }) // '2026-03-07'
+ * calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'UTC' })             // '2026-03-08'
+ * calendarDateIn('2026-03-08', { timeZone: 'Asia/Tokyo' })                // '2026-03-08'
+ * calendarDateIn(null, { timeZone: 'UTC' })                               // '—'
+ * ```
+ *
+ * The key is read from `Intl`'s parts, not from the `en-CA` locale's formatted
+ * string: that pattern is CLDR locale data, not a format contract. A bare
+ * `YYYY-MM-DD` is a floating calendar date and passes through unchanged, as in
+ * {@link formatDate}. A year outside 0000-9999 is written in the expanded form
+ * `Date.prototype.toISOString` uses (`-000001`, `+275760`). An unknown zone
+ * throws `RangeError`; there is no fallback to the host zone.
+ */
+export function calendarDateIn(value: NeDateInput, options: NeCalendarDateOptions): string {
+  const empty = options.empty ?? DEFAULT_EMPTY
+  const floating = typeof value === 'string' && CALENDAR_DATE.test(value)
+  const instant = instantOf(floating ? `${value}T12:00:00Z` : value)
+  if (instant === undefined) return empty
+  const { year, month, day } = zonedParts(instant, floating ? 'UTC' : options.timeZone)
+  const yearKey =
+    year >= 0 && year <= 9999
+      ? String(year).padStart(4, '0')
+      : `${year < 0 ? '-' : '+'}${String(Math.abs(year)).padStart(6, '0')}`
+  return `${yearKey}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+/**
+ * Whether two values fall on the same calendar day in `timeZone`. Absent or
+ * unparseable input on either side is never the same day, not even as another
+ * absent value.
+ *
+ * ```ts
+ * isSameCalendarDay(reading.at, now, { timeZone: farm.timeZone }) // "is this today?"
+ * ```
+ */
+export function isSameCalendarDay(
+  a: NeDateInput,
+  b: NeDateInput,
+  options: NeCalendarDateOptions,
+): boolean {
+  const keyOptions = { ...options, empty: '' }
+  const left = calendarDateIn(a, keyOptions)
+  return left !== '' && left === calendarDateIn(b, keyOptions)
 }
 
 /**
@@ -777,5 +841,7 @@ export function createFormatters(defaults: NeFormatterDefaults): NeFormatters {
     formatPercent: (value, options) => formatPercent(value, bind(options)),
     formatMoney: (value, options) => formatMoney(value, bind(options)),
     formatQuantity: (value, options) => formatQuantity(value, bind(options)),
+    calendarDateIn: (value, options) => calendarDateIn(value, bind(options)),
+    isSameCalendarDay: (a, b, options) => isSameCalendarDay(a, b, bind(options)),
   } satisfies NeFormatters)
 }
