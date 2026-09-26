@@ -3,6 +3,8 @@ import { dirname, resolve } from 'node:path'
 
 import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
 import type { CheckoutFacts } from './checkout-facts.js'
+import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
+import type { PackageRegistry } from './dependabot-registry.js'
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
@@ -856,7 +858,11 @@ function resolveManagedTarget(
   target: ManagedTarget,
   current: string | null,
   desired: string | undefined,
+  registry: PackageRegistry,
 ): Resolution {
+  if (target.path === '.github/dependabot.yml' && desired !== undefined) {
+    return resolveDependabot(current, desired, registry)
+  }
   if (desired === undefined) {
     return {
       detail: 'The generator does not emit this path for the resolved profile.',
@@ -890,6 +896,10 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
   const profile = await inferUpgradeProfile(targetDir, options, facts)
   const generated = generatedContentsFor(profile, targetDir, facts)
   const managedTargets = managedTargetsFor(facts)
+  const registry = detectPackageRegistry(
+    await readIfExists(resolve(targetDir, '.npmrc')),
+    await readIfExists(resolve(targetDir, 'pnpm-lock.yaml')),
+  )
 
   const only = (options.only ?? []).map((entry) => entry.replace(/^\.\//u, ''))
   for (const entry of only) {
@@ -909,7 +919,7 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
     const absolute = resolve(targetDir, target.path)
     const current = await readIfExists(absolute)
     const desiredPath = target.mode === 'jsonc-keys' ? 'apps/web/wrangler.jsonc' : target.path
-    const resolution = resolveManagedTarget(target, current, generated.get(desiredPath))
+    const resolution = resolveManagedTarget(target, current, generated.get(desiredPath), registry)
     const next = resolution.next
     const diff = next === undefined ? '' : unifiedDiff(target.path, current ?? '', next)
 
