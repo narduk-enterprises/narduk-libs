@@ -377,6 +377,29 @@ export interface ListAuditEventsInput {
   orgId: string
 }
 
+/**
+ * An identified actor revokes only a record in an org they belong to. Anyone
+ * else, and an `orgId` that is not the record's, gets the `not_found` a made-up
+ * id gets, before its state is revealed (narduk-libs#1061).
+ */
+export interface RevokeInviteInput {
+  actorUserId: TenancyActorId
+  inviteId: string
+  /** The org the caller's route is scoped to. The invite must belong to it. */
+  orgId?: string
+}
+
+/**
+ * As `RevokeInviteInput`. A support grant's own grantor and grantee may also
+ * revoke it, members or not: they are the parties to it.
+ */
+export interface RevokeSupportGrantInput {
+  actorUserId: TenancyActorId
+  grantId: string
+  /** The org the caller's route is scoped to. The grant must belong to it. */
+  orgId?: string
+}
+
 export interface TenancyService {
   acceptInvite: (input: AcceptInviteInput) => Promise<AcceptInviteResult>
   addMember: (input: AddMemberInput) => Promise<TenancyMembership>
@@ -390,11 +413,8 @@ export interface TenancyService {
   listOrgsForUser: (userId: string) => Promise<TenancyOrg[]>
   removeMember: (input: MemberInput) => Promise<void>
   resolveRole: (input: ResolveRoleInput) => Promise<TenancyRoleResolution>
-  revokeInvite: (input: { actorUserId: TenancyActorId; inviteId: string }) => Promise<TenancyInvite>
-  revokeSupportGrant: (input: {
-    actorUserId: TenancyActorId
-    grantId: string
-  }) => Promise<TenancySupportGrant>
+  revokeInvite: (input: RevokeInviteInput) => Promise<TenancyInvite>
+  revokeSupportGrant: (input: RevokeSupportGrantInput) => Promise<TenancySupportGrant>
   setMemberRole: (input: AddMemberInput) => Promise<TenancyMembership>
   setResourceRoleOverride: (
     input: ResourceRoleOverrideInput,
@@ -1179,7 +1199,13 @@ export function createTenancy(
           .limit(1)
           .all(),
       )
-      if (!invite) throw new TenancyError('not_found', `Invite ${input.inviteId} does not exist.`)
+      if (
+        !invite ||
+        (input.orgId !== undefined && invite.orgId !== input.orgId) ||
+        (actorUserId !== undefined && !(await findMembership(invite.orgId, actorUserId)))
+      ) {
+        throw new TenancyError('not_found', `Invite ${input.inviteId} does not exist.`)
+      }
       if (invite.acceptedAt !== null) {
         throw new TenancyError('conflict', `Invite ${invite.id} has already been accepted.`)
       }
@@ -1283,7 +1309,14 @@ export function createTenancy(
           .limit(1)
           .all(),
       )
-      if (!grant) {
+      if (
+        !grant ||
+        (input.orgId !== undefined && grant.orgId !== input.orgId) ||
+        (actorUserId !== undefined &&
+          actorUserId !== grant.grantedByUserId &&
+          actorUserId !== grant.granteeUserId &&
+          !(await findMembership(grant.orgId, actorUserId)))
+      ) {
         throw new TenancyError('not_found', `Support grant ${input.grantId} does not exist.`)
       }
       if (grant.revokedAt !== null) return grant

@@ -350,4 +350,107 @@ describe('cross-org isolation', () => {
       ),
     ).toBe('forbidden')
   })
+
+  it("refuses to revoke another org's invite, answering as if it did not exist (#1061)", async () => {
+    const { tenancy, north, south } = await twoOrgs()
+    const { invite: southPending } = await tenancy.createInvite({
+      orgId: south,
+      email: SHARED_EMAIL,
+      role: 'viewer',
+      invitedByUserId: SOUTH_OWNER,
+    })
+    const { invite: southRevoked } = await tenancy.createInvite({
+      orgId: south,
+      email: 'second@example.test',
+      role: 'viewer',
+      invitedByUserId: SOUTH_OWNER,
+    })
+    await tenancy.revokeInvite({ inviteId: southRevoked.id, actorUserId: SOUTH_OWNER })
+    const { invite: northPending } = await tenancy.createInvite({
+      orgId: north,
+      email: SHARED_EMAIL,
+      role: 'viewer',
+      invitedByUserId: NORTH_OWNER,
+    })
+
+    // A stranger to south gets the answer a made-up id gets, whatever state
+    // the invite is in, and nothing is revoked or audited.
+    const before = await tenancy.listAuditEvents({ orgId: south })
+    for (const inviteId of [southPending.id, southRevoked.id, 'ghost']) {
+      expect(await codeOf(tenancy.revokeInvite({ inviteId, actorUserId: NORTH_OWNER }))).toBe(
+        'not_found',
+      )
+    }
+    expect(await tenancy.listAuditEvents({ orgId: south })).toEqual(before)
+
+    // An `orgId` scopes the lookup: a member of both orgs naming north cannot
+    // reach south's invite through it.
+    expect(
+      await codeOf(
+        tenancy.revokeInvite({ orgId: north, inviteId: southPending.id, actorUserId: SHARED }),
+      ),
+    ).toBe('not_found')
+    expect(
+      (
+        await tenancy.revokeInvite({
+          orgId: north,
+          inviteId: northPending.id,
+          actorUserId: SHARED,
+        })
+      ).revokedAt,
+    ).not.toBeNull()
+
+    // South's own owner still revokes it.
+    expect(
+      (await tenancy.revokeInvite({ inviteId: southPending.id, actorUserId: SOUTH_OWNER }))
+        .revokedAt,
+    ).not.toBeNull()
+  })
+
+  it("refuses to revoke another org's support grant, answering as if it did not exist (#1061)", async () => {
+    const { tenancy, north, south } = await twoOrgs()
+    const grant = await tenancy.createSupportGrant({
+      orgId: south,
+      granteeUserId: 'support-1',
+      grantedByUserId: 'platform-1',
+      reason: 'Ticket 7',
+      ttlSeconds: 600,
+    })
+
+    const before = await tenancy.listAuditEvents({ orgId: south })
+    for (const grantId of [grant.id, 'ghost']) {
+      expect(await codeOf(tenancy.revokeSupportGrant({ grantId, actorUserId: NORTH_OWNER }))).toBe(
+        'not_found',
+      )
+    }
+    expect(
+      await codeOf(
+        tenancy.revokeSupportGrant({ orgId: north, grantId: grant.id, actorUserId: SHARED }),
+      ),
+    ).toBe('not_found')
+    expect(await tenancy.listAuditEvents({ orgId: south })).toEqual(before)
+    expect(await tenancy.listActiveSupportGrants({ orgId: south })).toHaveLength(1)
+
+    // The grant's own parties are not members, and may still revoke it: the
+    // grantor who issued it and the grantee giving it up.
+    expect(
+      (await tenancy.revokeSupportGrant({ grantId: grant.id, actorUserId: 'support-1' })).revokedAt,
+    ).not.toBeNull()
+    const second = await tenancy.createSupportGrant({
+      orgId: south,
+      granteeUserId: 'support-1',
+      grantedByUserId: 'platform-1',
+      reason: 'Ticket 8',
+      ttlSeconds: 600,
+    })
+    expect(
+      (
+        await tenancy.revokeSupportGrant({
+          orgId: south,
+          grantId: second.id,
+          actorUserId: 'platform-1',
+        })
+      ).revokedAt,
+    ).not.toBeNull()
+  })
 })
