@@ -41,6 +41,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeSearchInput',
       'NeSectionHeader',
       'NeSettingsPage',
+      'NeSkipLink',
       'NeSortHeader',
       'NeStatePanel',
       'NeStatusBadge',
