@@ -757,7 +757,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           sharedPackageList +
           '. Fix a shared behavior in its package in narduk-libs, not with a local copy.',
         '',
-        '`pnpm exec narduk-app doctor` checks the app-local prerequisites; run it first when something about the toolchain or Cloudflare configuration looks wrong. `pnpm dlx @narduk-enterprises/create-narduk-app upgrade .` shows what the generator would refresh, including this block.',
+        '`pnpm exec narduk-app doctor` checks the app-local prerequisites and the dependency audit and prints one verdict line; run it first when something about the toolchain or Cloudflare configuration looks wrong. `pnpm dlx @narduk-enterprises/create-narduk-app upgrade .` shows what the generator would refresh, including this block.',
         '',
         REGION_MARKERS.agentsRouter.end,
       ),

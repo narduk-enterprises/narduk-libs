@@ -8,10 +8,10 @@ import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { parseHotfixArgs, runHotfix } from './deploy-hotfix.js'
 import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
-import { runDoctor, formatDoctorReport } from './doctor.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
 import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
+import { parseBareDoctorArgs, runBareDoctorCommand } from './commands/doctor-bare.js'
 import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
 import {
   formatPromoteResult,
@@ -166,7 +166,7 @@ function usage(): string {
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  gh-packages-run -- <command...>     Run a command with process-scoped',
     '                                       GitHub Packages auth (temp userconfig)',
-    '  doctor                              Check app-local prerequisites',
+    '  doctor [--json] [--no-cache]        Prerequisites + audit, one verdict line (DOCTOR PASS|WARN|FAIL)',
     '  doctor --adoption [--checkout <dir>] [--live <url>] [--expect-sha <sha>]',
     '                    [--path <p>]... [--json [path]]',
     '                                      Report the 15 narduk-app adoption requirements',
@@ -391,8 +391,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return runGhPackagesCommand(parseGhPackagesRunArgs(rest))
     }
     if (command === 'doctor') {
-      // `--adoption` replaces the report rather than extending it: bare
-      // `doctor` keeps its exact output and exit code for its existing callers.
+      // Bare `doctor` is prerequisites plus the audit, one verdict line first
+      // (narduk-libs#376); `--adoption`, `--audit` and `--all` replace it.
       if (rest.includes('--adoption')) {
         const { exitCode } = await runAdoptionReportCommand(parseAdoptionReportArgs(rest))
         return exitCode
@@ -401,10 +401,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         return (await runDoctorAllCommand(parseDoctorAllArgs(rest))).exitCode
       }
       if (rest.includes('--audit')) return runAuditCommand(parseAuditArgs(rest)).exitCode
-      const json = rest.includes('--json')
-      const report = runDoctor()
-      console.log(json ? JSON.stringify(report, null, 2) : formatDoctorReport(report))
-      return report.clean ? 0 : 1
+      return runBareDoctorCommand(parseBareDoctorArgs(rest)).exitCode
     }
     if (command === 'performance-budget') {
       const options = parsePerformanceBudgetArgs(rest)
