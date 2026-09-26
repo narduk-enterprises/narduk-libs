@@ -639,13 +639,15 @@ export async function getSessionUserResponse(event: H3Event) {
     return { user: null }
   }
 
+  // Every backend's row expires (narduk-libs#1043), not only the local one.
+  if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
+    await clearLayerUserSession(event)
+    return { user: null }
+  }
+
   const hydrated = mergeAuthoritativeSessionUser(user, authSession, dbUser)
 
   if (user.authBackend === 'local') {
-    if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
-      await clearLayerUserSession(event)
-      return { user: null }
-    }
     return { user: hydrated }
   }
 

@@ -29,13 +29,8 @@ function isUnauthorizedError(error: unknown) {
 async function refreshLocalSessionUser(
   event: H3Event,
   sessionUser: AppSessionUser,
-  expiresAt: number,
   principal: AppSessionUser,
-): Promise<AppSessionUser | null> {
-  if (expiresAt <= Math.floor(Date.now() / 1000)) {
-    await clearLayerUserSession(event)
-    return null
-  }
+): Promise<AppSessionUser> {
   if (
     principal.email !== sessionUser.email ||
     principal.name !== sessionUser.name ||
@@ -107,10 +102,19 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
     return null
   }
 
+  // The row's absolute expiry is enforced here, on every backend, rather than
+  // left to the login sweep. A Supabase row used to be accepted past it while
+  // the cookie was inside its revalidation window, or when the refresh failed
+  // recoverably (narduk-libs#1043).
+  if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
+    await clearLayerUserSession(event)
+    return null
+  }
+
   const principal = mergeAuthoritativeSessionUser(sessionUser, authSession, dbUser)
 
   if (sessionUser.authBackend === 'local') {
-    return refreshLocalSessionUser(event, sessionUser, authSession.expiresAt, principal)
+    return refreshLocalSessionUser(event, sessionUser, principal)
   }
 
   if (wasAuthSessionRecentlyValidated(sessionUser)) {

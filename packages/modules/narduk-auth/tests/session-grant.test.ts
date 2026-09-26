@@ -209,6 +209,29 @@ describe('web session grant validation', () => {
     expect(state.clearCalls).toBe(0)
   })
 
+  // narduk-libs#1043: the row's expiry was enforced only for local sessions.
+  // A Supabase cookie inside its revalidation window, or one whose refresh
+  // failed recoverably, was accepted on an expired row until a login sweep
+  // happened to delete it.
+  it('rejects a recently-validated Supabase cookie whose auth_sessions row has expired', async () => {
+    state.user = cookieUser()
+    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) - 1 }
+    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
+
+    await expect(useRefreshedSessionUser(event())).resolves.toBeNull()
+    expect(state.clearCalls).toBe(1)
+  })
+
+  it('rejects an expired Supabase row even when the refresh fails recoverably', async () => {
+    state.user = cookieUser({ authSessionValidatedAt: '2020-01-01T00:00:00.000Z' })
+    state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) }
+    state.supabaseError = new Error('fetch failed')
+    const { useRefreshedSessionUser } = await import('../server/utils/session-user')
+
+    await expect(useRefreshedSessionUser(event())).resolves.toBeNull()
+    expect(state.clearCalls).toBe(1)
+  })
+
   it('hits D1 at most once per request for the same session', async () => {
     state.user = cookieUser({ authBackend: 'local' })
     state.row = { id: STOLEN_SESSION_ID, expiresAt: Math.floor(Date.now() / 1000) + 3600 }
