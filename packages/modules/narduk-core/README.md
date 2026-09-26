@@ -870,6 +870,43 @@ export default defineNitroPlugin(() => {
 A failed check publishes fixed text such as `Check failed.`; the thrown error
 goes only to the server log.
 
+### Reporting deploy identity
+
+`readWorkerIdentity(event)` is auto-imported in server code, or import it from
+`@narduk-enterprises/narduk-core/server/utils/worker-identity`. It returns
+`{ sourceRevision, workerVersion }`:
+
+- `sourceRevision`: `runtimeConfig.public.buildVersion` (the value in
+  `x-build-version`) when it is a 7-40 character hex SHA, lower-cased; `null`
+  when the build fell back to the app version. Pass `sourceRevision` to report
+  another value.
+- `workerVersion`: `{ id, tag, timestamp }` from the Worker's `version_metadata`
+  binding, read from `event.context.cloudflare.env` or
+  `event.context._platform.cloudflare.env`; `null` outside a Worker or without
+  the binding. The binding is `CF_VERSION_METADATA` unless `binding` names
+  another.
+
+`/api/health` surfaces it when the app opts in, so an app keeps its header names
+without overriding the route and losing the database probe and registered
+checks:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  runtimeConfig: {
+    nardukHealth: {
+      identity: {
+        revisionHeader: 'x-myapp-revision',
+        workerVersionHeader: 'x-myapp-worker-version',
+        body: true, // appends data.identity after data.checks
+      },
+    },
+  },
+})
+```
+
+A header whose value is unknown is left off rather than sent empty.
+
 ### Reporting data freshness
 
 An app that serves published data is up long after its feed has gone stale. A

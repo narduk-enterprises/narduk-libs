@@ -27,6 +27,17 @@ interface CoreRuntimeConfig {
   nardukHealth?: {
     /** Set by narduk-auth: also verify the `users`, `sessions` and `api_keys` tables. */
     authTables?: boolean
+    /**
+     * Opt-in deploy identity on `/api/health` (narduk-libs#1022). Header names
+     * are the app's own; `body: true` appends `identity` after `checks`.
+     */
+    identity?: {
+      /** The `version_metadata` binding. Default `CF_VERSION_METADATA`. */
+      binding?: string
+      body?: boolean
+      revisionHeader?: string
+      workerVersionHeader?: string
+    }
   }
   /** Wrangler Hyperdrive binding name; used by `useHyperdriveConnectionString`. */
   hyperdriveBinding: string
