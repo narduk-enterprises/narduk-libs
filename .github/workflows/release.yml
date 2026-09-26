@@ -79,6 +79,7 @@ jobs:
     timeout-minutes: 45
     outputs:
       published: ${{ steps.publish-first.outputs.published == 'true' || steps.changesets.outputs.published == 'true' }}
+      current: ${{ steps.main-state.outputs.current }}
     env:
       VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -241,6 +242,38 @@ jobs:
         run: |
           rm -f "${NPM_CONFIG_USERCONFIG}"
           rm -f "${RUNNER_TEMP}/changesets-home/.netrc"
+
+  # narduk-libs#1119. A run whose verified commit is no longer main's tip
+  # publishes what that commit bumped, but skips drift synthesis and
+  # release-PR preparation. It used to end green and silent. This job reads
+  # main's tip and either leaves the work to a queued Release run or to the
+  # tip's CI, dispatches release.yml for a green tip, or warns with the
+  # command when the tip's CI is red. It never dispatches into a busy
+  # narduk-libs-release group (see scripts/recheck-release-main.mjs). It
+  # installs nothing, so actions: write never shares a job with dependency
+  # scripts.
+  recheck-main:
+    needs: [verify-ci, release]
+    if: needs.release.outputs.current != 'true'
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Hand the release on to main's newest commit, or say why not
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
+        run: node scripts/recheck-release-main.mjs
 
   # No job here starts CI for the "chore: release packages" PR. That PR is
   # pushed with the job-scoped GITHUB_TOKEN above, so GitHub holds its

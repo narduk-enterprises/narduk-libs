@@ -36,7 +36,8 @@ test('every public CI and language job uses a hosted runner without package cred
 const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 
 test('only the verified main release receives a job-scoped package write token', () => {
-  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 3)
+  // verify-ci, release, recheck-main (#1119) and notify-mirror.
+  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 4)
   assert.match(release, /github\.ref == 'refs\/heads\/main'/u)
   // npm-release holds the estate App key, and environment secrets reach every
   // job that uses the environment. Only the install-free notify-mirror may.

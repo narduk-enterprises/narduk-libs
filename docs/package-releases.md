@@ -203,12 +203,26 @@ publish, and it fails the release job on any registry read it cannot resolve
 rather than silently withholding a release.
 
 Synthesis only runs when the release workflow does, and the release workflow
-only runs on a push to `main` (or a manual dispatch). A `deferred` bump whose
-release run never happened -- red CI on that push, or a queued run cancelled by
-the `narduk-libs-release` concurrency group when a third run arrived -- leaves
-the drift on `main` with nothing scheduled to release it, until the next
-unrelated push. The escape hatch is to run the **Release packages** workflow by
-hand:
+only runs on a push to `main` (or a manual dispatch). It also only runs against
+current `main`: a Release run whose verified commit is no longer the tip
+publishes what that commit bumped and skips synthesis and release-PR
+preparation. Its `recheck-main` job (#1119, `scripts/recheck-release-main.mjs`)
+then reads the tip:
+
+- **Another Release run is queued or waiting:** it takes `main` forward. Nothing
+  is dispatched, because a new queued run would replace the pending one in the
+  `narduk-libs-release` group.
+- **The tip's push CI is still running:** the Release run its success triggers
+  does the work. The job leaves a notice.
+- **The tip's push CI succeeded and no Release run will follow it:** the job
+  dispatches `release.yml` with `verified-sha` set to the tip.
+- **The tip's push CI concluded red or cancelled:** the job raises a `::warning`
+  naming the CI run and the dispatch command below.
+
+A `deferred` bump whose release run never happened, because of red CI on that
+push, leaves the drift on `main` with nothing scheduled to release it until the
+next unrelated push. The escape hatch is to run the **Release packages**
+workflow by hand:
 `gh workflow run release.yml --repo narduk-enterprises/narduk-libs -f verified-sha=$(git rev-parse origin/main)`.
 Passing current `main` is what makes the job synthesize; an older ancestor SHA
 publishes but does not compare manifests.
