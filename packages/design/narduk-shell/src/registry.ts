@@ -79,4 +79,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // an app can write it in a layout; nothing registers it AS a layout, and
   // nothing scaffolds it (D3: the shell is opt-in).
   { name: 'NeAppShell', filePath: './runtime/components/NeAppShell.vue' },
+  // narduk-libs#977: NeSkipLink, a fragment skip link that moves focus, not
+  // only the scroll position. NeAppShell renders one; a layout without the
+  // shell writes its own.
+  { name: 'NeSkipLink', filePath: './runtime/components/NeSkipLink.vue' },
 ]

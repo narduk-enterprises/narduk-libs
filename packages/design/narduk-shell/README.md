@@ -2591,8 +2591,8 @@ D2) and built on Nuxt UI's dashboard primitives — `UDashboardGroup`,
   move to the next / previous link across section boundaries, wrapping; Home /
   End go to the first / last. Focus only: every link stays in the Tab order and
   nothing navigates until Enter.
-- **One `main`.** The page renders inside the shell's `<main>`, and a skip link
-  (visible on focus) jumps to it.
+- **One `main`.** The page renders inside the shell's `<main>`, and a
+  [`NeSkipLink`](#neskiplink) (visible on focus) moves focus to it.
 
 The shell is **opt-in** (plan decision D3). The module registers the component
 but no layout, and `create-narduk-app` scaffolds nothing: an app that wants it
@@ -2714,6 +2714,82 @@ import type {
 narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
 are deprecated in favour of `NeAppShell` and are removed in the next narduk-core
 major. Their behaviour is unchanged until then.
+
+### NeSkipLink
+
+"Skip to content" that moves keyboard focus, not only the scroll position
+([narduk-libs#977](https://github.com/narduk-enterprises/narduk-libs/issues/977)).
+The link apps hand-rolled — Nuxt UI's link component with `to="#main-content"` —
+renders a RouterLink, whose click handler calls `preventDefault` and
+`router.push`: the page scrolled, focus stayed on the link, and the next Tab
+went straight back into the navigation it was meant to skip.
+
+`NeSkipLink` is a plain `<a href="#main-content">`, never a RouterLink. It keeps
+the browser's own fragment navigation (the hash, the scroll, back/forward) and
+adds one step in its click handler, which Enter on a focused link also fires: it
+finds the target by id, gives it `tabindex="-1"` if it has no tabindex of its
+own (a `<main>` is not focusable otherwise), and calls `focus()`. A tabindex the
+target already has is kept. The click is never prevented, and a modified click
+(a new tab or window) is left to the browser. In development, a missing target
+logs a `[narduk-shell]` warning and focus stays on the link.
+
+It is visually hidden (clipped, still in the Tab order) until it has focus, then
+drawn over the top-left corner of its nearest positioned container, in
+`--ne-surface` with `--ne-ink` text and an `--ne-accent` outline. Put it first
+in the layout, so it is the first Tab stop.
+
+`NeAppShell` renders one aimed at its own `<main>`; a layout without the shell
+writes its own.
+
+#### Example
+
+```vue
+<!-- app/layouts/default.vue — NE_MAIN_ID is auto-imported by the module -->
+<template>
+  <NeSkipLink />
+  <AppHeader />
+  <main :id="NE_MAIN_ID">
+    <slot />
+  </main>
+</template>
+```
+
+```vue
+<!-- A second target, with its own text -->
+<NeSkipLink target="results" label="Skip to results" />
+```
+
+#### Props
+
+| Prop     | Type     | Default             | What it does                                                                                                         |
+| -------- | -------- | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `target` | `string` | `NE_MAIN_ID`        | The id (no `#`) of the element to focus. `NE_MAIN_ID` is `'main-content'`. The element needs no tabindex of its own. |
+| `label`  | `string` | `'Skip to content'` | The link's text.                                                                                                     |
+
+#### Slots
+
+None. The text is `label`.
+
+#### Events
+
+None. A native `click` listener on the component still reaches the anchor.
+
+#### `NE_MAIN_ID`
+
+`'main-content'`: the id of the page's main content and the link's default
+target, so the layout's `<main>` and the link are one constant rather than two
+hand-typed strings. The module **auto-imports** it (alongside
+`defineStatusMap`), so a layout writes `:id="NE_MAIN_ID"` with no import. App
+code cannot value-import it from `@narduk-enterprises/narduk-shell`: Nuxt's
+import protection refuses a bare import of any installed module's entry path
+("Importing directly from module entry-points is not allowed"). The root barrel
+still exports it, for code outside a Nuxt app build such as a unit test.
+
+#### Types
+
+```ts
+import type { NeSkipLinkProps } from '@narduk-enterprises/narduk-shell'
+```
 
 ### NeHero
 

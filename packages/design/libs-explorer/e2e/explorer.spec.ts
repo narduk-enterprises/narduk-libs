@@ -135,6 +135,9 @@ test.describe('catalog', () => {
   })
 
   test('every component page renders each of its preview frames', async ({ page }) => {
+    // One page load per component, so the run grows with the registry: about
+    // 1.5s a page, past Playwright's 30s default at 29 components (#977).
+    test.setTimeout(120_000)
     await open(page, '/components')
     const links = await page
       .locator('main a[href^="/components/"]')
@@ -446,6 +449,29 @@ test.describe('usage examples (finding 5)', () => {
     await pager.getByRole('button', { name: /next/i }).first().click()
     await expect(pager.getByTestId('pager-items')).toContainText('runner-026')
     await expect(pager.getByTestId('pager-items')).not.toContainText('runner-001')
+  })
+
+  test('the skip link moves keyboard focus into main: Tab, Enter, Tab (narduk-libs#977)', async ({
+    page,
+  }) => {
+    // The frame opened on its own, so the skip link is the document's first
+    // Tab stop, exactly as it is at the top of an app's layout.
+    await page.goto('/frame/ne-skip-link/usage')
+    await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true')
+    await expect(page.locator('[data-ready="true"]')).toHaveCount(1)
+
+    const skip = page.getByRole('link', { name: 'Skip to content' })
+    await page.keyboard.press('Tab')
+    await expect(skip).toBeFocused()
+    await expect(skip).toBeInViewport()
+
+    await page.keyboard.press('Enter')
+    await expect(page.locator('main#main-content')).toBeFocused()
+    await expect(page).toHaveURL(/#main-content$/)
+
+    // Past the example's nav: the next Tab starts from the target.
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'First control in the page' })).toBeFocused()
   })
 
   test('the shown source is the file that runs, and setup is one link away', async ({ page }) => {

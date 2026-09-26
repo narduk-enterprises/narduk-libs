@@ -459,4 +459,23 @@ describe('narduk-shell NeAppShell options (item 18, narduk-libs#265)', () => {
       expect(call.from).toContain('/src/runtime/composables/use-narduk-shell-sections')
     }
   })
+
+  /*
+   * narduk-libs#977. A layout needs the id on its `<main>`, and app code cannot
+   * value-import it from the package root: Nuxt's import protection refuses a
+   * bare import of any installed module's entry path
+   * ("Importing directly from module entry-points is not allowed").
+   */
+  it('auto-imports NE_MAIN_ID from the plain types module, even with components disabled', async () => {
+    for (const components of [true, false]) {
+      vi.resetModules()
+      const { addImports } = mockNuxtKit()
+      const module_ = await loadModule()
+
+      await module_.setup({ components }, makeNuxt())
+
+      const call = importCall(addImports, 'NE_MAIN_ID')
+      expect(call.from).toContain('/src/runtime/components/ne-skip-link-types')
+    }
+  })
 })
