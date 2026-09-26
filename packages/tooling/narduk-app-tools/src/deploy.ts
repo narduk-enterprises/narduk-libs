@@ -72,6 +72,49 @@ export function isDryRunDeploy(args: readonly string[]): boolean {
   return args.includes('--dry-run')
 }
 
+/**
+ * `build:ci` writes this into the Nitro output it just produced. A later
+ * `cf:build` replaces `.output` and removes it. create-narduk-app keeps the
+ * same filename; the two packages do not import each other.
+ */
+export const BUILD_CI_OUTPUT_MARKER = '.narduk-build-ci'
+
+function publishesWorkerOutput(action: DeployAction): boolean {
+  return action === 'deploy' || action === 'versions-upload'
+}
+
+/** Names `.narduk-build-ci` and `cf:build`. Dry-run stays free of smoke-gate tokens. */
+export function buildCiOutputNotice(dryRun: boolean): string {
+  const marker = `.output/${BUILD_CI_OUTPUT_MARKER}`
+  const facts =
+    `${marker} marks a build:ci Worker, which contains the public test-only ` +
+    'NUXT_SESSION_PASSWORD and NUXT_OG_IMAGE_SECRET.'
+  if (dryRun) {
+    return (
+      `narduk-app deploy: caution: ${facts} Dry-run publishes nothing. ` +
+      'A real deploy requires pnpm run cf:build.'
+    )
+  }
+  return `narduk-app deploy: refusing to publish. ${facts} Run pnpm run cf:build before deploying.`
+}
+
+/**
+ * True when this publish must stop. `triggers-deploy` applies routes on an
+ * already uploaded version and does not send `.output`. A dry run prints the
+ * notice and returns false: it publishes nothing, and the release smoke still
+ * has to reach Wrangler.
+ */
+export function markedBuildCiOutputBlocksPublish(
+  appDir: string,
+  action: DeployAction,
+  dryRun: boolean,
+): boolean {
+  if (!publishesWorkerOutput(action)) return false
+  if (!existsSync(join(appDir, '.output', BUILD_CI_OUTPUT_MARKER))) return false
+  console.error(buildCiOutputNotice(dryRun))
+  return !dryRun
+}
+
 export function readJsonc<T>(path: string): T {
   const errors: ParseError[] = []
   const value = parse(readFileSync(path, 'utf8'), errors, {
@@ -346,11 +389,9 @@ export function runDeploy(
   options: { keepVars?: boolean } = {},
 ): number {
   const { action, passthroughArgs } = parseDeployArgs(args)
-  if (
-    !isDryRunDeploy(passthroughArgs) &&
-    !isWorkersBuildDeployAllowed(env) &&
-    !isLocalDeployAllowed(env)
-  ) {
+  const dryRun = isDryRunDeploy(passthroughArgs)
+  if (markedBuildCiOutputBlocksPublish(appDir, action, dryRun)) return 1
+  if (!dryRun && !isWorkersBuildDeployAllowed(env) && !isLocalDeployAllowed(env)) {
     console.error(getDeployGuardMessage(action))
     return 1
   }
