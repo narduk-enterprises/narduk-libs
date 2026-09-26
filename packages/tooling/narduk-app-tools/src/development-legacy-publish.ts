@@ -137,10 +137,31 @@ const COMPOUND_CLOSERS: Record<string, ShellGroupKind> = { fi: 'if', done: 'loop
 const TRANSPARENT_GROUPS = new Set<ShellGroupKind>(['{', '(', 'if', 'loop', 'case'])
 const QUOTED_PART = /'[^']*'|"(?:\\.|[^"\\])*"|\\./gu
 
-/** Output thrown away for good: `>/dev/null 2>&1`, `2>/dev/null`, `&>/dev/null`. */
-const DISCARD = /(?:[12]?>|&>)\s*\/dev\/null(?:\s+2>&1)?/gu
+/**
+ * Output thrown away for good: `>/dev/null 2>&1`, `1>/dev/null 2>&1`,
+ * `&>/dev/null`, and `2>/dev/null` with no later `2>&…`. Redirections apply
+ * left to right, so a `2>&1` after `2>/dev/null` sends stderr to stdout again
+ * and is left in place for the capture check.
+ */
+const DISCARD =
+  /(?<![\w&<>])(?:1?>|&>)\s*\/dev\/null(?:\s+2>&1)?|(?<![\w&<>])2>\s*\/dev\/null(?!\s*2>&)/gu
 /** stderr sent anywhere but the terminal, or a descriptor juggled so it can be. */
 const STDERR_CAPTURE = /(?<![\w-])(?:2|[3-9]\d*)[<>]|&>|\|&|>&\s*(?!2\b)[\w$-]/u
+/**
+ * Output piped into something that runs it. A pipe normally carries stdout
+ * only, but `pnpm --filter … run`, `script(1)` and friends merge a child's
+ * stderr into their own stdout, so any pipe into an interpreter that reads
+ * its program from stdin counts. An interpreter given a program file (after
+ * nothing but `--long=value` style options) reads the pipe as data.
+ */
+const INTERPRETER_PIPE = new RegExp(
+  [
+    String.raw`\|&?\s*(?:(?:sudo|env|command|exec|nohup|time)\s+)*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|source|\.|eval|node|deno|bun|python\d*|perl|ruby|php)(?![\w.-])(?!(?:\s+--(?:no|experimental|trace|enable|disable|[\w-]+=)\S*)*\s+(?!\/dev\/|\/proc\/|-)(?=[^\s|;&<>()'"$\x60]*[./])[^\s|;&<>()'"$\x60]+(?:[\s;|&)]|$))`,
+    // xargs turns its input into arguments; it counts when those reach a shell or an env setter.
+    String.raw`\|&?\s*xargs\s[^|;&\n]*?(?<![\w-])(?:sh|bash|zsh|dash|ksh|fish|eval|env|cross-env|npx|pnpm|npm|yarn|node|bun|deno|export|declare|sudo)(?![\w-])`,
+  ].join('|'),
+  'u',
+)
 /** Code that can make `echo`/`printf` do something other than print. */
 const SHELL_REWIRING = new RegExp(
   [
@@ -148,6 +169,7 @@ const SHELL_REWIRING = new RegExp(
     `\\b(?:export|declare|typeset|local|readonly)\\s+-\\w*f`,
     `\\b(?:echo|printf)\\s*\\(\\s*\\)`,
     `\\bfunction\\s+(?:echo|printf)\\b`,
+    `\\beval\\b`,
     `\\bBASH_(?:ENV|FUNC)`,
     `(?:^|[\\s;&|'"])ENV=`,
   ].join('|'),
@@ -156,9 +178,23 @@ const SHELL_REWIRING = new RegExp(
 /** A caller that preloads code into node, which can rewire console or Error. */
 const NODE_PRELOAD =
   /\bNODE_OPTIONS\b|--(?:require|import|loader|experimental-loader)\b|(?:^|\s)-r\s/mu
-/** A JS file that can read another process's stderr. */
+/**
+ * A JS file that can read another process's output: any `stderr` or child
+ * `stdout`, `.output` or `.all` read, a `stdio` other than `'inherit'`, a
+ * callback or promisified `exec`/`execFile`, execa or zx, a caught
+ * `execSync`/`execFileSync` error (its message carries the child's stderr), or
+ * more `spawn`/`fork` calls than `stdio: 'inherit'` options (a child spawned
+ * with the default pipes). Only `stdio: 'inherit'` hands a child's output
+ * straight to the terminal.
+ */
 const JAVASCRIPT_CAPTURE =
-  /\bstderr\b|\bstdio\b|\.output\b|\b(?:exec|execFile|spawn|fork)\s*\(|\bcatch\b/u
+  /\bstderr\b|(?<!\bprocess\s*\.\s*)\bstdout\b|\.output\b|\.all\b|\bstdio\s*:(?!\s*['"`]inherit['"`])|\bstdio\b(?!\s*:)|\bexec(?:File)?\b|\bexeca|\$`/u
+const SPAWN_CALL = /\b(?:spawn(?:Sync)?|fork)\s*\(/gu
+const INHERITED_STDIO = /\bstdio\s*:\s*['"`]inherit['"`]/gu
+const capturesOutput = (text: string) =>
+  JAVASCRIPT_CAPTURE.test(text) ||
+  (/\bcatch\b/u.test(text) && /\bexec(?:File)?Sync\b/u.test(text)) ||
+  [...text.matchAll(SPAWN_CALL)].length > [...text.matchAll(INHERITED_STDIO)].length
 /** A JS file that can load other code or rewire console, Error or stderr. */
 const JAVASCRIPT_REWIRING =
   /\b(?:import|require|eval|Function|globalThis|global|Reflect|Proxy|defineProperty|defineProperties|setPrototypeOf|prototype|__proto__|assign|catch|uncaughtException|unhandledRejection|setUncaughtExceptionCaptureCallback|prepareStackTrace|Console|stderr|stdio|output)\b|\bprocess\s*(?:\[|\.\s*(?:on|once|addListener|prependListener|prependOnceListener)\b)/u
@@ -419,27 +455,38 @@ function javascriptMessages(line: string, offset: number): QuotedSegment[] {
     .map((segment) => ({ ...segment, start: segment.start + offset, end: segment.end + offset }))
 }
 
+/** Whether `text` names `token` as a whole word (a script name, a file name). */
+function mentions(text: string, token: string): boolean {
+  const escaped = token.replaceAll(/[$()*+.?[\\\]^{|}]/gu, String.raw`\$&`)
+  return new RegExp(`(?<![\\w:.-])${escaped}(?![\\w:-])`, 'u').test(text)
+}
+
 interface MessageScope {
   shell: boolean
   javascript: boolean
-  /** Whether something that can read a child's stderr may run this script name or file. */
-  capturable: (token: string) => boolean
+  /**
+   * Whether something that can read a child's stderr may run this script or
+   * file: it names the file, a script that runs it, or any script whose
+   * command chain reaches one of those.
+   */
+  capturable: (owner: { script?: string; file?: string }) => boolean
 }
 
 const NO_MESSAGES: MessageScope = { shell: false, javascript: false, capturable: () => true }
 
 /**
  * Whether messages in this scope can be excused at all. Every script and
- * scanned file is a possible caller: a script that captures stderr, sources
- * code, redefines a printer or preloads node code could run what a message
- * prints, and a pnpm script-shell setting replaces the shell every script
- * runs in. A JS file that can read a child's stderr withdraws the excuse from
- * any script or file it, or the script running it, names.
+ * scanned file is a possible caller: a script that captures stderr, pipes
+ * into an interpreter, evals, sources code, redefines a printer or preloads
+ * node code could run what a message prints, and a pnpm script-shell setting
+ * replaces the shell every script runs in. A JS file that can read a child's
+ * stderr withdraws the excuse when it, or a script that runs it, names the
+ * excused file or any script whose command chain reaches that file.
  */
 function messageScope(
   configs: readonly string[],
   texts: ReadonlyMap<string, string>,
-  runs: ReadonlyArray<{ command: string; files: readonly string[] }>,
+  runs: ReadonlyArray<{ name: string; command: string; files: readonly string[] }>,
 ): MessageScope {
   if (configs.some((text) => SCRIPT_SHELL.test(text))) return NO_MESSAGES
   const shell: string[] = []
@@ -447,23 +494,37 @@ function messageScope(
   for (const [origin, text] of texts) {
     const stderrCaptured = STDERR_CAPTURE.test(text.replaceAll(DISCARD, ''))
     if (!JAVASCRIPT.test(origin)) {
-      if (stderrCaptured) return NO_MESSAGES
+      if (stderrCaptured || INTERPRETER_PIPE.test(text)) return NO_MESSAGES
       shell.push(text)
-    } else if (stderrCaptured || JAVASCRIPT_CAPTURE.test(text)) capturing.set(origin, text)
+    } else if (stderrCaptured || capturesOutput(text)) capturing.set(origin, text)
   }
-  const callers = [
-    ...capturing.values(),
-    ...runs
-      .filter((run) => run.files.some((file) => capturing.has(file)))
-      .map((run) => run.command),
-  ]
+  /** Scripts that start a capturing JS file; their arguments may name what it runs. */
+  const runners = runs.filter((run) => run.files.some((file) => capturing.has(file)))
   return {
     shell: !shell.some((text) => SHELL_REWIRING.test(text)),
     javascript: !shell.some((text) => NODE_PRELOAD.test(text)),
-    capturable: (token) => {
-      const escaped = token.replaceAll(/[$()*+.?[\\\]^{|}]/gu, String.raw`\$&`)
-      const mention = new RegExp(`(?<![\\w:.-])${escaped}(?![\\w:-])`, 'u')
-      return callers.some((text) => mention.test(text))
+    capturable: ({ script, file }) => {
+      const tokens = new Set<string>()
+      if (script) tokens.add(script)
+      if (file) {
+        tokens.add(basename(file))
+        for (const run of runs) if (run.files.includes(file)) tokens.add(run.name)
+      }
+      /** Scripts that run the excused code themselves: they cannot read their own earlier stderr. */
+      const owners = new Set(tokens)
+      for (let grown = true; grown;) {
+        grown = false
+        for (const run of runs)
+          if (!tokens.has(run.name) && [...tokens].some((token) => mentions(run.command, token))) {
+            tokens.add(run.name)
+            grown = true
+          }
+      }
+      const callers = [
+        ...capturing.values(),
+        ...runners.filter((run) => !owners.has(run.name)).map((run) => run.command),
+      ]
+      return callers.some((text) => [...tokens].some((token) => mentions(text, token)))
     },
   }
 }
@@ -753,7 +814,7 @@ export function findLegacyPublishPaths(
   const scope = messageScope(configs, texts, runs)
   for (const { pkg, name, command, files } of runs) {
     const at = (reason: string) => findings.push({ packageJson: pkg.rel, script: name, reason })
-    const inline = armedOverride(command, false, scope.shell && !scope.capturable(name))
+    const inline = armedOverride(command, false, scope.shell && !scope.capturable({ script: name }))
     if (inline) {
       at(`sets ${inline.name}, a workstation publish override`)
       continue
@@ -763,7 +824,7 @@ export function findLegacyPublishPaths(
       const javascript = JAVASCRIPT.test(file)
       const messages =
         (javascript ? scope.javascript && javascriptFileMessages(text) : scope.shell) &&
-        !scope.capturable(basename(file))
+        !scope.capturable({ file })
       const armed = armedOverride(text, javascript, messages)
       if (!armed) continue
       at(

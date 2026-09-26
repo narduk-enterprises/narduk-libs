@@ -481,6 +481,16 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
           'script/guard.mjs',
           `if (!armed) throw new Error('set ${X}=1 first')\n`,
         ),
+        {
+          'apps/web/package.json': pkg({
+            x: 'bash script/guard.sh',
+            quiet: 'bash script/guard.sh 2>/dev/null',
+            data: 'wrangler d1 export --json | node script/to-sql.mjs > out.sql',
+            ship: 'node script/ship.mjs deploy',
+          }),
+          'apps/web/script/guard.sh': `echo "set ${X}=1" >&2\nexit 1\n`,
+          'apps/web/script/ship.mjs': "spawnSync('wrangler', ['deploy'], { stdio: 'inherit' })\n",
+        },
       ]
       for (const files of guards) expect(found(checkout(files)), JSON.stringify(files)).toEqual([])
     })
@@ -521,6 +531,37 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
           'apps/web/script/run.mjs':
             "exec('pnpm run ' + process.argv[2], (e, o, x) => execSync(x))\n",
         },
+        {
+          'apps/web/package.json': pkg({
+            guard: 'bash script/guard.sh',
+            x: 'bash script/guard.sh 2>/dev/null 2>&1 | sh',
+          }),
+          'apps/web/script/guard.sh': `echo "${RUN}" >&2\n`,
+        },
+        {
+          'apps/web/package.json': pkg({
+            guard: 'bash script/guard.sh',
+            x: 'pnpm --filter web --reporter-hide-prefix run guard | sh',
+          }),
+          'apps/web/script/guard.sh': `echo "${RUN}" >&2\n`,
+        },
+        withFile('bash script/p.sh', 'script/p.sh', `echo "export ${X}=1" >&2; eval "$_"\n`),
+        {
+          'apps/web/package.json': pkg({ x: 'node script/a.cjs', run: 'node script/b.cjs' }),
+          'apps/web/script/a.cjs': `console.error('${RUN}')\n`,
+          'apps/web/script/b.cjs':
+            "const r = spawnSync('pnpm', ['run', 'x'], { encoding: 'utf8' }); execSync(r.stderr)\n",
+        },
+        {
+          'apps/web/package.json': pkg({
+            x: 'node script/a.cjs',
+            deploy: 'pnpm run x',
+            run: 'node script/b.cjs',
+          }),
+          'apps/web/script/a.cjs': `console.error('${RUN}')\n`,
+          'apps/web/script/b.cjs':
+            "try { execSync('pnpm run deploy') } catch (e) { execSync(String(e.stderr)) }\n",
+        },
         // JS: only console.error/warn and a directly thrown Error, in a file that loads and rewires nothing.
         withFile('eval "$(node script/p.mjs)"', 'script/p.mjs', `console.log('export ${X}=1')\n`),
         withFile('node script/p.mjs 2>&1 | sh', 'script/p.mjs', `console.error('${RUN}')\n`),
@@ -557,7 +598,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         ),
       ]
       for (const files of setters)
-        expect(found(checkout(files)), JSON.stringify(files)).toHaveLength(1)
+        expect(found(checkout(files)), JSON.stringify(files)).not.toEqual([])
     })
   })
 

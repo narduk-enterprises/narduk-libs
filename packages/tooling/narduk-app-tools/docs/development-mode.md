@@ -151,16 +151,29 @@ on:
     variable count).
 
   No message is excused anywhere in scope when a script or scanned shell file
-  captures stderr (`2>&1`, `2>file`, `&>`, `|&`, descriptor juggling;
-  `>/dev/null 2>&1` and `2>/dev/null` only discard), sources code, sets a trap,
-  redefines `echo`/`printf` or exports a function, or when the checkout's
-  `.npmrc` or `pnpm-workspace.yaml` sets a script shell; a JS message is not
-  excused when a script preloads node code (`NODE_OPTIONS`, `--require`,
-  `--import`). A JS file that can read a child's stderr withdraws the excuse
-  from any script or file it, or the script that runs it, names. A string that
-  is run (`sh -c "npx cross-env NAME=1 …"`, `execSync("…")`), a here-document
-  body and a string spanning lines always count. A full-line comment (`#` in
-  shell, `//` in JS) is skipped.
+  captures stderr (`2>&1`, `2>file`, `&>`, `|&`, descriptor juggling; only
+  `>/dev/null 2>&1`, `1>/dev/null 2>&1`, `&>/dev/null` and a lone `2>/dev/null`
+  discard, so `2>/dev/null 2>&1` captures), pipes into an interpreter that reads
+  its program from stdin (`| sh`, `| node`, `| bash -s`, `| xargs sh`; a
+  `pnpm --filter … run` or `script(1)` wrapper merges stderr into that pipe; an
+  interpreter given a program file reads the pipe as data), sources code,
+  `eval`s anything, sets a trap, redefines `echo`/`printf` or exports a
+  function, or when the checkout's `.npmrc` or `pnpm-workspace.yaml` sets a
+  script shell; a JS message is not excused when a script preloads node code
+  (`NODE_OPTIONS`, `--require`, `--import`). A JS file that can read a child's
+  stderr (`stderr`, `stdio` other than `'inherit'`, `exec`/`execFile`, or a
+  caught `execSync`) withdraws the excuse when it, or a script that runs it,
+  names the excused file or any package script whose command chain reaches it
+  (`spawnSync('pnpm', ['run', 'deploy'])` where `deploy` runs `pnpm run guard`).
+  A string that is run (`sh -c "npx cross-env NAME=1 …"`, `execSync("…")`), a
+  here-document body and a string spanning lines always count. A full-line
+  comment (`#` in shell, `//` in JS) is skipped.
+
+  Known gaps in the excuse, accepted because each needs deliberate obfuscation
+  inside the app's own checkout: a capture spelled with ANSI-C escapes
+  (`$'…\x3e&1…'`), a capture in a file one level deeper than the scanned scope
+  (a file that a scanned file runs), a script name a JS caller computes at run
+  time, and a program file that evaluates what is piped into it.
 
 Entry never edits the app to disarm it: it cannot find an app's own
 authorization record, and an edit in the integration checkout would reach no
