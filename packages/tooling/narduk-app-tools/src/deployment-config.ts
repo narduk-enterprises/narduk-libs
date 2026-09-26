@@ -46,6 +46,9 @@ import { developmentSchema } from './development-config.js'
  * here, because an exempt app is not claiming conformance. */
 export const DEPLOYMENT_STANDARD = 'narduk-v1'
 
+/** The only `promotion.mode` values narduk-v1 accepts. */
+export const PROMOTION_MODES = ['auto-on-green', 'manual-dispatch'] as const
+
 /** The only builder narduk-v1 supports: Cloudflare Workers Builds. */
 export const DEPLOYMENT_BUILDER = 'workers-builds'
 
@@ -276,7 +279,7 @@ export const deploymentBlockSchema = z.strictObject({
   nonProductionDeployCommand: z.string().trim().min(1).max(500),
   nonProductionBranchBuilds: z.boolean(),
   promotion: z.strictObject({
-    mode: z.enum(['auto-on-green', 'manual-dispatch']),
+    mode: z.enum(PROMOTION_MODES),
     gateCheck: z.string().trim().min(1).max(200),
     credential: z.string().trim().min(1).max(300),
   }),
@@ -372,6 +375,21 @@ function issuesOf(error: z.ZodError): DeploymentIssue[] {
   }))
 }
 
+/** A block that never names `standard`. An older `strategy` key is part of the sentence. */
+export function missingDeploymentStandardDetail(raw: Record<string, unknown>): string {
+  const modes = PROMOTION_MODES.map((mode) => JSON.stringify(mode)).join(' or ')
+  const strategy = raw.strategy
+  const named =
+    typeof strategy === 'string' && strategy.trim() !== ''
+      ? ` The block names strategy ${JSON.stringify(strategy.trim())} instead of a standard.`
+      : ''
+  return (
+    `deployment.standard is missing; expected ${JSON.stringify(DEPLOYMENT_STANDARD)}.` +
+    named +
+    ` Accepted promotion.mode values: ${modes}.`
+  )
+}
+
 /**
  * Reads the `deployment` block out of a parsed `Config/cloudflare-app.json`.
  * Never throws: every outcome a checkout can present is a named result, because
@@ -383,6 +401,13 @@ export function readDeploymentBlock(cloudflareApp: unknown): DeploymentBlockOutc
   }
   const raw = (cloudflareApp as Record<string, unknown>).deployment
   if (raw === undefined) return { kind: 'absent' }
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const record = raw as Record<string, unknown>
+    const standard = record.standard
+    if (standard === undefined || standard === null || standard === '') {
+      return { kind: 'malformed', detail: missingDeploymentStandardDetail(record) }
+    }
+  }
   const envelope = deploymentEnvelopeSchema.safeParse(raw)
   if (!envelope.success) {
     return {
