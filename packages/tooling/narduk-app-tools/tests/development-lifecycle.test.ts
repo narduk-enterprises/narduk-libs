@@ -146,11 +146,26 @@ function repository(paired = false) {
       JSON.stringify({ name: index ? 'fixture-api' : 'fixture-app', account_id: ACCOUNT }),
     )
     writeFileSync(join(root, app, 'src', 'page.ts'), 'export const page = 1\n')
+    // create-narduk-app's component shape: deploy:dev is the enrolled command.
+    writeFileSync(
+      join(root, app, 'package.json'),
+      JSON.stringify({
+        name: index ? 'api' : 'web',
+        scripts: { 'deploy:dev': 'narduk-app development deploy' },
+      }),
+    )
   }
   mkdirSync(join(root, 'Config'))
   mkdirSync(join(root, 'migrations'))
   writeFileSync(join(root, 'migrations', '0001_init.sql'), 'create table t (id integer);\n')
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10.33.4' }))
+  // create-narduk-app's root shape: deploy:dev only forwards to the web component.
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({
+      packageManager: 'pnpm@10.33.4',
+      scripts: { 'deploy:dev': 'pnpm --filter web run deploy:dev' },
+    }),
+  )
   writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
   writeFileSync(join(root, '.gitignore'), 'node_modules/\n.output/\n.env\n')
   writeFileSync(join(root, 'obsolete.txt'), 'remove me\n')
@@ -1028,6 +1043,7 @@ describe('development enter and app-owned publish paths', { timeout: 30_000 }, (
   it('names the armed path in the dry run and refuses it', async () => {
     const h = harness()
     armLegacyDeploy(h.root, MERGED_PACKAGE)
+    const before = trackedBytes(h.root)
     await expect(
       runDevelopmentEnter(
         { approvalRef: 'owner#1', publisher: 'lane-a', refresh: false, dryRun: true },
@@ -1038,6 +1054,8 @@ describe('development enter and app-owned publish paths', { timeout: 30_000 }, (
       '[development]   ARMED legacy publish path: apps/web/package.json "deploy:dev" runs "script/dev/deploy_dev.sh", not narduk-app development deploy',
     )
     expect(h.logs).toContain('[development] dry run: no provider state was changed')
+    expect(trackedBytes(h.root)).toEqual(before)
+    expect(git(h.root, 'status', '--porcelain', '--untracked-files=all')).toBe('')
     expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
     expect(h.cloudflare.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
     expect(readActivation(REPO, h.state)).toBeUndefined()
@@ -1085,6 +1103,16 @@ describe('development enter and app-owned publish paths', { timeout: 30_000 }, (
       ),
     ).rejects.toThrow(/Retire it in this checkout first/u)
     expect(readActivation(REPO, h.state)!.mode).toBe('active')
+  })
+
+  it('reports, rather than crashes, when status cannot read the package scripts', async () => {
+    const h = harness()
+    await enter(h)
+    rmSync(join(h.root, 'apps/web/package.json'))
+    mkdirSync(join(h.root, 'apps/web/package.json'))
+    const report = await runDevelopmentStatus({ remote: false }, h.context)
+    expect(report.legacyPublishPaths).toBeUndefined()
+    expect(formatStatus(report)).toMatch(/legacy publish paths unknown: .*EISDIR/u)
   })
 })
 

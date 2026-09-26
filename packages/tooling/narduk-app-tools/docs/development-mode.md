@@ -113,16 +113,21 @@ the refusal would otherwise land on the next honest deploy. `enter`,
 `package.json` and each enrolled component's `appDir/package.json` and refuse
 on:
 
-- a `deploy:dev` script that runs anything but `narduk-app development deploy`
-  (optionally through `pnpm exec` or `npx`, with flags only);
+- a component `deploy:dev` that runs anything but
+  `narduk-app development deploy` (optionally through `pnpm exec` or `npx`, with
+  plain flags only, on one line). A root `deploy:dev` may instead only forward
+  to an enrolled component's own `deploy:dev`, as `create-narduk-app` writes it
+  (`pnpm --filter web run deploy:dev`, or `pnpm -C <appDir> run deploy:dev`);
 - a `deploy:dev` key declared more than once. Merging `main` into a branch that
   predates the conversion keeps both keys without a conflict, and JSON keeps the
   last one, so the check reads the resolved value and the duplicate, never a
   grep for the converted string;
+- a `predeploy:dev` or `postdeploy:dev` script, which pnpm runs around it;
 - any script that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or
-  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` itself, or runs a checkout file (such as
-  `script/dev/deploy_dev.sh`) that does. A guard that only reads the variable
-  does not count.
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` (`NAME=1 cmd`, `export`, `env`,
+  `cross-env`), itself or in a checkout file it runs (such as
+  `script/dev/deploy_dev.sh`). A guard that only reads the variable, or names it
+  in a quoted message, does not count.
 
 Entry never edits the app to disarm it: it cannot find an app's own
 authorization record, and an edit in the integration checkout would reach no

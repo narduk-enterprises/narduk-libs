@@ -551,6 +551,8 @@ export interface StatusReport {
   workflows?: Array<{ path: string; state: string }>
   /** App-owned publish paths armed in the checkout (agent-infrastructure#1679). */
   legacyPublishPaths?: LegacyPublishPath[]
+  /** Why the checkout's package scripts could not be read; armed paths are then unknown, not absent. */
+  legacyPublishUnknown?: string
   /** The newest automatic validation push after a verified deploy. */
   autoValidation?: ValidationHistoryEntry
 }
@@ -579,7 +581,11 @@ export async function runDevelopmentStatus(
   if (record) {
     report.autoValidation = readValidationHistory(stateDirectory, project.repository).at(-1)
     // A merge can re-arm a retired script after entry; status reads the checkout, not the record.
-    report.legacyPublishPaths = legacyPublishPaths(project, Object.keys(record.components))
+    try {
+      report.legacyPublishPaths = legacyPublishPaths(project, Object.keys(record.components))
+    } catch (error) {
+      report.legacyPublishUnknown = error instanceof Error ? error.message : String(error)
+    }
   }
   if (flags.remote && !record) report.workflows = heldElsewhere(project, github)
   if (flags.remote && record) {
@@ -630,6 +636,8 @@ export function formatStatus(report: StatusReport): string {
     lines.push(`  FEEDBACK PIN: ${record.pin.scenario} (since ${record.pin.pinnedAt})`)
   for (const finding of report.legacyPublishPaths ?? [])
     lines.push(`  ARMED LEGACY PUBLISH PATH: ${describeLegacyPublishPath(finding)}`)
+  if (report.legacyPublishUnknown)
+    lines.push(`  legacy publish paths unknown: ${report.legacyPublishUnknown}`)
   if (record.pendingAttempt)
     lines.push(`  UNRESOLVED ATTEMPT ${record.pendingAttempt.buildId}: run development resolve`)
   if (report.lastReceipt)
