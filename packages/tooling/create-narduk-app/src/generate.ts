@@ -641,14 +641,20 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // is 2 -- one PR per lane. The `groups.*.patterns` shape is the
       // D-TOOLCHAIN-1 recipe foundation:check item 5.2 accepts (narduk-libs#233
       // / PR #235); it does not care which group name carries the scope.
-      // There is no `registries:` block: Dependabot reads the committed
-      // `.npmrc` (`https://npm.nard.uk`) anonymously. A `registries:` entry
-      // with `scope:` would discard that `.npmrc` and re-add token auth
-      // (agent-infrastructure#1405, narduk-libs#568).
+      // One scope-less `npm-nard-uk` registry (narduk-libs#1129,
+      // agent-infrastructure#1940): Dependabot's proxy refuses egress to any
+      // host dependabot.yml does not declare, so without it every
+      // `@narduk-enterprises/*` lookup against npm.nard.uk is a 403 and the
+      // app silently stops getting internal updates. It carries no `scope:`,
+      // which would make Dependabot discard the committed `.npmrc`
+      // (agent-infrastructure#1405, narduk-libs#568). Its token is an
+      // org-level Dependabot secret holding a non-credential value: the
+      // mirror is anonymous and ignores it, but GitHub's validator rejects
+      // both a plaintext token and a URL-only entry. coding-standards
+      // `scripts/check-dependabot-template.py` enforces this exact shape.
       path: '.github/dependabot.yml',
-      // After D-PKG-6 there is no `registries:` / `scope:` block
-      // (narduk-libs#568): Dependabot follows the committed `.npmrc`. Item
-      // 5.2 is satisfied by the group patterns naming `@narduk-enterprises/*`.
+      // Item 5.2 is satisfied by the group patterns naming
+      // `@narduk-enterprises/*`, not by the registry.
       // `directory: "/"` (singular) matches the reference app: Dependabot's
       // npm ecosystem parses the whole pnpm workspace graph from the root
       // manifest, so the array-of-directories form this template previously
@@ -662,9 +668,16 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // every run given how often @narduk-enterprises/* publishes.
       contents: text(
         'version: 2',
+        'registries:',
+        '  npm-nard-uk:',
+        "    type: 'npm-registry'",
+        "    url: 'https://npm.nard.uk'",
+        "    token: '${{secrets.NPM_NARD_UK_PLACEHOLDER}}'",
         'updates:',
         "  - package-ecosystem: 'npm'",
         "    directory: '/'",
+        '    registries:',
+        "      - 'npm-nard-uk'",
         '    schedule:',
         "      interval: 'weekly'",
         "      day: 'monday'",
@@ -858,7 +871,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Default installs (`pnpm install`, CI, Workers Builds `cf:build`) need no GitHub Packages token. `scripts/gh-packages-run.mjs` stays in the repo as an opt-in break-glass helper: temporarily point `.npmrc` at `https://npm.pkg.github.com` and run through that script with `GH_PACKAGES_READ` if the mirror is down. Never write the token into `~/.npmrc`, a tracked repository file, or a per-app alias.',
         '',
-        'Dependabot reads the same anonymous mirror. The generated `dependabot.yml` has no `registries:` block and does not need `NARDUK_PLATFORM_GH_PACKAGES_READ`.',
+        "Dependabot reads the same anonymous mirror. The generated `dependabot.yml` declares it as a scope-less `npm-nard-uk` registry, because Dependabot's proxy blocks undeclared hosts; its token is the org-level `NPM_NARD_UK_PLACEHOLDER` Dependabot secret, a non-credential value the mirror ignores. It does not need `NARDUK_PLATFORM_GH_PACKAGES_READ`.",
         '',
         'Before the first push, onboarding runs pnpm install and commits pnpm-lock.yaml. CI and Workers Builds always use a frozen lockfile.',
         '',
