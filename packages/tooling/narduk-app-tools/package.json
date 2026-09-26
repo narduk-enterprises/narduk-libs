@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-app-tools",
-  "version": "0.23.0",
+  "version": "0.25.0",
   "private": false,
   "type": "module",
   "description": "Focused app-local development, migration, deployment, and asset tools.",

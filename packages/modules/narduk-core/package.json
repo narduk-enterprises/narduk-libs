@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-core",
-  "version": "2.15.0",
+  "version": "2.17.0",
   "private": false,
   "type": "module",
   "description": "Core Nuxt module, Worker runtime helpers, UI primitives, and database utilities for Narduk Cloudflare apps.",
@@ -26,6 +26,9 @@
     "./app/components/shared/*": {
       "import": "./runtime/app/components/shared/*.vue"
     },
+    "./app/share": {
+      "import": "./runtime/app/share.ts"
+    },
     "./app/composables/*": {
       "import": "./runtime/app/composables/*.ts"
     },
@@ -35,6 +38,9 @@
     },
     "./app/stores/*": {
       "import": "./runtime/app/stores/*.ts"
+    },
+    "./app/stored-state": {
+      "import": "./runtime/app/stored-state.ts"
     },
     "./app/types/*": {
       "types": "./runtime/app/types/*.d.ts"
@@ -104,6 +110,7 @@
     "lint": "narduk-lint",
     "lint:strict": "eslint . --max-warnings 0",
     "test:unit": "vitest run --coverage",
+    "test:cf-ssr-d1": "node scripts/prove-cf-ssr-d1.mjs",
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit",
     "quality:strict": "pnpm run lint && pnpm run typecheck && pnpm run format:check && pnpm run build",
     "format": "pnpm run prettier:fix",

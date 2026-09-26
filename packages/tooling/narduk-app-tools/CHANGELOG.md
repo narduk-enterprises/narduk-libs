@@ -1,5 +1,67 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.25.0
+
+### Minor Changes
+
+- 60a0fa6: narduk-app-tools: add `narduk-app auth agent-key create`
+  (narduk-libs#782). It creates a non-login user (no password, an undeliverable
+  `.invalid` address) and an API key for it in one D1 batch, writing the `users`
+  timestamps that hand SQL left out. The raw key goes only to the stdin of the
+  secret-sink command after `--` (such as the guarded nvault setter), never to
+  argv, stdout or a file, and D1 stores its SHA-256 hash. `--app-url` proves the
+  key with `GET /api/auth/api-keys` (401 without it, 200 or a missing-scope 403
+  with it). narduk-auth's README now says `GET /api/auth/me` is session-only and
+  names the endpoint that proves a key.
+- f5e3293: narduk-app-tools: `foundation:check:coverage` sub-check 9.8 flags a
+  file that fetches `https://data.nard.uk` directly instead of through
+  narduk-core's `createNardukDataClient` / `fetchNardukDataJson`
+  (narduk-libs#373). It fails when narduk-core is a dependency and warns
+  (`unknown`) otherwise. A file that names either shared entry point, or only
+  links to the origin, is not reported.
+
+## 0.24.0
+
+### Minor Changes
+
+- badb7d0: Add `narduk-app dev:seed`: loads `seed/{d1,kv,r2}/<BINDING>/`
+  fixtures into Wrangler's local D1/KV/R2 with the Cloudflare credential
+  variables removed from the child, so a checkout (or a cloud agent container)
+  reaches a seeded local environment with no production credential. Generated D1
+  apps get a starter `apps/web/seed/` fixture and a `dev:seed` script (#378).
+- 36976a4: Add `narduk-app manifests validate` and `validateCloudflareManifest`:
+  the wrangler ↔ `Config/cloudflare-app.json` parity check (bindings and crons
+  as sorted sets, `deployment.accountId`, `workersDev`/`previewUrls`) that apps
+  carried as their own drifted `validate-manifests.mjs` copies, parsed with
+  `jsonc-parser` (#996).
+
+### Patch Changes
+
+- 8a551eb: Add the marketing sections (components backlog item 21,
+  narduk-libs#268): `NeHero`, `NeFeatureGrid`, `NeCta` and `NeMarketingFooter`,
+  thin themed wrappers over Nuxt UI's `UPageHero`, `UPageGrid` + `UPageFeature`,
+  `UPageCTA` and `UFooter`. Each takes its primitive's own props and slots
+  unchanged and adds only the suite's token classes through the primitive's `ui`
+  prop (the headline and feature icons read `--ne-accent`, the CTA panel
+  `--ne-radius-panel`, the footer a `--ne-hairline` rule); a caller's `ui`
+  merges after them and wins a conflict. Their prop types are exported from the
+  package root.
+
+  The eslint-config and narduk-app-tools shared-component lists name the four so
+  the drift and item-13 tests match `narduk-shell`'s registry. Explorer
+  inventory, catalog and usage ship beside the components.
+
+  `create-narduk-app` takes the patch because it pins `narduk-shell` in
+  generated apps; its `PACKAGE_VERSIONS` literal is not hand-edited
+  (`versions:sync` re-pins it at `release:version`). The generator's
+  landing-page scaffold is not part of this change.
+
+- 39046cb: Name `NeAppShell` as a narduk-shell shared component, so the
+  no-local-copy lint rule and foundation item 13 recognise an app-local copy of
+  it, and the drift and item-13 tests match narduk-shell's registry
+  (narduk-libs#265). The libs explorer gains the `ne-app-shell` example its
+  coverage check requires.
+
 ## 0.23.0
 
 ### Minor Changes

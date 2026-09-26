@@ -221,3 +221,134 @@ describe('account deletion re-authentication on the Supabase backend (#923)', ()
     expect(state.upstreamDeletes).toEqual([])
   })
 })
+
+/**
+ * narduk-libs#1051: the stock route passes `verifyCredentials`, but an app that
+ * builds its own delete route on the public helper and passes no hooks used to
+ * fall through to the local hash check, which a Supabase user without a local
+ * hash skips — so `{}` deleted the account.
+ */
+describe('custom delete route built on the helper (#1051)', () => {
+  beforeEach(() => {
+    state.backend = 'supabase'
+    state.deleted = 0
+    state.localHashChecks = 0
+    state.localPasswordHash = null
+    state.signIns = []
+    state.upstreamDeletes = []
+    state.user = { ...SUPABASE_EMAIL_USER }
+  })
+
+  async function customDelete(body: { currentPassword?: string }) {
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+    return deleteCurrentUserAccount(
+      { context: {}, path: '/api/me/delete', method: 'POST' } as never,
+      state.user as never,
+      body,
+    )
+  }
+
+  it('refuses a Supabase delete with an empty body', async () => {
+    await expect(customDelete({})).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: 'Current password is required to delete this account.',
+    })
+    expect(state.deleted).toBe(0)
+  })
+
+  it('refuses a wrong password, checked against Supabase', async () => {
+    await expect(customDelete({ currentPassword: 'wrong' })).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: 'Invalid current password.',
+    })
+    expect(state.signIns).toEqual([{ email: 'parent@example.com', password: 'wrong' }])
+    expect(state.deleted).toBe(0)
+  })
+
+  it('accepts the right password', async () => {
+    await expect(customDelete({ currentPassword: 'right-password' })).resolves.toBeUndefined()
+    expect(state.localHashChecks).toBe(0)
+    expect(state.deleted).toBe(1)
+  })
+
+  it('refuses a caller with no Supabase session on a Supabase app', async () => {
+    // e.g. an API-key principal: nothing to re-authenticate, so fail closed.
+    const principal = { ...SUPABASE_EMAIL_USER }
+    delete (principal as { authBackend?: string }).authBackend
+    state.user = null
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+    await expect(
+      deleteCurrentUserAccount({ context: {} } as never, principal as never, {}),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(state.deleted).toBe(0)
+  })
+
+  it("refuses when the re-authenticated session is not the principal's account", async () => {
+    // A victim's API key resolves the principal; the cookie is the attacker's
+    // own session, so the attacker's own password must not unlock the delete.
+    const victim = { ...SUPABASE_EMAIL_USER, id: 'victim-1', email: 'victim@example.com' }
+    delete (victim as { authBackend?: string }).authBackend
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+
+    state.user = { ...SUPABASE_EMAIL_USER, id: 'attacker-1', email: 'attacker@example.com' }
+    await expect(
+      deleteCurrentUserAccount({ context: {} } as never, victim as never, {
+        currentPassword: state.supabasePassword,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 })
+
+    // An OAuth-only attacker session would otherwise need no password at all.
+    state.user = { ...state.user, authProviders: ['google'] }
+    await expect(
+      deleteCurrentUserAccount({ context: {} } as never, victim as never, {}),
+    ).rejects.toMatchObject({ statusCode: 401 })
+
+    expect(state.signIns).toEqual([])
+    expect(state.deleted).toBe(0)
+  })
+
+  it('keeps the binding when the Supabase check is passed as the verifyCredentials hook', async () => {
+    // The documented custom-route pattern: the hook now receives the account id.
+    const victim = { ...SUPABASE_EMAIL_USER, id: 'victim-1', email: 'victim@example.com' }
+    const { verifySupabaseAccountDeletionCredentials } =
+      await import('../server/lib/app-auth/profile')
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+
+    state.user = { ...SUPABASE_EMAIL_USER, id: 'attacker-1', email: 'attacker@example.com' }
+    await expect(
+      deleteCurrentUserAccount(
+        { context: {} } as never,
+        victim as never,
+        { currentPassword: state.supabasePassword },
+        { verifyCredentials: verifySupabaseAccountDeletionCredentials },
+      ),
+    ).rejects.toMatchObject({ statusCode: 401 })
+    expect(state.signIns).toEqual([])
+    expect(state.deleted).toBe(0)
+  })
+
+  it('lets a caller that re-authenticates itself opt out with its own verifyCredentials', async () => {
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+    await expect(
+      deleteCurrentUserAccount(
+        { context: {} } as never,
+        state.user as never,
+        {},
+        {
+          verifyCredentials: async () => {},
+        },
+      ),
+    ).resolves.toBeUndefined()
+    expect(state.signIns).toEqual([])
+    expect(state.deleted).toBe(1)
+  })
+
+  it('keeps the local backend on the local hash check', async () => {
+    state.backend = 'local'
+    state.localPasswordHash = 'local-hash'
+    state.user = { ...SUPABASE_EMAIL_USER, authBackend: 'local' } as AppSessionUser
+    await expect(customDelete({})).rejects.toMatchObject({ statusCode: 400 })
+    await expect(customDelete({ currentPassword: 'old-local-password' })).resolves.toBeUndefined()
+    expect(state.signIns).toEqual([])
+  })
+})

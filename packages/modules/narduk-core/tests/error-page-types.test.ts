@@ -73,7 +73,22 @@ describe('app/error-page types (narduk-libs#521)', () => {
       'utf-8',
     )
 
-    expect(sfc).toMatch(/defineProps<\{\s*error: NuxtError\s*\}>\(\)/)
-    expect(declaration).toMatch(/interface EstateErrorPageProps \{\s*error: NuxtError\s*\}/)
+    const propNames = (block: string | undefined) =>
+      [...(block ?? '').matchAll(/^\s*(\w+)\??:/gmu)].map((match) => match[1]).sort()
+    const sfcProps = propNames(/defineProps<\{([^}]*)\}>\(\)/u.exec(sfc)?.[1])
+    const declaredProps = propNames(
+      /interface EstateErrorPageProps \{([\s\S]*?)\n\}/u
+        .exec(declaration)?.[1]
+        ?.replaceAll(/\/\*\*.*\*\//gu, ''),
+    )
+
+    expect(sfcProps).toContain('error')
+    expect(declaredProps).toEqual(sfcProps)
+    expect(sfc).toMatch(/\berror: NuxtError\b/)
+    expect(declaration).toMatch(/\berror: NuxtError\b/)
   })
+
+  it('type-checks a consumer that uses every seam (narduk-libs#976)', () => {
+    expect(diagnosticsFor('seams.ts')).toEqual([])
+  }, 60_000)
 })

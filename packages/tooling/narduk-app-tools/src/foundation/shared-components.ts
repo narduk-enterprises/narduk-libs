@@ -38,6 +38,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeMeter',
       'NePageHeader',
       'NePager',
+      'NeProse',
       'NeSearchInput',
       'NeSectionHeader',
       'NeSettingsPage',

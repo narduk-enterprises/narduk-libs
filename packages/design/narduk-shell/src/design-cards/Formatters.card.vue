@@ -48,6 +48,11 @@ const dates = [
   },
   { call: 'formatRelative(at, { now })', output: chicago.formatRelative(AT, { now: NOW }) },
   { call: 'formatDate(null)', output: chicago.formatDate(null) },
+  // The day key: 04:30 UTC on the 8th is still the 7th on a Chicago clock.
+  {
+    call: "calendarDateIn('2026-03-08T04:30:00Z')",
+    output: chicago.calendarDateIn('2026-03-08T04:30:00Z'),
+  },
 ]
 
 const numbers = [

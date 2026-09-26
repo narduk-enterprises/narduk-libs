@@ -1,5 +1,70 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.9.0
+
+### Minor Changes
+
+- a29099c: `./format` adds `calendarDateIn` and `isSameCalendarDay`: the
+  calendar date of an instant in a named zone as a sortable `YYYY-MM-DD` key,
+  read from `Intl`'s parts rather than the `en-CA` formatted-string trick five
+  apps hand-rolled. Both are also on `createFormatters()`'s bound set
+  (narduk-libs#992).
+- adcaf7a: `NeDataTable` can make a missing cell read as a word instead of a
+  fixed em dash. `missingText` on the table sets it for every cell, and
+  `missingText` on a `NeDataColumn` (a string, or a function of the row)
+  overrides it for that column. The text is drawn visible and `text-dimmed`, so
+  sighted and screen-reader users read the same word ("unreported", "unset",
+  "not claimed"). With neither set, the table keeps the em dash with "No value"
+  for a screen reader, as before (#1059).
+
+## 0.8.0
+
+### Minor Changes
+
+- 8a551eb: Add the marketing sections (components backlog item 21,
+  narduk-libs#268): `NeHero`, `NeFeatureGrid`, `NeCta` and `NeMarketingFooter`,
+  thin themed wrappers over Nuxt UI's `UPageHero`, `UPageGrid` + `UPageFeature`,
+  `UPageCTA` and `UFooter`. Each takes its primitive's own props and slots
+  unchanged and adds only the suite's token classes through the primitive's `ui`
+  prop (the headline and feature icons read `--ne-accent`, the CTA panel
+  `--ne-radius-panel`, the footer a `--ne-hairline` rule); a caller's `ui`
+  merges after them and wins a conflict. Their prop types are exported from the
+  package root.
+
+  The eslint-config and narduk-app-tools shared-component lists name the four so
+  the drift and item-13 tests match `narduk-shell`'s registry. Explorer
+  inventory, catalog and usage ship beside the components.
+
+  `create-narduk-app` takes the patch because it pins `narduk-shell` in
+  generated apps; its `PACKAGE_VERSIONS` literal is not hand-edited
+  (`versions:sync` re-pins it at `release:version`). The generator's
+  landing-page scaffold is not part of this change.
+
+- 39046cb: Add `NeAppShell` (components backlog item 18, narduk-libs#265): the
+  opt-in application frame — a rail of labelled, always-expanded sections whose
+  active item comes from the router, with ArrowUp/ArrowDown/Home/End focus
+  movement, a drawer only below Nuxt UI's `lg` breakpoint, `rail-top` /
+  `rail-bottom` / `navbar` / `navbar-right` slots, and one `<main>` with a skip
+  link. Built on `UDashboardGroup`, `UDashboardSidebar`, `UDashboardNavbar` and
+  `UNavigationMenu`. Nothing is registered as a layout and nothing is
+  scaffolded.
+
+  New module options `accent`, `structure` and `sections` pass through
+  `app.config.nardukShell` as a default the app's own `app.config.ts` beats.
+  `accent` / `structure` set `--ne-accent` / `--ne-structure` app-wide,
+  teleported overlays included, through one head `<style>`; with neither set
+  nothing is written. `useNardukShellSections()` is auto-imported (also with
+  `components: false`): shared, SSR-safe rail state seeded from `sections`.
+
+### Patch Changes
+
+- 3026594: `formatCompact` no longer throws a `RangeError` when
+  `minimumFractionDigits` is above its default ceiling of one digit; the ceiling
+  rises to meet it. `formatPercent` now honours `minimumFractionDigits` /
+  `maximumFractionDigits` like the other number formatters instead of dropping
+  them; its one-digit default applies only when none of `digits` or the pair is
+  given (narduk-libs#937).
+
 ## 0.7.2
 
 ### Patch Changes

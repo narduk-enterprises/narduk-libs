@@ -6,6 +6,7 @@ import {
   resolveAuthEnvironmentForEvent,
 } from '#narduk-auth-server/utils/auth-runtime-env'
 
+import { resolveAppleSignInConfig } from '../../../shared/utils/apple-sign-in-config'
 import { resolveWebauthnConfig } from '../../../shared/utils/webauthn-config'
 
 /**
@@ -22,15 +23,22 @@ import { resolveWebauthnConfig } from '../../../shared/utils/webauthn-config'
  */
 export default defineEventHandler((event) => {
   const resolved = resolveAuthEnvironmentForEvent(event)
+  const env = readAuthRuntimeEnv(event)
   const webauthn = resolveWebauthnConfig({
     authBackend: resolved.authBackend,
     authProviders: resolved.authProviders,
-    env: readAuthRuntimeEnv(event),
+    env,
+  })
+  const apple = resolveAppleSignInConfig({
+    authBackend: resolved.authBackend,
+    authProviders: resolved.authProviders,
+    env,
   })
   setAppResponseHeader(event, 'Cache-Control', 'private, no-store')
   return {
     authBackend: resolved.authBackend,
     authProviders: resolved.authProviders,
+    appleEnabled: apple.webEnabled,
     passkeysEnabled: webauthn.enabled,
   }
 })

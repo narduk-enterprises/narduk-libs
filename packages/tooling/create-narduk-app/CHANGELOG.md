@@ -1,5 +1,310 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.5
+
+### Patch Changes
+
+- 60a0fa6: narduk-app-tools: add `narduk-app auth agent-key create`
+  (narduk-libs#782). It creates a non-login user (no password, an undeliverable
+  `.invalid` address) and an API key for it in one D1 batch, writing the `users`
+  timestamps that hand SQL left out. The raw key goes only to the stdin of the
+  secret-sink command after `--` (such as the guarded nvault setter), never to
+  argv, stdout or a file, and D1 stores its SHA-256 hash. `--app-url` proves the
+  key with `GET /api/auth/api-keys` (401 without it, 200 or a missing-scope 403
+  with it). narduk-auth's README now says `GET /api/auth/me` is session-only and
+  names the endpoint that proves a key.
+- d65a7a8: `deleteCurrentUserAccount` / `deleteCurrentUserAccountBridge` now
+  re-authenticate a Supabase caller against Supabase
+  (`verifySupabaseAccountDeletionCredentials`) when the caller passes no
+  `verifyCredentials` hook (narduk-libs#1051). An app that built its own delete
+  route on the public helper used to fall through to the local password-hash
+  check, which a Supabase-provisioned user (no local hash) skipped, so `{}`
+  deleted the account. A principal without a session backend (an API key) takes
+  the app's backend, so on a Supabase app it fails closed with 401, and the
+  Supabase session it re-authenticates must belong to the account being deleted:
+  a key beside someone else's session cookie also gets 401.
+  `verifySupabaseAccountDeletionCredentials` takes an optional `{ userId }` for
+  the same binding, and a `verifyCredentials` hook now receives `{ userId }` as
+  its third argument, so passing that function as the hook keeps the binding.
+  Supply `verifyCredentials` only to replace the check with your own.
+- 0f2e149: narduk-auth: Sign in with Apple on the local D1 backend
+  (narduk-libs#164, library side). New `GET /api/auth/apple/start` and
+  `POST /api/callbacks/auth/apple` run Apple's web flow (`form_post`, state
+  cookie, SHA-256 nonce) and verify the identity token natively against Apple's
+  JWKS (`iss`, `aud`, `exp`, nonce), with no hosted auth and no client-secret
+  JWT. `startOAuthFlow` and `signInWithNativeApple` no longer 501 on the local
+  backend when `AUTH_APPLE_SERVICES_ID` / `AUTH_APPLE_NATIVE_CLIENT_IDS` are
+  set, and `users.apple_id` is populated. `/api/auth/runtime-public` reports
+  `appleEnabled`, which the login and register cards use instead of requiring
+  the Supabase backend. An existing account links to an Apple ID only when the
+  app has proven its email.
+- e4c5dcb: narduk-core: the estate error page (`./app/error-page`) gains seams
+  so apps wrap it instead of forking it (narduk-libs#976): `copy` (title and
+  description per status, with a `default`), `links`, `homeLabel`, `homeTo`,
+  `retryLabel`, `layout`, `ui` colour classes in place of hardcoded
+  `text-primary`, an awaited `onBeforeClear(error, action)` hook whose failures
+  never block recovery, and an `#actions` slot. The detail redaction outside
+  `previewSafeMode`, `noindex, nofollow`, and the request id cannot be
+  overridden. With no new prop set, the page renders as before. The export's
+  type declaration covers every new prop.
+- a29099c: `./format` adds `calendarDateIn` and `isSameCalendarDay`: the
+  calendar date of an instant in a named zone as a sortable `YYYY-MM-DD` key,
+  read from `Intl`'s parts rather than the `en-CA` formatted-string trick five
+  apps hand-rolled. Both are also on `createFormatters()`'s bound set
+  (narduk-libs#992).
+- f5e3293: narduk-app-tools: `foundation:check:coverage` sub-check 9.8 flags a
+  file that fetches `https://data.nard.uk` directly instead of through
+  narduk-core's `createNardukDataClient` / `fetchNardukDataJson`
+  (narduk-libs#373). It fails when narduk-core is a dependency and warns
+  (`unknown`) otherwise. A file that names either shared entry point, or only
+  links to the origin, is not reported.
+- 8d88b3d: `<AppMapKit>` no longer throws a `TypeError` when `createPinElement`
+  or `itemLabel` is set at mount and later becomes `undefined`. The pin layer's
+  wrappers read the live prop with optional chaining, the same way `pinGeometry`
+  and `itemKey` already did: a missing glyph renders an empty one, and a missing
+  label writes the empty accessible name the pin layer defaults to (#1038).
+- adcaf7a: `NeDataTable` can make a missing cell read as a word instead of a
+  fixed em dash. `missingText` on the table sets it for every cell, and
+  `missingText` on a `NeDataColumn` (a string, or a function of the row)
+  overrides it for that column. The text is drawn visible and `text-dimmed`, so
+  sighted and screen-reader users read the same word ("unreported", "unset",
+  "not claimed"). With neither set, the table keeps the em dash with "No value"
+  for a screen reader, as before (#1059).
+- e49a414: Add
+  `resolveBuildDeploymentTarget(env?, { productionBranch?, default? })` under
+  `@narduk-enterprises/narduk-seo/shared/deploymentTarget`, returning
+  `{ target, source }` from the explicit deploy-target variables, then the
+  Workers Builds / Pages branch, then a default. The module now falls back to
+  the branch when no `NARDUK_DEPLOY_TARGET` (or `NUXT_PUBLIC_` equivalent) is
+  set, so a branch build is noindexed as `preview` and a `main` build counts as
+  `production` for `hostAwareIndexing` without a `nuxt.config.ts` write-back. A
+  build with neither variable keeps today's unset target (narduk-libs#999). Apps
+  that deploy production from another branch set `nardukSeo.productionBranch`
+  (default `main`).
+- d092fec: Add
+  `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+  under `@narduk-enterprises/narduk-seo/shared/sitemapFromListing`: a pure
+  helper that turns a listing of entities into `@nuxtjs/sitemap` URL rows. It
+  keeps input order, skips items whose `loc` builder returns a blank value,
+  dedupes by `loc` (first wins) and normalises `lastmod` to an ISO string. The
+  README gains a "Programmatic SEO kit" section tying it to the structured-data
+  composables and the OG image pipeline (narduk-libs#375).
+- 6e7286c: narduk-core: `useShare`, native share with a clipboard fallback and a
+  cancel-aware outcome (narduk-libs#994). New explicit export
+  `@narduk-enterprises/narduk-core/app/share`: `share(content, { fallback })`
+  answers `'shared' | 'copied' | 'cancelled' | 'failed'`. A dismissed sheet is
+  `'cancelled'` and never overwrites the clipboard. Any other share failure
+  falls back to the clipboard, and a clipboard refusal is reported.
+  `copy(text)`, `copied` and a hydration-safe `canNativeShare` come with it;
+  `createSharer` is the Vue-free half. Nothing is auto-imported.
+- 9434163: narduk-core: `useStoredState`, a hydration-safe, validated,
+  failure-tolerant Web Storage ref (narduk-libs#993). New explicit export
+  `@narduk-enterprises/narduk-core/app/stored-state`:
+  `useStoredState(key, options)` holds the default on the server and first
+  paint, applies the stored value after mount, validates it, writes changes back
+  and offers `.clear()`; `createStoredState` is the Nuxt-free half. Every
+  storage access, including the `window.localStorage` property itself, is
+  try/caught. `usePersistentTab` now resolves its storage through the same
+  guarded accessor, so blocked storage no longer throws from its restore or its
+  write watcher. Nothing is auto-imported.
+
+## 0.14.4
+
+### Patch Changes
+
+- cbfcc73: Add `server/utils/chatCompletions`: `chatCompletion` /
+  `chatCompletionJson`, a provider-neutral OpenAI-compatible chat client with
+  `baseUrl`, `maxTokens`, JSON mode, a per-attempt timeout, a 5xx/network retry,
+  usage in the result and sanitized H3 errors that never carry the raw provider
+  body (#985). `grokChat` is unchanged.
+- badb7d0: Add `narduk-app dev:seed`: loads `seed/{d1,kv,r2}/<BINDING>/`
+  fixtures into Wrangler's local D1/KV/R2 with the Cloudflare credential
+  variables removed from the child, so a checkout (or a cloud agent container)
+  reaches a seeded local environment with no production credential. Generated D1
+  apps get a starter `apps/web/seed/` fixture and a `dev:seed` script (#378).
+- 36976a4: Add `narduk-app manifests validate` and `validateCloudflareManifest`:
+  the wrangler ↔ `Config/cloudflare-app.json` parity check (bindings and crons
+  as sorted sets, `deployment.accountId`, `workersDev`/`previewUrls`) that apps
+  carried as their own drifted `validate-manifests.mjs` copies, parsed with
+  `jsonc-parser` (#996).
+- 918cbe1: narduk-auth: add `server/utils/request-principal` (narduk-libs#980).
+  `resolveRequestPrincipal(event, options)` returns the caller, or `null` for an
+  anonymous caller or a recovery-mode / MFA-step-up session that the
+  restricted-session allowlists refuse for this request, so tenancy guards keep
+  their own 401/404 choice without skipping the rules `requireAuth` applies. API
+  keys (`allowApiKey`, with optional `requiredApiKeyScopes`) and native bearers
+  (`allowNative`) are opt-in; `emailVerified` comes from narduk-auth's proof,
+  not the raw session field. `resolveTenancyUserId` is a ready-made
+  narduk-tenancy `resolveUserId`. `session-privilege` also exports
+  `sessionPrivilegeRefusal`, the non-throwing form of
+  `assertSessionPrivilegeAllowsRequest`. The narduk-tenancy README's guard
+  example now uses `resolveTenancyUserId`.
+- 830f3ed: Supabase account deletion (narduk-libs#1052, the rest of #923): a
+  social-only account (no `email` provider) now needs a recent sign-in — its
+  `auth_sessions` row created within `RECENT_SIGN_IN_WINDOW_SECONDS` (10
+  minutes) — or the delete answers 403 `reauthentication_required`; it used to
+  delete with no re-authentication at all. The upstream session created by the
+  current-password check (deletion and password change) is signed out with
+  `scope: 'local'` once the check passes. Invited or magic-link users with the
+  `email` provider are held to the password on purpose, and the comment and
+  README now say so.
+- abb9b15: narduk-core: D1 bound-parameter chunking counts parameters, not
+  values (narduk-libs#988). `chunkD1BoundValues`, `runD1Chunked` and
+  `collectD1ChunkedRows` take `parametersPerValue` and `reservedParameters`,
+  derive the chunk size from them, and throw at call time when an explicit
+  `chunkSize` would overrun. New `chunkD1Rows(rows, table)` sizes multi-row
+  `INSERT` chunks from the table's column count. With no new option set,
+  behaviour is unchanged.
+- 39046cb: Deprecate `LayerAppShell`, `LayerChromelessShell` and
+  `LayerDashboardShell` in favour of narduk-shell's `NeAppShell` (components
+  backlog item 18, narduk-libs#265). They will be removed in the next
+  narduk-core major. Behaviour is unchanged: this adds `@deprecated` JSDoc and a
+  README migration mapping only, with no runtime warning, since core's own
+  `app.vue` and `dashboard` layout still render them.
+- 3026594: `formatCompact` no longer throws a `RangeError` when
+  `minimumFractionDigits` is above its default ceiling of one digit; the ceiling
+  rises to meet it. `formatPercent` now honours `minimumFractionDigits` /
+  `maximumFractionDigits` like the other number formatters instead of dropping
+  them; its one-digit default applies only when none of `digits` or the pair is
+  given (narduk-libs#937).
+- 4276bf3: narduk-core: keyset cursors for cursor-mode list routes
+  (narduk-libs#987). New explicit export
+  `@narduk-enterprises/narduk-core/server/list-cursor`: `encodeListCursor`
+  renders a versioned base64url cursor bound to the route's endpoint, sort and
+  hashed `bind` values; `readListCursor` / `decodeListCursor` read it back and
+  refuse any mismatch with one `400 cursor_invalid`; and `keysetAfter` is the
+  tie-safe seek predicate (`(a > ?) OR (a = ? AND b > ?) ...`) that stops rows
+  sharing a timestamp from being skipped across a page boundary. Nothing is
+  auto-imported.
+- d0a4ba0: `useLocalBusinessSchema` now emits its `openingHours` strings (the
+  schema.org text form, `'Mo-Fr 09:00-17:00'`) under `openingHours`. They used
+  to land under `openingHoursSpecification`, whose range is structured
+  `OpeningHoursSpecification` objects, so every page that passed opening hours
+  shipped invalid LocalBusiness JSON-LD (narduk-libs#944). The option type is
+  now exported as `LocalBusinessOptions`.
+- b5932aa: `declutter()` (`./marks`) now sizes its merge grid from the largest
+  item radius, so overlapping discs with a radius above 24 px merge wherever
+  they sit on screen instead of depending on grid position (#933).
+- 8a551eb: Add the marketing sections (components backlog item 21,
+  narduk-libs#268): `NeHero`, `NeFeatureGrid`, `NeCta` and `NeMarketingFooter`,
+  thin themed wrappers over Nuxt UI's `UPageHero`, `UPageGrid` + `UPageFeature`,
+  `UPageCTA` and `UFooter`. Each takes its primitive's own props and slots
+  unchanged and adds only the suite's token classes through the primitive's `ui`
+  prop (the headline and feature icons read `--ne-accent`, the CTA panel
+  `--ne-radius-panel`, the footer a `--ne-hairline` rule); a caller's `ui`
+  merges after them and wins a conflict. Their prop types are exported from the
+  package root.
+
+  The eslint-config and narduk-app-tools shared-component lists name the four so
+  the drift and item-13 tests match `narduk-shell`'s registry. Explorer
+  inventory, catalog and usage ship beside the components.
+
+  `create-narduk-app` takes the patch because it pins `narduk-shell` in
+  generated apps; its `PACKAGE_VERSIONS` literal is not hand-edited
+  (`versions:sync` re-pins it at `release:version`). The generator's
+  landing-page scaffold is not part of this change.
+
+- 39046cb: Name `NeAppShell` as a narduk-shell shared component, so the
+  no-local-copy lint rule and foundation item 13 recognise an app-local copy of
+  it, and the drift and item-13 tests match narduk-shell's registry
+  (narduk-libs#265). The libs explorer gains the `ne-app-shell` example its
+  coverage check requires.
+- 39046cb: Add `NeAppShell` (components backlog item 18, narduk-libs#265): the
+  opt-in application frame — a rail of labelled, always-expanded sections whose
+  active item comes from the router, with ArrowUp/ArrowDown/Home/End focus
+  movement, a drawer only below Nuxt UI's `lg` breakpoint, `rail-top` /
+  `rail-bottom` / `navbar` / `navbar-right` slots, and one `<main>` with a skip
+  link. Built on `UDashboardGroup`, `UDashboardSidebar`, `UDashboardNavbar` and
+  `UNavigationMenu`. Nothing is registered as a layout and nothing is
+  scaffolded.
+
+  New module options `accent`, `structure` and `sections` pass through
+  `app.config.nardukShell` as a default the app's own `app.config.ts` beats.
+  `accent` / `structure` set `--ne-accent` / `--ne-structure` app-wide,
+  teleported overlays included, through one head `<style>`; with neither set
+  nothing is written. `useNardukShellSections()` is auto-imported (also with
+  `components: false`): shared, SSR-safe rail state seeded from `sections`.
+
+- 9f8e206: `mapOverviewCamera` (`./marks`) frames a point set that straddles the
+  antimeridian on its own data. It used a plain min/max of longitudes, so any
+  crossing set spanned 360 degrees minus its short arc and always fell back to
+  `NORTH_AMERICA_OVERVIEW`. Longitudes are now unwrapped around their largest
+  gap before the outlier trim (the rule `computeLongitudeSpan` uses); `span.lng`
+  is the short arc and `center.lng` is normalised to -180..180. A set whose
+  largest gap already sits across +/-180 is framed exactly as before
+  (narduk-libs#932).
+- a703b1b: Passkey routes now answer 503 "Passkeys unavailable: server
+  misconfiguration" and log the cause when `@simplewebauthn/server` fails to
+  load, instead of an opaque 500 (narduk-libs#892). The library, including its
+  `helpers` entry, is now imported lazily on the first ceremony rather than at
+  module load, so a load failure such as #786's missing Reflect polyfill rejects
+  where it can be answered. The error and its `cause` chain are logged under
+  `AppAuth`; the cause never reaches the response. `readPresentedChallenge`
+  decodes base64url with the platform `atob`, so the pure ceremony checks no
+  longer import the library at all. Successful ceremonies behave as before.
+- 1ad30f8: `hitTestPolygonOverlays` no longer reports a hit for a point inside a
+  polygon's hole. A drawable's `rings` are `[outer, ...holes]` and the overlay
+  layer draws the holes empty, so containment is now even-odd across rings; a
+  tap on the empty water of a lake no longer selects the surrounding polygon,
+  and falls through to a polygon drawn inside the hole (narduk-libs#931).
+- 591f07c: Account deletion now re-authenticates Supabase email+password users
+  against Supabase. `POST /api/auth/account/delete` only checked the local
+  `users.password_hash`, which Supabase-provisioned users never have, so on the
+  Supabase backend a request with `{}` deleted the local user and the upstream
+  identity with no password. A linked user with a stale local hash had the
+  opposite problem: deletion demanded the old local password. On a Supabase
+  session the route now verifies `currentPassword` with `signInWithPassword`,
+  the same check password change uses, and never consults the local hash
+  (narduk-libs#923).
+
+  `deleteCurrentUserAccountBridge` (and its `deleteCurrentUserAccount` alias)
+  accepts a new optional `verifyCredentials` hook that replaces the local hash
+  check; the new `verifySupabaseAccountDeletionCredentials` export is the
+  Supabase one. Provider-only accounts and the local backend behave as before.
+
+- 9e0f2f2: Supabase logout now revokes only the current session upstream.
+  `POST /api/auth/logout` called `signOut()` with no options, and
+  `@supabase/auth-js` defaults that to `{ scope: 'global' }`, which revoked
+  every session the user held at the authority: their other devices, and every
+  other app on the same Supabase project, were signed out within one
+  revalidation window. It now calls `signOut({ scope: 'local' })`
+  (narduk-libs#921). The local backend is unchanged.
+- 1e4b5fe: Add `narduk-testkit e2e check|setup|run` (narduk-libs#997), the
+  shared replacement for the `scripts/setup-playwright-browsers.mjs` and
+  `scripts/run-web-e2e.mjs` copies in 13 apps. `check` launches Chromium
+  headless (an existing executable is not proof it starts) and quotes the launch
+  error; `setup` runs the app's `playwright install chromium` into the ambient
+  `PLAYWRIGHT_BROWSERS_PATH` or Playwright's shared machine cache, never a
+  per-checkout one; `run` checks, then runs `playwright test` with the default
+  config, `--project=web` only when the caller chose no project (Playwright
+  accumulates repeated `--project` flags), and `--import tsx` once when the app
+  has tsx. `playwright/config` also exports `resolveBrowserCachePath(env)` and
+  `withDefaultProject(args, project)` for apps that keep a custom runner.
+- 471374e: Add `server/kit/vitest` with `nuxtVitestAliases({ appRoot })` and
+  `server/kit/nitro-runtime-stub` (narduk-libs#998). The helper builds Vite
+  `resolve.alias` entries for Nuxt's `#` and `~` aliases from the table Nuxt
+  writes (`.nuxt/tsconfig.json`), so `#layer`, `#narduk-core/schema` and
+  `#narduk-core/postgres-runtime` follow narduk-core's `module.ts` (including
+  the postgres backend) instead of hand-copied paths. It never aliases a bare
+  package name, keeps exact and prefix keys distinct, and throws naming
+  `nuxt prepare` when the table is missing. `nitropack/runtime` (anchored) and
+  `#imports` point at one stub with `useRuntimeConfig`, `setTestRuntimeConfig`,
+  `resetTestRuntimeConfig` and a throwing `useEvent`.
+- 5d93591: Add `@narduk-enterprises/narduk-testkit/e2e/readiness`:
+  `registerReadinessSetup` is the body of the preset's `setup` project (base URL
+  → `/api/health` status `ok|degraded` plus optional app assertions → warm each
+  listed route once), so apps stop repeating per-spec `beforeAll` readiness
+  guards (#1000).
+- b3c821f: New `@narduk-enterprises/narduk-core/server/wait-until`, the
+  background-work helper five apps hand-rolled (#991). `resolveWaitUntil(event)`
+  returns the runtime's `waitUntil` bound to its owner, looking at
+  `event.waitUntil`, then the Cloudflare `ExecutionContext`, then
+  `event.context.waitUntil`, and walks a Nitro internal fetch to its SSR parent
+  event. `runInBackground(event, task, { onError, fallback })` hands the task to
+  it with its rejection observed, and detaches or awaits it when no `waitUntil`
+  exists; it never rejects. `withD1Cache` now uses the same resolver for its
+  stale refresh, so the refresh also survives an internal fetch.
+
 ## 0.14.3
 
 ### Patch Changes

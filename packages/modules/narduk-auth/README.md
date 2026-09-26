@@ -233,6 +233,17 @@ The admin routes take an admin-owned API key only where its scopes allow it.
 session-only: no API key can grant or revoke admin, whatever its scopes. Admin
 sessions need no scope.
 
+## nuxt-auth-utils' session route
+
+nuxt-auth-utils serves `GET /api/_auth/session`, which
+`useUserSession().fetch()` calls, straight from the sealed cookie, without the
+session-grant validator. narduk-auth's `auth-session-refresh` middleware checks
+the grant first: when the cookie carries a user whose `auth_sessions` row is
+gone, expired or unreadable, the route answers `{}` (signed out) instead of that
+user. A live session, a cookie with no user, and `DELETE /api/_auth/session` are
+left to nuxt-auth-utils. The route is a client display hint, never a grant:
+server authorization goes through `requireAuth`, which asks the validator.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request
@@ -250,7 +261,10 @@ the allowlisted routes below. Everything else that goes through `requireAuth` /
 `AUTH_REQUIRE_MFA` is **ignored on the local backend**. Local auth has no TOTP
 enroll/verify stack; treating the flag as a lockout would brick password
 sessions. A startup warning is logged when the flag is on and the backend is
-local. Passkey user-verification is not treated as AAL2.
+local. Passkey user-verification is not treated as AAL2. For the same reason
+`POST /api/auth/mfa/enroll` and `POST /api/auth/mfa/verify` answer
+`501 MFA is only available when Supabase auth is enabled.` on the local backend,
+rather than a 401 that reads as an expired session.
 
 Notification mutations require the API-key scope `auth:notifications:write`.
 Account deletion, password change, profile update, and MFA enroll/verify refuse
@@ -265,6 +279,13 @@ let any `email` session through unproven. A social-only account has no password,
 so its session must have signed in within the last 10 minutes
 (`RECENT_SIGN_IN_WINDOW_SECONDS`); otherwise the route answers 403
 `reauthentication_required` and the client signs the user in again and retries.
+
+**Setting a first password (Supabase backend).** The same recent-sign-in rule
+applies when a social-only session sets its first password through
+`change-password`: otherwise a stolen, old session could choose a password, sign
+in with it, and so pass the deletion window above. An older session gets 403
+`reauthentication_required`. A recovery session (from the reset link) is exempt,
+since it has just proved control of the inbox.
 
 ## Request principal for tenancy guards
 
@@ -307,6 +328,55 @@ session field: the Supabase confirmation on a Supabase session, otherwise the
 local `auth_verified_emails` record for the user's current address (so it is
 `false` unless `authLocalEmailVerification` is on). The 401-versus-404 choice,
 org selection and app roles stay in the app.
+
+## Sign in with Apple on the local backend
+
+The local D1 backend verifies Apple's identity token itself (narduk-libs#164,
+decision D4); no hosted auth is involved. It is enabled only when the app both
+advertises the provider and names its Apple client ids; otherwise the button is
+hidden and the routes answer 501.
+
+| Variable                       | Purpose                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `AUTH_LOCAL_PROVIDERS=apple`   | Advertise the provider (with `passkey`, comma-separated).                                |
+| `AUTH_APPLE_SERVICES_ID`       | The Services ID: the web flow's `client_id` and the identity token's required `aud`.     |
+| `AUTH_APPLE_NATIVE_CLIENT_IDS` | Comma-separated bundle ids whose native identity tokens `signInWithNativeApple` accepts. |
+
+`GET /api/auth/runtime-public` reports `appleEnabled`, and the login and
+register cards show "Continue with Apple" from it.
+
+**Web flow.** `POST /api/auth/oauth/start` with `provider: 'apple'` returns
+`/api/auth/apple/start?next=…`. That route binds a random `state` and nonce to
+the browser in an `HttpOnly`, `SameSite=None; Secure` cookie scoped to `/api`
+(Apple's `form_post` is a cross-site POST, so a Lax cookie would not return),
+then redirects to Apple with `response_type=code id_token`,
+`response_mode=form_post`, `scope=name email` and the nonce's SHA-256. Apple
+posts back to `/api/callbacks/auth/apple` (under `/api/callbacks/`, which
+narduk-core's header CSRF check exempts, since Apple's POST cannot carry one).
+The cookie is single-use; the callback refuses a `state` that is not this
+browser's, then verifies the identity token against Apple's JWKS (cached for an
+hour) — RS256 signature, `iss`, `aud` = the Services ID, `exp`/`iat`, and the
+nonce — and redirects to `next`, or to the auth callback page with an error.
+Register `https://<app>/api/callbacks/auth/apple` as the Services ID's return
+URL.
+
+The authorization code is not redeemed, so sign-in needs no Apple client-secret
+JWT and carries no six-month rotation. A later feature that needs Apple's
+refresh tokens or token revocation (for example on account deletion) would add
+that credential and its rotation.
+
+**Native.** `signInWithNativeApple(event, { identityToken, nonce })` on the
+local backend requires `nonce`, the raw value whose SHA-256 hex the app passed
+to Apple, and a token whose `aud` is one of `AUTH_APPLE_NATIVE_CLIENT_IDS`.
+
+**Accounts.** A user is found by `users.apple_id`. A first Apple sign-in with an
+Apple-verified address links to an existing account with that address only when
+this app has also proven it (`auth_verified_emails`, so
+`authLocalEmailVerification` must be on); otherwise it is refused with 409
+rather than letting whoever registered the address first share the account. With
+no match, a password-less account is created when public sign-up is open (403
+when closed), named from the name Apple posts on first authorization. Password
+login stays available to accounts that have a password.
 
 ## Passkeys
 
@@ -549,6 +619,12 @@ A key minted by another API key may hold only scopes the calling key holds
 `expiresInDays`, the child's expiry is clamped to the calling key's. An explicit
 expiry past the calling key's, or `null` under a key that expires, gets a 403.
 Revoking a key does not revoke the keys it minted.
+
+`GET /api/auth/me` is session-only: it answers `{"user":null}` for a valid API
+key, so it cannot prove one. Prove a key with `GET /api/auth/api-keys`, which
+answers 401 without a key, 200 with a key holding `auth:api-keys:read`, and 403
+(missing scope) with any other live key. For an agent key on its own non-login
+user, use `narduk-app auth agent-key create` (narduk-app-tools).
 
 #### Props
 

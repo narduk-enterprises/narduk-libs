@@ -3,6 +3,11 @@ import { useRuntimeConfig } from 'nitropack/runtime'
 import { readWorkerRuntimeEnv } from '#layer/server/utils/worker-env'
 
 import {
+  type AppleSignInConfig,
+  resolveAppleSignInConfig,
+} from '../../shared/utils/apple-sign-in-config'
+import {
+  type AppAuthBackend,
   resolveAuthEnvironment,
   type ResolvedAuthEnvironment,
 } from '../../shared/utils/auth-environment'
@@ -65,4 +70,22 @@ export function readAuthRuntimeEnv(event: H3Event): Record<string, string | unde
 
 export function resolveAuthEnvironmentForEvent(event: H3Event): ResolvedAuthEnvironment {
   return resolveAuthEnvironment(readAuthRuntimeEnv(event))
+}
+
+/**
+ * Sign in with Apple as the running Worker sees it (narduk-libs#164). Pass
+ * `backend` when the caller has already decided which backend handles the
+ * request, so the answer matches the flow it is about to run.
+ */
+export function resolveAppleSignInForEvent(
+  event: H3Event,
+  backend?: AppAuthBackend,
+): AppleSignInConfig {
+  const env = readAuthRuntimeEnv(event)
+  const resolved = resolveAuthEnvironment(env)
+  return resolveAppleSignInConfig({
+    authBackend: backend ?? resolved.authBackend,
+    authProviders: resolved.authProviders,
+    env,
+  })
 }

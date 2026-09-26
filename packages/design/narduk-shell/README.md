@@ -1611,6 +1611,7 @@ const groups = [
 | `missingLast`      | `boolean`                 | `true`      | Draws a break row before the first row with no value in the sorted column.                                       |
 | `missingCount`     | `number \| null`          | page count  | The whole set’s count of rows with no value, for the break row’s text.                                           |
 | `missingLabel`     | `string`                  | —           | Replaces the break row’s text entirely.                                                                          |
+| `missingText`      | `string`                  | —           | What every missing cell reads (`'unreported'`), as visible dimmed text. Unset keeps the em dash.                 |
 | `loading`          | `boolean`                 | `false`     | Dims the rows under a 2 px bar. The rows stay; nothing jumps.                                                    |
 | `dropEmptyColumns` | `boolean`                 | `false`     | Drops a non-sticky column whose every row is missing.                                                            |
 | `columnSet`        | `string \| null`          | first group | On a phone, which group shows beside the sticky and ungrouped columns. `v-model:column-set`.                     |
@@ -1633,6 +1634,7 @@ const groups = [
 | `width`          | `string`                    | Any CSS length, set on the header cell. See “Overflow and column widths” below.            |
 | `value`          | `(row) => unknown`          | How to read the cell. Defaults to `row[key]`.                                              |
 | `format`         | `(value, row) => string`    | How to print a present value. Missing values never reach it.                               |
+| `missingText`    | `string \| (row) => string` | What a missing cell in this column reads. Overrides the table’s `missingText`.             |
 | `sortKey`        | `string`                    | Makes the header a `NeSortHeader` for this wire key. The table never reorders rows itself. |
 | `firstDirection` | `'asc' \| 'desc'`           | First-click direction for `sortKey`. Defaults to `'asc'`.                                  |
 | `csv`            | `false \| (row) => unknown` | `false` leaves the column out of `NeCsvDownload`; a function supplies the raw file value.  |
@@ -1641,7 +1643,10 @@ const groups = [
 
 `0` and `false` are values. `null`, `undefined`, `''` and a non-finite number
 are missing: an em dash in `text-dimmed` with “No value” for a screen reader,
-never `0`.
+never `0`. Set `missingText` on the table, or on a column, to make a missing
+cell read as a word instead (“unreported”, “unset”, “not claimed”): it is drawn
+as visible `text-dimmed` text, so sighted readers and screen readers get the
+same word. A column's `missingText` can be a function of the row.
 
 #### Slots and events
 
@@ -2452,6 +2457,117 @@ import type {
 } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeProse
+
+A markdown document rendered in the suite's type scale
+([narduk-libs#1005](https://github.com/narduk-enterprises/narduk-libs/issues/1005)):
+a runbook, a help page, a changelog entry. Body copy reads `--ne-text-body` at
+`--ne-leading-body`, h2 the section-heading size (`--ne-text-heading`), h3 the
+body size at weight 600, code and tables `--ne-text-small` and `--ne-font-mono`,
+links `--ne-accent`.
+
+The page header owns the page's h1, so **NeProse never renders an h1**: a `#`
+heading is demoted to h2 (its text is kept, not dropped), and `####`–`######`
+clamp to h3. Every heading carries a slug `id` — GitHub's rule: lowercase,
+punctuation dropped, spaces to `-`, repeats suffixed `-1`, `-2` — so a table of
+contents can link to `#install`. `parseProse()` and `proseOutline()` are
+exported from the package root, so a page parses once and builds its TOC from
+the same AST it renders.
+
+It is XSS-safe by construction, not by sanitising. There is no `v-html` on the
+path: `parseProse()` (a small pure parser in `src/runtime/utils/prose.ts`, no
+dependency) produces a plain-data AST, and the component renders each node as an
+element with the source text as text nodes. Raw HTML in the source is shown as
+text. A link's `href` is the only attribute that carries source content, and it
+is kept only when it is `http:`, `https:`, `mailto:` or has no scheme at all
+(relative, `/root`, `#fragment`, `?query`); `javascript:`, `data:`, `vbscript:`
+and every other scheme drop the anchor and keep the link text. The href is
+checked again at render time, so a hand-built `blocks` AST gets the same rule.
+
+#### The subset
+
+| Construct             | Syntax                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headings              | `#`–`######` (ATX, optional closing hashes) and `===` / `---` underlines                                                                    |
+| Paragraphs and breaks | blank-line separated; two trailing spaces or a trailing `\` is a `<br>`                                                                     |
+| Lists                 | `-` `*` `+` and `1.` / `1)`, nested by indentation, keeping an ordered start                                                                |
+| Fenced code           | ` ``` ` or `~~~`, with the info string's first word as the language                                                                         |
+| Tables                | GFM pipes with a `:--` / `:-:` / `--:` delimiter row                                                                                        |
+| Blockquotes and rules | `>` (nesting any block) and `---` / `***` / `___`                                                                                           |
+| Inline                | `` `code` ``, `**bold**` / `__bold__`, `*italic*` / `_italic_`, `[text](href)`, `<https://…>`, `<a@b.c>`, bare `https://` URLs, `\` escapes |
+
+Deliberately left out: raw HTML (rendered as text), images (`![alt](src)`
+renders its alt text), indented code blocks, reference-style links,
+strikethrough, task lists and footnotes. A document that needs them wants a full
+markdown pipeline, not this component.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+
+const props = defineProps<{ markdown: string }>()
+const blocks = computed(() => parseProse(props.markdown))
+const toc = computed(() =>
+  proseOutline(blocks.value).filter((h) => h.level === 2),
+)
+</script>
+
+<template>
+  <NePageHeader title="Runbook" />
+  <nav>
+    <a v-for="entry in toc" :key="entry.id" :href="`#${entry.id}`">{{
+      entry.text
+    }}</a>
+  </nav>
+  <NeProse :blocks="blocks" />
+  <!-- Or, with no TOC: <NeProse :source="markdown" /> -->
+</template>
+```
+
+#### Props
+
+| Prop     | Type             | Default     | What it does                                                                                                                                      |
+| -------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source` | `string`         | `''`        | The markdown to render, parsed with `parseProse()`.                                                                                               |
+| `blocks` | `NeProseBlock[]` | `undefined` | A pre-parsed document — from `parseProse()` or built by hand — rendered as given (hrefs are still checked). Wins over `source` when both are set. |
+
+#### Slots
+
+None. The document is the content; a page that needs its own markup around a
+section splits the document.
+
+#### Events
+
+None. A table of contents comes from `proseOutline()`, not from an event, so it
+exists on the server's first paint too.
+
+#### Helpers
+
+- `parseProse(source: string): NeProseBlock[]` — the parser. Pure: no Vue, no
+  DOM. Heading ids are unique within one call and stable for a given source.
+- `proseOutline(input: string | NeProseBlock[]): NeProseHeading[]` — the
+  document's top-level headings as `{ id, level, text }` in order (a heading
+  inside a blockquote or list is not a section and is left out).
+
+Two NeProse documents on one page share the document's id namespace; give the
+second one headings that do not collide, or render it without a TOC.
+
+#### Types
+
+```ts
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseHeading,
+  NeProseInline,
+  NeProseListItem,
+  NeProseProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
 ### NeAppShell
 
 The application frame: a left rail of labelled sections, a navbar row, and the
@@ -3065,6 +3181,34 @@ night reads `2 hours ago`, not `yesterday`. Above that the ladder switches to
 the calendar, and days are counted in the caller's zone, so one 30-hour span
 reads `2 days ago` in Chicago and `yesterday` in Tokyo. The 23-hour day a
 spring-forward produces still reads `yesterday`.
+
+### `calendarDateIn`
+
+```ts
+calendarDateIn('2026-03-08T04:30:00Z', { timeZone: 'America/Chicago' }) // '2026-03-07'
+calendarDateIn('2026-03-08', { timeZone: 'Asia/Tokyo' }) // '2026-03-08'
+```
+
+The calendar date of an instant in a named zone, as a sortable `YYYY-MM-DD` key:
+grouping readings by the station's day, or asking "is this today on the farm's
+clock?". It replaces the `new Intl.DateTimeFormat('en-CA', …).format()` trick
+five apps hand-rolled (narduk-libs#992): that relies on `en-CA`'s formatted
+pattern, which is CLDR locale data rather than a format contract. This reads
+`Intl`'s parts instead, and its output is byte-identical to the `en-CA` form
+wherever that form is correct. `timeZone` is required, a bare `YYYY-MM-DD`
+passes through unchanged (a floating calendar date, as in `formatDate`), and an
+unknown zone throws `RangeError` rather than falling back to the host zone.
+
+### `isSameCalendarDay`
+
+```ts
+isSameCalendarDay(reading.at, now, { timeZone: farm.timeZone }) // "is this today?"
+```
+
+Whether two values fall on the same calendar day in `timeZone`, built on
+`calendarDateIn`. Absent or unparseable input on either side is never the same
+day. Choosing the zone stays with the app: the farm's recorded zone, Chicago for
+the portal. Pass `now` in explicitly, as everywhere in this module.
 
 ### `formatDuration`
 

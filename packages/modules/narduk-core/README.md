@@ -410,6 +410,51 @@ defineProps<{ error: NuxtError }>()
 </template>
 ```
 
+#### Wrapping it instead of forking it
+
+The page takes props and a slot, so an app that needs its own words, links,
+layout or colours wraps it rather than copying it (narduk-libs#976). A fork
+tends to drop the parts that matter: it echoes `error.message` to production,
+loses `noindex`, and loses the request id. None of the props below can change
+those three.
+
+```vue
+<script setup lang="ts">
+import EstateErrorPage from '@narduk-enterprises/narduk-core/app/error-page'
+import type { NuxtError } from '#app'
+
+defineProps<{ error: NuxtError }>()
+</script>
+
+<template>
+  <EstateErrorPage
+    :error="error"
+    layout="auth"
+    :copy="{ 404: { title: 'No screen lives at that address.' } }"
+    :links="[{ label: 'Stations', to: '/stations', icon: 'i-lucide-search' }]"
+    home-label="Back to Today"
+    :ui="{ status: 'text-sky-700', title: 'text-sky-900', home: 'bg-sky-600' }"
+    :on-before-clear="(err, action) => logClientError(err, action)"
+  >
+    <template #actions><!-- extra buttons after the links --></template>
+  </EstateErrorPage>
+</template>
+```
+
+| Prop            | Default       | Meaning                                                                                                  |
+| --------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `copy`          | —             | `{ [status]: { title?, description? }, default?: {…} }`. Status entry, then `default`, then estate copy. |
+| `links`         | `[]`          | Extra recovery links (`label`, `to`, `icon?`), test id `error-page-link`.                                |
+| `homeLabel`     | `'Go Home'`   | Go Home's label.                                                                                         |
+| `homeTo`        | `'/'`         | Where Go Home clears the error to.                                                                       |
+| `retryLabel`    | `'Try Again'` | Try Again's label. It still calls `reloadNuxtApp()`.                                                     |
+| `layout`        | `false`       | A Nuxt layout name to render the page inside.                                                            |
+| `ui`            | `{}`          | Classes for `root`, `status`, `title` (each replaces its default colours) and `home` (merged).           |
+| `onBeforeClear` | —             | `(error, 'home' \| 'retry')`, awaited before either action. A throw or rejection is ignored.             |
+
+To put the page inside an app shell component rather than a layout, render it as
+the shell's child, the way buoys does with `<MarineAppShell>`.
+
 ### Exception capture
 
 One seam, `narduk:exception`, carried on the runtime's own hook bus. Three
@@ -606,6 +651,19 @@ round trip per `first` / `all` / `run` / `raw` on a prepared statement, and one
 round trip carrying every statement for a `batch`. The counts reach the
 `Server-Timing` header (when phases are exposed) and the "Request completed" log
 record. Counting never fails a query.
+
+On a Worker, a nested SSR request keeps the D1 binding (narduk-libs#49). The
+global `$fetch` during SSR goes through Nitro's `localFetch` with a fresh event
+that has no `event.context.cloudflare`, so the env resolver falls back to the
+`globalThis.__env__` that Nitro's `cloudflare-module` handler sets before every
+request. `pnpm --filter @narduk-enterprises/narduk-core run test:cf-ssr-d1`
+proves that against a prebuilt Worker: it builds `tests/fixtures/cf-ssr-d1-app`
+once and serves the exact `.output` under `wrangler dev --local` with a real
+local D1. It checks the outer request and the nested `useFetch` and `$fetch`
+requests, and it reads the Worker log. It also runs a control with the fallback
+blocked, which must lose the binding, and a config with no D1, which must fail
+closed. It runs offline in about 40 s. It is not part of `quality`, because it
+needs a Nuxt build and Wrangler.
 
 With `'none'`:
 
@@ -1716,6 +1774,44 @@ unchanged, so the browser TTL of every route is identical before and after. What
 changes is that the edge TTL moves to a header Cloudflare will honor and the
 stale windows stop being silently discarded.
 
+## Per-browser state: `useStoredState`
+
+`@narduk-enterprises/narduk-core/app/stored-state` keeps a per-browser
+convenience (a sidebar's open state, a basemap, a dismissed guide) in Web
+Storage (narduk-libs#993). It is an explicit import, not an auto-import.
+
+```ts
+import { useStoredState } from '@narduk-enterprises/narduk-core/app/stored-state'
+
+const BASEMAPS = ['streets', 'satellite'] as const
+type Basemap = (typeof BASEMAPS)[number]
+
+const navOpen = useStoredState('narduk-farm:nav-open', { default: true })
+const basemap = useStoredState<Basemap>('lakestat:basemap', {
+  default: 'streets',
+  validate: (value): value is Basemap => BASEMAPS.includes(value as Basemap),
+})
+
+navOpen.value = false // written back after render
+basemap.clear() // removes the key and restores the default
+```
+
+- **Hydration-safe.** The server and first paint hold the default. The stored
+  value is applied in `onMounted`, so client and server render the same markup.
+  Never read storage in a `computed` or during setup.
+- **Validated.** The stored string goes through `parse` (default `JSON.parse`)
+  and then `validate`. Without either, a value is accepted only when it has the
+  default's JSON type. Anything else falls back to the default.
+- **Failure-tolerant.** Every read, write and remove is its own try/catch, and
+  so is the `window.localStorage` access itself, which throws `SecurityError`
+  when storage is blocked. Blocked or full storage leaves a working in-memory
+  ref, so the choice lasts for this visit only.
+- **The key is used as given**, with no prefix, so an app that adopts this keeps
+  its viewers' stored choices. `storage: 'session'` uses `sessionStorage`.
+- `createStoredState(key, options)` is the Nuxt-free half (`read`, `write`,
+  `remove`) for code outside a component. `resolveWebStorage(area)` answers the
+  storage area or `null`; `usePersistentTab` now reads storage through it too.
+
 ## Reader preferences: units, time zone and locale
 
 A Narduk app stores measurements in SI and displays them in whatever the reader
@@ -1904,12 +2000,24 @@ one does not ship the rest. Canonical inputs are SI.
 | `formatPressure`                                              | hectopascals                           | inHg                        | hPa                        | 2 / 0             |
 | `formatDecimal`                                               | number                                 | n/a                         | n/a                        | up to 3           |
 | `formatZonedDate` / `formatZonedTime` / `formatZonedDateTime` | `Date`, epoch ms or a parseable string | n/a                         | n/a                        | `Intl` styles     |
+| `formatLatitude` / `formatLongitude` / `formatCoordinate`     | decimal degrees                        | n/a                         | n/a                        | 3 (`dms`: 1)      |
 
 `formatHeight` and `formatLength` never auto-scale, which is why a 1.4 m swell
 stays `4.6 ft` instead of becoming `0.0 mi`. `formatPressure` appends its symbol
 itself because `Intl`'s sanctioned unit list has neither hectopascals nor inches
 of mercury; everything else uses a real `style: 'unit'` so the locale decides
 spacing and symbol form.
+
+The coordinate formatters write a hemisphere letter from the sign (`14.275° S`),
+in decimal degrees by default or, with `style: 'dm'` or `'dms'`, in degrees and
+decimal minutes (`29° 45.624′ N`, the chart-plotter form) or degrees, minutes
+and seconds. They round once, on the total, and carry into the degrees, so a
+value just under a whole degree renders `30° 0.000′ N`, never `29° 60.000′ N`.
+`digits` sets the last place's precision. A latitude beyond ±90 or a longitude
+beyond ±180 renders the empty value rather than being wrapped.
+`formatCoordinate({ lat, lon })` pairs them with `', '`, or with `separator` for
+an app that has to stay byte-identical to its old copy; the bound
+`format.coordinate` takes the reader's locale for the decimal separator.
 
 Rules the whole suite keeps:
 
@@ -2479,6 +2587,39 @@ const data = listPublishedStations(product, result.data)
 
 The adoption itself is a Buoys-side change and is not part of this package's
 release; the snippet above is the shape it takes.
+
+## Share with a clipboard fallback: `useShare`
+
+`@narduk-enterprises/narduk-core/app/share` offers the native share sheet and
+falls back to the clipboard (narduk-libs#994). It is an explicit import, not an
+auto-import, and takes no toast or UI dependency.
+
+```ts
+import { useShare } from '@narduk-enterprises/narduk-core/app/share'
+
+const { share, copy, copied, canNativeShare } = useShare({ copiedFor: 2000 })
+
+async function onShare() {
+  const outcome = await share({ title, text, url }) // fallback: 'url' by default
+  if (outcome === 'failed') toast.add({ title: 'Select the link to copy it.' })
+}
+// copied.value is true for 2 s after any successful copy
+```
+
+| Outcome       | When                                                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `'shared'`    | The share sheet completed.                                                                                        |
+| `'cancelled'` | The user dismissed the sheet (`AbortError`). The clipboard is left alone.                                         |
+| `'copied'`    | No sheet, `canShare` refused the data, or the share failed for another reason, and the clipboard write succeeded. |
+| `'failed'`    | The clipboard refused too, `fallback: false` was set, or it ran on the server.                                    |
+
+- `fallback: 'url'` (the default) copies the URL, or the text if there is no
+  URL. `'text+url'` copies both, separated by a space. `false` never copies.
+- `canNativeShare` is `false` on the server and first paint and is resolved
+  after mount, so a "Share" versus "Copy link" label hydrates cleanly.
+- `copy(text)` is the clipboard half on its own (`'copied' | 'failed'`), for
+  invite panels that only copy.
+- `createSharer()` is the Vue-free half.
 
 ## Scheduled jobs: `defineScheduledJobs`
 

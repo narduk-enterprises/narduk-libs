@@ -73,6 +73,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeFeatureGrid', filePath: './runtime/components/NeFeatureGrid.vue' },
   { name: 'NeCta', filePath: './runtime/components/NeCta.vue' },
   { name: 'NeMarketingFooter', filePath: './runtime/components/NeMarketingFooter.vue' },
+  // narduk-libs#1005: NeProse, a markdown document in the suite's type scale.
+  { name: 'NeProse', filePath: './runtime/components/NeProse.vue' },
   // Item 18 (narduk-libs#265): NeAppShell, the sectioned rail. Registered so
   // an app can write it in a layout; nothing registers it AS a layout, and
   // nothing scaffolds it (D3: the shell is opt-in).

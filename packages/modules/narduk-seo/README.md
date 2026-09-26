@@ -123,6 +123,53 @@ intentionally needs indexing in a non-production environment must opt in with
 `nardukSeo: { indexNonProduction: true }` or
 `NARDUK_SEO_INDEX_NON_PRODUCTION=true`.
 
+### Build deployment target
+
+The layer reads the target from the first non-blank of `NARDUK_DEPLOY_TARGET`,
+`NUXT_PUBLIC_NARDUK_DEPLOY_TARGET` and `NUXT_PUBLIC_DEPLOYMENT_TARGET`. When
+none is set, it falls back to the build branch (narduk-libs#999): a Workers
+Builds `WORKERS_CI_BRANCH` (or Cloudflare Pages `CF_PAGES_BRANCH`) of `main` is
+`production`, and any other branch is `preview`, so a branch build is noindexed
+and a `main` build gets `hostAwareIndexing`. A build with no explicit variable
+and no branch variable, such as a local `nuxt build`, keeps an unset target
+exactly as before: indexable, with host-aware indexing off.
+
+**If production deploys from a branch other than `main`** (for example `master`)
+and the app sets no `NARDUK_DEPLOY_TARGET`, its production build would now be
+treated as `preview` and noindexed. Set
+`nardukSeo: { productionBranch: 'master' }` (or an explicit
+`NARDUK_DEPLOY_TARGET`) so that branch builds as `production`.
+
+Apps therefore no longer need the `nuxt.config.ts` write-back block that
+generated apps carry:
+
+```ts
+// No longer needed for narduk-seo:
+const buildBranch = process.env.WORKERS_CI_BRANCH
+const isBranchPreview = Boolean(buildBranch && buildBranch !== 'main')
+process.env.NARDUK_DEPLOY_TARGET ??= isBranchPreview ? 'preview' : 'production'
+```
+
+Code that needs the same answer itself imports the resolver from the config-safe
+`@narduk-enterprises/narduk-seo/shared/deploymentTarget` entry point (no Nuxt
+imports, safe in `nuxt.config.ts`):
+
+```ts
+import { resolveBuildDeploymentTarget } from '@narduk-enterprises/narduk-seo/shared/deploymentTarget'
+
+const { target, source } = resolveBuildDeploymentTarget()
+// target: 'production' | 'staging' | 'preview'
+// source: 'explicit' | 'branch' | 'default'
+```
+
+It takes an optional env record (default `process.env`) and
+`{ productionBranch?: string; default?: DeploymentTarget }` (defaults `'main'`
+and `'production'`). An explicit value counts only when it is one of the three
+targets; otherwise the branch decides, and with no branch the result is
+`options.default` with `source: 'default'`. The module itself uses only the
+explicit and branch answers and never the default, and it still passes an
+unrecognised explicit value through unchanged, as it always has.
+
 ## Host-aware indexing
 
 A production build that sets `nardukSeo: { hostAwareIndexing: true }` (or
@@ -398,6 +445,57 @@ after SSR.
   Unhead also warns on an `og:image` without dimensions.
   `NUXT_PUBLIC_TWITTER_SITE` is still accepted as public runtime config but is
   no longer read by anything.
+
+## Programmatic SEO kit
+
+An app that publishes one page per entity (a product, an article, a buoy) needs
+the same three things for every row of its listing: structured data, a social
+card, and a sitemap entry. This layer ships all three; wire them from the same
+entity data so they cannot drift apart.
+
+1. **Structured data** — the `use*Schema(...)` composables above, called in the
+   detail page's `script setup`: `useProductSchema`, `useArticleSchema`,
+   `useDatasetSchema`, `useLocalBusinessSchema`, … per entity, and
+   `useItemListSchema(items)` on the listing page.
+2. **OG image** — `useSeo({ title, description, ogImage })` renders a per-page
+   card through `nuxt-og-image` (the shipped `Default` and `Article` Takumi
+   templates, or your own `ogImage.component`), with the static `defaultOgImage`
+   as the fallback. `useOgImageData()` and the admin OG route previews below let
+   an operator review the generated cards.
+3. **Sitemap** —
+   `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+   from `@narduk-enterprises/narduk-seo/shared/sitemapFromListing` turns the
+   same listing into `@nuxtjs/sitemap` rows. It is pure (no Nuxt or Nitro
+   imports), keeps input order, skips items whose `loc` builder returns a blank
+   value, keeps the first row for a repeated `loc`, and normalises `lastmod` (a
+   `Date` or epoch milliseconds becomes an ISO string; a missing or unparseable
+   value is omitted). `changefreq` and `priority` take a constant or a per-item
+   builder.
+
+```ts
+// server/api/__sitemap__/buoys.ts
+import { sitemapUrlsFromListing } from '@narduk-enterprises/narduk-seo/shared/sitemapFromListing'
+
+export default defineSitemapEventHandler(async () => {
+  const buoys = await listPublicBuoys() // your data access
+  return sitemapUrlsFromListing(buoys, {
+    loc: (buoy) => `/buoys/${buoy.slug}`,
+    lastmod: (buoy) => buoy.updatedAt,
+    changefreq: 'hourly',
+  })
+})
+```
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  sitemap: { sources: ['/api/__sitemap__/buoys'] },
+})
+```
+
+The detail page then calls `useSeo(...)` and the matching schema composable for
+the same entity, so its card, its JSON-LD and its sitemap row are built from one
+record.
 
 ## Admin OG route previews (SSR HTML)
 

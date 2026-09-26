@@ -75,6 +75,10 @@ export default defineConfig({
         packageRoot,
         '../narduk-core/runtime/server/utils/sessionGrant.ts',
       ),
+      '#layer/server/utils/worker-env': join(
+        packageRoot,
+        '../narduk-core/runtime/server/utils/worker-env.ts',
+      ),
       '#narduk-auth-server/utils/admin-scopes': join(packageRoot, 'server/utils/admin-scopes.ts'),
       '#narduk-auth-server/app-orm-tables': join(packageRoot, 'server/app-orm-tables.ts'),
       '#narduk-auth-server/database/app-schema': join(packageRoot, 'server/database/app-schema.ts'),
@@ -86,6 +90,14 @@ export default defineConfig({
       '#narduk-auth-server/utils/auth-session-stability': join(
         packageRoot,
         'server/utils/auth-session-stability.ts',
+      ),
+      '#narduk-auth-server/lib/app-auth/apple-local': join(
+        packageRoot,
+        'server/lib/app-auth/apple-local.ts',
+      ),
+      '#narduk-auth-server/utils/auth-runtime-env': join(
+        packageRoot,
+        'server/utils/auth-runtime-env.ts',
       ),
       '#narduk-auth-server/utils/auth-callback': join(packageRoot, 'tests/stubs/auth-callback.ts'),
       '#narduk-auth-server/utils/auth-session-refresh-path': join(

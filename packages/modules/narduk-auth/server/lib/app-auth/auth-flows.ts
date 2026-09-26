@@ -10,8 +10,11 @@ import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-dat
 import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-session-stability'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
+import { resolveAppleSignInForEvent } from '../../utils/auth-runtime-env'
 import { getLocalEmailVerification } from '../../utils/verified-email'
 
+import { verifyAppleIdentityToken } from './apple-identity'
+import { assertLocalAppleWebEnabled, signInWithAppleIdentity } from './apple-local'
 import {
   buildAppPath,
   buildAppUrl,
@@ -316,8 +319,21 @@ async function registerWithSupabase(
   }
 }
 
+/** The local backend's Apple web entry point (narduk-libs#164). */
+export const APPLE_START_PATH = '/api/auth/apple/start'
+
 export async function startOAuthFlow(event: H3Event, body: OAuthStartInput) {
   const config = getAuthConfig(event)
+  if (config.backend === 'local' && body.provider === 'apple') {
+    assertLocalAppleWebEnabled(resolveAppleSignInForEvent(event, 'local'))
+    // A same-origin GET sets the state/nonce cookie on this browser, then
+    // redirects to Apple; the card navigates there like any OAuth URL.
+    return {
+      url: buildAppUrl(config.appUrl, APPLE_START_PATH, {
+        next: sanitizeNextPath(body.next, config.redirectPath),
+      }),
+    }
+  }
   if (config.backend !== 'supabase' || !isSupabaseConfigured(config)) {
     throw createError({
       statusCode: 501,
@@ -362,6 +378,9 @@ export async function signInWithNativeApple(
   body: NativeAppleSignInInput,
 ): Promise<AuthMutationResult> {
   const config = getAuthConfig(event)
+  if (config.backend === 'local') {
+    return signInWithNativeAppleLocal(event, body)
+  }
   if (config.backend !== 'supabase' || !isSupabaseConfigured(config)) {
     throw createError({
       statusCode: 501,
@@ -423,6 +442,43 @@ export async function signInWithNativeApple(
 
   return {
     user: sessionUser,
+    nextStep: 'signed_in',
+    redirectTo: config.redirectPath,
+  }
+}
+
+/**
+ * Native Sign in with Apple on the local backend (narduk-libs#164): the app's
+ * identity token must name one of `AUTH_APPLE_NATIVE_CLIENT_IDS` as `aud` and
+ * carry the SHA-256 hex of `body.nonce`, the raw nonce the app generated. The
+ * nonce is required here, so a captured token cannot be replayed.
+ */
+async function signInWithNativeAppleLocal(
+  event: H3Event,
+  body: NativeAppleSignInInput,
+): Promise<AuthMutationResult> {
+  const config = getAuthConfig(event)
+  const apple = resolveAppleSignInForEvent(event, 'local')
+  if (!apple.nativeEnabled) {
+    throw createError({
+      statusCode: 501,
+      statusMessage: 'Native Apple sign-in is not configured for this app.',
+    })
+  }
+  const token = body.identityToken.trim()
+  const nonce = body.nonce?.trim() ?? ''
+  if (!token || !nonce) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Apple identity token and nonce are required.',
+    })
+  }
+  const claims = await verifyAppleIdentityToken(token, {
+    audiences: apple.nativeClientIds,
+    rawNonce: nonce,
+  })
+  return {
+    user: await signInWithAppleIdentity(event, claims),
     nextStep: 'signed_in',
     redirectTo: config.redirectPath,
   }

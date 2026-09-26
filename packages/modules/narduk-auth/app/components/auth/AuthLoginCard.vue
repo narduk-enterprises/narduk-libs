@@ -58,8 +58,12 @@ const effectiveAuthBackend = computed(
 const effectiveAuthProviders = computed(
   () => authRuntime.value?.authProviders ?? config.public.authProviders,
 )
+// The server's `appleEnabled` covers the local backend too (narduk-libs#164);
+// without a runtime answer, keep the build-time Supabase-only rule.
 const canUseApple = computed(
-  () => effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple'),
+  () =>
+    authRuntime.value?.appleEnabled ??
+    (effectiveAuthBackend.value === 'supabase' && effectiveAuthProviders.value.includes('apple')),
 )
 // `passkeysEnabled` is the server's own answer to "would a ceremony succeed?" —
 // backend, provider opt-in AND a valid Relying Party binding. Falling back to

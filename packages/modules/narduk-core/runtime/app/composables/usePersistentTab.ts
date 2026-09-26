@@ -1,3 +1,4 @@
+import { resolveWebStorage } from '../stored-state'
 import {
   buildPersistentTabStorageKey,
   normalizePersistentTabValue,
@@ -23,12 +24,14 @@ function readOptionValue<T>(value: MaybeRefOrGetter<T> | undefined): T | undefin
   return unref(value)
 }
 
+// Reading `window.localStorage` itself throws when storage is blocked, so the
+// shared accessor resolves it inside a try and answers `null` instead.
 function getPersistentTabStorage(mode: PersistentTabStorage | undefined): Storage | null {
   if (!import.meta.client || mode === false) {
     return null
   }
 
-  return mode === 'session' ? window.sessionStorage : window.localStorage
+  return resolveWebStorage(mode === 'session' ? 'session' : 'local')
 }
 
 function readPersistentTabStorage(

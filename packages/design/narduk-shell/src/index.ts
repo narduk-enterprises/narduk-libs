@@ -146,6 +146,23 @@ export type {
 } from './runtime/components/ne-data-table-types'
 
 /**
+ * NeProse's parser and AST (narduk-libs#1005). `parseProse` and
+ * `proseOutline` are pure functions with no Vue or DOM import, so a page can
+ * parse a document once, build its table of contents from the outline and
+ * hand the same blocks to `<NeProse :blocks>`, and a server route can run the
+ * parser too.
+ */
+export { parseProse, proseOutline } from './runtime/utils/prose'
+export type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseHeading,
+  NeProseInline,
+  NeProseListItem,
+  NeProseProps,
+} from './runtime/components/ne-prose-types'
+
+/**
  * The marketing sections (components backlog item 21, narduk-libs#268):
  * `NeHero`, `NeFeatureGrid`, `NeCta`, `NeMarketingFooter`. Types only; each
  * is the wrapped Nuxt UI primitive's own props, so a page can type a

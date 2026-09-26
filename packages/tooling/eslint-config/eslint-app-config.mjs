@@ -149,7 +149,19 @@ const parserConfigs = [
 const sharedBaselineTailConfigs = [
   {
     name: 'narduk/ignores',
-    ignores: ['.agents/**', '.nuxt/**', '.output/**', 'dist/**', 'node_modules/**', '**/*.d.ts'],
+    ignores: [
+      '.agents/**',
+      '.nuxt/**',
+      '.output/**',
+      'dist/**',
+      'node_modules/**',
+      '**/*.d.ts',
+      // Generated test output (vitest --coverage, Playwright). Linting it made
+      // a second `quality` run fail on unbudgeted warnings (narduk-libs#902).
+      'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
   },
 
   {

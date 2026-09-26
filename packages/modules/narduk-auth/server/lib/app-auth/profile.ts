@@ -115,9 +115,9 @@ export async function updateProfile(event: H3Event, body: UpdateProfileInput) {
  * migration can still carry a stale one (narduk-libs#923).
  *
  * Sessions without the `email` provider have no password to prove and skip
- * the check (account deletion holds them to `assertRecentSupabaseSignIn`
- * instead), as does a recovery session, which the session-privilege rules
- * already confine to `change-password`.
+ * the check (account deletion and a first password hold them to
+ * `assertRecentSupabaseSignIn` instead), as does a recovery session, which the
+ * session-privilege rules already confine to `change-password`.
  *
  * An invited or magic-link user has the `email` provider whether or not they
  * ever chose a password, and Supabase does not say which, so they are held to
@@ -215,9 +215,18 @@ export async function assertRecentSupabaseSignIn(
 export async function verifySupabaseAccountDeletionCredentials(
   event: H3Event,
   input: { currentPassword?: string },
+  options: {
+    /**
+     * The account about to be deleted. When the caller was resolved some other
+     * way (an API key beside a cookie), the session re-authenticated here must
+     * be that account's, or a leaked key plus the caller's own session and
+     * password would delete someone else (narduk-libs#1051).
+     */
+    userId?: string
+  } = {},
 ): Promise<void> {
   const sessionUser = await useRefreshedSessionUser(event)
-  if (!sessionUser) {
+  if (!sessionUser || (options.userId !== undefined && sessionUser.id !== options.userId)) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
@@ -245,6 +254,14 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   }
 
   if (config.backend === 'supabase' && sessionUser.authSessionId) {
+    // A social-only session has no password to prove, and the first password
+    // it sets signs in afresh, which would satisfy the recent-sign-in window
+    // account deletion relies on. Hold it to that window here too
+    // (narduk-libs#1075). A recovery session already proved its inbox.
+    if (!sessionUser.authProviders?.includes('email') && !sessionUser.recoveryMode) {
+      await assertRecentSupabaseSignIn(event, sessionUser)
+    }
+
     await assertSupabaseCurrentPassword(event, sessionUser, body.currentPassword, {
       missingMessage: 'Current password is required for email-auth accounts.',
     })
@@ -326,10 +343,26 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   return { success: true }
 }
 
+/**
+ * MFA is Supabase's TOTP factor. The local backend has no Supabase session to
+ * enroll against, and reading one answered a 401 that sends the user to sign
+ * in again for nothing, so it answers 501 up front, as the OAuth start does
+ * (narduk-libs#1048).
+ */
+function requireSupabaseMfa(event: H3Event): void {
+  if (getAuthConfig(event).backend !== 'supabase') {
+    throw createError({
+      statusCode: 501,
+      statusMessage: 'MFA is only available when Supabase auth is enabled.',
+    })
+  }
+}
+
 export async function enrollMfa(
   event: H3Event,
   friendlyName?: string,
 ): Promise<MfaEnrollmentResult> {
+  requireSupabaseMfa(event)
   const context = await getCurrentSupabaseContext(event)
   const issuer = readRuntimeConfigString(useRuntimeConfig(event).public.appName, 'Narduk')
   const { data, error } = await context.client.mfa.enroll({
@@ -352,6 +385,7 @@ export async function enrollMfa(
 }
 
 export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
+  requireSupabaseMfa(event)
   const context = await getCurrentSupabaseContext(event)
   const { data, error } = await context.client.mfa.challengeAndVerify({
     factorId: body.factorId,

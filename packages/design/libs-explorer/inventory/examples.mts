@@ -120,6 +120,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'Downloads exactly the rows in view, raw values, missing as empty.',
   ),
   shell(
+    'NeProse',
+    'Prose',
+    'A markdown document in the type scale, h1 demoted, heading ids for a TOC, no v-html.',
+  ),
+  shell(
     'NeAppShell',
     'App shell',
     'The opt-in sectioned left rail, navbar row and page frame; a slide-over below lg.',

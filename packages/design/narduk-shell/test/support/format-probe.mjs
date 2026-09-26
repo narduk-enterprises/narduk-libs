@@ -19,6 +19,7 @@
  * `.ts` extension with TS5097. `test/format.ssr.test.ts` asserts that.
  */
 import {
+  calendarDateIn,
   createFormatters,
   formatCompact,
   formatDate,
@@ -29,6 +30,7 @@ import {
   formatPercent,
   formatQuantity,
   formatRelative,
+  isSameCalendarDay,
 } from '../../src/format.ts'
 
 const CHICAGO = 'America/Chicago'
@@ -54,6 +56,14 @@ const cases = [
     formatDateTime('2026-01-08T08:30:00Z', { ...en, timeZone: CHICAGO, timeZoneName: 'short' }),
   ],
   ['dateTime.default-locale', formatDateTime(AT, { timeZone: CHICAGO })],
+  ['calendarDate.chicago', calendarDateIn('2026-03-08T04:30:00Z', { timeZone: CHICAGO })],
+  ['calendarDate.tokyo', calendarDateIn('2026-03-08T04:30:00Z', { timeZone: TOKYO })],
+  ['calendarDate.floating', calendarDateIn('2026-03-08', { timeZone: TOKYO })],
+  ['calendarDate.empty', calendarDateIn(null, { timeZone: CHICAGO })],
+  [
+    'calendarDate.sameDay',
+    String(isSameCalendarDay('2026-03-08T04:30:00Z', '2026-03-07', { timeZone: CHICAGO })),
+  ],
   ['relative.chicago', formatRelative(AT, { ...en, now: NOW, timeZone: CHICAGO })],
   ['relative.tokyo', formatRelative(AT, { ...en, now: NOW, timeZone: TOKYO })],
   ['relative.hours', formatRelative(AT, { ...en, now: '2026-03-08T11:30:00Z', timeZone: CHICAGO })],

@@ -185,6 +185,37 @@ placeholder. Without the command, the equivalent is `wrangler d1 create <name>`
 under the same credentials, then setting that binding's `database_id` to the id
 it prints.
 
+## Agent API keys (`narduk-app auth agent-key create`)
+
+Gives an agent an API key on a narduk-auth app without hand-written D1 SQL
+(narduk-libs#782). The key belongs to its own non-login user — no password and
+an undeliverable `agent-<label>-<id>@agents.invalid` address (or `--email`), so
+nobody can sign in as it or reset its password — never to an owner's account.
+
+```sh
+narduk-app auth agent-key create --database <d1-name> --remote \
+  --name "loadtest agent" --scopes auth:api-keys:read,loadtest:write --expires-days 90 \
+  [--admin] --app-url https://app.example \
+  -- <secret sink command...>
+```
+
+- The raw `nk_` key is minted in-process and written **only to the sink
+  command's stdin** — for example the estate's guarded nvault setter. It never
+  reaches argv, stdout, stderr or a file. D1 gets its SHA-256 hash, the same
+  format narduk-core `generateApiKey` stores.
+- The sink runs first: if it fails, nothing is written to D1. If D1 then refuses
+  (for example `--email` already belongs to a user), the value already in the
+  sink is inert, because no `api_keys` row carries its hash.
+- One D1 batch inserts the `users` row with its `created_at` / `updated_at`
+  (they have no SQL default; drizzle fills them in the app) and the `api_keys`
+  row.
+- `--app-url` proves the key: `GET /api/auth/api-keys` must answer 401 without
+  it, and 200 with it (or 403 "missing required API key scopes" for a key
+  without `auth:api-keys:read`). `/api/auth/me` is session-only and answers
+  `{"user":null}` for a valid key, so it is not a proof. `--no-proof` skips the
+  step, for example against `--local`.
+- At least one scope is required, and `--expires-days` runs from 1 to 3650.
+
 ## Wrangler ↔ manifest parity (`narduk-app manifests validate`)
 
 Compares the Worker's wrangler config with `Config/cloudflare-app.json`
@@ -729,6 +760,27 @@ with an empty list and the how-to in the app README.
 
 Bare `doctor` is unchanged. The audit leg is a flag, like `--adoption`.
 
+## One verdict (`narduk-app doctor --all`)
+
+`narduk-app doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]... [--json] [--no-cache]`
+answers "is this app in shape" with one line, then prints each leg's own report
+unchanged (narduk-libs#376). It composes the existing legs and reimplements
+none: bare `doctor`'s prerequisites, `doctor --adoption` (foundation, toolchain,
+shared-UI, coverage and deployment checks, plus the security-header and live
+build probes when `--live` is given) and `doctor --audit`.
+
+| Verdict       | When                                                                                                                                      | Exit |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `DOCTOR FAIL` | a prerequisite fails, an adoption requirement fails, or an undeclared high/critical advisory                                              | 1    |
+| `DOCTOR WARN` | nothing fails, but a prerequisite warns, adoption is `UNKNOWN` (always without `--live`) or `DEVIATION`, or the audit warns or is offline | 0    |
+| `DOCTOR PASS` | every leg passes                                                                                                                          | 0    |
+
+The line names every leg behind the verdict, for example
+`DOCTOR FAIL -- prerequisites: wrangler config; audit: FAIL 1 undeclared high/critical advisory`.
+`--json` prints one object: `verdict`, `line`, `exitCode`, and the three leg
+reports under `prerequisites`, `adoption` and `audit`. Bare `doctor`,
+`--adoption` and `--audit` keep their exact output and exit codes.
+
 ## The deployment standard block
 
 An app declares its half of the standard in the `deployment` block of
@@ -1245,23 +1297,31 @@ would fail every app in the estate.
 
 **Rule table:**
 
-| Sub-check | Condition                                                                                                                                              | Verdict                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| 9.0       | No `package.json` readable at a known monorepo-candidate path                                                                                          | `unknown` (whole item)                                                             |
-| 9.0       | At least one manifest readable                                                                                                                         | `pass`, names the manifests read                                                   |
-| 9.1       | The inventory and capability coverage, always produced once 9.0 passes                                                                                 | `pass`, summarizing pins, manifests and adopted capabilities                       |
-| 9.2       | An `@narduk-enterprises/*` pin the derived catalog cannot classify (retired, renamed, external)                                                        | `unknown` -- the roster cannot score it                                            |
-| 9.2       | Every estate pin resolves to a published capability                                                                                                    | `pass`                                                                             |
-| 9.3       | A `createLogger` declaration, or a `logger.ts`/`logging.ts` exporting a logger, **with** a `console.*` transport and no `@narduk-enterprises/*` import | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
-| 9.4       | An app-local `useSeo` / `defaultSocialMeta` declaration or file that shadows narduk-seo's auto-import, and does not import narduk-seo                  | `fail` if narduk-seo is a dependency, else `unknown` (WARN)                        |
-| 9.5       | An `import`/`require` of `posthog-js` in scanned source                                                                                                | `fail` if narduk-analytics is a dependency, else `unknown` (WARN)                  |
-| 9.5       | A direct `posthog-js` pin with no such import in the scan                                                                                              | `unknown` (WARN) -- manifest-level signal only                                     |
-| 9.6       | A `server/api/**/health*` route that never references `registerHealthCheck`                                                                            | `fail` if narduk-core is a dependency, else `unknown` (WARN)                       |
-| 9.6       | No `server/api` directory at any known prefix                                                                                                          | `not-applicable`                                                                   |
-| 9.7       | A Nitro plugin that hooks `error`/`afterResponse` or attaches a response `finish` listener **and** logs from it (narduk-logging adoption guide step 5) | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
-| 9.7       | No `server/plugins` directory and no `defineNitroPlugin` in the scan                                                                                   | `not-applicable`                                                                   |
-| 9.3-9.7   | The scan found no source directory at a known path                                                                                                     | `unknown` -- nothing could be looked for                                           |
-| 9.3-9.7   | Scanned, and no reimplementation found                                                                                                                 | `pass` (_proven_); `unknown` if the 2000-file ceiling was reached                  |
+| Sub-check | Condition                                                                                                                                                                          | Verdict                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 9.0       | No `package.json` readable at a known monorepo-candidate path                                                                                                                      | `unknown` (whole item)                                                             |
+| 9.0       | At least one manifest readable                                                                                                                                                     | `pass`, names the manifests read                                                   |
+| 9.1       | The inventory and capability coverage, always produced once 9.0 passes                                                                                                             | `pass`, summarizing pins, manifests and adopted capabilities                       |
+| 9.2       | An `@narduk-enterprises/*` pin the derived catalog cannot classify (retired, renamed, external)                                                                                    | `unknown` -- the roster cannot score it                                            |
+| 9.2       | Every estate pin resolves to a published capability                                                                                                                                | `pass`                                                                             |
+| 9.3       | A `createLogger` declaration, or a `logger.ts`/`logging.ts` exporting a logger, **with** a `console.*` transport and no `@narduk-enterprises/*` import                             | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
+| 9.4       | An app-local `useSeo` / `defaultSocialMeta` declaration or file that shadows narduk-seo's auto-import, and does not import narduk-seo                                              | `fail` if narduk-seo is a dependency, else `unknown` (WARN)                        |
+| 9.5       | An `import`/`require` of `posthog-js` in scanned source                                                                                                                            | `fail` if narduk-analytics is a dependency, else `unknown` (WARN)                  |
+| 9.5       | A direct `posthog-js` pin with no such import in the scan                                                                                                                          | `unknown` (WARN) -- manifest-level signal only                                     |
+| 9.6       | A `server/api/**/health*` route that never references `registerHealthCheck`                                                                                                        | `fail` if narduk-core is a dependency, else `unknown` (WARN)                       |
+| 9.6       | No `server/api` directory at any known prefix                                                                                                                                      | `not-applicable`                                                                   |
+| 9.7       | A Nitro plugin that hooks `error`/`afterResponse` or attaches a response `finish` listener **and** logs from it (narduk-logging adoption guide step 5)                             | `fail` if narduk-logging **or** narduk-core is a dependency, else `unknown` (WARN) |
+| 9.7       | No `server/plugins` directory and no `defineNitroPlugin` in the scan                                                                                                               | `not-applicable`                                                                   |
+| 9.8       | A file with an `https://data.nard.uk` string literal **and** a `fetch`/`$fetch`/`ofetch` call that never names `createNardukDataClient` or `fetchNardukDataJson` (narduk-libs#373) | `fail` if narduk-core is a dependency, else `unknown` (WARN)                       |
+| 9.3-9.8   | The scan found no source directory at a known path                                                                                                                                 | `unknown` -- nothing could be looked for                                           |
+| 9.3-9.8   | Scanned, and no reimplementation found                                                                                                                                             | `pass` (_proven_); `unknown` if the 2000-file ceiling was reached                  |
+
+9.8 needs both halves in one file: the origin alone is satisfied by an
+attribution link or a constant handed to the client, and the shared entry points
+are Nitro auto-imports, so a file that names either one is configuring the
+client, not replacing it. The hand-rolled readers it exists for had each dropped
+part of the client's policy: no timeout, no SHA-256 check, or the release pin
+skipped.
 
 The hook alone is not a 9.7 finding: the adoption guide says "Do not replace
 product-specific error handling", so an app may hook `error` for its own
