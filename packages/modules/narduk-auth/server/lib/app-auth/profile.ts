@@ -115,9 +115,9 @@ export async function updateProfile(event: H3Event, body: UpdateProfileInput) {
  * migration can still carry a stale one (narduk-libs#923).
  *
  * Sessions without the `email` provider have no password to prove and skip
- * the check (account deletion holds them to `assertRecentSupabaseSignIn`
- * instead), as does a recovery session, which the session-privilege rules
- * already confine to `change-password`.
+ * the check (account deletion and a first password hold them to
+ * `assertRecentSupabaseSignIn` instead), as does a recovery session, which the
+ * session-privilege rules already confine to `change-password`.
  *
  * An invited or magic-link user has the `email` provider whether or not they
  * ever chose a password, and Supabase does not say which, so they are held to
@@ -254,6 +254,14 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   }
 
   if (config.backend === 'supabase' && sessionUser.authSessionId) {
+    // A social-only session has no password to prove, and the first password
+    // it sets signs in afresh, which would satisfy the recent-sign-in window
+    // account deletion relies on. Hold it to that window here too
+    // (narduk-libs#1075). A recovery session already proved its inbox.
+    if (!sessionUser.authProviders?.includes('email') && !sessionUser.recoveryMode) {
+      await assertRecentSupabaseSignIn(event, sessionUser)
+    }
+
     await assertSupabaseCurrentPassword(event, sessionUser, body.currentPassword, {
       missingMessage: 'Current password is required for email-auth accounts.',
     })

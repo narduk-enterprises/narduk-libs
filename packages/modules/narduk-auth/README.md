@@ -266,6 +266,13 @@ so its session must have signed in within the last 10 minutes
 (`RECENT_SIGN_IN_WINDOW_SECONDS`); otherwise the route answers 403
 `reauthentication_required` and the client signs the user in again and retries.
 
+**Setting a first password (Supabase backend).** The same recent-sign-in rule
+applies when a social-only session sets its first password through
+`change-password`: otherwise a stolen, old session could choose a password, sign
+in with it, and so pass the deletion window above. An older session gets 403
+`reauthentication_required`. A recovery session (from the reset link) is exempt,
+since it has just proved control of the inbox.
+
 ## Request principal for tenancy guards
 
 Guards that choose their own answer for an anonymous caller (narduk-tenancy's
