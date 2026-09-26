@@ -2,6 +2,7 @@
 '@narduk-enterprises/narduk-shell': minor
 '@narduk-enterprises/eslint-config': patch
 '@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/libs-explorer': patch
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
@@ -17,3 +18,5 @@ and exported from the package root. `NeAppShell`'s own skip link is now an
 The eslint-config and narduk-app-tools shared-component lists name
 `NeSkipLink`, so an app-local component of that name is reported as shadowing
 the shared one.
+
+The Libs Explorer gains an `NeSkipLink` usage page.
