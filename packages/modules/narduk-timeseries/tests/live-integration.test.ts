@@ -215,6 +215,71 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
     expect(result.droppedRollupsOlderThan['1m']).toBeInstanceOf(Date)
   }, 120_000)
 
+  it("keeps a tier's rollups whole after its retention sweep and a refresh (narduk-libs#1081)", async () => {
+    // A row DELETE on the raw hypertable is logged as an invalidation for the
+    // continuous aggregates built on it, and the next refresh re-materializes
+    // those buckets from whatever raw is left. A per-tier raw DELETE inside the
+    // 1m level's 7-day refresh window therefore emptied that tier's rollups
+    // between the tier's raw window and 7 days -- the depth the tier was sold.
+    const tierVessel = randomUUID()
+    const store = createTimescaleHistoryStore({
+      executor: client,
+      retention: { executor: client, maxConnections: 1 },
+    })
+    const minute = 60_000
+    const start = new Date(Math.floor((Date.now() - 3 * 86_400_000) / minute) * minute)
+    await store.writeNumeric(
+      Array.from({ length: 120 }, (_, index) => ({
+        path: 'navigation.speedOverGround',
+        ts: new Date(start.getTime() + index * 1000),
+        unit: 'm/s',
+        value: 4,
+        vesselId: tierVessel,
+      })),
+    )
+    const rollupRows = async (view: string) => {
+      const result = await client.query<{ n: string }>(
+        `SELECT count(*) AS n FROM ${view} WHERE vessel_id = $1::uuid`,
+        [tierVessel],
+      )
+      return Number(result.rows[0]?.n)
+    }
+    // The policies' own refresh windows: 1m looks back 7 days.
+    const refresh = async () => {
+      await client.query(
+        "CALL refresh_continuous_aggregate('telemetry_numeric_1m', now() - INTERVAL '7 days', now() - INTERVAL '1 minute')",
+      )
+      await client.query(
+        "CALL refresh_continuous_aggregate('telemetry_numeric_15m', now() - INTERVAL '7 days', now() - INTERVAL '15 minutes')",
+      )
+    }
+
+    try {
+      await refresh()
+      expect(await rollupRows('telemetry_numeric_1m')).toBe(2)
+      expect(await rollupRows('telemetry_numeric_15m')).toBe(1)
+
+      await store.applyRetention({
+        globalRawWindowMs: 7 * 86_400_000,
+        globalRollupWindowMs: { '1m': 30 * 86_400_000 },
+        tiers: {
+          free: {
+            rawWindowMs: 86_400_000,
+            rollupWindowMs: { '1m': 7 * 86_400_000 },
+            vesselIds: [tierVessel],
+          },
+        },
+      })
+      await refresh()
+
+      expect(await rollupRows('telemetry_numeric_1m')).toBe(2)
+      expect(await rollupRows('telemetry_numeric_15m')).toBe(1)
+    } finally {
+      await client.query('DELETE FROM telemetry_numeric WHERE vessel_id = $1::uuid', [tierVessel])
+      await client.query('DELETE FROM series WHERE vessel_id = $1::uuid', [tierVessel])
+    }
+  }, 120_000)
+
   it('lists the series a write created, and creates none for a path it is asked about', async () => {
     const store = createTimescaleHistoryStore({ executor: client })
     await store.writeNumeric([

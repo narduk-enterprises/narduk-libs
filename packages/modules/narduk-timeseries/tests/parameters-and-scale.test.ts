@@ -154,16 +154,17 @@ describe('parameter ceilings', () => {
         free: {
           rawWindowMs: 86_400_000,
           rollupWindowMs: { '1m': 86_400_000 },
+          trackWindowMs: 86_400_000,
           vesselIds: Array.from({ length: 250 }, (_, index) => `vessel-${String(index)}`),
         },
       },
     })
     const deletes = statements.filter((statement) => statement.kind === 'delete')
-    // Per-tier raw only: rollup retention is global and per-vessel rollup
-    // deletes no longer exist (round 24).
+    // Per-tier track only: rollup retention is global (round 24), and a tier's
+    // raw window is a read depth, never a DELETE (narduk-libs#1081).
     expect(deletes).toHaveLength(3)
     for (const statement of deletes) {
-      expect(statement.target).toBe('telemetry_numeric')
+      expect(statement.target).toBe('track_points')
       // One comma-joined text parameter per batch (narduk-libs#311).
       expect((statement.params[0] as string).split(',').length).toBeLessThanOrEqual(100)
     }
