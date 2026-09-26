@@ -337,8 +337,17 @@ function resolvePin(current: string | null, desired: string): Resolution {
       detail:
         'App pin ' +
         (currentShas.find((sha) => workflowPinMove(sha, desiredSha) === 'refuse') ?? desiredSha) +
-        ' is not an older pin this generator shipped, so upgrade will not move it. A newer workflows SHA stays where the app put it.',
+        ' is newer than this generator pin, so upgrade will not move it backward.',
       status: 'clean',
+    }
+  }
+  if (moves.includes('unknown')) {
+    return {
+      detail:
+        'App pin ' +
+        (currentShas.find((sha) => workflowPinMove(sha, desiredSha) === 'unknown') ?? desiredSha) +
+        ' is not in the bundled workflows history, so upgrade will not call it clean or move it.',
+      status: 'unresolved',
     }
   }
   return {

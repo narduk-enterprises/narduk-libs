@@ -14,6 +14,11 @@ import {
 
 const GENERATOR_PIN = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
 const NEWER_APP_PIN = '94a3ba46994dd99e2b4b2ccdbf8b019cbe302745'
+const OLDER_UNLISTED_PINS = [
+  '9685e3d374a1e4b6136ea93f3c68715baa79800f',
+  '2a27d4578c67b2f8bd16962b627768c71436a3cb',
+] as const
+const UNKNOWN_PIN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const CALLER = '.github/workflows/ci.yml'
 
 const tempDirectories: string[] = []
@@ -48,11 +53,19 @@ describe('workflow pin direction', () => {
     expect(workflowPinMove(GENERATOR_PIN, GENERATOR_PIN)).toBe('same')
   })
 
-  it('moves an older generator pin forward and refuses a pin it did not ship', () => {
+  it('moves an older generator pin forward and refuses a newer one', () => {
     const oldest = NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0] as string
     expect(workflowPinMove(oldest, GENERATOR_PIN)).toBe('forward')
     expect(workflowPinMove(NEWER_APP_PIN, GENERATOR_PIN)).toBe('refuse')
     expect(workflowPinMove(GENERATOR_PIN, oldest)).toBe('refuse')
+  })
+
+  it('orders unlisted pins against workflows history and never treats an unknown SHA as movable', () => {
+    for (const sha of OLDER_UNLISTED_PINS) {
+      expect(workflowPinMove(sha, GENERATOR_PIN), sha).toBe('forward')
+    }
+    expect(workflowPinMove(NEWER_APP_PIN, GENERATOR_PIN)).toBe('refuse')
+    expect(workflowPinMove(UNKNOWN_PIN, GENERATOR_PIN)).toBe('unknown')
   })
 
   it('rewrites a workflows@ comment onto the SHA it writes', () => {
@@ -107,5 +120,36 @@ describe('upgrade workflow pin', () => {
     expect(after).toContain(`nuxt-cloudflare.yml@${GENERATOR_PIN}`)
     expect(after).toContain(`workflows@${GENERATOR_PIN.slice(0, 8)}`)
     expect(after).not.toContain(ancestor)
+  })
+
+  it('moves older unlisted caller pins forward', async () => {
+    for (const sha of OLDER_UNLISTED_PINS) {
+      const targetDir = await scaffold()
+      const before = (await read(targetDir, CALLER)).replaceAll(GENERATOR_PIN, sha)
+      await writeFile(join(targetDir, CALLER), before, 'utf8')
+
+      const report = await upgradeNardukApp({ only: [CALLER], targetDir, write: true })
+      const after = await read(targetDir, CALLER)
+
+      expect(report.changes.find((entry) => entry.path === CALLER)?.status, sha).toBe('drift')
+      expect(after, sha).toContain(`nuxt-cloudflare.yml@${GENERATOR_PIN}`)
+      expect(after, sha).not.toContain(sha)
+    }
+  })
+
+  it('does not call an unknown caller pin clean or rewrite it', async () => {
+    const targetDir = await scaffold()
+    const before = (await read(targetDir, CALLER)).replaceAll(GENERATOR_PIN, UNKNOWN_PIN)
+    await writeFile(join(targetDir, CALLER), before, 'utf8')
+
+    const report = await upgradeNardukApp({ only: [CALLER], targetDir, write: true })
+    const change = report.changes.find((entry) => entry.path === CALLER)
+
+    expect(change?.status).toBe('unresolved')
+    expect(change?.status).not.toBe('clean')
+    expect(change?.diff).toBe('')
+    expect(change?.applied).toBe(false)
+    expect(report.driftCount).toBeGreaterThan(0)
+    expect(await read(targetDir, CALLER)).toBe(before)
   })
 })

@@ -1,17 +1,18 @@
 /**
  * Ordinary CI's shared-workflow pin, and the older pins this generator has
- * shipped. `upgrade` moves a caller forward only along this list.
- *
- * A SHA that is not on the list is left alone. That includes a pin an app
- * took from a newer `narduk-enterprises/workflows` commit than this package
- * has reviewed (gonogo, riverstatus and borderwaitstat-us all had
- * `94a3ba46`, 21 commits after `1513b2a2`). Deciding "newer" any other way
- * needs the workflows history, and this package does not call GitHub.
+ * shipped. `upgrade` moves a caller forward when {@link workflowPinMove}
+ * can see that the app's SHA is an ancestor of this pin in the bundled
+ * workflows history (`workflow-history.ts`). A descendant is left where the
+ * app put it. A SHA that history does not contain is not clean and is not
+ * rewritten.
  *
  * When the pin in ci-workflow.ts moves, append the previous SHA here, oldest
- * first, in the same change. A pin that is not on this list is never written
- * over another pin.
+ * first, and refresh `workflow-history.ts` through the workflows `main` that
+ * contains the new pin. A pin that is not an ancestor of the desired SHA is
+ * never written over another pin.
  */
+
+import { WORKFLOWS_MAIN_PARENTS } from './workflow-history.js'
 
 export const NUXT_CLOUDFLARE_WORKFLOW_SHA = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
 
@@ -22,19 +23,34 @@ export const NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS = [
   '6f56678ad7562234e465284e48f27008e0f32db7',
 ] as const
 
-const LINEAGE: readonly string[] = [
-  ...NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS,
-  NUXT_CLOUDFLARE_WORKFLOW_SHA,
-]
+export type WorkflowPinMove = 'forward' | 'refuse' | 'same' | 'unknown'
 
-export type WorkflowPinMove = 'forward' | 'refuse' | 'same'
+function workflowsCommitKnown(sha: string): boolean {
+  return Object.prototype.hasOwnProperty.call(WORKFLOWS_MAIN_PARENTS, sha)
+}
+
+function workflowsIsAncestor(ancestor: string, descendant: string): boolean {
+  if (!workflowsCommitKnown(ancestor) || !workflowsCommitKnown(descendant)) return false
+  if (ancestor === descendant) return true
+  const seen = new Set<string>()
+  const stack = [...(WORKFLOWS_MAIN_PARENTS[descendant] ?? [])]
+  while (stack.length > 0) {
+    const parent = stack.pop()
+    if (!parent || seen.has(parent)) continue
+    if (parent === ancestor) return true
+    seen.add(parent)
+    const parents = WORKFLOWS_MAIN_PARENTS[parent]
+    if (parents) stack.push(...parents)
+  }
+  return false
+}
 
 export function workflowPinMove(currentSha: string, desiredSha: string): WorkflowPinMove {
   if (currentSha === desiredSha) return 'same'
-  const currentIndex = LINEAGE.indexOf(currentSha)
-  const desiredIndex = LINEAGE.indexOf(desiredSha)
-  if (currentIndex === -1 || desiredIndex === -1) return 'refuse'
-  return desiredIndex > currentIndex ? 'forward' : 'refuse'
+  if (!workflowsCommitKnown(currentSha) || !workflowsCommitKnown(desiredSha)) return 'unknown'
+  if (workflowsIsAncestor(currentSha, desiredSha)) return 'forward'
+  if (workflowsIsAncestor(desiredSha, currentSha)) return 'refuse'
+  return 'unknown'
 }
 
 const CALLER_PIN =
