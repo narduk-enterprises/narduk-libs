@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -15,6 +14,7 @@ import {
   webJourney,
   writeAttempt,
 } from './helpers.js'
+import { tempDir } from './fixtures/temp-dir.js'
 
 const DIGEST = 'sha256:current'
 
@@ -48,7 +48,7 @@ function options(outRoot: string) {
 
 describe('buildWalkthrough', () => {
   it('builds from a promoted capture run and reports journeys with none', () => {
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     promoted(outRoot)
     const twoJourneys = catalog()
     twoJourneys.journeys.push({ ...twoJourneys.journeys[0]!, id: 'second-journey' })
@@ -60,7 +60,7 @@ describe('buildWalkthrough', () => {
   })
 
   it('refuses a test-mode latest — a walkthrough never consumes a run with no media', () => {
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     promoted(
       outRoot,
       (manifest) => {
@@ -77,7 +77,7 @@ describe('buildWalkthrough', () => {
   })
 
   it('refuses a stale promoted run at build time', () => {
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     promoted(outRoot, (manifest) => {
       manifest.declarationDigest = 'sha256:older'
     })
@@ -85,7 +85,7 @@ describe('buildWalkthrough', () => {
   })
 
   it('does not refuse a promoted capture as stale when a sibling journey is added (#66)', () => {
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     const first = webJourney()
     promoted(outRoot, (manifest) => {
       manifest.journeyDigest = digestJourney(first)
@@ -100,7 +100,7 @@ describe('buildWalkthrough', () => {
   })
 
   it('refuses mixed application revisions without the explicit override', () => {
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     const mixed = catalog()
     mixed.journeys.push({ ...mixed.journeys[0]!, id: 'second-journey' })
     promoted(outRoot)
@@ -129,7 +129,7 @@ describe('buildWalkthrough', () => {
     // and their runs file under different environments by construction. Making
     // a cross-surface page demand the mixed-revision override every time would
     // turn the guard into noise, which is how a guard stops being read.
-    const outRoot = mkdtempSync(join(tmpdir(), 'njr-out-'))
+    const outRoot = tempDir('njr-out-')
     const both = catalog()
     both.profiles.handset = { kind: 'apple', device: 'iPhone 16 Pro' }
     both.journeys.push({
