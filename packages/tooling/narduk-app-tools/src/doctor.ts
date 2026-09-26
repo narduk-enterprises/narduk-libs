@@ -110,7 +110,17 @@ export function runDoctor(rootDir = process.cwd()): DoctorReport {
         : { detail: `package.json has no ${name} script`, name: `script:${name}`, status: 'warn' },
     )
   }
-  return { checks, clean: checks.every((check) => check.status !== 'fail'), rootDir: root }
+  // A missing cf:build or db:migrate:remote stays a warning (bare doctor still
+  // exits 0), but it is not a clean report. Those scripts are the ones the
+  // app codemod owns.
+  const missingOwnedScript = checks.some(
+    (check) => check.name.startsWith('script:') && check.status !== 'pass',
+  )
+  return {
+    checks,
+    clean: checks.every((check) => check.status !== 'fail') && !missingOwnedScript,
+    rootDir: root,
+  }
 }
 
 export function formatDoctorReport(report: DoctorReport): string {
