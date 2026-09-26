@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
+import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
+import type { CheckoutFacts } from './checkout-facts.js'
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
@@ -112,11 +114,15 @@ function stringList(value: unknown): string[] {
     : []
 }
 
-function capabilitiesFromDependencies(manifest: Record<string, unknown> | null): Capability[] {
-  const installed = new Set([
-    ...Object.keys((manifest?.dependencies as Record<string, string>) ?? {}),
-    ...Object.keys((manifest?.devDependencies as Record<string, string>) ?? {}),
-  ])
+function capabilitiesFromDependencies(
+  manifests: ReadonlyArray<Record<string, unknown> | null>,
+): Capability[] {
+  const installed = new Set(
+    manifests.flatMap((manifest) => [
+      ...Object.keys((manifest?.dependencies as Record<string, string>) ?? {}),
+      ...Object.keys((manifest?.devDependencies as Record<string, string>) ?? {}),
+    ]),
+  )
   // Only our own packages identify a capability. The seo list also pins the
   // third-party nuxt-og-image peer (narduk-libs#825), and an app that installs
   // that package without narduk-seo is not an seo app.
@@ -139,14 +145,19 @@ export async function inferUpgradeProfile(
     UpgradeNardukAppOptions,
     'capabilities' | 'databaseBackend' | 'localPort' | 'visibility'
   > = {},
+  facts?: CheckoutFacts,
 ): Promise<UpgradeProfile> {
   const inferred: string[] = []
   const notes: string[] = []
-  const rootManifest = parseJsonOrNull(await readIfExists(resolve(targetDir, 'package.json')))
-  const webManifest = parseJsonOrNull(
-    await readIfExists(resolve(targetDir, 'apps/web/package.json')),
-  )
-  const nuxtConfig = (await readIfExists(resolve(targetDir, 'apps/web/nuxt.config.ts'))) ?? ''
+  const checkout = facts ?? (await readCheckoutFacts(targetDir))
+  const rootManifest = checkout.rootManifest
+  const webManifest = checkout.webManifest
+  const nuxtConfig = checkout.nuxtConfig
+  if (checkout.layout === 'root') {
+    notes.push(
+      'Read as a root Nuxt app. An existing migrate command is left alone; a missing one is proposed as wrangler d1 migrations apply, not pnpm --filter web.',
+    )
+  }
 
   const appName =
     (typeof rootManifest?.name === 'string' && rootManifest.name) ||
@@ -165,7 +176,7 @@ export async function inferUpgradeProfile(
     ]
     capabilities = declared.length
       ? SUPPORTED_CAPABILITIES.filter((capability) => declared.includes(capability))
-      : capabilitiesFromDependencies(webManifest)
+      : capabilitiesFromDependencies([webManifest, rootManifest])
     inferred.push('capabilities')
   } else {
     const requested =
@@ -183,8 +194,13 @@ export async function inferUpgradeProfile(
 
   let databaseBackend: GeneratedDatabaseBackend
   if (overrides.databaseBackend === undefined) {
-    databaseBackend = /databaseBackend:\s*'none'/u.test(nuxtConfig) ? 'none' : 'd1'
+    databaseBackend = checkout.databaseBackend
     inferred.push('databaseBackend')
+    if (databaseBackend === 'none' && !/databaseBackend:\s*'none'/u.test(nuxtConfig)) {
+      notes.push(
+        'No D1 binding in Config/cloudflare-app.json or the wrangler config; database backend is none.',
+      )
+    }
   } else {
     if (!(GENERATED_DATABASE_BACKENDS as readonly string[]).includes(overrides.databaseBackend)) {
       throw new CreateNardukAppError(
@@ -194,21 +210,32 @@ export async function inferUpgradeProfile(
     databaseBackend = overrides.databaseBackend
   }
 
-  // The generator refuses auth without a database, because auth stores its
-  // users and sessions there. An app that reads as both is telling us one of
-  // the two readings is wrong -- say so and keep going on the database, which
-  // is read from an explicit declaration rather than from a dependency list.
+  // The generator refuses to *scaffold* auth without a database. An explicit
+  // `--capabilities` override that asks for that combination is dropped so
+  // `upgrade` does not throw. Auth read from the checkout — the
+  // `@narduk-enterprises/narduk-auth` dependency, or a declared capability —
+  // stays. Missing D1 is not a reason to drop it, and no managed script
+  // depends on the capability list.
   if (databaseBackend === 'none' && capabilities.includes('auth')) {
-    capabilities = capabilities.filter((capability) => capability !== 'auth')
-    notes.push(
-      "Dropped the auth capability: the app declares databaseBackend 'none', which auth cannot use. No managed unit depends on the capability list; pass --capabilities to override.",
-    )
+    if (overrides.capabilities !== undefined) {
+      capabilities = capabilities.filter((capability) => capability !== 'auth')
+      notes.push(
+        "Dropped the auth capability: the app declares databaseBackend 'none', which auth cannot use. No managed unit depends on the capability list; pass --capabilities to override.",
+      )
+    } else {
+      notes.push(
+        'Auth stays because @narduk-enterprises/narduk-auth is installed or declared. No D1 binding was found, so the database backend stays none.',
+      )
+    }
   }
 
   let localPort: number
   if (overrides.localPort === undefined) {
-    const declared = nardukBlock(webManifest).localDevNuxtPort
-    localPort = typeof declared === 'number' && Number.isInteger(declared) ? declared : 3000
+    const declared =
+      nardukBlock(webManifest).localDevNuxtPort ?? nardukBlock(rootManifest).localDevNuxtPort
+    localPort =
+      checkout.devServerPort ??
+      (typeof declared === 'number' && Number.isInteger(declared) ? declared : 3000)
     inferred.push('localPort')
   } else {
     if (!Number.isInteger(overrides.localPort)) {
@@ -229,16 +256,53 @@ export async function inferUpgradeProfile(
   return { appName, capabilities, databaseBackend, inferred, localPort, notes, visibility }
 }
 
-function generatedContentsFor(profile: UpgradeProfile, targetDir: string): Map<string, string> {
+function generatedContentsFor(
+  profile: UpgradeProfile,
+  targetDir: string,
+  facts: CheckoutFacts,
+): Map<string, string> {
+  // buildGeneratedFiles throws on auth without a database. The profile above
+  // still reports that auth; the desired files are built without it so an
+  // existing app can be checked. Managed scripts do not read the list.
+  const capabilities =
+    profile.databaseBackend === 'none'
+      ? profile.capabilities.filter((capability) => capability !== 'auth')
+      : profile.capabilities
   const files: GeneratedFile[] = buildGeneratedFiles({
     appName: profile.appName,
-    capabilities: profile.capabilities,
+    capabilities,
     databaseBackend: profile.databaseBackend,
     localPort: profile.localPort,
     targetDir,
     visibility: profile.visibility,
   })
-  return new Map(files.map((file) => [file.path, file.contents]))
+  const contents = new Map(files.map((file) => [file.path, file.contents]))
+  const packageJson = contents.get('package.json')
+  if (packageJson) {
+    contents.set('package.json', adaptManagedPackageJson(packageJson, facts, profile.appName))
+  }
+  return contents
+}
+
+function managedTargetsFor(facts: CheckoutFacts): readonly ManagedTarget[] {
+  const wranglerPath = facts.wranglerPath ?? facts.wranglerReportPath
+  return MANAGED_TARGETS.map((target) =>
+    target.mode === 'jsonc-keys' ? { ...target, path: wranglerPath } : target,
+  )
+}
+
+/** Scaffold path and the wrangler filenames a checkout may actually have. */
+const WRANGLER_ONLY_ALIASES = new Set([
+  'apps/web/wrangler.jsonc',
+  'apps/web/wrangler.json',
+  'apps/web/wrangler.toml',
+  'wrangler.jsonc',
+  'wrangler.json',
+  'wrangler.toml',
+])
+
+function onlyMatches(entry: string, target: ManagedTarget): boolean {
+  return entry === target.path || (target.mode === 'jsonc-keys' && WRANGLER_ONLY_ALIASES.has(entry))
 }
 
 interface Resolution {
@@ -822,27 +886,30 @@ function resolveManagedTarget(
  */
 export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promise<UpgradeReport> {
   const targetDir = resolve(options.targetDir)
-  const profile = await inferUpgradeProfile(targetDir, options)
-  const generated = generatedContentsFor(profile, targetDir)
+  const facts = await readCheckoutFacts(targetDir)
+  const profile = await inferUpgradeProfile(targetDir, options, facts)
+  const generated = generatedContentsFor(profile, targetDir, facts)
+  const managedTargets = managedTargetsFor(facts)
 
   const only = (options.only ?? []).map((entry) => entry.replace(/^\.\//u, ''))
   for (const entry of only) {
-    if (!MANAGED_TARGETS.some((target) => target.path === entry)) {
+    if (!managedTargets.some((target) => onlyMatches(entry, target))) {
       throw new CreateNardukAppError(
         '--only must name a managed path: ' +
-          MANAGED_TARGETS.map((target) => target.path).join(', '),
+          managedTargets.map((target) => target.path).join(', '),
       )
     }
   }
   const targets = only.length
-    ? MANAGED_TARGETS.filter((target) => only.includes(target.path))
-    : MANAGED_TARGETS
+    ? managedTargets.filter((target) => only.some((entry) => onlyMatches(entry, target)))
+    : managedTargets
 
   const changes: UpgradeChange[] = []
   for (const target of targets) {
     const absolute = resolve(targetDir, target.path)
     const current = await readIfExists(absolute)
-    const resolution = resolveManagedTarget(target, current, generated.get(target.path))
+    const desiredPath = target.mode === 'jsonc-keys' ? 'apps/web/wrangler.jsonc' : target.path
+    const resolution = resolveManagedTarget(target, current, generated.get(desiredPath))
     const next = resolution.next
     const diff = next === undefined ? '' : unifiedDiff(target.path, current ?? '', next)
 
