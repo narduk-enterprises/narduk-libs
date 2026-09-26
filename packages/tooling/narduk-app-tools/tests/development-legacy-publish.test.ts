@@ -28,6 +28,7 @@ function checkout(files: Record<string, string>): string {
 
 const pkg = (scripts: Record<string, string>, name = 'web') =>
   JSON.stringify({ name, scripts }, null, 2)
+const WORKSPACE = { 'pnpm-workspace.yaml': 'packages:\n  - apps/*\n' }
 const found = (root: string) =>
   findLegacyPublishPaths(root, ['apps/web']).map(describeLegacyPublishPath)
 
@@ -122,23 +123,89 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'pnpm --dir apps/web run deploy:dev',
     ]) {
       const root = checkout({
-        'package.json': pkg({ 'deploy:dev': forward }),
+        ...WORKSPACE,
+        'package.json': pkg({ 'deploy:dev': forward }, 'root'),
         'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
+        'apps/api/package.json': pkg({ build: 'x' }, 'api'),
       })
       expect(found(root), forward).toEqual([])
     }
   })
 
+  it('refuses a name forward unless exactly one workspace package has that name', () => {
+    const enrolled = pkg({ 'deploy:dev': 'narduk-app development deploy' })
+    const collision = checkout({
+      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n  - "packages/*"\n',
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+      'apps/web/package.json': enrolled,
+      'packages/web2/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
+    })
+    expect(found(collision)).toEqual([
+      'package.json "deploy:dev" forwards with --filter web, which selects 2 workspace packages (apps/web, packages/web2); a forward must select exactly one enrolled component',
+    ])
+    const nested = checkout({
+      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n',
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter ./apps/web run deploy:dev' }, 'root'),
+      'apps/web/package.json': enrolled,
+      'apps/web/legacy/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }, 'old'),
+    })
+    expect(found(nested)).toHaveLength(1)
+    const rootNamedWeb = checkout({
+      ...WORKSPACE,
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }),
+      'apps/web/package.json': enrolled,
+    })
+    expect(found(rootNamedWeb)).toHaveLength(1)
+    const excluded = checkout({
+      'pnpm-workspace.yaml': 'packages:\n  - "apps/**"\n  - "packages/*"\n  - "!packages/web2"\n',
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+      'apps/web/package.json': enrolled,
+      'packages/web2/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
+      'tools/web/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
+    })
+    expect(found(excluded)).toEqual([])
+  })
+
+  it('refuses a filter forward when the workspace file is missing or unreadable', () => {
+    const enrolled = pkg({ 'deploy:dev': 'narduk-app development deploy' })
+    const workspaces: Array<Record<string, string>> = [{}, { 'pnpm-workspace.yaml': 'packages: [' }]
+    for (const workspace of workspaces) {
+      const root = checkout({
+        ...workspace,
+        'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
+        'apps/web/package.json': enrolled,
+      })
+      expect(found(root), JSON.stringify(workspace)).toHaveLength(1)
+      expect(found(root)[0]).toContain('so which packages it runs is unknown')
+    }
+    const byDirectory = checkout({
+      'package.json': pkg({ 'deploy:dev': 'pnpm -C apps/web run deploy:dev' }, 'root'),
+      'apps/web/package.json': enrolled,
+    })
+    expect(found(byDirectory)).toEqual([])
+  })
+
   it('refuses a root forward to anything but an enrolled component running the tool', () => {
     const elsewhere = checkout({
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter legacy run deploy:dev' }),
+      ...WORKSPACE,
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter legacy run deploy:dev' }, 'root'),
       'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
+      'apps/legacy/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }, 'legacy'),
     })
     expect(found(elsewhere)).toEqual([
       'package.json "deploy:dev" forwards to "legacy", which is not an enrolled component',
     ])
+    const nowhere = checkout({
+      ...WORKSPACE,
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter legacy run deploy:dev' }, 'root'),
+      'apps/web/package.json': pkg({ 'deploy:dev': 'narduk-app development deploy' }),
+    })
+    expect(found(nowhere)).toEqual([
+      'package.json "deploy:dev" forwards with --filter legacy, which selects 0 workspace packages; a forward must select exactly one enrolled component',
+    ])
     const legacyComponent = checkout({
-      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }),
+      ...WORKSPACE,
+      'package.json': pkg({ 'deploy:dev': 'pnpm --filter web run deploy:dev' }, 'root'),
       'apps/web/package.json': pkg({ 'deploy:dev': 'script/dev/deploy_dev.sh' }),
     })
     expect(found(legacyComponent)).toEqual([
@@ -210,7 +277,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         'db:migrate:staging:remote:bootstrap': bootstrap,
         'single-quoted': "echo 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 by hand' >&2; exit 1",
         'unquoted-reader': '[ $NARDUK_ALLOW_MANUAL_PROMOTE = 1 ] && echo armed',
-        'unquoted-echo': 'echo set NARDUK_ALLOW_MANUAL_PROMOTE=1 to recover',
+        'nested-message': `sh -c "echo 'set NARDUK_ALLOW_MANUAL_PROMOTE=1 first'"`,
         check: 'script/check.sh',
       }),
       'apps/web/script/check.sh':
@@ -220,6 +287,7 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         "if (env.NARDUK_ALLOW_MANUAL_PROMOTE === '1') run()",
         'if (env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY == 1) run()',
         "console.error('set NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 for recovery work')",
+        '/* NARDUK_ALLOW_MANUAL_PROMOTE=1 is never set here */ run()',
         '',
       ].join('\n'),
     })
@@ -239,6 +307,14 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
         h: 'node script/ship.mjs',
         i: 'node script/spawn.mjs',
         j: 'node script/assign.mjs',
+        k: `sh -c 'NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote'`,
+        l: 'env "NARDUK_ALLOW_MANUAL_PROMOTE=1" narduk-app deploy versions-promote',
+        m: 'declare -x NARDUK_ALLOW_MANUAL_PROMOTE=1; narduk-app deploy versions-promote',
+        n: 'sudo -E NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote',
+        o: 'env -u FOO NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote',
+        p: 'echo set NARDUK_ALLOW_MANUAL_PROMOTE=1 to recover',
+        q: 'node script/exec.mjs',
+        r: 'node script/comment.mjs',
       }),
       'apps/web/script/ship.sh':
         'set -e\n  NARDUK_ALLOW_MANUAL_PROMOTE=1 pnpm exec narduk-app deploy versions-promote\n',
@@ -247,6 +323,9 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'apps/web/script/spawn.mjs':
         "execSync('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 wrangler deploy')\n",
       'apps/web/script/assign.mjs': "process.env['NARDUK_ALLOW_MANUAL_PROMOTE'] = 'true'\n",
+      'apps/web/script/exec.mjs':
+        'execSync("export NARDUK_ALLOW_MANUAL_PROMOTE=1; narduk-app deploy versions-promote")\n',
+      'apps/web/script/comment.mjs': "/* c */ process.env.NARDUK_ALLOW_MANUAL_PROMOTE = '1'\n",
     })
     expect(found(root).map((line) => line.split('"')[1])).toEqual([
       'a',
@@ -259,6 +338,14 @@ describe('app-owned publish paths (agent-infrastructure#1679)', () => {
       'h',
       'i',
       'j',
+      'k',
+      'l',
+      'm',
+      'n',
+      'o',
+      'p',
+      'q',
+      'r',
     ])
   })
 

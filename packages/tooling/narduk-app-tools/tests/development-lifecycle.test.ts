@@ -167,6 +167,7 @@ function repository(paired = false) {
     }),
   )
   writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n')
   writeFileSync(join(root, '.gitignore'), 'node_modules/\n.output/\n.env\n')
   writeFileSync(join(root, 'obsolete.txt'), 'remove me\n')
   const components = paired

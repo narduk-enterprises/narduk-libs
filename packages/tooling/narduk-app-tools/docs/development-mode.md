@@ -117,17 +117,25 @@ on:
   `narduk-app development deploy` (optionally through `pnpm exec` or `npx`, with
   plain flags only, on one line). A root `deploy:dev` may instead only forward
   to an enrolled component's own `deploy:dev`, as `create-narduk-app` writes it
-  (`pnpm --filter web run deploy:dev`, or `pnpm -C <appDir> run deploy:dev`);
+  (`pnpm --filter web run deploy:dev`, or `pnpm -C <appDir> run deploy:dev`). A
+  `--filter` forward passes only when it selects exactly one package of the
+  workspace that `pnpm-workspace.yaml` declares (the root plus its `packages`
+  globs, `!` excludes applied), and that package is the enrolled component: a
+  second package named `web` would also run, so it refuses, and so does a
+  missing or unreadable `pnpm-workspace.yaml`;
 - a `deploy:dev` key declared more than once. Merging `main` into a branch that
   predates the conversion keeps both keys without a conflict, and JSON keeps the
   last one, so the check reads the resolved value and the duplicate, never a
   grep for the converted string;
 - a `predeploy:dev` or `postdeploy:dev` script, which pnpm runs around it;
 - any script that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or
-  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` (`NAME=1 cmd`, `export`, `env`,
-  `cross-env`), itself or in a checkout file it runs (such as
-  `script/dev/deploy_dev.sh`). A guard that only reads the variable, or names it
-  in a quoted message, does not count.
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` to a truthy value (`NAME=1 cmd`,
+  `export`, `env`, `cross-env`, `sh -c '…'`, `NAME: '1'` in a spawned
+  environment), itself or in a checkout file it runs (such as
+  `script/dev/deploy_dev.sh`). Anything shaped like an assignment counts, except
+  a reader (`$NAME`, `${NAME…}`) and text wholly inside a quoted string that
+  does not set the variable when read as a command of its own, such as a guard's
+  `echo "… set NAME=1 …"` message. A full-line `#` or `//` comment is skipped.
 
 Entry never edits the app to disarm it: it cannot find an app's own
 authorization record, and an edit in the integration checkout would reach no
