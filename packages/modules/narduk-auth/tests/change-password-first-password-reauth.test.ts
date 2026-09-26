@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { changePassword } from '../server/lib/app-auth/profile'
+import {
+  changePassword,
+  verifySupabaseAccountDeletionCredentials,
+} from '../server/lib/app-auth/profile'
 
 import type { AppSessionUser } from '../server/lib/app-auth/types'
 
@@ -124,6 +127,23 @@ describe('a social-only session setting its first password needs a recent sign-i
       },
     )
     expect(state.passwordUpdates).toEqual([])
+  })
+
+  it('breaks the #1075 chain: no password to sign in with, so the old session cannot delete', async () => {
+    state.sessionCreatedAt = minutesAgo(60)
+
+    // Step 1: choose a password from the stolen, old session.
+    await expect(changePassword(event, { newPassword: 'attacker-chosen-1' })).rejects.toMatchObject(
+      { data: { code: 'reauthentication_required' } },
+    )
+    // Step 2 needs that password: none was set, so there is nothing to sign in with.
+    expect(state.passwordUpdates).toEqual([])
+    // Step 3: the same session still cannot pass the deletion check.
+    await expect(verifySupabaseAccountDeletionCredentials(event, {})).rejects.toMatchObject({
+      statusCode: 403,
+      data: { code: 'reauthentication_required' },
+    })
+    expect(state.signIns).toEqual([])
   })
 
   it('refuses a social-only session whose auth_sessions row is gone', async () => {
