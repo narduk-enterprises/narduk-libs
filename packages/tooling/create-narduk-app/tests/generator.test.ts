@@ -9,11 +9,7 @@ import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as YAML from 'yaml'
 
-import {
-  BUILD_CI_MARKS_OUTPUT,
-  BUILD_CI_REFUSES_DEPLOYED_BUILD,
-  DEPLOY_REFUSES_BUILD_CI_OUTPUT,
-} from '../src/ci-test-env.js'
+import { BUILD_CI_MARKS_OUTPUT, BUILD_CI_REFUSES_DEPLOYED_BUILD } from '../src/ci-test-env.js'
 import { buildGeneratedFiles, createNardukApp, PACKAGE_VERSIONS, runCli } from '../src/index.js'
 
 /**
@@ -1342,12 +1338,8 @@ describe('create-narduk-app generation contract', () => {
     )
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
-    expect(webPackage.scripts.deploy).toBe(
-      DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && narduk-app deploy deploy',
-    )
-    expect(webPackage.scripts['deploy:dry-run']).toBe(
-      DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && narduk-app deploy deploy --dry-run',
-    )
+    expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
+    expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
     expect(webPackage.scripts['deploy:dev']).toBe('narduk-app development deploy')
     expect(webPackage.scripts['performance-budget']).toContain('--font-total-budget-kb 140')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
@@ -1908,9 +1900,7 @@ describe('database-free scaffold', () => {
     expect(web.scripts).not.toHaveProperty('db:migrate:remote')
     expect(root.scripts).not.toHaveProperty('db:migrate:local')
     expect(root.scripts).not.toHaveProperty('db:migrate:remote')
-    expect(web.scripts['cf:deploy']).toBe(
-      DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && narduk-app deploy deploy',
-    )
+    expect(web.scripts['cf:deploy']).toBe('narduk-app deploy deploy')
     expect(collectVersionedDependencies(web)).not.toHaveProperty('drizzle-orm')
     expect(collectVersionedDependencies(web)).not.toHaveProperty('drizzle-kit')
 

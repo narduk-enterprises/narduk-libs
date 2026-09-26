@@ -22,18 +22,27 @@ export const BUILD_CI_REFUSES_DEPLOYED_BUILD =
   "node --eval 'if((process.env.WORKERS_CI||``).trim()||(process.env.WORKERS_CI_BRANCH||``).trim()||(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY||``).trim()){console.error(`build:ci injects public test-only secrets and cannot run for a deployed build`);process.exit(1)}'"
 
 /**
- * Appended to `build:ci` after a successful `pnpm run build`. The marker sits
- * inside `apps/web/.output`, which a later real `nuxt build` replaces.
- * Pasted into manifest.ts as a literal.
+ * Filename `build:ci` writes into the Nitro output directory. narduk-app-tools
+ * refuses to publish an `.output` that contains this file. A later `cf:build`
+ * replaces the directory and drops it.
  */
-export const BUILD_CI_MARKS_OUTPUT =
-  "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=path.join(`apps`,`web`,`.output`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`.narduk-build-ci`),`build:ci\\n`)'"
+export const BUILD_CI_OUTPUT_MARKER = '.narduk-build-ci'
 
 /**
- * Prefix of generated scripts that deploy the existing `apps/web/.output`.
- * `quality:static` runs `build:ci` with no deploy signal, so the output can
- * hold the public placeholders; this refuses to upload that output.
- * Pasted into manifest.ts as a literal.
+ * Suffix of `build:ci`, after a successful `pnpm run build`. `layout` is the
+ * one `upgrade` already infers: scaffolds are always `apps-web`. The apps-web
+ * string is pasted into manifest.ts, which cannot import this module.
  */
-export const DEPLOY_REFUSES_BUILD_CI_OUTPUT =
-  "node --eval 'const fs=require(`node:fs`);if(fs.existsSync(`.output/.narduk-build-ci`)){console.error(`refusing to deploy a build:ci output; it contains public test-only secrets. Run pnpm run build or cf:build first`);process.exit(1)}'"
+export function buildCiMarksOutput(layout: 'apps-web' | 'root'): string {
+  const dir = layout === 'root' ? '`.output`' : 'path.join(`apps`,`web`,`.output`)'
+  return (
+    "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=" +
+    dir +
+    ';fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`' +
+    BUILD_CI_OUTPUT_MARKER +
+    "`),`build:ci\\n`)'"
+  )
+}
+
+/** apps/web scaffolds and upgrades. Root checkouts rewrite this in checkout-facts.ts. */
+export const BUILD_CI_MARKS_OUTPUT = buildCiMarksOutput('apps-web')

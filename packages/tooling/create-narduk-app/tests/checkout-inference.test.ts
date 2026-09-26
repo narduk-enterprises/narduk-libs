@@ -72,6 +72,8 @@ describe('upgrade checkout inference', () => {
     expect(scripts['db:migrate:remote']).toBe('wrangler d1 migrations apply gonogo-db --remote')
     expect(JSON.stringify(scripts)).not.toContain('--filter web')
     expect(scripts['build:ci']).toContain('NUXT_SESSION_PASSWORD')
+    expect(scripts['build:ci']).toContain('dir=`.output`')
+    expect(scripts['build:ci']).not.toContain('apps`,`web')
     expect(report.changes.find((change) => change.path === 'package.json')?.detail).not.toContain(
       'db:migrate:remote',
     )
@@ -107,6 +109,7 @@ describe('upgrade checkout inference', () => {
     expect(scripts['db:migrate:local']).toBe(command)
     expect(scripts['db:migrate:remote']).toBeUndefined()
     expect(scripts['build:ci']).toContain('NUXT_SESSION_PASSWORD')
+    expect(scripts['build:ci']).toContain('path.join(`apps`,`web`,`.output`)')
   })
 
   it('infers database none when neither manifest binds D1', async () => {

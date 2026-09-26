@@ -80,11 +80,14 @@ the documented local gate unrunnable without knowing two placeholder values out
 of band. `build:ci` exits 1 before it exports those placeholders when
 `WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is
 set, so a Workers Builds or local-deploy command cannot use them. A successful
-`build:ci` marks `apps/web/.output/.narduk-build-ci`, and the generated
-`cf:deploy`, `cf:deploy:preview`, `deploy`, and `deploy:dry-run` scripts refuse
-that output, so `pnpm run quality:static` followed by `pnpm run cf:deploy`
-cannot publish the placeholders. `build`, `cf:build`, and `hotfix:build` never
-receive the placeholders and replace `.output`, which clears the marker.
+`build:ci` writes `.narduk-build-ci` beside the Nitro output it produced:
+`apps/web/.output` for the apps/web layout, and `.output` for a root-layout app.
+`upgrade` chooses that directory from the layout it already infers.
+`narduk-app deploy` refuses to publish a marked output and names `cf:build`;
+`deploy-local`, `deploy-hotfix`, and `development deploy` publish through that
+command. A dry run prints the same fact and exits 0. `build`, `cf:build`, and
+`hotfix:build` never receive the placeholders, and a later `cf:build` replaces
+`.output`, which clears the marker.
 
 ## Keeping an app current: `create-narduk-app upgrade`
 

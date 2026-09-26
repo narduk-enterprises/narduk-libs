@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,10 +14,11 @@ import {
 } from '../src/ci-workflow.js'
 import {
   BUILD_CI_MARKS_OUTPUT,
+  BUILD_CI_OUTPUT_MARKER,
   BUILD_CI_REFUSES_DEPLOYED_BUILD,
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
-  DEPLOY_REFUSES_BUILD_CI_OUTPUT,
+  buildCiMarksOutput,
 } from '../src/ci-test-env.js'
 import { buildGeneratedFiles } from '../src/generate.js'
 import { createRootPackageManifest, createWebPackageManifest } from '../src/manifest.js'
@@ -134,42 +135,60 @@ describe('generated CI boundaries', () => {
     }
   })
 
-  it('marks build:ci output and generated deploy scripts refuse that marker', async () => {
+  it('marks build:ci output beside the Nitro directory for each layout', async () => {
     const manifest = JSON.parse(createRootPackageManifest('marker', [], 'private')) as {
       scripts: Record<string, string>
     }
     expect(manifest.scripts['build:ci']?.endsWith(BUILD_CI_MARKS_OUTPUT)).toBe(true)
+    expect(BUILD_CI_MARKS_OUTPUT).toBe(buildCiMarksOutput('apps-web'))
     expect(manifest.scripts['quality:static']).toContain('pnpm run build:ci')
     const web = JSON.parse(createWebPackageManifest('marker', [], 3000)) as {
       scripts: Record<string, string>
     }
-    for (const key of ['cf:deploy', 'cf:deploy:preview', 'deploy', 'deploy:dry-run'] as const) {
-      expect(web.scripts[key]?.startsWith(DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && '), key).toBe(true)
+    for (const key of [
+      'cf:deploy',
+      'cf:deploy:preview',
+      'deploy',
+      'deploy:dry-run',
+      'deploy:local',
+      'deploy:version',
+    ] as const) {
+      expect(web.scripts[key] ?? '', key).not.toContain(BUILD_CI_OUTPUT_MARKER)
     }
 
+    const present = async (path: string): Promise<boolean> => {
+      try {
+        await access(path)
+        return true
+      } catch {
+        return false
+      }
+    }
     const directory = await mkdtemp(join(tmpdir(), 'build-ci-marker-'))
+    const rootDirectory = await mkdtemp(join(tmpdir(), 'build-ci-marker-root-'))
     try {
       const marked = spawnSync('sh', ['-c', BUILD_CI_MARKS_OUTPUT], {
         cwd: directory,
         encoding: 'utf8',
       })
       expect(marked.status).toBe(0)
-      const webDir = join(directory, 'apps', 'web')
-      const refused = spawnSync('sh', ['-c', web.scripts['cf:deploy']?.split(' && ')[0] ?? ''], {
-        cwd: webDir,
+      expect(await present(join(directory, 'apps', 'web', '.output', BUILD_CI_OUTPUT_MARKER))).toBe(
+        true,
+      )
+      expect(await present(join(directory, '.output', BUILD_CI_OUTPUT_MARKER))).toBe(false)
+
+      const rootMarked = spawnSync('sh', ['-c', buildCiMarksOutput('root')], {
+        cwd: rootDirectory,
         encoding: 'utf8',
       })
-      expect(refused.status).toBe(1)
-      expect(refused.stderr).toContain('refusing to deploy a build:ci output')
-      await rm(join(webDir, '.output', '.narduk-build-ci'))
-      const allowed = spawnSync('sh', ['-c', DEPLOY_REFUSES_BUILD_CI_OUTPUT], {
-        cwd: webDir,
-        encoding: 'utf8',
-        env: { PATH: process.env.PATH },
-      })
-      expect(allowed.status).toBe(0)
+      expect(rootMarked.status).toBe(0)
+      expect(await present(join(rootDirectory, '.output', BUILD_CI_OUTPUT_MARKER))).toBe(true)
+      expect(
+        await present(join(rootDirectory, 'apps', 'web', '.output', BUILD_CI_OUTPUT_MARKER)),
+      ).toBe(false)
     } finally {
       await rm(directory, { recursive: true, force: true })
+      await rm(rootDirectory, { recursive: true, force: true })
     }
   })
 
