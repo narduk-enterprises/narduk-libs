@@ -1,5 +1,29 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.8.0
+
+### Minor Changes
+
+- e49a414: Add
+  `resolveBuildDeploymentTarget(env?, { productionBranch?, default? })` under
+  `@narduk-enterprises/narduk-seo/shared/deploymentTarget`, returning
+  `{ target, source }` from the explicit deploy-target variables, then the
+  Workers Builds / Pages branch, then a default. The module now falls back to
+  the branch when no `NARDUK_DEPLOY_TARGET` (or `NUXT_PUBLIC_` equivalent) is
+  set, so a branch build is noindexed as `preview` and a `main` build counts as
+  `production` for `hostAwareIndexing` without a `nuxt.config.ts` write-back. A
+  build with neither variable keeps today's unset target (narduk-libs#999). Apps
+  that deploy production from another branch set `nardukSeo.productionBranch`
+  (default `main`).
+- d092fec: Add
+  `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+  under `@narduk-enterprises/narduk-seo/shared/sitemapFromListing`: a pure
+  helper that turns a listing of entities into `@nuxtjs/sitemap` URL rows. It
+  keeps input order, skips items whose `loc` builder returns a blank value,
+  dedupes by `loc` (first wins) and normalises `lastmod` to an ISO string. The
+  README gains a "Programmatic SEO kit" section tying it to the structured-data
+  composables and the OG image pipeline (narduk-libs#375).
+
 ## 2.7.2
 
 ### Patch Changes

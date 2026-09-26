@@ -1,5 +1,113 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.5
+
+### Patch Changes
+
+- 60a0fa6: narduk-app-tools: add `narduk-app auth agent-key create`
+  (narduk-libs#782). It creates a non-login user (no password, an undeliverable
+  `.invalid` address) and an API key for it in one D1 batch, writing the `users`
+  timestamps that hand SQL left out. The raw key goes only to the stdin of the
+  secret-sink command after `--` (such as the guarded nvault setter), never to
+  argv, stdout or a file, and D1 stores its SHA-256 hash. `--app-url` proves the
+  key with `GET /api/auth/api-keys` (401 without it, 200 or a missing-scope 403
+  with it). narduk-auth's README now says `GET /api/auth/me` is session-only and
+  names the endpoint that proves a key.
+- d65a7a8: `deleteCurrentUserAccount` / `deleteCurrentUserAccountBridge` now
+  re-authenticate a Supabase caller against Supabase
+  (`verifySupabaseAccountDeletionCredentials`) when the caller passes no
+  `verifyCredentials` hook (narduk-libs#1051). An app that built its own delete
+  route on the public helper used to fall through to the local password-hash
+  check, which a Supabase-provisioned user (no local hash) skipped, so `{}`
+  deleted the account. A principal without a session backend (an API key) takes
+  the app's backend, so on a Supabase app it fails closed with 401, and the
+  Supabase session it re-authenticates must belong to the account being deleted:
+  a key beside someone else's session cookie also gets 401.
+  `verifySupabaseAccountDeletionCredentials` takes an optional `{ userId }` for
+  the same binding, and a `verifyCredentials` hook now receives `{ userId }` as
+  its third argument, so passing that function as the hook keeps the binding.
+  Supply `verifyCredentials` only to replace the check with your own.
+- 0f2e149: narduk-auth: Sign in with Apple on the local D1 backend
+  (narduk-libs#164, library side). New `GET /api/auth/apple/start` and
+  `POST /api/callbacks/auth/apple` run Apple's web flow (`form_post`, state
+  cookie, SHA-256 nonce) and verify the identity token natively against Apple's
+  JWKS (`iss`, `aud`, `exp`, nonce), with no hosted auth and no client-secret
+  JWT. `startOAuthFlow` and `signInWithNativeApple` no longer 501 on the local
+  backend when `AUTH_APPLE_SERVICES_ID` / `AUTH_APPLE_NATIVE_CLIENT_IDS` are
+  set, and `users.apple_id` is populated. `/api/auth/runtime-public` reports
+  `appleEnabled`, which the login and register cards use instead of requiring
+  the Supabase backend. An existing account links to an Apple ID only when the
+  app has proven its email.
+- e4c5dcb: narduk-core: the estate error page (`./app/error-page`) gains seams
+  so apps wrap it instead of forking it (narduk-libs#976): `copy` (title and
+  description per status, with a `default`), `links`, `homeLabel`, `homeTo`,
+  `retryLabel`, `layout`, `ui` colour classes in place of hardcoded
+  `text-primary`, an awaited `onBeforeClear(error, action)` hook whose failures
+  never block recovery, and an `#actions` slot. The detail redaction outside
+  `previewSafeMode`, `noindex, nofollow`, and the request id cannot be
+  overridden. With no new prop set, the page renders as before. The export's
+  type declaration covers every new prop.
+- a29099c: `./format` adds `calendarDateIn` and `isSameCalendarDay`: the
+  calendar date of an instant in a named zone as a sortable `YYYY-MM-DD` key,
+  read from `Intl`'s parts rather than the `en-CA` formatted-string trick five
+  apps hand-rolled. Both are also on `createFormatters()`'s bound set
+  (narduk-libs#992).
+- f5e3293: narduk-app-tools: `foundation:check:coverage` sub-check 9.8 flags a
+  file that fetches `https://data.nard.uk` directly instead of through
+  narduk-core's `createNardukDataClient` / `fetchNardukDataJson`
+  (narduk-libs#373). It fails when narduk-core is a dependency and warns
+  (`unknown`) otherwise. A file that names either shared entry point, or only
+  links to the origin, is not reported.
+- 8d88b3d: `<AppMapKit>` no longer throws a `TypeError` when `createPinElement`
+  or `itemLabel` is set at mount and later becomes `undefined`. The pin layer's
+  wrappers read the live prop with optional chaining, the same way `pinGeometry`
+  and `itemKey` already did: a missing glyph renders an empty one, and a missing
+  label writes the empty accessible name the pin layer defaults to (#1038).
+- adcaf7a: `NeDataTable` can make a missing cell read as a word instead of a
+  fixed em dash. `missingText` on the table sets it for every cell, and
+  `missingText` on a `NeDataColumn` (a string, or a function of the row)
+  overrides it for that column. The text is drawn visible and `text-dimmed`, so
+  sighted and screen-reader users read the same word ("unreported", "unset",
+  "not claimed"). With neither set, the table keeps the em dash with "No value"
+  for a screen reader, as before (#1059).
+- e49a414: Add
+  `resolveBuildDeploymentTarget(env?, { productionBranch?, default? })` under
+  `@narduk-enterprises/narduk-seo/shared/deploymentTarget`, returning
+  `{ target, source }` from the explicit deploy-target variables, then the
+  Workers Builds / Pages branch, then a default. The module now falls back to
+  the branch when no `NARDUK_DEPLOY_TARGET` (or `NUXT_PUBLIC_` equivalent) is
+  set, so a branch build is noindexed as `preview` and a `main` build counts as
+  `production` for `hostAwareIndexing` without a `nuxt.config.ts` write-back. A
+  build with neither variable keeps today's unset target (narduk-libs#999). Apps
+  that deploy production from another branch set `nardukSeo.productionBranch`
+  (default `main`).
+- d092fec: Add
+  `sitemapUrlsFromListing(items, { loc, lastmod?, changefreq?, priority? })`
+  under `@narduk-enterprises/narduk-seo/shared/sitemapFromListing`: a pure
+  helper that turns a listing of entities into `@nuxtjs/sitemap` URL rows. It
+  keeps input order, skips items whose `loc` builder returns a blank value,
+  dedupes by `loc` (first wins) and normalises `lastmod` to an ISO string. The
+  README gains a "Programmatic SEO kit" section tying it to the structured-data
+  composables and the OG image pipeline (narduk-libs#375).
+- 6e7286c: narduk-core: `useShare`, native share with a clipboard fallback and a
+  cancel-aware outcome (narduk-libs#994). New explicit export
+  `@narduk-enterprises/narduk-core/app/share`: `share(content, { fallback })`
+  answers `'shared' | 'copied' | 'cancelled' | 'failed'`. A dismissed sheet is
+  `'cancelled'` and never overwrites the clipboard. Any other share failure
+  falls back to the clipboard, and a clipboard refusal is reported.
+  `copy(text)`, `copied` and a hydration-safe `canNativeShare` come with it;
+  `createSharer` is the Vue-free half. Nothing is auto-imported.
+- 9434163: narduk-core: `useStoredState`, a hydration-safe, validated,
+  failure-tolerant Web Storage ref (narduk-libs#993). New explicit export
+  `@narduk-enterprises/narduk-core/app/stored-state`:
+  `useStoredState(key, options)` holds the default on the server and first
+  paint, applies the stored value after mount, validates it, writes changes back
+  and offers `.clear()`; `createStoredState` is the Nuxt-free half. Every
+  storage access, including the `window.localStorage` property itself, is
+  try/caught. `usePersistentTab` now resolves its storage through the same
+  guarded accessor, so blocked storage no longer throws from its restore or its
+  write watcher. Nothing is auto-imported.
+
 ## 0.14.4
 
 ### Patch Changes
