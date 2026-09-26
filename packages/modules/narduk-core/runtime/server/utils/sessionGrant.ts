@@ -49,6 +49,11 @@ export function setSessionGrantValidator(event: H3Event, validator: SessionGrant
   grantContext(event)[SESSION_GRANT_VALIDATOR_KEY] = validator
 }
 
+/**
+ * @deprecated Unused inside narduk-libs: `validateSealedSessionGrant` reads the
+ * validator itself. Kept because server utils are auto-imported into apps, so
+ * removing it is a breaking change (narduk-libs#1037).
+ */
 export function getSessionGrantValidator(event: H3Event): SessionGrantValidator | undefined {
   return grantContext(event)[SESSION_GRANT_VALIDATOR_KEY]
 }
