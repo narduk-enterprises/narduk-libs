@@ -3,6 +3,7 @@ import {
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
 } from './ci-test-env.js'
 import { NODE_SOURCE_FILE } from './ownership.js'
+import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from './workflow-pin.js'
 
 import type { AppVisibility } from './types.js'
 
@@ -26,7 +27,9 @@ import type { AppVisibility } from './types.js'
 //
 // Still not main's tip. The development-mode validation caller stays on #141
 // below so ordinary CI does not also adopt every change between #116 and #141.
-const workflowSha = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
+// `upgrade` will not write this over a caller pin that is not an older value
+// from workflow-pin.ts, so an app that has already moved past it stays there.
+const workflowSha = NUXT_CLOUDFLARE_WORKFLOW_SHA
 
 // workflows#141 (merged as 67968e3): the first commit whose callable accepts an
 // explicit exact-candidate request pushed to `narduk-validation/<sha>/<id>`. Only
