@@ -1,0 +1,6 @@
+---
+'@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/create-narduk-app': patch
+---
+
+`narduk-app development enter` refuses while an app-owned publish path is still armed against the target it would enroll (agent-infrastructure#1679): a `deploy:dev` script that runs anything but `narduk-app development deploy`, a `deploy:dev` key declared more than once (a merge of `main` into a pre-conversion branch keeps both and JSON keeps the last), or any script in the root or a component's `package.json` that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` itself or through a checkout file it runs. The dry run names each one; `enter --refresh` and a resumed entry refuse too; `development status` shows one that a later merge re-armed. Entry reads the checkout and never edits it, so a refusal leaves the app byte for byte as it was and exit has nothing to restore.

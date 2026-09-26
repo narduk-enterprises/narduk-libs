@@ -104,6 +104,37 @@ fails is shown as `unknown`, never as in sync. Entry is journaled. If it is
 interrupted, re-run the same command and it resumes. After editing the
 declaration, `enter --refresh` re-verifies the holds.
 
+Entry refuses while the app still carries its own publish path against the
+target (agent-infrastructure#1679). An app that published itself from a
+workstation before this mode existed keeps its script and its own authorization
+record through enrollment, and that script publishes past the custody record;
+the refusal would otherwise land on the next honest deploy. `enter`,
+`enter --dry-run`, `enter --refresh` and a resumed entry read the root
+`package.json` and each enrolled component's `appDir/package.json` and refuse
+on:
+
+- a `deploy:dev` script that runs anything but `narduk-app development deploy`
+  (optionally through `pnpm exec` or `npx`, with flags only);
+- a `deploy:dev` key declared more than once. Merging `main` into a branch that
+  predates the conversion keeps both keys without a conflict, and JSON keeps the
+  last one, so the check reads the resolved value and the duplicate, never a
+  grep for the converted string;
+- any script that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` itself, or runs a checkout file (such as
+  `script/dev/deploy_dev.sh`) that does. A guard that only reads the variable
+  does not count.
+
+Entry never edits the app to disarm it: it cannot find an app's own
+authorization record, and an edit in the integration checkout would reach no
+other worktree. A refusal leaves every app byte as it was, so exit has nothing
+to restore. Retire the path in a commit (delete the script, keep exactly one
+`"deploy:dev": "narduk-app development deploy"`), retire the legacy
+authorization record with it, and re-run enter. While enrolled,
+`development status` prints `ARMED LEGACY PUBLISH PATH` when a later merge
+brings one back. Retiring the script also retires whatever else it did, such as
+a `wrangler triggers deploy`; `deploy:dev` applies the declared crons and routes
+itself.
+
 A held workflow that is already `disabled_*` at entry has an ambiguous prior
 state: the tool cannot tell an intentional disable from a stale hold left by
 something else. `enter` and `enter --dry-run` refuse and name the paths.

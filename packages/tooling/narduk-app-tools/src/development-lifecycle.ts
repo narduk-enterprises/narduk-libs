@@ -19,6 +19,12 @@ import {
 } from './development-deploy.js'
 import { DevelopmentGitHub, type SavedDevelopmentWorkflow } from './development-github.js'
 import {
+  describeLegacyPublishPath,
+  findLegacyPublishPaths,
+  legacyPublishRefusal,
+  type LegacyPublishPath,
+} from './development-legacy-publish.js'
+import {
   assessDevelopmentMigrations,
   developmentReceiptPath,
   planDevelopmentRollback,
@@ -155,6 +161,18 @@ function describeScriptTriggerCheck(check: ScriptTriggerCheck): string {
   return `script triggers MISMATCH: ${check.mismatches.map(describeScriptTriggerMismatch).join('; ')}`
 }
 
+/** App-owned publish paths for the given components (agent-infrastructure#1679). */
+function legacyPublishPaths(
+  project: DevelopmentProject,
+  ids: readonly string[],
+): LegacyPublishPath[] {
+  const components = project.development.components
+  return findLegacyPublishPaths(
+    project.checkout,
+    ids.flatMap((id) => (components[id] ? [components[id].appDir] : [])),
+  )
+}
+
 function lockTargets(record: ActivationRecord, operation: string, stateDirectory: string) {
   return acquireTargetLocks(
     Object.values(record.components).map(({ accountId, workerName }) => ({
@@ -232,7 +250,14 @@ export async function runDevelopmentEnter(
   log(
     `[development] enter ${project.repository} target-set=${targetSet} approval=${flags.approvalRef}`,
   )
+  // Refuse, never disarm: nothing in the app changes, so exit has nothing to restore.
+  const legacy = legacyPublishPaths(
+    project,
+    targets.map(({ id }) => id),
+  )
   if (flags.dryRun) {
+    for (const finding of legacy)
+      log(`[development]   ARMED legacy publish path: ${describeLegacyPublishPath(finding)}`)
     const workflows = github.saveWorkflows(automation)
     const retired = new Set(automation.retiredWorkflows)
     const known = new Set((existing?.workflows ?? []).map((workflow) => workflow.id))
@@ -269,8 +294,11 @@ export async function runDevelopmentEnter(
       )
     }
     log('[development] dry run: no provider state was changed')
+    if (legacy.length) throw new Error(legacyPublishRefusal(legacy))
     return existing ?? newRecord(project, targetSet, flags)
   }
+  // Before an `entering` record exists, and on resume or --refresh alike.
+  if (legacy.length) throw new Error(legacyPublishRefusal(legacy))
   if (!existing) {
     // Refuse before writing an `entering` record so a first-time enter that
     // hits ambiguous prior state does not leave a file later resume would
@@ -521,6 +549,8 @@ export interface StatusReport {
     }
   >
   workflows?: Array<{ path: string; state: string }>
+  /** App-owned publish paths armed in the checkout (agent-infrastructure#1679). */
+  legacyPublishPaths?: LegacyPublishPath[]
   /** The newest automatic validation push after a verified deploy. */
   autoValidation?: ValidationHistoryEntry
 }
@@ -546,8 +576,11 @@ export async function runDevelopmentStatus(
       timings: receipt.timings,
     }
   }
-  if (record)
+  if (record) {
     report.autoValidation = readValidationHistory(stateDirectory, project.repository).at(-1)
+    // A merge can re-arm a retired script after entry; status reads the checkout, not the record.
+    report.legacyPublishPaths = legacyPublishPaths(project, Object.keys(record.components))
+  }
   if (flags.remote && !record) report.workflows = heldElsewhere(project, github)
   if (flags.remote && record) {
     report.remote = {}
@@ -595,6 +628,8 @@ export function formatStatus(report: StatusReport): string {
     lines.push(`  incomplete transition; completed steps: ${record.journal.join(', ') || 'none'}`)
   if (record.pin)
     lines.push(`  FEEDBACK PIN: ${record.pin.scenario} (since ${record.pin.pinnedAt})`)
+  for (const finding of report.legacyPublishPaths ?? [])
+    lines.push(`  ARMED LEGACY PUBLISH PATH: ${describeLegacyPublishPath(finding)}`)
   if (record.pendingAttempt)
     lines.push(`  UNRESOLVED ATTEMPT ${record.pendingAttempt.buildId}: run development resolve`)
   if (report.lastReceipt)
