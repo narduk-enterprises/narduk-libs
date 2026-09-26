@@ -31,8 +31,10 @@ async function setupModule(options: SetupModuleOptions = {}) {
   const addPlugin = vi.fn()
   const addServerHandler = vi.fn()
   const addServerScanDir = vi.fn()
+  const addTypeTemplate = vi.fn()
   const extendPages = vi.fn()
   const extendRouteRules = vi.fn()
+  const installedModuleNames: string[] = []
   const installSnapshots: Array<{
     moduleName: string
     robots: unknown
@@ -51,6 +53,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     hook: vi.fn(),
   }
   const installModule = vi.fn((moduleName: string) => {
+    installedModuleNames.push(moduleName)
     installSnapshots.push({
       moduleName,
       robots: cloneConfig(nuxt.options.robots),
@@ -58,6 +61,14 @@ async function setupModule(options: SetupModuleOptions = {}) {
       sitemap: cloneConfig(nuxt.options.sitemap),
     })
   })
+  const hasNuxtModule = (name: string) => {
+    if (installedModuleNames.includes(name)) return true
+    const modules = (nuxt.options as { modules?: unknown[] }).modules ?? []
+    return modules.some((entry) => {
+      const id = Array.isArray(entry) ? entry[0] : entry
+      return id === name
+    })
+  }
   const loggerWarn = vi.fn()
 
   vi.doMock('@nuxt/kit', () => ({
@@ -68,12 +79,14 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addPlugin,
     addServerHandler,
     addServerScanDir,
+    addTypeTemplate,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
     extendPages,
     extendRouteRules,
+    hasNuxtModule,
     installModule,
     useLogger: () => ({ warn: loggerWarn }),
   }))
@@ -101,6 +114,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addPlugin,
     addServerHandler,
     addServerScanDir,
+    addTypeTemplate,
     extendPages,
     extendRouteRules,
     installSnapshots,
@@ -108,6 +122,19 @@ async function setupModule(options: SetupModuleOptions = {}) {
     loggerWarn,
     nuxt,
   }
+}
+
+function expectOgImageConfigTypes(addTypeTemplate: ReturnType<typeof vi.fn>) {
+  expect(addTypeTemplate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      filename: 'types/narduk-seo-og-image-config.d.ts',
+      getContents: expect.any(Function),
+    }),
+    { node: true, nuxt: true },
+  )
+  const declaration = String(addTypeTemplate.mock.calls[0]?.[0].getContents())
+  expect(declaration).toContain('ogImage?:')
+  expect(declaration).toContain('enabled?: boolean')
 }
 
 /** Frozen snapshot of production robots.txt options on origin/main before this change. */
@@ -149,12 +176,20 @@ describe('narduk-seo module', () => {
   })
 
   it('registers SEO surface without Nuxt layer inheritance', async () => {
-    const { addImportsDir, addServerScanDir, extendPages, extendRouteRules, installModule, nuxt } =
-      await setupModule()
+    const {
+      addImportsDir,
+      addServerScanDir,
+      addTypeTemplate,
+      extendPages,
+      extendRouteRules,
+      installModule,
+      nuxt,
+    } = await setupModule()
 
     expect(nuxt.options.build.transpile).toContain('@narduk-enterprises/narduk-seo')
     expect(installModule).toHaveBeenCalledWith('nuxt-site-config')
     expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
+    expect(addTypeTemplate).not.toHaveBeenCalled()
     expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
     expect(
       (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
@@ -174,11 +209,12 @@ describe('narduk-seo module', () => {
   })
 
   it('does not install nuxt-og-image when runtime OG is disabled (narduk-libs#170)', async () => {
-    const { addImports, installModule, nuxt } = await setupModule({
+    const { addImports, addTypeTemplate, installModule, nuxt } = await setupModule({
       nuxtOptions: { ogImage: { enabled: false } },
     })
 
     expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expectOgImageConfigTypes(addTypeTemplate)
     expect(installModule).toHaveBeenCalledWith('nuxt-schema-org')
     expect(addImports).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -193,11 +229,12 @@ describe('narduk-seo module', () => {
   })
 
   it('still installs nuxt-og-image when zeroRuntime is set (narduk-libs#170)', async () => {
-    const { addImports, installModule, nuxt } = await setupModule({
+    const { addImports, addTypeTemplate, installModule, nuxt } = await setupModule({
       nuxtOptions: { ogImage: { zeroRuntime: true } },
     })
 
     expect(installModule).toHaveBeenCalledWith('nuxt-og-image')
+    expect(addTypeTemplate).not.toHaveBeenCalled()
     expect(addImports).not.toHaveBeenCalled()
     expect(
       (nuxt.options.runtimeConfig as { public?: { nardukSeoOgImageModule?: boolean } }).public
@@ -208,11 +245,12 @@ describe('narduk-seo module', () => {
   async function expectSilentMissingPeerSkip(nuxtOptions?: Record<string, unknown>) {
     nuxtOgImagePackage.resolvable = false
 
-    const { addImports, installModule, loggerWarn, nuxt } = await setupModule(
+    const { addImports, addTypeTemplate, installModule, loggerWarn, nuxt } = await setupModule(
       nuxtOptions ? { nuxtOptions } : {},
     )
 
     expect(installModule).not.toHaveBeenCalledWith('nuxt-og-image')
+    expectOgImageConfigTypes(addTypeTemplate)
     expect(addImports).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'defineOgImage',

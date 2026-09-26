@@ -31,19 +31,21 @@ cached signed URLs 403 until regenerated. Signing is resolved at **build** time,
 so provision it as a Workers Builds **Build variable**, not as a runtime Worker
 secret. `nuxt dev` stays permissive. `nuxt-og-image` is an **optional peer**
 (narduk-libs#170) at `6.8.0`: omit the peer only for a static `defaultOgImage`
-by setting `ogImage.enabled: false`. Add `nuxt-og-image@6.8.0` when you need
-runtime OG or build-time prerender cards (`ogImage.zeroRuntime: true` still
-installs the module; it only disables the request-time renderer). If the package
-is not installed, this layer skips the renderer instead of failing the build,
-and `useSeo` falls back to the static image. That skip is silent on the
-default/static path and when the app set only `ogImage.zeroRuntime: true`; a
-warning fires only when the app set `ogImage.enabled: true` and the peer is
-missing. The committed CI placeholder is rejected on builds the estate deploys
--- Workers Builds (`WORKERS_CI`) and a local `wrangler deploy` behind
-`NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds nothing deploys (`nuxt dev`, GitHub
-Actions `build:ci`, packed-consumer fixtures) may still use it. Never set
-`ogImage.security.secret: false` -- that is the setting that actually disables
-signing and leaves `/_og/` an unauthenticated renderer.
+by setting `ogImage.enabled: false`. This package types that key, so
+`nuxt typecheck` accepts it when the peer is not installed (narduk-libs#1162).
+Add `nuxt-og-image@6.8.0` when you need runtime OG or build-time prerender cards
+(`ogImage.zeroRuntime: true` still installs the module; it only disables the
+request-time renderer). If the package is not installed, this layer skips the
+renderer instead of failing the build, and `useSeo` falls back to the static
+image. That skip is silent on the default/static path and when the app set only
+`ogImage.zeroRuntime: true`; a warning fires only when the app set
+`ogImage.enabled: true` and the peer is missing. The committed CI placeholder is
+rejected on builds the estate deploys -- Workers Builds (`WORKERS_CI`) and a
+local `wrangler deploy` behind `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds
+nothing deploys (`nuxt dev`, GitHub Actions `build:ci`, packed-consumer
+fixtures) may still use it. Never set `ogImage.security.secret: false` -- that
+is the setting that actually disables signing and leaves `/_og/` an
+unauthenticated renderer.
 
 **A prerendered page bakes its OG card at build time** (narduk-libs#170).
 `nuxt-og-image` picks how to address an image while the page renders: during a
