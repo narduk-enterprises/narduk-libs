@@ -104,6 +104,91 @@ fails is shown as `unknown`, never as in sync. Entry is journaled. If it is
 interrupted, re-run the same command and it resumes. After editing the
 declaration, `enter --refresh` re-verifies the holds.
 
+Entry refuses while the app still carries its own publish path against the
+target (agent-infrastructure#1679). An app that published itself from a
+workstation before this mode existed keeps its script and its own authorization
+record through enrollment, and that script publishes past the custody record;
+the refusal would otherwise land on the next honest deploy. `enter`,
+`enter --dry-run`, `enter --refresh` and a resumed entry read the root
+`package.json` and each enrolled component's `appDir/package.json` and refuse
+on:
+
+- a component `deploy:dev` that runs anything but
+  `narduk-app development deploy` (optionally through `pnpm exec` or `npx`, with
+  plain flags only, on one line). A root `deploy:dev` may instead only forward
+  to an enrolled component's own `deploy:dev`, as `create-narduk-app` writes it
+  (`pnpm --filter web run deploy:dev`, or `pnpm -C <appDir> run deploy:dev`). A
+  `--filter` forward names one package or one `./directory` (no glob or graph
+  selector), and entry asks pnpm itself what it selects
+  (`pnpm --filter <value> ls --json --depth -1` in the checkout). It passes only
+  when pnpm selects exactly one package and that package is the enrolled
+  component: a second package named `web` would also run, so it refuses. If pnpm
+  is missing, times out or answers in a shape the check cannot read, the forward
+  refuses too. Asking pnpm loads the checkout's `.pnpmfile.cjs` and pnpmfile
+  settings and may fetch its `configDependencies`, the same trust the owner
+  already extends by running `pnpm install` there;
+- a `deploy:dev` key declared more than once. Merging `main` into a branch that
+  predates the conversion keeps both keys without a conflict, and JSON keeps the
+  last one, so the check reads the resolved value and the duplicate, never a
+  grep for the converted string;
+- a `predeploy:dev` or `postdeploy:dev` script, which pnpm runs around it;
+- any script that sets `NARDUK_ALLOW_MANUAL_PROMOTE` or
+  `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` to a truthy value (`NAME=1 cmd`,
+  `export`, `env`, `cross-env`, `sh -c '…'`, `NAME: '1'` in a spawned
+  environment), itself or in a checkout file it runs (such as
+  `script/dev/deploy_dev.sh`). Anything shaped like an assignment counts,
+  including `${NAME=1}` and `${NAME:=1}`, except a reader (`$NAME`,
+  `${NAME:-…}`) and a guard's message printed to stderr:
+  - in shell, a quoted `echo`/`printf` argument with an explicit `>&2` or `1>&2`
+    and no other redirection, in no pipeline, function body, `$(…)` or
+    backticks, and in no `{ }`, `( )`, `if`, loop or `case` whose own output is
+    piped or redirected (so `test … || { echo "Set NAME=1 …" >&2; exit 1; }`
+    passes). A plain-stdout `echo` always counts, since a caller can
+    `eval "$(…)"`, `source <(…)` or pipe it into `sh`;
+  - in JS, a string literal passed first to `console.error`/`console.warn` or to
+    a directly thrown `new Error(…)`, in a file that imports, requires, catches
+    and rewires nothing (`console.log`, log helpers and an `Error` kept in a
+    variable count).
+
+  No message is excused anywhere in scope when a script or scanned shell file
+  captures stderr (`2>&1`, `2>file`, `&>`, `|&`, descriptor juggling; only
+  `>/dev/null 2>&1`, `1>/dev/null 2>&1`, `&>/dev/null` and a lone `2>/dev/null`
+  discard, so `2>/dev/null 2>&1` captures), pipes into an interpreter that reads
+  its program from stdin (`| sh`, `| node`, `| bash -s`, `| xargs sh`; a
+  `pnpm --filter … run` or `script(1)` wrapper merges stderr into that pipe; an
+  interpreter given a program file reads the pipe as data), sources code,
+  `eval`s anything, sets a trap, redefines `echo`/`printf` or exports a
+  function, or when the checkout's `.npmrc` or `pnpm-workspace.yaml` sets a
+  script shell; a JS message is not excused when a script preloads node code
+  (`NODE_OPTIONS`, `--require`, `--import`). A JS file that can read a child's
+  stderr (`stderr`, `stdio` other than `'inherit'`, `exec`/`execFile`, or a
+  caught `execSync`) withdraws the excuse when it, or a script that runs it,
+  names the excused file or any package script whose command chain reaches it
+  (`spawnSync('pnpm', ['run', 'deploy'])` where `deploy` runs `pnpm run guard`).
+  A string that is run (`sh -c "npx cross-env NAME=1 …"`, `execSync("…")`), a
+  here-document body and a string spanning lines always count. A full-line
+  comment (`#` in shell, `//` in JS) is skipped.
+
+  Known gaps in the excuse, accepted because each needs deliberate obfuscation
+  inside the app's own checkout: a capture spelled with ANSI-C escapes
+  (`$'…\x3e&1…'`), a capture in a file one level deeper than the scanned scope
+  (a file that a scanned file runs), script names selected by pattern (pnpm
+  `/regex/` selectors, shell globs) or computed at runtime, obfuscated access to
+  a captured child's output (computed property names, `Object.values`, renamed
+  imports), and a program file that evaluates what is piped into it. The check
+  guards against accidental re-arming, not a hostile repo owner.
+
+Entry never edits the app to disarm it: it cannot find an app's own
+authorization record, and an edit in the integration checkout would reach no
+other worktree. A refusal leaves every app byte as it was, so exit has nothing
+to restore. Retire the path in a commit (delete the script, keep exactly one
+`"deploy:dev": "narduk-app development deploy"`), retire the legacy
+authorization record with it, and re-run enter. While enrolled,
+`development status` prints `ARMED LEGACY PUBLISH PATH` when a later merge
+brings one back. Retiring the script also retires whatever else it did, such as
+a `wrangler triggers deploy`; `deploy:dev` applies the declared crons and routes
+itself.
+
 A held workflow that is already `disabled_*` at entry has an ambiguous prior
 state: the tool cannot tell an intentional disable from a stale hold left by
 something else. `enter` and `enter --dry-run` refuse and name the paths.

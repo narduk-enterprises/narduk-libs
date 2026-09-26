@@ -13,7 +13,7 @@ import {
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import { DEVELOPMENT_USAGE } from '../src/development-cli.js'
@@ -49,6 +49,7 @@ import {
   runDevelopmentValidate,
   type LifecycleContext,
 } from '../src/development-lifecycle.js'
+import { workspaceFilter } from '../src/development-legacy-publish.js'
 import { DevelopmentCloudflare } from '../src/development-provider.js'
 import { readActivation, writeActivation } from '../src/development-records.js'
 import { acquireTargetLocks, readPrivateJson, writePrivateJson } from '../src/development-state.js'
@@ -65,7 +66,25 @@ const ACCOUNT = 'a'.repeat(32)
 const REPO = 'narduk-enterprises/fixture-app'
 const SECRET = 'fixture-secret-value-that-is-long-enough-000'
 const roots: string[] = []
+// The template root forwards with `pnpm --filter web`; answer pnpm's
+// selection from the fixture instead of spawning pnpm for every entry.
+// tests/development-legacy-publish.test.ts asks the real pnpm.
+let pnpmSelection: MockInstance<typeof workspaceFilter.select> | undefined
+beforeEach(() => {
+  pnpmSelection = vi.spyOn(workspaceFilter, 'select').mockImplementation((cwd, filter) =>
+    ['apps/web', 'apps/api']
+      .map((dir) => join(cwd, dir))
+      .filter(
+        (dir) =>
+          existsSync(join(dir, 'package.json')) &&
+          (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string })
+            .name === filter,
+      )
+      .map((path) => ({ name: filter, path })),
+  )
+})
 afterEach(() => {
+  pnpmSelection?.mockRestore()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -146,12 +165,28 @@ function repository(paired = false) {
       JSON.stringify({ name: index ? 'fixture-api' : 'fixture-app', account_id: ACCOUNT }),
     )
     writeFileSync(join(root, app, 'src', 'page.ts'), 'export const page = 1\n')
+    // create-narduk-app's component shape: deploy:dev is the enrolled command.
+    writeFileSync(
+      join(root, app, 'package.json'),
+      JSON.stringify({
+        name: index ? 'api' : 'web',
+        scripts: { 'deploy:dev': 'narduk-app development deploy' },
+      }),
+    )
   }
   mkdirSync(join(root, 'Config'))
   mkdirSync(join(root, 'migrations'))
   writeFileSync(join(root, 'migrations', '0001_init.sql'), 'create table t (id integer);\n')
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10.33.4' }))
+  // create-narduk-app's root shape: deploy:dev only forwards to the web component.
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({
+      packageManager: 'pnpm@10.33.4',
+      scripts: { 'deploy:dev': 'pnpm --filter web run deploy:dev' },
+    }),
+  )
   writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n')
   writeFileSync(join(root, '.gitignore'), 'node_modules/\n.output/\n.env\n')
   writeFileSync(join(root, 'obsolete.txt'), 'remove me\n')
   const components = paired
@@ -944,6 +979,160 @@ describe('development mode entry', { timeout: 30_000 }, () => {
     expect(h.github.runs[1].status).toBe('in_progress')
     h.github.runs[1].status = 'completed'
     expect((await enter(h)).mode).toBe('active')
+  })
+})
+
+// ─── app-owned publish paths (agent-infrastructure#1679) ─────────────────────
+
+const LEGACY_DEPLOY = [
+  '#!/usr/bin/env bash',
+  'test -f "$HOME/.local/state/fixture-app-dev/mode.json" || exit 1',
+  'NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1 pnpm exec narduk-app deploy versions-upload',
+  'NARDUK_ALLOW_MANUAL_PROMOTE=1 pnpm exec narduk-app deploy versions-promote --version-id "$v"',
+  '',
+].join('\n')
+
+/** Every tracked file's bytes, so a test can prove the app was left exactly as found. */
+function trackedBytes(root: string): Record<string, string> {
+  return Object.fromEntries(
+    git(root, 'ls-files', '-z')
+      .split('\0')
+      .filter(Boolean)
+      .map((path) => [
+        path,
+        createHash('sha256')
+          .update(readFileSync(join(root, path)))
+          .digest('hex'),
+      ]),
+  )
+}
+
+function armLegacyDeploy(root: string, packageJson: string): void {
+  mkdirSync(join(root, 'apps/web/script/dev'), { recursive: true })
+  writeFileSync(join(root, 'apps/web/script/dev/deploy_dev.sh'), LEGACY_DEPLOY)
+  writeFileSync(join(root, 'apps/web/package.json'), packageJson)
+  git(root, 'add', '.')
+  git(root, 'commit', '-qm', 'app-owned deploy:dev')
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+}
+
+const ENROLLED_PACKAGE = JSON.stringify(
+  { name: 'web', scripts: { 'deploy:dev': 'narduk-app development deploy' } },
+  null,
+  2,
+)
+/** What a merge of main into a pre-conversion branch produced: both keys, legacy last. */
+const MERGED_PACKAGE = [
+  '{',
+  '  "name": "web",',
+  '  "scripts": {',
+  '    "deploy:dev": "narduk-app development deploy",',
+  '    "deploy:dev": "script/dev/deploy_dev.sh"',
+  '  }',
+  '}',
+  '',
+].join('\n')
+
+describe('development enter and app-owned publish paths', { timeout: 30_000 }, () => {
+  it('refuses while the app-owned deploy:dev is armed, changing nothing anywhere', async () => {
+    const h = harness()
+    armLegacyDeploy(
+      h.root,
+      JSON.stringify({ name: 'web', scripts: { 'deploy:dev': 'script/dev/deploy_dev.sh' } }),
+    )
+    const before = trackedBytes(h.root)
+    await expect(enter(h)).rejects.toThrow(
+      /apps\/web\/package.json "deploy:dev" runs "script\/dev\/deploy_dev.sh", not narduk-app development deploy/u,
+    )
+    await expect(enter(h)).rejects.toThrow(
+      /deploy_dev.sh, which sets NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY \(line 3\)/u,
+    )
+    expect(trackedBytes(h.root)).toEqual(before)
+    expect(git(h.root, 'status', '--porcelain', '--untracked-files=all')).toBe('')
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(h.cloudflare.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(h.github.workflows.map((workflow) => workflow.state)).toEqual([
+      'active',
+      'active',
+      'active',
+      'active',
+    ])
+  })
+
+  it('names the armed path in the dry run and refuses it', async () => {
+    const h = harness()
+    armLegacyDeploy(h.root, MERGED_PACKAGE)
+    const before = trackedBytes(h.root)
+    await expect(
+      runDevelopmentEnter(
+        { approvalRef: 'owner#1', publisher: 'lane-a', refresh: false, dryRun: true },
+        h.context,
+      ),
+    ).rejects.toThrow(/"deploy:dev" is declared 2 times; JSON keeps the last/u)
+    expect(h.logs).toContain(
+      '[development]   ARMED legacy publish path: apps/web/package.json "deploy:dev" runs "script/dev/deploy_dev.sh", not narduk-app development deploy',
+    )
+    expect(h.logs).toContain('[development] dry run: no provider state was changed')
+    expect(trackedBytes(h.root)).toEqual(before)
+    expect(git(h.root, 'status', '--porcelain', '--untracked-files=all')).toBe('')
+    expect(h.github.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(h.cloudflare.calls.filter((call) => !call.startsWith('GET'))).toEqual([])
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+  })
+
+  it('enters once the path is retired, and exit leaves every app byte as it found it', async () => {
+    const h = harness()
+    armLegacyDeploy(h.root, ENROLLED_PACKAGE)
+    const before = trackedBytes(h.root)
+    await enter(h)
+    await runDevelopmentDeploy({ dryRun: false, json: false }, h.context)
+    runDevelopmentExitPrepare(h.context)
+    const release = git(h.root, 'rev-parse', 'HEAD')
+    h.github.mainHead = release
+    h.github.runs.push({
+      id: 901,
+      workflow: 3,
+      status: 'completed',
+      head_sha: release,
+      head_branch: `narduk-validation/${release}/request`,
+    })
+    await runDevelopmentExitComplete({ releaseSha: release, validationRun: '901' }, h.context)
+    expect(readActivation(REPO, h.state)).toBeUndefined()
+    expect(trackedBytes(h.root)).toEqual(before)
+    expect(git(h.root, 'status', '--porcelain', '--untracked-files=all')).toBe('')
+  })
+
+  it('shows a merge that re-arms the path in status, and refuses --refresh on it', async () => {
+    const h = harness()
+    armLegacyDeploy(h.root, ENROLLED_PACKAGE)
+    await enter(h)
+    expect((await runDevelopmentStatus({ remote: false }, h.context)).legacyPublishPaths).toEqual(
+      [],
+    )
+    writeFileSync(join(h.root, 'apps/web/package.json'), MERGED_PACKAGE)
+    git(h.root, 'commit', '-qam', 'merge main')
+    const report = await runDevelopmentStatus({ remote: false }, h.context)
+    expect(formatStatus(report)).toContain(
+      '  ARMED LEGACY PUBLISH PATH: apps/web/package.json "deploy:dev" is declared 2 times; JSON keeps the last, so a merge can re-arm a retired script',
+    )
+    await expect(
+      runDevelopmentEnter(
+        { approvalRef: 'owner-approval#1', publisher: 'lane-a', refresh: true, dryRun: false },
+        h.context,
+      ),
+    ).rejects.toThrow(/Retire it in this checkout first/u)
+    expect(readActivation(REPO, h.state)!.mode).toBe('active')
+  })
+
+  it('reports, rather than crashes, when status cannot read the package scripts', async () => {
+    const h = harness()
+    await enter(h)
+    rmSync(join(h.root, 'apps/web/package.json'))
+    mkdirSync(join(h.root, 'apps/web/package.json'))
+    const report = await runDevelopmentStatus({ remote: false }, h.context)
+    expect(report.legacyPublishPaths).toBeUndefined()
+    expect(formatStatus(report)).toMatch(/legacy publish paths unknown: .*EISDIR/u)
   })
 })
 
