@@ -308,6 +308,55 @@ local `auth_verified_emails` record for the user's current address (so it is
 `false` unless `authLocalEmailVerification` is on). The 401-versus-404 choice,
 org selection and app roles stay in the app.
 
+## Sign in with Apple on the local backend
+
+The local D1 backend verifies Apple's identity token itself (narduk-libs#164,
+decision D4); no hosted auth is involved. It is enabled only when the app both
+advertises the provider and names its Apple client ids; otherwise the button is
+hidden and the routes answer 501.
+
+| Variable                       | Purpose                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `AUTH_LOCAL_PROVIDERS=apple`   | Advertise the provider (with `passkey`, comma-separated).                                |
+| `AUTH_APPLE_SERVICES_ID`       | The Services ID: the web flow's `client_id` and the identity token's required `aud`.     |
+| `AUTH_APPLE_NATIVE_CLIENT_IDS` | Comma-separated bundle ids whose native identity tokens `signInWithNativeApple` accepts. |
+
+`GET /api/auth/runtime-public` reports `appleEnabled`, and the login and
+register cards show "Continue with Apple" from it.
+
+**Web flow.** `POST /api/auth/oauth/start` with `provider: 'apple'` returns
+`/api/auth/apple/start?next=…`. That route binds a random `state` and nonce to
+the browser in an `HttpOnly`, `SameSite=None; Secure` cookie scoped to `/api`
+(Apple's `form_post` is a cross-site POST, so a Lax cookie would not return),
+then redirects to Apple with `response_type=code id_token`,
+`response_mode=form_post`, `scope=name email` and the nonce's SHA-256. Apple
+posts back to `/api/callbacks/auth/apple` (under `/api/callbacks/`, which
+narduk-core's header CSRF check exempts, since Apple's POST cannot carry one).
+The cookie is single-use; the callback refuses a `state` that is not this
+browser's, then verifies the identity token against Apple's JWKS (cached for an
+hour) — RS256 signature, `iss`, `aud` = the Services ID, `exp`/`iat`, and the
+nonce — and redirects to `next`, or to the auth callback page with an error.
+Register `https://<app>/api/callbacks/auth/apple` as the Services ID's return
+URL.
+
+The authorization code is not redeemed, so sign-in needs no Apple client-secret
+JWT and carries no six-month rotation. A later feature that needs Apple's
+refresh tokens or token revocation (for example on account deletion) would add
+that credential and its rotation.
+
+**Native.** `signInWithNativeApple(event, { identityToken, nonce })` on the
+local backend requires `nonce`, the raw value whose SHA-256 hex the app passed
+to Apple, and a token whose `aud` is one of `AUTH_APPLE_NATIVE_CLIENT_IDS`.
+
+**Accounts.** A user is found by `users.apple_id`. A first Apple sign-in with an
+Apple-verified address links to an existing account with that address only when
+this app has also proven it (`auth_verified_emails`, so
+`authLocalEmailVerification` must be on); otherwise it is refused with 409
+rather than letting whoever registered the address first share the account. With
+no match, a password-less account is created when public sign-up is open (403
+when closed), named from the name Apple posts on first authorization. Password
+login stays available to accounts that have a password.
+
 ## Passkeys
 
 Passkeys (WebAuthn discoverable credentials) sit **beside** email + password on

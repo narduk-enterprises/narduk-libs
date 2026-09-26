@@ -76,6 +76,8 @@ export interface AuthPasskeySummary {
 }
 
 export interface AuthRuntimePublic {
+  /** Sign in with Apple would complete: advertised, and on local also configured. */
+  appleEnabled?: boolean
   authBackend: 'local' | 'supabase'
   authProviders: string[]
   passkeysEnabled: boolean
