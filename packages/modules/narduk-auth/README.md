@@ -250,7 +250,10 @@ the allowlisted routes below. Everything else that goes through `requireAuth` /
 `AUTH_REQUIRE_MFA` is **ignored on the local backend**. Local auth has no TOTP
 enroll/verify stack; treating the flag as a lockout would brick password
 sessions. A startup warning is logged when the flag is on and the backend is
-local. Passkey user-verification is not treated as AAL2.
+local. Passkey user-verification is not treated as AAL2. For the same reason
+`POST /api/auth/mfa/enroll` and `POST /api/auth/mfa/verify` answer
+`501 MFA is only available when Supabase auth is enabled.` on the local backend,
+rather than a 401 that reads as an expired session.
 
 Notification mutations require the API-key scope `auth:notifications:write`.
 Account deletion, password change, profile update, and MFA enroll/verify refuse

@@ -335,10 +335,26 @@ export async function changePassword(event: H3Event, body: ChangePasswordInput) 
   return { success: true }
 }
 
+/**
+ * MFA is Supabase's TOTP factor. The local backend has no Supabase session to
+ * enroll against, and reading one answered a 401 that sends the user to sign
+ * in again for nothing, so it answers 501 up front, as the OAuth start does
+ * (narduk-libs#1048).
+ */
+function requireSupabaseMfa(event: H3Event): void {
+  if (getAuthConfig(event).backend !== 'supabase') {
+    throw createError({
+      statusCode: 501,
+      statusMessage: 'MFA is only available when Supabase auth is enabled.',
+    })
+  }
+}
+
 export async function enrollMfa(
   event: H3Event,
   friendlyName?: string,
 ): Promise<MfaEnrollmentResult> {
+  requireSupabaseMfa(event)
   const context = await getCurrentSupabaseContext(event)
   const issuer = readRuntimeConfigString(useRuntimeConfig(event).public.appName, 'Narduk')
   const { data, error } = await context.client.mfa.enroll({
@@ -361,6 +377,7 @@ export async function enrollMfa(
 }
 
 export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
+  requireSupabaseMfa(event)
   const context = await getCurrentSupabaseContext(event)
   const { data, error } = await context.client.mfa.challengeAndVerify({
     factorId: body.factorId,
