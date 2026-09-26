@@ -66,6 +66,11 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeDataTable', filePath: './runtime/components/NeDataTable.vue' },
   { name: 'NeSortHeader', filePath: './runtime/components/NeSortHeader.vue' },
   { name: 'NeCsvDownload', filePath: './runtime/components/NeCsvDownload.vue' },
+  // Item 20 (narduk-libs#267): the admin page blocks, composed from items 9,
+  // 11, 12, 14, 16, 17 and 19 — list, detail and edit screens.
+  { name: 'NeAdminListPage', filePath: './runtime/components/NeAdminListPage.vue' },
+  { name: 'NeAdminDetailPage', filePath: './runtime/components/NeAdminDetailPage.vue' },
+  { name: 'NeAdminEditPage', filePath: './runtime/components/NeAdminEditPage.vue' },
   // Item 21 (narduk-libs#268): NeHero, NeFeatureGrid, NeCta, NeMarketingFooter —
   // thin themed wrappers over UPageHero, UPageGrid + UPageFeature, UPageCTA
   // and UFooter.

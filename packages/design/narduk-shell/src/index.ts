@@ -163,6 +163,20 @@ export type {
 } from './runtime/components/ne-prose-types'
 
 /**
+ * The admin page blocks (components backlog item 20, narduk-libs#267):
+ * `NeAdminListPage`, `NeAdminDetailPage`, `NeAdminEditPage`. Types only; a
+ * page wrapping one of them can state its props without importing the SFC.
+ */
+export type {
+  NeAdminBreadcrumbItem,
+  NeAdminDetailPageProps,
+  NeAdminEditPageProps,
+  NeAdminListPageProps,
+  NeAdminPageHeaderProps,
+  NeAdminPanelCopyProps,
+} from './runtime/components/ne-admin-page-types'
+
+/**
  * The marketing sections (components backlog item 21, narduk-libs#268):
  * `NeHero`, `NeFeatureGrid`, `NeCta`, `NeMarketingFooter`. Types only; each
  * is the wrapped Nuxt UI primitive's own props, so a page can type a

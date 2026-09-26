@@ -67,7 +67,11 @@ in its favour. Item 21
 ([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268))
 ships the marketing sections — `NeHero`, `NeFeatureGrid`, `NeCta` and
 `NeMarketingFooter`, thin themed wrappers over `UPageHero`, `UPageGrid` +
-`UPageFeature`, `UPageCTA` and `UFooter`.
+`UPageFeature`, `UPageCTA` and `UFooter`. Item 20
+([narduk-libs#267](https://github.com/narduk-enterprises/narduk-libs/issues/267))
+ships the admin page blocks — `NeAdminListPage`, `NeAdminDetailPage` and
+`NeAdminEditPage` — composed from the header, collection, table, filter, detail,
+confirm and form items with no behaviour of their own.
 [narduk-libs#388](https://github.com/narduk-enterprises/narduk-libs/issues/388)
 ships `NeDataAttribution` and `NeLegalPage` with placeholder-only legal
 templates; the wording itself waits for Logan's approval. Components read Nuxt
@@ -2048,6 +2052,313 @@ None, for the same reason as `NeForm`: `onSubmit` is a real function prop.
 next major"). It is deprecated in the same release as this component and removed
 in the next `narduk-core` major; the migration mapping is in
 [that package's README](../../modules/narduk-core/README.md#deprecated-components).
+
+### NeAdminListPage
+
+An admin list screen on **one** `useCollection()`: `NePageHeader`, a toolbar
+(`NeSearchInput` bound to `c.q`, plus the page's own filters), `NeDataTable` and
+`NePager`. Backlog item 20
+([narduk-libs#267](https://github.com/narduk-enterprises/narduk-libs/issues/267)).
+
+This is composition, not new behaviour. Every control writes back through the
+collection's own mutators — a sortable header through `setSort`, the search
+through `c.q` (with `:debounce="0"`, since the collection already debounces),
+the pager through `state` (page only) and `setLimit` — so the page reset,
+single-flight fetch and clamp that `useCollection` guarantees hold for the whole
+screen without the page wiring any of them.
+
+Filters are a **slot**, not a prop: a filter's value is the `filters` getter the
+page handed `useCollection`, so the page renders its own `NeFilterBar` against
+that ref and the collection refetches from page one when it changes. Empty,
+loading and error follow `NeCardList`'s rule — a panel only when there is no row
+to show; a refetch or a later error keeps the last good page on screen under the
+table's loading bar.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const state = ref<string | null>(null)
+const c = useCollection<Runner>({
+  fetch: (query, { signal }) => $fetch('/api/admin/runners', { query, signal }),
+  filters: () => (state.value ? { state: state.value } : {}),
+  sortable: ['name', 'jobs'],
+  syncQuery: true,
+})
+const columns = [
+  { key: 'name', label: 'Name', sortKey: 'name' },
+  { key: 'state', label: 'State' },
+  { key: 'jobs', label: 'Jobs', numeric: true, sortKey: 'jobs' },
+] satisfies NeDataColumn<Runner>[]
+</script>
+
+<template>
+  <NeAdminListPage
+    title="Runners"
+    eyebrow="Admin"
+    :collection="c"
+    :columns="columns"
+    :row-key="(row) => row.id"
+    noun="runners"
+    search-label="Search runners"
+    empty-title="No runners"
+  >
+    <template #actions>
+      <UButton to="/admin/runners/new" label="New runner" />
+    </template>
+    <template #filters>
+      <NeFilterBar
+        v-model="state"
+        label="State"
+        :items="[
+          { key: 'online', label: 'Online' },
+          { key: 'offline', label: 'Offline' },
+        ]"
+      />
+    </template>
+    <template #name-cell="{ row }">
+      <ULink :to="`/admin/runners/${row.id}`">{{ row.name }}</ULink>
+    </template>
+  </NeAdminListPage>
+</template>
+```
+
+#### Props
+
+| Prop                | Type                                 | Default     | Notes                                                                              |
+| ------------------- | ------------------------------------ | ----------- | ---------------------------------------------------------------------------------- |
+| `title`             | `string`                             | —           | Required. The page's one `<h1>`.                                                   |
+| `collection`        | `NeCollection<T>`                    | —           | Required. The live `useCollection()` return every control reads and writes.        |
+| `columns`           | `readonly NeDataColumn<T>[]`         | —           | Required. `NeDataTable` columns; a `sortKey` column drives `collection.setSort`.   |
+| `description`       | `string`                             | —           | Forwards to `NePageHeader`.                                                        |
+| `eyebrow`           | `string`                             | —           | Forwards to `NePageHeader`.                                                        |
+| `breadcrumbs`       | `NeAdminBreadcrumbItem[]`            | —           | Forwards to `NePageHeader`: one `nav` landmark above the title.                    |
+| `searchLabel`       | `string`                             | —           | Accessible name of the built-in search. Omit it and no search field is rendered.   |
+| `searchPlaceholder` | `string`                             | —           | Hint in the empty search field. Not its accessible name.                           |
+| `noun`              | `string`                             | `'results'` | Plural noun for the pager summary.                                                 |
+| `pageSizes`         | `readonly number[]`                  | —           | Forwards to `NePager`; the select is wired to `collection.setLimit`.               |
+| `to`                | `(page: number) => RouteLocationRaw` | —           | Forwards to `NePager`. Real hrefs.                                                 |
+| `rowKey`            | `(row: T, index: number) => string`  | index       | Forwards to `NeDataTable`.                                                         |
+| `caption`           | `string`                             | —           | Forwards to `NeDataTable`: screen-reader caption.                                  |
+| `emptyTitle`        | `string`                             | `''`        | Empty-panel headline.                                                              |
+| `emptyMessage`      | `string`                             | `''`        | Empty-panel sentence.                                                              |
+| `loadingTitle`      | `string`                             | `''`        | Loading-panel headline.                                                            |
+| `loadingMessage`    | `string`                             | `''`        | Loading-panel sentence.                                                            |
+| `errorTitle`        | `string`                             | `''`        | Error-panel headline.                                                              |
+| `errorMessage`      | `string`                             | `''`        | Error-panel sentence. The collection's `error` is never stringified onto the page. |
+
+#### Slots
+
+| Slot         | When it renders                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `actions`    | Right-aligned header actions next to the title — "New runner".                                   |
+| `filters`    | The page's own filter controls, in the toolbar after the search field.                           |
+| `empty`      | Replaces the empty panel entirely when the collection answered with no rows — a first-run CTA.   |
+| `<key>-cell` | Forwarded to `NeDataTable` unchanged, with `{ column, row, value }`. So are `group` and `break`. |
+
+#### Events
+
+None. Every change goes through the collection's own mutators, so there is
+nothing for the page to hear that the collection has not already applied.
+
+#### Types
+
+```ts
+import type {
+  NeAdminBreadcrumbItem,
+  NeAdminListPageProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeAdminDetailPage
+
+One record on an admin screen: `NePageHeader` with the page's actions, then the
+record through `NeDetailView`, gated by `NeStatePanel` while the read is
+loading, failed or found nothing. Backlog item 20
+([narduk-libs#267](https://github.com/narduk-enterprises/narduk-libs/issues/267)).
+
+**Delete asks first, by construction.** With `onDelete` bound the header gains a
+delete button that opens `useConfirm()` as a `danger` dialog and hands
+`onDelete` to it as the dialog's `onConfirm`: the handler runs only on confirm,
+the dialog stays open and pending while it runs, and a rejection stays in the
+dialog as its error for a retry. `deleted` fires once the handler has resolved —
+navigate away there. The button is hidden while a panel reading is on screen
+(there is no record to delete), and the confirm handle is created on the first
+click, so a page that never deletes adds nothing to the overlay stack. Like
+every `useConfirm()` call, it needs `UApp` (or a `UOverlayProvider`) in the
+tree.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const route = useRoute()
+const { data: runner, status } = await useFetch(
+  `/api/admin/runners/${route.params.id}`,
+)
+
+async function remove() {
+  await $fetch(`/api/admin/runners/${route.params.id}`, { method: 'DELETE' })
+}
+</script>
+
+<template>
+  <NeAdminDetailPage
+    :title="runner?.name ?? 'Runner'"
+    :breadcrumbs="[
+      { label: 'Runners', to: '/admin/runners' },
+      { label: runner?.name },
+    ]"
+    :status="status"
+    :items="[
+      { label: 'Name', value: runner?.name },
+      { label: 'Jobs run', format: 'number', value: runner?.jobs },
+      { label: 'Registered', format: 'date', value: runner?.createdAt },
+    ]"
+    time-zone="America/Chicago"
+    :on-delete="remove"
+    @deleted="navigateTo('/admin/runners')"
+  >
+    <template #actions>
+      <UButton :to="`/admin/runners/${route.params.id}/edit`" label="Edit" />
+    </template>
+  </NeAdminDetailPage>
+</template>
+```
+
+#### Props
+
+| Prop                                    | Type                                  | Default    | Notes                                                                                                   |
+| --------------------------------------- | ------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `title`                                 | `string`                              | —          | Required. The page's one `<h1>`; also the default confirm question ("Delete runner-01?").               |
+| `items`                                 | `readonly NeDetailItem[]`             | —          | Required. The record, as `NeDetailView` rows.                                                           |
+| `description`, `eyebrow`, `breadcrumbs` | as on `NeAdminListPage`               | —          | Forward to `NePageHeader`.                                                                              |
+| `status`                                | `NeAsyncDataStatus`                   | —          | `useFetch()` / `useAsyncData()` status for the record's read.                                           |
+| `panelState`                            | `NeStateValue`                        | —          | An explicit `NeStatePanel` reading. Wins over `status` (`:panel-state="runner ? undefined : 'empty'"`). |
+| `timeZone`                              | `string`                              | —          | Forwards to `NeDetailView`.                                                                             |
+| `unavailableMessage`                    | `string`                              | —          | Forwards to `NeDetailView`: what a missing reading prints.                                              |
+| `onDelete`                              | `() => unknown \| Promise<unknown>`   | —          | Adds the delete button. Runs only after the dialog is confirmed. Bind as `:on-delete`.                  |
+| `deleteLabel`                           | `string`                              | `'Delete'` | The delete button's and the confirm button's label.                                                     |
+| `deleteConfirm`                         | `Omit<NeConfirmOptions, 'onConfirm'>` | —          | Overrides the dialog's copy (`title`, `message`, `confirmLabel`, `body`…).                              |
+| `emptyTitle` / `emptyMessage`           | `string`                              | `''`       | Empty-panel copy (`panelState: 'empty'`).                                                               |
+| `loadingTitle` / `loadingMessage`       | `string`                              | `''`       | Loading-panel copy.                                                                                     |
+| `errorTitle` / `errorMessage`           | `string`                              | `''`       | Error-panel copy. The underlying error is never stringified onto the page.                              |
+
+#### Slots
+
+| Slot      | When it renders                                                                    |
+| --------- | ---------------------------------------------------------------------------------- |
+| `actions` | Right-aligned header actions, before the delete button — Edit, Back. Always shown. |
+| `default` | Extra content under the record — a related list, an audit trail. Hidden with it.   |
+
+#### Events
+
+| Event     | Payload | Notes                                                               |
+| --------- | ------- | ------------------------------------------------------------------- |
+| `deleted` | —       | `onDelete` resolved after the reader confirmed. Navigate away here. |
+
+#### Types
+
+```ts
+import type { NeAdminDetailPageProps } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeAdminEditPage
+
+Create or edit one record on an admin screen: `NePageHeader` over a `NeForm`
+whose save bar is sticky by default and carries a cancel action, held behind
+`NeStatePanel` while the record being edited is still loading or failed to load.
+Backlog item 20
+([narduk-libs#267](https://github.com/narduk-enterprises/narduk-libs/issues/267)).
+
+Every `NeForm` fix (one submit per click, dirty state that only clears on
+success, focus on the first invalid field) is inherited unchanged — the same
+relationship `NeSettingsPage` has with `NeForm`. The gate is the point of the
+panel: a form rendered over a record that has not arrived yet is a form of blank
+fields that saves blanks, so with `status` bound the form does not exist until
+the read has succeeded. Cancel is a real link with `cancelTo`, and a
+`type="button"` calling `onCancel` otherwise, so it can never submit the form.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const route = useRoute()
+const { data: runner, status } = await useFetch(
+  `/api/admin/runners/${route.params.id}`,
+)
+const state = reactive({ name: '', pool: '' })
+watchEffect(() => runner.value && Object.assign(state, runner.value))
+
+async function save(data: Record<string, unknown>) {
+  await $fetch(`/api/admin/runners/${route.params.id}`, {
+    method: 'PATCH',
+    body: data,
+  })
+  await navigateTo(`/admin/runners/${route.params.id}`)
+}
+</script>
+
+<template>
+  <NeAdminEditPage
+    title="Edit runner"
+    :status="status"
+    :schema="runnerSchema"
+    :state="state"
+    :on-submit="save"
+    :cancel-to="`/admin/runners/${route.params.id}`"
+  >
+    <NeFormSection title="General">
+      <UFormField name="name" label="Name"
+        ><UInput v-model="state.name"
+      /></UFormField>
+      <UFormField name="pool" label="Pool"
+        ><UInput v-model="state.pool"
+      /></UFormField>
+    </NeFormSection>
+  </NeAdminEditPage>
+</template>
+```
+
+#### Props
+
+| Prop                                    | Type                                    | Default    | Notes                                                                          |
+| --------------------------------------- | --------------------------------------- | ---------- | ------------------------------------------------------------------------------ |
+| `title`                                 | `string`                                | —          | Required. The page's one `<h1>`.                                               |
+| `state`                                 | `Record<string, unknown>`               | —          | Required. Forwards to `NeForm`'s `state`.                                      |
+| `description`, `eyebrow`, `breadcrumbs` | as on `NeAdminListPage`                 | —          | Forward to `NePageHeader`.                                                     |
+| `onSubmit`                              | `(data) => unknown \| Promise<unknown>` | —          | Forwards to `NeForm`. Bind as `:on-submit`.                                    |
+| `schema`                                | `unknown`                               | —          | Forwards to `NeForm`.                                                          |
+| `validate`                              | `(state) => unknown`                    | —          | Forwards to `NeForm`.                                                          |
+| `saveLabel`                             | `string`                                | `'Save'`   | Forwards to `NeForm`.                                                          |
+| `disabled`                              | `boolean`                               | `false`    | Forwards to `NeForm`.                                                          |
+| `stickySave`                            | `boolean`                               | `true`     | Forwards to `NeForm`. On by default, as on `NeSettingsPage`.                   |
+| `cancelTo`                              | `RouteLocationRaw`                      | —          | Renders cancel as a link back — usually the detail page. Wins over `onCancel`. |
+| `onCancel`                              | `() => void`                            | —          | Renders cancel as a button that calls this. Bind as `:on-cancel`.              |
+| `cancelLabel`                           | `string`                                | `'Cancel'` | The cancel label. No cancel is rendered without `cancelTo` or `onCancel`.      |
+| `status`                                | `NeAsyncDataStatus`                     | —          | The record's read. The form is not rendered until it succeeds.                 |
+| `panelState`                            | `NeStateValue`                          | —          | An explicit `NeStatePanel` reading. Wins over `status`.                        |
+| `emptyTitle` / `emptyMessage`           | `string`                                | `''`       | Empty-panel copy (`panelState: 'empty'`).                                      |
+| `loadingTitle` / `loadingMessage`       | `string`                                | `''`       | Loading-panel copy.                                                            |
+| `errorTitle` / `errorMessage`           | `string`                                | `''`       | Error-panel copy.                                                              |
+
+#### Slots
+
+| Slot            | When it renders                                                             |
+| --------------- | --------------------------------------------------------------------------- |
+| `default`       | The form's fields — typically one or more `NeFormSection`s.                 |
+| `actions`       | Extra buttons in the save bar, before cancel and save.                      |
+| `headerActions` | Right-aligned actions next to the page title, distinct from the save bar's. |
+
+#### Events
+
+None: `onSubmit` and `onCancel` are real function props, as on `NeForm`.
+
+#### Types
+
+```ts
+import type { NeAdminEditPageProps } from '@narduk-enterprises/narduk-shell'
+```
 
 ### NeKpiTile
 
