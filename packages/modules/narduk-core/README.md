@@ -1716,6 +1716,44 @@ unchanged, so the browser TTL of every route is identical before and after. What
 changes is that the edge TTL moves to a header Cloudflare will honor and the
 stale windows stop being silently discarded.
 
+## Per-browser state: `useStoredState`
+
+`@narduk-enterprises/narduk-core/app/stored-state` keeps a per-browser
+convenience (a sidebar's open state, a basemap, a dismissed guide) in Web
+Storage (narduk-libs#993). It is an explicit import, not an auto-import.
+
+```ts
+import { useStoredState } from '@narduk-enterprises/narduk-core/app/stored-state'
+
+const BASEMAPS = ['streets', 'satellite'] as const
+type Basemap = (typeof BASEMAPS)[number]
+
+const navOpen = useStoredState('narduk-farm:nav-open', { default: true })
+const basemap = useStoredState<Basemap>('lakestat:basemap', {
+  default: 'streets',
+  validate: (value): value is Basemap => BASEMAPS.includes(value as Basemap),
+})
+
+navOpen.value = false // written back after render
+basemap.clear() // removes the key and restores the default
+```
+
+- **Hydration-safe.** The server and first paint hold the default. The stored
+  value is applied in `onMounted`, so client and server render the same markup.
+  Never read storage in a `computed` or during setup.
+- **Validated.** The stored string goes through `parse` (default `JSON.parse`)
+  and then `validate`. Without either, a value is accepted only when it has the
+  default's JSON type. Anything else falls back to the default.
+- **Failure-tolerant.** Every read, write and remove is its own try/catch, and
+  so is the `window.localStorage` access itself, which throws `SecurityError`
+  when storage is blocked. Blocked or full storage leaves a working in-memory
+  ref, so the choice lasts for this visit only.
+- **The key is used as given**, with no prefix, so an app that adopts this keeps
+  its viewers' stored choices. `storage: 'session'` uses `sessionStorage`.
+- `createStoredState(key, options)` is the Nuxt-free half (`read`, `write`,
+  `remove`) for code outside a component. `resolveWebStorage(area)` answers the
+  storage area or `null`; `usePersistentTab` now reads storage through it too.
+
 ## Reader preferences: units, time zone and locale
 
 A Narduk app stores measurements in SI and displays them in whatever the reader

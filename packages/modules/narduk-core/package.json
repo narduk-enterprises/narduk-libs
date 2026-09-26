@@ -36,6 +36,9 @@
     "./app/stores/*": {
       "import": "./runtime/app/stores/*.ts"
     },
+    "./app/stored-state": {
+      "import": "./runtime/app/stored-state.ts"
+    },
     "./app/types/*": {
       "types": "./runtime/app/types/*.d.ts"
     },
