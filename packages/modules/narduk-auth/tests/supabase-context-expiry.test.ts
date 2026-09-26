@@ -6,11 +6,11 @@ import { getCurrentSupabaseContext } from '../server/lib/app-auth/session'
  * narduk-libs#1043: `getCurrentSupabaseContext` is the one caller that reaches
  * a Supabase refresh without the read paths' expiry check. A refresh rewrites
  * the row's expiry, so without its own check it would revive an expired
- * session. This runs the real `session.ts`, with the row served from the
- * per-request cache the loader reads first.
+ * session. This runs the real `session.ts` and its row loader; only the
+ * database read is stubbed.
  */
 
-const state = vi.hoisted(() => ({ clearCalls: 0 }))
+const state = vi.hoisted(() => ({ clearCalls: 0, row: null as null | Record<string, unknown> }))
 const createSupabaseUserClient = vi.hoisted(() =>
   vi.fn(() => {
     throw new Error('refresh reached')
@@ -32,21 +32,20 @@ vi.mock('#layer/server/utils/logger', () => ({ useLogger: () => console }))
 
 vi.mock('#layer/server/utils/database', () => ({
   executeDatabaseQuery: vi.fn(),
-  getDatabaseRow: vi.fn(),
+  getDatabaseRow: async () => state.row,
   useDatabase: () => ({}),
 }))
 
+const selectChain = { from: () => ({ where: () => ({}) }) }
 vi.mock('#narduk-auth-server/utils/auth-bridge-database', () => ({
-  useAuthBridgeDatabase: () => ({}),
+  useAuthBridgeDatabase: () => ({ select: () => selectChain }),
 }))
 
 vi.mock('../server/lib/app-auth/supabase-client', () => ({ createSupabaseUserClient }))
 
 function eventWithRow(expiresAt: number) {
-  const row = { id: 'sess-1', userId: 'user-1', expiresAt }
-  return {
-    context: { _nardukAuthSessionRowCache: new Map([['sess-1', Promise.resolve(row)]]) },
-  } as never
+  state.row = { id: 'sess-1', userId: 'user-1', expiresAt }
+  return { context: {} } as never
 }
 
 const nowSeconds = () => Math.floor(Date.now() / 1000)
