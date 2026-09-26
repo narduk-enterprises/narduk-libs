@@ -428,7 +428,7 @@ describe('item 9.6 -- hand-rolled /api/health route', () => {
     expect(detailOf(repo, '9.6')).toContain('@narduk-enterprises/narduk-core')
   })
 
-  it('also catches a nested health route at a monorepo prefix', () => {
+  it('also catches the shared health route at a monorepo prefix', () => {
     const repo = repoWith((root) => {
       writeJson(root, 'apps/web/package.json', {
         name: 'web',
@@ -437,11 +437,33 @@ describe('item 9.6 -- hand-rolled /api/health route', () => {
       writeFile(root, 'apps/web/nuxt.config.ts', 'export default defineNuxtConfig({})\n')
       writeFile(
         root,
-        'apps/web/server/api/v1/health/index.get.ts',
+        'apps/web/server/api/health/index.get.ts',
         'export default defineEventHandler(() => ({}))\n',
       )
     })
     expect(statusOf(repo, '9.6')).toBe('fail')
+    expect(detailOf(repo, '9.6')).toContain('answers /api/health')
+  })
+
+  it('does not treat a versioned health route as /api/health', () => {
+    const repo = repoWith((root) => {
+      writeJson(root, 'apps/web/package.json', {
+        name: 'web',
+        dependencies: { '@narduk-enterprises/narduk-core': '2.0.0' },
+      })
+      writeFile(root, 'apps/web/nuxt.config.ts', 'export default defineNuxtConfig({})\n')
+      writeFile(
+        root,
+        'apps/web/server/api/v1/health.get.ts',
+        'export default defineEventHandler(() => ({}))\n',
+      )
+      writeFile(
+        root,
+        'apps/web/server/api/v1/health/index.get.ts',
+        'export default defineEventHandler(() => ({}))\n',
+      )
+    })
+    expect(statusOf(repo, '9.6')).toBe('pass')
   })
 
   it('is not-applicable when the app has no server/api directory', () => {

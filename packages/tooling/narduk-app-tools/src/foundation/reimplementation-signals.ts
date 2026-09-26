@@ -228,12 +228,16 @@ export const POSTHOG_PACKAGE = 'posthog-js'
 
 // ── Detector 4: app-owned health route ────────────────────────────────────
 
-const HEALTH_ROUTE_RE =
-  /(?:^|\/)server\/api\/(?:[\w[\].-]+\/)*health(?:\/index)?(?:\.[a-z]+)?\.(?:ts|mts|js|mjs)$/
+/**
+ * Nitro mounts `server/api/health.get.ts` and `server/api/health/index.get.ts`
+ * at `/api/health`. A nested file such as `server/api/v1/health.get.ts` mounts
+ * `/api/v1/health` and is not a copy of the shared route.
+ */
+const HEALTH_ROUTE_RE = /(?:^|\/)server\/api\/health(?:\/index)?(?:\.[a-z]+)?\.(?:ts|mts|js|mjs)$/
 const REGISTER_HEALTH_CHECK_RE = /\bregisterHealthCheck\b/
 
-/** A route file under `server/api/` that answers `/api/health` without using
- * narduk-core's `registerHealthCheck`.
+/** A route file that answers `/api/health` without using narduk-core's
+ * `registerHealthCheck`.
  *
  * company-hq `NARDUK-APP-COMPLIANCE.md` §3.6 rule 1 (narduk-libs#313, Logan
  * 2026-09-16): "The app serves the shared narduk-core `/api/health` route; it
