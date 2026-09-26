@@ -75,6 +75,38 @@ describe('readPresentedChallenge', () => {
     expect(readPresentedChallenge(encodeClientData(null))).toBeNull()
     expect(readPresentedChallenge(isoBase64URL.fromBuffer(new Uint8Array([0xff, 0x00])))).toBeNull()
   })
+
+  // narduk-libs#1060: the decoder is strict base64url, where the library's is
+  // lenient and returns garbage. Either way nothing is accepted, because the
+  // challenge must still match a row this server issued; the test pins which.
+  it('reads only strict base64url, with or without padding', () => {
+    const clientDataJSON = encodeClientData({ challenge: 'Q0hBTExFTkdF' })
+    const padded = clientDataJSON.padEnd(Math.ceil(clientDataJSON.length / 4) * 4, '=')
+    expect(padded).not.toBe(clientDataJSON)
+    expect(readPresentedChallenge(padded)).toBe('Q0hBTExFTkdF')
+
+    // `?>` and `~` encode to `+` and `/` in standard base64.
+    const withSymbols = encodeClientData({ challenge: 'Q0hBTExFTkdF', pad: '?>?~~~' })
+    expect(withSymbols).toMatch(/[-_]/u)
+    const standardBase64 = withSymbols.replaceAll('-', '+').replaceAll('_', '/')
+    expect(readPresentedChallenge(withSymbols)).toBe('Q0hBTExFTkdF')
+
+    for (const malformed of [
+      'a',
+      'a===',
+      `${clientDataJSON}===`,
+      ` ${clientDataJSON}`,
+      `${clientDataJSON}\n`,
+      `${clientDataJSON.slice(0, 8)} ${clientDataJSON.slice(8)}`,
+      // Whitespace that keeps the length a multiple of four, which `atob` skips.
+      `    ${clientDataJSON}`,
+      `${clientDataJSON.slice(0, 4)}\t\t\t\t${clientDataJSON.slice(4)}`,
+      // Standard base64, not base64url.
+      standardBase64,
+    ]) {
+      expect(readPresentedChallenge(malformed), JSON.stringify(malformed)).toBeNull()
+    }
+  })
 })
 
 describe('isClaimedChallengeUsable', () => {

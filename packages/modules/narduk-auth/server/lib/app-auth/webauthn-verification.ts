@@ -42,13 +42,20 @@ export function evaluateSignatureCounter(
   return { ok: true, nextCounter: newCounter }
 }
 
+/** Base64url, with the padding a whole number of quartets allows and nothing else. */
+const STRICT_BASE64URL = /^(?:[\w-]{4})*(?:[\w-]{2}(?:==)?|[\w-]{3}=?)?$/u
+
 /**
  * Decodes base64url (padding optional) to UTF-8, as `isoBase64URL.toUTF8String`
  * does. Done here with platform `atob` so this module never imports
- * `@simplewebauthn/server`, which loads lazily (narduk-libs#892). Throws on
- * characters outside the alphabet.
+ * `@simplewebauthn/server`, which loads lazily (narduk-libs#892).
+ *
+ * Strict where the library is lenient (narduk-libs#1060): anything outside the
+ * alphabet, whitespace, standard base64's `+` and `/`, a lone trailing
+ * character or surplus padding throws rather than decoding to garbage.
  */
 function decodeBase64UrlToUtf8(value: string): string {
+  if (!STRICT_BASE64URL.test(value)) throw new TypeError('Not base64url.')
   const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
   const binary = atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '='))
   return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)))

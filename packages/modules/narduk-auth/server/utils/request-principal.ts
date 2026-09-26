@@ -1,4 +1,5 @@
 import { getHeader } from 'h3'
+import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { authenticateApiKey } from '#layer/server/utils/auth'
 import {
@@ -55,7 +56,10 @@ export interface ResolvePrincipalOptions {
   allowApiKey?: boolean
   /**
    * Accept a native-app bearer (`getNativeAuthSession`). Default false. A
-   * native bearer takes precedence over the session cookie.
+   * native bearer takes precedence over the session cookie. On an app without
+   * native sign-in (no `authNativeClients`, or not the local backend) there is
+   * no native bearer to read, and the call resolves the session as without
+   * this option.
    */
   allowNative?: boolean
   /** Refuse a session whose user still has to set a password. Default false. */
@@ -71,6 +75,17 @@ export interface ResolvePrincipalOptions {
 function hasBearer(event: H3Event): boolean {
   const header = getHeader(event, 'authorization')
   return typeof header === 'string' && /^bearer\s+\S/iu.test(header.trim())
+}
+
+/**
+ * Whether this app issues native sessions at all. `nativeAuthClients` throws
+ * 404 or 503 when it does not, which suits the native endpoints but not a
+ * resolver that answers `null` (narduk-libs#1060).
+ */
+function nativeSignInEnabled(event: H3Event): boolean {
+  const config = useRuntimeConfig(event)
+  const clients: unknown = config.authNativeClients
+  return Array.isArray(clients) && clients.length > 0 && config.authBackend === 'local'
 }
 
 async function localEmailVerified(event: H3Event, userId: string, email: string) {
@@ -149,7 +164,7 @@ export async function resolveRequestPrincipal(
   if (getApiKeyFromAuthorization(event)) {
     return options.allowApiKey ? resolveApiKeyPrincipal(event, options) : null
   }
-  if (options.allowNative && hasBearer(event)) {
+  if (options.allowNative && hasBearer(event) && nativeSignInEnabled(event)) {
     return resolveNativePrincipal(event)
   }
   return resolveSessionPrincipal(event, options)
