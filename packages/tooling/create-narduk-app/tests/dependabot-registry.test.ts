@@ -263,6 +263,26 @@ describe('upgrade dependabot registry', () => {
     await expect(readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')).rejects.toThrow()
   })
 
+  it('reports an existing file as unresolved, not clean, when the registry is unknown', async () => {
+    const targetDir = await checkout()
+    await write(targetDir, 'package.json', '{ "name": "unknown-app", "private": true }\n')
+    const existing =
+      'version: 2\nupdates:\n  - package-ecosystem: github-actions\n    directory: /\n'
+    await write(targetDir, '.github/dependabot.yml', existing)
+
+    const report = await upgradeNardukApp({
+      only: ['.github/dependabot.yml'],
+      targetDir,
+      write: true,
+    })
+    const change = report.changes.find((entry) => entry.path === '.github/dependabot.yml')
+    expect(change?.status).toBe('unresolved')
+    expect(change?.applied).toBe(false)
+    await expect(readFile(join(targetDir, '.github/dependabot.yml'), 'utf8')).resolves.toBe(
+      existing,
+    )
+  })
+
   it('still matches a freshly generated npm.nard.uk app', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'create-narduk-dependabot-scaffold-'))
     tempDirectories.push(directory)

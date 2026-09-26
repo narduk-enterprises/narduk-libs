@@ -152,17 +152,17 @@ export function dependabotMatchesRegistry(contents: string, registry: PackageReg
     return false
   }
   const entries = registryEntries(contents)
-  const hosts = entries.map((entry) => registryHost(entry.url))
+  const hosts = new Set(entries.map((entry) => registryHost(entry.url)))
   if (registry === 'github-packages') {
     return (
-      hosts.includes(GITHUB_PACKAGES_HOST) &&
-      !hosts.includes(NARDUK_MIRROR_HOST) &&
+      hosts.has(GITHUB_PACKAGES_HOST) &&
+      !hosts.has(NARDUK_MIRROR_HOST) &&
       !contents.includes(PLACEHOLDER_SECRET)
     )
   }
   return (
     entries.some((entry) => registryHost(entry.url) === NARDUK_MIRROR_HOST && !entry.scope) &&
-    !hosts.includes(GITHUB_PACKAGES_HOST)
+    !hosts.has(GITHUB_PACKAGES_HOST)
   )
 }
 
@@ -268,8 +268,8 @@ export function resolveDependabot(
   if (registry === 'unknown') {
     return {
       detail:
-        'Could not tell npm.nard.uk from npm.pkg.github.com (.npmrc and lockfile). Left untouched.',
-      status: 'clean',
+        'Could not tell npm.nard.uk from npm.pkg.github.com (.npmrc and lockfile), so the file was not checked. Left untouched.',
+      status: 'unresolved',
     }
   }
   if (current === desired) {
