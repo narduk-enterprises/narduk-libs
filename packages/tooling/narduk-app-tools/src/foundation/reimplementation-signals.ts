@@ -300,3 +300,35 @@ export function hasNitroPluginSurface(repo: AppRepo, files: readonly ScannedFile
   if (APP_PREFIXES.some((prefix) => repo.exists(`${prefix}server/plugins`))) return true
   return files.some(({ text }) => NITRO_PLUGIN_RE.test(text))
 }
+
+// ── Detector 6: hand-rolled narduk-data reader ────────────────────────────
+
+const NARDUK_DATA_ORIGIN_RE = /['"`]https:\/\/data\.nard\.uk(?:[/'"`?#]|\$\{)/
+const FETCH_CALL_RE = /(?:\bfetch|\$fetch|\bofetch|\bfetchJson)\s*[(<]/
+const SHARED_DATA_CLIENT_RE = /\b(?:createNardukDataClient|fetchNardukDataJson)\b/
+
+/** A file that fetches `https://data.nard.uk` itself instead of through
+ * narduk-core's shared product client (narduk-libs#373).
+ *
+ * `createNardukDataClient` / `fetchNardukDataJson` carry the timeout, retry,
+ * single-flight, stale-if-error, SHA-256 and freshness policy; the hand-rolled
+ * readers found in the estate had each dropped some of it (no timeout, no
+ * checksum, the release pin skipped). Both halves are required: the origin as a
+ * string literal AND a fetch call in the same file. A file that names either
+ * shared entry point -- they are Nitro auto-imports, so there may be no import
+ * line -- is configuring the client, not replacing it, and is not reported. */
+export function detectHandRolledNardukDataReader(files: readonly ScannedFile[]): Detection[] {
+  const hits: Detection[] = []
+  for (const { rel, text } of files) {
+    if (!NARDUK_DATA_ORIGIN_RE.test(text)) continue
+    if (SHARED_DATA_CLIENT_RE.test(text)) continue
+    if (!FETCH_CALL_RE.test(text)) continue
+    hits.push({
+      path: rel,
+      detail:
+        "fetches https://data.nard.uk directly instead of through narduk-core's " +
+        'createNardukDataClient / fetchNardukDataJson',
+    })
+  }
+  return hits
+}

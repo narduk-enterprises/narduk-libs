@@ -281,5 +281,6 @@ describe('zero false positives on conformant apps', () => {
     expect(byId.get('9.3')).toBe('pass')
     expect(byId.get('9.4')).toBe('pass')
     expect(byId.get('9.5')).toBe('pass')
+    expect(byId.get('9.8')).toBe('pass')
   })
 })
