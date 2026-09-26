@@ -4,7 +4,7 @@
 ---
 
 narduk-auth: Sign in with Apple on the local D1 backend (narduk-libs#164,
-library side). New `GET /api/auth/apple/start` and `POST /api/auth/apple/callback`
+library side). New `GET /api/auth/apple/start` and `POST /api/callbacks/auth/apple`
 run Apple's web flow (`form_post`, state cookie, SHA-256 nonce) and verify the
 identity token natively against Apple's JWKS (`iss`, `aud`, `exp`, nonce), with
 no hosted auth and no client-secret JWT. `startOAuthFlow` and
