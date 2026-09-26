@@ -13,12 +13,14 @@ import {
   RUNNER_ONBOARDING_MESSAGE,
 } from '../src/ci-workflow.js'
 import {
+  BUILD_CI_MARKS_OUTPUT,
   BUILD_CI_REFUSES_DEPLOYED_BUILD,
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
+  DEPLOY_REFUSES_BUILD_CI_OUTPUT,
 } from '../src/ci-test-env.js'
 import { buildGeneratedFiles } from '../src/generate.js'
-import { createRootPackageManifest } from '../src/manifest.js'
+import { createRootPackageManifest, createWebPackageManifest } from '../src/manifest.js'
 
 /**
  * The caller's environment minus npm's registry config. An outer
@@ -100,7 +102,8 @@ describe('generated CI boundaries', () => {
         ' && ' +
         `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
         `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD} ` +
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build && ' +
+        BUILD_CI_MARKS_OUTPUT,
     )
   })
 
@@ -128,6 +131,45 @@ describe('generated CI boundaries', () => {
     }
     for (const key of ['build', 'cf:build', 'hotfix:build']) {
       expect(manifest.scripts[key] ?? '').not.toContain('narduk-test-only')
+    }
+  })
+
+  it('marks build:ci output and generated deploy scripts refuse that marker', async () => {
+    const manifest = JSON.parse(createRootPackageManifest('marker', [], 'private')) as {
+      scripts: Record<string, string>
+    }
+    expect(manifest.scripts['build:ci']?.endsWith(BUILD_CI_MARKS_OUTPUT)).toBe(true)
+    expect(manifest.scripts['quality:static']).toContain('pnpm run build:ci')
+    const web = JSON.parse(createWebPackageManifest('marker', [], 3000)) as {
+      scripts: Record<string, string>
+    }
+    for (const key of ['cf:deploy', 'cf:deploy:preview', 'deploy', 'deploy:dry-run'] as const) {
+      expect(web.scripts[key]?.startsWith(DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && '), key).toBe(true)
+    }
+
+    const directory = await mkdtemp(join(tmpdir(), 'build-ci-marker-'))
+    try {
+      const marked = spawnSync('sh', ['-c', BUILD_CI_MARKS_OUTPUT], {
+        cwd: directory,
+        encoding: 'utf8',
+      })
+      expect(marked.status).toBe(0)
+      const webDir = join(directory, 'apps', 'web')
+      const refused = spawnSync('sh', ['-c', web.scripts['cf:deploy']?.split(' && ')[0] ?? ''], {
+        cwd: webDir,
+        encoding: 'utf8',
+      })
+      expect(refused.status).toBe(1)
+      expect(refused.stderr).toContain('refusing to deploy a build:ci output')
+      await rm(join(webDir, '.output', '.narduk-build-ci'))
+      const allowed = spawnSync('sh', ['-c', DEPLOY_REFUSES_BUILD_CI_OUTPUT], {
+        cwd: webDir,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH },
+      })
+      expect(allowed.status).toBe(0)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
     }
   })
 

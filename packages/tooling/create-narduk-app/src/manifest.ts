@@ -18,6 +18,20 @@ export const PNPM_VERSION = '10.33.4'
 
 export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
+/**
+ * BUILD_CI_MARKS_OUTPUT and DEPLOY_REFUSES_BUILD_CI_OUTPUT in ci-test-env.ts,
+ * pasted here because this file cannot import it. ci-workflow.test.ts pins them.
+ */
+const BUILD_CI_MARKS_OUTPUT =
+  "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=path.join(`apps`,`web`,`.output`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`.narduk-build-ci`),`build:ci\\n`)'"
+
+const DEPLOY_REFUSES_BUILD_CI_OUTPUT =
+  "node --eval 'const fs=require(`node:fs`);if(fs.existsSync(`.output/.narduk-build-ci`)){console.error(`refusing to deploy a build:ci output; it contains public test-only secrets. Run pnpm run build or cf:build first`);process.exit(1)}'"
+
+function refuseBuildCiOutput(command: string): string {
+  return DEPLOY_REFUSES_BUILD_CI_OUTPUT + ' && ' + command
+}
+
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
@@ -268,7 +282,8 @@ export function createRootPackageManifest(
         "node --eval 'if((process.env.WORKERS_CI||``).trim()||(process.env.WORKERS_CI_BRANCH||``).trim()||(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY||``).trim()){console.error(`build:ci injects public test-only secrets and cannot run for a deployed build`);process.exit(1)}' && " +
         'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
         'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build && ' +
+        BUILD_CI_MARKS_OUTPUT,
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
       // install before `narduk-app` / `nuxt` exist. The frozen install reads
       // `@narduk-enterprises/*` from `https://npm.nard.uk` with no token.
@@ -567,13 +582,14 @@ export function createWebPackageManifest(
       'test:unit': 'vitest run --config vitest.config.ts',
       'cf:build':
         'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build --preset=cloudflare_module',
-      'cf:deploy':
+      'cf:deploy': refuseBuildCiOutput(
         databaseBackend === 'none'
           ? 'narduk-app deploy deploy'
           : 'narduk-app db migrate --config migrations.sources.json --database ' +
-            appName +
-            '-db --remote --workers-build-only && narduk-app deploy deploy',
-      'cf:deploy:preview': 'narduk-app deploy versions-upload',
+              appName +
+              '-db --remote --workers-build-only && narduk-app deploy deploy',
+      ),
+      'cf:deploy:preview': refuseBuildCiOutput('narduk-app deploy versions-upload'),
       ...(databaseBackend === 'none'
         ? {}
         : {
@@ -591,8 +607,8 @@ export function createWebPackageManifest(
             // local D1, then load seed/ through Wrangler local mode.
             'dev:seed': 'pnpm run db:migrate:local && narduk-app dev:seed',
           }),
-      deploy: 'narduk-app deploy deploy',
-      'deploy:dry-run': 'narduk-app deploy deploy --dry-run',
+      deploy: refuseBuildCiOutput('narduk-app deploy deploy'),
+      'deploy:dry-run': refuseBuildCiOutput('narduk-app deploy deploy --dry-run'),
       // Development mode (company-hq#781): refuses unless this workstation holds
       // an activation record from `narduk-app development enter`.
       'deploy:dev': 'narduk-app development deploy',

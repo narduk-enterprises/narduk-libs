@@ -20,3 +20,20 @@ export const CI_TEST_ONLY_NUXT_SESSION_PASSWORD = 'narduk-test-only-session-pass
  */
 export const BUILD_CI_REFUSES_DEPLOYED_BUILD =
   "node --eval 'if((process.env.WORKERS_CI||``).trim()||(process.env.WORKERS_CI_BRANCH||``).trim()||(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY||``).trim()){console.error(`build:ci injects public test-only secrets and cannot run for a deployed build`);process.exit(1)}'"
+
+/**
+ * Appended to `build:ci` after a successful `pnpm run build`. The marker sits
+ * inside `apps/web/.output`, which a later real `nuxt build` replaces.
+ * Pasted into manifest.ts as a literal.
+ */
+export const BUILD_CI_MARKS_OUTPUT =
+  "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=path.join(`apps`,`web`,`.output`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`.narduk-build-ci`),`build:ci\\n`)'"
+
+/**
+ * Prefix of generated scripts that deploy the existing `apps/web/.output`.
+ * `quality:static` runs `build:ci` with no deploy signal, so the output can
+ * hold the public placeholders; this refuses to upload that output.
+ * Pasted into manifest.ts as a literal.
+ */
+export const DEPLOY_REFUSES_BUILD_CI_OUTPUT =
+  "node --eval 'const fs=require(`node:fs`);if(fs.existsSync(`.output/.narduk-build-ci`)){console.error(`refusing to deploy a build:ci output; it contains public test-only secrets. Run pnpm run build or cf:build first`);process.exit(1)}'"
