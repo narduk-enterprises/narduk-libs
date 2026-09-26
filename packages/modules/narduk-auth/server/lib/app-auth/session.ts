@@ -216,7 +216,9 @@ function memoizeAuthRow<T>(event: H3Event, key: string, load: () => Promise<T>):
  * Look up an `auth_sessions` row by id. Memoized on the event so requireAuth,
  * session refresh, and grant validation share one D1 read per session per request.
  */
-export function loadAuthSessionRow(
+// `async` keeps a throwing database accessor a rejected promise, not a
+// synchronous throw; both loaders are auto-imported into apps.
+export async function loadAuthSessionRow(
   event: H3Event,
   authSessionId: string,
 ): Promise<AuthSessionRow | null> {
@@ -233,7 +235,7 @@ function forgetCachedAuthSessionRow(event: H3Event, authSessionId: string): void
  * Current `users` row for authorization fields (`isAdmin`, email, name).
  * Memoized on the event so grant validation and session refresh share one read.
  */
-export function loadAuthUserRow(event: H3Event, userId: string): Promise<LocalUser | null> {
+export async function loadAuthUserRow(event: H3Event, userId: string): Promise<LocalUser | null> {
   return memoizeAuthRow(event, `user:${userId}`, () =>
     Promise.resolve(
       getDatabaseRow<LocalUser>(
