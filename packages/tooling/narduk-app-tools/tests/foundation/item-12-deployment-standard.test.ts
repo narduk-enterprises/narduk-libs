@@ -229,6 +229,22 @@ describe('item 12 rollout mode', () => {
     expect(run(root).adoption).toBe('exempt')
   })
 
+  it('names a missing deployment.standard and a leftover strategy', () => {
+    const root = baseline({
+      deployment: { strategy: 'build-once-promote', promotion: { mode: 'manual-dispatch' } },
+    })
+    const detail = detailOf(root, '12.0')
+    expect(detail).toContain('deployment.standard is missing')
+    expect(detail).toContain('"narduk-v1"')
+    expect(detail).toContain('auto-on-green')
+    expect(detail).toContain('manual-dispatch')
+    expect(detail).toContain('build-once-promote')
+    expect(detail).not.toContain('unreadable')
+    expect(detail).not.toContain('Invalid input')
+    expect(run(root).exitCode).toBe(1)
+    expect(run(root).adoption).toBe('invalid')
+  })
+
   it('fails a block that claims the standard and does not satisfy it, in either mode', () => {
     const root = baseline({ deployment: { standard: DEPLOYMENT_STANDARD } })
     expect(run(root).exitCode).toBe(1)

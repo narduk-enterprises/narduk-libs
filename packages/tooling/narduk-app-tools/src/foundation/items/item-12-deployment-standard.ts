@@ -685,13 +685,10 @@ function evaluate120(scan: DeploymentScan, strict: boolean): FoundationSubCheck 
     )
   }
   if (outcome.kind === 'malformed') {
-    return check(
-      '12.0',
-      name,
-      STATUS_FAIL,
-      `"deployment" is present but unreadable: ${outcome.detail}`,
-      scan.configFile,
-    )
+    const detail = outcome.detail.startsWith('deployment.standard is missing')
+      ? outcome.detail
+      : `"deployment" is present but unreadable: ${outcome.detail}`
+    return check('12.0', name, STATUS_FAIL, detail, scan.configFile)
   }
   if (outcome.kind === 'exempt') {
     return check(

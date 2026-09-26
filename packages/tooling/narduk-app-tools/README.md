@@ -870,6 +870,12 @@ entering `foundation-check.json`, which is the ratified 7-item contract.
 }
 ```
 
+A block that omits `deployment.standard` fails check 12.0 by name:
+`deployment.standard is missing; expected "narduk-v1"`, and the sentence lists
+the accepted `promotion.mode` values (`auto-on-green` or `manual-dispatch`). A
+leftover `strategy` key is named in that same sentence. The check does not
+report that shape as an unreadable zod error.
+
 `liveProof.healthAuth` is `"anonymous"` (the default) or `"authenticated"`.
 Declare `"authenticated"` when `healthPath` sits behind the app's auth and
 refuses an anonymous request: the path stays required, because the route exists,
