@@ -135,6 +135,9 @@ test.describe('catalog', () => {
   })
 
   test('every component page renders each of its preview frames', async ({ page }) => {
+    // One page load per component, so the run grows with the registry: about
+    // 1.5s a page, past Playwright's 30s default at 29 components (#977).
+    test.setTimeout(120_000)
     await open(page, '/components')
     const links = await page
       .locator('main a[href^="/components/"]')
