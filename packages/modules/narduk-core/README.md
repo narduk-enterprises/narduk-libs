@@ -2000,12 +2000,24 @@ one does not ship the rest. Canonical inputs are SI.
 | `formatPressure`                                              | hectopascals                           | inHg                        | hPa                        | 2 / 0             |
 | `formatDecimal`                                               | number                                 | n/a                         | n/a                        | up to 3           |
 | `formatZonedDate` / `formatZonedTime` / `formatZonedDateTime` | `Date`, epoch ms or a parseable string | n/a                         | n/a                        | `Intl` styles     |
+| `formatLatitude` / `formatLongitude` / `formatCoordinate`     | decimal degrees                        | n/a                         | n/a                        | 3 (`dms`: 1)      |
 
 `formatHeight` and `formatLength` never auto-scale, which is why a 1.4 m swell
 stays `4.6 ft` instead of becoming `0.0 mi`. `formatPressure` appends its symbol
 itself because `Intl`'s sanctioned unit list has neither hectopascals nor inches
 of mercury; everything else uses a real `style: 'unit'` so the locale decides
 spacing and symbol form.
+
+The coordinate formatters write a hemisphere letter from the sign (`14.275° S`),
+in decimal degrees by default or, with `style: 'dm'` or `'dms'`, in degrees and
+decimal minutes (`29° 45.624′ N`, the chart-plotter form) or degrees, minutes
+and seconds. They round once, on the total, and carry into the degrees, so a
+value just under a whole degree renders `30° 0.000′ N`, never `29° 60.000′ N`.
+`digits` sets the last place's precision. A latitude beyond ±90 or a longitude
+beyond ±180 renders the empty value rather than being wrapped.
+`formatCoordinate({ lat, lon })` pairs them with `', '`, or with `separator` for
+an app that has to stay byte-identical to its old copy; the bound
+`format.coordinate` takes the reader's locale for the decimal separator.
 
 Rules the whole suite keeps:
 

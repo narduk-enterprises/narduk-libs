@@ -243,6 +243,39 @@ export interface NeZonedOptions {
   timeZoneName?: 'long' | 'longOffset' | 'short' | 'shortOffset'
 }
 
+/** How {@link formatLatitude} and friends write an angle. */
+export type NeCoordinateStyle = 'decimal' | 'dm' | 'dms'
+
+/** {@link formatLatitude}'s and {@link formatLongitude}'s options. */
+export interface NeCoordinateOptions {
+  /**
+   * Fraction digits on the last place: the degrees for `decimal`, the minutes
+   * for `dm`, the seconds for `dms`. Defaults to 3, 3 and 1. Clamped to 0-8.
+   */
+  digits?: number
+  /** Rendered for absent, non-finite or out-of-range input. Defaults to {@link NE_EMPTY_VALUE}. */
+  empty?: string
+  /** BCP-47 tag for the decimal separator. Defaults to `en-US`. */
+  locale?: string
+  /**
+   * `decimal` (`29.760° N`, the default), `dm` degrees and decimal minutes
+   * (`29° 45.624′ N`, the chart-plotter form) or `dms` (`29° 45′ 37.4″ N`).
+   */
+  style?: NeCoordinateStyle
+}
+
+/** A position, in decimal degrees. */
+export interface NeCoordinate {
+  lat: number
+  lon: number
+}
+
+/** {@link formatCoordinate}'s options. */
+export interface NeCoordinatePairOptions extends NeCoordinateOptions {
+  /** Between latitude and longitude. Defaults to `', '`. */
+  separator?: string
+}
+
 /* -------------------------------------------------------------------------- */
 /* Intl instance cache                                                        */
 /* -------------------------------------------------------------------------- */
@@ -572,6 +605,112 @@ export function formatDecimal(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Coordinate formatters                                                      */
+/* -------------------------------------------------------------------------- */
+
+const DEFAULT_COORDINATE_DIGITS: Record<NeCoordinateStyle, number> = { decimal: 3, dm: 3, dms: 1 }
+
+/**
+ * One axis of a position. The value is rounded **once, as a total** in the
+ * last place's unit, and then split: rounding the minutes after flooring the
+ * degrees is how 29.9999996 printed as `29° 60.000′ N` in a hand-rolled copy.
+ * The hemisphere comes from the sign of the rounded value, so a value that
+ * rounds to zero is `N`/`E` rather than a southern or western zero.
+ */
+function formatAxis(
+  value: number | null | undefined,
+  limit: number,
+  hemispheres: readonly [positive: string, negative: string],
+  options: NeCoordinateOptions,
+): string {
+  if (!isRenderable(value) || Math.abs(value) > limit) return options.empty ?? NE_EMPTY_VALUE
+
+  const style = options.style ?? 'decimal'
+  const fraction = Math.min(
+    8,
+    Math.max(0, Math.trunc(options.digits ?? DEFAULT_COORDINATE_DIGITS[style])),
+  )
+  const scale = 10 ** fraction
+  // Units of the last place, per degree: 1, 60 or 3600, times the fraction.
+  const perDegree = (style === 'dms' ? 3600 : style === 'dm' ? 60 : 1) * scale
+  const total = Math.round(Math.abs(value) * perDegree)
+  const hemisphere = value < 0 && total > 0 ? hemispheres[1] : hemispheres[0]
+
+  const locale = safeLocale(options.locale)
+  const last = numberFormat(locale, {
+    maximumFractionDigits: fraction,
+    minimumFractionDigits: fraction,
+    useGrouping: false,
+  })
+  if (style === 'decimal') return `${last.format(total / scale)}° ${hemisphere}`
+
+  // Whole places go through `Intl` too, so a locale with its own digits
+  // (`ar-EG`) does not mix them with Latin ones.
+  const whole = numberFormat(locale, { maximumFractionDigits: 0, useGrouping: false })
+  const degrees = Math.floor(total / perDegree)
+  const rest = total - degrees * perDegree
+  if (style === 'dm') {
+    return `${whole.format(degrees)}° ${last.format(rest / scale)}′ ${hemisphere}`
+  }
+
+  const minutes = Math.floor(rest / (60 * scale))
+  const seconds = (rest - minutes * 60 * scale) / scale
+  return `${whole.format(degrees)}° ${whole.format(minutes)}′ ${last.format(seconds)}″ ${hemisphere}`
+}
+
+/**
+ * A latitude in decimal degrees, with its hemisphere letter.
+ *
+ * ```ts
+ * formatLatitude(29.76044, { digits: 4 })            // '29.7604° N'
+ * formatLatitude(-14.275)                            // '14.275° S'
+ * formatLatitude(29.999999, { style: 'dm' })         // '30° 0.000′ N' (carried, never 60′)
+ * formatLatitude(29.7604, { style: 'dms' })          // '29° 45′ 37.4″ N'
+ * ```
+ *
+ * Absent, non-finite input and a value beyond ±90 render {@link NE_EMPTY_VALUE}.
+ * The decimal separator follows `locale`.
+ */
+export function formatLatitude(
+  value: number | null | undefined,
+  options: NeCoordinateOptions = {},
+): string {
+  return formatAxis(value, 90, ['N', 'S'], options)
+}
+
+/**
+ * A longitude in decimal degrees, with its hemisphere letter: `95.370° W`.
+ * The same styles and rules as {@link formatLatitude}; a value beyond ±180
+ * renders {@link NE_EMPTY_VALUE} rather than being silently wrapped.
+ */
+export function formatLongitude(
+  value: number | null | undefined,
+  options: NeCoordinateOptions = {},
+): string {
+  return formatAxis(value, 180, ['E', 'W'], options)
+}
+
+/**
+ * A position as `latitude, longitude`: `29.760° N, 95.370° W`.
+ *
+ * If either axis is absent or out of range the whole position renders
+ * {@link NE_EMPTY_VALUE}; half a position is not a position. `separator`
+ * defaults to `', '`, so an app migrating from its own copy can pass its old
+ * separator and stay byte-identical.
+ */
+export function formatCoordinate(
+  value: NeCoordinate | null | undefined,
+  options: NeCoordinatePairOptions = {},
+): string {
+  const empty = options.empty ?? NE_EMPTY_VALUE
+  if (!value) return empty
+  const lat = formatLatitude(value.lat, { ...options, empty: '' })
+  const lon = formatLongitude(value.lon, { ...options, empty: '' })
+  if (lat === '' || lon === '') return empty
+  return `${lat}${options.separator ?? ', '}${lon}`
+}
+
+/* -------------------------------------------------------------------------- */
 /* Date and time formatters                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -615,6 +754,8 @@ export function formatZonedDateTime(value: NeDateInput, options: NeZonedOptions 
 
 /** The formatter suite with a preference set already applied. */
 export interface NeBoundFormatters {
+  /** {@link formatCoordinate}, bound to the reader's locale. */
+  coordinate: (value: NeCoordinate | null | undefined, options?: NeCoordinatePairOptions) => string
   /** {@link formatZonedDate}, bound. */
   date: (value: NeDateInput, options?: NeZonedOptions) => string
   /** {@link formatZonedDateTime}, bound. */
@@ -667,6 +808,7 @@ export function createFormatters(source: NePreferences | (() => NePreferences)):
   }
 
   return {
+    coordinate: (value, options) => formatCoordinate(value, { locale: read().locale, ...options }),
     date: (value, options) => formatZonedDate(value, zoned(options)),
     dateTime: (value, options) => formatZonedDateTime(value, zoned(options)),
     distance: (value, options) => formatDistance(value, measurement(options)),
