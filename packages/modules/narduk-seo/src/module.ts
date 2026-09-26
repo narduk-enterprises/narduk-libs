@@ -9,10 +9,12 @@ import {
   addPlugin,
   addServerHandler,
   addServerScanDir,
+  addTypeTemplate,
   createResolver,
   defineNuxtModule,
   extendPages,
   extendRouteRules,
+  hasNuxtModule,
   installModule,
   useLogger,
 } from '@nuxt/kit'
@@ -30,6 +32,7 @@ import {
   isRuntimeOgImageGenerationExplicitlyRequested,
   MISSING_NUXT_OG_IMAGE_MESSAGE,
 } from '../shared/nuxtOgImagePackage'
+import { OG_IMAGE_NUXT_CONFIG_DECLARATION } from '../shared/ogImageNuxtConfig'
 import {
   assertOgImageSigningSecretForBuild,
   resolveOgImageSigningSecret,
@@ -561,6 +564,20 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       ogImageModuleAvailable,
       seoModule: Boolean(options.seoModule),
     })
+
+    // narduk-libs#1162: `ogImage` is typed only by the installed nuxt-og-image
+    // module. Skipping that install (peer omitted, or `enabled: false`) left
+    // the documented opt-out off NuxtConfig, so nuxt.config.ts failed typecheck.
+    // Register the key for the node tsconfig that checks nuxt.config.ts.
+    if (!hasNuxtModule('nuxt-og-image')) {
+      addTypeTemplate(
+        {
+          filename: 'types/narduk-seo-og-image-config.d.ts',
+          getContents: () => OG_IMAGE_NUXT_CONFIG_DECLARATION,
+        },
+        { node: true, nuxt: true },
+      )
+    }
 
     if (options.app) {
       if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))
