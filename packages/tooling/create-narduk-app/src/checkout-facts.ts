@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
+import { buildCiMarksOutput } from './ci-test-env.js'
 import { parseJsoncObject } from './jsonc.js'
 import type { GeneratedDatabaseBackend } from './types.js'
 
@@ -415,6 +416,14 @@ export function adaptManagedPackageJson(
     // The scaffold body calls `pnpm --filter web`. A root app has no web
     // package; leave the key unmanaged unless this checkout has the script.
     delete scripts['manifests:validate']
+  }
+  if (rootLayout && typeof scripts['build:ci'] === 'string') {
+    const appsWebMarker = buildCiMarksOutput('apps-web')
+    if (scripts['build:ci'].includes(appsWebMarker)) {
+      // Nitro writes `./.output` for a root app. The scaffold marker targets
+      // `apps/web/.output`, which this checkout does not build.
+      scripts['build:ci'] = scripts['build:ci'].replace(appsWebMarker, buildCiMarksOutput('root'))
+    }
   }
 
   return JSON.stringify(manifest, null, 2) + '\n'

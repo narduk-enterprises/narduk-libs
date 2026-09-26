@@ -18,6 +18,15 @@ export const PNPM_VERSION = '10.33.4'
 
 export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
+/**
+ * BUILD_CI_MARKS_OUTPUT in ci-test-env.ts, pasted here because this file cannot
+ * import it. ci-workflow.test.ts pins the two copies. Root-layout upgrades
+ * rewrite the directory in checkout-facts.ts. narduk-app deploy refuses the
+ * marker; these scripts stay plain commands so a dry run still reaches Wrangler.
+ */
+const BUILD_CI_MARKS_OUTPUT =
+  "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=path.join(`apps`,`web`,`.output`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`.narduk-build-ci`),`build:ci\\n`)'"
+
 export const PACKAGE_VERSIONS = {
   '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
@@ -260,10 +269,16 @@ export function createRootPackageManifest(
       // file with Node's own type stripping (consumer-smoke-fixture.mjs), so
       // it must have no runtime imports. ci-workflow.test.ts pins the two
       // copies together.
+      // The node --eval prefix is BUILD_CI_REFUSES_DEPLOYED_BUILD in
+      // ci-test-env.ts, pasted here because this file cannot import it.
+      // It runs before the placeholders are exported, so a Workers Builds
+      // or local-deploy invocation cannot bake them into a live Worker.
       'build:ci':
+        "node --eval 'if((process.env.WORKERS_CI||``).trim()||(process.env.WORKERS_CI_BRANCH||``).trim()||(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY||``).trim()){console.error(`build:ci injects public test-only secrets and cannot run for a deployed build`);process.exit(1)}' && " +
         'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
         'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build && ' +
+        BUILD_CI_MARKS_OUTPUT,
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
       // install before `narduk-app` / `nuxt` exist. The frozen install reads
       // `@narduk-enterprises/*` from `https://npm.nard.uk` with no token.

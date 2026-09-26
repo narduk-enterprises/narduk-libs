@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -13,11 +13,15 @@ import {
   RUNNER_ONBOARDING_MESSAGE,
 } from '../src/ci-workflow.js'
 import {
+  BUILD_CI_MARKS_OUTPUT,
+  BUILD_CI_OUTPUT_MARKER,
+  BUILD_CI_REFUSES_DEPLOYED_BUILD,
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
+  buildCiMarksOutput,
 } from '../src/ci-test-env.js'
 import { buildGeneratedFiles } from '../src/generate.js'
-import { createRootPackageManifest } from '../src/manifest.js'
+import { createRootPackageManifest, createWebPackageManifest } from '../src/manifest.js'
 
 /**
  * The caller's environment minus npm's registry config. An outer
@@ -95,10 +99,97 @@ describe('generated CI boundaries', () => {
       scripts: Record<string, string>
     }
     expect(manifest.scripts['build:ci']).toBe(
-      `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
+      BUILD_CI_REFUSES_DEPLOYED_BUILD +
+        ' && ' +
+        `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
         `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD} ` +
-        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build && ' +
+        BUILD_CI_MARKS_OUTPUT,
     )
+  })
+
+  it('refuses to run build:ci for a deployed build and lets CI run it', () => {
+    const manifest = JSON.parse(createRootPackageManifest('guard', [], 'private')) as {
+      scripts: Record<string, string>
+    }
+    const guard = manifest.scripts['build:ci'].split(' && ')[0] ?? ''
+    expect(guard).toBe(BUILD_CI_REFUSES_DEPLOYED_BUILD)
+    const clean = { PATH: process.env.PATH }
+    const run = (env: Record<string, string | undefined>) =>
+      spawnSync('sh', ['-c', guard], { encoding: 'utf8', env })
+    expect(run(clean).status).toBe(0)
+    expect(
+      run({ ...clean, NARDUK_CLOUDFLARE_BUILD: '1', NARDUK_DEPLOY_TARGET: 'production' }).status,
+    ).toBe(0)
+    for (const env of [
+      { WORKERS_CI: '1' },
+      { WORKERS_CI_BRANCH: 'main' },
+      { NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1' },
+    ]) {
+      const result = run({ ...clean, ...env })
+      expect(result.status, JSON.stringify(env)).toBe(1)
+      expect(result.stderr).toContain('cannot run for a deployed build')
+    }
+    for (const key of ['build', 'cf:build', 'hotfix:build']) {
+      expect(manifest.scripts[key] ?? '').not.toContain('narduk-test-only')
+    }
+  })
+
+  it('marks build:ci output beside the Nitro directory for each layout', async () => {
+    const manifest = JSON.parse(createRootPackageManifest('marker', [], 'private')) as {
+      scripts: Record<string, string>
+    }
+    expect(manifest.scripts['build:ci']?.endsWith(BUILD_CI_MARKS_OUTPUT)).toBe(true)
+    expect(BUILD_CI_MARKS_OUTPUT).toBe(buildCiMarksOutput('apps-web'))
+    expect(manifest.scripts['quality:static']).toContain('pnpm run build:ci')
+    const web = JSON.parse(createWebPackageManifest('marker', [], 3000)) as {
+      scripts: Record<string, string>
+    }
+    for (const key of [
+      'cf:deploy',
+      'cf:deploy:preview',
+      'deploy',
+      'deploy:dry-run',
+      'deploy:local',
+      'deploy:version',
+    ] as const) {
+      expect(web.scripts[key] ?? '', key).not.toContain(BUILD_CI_OUTPUT_MARKER)
+    }
+
+    const present = async (path: string): Promise<boolean> => {
+      try {
+        await access(path)
+        return true
+      } catch {
+        return false
+      }
+    }
+    const directory = await mkdtemp(join(tmpdir(), 'build-ci-marker-'))
+    const rootDirectory = await mkdtemp(join(tmpdir(), 'build-ci-marker-root-'))
+    try {
+      const marked = spawnSync('sh', ['-c', BUILD_CI_MARKS_OUTPUT], {
+        cwd: directory,
+        encoding: 'utf8',
+      })
+      expect(marked.status).toBe(0)
+      expect(await present(join(directory, 'apps', 'web', '.output', BUILD_CI_OUTPUT_MARKER))).toBe(
+        true,
+      )
+      expect(await present(join(directory, '.output', BUILD_CI_OUTPUT_MARKER))).toBe(false)
+
+      const rootMarked = spawnSync('sh', ['-c', buildCiMarksOutput('root')], {
+        cwd: rootDirectory,
+        encoding: 'utf8',
+      })
+      expect(rootMarked.status).toBe(0)
+      expect(await present(join(rootDirectory, '.output', BUILD_CI_OUTPUT_MARKER))).toBe(true)
+      expect(
+        await present(join(rootDirectory, 'apps', 'web', '.output', BUILD_CI_OUTPUT_MARKER)),
+      ).toBe(false)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+      await rm(rootDirectory, { recursive: true, force: true })
+    }
   })
 
   it('manifest.ts has no runtime import, so Node type stripping can load it alone', async () => {
