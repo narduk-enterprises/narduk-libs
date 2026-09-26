@@ -25,6 +25,7 @@ import { type User as LocalUser, users } from '#narduk-core/schema'
 import { decodeAccessTokenPayload, extractProviderMetadata, toSessionUser } from './helpers'
 import { ensureLinkedLocalUser } from './linking'
 import { resolvePersistedRecoveryMode } from './recovery-mode'
+import { isAuthSessionRowExpired } from './session-expiry'
 import { createSupabaseUserClient } from './supabase-client'
 
 import type {
@@ -600,7 +601,9 @@ export async function getCurrentSupabaseContext(event: H3Event): Promise<AppSupa
   const appDb = useAuthBridgeDatabase(event)
   const authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
 
-  if (!authSession) {
+  // An expired row is refused here too; a Supabase refresh would otherwise
+  // rewrite its expiry and revive it (narduk-libs#1043).
+  if (!authSession || isAuthSessionRowExpired(authSession)) {
     await clearLayerUserSession(event)
     throw createError({
       statusCode: 401,
@@ -657,13 +660,15 @@ export async function getSessionUserResponse(event: H3Event) {
     return { user: null }
   }
 
+  // Every backend's row expires (narduk-libs#1043), not only the local one.
+  if (isAuthSessionRowExpired(authSession)) {
+    await clearLayerUserSession(event)
+    return { user: null }
+  }
+
   const hydrated = mergeAuthoritativeSessionUser(user, authSession, dbUser)
 
   if (user.authBackend === 'local') {
-    if (authSession.expiresAt <= Math.floor(Date.now() / 1000)) {
-      await clearLayerUserSession(event)
-      return { user: null }
-    }
     return { user: hydrated }
   }
 
