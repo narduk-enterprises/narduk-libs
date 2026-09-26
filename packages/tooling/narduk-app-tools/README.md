@@ -729,6 +729,27 @@ with an empty list and the how-to in the app README.
 
 Bare `doctor` is unchanged. The audit leg is a flag, like `--adoption`.
 
+## One verdict (`narduk-app doctor --all`)
+
+`narduk-app doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]... [--json] [--no-cache]`
+answers "is this app in shape" with one line, then prints each leg's own report
+unchanged (narduk-libs#376). It composes the existing legs and reimplements
+none: bare `doctor`'s prerequisites, `doctor --adoption` (foundation, toolchain,
+shared-UI, coverage and deployment checks, plus the security-header and live
+build probes when `--live` is given) and `doctor --audit`.
+
+| Verdict       | When                                                                                                                                      | Exit |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `DOCTOR FAIL` | a prerequisite fails, an adoption requirement fails, or an undeclared high/critical advisory                                              | 1    |
+| `DOCTOR WARN` | nothing fails, but a prerequisite warns, adoption is `UNKNOWN` (always without `--live`) or `DEVIATION`, or the audit warns or is offline | 0    |
+| `DOCTOR PASS` | every leg passes                                                                                                                          | 0    |
+
+The line names every leg behind the verdict, for example
+`DOCTOR FAIL -- prerequisites: wrangler config; audit: FAIL 1 undeclared high/critical advisory`.
+`--json` prints one object: `verdict`, `line`, `exitCode`, and the three leg
+reports under `prerequisites`, `adoption` and `audit`. Bare `doctor`,
+`--adoption` and `--audit` keep their exact output and exit codes.
+
 ## The deployment standard block
 
 An app declares its half of the standard in the `deployment` block of

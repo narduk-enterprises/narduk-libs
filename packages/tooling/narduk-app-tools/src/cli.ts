@@ -11,6 +11,7 @@ import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
 import { runDoctor, formatDoctorReport } from './doctor.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
+import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
 import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
 import {
   formatPromoteResult,
@@ -148,6 +149,10 @@ function usage(): string {
     '                                      Report the 15 narduk-app adoption requirements',
     '  doctor --audit [--checkout <dir>] [--json] [--no-cache]',
     '                                      Fail on undeclared high/critical advisories',
+    '  doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]...',
+    '               [--json] [--no-cache]',
+    '                                      One verdict line (DOCTOR PASS|WARN|FAIL) over the',
+    '                                      prerequisites, --adoption and --audit legs',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
     '  og:generate [--if-missing|--force]    Render the app-owned default share image',
@@ -357,6 +362,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       if (rest.includes('--adoption')) {
         const { exitCode } = await runAdoptionReportCommand(parseAdoptionReportArgs(rest))
         return exitCode
+      }
+      if (rest.includes('--all')) {
+        return (await runDoctorAllCommand(parseDoctorAllArgs(rest))).exitCode
       }
       if (rest.includes('--audit')) return runAuditCommand(parseAuditArgs(rest)).exitCode
       const json = rest.includes('--json')
