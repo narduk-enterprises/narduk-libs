@@ -26,6 +26,9 @@
     "./app/components/shared/*": {
       "import": "./runtime/app/components/shared/*.vue"
     },
+    "./app/share": {
+      "import": "./runtime/app/share.ts"
+    },
     "./app/composables/*": {
       "import": "./runtime/app/composables/*.ts"
     },
