@@ -80,7 +80,12 @@ test('release.yml does not dispatch CI for the release PR', () => {
 
 test('the mirror notify is credential-isolated, downscoped and never fails the release', () => {
   assert.ok(releaseNotify, 'release.yml has a notify-mirror job')
-  assert.match(releasePublish, /published: \$\{\{ steps\.changesets\.outputs\.published \}\}/u)
+  // Either publish path can publish: publish-first (narduk-libs#1102) or the
+  // Changesets action's own publish mode.
+  assert.match(
+    releasePublish,
+    /published: \$\{\{ steps\.publish-first\.outputs\.published == 'true' \|\| steps\.changesets\.outputs\.published == 'true' \}\}/u,
+  )
   assert.match(releaseNotify, /if: needs\.release\.outputs\.published == 'true'/u)
   assert.match(releaseNotify, /continue-on-error: true/u)
   assert.match(releaseNotify, /permissions: \{\}/u)

@@ -34,11 +34,19 @@ package needs an entry there, or `scripts:test` fails.
    consumer gate must prove every runtime dependency between local packages was
    rewritten from `workspace:*` to the exact coordinated release version; this
    prevents stale core, auth, or platform versions from entering the graph.
-4. Review and merge the release PR. Changesets publishes the exact checked-out
-   version commit, which must contain no pending changesets. Registry preflight
+4. Review and merge the release PR. The Release run publishes every version on
+   the checked-out commit that is not on the registry yet. Registry preflight
    refuses unpublished versions that would move `latest` backwards. A commit
    with pending changesets may prepare a version PR only while it is current
    main.
+
+   Other PRs may merge while a release PR is open or armed (narduk-libs#1102).
+   If the merge commit also carries changesets from PRs that landed after the
+   release PR last refreshed, the Release run sets them aside, publishes the
+   versions the release PR bumped (with their tags and GitHub releases), runs
+   `release:verify-published`, and restores them. Only then does it prepare the
+   next release PR. Before this, such a merge published nothing while its run
+   stayed green.
 
    When `create-narduk-app` pins a version that is publishing in the same batch,
    `release:publish` works in two phases. `changeset publish` runs a batch
@@ -187,12 +195,12 @@ one of those packages is pinned by create-narduk-app. A Dependabot security bump
 of a runtime dependency therefore reaches consumers without anyone pushing a
 commit onto a Dependabot branch.
 
-Synthesis can only ever open the `chore: release packages` PR, never publish:
-the Changesets action publishes only from a commit with no pending Changesets,
-so the release still passes full CI and a human merge. It writes nothing while
-any publishable version is still waiting to publish, and it fails the release
-job on any registry read it cannot resolve rather than silently withholding a
-release.
+Synthesis can only ever open the `chore: release packages` PR, never publish: it
+writes Changesets, never versions, and a release publishes only versions a
+merged release PR already bumped. So the release still passes full CI and a
+human merge. It writes nothing while any publishable version is still waiting to
+publish, and it fails the release job on any registry read it cannot resolve
+rather than silently withholding a release.
 
 Synthesis only runs when the release workflow does, and the release workflow
 only runs on a push to `main` (or a manual dispatch). A `deferred` bump whose

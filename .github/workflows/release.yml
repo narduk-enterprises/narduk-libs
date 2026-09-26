@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
-      published: ${{ steps.changesets.outputs.published }}
+      published: ${{ steps.publish-first.outputs.published == 'true' || steps.changesets.outputs.published == 'true' }}
     env:
       VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -181,10 +181,43 @@ jobs:
       # changesets/action v1.9.0 writes a .netrc for its git-cli push. Keep
       # that credential outside the checkout and only after untrusted install.
       - name: Prepare isolated Changesets home
-        if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
         run: |
           mkdir -p "${RUNNER_TEMP}/changesets-home"
           install -m 0600 /dev/null "${RUNNER_TEMP}/changesets-home/.netrc"
+
+      # narduk-libs#1102. A release-PR merge commit can also carry Changesets
+      # from PRs that merged after the release PR last refreshed. The Changesets
+      # action publishes only when no Changeset is pending, so that commit used
+      # to publish nothing while this run stayed green. Set the pending
+      # Changesets aside, let the action publish the versions main already
+      # bumped (tags and GitHub releases included), then restore them for the
+      # version step below. With every version already on the registry,
+      # release:publish publishes nothing and this costs one registry read per
+      # package.
+      - name: Set aside pending changesets to publish main's bumped versions first
+        id: set-aside
+        if: steps.release-mode.outputs.publish == 'false'
+        run: node scripts/pending-changesets.mjs set-aside "${RUNNER_TEMP}/pending-changesets"
+
+      - name: Publish versions main already bumped
+        id: publish-first
+        if: steps.set-aside.outcome == 'success'
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          publish: pnpm run release:publish
+        env:
+          HOME: ${{ runner.temp }}/changesets-home
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Before the version step: in version mode the action leaves the working
+      # tree on the release branch, whose manifests are not published yet.
+      - name: Verify the versions published first
+        if: steps.publish-first.outcome == 'success'
+        run: pnpm run release:verify-published
+
+      - name: Restore pending changesets
+        if: always() && steps.set-aside.outcome == 'success'
+        run: node scripts/pending-changesets.mjs restore "${RUNNER_TEMP}/pending-changesets"
 
       - name: Prepare or publish the independently verified package versions
         id: changesets
