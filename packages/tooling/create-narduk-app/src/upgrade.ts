@@ -16,6 +16,7 @@ import {
   UNMANAGED_MARKER,
   unmanagedMarkerFor,
 } from './ownership.js'
+import { rewriteWorkflowPins, workflowPinMove } from './workflow-pin.js'
 import type { ManagedTarget, OwnershipMode, RegionName } from './ownership.js'
 import {
   CreateNardukAppError,
@@ -325,12 +326,24 @@ function resolvePin(current: string | null, desired: string): Resolution {
       status: 'absent',
     }
   }
+  const desiredSha = desiredPin.split('@')[1] ?? ''
   if (found.every((match) => match === desiredPin)) {
-    return { detail: 'Pinned at ' + desiredPin.split('@')[1] + '.', status: 'clean' }
+    return { detail: 'Pinned at ' + desiredSha + '.', status: 'clean' }
+  }
+  const currentShas = [...new Set(found.map((match) => match.split('@')[1] ?? ''))]
+  const moves = currentShas.map((sha) => workflowPinMove(sha, desiredSha))
+  if (moves.includes('refuse')) {
+    return {
+      detail:
+        'App pin ' +
+        (currentShas.find((sha) => workflowPinMove(sha, desiredSha) === 'refuse') ?? desiredSha) +
+        ' is not an older pin this generator shipped, so upgrade will not move it. A newer workflows SHA stays where the app put it.',
+      status: 'clean',
+    }
   }
   return {
-    detail: 'Re-pins the shared workflow to ' + desiredPin.split('@')[1] + '.',
-    next: current.replace(pattern, desiredPin),
+    detail: 'Re-pins the shared workflow to ' + desiredSha + '.',
+    next: rewriteWorkflowPins(current, desiredSha),
     status: 'drift',
   }
 }
