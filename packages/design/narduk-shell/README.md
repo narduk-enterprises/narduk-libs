@@ -67,10 +67,13 @@ in its favour. Item 21
 ([narduk-libs#268](https://github.com/narduk-enterprises/narduk-libs/issues/268))
 ships the marketing sections — `NeHero`, `NeFeatureGrid`, `NeCta` and
 `NeMarketingFooter`, thin themed wrappers over `UPageHero`, `UPageGrid` +
-`UPageFeature`, `UPageCTA` and `UFooter`. Components read Nuxt UI semantic
-tokens and `UBadge` colour/variant props, and do not hardcode a colour, radius,
-shadow or font. Each later item adds its own component, README section, tests
-and NE Base card.
+`UPageFeature`, `UPageCTA` and `UFooter`.
+[narduk-libs#388](https://github.com/narduk-enterprises/narduk-libs/issues/388)
+ships `NeDataAttribution` and `NeLegalPage` with placeholder-only legal
+templates; the wording itself waits for Logan's approval. Components read Nuxt
+UI semantic tokens and `UBadge` colour/variant props, and do not hardcode a
+colour, radius, shadow or font. Each later item adds its own component, README
+section, tests and NE Base card.
 
 ## Install
 
@@ -3055,6 +3058,190 @@ None.
 
 ```ts
 import type { NeMarketingFooterProps } from '@narduk-enterprises/narduk-shell'
+```
+
+### NeDataAttribution
+
+One consistent "Data from <source>, updated <time>" credit for a page that shows
+third-party data
+([narduk-libs#388](https://github.com/narduk-enterprises/narduk-libs/issues/388)).
+
+It is driven by the source-and-publish-time metadata a `narduk-data` manifest
+carries, through a small structural type (`NeDataSource`) rather than a
+dependency: map a product's display name, licence and `observedAt` /
+`evaluatedAt` onto it. Times go through `./format` and follow its rules — the
+zone is a required prop, and a relative time is measured only against the
+caller's `now`, never the ambient clock, so the server and the browser render
+the same string. Without `now` the time is absolute. A bare `YYYY-MM-DD` prints
+as a calendar date. A missing or unparseable time drops the "updated" clause
+instead of printing `updated —`.
+
+Links: only an absolute `http:` / `https:` href becomes an `<a>`, always with
+`rel="noopener noreferrer"`; anything else (`javascript:`, `data:`, a relative
+path) renders the name as text. `target="_blank"` only with `new-tab`.
+
+#### Example
+
+```vue
+<NeDataAttribution
+  :sources="[
+    {
+      name: 'NOAA NDBC',
+      href: 'https://www.ndbc.noaa.gov/',
+      updatedAt: ndbc.observedAt,
+    },
+    { name: 'USGS', license: 'Public domain', updatedAt: usgs.observedAt },
+  ]"
+  :now="renderedAt"
+  time-zone="America/Chicago"
+/>
+<!-- Data from NOAA NDBC (updated 3 hours ago) and USGS (Public domain, updated 1 hour ago) -->
+```
+
+`renderedAt` is an instant the page fixed once (for example in `useState` on the
+server), not `Date.now()` in the template.
+
+#### Props
+
+| Prop        | Type                                      | Default     | Notes                                                                       |
+| ----------- | ----------------------------------------- | ----------- | --------------------------------------------------------------------------- |
+| `sources`   | `NeDataSource \| readonly NeDataSource[]` | —           | Required. Several are joined as `A, B and C`.                               |
+| `timeZone`  | `string`                                  | —           | Required. IANA zone for every time.                                         |
+| `now`       | `NeDateInput`                             | —           | Set for a relative time; the absolute reading becomes the `<time>`'s title. |
+| `updatedAt` | `NeDateInput`                             | —           | One publish time for all sources, shown once at the end.                    |
+| `label`     | `string`                                  | `Data from` | The lead-in.                                                                |
+| `newTab`    | `boolean`                                 | `false`     | `target="_blank"` on source and licence links.                              |
+
+#### `NeDataSource`
+
+| Field       | Type                                        | Notes                                            |
+| ----------- | ------------------------------------------- | ------------------------------------------------ |
+| `name`      | `string`                                    | Required. Always rendered as text.               |
+| `href`      | `string`                                    | Linked only when it is an absolute http(s) URL.  |
+| `license`   | `string \| { name: string; href?: string }` | Shown in parentheses after the name.             |
+| `updatedAt` | `NeDateInput`                               | This source's own publish time, shown beside it. |
+
+#### Slots
+
+None.
+
+#### Events
+
+None.
+
+#### Types
+
+```ts
+import {
+  safeAttributionHref,
+  type NeDataAttributionProps,
+  type NeDataLicense,
+  type NeDataSource,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeLegalPage
+
+The layout for a terms, privacy or other legal page
+([narduk-libs#388](https://github.com/narduk-enterprises/narduk-libs/issues/388)):
+the title as the page `h1`, a "Last updated" date through `formatDate`, a table
+of contents built from the sections, and each section as an anchored `h2` with
+plain-text paragraphs (never `v-html`).
+
+**This package ships no legal wording.** Logan's decision on #388 was "Build,
+wording later": `privacyPolicyTemplate()` and `termsOfServiceTemplate()` return
+section structure whose every body is a placeholder —
+`[PLACEHOLDER — legal wording pending Logan's review: …]` — with the app's name,
+company, contact address and processors quoted inside those placeholders only.
+**No app ships a legal page live until Logan approves its wording in a separate
+issue.**
+
+The page is a **draft** unless the app sets `wording-approved` **and** no
+section is still a placeholder — approval cannot hide template text. A draft has
+`data-ne-legal-status="draft"` on its root (else `"approved"`), a visible
+"Draft: not for publication" banner (`data-ne-legal-draft`), a dashed rule and
+`data-ne-legal-placeholder` on each placeholder section, and one
+development-only console warning. A section is a placeholder when it sets
+`placeholder: true` or any paragraph contains `NE_LEGAL_PLACEHOLDER_MARK`
+(`[PLACEHOLDER`).
+
+#### Example
+
+```vue
+<script setup lang="ts">
+// privacyPolicyTemplate is auto-imported by the module.
+// A draft: every section is a placeholder until approved wording replaces it.
+const privacy = privacyPolicyTemplate({
+  appName: 'Buoys',
+  companyName: 'Example Co',
+  contactEmail: 'privacy@example.com',
+  processors: [{ name: 'Cloudflare Web Analytics', purpose: 'analytics' }],
+})
+</script>
+
+<template>
+  <NeLegalPage
+    :title="privacy.title"
+    :sections="privacy.sections"
+    last-updated="2026-09-25"
+  />
+</template>
+```
+
+Once wording is approved, the app replaces each section's `body` with that text,
+drops `placeholder`, and sets `wording-approved`. Its own test can guard the
+launch:
+
+```ts
+import { hasLegalPlaceholders } from '@narduk-enterprises/narduk-shell'
+
+expect(hasLegalPlaceholders(privacySections)).toBe(false)
+```
+
+#### Props
+
+| Prop              | Type                        | Default    | Notes                                                                                  |
+| ----------------- | --------------------------- | ---------- | -------------------------------------------------------------------------------------- |
+| `title`           | `string`                    | —          | Required. The page `h1`.                                                               |
+| `sections`        | `readonly NeLegalSection[]` | —          | Required. `{ id, title, body, placeholder? }`; `body` is one or more paragraphs.       |
+| `lastUpdated`     | `NeDateInput`               | —          | A `YYYY-MM-DD` needs no zone; an instant needs `timeZone` or is omitted.               |
+| `timeZone`        | `string`                    | —          | IANA zone for an instant `lastUpdated`.                                                |
+| `wordingApproved` | `boolean`                   | `false`    | The app's acknowledgement that the wording is approved. Cannot override a placeholder. |
+| `tocLabel`        | `string`                    | `Contents` | The contents' heading and accessible name.                                             |
+
+#### Slots
+
+| Slot      | Props                         | Notes                                                   |
+| --------- | ----------------------------- | ------------------------------------------------------- |
+| `section` | `{ section: NeLegalSection }` | Replaces a section's body; the heading and anchor stay. |
+| `default` | —                             | After the last section, outside the table of contents.  |
+
+#### Events
+
+None.
+
+The five helpers — `privacyPolicyTemplate`, `termsOfServiceTemplate`,
+`hasLegalPlaceholders`, `isLegalPlaceholder` and `legalPlaceholder` — are
+auto-imported in app code, like `defineStatusMap`: Nuxt's import protection
+refuses a page that imports this package's own module specifier. The root export
+below is for tests and plain Node scripts.
+
+#### Types
+
+```ts
+import {
+  hasLegalPlaceholders,
+  isLegalPlaceholder,
+  legalPlaceholder,
+  NE_LEGAL_PLACEHOLDER_MARK,
+  privacyPolicyTemplate,
+  termsOfServiceTemplate,
+  type NeLegalDocument,
+  type NeLegalPageProps,
+  type NeLegalProcessor,
+  type NeLegalSection,
+  type NeLegalTemplateOptions,
+} from '@narduk-enterprises/narduk-shell'
 ```
 
 ## Formatters (`./format`)

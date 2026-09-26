@@ -23,6 +23,7 @@ import { consumeWebauthnChallenge, issueWebauthnChallenge } from './webauthn-cha
 import {
   type AuthenticationResponseJSON,
   loadWebauthnServer,
+  PASSKEYS_UNAVAILABLE_MESSAGE,
   type RegistrationResponseJSON,
   type WebauthnServer,
 } from './webauthn-server'
@@ -163,6 +164,22 @@ function useWebauthnServer(event: H3Event): Promise<WebauthnServer> {
   })
 }
 
+/**
+ * A throw from the library's option generators, which read only server state
+ * (config, the session user, stored credentials) and nothing from the request
+ * body: it is the runtime or the bundle, the #892 misconfiguration met one step
+ * after the load. Logged with its cause and
+ * answered with the loader's 503 rather than an opaque 500 (narduk-libs#1060).
+ */
+function passkeysUnavailable(event: H3Event, error: unknown): never {
+  useLogger(event)
+    .child('AppAuth')
+    .error('Passkeys unavailable: @simplewebauthn/server failed when called', {
+      error: describeLoadFailure(error),
+    })
+  throw createError({ statusCode: 503, statusMessage: PASSKEYS_UNAVAILABLE_MESSAGE })
+}
+
 /** The error and its `cause` chain, one line each: a bundler often wraps the real failure. */
 function describeLoadFailure(error: unknown): string {
   const lines: string[] = []
@@ -214,7 +231,7 @@ export async function startPasskeyRegistration(
       requireResidentKey: true,
       userVerification: 'required',
     },
-  })
+  }).catch((error: unknown) => passkeysUnavailable(event, error))
 
   await issueWebauthnChallenge(event, {
     challenge: options.challenge,
@@ -349,7 +366,7 @@ export async function startPasskeyAuthentication(event: H3Event) {
     rpID: config.rpId,
     timeout: CEREMONY_TIMEOUT_MS,
     userVerification: 'required',
-  })
+  }).catch((error: unknown) => passkeysUnavailable(event, error))
 
   await issueWebauthnChallenge(event, {
     challenge: options.challenge,
