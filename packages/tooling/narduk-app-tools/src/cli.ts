@@ -51,6 +51,12 @@ import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/
 import { runBaselineCommand } from './commands/baseline.js'
 import { runOgCommand } from './commands/og.js'
 import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
+import {
+  AGENT_KEY_USAGE,
+  formatAgentKeyCreateResult,
+  parseAgentKeyCreateArgs,
+  runAgentKeyCreate,
+} from './auth-agent-key.js'
 import { parseManifestsValidateArgs, runManifestsValidateCommand } from './manifests-validate.js'
 
 function usage(): string {
@@ -62,6 +68,11 @@ function usage(): string {
     '      [--config <name>] [--dry-run] -- <command...>',
     '                                       Run local development directly, or under the',
     '                                       registered nvault credential route',
+    '  auth agent-key create --database <name> --local|--remote --name <label>',
+    '      --scopes <a,b> --expires-days <n> [--admin] [--email <address>]',
+    '      (--app-url <origin> | --no-proof) -- <secret sink command...>',
+    '                                       Create a non-login user and API key; the key goes',
+    '                                       only to the sink stdin, D1 gets its hash',
     '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
     '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
     '                                       Seed local D1/KV/R2 (Wrangler --local) from',
@@ -246,6 +257,13 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (command === 'e2e-serve') return await runE2eServe(parseE2eServeArgs(rest))
     if (command === 'og:check' || command === 'og:generate')
       return await runOgCommand(command, rest)
+    if (command === 'auth') {
+      const [group, action, ...keyArgs] = rest
+      if (group !== 'agent-key' || action !== 'create') throw new Error(AGENT_KEY_USAGE)
+      const result = await runAgentKeyCreate(parseAgentKeyCreateArgs(keyArgs))
+      console.log(formatAgentKeyCreateResult(result))
+      return 0
+    }
     if (command === 'db') {
       const [subcommand, ...migrateArgs] = rest
       if (subcommand === 'baseline') {

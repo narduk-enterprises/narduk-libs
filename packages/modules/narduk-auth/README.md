@@ -550,6 +550,12 @@ A key minted by another API key may hold only scopes the calling key holds
 expiry past the calling key's, or `null` under a key that expires, gets a 403.
 Revoking a key does not revoke the keys it minted.
 
+`GET /api/auth/me` is session-only: it answers `{"user":null}` for a valid API
+key, so it cannot prove one. Prove a key with `GET /api/auth/api-keys`, which
+answers 401 without a key, 200 with a key holding `auth:api-keys:read`, and 403
+(missing scope) with any other live key. For an agent key on its own non-login
+user, use `narduk-app auth agent-key create` (narduk-app-tools).
+
 #### Props
 
 | Prop                    | Default | Purpose                                                                                         |
