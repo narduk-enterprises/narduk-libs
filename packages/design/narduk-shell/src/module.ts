@@ -190,6 +190,30 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
     })
+    // narduk-libs#388: the legal-page templates and their placeholder checks.
+    // Plain functions, auto-imported because Nuxt's import protection refuses
+    // app code that imports this package's own module specifier. The
+    // templates carry placeholders only; wording waits for Logan.
+    addImports({
+      name: 'hasLegalPlaceholders',
+      from: resolver.resolve('./runtime/components/ne-legal-page-types'),
+    })
+    addImports({
+      name: 'isLegalPlaceholder',
+      from: resolver.resolve('./runtime/components/ne-legal-page-types'),
+    })
+    addImports({
+      name: 'legalPlaceholder',
+      from: resolver.resolve('./runtime/components/ne-legal-page-types'),
+    })
+    addImports({
+      name: 'privacyPolicyTemplate',
+      from: resolver.resolve('./runtime/utils/legal-templates'),
+    })
+    addImports({
+      name: 'termsOfServiceTemplate',
+      from: resolver.resolve('./runtime/utils/legal-templates'),
+    })
     addImports({
       name: 'useCollection',
       from: resolver.resolve('./runtime/composables/use-collection'),
