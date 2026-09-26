@@ -48,6 +48,14 @@ export interface DevelopmentProviderState {
   requiredSecretNames: string[]
 }
 
+/** `TimeoutError: <message>; cause <code>` for a request that never produced a response. */
+function describeRequestFailure(error: unknown): string {
+  if (!(error instanceof Error)) return `${typeof error}; cause none`
+  const cause = error.cause as { code?: unknown } | undefined
+  const code = typeof cause?.code === 'string' ? cause.code : 'none'
+  return `${error.name}: ${error.message}; cause ${code}`
+}
+
 /** No write is retried. A timeout is an unknown outcome requiring provider inspection. */
 export class DevelopmentCloudflare {
   #deploymentToken?: string
@@ -81,9 +89,13 @@ export class DevelopmentCloudflare {
           signal: AbortSignal.timeout(30_000),
         },
       )
-    } catch {
+    } catch (error) {
+      // Keep the cause: a timeout, a DNS failure and a reset connection need
+      // different responses (narduk-libs#1096). The path carries no account id
+      // or token; the query string is dropped.
       throw new Error(
-        `Cloudflare ${method} request did not complete; inspect provider state before retrying a write`,
+        `Cloudflare ${method} ${path.split('?')[0]} did not complete (${describeRequestFailure(error)}); inspect provider state before retrying a write`,
+        { cause: error },
       )
     }
     let payload: unknown

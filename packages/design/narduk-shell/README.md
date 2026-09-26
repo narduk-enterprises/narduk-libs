@@ -2457,6 +2457,117 @@ import type {
 } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeProse
+
+A markdown document rendered in the suite's type scale
+([narduk-libs#1005](https://github.com/narduk-enterprises/narduk-libs/issues/1005)):
+a runbook, a help page, a changelog entry. Body copy reads `--ne-text-body` at
+`--ne-leading-body`, h2 the section-heading size (`--ne-text-heading`), h3 the
+body size at weight 600, code and tables `--ne-text-small` and `--ne-font-mono`,
+links `--ne-accent`.
+
+The page header owns the page's h1, so **NeProse never renders an h1**: a `#`
+heading is demoted to h2 (its text is kept, not dropped), and `####`–`######`
+clamp to h3. Every heading carries a slug `id` — GitHub's rule: lowercase,
+punctuation dropped, spaces to `-`, repeats suffixed `-1`, `-2` — so a table of
+contents can link to `#install`. `parseProse()` and `proseOutline()` are
+exported from the package root, so a page parses once and builds its TOC from
+the same AST it renders.
+
+It is XSS-safe by construction, not by sanitising. There is no `v-html` on the
+path: `parseProse()` (a small pure parser in `src/runtime/utils/prose.ts`, no
+dependency) produces a plain-data AST, and the component renders each node as an
+element with the source text as text nodes. Raw HTML in the source is shown as
+text. A link's `href` is the only attribute that carries source content, and it
+is kept only when it is `http:`, `https:`, `mailto:` or has no scheme at all
+(relative, `/root`, `#fragment`, `?query`); `javascript:`, `data:`, `vbscript:`
+and every other scheme drop the anchor and keep the link text. The href is
+checked again at render time, so a hand-built `blocks` AST gets the same rule.
+
+#### The subset
+
+| Construct             | Syntax                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headings              | `#`–`######` (ATX, optional closing hashes) and `===` / `---` underlines                                                                    |
+| Paragraphs and breaks | blank-line separated; two trailing spaces or a trailing `\` is a `<br>`                                                                     |
+| Lists                 | `-` `*` `+` and `1.` / `1)`, nested by indentation, keeping an ordered start                                                                |
+| Fenced code           | ` ``` ` or `~~~`, with the info string's first word as the language                                                                         |
+| Tables                | GFM pipes with a `:--` / `:-:` / `--:` delimiter row                                                                                        |
+| Blockquotes and rules | `>` (nesting any block) and `---` / `***` / `___`                                                                                           |
+| Inline                | `` `code` ``, `**bold**` / `__bold__`, `*italic*` / `_italic_`, `[text](href)`, `<https://…>`, `<a@b.c>`, bare `https://` URLs, `\` escapes |
+
+Deliberately left out: raw HTML (rendered as text), images (`![alt](src)`
+renders its alt text), indented code blocks, reference-style links,
+strikethrough, task lists and footnotes. A document that needs them wants a full
+markdown pipeline, not this component.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+
+const props = defineProps<{ markdown: string }>()
+const blocks = computed(() => parseProse(props.markdown))
+const toc = computed(() =>
+  proseOutline(blocks.value).filter((h) => h.level === 2),
+)
+</script>
+
+<template>
+  <NePageHeader title="Runbook" />
+  <nav>
+    <a v-for="entry in toc" :key="entry.id" :href="`#${entry.id}`">{{
+      entry.text
+    }}</a>
+  </nav>
+  <NeProse :blocks="blocks" />
+  <!-- Or, with no TOC: <NeProse :source="markdown" /> -->
+</template>
+```
+
+#### Props
+
+| Prop     | Type             | Default     | What it does                                                                                                                                      |
+| -------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source` | `string`         | `''`        | The markdown to render, parsed with `parseProse()`.                                                                                               |
+| `blocks` | `NeProseBlock[]` | `undefined` | A pre-parsed document — from `parseProse()` or built by hand — rendered as given (hrefs are still checked). Wins over `source` when both are set. |
+
+#### Slots
+
+None. The document is the content; a page that needs its own markup around a
+section splits the document.
+
+#### Events
+
+None. A table of contents comes from `proseOutline()`, not from an event, so it
+exists on the server's first paint too.
+
+#### Helpers
+
+- `parseProse(source: string): NeProseBlock[]` — the parser. Pure: no Vue, no
+  DOM. Heading ids are unique within one call and stable for a given source.
+- `proseOutline(input: string | NeProseBlock[]): NeProseHeading[]` — the
+  document's top-level headings as `{ id, level, text }` in order (a heading
+  inside a blockquote or list is not a section and is left out).
+
+Two NeProse documents on one page share the document's id namespace; give the
+second one headings that do not collide, or render it without a TOC.
+
+#### Types
+
+```ts
+import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseHeading,
+  NeProseInline,
+  NeProseListItem,
+  NeProseProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
 ### NeAppShell
 
 The application frame: a left rail of labelled sections, a navbar row, and the
@@ -2480,8 +2591,8 @@ D2) and built on Nuxt UI's dashboard primitives — `UDashboardGroup`,
   move to the next / previous link across section boundaries, wrapping; Home /
   End go to the first / last. Focus only: every link stays in the Tab order and
   nothing navigates until Enter.
-- **One `main`.** The page renders inside the shell's `<main>`, and a skip link
-  (visible on focus) jumps to it.
+- **One `main`.** The page renders inside the shell's `<main>`, and a
+  [`NeSkipLink`](#neskiplink) (visible on focus) moves focus to it.
 
 The shell is **opt-in** (plan decision D3). The module registers the component
 but no layout, and `create-narduk-app` scaffolds nothing: an app that wants it
@@ -2603,6 +2714,82 @@ import type {
 narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
 are deprecated in favour of `NeAppShell` and are removed in the next narduk-core
 major. Their behaviour is unchanged until then.
+
+### NeSkipLink
+
+"Skip to content" that moves keyboard focus, not only the scroll position
+([narduk-libs#977](https://github.com/narduk-enterprises/narduk-libs/issues/977)).
+The link apps hand-rolled — Nuxt UI's link component with `to="#main-content"` —
+renders a RouterLink, whose click handler calls `preventDefault` and
+`router.push`: the page scrolled, focus stayed on the link, and the next Tab
+went straight back into the navigation it was meant to skip.
+
+`NeSkipLink` is a plain `<a href="#main-content">`, never a RouterLink. It keeps
+the browser's own fragment navigation (the hash, the scroll, back/forward) and
+adds one step in its click handler, which Enter on a focused link also fires: it
+finds the target by id, gives it `tabindex="-1"` if it has no tabindex of its
+own (a `<main>` is not focusable otherwise), and calls `focus()`. A tabindex the
+target already has is kept. The click is never prevented, and a modified click
+(a new tab or window) is left to the browser. In development, a missing target
+logs a `[narduk-shell]` warning and focus stays on the link.
+
+It is visually hidden (clipped, still in the Tab order) until it has focus, then
+drawn over the top-left corner of its nearest positioned container, in
+`--ne-surface` with `--ne-ink` text and an `--ne-accent` outline. Put it first
+in the layout, so it is the first Tab stop.
+
+`NeAppShell` renders one aimed at its own `<main>`; a layout without the shell
+writes its own.
+
+#### Example
+
+```vue
+<!-- app/layouts/default.vue — NE_MAIN_ID is auto-imported by the module -->
+<template>
+  <NeSkipLink />
+  <AppHeader />
+  <main :id="NE_MAIN_ID">
+    <slot />
+  </main>
+</template>
+```
+
+```vue
+<!-- A second target, with its own text -->
+<NeSkipLink target="results" label="Skip to results" />
+```
+
+#### Props
+
+| Prop     | Type     | Default             | What it does                                                                                                         |
+| -------- | -------- | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `target` | `string` | `NE_MAIN_ID`        | The id (no `#`) of the element to focus. `NE_MAIN_ID` is `'main-content'`. The element needs no tabindex of its own. |
+| `label`  | `string` | `'Skip to content'` | The link's text.                                                                                                     |
+
+#### Slots
+
+None. The text is `label`.
+
+#### Events
+
+None. A native `click` listener on the component still reaches the anchor.
+
+#### `NE_MAIN_ID`
+
+`'main-content'`: the id of the page's main content and the link's default
+target, so the layout's `<main>` and the link are one constant rather than two
+hand-typed strings. The module **auto-imports** it (alongside
+`defineStatusMap`), so a layout writes `:id="NE_MAIN_ID"` with no import. App
+code cannot value-import it from `@narduk-enterprises/narduk-shell`: Nuxt's
+import protection refuses a bare import of any installed module's entry path
+("Importing directly from module entry-points is not allowed"). The root barrel
+still exports it, for code outside a Nuxt app build such as a unit test.
+
+#### Types
+
+```ts
+import type { NeSkipLinkProps } from '@narduk-enterprises/narduk-shell'
+```
 
 ### NeHero
 

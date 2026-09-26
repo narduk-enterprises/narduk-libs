@@ -7,10 +7,13 @@ import {
   createFormatters,
   fahrenheitToCelsius,
   feetToMetres,
+  formatCoordinate,
   formatDecimal,
   formatDistance,
   formatHeight,
+  formatLatitude,
   formatLength,
+  formatLongitude,
   formatPressure,
   formatSpeed,
   formatTemperature,
@@ -290,6 +293,68 @@ describe('createFormatters', () => {
 
     expect(format.height(1.4, { units: 'metric' })).toBe('1.4 m')
     expect(format.time(OBSERVED_AT, { timeZone: 'UTC' })).toBe('8:30 AM')
+  })
+})
+
+describe('coordinates (narduk-libs#995)', () => {
+  it('renders decimal degrees with a hemisphere letter derived from the sign', () => {
+    expect(formatLatitude(29.76044, { digits: 4 })).toBe('29.7604° N')
+    expect(formatLatitude(-14.275)).toBe('14.275° S')
+    expect(formatLongitude(-95.3698, { digits: 4 })).toBe('95.3698° W')
+    expect(formatLongitude(151.2093)).toBe('151.209° E')
+    expect(formatLatitude(29.7604)).toBe('29.760° N')
+  })
+
+  it('carries degrees-and-minutes rounding into the degrees instead of printing 60′', () => {
+    expect(formatLatitude(29.999999, { style: 'dm', digits: 3 })).toBe('30° 0.000′ N')
+    expect(formatLatitude(29.99999, { style: 'dm', digits: 3 })).toBe('29° 59.999′ N')
+    expect(formatLatitude(29.7604, { style: 'dm' })).toBe('29° 45.624′ N')
+    expect(formatLongitude(-95.3698, { style: 'dm' })).toBe('95° 22.188′ W')
+    expect(formatLatitude(-0.5, { style: 'dm', digits: 1 })).toBe('0° 30.0′ S')
+  })
+
+  it('carries degrees-minutes-seconds rounding through both places', () => {
+    expect(formatLatitude(29.7604, { style: 'dms' })).toBe('29° 45′ 37.4″ N')
+    expect(formatLatitude(29.9999999, { style: 'dms' })).toBe('30° 0′ 0.0″ N')
+    expect(formatLongitude(-95.3698, { style: 'dms', digits: 0 })).toBe('95° 22′ 11″ W')
+  })
+
+  it('names no southern or western zero: a value that rounds to 0 is N or E', () => {
+    expect(formatLatitude(-0.0001)).toBe('0.000° N')
+    expect(formatLongitude(-0.0001)).toBe('0.000° E')
+    expect(formatLatitude(-0)).toBe('0.000° N')
+  })
+
+  it('renders absent, non-finite and out-of-range input as the empty value', () => {
+    expect(formatLatitude(null)).toBe(NE_EMPTY_VALUE)
+    expect(formatLatitude(undefined)).toBe(NE_EMPTY_VALUE)
+    expect(formatLatitude(Number.NaN)).toBe(NE_EMPTY_VALUE)
+    expect(formatLongitude(Number.POSITIVE_INFINITY)).toBe(NE_EMPTY_VALUE)
+    expect(formatLatitude(90.5)).toBe(NE_EMPTY_VALUE)
+    expect(formatLongitude(-180.5, { empty: 'n/a' })).toBe('n/a')
+    expect(formatCoordinate(null)).toBe(NE_EMPTY_VALUE)
+    expect(formatCoordinate({ lat: Number.NaN, lon: 10 })).toBe(NE_EMPTY_VALUE)
+    expect(formatCoordinate({ lat: 10, lon: 200 })).toBe(NE_EMPTY_VALUE)
+  })
+
+  it('pairs latitude and longitude with a configurable separator', () => {
+    const houston = { lat: 29.7604, lon: -95.3698 }
+    expect(formatCoordinate(houston, { digits: 4 })).toBe('29.7604° N, 95.3698° W')
+    expect(formatCoordinate(houston, { separator: ' · ' })).toBe('29.760° N · 95.370° W')
+    expect(formatCoordinate(houston, { style: 'dm' })).toBe('29° 45.624′ N, 95° 22.188′ W')
+  })
+
+  it('follows the locale for the decimal separator', () => {
+    expect(formatLatitude(29.7604, { locale: 'de-DE' })).toBe('29,760° N')
+    expect(formatLatitude(29.7604, { locale: 'de-DE', style: 'dm' })).toBe('29° 45,624′ N')
+  })
+
+  it('is bound into createFormatters as format.coordinate, with the reader locale', () => {
+    const format = createFormatters(METRIC)
+    expect(format.coordinate({ lat: 29.7604, lon: -95.3698 })).toBe('29,760° N, 95,370° W')
+    expect(format.coordinate({ lat: 29.7604, lon: -95.3698 }, { locale: 'en-US' })).toBe(
+      '29.760° N, 95.370° W',
+    )
   })
 })
 

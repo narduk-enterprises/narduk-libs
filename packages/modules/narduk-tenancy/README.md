@@ -232,6 +232,17 @@ symbol, so no request input can equal it. `createOrg`, `createInvite` and
 `createSupportGrant` already name their actor (`createdByUserId`,
 `invitedByUserId`, `grantedByUserId`) and have no system path.
 
+`revokeInvite` and `revokeSupportGrant` look the record up by its id, then check
+the actor belongs to the record's org before they reveal anything: an identified
+actor who is not a member gets the same `not_found` a made-up id gets, whether
+the record is pending, revoked or accepted. A support grant's own grantor and
+grantee may also revoke it without a membership. Pass the route's `orgId` too,
+and a record from any other org is `not_found` even to a member of both:
+
+```ts
+await tenancy.revokeInvite({ orgId, inviteId, actorUserId: userId })
+```
+
 `createTenancy(db, options)` accepts `{ now, idGenerator, tokenGenerator }` so
 tests own time, ids, and tokens. Operations:
 

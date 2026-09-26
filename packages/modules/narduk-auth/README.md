@@ -233,6 +233,17 @@ The admin routes take an admin-owned API key only where its scopes allow it.
 session-only: no API key can grant or revoke admin, whatever its scopes. Admin
 sessions need no scope.
 
+## nuxt-auth-utils' session route
+
+nuxt-auth-utils serves `GET /api/_auth/session`, which
+`useUserSession().fetch()` calls, straight from the sealed cookie, without the
+session-grant validator. narduk-auth's `auth-session-refresh` middleware checks
+the grant first: when the cookie carries a user whose `auth_sessions` row is
+gone, expired or unreadable, the route answers `{}` (signed out) instead of that
+user. A live session, a cookie with no user, and `DELETE /api/_auth/session` are
+left to nuxt-auth-utils. The route is a client display hint, never a grant:
+server authorization goes through `requireAuth`, which asks the validator.
+
 ## Restricted sessions (recovery and MFA)
 
 The session-grant validator (registered on every request) is the per-request
@@ -250,7 +261,10 @@ the allowlisted routes below. Everything else that goes through `requireAuth` /
 `AUTH_REQUIRE_MFA` is **ignored on the local backend**. Local auth has no TOTP
 enroll/verify stack; treating the flag as a lockout would brick password
 sessions. A startup warning is logged when the flag is on and the backend is
-local. Passkey user-verification is not treated as AAL2.
+local. Passkey user-verification is not treated as AAL2. For the same reason
+`POST /api/auth/mfa/enroll` and `POST /api/auth/mfa/verify` answer
+`501 MFA is only available when Supabase auth is enabled.` on the local backend,
+rather than a 401 that reads as an expired session.
 
 Notification mutations require the API-key scope `auth:notifications:write`.
 Account deletion, password change, profile update, and MFA enroll/verify refuse
@@ -265,6 +279,13 @@ let any `email` session through unproven. A social-only account has no password,
 so its session must have signed in within the last 10 minutes
 (`RECENT_SIGN_IN_WINDOW_SECONDS`); otherwise the route answers 403
 `reauthentication_required` and the client signs the user in again and retries.
+
+**Setting a first password (Supabase backend).** The same recent-sign-in rule
+applies when a social-only session sets its first password through
+`change-password`: otherwise a stolen, old session could choose a password, sign
+in with it, and so pass the deletion window above. An older session gets 403
+`reauthentication_required`. A recovery session (from the reset link) is exempt,
+since it has just proved control of the inbox.
 
 ## Request principal for tenancy guards
 

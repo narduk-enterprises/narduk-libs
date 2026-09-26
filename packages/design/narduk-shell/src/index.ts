@@ -146,6 +146,23 @@ export type {
 } from './runtime/components/ne-data-table-types'
 
 /**
+ * NeProse's parser and AST (narduk-libs#1005). `parseProse` and
+ * `proseOutline` are pure functions with no Vue or DOM import, so a page can
+ * parse a document once, build its table of contents from the outline and
+ * hand the same blocks to `<NeProse :blocks>`, and a server route can run the
+ * parser too.
+ */
+export { parseProse, proseOutline } from './runtime/utils/prose'
+export type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseHeading,
+  NeProseInline,
+  NeProseListItem,
+  NeProseProps,
+} from './runtime/components/ne-prose-types'
+
+/**
  * The marketing sections (components backlog item 21, narduk-libs#268):
  * `NeHero`, `NeFeatureGrid`, `NeCta`, `NeMarketingFooter`. Types only; each
  * is the wrapped Nuxt UI primitive's own props, so a page can type a
@@ -176,6 +193,19 @@ export type {
   NeAppShellSection,
   NeAppShellVariant,
 } from './runtime/components/ne-app-shell-types'
+
+/**
+ * The skip link's target id and props (narduk-libs#977). `NE_MAIN_ID` is a
+ * value on purpose: the layout writes `<main :id="NE_MAIN_ID">` and
+ * `NeSkipLink` defaults to it, so the two ends of the link are one constant.
+ * Inside a Nuxt app it arrives through the module's `addImports`, since import
+ * protection refuses app code a bare import of this specifier; this export is
+ * for code outside that build (a unit test, a non-Nuxt consumer). The types
+ * file is a plain module, so this adds no SFC to the barrel's value-import
+ * graph.
+ */
+export { NE_MAIN_ID } from './runtime/components/ne-skip-link-types'
+export type { NeSkipLinkProps } from './runtime/components/ne-skip-link-types'
 
 // Re-exported from the barrel rather than from a new subpath: item 1 fixed
 // the exports map at `.`, `./format` and `./theme.css`; narduk-libs#295 added

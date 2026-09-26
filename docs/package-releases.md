@@ -10,6 +10,13 @@ source production proof, use the
 [`operations/template-decoupling/`](operations/template-decoupling/README.md)
 runbook and evidence exemplar.
 
+Every published package also states its N-1 support window, meaning how long the
+previous major keeps security and critical-bugfix backports after a new major
+ships. The window is recorded in
+[`package-support-window.json`](package-support-window.json) and explained in
+[`package-support-window.md`](package-support-window.md). A new published
+package needs an entry there, or `scripts:test` fails.
+
 ## Normal release
 
 1. Add a Changeset for every publishable package whose public artifact changes.

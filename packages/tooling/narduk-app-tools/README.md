@@ -75,6 +75,33 @@ artifact; version promotion does not. Full validation runs on request and on
 exit. Nothing enrolls automatically. See the
 [development mode runbook](docs/development-mode.md).
 
+## Shared app scripts (`ensure-generated`, `check-starter-identity`)
+
+Two scripts every template-derived app used to carry as a copy
+(narduk-libs#1019) ship here with the same rules. Replace the copy with the
+command and delete `scripts/ensure-generated-files.sh` or
+`scripts/check-starter-identity.mjs`.
+
+```sh
+narduk-app ensure-generated <file...> -- <command...>
+narduk-app check-starter-identity [--cwd <dir>]
+```
+
+- `ensure-generated` runs the command only when a listed file is missing, or
+  imports a `node_modules/.pnpm/...` path that no longer exists (a reinstall
+  moved the store entry, so a `.nuxt` file looks present but is stale). It then
+  checks up to five times, a second apart, and fails naming each file still
+  missing. The command's own non-zero exit is returned unchanged. A
+  `package.json` script
+  `sh scripts/ensure-generated-files.sh .nuxt/nuxt.d.ts -- nuxt prepare` becomes
+  `narduk-app ensure-generated .nuxt/nuxt.d.ts -- nuxt prepare`.
+- `check-starter-identity` fails when a generator placeholder (`__APP_NAME__`,
+  `__DISPLAY_NAME__`, `__SITE_URL__`, `__APP_DESCRIPTION__` and the `__SPEC_*__`
+  set) remains in a README, SPEC, UI_PLAN or CONTRACT file, a `package.json`,
+  `wrangler.json`, `site.webmanifest`, or `apps/web/app`'s `app.config.ts`,
+  pages and layouts. `node_modules`, build output and `pnpm-lock.yaml` are
+  skipped.
+
 ## Seeded local development (`narduk-app dev:seed`)
 
 One command from a clean checkout to local D1/KV/R2 holding representative data,
@@ -759,6 +786,27 @@ a second rather than a minute. `create-narduk-app` scaffolds `narduk-app.json`
 with an empty list and the how-to in the app README.
 
 Bare `doctor` is unchanged. The audit leg is a flag, like `--adoption`.
+
+## One verdict (`narduk-app doctor --all`)
+
+`narduk-app doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]... [--json] [--no-cache]`
+answers "is this app in shape" with one line, then prints each leg's own report
+unchanged (narduk-libs#376). It composes the existing legs and reimplements
+none: bare `doctor`'s prerequisites, `doctor --adoption` (foundation, toolchain,
+shared-UI, coverage and deployment checks, plus the security-header and live
+build probes when `--live` is given) and `doctor --audit`.
+
+| Verdict       | When                                                                                                                                      | Exit |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `DOCTOR FAIL` | a prerequisite fails, an adoption requirement fails, or an undeclared high/critical advisory                                              | 1    |
+| `DOCTOR WARN` | nothing fails, but a prerequisite warns, adoption is `UNKNOWN` (always without `--live`) or `DEVIATION`, or the audit warns or is offline | 0    |
+| `DOCTOR PASS` | every leg passes                                                                                                                          | 0    |
+
+The line names every leg behind the verdict, for example
+`DOCTOR FAIL -- prerequisites: wrangler config; audit: FAIL 1 undeclared high/critical advisory`.
+`--json` prints one object: `verdict`, `line`, `exitCode`, and the three leg
+reports under `prerequisites`, `adoption` and `audit`. Bare `doctor`,
+`--adoption` and `--audit` keep their exact output and exit codes.
 
 ## The deployment standard block
 

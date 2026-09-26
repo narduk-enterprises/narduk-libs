@@ -271,6 +271,15 @@ describe('NeAppShell: slots', () => {
     expect(shell.get('.ne-app-shell__skip').attributes('href')).toBe(`#${main.attributes('id')}`)
     expect(shell.get('.ne-app-shell__skip').text()).toBe('Skip to content')
   })
+
+  it('skip link is NeSkipLink: activating it moves focus into the main landmark', async () => {
+    const shell = await render()
+    const skip = shell.get('.ne-app-shell__skip')
+    expect(skip.classes()).toContain('ne-skip-link')
+
+    await skip.trigger('click')
+    expect(document.activeElement).toBe(shell.get('main').element)
+  })
 })
 
 describe('NeAppShell: useNardukShellSections() drives the rail', () => {

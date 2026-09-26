@@ -11,6 +11,7 @@ import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
 import { runDoctor, formatDoctorReport } from './doctor.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
+import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
 import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
 import {
   formatPromoteResult,
@@ -58,6 +59,12 @@ import {
   runAgentKeyCreate,
 } from './auth-agent-key.js'
 import { parseManifestsValidateArgs, runManifestsValidateCommand } from './manifests-validate.js'
+import {
+  parseEnsureGeneratedArgs,
+  parseStarterIdentityArgs,
+  runEnsureGenerated,
+  runStarterIdentityCheck,
+} from './app-scripts.js'
 
 function usage(): string {
   return [
@@ -73,6 +80,12 @@ function usage(): string {
     '      (--app-url <origin> | --no-proof) -- <secret sink command...>',
     '                                       Create a non-login user and API key; the key goes',
     '                                       only to the sink stdin, D1 gets its hash',
+    '  ensure-generated <file...> -- <command...>',
+    '                                       Run the command only when a generated file is',
+    '                                       missing or imports a pnpm store path that is gone',
+    '  check-starter-identity [--cwd <dir>]',
+    '                                       Fail when generator placeholders such as',
+    '                                       __APP_NAME__ remain on identity surfaces',
     '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
     '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
     '                                       Seed local D1/KV/R2 (Wrangler --local) from',
@@ -159,6 +172,10 @@ function usage(): string {
     '                                      Report the 15 narduk-app adoption requirements',
     '  doctor --audit [--checkout <dir>] [--json] [--no-cache]',
     '                                      Fail on undeclared high/critical advisories',
+    '  doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]...',
+    '               [--json] [--no-cache]',
+    '                                      One verdict line (DOCTOR PASS|WARN|FAIL) over the',
+    '                                      prerequisites, --adoption and --audit legs',
     '  performance-budget [options]        Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
     '  og:generate [--if-missing|--force]    Render the app-owned default share image',
@@ -246,6 +263,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       return 0
     }
     if (command === 'dev') return runDev(parseDevArgs(rest))
+    if (command === 'ensure-generated') return runEnsureGenerated(parseEnsureGeneratedArgs(rest))
+    if (command === 'check-starter-identity') {
+      return runStarterIdentityCheck(parseStarterIdentityArgs(rest))
+    }
     if (command === 'dev:seed') {
       const flags = parseDevSeedArgs(rest)
       const plan = runDevSeed(flags)
@@ -375,6 +396,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       if (rest.includes('--adoption')) {
         const { exitCode } = await runAdoptionReportCommand(parseAdoptionReportArgs(rest))
         return exitCode
+      }
+      if (rest.includes('--all')) {
+        return (await runDoctorAllCommand(parseDoctorAllArgs(rest))).exitCode
       }
       if (rest.includes('--audit')) return runAuditCommand(parseAuditArgs(rest)).exitCode
       const json = rest.includes('--json')

@@ -62,6 +62,7 @@ const SHELL_DEMOS = [
   'ne-data-table',
   'ne-sort-header',
   'ne-csv-download',
+  'ne-prose',
   'ne-hero',
   'ne-feature-grid',
   'ne-cta',
