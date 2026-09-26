@@ -564,10 +564,12 @@ const admin = await requireAdmin(event)
 requireAdminRouteScopes(admin, ['runtime:status:read'])
 ```
 
-- A session passes. The scope restricts keys only.
+- A non-admin gets 403 from the helper itself, not only from `requireAdmin`.
+- An admin session passes. The scope restricts keys only.
 - A key that carries scopes must hold every scope named, or `*`, or it gets 403.
-  An admin-owned key minted for something narrow is then no longer an admin
-  credential on that route.
+  An admin-owned key minted for something narrow cannot use that route. It can
+  still mint an unscoped key if it holds `auth:api-keys:write`, until
+  narduk-libs#1122 closes that path.
 - A key with no scopes keeps its full admin reach. That lasts until every admin
   route names a scope, and it is what separates this helper from
   `requireAuthScopes`, which refuses such a key.

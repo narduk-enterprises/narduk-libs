@@ -37,6 +37,7 @@ vi.mock('../runtime/server/utils/database', () => {
   }
 })
 
+const STATUS_SCOPE = 'runtime:status:read'
 const ADMIN = { id: 'admin-1', email: 'ops@example.com', name: 'Ops', isAdmin: true }
 const FUTURE = Math.floor(Date.now() / 1000) + 86_400
 
@@ -85,8 +86,8 @@ describe('GET /api/runtime/status API-key scope (#971)', () => {
   })
 
   it('accepts a key that holds runtime:status:read, or the wildcard', async () => {
-    expect(await statusCodeOf(callStatus(['runtime:status:read']))).toBe(200)
-    expect(await statusCodeOf(callStatus(['registry:read', 'runtime:status:read']))).toBe(200)
+    expect(await statusCodeOf(callStatus([STATUS_SCOPE]))).toBe(200)
+    expect(await statusCodeOf(callStatus(['registry:read', STATUS_SCOPE]))).toBe(200)
     expect(await statusCodeOf(callStatus(['*']))).toBe(200)
   })
 
@@ -95,8 +96,29 @@ describe('GET /api/runtime/status API-key scope (#971)', () => {
   })
 
   it('still requires the key owner to be an admin', async () => {
-    expect(
-      await statusCodeOf(callStatus(['runtime:status:read'], { ...ADMIN, isAdmin: false })),
-    ).toBe(403)
+    expect(await statusCodeOf(callStatus([STATUS_SCOPE], { ...ADMIN, isAdmin: false }))).toBe(403)
+  })
+})
+
+describe('requireAdminRouteScopes refuses a non-admin on its own (#971)', () => {
+  const base = { id: 'user-1', email: 'user@example.com', name: 'User', scopes: [] }
+
+  it('refuses a non-admin session and a non-admin unscoped key', async () => {
+    const { requireAdminRouteScopes } = await import('../runtime/server/utils/auth')
+    for (const user of [
+      { ...base, authMethod: 'session' as const, isAdmin: false },
+      { ...base, authMethod: 'api-key' as const, isAdmin: null },
+    ]) {
+      expect(() => requireAdminRouteScopes(user, [STATUS_SCOPE])).toThrow(
+        expect.objectContaining({ statusCode: 403 }),
+      )
+    }
+  })
+
+  it('passes an admin session', async () => {
+    const { requireAdminRouteScopes } = await import('../runtime/server/utils/auth')
+    expect(() =>
+      requireAdminRouteScopes({ ...base, authMethod: 'session', isAdmin: true }, [STATUS_SCOPE]),
+    ).not.toThrow()
   })
 })
