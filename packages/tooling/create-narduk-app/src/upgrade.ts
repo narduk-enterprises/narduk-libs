@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
+import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
+import type { PackageRegistry } from './dependabot-registry.js'
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
@@ -770,7 +772,11 @@ function resolveManagedTarget(
   target: ManagedTarget,
   current: string | null,
   desired: string | undefined,
+  registry: PackageRegistry,
 ): Resolution {
+  if (target.path === '.github/dependabot.yml' && desired !== undefined) {
+    return resolveDependabot(current, desired, registry)
+  }
   if (desired === undefined) {
     return {
       detail: 'The generator does not emit this path for the resolved profile.',
@@ -802,6 +808,10 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
   const targetDir = resolve(options.targetDir)
   const profile = await inferUpgradeProfile(targetDir, options)
   const generated = generatedContentsFor(profile, targetDir)
+  const registry = detectPackageRegistry(
+    await readIfExists(resolve(targetDir, '.npmrc')),
+    await readIfExists(resolve(targetDir, 'pnpm-lock.yaml')),
+  )
 
   const only = (options.only ?? []).map((entry) => entry.replace(/^\.\//u, ''))
   for (const entry of only) {
@@ -820,7 +830,7 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
   for (const target of targets) {
     const absolute = resolve(targetDir, target.path)
     const current = await readIfExists(absolute)
-    const resolution = resolveManagedTarget(target, current, generated.get(target.path))
+    const resolution = resolveManagedTarget(target, current, generated.get(target.path), registry)
     const next = resolution.next
     const diff = next === undefined ? '' : unifiedDiff(target.path, current ?? '', next)
 

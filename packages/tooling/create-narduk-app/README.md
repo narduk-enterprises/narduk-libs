@@ -234,6 +234,16 @@ entry. Never add `scope:` to the entry; it makes Dependabot discard the
 committed `.npmrc` (agent-infrastructure#1405). coding-standards
 `scripts/check-dependabot-template.py --file --npmrc` checks the shape.
 
+`upgrade` reads the app's registry before it touches this file. `.npmrc`'s
+`@narduk-enterprises:registry` wins, and the lockfile is the fallback. An app on
+`https://npm.pkg.github.com` is never given `npm.nard.uk` or
+`NPM_NARD_UK_PLACEHOLDER`. An app on `https://npm.nard.uk` is never given a
+scope-bearing GitHub Packages registry. A file that already targets that
+registry and sets `cooldown.default-days: 0` (with `semver-major-days` absent
+or 0) is left untouched, including its own `ignore` rules. Anything else is
+rewritten to the template for the registry the app actually uses. Opt out with
+`# narduk:unmanaged` when the app's rules should stay even if they disagree.
+
 ### How a narduk-app stays current
 
 1. **Adopt the check.** Run `create-narduk-app upgrade .` in CI, or locally
