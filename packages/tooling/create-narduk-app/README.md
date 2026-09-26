@@ -224,11 +224,16 @@ pnpm dlx @narduk-enterprises/create-narduk-app upgrade . \
   --only .github/workflows/dependabot-merge.yml --write
 ```
 
-The generated `.github/dependabot.yml` has no `registries:` block. Dependabot
-reads `@narduk-enterprises/*` from the committed `.npmrc`
-(`https://npm.nard.uk`) anonymously. A `registries:` entry with `scope:` would
-discard that `.npmrc` and re-add GitHub Packages token auth
-(agent-infrastructure#1405). Do not add one back when adopting the file.
+The generated `.github/dependabot.yml` declares one scope-less `npm-nard-uk`
+registry for `https://npm.nard.uk`, and the npm update lists it
+(narduk-libs#1129). Dependabot's proxy refuses egress to hosts the file does not
+declare, so without it every `@narduk-enterprises/*` lookup is a 403
+(agent-infrastructure#1940). The token is the org-level
+`NPM_NARD_UK_PLACEHOLDER` Dependabot secret, a non-credential value: the mirror
+is anonymous, but GitHub's validator rejects a plaintext token and a URL-only
+entry. Never add `scope:` to the entry; it makes Dependabot discard the
+committed `.npmrc` (agent-infrastructure#1405). coding-standards
+`scripts/check-dependabot-template.py --file --npmrc` checks the shape.
 
 ### How a narduk-app stays current
 

@@ -1610,7 +1610,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
       expect(readme, label).toContain('https://npm.nard.uk')
       expect(readme, label).toContain('gh-packages-run')
-      expect(readme, label).toContain('no `registries:` block')
+      expect(readme, label).toContain('scope-less `npm-nard-uk` registry')
       expect(files.has('scripts/package-registry-auth.mjs'), label).toBe(false)
       expect(files.has('scripts/gh-packages-run.mjs'), label).toBe(true)
       const root = JSON.parse(files.get('package.json') ?? '{}') as {
@@ -1624,8 +1624,9 @@ describe('generated app typecheck and lint surfaces', () => {
   })
 
   // Matches the reference app's live shape (company-hq D-TOOLCHAIN-1,
-  // gonogo#104 / narduk-libs#U2). After D-PKG-6 there is no `registries:`
-  // block (narduk-libs#568). Two npm groups, split by `update-types` into a
+  // gonogo#104 / narduk-libs#U2). The one registry is the scope-less
+  // npm.nard.uk entry Dependabot's proxy needs (narduk-libs#1129); a
+  // `scope:` would drop the committed `.npmrc` (narduk-libs#568). Two npm groups, split by `update-types` into a
   // `safe` (minor + patch) lane and a `majors` lane, replace the old single
   // all-in `dependencies` group: a main-branch merge still can't trigger
   // more than one PR per lane (foundation:check item 5.2's "grouping
@@ -1642,7 +1643,6 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(dependabot, label).toContain('safe:')
       expect(dependabot, label).toContain('majors:')
       expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
-      expect(dependabot, label).not.toContain('registries:')
       expect(dependabot, label).not.toContain('npm.pkg.github.com')
       expect(dependabot, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(() => YAML.parse(dependabot), label).not.toThrow()
@@ -1658,11 +1658,17 @@ describe('generated app typecheck and lint surfaces', () => {
         }>
       }
       expect(parsed.version, label).toBe(2)
-      expect(parsed.registries, label).toBeUndefined()
+      expect(parsed.registries, label).toEqual({
+        'npm-nard-uk': {
+          type: 'npm-registry',
+          url: 'https://npm.nard.uk',
+          token: '${{secrets.NPM_NARD_UK_PLACEHOLDER}}',
+        },
+      })
       expect(parsed.updates, label).toHaveLength(2)
       const npmUpdate = parsed.updates.find((update) => update['package-ecosystem'] === 'npm')
       expect(npmUpdate?.directory, label).toBe('/')
-      expect(npmUpdate?.registries, label).toBeUndefined()
+      expect(npmUpdate?.registries, label).toEqual(['npm-nard-uk'])
       expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
       expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
       expect(npmUpdate?.groups.safe['update-types'], label).toEqual(['minor', 'patch'])
