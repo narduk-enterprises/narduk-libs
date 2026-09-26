@@ -52,6 +52,7 @@
     "runtime/server/list-cursor.ts",
     "runtime/server/json-error-no-store.ts",
     "runtime/server/api/health.get.ts",
+    "runtime/server/api/runtime/status.get.ts",
     "runtime/server/database/d1RoundTrips.ts",
     "runtime/server/database/pg-schema.ts",
     "runtime/server/database/schema.ts",

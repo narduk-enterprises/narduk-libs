@@ -553,6 +553,29 @@ requireSharedSecret(event, {
   `hasSharedSecret(event, options) || (await requireAdmin(event))`.
 - `timingSafeEqualText(a, b)` is the byte-wise compare underneath.
 
+## Admin route API-key scopes (opt-in)
+
+`requireAdmin` accepts a bearer API key whose owner is an admin. An admin route
+that a machine client calls names its own scope with `requireAdminRouteScopes`
+(narduk-libs#971):
+
+```ts
+const admin = await requireAdmin(event)
+requireAdminRouteScopes(admin, ['runtime:status:read'])
+```
+
+- A non-admin gets 403 from the helper itself, not only from `requireAdmin`.
+- An admin session passes. The scope restricts keys only.
+- A key that carries scopes must hold every scope named, or `*`, or it gets 403.
+  An admin-owned key minted for something narrow cannot use that route. It can
+  still mint an unscoped key if it holds `auth:api-keys:write`, until
+  narduk-libs#1122 closes that path.
+- A key with no scopes keeps its full admin reach. That lasts until every admin
+  route names a scope, and it is what separates this helper from
+  `requireAuthScopes`, which refuses such a key.
+
+`GET /api/runtime/status` names `runtime:status:read`.
+
 ## Media security policy
 
 Media stays restricted to the application origin by default. Set
