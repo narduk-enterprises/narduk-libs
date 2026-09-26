@@ -172,8 +172,11 @@ on:
   Known gaps in the excuse, accepted because each needs deliberate obfuscation
   inside the app's own checkout: a capture spelled with ANSI-C escapes
   (`$'…\x3e&1…'`), a capture in a file one level deeper than the scanned scope
-  (a file that a scanned file runs), a script name a JS caller computes at run
-  time, and a program file that evaluates what is piped into it.
+  (a file that a scanned file runs), script names selected by pattern (pnpm
+  `/regex/` selectors, shell globs) or computed at runtime, obfuscated access to
+  a captured child's output (computed property names, `Object.values`, renamed
+  imports), and a program file that evaluates what is piped into it. The check
+  guards against accidental re-arming, not a hostile repo owner.
 
 Entry never edits the app to disarm it: it cannot find an app's own
 authorization record, and an edit in the integration checkout would reach no
