@@ -191,7 +191,12 @@ pnpm exec narduk-app og:check --live --base-url http://127.0.0.1:3000
 
 # After deployment: the canonical HTTPS origin, without an override.
 pnpm exec narduk-app og:check --live --json
+pnpm exec narduk-app og:check --json evidence/og-check.json
 ```
+
+`--json` prints the verdict. `--json <path>` writes it and prints the text
+summary, the same as `foundation:check`. A missing config file exits 1 with
+`ok: false` and the path in `errors`. It does not throw `ENOENT`.
 
 `--root` selects an app directory; `--config` selects an app-relative JSON file.
 From a generated monorepo root the CLI detects `apps/web`. From another layout,

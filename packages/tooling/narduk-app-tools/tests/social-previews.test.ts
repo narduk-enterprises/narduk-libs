@@ -201,6 +201,30 @@ describe('social preview inventory and default images', () => {
     await expect(inspectSocialImage(redPng.subarray(0, 100))).rejects.toThrow()
   })
 
+  it('reports a missing social-previews file as a JSON failure, not an ENOENT throw', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const out = join(root, 'og-check.json')
+    try {
+      expect(await main(['og:check', '--root', root, '--json'])).toBe(1)
+      const printed = JSON.parse(log.mock.calls.map((call) => String(call[0])).join('\n')) as {
+        ok: boolean
+        errors: string[]
+      }
+      expect(printed.ok).toBe(false)
+      expect(printed.errors.join('\n')).toContain('Config/social-previews.json is missing')
+      log.mockClear()
+      expect(await main(['og:check', '--root', root, '--json', out])).toBe(1)
+      const written = JSON.parse(readFileSync(out, 'utf8')) as { ok: boolean; errors: string[] }
+      expect(written.ok).toBe(false)
+      expect(written.errors.join('\n')).toContain('Config/social-previews.json is missing')
+      expect(error).not.toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+      error.mockRestore()
+    }
+  })
+
   it('reports offline success without claiming a live probe and returns a failing CLI exit', async () => {
     const report = await checkSocialPreviews(config, root)
     expect(report).toMatchObject({ ok: true, mode: 'offline', samples: 0 })
@@ -274,6 +298,7 @@ describe('crawler-visible delivery', () => {
     expect(report.errors.join(' ')).toContain('exactly one')
   })
 
+  // The head is 1MB. Under a full v8 coverage run this sits past vitest's 5s default.
   it('keeps the byte ceiling on the head itself', async () => {
     await serve((path) =>
       path.endsWith('.png')
@@ -285,7 +310,7 @@ describe('crawler-visible delivery', () => {
     const report = await checkSocialPreviews(config, root, { live: true, baseUrl: origin })
     expect(report.ok).toBe(false)
     expect(report.errors.join(' ')).toContain('head exceeds byte limit')
-  })
+  }, 20_000)
 
   it('bounds concurrent requests and cancels a stalled run within its total budget', async () => {
     await serve()

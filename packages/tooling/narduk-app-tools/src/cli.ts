@@ -31,7 +31,7 @@ import {
   writeDeploymentMigrationBundle,
 } from './deployment-migrations.js'
 import {
-  formatPerformanceBudgetReport,
+  emitPerformanceBudgetReport,
   parsePerformanceBudgetArgs,
   runPerformanceBudgetCheck,
 } from './performance.js'
@@ -176,10 +176,14 @@ function usage(): string {
     '               [--json] [--no-cache]',
     '                                      One verdict line (DOCTOR PASS|WARN|FAIL) over the',
     '                                      prerequisites, --adoption and --audit legs',
-    '  performance-budget [options]        Check built asset budgets',
+    '  performance-budget [--json [path]] [options]',
+    '                                       Check built asset budgets',
     '  assets favicons [options]            Generate ordinary favicon assets',
     '  og:generate [--if-missing|--force]    Render the app-owned default share image',
-    '  og:check [--live] [--base-url URL] [--json]  Verify route coverage and crawler images',
+    '  og:check [--live] [--base-url URL] [--json [path]]',
+    '                                       Verify route coverage and crawler images.',
+    '                                       A missing social-previews file is a failed',
+    '                                       check (exit 1), not an ENOENT throw.',
     '  foundation:check [--checkout <dir>] [--json [path]]',
     '                                       Web foundation conformance (D-WEBFOUND-2 Q9 (a))',
     '  foundation:check:shared-ui-pinned [--checkout <dir>] [--json [path]]',
@@ -406,9 +410,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (command === 'performance-budget') {
       const options = parsePerformanceBudgetArgs(rest)
       const report = runPerformanceBudgetCheck(options)
-      console.log(
-        options.json ? JSON.stringify(report, null, 2) : formatPerformanceBudgetReport(report),
-      )
+      emitPerformanceBudgetReport(options, report)
       return report.violations.length > 0 && !options.reportOnly ? 1 : 0
     }
     if (command === 'assets') {
