@@ -1,5 +1,48 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.14.8
+
+### Patch Changes
+
+- 9b4a207: Bare `narduk-app doctor` now runs the dependency audit alongside the
+  prerequisites and prints one verdict line first: `DOCTOR PASS|WARN|FAIL`
+  (narduk-libs#376). It can newly exit 1 on an undeclared high or critical
+  advisory; accept or bump it as `doctor --audit` describes. The audit runs at
+  the nearest `pnpm-lock.yaml`, without leaving the git repository, so a
+  generated app's `pnpm run doctor` in `apps/web` audits the root lockfile.
+  `--json` keeps the old fields and adds `verdict`, `line`, `exitCode` and
+  `audit`. The generated app README describes the new behaviour.
+- 3029d69: `foundation:check:shared-ui-pinned` warns when a UI app depends on
+  `@nuxt/ui` through a range (narduk-libs#1033). narduk-core, narduk-shell,
+  narduk-auth, narduk-seo, narduk-analytics and narduk-ai render Nuxt UI and pin
+  it exactly. The warning is a `[WARN]` summary line and an `advisories` entry
+  in the JSON artefact; it changes neither the result nor the exit code.
+  Generated apps already pin `@nuxt/ui` exactly, so they see no warning.
+- 5ebe212: `upgrade` reads `.npmrc` (a scoped registry line, then an unscoped
+  `registry=` line, then the lockfile) before rewriting
+  `.github/dependabot.yml`, comparing registry hosts rather than URL substrings.
+  A GitHub Packages app is not given the `npm.nard.uk` placeholder registry, an
+  `npm.nard.uk` app is not given a GitHub Packages registry, and a file that
+  already targets the app's registry with an npm update block and cooldown 0 is
+  left untouched. An unknown registry does not create a placeholder-token file.
+- 6b68cdb: `upgrade` appends the `narduk:e2e-policy` block to
+  `docs/e2e-testing.md` when the markers are missing, the same way it appends
+  the router block to `AGENTS.md`. The surrounding prose stays put. A
+  `narduk:unmanaged` header still opts the file out.
+- 9209fea: `upgrade` reads the checkout it is pointed at: root Nuxt app versus
+  `apps/web`, the wrangler file that exists (`wrangler.json`, `wrangler.jsonc`,
+  or `wrangler.toml`, or `nativeManifests.wrangler`), and a literal
+  `devServer.port` (comments and nested objects do not count). `databaseBackend`
+  comes from the Nuxt config or a D1 binding. An existing migrate command is
+  left alone. Auth inferred from `@narduk-enterprises/narduk-auth` is not
+  dropped when no D1 binding is found. `--only apps/web/wrangler.jsonc` selects
+  the checkout's wrangler file.
+- 70a376b: `upgrade` moves a `nuxt-cloudflare.yml` caller pin forward when
+  bundled workflows history shows it is older than this generator's pin,
+  including pins this package did not ship itself (`9685e3d3`, `2a27d457`). A
+  newer pin (`94a3ba46`) stays where the app put it. A SHA missing from that
+  history is unresolved, never clean, and is not rewritten.
+
 ## 0.14.7
 
 ### Patch Changes

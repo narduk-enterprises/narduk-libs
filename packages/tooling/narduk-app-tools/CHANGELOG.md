@@ -1,5 +1,52 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.27.0
+
+### Minor Changes
+
+- 9b4a207: Bare `narduk-app doctor` now runs the dependency audit alongside the
+  prerequisites and prints one verdict line first: `DOCTOR PASS|WARN|FAIL`
+  (narduk-libs#376). It can newly exit 1 on an undeclared high or critical
+  advisory; accept or bump it as `doctor --audit` describes. The audit runs at
+  the nearest `pnpm-lock.yaml`, without leaving the git repository, so a
+  generated app's `pnpm run doctor` in `apps/web` audits the root lockfile.
+  `--json` keeps the old fields and adds `verdict`, `line`, `exitCode` and
+  `audit`. The generated app README describes the new behaviour.
+- 3029d69: `foundation:check:shared-ui-pinned` warns when a UI app depends on
+  `@nuxt/ui` through a range (narduk-libs#1033). narduk-core, narduk-shell,
+  narduk-auth, narduk-seo, narduk-analytics and narduk-ai render Nuxt UI and pin
+  it exactly. The warning is a `[WARN]` summary line and an `advisories` entry
+  in the JSON artefact; it changes neither the result nor the exit code.
+  Generated apps already pin `@nuxt/ui` exactly, so they see no warning.
+
+### Patch Changes
+
+- 4d5d1d0: `doctor --adoption` requirement R4 is labeled foundation evidence for
+  items 1-9. Items 10-12 stay on their own requirements. An unreadable
+  deployment block no longer copies one parse error onto R1, R5, R6, and R7: R6
+  is not-applicable when the app declares no D1 binding, and R7 is
+  not-applicable when it declares no D1, KV, or R2 binding. Bare `doctor`
+  reports `clean: false` when `cf:build` or `db:migrate:remote` is missing.
+  Those checks stay warnings, so the bare-doctor exit stays 0.
+- e66c3a9: `foundation:check:deployment` names a missing `deployment.standard`
+  and the accepted `promotion.mode` values. A leftover `strategy` key is named
+  in the same sentence. That shape is no longer reported as an unreadable zod
+  error.
+- a632a01: Item 9.6 flags only a file Nitro mounts at `/api/health`
+  (`server/api/health.*` or `server/api/health/index.*`). A versioned route such
+  as `server/api/v1/health.get.ts` mounts `/api/v1/health` and is no longer
+  reported as a hand-rolled `/api/health`.
+- d2a0aec: `og:check` and `performance-budget` accept `--json <path>` the way
+  `foundation:check` does: the path is written, and `--json` alone still prints
+  the verdict. A missing `Config/social-previews.json` is a failed check
+  (`ok: false`, exit 1) instead of an `ENOENT` throw.
+- 612e958: `narduk-app <command> --help` and `-h` print the command list and
+  exit 0. A subcommand used to treat `--help` as an unknown option and exit 1.
+  `--help` after `--` is still passed to the child command.
+- 904667f: A passing `verify --live` assertion reports `exitCode` 0. Previously
+  a passing build-version assertion kept exit code 3, the mismatch code, while
+  its status was `pass`. The report's top-level exit code is unchanged.
+
 ## 0.26.1
 
 ### Patch Changes

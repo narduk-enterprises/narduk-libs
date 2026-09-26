@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.8.2
+
+### Patch Changes
+
+- 3ce9543: `ogImage: { enabled: false }` typechecks when `nuxt-og-image` is not
+  installed. Static-card apps can opt out without `@ts-expect-error` and without
+  `NUXT_OG_IMAGE_SECRET`.
+
+  Refs narduk-libs#1162
+
 ## 2.8.1
 
 ### Patch Changes
