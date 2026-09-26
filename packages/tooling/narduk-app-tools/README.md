@@ -4,9 +4,13 @@
 
 `narduk-app og:generate` renders an app-owned default share image.
 `narduk-app og:check` validates the default and route inventory; add `--live` to
-verify actual server-rendered metadata and downloaded images as crawlers. New
-app scaffolds wire these into builds and browser CI. Existing apps adopt them
-using the [social preview guide](docs/social-previews.md).
+verify actual server-rendered metadata and downloaded images as crawlers.
+`--json` prints that verdict. `--json <path>` writes it and prints the text
+summary, the same way `foundation:check --json` does. A missing
+`Config/social-previews.json` is a failed check (`ok: false`, exit 1) with that
+verdict, not an `ENOENT` throw. `performance-budget` accepts `--json [path]` the
+same way. New app scaffolds wire these into builds and browser CI. Existing apps
+adopt them using the [social preview guide](docs/social-previews.md).
 
 Focused app-local tooling exposed as `narduk-app`. It operates on the current
 application only: local development, prebuilt-Worker e2e serving, source-owned

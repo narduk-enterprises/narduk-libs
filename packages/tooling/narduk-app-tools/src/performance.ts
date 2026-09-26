@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
@@ -11,7 +11,10 @@ export interface PerformanceBudgetOptions {
   fontBudgetKb?: number
   fontTotalBudgetKb?: number
   imageBudgetKb?: number
+  /** Print the JSON verdict on stdout. Set only when `--json` has no path. */
   json?: boolean
+  /** Write the JSON verdict here. Same contract as `foundation:check --json <path>`. */
+  jsonPath?: string
   reportOnly?: boolean
 }
 
@@ -100,6 +103,7 @@ function normalizeOptions(options: PerformanceBudgetOptions): Required<Performan
     fontTotalBudgetKb: options.fontTotalBudgetKb ?? 100,
     imageBudgetKb: options.imageBudgetKb ?? 800,
     json: options.json ?? false,
+    jsonPath: options.jsonPath ?? '',
     reportOnly: options.reportOnly ?? false,
   }
 }
@@ -235,8 +239,13 @@ export function parsePerformanceBudgetArgs(args: string[]): PerformanceBudgetOpt
   for (let index = 0; index < normalizedArgs.length; index += 1) {
     const arg = normalizedArgs[index]
     if (arg === '--app-dir') options.appDir = normalizedArgs[++index]
-    else if (arg === '--json') options.json = true
-    else if (arg === '--report-only') options.reportOnly = true
+    else if (arg === '--json') {
+      const next = normalizedArgs[index + 1]
+      if (next && !next.startsWith('--')) {
+        options.jsonPath = next
+        index += 1
+      } else options.json = true
+    } else if (arg === '--report-only') options.reportOnly = true
     else if (numeric.has(arg)) {
       const value = Number(normalizedArgs[++index])
       if (!Number.isFinite(value) || value <= 0) throw new Error(`${arg} must be a positive number`)
@@ -264,13 +273,24 @@ export function formatPerformanceBudgetReport(report: PerformanceBudgetReport): 
   return lines.join('\n')
 }
 
+/** `--json <path>` writes the verdict. `--json` alone prints it. */
+export function emitPerformanceBudgetReport(
+  options: PerformanceBudgetOptions,
+  report: PerformanceBudgetReport,
+): void {
+  if (options.jsonPath) {
+    writeFileSync(options.jsonPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+  }
+  console.log(
+    options.json ? JSON.stringify(report, null, 2) : formatPerformanceBudgetReport(report),
+  )
+}
+
 export function runPerformanceBudgetCli(args: string[]): number {
   try {
     const options = parsePerformanceBudgetArgs(args)
     const report = runPerformanceBudgetCheck(options)
-    console.log(
-      options.json ? JSON.stringify(report, null, 2) : formatPerformanceBudgetReport(report),
-    )
+    emitPerformanceBudgetReport(options, report)
     return report.violations.length > 0 && !options.reportOnly ? 1 : 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))

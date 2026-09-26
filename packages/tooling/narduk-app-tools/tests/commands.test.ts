@@ -2,10 +2,10 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { main, parseMigrationArgs } from '../src/cli.js'
 import { parseFoundationCheckArgs } from '../src/commands/foundation-check.js'
-import { parseMigrationArgs } from '../src/cli.js'
 import { buildDevInvocation, parseDevArgs } from '../src/dev.js'
 import {
   buildWranglerCommandArgs,
@@ -173,6 +173,23 @@ describe('app-local command planning', () => {
     expect(() => parsePerformanceBudgetArgs(['--', '--', '--json'])).toThrow(
       'Unknown performance-budget option: --',
     )
+  })
+
+  it('accepts --json <path> the way foundation:check does', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-budget-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, '.output', 'public'), { recursive: true })
+    const out = join(root, 'budget.json')
+    expect(parsePerformanceBudgetArgs(['--json', out])).toEqual({ jsonPath: out })
+    expect(parsePerformanceBudgetArgs(['--json'])).toEqual({ json: true })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(await main(['performance-budget', '--app-dir', root, '--json', out])).toBe(1)
+      const written = JSON.parse(readFileSync(out, 'utf8')) as { violations: unknown[] }
+      expect(written.violations.length).toBeGreaterThan(0)
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it('reads commented Wrangler JSONC and prefers it over legacy JSON', () => {
