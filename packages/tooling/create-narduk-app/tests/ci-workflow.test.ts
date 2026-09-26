@@ -13,6 +13,7 @@ import {
   RUNNER_ONBOARDING_MESSAGE,
 } from '../src/ci-workflow.js'
 import {
+  BUILD_CI_REFUSES_DEPLOYED_BUILD,
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
 } from '../src/ci-test-env.js'
@@ -95,10 +96,39 @@ describe('generated CI boundaries', () => {
       scripts: Record<string, string>
     }
     expect(manifest.scripts['build:ci']).toBe(
-      `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
+      BUILD_CI_REFUSES_DEPLOYED_BUILD +
+        ' && ' +
+        `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
         `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD} ` +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
     )
+  })
+
+  it('refuses to run build:ci for a deployed build and lets CI run it', () => {
+    const manifest = JSON.parse(createRootPackageManifest('guard', [], 'private')) as {
+      scripts: Record<string, string>
+    }
+    const guard = manifest.scripts['build:ci'].split(' && ')[0] ?? ''
+    expect(guard).toBe(BUILD_CI_REFUSES_DEPLOYED_BUILD)
+    const clean = { PATH: process.env.PATH }
+    const run = (env: Record<string, string | undefined>) =>
+      spawnSync('sh', ['-c', guard], { encoding: 'utf8', env })
+    expect(run(clean).status).toBe(0)
+    expect(
+      run({ ...clean, NARDUK_CLOUDFLARE_BUILD: '1', NARDUK_DEPLOY_TARGET: 'production' }).status,
+    ).toBe(0)
+    for (const env of [
+      { WORKERS_CI: '1' },
+      { WORKERS_CI_BRANCH: 'main' },
+      { NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1' },
+    ]) {
+      const result = run({ ...clean, ...env })
+      expect(result.status, JSON.stringify(env)).toBe(1)
+      expect(result.stderr).toContain('cannot run for a deployed build')
+    }
+    for (const key of ['build', 'cf:build', 'hotfix:build']) {
+      expect(manifest.scripts[key] ?? '').not.toContain('narduk-test-only')
+    }
   })
 
   it('manifest.ts has no runtime import, so Node type stripping can load it alone', async () => {

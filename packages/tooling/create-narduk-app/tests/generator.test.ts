@@ -9,6 +9,7 @@ import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as YAML from 'yaml'
 
+import { BUILD_CI_REFUSES_DEPLOYED_BUILD } from '../src/ci-test-env.js'
 import { buildGeneratedFiles, createNardukApp, PACKAGE_VERSIONS, runCli } from '../src/index.js'
 
 /**
@@ -877,7 +878,8 @@ describe('create-narduk-app generation contract', () => {
         devDependencies: Record<string, string>
       }
       expect(rootManifest.scripts['build:ci'], label).toBe(
-        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        BUILD_CI_REFUSES_DEPLOYED_BUILD +
+          ' && NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       )
       expect(rootManifest.scripts['foundation:check'], label).toBe(
         'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',

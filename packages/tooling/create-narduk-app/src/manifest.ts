@@ -260,7 +260,12 @@ export function createRootPackageManifest(
       // file with Node's own type stripping (consumer-smoke-fixture.mjs), so
       // it must have no runtime imports. ci-workflow.test.ts pins the two
       // copies together.
+      // The node --eval prefix is BUILD_CI_REFUSES_DEPLOYED_BUILD in
+      // ci-test-env.ts, pasted here because this file cannot import it.
+      // It runs before the placeholders are exported, so a Workers Builds
+      // or local-deploy invocation cannot bake them into a live Worker.
       'build:ci':
+        "node --eval 'if((process.env.WORKERS_CI||``).trim()||(process.env.WORKERS_CI_BRANCH||``).trim()||(process.env.NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY||``).trim()){console.error(`build:ci injects public test-only secrets and cannot run for a deployed build`);process.exit(1)}' && " +
         'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
         'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
