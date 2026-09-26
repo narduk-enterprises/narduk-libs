@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
+import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
+import type { CheckoutFacts } from './checkout-facts.js'
 import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
@@ -138,14 +140,19 @@ export async function inferUpgradeProfile(
     UpgradeNardukAppOptions,
     'capabilities' | 'databaseBackend' | 'localPort' | 'visibility'
   > = {},
+  facts?: CheckoutFacts,
 ): Promise<UpgradeProfile> {
   const inferred: string[] = []
   const notes: string[] = []
-  const rootManifest = parseJsonOrNull(await readIfExists(resolve(targetDir, 'package.json')))
-  const webManifest = parseJsonOrNull(
-    await readIfExists(resolve(targetDir, 'apps/web/package.json')),
-  )
-  const nuxtConfig = (await readIfExists(resolve(targetDir, 'apps/web/nuxt.config.ts'))) ?? ''
+  const checkout = facts ?? (await readCheckoutFacts(targetDir))
+  const rootManifest = checkout.rootManifest
+  const webManifest = checkout.webManifest
+  const nuxtConfig = checkout.nuxtConfig
+  if (checkout.layout === 'root') {
+    notes.push(
+      'Read as a root Nuxt app. Migrate scripts call wrangler in this checkout, not a web package.',
+    )
+  }
 
   const appName =
     (typeof rootManifest?.name === 'string' && rootManifest.name) ||
@@ -164,7 +171,7 @@ export async function inferUpgradeProfile(
     ]
     capabilities = declared.length
       ? SUPPORTED_CAPABILITIES.filter((capability) => declared.includes(capability))
-      : capabilitiesFromDependencies(webManifest)
+      : capabilitiesFromDependencies(webManifest ?? rootManifest)
     inferred.push('capabilities')
   } else {
     const requested =
@@ -182,8 +189,13 @@ export async function inferUpgradeProfile(
 
   let databaseBackend: GeneratedDatabaseBackend
   if (overrides.databaseBackend === undefined) {
-    databaseBackend = /databaseBackend:\s*'none'/u.test(nuxtConfig) ? 'none' : 'd1'
+    databaseBackend = checkout.databaseBackend
     inferred.push('databaseBackend')
+    if (databaseBackend === 'none' && !/databaseBackend:\s*'none'/u.test(nuxtConfig)) {
+      notes.push(
+        'No D1 binding in Config/cloudflare-app.json or the wrangler config; database backend is none.',
+      )
+    }
   } else {
     if (!(GENERATED_DATABASE_BACKENDS as readonly string[]).includes(overrides.databaseBackend)) {
       throw new CreateNardukAppError(
@@ -206,8 +218,11 @@ export async function inferUpgradeProfile(
 
   let localPort: number
   if (overrides.localPort === undefined) {
-    const declared = nardukBlock(webManifest).localDevNuxtPort
-    localPort = typeof declared === 'number' && Number.isInteger(declared) ? declared : 3000
+    const declared =
+      nardukBlock(webManifest).localDevNuxtPort ?? nardukBlock(rootManifest).localDevNuxtPort
+    localPort =
+      checkout.devServerPort ??
+      (typeof declared === 'number' && Number.isInteger(declared) ? declared : 3000)
     inferred.push('localPort')
   } else {
     if (!Number.isInteger(overrides.localPort)) {
@@ -228,7 +243,11 @@ export async function inferUpgradeProfile(
   return { appName, capabilities, databaseBackend, inferred, localPort, notes, visibility }
 }
 
-function generatedContentsFor(profile: UpgradeProfile, targetDir: string): Map<string, string> {
+function generatedContentsFor(
+  profile: UpgradeProfile,
+  targetDir: string,
+  facts: CheckoutFacts,
+): Map<string, string> {
   const files: GeneratedFile[] = buildGeneratedFiles({
     appName: profile.appName,
     capabilities: profile.capabilities,
@@ -237,7 +256,19 @@ function generatedContentsFor(profile: UpgradeProfile, targetDir: string): Map<s
     targetDir,
     visibility: profile.visibility,
   })
-  return new Map(files.map((file) => [file.path, file.contents]))
+  const contents = new Map(files.map((file) => [file.path, file.contents]))
+  const packageJson = contents.get('package.json')
+  if (packageJson) {
+    contents.set('package.json', adaptManagedPackageJson(packageJson, facts, profile.appName))
+  }
+  return contents
+}
+
+function managedTargetsFor(facts: CheckoutFacts): readonly ManagedTarget[] {
+  const wranglerPath = facts.wranglerPath ?? facts.wranglerReportPath
+  return MANAGED_TARGETS.map((target) =>
+    target.mode === 'jsonc-keys' ? { ...target, path: wranglerPath } : target,
+  )
 }
 
 interface Resolution {
@@ -800,27 +831,30 @@ function resolveManagedTarget(
  */
 export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promise<UpgradeReport> {
   const targetDir = resolve(options.targetDir)
-  const profile = await inferUpgradeProfile(targetDir, options)
-  const generated = generatedContentsFor(profile, targetDir)
+  const facts = await readCheckoutFacts(targetDir)
+  const profile = await inferUpgradeProfile(targetDir, options, facts)
+  const generated = generatedContentsFor(profile, targetDir, facts)
+  const managedTargets = managedTargetsFor(facts)
 
   const only = (options.only ?? []).map((entry) => entry.replace(/^\.\//u, ''))
   for (const entry of only) {
-    if (!MANAGED_TARGETS.some((target) => target.path === entry)) {
+    if (!managedTargets.some((target) => target.path === entry)) {
       throw new CreateNardukAppError(
         '--only must name a managed path: ' +
-          MANAGED_TARGETS.map((target) => target.path).join(', '),
+          managedTargets.map((target) => target.path).join(', '),
       )
     }
   }
   const targets = only.length
-    ? MANAGED_TARGETS.filter((target) => only.includes(target.path))
-    : MANAGED_TARGETS
+    ? managedTargets.filter((target) => only.includes(target.path))
+    : managedTargets
 
   const changes: UpgradeChange[] = []
   for (const target of targets) {
     const absolute = resolve(targetDir, target.path)
     const current = await readIfExists(absolute)
-    const resolution = resolveManagedTarget(target, current, generated.get(target.path))
+    const desiredPath = target.mode === 'jsonc-keys' ? 'apps/web/wrangler.jsonc' : target.path
+    const resolution = resolveManagedTarget(target, current, generated.get(desiredPath))
     const next = resolution.next
     const diff = next === undefined ? '' : unifiedDiff(target.path, current ?? '', next)
 

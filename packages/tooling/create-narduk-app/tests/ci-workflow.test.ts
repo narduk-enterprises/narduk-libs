@@ -81,7 +81,9 @@ describe('generated CI boundaries', () => {
     expect(manifest.scripts['build:ci']).toContain(
       'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000',
     )
-    expect(manifest.scripts['build:ci']).toContain(
+    expect(manifest.scripts['build:ci']).not.toContain('NUXT_SESSION_PASSWORD')
+    const authManifest = JSON.parse(createRootPackageManifest('ci-fixture', ['auth'], 'private'))
+    expect(authManifest.scripts['build:ci']).toContain(
       'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000',
     )
     expect(workflow).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
@@ -95,6 +97,15 @@ describe('generated CI boundaries', () => {
       scripts: Record<string, string>
     }
     expect(manifest.scripts['build:ci']).toBe(
+      `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
+        'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+    )
+    const authManifest = JSON.parse(
+      createRootPackageManifest('pinned-prefix', ['auth'], 'private'),
+    ) as {
+      scripts: Record<string, string>
+    }
+    expect(authManifest.scripts['build:ci']).toBe(
       `NUXT_OG_IMAGE_SECRET=${CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET} ` +
         `NUXT_SESSION_PASSWORD=${CI_TEST_ONLY_NUXT_SESSION_PASSWORD} ` +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',

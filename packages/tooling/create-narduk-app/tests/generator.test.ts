@@ -877,7 +877,9 @@ describe('create-narduk-app generation contract', () => {
         devDependencies: Record<string, string>
       }
       expect(rootManifest.scripts['build:ci'], label).toBe(
-        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
+        'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
+          (hasAuth ? 'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' : '') +
+          'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       )
       expect(rootManifest.scripts['foundation:check'], label).toBe(
         'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',
@@ -1581,7 +1583,17 @@ describe('generated app typecheck and lint surfaces', () => {
       }),
     ).get('.github/workflows/ci.yml')!
     expect(publicCi).toContain('NUXT_OG_IMAGE_SECRET: narduk-test-only-og-image-secret-000000')
-    expect(publicCi).toContain('NUXT_SESSION_PASSWORD: narduk-test-only-session-password-000000')
+    expect(publicCi).not.toContain('NUXT_SESSION_PASSWORD')
+    const authCi = asFileMap(
+      buildGeneratedFiles({
+        appName: 'surface-check-auth',
+        capabilities: ['auth', 'seo'],
+        noGit: true,
+        targetDir: '/tmp/surface-check-auth',
+        visibility: 'public',
+      }),
+    ).get('.github/workflows/ci.yml')!
+    expect(authCi).toContain('NUXT_SESSION_PASSWORD: narduk-test-only-session-password-000000')
     expect(publicCi).toContain('- run: pnpm run quality:static')
     expect(publicCi).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
 

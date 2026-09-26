@@ -260,9 +260,15 @@ export function createRootPackageManifest(
       // file with Node's own type stripping (consumer-smoke-fixture.mjs), so
       // it must have no runtime imports. ci-workflow.test.ts pins the two
       // copies together.
+      // NUXT_SESSION_PASSWORD is only set for an auth app. A non-empty value
+      // switches nuxt-auth-utils onto server-first and turns session on
+      // (narduk-core auth-utils-install). A published-data app must stay
+      // loadStrategy none.
       'build:ci':
         'NUXT_OG_IMAGE_SECRET=narduk-test-only-og-image-secret-000000 ' +
-        'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 ' +
+        (capabilities.includes('auth')
+          ? 'NUXT_SESSION_PASSWORD=narduk-test-only-session-password-000000 '
+          : '') +
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm run build',
       // Workers Builds sets SKIP_DEPENDENCY_INSTALL=1, so this script must
       // install before `narduk-app` / `nuxt` exist. The frozen install reads
