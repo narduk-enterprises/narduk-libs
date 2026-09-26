@@ -22,13 +22,16 @@ function assertSessionGrantRequired(config: { nardukSessionGrantRequired?: unkno
  * narduk-core's `requireAuth` consults this seam. Core never imports this
  * package; the validator is placed on `event.context` at request start.
  *
- * The grant-required flag is checked at startup and again on each request,
- * because Cloudflare applies env overrides to the runtime config per request.
+ * The grant-required flag is checked once, at startup. The validator is then
+ * attached to every request whatever the flag says: core runs a present
+ * validator regardless of the flag, so an override that only reaches the
+ * per-request config still fails closed. Throwing from this hook instead
+ * would not refuse the request; Nitro logs a `request` hook error and carries
+ * on without the validator, accepting the cookie as the grant.
  */
 export default defineNitroPlugin((nitroApp) => {
   assertSessionGrantRequired(useRuntimeConfig())
   nitroApp.hooks.hook('request', (event) => {
-    assertSessionGrantRequired(useRuntimeConfig(event))
     attachAuthSessionGrantValidator(event)
   })
 })

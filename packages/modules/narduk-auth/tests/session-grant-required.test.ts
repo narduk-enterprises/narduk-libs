@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * narduk-libs#1040: the narduk-auth module forces
  * `runtimeConfig.nardukSessionGrantRequired = true` at build time, but Nitro
  * lets `NUXT_NARDUK_SESSION_GRANT_REQUIRED=false` override it at runtime, and
- * nothing noticed. The validator plugin now refuses to start, and refuses each
- * request, while the resolved flag is anything but `true`. Cloudflare applies
- * env overrides per request, which is why the request check exists too.
+ * nothing noticed. The validator plugin now refuses to start while the
+ * resolved flag is anything but `true`. A per-request override (Cloudflare
+ * can apply env per request) must not detach the validator: Nitro swallows a
+ * `request` hook error, so throwing there would let the request through with
+ * the cookie accepted as the grant.
  */
 
 const state = vi.hoisted(() => ({
@@ -66,10 +68,14 @@ describe('nardukSessionGrantRequired cannot be disarmed (#1040)', () => {
     await expect(boot()).rejects.toThrow(/nardukSessionGrantRequired/u)
   })
 
-  it('refuses a request whose runtime config disarms the flag', async () => {
+  it('still attaches the validator when only the request config disarms the flag', async () => {
     const onRequest = await boot()
     state.requestConfig = { nardukSessionGrantRequired: false }
-    expect(() => onRequest({})).toThrow(/nardukSessionGrantRequired/u)
-    expect(attachAuthSessionGrantValidator).not.toHaveBeenCalled()
+    const event = {}
+    // Nitro runs request hooks as `callHook('request', event).catch(log)`.
+    await Promise.resolve()
+      .then(() => onRequest(event))
+      .catch(() => {})
+    expect(attachAuthSessionGrantValidator).toHaveBeenCalledWith(event)
   })
 })
