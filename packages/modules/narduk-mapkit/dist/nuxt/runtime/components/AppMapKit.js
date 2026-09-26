@@ -449,13 +449,18 @@ const AppMapKitImpl = defineComponent({
                 ...(componentProps.clusteringIdentifier === undefined
                     ? {}
                     : { clusteringIdentifier: componentProps.clusteringIdentifier }),
+                // Both wrappers read the live prop and survive it going undefined after
+                // mount (narduk-libs#1038): an absent glyph renders an empty one, and an
+                // absent label writes the empty name the pin layer itself defaults to.
                 ...(componentProps.createPinElement
                     ? {
-                        createPinElement: (item, selected) => componentProps.createPinElement(item, selected),
+                        createPinElement: (item, selected) => componentProps.createPinElement?.(item, selected) ?? {
+                            element: container.ownerDocument.createElement('span'),
+                        },
                     }
                     : {}),
                 ...(componentProps.itemLabel
-                    ? { itemLabel: (item) => componentProps.itemLabel(item) }
+                    ? { itemLabel: (item) => componentProps.itemLabel?.(item) ?? '' }
                     : {}),
                 // Read the live prop, not the function identity captured at init -- a
                 // pinGeometry-only setProps would otherwise restyle nothing.

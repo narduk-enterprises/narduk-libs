@@ -297,6 +297,33 @@ describe('per-pin geometry on a mounted map (§c.3)', () => {
   })
 })
 
+describe('createPinElement and itemLabel can go away after mount (narduk-libs#1038)', () => {
+  it('re-renders pins without throwing once both props become undefined', async () => {
+    const errors: unknown[] = []
+    const wrapper = await mountMap({ items: STATIONS, pinsFocusable: false })
+    wrapper.vm.$.appContext.config.errorHandler = (error) => {
+      errors.push(error)
+    }
+    const hosts = () => [...document.querySelectorAll<HTMLElement>('[data-mapkit-pin]')]
+    expect(hosts()).toHaveLength(3)
+    expect(document.querySelectorAll('.app-glyph')).toHaveLength(3)
+
+    await wrapper.setProps({ createPinElement: undefined, itemLabel: undefined })
+    await nextTick()
+    // A selection change re-renders two glyphs; an item change restyles one.
+    await wrapper.setProps({ selectedId: 'station-2' })
+    await wrapper.setProps({
+      items: STATIONS.map((s) => (s.id === 'station-1' ? { ...s, label: 'Renamed' } : s)),
+    })
+    await nextTick()
+
+    expect(errors).toEqual([])
+    expect(wrapper.emitted('mapkit-error')).toBeUndefined()
+    expect(hosts()).toHaveLength(3)
+    expect(document.querySelectorAll('.app-glyph').length).toBeLessThan(3)
+  })
+})
+
 describe('the three flipped defaults (§c.1)', () => {
   it('defaults preserveRegion, suppressSelectionZoom on and showsPointsOfInterest off', async () => {
     const wrapper = await mountMap({ items: STATIONS })
