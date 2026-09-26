@@ -232,7 +232,21 @@ describe('verify --live outcomes', () => {
     expect(report.exitCode).toBe(VERIFY_EXIT.pass)
     expect(report.attemptsUsed).toBe(1)
     expect(report.assertions.map((a) => a.id)).toEqual(['build-version', 'smoke', 'health'])
+    for (const assertion of report.assertions) {
+      expect(assertion.exitCode).toBe(VERIFY_EXIT.pass)
+    }
     expect(formatVerifyReport(report)).toContain('RESULT: PASS')
+  })
+
+  it('does not put the mismatch code on a build-version assertion that passed', async () => {
+    const unhealthy: LiveResponse = { ...okHealth, body: healthBody('error') }
+    const { probe } = scriptedProbe({ '/': okHead, '/api/health': unhealthy })
+    const report = await runVerifyLive(flags(['--attempts', '1']), { probe, sleep: noSleep })
+    expect(report.exitCode).toBe(VERIFY_EXIT.healthFailed)
+    expect(report.assertions.find((assertion) => assertion.id === 'build-version')).toMatchObject({
+      status: 'pass',
+      exitCode: VERIFY_EXIT.pass,
+    })
   })
 
   it('reads x-build-version from health when the smoke path is a prerendered static asset', async () => {
@@ -253,6 +267,7 @@ describe('verify --live outcomes', () => {
     expect(report.exitCode).toBe(VERIFY_EXIT.pass)
     expect(report.assertions.find((assertion) => assertion.id === 'build-version')).toMatchObject({
       status: 'pass',
+      exitCode: VERIFY_EXIT.pass,
     })
     expect(report.assertions.find((assertion) => assertion.id === 'smoke')?.status).toBe('pass')
   })

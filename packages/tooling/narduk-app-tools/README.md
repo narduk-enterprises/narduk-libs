@@ -700,6 +700,11 @@ Cloudflare's configuration matches what the repository declares (that is
 | 6    | a redirect left the origin under proof             |
 | 7    | an edge-cache assertion failed (see below)         |
 
+In `--json`, each assertion's own `exitCode` is 0 when that assertion's `status`
+is `pass`. The code in the table is used only when that assertion failed. The
+report's top-level `exitCode` is still the failing assertion's code, or 0 when
+every assertion passed.
+
 #### Edge cache proof (`--edge-cache-path`, `--edge-uncached-path`)
 
 `setCacheProfile` headers are inert until Workers Cache is on, and a repository
