@@ -330,6 +330,38 @@ Only numbered migration files such as `0000_initial_schema.sql` or `0001.sql`
 are discovered. Utility SQL such as `seed.sql` is deliberately excluded and is
 never executed against local or remote application databases by this command.
 
+### Concurrent runs and the migration lock
+
+Every writing run takes the singleton `_narduk_migration_lock` row in the
+database itself, so runs from any repository, host or binding alias serialize. A
+remote run that fails keeps its row on purpose; there is no TTL and no lock
+stealing (see
+[Lock, failure and recovery](docs/deployment-migrations.md#lock-failure-and-recovery)).
+
+Two Workers Builds from back-to-back merges both run `db migrate`, and nothing
+on Cloudflare's side serializes them. When the lock insert fails because another
+run holds the row, `db migrate` can wait for it instead of failing at once
+(narduk-libs#1189):
+
+- It prints
+  `[db] waiting on another deploy: migration lock for <db> held by owner <uuid> since <time> UTC; ...`
+  on stderr, then reads the row again with backoff (2 s, doubling, at most 15 s
+  between reads).
+- When the holder releases, the run starts over from a fresh read: it applies
+  what is still pending, or reports that the other run already did it.
+- The budget is `--lock-wait-seconds <n>`, else
+  `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, else **300 s with
+  `--workers-build-only`** and 0 everywhere else. 0 is the old behaviour. The
+  maximum is 1800.
+- It fails with the unchanged `Could not acquire D1 migration lock ...` error,
+  without waiting further, when the budget is spent, when the row is at least
+  **600 s** old by D1's own clock (a retained lock from a failed run, which an
+  operator must inspect), when the row is this run's own (an insert whose
+  response was lost), or when the row cannot be read.
+
+It only ever reads another run's row. It never deletes, overwrites or ages out a
+lock it does not own.
+
 App Worker configuration may use `wrangler.jsonc` (preferred) or legacy
 `wrangler.json`. All Wrangler calls run through the app's pinned dependency via
 `pnpm exec wrangler`. Dry runs are allowed without credentials or the local

@@ -299,6 +299,13 @@ nothing at all -- not even the lock -- and reports what `db status` would. A
 lock row still sends it down the locked path, so a retained lock fails that run
 exactly as it fails one with pending work (narduk-libs#704).
 
+A run that finds the row held by a _live_ run can wait for it, bounded
+(`--lock-wait-seconds`, `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, default 300 s with
+`--workers-build-only`, else 0), then start over from a fresh read. A row at
+least 600 s old by D1's clock is treated as retained and fails at once, as
+before. The waiter only reads the row; it never releases another owner's lock
+(narduk-libs#1189).
+
 Remote errors, client timeout or cancellation **retain the lock**. There is no
 TTL/automatic lock stealing: a disconnected client does not prove that the
 provider stopped the import. Promotion fails. The currently serving Worker

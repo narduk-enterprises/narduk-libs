@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { main, parseMigrationArgs } from '../src/cli.js'
+import {
+  MIGRATION_LOCK_WAIT_DEFAULT_SECONDS,
+  resolveMigrationLockWaitSeconds,
+} from '../src/migrations.js'
 import { parseFoundationCheckArgs } from '../src/commands/foundation-check.js'
 import { buildDevInvocation, parseDevArgs } from '../src/dev.js'
 import {
@@ -159,6 +163,34 @@ describe('app-local command planning', () => {
         '--workers-build-only',
       ]),
     ).toThrow('valid only with --remote')
+  })
+
+  it('parses --lock-wait-seconds and resolves the wait budget (#1189)', () => {
+    const base = ['--config', 'm.json', '--database', 'app-db', '--remote']
+    expect(parseMigrationArgs(base)).not.toHaveProperty('lockWaitSeconds')
+    expect(parseMigrationArgs([...base, '--lock-wait-seconds', '90'])).toMatchObject({
+      lockWaitSeconds: '90',
+    })
+    for (const bad of ['', 'abc', '-1', '1.5', '1801']) {
+      expect(() => parseMigrationArgs([...base, '--lock-wait-seconds', bad])).toThrow(
+        '--lock-wait-seconds must be a whole number of seconds from 0 to 1800',
+      )
+    }
+    expect(() => parseMigrationArgs([...base, '--lock-wait-seconds'])).toThrow(
+      '--lock-wait-seconds must be',
+    )
+
+    const resolve = resolveMigrationLockWaitSeconds
+    expect(resolve({ workersBuildOnly: true })).toBe(MIGRATION_LOCK_WAIT_DEFAULT_SECONDS)
+    expect(MIGRATION_LOCK_WAIT_DEFAULT_SECONDS).toBe(300)
+    expect(resolve({ workersBuildOnly: false })).toBe(0)
+    expect(resolve({ workersBuildOnly: true, env: '45' })).toBe(45)
+    expect(resolve({ workersBuildOnly: false, env: '45' })).toBe(45)
+    expect(resolve({ workersBuildOnly: true, env: '  ' })).toBe(300)
+    expect(resolve({ workersBuildOnly: true, env: '45', flag: '0' })).toBe(0)
+    expect(() => resolve({ workersBuildOnly: true, env: 'soon' })).toThrow(
+      'NARDUK_MIGRATION_LOCK_WAIT_SECONDS must be a whole number',
+    )
   })
 
   it('accepts package-manager passthrough before performance budget flags', () => {

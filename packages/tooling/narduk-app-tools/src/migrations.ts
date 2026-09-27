@@ -130,6 +130,76 @@ export interface MigrationRunOptions {
   /** Explicit target, bypassing Wrangler's build-output config redirect. */
   wranglerConfig?: string
   strict?: boolean
+  /**
+   * Wait, bounded, for a live lock another run holds instead of failing at
+   * once (narduk-libs#1189). Absent or `timeoutSeconds: 0` is the pre-#1189
+   * behaviour: a held lock fails the run immediately.
+   */
+  lockWait?: MigrationLockWait
+}
+
+/** Default wait budget for `db migrate --workers-build-only` (narduk-libs#1189). */
+export const MIGRATION_LOCK_WAIT_DEFAULT_SECONDS = 300
+/** Largest wait budget the flag or environment may ask for. */
+export const MIGRATION_LOCK_WAIT_MAX_SECONDS = 1800
+/**
+ * A lock held at least this long, by D1's own clock, is not treated as a live
+ * deploy. It fails the run at once, exactly as every held lock did before
+ * #1189: a remote run that failed keeps its lock on purpose (no TTL), and an
+ * operator has to inspect it.
+ */
+export const MIGRATION_LOCK_STALE_AFTER_SECONDS = 600
+/** Environment override for the wait budget, in whole seconds. */
+export const MIGRATION_LOCK_WAIT_ENV = 'NARDUK_MIGRATION_LOCK_WAIT_SECONDS'
+
+const LOCK_POLL_INITIAL_MS = 2_000
+const LOCK_POLL_MAX_MS = 15_000
+
+export interface MigrationLockWait {
+  /** Total time to spend waiting on other runs' locks, in seconds. */
+  timeoutSeconds: number
+  /** Defaults to `MIGRATION_LOCK_STALE_AFTER_SECONDS`. */
+  staleAfterSeconds?: number
+  /** Injectable for tests. Defaults to `Date.now`. */
+  now?: () => number
+  /** Injectable for tests. Defaults to a blocking sleep. */
+  sleep?: (ms: number) => void
+  /** Where the waiting lines go. Defaults to stderr. */
+  log?: (line: string) => void
+}
+
+function parseLockWaitSeconds(raw: string, source: string): number {
+  const trimmed = raw.trim()
+  const value = /^\d+$/u.test(trimmed) ? Number(trimmed) : Number.NaN
+  if (!Number.isSafeInteger(value) || value > MIGRATION_LOCK_WAIT_MAX_SECONDS) {
+    throw new Error(
+      `${source} must be a whole number of seconds from 0 to ${MIGRATION_LOCK_WAIT_MAX_SECONDS}`,
+    )
+  }
+  return value
+}
+
+/**
+ * The wait budget for one `db migrate`: the `--lock-wait-seconds` flag, then
+ * `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, then the default. The default is
+ * `MIGRATION_LOCK_WAIT_DEFAULT_SECONDS` on the Workers Builds deploy path
+ * (`--workers-build-only`), where two merges close together start two builds
+ * that nothing serialises, and 0 everywhere else, which is unchanged.
+ */
+export function resolveMigrationLockWaitSeconds(input: {
+  flag?: string
+  env?: string
+  workersBuildOnly: boolean
+}): number {
+  if (input.flag !== undefined) return parseLockWaitSeconds(input.flag, '--lock-wait-seconds')
+  if (input.env !== undefined && input.env.trim() !== '') {
+    return parseLockWaitSeconds(input.env, MIGRATION_LOCK_WAIT_ENV)
+  }
+  return input.workersBuildOnly ? MIGRATION_LOCK_WAIT_DEFAULT_SECONDS : 0
+}
+
+function blockingSleep(ms: number): void {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
 export interface MigrationRecoverySnapshot {
@@ -1163,6 +1233,24 @@ export function runMigrations(
       { force: true, recursive: true },
     )
   const db = migrationDatabase(options, executor)
+  const waiter = lockWaiter(options, db)
+  for (;;) {
+    try {
+      return migrateOnce(options, db, cwd)
+    } catch (error) {
+      if (!(error instanceof MigrationLockNotAcquiredError)) throw error
+      // Throws the same error when the lock is not a live run's, or the
+      // budget is spent; returns once the holder has released it.
+      waiter(error)
+    }
+  }
+}
+
+function migrateOnce(
+  options: MigrationRunOptions,
+  db: MigrationDatabase,
+  cwd: string,
+): MigrationPlan {
   // Fail on history conflicts and bad manifests before taking any remote mutation path.
   const before = inspectDatabase(options, db, { readLock: true })
   // Nothing to write and no run holding the lock: there is no mutation to
@@ -1200,6 +1288,125 @@ export function runMigrations(
   })
 }
 
+/** The lock INSERT failed. Carries the owner this run tried to write so the
+ * waiter can tell another run's lock from an uncertain acquisition of its own.
+ * The message is the pre-#1189 one, unchanged. */
+class MigrationLockNotAcquiredError extends Error {
+  constructor(
+    readonly database: string,
+    readonly attemptedOwner: string,
+  ) {
+    super(
+      `Could not acquire D1 migration lock for ${database}; attempted owner ${attemptedOwner}. Inspect ${MIGRATION_LOCK_TABLE} and the prior run before recovery.`,
+    )
+    this.name = 'Error'
+  }
+}
+
+interface LockHolder {
+  owner: string
+  acquiredAt: string
+  ageSeconds: number
+}
+
+/** The current lock row, aged by D1's own clock so a skewed runner clock
+ * cannot make a live lock look stale. `undefined` means no row. */
+function readLockHolder(db: MigrationDatabase): LockHolder | undefined {
+  const [row] = db.rows<{ owner?: unknown; acquired_at?: unknown; age_seconds?: unknown }>(
+    `SELECT owner, acquired_at, CAST((julianday('now') - julianday(acquired_at)) * 86400 AS INTEGER) AS age_seconds FROM ${MIGRATION_LOCK_TABLE} WHERE id = 1;`,
+  )
+  if (!row) return undefined
+  if (typeof row.owner !== 'string' || typeof row.acquired_at !== 'string') {
+    throw new Error('unreadable lock row')
+  }
+  const ageSeconds = Number(row.age_seconds)
+  if (!Number.isFinite(ageSeconds)) throw new Error('unreadable lock age')
+  return { owner: row.owner, acquiredAt: row.acquired_at, ageSeconds }
+}
+
+/**
+ * narduk-libs#1189: two Workers Builds from back-to-back merges both run
+ * `db migrate`, and the newer one used to fail on the older one's live lock,
+ * leaving production on the older commit. This waits, bounded, for a LIVE
+ * holder to release, then lets `runMigrations` start over from a fresh read
+ * (the other run may have applied everything, or this run may still have work).
+ *
+ * It never takes, deletes or overwrites another run's lock; it only reads the
+ * row. It gives up with the unchanged pre-#1189 error, at once, when:
+ * - waiting is off (`timeoutSeconds` 0, the default outside Workers Builds);
+ * - the row is this run's own owner -- the INSERT's response was lost, which
+ *   is an uncertain acquisition and never something to wait on or release;
+ * - the holder is at least `staleAfterSeconds` old by D1's clock -- a retained
+ *   lock from a failed run, which an operator must inspect;
+ * - the row cannot be read; or
+ * - the budget is spent.
+ * A holder that ages past the stale threshold while this run waits ends the
+ * wait the same way.
+ */
+function lockWaiter(
+  options: MigrationRunOptions,
+  db: MigrationDatabase,
+): (error: MigrationLockNotAcquiredError) => void {
+  const wait = options.lockWait
+  const timeoutMs = Math.max(0, (wait?.timeoutSeconds ?? 0) * 1000)
+  const staleAfterSeconds = wait?.staleAfterSeconds ?? MIGRATION_LOCK_STALE_AFTER_SECONDS
+  const now = wait?.now ?? Date.now
+  const sleep = wait?.sleep ?? blockingSleep
+  const log = wait?.log ?? ((line: string) => console.error(line))
+  let deadline: number | undefined
+  let pollMs = LOCK_POLL_INITIAL_MS
+  let announced: string | undefined
+
+  return (error) => {
+    if (timeoutMs === 0) throw error
+    deadline ??= now() + timeoutMs
+    const budget = `${Math.round(timeoutMs / 1000)}s`
+    for (let polls = 0; ; polls += 1) {
+      let holder: LockHolder | undefined
+      try {
+        holder = readLockHolder(db)
+      } catch {
+        throw error
+      }
+      if (!holder) {
+        // The holder we were waiting on released it: start over now.
+        if (polls > 0) return
+        // No row at all right after our INSERT failed: it was released in
+        // between, or the INSERT failed for another reason. Retry after one
+        // poll interval, inside the same budget, so a persistent failure
+        // still ends in the same error.
+        const remaining = deadline - now()
+        if (remaining <= 0) throw error
+        sleep(Math.min(pollMs, remaining))
+        pollMs = Math.min(pollMs * 2, LOCK_POLL_MAX_MS)
+        return
+      }
+      if (holder.owner === error.attemptedOwner) throw error
+      if (holder.ageSeconds >= staleAfterSeconds) {
+        log(
+          `[db] migration lock for ${options.database} is held by owner ${holder.owner} since ${holder.acquiredAt} UTC (${holder.ageSeconds}s, at or past the ${staleAfterSeconds}s stale threshold); not waiting on it.`,
+        )
+        throw error
+      }
+      const remaining = deadline - now()
+      if (remaining <= 0) {
+        log(
+          `[db] gave up waiting on the migration lock for ${options.database} after ${budget}; owner ${holder.owner} still holds it.`,
+        )
+        throw error
+      }
+      if (announced !== holder.owner) {
+        announced = holder.owner
+        log(
+          `[db] waiting on another deploy: migration lock for ${options.database} held by owner ${holder.owner} since ${holder.acquiredAt} UTC; waiting up to ${budget} in total.`,
+        )
+      }
+      sleep(Math.min(pollMs, remaining))
+      pollMs = Math.min(pollMs * 2, LOCK_POLL_MAX_MS)
+    }
+  }
+}
+
 function withMigrationLock<T>(
   options: MigrationRunOptions,
   db: MigrationDatabase,
@@ -1216,9 +1423,7 @@ function withMigrationLock<T>(
   } catch {
     // INSERT may have succeeded despite a lost response. Never release an
     // uncertain acquisition, and never disclose raw provider output here.
-    throw new Error(
-      `Could not acquire D1 migration lock for ${options.database}; attempted owner ${owner}. Inspect ${MIGRATION_LOCK_TABLE} and the prior run before recovery.`,
-    )
+    throw new MigrationLockNotAcquiredError(options.database, owner)
   }
   let complete = false
   try {
