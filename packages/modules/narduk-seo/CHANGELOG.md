@@ -1,5 +1,39 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.8.3
+
+### Patch Changes
+
+- 9f5c4fe: A non-dev build that carries the committed `NUXT_OG_IMAGE_SECRET`
+  placeholder now fails unless `NARDUK_CLOUDFLARE_BUILD=1` is set and none of
+  `WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is.
+  A plain `build` and a `cf:build` without that variable used to be accepted and
+  are now refused.
+
+  The generated `build:ci` sets `NARDUK_CLOUDFLARE_BUILD=1`, and so do most
+  hand-written `cf:build` scripts and `hotfix:build`. When narduk-seo accepts
+  the placeholder on that signal, it writes `.narduk-build-ci` into the Nitro
+  output after compile. `narduk-app deploy` already refuses an output holding
+  that file (`deploy` and `versions-upload`, and through them `deploy-local`,
+  `deploy-hotfix`, and `development deploy`), so a placeholder-signed output
+  cannot be published through `narduk-app` whichever script built it, including
+  with `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1`. A plain `wrangler deploy` outside
+  `narduk-app` does not read the marker. A real secret is accepted and writes no
+  marker. `nuxt dev` and `nuxt prepare` stay permissive.
+
+  narduk-app-tools' refusal message now names both writers of the marker and
+  asks for a `cf:build` with real secrets. The generator release picks up the
+  new pins.
+
+- 2985f13: Setup fails the build when the resolved `@unhead/vue` is 3 or newer
+  and the resolved `nuxt-schema-org` is below 6.3.0 or `nuxt-seo-utils` is below
+  8.5.0. That mix peers on Unhead 2 and silently empties JSON-LD and drops
+  `og:site_name` and the twitter tags. The app's own copies are what get
+  checked, so an override or a direct older dependency cannot hide behind this
+  package's pins. Unhead 2 with the older packages still builds. A version that
+  cannot be read fails closed. The generator release picks up the new narduk-seo
+  pin.
+
 ## 2.8.2
 
 ### Patch Changes

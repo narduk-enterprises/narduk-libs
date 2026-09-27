@@ -1,5 +1,73 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.27.2
+
+### Patch Changes
+
+- fa85548: `foundation:check` item 2.3 now reads GitHub Packages with
+  `GH_PACKAGES_READ` ahead of `GH_TOKEN` and `GITHUB_TOKEN` (narduk-libs#1196).
+  The #698 fix put it last, so any shell that also exported a general-purpose
+  GitHub token, such as an agent lane's repository-scoped `GH_TOKEN`, sent that
+  token instead, could not see the package, and item 2.3 went `unknown` under
+  `gh-packages-run`. The order is now `NODE_AUTH_TOKEN`, `GH_PACKAGES_READ`,
+  `GH_TOKEN`, `GITHUB_TOKEN`, and an exported-but-empty name counts as unset.
+  CI, which exports `NODE_AUTH_TOKEN`, resolves the same credential as before.
+- d76c0a0: `narduk-app db migrate` waits, bounded, for a live migration lock
+  held by an older deploy, instead of failing at once (narduk-libs#1189). Two
+  Workers Builds from back-to-back merges used to leave production on the older
+  commit because the newer build's migrate failed on the older one's lock.
+
+  Under Workers Builds the lock owner now carries the commit as
+  `<uuid>:<WORKERS_CI_COMMIT_SHA>:<committer time>`, with the time from
+  `git log -1 --format=%ct`. The table schema does not change. A run waits only
+  on a holder building the same commit or an earlier one. An older build never
+  waits on a newer one
+  (`[db] superseded: ... held by a newer commit <sha>; not waiting`), so the
+  wait itself never makes it deploy last. Deploy-step ordering is not covered:
+  the lock is released before `narduk-app deploy` runs, and a warm no-op migrate
+  takes no lock (narduk-libs#704). See narduk-libs#1207.
+
+  - **Budget:** 300 s by default with `--workers-build-only`, and 0, the old
+    behaviour, elsewhere. `--lock-wait-seconds <n>` or
+    `NARDUK_MIGRATION_LOCK_WAIT_SECONDS` sets it, up to a maximum of 1200 s. It
+    counts wall-clock waiting time only; Wrangler latency on the final read and
+    the migration itself come on top.
+  - **While waiting** it prints a `waiting on another deploy (owner, since)`
+    line, polls with backoff, and starts over from a fresh read once the lock is
+    released.
+  - **These fail at once** with the unchanged
+    `Could not acquire D1 migration lock` error:
+    - a newer or same-second different commit;
+    - an unknown holder, such as a bare-UUID owner from an older release;
+    - a run with no commit identity;
+    - a lock at least 600 s old by D1's clock;
+    - the run's own uncertain insert;
+    - an unreadable row or age;
+    - a spent budget.
+
+  It never releases or overwrites another owner's lock.
+
+- 9f5c4fe: A non-dev build that carries the committed `NUXT_OG_IMAGE_SECRET`
+  placeholder now fails unless `NARDUK_CLOUDFLARE_BUILD=1` is set and none of
+  `WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is.
+  A plain `build` and a `cf:build` without that variable used to be accepted and
+  are now refused.
+
+  The generated `build:ci` sets `NARDUK_CLOUDFLARE_BUILD=1`, and so do most
+  hand-written `cf:build` scripts and `hotfix:build`. When narduk-seo accepts
+  the placeholder on that signal, it writes `.narduk-build-ci` into the Nitro
+  output after compile. `narduk-app deploy` already refuses an output holding
+  that file (`deploy` and `versions-upload`, and through them `deploy-local`,
+  `deploy-hotfix`, and `development deploy`), so a placeholder-signed output
+  cannot be published through `narduk-app` whichever script built it, including
+  with `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY=1`. A plain `wrangler deploy` outside
+  `narduk-app` does not read the marker. A real secret is accepted and writes no
+  marker. `nuxt dev` and `nuxt prepare` stay permissive.
+
+  narduk-app-tools' refusal message now names both writers of the marker and
+  asks for a `cf:build` with real secrets. The generator release picks up the
+  new pins.
+
 ## 0.27.1
 
 ### Patch Changes
