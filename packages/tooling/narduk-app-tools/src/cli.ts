@@ -23,7 +23,14 @@ import {
   runVersionsPromote,
 } from './promote.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
-import { inspectMigrations, runMigrations, type MigrationLocation } from './migrations.js'
+import {
+  MIGRATION_LOCK_WAIT_ENV,
+  inspectMigrations,
+  resolveMigrationLockIdentity,
+  resolveMigrationLockWaitSeconds,
+  runMigrations,
+  type MigrationLocation,
+} from './migrations.js'
 import { formatD1CreateResult, parseD1CreateArgs, runD1Create } from './d1-create.js'
 import {
   parseDeploymentMigrationArgs,
@@ -95,6 +102,13 @@ function usage(): string {
     '                                       seed/{d1,kv,r2}/<BINDING>/ fixtures. Cloudflare',
     '                                       credentials are removed from the child environment.',
     '  db migrate --config <file> --database <name> --local|--remote [--reset] [--wrangler-config <file>]',
+    '      [--workers-build-only] [--lock-wait-seconds <n>]',
+    '                                       Waits up to <n> seconds (default 300 with',
+    '                                       --workers-build-only, else 0; env',
+    '                                       NARDUK_MIGRATION_LOCK_WAIT_SECONDS, max 1200) for',
+    "                                       another live run's migration lock, only when that run",
+    '                                       builds the same or an older commit. A newer, unknown',
+    '                                       or 600s-old holder fails at once, as before.',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
@@ -220,8 +234,11 @@ export function parseMigrationArgs(args: string[]): {
   reset: boolean
   workersBuildOnly: boolean
   wranglerConfig?: string
+  /** Raw `--lock-wait-seconds`, validated here; resolved against the env in `main`. */
+  lockWaitSeconds?: string
 } {
   let configFile = ''
+  let lockWaitSeconds: string | undefined
   let database = ''
   let location: MigrationLocation | undefined
   let reset = false
@@ -243,7 +260,10 @@ export function parseMigrationArgs(args: string[]): {
       location = '--remote'
     } else if (arg === '--reset') reset = true
     else if (arg === '--workers-build-only') workersBuildOnly = true
-    else throw new Error(`Unknown migrate option: ${arg}`)
+    else if (arg === '--lock-wait-seconds') {
+      lockWaitSeconds = args[++index] ?? ''
+      resolveMigrationLockWaitSeconds({ flag: lockWaitSeconds, workersBuildOnly })
+    } else throw new Error(`Unknown migrate option: ${arg}`)
   }
   if (!configFile) throw new Error('--config requires a file')
   if (!database) throw new Error('--database requires a name')
@@ -259,6 +279,7 @@ export function parseMigrationArgs(args: string[]): {
     reset,
     workersBuildOnly,
     ...(wranglerConfig ? { wranglerConfig } : {}),
+    ...(lockWaitSeconds !== undefined ? { lockWaitSeconds } : {}),
   }
 }
 
@@ -347,7 +368,19 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       if (options.workersBuildOnly && !isWorkersBuildDeployAllowed()) {
         throw new Error('Remote migration requires an attested Cloudflare Workers Build')
       }
-      const plan = runMigrations(options)
+      const { lockWaitSeconds, ...runOptions } = options
+      const lockIdentity = resolveMigrationLockIdentity(process.env, process.cwd())
+      const plan = runMigrations({
+        ...runOptions,
+        ...(lockIdentity ? { lockIdentity } : {}),
+        lockWait: {
+          timeoutSeconds: resolveMigrationLockWaitSeconds({
+            flag: lockWaitSeconds,
+            env: process.env[MIGRATION_LOCK_WAIT_ENV],
+            workersBuildOnly: options.workersBuildOnly,
+          }),
+        },
+      })
       if (plan.recoveryPath) console.log(`[db] recovery snapshot ${plan.recoveryPath}`)
       console.log(`[db] ${plan.apply} applied, ${plan.adopt} adopted, ${plan.skip} skipped`)
       return 0

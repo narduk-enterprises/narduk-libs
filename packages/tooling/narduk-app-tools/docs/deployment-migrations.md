@@ -299,6 +299,22 @@ nothing at all -- not even the lock -- and reports what `db status` would. A
 lock row still sends it down the locked path, so a retained lock fails that run
 exactly as it fails one with pending work (narduk-libs#704).
 
+A Workers Build that finds the row held by a _live_ run of the same or an
+**older** commit can wait for it, bounded (`--lock-wait-seconds`,
+`NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, default 300 s with `--workers-build-only`,
+else 0, maximum 1200), then start over from a fresh read. The owner value
+carries `<uuid>:<commit sha>:<committer time>` for this. A holder building a
+newer commit, a holder whose commit is unknown (a bare-UUID owner), a run with
+no commit identity, an unreadable row or age, and a row at least 600 s old by
+D1's clock all fail at once, as before. An older build never waits on a newer
+one, so the wait itself never makes it deploy last. The waiter only reads the
+row; it never releases another owner's lock (narduk-libs#1189). See the README's
+"Concurrent runs and the migration lock".
+
+Deploy-step ordering is not covered: the lock is released before
+`narduk-app deploy` runs, and a warm no-op migrate takes no lock
+(narduk-libs#704). See narduk-libs#1207.
+
 Remote errors, client timeout or cancellation **retain the lock**. There is no
 TTL/automatic lock stealing: a disconnected client does not prove that the
 provider stopped the import. Promotion fails. The currently serving Worker
