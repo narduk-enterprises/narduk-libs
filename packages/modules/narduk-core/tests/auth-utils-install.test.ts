@@ -176,9 +176,11 @@ describe('nardukCore.auth install gate (narduk-libs#169)', () => {
   })
 
   it('seeds an empty session password only when auth stays on', () => {
-    expect(sessionRuntimeConfigSeed(undefined, {})).toEqual({ session: { password: '' } })
+    expect(sessionRuntimeConfigSeed(undefined, {})).toEqual({
+      session: { name: 'nuxt-session', maxAge: 30 * 24 * 60 * 60, password: '' },
+    })
     expect(sessionRuntimeConfigSeed(true, { NUXT_SESSION_PASSWORD: 'secret' })).toEqual({
-      session: { password: 'secret' },
+      session: { name: 'nuxt-session', maxAge: 30 * 24 * 60 * 60, password: 'secret' },
     })
     expect(sessionRuntimeConfigSeed(false, { NUXT_SESSION_PASSWORD: 'secret' })).toEqual({})
   })

@@ -18,7 +18,7 @@ import {
 import { executeDatabaseQuery, getDatabaseRow, getDatabaseRows, useDatabase } from './database'
 import { useLogger } from './logger'
 import { validateSealedSessionGrant } from './sessionGrant'
-import { getLayerUserSession } from './user-session'
+import { peekLayerUserSession } from './user-session'
 
 import type { User } from '#narduk-core/schema'
 import type { LayerDatabase } from './database'
@@ -321,7 +321,8 @@ export async function requireAuth(event: H3Event): Promise<AuthUser> {
     }
   }
 
-  const session = await getLayerUserSession(event)
+  // A pure read: an anonymous 401 must not mint a session cookie (narduk-libs#1214).
+  const session = await peekLayerUserSession(event)
   if (session?.user) {
     const grant = await validateSealedSessionGrant(event, session.user)
     if (grant.status === 'invalid') {

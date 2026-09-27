@@ -75,6 +75,12 @@ export default defineConfig({
         packageRoot,
         '../narduk-core/runtime/server/utils/sessionGrant.ts',
       ),
+      // The real narduk-core session helpers over h3's `useSession`, so a
+      // session test can prove what reaches `Set-Cookie` (narduk-libs#1214).
+      '#layer/server/utils/user-session': join(
+        packageRoot,
+        '../narduk-core/runtime/server/utils/user-session.ts',
+      ),
       '#layer/server/utils/worker-env': join(
         packageRoot,
         '../narduk-core/runtime/server/utils/worker-env.ts',
@@ -90,6 +96,10 @@ export default defineConfig({
       '#narduk-auth-server/utils/auth-session-stability': join(
         packageRoot,
         'server/utils/auth-session-stability.ts',
+      ),
+      '#narduk-auth-server/lib/app-auth/session': join(
+        packageRoot,
+        'server/lib/app-auth/session.ts',
       ),
       '#narduk-auth-server/lib/app-auth/apple-local': join(
         packageRoot,

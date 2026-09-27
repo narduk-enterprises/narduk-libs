@@ -1,16 +1,32 @@
 import { createEvent } from 'h3'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
+  getLayerUserSession,
+  hasLayerUserSession,
+  LAYER_USER_SESSION_NAME,
+  peekLayerUserSession,
   resolveSessionConfig,
   setLayerUserSession,
 } from '../runtime/server/utils/user-session'
+import { sessionRuntimeConfigSeed } from '../src/auth-utils-install'
 
 import type { H3Event } from 'h3'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+const runtime = vi.hoisted(() => ({ session: undefined as Record<string, unknown> | undefined }))
+
+vi.mock('nitropack/runtime', () => ({
+  useRuntimeConfig: () => (runtime.session ? { session: runtime.session } : {}),
+}))
+
+beforeEach(() => {
+  runtime.session = undefined
+})
+
 const EXAMPLE_HOST = 'example.com'
+const SIGNED_IN_USER = { email: 'parent@example.com' }
 
 function createConfigEvent(headers: Record<string, string> = {}): H3Event {
   return {
@@ -24,7 +40,7 @@ function createConfigEvent(headers: Record<string, string> = {}): H3Event {
   } as unknown as H3Event
 }
 
-function createSessionEvent(): H3Event {
+function createSessionEvent(requestHeaders: Record<string, string> = {}): H3Event {
   const responseHeaders = new Map<string, number | string | string[]>()
   const response = {
     appendHeader(name: string, value: string) {
@@ -50,7 +66,7 @@ function createSessionEvent(): H3Event {
     },
   } as unknown as ServerResponse
   const request = {
-    headers: { host: EXAMPLE_HOST, 'x-forwarded-proto': 'https' },
+    headers: { host: EXAMPLE_HOST, 'x-forwarded-proto': 'https', ...requestHeaders },
     method: 'POST',
     url: '/api/auth/login',
   } as unknown as IncomingMessage
@@ -99,11 +115,125 @@ describe('user session cookie defaults', () => {
     expect(config.cookie).toMatchObject({ sameSite: 'strict', secure: false })
   })
 
+  // narduk-libs#1214: nuxt-auth-utils reads its session with
+  // `runtimeConfig.session`, so core takes the name and lifetime from there too.
+  it('takes the cookie name and lifetime from runtimeConfig.session', () => {
+    runtime.session = { name: 'app-session', maxAge: 3600, password: '' }
+    const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }))
+
+    expect(config.name).toBe('app-session')
+    expect(config.maxAge).toBe(3600)
+  })
+
+  it('falls back to nuxt-session and 30 days when runtimeConfig.session has neither', () => {
+    runtime.session = { name: '  ', maxAge: 0 }
+    const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }))
+
+    expect(config.name).toBe(LAYER_USER_SESSION_NAME)
+    expect(config.name).toBe('nuxt-session')
+    expect(config.maxAge).toBe(DEFAULT_USER_SESSION_MAX_AGE_SECONDS)
+  })
+
+  it('matches the runtimeConfig.session seed core gives nuxt-auth-utils', () => {
+    const seed = sessionRuntimeConfigSeed(undefined, {})
+    expect(seed).toMatchObject({
+      session: { name: LAYER_USER_SESSION_NAME, maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS },
+    })
+  })
+
   it('preserves an explicit caller session lifetime override', () => {
     const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }), {
       maxAge: 3600,
     })
 
     expect(config.maxAge).toBe(3600)
+  })
+})
+
+function setCookieHeader(event: H3Event): string | undefined {
+  const header = event.node.res.getHeader('set-cookie')
+  if (header === undefined) return undefined
+  return Array.isArray(header) ? header.join('\n') : String(header)
+}
+
+/** A sealed session the real h3 `useSession` wrote, as a request cookie. */
+async function signedInCookie(): Promise<string> {
+  const event = createSessionEvent()
+  await setLayerUserSession(event, { user: SIGNED_IN_USER })
+  const cookie = setCookieHeader(event)?.split(';')[0]
+  if (!cookie) throw new Error('sign-in wrote no cookie')
+  return cookie
+}
+
+// narduk-libs#1214: h3's `useSession` seals and sets a new cookie whenever the
+// request carries none, so a pure read through it gave every anonymous
+// request a 30-day session cookie.
+describe('peekLayerUserSession', () => {
+  it('reads nothing and writes no cookie when the request has no session', async () => {
+    const event = createSessionEvent()
+
+    expect(hasLayerUserSession(event)).toBe(false)
+    await expect(peekLayerUserSession(event)).resolves.toBeNull()
+    expect(setCookieHeader(event)).toBeUndefined()
+    expect(event.context.sessions).toBeUndefined()
+  })
+
+  it('is the non-mutating read: getLayerUserSession on the same request writes one', async () => {
+    const event = createSessionEvent()
+
+    await getLayerUserSession(event)
+
+    expect(setCookieHeader(event)).toMatch(/^nuxt-session=Fe26\.2\*\*/)
+  })
+
+  it('reads a sealed session cookie without rewriting it', async () => {
+    const event = createSessionEvent({ cookie: await signedInCookie() })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    const session = await peekLayerUserSession(event)
+
+    expect(session?.user).toEqual(SIGNED_IN_USER)
+    expect(session?.id).toEqual(expect.any(String))
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('reads the session from the h3 session header too', async () => {
+    const sealed = (await signedInCookie()).slice('nuxt-session='.length)
+    const event = createSessionEvent({ 'x-nuxt-session-session': sealed })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    expect((await peekLayerUserSession(event))?.user).toEqual(SIGNED_IN_USER)
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('answers null for a cookie that does not unseal, and writes nothing', async () => {
+    const event = createSessionEvent({ cookie: 'nuxt-session=not-a-sealed-session' })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    await expect(peekLayerUserSession(event)).resolves.toBeNull()
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('sees a session written earlier in the same request', async () => {
+    const event = createSessionEvent()
+    await setLayerUserSession(event, { user: SIGNED_IN_USER })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    expect((await peekLayerUserSession(event))?.user).toEqual(SIGNED_IN_USER)
+  })
+})
+
+describe('peekLayerUserSession with a custom session name', () => {
+  it('finds the cookie under the name runtimeConfig.session gives', async () => {
+    runtime.session = { name: 'app-session' }
+    const writer = createSessionEvent()
+    await setLayerUserSession(writer, { user: SIGNED_IN_USER })
+    const cookie = setCookieHeader(writer)?.split(';')[0]
+    expect(cookie).toMatch(/^app-session=/)
+
+    const reader = createSessionEvent({ cookie: cookie! })
+    expect(hasLayerUserSession(reader)).toBe(true)
+    expect((await peekLayerUserSession(reader))?.user).toEqual(SIGNED_IN_USER)
+    expect(hasLayerUserSession(createSessionEvent({ cookie: 'nuxt-session=x' }))).toBe(false)
   })
 })

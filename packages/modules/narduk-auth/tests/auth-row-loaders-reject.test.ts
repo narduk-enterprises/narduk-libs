@@ -19,7 +19,7 @@ vi.mock('#layer/server/utils/database', () => ({
 
 vi.mock('#layer/server/utils/user-session', () => ({
   clearLayerUserSession: vi.fn(),
-  getLayerUserSession: vi.fn(),
+  peekLayerUserSession: vi.fn(),
   replaceLayerUserSession: vi.fn(),
   setLayerUserSession: vi.fn(),
 }))
