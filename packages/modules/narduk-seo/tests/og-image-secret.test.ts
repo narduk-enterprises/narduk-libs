@@ -19,6 +19,8 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+const REAL_OG_SECRET = 'production-og-secret'
+
 describe('OG image signing secret', () => {
   it('treats empty, whitespace, and non-strings as unconfigured', () => {
     expect(resolveOgImageSigningSecret('')).toBe('')
@@ -31,8 +33,8 @@ describe('OG image signing secret', () => {
   })
 
   it('trims a configured secret', () => {
-    expect(resolveOgImageSigningSecret('  production-og-secret  ')).toBe('production-og-secret')
-    expect(isOgImageSigningSecretConfigured('production-og-secret')).toBe(true)
+    expect(resolveOgImageSigningSecret(`  ${REAL_OG_SECRET}  `)).toBe(REAL_OG_SECRET)
+    expect(isOgImageSigningSecretConfigured(REAL_OG_SECRET)).toBe(true)
   })
 
   it('fails a non-dev build when runtime OG is enabled without a secret', () => {
@@ -77,12 +79,25 @@ describe('OG image signing secret', () => {
     ).not.toThrow()
   })
 
-  it('accepts a non-dev build when a secret is configured', () => {
+  it('accepts a real secret on a deploy build and on a plain build', () => {
+    vi.stubEnv('WORKERS_CI', '1')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
     expect(() =>
       assertOgImageSigningSecretForBuild({
         isDev: false,
         runtimeGenerationEnabled: true,
-        secret: 'production-og-secret',
+        secret: REAL_OG_SECRET,
+      }),
+    ).not.toThrow()
+
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+    expect(() =>
+      assertOgImageSigningSecretForBuild({
+        isDev: false,
+        runtimeGenerationEnabled: true,
+        secret: REAL_OG_SECRET,
       }),
     ).not.toThrow()
   })
@@ -116,11 +131,9 @@ describe('OG image signing secret', () => {
     ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   })
 
-  it('accepts the placeholder for a build no estate path deploys', () => {
-    // narduk-libs#440's packed-consumer smoke fills NUXT_OG_IMAGE_SECRET with
-    // this literal and builds the generated fixture app with the plain `build`
-    // script, so NARDUK_CLOUDFLARE_BUILD is unset. That artefact is built in a
-    // temp directory and never deployed, so it must not be rejected.
+  it('rejects the placeholder on a plain build that is not build:ci', () => {
+    // ogpreview-app and gonogo defaulted this literal from `build` / `cf:build`
+    // with no NARDUK_CLOUDFLARE_BUILD, then deployed the output (narduk-libs#1155).
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
     vi.stubEnv('WORKERS_CI', '')
@@ -133,7 +146,7 @@ describe('OG image signing secret', () => {
         runtimeGenerationEnabled: true,
         secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
       }),
-    ).not.toThrow()
+    ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   })
 
   it('rejects the placeholder when the local wrangler deploy escape hatch is on', () => {
@@ -151,13 +164,14 @@ describe('OG image signing secret', () => {
     ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   })
 
-  it('keeps accepting the placeholder on GitHub Actions build:ci', () => {
+  it('accepts the placeholder on an explicit build:ci', () => {
     // Generated nuxt.config.ts does `NARDUK_DEPLOY_TARGET ??= production`
     // when WORKERS_CI_BRANCH is unset, so build:ci also sees production.
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
     vi.stubEnv('WORKERS_CI', '')
     vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
 
     expect(() =>
       assertOgImageSigningSecretForBuild({

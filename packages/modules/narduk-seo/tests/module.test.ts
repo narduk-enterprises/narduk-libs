@@ -811,7 +811,21 @@ describe('narduk-seo module', () => {
     )
   })
 
-  it('keeps accepting the CI OG placeholder on a build nothing deploys', async () => {
+  it('rejects the CI OG placeholder on a plain build that is not build:ci', async () => {
+    const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+
+    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
+      /test-only placeholder/u,
+    )
+  })
+
+  it('keeps accepting the CI OG placeholder on an explicit build:ci', async () => {
     const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
     vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')

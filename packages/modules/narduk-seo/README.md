@@ -52,13 +52,18 @@ request-time renderer). If the package is not installed, this layer skips the
 renderer instead of failing the build, and `useSeo` falls back to the static
 image. That skip is silent on the default/static path and when the app set only
 `ogImage.zeroRuntime: true`; a warning fires only when the app set
-`ogImage.enabled: true` and the peer is missing. The committed CI placeholder is
-rejected on builds the estate deploys -- Workers Builds (`WORKERS_CI`) and a
-local `wrangler deploy` behind `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`. Builds
-nothing deploys (`nuxt dev`, GitHub Actions `build:ci`, packed-consumer
-fixtures) may still use it. Never set `ogImage.security.secret: false` -- that
-is the setting that actually disables signing and leaves `/_og/` an
-unauthenticated renderer.
+`ogImage.enabled: true` and the peer is missing. The committed CI placeholder
+(`narduk-test-only-og-image-secret-000000`) is refused on every non-dev build
+except an explicit `build:ci`. That script is recognized by
+`NARDUK_CLOUDFLARE_BUILD=1` with none of the deploy signals set (`WORKERS_CI`,
+`WORKERS_CI_BRANCH`, `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`). A `build` or
+`cf:build` that defaults the placeholder is refused, including one whose output
+a later deploy would publish (narduk-libs#1155). `nuxt dev` and `nuxt prepare`
+stay permissive. A real `NUXT_OG_IMAGE_SECRET` is accepted on every build.
+`hotfix:build` also exports `NARDUK_CLOUDFLARE_BUILD=1`; it does not export the
+placeholder, so pass it a real secret. Never set
+`ogImage.security.secret: false` -- that is the setting that actually disables
+signing and leaves `/_og/` an unauthenticated renderer.
 
 **A prerendered page bakes its OG card at build time** (narduk-libs#170).
 `nuxt-og-image` picks how to address an image while the page renders: during a
