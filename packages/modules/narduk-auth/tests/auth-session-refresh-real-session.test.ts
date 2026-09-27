@@ -11,9 +11,9 @@ import {
 import sessionRefreshMiddleware from '../server/middleware/auth-session-refresh'
 import { useRefreshedSessionUser } from '../server/utils/session-user'
 
-import type * as NitroRuntimeStub from './stubs/nitropack-runtime'
 import type * as SessionModule from '../server/lib/app-auth/session'
 import type { AppSessionUser } from '../server/lib/app-auth/types'
+import type * as NitroRuntimeStub from './stubs/nitropack-runtime'
 import type { H3Event } from 'h3'
 
 /**
@@ -46,6 +46,7 @@ vi.mock('../server/lib/app-auth/session', async (importOriginal) => ({
 }))
 
 const SESSION_COOKIE = 'nuxt-session'
+const SESSION_READ_PATH = '/api/_auth/session'
 const PASSWORD = 'narduk-libs-1214-session-password-at-least-32-chars'
 
 const USER: AppSessionUser = {
@@ -134,7 +135,7 @@ function buildApp() {
       return { page: 'home', user: user?.email ?? null }
     }),
   )
-  router.get('/api/_auth/session', nuxtAuthUtilsSessionRead)
+  router.get(SESSION_READ_PATH, nuxtAuthUtilsSessionRead)
   router.get(
     '/api/app-route',
     eventHandler(async (event) => {
@@ -213,7 +214,7 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
     })
 
     it('gets no session cookie from the session read the client calls on load', async () => {
-      const response = await request('/api/_auth/session', {
+      const response = await request(SESSION_READ_PATH, {
         headers: { accept: 'application/json' },
       })
       expect(response.status).toBe(200)
@@ -267,7 +268,7 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
       const cookie = await signIn()
       vi.mocked(loadAuthSessionRow).mockResolvedValue(null)
 
-      const response = await request('/api/_auth/session', { headers: { cookie } })
+      const response = await request(SESSION_READ_PATH, { headers: { cookie } })
       expect(await response.json()).toEqual({})
     })
   })
@@ -306,7 +307,7 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
     }
 
     async function expectSignedOut(cookie: string) {
-      const sessionRead = await request('/api/_auth/session', { headers: { cookie } })
+      const sessionRead = await request(SESSION_READ_PATH, { headers: { cookie } })
       expect((await sessionRead.json()).user).toBeUndefined()
 
       const appRoute = await request('/api/app-route', { headers: { cookie } })
@@ -330,6 +331,7 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
       // An app that replaced `runtimeConfig.session` wholesale, or the config
       // before core seeded `maxAge`: the middleware must still hold.
       runtime.session = { ...NUXT_AUTH_UTILS_SESSION_DEFAULTS }
+      expect(runtime.session.maxAge).toBeUndefined()
       await expectSignedOut(await replayedCookie())
     })
   })
@@ -344,14 +346,14 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
     it('is written, revalidated and read under that name by core and nuxt-auth-utils alike', async () => {
       const cookie = await signIn(CUSTOM_NAME)
 
-      const response = await request('/api/_auth/session', { headers: { cookie } })
+      const response = await request(SESSION_READ_PATH, { headers: { cookie } })
       expect(await response.json()).toMatchObject({ user: { email: USER.email } })
       expect(loadAuthSessionRow).toHaveBeenCalledWith(expect.anything(), USER.authSessionId)
     })
 
     it('still sends an anonymous request no cookie', async () => {
       const page = await request('/')
-      const sessionRead = await request('/api/_auth/session')
+      const sessionRead = await request(SESSION_READ_PATH)
       expect(page.headers.getSetCookie()).toEqual([])
       expect(sessionRead.headers.getSetCookie()).toEqual([])
       expect(await sessionRead.json()).toEqual({})

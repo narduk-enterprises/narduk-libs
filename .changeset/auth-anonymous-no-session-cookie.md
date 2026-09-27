@@ -1,4 +1,5 @@
 ---
+'@narduk-enterprises/create-narduk-app': patch
 '@narduk-enterprises/narduk-auth': patch
 '@narduk-enterprises/narduk-core': patch
 ---
@@ -9,4 +10,4 @@ A session cookie that does not unseal (tampered, a rotated password, or older th
 
 narduk-core now seeds `runtimeConfig.session.name` (`nuxt-session`) and `runtimeConfig.session.maxAge` (30 days), and its session helpers read both keys from `runtimeConfig.session`. nuxt-auth-utils reads the same config, so the two agree on the cookie name and lifetime. Before, nuxt-auth-utils had no `maxAge` and would still serve the user of a replayed cookie that core had refused as too old. An app-set `runtimeConfig.session.name` or `maxAge`, or a `NUXT_SESSION_NAME` / `NUXT_SESSION_MAX_AGE` override, now applies to both.
 
-narduk-core adds `peekLayerUserSession(event)`, which reads the session without ever writing a cookie (`null` when there is none or it does not unseal), and `hasLayerUserSession(event)`. `requireAuth` and narduk-auth's `getCurrentSessionUser` now read through the peek, so an anonymous 401 or a pure session read no longer sets a cookie. `getLayerUserSession`, `setLayerUserSession` and `replaceLayerUserSession` are unchanged: sign-in still creates the session.
+narduk-core adds `peekLayerUserSession(event)`, which reads the session without ever writing a cookie (`null` when there is none or it does not unseal), and `hasLayerUserSession(event)`. `requireAuth` and narduk-auth's `getCurrentSessionUser` now read through the peek, so an anonymous 401 or a pure session read no longer sets a cookie. `getLayerUserSession`, `setLayerUserSession` and `replaceLayerUserSession` are unchanged: sign-in still creates the session. The generator release picks up the new package pins.

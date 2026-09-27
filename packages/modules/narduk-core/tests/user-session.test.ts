@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
   getLayerUserSession,
-  LAYER_USER_SESSION_NAME,
   hasLayerUserSession,
+  LAYER_USER_SESSION_NAME,
   peekLayerUserSession,
   resolveSessionConfig,
   setLayerUserSession,
