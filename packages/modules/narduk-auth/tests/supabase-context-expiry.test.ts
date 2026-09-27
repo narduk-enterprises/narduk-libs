@@ -21,7 +21,8 @@ vi.mock('#layer/server/utils/user-session', () => ({
   clearLayerUserSession: async () => {
     state.clearCalls += 1
   },
-  getLayerUserSession: async () => ({
+  peekLayerUserSession: async () => ({
+    id: 'session-1',
     user: { id: 'user-1', authSessionId: 'sess-1', authBackend: 'supabase' },
   }),
   replaceLayerUserSession: vi.fn(),

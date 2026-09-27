@@ -7,7 +7,7 @@ import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server
 import { useLogger } from '#layer/server/utils/logger'
 import {
   clearLayerUserSession,
-  getLayerUserSession,
+  peekLayerUserSession,
   replaceLayerUserSession,
   setLayerUserSession,
 } from '#layer/server/utils/user-session'
@@ -157,9 +157,13 @@ export async function persistSupabaseSession(
   }
 }
 
+/**
+ * The cookie's session user, or `null`. A pure read: a request with no
+ * session cookie is answered without writing one (narduk-libs#1214).
+ */
 export async function getCurrentSessionUser(event: H3Event): Promise<AppSessionUser | null> {
-  const session = await getLayerUserSession(event)
-  return session.user ? (session.user as AppSessionUser) : null
+  const session = await peekLayerUserSession(event)
+  return session?.user ? (session.user as AppSessionUser) : null
 }
 
 export async function setCurrentSessionUser(event: H3Event, user: AppSessionUser) {

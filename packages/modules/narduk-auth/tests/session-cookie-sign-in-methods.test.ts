@@ -21,7 +21,7 @@ const replaceLayerUserSession = vi.hoisted(() => vi.fn())
 
 vi.mock('#layer/server/utils/user-session', () => ({
   clearLayerUserSession: vi.fn(),
-  getLayerUserSession: vi.fn(),
+  peekLayerUserSession: vi.fn(),
   replaceLayerUserSession,
   setLayerUserSession: vi.fn(),
 }))

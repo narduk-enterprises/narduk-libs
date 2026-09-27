@@ -19,7 +19,7 @@ vi.mock('nitropack/runtime', () => ({
 }))
 vi.mock('#narduk-core/schema', () => ({ apiKeys: {}, sessions: {}, users: {} }))
 vi.mock('../runtime/server/utils/user-session', () => ({
-  getLayerUserSession: async () => null,
+  peekLayerUserSession: async () => null,
 }))
 vi.mock('../runtime/server/utils/worker-env', () => ({
   readCloudflareRuntimeEnv: () => ({}),

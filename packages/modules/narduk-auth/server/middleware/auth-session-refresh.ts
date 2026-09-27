@@ -1,5 +1,6 @@
 import { defineEventHandler } from 'h3'
 
+import { hasLayerUserSession } from '#layer/server/utils/user-session'
 import { getCurrentSessionUser } from '#narduk-auth-server/lib/app-auth/session'
 import { shouldRevalidateAuthSession } from '#narduk-auth-server/utils/auth-session-refresh-path'
 import { useRefreshedSessionUser } from '#narduk-auth-server/utils/session-user'
@@ -19,6 +20,17 @@ function isNuxtAuthUtilsSessionRead(event: H3Event): boolean {
 export default defineEventHandler(async (event) => {
   if (!shouldRevalidateAuthSession(event.path)) {
     return
+  }
+
+  // No session cookie, nothing to revalidate: a revoked cookie can only stop
+  // authenticating if there is one (#442). Reading the session anyway went
+  // through h3's `useSession`, which seals and sets a new 30-day cookie on
+  // every anonymous page and 404 (narduk-libs#1214).
+  if (!hasLayerUserSession(event)) {
+    // nuxt-auth-utils' own read does the same when it reaches `useSession`,
+    // and the client calls it on load (cached and prerendered pages, the
+    // `client-only` load strategy). Answer it as signed out here instead.
+    return isNuxtAuthUtilsSessionRead(event) ? {} : undefined
   }
 
   let refreshed: Awaited<ReturnType<typeof useRefreshedSessionUser>> = null

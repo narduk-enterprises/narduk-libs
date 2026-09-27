@@ -33,7 +33,7 @@ vi.mock('#narduk-core/postgres-runtime', () => ({
 }))
 vi.mock('#narduk-core/schema', () => ({ apiKeys: {}, sessions: {}, users: {} }))
 vi.mock('../runtime/server/utils/user-session', () => ({
-  getLayerUserSession: async () => ({ id: 'nuxt-session', user: sessionState.user }),
+  peekLayerUserSession: async () => ({ id: 'nuxt-session', user: sessionState.user }),
 }))
 
 const COOKIE_USER = {

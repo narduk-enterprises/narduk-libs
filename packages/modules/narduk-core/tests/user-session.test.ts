@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
+  getLayerUserSession,
+  hasLayerUserSession,
+  peekLayerUserSession,
   resolveSessionConfig,
   setLayerUserSession,
 } from '../runtime/server/utils/user-session'
@@ -24,7 +27,7 @@ function createConfigEvent(headers: Record<string, string> = {}): H3Event {
   } as unknown as H3Event
 }
 
-function createSessionEvent(): H3Event {
+function createSessionEvent(requestHeaders: Record<string, string> = {}): H3Event {
   const responseHeaders = new Map<string, number | string | string[]>()
   const response = {
     appendHeader(name: string, value: string) {
@@ -50,7 +53,7 @@ function createSessionEvent(): H3Event {
     },
   } as unknown as ServerResponse
   const request = {
-    headers: { host: EXAMPLE_HOST, 'x-forwarded-proto': 'https' },
+    headers: { host: EXAMPLE_HOST, 'x-forwarded-proto': 'https', ...requestHeaders },
     method: 'POST',
     url: '/api/auth/login',
   } as unknown as IncomingMessage
@@ -105,5 +108,78 @@ describe('user session cookie defaults', () => {
     })
 
     expect(config.maxAge).toBe(3600)
+  })
+})
+
+function setCookieHeader(event: H3Event): string | undefined {
+  const header = event.node.res.getHeader('set-cookie')
+  if (header === undefined) return undefined
+  return Array.isArray(header) ? header.join('\n') : String(header)
+}
+
+/** A sealed session the real h3 `useSession` wrote, as a request cookie. */
+async function signedInCookie(): Promise<string> {
+  const event = createSessionEvent()
+  await setLayerUserSession(event, { user: { email: 'parent@example.com' } })
+  const cookie = setCookieHeader(event)?.split(';')[0]
+  if (!cookie) throw new Error('sign-in wrote no cookie')
+  return cookie
+}
+
+// narduk-libs#1214: h3's `useSession` seals and sets a new cookie whenever the
+// request carries none, so a pure read through it gave every anonymous
+// request a 30-day session cookie.
+describe('peekLayerUserSession', () => {
+  it('reads nothing and writes no cookie when the request has no session', async () => {
+    const event = createSessionEvent()
+
+    expect(hasLayerUserSession(event)).toBe(false)
+    await expect(peekLayerUserSession(event)).resolves.toBeNull()
+    expect(setCookieHeader(event)).toBeUndefined()
+    expect(event.context.sessions).toBeUndefined()
+  })
+
+  it('is the non-mutating read: getLayerUserSession on the same request writes one', async () => {
+    const event = createSessionEvent()
+
+    await getLayerUserSession(event)
+
+    expect(setCookieHeader(event)).toMatch(/^nuxt-session=Fe26\.2\*\*/)
+  })
+
+  it('reads a sealed session cookie without rewriting it', async () => {
+    const event = createSessionEvent({ cookie: await signedInCookie() })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    const session = await peekLayerUserSession(event)
+
+    expect(session?.user).toEqual({ email: 'parent@example.com' })
+    expect(session?.id).toEqual(expect.any(String))
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('reads the session from the h3 session header too', async () => {
+    const sealed = (await signedInCookie()).slice('nuxt-session='.length)
+    const event = createSessionEvent({ 'x-nuxt-session-session': sealed })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    expect((await peekLayerUserSession(event))?.user).toEqual({ email: 'parent@example.com' })
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('answers null for a cookie that does not unseal, and writes nothing', async () => {
+    const event = createSessionEvent({ cookie: 'nuxt-session=not-a-sealed-session' })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    await expect(peekLayerUserSession(event)).resolves.toBeNull()
+    expect(setCookieHeader(event)).toBeUndefined()
+  })
+
+  it('sees a session written earlier in the same request', async () => {
+    const event = createSessionEvent()
+    await setLayerUserSession(event, { user: { email: 'parent@example.com' } })
+
+    expect(hasLayerUserSession(event)).toBe(true)
+    expect((await peekLayerUserSession(event))?.user).toEqual({ email: 'parent@example.com' })
   })
 })

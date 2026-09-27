@@ -4,6 +4,12 @@ const useRefreshedSessionUser = vi.hoisted(() => vi.fn(async () => null))
 
 const getCurrentSessionUser = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null))
 
+const hasLayerUserSession = vi.hoisted(() => vi.fn(() => true))
+
+vi.mock('#layer/server/utils/user-session', () => ({
+  hasLayerUserSession,
+}))
+
 vi.mock('#narduk-auth-server/utils/session-user', () => ({
   useRefreshedSessionUser,
 }))
@@ -21,6 +27,8 @@ describe('auth-session-refresh middleware', () => {
     useRefreshedSessionUser.mockResolvedValue(null)
     getCurrentSessionUser.mockReset()
     getCurrentSessionUser.mockResolvedValue(null)
+    hasLayerUserSession.mockReset()
+    hasLayerUserSession.mockReturnValue(true)
     vi.stubGlobal('defineEventHandler', (fn: (event: { path: string }) => Promise<unknown>) => fn)
     const loaded = await import('../server/middleware/auth-session-refresh')
     handler = loaded.default
@@ -56,6 +64,23 @@ describe('auth-session-refresh middleware', () => {
     await handler({ path: '/dashboard' })
     await handler({ path: '/api/notifications' })
     expect(useRefreshedSessionUser).toHaveBeenCalledTimes(2)
+  })
+
+  // narduk-libs#1214: with no session cookie there is nothing to revalidate,
+  // and reading one through h3's useSession would set a new cookie.
+  it('skips a request that carries no session', async () => {
+    hasLayerUserSession.mockReturnValue(false)
+    await expect(handler({ path: '/' })).resolves.toBeUndefined()
+    await expect(handler({ path: '/api/admin/users' })).resolves.toBeUndefined()
+    expect(useRefreshedSessionUser).not.toHaveBeenCalled()
+    expect(getCurrentSessionUser).not.toHaveBeenCalled()
+  })
+
+  it('answers the client session read as signed out when there is no session', async () => {
+    hasLayerUserSession.mockReturnValue(false)
+    await expect(handler({ method: 'GET', path: '/api/_auth/session' })).resolves.toEqual({})
+    await expect(handler({ method: 'DELETE', path: '/api/_auth/session' })).resolves.toBeUndefined()
+    expect(useRefreshedSessionUser).not.toHaveBeenCalled()
   })
 
   it('does not 500 when session refresh throws; the request proceeds unauthenticated', async () => {
