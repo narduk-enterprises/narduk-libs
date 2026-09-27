@@ -1,6 +1,11 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const repoPackages = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 const nuxtOgImagePackage = vi.hoisted(() => ({ resolvable: true }))
 
@@ -123,6 +128,37 @@ async function setupModule(options: SetupModuleOptions = {}) {
     nuxt,
   }
 }
+
+/**
+ * Run what the module registered on `nitro:init` against a fake Nitro whose
+ * output dir is a temp directory, then fire its `compiled` hooks. Returns the
+ * output dir so a test can look for `.narduk-build-ci`.
+ */
+function compileNitroOutput(nuxt: { hook: ReturnType<typeof vi.fn> }): string {
+  const outputDir = join(mkdtempSync(join(tmpdir(), 'narduk-seo-nitro-output-')), '.output')
+  compiledOutputRoots.push(outputDir)
+  const compiled: Array<() => void> = []
+  const nitro = {
+    hooks: {
+      hook: (name: string, fn: () => void) => {
+        if (name === 'compiled') compiled.push(fn)
+      },
+    },
+    options: { output: { dir: outputDir } },
+  }
+  for (const [name, fn] of nuxt.hook.mock.calls as Array<[string, (value: unknown) => void]>) {
+    if (name === 'nitro:init') fn(nitro)
+  }
+  for (const fn of compiled) fn()
+  return outputDir
+}
+
+const compiledOutputRoots: string[] = []
+afterEach(() => {
+  for (const dir of compiledOutputRoots.splice(0)) {
+    rmSync(join(dir, '..'), { force: true, recursive: true })
+  }
+})
 
 function expectOgImageConfigTypes(addTypeTemplate: ReturnType<typeof vi.fn>) {
   expect(addTypeTemplate).toHaveBeenCalledWith(
@@ -811,7 +847,21 @@ describe('narduk-seo module', () => {
     )
   })
 
-  it('keeps accepting the CI OG placeholder on a build nothing deploys', async () => {
+  it('rejects the CI OG placeholder on a plain build that is not build:ci', async () => {
+    const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+
+    await expect(setupModule({ nuxtOptions: { dev: false } })).rejects.toThrow(
+      /test-only placeholder/u,
+    )
+  })
+
+  it('keeps accepting the CI OG placeholder on an explicit build:ci', async () => {
     const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
     vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
@@ -824,5 +874,65 @@ describe('narduk-seo module', () => {
     expect(nuxt.options.ogImage).toMatchObject({
       security: { secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET },
     })
+  })
+
+  it('marks a placeholder-signed output so narduk-app deploy refuses it', async () => {
+    // narduk-libs#1155: riverstatus, borderwaitstat-us, float-forecast,
+    // ogpreview-app and been-sober-for set NARDUK_CLOUDFLARE_BUILD=1 in
+    // cf:build too, so the accepted build must mark its own output.
+    const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
+    const { BUILD_CI_OUTPUT_MARKER } = await import('../src/buildCiOutputMarker')
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+
+    const { nuxt } = await setupModule({ nuxtOptions: { dev: false } })
+    const outputDir = compileNitroOutput(nuxt)
+
+    const marker = join(outputDir, BUILD_CI_OUTPUT_MARKER)
+    expect(existsSync(marker)).toBe(true)
+    expect(readFileSync(marker, 'utf8')).toContain('NUXT_OG_IMAGE_SECRET')
+
+    // The same output, handed to narduk-app deploy with the local wrangler
+    // override on, is refused before Wrangler runs. The path is computed so
+    // typecheck does not follow it into narduk-app-tools.
+    const deployModule = join(repoPackages, 'tooling/narduk-app-tools/src/deploy.ts')
+    const { isLocalDeployAllowed, markedBuildCiOutputBlocksPublish } = (await import(
+      deployModule
+    )) as {
+      isLocalDeployAllowed: (env: Record<string, string>) => boolean
+      markedBuildCiOutputBlocksPublish: (appDir: string, action: string, dryRun: boolean) => boolean
+    }
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(isLocalDeployAllowed({ NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1' })).toBe(true)
+      expect(markedBuildCiOutputBlocksPublish(dirname(outputDir), 'deploy', false)).toBe(true)
+      expect(markedBuildCiOutputBlocksPublish(dirname(outputDir), 'versions-upload', false)).toBe(
+        true,
+      )
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('leaves a real-secret output and a dev placeholder unmarked', async () => {
+    const { CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET } = await import('../shared/ogImageSecret')
+    const { BUILD_CI_OUTPUT_MARKER } = await import('../src/buildCiOutputMarker')
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', 'production-og-secret')
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+
+    const real = await setupModule({ nuxtOptions: { dev: false } })
+    expect(existsSync(join(compileNitroOutput(real.nuxt), BUILD_CI_OUTPUT_MARKER))).toBe(false)
+
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.stubEnv('NUXT_OG_IMAGE_SECRET', CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET)
+    const dev = await setupModule({ nuxtOptions: { dev: true } })
+    expect(existsSync(join(compileNitroOutput(dev.nuxt), BUILD_CI_OUTPUT_MARKER))).toBe(false)
   })
 })

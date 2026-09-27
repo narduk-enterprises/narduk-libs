@@ -97,9 +97,12 @@ export function isDryRunDeploy(args: readonly string[]): boolean {
 }
 
 /**
- * `build:ci` writes this into the Nitro output it just produced. A later
- * `cf:build` replaces `.output` and removes it. create-narduk-app keeps the
- * same filename; the two packages do not import each other.
+ * `build:ci` writes this into the Nitro output it just produced, and so does
+ * narduk-seo whenever it lets a build sign with the test-only
+ * `NUXT_OG_IMAGE_SECRET` placeholder, whatever script ran that build
+ * (narduk-libs#1155). A later build replaces `.output` and removes it.
+ * create-narduk-app and narduk-seo keep the same filename; none of these
+ * packages import each other.
  */
 export const BUILD_CI_OUTPUT_MARKER = '.narduk-build-ci'
 
@@ -111,15 +114,19 @@ function publishesWorkerOutput(action: DeployAction): boolean {
 export function buildCiOutputNotice(dryRun: boolean): string {
   const marker = `.output/${BUILD_CI_OUTPUT_MARKER}`
   const facts =
-    `${marker} marks a build:ci Worker, which contains the public test-only ` +
-    'NUXT_SESSION_PASSWORD and NUXT_OG_IMAGE_SECRET.'
+    `${marker} marks a Worker built with a public test-only secret: build:ci ` +
+    'bakes the NUXT_SESSION_PASSWORD and NUXT_OG_IMAGE_SECRET placeholders, and ' +
+    'narduk-seo marks any build it let sign with the NUXT_OG_IMAGE_SECRET placeholder.'
   if (dryRun) {
     return (
       `narduk-app deploy: caution: ${facts} Dry-run publishes nothing. ` +
-      'A real deploy requires pnpm run cf:build.'
+      'A real deploy requires pnpm run cf:build with real secrets.'
     )
   }
-  return `narduk-app deploy: refusing to publish. ${facts} Run pnpm run cf:build before deploying.`
+  return (
+    `narduk-app deploy: refusing to publish. ${facts} ` +
+    'Run pnpm run cf:build with real secrets before deploying.'
+  )
 }
 
 /**
