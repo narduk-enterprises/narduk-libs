@@ -84,6 +84,11 @@ describe('narduk-core module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/composables'))
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/app/utils'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/runtime/server'))
+    const { nuxtIconModuleEntry } = await import('../src/nuxt-icon-module')
+    const iconEntry = nuxtIconModuleEntry()
+    const installOrder = installModule.mock.calls.map((call) => call[0])
+    expect(installOrder.indexOf(iconEntry)).toBeGreaterThanOrEqual(0)
+    expect(installOrder.indexOf(iconEntry)).toBeLessThan(installOrder.indexOf('@nuxt/ui'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
     expect(iconConfigAtNuxtUiInstall[0]).toEqual({
       provider: 'server',
@@ -134,8 +139,16 @@ describe('narduk-core module', () => {
 
     installModule.mockClear()
     await mod.setup({ app: false, coreModules: true, image: false, server: false }, nuxt)
+    const iconEntryAgain = nuxtIconModuleEntry()
+    const coreOnlyOrder = installModule.mock.calls.map((call) => call[0])
+    expect(coreOnlyOrder.indexOf(iconEntryAgain)).toBeGreaterThanOrEqual(0)
+    expect(coreOnlyOrder.indexOf(iconEntryAgain)).toBeLessThan(coreOnlyOrder.indexOf('@nuxt/ui'))
     expect(installModule).toHaveBeenCalledWith('@nuxt/ui')
     expect(installModule).not.toHaveBeenCalledWith('@nuxt/image')
+
+    installModule.mockClear()
+    await mod.setup({ app: false, coreModules: false, image: false, server: false }, nuxt)
+    expect(installModule).not.toHaveBeenCalledWith(nuxtIconModuleEntry())
 
     const previousDatabaseBackend = process.env.NUXT_DATABASE_BACKEND
     try {

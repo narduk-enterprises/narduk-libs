@@ -43,8 +43,9 @@ import {
   USER_SESSION_IMPORT_NAME,
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
-import { CORE_CLIENT_BUNDLE_ICONS, iconSeedArrivedLate } from './icon-order'
+import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
+import { localIconDefaults, nuxtIconModuleEntry } from './nuxt-icon-module'
 import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 import { registerNuxtUiSources } from './nuxt-ui-sources'
 import {
@@ -588,29 +589,25 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
       }
 
-      // @nuxt/ui installs @nuxt/icon during its own setup. Seed the local-only
-      // collection contract before that installation so the icon server bundles
-      // Lucide instead of attempting runtime API fallback.
+      // Seed the local-only contract before @nuxt/icon installs. @nuxt/ui
+      // 4.11.1 does not register that module from an app that does not list
+      // it (narduk-libs#1195); narduk-core installs the copy it depends on
+      // below, after this seed, so the icon server bundles Lucide instead of
+      // attempting a runtime API fallback.
       const lateIconSeed = iconSeedArrivedLate(
         nuxtOptions as Parameters<typeof iconSeedArrivedLate>[0],
       )
       if (lateIconSeed) console.warn(lateIconSeed)
-      nuxtOptions.icon = defu((nuxtOptions.icon ?? {}) as Record<string, unknown>, {
-        provider: 'server',
-        fallbackToApi: false,
-        clientBundle: {
-          icons: [...CORE_CLIENT_BUNDLE_ICONS],
-        },
-        serverBundle: {
-          collections: ['lucide'],
-          remote: false,
-        },
-      })
+      nuxtOptions.icon = defu(
+        (nuxtOptions.icon ?? {}) as Record<string, unknown>,
+        localIconDefaults(nuxt.options.rootDir),
+      )
 
       if (options.coreModules) {
         dedupeIconServerCollections({ options: nuxtOptions })
         await installModule('@pinia/nuxt')
         await installModule('@nuxtjs/color-mode')
+        await installModule(nuxtIconModuleEntry())
         await installModule('@nuxt/ui')
         await installModule('@nuxt/fonts')
         if (options.image !== false) {
