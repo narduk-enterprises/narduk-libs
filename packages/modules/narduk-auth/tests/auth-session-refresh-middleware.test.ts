@@ -2,20 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const useRefreshedSessionUser = vi.hoisted(() => vi.fn(async () => null))
 
-const getCurrentSessionUser = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null))
+/** A readable session cookie that carries no user, unless a test says otherwise. */
+const READABLE_NO_USER = { id: 'session-1' }
+
+const peekLayerUserSession = vi.hoisted(() =>
+  vi.fn(async (): Promise<null | Record<string, unknown>> => null),
+)
+
+const getLayerUserSession = vi.hoisted(() => vi.fn(async () => ({ id: 'fresh-session' })))
 
 const hasLayerUserSession = vi.hoisted(() => vi.fn(() => true))
 
 vi.mock('#layer/server/utils/user-session', () => ({
+  getLayerUserSession,
   hasLayerUserSession,
+  peekLayerUserSession,
 }))
 
 vi.mock('#narduk-auth-server/utils/session-user', () => ({
   useRefreshedSessionUser,
-}))
-
-vi.mock('#narduk-auth-server/lib/app-auth/session', () => ({
-  getCurrentSessionUser,
 }))
 
 describe('auth-session-refresh middleware', () => {
@@ -25,8 +30,9 @@ describe('auth-session-refresh middleware', () => {
     vi.resetModules()
     useRefreshedSessionUser.mockReset()
     useRefreshedSessionUser.mockResolvedValue(null)
-    getCurrentSessionUser.mockReset()
-    getCurrentSessionUser.mockResolvedValue(null)
+    peekLayerUserSession.mockReset()
+    peekLayerUserSession.mockResolvedValue(READABLE_NO_USER)
+    getLayerUserSession.mockClear()
     hasLayerUserSession.mockReset()
     hasLayerUserSession.mockReturnValue(true)
     vi.stubGlobal('defineEventHandler', (fn: (event: { path: string }) => Promise<unknown>) => fn)
@@ -73,7 +79,8 @@ describe('auth-session-refresh middleware', () => {
     await expect(handler({ path: '/' })).resolves.toBeUndefined()
     await expect(handler({ path: '/api/admin/users' })).resolves.toBeUndefined()
     expect(useRefreshedSessionUser).not.toHaveBeenCalled()
-    expect(getCurrentSessionUser).not.toHaveBeenCalled()
+    expect(peekLayerUserSession).not.toHaveBeenCalled()
+    expect(getLayerUserSession).not.toHaveBeenCalled()
   })
 
   it('answers the client session read as signed out when there is no session', async () => {
@@ -97,7 +104,7 @@ describe('auth-session-refresh middleware', () => {
     const COOKIE_USER = { id: 'user-1', email: 'parent@example.com' }
 
     it('answers an empty session for a cookie whose grant is revoked', async () => {
-      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      peekLayerUserSession.mockResolvedValue({ id: 'session-1', user: COOKIE_USER })
       await expect(handler(SESSION_READ)).resolves.toEqual({})
       await expect(handler({ ...SESSION_READ, path: '/api/_auth/session?x=1' })).resolves.toEqual(
         {},
@@ -105,7 +112,7 @@ describe('auth-session-refresh middleware', () => {
     })
 
     it('answers the trailing-slash spelling Nitro routes to the same handler', async () => {
-      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      peekLayerUserSession.mockResolvedValue({ id: 'session-1', user: COOKIE_USER })
       await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/' })).resolves.toEqual({})
       await expect(handler({ ...SESSION_READ, path: '/api/_auth/session/?x=1' })).resolves.toEqual(
         {},
@@ -113,7 +120,7 @@ describe('auth-session-refresh middleware', () => {
     })
 
     it('answers an empty session when the grant lookup throws', async () => {
-      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      peekLayerUserSession.mockResolvedValue({ id: 'session-1', user: COOKIE_USER })
       useRefreshedSessionUser.mockRejectedValueOnce(new Error('D1 unavailable'))
       await expect(handler(SESSION_READ)).resolves.toEqual({})
     })
@@ -123,12 +130,34 @@ describe('auth-session-refresh middleware', () => {
       await expect(handler(SESSION_READ)).resolves.toBeUndefined()
 
       useRefreshedSessionUser.mockResolvedValue(null)
-      getCurrentSessionUser.mockResolvedValue(null)
+      peekLayerUserSession.mockResolvedValue(READABLE_NO_USER)
       await expect(handler(SESSION_READ)).resolves.toBeUndefined()
     })
 
+    // narduk-libs#1214: a cookie core cannot unseal (tampered, a rotated
+    // password, past maxAge) is replaced with a fresh empty session, so
+    // nuxt-auth-utils cannot unseal it on its own later in the request.
+    it('answers an empty session for a cookie that does not unseal, and replaces it', async () => {
+      peekLayerUserSession.mockResolvedValue(null)
+      await expect(handler(SESSION_READ)).resolves.toEqual({})
+      expect(getLayerUserSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('replaces an unreadable cookie on every other path too', async () => {
+      peekLayerUserSession.mockResolvedValue(null)
+      await expect(handler({ method: 'GET', path: '/dashboard' })).resolves.toBeUndefined()
+      expect(getLayerUserSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not touch a readable cookie', async () => {
+      await handler(SESSION_READ)
+      peekLayerUserSession.mockResolvedValue({ id: 'session-1', user: COOKIE_USER })
+      await handler({ method: 'GET', path: '/dashboard' })
+      expect(getLayerUserSession).not.toHaveBeenCalled()
+    })
+
     it('leaves sign-out and every other path alone', async () => {
-      getCurrentSessionUser.mockResolvedValue(COOKIE_USER)
+      peekLayerUserSession.mockResolvedValue({ id: 'session-1', user: COOKIE_USER })
       await expect(
         handler({ method: 'DELETE', path: '/api/_auth/session' }),
       ).resolves.toBeUndefined()

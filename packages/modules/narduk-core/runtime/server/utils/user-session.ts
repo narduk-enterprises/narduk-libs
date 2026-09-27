@@ -1,4 +1,10 @@
 import { getCookie, getRequestHeader, getRequestProtocol, unsealSession, useSession } from 'h3'
+import { useRuntimeConfig } from 'nitropack/runtime'
+
+import {
+  DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
+  LAYER_USER_SESSION_NAME,
+} from '../../shared/user-session-config'
 
 import { readRuntimeStringFromKeys } from './runtime-env'
 
@@ -11,7 +17,32 @@ export interface LayerUserSession extends Record<string, unknown> {
 
 type SessionData = Omit<LayerUserSession, 'id'>
 
-export const DEFAULT_USER_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+export { DEFAULT_USER_SESSION_MAX_AGE_SECONDS, LAYER_USER_SESSION_NAME }
+
+/**
+ * `runtimeConfig.session`, the config `nuxt-auth-utils` reads its session
+ * with. Core seeds its `name` and `maxAge` (`src/module.ts`); an app or a
+ * `NUXT_SESSION_*` env override changes them for both readers at once.
+ */
+function readSessionRuntimeConfig(event: H3Event): { maxAge?: unknown; name?: unknown } {
+  try {
+    const session = (useRuntimeConfig(event) as Record<string, unknown>).session
+    return session && typeof session === 'object' ? (session as Record<string, unknown>) : {}
+  } catch {
+    // Outside a Nitro app (unit tests, tooling): the shared defaults.
+    return {}
+  }
+}
+
+function sessionNameFrom(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : LAYER_USER_SESSION_NAME
+}
+
+function sessionMaxAgeFrom(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_USER_SESSION_MAX_AGE_SECONDS
+}
 
 export function resolveSessionConfig(
   event: H3Event,
@@ -20,10 +51,15 @@ export function resolveSessionConfig(
   const password = readRuntimeStringFromKeys(event, ['NUXT_SESSION_PASSWORD', 'SESSION_PASSWORD'])
   const { cookie: cookieOverrides, ...configOverrides } = overrides
 
+  const runtimeSession = readSessionRuntimeConfig(event)
+
+  // Name and lifetime come from the same `runtimeConfig.session` that
+  // `nuxt-auth-utils` reads, so both accept and refuse the same cookie
+  // (narduk-libs#1214).
   return {
-    name: 'nuxt-session',
+    name: sessionNameFrom(runtimeSession.name),
     password,
-    maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
+    maxAge: sessionMaxAgeFrom(runtimeSession.maxAge),
     ...configOverrides,
     cookie: {
       sameSite: 'lax',

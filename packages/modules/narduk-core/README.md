@@ -122,6 +122,21 @@ The install reuses the module's own `auth.loadStrategy` option:
 `loadStrategy: 'none'` is not a substitute for `nardukCore.auth: false`: the
 session module is still installed and still serves the session route.
 
+With auth on, core also seeds `runtimeConfig.session.name` (`nuxt-session`) and
+`runtimeConfig.session.maxAge` (30 days). `nuxt-auth-utils` reads its session
+with that config. Core's own session helpers (`resolveSessionConfig` and the
+`*LayerUserSession` functions) read the same two keys at runtime, so both
+readers accept and refuse the same cookie. An app-set value or a
+`NUXT_SESSION_NAME` / `NUXT_SESSION_MAX_AGE` override changes both at once.
+Before this, `nuxt-auth-utils` had no `maxAge` and still served the user of a
+replayed cookie that core had refused as too old (narduk-libs#1214).
+
+A pure session read uses `peekLayerUserSession(event)`. It returns `null` when
+the request has no session or the session does not unseal, and it never writes a
+cookie. `getLayerUserSession` goes through h3's `useSession`, which creates a
+session and sets its cookie when the request has none, so it is for callers that
+are about to write the session.
+
 ## Public runtime overlay (Workers Builds)
 
 Workers Builds runs `nuxt build` in a process that **does not** receive

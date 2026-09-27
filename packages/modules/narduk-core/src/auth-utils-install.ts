@@ -18,6 +18,11 @@
  * `nuxt-auth-utils`.
  */
 
+import {
+  DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
+  LAYER_USER_SESSION_NAME,
+} from '../runtime/shared/user-session-config'
+
 export type NuxtAuthUtilsLoadStrategy = 'client-only' | 'none' | 'server-first'
 
 export interface NuxtAuthUtilsInstallSignals {
@@ -122,13 +127,25 @@ export function shouldInstallNuxtAuthUtils(auth: boolean | undefined): boolean {
   return auth !== false
 }
 
+/**
+ * `runtimeConfig.session`, which `nuxt-auth-utils` reads its session with and
+ * core's `resolveSessionConfig` reads the cookie name and lifetime from.
+ *
+ * `nuxt-auth-utils` has no `maxAge` of its own. Without one it kept accepting
+ * a replayed cookie core had refused as older than its 30 days, and answered
+ * `/api/_auth/session` with that cookie's user (narduk-libs#1214). Seeding
+ * both keys here makes the two readers agree; an app-set value still wins,
+ * for both.
+ */
 export function sessionRuntimeConfigSeed(
   auth: boolean | undefined,
   env: Record<string, string | undefined> | undefined,
-): { session: { password: string } } | Record<string, never> {
+): { session: { maxAge: number; name: string; password: string } } | Record<string, never> {
   if (!shouldInstallNuxtAuthUtils(auth)) return {}
   return {
     session: {
+      name: LAYER_USER_SESSION_NAME,
+      maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
       password: env?.NUXT_SESSION_PASSWORD || '',
     },
   }

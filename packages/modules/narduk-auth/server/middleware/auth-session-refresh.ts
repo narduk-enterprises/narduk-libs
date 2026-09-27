@@ -1,7 +1,10 @@
 import { defineEventHandler } from 'h3'
 
-import { hasLayerUserSession } from '#layer/server/utils/user-session'
-import { getCurrentSessionUser } from '#narduk-auth-server/lib/app-auth/session'
+import {
+  getLayerUserSession,
+  hasLayerUserSession,
+  peekLayerUserSession,
+} from '#layer/server/utils/user-session'
 import { shouldRevalidateAuthSession } from '#narduk-auth-server/utils/auth-session-refresh-path'
 import { useRefreshedSessionUser } from '#narduk-auth-server/utils/session-user'
 
@@ -41,13 +44,31 @@ export default defineEventHandler(async (event) => {
     // the request closed without clearing the cookie.
   }
 
+  if (refreshed) {
+    return
+  }
+
+  const cookieSession = await peekLayerUserSession(event)
+  if (!cookieSession) {
+    // The request carries a session that does not unseal: tampered, sealed
+    // with a rotated password, or older than `maxAge`. Replace it with a
+    // fresh empty session, which is what h3's `useSession` does, so that
+    // every later read in this request sees signed out, nuxt-auth-utils'
+    // `getUserSession` included, whatever config it reads with. The
+    // side-effect-free peek would otherwise leave nuxt-auth-utils to unseal
+    // the request's cookie on its own (narduk-libs#1214). A request that
+    // carried no session never reaches this point, so it still gets no cookie.
+    await getLayerUserSession(event)
+  }
+
   // nuxt-auth-utils answers this route from the sealed cookie and never asks
   // the grant validator; clearing the session does not stop it either, since
-  // h3 re-reads the request's cookie. So a cookie that still carries a user
-  // whose grant is revoked, expired or unreadable is answered here, as signed
-  // out (narduk-libs#1041). A live session, a cookie with no user, and the
-  // DELETE sign-out stay with nuxt-auth-utils.
-  if (!refreshed && isNuxtAuthUtilsSessionRead(event) && (await getCurrentSessionUser(event))) {
+  // h3 re-reads the request's cookie. So a cookie that is unreadable, or
+  // still carries a user whose grant is revoked, expired or unreadable, is
+  // answered here, as signed out (narduk-libs#1041, #1214). A live session, a
+  // readable cookie with no user, and the DELETE sign-out stay with
+  // nuxt-auth-utils.
+  if (isNuxtAuthUtilsSessionRead(event) && (!cookieSession || cookieSession.user)) {
     return {}
   }
 })

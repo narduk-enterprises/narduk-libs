@@ -1,8 +1,8 @@
+import { defu } from 'defu'
 import { createApp, createRouter, eventHandler, readBody, toWebHandler, useSession } from 'h3'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveSessionConfig } from '#layer/server/utils/user-session'
-
+import { sessionRuntimeConfigSeed } from '../../narduk-core/src/auth-utils-install'
 import {
   loadAuthSessionRow,
   loadAuthUserRow,
@@ -11,6 +11,7 @@ import {
 import sessionRefreshMiddleware from '../server/middleware/auth-session-refresh'
 import { useRefreshedSessionUser } from '../server/utils/session-user'
 
+import type * as NitroRuntimeStub from './stubs/nitropack-runtime'
 import type * as SessionModule from '../server/lib/app-auth/session'
 import type { AppSessionUser } from '../server/lib/app-auth/types'
 import type { H3Event } from 'h3'
@@ -24,8 +25,19 @@ import type { H3Event } from 'h3'
  * Nothing here mocks the session: the middleware, narduk-core's
  * `user-session` helpers and h3's `useSession` run for real against a real
  * h3 app. Only the `auth_sessions` and `users` row reads are stubbed, since
- * they stand for D1.
+ * they stand for D1, and `runtimeConfig.session` is set per test the way the
+ * two modules build it.
  */
+
+const runtime = vi.hoisted(() => ({ session: {} as Record<string, unknown> }))
+
+vi.mock('nitropack/runtime', async (importOriginal) => {
+  const stub = await importOriginal<typeof NitroRuntimeStub>()
+  return {
+    ...stub,
+    useRuntimeConfig: () => ({ ...stub.useRuntimeConfig(), session: runtime.session }),
+  }
+})
 
 vi.mock('../server/lib/app-auth/session', async (importOriginal) => ({
   ...(await importOriginal<typeof SessionModule>()),
@@ -50,11 +62,13 @@ const USER: AppSessionUser = {
   recoveryMode: false,
 }
 
-const LIVE_SESSION_ROW = {
-  id: USER.authSessionId,
-  aal: null,
-  recoveryMode: false,
-  expiresAt: Math.floor(Date.now() / 1000) + 3600,
+function liveSessionRow() {
+  return {
+    id: USER.authSessionId,
+    aal: null,
+    recoveryMode: false,
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  }
 }
 
 const LIVE_USER_ROW = {
@@ -67,14 +81,45 @@ const LIVE_USER_ROW = {
 }
 
 /**
- * Stands in for nuxt-auth-utils' `GET /api/_auth/session`
- * (`runtime/server/api/session.get.js`): it reads the session through h3's
- * `useSession` with the same config, so an anonymous call reaching it writes
- * a cookie exactly as the real handler does.
+ * `runtimeConfig.session` as nuxt-auth-utils 0.5.29's module builds it
+ * (`defu(runtimeConfig.session, { name: 'nuxt-session', password: '', cookie:
+ * { sameSite: 'lax' } })`), before core adds its seed. No `maxAge`.
+ */
+const NUXT_AUTH_UTILS_SESSION_DEFAULTS = {
+  name: 'nuxt-session',
+  password: '',
+  cookie: { sameSite: 'lax' },
+}
+
+/** What an app gets: nuxt-auth-utils' defaults, then core's seed (`src/module.ts`). */
+function installedSessionRuntimeConfig(appSession: Record<string, unknown> = {}) {
+  return defu(
+    defu(appSession, NUXT_AUTH_UTILS_SESSION_DEFAULTS),
+    sessionRuntimeConfigSeed(undefined, {}).session,
+  ) as Record<string, unknown>
+}
+
+/**
+ * nuxt-auth-utils 0.5.29's `_useSession` config:
+ * `defu({ password: process.env.NUXT_SESSION_PASSWORD }, runtimeConfig.session)`.
+ * Its own read, not core's, so a disagreement between the two shows here.
+ */
+function nuxtAuthUtilsSessionConfig() {
+  return defu({ password: process.env.NUXT_SESSION_PASSWORD }, runtime.session) as never
+}
+
+/** nuxt-auth-utils' `getUserSession`, which app routes may call directly. */
+async function nuxtAuthUtilsGetUserSession(event: H3Event) {
+  const session = await useSession(event, nuxtAuthUtilsSessionConfig())
+  return { ...session.data, id: session.id } as Record<string, unknown>
+}
+
+/**
+ * nuxt-auth-utils' `GET /api/_auth/session` (`runtime/server/api/session.get.js`):
+ * an anonymous call that reaches it writes a cookie, as the real handler does.
  */
 const nuxtAuthUtilsSessionRead = eventHandler(async (event: H3Event) => {
-  const session = await useSession(event, resolveSessionConfig(event))
-  const { secure: _secure, ...data } = { ...session.data, id: session.id }
+  const { secure: _secure, ...data } = await nuxtAuthUtilsGetUserSession(event)
   return data
 })
 
@@ -90,6 +135,13 @@ function buildApp() {
     }),
   )
   router.get('/api/_auth/session', nuxtAuthUtilsSessionRead)
+  router.get(
+    '/api/app-route',
+    eventHandler(async (event) => {
+      const session = await nuxtAuthUtilsGetUserSession(event)
+      return { user: (session.user as AppSessionUser | undefined)?.email ?? null }
+    }),
+  )
   router.post(
     '/test/login',
     eventHandler(async (event) => {
@@ -107,17 +159,17 @@ function request(path: string, init: RequestInit = {}) {
   return handler(new Request(`http://app.test${path}`, init))
 }
 
-function sessionSetCookies(response: Response): string[] {
-  return response.headers.getSetCookie().filter((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`))
+function sessionSetCookies(response: Response, name = SESSION_COOKIE): string[] {
+  return response.headers.getSetCookie().filter((cookie) => cookie.startsWith(`${name}=`))
 }
 
-async function signIn(): Promise<string> {
+async function signIn(name = SESSION_COOKIE): Promise<string> {
   const response = await request('/test/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(USER),
   })
-  const [cookie] = sessionSetCookies(response)
+  const [cookie] = sessionSetCookies(response, name)
   expect(cookie, 'sign-in sets the session cookie').toBeTruthy()
   return cookie!.split(';')[0]!
 }
@@ -134,10 +186,15 @@ afterAll(() => {
 })
 
 beforeEach(() => {
+  runtime.session = installedSessionRuntimeConfig()
   vi.mocked(loadAuthSessionRow).mockReset()
   vi.mocked(loadAuthUserRow).mockReset()
-  vi.mocked(loadAuthSessionRow).mockResolvedValue(LIVE_SESSION_ROW as never)
+  vi.mocked(loadAuthSessionRow).mockImplementation(async () => liveSessionRow() as never)
   vi.mocked(loadAuthUserRow).mockResolvedValue(LIVE_USER_ROW as never)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('auth-session-refresh with the real h3 session (#1214)', () => {
@@ -212,6 +269,92 @@ describe('auth-session-refresh with the real h3 session (#1214)', () => {
 
       const response = await request('/api/_auth/session', { headers: { cookie } })
       expect(await response.json()).toEqual({})
+    })
+  })
+
+  // The verifier's probe on PR #1215: core refuses a cookie older than its
+  // 30-day maxAge, but a re-seal keeps `createdAt` and extends the seal. When
+  // nuxt-auth-utils read with no maxAge it still accepted the cookie and
+  // served its user, although the grant was revoked and never consulted.
+  describe('a replayed cookie past maxAge whose grant is revoked (#1214)', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000
+    const T0 = Date.UTC(2026, 0, 1)
+
+    async function replayedCookie(): Promise<string> {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(T0)
+      const signedIn = await signIn()
+
+      // Day 20: a surfaced field changed, so the refresh re-seals the cookie.
+      // `createdAt` stays day 0; the seal's own expiry moves to day 50.
+      vi.setSystemTime(T0 + 20 * DAY_MS)
+      vi.mocked(loadAuthUserRow).mockResolvedValue({
+        ...LIVE_USER_ROW,
+        name: 'Reader Renamed',
+      } as never)
+      const day20 = await request('/', { headers: { cookie: signedIn } })
+      expect(await day20.json()).toEqual({ page: 'home', user: USER.email })
+      const resealed = sessionSetCookies(day20).filter(
+        (cookie) => !cookie.startsWith(`${SESSION_COOKIE}=;`),
+      )
+      expect(resealed).toHaveLength(1)
+
+      // Day 35: past the 30-day maxAge, and the grant is revoked.
+      vi.setSystemTime(T0 + 35 * DAY_MS)
+      vi.mocked(loadAuthSessionRow).mockResolvedValue(null)
+      return resealed[0]!.split(';')[0]!
+    }
+
+    async function expectSignedOut(cookie: string) {
+      const sessionRead = await request('/api/_auth/session', { headers: { cookie } })
+      expect((await sessionRead.json()).user).toBeUndefined()
+
+      const appRoute = await request('/api/app-route', { headers: { cookie } })
+      expect(await appRoute.json()).toEqual({ user: null })
+      // The unreadable cookie is replaced with an empty session. That write is
+      // allowed: the request carried a cookie.
+      const [replacement] = sessionSetCookies(appRoute)
+      expect(replacement).toBeTruthy()
+      const next = await request('/api/app-route', {
+        headers: { cookie: replacement!.split(';')[0]! },
+      })
+      expect(await next.json()).toEqual({ user: null })
+    }
+
+    it('reads as signed out with the config the two modules install', async () => {
+      expect(runtime.session.maxAge).toBe(30 * 24 * 60 * 60)
+      await expectSignedOut(await replayedCookie())
+    })
+
+    it('reads as signed out even when nuxt-auth-utils reads with no maxAge', async () => {
+      // An app that replaced `runtimeConfig.session` wholesale, or the config
+      // before core seeded `maxAge`: the middleware must still hold.
+      runtime.session = { ...NUXT_AUTH_UTILS_SESSION_DEFAULTS }
+      await expectSignedOut(await replayedCookie())
+    })
+  })
+
+  describe('a custom session name in runtimeConfig.session.name', () => {
+    const CUSTOM_NAME = 'app-session'
+
+    beforeEach(() => {
+      runtime.session = installedSessionRuntimeConfig({ name: CUSTOM_NAME })
+    })
+
+    it('is written, revalidated and read under that name by core and nuxt-auth-utils alike', async () => {
+      const cookie = await signIn(CUSTOM_NAME)
+
+      const response = await request('/api/_auth/session', { headers: { cookie } })
+      expect(await response.json()).toMatchObject({ user: { email: USER.email } })
+      expect(loadAuthSessionRow).toHaveBeenCalledWith(expect.anything(), USER.authSessionId)
+    })
+
+    it('still sends an anonymous request no cookie', async () => {
+      const page = await request('/')
+      const sessionRead = await request('/api/_auth/session')
+      expect(page.headers.getSetCookie()).toEqual([])
+      expect(sessionRead.headers.getSetCookie()).toEqual([])
+      expect(await sessionRead.json()).toEqual({})
     })
   })
 })

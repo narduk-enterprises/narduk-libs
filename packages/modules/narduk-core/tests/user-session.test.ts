@@ -1,17 +1,29 @@
 import { createEvent } from 'h3'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DEFAULT_USER_SESSION_MAX_AGE_SECONDS,
   getLayerUserSession,
+  LAYER_USER_SESSION_NAME,
   hasLayerUserSession,
   peekLayerUserSession,
   resolveSessionConfig,
   setLayerUserSession,
 } from '../runtime/server/utils/user-session'
+import { sessionRuntimeConfigSeed } from '../src/auth-utils-install'
 
 import type { H3Event } from 'h3'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+
+const runtime = vi.hoisted(() => ({ session: undefined as Record<string, unknown> | undefined }))
+
+vi.mock('nitropack/runtime', () => ({
+  useRuntimeConfig: () => (runtime.session ? { session: runtime.session } : {}),
+}))
+
+beforeEach(() => {
+  runtime.session = undefined
+})
 
 const EXAMPLE_HOST = 'example.com'
 const SIGNED_IN_USER = { email: 'parent@example.com' }
@@ -103,6 +115,32 @@ describe('user session cookie defaults', () => {
     expect(config.cookie).toMatchObject({ sameSite: 'strict', secure: false })
   })
 
+  // narduk-libs#1214: nuxt-auth-utils reads its session with
+  // `runtimeConfig.session`, so core takes the name and lifetime from there too.
+  it('takes the cookie name and lifetime from runtimeConfig.session', () => {
+    runtime.session = { name: 'app-session', maxAge: 3600, password: '' }
+    const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }))
+
+    expect(config.name).toBe('app-session')
+    expect(config.maxAge).toBe(3600)
+  })
+
+  it('falls back to nuxt-session and 30 days when runtimeConfig.session has neither', () => {
+    runtime.session = { name: '  ', maxAge: 0 }
+    const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }))
+
+    expect(config.name).toBe(LAYER_USER_SESSION_NAME)
+    expect(config.name).toBe('nuxt-session')
+    expect(config.maxAge).toBe(DEFAULT_USER_SESSION_MAX_AGE_SECONDS)
+  })
+
+  it('matches the runtimeConfig.session seed core gives nuxt-auth-utils', () => {
+    const seed = sessionRuntimeConfigSeed(undefined, {})
+    expect(seed).toMatchObject({
+      session: { name: LAYER_USER_SESSION_NAME, maxAge: DEFAULT_USER_SESSION_MAX_AGE_SECONDS },
+    })
+  })
+
   it('preserves an explicit caller session lifetime override', () => {
     const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }), {
       maxAge: 3600,
@@ -182,5 +220,20 @@ describe('peekLayerUserSession', () => {
 
     expect(hasLayerUserSession(event)).toBe(true)
     expect((await peekLayerUserSession(event))?.user).toEqual(SIGNED_IN_USER)
+  })
+})
+
+describe('peekLayerUserSession with a custom session name', () => {
+  it('finds the cookie under the name runtimeConfig.session gives', async () => {
+    runtime.session = { name: 'app-session' }
+    const writer = createSessionEvent()
+    await setLayerUserSession(writer, { user: SIGNED_IN_USER })
+    const cookie = setCookieHeader(writer)?.split(';')[0]
+    expect(cookie).toMatch(/^app-session=/)
+
+    const reader = createSessionEvent({ cookie: cookie! })
+    expect(hasLayerUserSession(reader)).toBe(true)
+    expect((await peekLayerUserSession(reader))?.user).toEqual(SIGNED_IN_USER)
+    expect(hasLayerUserSession(createSessionEvent({ cookie: 'nuxt-session=x' }))).toBe(false)
   })
 })
