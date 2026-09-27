@@ -57,15 +57,22 @@ app that wants light-only sets
 `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
 still override `classSuffix`.
 
-narduk-core seeds a local-only `@nuxt/icon` contract before it installs
-`@nuxt/ui`: `provider: 'server'`, `fallbackToApi: false`, the Lucide collection
-bundled on the server, and the icons core's own components render bundled on the
-client. `@nuxt/icon` reads that contract once, when it installs. So **list
-`@narduk-enterprises/narduk-core` before `@nuxt/icon`** in `modules`, as
-generated apps do. An app that lists `@nuxt/icon` first keeps the Iconify API
-fallback, and an enforcing CSP then refuses the first unbundled icon's fetch
-from `api.iconify.design`. The build warns in that case, unless the app sets
-`icon.fallbackToApi: false` itself (narduk-libs#467).
+narduk-core depends on `@nuxt/icon` 2.5.1 and, when `coreModules` is on,
+registers that module itself after seeding a local-only contract:
+`provider: 'server'`, `fallbackToApi: false`, the Lucide collection bundled on
+the server, and the icons core's own components render bundled on the client.
+`@nuxt/icon` reads that contract once, when it installs. An app does not need to
+list `@nuxt/icon`. `@nuxt/ui` 4.11.1 declares it as a module dependency, but
+Nuxt resolves that name from the app root, where pnpm does not expose the
+transitive package. Without narduk-core's own registration the build fails with
+`Could not load .nuxt/nuxt-icon-client-bundle` (narduk-libs#1195).
+
+If an app lists `@nuxt/icon` anyway, **list `@narduk-enterprises/narduk-core`
+before `@nuxt/icon`** in `modules`, as generated apps do. An app that lists
+`@nuxt/icon` first keeps the Iconify API fallback, and an enforcing CSP then
+refuses the first unbundled icon's fetch from `api.iconify.design`. The build
+warns in that case, unless the app sets `icon.fallbackToApi: false` itself
+(narduk-libs#467).
 
 ## Session module (`nuxt-auth-utils`)
 
