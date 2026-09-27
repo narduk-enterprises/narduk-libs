@@ -18,6 +18,19 @@ render Nuxt UI, so `@nuxt/ui` is a peer at exactly `4.11.1`, the version
 narduk-core and narduk-shell pin (narduk-libs#1033). An app on narduk-core
 already installs it.
 
+## Unhead 3
+
+Nuxt 4.5 and newer resolve `@unhead/vue` 3. `nuxt-schema-org` below 6.3 and
+`nuxt-seo-utils` below 8.5 peer on Unhead 2. That mix still builds, then ships
+an empty JSON-LD graph and drops `og:site_name` and the twitter tags
+(narduk-libs#1190). This package depends on `nuxt-schema-org@6.3.2` and
+`nuxt-seo-utils@8.5.1`. When `seoModule` is on, setup reads the resolved
+`@unhead/vue`, `nuxt-schema-org` and `nuxt-seo-utils` versions — the app root
+wins over this package's own copies — and fails the build if Unhead is 3 or
+newer and either SEO package is below those floors. Unhead 2 with the older
+packages stays valid. A missing version fails closed rather than continuing into
+the silent empty-head failure.
+
 Dynamic OG images are enabled by default for crawlable pages that call
 `useSeo(...)`. Explicit `noindex` callers skip automatic generation; public
 unlisted pages can still request it with an explicit `ogImage` object. A page
