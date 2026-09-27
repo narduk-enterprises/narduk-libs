@@ -306,10 +306,14 @@ else 0, maximum 1200), then start over from a fresh read. The owner value
 carries `<uuid>:<commit sha>:<committer time>` for this. A holder building a
 newer commit, a holder whose commit is unknown (a bare-UUID owner), a run with
 no commit identity, an unreadable row or age, and a row at least 600 s old by
-D1's clock all fail at once, as before. That way an older build never deploys
-after a newer one. The waiter only reads the row; it never releases another
-owner's lock (narduk-libs#1189). See the README's "Concurrent runs and the
-migration lock".
+D1's clock all fail at once, as before. An older build never waits on a newer
+one, so the wait itself never makes it deploy last. The waiter only reads the
+row; it never releases another owner's lock (narduk-libs#1189). See the README's
+"Concurrent runs and the migration lock".
+
+Deploy-step ordering is not covered: the lock is released before
+`narduk-app deploy` runs, and a warm no-op migrate takes no lock
+(narduk-libs#704). See narduk-libs#1207.
 
 Remote errors, client timeout or cancellation **retain the lock**. There is no
 TTL/automatic lock stealing: a disconnected client does not prove that the

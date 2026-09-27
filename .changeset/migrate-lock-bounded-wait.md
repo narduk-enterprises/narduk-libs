@@ -5,7 +5,7 @@
 
 `narduk-app db migrate` waits, bounded, for a live migration lock held by an older deploy, instead of failing at once (narduk-libs#1189). Two Workers Builds from back-to-back merges used to leave production on the older commit because the newer build's migrate failed on the older one's lock.
 
-Under Workers Builds the lock owner now carries the commit as `<uuid>:<WORKERS_CI_COMMIT_SHA>:<committer time>`, with the time from `git log -1 --format=%ct`. The table schema does not change. A run waits only on a holder building the same commit or an earlier one. An older build never waits on a newer one (`[db] superseded: ... held by a newer commit <sha>; not waiting`), so it cannot deploy last.
+Under Workers Builds the lock owner now carries the commit as `<uuid>:<WORKERS_CI_COMMIT_SHA>:<committer time>`, with the time from `git log -1 --format=%ct`. The table schema does not change. A run waits only on a holder building the same commit or an earlier one. An older build never waits on a newer one (`[db] superseded: ... held by a newer commit <sha>; not waiting`), so the wait itself never makes it deploy last. Deploy-step ordering is not covered: the lock is released before `narduk-app deploy` runs, and a warm no-op migrate takes no lock (narduk-libs#704). See narduk-libs#1207.
 
 - **Budget:** 300 s by default with `--workers-build-only`, and 0, the old behaviour, elsewhere. `--lock-wait-seconds <n>` or `NARDUK_MIGRATION_LOCK_WAIT_SECONDS` sets it, up to a maximum of 1200 s. It counts wall-clock waiting time only; Wrangler latency on the final read and the migration itself come on top.
 - **While waiting** it prints a `waiting on another deploy (owner, since)` line, polls with backoff, and starts over from a fresh read once the lock is released.

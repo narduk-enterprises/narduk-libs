@@ -387,6 +387,10 @@ older commit, so it must not wait.
 It only ever reads another run's row. It never deletes, overwrites or ages out a
 lock it does not own.
 
+Deploy-step ordering is not covered: the lock is released before
+`narduk-app deploy` runs, and a warm no-op migrate takes no lock
+(narduk-libs#704). See narduk-libs#1207.
+
 App Worker configuration may use `wrangler.jsonc` (preferred) or legacy
 `wrangler.json`. All Wrangler calls run through the app's pinned dependency via
 `pnpm exec wrangler`. Dry runs are allowed without credentials or the local

@@ -275,7 +275,7 @@ function refuseToWaitOn(
   }
   if (holder.commitSha === own.commitSha) return undefined
   if (holder.committedAt > own.committedAt) {
-    return `[db] superseded: migration lock for ${database} held by a newer commit ${holder.commitSha}; not waiting, so this older build (${own.commitSha}) does not deploy after it.`
+    return `[db] superseded: migration lock for ${database} held by a newer commit ${holder.commitSha}; not waiting, because this build (${own.commitSha}) is older.`
   }
   if (holder.committedAt === own.committedAt) {
     return `[db] migration lock for ${database} is held by commit ${holder.commitSha}, committed the same second as this build (${own.commitSha}); cannot order them, not waiting.`

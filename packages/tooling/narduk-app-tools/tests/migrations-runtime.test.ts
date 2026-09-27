@@ -417,7 +417,7 @@ describe('bounded wait on a live migration lock (#1189)', () => {
       expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
       expect(c.sleeps).toEqual([])
       expect(c.lines).toEqual([
-        '[db] superseded: migration lock for DB held by a newer commit ccccccc3333333; not waiting, so this older build (bbbbbbb2222222) does not deploy after it.',
+        '[db] superseded: migration lock for DB held by a newer commit ccccccc3333333; not waiting, because this build (bbbbbbb2222222) is older.',
       ])
       expect(lockRows(f)).toEqual([{ owner: ownerOf(NEWER) }])
       expect(f.db.prepare("SELECT name FROM sqlite_master WHERE name='example'").all()).toEqual([])
@@ -435,6 +435,28 @@ describe('bounded wait on a live migration lock (#1189)', () => {
       expect(lockRows(f)).toEqual([{ owner: ownerOf(NEWER) }])
     })
 
+    it('a holder exactly one second newer is superseding: no wait', () => {
+      const f = fixture()
+      const oneSecondNewer = { commitSha: 'eeeeeee5555555', committedAt: THIS.committedAt + 1 }
+      holdLock(f, ownerOf(oneSecondNewer))
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+      expect(c.lines[0]).toContain('superseded')
+    })
+
+    it('a holder exactly one second older is waited on', () => {
+      const f = fixture()
+      const oneSecondOlder = { commitSha: 'fffffff6666666', committedAt: THIS.committedAt - 1 }
+      holdLock(f, ownerOf(oneSecondOlder))
+      const c = clock(f, (n) => {
+        if (n === 1) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+      })
+      expect(runMigrations(run(f, c), f.executor)).toMatchObject({ apply: 1 })
+      expect(c.sleeps).toEqual([2_000])
+      expect(c.lines[0]).toContain('waiting on another deploy')
+    })
+
     it('a different commit from the same second cannot be ordered: no wait', () => {
       const f = fixture()
       holdLock(f, ownerOf({ commitSha: 'ddddddd4444444', committedAt: THIS.committedAt }))
@@ -449,6 +471,8 @@ describe('bounded wait on a live migration lock (#1189)', () => {
       ['a free-text owner', 'older-deploy'],
       ['a malformed commit time', '00000001-0000-4000-8000-000000000000:aaaaaaa1111111:soon'],
       ['a non-hex sha', '00000001-0000-4000-8000-000000000000:not-a-sha:1790000000'],
+      // Pins the `$` anchor: a valid owner followed by anything is not one.
+      ['trailing garbage after a valid owner', `${ownerOf(OLDER)}:extra`],
     ])('%s is an unknown holder: no wait', (_label, owner) => {
       const f = fixture()
       holdLock(f, owner)
@@ -513,6 +537,36 @@ describe('bounded wait on a live migration lock (#1189)', () => {
     expect(c.lines[0]).toContain(`owner ${ownerOf(OLDER)}`)
     expect(c.lines[0]).toContain('stale threshold')
     expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
+  })
+
+  /** Pin `acquired_at` to `seconds` ago with millisecond precision, so D1's
+   * integer age is exactly `Math.floor(seconds)` (the half second absorbs the
+   * few milliseconds between this write and the waiter's read). */
+  function ageLockBy(f: ReturnType<typeof fixture>, seconds: number) {
+    f.db.exec(
+      `UPDATE ${MIGRATION_LOCK_TABLE} SET acquired_at = strftime('%Y-%m-%d %H:%M:%f', 'now', '-${seconds} seconds');`,
+    )
+  }
+
+  it('an age of exactly the threshold (600 s) is stale: no wait', () => {
+    const f = fixture()
+    holdLock(f, ownerOf(OLDER))
+    ageLockBy(f, MIGRATION_LOCK_STALE_AFTER_SECONDS + 0.5)
+    const c = clock(f)
+    expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+    expect(c.sleeps).toEqual([])
+    expect(c.lines[0]).toContain('(600s, at or past the 600s stale threshold)')
+  })
+
+  it('an age of one second under the threshold (599 s) is waited on', () => {
+    const f = fixture()
+    holdLock(f, ownerOf(OLDER))
+    ageLockBy(f, MIGRATION_LOCK_STALE_AFTER_SECONDS - 0.5)
+    const c = clock(f, (n) => {
+      if (n === 1) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+    })
+    expect(runMigrations(run(f, c), f.executor)).toMatchObject({ apply: 1 })
+    expect(c.sleeps).toEqual([2_000])
   })
 
   it('stops waiting when the holder ages past the stale threshold mid-wait', () => {
