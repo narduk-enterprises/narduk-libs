@@ -10,6 +10,7 @@ import {
   encodePackumentName,
   parseScopeRoute,
   readScopeRoute,
+  resolveRegistryAuthToken,
 } from '../../src/foundation/npm-registry.js'
 
 const TARGET = '@narduk-enterprises/narduk-shell'
@@ -482,6 +483,19 @@ describe('credential name resolution (narduk-farm#148)', () => {
     vi.stubEnv('GITHUB_TOKEN', undefined)
   }
 
+  it.each([
+    [{ GH_PACKAGES_READ: 'p' }, 'p'],
+    [{ GH_PACKAGES_READ: 'p', GH_TOKEN: 'g', GITHUB_TOKEN: 'a' }, 'p'],
+    [{ NODE_AUTH_TOKEN: 'n', GH_PACKAGES_READ: 'p', GH_TOKEN: 'g' }, 'n'],
+    [{ GH_TOKEN: 'g', GITHUB_TOKEN: 'a' }, 'g'],
+    [{ GITHUB_TOKEN: 'a' }, 'a'],
+    [{ NODE_AUTH_TOKEN: '', GH_PACKAGES_READ: ' p ' }, 'p'],
+    [{ NODE_AUTH_TOKEN: '', GH_PACKAGES_READ: ' ' }, undefined],
+    [{}, undefined],
+  ] as const)('resolves %o to %s', (env, expected) => {
+    expect(resolveRegistryAuthToken(env)).toBe(expected)
+  })
+
   it('authenticates from GH_PACKAGES_READ when no other name is set', async () => {
     clearPrecedingNames()
     vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
@@ -518,19 +532,86 @@ describe('credential name resolution (narduk-farm#148)', () => {
     expect(seen[0]?.headers).not.toHaveProperty('Authorization')
   })
 
-  it('documents that an exported-but-empty earlier name shadows the fallback', async () => {
-    // Not the behaviour anyone wants, but it is what `??` means and it is
-    // better pinned than rediscovered. No caller produces this today: the
-    // shared workflow exports NODE_AUTH_TOKEN only after resolving a
-    // non-empty credential, and `gh-packages-run` sets neither. Collapsing
-    // empty to absent would be a real improvement and a behaviour change for
-    // every consumer, so it belongs in its own change, not this one.
+  it('an exported-but-empty earlier name no longer shadows GH_PACKAGES_READ (#1196)', async () => {
+    // Pinned the other way before #1196: `??` treated '' as a value, stopped
+    // there, and the reader went unreadable with a real credential in hand.
     vi.stubEnv('NODE_AUTH_TOKEN', '')
+    vi.stubEnv('GH_TOKEN', '  ')
     vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+    const seen = stubRequests(200, { 'dist-tags': { latest: '2.7.0' } })
+    expect(await reader().publicationOf(TARGET)).toEqual({
+      status: 'published',
+      latest: '2.7.0',
+      major: 2,
+    })
+    expect(seen[0]?.headers.Authorization).toBe('Bearer packages-read-token')
+  })
+
+  it('is still unreadable, with no request, when every name is blank', async () => {
+    vi.stubEnv('NODE_AUTH_TOKEN', '')
+    vi.stubEnv('GH_TOKEN', ' ')
+    vi.stubEnv('GITHUB_TOKEN', '')
+    vi.stubEnv('GH_PACKAGES_READ', '\t')
     const { requested } = stubRegistry({})
     expect(await reader().publicationOf(TARGET)).toEqual({ status: 'unreadable' })
     expect(requested).toEqual([])
   })
+
+  // narduk-libs#1196. The gonogo lane ran `gh-packages-run -- pnpm exec
+  // narduk-app foundation:check` with a repository-scoped lane token in
+  // GH_TOKEN (agent lanes export one so `gh` works). Before the fix that token
+  // outranked GH_PACKAGES_READ, went to npm.pkg.github.com, could not see the
+  // package, and item 2.3 was `unknown`. The registry double below only
+  // answers the packages-read credential, the way GitHub Packages only
+  // answers a token with package access.
+  describe.each(['GH_TOKEN', 'GITHUB_TOKEN'] as const)(
+    'gh-packages-run in an environment that also exports %s',
+    (generalName) => {
+      let repoRoot: string
+
+      beforeEach(() => {
+        repoRoot = mkdtempSync(join(tmpdir(), 'npm-registry-1196-'))
+        // gonogo's committed route: the scope on GitHub Packages, no auth line.
+        writeFileSync(
+          join(repoRoot, '.npmrc'),
+          '@narduk-enterprises:registry=https://npm.pkg.github.com\n',
+        )
+      })
+
+      afterEach(() => {
+        rmSync(repoRoot, { recursive: true, force: true })
+      })
+
+      function stubPackagesOnlyRegistry(): { authorizations: string[] } {
+        const authorizations: string[] = []
+        vi.stubGlobal('fetch', (url: string, init?: { headers?: Record<string, string> }) => {
+          expect(String(url)).toBe(`https://npm.pkg.github.com/${TARGET}`)
+          const authorization = init?.headers?.Authorization ?? ''
+          authorizations.push(authorization)
+          const status = authorization === 'Bearer packages-read-token' ? 200 : 401
+          return Promise.resolve({
+            status,
+            ok: status === 200,
+            json: () => Promise.resolve({ 'dist-tags': { latest: '4.1.0' } }),
+          })
+        })
+        return { authorizations }
+      }
+
+      it('authenticates the registry read with GH_PACKAGES_READ', async () => {
+        vi.stubEnv('NODE_AUTH_TOKEN', undefined)
+        vi.stubEnv('GH_TOKEN', undefined)
+        vi.stubEnv('GITHUB_TOKEN', undefined)
+        vi.stubEnv(generalName, 'repository-scoped-lane-token')
+        vi.stubEnv('GH_PACKAGES_READ', 'packages-read-token')
+        const { authorizations } = stubPackagesOnlyRegistry()
+
+        const registry = new FilesystemRegistryReality(repoRoot)
+        expect(await registry.latestPublishedMajor(TARGET)).toBe(4)
+        expect(authorizations).toEqual(['Bearer packages-read-token'])
+      })
+    },
+  )
 })
 
 // Live, opt-in: NARDUK_LIVE_REGISTRY_TEST=1. Proves the mirror answers the

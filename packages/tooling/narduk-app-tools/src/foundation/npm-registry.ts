@@ -195,6 +195,56 @@ type PackumentResponse =
  * `PackumentResponse` unchanged. */
 type PackumentAttemptResult = PackumentResponse | { kind: 'retryable-error' }
 
+/**
+ * Credential names the GitHub Packages route reads, in order. All four carry
+ * a GitHub token; only some of them carry one that can read packages.
+ *
+ * `NODE_AUTH_TOKEN` is first because the shared CI workflow exports it (and,
+ * since workflows#85, `GH_PACKAGES_READ` with the same value), so CI resolves
+ * exactly the credential it always did.
+ *
+ * `GH_PACKAGES_READ` is second, ahead of `GH_TOKEN` and `GITHUB_TOKEN`
+ * (narduk-libs#1196). It is the ONLY name the sanctioned local route uses:
+ * `gh-packages-run` puts the value in the child environment as
+ * `GH_PACKAGES_READ` and writes a 0600 process-scoped userconfig that
+ * references it BY NAME, which is what `pnpm install` needs and which this
+ * reader deliberately cannot see -- it reads no `.npmrc` and no `_authToken`
+ * line, so that a custom scope route gets an anonymous read rather than a
+ * credential (narduk-farm#148).
+ *
+ * narduk-libs#698 (c7a2aaf) added it LAST, behind `GH_TOKEN` and
+ * `GITHUB_TOKEN`. Those two are general-purpose GitHub names: an agent lane
+ * runs with a repository-scoped App token in `GH_TOKEN` (so `gh` works), and a
+ * workflow step may expose the Actions `GITHUB_TOKEN`. Neither can read the
+ * `@narduk-enterprises` packages, and under `??` either one shadowed the
+ * dedicated credential sitting right behind it: `gh-packages-run -- narduk-app
+ * foundation:check` in a lane sent the lane token, got a 401/404, and item 2.3
+ * collapsed to `unknown` (narduk-libs#1196, a recurrence of #306). Re-exporting
+ * the value as `NODE_AUTH_TOKEN` "fixed" it only because that name is first.
+ * The purpose-named credential now wins over the general-purpose ones.
+ *
+ * An exported-but-empty (or whitespace-only) name is treated as unset, so
+ * `NODE_AUTH_TOKEN=` left over from a shell or a CI step no longer hides a real
+ * credential behind it and sends `Bearer ` instead.
+ */
+export const REGISTRY_AUTH_TOKEN_NAMES = [
+  'NODE_AUTH_TOKEN',
+  'GH_PACKAGES_READ',
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+] as const
+
+/** The first non-blank credential among `REGISTRY_AUTH_TOKEN_NAMES`. */
+export function resolveRegistryAuthToken(
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  for (const name of REGISTRY_AUTH_TOKEN_NAMES) {
+    const value = env[name]?.trim()
+    if (value) return value
+  }
+  return undefined
+}
+
 /** Read `node_modules/<scope>/<name>/package.json` under any of `roots`
  * (root, apps/web, apps/api, web, app -- the same monorepo candidates every
  * other item checks) and fall back to the manifest's own pinned spec, which
@@ -209,34 +259,6 @@ export class FilesystemRegistryReality implements RegistryReality {
   /** Memoized so the corroboration probe costs at most one extra request per
    * reader, however many packages 404. */
   private scopeReadable: Promise<boolean> | undefined
-
-  /**
-   * Credential names this reader will use, in order. All four carry the same
-   * GitHub Packages read token in practice; they differ only in who exported it.
-   *
-   * `GH_PACKAGES_READ` is the estate's own name for it and is last because the
-   * other three are what CI already sets -- appending rather than prepending
-   * keeps a working CI path byte-identical. It is here because it is the ONLY
-   * name the sanctioned local route uses: `gh-packages-run` puts the value in
-   * the child environment as `GH_PACKAGES_READ` and writes a 0600 process-scoped
-   * userconfig that references it BY NAME, which is what `pnpm install` needs
-   * and which this reader deliberately cannot see -- it reads no `.npmrc` and no
-   * `_authToken` line, so that a custom scope route gets an anonymous read
-   * rather than a credential. The token was therefore present in the environment
-   * during `gh-packages-run pnpm run foundation:check` and invisible to the one
-   * component that needed it, and item 2.3 collapsed to `unknown` -> a blocking
-   * `UNKNOWN` exit (narduk-farm#148).
-   *
-   * This has already cost one incident. workflows#79 renamed that step's
-   * exported credential from `NODE_AUTH_TOKEN` to `GH_PACKAGES_READ` and
-   * silently broke package-token-mode `foundation-check` for every v1 adopter
-   * refreshing past afbaa6051e, reproduced deterministically in buoys#39.
-   * workflows#85 restored CI with an alias and named the real fix in its own
-   * comment: "Export both names, same value, until narduk-app-tools reads
-   * GH_PACKAGES_READ instead." This is that. The alias can retire once every
-   * caller is past this release; it is harmless until then because both names
-   * hold the same value.
-   */
 
   constructor(
     repoRoot: string,
@@ -260,12 +282,7 @@ export class FilesystemRegistryReality implements RegistryReality {
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
     this.scopeProbePackage = options.scopeProbePackage ?? SCOPE_PROBE_PACKAGE
     this.scopeRoute = options.scopeRoute ?? readScopeRoute(repoRoot)
-    this.authToken =
-      process.env.NODE_AUTH_TOKEN ??
-      process.env.GH_TOKEN ??
-      process.env.GITHUB_TOKEN ??
-      process.env.GH_PACKAGES_READ ??
-      undefined
+    this.authToken = resolveRegistryAuthToken(process.env)
   }
 
   resolveInstalled(pkgName: string, pinnedSpec: string | undefined): ResolvedVersion | null {
