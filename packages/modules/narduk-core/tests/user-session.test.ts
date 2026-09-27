@@ -14,6 +14,7 @@ import type { H3Event } from 'h3'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const EXAMPLE_HOST = 'example.com'
+const SIGNED_IN_USER = { email: 'parent@example.com' }
 
 function createConfigEvent(headers: Record<string, string> = {}): H3Event {
   return {
@@ -120,7 +121,7 @@ function setCookieHeader(event: H3Event): string | undefined {
 /** A sealed session the real h3 `useSession` wrote, as a request cookie. */
 async function signedInCookie(): Promise<string> {
   const event = createSessionEvent()
-  await setLayerUserSession(event, { user: { email: 'parent@example.com' } })
+  await setLayerUserSession(event, { user: SIGNED_IN_USER })
   const cookie = setCookieHeader(event)?.split(';')[0]
   if (!cookie) throw new Error('sign-in wrote no cookie')
   return cookie
@@ -153,7 +154,7 @@ describe('peekLayerUserSession', () => {
     expect(hasLayerUserSession(event)).toBe(true)
     const session = await peekLayerUserSession(event)
 
-    expect(session?.user).toEqual({ email: 'parent@example.com' })
+    expect(session?.user).toEqual(SIGNED_IN_USER)
     expect(session?.id).toEqual(expect.any(String))
     expect(setCookieHeader(event)).toBeUndefined()
   })
@@ -163,7 +164,7 @@ describe('peekLayerUserSession', () => {
     const event = createSessionEvent({ 'x-nuxt-session-session': sealed })
 
     expect(hasLayerUserSession(event)).toBe(true)
-    expect((await peekLayerUserSession(event))?.user).toEqual({ email: 'parent@example.com' })
+    expect((await peekLayerUserSession(event))?.user).toEqual(SIGNED_IN_USER)
     expect(setCookieHeader(event)).toBeUndefined()
   })
 
@@ -177,9 +178,9 @@ describe('peekLayerUserSession', () => {
 
   it('sees a session written earlier in the same request', async () => {
     const event = createSessionEvent()
-    await setLayerUserSession(event, { user: { email: 'parent@example.com' } })
+    await setLayerUserSession(event, { user: SIGNED_IN_USER })
 
     expect(hasLayerUserSession(event)).toBe(true)
-    expect((await peekLayerUserSession(event))?.user).toEqual({ email: 'parent@example.com' })
+    expect((await peekLayerUserSession(event))?.user).toEqual(SIGNED_IN_USER)
   })
 })

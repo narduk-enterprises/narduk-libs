@@ -1,25 +1,19 @@
-import {
-  createApp,
-  createRouter,
-  eventHandler,
-  readBody,
-  toWebHandler,
-  useSession,
-  type H3Event,
-} from 'h3'
+import { createApp, createRouter, eventHandler, readBody, toWebHandler, useSession } from 'h3'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveSessionConfig } from '#layer/server/utils/user-session'
 
-import sessionRefreshMiddleware from '../server/middleware/auth-session-refresh'
 import {
   loadAuthSessionRow,
   loadAuthUserRow,
   setCurrentSessionUser,
 } from '../server/lib/app-auth/session'
+import sessionRefreshMiddleware from '../server/middleware/auth-session-refresh'
 import { useRefreshedSessionUser } from '../server/utils/session-user'
 
+import type * as SessionModule from '../server/lib/app-auth/session'
 import type { AppSessionUser } from '../server/lib/app-auth/types'
+import type { H3Event } from 'h3'
 
 /**
  * narduk-libs#1214: the global session-refresh middleware ran h3's
@@ -34,7 +28,7 @@ import type { AppSessionUser } from '../server/lib/app-auth/types'
  */
 
 vi.mock('../server/lib/app-auth/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../server/lib/app-auth/session')>()),
+  ...(await importOriginal<typeof SessionModule>()),
   loadAuthSessionRow: vi.fn(),
   loadAuthUserRow: vi.fn(),
 }))
