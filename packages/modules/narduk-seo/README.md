@@ -53,17 +53,22 @@ renderer instead of failing the build, and `useSeo` falls back to the static
 image. That skip is silent on the default/static path and when the app set only
 `ogImage.zeroRuntime: true`; a warning fires only when the app set
 `ogImage.enabled: true` and the peer is missing. The committed CI placeholder
-(`narduk-test-only-og-image-secret-000000`) is refused on every non-dev build
-except an explicit `build:ci`. That script is recognized by
-`NARDUK_CLOUDFLARE_BUILD=1` with none of the deploy signals set (`WORKERS_CI`,
-`WORKERS_CI_BRANCH`, `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`). A `build` or
-`cf:build` that defaults the placeholder is refused, including one whose output
-a later deploy would publish (narduk-libs#1155). `nuxt dev` and `nuxt prepare`
-stay permissive. A real `NUXT_OG_IMAGE_SECRET` is accepted on every build.
-`hotfix:build` also exports `NARDUK_CLOUDFLARE_BUILD=1`; it does not export the
-placeholder, so pass it a real secret. Never set
-`ogImage.security.secret: false` -- that is the setting that actually disables
-signing and leaves `/_og/` an unauthenticated renderer.
+(`narduk-test-only-og-image-secret-000000`) is accepted on a non-dev build only
+when `NARDUK_CLOUDFLARE_BUILD=1` is set and none of the deploy signals is
+(`WORKERS_CI`, `WORKERS_CI_BRANCH`, `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY`). Every
+other non-dev build that carries it fails, including a plain `build` and a
+`cf:build` that does not set `NARDUK_CLOUDFLARE_BUILD=1`. The generated
+`build:ci` sets that variable, but so do most hand-written `cf:build` scripts
+and `hotfix:build`, so the variable cannot prove the output stays in CI. A build
+that accepts the placeholder therefore writes `.narduk-build-ci` into its Nitro
+output (`.output/.narduk-build-ci`), and `narduk-app deploy` refuses to publish
+that output (`deploy`, `versions-upload`, and so `deploy-local`,
+`deploy-hotfix`, and `development deploy`) whichever script built it
+(narduk-libs#1155). A plain `wrangler deploy` run outside `narduk-app` does not
+read the marker. `nuxt dev` and `nuxt prepare` stay permissive. A real
+`NUXT_OG_IMAGE_SECRET` is accepted on every build and writes no marker. Never
+set `ogImage.security.secret: false` -- that is the setting that actually
+disables signing and leaves `/_og/` an unauthenticated renderer.
 
 **A prerendered page bakes its OG card at build time** (narduk-libs#170).
 `nuxt-og-image` picks how to address an image while the page renders: during a

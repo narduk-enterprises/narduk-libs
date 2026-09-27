@@ -343,11 +343,14 @@ neutralize `--dry-run`.
 
 `deploy` and `versions-upload` also refuse an `.output` that contains
 `.narduk-build-ci`. `build:ci` writes that file after baking the public
-test-only `NUXT_SESSION_PASSWORD` and `NUXT_OG_IMAGE_SECRET`. The message names
-the marker and `cf:build`. `deploy-local`, `deploy-hotfix`, and
-`development deploy` publish through those commands, so the same output cannot
-leave on those paths. `--dry-run` prints the fact and exits 0, because a dry run
-publishes nothing. A later `cf:build` replaces `.output` and drops the marker.
+test-only `NUXT_SESSION_PASSWORD` and `NUXT_OG_IMAGE_SECRET`. narduk-seo writes
+it too whenever it lets a build sign with the `NUXT_OG_IMAGE_SECRET`
+placeholder, so a `cf:build` or `hotfix:build` that narduk-seo let through with
+the placeholder is refused here as well. The message names the marker and
+`cf:build`. `deploy-local`, `deploy-hotfix`, and `development deploy` publish
+through those commands, so the same output cannot leave on those paths.
+`--dry-run` prints the fact and exits 0, because a dry run publishes nothing. A
+later `cf:build` with real secrets replaces `.output` and drops the marker.
 
 Workers Builds does **not** copy the Worker's wrangler `vars` into the
 `nuxt build` process environment. Public keys such as `GA_MEASUREMENT_ID` and

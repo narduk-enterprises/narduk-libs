@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -12,6 +13,7 @@ import {
   MISSING_OG_IMAGE_SECRET_MESSAGE,
   resolveOgImageSigningSecret,
 } from '../shared/ogImageSecret'
+import { BUILD_CI_OUTPUT_MARKER, writeBuildCiOutputMarker } from '../src/buildCiOutputMarker'
 
 const repoPackages = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -164,22 +166,67 @@ describe('OG image signing secret', () => {
     ).toThrow(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   })
 
-  it('accepts the placeholder on an explicit build:ci', () => {
+  it('accepts the placeholder on NARDUK_CLOUDFLARE_BUILD=1 and says the output must be marked', () => {
     // Generated nuxt.config.ts does `NARDUK_DEPLOY_TARGET ??= production`
     // when WORKERS_CI_BRANCH is unset, so build:ci also sees production.
+    // A local cf:build or hotfix:build sets the same variable, which is why
+    // acceptance is reported to the caller instead of trusted (#1155).
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
     vi.stubEnv('WORKERS_CI', '')
     vi.stubEnv('WORKERS_CI_BRANCH', '')
     vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
 
-    expect(() =>
+    expect(
       assertOgImageSigningSecretForBuild({
         isDev: false,
         runtimeGenerationEnabled: true,
         secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
       }),
-    ).not.toThrow()
+    ).toBe(true)
+  })
+
+  it('reports no placeholder for a real secret, dev, prepare, or disabled runtime', () => {
+    vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
+    vi.stubEnv('WORKERS_CI', '')
+    vi.stubEnv('WORKERS_CI_BRANCH', '')
+    vi.stubEnv('NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY', '')
+    const base = { isDev: false, runtimeGenerationEnabled: true }
+
+    expect(assertOgImageSigningSecretForBuild({ ...base, secret: REAL_OG_SECRET })).toBe(false)
+    for (const input of [
+      { isDev: true },
+      { isPrepare: true },
+      { runtimeGenerationEnabled: false },
+    ]) {
+      expect(
+        assertOgImageSigningSecretForBuild({
+          ...base,
+          ...input,
+          secret: CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
+        }),
+      ).toBe(false)
+    }
+  })
+
+  it('writes the deploy-refused marker into the Nitro output dir', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-seo-marker-'))
+    try {
+      const outputDir = join(root, '.output')
+      const path = writeBuildCiOutputMarker(outputDir)
+      expect(path).toBe(join(outputDir, BUILD_CI_OUTPUT_MARKER))
+      expect(readFileSync(path, 'utf8')).toContain('test-only placeholder')
+    } finally {
+      rmSync(root, { force: true, recursive: true })
+    }
+  })
+
+  it('uses the marker name narduk-app deploy refuses', () => {
+    const deploySrc = readFileSync(
+      join(repoPackages, 'tooling/narduk-app-tools/src/deploy.ts'),
+      'utf8',
+    )
+    expect(deploySrc).toContain(`export const BUILD_CI_OUTPUT_MARKER = '${BUILD_CI_OUTPUT_MARKER}'`)
   })
 
   it('shares one placeholder literal with the generator files that emit it', () => {

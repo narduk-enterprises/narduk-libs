@@ -11,7 +11,7 @@ export const MISSING_OG_IMAGE_SECRET_MESSAGE =
   '[@narduk-enterprises/narduk-seo] Runtime OG image generation requires a non-empty NUXT_OG_IMAGE_SECRET in non-dev builds. With no secret, nuxt-og-image auto-generates a new one on every build, so every previously signed /_og/ URL stops verifying: a rolling Worker release serves two secrets at once and cached signed URLs 403 until they are regenerated. The estate needs one stable operator-provided secret. Set NUXT_OG_IMAGE_SECRET in every deployed environment (a Workers Builds Build variable, not a runtime Worker secret -- signing is resolved at build time). Local `nuxt dev` stays permissive. Apps that only ship a static defaultOgImage can set ogImage.enabled: false or ogImage.zeroRuntime: true instead. Never set ogImage.security.secret: false; that is the setting that actually disables signing and leaves /_og/ an unauthenticated renderer.'
 
 export const CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE =
-  '[@narduk-enterprises/narduk-seo] NUXT_OG_IMAGE_SECRET equals the committed test-only placeholder. That value is public and must never sign a Worker a person can deploy. It is accepted only for `nuxt dev`, `nuxt prepare`, and an explicit `build:ci`: the generated script sets NARDUK_CLOUDFLARE_BUILD=1 and is not a Workers Builds or local wrangler deploy (WORKERS_CI, WORKERS_CI_BRANCH, or NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY). A `build` or `cf:build` that defaults this placeholder is refused. Set a real secret as a Workers Builds Build variable.'
+  '[@narduk-enterprises/narduk-seo] NUXT_OG_IMAGE_SECRET equals the committed test-only placeholder. That value is public and must never sign a Worker a person can deploy. A build accepts it only when NARDUK_CLOUDFLARE_BUILD=1 is set and none of WORKERS_CI, WORKERS_CI_BRANCH, or NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY is. That build writes .narduk-build-ci into its Nitro output, and `narduk-app deploy` refuses to publish an output holding that file. This build is a Workers Builds or local wrangler deploy build, or does not set NARDUK_CLOUDFLARE_BUILD=1, so it is refused. `nuxt dev` and `nuxt prepare` stay permissive. Set a real secret as a Workers Builds Build variable.'
 
 /** Env var the generated `build:ci` script exports before `nuxt build`. */
 export const BUILD_CI_ENV = 'NARDUK_CLOUDFLARE_BUILD'
@@ -52,9 +52,11 @@ export function isDeployedBuild(): boolean {
 
 /**
  * Generated `build:ci` exports `NARDUK_CLOUDFLARE_BUILD=1` before `pnpm run build`.
- * A hand-written `build` or `cf:build` that only defaults the placeholder does
- * not (narduk-libs#1155). `hotfix:build` also exports this variable; that
- * script does not export the placeholder, and a real secret is still accepted.
+ * So do most hand-written `cf:build` scripts and `hotfix:build`, so this
+ * variable alone cannot tell a CI build from one a person will deploy
+ * (narduk-libs#1155). A build that accepts the placeholder on this signal
+ * therefore marks its own Nitro output (see `src/buildCiOutputMarker.ts`),
+ * and `narduk-app deploy` refuses that output whichever script built it.
  *
  * Packed-consumer runs the generated `build:ci` (narduk-libs#617), so requiring
  * the variable does not reject that smoke. Deploy signals still reject the
@@ -68,18 +70,23 @@ export function isExplicitBuildCi(): boolean {
  * Fail closed before nuxt-og-image is installed for a real non-dev build.
  * `nuxt dev` and `nuxt prepare` stay permissive so local work and typecheck
  * do not require a production secret.
+ *
+ * Returns true when a non-dev build accepted the test-only placeholder. The
+ * caller must then mark the build output so it cannot be deployed.
  */
 export function assertOgImageSigningSecretForBuild(input: {
   isDev: boolean
   isPrepare?: boolean
   runtimeGenerationEnabled: boolean
   secret: unknown
-}): void {
-  if (input.isDev || input.isPrepare || !input.runtimeGenerationEnabled) return
+}): boolean {
+  if (input.isDev || input.isPrepare || !input.runtimeGenerationEnabled) return false
   if (!isOgImageSigningSecretConfigured(input.secret)) {
     throw new Error(MISSING_OG_IMAGE_SECRET_MESSAGE)
   }
-  if (isCiTestOnlyOgImageSecret(input.secret) && !(isExplicitBuildCi() && !isDeployedBuild())) {
+  if (!isCiTestOnlyOgImageSecret(input.secret)) return false
+  if (!isExplicitBuildCi() || isDeployedBuild()) {
     throw new Error(CI_TEST_ONLY_OG_IMAGE_SECRET_MESSAGE)
   }
+  return true
 }

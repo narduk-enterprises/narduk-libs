@@ -45,6 +45,8 @@ import {
 } from '../shared/securityTxt'
 import { assertResolvedSeoUnheadCompatibility } from '../shared/seoUnheadCompat'
 
+import { writeBuildCiOutputMarker } from './buildCiOutputMarker'
+
 export {
   AI_CRAWLERS,
   type AiCrawlerLists,
@@ -534,12 +536,24 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       })
     const publicRuntimeConfig = nuxtOptions.runtimeConfig.public as Record<string, unknown>
     publicRuntimeConfig.nardukSeoOgImageModule = ogImageModuleAvailable
-    assertOgImageSigningSecretForBuild({
+    const signsWithCiPlaceholder = assertOgImageSigningSecretForBuild({
       isDev: Boolean(nuxtBuildFlags.dev),
       isPrepare: Boolean(nuxtBuildFlags._prepare),
       runtimeGenerationEnabled: runtimeOgAvailable,
       secret: resolvedOgImageSecret,
     })
+    if (signsWithCiPlaceholder) {
+      // narduk-libs#1155: NARDUK_CLOUDFLARE_BUILD=1 is also set by most
+      // cf:build and hotfix:build scripts, so the script name cannot keep this
+      // output off a live Worker. The output itself carries the marker that
+      // `narduk-app deploy` refuses. Nitro empties its output directory before
+      // building, so the marker is written after compile.
+      nuxt.hook('nitro:init', (nitro) => {
+        nitro.hooks.hook('compiled', () => {
+          writeBuildCiOutputMarker(nitro.options.output.dir)
+        })
+      })
+    }
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
       urls: ['/narduk-network'],
       exclude: nonPublicSitemapRoutes,
