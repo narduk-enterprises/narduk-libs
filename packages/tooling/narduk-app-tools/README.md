@@ -1102,10 +1102,14 @@ highest published `narduk-core` major. The reader takes the last
 rule as the shared CI workflows). A route to any registry other than GitHub
 Packages, in practice the `https://npm.nard.uk` mirror, is read anonymously: no
 `Authorization` header and no token needed. With no such line, or a route to
-`npm.pkg.github.com`, the reader uses GitHub Packages with `NODE_AUTH_TOKEN`
-(then `GH_TOKEN`, then `GITHUB_TOKEN`) as a Bearer token. Only that route
-corroborates an ambiguous 404 with a scope probe. Other scopes always stay on
-GitHub Packages.
+`npm.pkg.github.com`, the reader uses GitHub Packages with the first non-blank
+of `NODE_AUTH_TOKEN`, `GH_PACKAGES_READ`, `GH_TOKEN`, `GITHUB_TOKEN` as a Bearer
+token. `GH_PACKAGES_READ` ranks above the two general-purpose GitHub names, so
+`gh-packages-run -- pnpm exec narduk-app foundation:check` reads the registry
+with the package credential even when the shell also exports a repository-scoped
+`GH_TOKEN`, as agent lanes do (narduk-libs#1196). An empty variable counts as
+unset. Only that route corroborates an ambiguous 404 with a scope probe. Other
+scopes always stay on GitHub Packages.
 
 **Sub-check 1.5 fails a D1 binding that names no real database.** Any
 `d1_databases[].database_id` in the app's wrangler config (top level or any
