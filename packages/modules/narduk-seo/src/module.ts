@@ -43,6 +43,7 @@ import {
   SECURITY_TXT_LEGACY_PATH,
   SECURITY_TXT_WELL_KNOWN_PATH,
 } from '../shared/securityTxt'
+import { assertResolvedSeoUnheadCompatibility } from '../shared/seoUnheadCompat'
 
 export {
   AI_CRAWLERS,
@@ -557,6 +558,15 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     }
     if (hostAwareIndexing) {
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
+    }
+
+    if (options.seoModule) {
+      // App root first, so a direct older nuxt-schema-org / nuxt-seo-utils
+      // wins over the copies this package depends on (narduk-libs#1190).
+      assertResolvedSeoUnheadCompatibility({
+        moduleUrl: import.meta.url,
+        rootDir: nuxt.options.rootDir,
+      })
     }
 
     await installSeoUtilityModules({
