@@ -9,6 +9,7 @@ import {
   MIGRATION_LOCK_STALE_AFTER_SECONDS,
   MIGRATION_LOCK_TABLE,
   parseWranglerBatchJson,
+  resolveMigrationLockIdentity,
   parseWranglerJson,
   type MigrationExecutor,
   type MigrationRunOptions,
@@ -286,7 +287,14 @@ describe('wrangler process count (narduk-libs#704)', () => {
 // the lock row, its PRIMARY KEY conflict and D1's clock are all real SQL.
 describe('bounded wait on a live migration lock (#1189)', () => {
   const TODAY =
-    /^Could not acquire D1 migration lock for DB; attempted owner [0-9a-f-]{36}\. Inspect _narduk_migration_lock and the prior run before recovery\.$/u
+    /^Could not acquire D1 migration lock for DB; attempted owner [0-9a-f-]{36}(?::[0-9a-f]{7,64}:\d+)?\. Inspect _narduk_migration_lock and the prior run before recovery\.$/u
+
+  // Committer times in Unix seconds: OLDER merged before THIS, NEWER after.
+  const OLDER = { commitSha: 'aaaaaaa1111111', committedAt: 1_790_000_000 }
+  const THIS = { commitSha: 'bbbbbbb2222222', committedAt: 1_790_000_060 }
+  const NEWER = { commitSha: 'ccccccc3333333', committedAt: 1_790_000_120 }
+  const ownerOf = (c: { commitSha: string; committedAt: number }, n = 1) =>
+    `0000000${n}-0000-4000-8000-000000000000:${c.commitSha}:${c.committedAt}`
 
   function holdLock(f: ReturnType<typeof fixture>, owner: string, ageSeconds = 5) {
     f.db.exec(
@@ -326,105 +334,207 @@ describe('bounded wait on a live migration lock (#1189)', () => {
     }
   }
 
-  it('waits for a live holder that releases after N polls, then migrates', () => {
-    const f = fixture()
-    holdLock(f, 'older-deploy')
-    const c = clock(f, (n) => {
-      if (n === 3) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+  /** This run: a Workers Build of THIS, with the given budget. */
+  function run(f: ReturnType<typeof fixture>, c: ReturnType<typeof clock>, budget = 300) {
+    return { ...f.options, lockIdentity: THIS, lockWait: c.lockWait(budget) }
+  }
+
+  describe('forward race: the older build holds, this newer build waits', () => {
+    it('waits for the holder to release after N polls, then migrates', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      const c = clock(f, (n) => {
+        if (n === 3) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+      })
+      const result = runMigrations(run(f, c), f.executor)
+      expect(result).toMatchObject({ apply: 1, skip: 0 })
+      expect(c.sleeps).toEqual([2_000, 4_000, 8_000])
+      expect(c.lines).toHaveLength(1)
+      expect(c.lines[0]).toMatch(
+        /^\[db\] waiting on another deploy: migration lock for DB held by owner 00000001-0000-4000-8000-000000000000:aaaaaaa1111111:1790000000 since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC; waiting up to 300s in total\.$/u,
+      )
+      expect(f.db.prepare('SELECT count(*) AS n FROM _narduk_migrations').get()?.n).toBe(1)
+      expect(lockRows(f)).toEqual([])
     })
-    const result = runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)
-    expect(result).toMatchObject({ apply: 1, skip: 0 })
-    expect(c.sleeps).toEqual([2_000, 4_000, 8_000])
-    expect(c.lines).toHaveLength(1)
-    expect(c.lines[0]).toMatch(
-      /^\[db\] waiting on another deploy: migration lock for DB held by owner older-deploy since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC; waiting up to 300s in total\.$/u,
-    )
-    expect(f.db.prepare('SELECT count(*) AS n FROM _narduk_migrations').get()?.n).toBe(1)
-    expect(lockRows(f)).toEqual([])
+
+    it('writes its own commit identity into the lock row it takes', () => {
+      const f = fixture()
+      let seen: unknown[] = []
+      const spy: MigrationExecutor = (args, cwd, json) => {
+        if (args.includes('time-travel')) seen = lockRows(f)
+        return f.executor(args, cwd, json)
+      }
+      runMigrations({ ...f.options, lockIdentity: THIS }, spy)
+      expect(seen).toEqual([
+        { owner: expect.stringMatching(/^[0-9a-f-]{36}:bbbbbbb2222222:1790000060$/u) },
+      ])
+    })
+
+    it('starts over from a fresh read, so work the holder already did is not redone', () => {
+      const f = fixture()
+      // The older deploy is mid-run: it holds the lock and applies 0001 before
+      // releasing. The waiting run must then find nothing to do.
+      holdLock(f, ownerOf(OLDER))
+      const c = clock(f, (n) => {
+        if (n !== 1) return
+        f.db.exec('DELETE FROM _narduk_migration_lock;')
+        runMigrations(f.options, f.executor)
+      })
+      expect(runMigrations(run(f, c), f.executor)).toMatchObject({ apply: 0, skip: 1 })
+      expect(f.db.prepare('SELECT count(*) AS n FROM _narduk_migrations').get()?.n).toBe(1)
+    })
+
+    it('waits on another build of the same commit (a rerun), then migrates', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(THIS, 2))
+      const c = clock(f, (n) => {
+        if (n === 1) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+      })
+      expect(runMigrations(run(f, c), f.executor)).toMatchObject({ apply: 1 })
+      expect(c.sleeps).toEqual([2_000])
+    })
+
+    it('announces each new older holder when another older build takes the lock in between', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      const c = clock(f, (n) => {
+        if (n === 1) f.db.exec(`UPDATE ${MIGRATION_LOCK_TABLE} SET owner = '${ownerOf(OLDER, 3)}';`)
+        if (n === 2) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+      })
+      expect(runMigrations(run(f, c), f.executor)).toMatchObject({ apply: 1 })
+      expect(c.lines.map((line) => /owner (\S+)/u.exec(line)?.[1])).toEqual([
+        ownerOf(OLDER),
+        ownerOf(OLDER, 3),
+      ])
+    })
   })
 
-  it('starts over from a fresh read, so work the holder already did is not redone', () => {
-    const f = fixture()
-    // The older deploy is mid-run: it holds the lock and applies 0001 before
-    // releasing. The waiting run must then find nothing to do.
-    holdLock(f, 'older-deploy')
-    const c = clock(f, (n) => {
-      if (n !== 1) return
-      f.db.exec('DELETE FROM _narduk_migration_lock;')
-      runMigrations(f.options, f.executor)
-      holdLock(f, 'older-deploy-tail')
-      f.db.exec('DELETE FROM _narduk_migration_lock;')
+  describe('reverse race and unknown holders: fail at once, as before', () => {
+    it('superseded: a newer commit holds the lock -- no wait, lock untouched', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(NEWER))
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+      expect(c.lines).toEqual([
+        '[db] superseded: migration lock for DB held by a newer commit ccccccc3333333; not waiting, so this older build (bbbbbbb2222222) does not deploy after it.',
+      ])
+      expect(lockRows(f)).toEqual([{ owner: ownerOf(NEWER) }])
+      expect(f.db.prepare("SELECT name FROM sqlite_master WHERE name='example'").all()).toEqual([])
     })
-    const result = runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)
-    expect(result).toMatchObject({ apply: 0, skip: 1 })
-    expect(f.db.prepare('SELECT count(*) AS n FROM _narduk_migrations').get()?.n).toBe(1)
-  })
 
-  it('announces each new holder when a third deploy takes the lock in between', () => {
-    const f = fixture()
-    holdLock(f, 'older-deploy')
-    const c = clock(f, (n) => {
-      if (n === 1) f.db.exec(`UPDATE ${MIGRATION_LOCK_TABLE} SET owner = 'third-deploy';`)
-      if (n === 2) f.db.exec(`DELETE FROM ${MIGRATION_LOCK_TABLE};`)
+    it('stops waiting when a newer build takes the lock mid-wait', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      const c = clock(f, (n) => {
+        if (n === 1) f.db.exec(`UPDATE ${MIGRATION_LOCK_TABLE} SET owner = '${ownerOf(NEWER)}';`)
+      })
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([2_000])
+      expect(c.lines.at(-1)).toContain('superseded')
+      expect(lockRows(f)).toEqual([{ owner: ownerOf(NEWER) }])
     })
-    expect(runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)).toMatchObject({
-      apply: 1,
+
+    it('a different commit from the same second cannot be ordered: no wait', () => {
+      const f = fixture()
+      holdLock(f, ownerOf({ commitSha: 'ddddddd4444444', committedAt: THIS.committedAt }))
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+      expect(c.lines[0]).toContain('cannot order them')
     })
-    expect(c.lines.map((line) => /owner (\S+)/u.exec(line)?.[1])).toEqual([
-      'older-deploy',
-      'third-deploy',
-    ])
+
+    it.each([
+      ['an old-format bare-UUID owner', '00000001-0000-4000-8000-000000000000'],
+      ['a free-text owner', 'older-deploy'],
+      ['a malformed commit time', '00000001-0000-4000-8000-000000000000:aaaaaaa1111111:soon'],
+      ['a non-hex sha', '00000001-0000-4000-8000-000000000000:not-a-sha:1790000000'],
+    ])('%s is an unknown holder: no wait', (_label, owner) => {
+      const f = fixture()
+      holdLock(f, owner)
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+      expect(c.lines[0]).toContain('whose commit is unknown')
+      expect(lockRows(f)).toEqual([{ owner }])
+    })
+
+    it('a run with no commit identity never waits, even with a budget', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      const c = clock(f)
+      expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)).toThrow(
+        TODAY,
+      )
+      expect(c.sleeps).toEqual([])
+      expect(c.lines[0]).toContain('no commit identity')
+    })
+
+    it('a garbage acquired_at is an unreadable age: no wait', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      f.db.exec(`UPDATE ${MIGRATION_LOCK_TABLE} SET acquired_at = 'not a date';`)
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+      expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
+    })
+
+    it('an acquired_at in the future is an unreadable age: no wait', () => {
+      const f = fixture()
+      holdLock(f, ownerOf(OLDER))
+      f.db.exec(
+        `UPDATE ${MIGRATION_LOCK_TABLE} SET acquired_at = datetime('now', '+3600 seconds');`,
+      )
+      const c = clock(f)
+      expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
+      expect(c.sleeps).toEqual([])
+    })
   })
 
   it('held past the cap: the same hard failure as today, and the lock is not taken', () => {
     const f = fixture()
-    holdLock(f, 'older-deploy')
+    holdLock(f, ownerOf(OLDER))
     const c = clock(f)
-    expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(10) }, f.executor)).toThrow(
-      TODAY,
-    )
+    expect(() => runMigrations(run(f, c, 10), f.executor)).toThrow(TODAY)
     // Backoff, clipped to the remaining budget, and never past it.
     expect(c.sleeps).toEqual([2_000, 4_000, 4_000])
     expect(c.lines.at(-1)).toContain('gave up waiting on the migration lock for DB after 10s')
-    expect(lockRows(f)).toEqual([{ owner: 'older-deploy' }])
+    expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
     expect(f.db.prepare("SELECT name FROM sqlite_master WHERE name='example'").all()).toEqual([])
   })
 
   it('stale: a lock at or past the threshold fails at once, as today, without waiting', () => {
     const f = fixture()
-    holdLock(f, 'crashed-run', MIGRATION_LOCK_STALE_AFTER_SECONDS + 60)
+    holdLock(f, ownerOf(OLDER), MIGRATION_LOCK_STALE_AFTER_SECONDS + 60)
     const c = clock(f)
-    expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)).toThrow(
-      TODAY,
-    )
+    expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
     expect(c.sleeps).toEqual([])
-    expect(c.lines[0]).toContain('owner crashed-run')
+    expect(c.lines[0]).toContain(`owner ${ownerOf(OLDER)}`)
     expect(c.lines[0]).toContain('stale threshold')
-    expect(lockRows(f)).toEqual([{ owner: 'crashed-run' }])
+    expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
   })
 
   it('stops waiting when the holder ages past the stale threshold mid-wait', () => {
     const f = fixture()
-    holdLock(f, 'slow-run', MIGRATION_LOCK_STALE_AFTER_SECONDS - 5)
+    holdLock(f, ownerOf(OLDER), MIGRATION_LOCK_STALE_AFTER_SECONDS - 5)
     const c = clock(f)
-    expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(300) }, f.executor)).toThrow(
-      TODAY,
-    )
+    expect(() => runMigrations(run(f, c), f.executor)).toThrow(TODAY)
     expect(c.sleeps).toEqual([2_000, 4_000])
-    expect(lockRows(f)).toEqual([{ owner: 'slow-run' }])
+    expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
   })
 
   it('does not wait when the budget is 0 or absent: unchanged immediate failure', () => {
     for (const lockWait of [undefined, 0]) {
       const f = fixture()
-      holdLock(f, 'older-deploy')
+      holdLock(f, ownerOf(OLDER))
       const c = clock(f)
       const options =
-        lockWait === undefined ? f.options : { ...f.options, lockWait: c.lockWait(lockWait) }
+        lockWait === undefined ? f.options : { ...run(f, c), lockWait: c.lockWait(lockWait) }
       expect(() => runMigrations(options, f.executor)).toThrow(TODAY)
       expect(c.sleeps).toEqual([])
       expect(c.lines).toEqual([])
-      expect(lockRows(f)).toEqual([{ owner: 'older-deploy' }])
+      expect(lockRows(f)).toEqual([{ owner: ownerOf(OLDER) }])
     }
   })
 
@@ -437,10 +547,13 @@ describe('bounded wait on a live migration lock (#1189)', () => {
       if (command.startsWith(`INSERT INTO ${MIGRATION_LOCK_TABLE}`)) throw new Error('lost')
       return out
     }
-    expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(300) }, lossy)).toThrow(TODAY)
+    expect(() => runMigrations(run(f, c), lossy)).toThrow(TODAY)
     expect(c.sleeps).toEqual([])
-    // Its own row stays: an uncertain acquisition is never released.
-    expect(lockRows(f)).toHaveLength(1)
+    // Its own row, in the identity format, stays: an uncertain acquisition is
+    // never released.
+    expect(lockRows(f)).toEqual([
+      { owner: expect.stringMatching(/^[0-9a-f-]{36}:bbbbbbb2222222:1790000060$/u) },
+    ])
   })
 
   it('a lock INSERT that keeps failing with no holder still ends in the same error', () => {
@@ -451,8 +564,34 @@ describe('bounded wait on a live migration lock (#1189)', () => {
       if (command.startsWith(`INSERT INTO ${MIGRATION_LOCK_TABLE}`)) throw new Error('refused')
       return f.executor(args, cwd, json)
     }
-    expect(() => runMigrations({ ...f.options, lockWait: c.lockWait(10) }, refusing)).toThrow(TODAY)
+    expect(() => runMigrations(run(f, c, 10), refusing)).toThrow(TODAY)
     expect(c.sleeps.reduce((a, b) => a + b, 0)).toBe(10_000)
     expect(lockRows(f)).toEqual([])
+  })
+})
+
+describe('resolveMigrationLockIdentity (#1189)', () => {
+  const sha = 'abcdef0123456789abcdef0123456789abcdef01'
+  it('reads WORKERS_CI_COMMIT_SHA and asks git for that commit time', () => {
+    const asked: Array<[string, string]> = []
+    const identity = resolveMigrationLockIdentity(
+      { WORKERS_CI_COMMIT_SHA: sha },
+      '/app',
+      (s, cwd) => {
+        asked.push([s, cwd])
+        return '1790000060\n'
+      },
+    )
+    expect(identity).toEqual({ commitSha: sha, committedAt: 1_790_000_060 })
+    expect(asked).toEqual([[sha, '/app']])
+  })
+  it.each([
+    ['no commit variable', {}, '1790000060'],
+    ['a non-hex commit', { WORKERS_CI_COMMIT_SHA: 'main' }, '1790000060'],
+    ['a shallow clone without the commit object', { WORKERS_CI_COMMIT_SHA: sha }, undefined],
+    ['a non-numeric time', { WORKERS_CI_COMMIT_SHA: sha }, 'yesterday'],
+    ['an empty time', { WORKERS_CI_COMMIT_SHA: sha }, ''],
+  ] as const)('is undefined with %s', (_label, env, time) => {
+    expect(resolveMigrationLockIdentity(env, '/app', () => time)).toBeUndefined()
   })
 })

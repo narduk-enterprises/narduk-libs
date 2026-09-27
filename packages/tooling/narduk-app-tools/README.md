@@ -340,24 +340,49 @@ stealing (see
 
 Two Workers Builds from back-to-back merges both run `db migrate`, and nothing
 on Cloudflare's side serializes them. When the lock insert fails because another
-run holds the row, `db migrate` can wait for it instead of failing at once
-(narduk-libs#1189):
+run holds the row, `db migrate` can wait for it instead of failing at once, but
+only when this run is the **newer** deploy (narduk-libs#1189). An older build
+that waited would deploy after the newer one and put production back on the
+older commit, so it must not wait.
 
-- It prints
-  `[db] waiting on another deploy: migration lock for <db> held by owner <uuid> since <time> UTC; ...`
+- **Commit identity.** Under Workers Builds the run writes its lock owner as
+  `<uuid>:<WORKERS_CI_COMMIT_SHA>:<committer time>`, with the time taken from
+  `git log -1 --format=%ct <sha>` in the build checkout. The table's schema does
+  not change. A run without that identity (outside Workers Builds, or a shallow
+  clone missing the commit object) writes a bare UUID, as before, and never
+  waits.
+- **Who waits.** A run waits only on a holder building the same commit (a rerun)
+  or one with an earlier committer time.
+- **Waiting.** It prints
+  `[db] waiting on another deploy: migration lock for <db> held by owner <owner> since <time> UTC; ...`
   on stderr, then reads the row again with backoff (2 s, doubling, at most 15 s
-  between reads).
-- When the holder releases, the run starts over from a fresh read: it applies
-  what is still pending, or reports that the other run already did it.
-- The budget is `--lock-wait-seconds <n>`, else
+  between reads). Every read re-checks the holder, so a newer build that takes
+  the lock in between ends the wait.
+- **After a release** the run starts over from a fresh read: it applies what is
+  still pending, or reports that the other run already did it.
+- **Budget.** `--lock-wait-seconds <n>`, else
   `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, else **300 s with
   `--workers-build-only`** and 0 everywhere else. 0 is the old behaviour. The
-  maximum is 1800.
-- It fails with the unchanged `Could not acquire D1 migration lock ...` error,
-  without waiting further, when the budget is spent, when the row is at least
-  **600 s** old by D1's own clock (a retained lock from a failed run, which an
-  operator must inspect), when the row is this run's own (an insert whose
-  response was lost), or when the row cannot be read.
+  maximum is 1200, the Workers Builds 20-minute build limit. The budget is the
+  waiting time, measured on the wall clock from the first failed insert. The D1
+  read in flight at the deadline (a Wrangler process each) and the migration
+  after a release come on top of it, so the step can overrun the budget by a few
+  seconds.
+- **Fails at once** with the unchanged `Could not acquire D1 migration lock ...`
+  error, with a `[db]` line saying why, when:
+  - the holder builds a **newer** commit
+    (`[db] superseded: ... held by a newer commit <sha>; not waiting ...`);
+  - the holder builds a different commit from the same second (they cannot be
+    ordered);
+  - the holder's commit is **unknown**: a bare-UUID owner from an older
+    narduk-app-tools, or anything unparseable;
+  - this run has no commit identity;
+  - the row is at least **600 s** old by D1's own clock (a retained lock from a
+    failed run, which an operator must inspect);
+  - the row is this run's own (an insert whose response was lost);
+  - the row or its age cannot be read, for example an `acquired_at` that is not
+    a date; or
+  - the budget is spent.
 
 It only ever reads another run's row. It never deletes, overwrites or ages out a
 lock it does not own.

@@ -299,12 +299,17 @@ nothing at all -- not even the lock -- and reports what `db status` would. A
 lock row still sends it down the locked path, so a retained lock fails that run
 exactly as it fails one with pending work (narduk-libs#704).
 
-A run that finds the row held by a _live_ run can wait for it, bounded
-(`--lock-wait-seconds`, `NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, default 300 s with
-`--workers-build-only`, else 0), then start over from a fresh read. A row at
-least 600 s old by D1's clock is treated as retained and fails at once, as
-before. The waiter only reads the row; it never releases another owner's lock
-(narduk-libs#1189).
+A Workers Build that finds the row held by a _live_ run of the same or an
+**older** commit can wait for it, bounded (`--lock-wait-seconds`,
+`NARDUK_MIGRATION_LOCK_WAIT_SECONDS`, default 300 s with `--workers-build-only`,
+else 0, maximum 1200), then start over from a fresh read. The owner value
+carries `<uuid>:<commit sha>:<committer time>` for this. A holder building a
+newer commit, a holder whose commit is unknown (a bare-UUID owner), a run with
+no commit identity, an unreadable row or age, and a row at least 600 s old by
+D1's clock all fail at once, as before. That way an older build never deploys
+after a newer one. The waiter only reads the row; it never releases another
+owner's lock (narduk-libs#1189). See the README's "Concurrent runs and the
+migration lock".
 
 Remote errors, client timeout or cancellation **retain the lock**. There is no
 TTL/automatic lock stealing: a disconnected client does not prove that the

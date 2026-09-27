@@ -26,6 +26,7 @@ import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-liv
 import {
   MIGRATION_LOCK_WAIT_ENV,
   inspectMigrations,
+  resolveMigrationLockIdentity,
   resolveMigrationLockWaitSeconds,
   runMigrations,
   type MigrationLocation,
@@ -104,9 +105,10 @@ function usage(): string {
     '      [--workers-build-only] [--lock-wait-seconds <n>]',
     '                                       Waits up to <n> seconds (default 300 with',
     '                                       --workers-build-only, else 0; env',
-    '                                       NARDUK_MIGRATION_LOCK_WAIT_SECONDS) for another live',
-    "                                       run's migration lock. A lock held 600s or more fails",
-    '                                       at once, as before.',
+    '                                       NARDUK_MIGRATION_LOCK_WAIT_SECONDS, max 1200) for',
+    "                                       another live run's migration lock, only when that run",
+    '                                       builds the same or an older commit. A newer, unknown',
+    '                                       or 600s-old holder fails at once, as before.',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
@@ -367,8 +369,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         throw new Error('Remote migration requires an attested Cloudflare Workers Build')
       }
       const { lockWaitSeconds, ...runOptions } = options
+      const lockIdentity = resolveMigrationLockIdentity(process.env, process.cwd())
       const plan = runMigrations({
         ...runOptions,
+        ...(lockIdentity ? { lockIdentity } : {}),
         lockWait: {
           timeoutSeconds: resolveMigrationLockWaitSeconds({
             flag: lockWaitSeconds,

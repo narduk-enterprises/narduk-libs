@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -136,12 +137,26 @@ export interface MigrationRunOptions {
    * behaviour: a held lock fails the run immediately.
    */
   lockWait?: MigrationLockWait
+  /**
+   * The commit this run deploys. Written into the lock row's owner so a waiter
+   * can tell whether the holder is building a newer commit (narduk-libs#1189).
+   * Absent, the owner is a bare UUID, as before, and this run never waits.
+   */
+  lockIdentity?: MigrationLockIdentity
+}
+
+/** A Workers Builds commit: `WORKERS_CI_COMMIT_SHA` and its committer time. */
+export interface MigrationLockIdentity {
+  commitSha: string
+  /** Committer time, Unix seconds, from `git log -1 --format=%ct <sha>`. */
+  committedAt: number
 }
 
 /** Default wait budget for `db migrate --workers-build-only` (narduk-libs#1189). */
 export const MIGRATION_LOCK_WAIT_DEFAULT_SECONDS = 300
-/** Largest wait budget the flag or environment may ask for. */
-export const MIGRATION_LOCK_WAIT_MAX_SECONDS = 1800
+/** Largest wait budget the flag or environment may ask for: Workers Builds
+ * stops a build at 20 minutes, so a longer wait could never finish. */
+export const MIGRATION_LOCK_WAIT_MAX_SECONDS = 1200
 /**
  * A lock held at least this long, by D1's own clock, is not treated as a live
  * deploy. It fails the run at once, exactly as every held lock did before
@@ -196,6 +211,76 @@ export function resolveMigrationLockWaitSeconds(input: {
     return parseLockWaitSeconds(input.env, MIGRATION_LOCK_WAIT_ENV)
   }
   return input.workersBuildOnly ? MIGRATION_LOCK_WAIT_DEFAULT_SECONDS : 0
+}
+
+const COMMIT_SHA_RE = /^[0-9a-f]{7,64}$/iu
+const LOCK_OWNER_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:([0-9a-f]{7,64}):(\d{1,12})$/iu
+
+/** `git log -1 --format=%ct <sha>` in `cwd`; stdout, or undefined on failure. */
+export type CommitTimeReader = (sha: string, cwd: string) => string | undefined
+
+const readCommitTimeWithGit: CommitTimeReader = (sha, cwd) => {
+  const result = spawnSync('git', ['log', '-1', '--format=%ct', sha, '--'], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  return result.status === 0 ? result.stdout : undefined
+}
+
+/**
+ * This run's commit identity, or undefined when it cannot be proven: no
+ * `WORKERS_CI_COMMIT_SHA` (a run outside Workers Builds), a malformed one, or
+ * a checkout without that commit object (a shallow clone), so no committer
+ * time. The attestation `--workers-build-only` requires already demands the
+ * variable. Undefined means this run neither waits nor lets others order
+ * against it.
+ */
+export function resolveMigrationLockIdentity(
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+  readCommitTime: CommitTimeReader = readCommitTimeWithGit,
+): MigrationLockIdentity | undefined {
+  const commitSha = env.WORKERS_CI_COMMIT_SHA?.trim() ?? ''
+  if (!COMMIT_SHA_RE.test(commitSha)) return undefined
+  const raw = readCommitTime(commitSha, cwd)?.trim() ?? ''
+  if (!/^\d{1,12}$/u.test(raw)) return undefined
+  return { commitSha: commitSha.toLowerCase(), committedAt: Number(raw) }
+}
+
+function lockOwnerFor(identity: MigrationLockIdentity | undefined): string {
+  const id = randomUUID()
+  return identity ? `${id}:${identity.commitSha}:${identity.committedAt}` : id
+}
+
+/** The commit a lock owner carries, or undefined for a bare UUID (an older
+ * narduk-app-tools, or a run without identity) and anything unparseable. */
+function commitOfLockOwner(owner: string): MigrationLockIdentity | undefined {
+  const match = LOCK_OWNER_RE.exec(owner)
+  if (!match) return undefined
+  return { commitSha: match[1]!.toLowerCase(), committedAt: Number(match[2]) }
+}
+
+/** Why this run must not wait on `holder`, or undefined when it may: only a
+ * build of the same commit, or of a strictly later one, waits. */
+function refuseToWaitOn(
+  own: MigrationLockIdentity,
+  holderOwner: string,
+  database: string,
+): string | undefined {
+  const holder = commitOfLockOwner(holderOwner)
+  if (!holder) {
+    return `[db] migration lock for ${database} is held by owner ${holderOwner}, whose commit is unknown (an older narduk-app-tools or a run outside Workers Builds); not waiting.`
+  }
+  if (holder.commitSha === own.commitSha) return undefined
+  if (holder.committedAt > own.committedAt) {
+    return `[db] superseded: migration lock for ${database} held by a newer commit ${holder.commitSha}; not waiting, so this older build (${own.commitSha}) does not deploy after it.`
+  }
+  if (holder.committedAt === own.committedAt) {
+    return `[db] migration lock for ${database} is held by commit ${holder.commitSha}, committed the same second as this build (${own.commitSha}); cannot order them, not waiting.`
+  }
+  return undefined
 }
 
 function blockingSleep(ms: number): void {
@@ -1319,8 +1404,13 @@ function readLockHolder(db: MigrationDatabase): LockHolder | undefined {
   if (typeof row.owner !== 'string' || typeof row.acquired_at !== 'string') {
     throw new Error('unreadable lock row')
   }
-  const ageSeconds = Number(row.age_seconds)
-  if (!Number.isFinite(ageSeconds)) throw new Error('unreadable lock age')
+  // NULL when `acquired_at` is not a date (julianday of garbage), and
+  // `Number(null)` is 0 -- which would read as a fresh lock and wait the whole
+  // budget. Only a real, non-negative number is an age.
+  const ageSeconds = row.age_seconds
+  if (typeof ageSeconds !== 'number' || !Number.isFinite(ageSeconds) || ageSeconds < 0) {
+    throw new Error('unreadable lock age')
+  }
   return { owner: row.owner, acquiredAt: row.acquired_at, ageSeconds }
 }
 
@@ -1331,17 +1421,28 @@ function readLockHolder(db: MigrationDatabase): LockHolder | undefined {
  * holder to release, then lets `runMigrations` start over from a fresh read
  * (the other run may have applied everything, or this run may still have work).
  *
+ * Only the NEWER build may wait. If an older build waited on a newer one it
+ * would migrate (a no-op) after the newer one released and then deploy LAST,
+ * putting production back on the older commit -- the reverse of the race this
+ * exists for. So each owner carries `<uuid>:<commit sha>:<committer time>` and a
+ * run waits only on a holder of the same commit or a strictly older one.
+ *
  * It never takes, deletes or overwrites another run's lock; it only reads the
  * row. It gives up with the unchanged pre-#1189 error, at once, when:
  * - waiting is off (`timeoutSeconds` 0, the default outside Workers Builds);
+ * - this run has no commit identity, so it cannot prove it is newer;
  * - the row is this run's own owner -- the INSERT's response was lost, which
  *   is an uncertain acquisition and never something to wait on or release;
  * - the holder is at least `staleAfterSeconds` old by D1's clock -- a retained
  *   lock from a failed run, which an operator must inspect;
- * - the row cannot be read; or
- * - the budget is spent.
- * A holder that ages past the stale threshold while this run waits ends the
- * wait the same way.
+ * - the holder's commit is newer, committed the same second under another sha,
+ *   or unknown (a bare-UUID owner from an older narduk-app-tools, or garbage);
+ * - the row or its age cannot be read (a non-date `acquired_at`); or
+ * - the budget is spent. The budget is wall-clock time from the first failed
+ *   acquisition; the D1 read in flight at the deadline, and the migration
+ *   itself after a release, come on top of it.
+ * Every check re-runs on each poll, so a holder that ages past the stale
+ * threshold, or a newer build that takes the lock in between, ends the wait.
  */
 function lockWaiter(
   options: MigrationRunOptions,
@@ -1359,6 +1460,13 @@ function lockWaiter(
 
   return (error) => {
     if (timeoutMs === 0) throw error
+    const own = options.lockIdentity
+    if (!own) {
+      log(
+        `[db] this run has no commit identity (WORKERS_CI_COMMIT_SHA and its committer time), so it cannot prove it is the newer deploy; not waiting on the migration lock for ${options.database}.`,
+      )
+      throw error
+    }
     deadline ??= now() + timeoutMs
     const budget = `${Math.round(timeoutMs / 1000)}s`
     for (let polls = 0; ; polls += 1) {
@@ -1388,6 +1496,11 @@ function lockWaiter(
         )
         throw error
       }
+      const refusal = refuseToWaitOn(own, holder.owner, options.database)
+      if (refusal) {
+        log(refusal)
+        throw error
+      }
       const remaining = deadline - now()
       if (remaining <= 0) {
         log(
@@ -1412,7 +1525,7 @@ function withMigrationLock<T>(
   db: MigrationDatabase,
   operation: (owner: string) => T,
 ): T {
-  const owner = randomUUID()
+  const owner = lockOwnerFor(options.lockIdentity)
   db.execute(
     `CREATE TABLE IF NOT EXISTS ${MIGRATION_LOCK_TABLE} (id INTEGER PRIMARY KEY CHECK (id = 1), owner TEXT NOT NULL, acquired_at TEXT NOT NULL);`,
   )

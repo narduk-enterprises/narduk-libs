@@ -171,9 +171,9 @@ describe('app-local command planning', () => {
     expect(parseMigrationArgs([...base, '--lock-wait-seconds', '90'])).toMatchObject({
       lockWaitSeconds: '90',
     })
-    for (const bad of ['', 'abc', '-1', '1.5', '1801']) {
+    for (const bad of ['', 'abc', '-1', '1.5', '1201']) {
       expect(() => parseMigrationArgs([...base, '--lock-wait-seconds', bad])).toThrow(
-        '--lock-wait-seconds must be a whole number of seconds from 0 to 1800',
+        '--lock-wait-seconds must be a whole number of seconds from 0 to 1200',
       )
     }
     expect(() => parseMigrationArgs([...base, '--lock-wait-seconds'])).toThrow(
