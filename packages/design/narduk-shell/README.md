@@ -626,28 +626,45 @@ components, because the mapping lived twice.
 
 #### Props
 
-| Prop       | Type                                                            | Default                | Notes                                                                                                                                                                                                                             |
-| ---------- | --------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tone`     | `'ok' \| 'warn' \| 'error' \| 'info' \| 'neutral' \| 'pending'` | —, required            | Drives the Nuxt UI semantic colour (tone table below) and is folded into the accessible name.                                                                                                                                     |
-| `label`    | `string`                                                        | —, required            | Visible text, and the core of the accessible name.                                                                                                                                                                                |
-| `icon`     | `string`                                                        | —                      | Overrides the tone's default icon. Only `pending` has one by default.                                                                                                                                                             |
-| `size`     | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'`                          | `UBadge`'s own default | Passed straight through to `UBadge`.                                                                                                                                                                                              |
-| `variant`  | `'solid' \| 'outline' \| 'soft' \| 'subtle'`                    | —                      | Overrides the tone's default variant. Only `pending` has one: `subtle`.                                                                                                                                                           |
-| `truncate` | `boolean`                                                       | `false`                | Opt into ellipsis truncation. By default the label never wraps mid-word or truncates — it stays on one line and the badge grows to fit ([operator-portal#156](https://github.com/narduk-enterprises/operator-portal/issues/156)). |
+| Prop       | Type                                                                            | Default                                    | Notes                                                                                                                                                                                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tone`     | `'ok' \| 'warn' \| 'error' \| 'info' \| 'neutral' \| 'pending' \| 'unreported'` | —, required                                | Drives the Nuxt UI semantic colour (tone table below) and is folded into the accessible name.                                                                                                                                                                                                                               |
+| `label`    | `string`                                                                        | —, required except for `tone="unreported"` | Visible text, and the core of the accessible name. Typed optional for every tone (Vue's runtime props can't make one prop required only when a sibling prop has a given value); `tone="unreported"` defaults an empty `label` to `NE_UNREPORTED_TEXT` ("Not reported"), every other tone still needs a caller-supplied one. |
+| `icon`     | `string`                                                                        | —                                          | Overrides the tone's default icon. Only `pending` has one by default.                                                                                                                                                                                                                                                       |
+| `size`     | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl'`                                          | `UBadge`'s own default                     | Passed straight through to `UBadge`.                                                                                                                                                                                                                                                                                        |
+| `variant`  | `'solid' \| 'outline' \| 'soft' \| 'subtle'`                                    | —                                          | Overrides the tone's default variant. Only `pending` has one: `subtle`.                                                                                                                                                                                                                                                     |
+| `truncate` | `boolean`                                                                       | `false`                                    | Opt into ellipsis truncation. By default the label never wraps mid-word or truncates — it stays on one line and the badge grows to fit ([operator-portal#156](https://github.com/narduk-enterprises/operator-portal/issues/156)).                                                                                           |
 
 No slots, no emitted events — `NeStatusBadge` is a controlled, presentation-only
 wrapper; pass a new `tone`/`label` to change what it shows.
 
 #### Tone → colour
 
-| Tone      | Nuxt UI colour | Default variant | Default icon             |
-| --------- | -------------- | --------------- | ------------------------ |
-| `ok`      | `success`      | —               | —                        |
-| `warn`    | `warning`      | —               | —                        |
-| `error`   | `error`        | —               | —                        |
-| `info`    | `info`         | —               | —                        |
-| `neutral` | `neutral`      | —               | —                        |
-| `pending` | `neutral`      | `subtle`        | `i-lucide-loader-circle` |
+| Tone         | Nuxt UI colour | Default variant | Default icon              |
+| ------------ | -------------- | --------------- | ------------------------- |
+| `ok`         | `success`      | —               | —                         |
+| `warn`       | `warning`      | —               | —                         |
+| `error`      | `error`        | —               | —                         |
+| `info`       | `info`         | —               | —                         |
+| `neutral`    | `neutral`      | —               | —                         |
+| `pending`    | `neutral`      | `subtle`        | `i-lucide-loader-circle`  |
+| `unreported` | `neutral`      | `subtle`        | — (never a status colour) |
+
+`unreported` is the estate's [unreported treatment](#the-unreported-treatment)
+(narduk-libs#602) applied to a badge: nothing produced a status at all, which is
+different from every other tone reporting one. Its background is always the
+`--ne-hatch-soft` material over `--ne-surface` — the same material `NeKpiTile`'s
+`ne-kpi-tile__value--unreported` paints over its value slot — regardless of
+`variant`, because this tone must never render as a status colour, including a
+caller-overridden variant. `label` is optional only for this tone and defaults
+to `NE_UNREPORTED_TEXT` ("Not reported") when left empty; pass an explicit
+`label` to say something more specific ("No sensor") and it still wins.
+
+```vue
+<NeStatusBadge tone="unreported" />
+<!-- or, with a more specific word for this domain: -->
+<NeStatusBadge tone="unreported" label="No sensor" />
+```
 
 #### Accessibility
 

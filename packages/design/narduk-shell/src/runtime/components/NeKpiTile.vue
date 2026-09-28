@@ -104,7 +104,16 @@ const DIRECTION_GLYPH: Readonly<Record<NeKpiDeltaDirection, string>> = {
   flat: '',
 }
 
-/** The tone vocabulary's colour, read the same way `NeStatusBadge` reads it. */
+/**
+ * The tone vocabulary's colour, read the same way `NeStatusBadge` reads it.
+ *
+ * `unreported` is included only so this `Record` stays exhaustive over
+ * `NeStatusTone`, which grew that tone for `NeStatusBadge` -- a delta's own
+ * missing-figure state is `NeKpiTile`'s existing `value`-level unreported
+ * treatment below, not this `tone` prop, so `tone` is never expected to be
+ * `'unreported'` in practice. It reads the same `text-muted` as
+ * `neutral`/`pending` for the same reason: no colour signal.
+ */
 const TONE_TEXT_CLASS: Readonly<Record<NeStatusTone, string>> = {
   ok: 'text-success',
   warn: 'text-warning',
@@ -112,6 +121,7 @@ const TONE_TEXT_CLASS: Readonly<Record<NeStatusTone, string>> = {
   info: 'text-info',
   neutral: 'text-muted',
   pending: 'text-muted',
+  unreported: 'text-muted',
 }
 
 /** Nothing produced a figure: the unreported treatment, not a zero. */

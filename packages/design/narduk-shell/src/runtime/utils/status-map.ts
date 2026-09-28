@@ -10,8 +10,17 @@
  * `defineStatusMap` is the single place that mapping lives.
  */
 
-/** The fixed tone vocabulary every `NeStatusBadge` renders as. */
-export type NeStatusTone = 'ok' | 'warn' | 'error' | 'info' | 'neutral' | 'pending'
+/**
+ * The fixed tone vocabulary every `NeStatusBadge` renders as.
+ *
+ * `unreported` is not a status a caller's own domain enum picks — nothing
+ * produced a value at all (narduk-libs#602, the same "not zero, not stale"
+ * rule `NeKpiTile` and `NeMeter` already apply). It exists in this union so
+ * `defineStatusMap`'s exhaustiveness check can still type-check a map that
+ * chooses to use it, not so a `FloodStage`-style status map maps a real
+ * status onto it.
+ */
+export type NeStatusTone = 'ok' | 'warn' | 'error' | 'info' | 'neutral' | 'pending' | 'unreported'
 
 export interface NeStatusDescriptor {
   tone: NeStatusTone

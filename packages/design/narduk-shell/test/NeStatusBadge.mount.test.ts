@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 
 import NeStatusBadge from '../src/runtime/components/NeStatusBadge.vue'
+import { NE_UNREPORTED_TEXT } from '../src/runtime/utils/unreported'
 
 import type { NeStatusTone } from '../src/runtime/utils/status-map'
 
@@ -42,7 +43,7 @@ const FakeUBadge = defineComponent({
 
 interface BadgeTestProps {
   tone: NeStatusTone
-  label: string
+  label?: string
   icon?: string
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   variant?: 'solid' | 'outline' | 'soft' | 'subtle'
@@ -92,6 +93,47 @@ describe('NeStatusBadge', () => {
     })
     expect(wrapper.attributes('data-variant')).toBe('outline')
     expect(wrapper.attributes('data-icon')).toBe('i-lucide-hourglass')
+  })
+
+  it('maps "unreported" to neutral with a subtle variant, no icon, and the hatch material', () => {
+    const wrapper = mountBadge({ tone: 'unreported' })
+    expect(wrapper.attributes('data-color')).toBe('neutral')
+    expect(wrapper.attributes('data-variant')).toBe('subtle')
+    expect(wrapper.attributes('data-icon')).toBeUndefined()
+    expect(wrapper.attributes('data-ui-base')).toBe(
+      'bg-[image:var(--ne-hatch-soft)] bg-(--ne-surface) text-[var(--ne-ink-muted)]',
+    )
+  })
+
+  it('defaults an omitted "unreported" label to NE_UNREPORTED_TEXT', () => {
+    const wrapper = mountBadge({ tone: 'unreported' })
+    expect(wrapper.text()).toBe(NE_UNREPORTED_TEXT)
+    expect(wrapper.attributes('aria-label')).toBe(`unreported: ${NE_UNREPORTED_TEXT}`)
+  })
+
+  it('defaults an empty-string "unreported" label to NE_UNREPORTED_TEXT too', () => {
+    const wrapper = mountBadge({ tone: 'unreported', label: '' })
+    expect(wrapper.text()).toBe(NE_UNREPORTED_TEXT)
+  })
+
+  it('lets an explicit "unreported" label win over the NE_UNREPORTED_TEXT default', () => {
+    const wrapper = mountBadge({ tone: 'unreported', label: 'No sensor' })
+    expect(wrapper.text()).toBe('No sensor')
+    expect(wrapper.attributes('aria-label')).toBe('unreported: No sensor')
+  })
+
+  it('forces the hatch material on "unreported" even when a caller overrides the variant', () => {
+    const wrapper = mountBadge({ tone: 'unreported', variant: 'solid' })
+    expect(wrapper.attributes('data-variant')).toBe('solid')
+    expect(wrapper.attributes('data-ui-base')).toBe(
+      'bg-[image:var(--ne-hatch-soft)] bg-(--ne-surface) text-[var(--ne-ink-muted)]',
+    )
+  })
+
+  it('never defaults the label for tones other than "unreported"', () => {
+    const wrapper = mountBadge({ tone: 'neutral', label: '' })
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.attributes('aria-label')).toBe('neutral: ')
   })
 
   it('lets an explicit variant and icon apply to a non-pending tone too', () => {
@@ -249,5 +291,6 @@ describe('NeStatusBadge', () => {
     expect(source).toContain("ok: 'success'")
     expect(source).toContain("warn: 'warning'")
     expect(source).toContain("pending: 'neutral'")
+    expect(source).toContain("unreported: 'neutral'")
   })
 })

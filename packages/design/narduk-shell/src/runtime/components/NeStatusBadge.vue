@@ -25,6 +25,8 @@
  */
 import { computed } from 'vue'
 
+import { NE_UNREPORTED_TEXT } from '../utils/unreported'
+
 import type { NeStatusTone } from '../utils/status-map'
 
 type NeStatusBadgeVariant = 'solid' | 'outline' | 'soft' | 'subtle'
@@ -35,8 +37,19 @@ const props = withDefaults(
   defineProps<{
     /** Overrides the tone's default icon. Only `pending` has one by default. */
     icon?: string
-    /** Visible text, and the core of the accessible name (see below). */
-    label: string
+    /**
+     * Visible text, and the core of the accessible name (see below).
+     *
+     * Required for every tone except `unreported`, which defaults to
+     * `NE_UNREPORTED_TEXT` ("Not reported") when `label` is omitted or empty.
+     * Vue's runtime-declared props (`defineProps<{...}>()`) have no way to
+     * make one prop's requiredness depend on a sibling prop's value, so this
+     * is typed optional for every tone rather than split into two prop sets;
+     * the default is applied in script only when `tone === 'unreported'`.
+     * Every other tone still needs a caller-supplied `label` -- omitting one
+     * there renders an empty badge, not a type error.
+     */
+    label?: string
     size?: NeStatusBadgeSize
     /** The status this badge reports. Drives the Nuxt UI semantic colour. */
     tone: NeStatusTone
@@ -63,6 +76,7 @@ const TONE_COLOR: Record<NeStatusTone, NeStatusBadgeColor> = {
   info: 'info',
   neutral: 'neutral',
   pending: 'neutral',
+  unreported: 'neutral',
 }
 
 /** `pending` is the one tone with opinions beyond its colour: a quieter
@@ -70,14 +84,48 @@ const TONE_COLOR: Record<NeStatusTone, NeStatusBadgeColor> = {
 const PENDING_VARIANT: NeStatusBadgeVariant = 'subtle'
 const PENDING_ICON = 'i-lucide-loader-circle'
 
+/** `unreported` keeps the same quiet variant `pending` uses; it never gets
+ *  a default icon -- "geometry with texture and no magnitude" (the hatch,
+ *  below) is the whole signal, and a leading icon would need its own colour
+ *  the way `pending`'s spinner has one, which this tone must never carry. */
+const UNREPORTED_VARIANT: NeStatusBadgeVariant = 'subtle'
+
+/**
+ * The unreported material (README § "The unreported treatment",
+ * narduk-libs#602): the same `--ne-hatch-soft` texture `NeKpiTile`'s
+ * `ne-kpi-tile__value--unreported` paints over its own value slot, read as
+ * Tailwind arbitrary-value utilities so it reaches `UBadge`'s root through
+ * the `ui` prop below rather than a hardcoded colour. It is forced
+ * regardless of `variant` -- solid, soft, subtle or outline -- because this
+ * tone must never render a status colour, including a caller-overridden one.
+ */
+const UNREPORTED_BASE_CLASS =
+  'bg-[image:var(--ne-hatch-soft)] bg-(--ne-surface) text-[var(--ne-ink-muted)]'
+
 const color = computed<NeStatusBadgeColor>(() => TONE_COLOR[props.tone])
 
-const variant = computed<NeStatusBadgeVariant | undefined>(
-  () => props.variant ?? (props.tone === 'pending' ? PENDING_VARIANT : undefined),
-)
+const variant = computed<NeStatusBadgeVariant | undefined>(() => {
+  if (props.variant) return props.variant
+  if (props.tone === 'pending') return PENDING_VARIANT
+  if (props.tone === 'unreported') return UNREPORTED_VARIANT
+  return
+})
 
 const icon = computed<string | undefined>(
   () => props.icon ?? (props.tone === 'pending' ? PENDING_ICON : undefined),
+)
+
+/**
+ * `label` defaults to `NE_UNREPORTED_TEXT` only for `tone="unreported"` and
+ * only when the caller left `label` empty -- an explicit label (a caller
+ * that wants "No sensor" instead of "Not reported", say) still wins.
+ */
+const resolvedLabel = computed(() =>
+  props.label
+    ? props.label
+    : props.tone === 'unreported'
+      ? NE_UNREPORTED_TEXT
+      : (props.label ?? ''),
 )
 
 /**
@@ -87,7 +135,7 @@ const icon = computed<string | undefined>(
  * this is the single source of truth rather than a second, easy-to-forget
  * visually-hidden span carrying the same words.
  */
-const ariaLabel = computed(() => `${props.tone}: ${props.label}`)
+const ariaLabel = computed(() => `${props.tone}: ${resolvedLabel.value}`)
 
 const labelClass = computed(() => (props.truncate ? 'truncate' : 'whitespace-nowrap'))
 
@@ -141,8 +189,15 @@ const TINTED_VARIANTS = new Set<NeStatusBadgeVariant>(['soft', 'subtle', 'outlin
  * is recoloured with the words. An icon left at shade 500 on its own 10% tint
  * is around 1.8:1, under the 3:1 floor non-text content has to clear, and axe
  * has no rule that would have told us.
+ *
+ * `unreported` takes the `UNREPORTED_BASE_CLASS` override unconditionally,
+ * ahead of the tinted-variant check: it is not one of the tinted-contrast
+ * corrections above, and it must win regardless of which `variant` is in
+ * play, including a caller-supplied one -- this tone paints its own material,
+ * never a status colour.
  */
 const ui = computed<{ base: string } | undefined>(() => {
+  if (props.tone === 'unreported') return { base: UNREPORTED_BASE_CLASS }
   const tinted = variant.value !== undefined && TINTED_VARIANTS.has(variant.value)
   const base = tinted ? TINTED_TEXT_CLASS[color.value] : undefined
   return base ? { base } : undefined
@@ -159,6 +214,6 @@ const ui = computed<{ base: string } | undefined>(() => {
     :ui="ui"
     :aria-label="ariaLabel"
   >
-    <span :class="labelClass" data-slot="label">{{ label }}</span>
+    <span :class="labelClass" data-slot="label">{{ resolvedLabel }}</span>
   </UBadge>
 </template>
