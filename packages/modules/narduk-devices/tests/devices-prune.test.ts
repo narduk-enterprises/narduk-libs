@@ -116,6 +116,34 @@ describe('opportunistic pruning', () => {
     })
   })
 
+  it('prunes as one batch: a failing DELETE removes nothing', async () => {
+    const harness = createTestHarness()
+    const { devices, clock, sqlite } = harness
+    const claimed = await claimDevice(harness)
+    await devices.openSession((await signedOpen(harness, claimed, 'command')).input)
+    const before = counts(harness)
+    expect(before.replayEntries).toBe(1)
+    expect(before.authAttempts).toBeGreaterThan(0)
+    const cutoff =
+      clock.now() + (DEVICES_LOCKOUT_MAX_WINDOW_SECONDS + CHALLENGE_DEFAULT_TTL_SECONDS) * 1000
+
+    // The last DELETE fails; the replay-entry DELETE sent before it must not
+    // stay applied on its own.
+    sqlite.exec(
+      "CREATE TRIGGER induced_fault BEFORE DELETE ON devices_auth_attempts BEGIN SELECT RAISE(ABORT, 'induced fault'); END",
+    )
+    await expect(devices.pruneExpired({ before: cutoff })).rejects.toThrow('induced fault')
+    expect(counts(harness)).toEqual(before)
+
+    sqlite.exec('DROP TRIGGER induced_fault')
+    expect(await devices.pruneExpired({ before: cutoff })).toEqual({
+      replayEntries: 1,
+      scopedNonces: 0,
+      authAttempts: before.authAttempts,
+    })
+    expect(counts(harness)).toEqual({ authAttempts: 0, replayEntries: 0 })
+  })
+
   it('accepts an explicit cutoff', async () => {
     const harness = createTestHarness()
     const { devices, clock } = harness

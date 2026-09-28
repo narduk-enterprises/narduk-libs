@@ -15,6 +15,7 @@ import {
   devicesSessions,
 } from '../database/devices-schema'
 
+import { runDevicesBatch } from './devices-atomic'
 import {
   completeClaimAtomically,
   type PreparedCredential,
@@ -1004,28 +1005,29 @@ export function createDevices(
   }
 
   /**
-   * Bounded, opportunistic prune. Both DELETEs are single statements with an
+   * Bounded, opportunistic prune. Every DELETE is a single statement with an
    * index-backed predicate rather than a LIMIT (D1's SQLite is built without
    * `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`), and the auth-attempt cutoff is older
    * than the widest lockout window, so nothing a live check reads is removed.
+   * The three are independent, so they go as one batch: one round trip, and a
+   * failure removes nothing rather than leaving a partial prune behind.
    */
   async function prune(before?: number): Promise<PruneExpiredResult> {
     const at = before ?? now()
-    const replayEntries = await db
-      .delete(devicesReplayEntries)
-      .where(lte(devicesReplayEntries.expiresAt, at))
-      .returning({ id: devicesReplayEntries.id })
-      .all()
-    const scopedNonces = await db
-      .delete(devicesScopedNonces)
-      .where(lte(devicesScopedNonces.expiresAt, at))
-      .returning({ id: devicesScopedNonces.id })
-      .all()
-    const authAttempts = await db
-      .delete(devicesAuthAttempts)
-      .where(lt(devicesAuthAttempts.at, at - DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000))
-      .returning({ id: devicesAuthAttempts.id })
-      .all()
+    const [replayEntries, scopedNonces, authAttempts] = await runDevicesBatch(db, [
+      db
+        .delete(devicesReplayEntries)
+        .where(lte(devicesReplayEntries.expiresAt, at))
+        .returning({ id: devicesReplayEntries.id }),
+      db
+        .delete(devicesScopedNonces)
+        .where(lte(devicesScopedNonces.expiresAt, at))
+        .returning({ id: devicesScopedNonces.id }),
+      db
+        .delete(devicesAuthAttempts)
+        .where(lt(devicesAuthAttempts.at, at - DEVICES_LOCKOUT_MAX_WINDOW_SECONDS * 1000))
+        .returning({ id: devicesAuthAttempts.id }),
+    ])
     return {
       replayEntries: replayEntries.length,
       scopedNonces: scopedNonces.length,
@@ -1786,22 +1788,26 @@ export function createDevices(
       }
       if (token.revokedAt !== null) return token
       const revokedAt = now()
-      await db
-        .update(devicesClaimTokens)
-        .set({ revokedAt })
-        .where(eq(devicesClaimTokens.id, token.id))
-        .run()
-      const sessions = await db
-        .update(devicesClaimSessions)
-        .set({ status: 'revoked' })
-        .where(
-          and(
-            eq(devicesClaimSessions.claimTokenId, token.id),
-            eq(devicesClaimSessions.status, 'pending_user_approval'),
-          ),
-        )
-        .returning({ id: devicesClaimSessions.id })
-        .all()
+      // One batch: the token and its pending sessions are revoked together or
+      // not at all, so a failure cannot leave a revoked token with a session
+      // still awaiting approval.
+      const [, sessions] = await runDevicesBatch(db, [
+        db
+          .update(devicesClaimTokens)
+          .set({ revokedAt })
+          .where(eq(devicesClaimTokens.id, token.id))
+          .returning({ id: devicesClaimTokens.id }),
+        db
+          .update(devicesClaimSessions)
+          .set({ status: 'revoked' })
+          .where(
+            and(
+              eq(devicesClaimSessions.claimTokenId, token.id),
+              eq(devicesClaimSessions.status, 'pending_user_approval'),
+            ),
+          )
+          .returning({ id: devicesClaimSessions.id }),
+      ])
       await audit({
         orgId: token.orgId,
         actorUserId: input.actorUserId,
