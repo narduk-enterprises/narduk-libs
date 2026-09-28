@@ -22,6 +22,12 @@
  *   raised, and deleted when they reach zero. A strict budget records an
  *   unbudgeted rule only under `--accept-new-rules`. Committing that file is
  *   the ratchet;
+ * - a **narrowed** run (paths other than the package root, `--ignore-pattern`,
+ *   or a run from below the budget file's directory) never writes the file and
+ *   refuses `--accept-new-rules`: it has not seen the rest of the package, so
+ *   it would clear entries whose warnings it skipped (see `narrowedBy`). It
+ *   still fails errors, over-budget, unbudgeted (strict), unstamped (strict)
+ *   and expired entries among the files it saw;
  * - in CI (`--ci`, or `CI=true`) the file is never written, and a stale budget
  *   (lower counts, unbudgeted rules) is a notice, not a failure — nobody has to
  *   intervene for the build to stay green;
@@ -30,14 +36,20 @@
  *   per-rule entries allow. No run records entries that would put the
  *   recorded total past it, `--accept-new-rules` included. Without the field
  *   there is no ceiling and nothing else changes;
- * - every entry that allows warnings carries an expiry in `"expires"`, a UTC
- *   date stamped 7 days after the entry is recorded. Once that date has passed,
- *   an entry that still has warnings fails, locally and in CI alike. No run
- *   ever moves an existing expiry: lowering, re-running `--accept-new-rules`
- *   or a hand-raised count all keep it. An entry with no expiry (recorded
- *   before expiries existed) is treated like a rule with no entry: a strict
- *   budget fails it until `--accept-new-rules` stamps it, and a non-strict
- *   budget stamps it on a local run.
+ * - every entry that allows warnings carries an expiry in `"expires"`: the
+ *   last UTC day its warnings pass, 7 days after the day the entry was
+ *   recorded (recorded 2026-09-28 → `"2026-10-05"`, failing from 2026-10-06).
+ *   After that day, an entry that still has warnings fails, locally and in CI
+ *   alike. narduk-lint never moves an existing expiry: lowering, re-running
+ *   `--accept-new-rules` or a hand-raised count all keep it. The entry leaves
+ *   the file, date and all, only when a whole-package run sees its rule at
+ *   zero; if the rule comes back, it is new debt with a new date. What this
+ *   cannot stop: a hand edit, an older narduk-lint (2.6.0 and earlier ignores
+ *   and drops `expires` when it rewrites the file), or a renamed rule, which
+ *   is a different key. An entry with no expiry (recorded before expiries
+ *   existed) is treated like a rule with no entry: a strict budget fails it
+ *   until `--accept-new-rules` stamps it, and a non-strict budget stamps it on
+ *   a local run.
  *
  * Budget file: `lint-budget.json` in the directory narduk-lint runs from (the
  * package root; override with `--budget <path>`):
@@ -58,7 +70,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 import { ESLint } from 'eslint'
 
@@ -84,7 +96,8 @@ Options:
   --no-write              Local mode, but do not rewrite the budget file
   --accept-new-rules      Local mode: record rules that have no budget entry,
                           even in a strict budget, and stamp an expiry on
-                          entries that have none (review the diff, then commit)
+                          entries that have none (review the diff, then commit).
+                          Needs the whole package: no paths, no --ignore-pattern
   --budget <path>         Budget file (default: ./lint-budget.json)
   --fix                   Apply ESLint autofixes before counting
   --cache                 Use the ESLint cache
@@ -93,10 +106,15 @@ Options:
   --verbose               Print every warning, not only errors
   -h, --help              Show this help
 
+A narrowed run (any path other than the package root, --ignore-pattern, or a
+run from below the budget file's directory) never writes the budget: it has not
+seen the rest of the package's warnings. It still fails what it saw.
+
 Budget file keys: "strict" (a rule with no entry fails), "maxWarnings" (a total
 ceiling: more warnings than this fail, whatever the rules allow), "rules", and
-"expires" (per entry, the UTC date after which its warnings fail; stamped ${EXPIRY_DAYS}
-days after the entry is recorded and never moved).
+"expires" (per entry, the last UTC day its warnings pass: ${EXPIRY_DAYS} days after the
+day the entry was recorded. They fail from the next day, and narduk-lint never
+moves the date).
 
 Exit codes: 0 pass, 1 lint errors, a rule over budget, (strict budget) a rule
 with warnings and no entry or an entry with no expiry, an entry past its expiry
@@ -230,6 +248,38 @@ export function parseArgs(argv, env = {}) {
 }
 
 export class UsageError extends Error {}
+
+/**
+ * Why this run sees less than the whole package, or `undefined` when it sees
+ * all of it. The whole package is what `narduk-lint` lints with no paths from
+ * the budget file's directory: ESLint's own config decides the file set, so a
+ * package that must skip files says so there, not on the command line.
+ *
+ * A narrowed run must never write the budget. Its counts are a lower bound:
+ * an entry whose warnings live in files it skipped would read as zero and be
+ * cleared, and the next full run would record it again with a fresh expiry,
+ * renewing a date no run is allowed to move (narduk-libs#1237). The lower bound
+ * is still safe to fail on, so a narrowed run fails what it saw.
+ *
+ * @param {Pick<ParsedArgs, 'patterns' | 'ignorePatterns'>} args
+ * @param {string} cwd
+ * @param {string} budgetPath  absolute
+ * @returns {string | undefined}
+ */
+export function narrowedBy(args, cwd, budgetPath) {
+  const root = resolve(cwd)
+  if (!args.patterns.some((pattern) => resolve(root, pattern) === root)) {
+    return `paths ${args.patterns.join(' ')}`
+  }
+  if (args.ignorePatterns.length > 0) {
+    return `--ignore-pattern ${args.ignorePatterns.join(' ')}`
+  }
+  const fromBudget = relative(dirname(budgetPath), root)
+  if (fromBudget !== '' && !fromBudget.startsWith('..') && !isAbsolute(fromBudget)) {
+    return 'a subdirectory of the budget directory'
+  }
+  return undefined
+}
 
 /**
  * @typedef {object} Budget
@@ -577,6 +627,8 @@ export async function runNardukLint(argv, options = {}) {
   let args
   let budgetPath
   let budget
+  /** @type {string | undefined} */
+  let narrowed
   try {
     args = parseArgs(argv, env)
     if (args.help) {
@@ -584,6 +636,12 @@ export async function runNardukLint(argv, options = {}) {
       return EXIT_OK
     }
     budgetPath = resolve(cwd, args.budgetPath ?? BUDGET_FILENAME)
+    narrowed = narrowedBy(args, cwd, budgetPath)
+    if (narrowed !== undefined && args.acceptNewRules) {
+      throw new UsageError(
+        `--accept-new-rules writes the budget, so it needs the whole package; this run is narrowed (${narrowed}). Drop the paths and --ignore-pattern and run it from the budget file's directory.`,
+      )
+    }
     budget = readBudget(budgetPath)
   } catch (error) {
     if (error instanceof UsageError) {
@@ -653,11 +711,14 @@ export async function runNardukLint(argv, options = {}) {
   })
   const stampedAt = new Map(expiry.stamped.map(({ ruleId, expires }) => [ruleId, expires]))
   const restamped = expiry.stamped.filter(({ ruleId }) => Object.hasOwn(budget.rules, ruleId))
+  // A narrowed run's lowered and cleared entries are artefacts of the files it
+  // skipped, so it neither reports nor writes them (see narrowedBy).
   const stale =
-    verdict.lowered.length > 0 ||
-    verdict.cleared.length > 0 ||
-    recorded.length > 0 ||
-    restamped.length > 0
+    narrowed === undefined &&
+    (verdict.lowered.length > 0 ||
+      verdict.cleared.length > 0 ||
+      recorded.length > 0 ||
+      restamped.length > 0)
 
   log(
     `narduk-lint (${mode}): ${results.length} files, ${errorCount} error(s), ${totalWarnings} warning(s) across ${byRule.size} rule(s)${ceiling === undefined ? '' : `, maxWarnings ${ceiling}`}`,
@@ -719,7 +780,11 @@ export async function runNardukLint(argv, options = {}) {
     )
   }
 
-  if (args.ci) {
+  if (narrowed !== undefined) {
+    log(
+      `  narrowed run (${narrowed}): ${budgetLabel} not written, and lowered or cleared entries are not reported; run \`narduk-lint\` with no paths to update it.`,
+    )
+  } else if (args.ci) {
     for (const { ruleId, count, budget: allowed } of verdict.lowered) {
       log(`• budget can ratchet: ${ruleId} ${allowed} → ${count}`)
     }
@@ -784,7 +849,7 @@ export async function runNardukLint(argv, options = {}) {
     }
     if (expiry.expired.length > 0) {
       logError(
-        `narduk-lint: ${expiry.expired.length} budget entr${expiry.expired.length === 1 ? 'y is' : 'ies are'} past expiry in ${budgetLabel}. Fix those warnings, run \`narduk-lint\` locally so the cleared entry leaves ${budgetLabel}, and commit it. An expiry is never extended; \`--accept-new-rules\` does not renew it.`,
+        `narduk-lint: ${expiry.expired.length} budget entr${expiry.expired.length === 1 ? 'y is' : 'ies are'} past expiry in ${budgetLabel}. Fix those warnings, run \`narduk-lint\` locally with no paths so the cleared entry leaves ${budgetLabel}, and commit it. narduk-lint never moves an existing expiry (\`--accept-new-rules\` keeps it); a rule gets a new date only if a whole-package run clears its entry and the warnings come back.`,
       )
     }
     if (expiry.blocked.length > 0) {

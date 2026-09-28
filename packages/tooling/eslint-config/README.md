@@ -234,24 +234,40 @@ instead of `--max-warnings 0`. Use it as the lint script:
   ceiling".
 - **Every entry expires 7 days after it is recorded.** Recording an entry
   (`--accept-new-rules`, or a non-strict file's local run) stamps it in
-  `"expires"` with a UTC date 7 days out. After that date, an entry that still
-  has warnings fails, locally and in CI: fix them, run `narduk-lint` locally so
-  the cleared entry leaves the file, and commit it. No run moves an existing
-  date. Re-running `--accept-new-rules`, raising a count by hand and lowering it
-  all keep the original date. An entry with no date (written before 2.7.0) fails
-  in a strict file until `narduk-lint --accept-new-rules` stamps it, and a
-  non-strict file's local run stamps it. A malformed date, or a date for a rule
-  with no entry, exits 2. See DESIGN.md, "Entry expiry".
+  `"expires"` with the record day plus 7 (UTC). That date is the last day the
+  warnings pass: an entry recorded on 2026-09-28 reads `"2026-10-05"` and fails
+  from 2026-10-06 00:00 UTC, the 8th day after it was recorded. From then on an
+  entry that still has warnings fails, locally and in CI: fix them, run
+  `narduk-lint` locally with no paths so the cleared entry leaves the file, and
+  commit it. narduk-lint never moves an existing date. Re-running
+  `--accept-new-rules`, raising a count by hand and lowering it all keep the
+  original date. An entry with no date (written before 2.7.0) fails in a strict
+  file until `narduk-lint --accept-new-rules` stamps it, and a non-strict file's
+  local run stamps it. A malformed date, or a date for a rule with no entry,
+  exits 2. Two things still give a rule a fresh date: an older narduk-lint
+  (2.6.0 and earlier drops `expires` when it rewrites the file, so run
+  `pnpm install` after pulling an eslint-config bump before you lint), and a
+  renamed rule, which is a new key. See DESIGN.md, "Entry expiry".
+- **A narrowed run never writes.** Given paths other than the package root, or
+  `--ignore-pattern`, or started below the budget file's directory,
+  `narduk-lint` has not seen the whole package. It still fails what it saw, but
+  it leaves the budget file alone, reports no lowered or cleared entries, says
+  so in one line, and refuses `--accept-new-rules`. Otherwise linting one clean
+  file would clear every entry whose warnings live elsewhere, and the next full
+  run would record them again with a new expiry.
 
 The budget file is read from the directory `narduk-lint` runs in (the package
 root under `pnpm run lint`), not from next to the ESLint config, so packages
-that share one config still keep separate budgets. Run it over the same paths
-the lint script uses: counting a subset would lower the budget for the rest.
-`--no-write` counts without rewriting.
+that share one config still keep separate budgets. The lint script should be
+plain `narduk-lint`: a package that must skip files lists them in its ESLint
+config's `ignores`, because paths or `--ignore-pattern` in the script would make
+every run a narrowed one that never ratchets. `--no-write` counts without
+rewriting.
 
-Paths are positional (default `.`). `--fix`, `--cache`, `--cache-location` and
-`--ignore-pattern` pass through to ESLint. `--max-warnings` is refused.
-`--budget <path>` points at another file, `--verbose` prints every warning.
+Paths are positional (default `.`, the package root; any other path narrows the
+run). `--fix`, `--cache`, `--cache-location` and `--ignore-pattern` pass through
+to ESLint. `--max-warnings` is refused. `--budget <path>` points at another
+file, `--verbose` prints every warning.
 
 Exit codes: `0` pass; `1` a lint error, a rule over budget, an unbudgeted rule
 or an entry with no expiry in a strict budget, an entry past its expiry that

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -640,8 +640,10 @@ describe('narduk-lint entry expiry (7 days)', () => {
       `expired: no-console has 3 warning(s); its budget entry expired after ${STAMPED} (today is 2026-10-06, UTC)`,
     )
     expect(local.err).toContain('a.js:1')
-    expect(local.err).toContain('Fix those warnings, run `narduk-lint` locally')
-    expect(local.err).toContain('`--accept-new-rules` does not renew it')
+    expect(local.err).toContain('Fix those warnings, run `narduk-lint` locally with no paths')
+    expect(local.err).toContain(
+      'narduk-lint never moves an existing expiry (`--accept-new-rules` keeps it)',
+    )
     expect(readRaw(dir)).toBe(original)
     const ci = await run(dir, [], { CI: 'true' }, '2026-10-06')
     expect(ci.code).toBe(EXIT_LINT_FAILURE)
@@ -816,6 +818,134 @@ describe('narduk-lint entry expiry (7 days)', () => {
     const result = await run(dir)
     expect(result.code).toBe(EXIT_USAGE)
     expect(result.err).toContain(message)
+  })
+})
+
+/**
+ * A narrowed run (paths, `--ignore-pattern`, or a run from below the budget's
+ * directory) sees only some of the package's warnings. If it wrote, it would
+ * clear entries whose warnings live in files it never linted, and the next
+ * full run would record them again with a fresh date: a renewal. So a narrowed
+ * run never writes (adversarial verify of narduk-libs#1237, claim 3).
+ */
+describe('narduk-lint narrowed runs never write the budget', () => {
+  const readRaw = (dir: string) => readFileSync(join(dir, 'lint-budget.json'), 'utf8')
+  const DUE = '2026-10-01'
+  const owed = (options: BudgetOptions = {}) =>
+    serializeBudget({ 'no-console': 3 }, { expires: { 'no-console': DUE }, ...options })
+
+  it('strict: linting a clean file keeps the entry, and the next full run fails it as expired, not new', async () => {
+    const original = owed({ strict: true })
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'b.js': 'export const b = 1\n',
+      'lint-budget.json': original,
+    })
+    const subset = await run(dir, ['b.js'], {}, '2026-09-30')
+    expect(subset.code).toBe(EXIT_OK)
+    expect(subset.out).not.toContain('• cleared')
+    expect(subset.out).toContain(
+      'narrowed run (paths b.js): lint-budget.json not written, and lowered or cleared entries are not reported',
+    )
+    expect(readRaw(dir)).toBe(original)
+
+    const full = await run(dir, [], {}, '2026-10-02')
+    expect(full.code).toBe(EXIT_LINT_FAILURE)
+    expect(full.err).toContain(
+      `expired: no-console has 3 warning(s); its budget entry expired after ${DUE}`,
+    )
+    expect(full.err).not.toContain('unbudgeted')
+
+    const accept = await run(dir, ['--accept-new-rules'], {}, '2026-10-02')
+    expect(accept.code).toBe(EXIT_LINT_FAILURE)
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('non-strict: an --ignore-pattern run keeps the entry, and the next full run fails it as expired', async () => {
+    const original = owed()
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'b.js': 'export const b = 1\n',
+      'lint-budget.json': original,
+    })
+    const subset = await run(dir, ['--ignore-pattern', 'a.js'], {}, '2026-09-30')
+    expect(subset.code).toBe(EXIT_OK)
+    expect(subset.out).toContain('narrowed run (--ignore-pattern a.js)')
+    expect(readRaw(dir)).toBe(original)
+
+    const full = await run(dir, [], {}, '2026-10-02')
+    expect(full.code).toBe(EXIT_LINT_FAILURE)
+    expect(full.err).toContain('expired: no-console')
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('a narrowed run does not record, lower or stamp either', async () => {
+    const original = serializeBudget({ 'no-var': 2, 'no-console': 3 })
+    const dir = fixture({ 'a.js': 'console.log(1)\n', 'lint-budget.json': original })
+    const result = await run(dir, ['a.js'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).not.toMatch(/• (?:lowered|cleared|recorded|stamped)/u)
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('a narrowed run still fails what it saw: errors, over budget and expired', async () => {
+    const original = owed({ strict: true })
+    const dir = fixture({
+      'a.js': `${THREE_CONSOLES}console.log(4)\n`,
+      'b.js': 'debugger\n',
+      'lint-budget.json': original,
+    })
+    const over = await run(dir, ['a.js'], {}, '2026-09-30')
+    expect(over.code).toBe(EXIT_LINT_FAILURE)
+    expect(over.err).toContain('over budget: no-console has 4 warning(s), budget is 3')
+    expect((await run(dir, ['b.js'], {}, '2026-09-30')).code).toBe(EXIT_LINT_FAILURE)
+    const expired = await run(dir, ['a.js'], {}, '2026-10-02')
+    expect(expired.err).toContain('expired: no-console')
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('refuses --accept-new-rules on a narrowed run, since it would write', async () => {
+    const original = owed({ strict: true })
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    for (const argv of [
+      ['a.js', '--accept-new-rules'],
+      ['--ignore-pattern', 'b.js', '--accept-new-rules'],
+    ]) {
+      const result = await run(dir, argv)
+      expect(result.code).toBe(EXIT_USAGE)
+      expect(result.err).toContain('--accept-new-rules writes the budget')
+    }
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('ci: prints the narrowed line and no ratchet notices', async () => {
+    const dir = fixture({ 'a.js': 'export const a = 1\n', 'lint-budget.json': owed() })
+    const result = await run(dir, ['a.js', '--ci'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('narrowed run (paths a.js)')
+    expect(result.out).not.toContain('budget can ratchet')
+    expect(result.out).not.toContain('is stale')
+  })
+
+  it('the package root itself is not narrowed: ".", "./" and its absolute path write', async () => {
+    for (const path of ['.', './', undefined]) {
+      const dir = fixture({ 'a.js': 'export const a = 1\n', 'lint-budget.json': owed() })
+      const result = await run(dir, [path ?? dir])
+      expect(result.code).toBe(EXIT_OK)
+      expect(result.out).toContain('cleared: no-console 3 → 0')
+      expect(readRaw(dir)).toBe(serializeBudget({}))
+    }
+  })
+
+  it('a run from below the budget directory is narrowed', async () => {
+    const original = owed()
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'b.js'), 'export const b = 1\n')
+    const result = await run(join(dir, 'sub'), ['--budget', '../lint-budget.json'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('narrowed run (a subdirectory of the budget directory)')
+    expect(readRaw(dir)).toBe(original)
   })
 })
 

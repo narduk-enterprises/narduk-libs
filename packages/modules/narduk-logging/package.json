@@ -72,7 +72,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit",
-    "lint": "node ../../../tools/package-quality.mjs lint 'src/**/*.ts' 'tests/**/*.ts' 'examples/**/*.ts'",
+    "lint": "node ../../../tools/package-quality.mjs lint",
     "format:check": "prettier --check --log-level warn '**/*.{ts,mts,js,mjs,json,md,yaml,yml}' --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "test:unit": "vitest run",
     "test:go": "python3 scripts/go-quality.py",

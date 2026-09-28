@@ -42,6 +42,49 @@ test('every narduk-lint package has a strict lint-budget.json', () => {
   )
 })
 
+// A narduk-lint run given paths or --ignore-pattern is narrowed: it never
+// writes lint-budget.json, because it would clear entries whose warnings live
+// in files it skipped and so renew their expiry on the next full run
+// (narduk-libs#1237). A package's lint script is its canonical run, so it
+// lints the whole package; files a package must skip belong in ESLint's
+// config, not on the command line.
+export function nardukLintArguments(manifest) {
+  const lint = manifest.scripts?.lint ?? ''
+  const match =
+    /(?:^|&&|\|\||;)\s*narduk-lint((?:\s+[^&|;]+)?)/u.exec(lint) ??
+    /package-quality\.mjs\s+lint((?:\s+[^&|;]+)?)/u.exec(lint)
+  return match ? match[1].trim().split(/\s+/u).filter(Boolean) : []
+}
+
+test('every narduk-lint package lints the whole package', () => {
+  const problems = loadWorkspace(root)
+    .packages.filter(({ manifest }) => lintsWithNardukLint(manifest))
+    .filter(({ manifest }) => nardukLintArguments(manifest).length > 0)
+    .map(
+      ({ relativeDirectory, manifest }) =>
+        `${relativeDirectory}: "lint" passes ${nardukLintArguments(manifest).join(' ')}`,
+    )
+  assert.deepEqual(
+    problems,
+    [],
+    `Run plain \`narduk-lint\` and move any file exclusions into the ESLint config:\n${problems.join('\n')}`,
+  )
+})
+
+test('reads the arguments a lint script passes to narduk-lint', () => {
+  const args = (lint) => nardukLintArguments({ scripts: { lint } })
+  assert.deepEqual(args('narduk-lint'), [])
+  assert.deepEqual(args('narduk-lint && narduk-stylelint tokens.css'), [])
+  assert.deepEqual(args('nuxt prepare && narduk-lint'), [])
+  assert.deepEqual(args('narduk-lint src tests'), ['src', 'tests'])
+  assert.deepEqual(args('narduk-lint --ignore-pattern x.ts && y'), ['--ignore-pattern', 'x.ts'])
+  assert.deepEqual(args('node ../../../tools/package-quality.mjs lint'), [])
+  assert.deepEqual(args("node ../../../tools/package-quality.mjs lint 'src/**/*.ts'"), [
+    "'src/**/*.ts'",
+  ])
+  assert.deepEqual(args('node ./bin/narduk-lint.mjs'), [])
+})
+
 test('recognizes both ways a package reaches narduk-lint', () => {
   assert.equal(lintsWithNardukLint({ scripts: { lint: 'narduk-lint src tests' } }), true)
   assert.equal(

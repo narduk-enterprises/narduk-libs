@@ -5,19 +5,39 @@
 
 `narduk-lint` gives every budget entry that allows a warning a 7-day expiry.
 Recording an entry (`--accept-new-rules`, or a non-strict file's local run)
-stamps `"expires": { "<rule>": "YYYY-MM-DD" }` beside `rules`, a UTC date 7 days
-out. After that date, an entry that still has warnings fails (exit 1) locally
-and in CI alike. The message names the rule, its count, the expiry and the fix.
-No run moves an existing expiry: re-running `--accept-new-rules`, a hand-raised
-count and a lowered count all keep it, and only clearing the entry removes it.
-The `maxWarnings` ceiling is unchanged.
+stamps `"expires": { "<rule>": "YYYY-MM-DD" }` beside `rules`: the record day
+plus 7, in UTC. That date is the last day the warnings pass, so an entry
+recorded on 2026-09-28 reads `"2026-10-05"` and fails from 2026-10-06 00:00 UTC.
+From then on an entry that still has warnings fails (exit 1) locally and in CI
+alike, and the message names the rule, its count, the expiry and the fix. The
+`maxWarnings` ceiling is unchanged.
 
-A budget with no entries, the generated default, behaves exactly as before. An
-entry with no expiry, written by 2.6.0 or earlier, fails in a strict file with
-the exact fix command (`narduk-lint --accept-new-rules`, which stamps today plus
-7), and a non-strict file's local run stamps it. A malformed date, or a date for
-a rule with no entry, exits 2. `runNardukLint` takes an injectable `now` clock
-for tests.
+**Upgrading fails a strict budget that has entries.** A strict `lint-budget.json`
+whose entries allow warnings but carry no `expires` date (every such file
+written by 2.6.0 or earlier) fails, locally and in CI, from the first run of
+this version until you run `pnpm run lint --accept-new-rules` once and commit the
+result. That command stamps every undated entry with today plus 7, so those
+warnings must then be fixed within the week. A non-strict file's local run
+stamps undated entries itself. A budget with no entries, the generated default,
+behaves exactly as before.
+
+narduk-lint never moves an existing expiry: re-running `--accept-new-rules`, a
+hand-raised count and a lowered count all keep it. The entry leaves the file
+only when a whole-package run sees its rule at zero; if the rule comes back, it
+is new debt with a new date. A narrowed run (paths other than the package root,
+`--ignore-pattern`, or a run from below the budget file's directory) now never
+writes the budget and refuses `--accept-new-rules`, because it would clear
+entries whose warnings live in files it skipped. It still fails what it saw.
+Package lint scripts should therefore be plain `narduk-lint`, with any
+exclusions in the ESLint config.
+
+Two things this cannot stop, documented in DESIGN.md: eslint-config 2.6.0 and
+earlier drop `expires` whenever they rewrite the file, so a stale install strips
+the dates (run `pnpm install` after pulling this bump, before linting), and a
+renamed rule is a new key with a new date.
+
+A malformed date, or a date for a rule with no entry, exits 2. `runNardukLint`
+takes an injectable `now` clock for tests.
 
 The generated AGENTS.md quality bar says that each recorded warning expires 7
 days after it is recorded, and the generator release picks up the new package
