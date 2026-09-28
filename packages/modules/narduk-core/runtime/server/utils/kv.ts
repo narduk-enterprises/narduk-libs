@@ -1,6 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 import { createError } from 'h3'
 
+import { warnBestEffort } from '../../internal/best-effort-log'
+
 import { readWorkerRuntimeEnv } from './worker-env'
 
 import type { H3Event } from 'h3'
@@ -75,7 +77,7 @@ export async function kvGet<T = unknown>(
   try {
     return JSON.parse(raw) as T
   } catch (err) {
-    console.warn('[KV] Failed to parse JSON for key', { key, error: String(err) })
+    warnBestEffort(event, 'KV', 'Failed to parse JSON for key', { key, error: err })
     return raw as unknown as T
   }
 }

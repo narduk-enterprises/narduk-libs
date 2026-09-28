@@ -1,13 +1,19 @@
 /// <reference types="@cloudflare/workers-types" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useKV } from '../runtime/server/utils/kv'
+import { kvGet, useKV } from '../runtime/server/utils/kv'
 import { deleteKVCache, withKVCache } from '../runtime/server/utils/kvCache'
+
+import { logged, resetLogged } from './stubs/recording-logger'
 
 import type { H3Event } from 'h3'
 
 vi.mock('nitropack/runtime', () => ({
   useRuntimeConfig: () => ({}),
+}))
+vi.mock('../runtime/server/utils/logger', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useLogger: (await import('./stubs/recording-logger')).useRecordingLogger,
 }))
 
 function createKV() {
@@ -138,27 +144,50 @@ describe('KV cache helper', () => {
   })
 
   it('falls back to the producer when the binding is unavailable', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resetLogged()
     const event = {
       context: { cloudflare: { env: {} } },
       method: 'GET',
       path: '/test',
     } as unknown as H3Event
 
-    try {
-      await expect(withKVCache(event, 'missing:test', 60, async () => 'fresh')).resolves.toBe(
-        'fresh',
-      )
-      expect(warn).toHaveBeenCalledWith(
-        '[KVCache] GET error missing:test',
-        expect.objectContaining({
-          bindingName: 'KV',
-          error: expect.stringContaining('Error: KV binding "KV" not found'),
-        }),
-      )
-    } finally {
-      warn.mockRestore()
-    }
+    await expect(withKVCache(event, 'missing:test', 60, async () => 'fresh')).resolves.toBe('fresh')
+    const missingBinding = expect.objectContaining({
+      message: expect.stringContaining('KV binding "KV" not found'),
+      statusCode: 500,
+    })
+    expect(logged).toEqual([
+      {
+        data: { bindingName: 'KV', cacheKey: 'missing:test', error: missingBinding },
+        level: 'warn',
+        message: 'GET error missing:test',
+        scope: 'KVCache',
+      },
+      {
+        data: { bindingName: 'KV', cacheKey: 'missing:test', error: missingBinding },
+        level: 'warn',
+        message: 'SET error missing:test',
+        scope: 'KVCache',
+      },
+    ])
+  })
+})
+
+describe('kvGet', () => {
+  it('returns the raw string and warns through the logger when the value is not JSON', async () => {
+    resetLogged()
+    const { kv, values } = createKV()
+    values.set('legacy:plain', 'not json {')
+
+    await expect(kvGet(createEvent('KV', kv), 'legacy:plain')).resolves.toBe('not json {')
+    expect(logged).toEqual([
+      {
+        data: { error: expect.any(SyntaxError), key: 'legacy:plain' },
+        level: 'warn',
+        message: 'Failed to parse JSON for key',
+        scope: 'KV',
+      },
+    ])
   })
 })
 

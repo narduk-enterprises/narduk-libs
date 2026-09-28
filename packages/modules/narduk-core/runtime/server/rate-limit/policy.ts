@@ -255,6 +255,9 @@ export function rateLimitCounterKey(
       return `${policy.key}:global`
     case 'ip-path':
       return `${policy.key}:${who}:${counterPath(path)}`
+    // A scope outside the union (a hand-built policy from plain JS) keeps the
+    // per-address bucket it always got, rather than returning `undefined`.
+    case 'ip':
     default:
       return `${policy.key}:${who}`
   }
