@@ -242,11 +242,13 @@ describe('item 12 rollout mode', () => {
     expect(detail).not.toContain('unreadable')
     expect(detail).not.toContain('Invalid input')
     expect(run(root).exitCode).toBe(1)
+    expect(scanDeployment(new AppRepo(root)).outcome.kind).toBe('malformed')
     expect(run(root).adoption).toBe('invalid')
   })
 
   it('fails a block that claims the standard and does not satisfy it, in either mode', () => {
     const root = baseline({ deployment: { standard: DEPLOYMENT_STANDARD } })
+    expect(scanDeployment(new AppRepo(root)).outcome.kind).toBe('invalid')
     expect(run(root).exitCode).toBe(1)
     expect(run(root, true).exitCode).toBe(1)
     expect(run(root).adoption).toBe('invalid')
