@@ -20,7 +20,7 @@ const groups: NeDataColumnGroup[] = [
   { id: 'pressure', label: 'Pressure', unit: 'inHg' },
 ]
 
-const columns: NeDataColumn<Reading>[] = [
+const columns: Array<NeDataColumn<Reading>> = [
   { key: 'time', label: 'Time', sticky: true },
   {
     key: 'wind',
@@ -73,7 +73,7 @@ it('mounts NeDataTable directly when columns do not pin T', () => {
 })
 
 const bodyRows = (wrapper: ReturnType<typeof render>) => wrapper.findAll('tbody tr')
-const cellTexts = (row: { findAll: (s: string) => { text: () => string }[] }) =>
+const cellTexts = (row: { findAll: (s: string) => Array<{ text: () => string }> }) =>
   row.findAll('td').map((td) => td.text())
 
 describe('NeDataTable: header', () => {

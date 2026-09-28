@@ -33,7 +33,7 @@ const groups: NeDataColumnGroup[] = [
   { id: 'waves', label: 'Waves', unit: 'ft' },
 ]
 
-const columns: NeDataColumn<Reading>[] = [
+const columns: Array<NeDataColumn<Reading>> = [
   { key: 'time', label: 'Time', sticky: true },
   {
     firstDirection: 'desc',

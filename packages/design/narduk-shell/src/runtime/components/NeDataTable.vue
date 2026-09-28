@@ -57,6 +57,7 @@ import { computed, h, shallowRef, type VNodeChild } from 'vue'
 
 import { formatNumber } from '../../format'
 import { dataTableMinWidth, isMissingValue, parseSort, readColumnValue } from '../utils/data-table'
+
 import NeSortHeader from './NeSortHeader.vue'
 
 import type {
@@ -86,8 +87,8 @@ const props = withDefaults(defineProps<NeDataTableProps<T>>(), {
 })
 
 const emit = defineEmits<{
-  'update:sort': [sort: string]
   'update:columnSet': [id: string]
+  'update:sort': [sort: string]
 }>()
 
 const slots = defineSlots<NeDataTableSlots<T>>()
@@ -98,7 +99,7 @@ type Entry =
   | { count: number; id: string; kind: 'break' }
 
 /** Columns the table draws: never `csvOnly`, and optionally never all-empty. */
-const shownColumns = computed<NeDataColumn<T>[]>(() =>
+const shownColumns = computed<Array<NeDataColumn<T>>>(() =>
   props.columns.filter((column) => {
     if (column.csvOnly) return false
     if (!props.dropEmptyColumns || column.sticky || props.rows.length === 0) return true
@@ -156,6 +157,32 @@ const sortedColumn = computed(() => {
   return key ? shownColumns.value.find((column) => column.sortKey === key) : undefined
 })
 
+/**
+ * Resolves the open group for the current row: reuses `previous` when its
+ * key matches, opens a new one (pushed to `out`) when the key changes, or
+ * closes the group entirely on a `null` key. A plain function call, rather
+ * than inline reassignment inside the `entries` loop, keeps TypeScript's
+ * control-flow narrowing of the mutable `openGroup` variable well-defined
+ * across loop iterations.
+ */
+function nextGroup(
+  previous: Extract<Entry, { kind: 'group' }> | null,
+  key: string | null,
+  index: number,
+  out: Entry[],
+): Extract<Entry, { kind: 'group' }> | null {
+  if (key === null) return null
+  if (previous?.key === key) return previous
+  const group: Extract<Entry, { kind: 'group' }> = {
+    id: `__ne-group-${index}-${key}`,
+    key,
+    kind: 'group',
+    rows: [],
+  }
+  out.push(group)
+  return group
+}
+
 const entries = computed<Entry[]>(() => {
   const out: Entry[] = []
   const sorted = props.missingLast ? sortedColumn.value : undefined
@@ -165,18 +192,14 @@ const entries = computed<Entry[]>(() => {
   let breakPlaced = false
   let openGroup: Extract<Entry, { kind: 'group' }> | null = null
 
-  props.rows.forEach((row, index) => {
+  for (const [index, row] of props.rows.entries()) {
     if (sorted && !breakPlaced && isMissingValue(readColumnValue(sorted, row))) {
       breakPlaced = true
       out.push({ count: props.missingCount ?? missing, id: '__ne-break', kind: 'break' })
     }
     if (props.groupBy) {
       const key = props.groupBy(row) ?? null
-      if (key === null) openGroup = null
-      else if (openGroup?.key !== key) {
-        openGroup = { id: `__ne-group-${index}-${key}`, key, kind: 'group', rows: [] }
-        out.push(openGroup)
-      }
+      openGroup = nextGroup(openGroup, key, index, out)
       openGroup?.rows.push(row)
     }
     out.push({
@@ -185,7 +208,7 @@ const entries = computed<Entry[]>(() => {
       kind: 'row',
       row,
     })
-  })
+  }
   return out
 })
 
@@ -303,16 +326,19 @@ const tableColumns = computed(() => {
   })
 
   type Leaf = ReturnType<typeof leaf>
-  type Group = { columns: Leaf[]; group: NeDataColumnGroup }
+  interface Group {
+    columns: Leaf[]
+    group: NeDataColumnGroup
+  }
   const top: Array<Leaf | Group> = []
-  shownColumns.value.forEach((column, index) => {
+  for (const [index, column] of shownColumns.value.entries()) {
     const group = column.group ? groupsById.value.get(column.group) : undefined
     const last = top.at(-1)
     if (!group) top.push(leaf(column, index))
     else if (last && 'group' in last && last.group.id === group.id)
       last.columns.push(leaf(column, index))
     else top.push({ columns: [leaf(column, index)], group })
-  })
+  }
 
   return top.map((item) => {
     if (!('group' in item)) return item

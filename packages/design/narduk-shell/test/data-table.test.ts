@@ -79,7 +79,7 @@ describe('toCsv', () => {
     time: Date
     wind: number | null
   }
-  const columns: NeDataColumn<Row>[] = [
+  const columns: Array<NeDataColumn<Row>> = [
     { key: 'time', label: 'Time' },
     { key: 'wind', label: 'Wind', unit: 'kt', format: () => 'never used' },
     {
