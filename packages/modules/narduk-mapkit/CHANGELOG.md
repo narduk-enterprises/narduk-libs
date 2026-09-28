@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.11.1
+
+### Patch Changes
+
+- 745ee4f: Model MapKit's padded visible rectangle in the shared testing fake.
+  Reading and writing the rect now preserve annotation scale when a phone
+  selection pans beneath changing map chrome, using the measured container or
+  configured viewport fallback.
+
 ## 2.11.0
 
 ### Minor Changes
