@@ -280,12 +280,14 @@ describe('upgrade completes a private caller', () => {
     const targetDir = await scaffold()
     await edit(targetDir, CI, toLegacyCaller)
     // An analytics app, so pin a narduk-core whose baseline allows the proxy.
-    await edit(targetDir, 'apps/web/package.json', (text) =>
-      text.replace(
-        /"@narduk-enterprises\/narduk-core": "[^"]+"/u,
-        '"@narduk-enterprises/narduk-core": "2.20.0"',
-      ),
+    // Once the release that ships it lands, the scaffold already pins 2.20.0
+    // and the edit is a no-op, so only edit when it changes something.
+    const manifest = await read(targetDir, 'apps/web/package.json')
+    const pinned = manifest.replace(
+      /"@narduk-enterprises\/narduk-core": "[^"]+"/u,
+      '"@narduk-enterprises/narduk-core": "2.20.0"',
     )
+    if (pinned !== manifest) await edit(targetDir, 'apps/web/package.json', () => pinned)
     await edit(targetDir, 'apps/web/nuxt.config.ts', (text) =>
       text.replace(
         '    security: {\n      headers: { enabled: true, enforce: true },\n    },\n',
