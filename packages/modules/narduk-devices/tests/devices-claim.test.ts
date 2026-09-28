@@ -317,6 +317,44 @@ describe('claim ceremony', () => {
     expect(await codeOf(devices.revokeClaimToken({ claimTokenId: 'missing' }))).toBe('not_found')
   })
 
+  it('revokes a token and its pending session together or not at all', async () => {
+    const harness = createTestHarness()
+    const { devices, sqlite } = harness
+    const pending = await startPendingClaim(harness)
+    const tokenRevokedAt = () =>
+      (
+        sqlite.prepare('SELECT revoked_at FROM devices_claim_tokens').get() as {
+          revoked_at: number | null
+        }
+      ).revoked_at
+    const revokeAudits = () =>
+      sqlite
+        .prepare("SELECT id FROM devices_audit_events WHERE action = 'claim_token.revoke'")
+        .all()
+
+    // The session half fails the way a D1 statement can; the token half, sent
+    // first, must not stay applied on its own.
+    sqlite.exec(
+      "CREATE TRIGGER induced_fault BEFORE UPDATE ON devices_claim_sessions WHEN NEW.status = 'revoked' BEGIN SELECT RAISE(ABORT, 'induced fault'); END",
+    )
+    await expect(
+      devices.revokeClaimToken({ claimTokenId: pending.minted.tokenId }),
+    ).rejects.toThrow('induced fault')
+    expect(tokenRevokedAt()).toBeNull()
+    expect(await devices.getClaimSession(pending.claimSessionId)).toMatchObject({
+      status: 'pending_user_approval',
+    })
+    expect(revokeAudits()).toEqual([])
+
+    sqlite.exec('DROP TRIGGER induced_fault')
+    await devices.revokeClaimToken({ claimTokenId: pending.minted.tokenId })
+    expect(tokenRevokedAt()).not.toBeNull()
+    expect(await devices.getClaimSession(pending.claimSessionId)).toMatchObject({
+      status: 'revoked',
+    })
+    expect(revokeAudits()).toHaveLength(1)
+  })
+
   it('bounds the claim token TTL and requires non-empty inputs', async () => {
     const { devices } = createTestHarness()
     const base = { orgId: ORG, resource: VESSEL, createdByUserId: 'owner-1' }
