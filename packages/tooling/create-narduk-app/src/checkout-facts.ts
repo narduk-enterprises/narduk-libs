@@ -417,6 +417,16 @@ export function adaptManagedPackageJson(
     // package; leave the key unmanaged unless this checkout has the script.
     delete scripts['manifests:validate']
   }
+  if (
+    typeof scripts['foundation:shared-ui-pinned'] === 'string' &&
+    (rootLayout || !facts.webScripts['foundation:shared-ui-pinned']?.trim())
+  ) {
+    // The scaffold body delegates to an `apps/web` script this checkout does
+    // not have. The name is what CI needs, so propose the root form the
+    // reference app uses: the same checker, reading the whole checkout.
+    scripts['foundation:shared-ui-pinned'] =
+      'mkdir -p foundation-check && narduk-app foundation:check:shared-ui-pinned --checkout . --json foundation-check/shared-ui-pinned.json'
+  }
   if (rootLayout && typeof scripts['build:ci'] === 'string') {
     const appsWebMarker = buildCiMarksOutput('apps-web')
     if (scripts['build:ci'].includes(appsWebMarker)) {

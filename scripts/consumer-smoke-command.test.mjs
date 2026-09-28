@@ -29,7 +29,7 @@ test('a failed command keeps its exit code and exposes its output', async () => 
     runConsumerCommand(process.execPath, ['-e', 'console.error("build failed"); process.exit(7)'], {
       stderr: (chunk) => chunks.push(chunk),
     }),
-    { code: 7 },
+    { code: 7, output: 'build failed\n' },
   )
   assert.equal(chunks.join(''), 'build failed\n')
 })

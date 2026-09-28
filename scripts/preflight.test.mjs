@@ -6,11 +6,15 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import {
+  claimsReleasePr,
   fetchTargetForBase,
   newlyDirtyPaths,
   nonWritingExecute,
   parsePreflightArgs,
+  pendingChangesets,
   preflightChangedFiles,
+  releasePrBranch,
+  releasePrIdentity,
   trackedTreeSnapshot,
 } from './preflight.mjs'
 
@@ -139,12 +143,19 @@ test('package gates run with CI=true so narduk-lint cannot write the budget', ()
 })
 
 test('preflight arguments parse, and an unknown one is refused', () => {
-  assert.deepEqual(parsePreflightArgs([]), { base: 'origin/main', fetch: true, consumer: true })
+  assert.deepEqual(parsePreflightArgs([]), {
+    base: 'origin/main',
+    fetch: true,
+    consumer: true,
+    releasePr: false,
+  })
   assert.deepEqual(parsePreflightArgs(['--base', 'origin/release', '--no-fetch']), {
     base: 'origin/release',
     fetch: false,
     consumer: true,
+    releasePr: false,
   })
+  assert.equal(parsePreflightArgs(['--release-pr']).releasePr, true)
   assert.equal(parsePreflightArgs(['--base=upstream/main']).base, 'upstream/main')
   assert.equal(parsePreflightArgs(['--no-consumer']).consumer, false)
   assert.throws(() => parsePreflightArgs(['--write']), /Unknown preflight argument/u)
@@ -239,4 +250,80 @@ test('the preflight itself invokes no writing command', () => {
     source,
     /'--dry-run',\n\s+'--consumer-smoke',\n\s+'--artifacts-only'|'--dry-run', '--consumer-smoke', '--artifacts-only'/u,
   )
+})
+
+// ci.yml skips release-plan:check when IS_CHANGESET_RELEASE; preflight must
+// agree on the release PR's head and nowhere else (release PR #1238's local
+// preflight failed only on this guard, demanding Changesets for the bump).
+test('only the release branch or --release-pr claims the release PR', () => {
+  assert.equal(releasePrBranch, 'changeset-release/main')
+  assert.equal(claimsReleasePr({ releasePr: false, branch: 'codex/feature' }), false)
+  // A detached head has no branch; without the flag it is an ordinary run.
+  assert.equal(claimsReleasePr({ releasePr: false, branch: '' }), false)
+  assert.equal(claimsReleasePr({ releasePr: false, branch: 'changeset-release/other' }), false)
+  assert.equal(claimsReleasePr({ releasePr: false, branch: 'changeset-release/main' }), true)
+  assert.equal(claimsReleasePr({ releasePr: true, branch: '' }), true)
+  // CI's rule and the skip it gates stay where preflight mirrors them.
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  assert.match(ci, /IS_CHANGESET_RELEASE: \$\{\{ github\.head_ref == 'changeset-release\/main'/u)
+  assert.match(
+    ci,
+    /if \[ "\$\{IS_CHANGESET_RELEASE\}" != "true" \]; then\n\s+pnpm run release-plan:check/u,
+  )
+})
+
+test('a claimed release PR skips the guard only on proof', () => {
+  const head = 'a'.repeat(40)
+  const proof = {
+    head,
+    releaseRef: 'origin/changeset-release/main',
+    releaseTip: head,
+    dirtyPaths: [],
+    changesets: [],
+  }
+  assert.deepEqual(releasePrIdentity(proof), { proven: true, problems: [] })
+  for (const [change, problem] of [
+    [{ releaseTip: '' }, /origin\/changeset-release\/main does not resolve/u],
+    [{ releaseTip: 'b'.repeat(40) }, /HEAD a{40} is not origin\/changeset-release\/main b{40}/u],
+    [
+      { dirtyPaths: ['packages/x/package.json'] },
+      /working tree is not HEAD \(packages\/x\/package\.json\)/u,
+    ],
+    [{ changesets: ['.changeset/fix.md'] }, /still carries Changesets \(\.changeset\/fix\.md\)/u],
+  ]) {
+    const identity = releasePrIdentity({ ...proof, ...change })
+    assert.equal(identity.proven, false, JSON.stringify(change))
+    assert.match(identity.problems.join('; '), problem)
+  }
+})
+
+test('pending Changesets are read from HEAD, README excluded', () => {
+  const { directory, git, cleanup } = repository()
+  try {
+    mkdirSync(join(directory, '.changeset'))
+    writeFileSync(join(directory, '.changeset', 'README.md'), '# Changesets\n')
+    writeFileSync(join(directory, '.changeset', 'config.json'), '{}\n')
+    git('add', '-A')
+    git('commit', '--quiet', '-m', 'version packages')
+    assert.deepEqual(pendingChangesets(directory), [])
+    writeFileSync(join(directory, '.changeset', 'fix.md'), "---\n'a': patch\n---\n\nFix.\n")
+    // Uncommitted is not HEAD; the dirty-tree rule catches that case.
+    assert.deepEqual(pendingChangesets(directory), [])
+    git('add', '-A')
+    git('commit', '--quiet', '-m', 'feature')
+    assert.deepEqual(pendingChangesets(directory), ['.changeset/fix.md'])
+  } finally {
+    cleanup()
+  }
+})
+
+test('the guard still runs, and an unproven claim fails, outside the release head', () => {
+  const source = readFileSync(new URL('./preflight.mjs', import.meta.url), 'utf8')
+  // The only skip is behind the proof, and an unproven claim is a failure
+  // on top of running the guard, not a quieter run.
+  assert.equal(source.match(/releaseIdentity\?\.proven/gu)?.length, 1)
+  assert.match(source, /release PR identity not proven, so release-plan:check ran/u)
+  const skip = source.indexOf('if (releaseIdentity?.proven)')
+  const guard = source.indexOf("phase('release-plan:check'")
+  assert.ok(skip > 0 && guard > skip, 'release-plan:check runs in the else branch of the proof')
 })

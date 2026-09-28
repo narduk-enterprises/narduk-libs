@@ -243,3 +243,39 @@ test('retries that are not transient, or that carry more text, still fail the ga
     assert.equal(collectWarningFindings(line).length, 1, line)
   }
 })
+
+// Verbatim from `foundation:check:coverage` (narduk-app-tools 0.27.2) on a
+// freshly generated app with no server/plugins directory: the normal
+// not-applicable verdict for sub-check 9.7, whose name contains "error plugin".
+// The whole command output is from the same run; RESULT: PASS, exit 0.
+const coverageNotApplicable =
+  '         [N/A ] 9.7 no duplicate error plugin or response finish listener: no server/plugins directory and no defineNitroPlugin in the scan'
+
+test('the coverage check reporting 9.7 not applicable is not a finding', () => {
+  const output = [
+    'foundation:check:coverage -- unknown/unknown',
+    '  [PASS] item 9 shared-capability-coverage',
+    '         [N/A ] 9.6 no hand-rolled /api/health route: no server/api directory at a known monorepo path',
+    coverageNotApplicable,
+    '',
+    'RESULT: PASS',
+  ].join('\n')
+  assert.deepEqual(collectWarningFindings(output), [])
+  assert.deepEqual(collectWarningFindings(`${escape}[2m${coverageNotApplicable}${escape}[22m`), [])
+})
+
+test('any other 9.7 verdict, detail or error-plugin line still fails the gate', () => {
+  const line = coverageNotApplicable.trim()
+  for (const other of [
+    line.replace('[N/A ]', '[FAIL]'),
+    line.replace('[N/A ]', '[UNKN]'),
+    line.replace('[N/A ]', '[WARN]'),
+    line.replace('[N/A ]', '[PASS]'),
+    line.replace('9.7', '9.8'),
+    line.replace('no server/plugins directory', 'server/plugins/error.ts duplicates the handler'),
+    `${line}; error: scan aborted`,
+    'Error: no duplicate error plugin or response finish listener',
+  ]) {
+    assert.deepEqual(collectWarningFindings(other), [other], other)
+  }
+})

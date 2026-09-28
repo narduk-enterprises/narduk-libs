@@ -3,6 +3,10 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
+import {
+  CANDIDATE_SECURITY_HEADERS_STEP_NAME,
+  REPOSITORY_GATE_STEP_NAME,
+} from '../src/ci-workflow.js'
 import { buildGeneratedFiles } from '../src/index.js'
 import type { AppVisibility } from '../src/types.js'
 
@@ -85,7 +89,13 @@ describe('generated CI execution boundary', () => {
       expect(manifest.scripts.build).toBeTruthy()
       expect(manifest.scripts['test:unit']).toBe('pnpm --filter web run test:unit')
       expect(manifest.scripts['test:e2e']).toBe('playwright test')
-      expect(workflow.jobs.quality.steps.at(-1)?.run).toBe('pnpm run quality:static')
+      // quality:static builds the Worker, then the repository gate and the
+      // item-10 probe of that build close the job (NAC-GATE-PARITY).
+      expect(workflow.jobs.quality.steps.slice(-3).map((step) => step.name ?? step.run)).toEqual([
+        'pnpm run quality:static',
+        REPOSITORY_GATE_STEP_NAME,
+        CANDIDATE_SECURITY_HEADERS_STEP_NAME,
+      ])
     })
 
     it(`${visibility}: preserves three shards and diagnostics, including failed runs`, () => {

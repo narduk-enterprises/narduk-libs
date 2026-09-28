@@ -24,11 +24,28 @@ import {
   consumerSmokeTestEnv,
   isGeneratedBuildPhase,
   mapPackages,
+  scaffoldOnlyPhases,
 } from './consumer-smoke-phases.mjs'
 import {
   assertConsumerDependencyScope,
   consumerSmokeGeneratorArgs,
+  consumerSmokePublicGeneratorArgs,
 } from './consumer-smoke-fixture.mjs'
+import {
+  assertUpgradeRestoredGate,
+  expectedFoundationVerdicts,
+  loadYamlParser,
+  passingVerdict,
+  probeOutputMismatch,
+  readRepositoryGate,
+  repositoryGateScripts,
+  requiredArtefactPath,
+  splitJsonReport,
+  toPreGatePrivateCaller,
+  toPreGatePublicWorkflow,
+  verdictMismatch,
+  withoutParityGateScripts,
+} from './consumer-smoke-gate.mjs'
 import { consumerLockDigest, packedInput } from './packed-consumer-inputs.mjs'
 import {
   consumerSmokeGeneratorPackage,
@@ -172,19 +189,31 @@ function childEnvironment(overrides = {}) {
 }
 
 async function runChecked(command, commandArgs, options) {
+  return (await runCheckedExit(command, commandArgs, options)).output
+}
+
+// runChecked, for a command whose non-zero exit is a verdict the caller then
+// judges (`exitCodes`). Any other exit still fails, and the warning check
+// still reads the output either way.
+async function runCheckedExit(command, commandArgs, options) {
   const label = options.label || `${command} ${commandArgs.join(' ')}`
   writeLine(`\n[consumer-smoke] ${label}`)
   const started = performance.now()
   let output
+  let exitCode = 0
   try {
     output = await runConsumerCommand(command, commandArgs, {
       cwd: options.cwd,
       env: childEnvironment(options.env),
     })
   } catch (error) {
-    throw new Error(`${label} failed (${error.signal || error.code || 'unknown exit'}).`, {
-      cause: error,
-    })
+    if (!options.exitCodes?.includes(error.code)) {
+      throw new Error(`${label} failed (${error.signal || error.code || 'unknown exit'}).`, {
+        cause: error,
+      })
+    }
+    exitCode = error.code
+    output = error.output
   } finally {
     timings.push({ label, seconds: (performance.now() - started) / 1000 })
     writeLine(`[consumer-smoke] Completed ${label} in ${timings.at(-1).seconds.toFixed(1)}s`)
@@ -195,12 +224,14 @@ async function runChecked(command, commandArgs, options) {
     for (const notice of collectRecoveredRetryNotices(output)) {
       writeLine(`[consumer-smoke] Not a finding (retry recovered, command exited 0): ${notice}`)
     }
-    const findings = collectWarningFindings(output)
+    const findings = collectWarningFindings(
+      options.reportText ? options.reportText(output) : output,
+    )
     if (findings.length > 0) {
       throw new Error(`${label} emitted warning/error output:\n${findings.join('\n')}`)
     }
   }
-  return stripAnsi(output)
+  return { output: stripAnsi(output), exitCode }
 }
 
 function relativeFileSpecifier(fromDirectory, targetPath) {
@@ -465,7 +496,11 @@ async function assertIsolatedPlaywrightToolchain({ cwd, expectedVersion, require
   }
 }
 
-function assertExactGeneratedPackagePins(generatedDirectory, packagesByName) {
+function assertExactGeneratedPackagePins(
+  generatedDirectory,
+  packagesByName,
+  requiredPackageNames = generatedConsumerRequiredPackages,
+) {
   // The list itself lives in packed-consumer-scope.mjs so a scoped run can ask
   // whether it could satisfy this assertion before it packs anything; this
   // file has top-level side effects and cannot be imported by `node --test`.
@@ -473,7 +508,7 @@ function assertExactGeneratedPackagePins(generatedDirectory, packagesByName) {
   // narduk-libs#251), so it is pinned exactly like every other required
   // package here even though it is not one of the `--capabilities` passed
   // below.
-  const requiredPackages = new Set(generatedConsumerRequiredPackages)
+  const requiredPackages = new Set(requiredPackageNames)
   const seenPackages = new Set()
 
   for (const manifestPath of [
@@ -1003,6 +1038,206 @@ async function runPasskeyWorkerProbe(generatedDirectory) {
   }
 }
 
+const generatedCiPath = join('.github', 'workflows', 'ci.yml')
+
+function parseGeneratedYaml(text) {
+  const generator = loadWorkspace(root).byName.get(consumerSmokeGeneratorPackage)
+  return loadYamlParser(generator.directory)(text)
+}
+
+// NAC-GATE-PARITY (§3.11), upgrade half: take the freshly generated app back
+// to the gate an app generated before that change carries, run the PACKED
+// generator's `upgrade --write` on it, and require the fresh scaffold's gate
+// back -- then a dry run over every managed unit with nothing left to do.
+// The app keeps the upgraded files, so the gate run later executes what the
+// upgrade wrote. Credential-free and install-free, so it runs on the
+// artifacts-only path as well.
+async function proveUpgradedRepositoryGate(consumerDirectory, appDirectory, visibility) {
+  const ciPath = join(appDirectory, generatedCiPath)
+  const packagePath = join(appDirectory, 'package.json')
+  const generated = {
+    ci: readFileSync(ciPath, 'utf8'),
+    packageJson: readFileSync(packagePath, 'utf8'),
+  }
+  writeFileSync(
+    ciPath,
+    visibility === 'private'
+      ? toPreGatePrivateCaller(generated.ci)
+      : toPreGatePublicWorkflow(generated.ci),
+  )
+  writeFileSync(packagePath, withoutParityGateScripts(generated.packageJson))
+  const reportText = (output) => splitJsonReport(output).rest
+  const written = await runChecked(
+    'pnpm',
+    [
+      'exec',
+      'create-narduk-app',
+      'upgrade',
+      appDirectory,
+      '--write',
+      '--only',
+      generatedCiPath,
+      '--only',
+      'package.json',
+      '--json',
+    ],
+    {
+      cwd: consumerDirectory,
+      label: `upgrade a pre-gate ${visibility} app with the packed generator`,
+      reportText,
+    },
+  )
+  const { byteIdentical } = assertUpgradeRestoredGate({
+    report: splitJsonReport(written).report,
+    generated,
+    upgraded: {
+      ci: readFileSync(ciPath, 'utf8'),
+      packageJson: readFileSync(packagePath, 'utf8'),
+    },
+    parseYaml: parseGeneratedYaml,
+  })
+  // Dry run exits 1 on any drift, which runChecked turns into a failure.
+  const again = splitJsonReport(
+    await runChecked('pnpm', ['exec', 'create-narduk-app', 'upgrade', appDirectory, '--json'], {
+      cwd: consumerDirectory,
+      label: `re-check every managed unit of the upgraded ${visibility} app`,
+      reportText,
+    }),
+  ).report
+  if (again.driftCount !== 0) {
+    throw new Error(`The upgraded ${visibility} app still drifts in ${again.driftCount} unit(s).`)
+  }
+  writeLine(
+    `[consumer-smoke] Upgraded ${visibility} gate equals the generated one (${byteIdentical ? 'byte for byte' : 'same YAML; formatting differs'}).`,
+  )
+}
+
+// A verdict is read only from an artefact this run wrote: remove any earlier
+// one first, and fail when the command left none behind.
+function clearGateArtefacts(appDirectory, scripts) {
+  for (const script of scripts) {
+    const artefactPath = requiredArtefactPath(
+      readJson(join(appDirectory, 'package.json')).scripts,
+      script,
+    )
+    if (artefactPath) rmSync(join(appDirectory, artefactPath), { force: true })
+  }
+}
+
+function readGateArtefact(appDirectory, artefactPath, label) {
+  const path = join(appDirectory, artefactPath)
+  if (!existsSync(path)) throw new Error(`${label} wrote no artefact at ${artefactPath}.`)
+  return readJson(path)
+}
+
+async function runRepositoryGateVerdict(appDirectory, script, expected, label) {
+  const scripts = readJson(join(appDirectory, 'package.json')).scripts
+  const artefactPath = requiredArtefactPath(scripts, script)
+  clearGateArtefacts(appDirectory, [script])
+  const { exitCode } = await runCheckedExit('pnpm', ['run', script], {
+    cwd: appDirectory,
+    label,
+    exitCodes: [expected.exitCode],
+  })
+  if (artefactPath) {
+    const mismatch = verdictMismatch({
+      label,
+      artefact: readGateArtefact(appDirectory, artefactPath, label),
+      exitCode,
+      expected,
+    })
+    if (mismatch) throw new Error(mismatch)
+  } else if (exitCode !== expected.exitCode) {
+    throw new Error(`${label}: exit ${exitCode}, expected ${expected.exitCode}`)
+  }
+  return exitCode
+}
+
+// NAC-GATE-PARITY (§3.11), generated-versus-validator half: run the gate the
+// app's own ci.yml names, as that workflow runs it, against the packed
+// narduk-app-tools, and require the pinned verdicts in
+// scripts/consumer-smoke-gate.mjs. Private: every extra-scripts gate name and
+// foundation:check (item 10 reads a Workers Builds preview there, which this
+// job has none of). Public: the quality job's gate steps verbatim -- item 10
+// probing this build's Worker on 127.0.0.1 -- and foundation:check, which the
+// public workflow cannot gate on (5.1, pinned UNKNOWN).
+async function proveRepositoryGateRoundTrip(consumerDirectory, appDirectory, visibility) {
+  const gate = readRepositoryGate(
+    readFileSync(join(appDirectory, generatedCiPath), 'utf8'),
+    visibility,
+    parseGeneratedYaml,
+    scaffoldOnlyPhases,
+  )
+  const summary = []
+  for (const script of gate.scripts) {
+    const artefactPath = requiredArtefactPath(
+      readJson(join(appDirectory, 'package.json')).scripts,
+      script,
+    )
+    await runRepositoryGateVerdict(
+      appDirectory,
+      script,
+      passingVerdict,
+      `${visibility} gate: pnpm run ${script}`,
+    )
+    summary.push(`${script}: ${artefactPath ? 'PASS' : 'exit 0'}`)
+  }
+  if (gate.steps.length > 0) clearGateArtefacts(appDirectory, repositoryGateScripts)
+  for (const [index, step] of gate.steps.entries()) {
+    const scriptPath = join(consumerDirectory, `${visibility}-gate-step-${index + 1}.sh`)
+    writeFileSync(scriptPath, `${step.run}\n`)
+    const runnerTemp = mkdtempSync(join(consumerDirectory, `${visibility}-runner-temp-`))
+    const env = { ...step.env, RUNNER_TEMP: runnerTemp }
+    // The emitted step names a fixed port for a fresh hosted runner; a shared
+    // local machine may hold it, so the proof takes a free one.
+    if ('CANDIDATE_PORT' in env) env.CANDIDATE_PORT = String(await freeLocalPort())
+    // GitHub's `shell: bash` for a run step.
+    const label = `${visibility} gate step: ${step.name}`
+    const output = await runChecked(
+      'bash',
+      ['--noprofile', '--norc', '-eo', 'pipefail', scriptPath],
+      { cwd: appDirectory, env, label },
+    )
+    if (step.needsBuild) {
+      const mismatch = probeOutputMismatch(output, env.CANDIDATE_PORT)
+      if (mismatch) throw new Error(`${label}: ${mismatch}`)
+      summary.push(`${step.name}: PASS on the candidate Worker`)
+    } else {
+      summary.push(`${step.name}: exit 0`)
+    }
+  }
+  // The public steps run the gate scripts themselves; every artefact they
+  // wrote must read PASS, not only exit 0.
+  if (gate.steps.length > 0) {
+    const scripts = readJson(join(appDirectory, 'package.json')).scripts
+    for (const script of repositoryGateScripts) {
+      const artefactPath = requiredArtefactPath(scripts, script)
+      if (!artefactPath) continue
+      const mismatch = verdictMismatch({
+        label: `${visibility} gate artefact of ${script}`,
+        artefact: readGateArtefact(appDirectory, artefactPath, `${visibility} gate step`),
+        exitCode: 0,
+        expected: passingVerdict,
+      })
+      if (mismatch) throw new Error(mismatch)
+    }
+  }
+  const expected = expectedFoundationVerdicts[visibility]
+  await runRepositoryGateVerdict(
+    appDirectory,
+    'foundation:check',
+    expected,
+    `${visibility} foundation:check (items 1-7)${gate.runsFoundationCheck ? '' : ', not gated by the public workflow'}`,
+  )
+  summary.push(
+    `foundation:check: ${expected.result}, exactly ${Object.entries(expected.open)
+      .map(([id, status]) => `${id} ${status}`)
+      .join(', ')} (pinned)`,
+  )
+  writeLine(`[consumer-smoke] ${visibility} repository gate round trip: ${summary.join('; ')}`)
+  return summary
+}
+
 async function proveGeneratedConsumer({
   consumerDirectory,
   packages,
@@ -1014,6 +1249,13 @@ async function proveGeneratedConsumer({
     cwd: consumerDirectory,
     label: 'run the packed one-shot app generator',
   })
+  const publicDirectory = join(consumerDirectory, 'generated-public-app')
+  await runChecked('pnpm', consumerSmokePublicGeneratorArgs(publicDirectory), {
+    cwd: consumerDirectory,
+    label: 'run the packed one-shot app generator for a public app',
+  })
+  await proveUpgradedRepositoryGate(consumerDirectory, generatedDirectory, 'private')
+  await proveUpgradedRepositoryGate(consumerDirectory, publicDirectory, 'public')
 
   const packagesByName = new Map(packages.map(({ manifest }) => [manifest.name, manifest]))
   assertExactGeneratedPackagePins(generatedDirectory, packagesByName)
@@ -1023,9 +1265,17 @@ async function proveGeneratedConsumer({
   addPackedShellRootValueImportSmoke(generatedDirectory)
   addPackedSeoMetadataSmoke(generatedDirectory)
   assertNoForbiddenGeneratedReferences(generatedDirectory)
+  // The public app carries only the public capability set, so it has no
+  // required-package list of its own; every pin it has must still be exact.
+  assertExactGeneratedPackagePins(publicDirectory, packagesByName, [])
+  addTarballOverrides(publicDirectory, packages, tarballs)
+  configureConsumerFonts(publicDirectory)
+  assertNoForbiddenGeneratedReferences(publicDirectory)
   assertConsumerDependencyScope(loadWorkspace(root), [
     readJson(join(generatedDirectory, 'package.json')),
     readJson(join(generatedDirectory, 'apps', 'web', 'package.json')),
+    readJson(join(publicDirectory, 'package.json')),
+    readJson(join(publicDirectory, 'apps', 'web', 'package.json')),
   ])
   if (artifactsOnly) {
     writeLine(
@@ -1034,7 +1284,7 @@ async function proveGeneratedConsumer({
     if (process.env.GITHUB_STEP_SUMMARY)
       appendFileSync(
         process.env.GITHUB_STEP_SUMMARY,
-        '\n**Consumer coverage:** packed artifacts, export resolution, testkit execution, and generated manifests. Nuxt/browser/D1 integration is not affected; no reusable generated-app proof was produced.\n',
+        '\n**Consumer coverage:** packed artifacts, export resolution, testkit execution, generated manifests, and the upgrade of pre-gate private and public apps to the generated repository gate. Nuxt/browser/D1 integration and the gate run are not affected; no reusable generated-app proof was produced.\n',
       )
     return
   }
@@ -1196,6 +1446,53 @@ async function proveGeneratedConsumer({
     assertNoForbiddenGeneratedReferences(generatedDirectory)
   }
 
+  // Not part of the reusable proof above: always executed, so every
+  // generated-app run proves the gate the packed generator and its upgrade
+  // emit against the packed validators.
+  const gateSummary = [
+    ...(await proveRepositoryGateRoundTrip(consumerDirectory, generatedDirectory, 'private')).map(
+      (line) => `private ${line}`,
+    ),
+  ]
+  await runChecked('pnpm', ['install', '--no-frozen-lockfile'], {
+    cwd: publicDirectory,
+    label: 'install the generated public app from packed artifacts',
+  })
+  assertNoForbiddenGeneratedReferences(publicDirectory)
+  // The emitted public quality job runs `pnpm run quality:static`, then the
+  // gate steps; the item-10 step serves the Worker that built. Same phases as
+  // the private proof: style checks are the generated app's own business.
+  let builtPublicWorker = false
+  for (const phase of consumerSmokePhases(
+    readJson(join(publicDirectory, 'package.json')).scripts,
+  )) {
+    if (phase === 'test:e2e') continue
+    const output = await runChecked('pnpm', ['run', phase], {
+      cwd: publicDirectory,
+      label: `generated public app ${phase}`,
+    })
+    if (isGeneratedBuildPhase(phase)) {
+      if (!output.includes('[consumer-smoke] Unused font catalog providers disabled:')) {
+        throw new Error(`The generated public ${phase} did not activate its font provider fixture.`)
+      }
+      builtPublicWorker = true
+    }
+  }
+  if (!builtPublicWorker) {
+    throw new Error('No generated public phase built the Worker the item-10 step serves.')
+  }
+  gateSummary.push(
+    ...(await proveRepositoryGateRoundTrip(consumerDirectory, publicDirectory, 'public')).map(
+      (line) => `public ${line}`,
+    ),
+  )
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `\n### Generated and upgraded repository gate (NAC-GATE-PARITY)\n\n${gateSummary.map((line) => `- ${line}`).join('\n')}\n`,
+    )
+  }
+
   if (process.env.GITHUB_RUN_ID && imageIdentity) {
     const evidenceDirectory = join(root, '.ci-evidence', 'packed-consumer-proof')
     mkdirSync(evidenceDirectory, { recursive: true })
@@ -1222,7 +1519,7 @@ async function proveGeneratedConsumer({
   }
 
   writeLine(
-    `Packed consumer smoke passed for ${packages.length} package(s) and the generated Nuxt/Cloudflare/D1 fixture.`,
+    `Packed consumer smoke passed for ${packages.length} package(s), the generated Nuxt/Cloudflare/D1 fixture, and the generated and upgraded repository gate of a private and a public app.`,
   )
 }
 

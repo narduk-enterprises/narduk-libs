@@ -108,9 +108,11 @@ baseline 190 drained, and the count admitted since the freeze.
   `CI=true` so `narduk-lint` cannot rewrite `lint-budget.json` (#623), and the
   tracked tree is compared before and after every phase, so any other writer
   fails the run and is named. Flags: `--base <ref>`, `--no-fetch`,
-  `--no-consumer`. A diff that touches a global trigger such as the root
-  `package.json` or the lockfile selects every package, and the command says so
-  before spending the time.
+  `--no-consumer`, `--release-pr` (skip `release-plan:check` as CI does on the
+  release PR, only once HEAD is proven to be the fetched
+  `origin/changeset-release/main` tip; see `docs/package-releases.md`). A diff
+  that touches a global trigger such as the root `package.json` or the lockfile
+  selects every package, and the command says so before spending the time.
 - **When to run the full preflight before pushing** (Logan, 2026-09-25, for this
   repo only): this repo is public, its CI runs on GitHub-hosted runners, and the
   ruleset makes CI a merge gate, so a local preflight re-runs checks CI will run

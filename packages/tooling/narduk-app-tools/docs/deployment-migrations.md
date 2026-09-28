@@ -154,20 +154,25 @@ The app's promote workflow must follow these steps in one serialized job:
    narduk-app db migrate-deployment --target production --check
    ```
 5. Only on success, restore the separate promote credential, promote that exact
-   SHA, then perform live proof. Keep the app's existing alert and Worker
-   rollback handling. Rollback requires a completed promotion followed by failed
-   live proof; a migration failure must not trigger a Worker rollback.
+   SHA, then perform live proof. Keep the app's existing alert. A completed
+   promotion whose live proof fails leaves the run red and prints the version
+   production left and the `narduk-app deploy rollback` command; the workflow
+   does not run it. A migration failure blocks the promotion and triggers
+   nothing else.
 6. Upload `.narduk/recovery/d1` with `if: always()`, hidden files included and
    restricted artifact access. It contains schema/ledger metadata and a Time
    Travel bookmark, not application records or credentials. Missing evidence on
    a no-op run is normal; a pending migration requires successful capture.
 
-**Automated rollback depends on step 2 (narduk-libs#399).**
-`narduk-app deploy rollback` restores code, never a schema. A promote workflow
-(slice W1) may run rollback automatically after failed live proof only when step
-2 runs before its migrate step. The same holds for an app wiring rollback into
-its own promote job, such as Buoys slice B3. Without step 2, rollback stays a
-manual command, run by someone who knows what the schema did.
+**Rollback is manual (narduk-libs#399).** The deployment standard declares
+`deployment.rollback.mode: manual` (company-hq NARDUK-APP-COMPLIANCE.md §3.1,
+NAC-DEPLOY-CONFORM), and `foundation:check:deployment` sub-check 12.10 fails
+`"auto"`. No promote workflow, generated or app-written, runs
+`narduk-app deploy rollback` on its own, including after failed live proof. A
+person runs it, with the version the failed run printed.
+`narduk-app deploy rollback` restores code, never a schema, and step 2 is what
+keeps the version being rolled back to compatible with the migrated database.
+Whoever runs it still checks what the schema did since that version.
 
 `create-narduk-app` emits `promote-d1.steps.yml` for this insertion, step 2
 included. Keep workflow concurrency `cancel-in-progress: false`. Repository

@@ -1,6 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
+import { applyCallerGate, applyPublicGate } from './ci-gate.js'
+import type { CiGateContext, CiGateEdit } from './ci-gate.js'
+import { CANDIDATE_SECURITY_HEADERS_STEP_NAME, REPOSITORY_GATE_STEP_NAME } from './ci-workflow.js'
 import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
 import type { CheckoutFacts } from './checkout-facts.js'
 import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
@@ -62,8 +65,9 @@ export interface UpgradeProfile {
   capabilities: Capability[]
   /**
    * `standard` when the app's `.github/workflows/ci.yml` passes the shared
-   * workflow `quality-level: standard`; `legacy` otherwise. Only the AGENTS.md
-   * quality bar reads it, and `upgrade` never writes that input.
+   * workflow `quality-level: standard` -- or will, once this run's ci.yml
+   * unit lands; `legacy` otherwise. Only the AGENTS.md quality bar reads it,
+   * so the bar never claims a gate the app's CI does not run.
    */
   ciQualityLevel: CiQualityLevel
   databaseBackend: GeneratedDatabaseBackend
@@ -267,11 +271,12 @@ export async function inferUpgradeProfile(
     visibility = overrides.visibility
   }
 
-  // Read, never written: adopting the standard gates is the app's own change
-  // (narduk-enterprises/workflows#158), so the quality bar follows the caller.
+  // The quality bar follows the caller. `upgrade` adds `quality-level:
+  // standard` to a caller that lacks it (NAC-GATE-PARITY), and
+  // upgradeNardukApp re-reads the level from the edited caller, so the bar and
+  // the CI move together.
   const ciCaller = (await readIfExists(resolve(targetDir, '.github/workflows/ci.yml'))) ?? ''
-  const ciQualityLevel: CiQualityLevel =
-    /^\s*quality-level:\s*['"]?standard['"]?\s*(?:#.*)?$/mu.test(ciCaller) ? 'standard' : 'legacy'
+  const ciQualityLevel = ciQualityLevelOf(ciCaller)
   inferred.push('ciQualityLevel')
 
   return {
@@ -284,6 +289,12 @@ export async function inferUpgradeProfile(
     notes,
     visibility,
   }
+}
+
+const STANDARD_QUALITY_LEVEL = /^\s*quality-level:\s*['"]?standard['"]?\s*(?:#.*)?$/mu
+
+function ciQualityLevelOf(ciCaller: string): CiQualityLevel {
+  return STANDARD_QUALITY_LEVEL.test(ciCaller) ? 'standard' : 'legacy'
 }
 
 function generatedContentsFor(
@@ -392,19 +403,7 @@ function resolveFile(current: string | null, desired: string, path: string): Res
   }
 }
 
-function resolvePin(current: string | null, desired: string): Resolution {
-  if (current === null) {
-    return {
-      detail: 'File is absent. Its inputs are app-owned, so upgrade does not create it.',
-      status: 'absent',
-    }
-  }
-  if (isDisowned(current)) {
-    return {
-      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
-      status: 'unmanaged',
-    }
-  }
+function resolvePin(current: string, desired: string): Resolution {
   const desiredPin = CI_CALLER_PIN_PATTERN.exec(desired)?.[0]
   if (!desiredPin) {
     return {
@@ -413,14 +412,7 @@ function resolvePin(current: string | null, desired: string): Resolution {
     }
   }
   const pattern = new RegExp(CI_CALLER_PIN_PATTERN.source, 'gu')
-  const found = current.match(pattern)
-  if (!found) {
-    return {
-      detail:
-        'No narduk-enterprises/workflows nuxt-cloudflare caller found; this app does not call the shared workflow.',
-      status: 'absent',
-    }
-  }
+  const found = current.match(pattern) ?? []
   const desiredSha = desiredPin.split('@')[1] ?? ''
   if (found.every((match) => match === desiredPin)) {
     return { detail: 'Pinned at ' + desiredSha + '.', status: 'clean' }
@@ -450,6 +442,83 @@ function resolvePin(current: string | null, desired: string): Resolution {
     next: rewriteWorkflowPins(current, desiredSha),
     status: 'drift',
   }
+}
+
+/** Folds a repository-gate edit into the unit's resolution. */
+function withGateEdit(
+  current: string,
+  base: Resolution,
+  edit: CiGateEdit,
+  cleanDetail: string,
+): Resolution {
+  const changed = edit.contents !== current
+  const parts = [base.detail]
+  if (edit.added.length) parts.push('Adds the repository gate: ' + edit.added.join('; ') + '.')
+  if (edit.warnings.length) parts.push('Warning: ' + edit.warnings.join('; ') + '.')
+  if (edit.problems.length) parts.push('Gate incomplete: ' + edit.problems.join('; ') + '.')
+  if (!changed && !edit.problems.length) parts.push(cleanDetail)
+  return {
+    detail: parts.join(' '),
+    ...(changed ? { next: edit.contents } : {}),
+    status: edit.problems.length ? 'unresolved' : changed ? 'drift' : 'clean',
+  }
+}
+
+/**
+ * The app's CI caller: the shared-workflow pin, and the repository gate
+ * (NAC-GATE-PARITY) -- every repository-stage check wired in, whatever else
+ * the app's inputs say. See ci-gate.ts for exactly what is edited.
+ */
+function resolveCiCaller(
+  current: string | null,
+  desired: string,
+  visibility: AppVisibility,
+  gate: CiGateContext,
+): Resolution {
+  if (current === null) {
+    return {
+      detail: 'File is absent. Its inputs are app-owned, so upgrade does not create it.',
+      status: 'absent',
+    }
+  }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
+  }
+  if (!CI_CALLER_PIN_PATTERN.test(current)) {
+    if (visibility !== 'public') {
+      return {
+        detail:
+          'No narduk-enterprises/workflows nuxt-cloudflare caller found; this app does not call the shared workflow.',
+        status: 'absent',
+      }
+    }
+    const edit = applyPublicGate(current, gate)
+    if (!edit) {
+      return {
+        detail:
+          'Public CI has no single `- run: pnpm run quality:static` step to extend, so the repository gate was not added. Copy the "' +
+          REPOSITORY_GATE_STEP_NAME +
+          '" and "' +
+          CANDIDATE_SECURITY_HEADERS_STEP_NAME +
+          '" steps from a newly generated public app.',
+        status: 'unresolved',
+      }
+    }
+    return withGateEdit(
+      current,
+      { detail: 'Public CI calls no shared workflow.', status: 'clean' },
+      edit,
+      'Repository gate steps present.',
+    )
+  }
+  const pin = resolvePin(current, desired)
+  // A pin this generator cannot place leaves the whole file alone.
+  if (pin.status === 'unresolved') return pin
+  const edit = applyCallerGate(pin.next ?? current, gate)
+  return withGateEdit(current, pin, edit, 'Repository gate inputs present.')
 }
 
 function resolveRegion(
@@ -883,12 +952,19 @@ function resolveKeys(current: string | null, desired: string): Resolution {
   }
 }
 
+interface ResolveContext {
+  registry: PackageRegistry
+  visibility: AppVisibility
+  gate: CiGateContext
+}
+
 function resolveManagedTarget(
   target: ManagedTarget,
   current: string | null,
   desired: string | undefined,
-  registry: PackageRegistry,
+  context: ResolveContext,
 ): Resolution {
+  const { registry } = context
   if (target.path === '.github/dependabot.yml' && desired !== undefined) {
     return resolveDependabot(current, desired, registry)
   }
@@ -902,7 +978,7 @@ function resolveManagedTarget(
     case 'file':
       return resolveFile(current, desired, target.path)
     case 'pin':
-      return resolvePin(current, desired)
+      return resolveCiCaller(current, desired, context.visibility, context.gate)
     case 'region':
       return resolveRegion(current, desired, target.region, target.path, target.insertWhenMissing)
     case 'keys':
@@ -910,6 +986,11 @@ function resolveManagedTarget(
     case 'jsonc-keys':
       return resolveJsoncKeys(current, desired, target)
   }
+}
+
+/** A gate context for resolving units that never read it. */
+function emptyGate(facts: CheckoutFacts): CiGateContext {
+  return { cspEnforcedHint: false, layout: facts.layout, scriptsAfterUpgrade: new Set() }
 }
 
 /**
@@ -922,8 +1003,8 @@ function resolveManagedTarget(
 export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promise<UpgradeReport> {
   const targetDir = resolve(options.targetDir)
   const facts = await readCheckoutFacts(targetDir)
-  const profile = await inferUpgradeProfile(targetDir, options, facts)
-  const generated = generatedContentsFor(profile, targetDir, facts)
+  let profile = await inferUpgradeProfile(targetDir, options, facts)
+  let generated = generatedContentsFor(profile, targetDir, facts)
   const managedTargets = managedTargetsFor(facts)
   const registry = detectPackageRegistry(
     await readIfExists(resolve(targetDir, '.npmrc')),
@@ -943,12 +1024,74 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
     ? managedTargets.filter((target) => only.some((entry) => onlyMatches(entry, target)))
     : managedTargets
 
+  const currentOf = new Map<string, string | null>()
+  for (const target of targets) {
+    currentOf.set(target.path, await readIfExists(resolve(targetDir, target.path)))
+  }
+  const resolved = new Map<string, Resolution>()
+
+  // package.json first: the CI gate may only name a script the app will have
+  // once this run lands, and the scripts unit is what creates a missing one.
+  const packageTarget = targets.find((target) => target.path === 'package.json')
+  const packageNow =
+    currentOf.get('package.json') ?? (await readIfExists(resolve(targetDir, 'package.json')))
+  if (packageTarget) {
+    resolved.set(
+      'package.json',
+      resolveManagedTarget(packageTarget, packageNow, generated.get('package.json'), {
+        gate: emptyGate(facts),
+        registry,
+        visibility: profile.visibility,
+      }),
+    )
+  }
+  const packageAfter = resolved.get('package.json')?.next ?? packageNow
+  const scriptsAfterUpgrade = new Set(
+    Object.keys((parseJsonOrNull(packageAfter)?.scripts as Record<string, string>) ?? {}),
+  )
+  const context: ResolveContext = {
+    gate: {
+      cspEnforcedHint: /\benforce\s*:\s*true\b/u.test(facts.nuxtConfig),
+      layout: facts.layout,
+      scriptsAfterUpgrade,
+    },
+    registry,
+    visibility: profile.visibility,
+  }
+
+  // Then the CI caller, and the quality level it will declare afterwards: the
+  // AGENTS.md quality bar is rendered from that, not from the caller as found.
+  const ciTarget = targets.find((target) => target.path === '.github/workflows/ci.yml')
+  if (ciTarget) {
+    const ci = resolveManagedTarget(
+      ciTarget,
+      currentOf.get(ciTarget.path) ?? null,
+      generated.get(ciTarget.path),
+      context,
+    )
+    resolved.set(ciTarget.path, ci)
+    const level = ciQualityLevelOf(ci.next ?? currentOf.get(ciTarget.path) ?? '')
+    if (level !== profile.ciQualityLevel) {
+      profile = {
+        ...profile,
+        ciQualityLevel: level,
+        notes: [
+          ...profile.notes,
+          'ci.yml gains quality-level standard in this run, so the AGENTS.md quality bar is rendered for it.',
+        ],
+      }
+      generated = generatedContentsFor(profile, targetDir, facts)
+    }
+  }
+
   const changes: UpgradeChange[] = []
   for (const target of targets) {
     const absolute = resolve(targetDir, target.path)
-    const current = await readIfExists(absolute)
+    const current = currentOf.get(target.path) ?? null
     const desiredPath = target.mode === 'jsonc-keys' ? 'apps/web/wrangler.jsonc' : target.path
-    const resolution = resolveManagedTarget(target, current, generated.get(desiredPath), registry)
+    const resolution =
+      resolved.get(target.path) ??
+      resolveManagedTarget(target, current, generated.get(desiredPath), context)
     const next = resolution.next
     const diff = next === undefined ? '' : unifiedDiff(target.path, current ?? '', next)
 
@@ -1015,7 +1158,13 @@ export function formatUpgradeReport(report: UpgradeReport): string {
   )
   for (const note of report.profile.notes) lines.push('  note: ' + note)
   for (const change of report.changes) {
-    const verb = change.applied ? 'applied' : change.status
+    // A unit can be written and still be unresolved: the CI gate edit lands
+    // what it safely can and says what the app still has to do.
+    const verb = change.applied
+      ? change.status === 'unresolved'
+        ? 'partial'
+        : 'applied'
+      : change.status
     lines.push('  ' + verb.padEnd(11) + change.path + ' [' + change.unit + '] — ' + change.detail)
   }
   lines.push(

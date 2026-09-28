@@ -249,6 +249,26 @@ published, so it still needs one too.
 The check is skipped on `changeset-release/*` branches, whose version commits
 legitimately rewrite every manifest with the Changesets already consumed.
 
+`pnpm run preflight` skips it in the same place, but only on proof, because a
+local branch name proves nothing. Pass `--release-pr` (a checkout of the
+`changeset-release/main` branch implies it). The skip then needs HEAD to be
+exactly the tip of `origin/changeset-release/main`, fetched by that run, a
+working tree identical to HEAD, and no pending `.changeset/*.md`. Any gap is
+named, `release-plan:check` runs anyway, and preflight fails. To validate the
+current release PR head locally:
+
+```sh
+git fetch origin changeset-release/main
+git worktree add --detach ../narduk-libs-release origin/changeset-release/main
+cd ../narduk-libs-release
+pnpm install --frozen-lockfile
+pnpm run preflight --release-pr
+```
+
+A release head the bot has since replaced fails the proof
+(`HEAD <old> is not origin/changeset-release/main <new>`); validate the new head
+instead.
+
 ## Consuming a fix that is merged but not yet published
 
 An app that needs a library fix sees a gap between the fix merging here and a

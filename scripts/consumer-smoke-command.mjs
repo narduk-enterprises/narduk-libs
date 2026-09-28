@@ -14,7 +14,8 @@ export function runConsumerCommand(command, args, options) {
         maxBuffer: 64 * 1024 * 1024,
       },
       (error, stdout, stderr) => {
-        if (error) reject(error)
+        // A caller that expects a non-zero verdict reads the output here.
+        if (error) reject(Object.assign(error, { output: `${stdout}${stderr}` }))
         else resolve(`${stdout}${stderr}`)
       },
     )

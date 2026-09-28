@@ -323,6 +323,19 @@ export function createRootPackageManifest(
       // not call this script. Matches the reference app's root script.
       'foundation:check':
         'mkdir -p foundation-check && narduk-app foundation:check --checkout . --json foundation-check/foundation-check.json',
+      // Items 9, 11 and 12 (NAC-CAPABILITY, NAC-TOOLCHAIN, NAC-DEPLOY-CONFORM).
+      // Each reads the checkout only and needs no credential. CI runs every
+      // one of them by name -- private through the shared workflow's
+      // `extra-scripts`, public as its own step (ci-workflow.ts) -- so the
+      // script NAME is the contract `upgrade` creates when missing. The
+      // bodies match the reference app's, one JSON artefact each beside
+      // foundation-check.json.
+      'foundation:check:coverage':
+        'mkdir -p foundation-check && narduk-app foundation:check:coverage --checkout . --json foundation-check/coverage.json',
+      'foundation:check:deployment':
+        'mkdir -p foundation-check && narduk-app foundation:check:deployment --checkout . --json foundation-check/deployment.json',
+      'foundation:check:toolchain':
+        'mkdir -p foundation-check && narduk-app foundation:check:toolchain --checkout . --json foundation-check/toolchain.json',
       'foundation:shared-ui-pinned': 'pnpm --filter web run foundation:shared-ui-pinned',
       format: 'prettier --write "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',
       'format:check': 'prettier --check "**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}"',

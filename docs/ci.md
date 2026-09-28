@@ -92,6 +92,28 @@ digest; all registry resolution bytes remain exact. Actual installs still use
 the original fresh tarballs and lockfiles. Invalid or duplicate archive
 members/manifests fail.
 
+The packed consumer also round-trips the repository gate that generated apps
+emit (company-hq NAC-GATE-PARITY, §3.11; `scripts/consumer-smoke-gate.mjs`).
+Beside the private fixture it generates a public, database-free app. Each app is
+taken back to the gate an app generated before that change carries. The packed
+generator's `upgrade --write` must then restore the fresh scaffold's gate, with
+no unit left drifting; this half also runs on the artifacts-only path. On the
+generated-app path, the job then runs each app's gate as its own `ci.yml` names
+it, against the packed `narduk-app-tools`. For the private app that is the
+extra-scripts gate names and `foundation:check`. For the public app it is the
+quality job's two gate steps verbatim, with item 10 probing its locally built
+Worker, plus `foundation:check`. Items 8, 9, 11 and 12 must PASS, read from the
+JSON artefact each command writes in that run (an earlier artefact is removed
+first; a missing one fails). Item 10 must print PASS for a route it probed on
+the candidate's own `127.0.0.1` port. The `foundation:check` verdicts are pinned
+exactly, detail included: private FAIL on only 1.5, for the fixture's one D1
+binding still on the placeholder `database_id`
+`00000000-0000-0000-0000-000000000000`; public UNKNOWN on only 5.1, because the
+adoption matrix is cross-repository (by specification, company-hq
+WEB-FOUNDATION-CHECK.md item 5). Any other exit code or verdict fails the job,
+including one of those closing or failing for another reason. This half always
+executes; it is not part of the reusable proof.
+
 Proof lookup accepts only the latest successful CI run/attempt for that
 same-repo PR head, its successful packed-consumer job, and one unexpired
 seven-day artifact. It cannot reuse a receipt that itself reused a proof. Lookup
