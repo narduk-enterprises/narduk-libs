@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.11.0
+
+### Minor Changes
+
+- 4da2968: Add the instrument mark renderer and path geometry at
+  `./instrument-marks`, with opt-in `marks: 'instruments'` styling. This moves
+  reusable SVG/DOM behavior out of Buoys without changing the existing `./marks`
+  disc API or its default stylesheet. Product thresholds, labels, colors and
+  lens selection stay in the app.
+
+  Also share `useMapKitLayoutSettle` for bare MapKit hosts, preserving the
+  measured tile-layout repair while restoring inline height and cancelling
+  pending frames on disposal or replacement.
+
+  Add opt-in `chrome: true` Vue map controls, keyboard menus, notices and
+  instrument legends so apps supply product inputs without copying reusable UI
+  behavior.
+
+### Patch Changes
+
+- da9d090: Test-only: the SSR preload hydration tests call unhead 3's
+  synchronous `renderSSRHead`/`renderDOMHead` without `await`, clearing the
+  package's last lint warnings. No runtime change.
+
 ## 2.10.3
 
 ### Patch Changes

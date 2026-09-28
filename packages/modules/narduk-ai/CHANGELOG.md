@@ -1,5 +1,17 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.7
+
+### Patch Changes
+
+- 507e9c1: `grokListModels` now times out after 10s instead of waiting
+  indefinitely on a stalled xAI; the timeout rejects the same way a network
+  failure does.
+- Updated dependencies [32489bd]
+- Updated dependencies [cb0c602]
+- Updated dependencies [1d62518]
+  - @narduk-enterprises/narduk-core@2.19.0
+
 ## 0.4.6
 
 ### Patch Changes

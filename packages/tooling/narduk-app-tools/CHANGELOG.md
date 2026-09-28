@@ -1,5 +1,19 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.27.3
+
+### Patch Changes
+
+- 75a14a1: Clear the two mechanical `@typescript-eslint/array-type` narduk-lint
+  warnings in `tests/foundation/npm-registry.test.ts` (narduk-libs#1237):
+  `{ headers: Record<string, string> }[]` to
+  `Array<{ headers: Record<string, string> }>`. Type-only change, no behaviour
+  affected.
+- a7d76f3: `deployment-check` names the `malformed` and `invalid`
+  deployment-block outcomes explicitly when reporting `adoption: invalid`; the
+  reported adoption is unchanged, and a future outcome kind now fails the type
+  check instead of silently reading as invalid.
+
 ## 0.27.2
 
 ### Patch Changes

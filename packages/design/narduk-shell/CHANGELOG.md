@@ -1,5 +1,26 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.11.1
+
+### Patch Changes
+
+- 319a84d: `narduk/require-client-only-hydration-sensitive` no longer flags
+  `UNavigationMenu`: it reads no localStorage or matchMedia state, and its
+  active item comes from the route, which matches on server and client. It may
+  server-render, as NeAppShell's rail does. The `UColorMode*` controls are still
+  required to be in `<ClientOnly>`.
+- 482f471: Clear the 20 mechanical narduk-lint warnings recorded against
+  `@narduk-enterprises/narduk-shell` (narduk-libs#1237): `array-type` (`T[]` /
+  `readonly T[]` to `Array<T>` / `ReadonlyArray<T>`),
+  `perfectionist/sort-interfaces` and `perfectionist/sort-object-types`
+  (alphabetized keys), `perfectionist/sort-imports` (blank line between import
+  groups), `unicorn/no-for-each` (`for...of` in place of `.forEach`),
+  `unicorn/no-useless-undefined`, `vue/define-macros-order` (`defineEmits` moved
+  above `defineModel`), and `consistent-type-definitions` (`type` to `interface`
+  for an object type literal). No behaviour change: all fixes are type-only or
+  control-flow-equivalent rewrites, verified by the existing unit/mount/SSR test
+  suites.
+
 ## 0.11.0
 
 ### Minor Changes
