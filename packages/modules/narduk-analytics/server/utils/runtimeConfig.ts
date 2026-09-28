@@ -35,9 +35,13 @@ export type AnalyticsServerRuntimeConfig = Record<string, unknown> & {
  * Server code in this package calls this instead of `useRuntimeConfig`
  * directly so its view of the config is the same in our workspace and in a
  * consumer's Nitro build, rather than depending on a type augmentation that
- * only takes effect on one of the two. The single cast lives here; every
- * caller gets a type that is true in both programs.
+ * only takes effect on one of the two. This assertion is a module boundary:
+ * consumer-generated configs also require app/Nitro keys absent from our
+ * deliberately narrower view, so neither interface structurally contains the
+ * other. The module's defaults guarantee our keys at runtime.
  */
 export function analyticsRuntimeConfig(event?: H3Event): AnalyticsServerRuntimeConfig {
-  return (event ? useRuntimeConfig(event) : useRuntimeConfig()) as AnalyticsServerRuntimeConfig
+  return (event
+    ? useRuntimeConfig(event)
+    : useRuntimeConfig()) as unknown as AnalyticsServerRuntimeConfig
 }
