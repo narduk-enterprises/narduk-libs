@@ -15,6 +15,8 @@ function directive(name: string, options: Parameters<typeof resolveSecurityHeade
   return resolveSecurityHeaders(options).csp[name] as string[]
 }
 
+const SCRIPT_SRC = 'script-src'
+
 describe('security.headers mode', () => {
   it('is off unless an app asks for it, so upgrading narduk-core changes no headers', () => {
     expect(resolveSecurityHeadersMode(undefined)).toBe('off')
@@ -33,12 +35,12 @@ describe('security.headers mode', () => {
 
 describe('strict policy', () => {
   it('carries the nonce placeholder and strict-dynamic on script-src', () => {
-    expect(directive('script-src')).toContain("'nonce-{{nonce}}'")
-    expect(directive('script-src')).toContain("'strict-dynamic'")
+    expect(directive(SCRIPT_SRC)).toContain("'nonce-{{nonce}}'")
+    expect(directive(SCRIPT_SRC)).toContain("'strict-dynamic'")
   })
 
   it('drops strict-dynamic on request, keeping the host allowlist meaningful', () => {
-    const sources = directive('script-src', { enabled: true, strictDynamic: false })
+    const sources = directive(SCRIPT_SRC, { enabled: true, strictDynamic: false })
     expect(sources).toContain("'nonce-{{nonce}}'")
     expect(sources).not.toContain("'strict-dynamic'")
     expect(sources).toContain('https://*.googletagmanager.com')
@@ -46,7 +48,7 @@ describe('strict policy', () => {
 
   it('never allows unsafe-inline or unsafe-eval to execute script', () => {
     for (const strictDynamic of [true, false]) {
-      const sources = directive('script-src', { enabled: true, strictDynamic })
+      const sources = directive(SCRIPT_SRC, { enabled: true, strictDynamic })
       expect(sources).not.toContain("'unsafe-inline'")
       expect(sources).not.toContain("'unsafe-eval'")
     }
@@ -122,7 +124,7 @@ describe('allowlist surface', () => {
     expect(resolved.csp['frame-src']).toContain('https://embed.example')
     expect(resolved.csp['img-src']).toContain('https://tiles.example')
     expect(resolved.csp['media-src']).toContain('https://media.example')
-    expect(resolved.csp['script-src']).toContain('https://p.nard.uk')
+    expect(resolved.csp[SCRIPT_SRC]).toContain('https://p.nard.uk')
     expect(resolved.csp['style-src']).toContain('https://styles.example')
     expect(resolved.csp['worker-src']).toContain('https://worker.example')
   })
@@ -180,7 +182,7 @@ describe("baseline: 'self' (issue #560)", () => {
       ['frame', 'frame-src'],
       ['img', 'img-src'],
       ['media', 'media-src'],
-      ['script', 'script-src'],
+      ['script', SCRIPT_SRC],
       ['style', 'style-src'],
       ['worker', 'worker-src'],
     ] as const) {
@@ -223,7 +225,7 @@ describe("baseline: 'self' (issue #560)", () => {
 
   it('keeps every concession the nonce policy depends on', () => {
     const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
-    const script = resolved.csp['script-src'] as string[]
+    const script = resolved.csp[SCRIPT_SRC] as string[]
     expect(script).toEqual(["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"])
     // style-src's unsafe-inline is Vue's scoped-style runtime, not a baseline
     // origin, so dropping the baseline must not drop it.
@@ -298,7 +300,7 @@ describe('legacy CSP_*_SRC environment variables', () => {
     expect(resolved.csp['connect-src']).toContain('https://data.nard.uk')
     expect(resolved.csp['frame-src']).toContain('https://frame.example')
     expect(resolved.csp['media-src']).toContain('blob:')
-    expect(resolved.csp['script-src']).toContain('https://p.nard.uk')
+    expect(resolved.csp[SCRIPT_SRC]).toContain('https://p.nard.uk')
     expect(resolved.csp['worker-src']).toContain('https://worker.example')
   })
 
