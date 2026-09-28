@@ -15,6 +15,10 @@
  * against the current route, which is the same on the server and the client.
  * Forcing it into `<ClientOnly>` removed navigation from the server's first
  * paint for no hydration benefit (narduk-shell's `NeAppShell` rail).
+ * One caveat: the server never sees the URL hash, so an item with `exactHash`
+ * (or an `active` flag computed from the hash) marks a different item active
+ * on the server and the client. That is true of any hash-matched link, not of
+ * the menu, so this rule does not try to catch it.
  *
  * v1 was **exactly inverted** for the same reason as `require-client-only-switch`
  * (deep-review proof 1): `VElement.name` is lowercased by `vue-eslint-parser`, so
