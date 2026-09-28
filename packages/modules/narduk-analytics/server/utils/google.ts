@@ -13,6 +13,14 @@ export const GSC_WRITE_SCOPES = ['https://www.googleapis.com/auth/webmasters']
 
 export const INDEXING_SCOPES = ['https://www.googleapis.com/auth/indexing']
 
+// Upper bounds for outbound Google calls, so a stalled upstream cannot hold the
+// request (and the Worker's wall-clock budget) open. A timeout rejects the
+// fetch with a `TimeoutError`, which reaches callers the same way a network
+// failure does. Module-private on purpose: `server/utils` exports become
+// auto-imports in consumer apps.
+const GOOGLE_TOKEN_TIMEOUT_MS = 10_000
+const GOOGLE_API_TIMEOUT_MS = 15_000
+
 /**
  * Structured error for Google API failures.
  * Preserves HTTP status, statusText, and response body for downstream handling.
@@ -87,6 +95,7 @@ export async function getAccessToken(scopes: string[], event?: H3Event): Promise
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion: jwt,
     }),
+    signal: AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
   })
 
   if (!tokenResponse.ok) {
@@ -106,6 +115,7 @@ export async function getAccessToken(scopes: string[], event?: H3Event): Promise
 /**
  * Fetch from Google APIs using service account credentials.
  * Automatically handles JWT-based token generation and caching.
+ * Bounded by `GOOGLE_API_TIMEOUT_MS` unless the caller passes its own `signal`.
  */
 export async function googleApiFetch(
   url: string,
@@ -119,7 +129,11 @@ export async function googleApiFetch(
   headers.set('Authorization', `Bearer ${token}`)
   headers.set('Content-Type', 'application/json')
 
-  const response = await fetch(url, { ...options, headers })
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    signal: options.signal ?? AbortSignal.timeout(GOOGLE_API_TIMEOUT_MS),
+  })
 
   if (!response.ok) {
     let body: unknown
