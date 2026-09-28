@@ -113,7 +113,12 @@ pnpm dlx @narduk-enterprises/create-narduk-app upgrade . --only .github/dependab
 `--json` prints the machine-readable report (`schemaVersion: 1`) instead of the
 human summary. `--capabilities`, `--database`, `--local-dev-port` and
 `--visibility` override the inferred profile; the profile itself is printed on
-every run so a wrong reading is visible before `--write`.
+every run so a wrong reading is visible before `--write`. Capabilities are
+always _inferred_ here -- from the app's own `narduk.capabilities` declaration,
+falling back to its dependencies -- never defaulted: the no-flag seo/analytics
+default a fresh public scaffold gets (see `foundation:check` below) applies only
+to `create-narduk-app` itself, so `upgrade` never adds a capability an existing
+app does not already declare or depend on.
 
 ### Reading an existing checkout
 
@@ -460,11 +465,17 @@ Scaffolds match the reference app shape Buoys is being brought to
 
 A freshly generated app is web-foundation conformant once its database exists:
 `pnpm run foundation:check` reports `PASS`, before or after its first build,
-after one command. The exception is a public app scaffolded without `seo` and
-`analytics`: item 3.1 requires both for `exposureClass: public`, so pass
-`--capabilities seo,analytics` (or `auth`, which makes the app authenticated).
-Generated CI calls the shared workflow with `foundation-check: true`, which
-fails the build on a `FAIL` **or** an `UNKNOWN` result.
+after one command. Item 3.1 requires both `seo` and `analytics` for
+`exposureClass: public`, so a scaffold with no `--capabilities`/`--capability`
+flag at all defaults to both when it lands on public exposure (Logan, askme
+2026-09-28, narduk-libs#1229) -- a no-flag `create-narduk-app harbor-notes`
+passes 3.1 out of the box. An explicit `--capabilities`, even an empty or
+different set, always wins over that default: pass `--capabilities=` (or any
+list without `seo`/`analytics`) to opt out, or `--capabilities auth` (or any
+list containing `auth`), which makes the app authenticated instead, where the
+default does not apply. Generated CI calls the shared workflow with
+`foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN`
+result.
 
 ### Standard quality gates
 

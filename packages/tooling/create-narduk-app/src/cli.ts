@@ -25,6 +25,9 @@ function usage(): string {
       '',
       'Options:',
       '  --capabilities <list>       Comma-separated: auth, seo, analytics, uploads, ai, mapkit',
+      '                              Default when omitted entirely: seo,analytics for a public',
+      '                              app (foundation:check 3.1), none for an authenticated one.',
+      '                              An explicit --capabilities/--capability, even empty, wins.',
       '  --capability <name>        Add one capability; may be repeated',
       '  --display-name <name>       Human-readable app name',
       '  --description <text>        Product description',
@@ -317,7 +320,12 @@ export function parseCliArguments(
     json: jsonOutput,
     options: {
       appName,
-      capabilities: capabilityValues.join(','),
+      // `undefined` (never `--capabilities`/`--capability` at all) is distinct
+      // from an explicit but empty list (`--capabilities ""`): only the former
+      // lets normalizeOptions apply the no-flag public-app default. Both parse
+      // to the same joined string, so the distinction has to survive here, in
+      // whether the flag was seen.
+      capabilities: capabilityValues.length > 0 ? capabilityValues.join(',') : undefined,
       databaseBackend,
       description,
       displayName,
