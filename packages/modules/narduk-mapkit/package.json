@@ -29,7 +29,8 @@
     "examples/",
     "LICENSE",
     "README.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "components/"
   ],
   "exports": {
     ".": {
@@ -87,6 +88,10 @@
     "./nuxt/composables": {
       "types": "./dist/nuxt/runtime/composables/index.d.ts",
       "import": "./dist/nuxt/runtime/composables/index.js"
+    },
+    "./instrument-marks": {
+      "types": "./dist/instrument-marks/index.d.ts",
+      "import": "./dist/instrument-marks/index.js"
     }
   },
   "scripts": {
@@ -94,7 +99,7 @@
     "check:dist": "node script/check_dist_clean.mjs",
     "check:exports": "node script/check_package_exports.mjs",
     "check:package": "node script/check_package_exports.mjs && publint --strict && pnpm pack --dry-run",
-    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
     "lint": "narduk-lint",
     "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest run",

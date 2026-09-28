@@ -6,6 +6,8 @@
  * of them read the module's source text -- a module that produced the same
  * effects a different way would still pass, which is the point.
  */
+import { existsSync, readFileSync } from 'node:fs'
+
 import { runWithNuxtContext } from '@nuxt/kit'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -304,6 +306,40 @@ describe('the shipped stylesheet (K-6)', () => {
 })
 
 describe('the opt-in marks stylesheet (narduk-libs#517)', () => {
+  it('registers shipped chrome components only when requested, with no app imports', async () => {
+    for (const chrome of [false, true]) {
+      const nuxt = await setup({ chrome, component: false })
+      const components: Array<{ pascalName: string; filePath: string }> = []
+      for (const [name, hook] of nuxt.hooks) {
+        if (name === 'components:extend') {
+          ;(hook as (components: unknown[]) => void)(components)
+        }
+      }
+      expect(components).toHaveLength(chrome ? 9 : 0)
+      for (const component of components) {
+        expect(component.pascalName).toMatch(/^Mapkit/)
+        expect(existsSync(component.filePath)).toBe(true)
+        expect(readFileSync(component.filePath, 'utf8')).not.toMatch(/from ['"]~\//)
+      }
+      expect(nuxt.options.css.some((path) => path.endsWith('narduk-mapkit-chrome.css'))).toBe(
+        chrome,
+      )
+    }
+  })
+
+  it('selects instrument geometry without also installing disc styles', async () => {
+    const nuxt = await setup({ marks: 'instruments' })
+    const templates = nuxt.options.build.templates.filter(
+      (candidate) => (candidate as { filename?: string }).filename === 'narduk-mapkit-marks.css',
+    ) as Array<{ getContents: () => string }>
+    expect(templates).toHaveLength(1)
+    const css = templates[0]!.getContents()
+    expect(css).toContain('.mk-pin-svg')
+    expect(css).toContain('display: flow-root')
+    expect(css).not.toContain('.mk-pin-disc')
+    expect(css).not.toMatch(/var\(--mk-[a-z0-9-]+\)/)
+  })
+
   it('adds nothing unless the app opts in', async () => {
     const nuxt = await setup()
 

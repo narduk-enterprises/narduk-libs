@@ -1135,7 +1135,59 @@ property (`--mk-ink`, `--mk-ink-2`, `--mk-ink-3`, `--mk-void`, `--mk-surface`,
 `--mk-focus`, `--mk-font-sans`, `--mk-font-mono`, `--mk-leader`) with a neutral
 fallback, so a host themes marks by setting those on any ancestor of the map.
 
-### `useMapKitView()` in Nuxt
+#
+
+### Instrument marks
+
+`@narduk-enterprises/narduk-mapkit/instrument-marks` is an additive renderer for
+SVG layer stacks around a fixed dot. It exports `createPinMark`,
+`createSelectedMark`, `createBackgroundMark`, their paint and interaction types,
+and path geometry (`sockPath`, `crestsPath`, `ringsPath`, `arcPath`). This is a
+separate entry point from the existing disc-based `./marks` API: existing
+consumers and `marks: true` keep their current behavior.
+
+In Nuxt, set `nardukMapkit: { marks: 'instruments' }` to install the renderer's
+stylesheet. Outside Nuxt, insert `MAPKIT_INSTRUMENT_MARKS_CSS` once. Both
+renderers use the same `mk-*` DOM classes; select one stylesheet per page. Theme
+it through `--mk-*` custom properties; neutral fallbacks allow a host without
+those tokens.
+
+Callers supply the accessible label, selection callback, SVG paths, colors,
+geometry and numbers through `PinPaint`. `bearing` controls the value tab's
+side; `extent` sizes the SVG canvas while `footprint` keeps labels beside the
+dot. `selRadius` can override the selection ring. The root establishes a block
+formatting context so negative hit-target margins cannot move MapKit's anchor.
+
+Product thresholds, units, lens selection, labels and data classification stay
+in the app. Buoys' instrument rendering and tests were extracted without
+changing its paint inputs; the package does not import marine schemas or fetch
+data.
+
+## Optional map chrome
+
+Set `nardukMapKit: { chrome: true }` to register `MapkitControlStack`,
+`MapkitIcon`, `MapkitInstrumentKey`, `MapkitLensOptionButton`, `MapkitLensRail`,
+`MapkitMenu`, `MapkitNotice`, `MapkitScaleStrip`, and `MapkitStyleMenu`. These
+components accept caller-provided labels, colors, paths and menu choices; all
+product thresholds, data fetching and route layout remain in the app. The menu
+handles keyboard navigation and outside clicks, while the style picker emits
+changes through its `basemap` and `units` models. The matching stylesheet
+supplies `--mk-*` defaults under `.mk-root`; app CSS loads later and can
+override these tokens. Registration and styles are off by default. Vue SFCs ship
+in the published artifact's `components/` directory and are compiled by Nuxt.
+
+## `useMapKitLayoutSettle()` in Nuxt
+
+A bare `<AppMapKit>` inside a drawer or a station card can initialize before its
+host has a layout box. Call `useMapKitLayoutSettle()` in setup and bind
+`@map-ready="mapLayout.handleMapReady"`. The composable waits for nonzero size,
+refreshes the camera and briefly nudges the host height to make MapKit
+reschedule tiles. It observes later resizes, cancels pending frames on disposal
+or map replacement, and restores the original inline height. This helper is also
+available from `@narduk-enterprises/narduk-mapkit/nuxt/composables` outside
+Nuxt.
+
+## `useMapKitView()` in Nuxt
 
 `useMapKitView()` is the Vue side of the marks: it owns the map behind a
 map-first page's `<AppMapKit>` (camera, frame, zoom tier, padding, basemap, the
