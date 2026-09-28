@@ -35,6 +35,7 @@ import type {
   AppExposure,
   AppVisibility,
   Capability,
+  CiQualityLevel,
   CreateNardukAppOptions,
   CreateNardukAppReport,
   GeneratedDatabaseBackend,
@@ -107,29 +108,51 @@ function handbookLink(chapterFile: string): string {
  * refreshes this region, so an existing app gets the list on its next upgrade
  * run without anything else in the file moving. Social previews keep their own
  * line above it.
+ *
+ * The CSP, accessibility and performance lines state a gate only for an app
+ * whose CI runs the shared workflow's `quality-level: standard`
+ * (narduk-enterprises/workflows#158): a new private app scaffolds the enforced
+ * CSP, the `expectAccessible` home spec and that CI input together. Any other
+ * app gets them as adoption steps, so the block never claims a gate its CI
+ * does not run.
  */
-const AGENTS_QUALITY_BAR: readonly string[] = [
-  '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
-    handbookLink('07-quality-and-release.md'),
-  '- Every mutating API route goes through narduk-core `defineUserMutation` (or `definePublicMutation` / `defineAdminMutation`) and parses its body with `withValidatedBody(schema.parse)`; never a bare `readBody`. ' +
-    handbookLink('03-backend-and-apis.md'),
-  '- Every route under `/api/admin/**` requires an admin (`defineAdminMutation`, `defineAdminQuery`, or `requireAdmin` first) and answers 401 or 403 to anyone else, never 500 or data. ' +
-    handbookLink('03-backend-and-apis.md'),
-  '- Loading, empty and error states say only what is verified: no "all clear", "up to date" or zero count when the data failed to load or is stale. ' +
-    handbookLink('02-web-apps.md'),
-  '- At phone widths of 320 and 375 px, no page scrolls horizontally and no text is clipped. ' +
-    handbookLink('02-web-apps.md'),
-  '- Times are SSR-safe: no clock read during render (`narduk/no-render-clock`; use `useSsrNow(key)` or read it after mount), and formatting names its time zone. ' +
-    handbookLink('02-web-apps.md'),
-  "- CSP target: narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven with `narduk-app foundation:check:security-headers`. A new app starts without it; turn it on in the first change that touches headers or page shells. " +
-    handbookLink('02-web-apps.md'),
-  '- Accessibility: every primary route has an e2e check with narduk-testkit `expectAccessible`. Add it to any route spec you create or change. ' +
-    handbookLink('02-web-apps.md'),
-  "- Performance: `pnpm run performance-budget` must pass. CI does not run it until this app adopts the shared workflow's standard quality level, so run it yourself before you push. " +
-    handbookLink('02-web-apps.md'),
-  '- A test suite counts only if CI runs it; a suite CI skips, or a required check with a no-op path, counts as no suite. ' +
-    handbookLink('07-quality-and-release.md'),
-]
+function agentsQualityBar(ciQualityLevel: CiQualityLevel): string[] {
+  const standard = ciQualityLevel === 'standard'
+  return [
+    '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
+      handbookLink('07-quality-and-release.md'),
+    '- Every mutating API route goes through narduk-core `defineUserMutation` (or `definePublicMutation` / `defineAdminMutation`) and parses its body with `withValidatedBody(schema.parse)`; never a bare `readBody`. ' +
+      handbookLink('03-backend-and-apis.md'),
+    '- Every route under `/api/admin/**` requires an admin (`defineAdminMutation`, `defineAdminQuery`, or `requireAdmin` first) and answers 401 or 403 to anyone else, never 500 or data. ' +
+      handbookLink('03-backend-and-apis.md'),
+    '- Loading, empty and error states say only what is verified: no "all clear", "up to date" or zero count when the data failed to load or is stale. ' +
+      handbookLink('02-web-apps.md'),
+    '- At phone widths of 320 and 375 px, no page scrolls horizontally and no text is clipped. ' +
+      handbookLink('02-web-apps.md'),
+    '- Times are SSR-safe: no clock read during render (`narduk/no-render-clock`; use `useSsrNow(key)` or read it after mount), and formatting names its time zone. ' +
+      handbookLink('02-web-apps.md'),
+    (standard
+      ? "- CSP is narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven by `narduk-app foundation:check:security-headers`, which CI runs against every pull request preview. A new origin goes in `allow`; never weaken or un-enforce the policy. "
+      : "- CSP target: narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven with `narduk-app foundation:check:security-headers`. If this app does not have it yet, turn it on in the first change that touches headers or page shells. ") +
+      handbookLink('02-web-apps.md'),
+    (standard
+      ? '- Accessibility is gated in e2e with narduk-testkit `expectAccessible` on every primary route; the home spec has it, and every route spec you add or change carries the same call. '
+      : '- Accessibility: every primary route has an e2e check with narduk-testkit `expectAccessible`. Add it to any route spec you create or change. ') +
+      handbookLink('02-web-apps.md'),
+    (standard
+      ? '- Performance is gated by `pnpm run performance-budget` (narduk-app performance-budget), which CI runs over every build. '
+      : "- Performance: `pnpm run performance-budget` must pass. CI does not run it until this app adopts the shared workflow's standard quality level, so run it yourself before you push. ") +
+      handbookLink('02-web-apps.md'),
+    '- A test suite counts only if CI runs it; a suite CI skips, or a required check with a no-op path, counts as no suite. ' +
+      handbookLink('07-quality-and-release.md'),
+    ...(standard
+      ? [
+          '- CI: this app runs `quality-level: standard`; opting out of a check needs a written reason in `quality-opt-out`. ' +
+            handbookLink('07-quality-and-release.md'),
+        ]
+      : []),
+  ]
+}
 
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
@@ -408,6 +431,7 @@ interface NormalizedCreateOptions {
   exposure: AppExposure
   appName: string
   capabilities: Capability[]
+  ciQualityLevel: CiQualityLevel
   databaseBackend: GeneratedDatabaseBackend
   description: string
   displayName: string
@@ -438,6 +462,11 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
   }
   const localPort = normalizePort(options.localDevPort ?? options.localPort)
   const visibility = normalizeVisibility(options.visibility)
+  const ciQualityLevel =
+    options.ciQualityLevel ?? (visibility === 'private' ? 'standard' : 'legacy')
+  if (!['legacy', 'standard'].includes(ciQualityLevel)) {
+    throw new CreateNardukAppError('ciQualityLevel must be legacy or standard.')
+  }
   const siteUrl = normalizeSiteUrl(options.siteUrl, localPort)
   const displayName = options.displayName?.trim() || titleCase(appName)
   const description = options.description?.trim() || DEFAULT_DESCRIPTION
@@ -461,6 +490,7 @@ function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOpti
   return {
     appName,
     capabilities,
+    ciQualityLevel,
     databaseBackend,
     description,
     displayName,
@@ -477,6 +507,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
   const {
     appName,
     capabilities,
+    ciQualityLevel,
     databaseBackend,
     description,
     displayName,
@@ -796,7 +827,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         "**Quality bar.** Each rule is checkable, and its link is the handbook chapter behind it. A change that touches an area meets that area's rule.",
         '',
-        ...AGENTS_QUALITY_BAR,
+        ...agentsQualityBar(ciQualityLevel),
         '',
         'Shared packages: ' +
           sharedPackageList +
@@ -1281,7 +1312,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- `playwright.config.ts` defines a `setup` project (runs once, see `global.setup.ts`) and a `chromium` project that depends on it.',
         '- `apps/web/tests/e2e/fixtures.ts` re-exports the shared readiness and hydration helpers from `@narduk-enterprises/narduk-testkit/e2e/fixtures` -- import from this local file, not the package directly, so a future fixture addition only touches one file.',
         "- `apps/web/tests/e2e/global.setup.ts` is the `setup` project: it waits for the base URL, asserts `/api/health` reports a healthy status (an unmigrated database's auth-tables check is tolerated as `degraded`, never a hard failure), and warms the app before any other spec runs.",
-        '- `apps/web/tests/e2e/home.spec.ts` is the starter smoke spec.',
+        '- `apps/web/tests/e2e/home.spec.ts` is the starter smoke spec. It also runs narduk-testkit `expectAccessible` on `/`; give every primary route spec the same call.',
         '- `apps/web/tests/e2e/visual-audit.spec.ts` captures the starter route across representative viewports using the shared UI-quality toolkit (see below) and asserts a clean browser console.',
         '',
         REGION_MARKERS.e2eFlakePolicy.start,
@@ -1614,7 +1645,25 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               "    '#narduk-db': fileURLToPath(new URL('./server/database/schema.ts', import.meta.url)),",
               '  },',
             ]
-          : ['  nardukCore: {', "    databaseBackend: 'none',", '  },']),
+          : []),
+        '  nardukCore: {',
+        ...(hasDatabase ? [] : ["    databaseBackend: 'none',"]),
+        // narduk-core's strict nonce + `strict-dynamic` CSP, enforcing from
+        // the first deploy. A new app has no inline script or third-party
+        // origin to soak for, so it skips the report-only step an existing
+        // app takes. CI's `quality-level: standard` probes these headers on
+        // every pull request preview. Needs the nuxt-security devDependency.
+        '    security: {',
+        '      headers: { enabled: true, enforce: true },',
+        '    },',
+        '  },',
+        // @nuxt/fonts (installed by narduk-core) otherwise ships every
+        // Google Fonts subset of Inter and Outfit, over the 140 KiB font
+        // total `performance-budget` allows. An app that needs another
+        // script adds its subset here.
+        '  fonts: {',
+        "    defaults: { subsets: ['latin'] },",
+        '  },',
         '  devServer: {',
         '    port: localPort,',
         '  },',
@@ -1648,6 +1697,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           : [
               '  app: {',
               '    head: {',
+              "      htmlAttrs: { lang: 'en' },",
               '      title: appName,',
               '      meta: [',
               "        { name: 'description', content: appDescription },",
@@ -1669,9 +1719,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         // because `site` is then not a NuxtConfig key at all (narduk-libs#172).
         ...(capabilities.includes('seo')
           ? [
-              '  fonts: {',
-              "    defaults: { subsets: ['latin'] },",
-              '  },',
               '  sitemap: {',
               '    zeroRuntime: true,',
               '  },',
@@ -1681,7 +1728,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '    description: appDescription,',
               "    indexable: deploymentTarget === 'production',",
               '  },',
-              "  routeRules: { '/': { prerender: true } },",
+              // No `routeRules: { '/': { prerender: true } }`. A prerendered
+              // page is a static asset the Worker never sees, so it is served
+              // with no Content-Security-Policy at all, and a per-request
+              // nonce cannot be baked into it: CI's security-headers probe
+              // failed on the home page of an seo scaffold (narduk-libs#1227). SSR
+              // serves the enforced policy; home still uses the static
+              // `defaultOgImage`.
             ]
           : []),
         '  runtimeConfig: {',
@@ -2084,6 +2137,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     {
       path: 'apps/web/tests/e2e/home.spec.ts',
       contents: text(
+        "import { expectAccessible } from '@narduk-enterprises/narduk-testkit/playwright/accessibility'",
+        '',
         "import { expect, test } from './fixtures'",
         '',
         // The display name is bound to a const rather than interpolated into
@@ -2097,6 +2152,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "test('home page renders', async ({ page }) => {",
         "  await page.goto('/')",
         "  await expect(page.getByRole('heading', { name: heading })).toBeVisible()",
+        // Zero serious or critical axe (WCAG 2.1 AA) violations, the estate
+        // accessibility bar. Every primary route spec carries the same call.
+        "  await expectAccessible(page, { key: '/' })",
         '})',
       ),
     },

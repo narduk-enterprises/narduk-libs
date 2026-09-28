@@ -557,7 +557,7 @@ describe('create-narduk-app generation contract', () => {
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
+      'nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0',
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).not.toContain(
       'NARDUK_PLATFORM_GH_PACKAGES_READ',
@@ -1361,7 +1361,7 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-shell'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
+    expect(generatedCi).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
     expect(generatedCi).toContain('require-scripts: true')
     expect(generatedCi).toContain('run-tests: true')
     expect(generatedCi).toContain('run-e2e: true')
@@ -1477,7 +1477,8 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(nuxtConfig.includes('  site: {'), label).toBe(hasSeo)
       expect(nuxtConfig.includes('zeroRuntime: true'), label).toBe(hasSeo)
-      expect(nuxtConfig.includes("routeRules: { '/': { prerender: true } }"), label).toBe(hasSeo)
+      // A prerendered home would be served without the enforced CSP.
+      expect(nuxtConfig, label).not.toContain('prerender: true')
       expect(
         webManifest.dependencies?.['nuxt-og-image'] === PACKAGE_VERSIONS['nuxt-og-image'],
         label,
@@ -1598,7 +1599,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
       expect(npmrc, label).not.toContain('npm.pkg.github.com')
-      expect(ci, label).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
+      expect(ci, label).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
       expect(ci, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(ci, label).not.toContain('npm.pkg.github.com')
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
@@ -1833,7 +1834,7 @@ describe('generated app typecheck and lint surfaces', () => {
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
       )
       const rules = region.split('\n').filter((line) => line.startsWith('- '))
-      expect(rules.length, label).toBe(10)
+      expect(rules.length, label).toBe(11)
       for (const rule of rules) {
         expect(rule, label).toMatch(
           /\(\[ch\d{2}\]\(https:\/\/github\.com\/narduk-enterprises\/coding-standards\/blob\/main\/standards\/\d{2}-[a-z-]+\.md\)\)$/u,
@@ -1850,10 +1851,71 @@ describe('generated app typecheck and lint surfaces', () => {
         '`expectAccessible`',
         '`pnpm run performance-budget`',
         'only if CI runs it',
+        // A private app's CI runs these gates, so the lines state them.
+        'which CI runs against every pull request preview',
+        'the home spec has it',
+        'which CI runs over every build',
+        '- CI: this app runs `quality-level: standard`; opting out of a check needs a written reason in `quality-opt-out`.',
       ]) {
         expect(region, label + ': ' + needle).toContain(needle)
       }
+      expect(region, label).not.toContain('CSP target:')
+      expect(region, label).not.toContain('CI does not run it')
     }
+  })
+
+  // A public app does not call the shared workflow, and `upgrade` renders an
+  // existing app's block from its own ci.yml: neither may claim a gate its CI
+  // does not run.
+  it('words the CI-backed quality-bar lines as adoption steps without the standard level', () => {
+    for (const options of [
+      { visibility: 'public' as const },
+      { visibility: 'private' as const, ciQualityLevel: 'legacy' as const },
+    ]) {
+      const label = JSON.stringify(options)
+      const agents =
+        asFileMap(
+          buildGeneratedFiles({
+            appName: 'surface-check',
+            noGit: true,
+            targetDir: '/tmp/surface-check',
+            ...options,
+          }),
+        ).get('AGENTS.md') ?? ''
+      const region = agents.slice(
+        agents.indexOf('<!-- narduk:router:start -->'),
+        agents.indexOf('<!-- narduk:router:end -->'),
+      )
+      const rules = region.split('\n').filter((line) => line.startsWith('- '))
+      expect(rules.length, label).toBe(10)
+      expect(region, label).toContain('CSP target:')
+      expect(region, label).toContain('Add it to any route spec you create or change.')
+      expect(region, label).toContain('CI does not run it until this app adopts')
+      expect(region, label).not.toContain('quality-level: standard')
+    }
+  })
+
+  // workflows#158 standard gates: what a fresh app needs to pass them. Proven
+  // on a built, served scaffold on 2026-09-27; these pin the inputs.
+  it('scaffolds the enforced CSP, a budget-sized font set and an accessible home page', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const config = files.get('apps/web/nuxt.config.ts') ?? ''
+      expect(config, label).toContain('      headers: { enabled: true, enforce: true },')
+      expect(config, label).toContain("    defaults: { subsets: ['latin'] },")
+      const web = JSON.parse(files.get('apps/web/package.json') ?? '{}')
+      expect(web.devDependencies['nuxt-security'], label).toBe(PACKAGE_VERSIONS['nuxt-security'])
+      expect(web.devDependencies['@axe-core/playwright'], label).toBe(
+        PACKAGE_VERSIONS['@axe-core/playwright'],
+      )
+      const home = files.get('apps/web/tests/e2e/home.spec.ts') ?? ''
+      expect(home, label).toContain(
+        "import { expectAccessible } from '@narduk-enterprises/narduk-testkit/playwright/accessibility'",
+      )
+      expect(home, label).toContain("await expectAccessible(page, { key: '/' })")
+    }
+    // axe's html-has-lang is serious: without a lang the home spec fails.
+    expect(generate([]).get('apps/web/nuxt.config.ts')).toContain("htmlAttrs: { lang: 'en' },")
   })
 
   // components-library-plan.md #2 item 4: narduk-shell ships to every
@@ -1939,7 +2001,7 @@ describe('database-free scaffold', () => {
       }
       expect(files.get('apps/web/nuxt.config.ts')).toContain("'#narduk-db'")
       expect(files.get('apps/web/wrangler.jsonc')).toContain('"d1_databases"')
-      expect(files.get('apps/web/nuxt.config.ts')).not.toContain('nardukCore')
+      expect(files.get('apps/web/nuxt.config.ts')).not.toContain("databaseBackend: 'none'")
     }
   })
 

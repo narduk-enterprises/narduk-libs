@@ -44,7 +44,7 @@ describe('generated CI boundaries', () => {
     expect(runner.group).toBe('linux-ci')
     expect(browser.group).toBe('playwright-isolated')
     expect(browser.labels).toContain('proxmox-playwright-x64')
-    expect(workflow).toContain('nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399')
+    expect(workflow).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
     expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     expect(workflow).not.toMatch(/^ {4}secrets:/mu)
     expect(workflow).toContain('require-scripts: true')
@@ -55,6 +55,15 @@ describe('generated CI boundaries', () => {
       "extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
     )
     expect(workflow).toContain('foundation-check: true')
+    // workflows#158: the standard gates, with the budget pointed at the
+    // workspace app. The header probe needs a preview check, so the caller
+    // must never pass `preview-checks: none` (the default is `og`).
+    expect(workflow).toContain('      quality-level: standard')
+    expect(workflow).toContain(
+      "      performance-budget-args: '--app-dir apps/web --font-total-budget-kb 140'",
+    )
+    expect(workflow).not.toContain('preview-checks')
+    expect(workflow).not.toContain('quality-opt-out')
     expect(workflow).toContain('e2e-install-browsers: false')
     expect(workflow).not.toContain('e2e-browsers-path:')
     expect(workflow).not.toContain('playwright install')

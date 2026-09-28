@@ -2,6 +2,7 @@ import {
   CI_TEST_ONLY_NUXT_OG_IMAGE_SECRET,
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
 } from './ci-test-env.js'
+import { PERFORMANCE_BUDGET_ARGS } from './manifest.js'
 import { NODE_SOURCE_FILE } from './ownership.js'
 import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from './workflow-pin.js'
 
@@ -197,13 +198,6 @@ export function createCopilotSetupWorkflow(): string {
  * validation caller reuses them verbatim so a release is validated by exactly the
  * suite ordinary CI runs, plus the exact-candidate guard.
  */
-// TODO(narduk-enterprises/workflows#158): emit `      quality-level: standard`
-// here, and add the matching quality-bar line to the AGENTS.md router region
-// ("CI: this app runs `quality-level: standard`; opting out of a check needs a
-// written reason."), once #158 has merged and NUXT_CLOUDFLARE_WORKFLOW_SHA
-// (workflow-pin.ts) has moved to a commit that declares the `quality-level`
-// input. The current pin, 1513b2a, does not declare it, and a caller that
-// passes an undeclared input to a reusable workflow fails at startup.
 function privateCallerInputs(): string[] {
   return [
     `      runner: '${linuxRoute}'`,
@@ -238,6 +232,18 @@ function privateCallerInputs(): string[] {
     // result and uploads the JSON artefact either way (parity with the
     // reference app's ci.yml).
     '      foundation-check: true',
+    // The estate web quality gates (narduk-enterprises/workflows#158):
+    // foundation-check and performance-budget in Build, and the
+    // security-headers probe against the pull request's own Cloudflare
+    // preview. The probe needs a preview check, which `preview-checks`
+    // (default `og`) provides; the workflow fails Build if it were `none`.
+    // Turning one gate off takes `quality-opt-out: <check>=<reason>`, and
+    // the workflow warns with that reason on every run.
+    '      quality-level: standard',
+    // The budget runs from the repository root, but the build output is
+    // the workspace app's. The rest are the app's own `performance-budget`
+    // script arguments, so CI and a local run agree.
+    `      performance-budget-args: '--app-dir apps/web ${PERFORMANCE_BUDGET_ARGS}'`,
     '      run-e2e: true',
     '      e2e-script: test:e2e',
     `      e2e-runner: '${browserRoute}'`,

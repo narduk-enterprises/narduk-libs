@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createNardukApp, upgradeNardukApp } from '../src/index.js'
 import {
@@ -11,9 +11,26 @@ import {
   rewriteWorkflowPins,
   workflowPinMove,
 } from '../src/workflow-pin.js'
+import type * as WorkflowHistory from '../src/workflow-history.js'
 
-const GENERATOR_PIN = '1513b2a2f4b147b2e625478e56eb9de0cc5d5399'
-const NEWER_APP_PIN = '94a3ba46994dd99e2b4b2ccdbf8b019cbe302745'
+// The generator pin is the tip of the bundled workflows history, so no real
+// commit is newer. The mock below adds one child of the pin; everything else
+// reads the real history. Hoisted because vi.mock runs before the imports.
+const { GENERATOR_PIN, NEWER_APP_PIN } = vi.hoisted(() => ({
+  GENERATOR_PIN: '59825ef09ce484e8189c1932d0ac18f3892dd8d0',
+  NEWER_APP_PIN: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+}))
+
+vi.mock('../src/workflow-history.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof WorkflowHistory>()
+  return {
+    WORKFLOWS_MAIN_PARENTS: {
+      ...actual.WORKFLOWS_MAIN_PARENTS,
+      [NEWER_APP_PIN]: [GENERATOR_PIN],
+    },
+  }
+})
+
 const OLDER_UNLISTED_PINS = [
   '9685e3d374a1e4b6136ea93f3c68715baa79800f',
   '2a27d4578c67b2f8bd16962b627768c71436a3cb',
@@ -75,7 +92,7 @@ describe('workflow pin direction', () => {
     ].join('\n')
     const rewritten = rewriteWorkflowPins(source, GENERATOR_PIN)
     expect(rewritten).toContain(`nuxt-cloudflare.yml@${GENERATOR_PIN}`)
-    expect(rewritten).toContain('workflows@1513b2a2')
+    expect(rewritten).toContain('workflows@59825ef0')
     expect(rewritten).not.toContain('9070db72')
   })
 })
@@ -87,7 +104,7 @@ describe('upgrade workflow pin', () => {
       .replaceAll(GENERATOR_PIN, NEWER_APP_PIN)
       .replace(
         `nuxt-cloudflare.yml@${NEWER_APP_PIN}`,
-        `nuxt-cloudflare.yml@${NEWER_APP_PIN} # workflows@94a3ba46`,
+        `nuxt-cloudflare.yml@${NEWER_APP_PIN} # workflows@b0b0b0b0`,
       )
     await writeFile(join(targetDir, CALLER), before, 'utf8')
 

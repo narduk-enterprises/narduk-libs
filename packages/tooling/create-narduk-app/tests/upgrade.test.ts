@@ -160,7 +160,7 @@ describe('upgrade ownership contract', () => {
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
-      'nuxt-cloudflare.yml@1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
+      'nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0',
     )
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
       pristine.copilot,
@@ -697,7 +697,33 @@ describe('upgrade opt-outs and notices', () => {
 
     const report = await upgradeNardukApp({ targetDir })
     expect(statusOf(report, '.github/workflows/ci.yml')).toBe('absent')
-    expect(report.driftCount).toBe(0)
+    // With no CI caller the quality bar stops claiming CI gates, which is the
+    // only other change.
+    expect(report.profile.ciQualityLevel).toBe('legacy')
+    expect(
+      report.changes.filter((change) => change.status === 'drift').map((change) => change.path),
+    ).toEqual(['AGENTS.md'])
+    expect(report.driftCount).toBe(1)
+  })
+
+  // The router block follows the app's own CI caller: upgrade never writes
+  // `quality-level`, so a legacy app's block must not claim the gates.
+  it('renders the quality bar from the quality level the app CI declares', async () => {
+    const targetDir = await scaffold()
+    const fresh = await upgradeNardukApp({ targetDir })
+    expect(fresh.profile.ciQualityLevel).toBe('standard')
+    expect(statusOf(fresh, 'AGENTS.md')).toBe('clean')
+
+    await edit(targetDir, '.github/workflows/ci.yml', (contents) =>
+      contents.replace('      quality-level: standard\n', ''),
+    )
+    const report = await upgradeNardukApp({ only: ['AGENTS.md'], targetDir, write: true })
+    expect(report.profile.ciQualityLevel).toBe('legacy')
+    expect(statusOf(report, 'AGENTS.md')).toBe('drift')
+    const agents = await read(targetDir, 'AGENTS.md')
+    expect(agents).toContain('CSP target:')
+    expect(agents).not.toContain('this app runs `quality-level: standard`')
+    expect(await read(targetDir, '.github/workflows/ci.yml')).not.toContain('quality-level')
   })
 
   it('creates a managed file that is missing entirely', async () => {
