@@ -829,6 +829,25 @@ describe('create-narduk-app generation contract', () => {
       // latest `ci / Required` on that exact commit passed. Pull-request
       // workflow_runs never reach it.
       expect(runbook, label).toContain('  workflow_dispatch:\n    inputs:\n      verified-sha:')
+      // narduk-libs#1233: a duplicate upload of one commit is a one-click
+      // recovery. The dispatch takes an optional version-id (ci.yml's
+      // promote-dispatch sends none), keeps every gate -- the commit must be
+      // main's head with a passing ci / Required read from the check-runs API --
+      // and passes the version to versions-promote beside --sha, never instead.
+      expect(runbook, label).toContain(
+        '      version-id:\n        description: Worker version to promote when two carry verified-sha (recovery only)\n        required: false\n        type: string',
+      )
+      expect(runbook, label).toContain('VERSION_ID: ${{ inputs.version-id }}')
+      expect(runbook, label).toContain('if [ "$STARTED_FOR" != "$head" ]; then')
+      expect(runbook, label).toContain('echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"')
+      expect(runbook, label).toContain('version_id: ${{ steps.gate.outputs.version_id }}')
+      expect(runbook, label).toContain('VERSION_ID: ${{ needs.gate.outputs.version_id }}')
+      expect(runbook, label).toContain(
+        'narduk-app deploy versions-promote --sha "$VERIFIED_SHA" ${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA"',
+      )
+      expect(runbook, label).toContain(
+        'gh workflow run promote.yml --ref main -f verified-sha=<sha> -f version-id=<id>',
+      )
       expect(runbook, label).toContain("github.event.workflow_run.event != 'pull_request'")
       expect(runbook, label).toContain('head=$(gh api "repos/$REPO/commits/main" --jq .sha)')
       expect(runbook, label).toContain('check-runs?check_name=ci%20%2F%20Required')

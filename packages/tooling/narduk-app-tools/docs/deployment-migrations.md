@@ -128,7 +128,10 @@ fallback.
 The app's promote workflow must follow these steps in one serialized job:
 
 1. Require a successful same-repository CI `workflow_run` for the production
-   branch. Check out **`workflow_run.head_sha`** and install its frozen
+   branch, or a dispatch the `gate` job in the app's `docs/workers-builds.md`
+   admits: it promotes main's head only once that commit's `ci / Required`
+   passed. Check out that verified SHA (`needs.gate.outputs.sha`, the
+   `workflow_run.head_sha` under a `workflow_run`) and install its frozen
    toolchain.
 2. With no credential, run
    `narduk-app foundation:check:deployment --json <path>` on that checkout and
@@ -141,7 +144,10 @@ The app's promote workflow must follow these steps in one serialized job:
 3. With the existing promote credential, run
    `narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json`.
    A missing upload, a stale version, or a gate attestation for a different
-   commit (exit 9, narduk-libs#400) fails before changing the database.
+   commit (exit 9, narduk-libs#400) fails before changing the database. On a
+   recovery dispatch that chose one of a commit's duplicate uploads, pass
+   `--version-id "$VERSION_ID"` here as well (narduk-libs#1233); otherwise the
+   duplicate stops the run at this step.
 4. Inject the **separate D1-only migrate persona** for this step only, then run:
    ```sh
    narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"

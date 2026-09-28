@@ -41,9 +41,13 @@ export function createMigrationWorkflowFiles(visibility: AppVisibility): Generat
     {
       path: 'docs/deployment/promote-d1.steps.yml',
       contents: `# Insert these steps in the existing serialized promote job, AFTER successful CI,
-# checkout of workflow_run.head_sha and frozen install, BEFORE versions-promote.
-# The enclosing workflow must have cancel-in-progress: false and same-repository,
-# production-branch, successful workflow_run guards. Never use pull_request_target.
+# checkout of the gate's verified SHA and frozen install, BEFORE versions-promote.
+# The enclosing workflow must have cancel-in-progress: false and the gate job
+# from docs/workers-builds.md: it promotes main's head only once that commit's
+# ci / Required passed, whether a workflow_run or a dispatch started it. Never
+# use pull_request_target. VERSION_ID is empty unless a recovery dispatch chose
+# one of the commit's duplicate uploads (narduk-libs#1233); the dry run takes
+# it too, or the duplicate would stop the recovery here.
 # D1_MIGRATE_API_TOKEN is materialized from the declared D1-only migrate persona;
 # CLOUDFLARE_API_TOKEN below remains the existing separate promote credential.
 # The first two steps hold no credential. Worker rollback restores code, never a
@@ -68,13 +72,14 @@ steps:
   - name: Require an eligible uploaded version before changing D1
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-      VERIFIED_SHA: \${{ github.event.workflow_run.head_sha }}
-    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
+      VERIFIED_SHA: \${{ needs.gate.outputs.sha }}
+      VERSION_ID: \${{ needs.gate.outputs.version_id }}
+    run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" \${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
     working-directory: apps/web
   - name: Apply compatible D1 migrations and require no drift
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.D1_MIGRATE_API_TOKEN }}
-      VERIFIED_SHA: \${{ github.event.workflow_run.head_sha }}
+      VERIFIED_SHA: \${{ needs.gate.outputs.sha }}
     run: |
       set -euo pipefail
       pnpm exec narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"

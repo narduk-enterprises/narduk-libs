@@ -489,7 +489,7 @@ hold, and `narduk-app deploy versions-upload` now sets it automatically from
 ### `narduk-app deploy versions-promote`
 
 ```sh
-narduk-app deploy versions-promote [--sha <commit> | --version-id <id>] \
+narduk-app deploy versions-promote [--sha <commit>] [--version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
   [--max-versions <n>] [--wait-for-version <seconds>] \
@@ -518,6 +518,20 @@ detail names the SHA, how many versions were read, the bound, and whether the
 search reached the end of the Worker's history (no build ever uploaded this
 commit) or stopped at the bound (raise `--max-versions`, or use `--version-id`).
 Wire the step so that exit is a **red** job, never a skip.
+
+**A duplicate upload is exit 4, with its recovery named.** Workers Builds
+sometimes dispatches one trigger twice for one push, so two versions carry the
+same commit (narduk-libs#1233). Nothing in a version's metadata tells that apart
+from a second uploader, so the promote still refuses with `ambiguous-version`.
+The detail lists the candidates newest first and prints the one-click recovery
+for each:
+`gh workflow run promote.yml --ref main -f verified-sha=<sha> -f version-id=<id>`.
+A generated `promote.yml` takes that `version-id` input (see the app's
+`docs/workers-builds.md`) and passes it through as `--version-id` beside
+`--sha`. Given both, the command promotes the named version only if it is in the
+searched listing and its `workers/tag` is that commit; otherwise it exits 3 and
+deploys nothing. `--gate-verified`, the production-branch check and the ordering
+guard apply unchanged: only the choice between the duplicates is manual.
 
 **The build and the promote are not ordered.** Under narduk-v1 the Workers Build
 uploads the version, while `workflow_run` on the gate starts the promote, and
