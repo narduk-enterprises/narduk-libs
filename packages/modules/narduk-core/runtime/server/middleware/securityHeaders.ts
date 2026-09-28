@@ -32,6 +32,9 @@ import { readRuntimeBoolean, readRuntimeString } from '../utils/runtime-env'
 import type { SecurityHeadersMode } from '../../shared/security-headers'
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
+// Also added below from POSTHOG_HOST when an app sets it; listed so the two
+// baselines stay identical (shared/security-headers.ts says why it is there).
+const ESTATE_POSTHOG_PROXY = 'https://p.nard.uk'
 
 // Hosts match the strict preset's BASELINE_ALLOWLIST.script. An app that
 // loads another script origin (AdSense, say) adds it through
@@ -42,6 +45,7 @@ const BASELINE_SCRIPT_SRC = [
   "'unsafe-inline'",
   "'unsafe-eval'",
   'https://*.googletagmanager.com',
+  ESTATE_POSTHOG_PROXY,
   DEFAULT_POSTHOG_HOST,
   'https://us-assets.i.posthog.com',
   'https://static.cloudflareinsights.com',
@@ -59,6 +63,7 @@ const BASELINE_CONNECT_SRC = [
   // need this host (issue #472; shared/security-headers.ts BASELINE_ALLOWLIST
   // carries the matching entry and the full doc citation).
   'https://www.google.com',
+  ESTATE_POSTHOG_PROXY,
   DEFAULT_POSTHOG_HOST,
   'https://us-assets.i.posthog.com',
   'https://*.apple-mapkit.com',

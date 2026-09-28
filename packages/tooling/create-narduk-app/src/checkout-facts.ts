@@ -99,7 +99,7 @@ function databaseNameFromList(list: readonly unknown[], key: string): string | n
   return typeof name === 'string' && SAFE_DATABASE_NAME.test(name) ? name : null
 }
 
-function isIdentStart(character: string): boolean {
+export function isIdentStart(character: string): boolean {
   return /[A-Za-z_$]/u.test(character)
 }
 
@@ -107,17 +107,17 @@ function isIdentPart(character: string): boolean {
   return /[\w$]/u.test(character)
 }
 
-function skipLineComment(source: string, index: number): number {
+export function skipLineComment(source: string, index: number): number {
   const newline = source.indexOf('\n', index)
   return newline === -1 ? source.length : newline + 1
 }
 
-function skipBlockComment(source: string, index: number): number {
+export function skipBlockComment(source: string, index: number): number {
   const end = source.indexOf('*/', index + 2)
   return end === -1 ? source.length : end + 2
 }
 
-function skipQuoted(source: string, index: number, quote: string): number {
+export function skipQuoted(source: string, index: number, quote: string): number {
   let cursor = index + 1
   while (cursor < source.length) {
     const character = source[cursor]
@@ -132,7 +132,7 @@ function skipQuoted(source: string, index: number, quote: string): number {
   return source.length
 }
 
-function skipWhitespaceAndComments(source: string, index: number): number {
+export function skipWhitespaceAndComments(source: string, index: number): number {
   let cursor = index
   while (cursor < source.length) {
     const character = source[cursor]
@@ -153,7 +153,7 @@ function skipWhitespaceAndComments(source: string, index: number): number {
   return cursor
 }
 
-function readIdentifier(source: string, index: number): string {
+export function readIdentifier(source: string, index: number): string {
   let cursor = index + 1
   while (cursor < source.length && isIdentPart(source[cursor] ?? '')) cursor += 1
   return source.slice(index, cursor)

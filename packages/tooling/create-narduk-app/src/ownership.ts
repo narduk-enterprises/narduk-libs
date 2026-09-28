@@ -152,7 +152,8 @@ export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set([
   ...REPOSITORY_GATE_SCRIPTS,
 ])
 
-export type OwnershipMode = 'file' | 'jsonc-keys' | 'keys' | 'pin' | 'region'
+export type OwnershipMode =
+  'csp-preset' | 'dev-dependency' | 'file' | 'jsonc-keys' | 'keys' | 'pin' | 'region'
 
 export interface ManagedTarget {
   /** Path relative to the app root, matching the generated file's path. */
@@ -170,6 +171,8 @@ export interface ManagedTarget {
   insertWhenMissing?: boolean
   /** Top-level JSONC keys this target owns. Required for `jsonc-keys`. */
   jsonKeys?: readonly string[]
+  /** The package a `dev-dependency` target adds when the app has none. */
+  dependency?: string
 }
 
 /**
@@ -233,6 +236,24 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     mode: 'jsonc-keys',
     unit: 'top-level cache.enabled',
     jsonKeys: ['cache'],
+  },
+  // narduk-core's enforced CSP preset (foundation item 10), which scaffolds
+  // have emitted since narduk-libs#1228. Only added when the app states no
+  // `security.headers` at all; a soak or an opt-out is the app's decision.
+  // An app that sends to PostHog waits for a narduk-core whose baseline
+  // allows the estate proxy (see csp-preset.ts). The path follows the app's
+  // Nuxt config, and a root-layout app has one manifest, so it gets no
+  // separate dependency unit.
+  {
+    path: 'apps/web/nuxt.config.ts',
+    mode: 'csp-preset',
+    unit: 'nardukCore.security.headers (enforced CSP preset)',
+  },
+  {
+    path: 'apps/web/package.json',
+    mode: 'dev-dependency',
+    unit: 'devDependencies.nuxt-security (the CSP preset peer)',
+    dependency: 'nuxt-security',
   },
 ]
 

@@ -245,7 +245,7 @@ export function applyCallerGate(source: string, context: CiGateContext): CiGateE
         }
         if (!context.cspEnforcedHint) {
           warnings.push(
-            "no `enforce: true` in the Nuxt config: item 10 fails on the preview until narduk-core's CSP preset is enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`); upgrade does not change app config",
+            "no `enforce: true` in the Nuxt config: item 10 fails on the preview until narduk-core's CSP preset is enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`); the Nuxt config unit reports why upgrade did not add it",
           )
         }
       }
@@ -409,7 +409,7 @@ export function applyPublicGate(source: string, context: CiGateContext): CiGateE
   const warnings = context.cspEnforcedHint
     ? []
     : [
-        "no `enforce: true` in the Nuxt config: the item-10 step fails until narduk-core's CSP preset is enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`); upgrade does not change app config",
+        "no `enforce: true` in the Nuxt config: the item-10 step fails until narduk-core's CSP preset is enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`); the Nuxt config unit reports why upgrade did not add it",
       ]
   return { added, contents: lines.join('\n'), problems, warnings }
 }
