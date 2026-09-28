@@ -1,5 +1,15 @@
 # @narduk-enterprises/eslint-config
 
+## 2.6.1
+
+### Patch Changes
+
+- 319a84d: `narduk/require-client-only-hydration-sensitive` no longer flags
+  `UNavigationMenu`: it reads no localStorage or matchMedia state, and its
+  active item comes from the route, which matches on server and client. It may
+  server-render, as NeAppShell's rail does. The `UColorMode*` controls are still
+  required to be in `<ClientOnly>`.
+
 ## 2.6.0
 
 ### Minor Changes

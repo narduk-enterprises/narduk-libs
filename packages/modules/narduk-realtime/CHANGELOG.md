@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-realtime
 
+## 0.3.3
+
+### Patch Changes
+
+- e812d7b: `withUpgradeRouter` now types its returned `fetch` as
+  `Promise<Response>` (new exported `UpgradeRoutedHandler` type), matching what
+  it returns at runtime even when the wrapped handler's `fetch` is synchronous.
+
 ## 0.3.2
 
 ### Patch Changes

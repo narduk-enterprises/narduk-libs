@@ -1,5 +1,28 @@
 # @narduk-enterprises/narduk-core
 
+## 2.19.0
+
+### Minor Changes
+
+- 32489bd: Add opt-in shared edge storage and stale-while-revalidate to the
+  published data client. Bound and checksum cached artifacts, expire manifests
+  using an explicit write timestamp, coalesce background refreshes, and enforce
+  a non-renewing hard age on failures. A cold isolate can reuse immutable bytes
+  without downloading the product again; existing clients retain their defaults.
+  Expose request-phase instrumentation so apps can keep their own timing without
+  copying the cache implementation.
+
+### Patch Changes
+
+- cb0c602: Server warnings from the KV helpers (`kvGet`, `withKVCache`) and the
+  dev-only nonce-CSP and preference cache warnings now go through the request
+  logger (narduk-logging) instead of `console.warn`, so they carry the request
+  ID and honour `LOG_LEVEL`; a logging failure never breaks the response.
+- 1d62518: Clear the mechanical `sonarjs/no-duplicate-string` narduk-lint
+  warning in `tests/security-headers-preset.test.ts` (narduk-libs#1237) by
+  extracting the repeated `'script-src'` literal into a `SCRIPT_SRC` const.
+  Test-only change, no runtime behaviour affected.
+
 ## 2.18.4
 
 ### Patch Changes

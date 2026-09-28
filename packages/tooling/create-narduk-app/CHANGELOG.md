@@ -1,5 +1,80 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.16.0
+
+### Minor Changes
+
+- 2d5d088: Default a no-flag scaffold that lands on public exposure to
+  `seo,analytics` capabilities (Logan, askme 2026-09-28, narduk-libs#1229).
+  Without them, a public app's `narduk-app foundation:check` failed item 3.1
+  (missing narduk-seo/narduk-analytics) on day one; the fix is additive and does
+  not change any explicit `--capabilities`/`--capability` invocation, including
+  an explicit empty or otherwise different list, or an authenticated app's
+  (unchanged, empty) default. `upgrade` is unaffected: it always infers an
+  existing app's capabilities from its own manifests/dependencies rather than
+  applying this default.
+
+  Minor, not patch: this changes generated output for the common no-flag CLI
+  invocation, which is user-visible behavior a consumer may reasonably pin
+  against, even though no public API signature changed.
+
+### Patch Changes
+
+- a7d76f3: `deployment-check` names the `malformed` and `invalid`
+  deployment-block outcomes explicitly when reporting `adoption: invalid`; the
+  reported adoption is unchanged, and a future outcome kind now fails the type
+  check instead of silently reading as invalid.
+- 4da2968: Add the instrument mark renderer and path geometry at
+  `./instrument-marks`, with opt-in `marks: 'instruments'` styling. This moves
+  reusable SVG/DOM behavior out of Buoys without changing the existing `./marks`
+  disc API or its default stylesheet. Product thresholds, labels, colors and
+  lens selection stay in the app.
+
+  Also share `useMapKitLayoutSettle` for bare MapKit hosts, preserving the
+  measured tile-layout repair while restoring inline height and cancelling
+  pending frames on disposal or replacement.
+
+  Add opt-in `chrome: true` Vue map controls, keyboard menus, notices and
+  instrument legends so apps supply product inputs without copying reusable UI
+  behavior.
+
+- 32489bd: Add opt-in shared edge storage and stale-while-revalidate to the
+  published data client. Bound and checksum cached artifacts, expire manifests
+  using an explicit write timestamp, coalesce background refreshes, and enforce
+  a non-renewing hard age on failures. A cold isolate can reuse immutable bytes
+  without downloading the product again; existing clients retain their defaults.
+  Expose request-phase instrumentation so apps can keep their own timing without
+  copying the cache implementation.
+- d037d7e: `NardukBarChart` and `NardukPieChart` keyboard navigation no longer
+  detach the focus tick: an error while moving focus now reaches the app's
+  `errorHandler` instead of surfacing as an unhandled promise rejection.
+- cb0c602: Server warnings from the KV helpers (`kvGet`, `withKVCache`) and the
+  dev-only nonce-CSP and preference cache warnings now go through the request
+  logger (narduk-logging) instead of `console.warn`, so they carry the request
+  ID and honour `LOG_LEVEL`; a logging failure never breaks the response.
+- e4560eb: Default the local `siteUrl` (used whenever `--site-url` is omitted)
+  to `http://127.0.0.1:<port>` instead of `http://localhost:<port>`.
+  `nuxt-site-config` (pulled in transitively by the `seo` capability) flags a
+  `localhost` hostname as an invalid site URL and can resolve
+  `useSiteConfig().url` to a different host than the literal `siteUrl` the
+  generator wrote everywhere else (`nuxt.config.ts`'s `site.url`,
+  `Config/social-previews.json`, the runtime `public.siteUrl`). That split made
+  every fresh `--capabilities seo` (or default-capabilities, once
+  `@narduk-enterprises/create-narduk-app`'s `seo,analytics` default applies)
+  scaffold's rendered `og:image` mismatch its own `Config/social-previews.json`
+  default, failing `social-previews.spec.ts`'s default-route check
+  (`Default route did not select defaultImage.path`) in every new app's own CI,
+  independent of any other capability or config choice. `127.0.0.1` carries the
+  same "local dev" meaning without tripping that check.
+
+  Patch, not minor: this only changes the _unconfigured_ local-dev default,
+  which is not meant to be relied on past `narduk-app deploy` (every deployed
+  app has a real `--site-url`), and no public API/CLI surface changed.
+
+- da9d090: Test-only: the SSR preload hydration tests call unhead 3's
+  synchronous `renderSSRHead`/`renderDOMHead` without `await`, clearing the
+  package's last lint warnings. No runtime change.
+
 ## 0.15.0
 
 ### Minor Changes

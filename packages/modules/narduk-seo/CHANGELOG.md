@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.8.4
+
+### Patch Changes
+
+- f53efb2: The network-directory and admin OG-preview fetches now time out (5s /
+  10s) and fall back as they do on any upstream failure; the OG-preview failure
+  and security.txt expiry warnings now go through the narduk-core request logger
+  instead of `console.warn`.
+
 ## 2.8.3
 
 ### Patch Changes

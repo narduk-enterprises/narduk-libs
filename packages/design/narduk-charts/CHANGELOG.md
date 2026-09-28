@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.4
+
+### Patch Changes
+
+- d037d7e: `NardukBarChart` and `NardukPieChart` keyboard navigation no longer
+  detach the focus tick: an error while moving focus now reaches the app's
+  `errorHandler` instead of surfacing as an unhandled promise rejection.
+
 ## 2.7.3
 
 ### Patch Changes
