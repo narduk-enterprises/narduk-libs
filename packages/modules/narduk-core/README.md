@@ -1276,6 +1276,78 @@ means "exempt nothing".
 
 ### Operator overrides
 
+## Mutating routes: `defineUserMutation` and `withValidatedBody`
+
+A route that changes state should go through one of the mutation wrappers. Each
+one runs the same steps in a fixed order: the rate limit, then the auth check,
+then the body parse, then the handler. A caller who is over the limit or not
+signed in is refused before the body is read, and the handler receives a body
+that has already been validated.
+
+```ts
+// server/api/notes/index.post.ts — auto-imported, like defineEventHandler
+import { z } from 'zod'
+
+const noteBody = z.object({
+  title: z.string().trim().min(1).max(200),
+  body: z.string().max(10_000).default(''),
+})
+
+const notesWrite = defineRateLimitPolicy(
+  'notesWrite',
+  'notes-write',
+  30,
+  60_000,
+)
+
+export default defineUserMutation(
+  { rateLimit: notesWrite, parseBody: withValidatedBody(noteBody.parse) },
+  async ({ user, body }) => createNote(user.id, body),
+)
+```
+
+| Wrapper                | Auth check                    | Handler receives           |
+| ---------------------- | ----------------------------- | -------------------------- |
+| `definePublicMutation` | none                          | `{ event, body }`          |
+| `defineUserMutation`   | `requireAuth`                 | `{ event, body, user }`    |
+| `defineAdminMutation`  | `requireAdmin`                | `{ event, body, admin }`   |
+| `defineCronMutation`   | `requireCronAuth`             | `{ event, body }`          |
+| `defineUserQuery`      | `requireAuth` (GET, no body)  | `{ event, user, query? }`  |
+| `defineAdminQuery`     | `requireAdmin` (GET, no body) | `{ event, admin, query? }` |
+
+`defineWebhookMutation` and `defineCallbackMutation` are aliases of
+`definePublicMutation`.
+
+The options:
+
+- **`rateLimit`** is required. Pass a policy from
+  `defineRateLimitPolicy(key, namespace, maxRequests, windowMs)`, one of the
+  shared `RATE_LIMIT_POLICIES`, or a function of the event that returns a
+  policy.
+- **`parseBody`** is optional. Leave it out and the handler's `body` is
+  `undefined`, and the payload is never read.
+- **`requiredScopes`** applies only to a bearer API-key caller, who gets 403
+  without every listed scope. A session user is not checked against it.
+
+The body helpers:
+
+- **`withValidatedBody(validate)`** reads the JSON body and passes it to
+  `validate`, which is any `(body: unknown) => T`: a Zod schema's `parse`, or a
+  hand-written guard that throws. A `ZodError` becomes the same 400
+  `VALIDATION_FAILED` response that `defineValidatedHandler` sends (below), so a
+  field name never reaches `statusMessage`. An HTTP error that `validate` throws
+  is passed through unchanged. Any other throw becomes 400
+  `Invalid request body`.
+- **`withOptionalValidatedBody(validate, fallback = {})`** validates `fallback`
+  when the body is missing or does not parse. Use it for a route whose payload
+  is optional.
+- **`requireMutationBody(body)`** narrows `TBody | undefined` to `TBody`, and
+  answers 500 if the body is somehow missing after validation.
+
+Use `defineValidatedHandler` when the route needs typed `params`, `query` or a
+checked `response`. Use a mutation wrapper when the route needs the rate limit
+and the auth check in front of the body.
+
 ## Typed API contracts: `defineValidatedHandler`
 
 Give a route a signature. The schemas are the contract: the handler receives
