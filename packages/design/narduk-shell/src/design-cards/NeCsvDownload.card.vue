@@ -15,7 +15,7 @@ interface Reading {
   windMs: number | null
 }
 
-const columns: NeDataColumn<Reading>[] = [
+const columns: Array<NeDataColumn<Reading>> = [
   { key: 'time', label: 'Time' },
   { key: 'wind', label: 'Wind', unit: 'kt', numeric: true },
   { key: 'windMs', label: 'Wind', unit: 'm/s', csvOnly: true },

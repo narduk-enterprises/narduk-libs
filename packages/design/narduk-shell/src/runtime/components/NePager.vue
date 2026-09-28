@@ -68,13 +68,13 @@ const props = withDefaults(defineProps<NePagerProps>(), {
   to: undefined,
 })
 
+const emit = defineEmits<{ 'update:limit': [limit: number] }>()
+
 /**
  * Assigning to this model applies `page` only — `useCollection`'s setter
  * ignores every other field on purpose. See the composable's `state` doc.
  */
 const state = defineModel<NeCollectionState<unknown>>('state', { required: true })
-
-const emit = defineEmits<{ 'update:limit': [limit: number] }>()
 
 const dense = computed(() => props.density === 'dense')
 

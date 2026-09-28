@@ -104,7 +104,7 @@ export function csvHeader<TRow>(column: NeDataColumn<TRow>): string {
  * cells, never `0`.
  */
 export function toCsv<TRow>(
-  columns: readonly NeDataColumn<TRow>[],
+  columns: ReadonlyArray<NeDataColumn<TRow>>,
   rows: readonly TRow[],
   preamble: readonly string[] = [],
 ): string {
