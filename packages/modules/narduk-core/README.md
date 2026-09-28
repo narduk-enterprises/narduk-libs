@@ -2542,6 +2542,29 @@ not a product artifact.
 Import from `@narduk-enterprises/narduk-core/server/utils/narduk-data`, or use
 the Nitro auto-import inside an app that has the layer installed.
 
+### Optional edge cache and background refresh
+
+Pass `store: () => caches.default` (or a Cache API-compatible store) to share
+public release bytes across isolates. Stored manifests expire after
+`product.manifestTtlMs` (30 seconds by default); an explicit write timestamp
+prevents a rewritten `Date` header from renewing them. Artifact keys contain the
+immutable URL and checksum. Every cold reader bounds, hashes and validates the
+stored bytes; corrupt entries are evicted and storage failures fall back to the
+origin. No response tee buffers an unbounded second copy.
+
+Set `product.staleWhileRevalidateMs` to an absolute hard age and supply
+`context.waitUntil` to opt into background refresh. A soft-stale memo returns
+immediately with `freshness.source: 'swr'`, while one coalesced refresh runs.
+Failed refreshes never advance the hard age. At that age, or without
+`waitUntil`, the read blocks and propagates failure unless the caller separately
+opted into `maxStaleMs`. Keep that option unset when the hard age must fail
+closed. A read filled from the edge store reports `source: 'cache'`.
+
+`context.onPhase(phase, source?)` can connect manifest, artifact and product
+reads to an app's existing request timer. Background refresh does not retain or
+mutate the caller's timer. Cache fills also use `waitUntil` when provided. Both
+features are opt-in; existing clients keep their existing behavior.
+
 ### What it does
 
 - **The manifest names the artifact** — unless `entryPath` is set, the artifact

@@ -142,10 +142,14 @@ export interface NardukDataRequestContext {
    * `proxy-authorization` are dropped.
    */
   headers?: Readonly<Record<string, string>>
+  /** Optional request instrumentation; no request object is retained in the memo. */
+  onPhase?: (phase: 'manifest' | 'artifact' | 'product', source?: NardukDataSource) => void
   /** Correlation id propagated upstream as `x-request-id`. */
   requestId?: string
   /** Cancels this caller's read. Never cancels the shared upstream read. */
   signal?: AbortSignal
+  /** Keep a background refresh/store fill alive in the request runtime. */
+  waitUntil?: (task: Promise<unknown>) => void
 }
 
 /** Transport policy shared by every request this module makes. */
@@ -220,7 +224,7 @@ export interface NardukDataFreshnessThresholds {
 }
 
 /** Where a served value came from. */
-export type NardukDataSource = 'memo' | 'stale-if-error' | 'upstream'
+export type NardukDataSource = 'cache' | 'memo' | 'stale-if-error' | 'swr' | 'upstream'
 
 /**
  * Freshness metadata published beside every value this client returns.
@@ -283,6 +287,8 @@ export interface NardukDataProduct<
   manifestMaxBytes?: number
   /** Stricter manifest validator; defaults to the shared release contract. */
   manifestSchema?: NardukDataSchema<TManifest>
+  /** Edge manifest TTL; defaults to 30 seconds when a store is configured. */
+  manifestTtlMs?: number
   /** Hard ceiling on the artifact body. Defaults to 16 MiB. */
   maxBytes?: number
   /**
@@ -295,6 +301,8 @@ export interface NardukDataProduct<
   productId: string
   /** Validator the artifact must satisfy. */
   schema: NardukDataSchema<TArtifact>
+  /** Opt-in SWR hard age, measured from the last successful read. Requires waitUntil. */
+  staleWhileRevalidateMs?: number
   /** How long a value is served without re-reading upstream. Defaults to 60000. */
   ttlMs?: number
   /**
@@ -313,6 +321,13 @@ export interface NardukDataResult<TArtifact, TManifest> {
   manifest: TManifest
   /** The manifest URL this value was resolved through. */
   manifestUrl: string
+}
+
+/** The public-response subset of the Workers Cache API. Failures fall back to upstream. */
+export interface NardukDataStore {
+  delete: (key: string) => Promise<boolean>
+  match: (key: string) => Promise<Response | undefined>
+  put: (key: string, response: Response) => Promise<void>
 }
 
 /** Options shared by every product one client reads. */
@@ -335,6 +350,8 @@ export interface NardukDataClientOptions {
   origin?: string
   /** Extra attempts after the first. Defaults to 1. */
   retries?: number
+  /** Optional shared edge storage. A resolver supports runtimes where caches is request-local. */
+  store?: NardukDataStore | (() => NardukDataStore | null) | null
   /** Timeout for each attempt, in milliseconds. Defaults to 15000. */
   timeoutMs?: number
   /** `user-agent` to send; omitted when unset. */
@@ -744,6 +761,7 @@ interface CacheEntry {
   cooldownUntilMs: number
   data: unknown
   fetchedAtMs: number
+  loadSource: 'cache' | 'upstream'
   manifest: NardukDataReleaseManifest
   manifestUrl: string
   retainedBytes: number
@@ -793,6 +811,88 @@ async function withCallerSignal<T>(
  * without limit; `clear()` drops it, which is what a test suite wants between
  * cases.
  */
+const STORED_AT_HEADER = 'x-narduk-stored-at'
+
+function storedAge(response: Response, now: number): number | null {
+  const stamp = response.headers.get(STORED_AT_HEADER)
+  const date = response.headers.get('date')
+  const stamps = [
+    stamp === null ? NaN : Number(stamp),
+    date === null ? NaN : Date.parse(date),
+  ].filter(Number.isFinite)
+  return stamps.length ? Math.max(0, now - Math.min(...stamps)) : null
+}
+
+function persistDataStore(
+  store: NardukDataStore,
+  key: string,
+  response: Response,
+  waitUntil: NardukDataRequestContext['waitUntil'],
+): void {
+  const fill = Promise.resolve()
+    .then(() => store.put(key, response))
+    .catch(() => {})
+  waitUntil?.(fill)
+}
+
+async function readDataStore(store: NardukDataStore, key: string): Promise<Response | undefined> {
+  try {
+    return await store.match(key)
+  } catch {
+    return undefined
+  }
+}
+
+async function readStoredManifest<T>(
+  store: NardukDataStore,
+  key: string,
+  ttlMs: number,
+  now: number,
+  maxBytes: number,
+  schema: NardukDataSchema<T>,
+): Promise<T | undefined> {
+  const stored = await readDataStore(store, key)
+  if (!stored) return undefined
+  const age = storedAge(stored, now)
+  if (age === null || age >= ttlMs) {
+    await store.delete(key).catch(() => false)
+    return undefined
+  }
+  try {
+    const bytes = await readBoundedBody(stored, maxBytes)
+    return applySchema(key, decodeJson(key, bytes), schema)
+  } catch {
+    return undefined
+  }
+}
+
+async function readStoredArtifact(
+  store: NardukDataStore,
+  key: string,
+  sha256: string,
+  maxBytes: number,
+): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  const stored = await readDataStore(store, key)
+  if (!stored) return undefined
+  try {
+    const bytes = await readBoundedBody(stored, maxBytes)
+    if ((await sha256Hex(bytes)) === sha256) return bytes
+  } catch {
+    /* Corrupt and oversized entries both fail closed. */
+  }
+  await store.delete(key).catch(() => false)
+  return undefined
+}
+
+function canRevalidateInBackground(
+  entry: CacheEntry | undefined,
+  hardAge: number | undefined,
+  waitUntil: NardukDataRequestContext['waitUntil'],
+  now: number,
+): boolean {
+  return entry !== undefined && waitUntil !== undefined && (hardAge ?? 0) > now - entry.fetchedAtMs
+}
+
 export function createNardukDataClient(options: NardukDataClientOptions = {}): NardukDataClient {
   const origin = options.origin ?? NARDUK_DATA_ORIGIN
   const now = options.now ?? (() => Date.now())
@@ -895,11 +995,45 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       timeoutMs: options.timeoutMs,
       userAgent: options.userAgent,
     }
-    const manifest = await fetchNardukDataJson(manifestUrl, {
-      ...policy,
-      maxBytes: product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
-      schema: product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>),
-    })
+    const store = typeof options.store === 'function' ? options.store() : options.store
+    const manifestKey = `${manifestUrl}?narduk-cache=manifest`
+    const manifestTtlMs = product.manifestTtlMs ?? 30_000
+    let manifest = store
+      ? await readStoredManifest(
+          store,
+          manifestKey,
+          manifestTtlMs,
+          now(),
+          product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
+          product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>),
+        )
+      : undefined
+    let loadSource: 'cache' | 'upstream' = 'cache'
+    if (!manifest) {
+      manifest = await fetchNardukDataJson(manifestUrl, {
+        ...policy,
+        maxBytes: product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
+        schema: product.manifestSchema ?? (releaseManifestSchema as NardukDataSchema<TManifest>),
+      })
+      loadSource = 'upstream'
+    }
+    context?.onPhase?.('manifest')
+    const rememberManifest = () => {
+      if (store && loadSource === 'upstream')
+        persistDataStore(
+          store,
+          manifestKey,
+          new Response(JSON.stringify(manifest), {
+            headers: {
+              'content-type': 'application/json',
+              'cache-control': `public, max-age=${Math.ceil(manifestTtlMs / 1000)}`,
+              date: new Date(now()).toUTCString(),
+              [STORED_AT_HEADER]: String(now()),
+            },
+          }),
+          context?.waitUntil,
+        )
+    }
 
     if (product.acceptManifest) {
       const accept = product.acceptManifest
@@ -949,13 +1083,22 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
           validate(kept, manifest)
         })
       }
-      return { ...previous, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
+      rememberManifest()
+      return { ...previous, loadSource, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
     }
-    const bytes = await requestBytes(
-      artifactUrl,
-      { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
-      'GET',
-    )
+    const artifactKey = `${artifactUrl}?sha256=${sha256}`
+    let bytes = store
+      ? await readStoredArtifact(store, artifactKey, sha256, product.maxBytes ?? DEFAULT_MAX_BYTES)
+      : undefined
+    const artifactFromStore = bytes !== undefined
+    if (!bytes) {
+      bytes = await requestBytes(
+        artifactUrl,
+        { ...policy, maxBytes: product.maxBytes ?? DEFAULT_MAX_BYTES },
+        'GET',
+      )
+      loadSource = 'upstream'
+    }
     const observed = await sha256Hex(bytes)
     if (observed !== sha256) {
       throw new NardukDataError(
@@ -973,7 +1116,23 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       })
     }
 
+    rememberManifest()
+    if (store && !artifactFromStore)
+      persistDataStore(
+        store,
+        artifactKey,
+        new Response(bytes, {
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'public, max-age=604800, immutable',
+          },
+        }),
+        context?.waitUntil,
+      )
+    context?.onPhase?.('artifact')
+
     return {
+      loadSource,
       artifactSha256: sha256,
       artifactUrl,
       cooldownUntilMs: 0,
@@ -1012,25 +1171,35 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       const segments =
         product.entryPath === undefined ? null : entrySegments(product.entryPath, manifestUrl)
       const key = cacheKey(product, context)
-      const present = (entry: CacheEntry, source: NardukDataSource) => ({
-        artifactUrl: entry.artifactUrl,
-        data: entry.data as TArtifact,
-        freshness: describeFreshness(
-          entry.manifest,
-          entry.fetchedAtMs,
-          now(),
-          source,
-          product.freshness,
-        ),
-        manifest: entry.manifest as TManifest,
-        manifestUrl: entry.manifestUrl,
-      })
+      const present = (entry: CacheEntry, source: NardukDataSource) => {
+        context?.onPhase?.('product', source)
+        return {
+          artifactUrl: entry.artifactUrl,
+          data: entry.data as TArtifact,
+          freshness: describeFreshness(
+            entry.manifest,
+            entry.fetchedAtMs,
+            now(),
+            source,
+            product.freshness,
+          ),
+          manifest: entry.manifest as TManifest,
+          manifestUrl: entry.manifestUrl,
+        }
+      }
       const maxStaleMs = product.maxStaleMs ?? 0
       const servableStale = (entry: CacheEntry | undefined, at: number) =>
         entry !== undefined && maxStaleMs > 0 && at - entry.fetchedAtMs <= maxStaleMs
 
+      if (context?.signal?.aborted) throw abortedError(manifestUrl)
       const memo = recall(key)
       const startedAt = now()
+      const serveWhileRevalidating = canRevalidateInBackground(
+        memo,
+        product.staleWhileRevalidateMs,
+        context?.waitUntil,
+        startedAt,
+      )
       if (memo && startedAt - memo.fetchedAtMs < (product.ttlMs ?? DEFAULT_TTL_MS)) {
         return present(memo, 'memo')
       }
@@ -1043,7 +1212,8 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
 
       let flight = inFlight.get(key)
       if (!flight) {
-        flight = load(product, context, manifestUrl, segments, memo)
+        const loadContext = serveWhileRevalidating ? { ...context, onPhase: undefined } : context
+        flight = load(product, loadContext, manifestUrl, segments, memo)
           .then((entry) => {
             remember(key, entry)
             return entry
@@ -1052,10 +1222,13 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
             inFlight.delete(key)
           })
         inFlight.set(key, flight)
+        if (serveWhileRevalidating) context?.waitUntil?.(flight.catch(() => {}))
       }
+      if (serveWhileRevalidating && memo) return present(memo, 'swr')
 
       try {
-        return present(await withCallerSignal(flight, context?.signal, manifestUrl), 'upstream')
+        const loaded = await withCallerSignal(flight, context?.signal, manifestUrl)
+        return present(loaded, loaded.loadSource)
       } catch (error) {
         // A caller that cancelled is told it cancelled. Handing it stale data
         // instead would answer a question it withdrew.
