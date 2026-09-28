@@ -6,6 +6,8 @@ import {
   formatPromoteResult,
   checkGateAgainstSha,
   checkGateAgainstVersion,
+  checkVersionAgainstSha,
+  describeAmbiguousVersions,
   compareVersionRecency,
   GATE_ATTESTATION_MISSING_WARNING,
   parseGateAttestation,
@@ -380,8 +382,13 @@ describe('rollback', () => {
 })
 
 describe('argument parsing', () => {
-  it('rejects a promote that names both a commit and a version', () => {
-    expect(() => parseVersionsPromoteArgs(['--sha', SHA, '--version-id', 'v1'])).toThrow('not both')
+  it('accepts a commit and a version together, and rejects malformed flags', () => {
+    // narduk-libs#1233: --version-id beside --sha chooses among that commit's
+    // versions; it no longer replaces the commit.
+    expect(parseVersionsPromoteArgs(['--sha', SHA, '--version-id', 'v1'])).toMatchObject({
+      sha: SHA,
+      versionId: 'v1',
+    })
     expect(() => parseVersionsPromoteArgs(['--sha', 'not-a-sha'])).toThrow('hex commit SHA')
     expect(() => parseVersionsPromoteArgs(['--bogus'])).toThrow(
       'Unknown deploy versions-promote option: --bogus',
@@ -1664,5 +1671,186 @@ describe('--gate-verified binds the gate result to the promoted commit (narduk-l
     expect(checkGateAgainstVersion(gate, 'v', numbered('v', `${SHA.slice(0, 39)}0`, 1))).toContain(
       'built from',
     )
+  })
+})
+
+describe('--version-id recovers a duplicate upload of one commit (narduk-libs#1233)', () => {
+  const GATE = 'ci / Required'
+  const OTHER = '0123456789abcdef0123456789abcdef01234567'
+  // A Workers Builds double dispatch: one trigger, one push, two versions 1.4 s
+  // apart, both tagged with the same commit.
+  const first = numbered('v-first', SHA, 21)
+  const second = numbered('v-second', SHA, 22)
+  const older = numbered('v-older', OTHER, 20)
+  const branchBuild = numbered('v-branch', SHA, 23, 'feature')
+  const versions = [branchBuild, second, first, older]
+  const live = [deployment('d1', 'v-older', '2026-09-28T07:00:00Z')]
+  const DISPATCH_ENV = {
+    ...ACTIONS_ENV,
+    GITHUB_EVENT_NAME: 'workflow_dispatch',
+    GITHUB_REF_NAME: 'main',
+  }
+
+  function run(
+    args: string[],
+    listed: WorkerVersion[] = [second, first, older],
+    deployments = live,
+  ) {
+    const lines: string[] = []
+    const { context: ctx, calls } = context(listed, deployments, DISPATCH_ENV)
+    return {
+      calls,
+      lines,
+      result: runVersionsPromote(
+        parseVersionsPromoteArgs(['--production-branch', 'main', ...args]),
+        {
+          ...ctx,
+          log: (line) => lines.push(line),
+        },
+      ),
+    }
+  }
+
+  it('still refuses to guess, and names the dispatch recovery with both candidate ids', async () => {
+    const { result, calls } = run(['--sha', SHA, '--gate-verified', `${GATE}@${SHA}`])
+    const refused = await result
+    expect(refused.outcome).toBe('ambiguous-version')
+    expect(refused.exitCode).toBe(PROMOTE_EXIT.ambiguousVersion)
+    expect(refused.candidates).toEqual(['v-second', 'v-first'])
+    const dispatch = (id: string): string =>
+      `gh workflow run promote.yml --repo narduk-enterprises/buoys --ref main ` +
+      `-f verified-sha=${SHA} -f version-id=${id}`
+    expect(refused.detail).toContain(dispatch('v-second'))
+    expect(refused.detail).toContain(dispatch('v-first'))
+    // Newest first, so the first command is the obvious one to run.
+    expect(refused.detail.indexOf('version-id=v-second')).toBeLessThan(
+      refused.detail.indexOf('version-id=v-first'),
+    )
+    expect(refused.detail).toContain('(v-second, v-first, newest first)')
+    expect(refused.detail).toContain(`--sha ${SHA} --version-id <id>`)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('orders candidates by created_on when they carry no version number', () => {
+    const early = version('v-early', SHA, { metadata: { created_on: '2026-09-28T07:16:00.000Z' } })
+    const late = version('v-late', SHA, { metadata: { created_on: '2026-09-28T07:16:01.400Z' } })
+    const detail = describeAmbiguousVersions(SHA, [early, late], {}, null)
+    expect(detail).toContain('(v-late, v-early, newest first)')
+    // No GITHUB_REPOSITORY outside Actions: the command omits --repo and
+    // falls back to main.
+    expect(detail).toContain(`gh workflow run promote.yml --ref main -f verified-sha=${SHA}`)
+  })
+
+  it('promotes the chosen duplicate with every gate still applied', async () => {
+    const { result, calls } = run([
+      '--sha',
+      SHA,
+      '--version-id',
+      'v-first',
+      '--gate-verified',
+      `${GATE}@${SHA}`,
+    ])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.exitCode).toBe(PROMOTE_EXIT.ok)
+    expect(promoted.sha).toBe(SHA)
+    expect(promoted.versionId).toBe('v-first')
+    expect(promoted.previousVersionId).toBe('v-older')
+    expect(promoted.gateVerified).toEqual({ check: GATE, sha: SHA })
+    expect(calls.deployed).toEqual([
+      { versionId: 'v-first', percentage: 100, message: `narduk-app promote ${SHA}` },
+    ])
+  })
+
+  it('refuses a chosen version that is not a build of --sha, deploying nothing', async () => {
+    const { result, calls } = run(['--sha', SHA, '--version-id', 'v-older'])
+    const refused = await result
+    expect(refused.outcome).toBe('version-not-found')
+    expect(refused.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    expect(refused.detail).toContain(`was built from ${OTHER}, not ${SHA}`)
+    expect(calls.deployed).toEqual([])
+
+    const gone = run(['--sha', SHA, '--version-id', 'v-gone'])
+    const missing = await gone.result
+    expect(missing.exitCode).toBe(PROMOTE_EXIT.versionNotFound)
+    expect(missing.detail).toContain('is not among the 3 version(s) searched')
+    expect(gone.calls.deployed).toEqual([])
+
+    const untagged = run(
+      ['--sha', SHA, '--version-id', 'v-untagged'],
+      [version('v-untagged', undefined, { number: 30 }), first],
+    )
+    expect((await untagged.result).detail).toContain('carries no workers/tag')
+    expect(untagged.calls.deployed).toEqual([])
+  })
+
+  it('refuses when --gate-verified names another commit, before reading Cloudflare', async () => {
+    const { result, calls } = run([
+      '--sha',
+      SHA,
+      '--version-id',
+      'v-first',
+      '--gate-verified',
+      `${GATE}@${OTHER}`,
+    ])
+    const refused = await result
+    expect(refused.outcome).toBe('gate-mismatch')
+    expect(refused.exitCode).toBe(PROMOTE_EXIT.gateMismatch)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('refuses when --gate-verified matches --sha but the chosen version is another commit', async () => {
+    // --sha and the gate agree; the version is the odd one out. Either binding
+    // refuses it: without the gate the --sha check does, with it the tag check.
+    const { result, calls } = run([
+      '--sha',
+      SHA,
+      '--version-id',
+      'v-older',
+      '--gate-verified',
+      `${GATE}@${SHA}`,
+    ])
+    expect((await result).exitCode).not.toBe(PROMOTE_EXIT.ok)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('still refuses a chosen version older than the live one', async () => {
+    const { result, calls } = run(
+      ['--sha', SHA, '--version-id', 'v-first', '--gate-verified', `${GATE}@${SHA}`],
+      [second, first, older],
+      [deployment('d1', 'v-second', '2026-09-28T07:20:00Z')],
+    )
+    const refused = await result
+    expect(refused.outcome).toBe('stale-promote')
+    expect(refused.exitCode).toBe(PROMOTE_EXIT.stalePromote)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('still refuses a chosen version built from another branch', async () => {
+    const { result, calls } = run(
+      ['--sha', SHA, '--version-id', 'v-branch', '--gate-verified', `${GATE}@${SHA}`],
+      versions,
+    )
+    const refused = await result
+    expect(refused.outcome).toBe('branch-mismatch')
+    expect(refused.exitCode).toBe(PROMOTE_EXIT.branchMismatch)
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('is already-live when the chosen duplicate already serves production', async () => {
+    const { result, calls } = run(
+      ['--sha', SHA, '--version-id', 'v-second', '--gate-verified', `${GATE}@${SHA}`],
+      [second, first, older],
+      [deployment('d1', 'v-second', '2026-09-28T07:20:00Z')],
+    )
+    expect((await result).outcome).toBe('already-live')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('binds the pair directly through checkVersionAgainstSha', () => {
+    expect(checkVersionAgainstSha([first, older], 'v-first', SHA)).toBeNull()
+    expect(checkVersionAgainstSha([first, older], 'v-first', SHA.slice(0, 12))).toBeNull()
+    expect(checkVersionAgainstSha([first, older], 'v-older', SHA)).toContain('built from')
+    expect(checkVersionAgainstSha([first], 'v-gone', SHA)).toContain('not among the 1 version(s)')
   })
 })

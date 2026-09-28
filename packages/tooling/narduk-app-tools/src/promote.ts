@@ -179,7 +179,10 @@ export const PROMOTE_EXIT = {
   refused: 1,
   /** Bad arguments or unresolvable Worker name. Nothing was attempted. */
   usage: 2,
-  /** No version carries this commit's tag inside the searched window. */
+  /**
+   * No version carries this commit's tag inside the searched window, or the
+   * `--version-id` chosen beside `--sha` is not one of them.
+   */
   versionNotFound: 3,
   /** More than one version carries this commit's tag. */
   ambiguousVersion: 4,
@@ -731,6 +734,69 @@ export function resolveVersionForSha(
 }
 
 /**
+ * The `--sha` + `--version-id` binding: `null` when the named version is in the
+ * listing and carries that commit's tag, otherwise why it is refused. Without
+ * `--sha`, a `--version-id` promote binds nothing here (`--gate-verified` still
+ * binds it through the tag).
+ */
+export function checkVersionAgainstSha(
+  versions: readonly WorkerVersion[],
+  versionId: string,
+  sha: string,
+): string | null {
+  const target = versions.find((version) => version.id === versionId)
+  if (!target) {
+    return (
+      `Version ${versionId} is not among the ${String(versions.length)} version(s) searched, so ` +
+      `its ${VERSION_TAG_ANNOTATION} cannot be read and it cannot be confirmed as a build of ` +
+      `${sha}. Raise --max-versions, or check the id. Nothing was attempted.`
+    )
+  }
+  const tag = target.annotations?.[VERSION_TAG_ANNOTATION]
+  if (!shaMatchesTag(sha, tag)) {
+    return (
+      `Version ${versionId} ` +
+      (tag ? `was built from ${tag}` : `carries no ${VERSION_TAG_ANNOTATION}`) +
+      `, not ${sha}; --version-id may only choose among the versions of the --sha commit. ` +
+      'Nothing was attempted.'
+    )
+  }
+  return null
+}
+
+/**
+ * The `ambiguous-version` detail, recovery included (narduk-libs#1233).
+ *
+ * Workers Builds sometimes dispatches one trigger twice for one push, so two
+ * versions carry the same commit. Nothing in a version's metadata tells a
+ * double dispatch from a second uploader, so the promote still refuses to
+ * guess -- but it names the one-click recovery: dispatch Promote with the
+ * version to deploy. Candidates are listed newest first.
+ */
+export function describeAmbiguousVersions(
+  sha: string,
+  candidates: readonly WorkerVersion[],
+  env: DeployEnv = {},
+  productionBranch: string | null = null,
+): string {
+  const ordered = [...candidates].sort((a, b) => -(compareVersionRecency(a, b) ?? 0))
+  const repo = env.GITHUB_REPOSITORY?.trim()
+  const ref = productionBranch ?? 'main'
+  const dispatch = (id: string): string =>
+    `gh workflow run promote.yml${repo ? ` --repo ${repo}` : ''} --ref ${ref} ` +
+    `-f verified-sha=${sha} -f version-id=${id}`
+  return (
+    `${String(candidates.length)} versions carry ${VERSION_TAG_ANNOTATION} ${sha} ` +
+    `(${ordered.map((version) => version.id).join(', ')}, newest first); refusing to guess. ` +
+    'A Workers Builds double dispatch uploads one commit twice (narduk-libs#1233). To recover, ' +
+    'dispatch Promote with the version to deploy; the gate still requires this commit to be ' +
+    `the head of ${ref} with a passing check: ` +
+    ordered.map((version) => dispatch(version.id)).join('  OR  ') +
+    `. By hand: narduk-app deploy versions-promote --sha ${sha} --version-id <id>.`
+  )
+}
+
+/**
  * The remedy half of a `version-not-found`, kept beside the search facts that
  * decide it: a search that ran out of history means the build never uploaded
  * this commit, a search that hit its bound means the version is simply older
@@ -995,9 +1061,6 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     else if (arg === '--json') flags.json = true
     else if (arg === '--dry-run') flags.dryRun = true
     else throw new Error(`Unknown deploy versions-promote option: ${arg}`)
-  }
-  if (flags.sha && flags.versionId) {
-    throw new Error('Choose either --sha or --version-id, not both')
   }
   if (flags.sha && !SHA_PATTERN.test(flags.sha)) {
     throw new Error(`--sha must be a hex commit SHA, got ${JSON.stringify(flags.sha)}`)
@@ -1370,7 +1433,29 @@ async function promoteVersion(
 
   let versionId = flags.versionId
   let searchedVersions: number | undefined
-  if (!versionId && sha) {
+  if (versionId && flags.sha) {
+    // `--sha` with `--version-id` is the one-click recovery from a duplicate
+    // upload (narduk-libs#1233): the operator chooses the version, and the
+    // commit still binds it. A version this listing cannot show, or one built
+    // from another commit, is not a version of this commit.
+    const mismatch = checkVersionAgainstSha(versions, versionId, flags.sha)
+    if (mismatch) {
+      return {
+        action: 'versions-promote',
+        outcome: 'version-not-found',
+        worker: workerName,
+        sha,
+        versionId,
+        previousVersionId,
+        percentage: null,
+        searchedVersions: versions.length,
+        versionSearch,
+        detail: mismatch,
+        exitCode: PROMOTE_EXIT.versionNotFound,
+      }
+    }
+    searchedVersions = versions.length
+  } else if (!versionId && sha) {
     const match = resolveVersionForSha(versions, sha)
     searchedVersions = match.searched
     if (match.kind === 'not-found') {
@@ -1408,9 +1493,7 @@ async function promoteVersion(
         searchedVersions,
         versionSearch,
         candidates: match.versions.map((version) => version.id),
-        detail:
-          `${String(match.versions.length)} versions carry workers/tag ${sha}; refusing to guess. ` +
-          'Promote the intended one with --version-id.',
+        detail: describeAmbiguousVersions(sha, match.versions, env, productionBranch),
         exitCode: PROMOTE_EXIT.ambiguousVersion,
       }
     }
