@@ -756,6 +756,28 @@ describe('upgrade profile inference', () => {
     expect(profile.inferred).toContain('databaseBackend')
   })
 
+  // narduk-libs#1229: create-narduk-app now defaults a *no-flag* public
+  // scaffold to seo+analytics, but `upgrade` infers an existing app's
+  // profile from its own manifests/dependencies -- it never re-runs that
+  // no-flag default, so a public app that was deliberately scaffolded with
+  // zero capabilities (an explicit empty list, not a no-flag call) stays at
+  // zero across `upgrade`.
+  it('never adds seo/analytics to an existing public app with no capabilities', async () => {
+    const targetDir = await scaffold({ capabilities: '' })
+    const profile = await inferUpgradeProfile(targetDir)
+
+    expect(profile.capabilities).toEqual([])
+    expect(profile.visibility).toBe('private')
+
+    const report = await upgradeNardukApp({ targetDir })
+    expect(report.driftCount).toBe(0)
+
+    const rootManifest = JSON.parse(await read(targetDir, 'package.json')) as {
+      narduk?: { capabilities?: string[] }
+    }
+    expect(rootManifest.narduk?.capabilities).toEqual([])
+  })
+
   // narduk-libs#825: the seo capability also pins the third-party
   // nuxt-og-image peer. An app with no `narduk.capabilities` block is read
   // from its dependencies, and nuxt-og-image alone must not read as seo.

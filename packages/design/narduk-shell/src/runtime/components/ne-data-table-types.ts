@@ -111,7 +111,7 @@ export interface NeDataColumn<TRow = Record<string, unknown>> {
 }
 
 export interface NeDataTableProps<TRow = Record<string, unknown>> {
-  columns: readonly NeDataColumn<TRow>[]
+  columns: ReadonlyArray<NeDataColumn<TRow>>
   rows: readonly TRow[]
   groups?: readonly NeDataColumnGroup[]
   /** Stable row identity. Defaults to the row's index. */
@@ -205,7 +205,7 @@ export type NeDataTableSlots<TRow = Record<string, unknown>> = {
 }
 
 export interface NeCsvDownloadProps<TRow = Record<string, unknown>> {
-  columns: readonly NeDataColumn<TRow>[]
+  columns: ReadonlyArray<NeDataColumn<TRow>>
   rows: readonly TRow[]
   /** The saved file's name. `.csv` is appended when missing. */
   filename?: string

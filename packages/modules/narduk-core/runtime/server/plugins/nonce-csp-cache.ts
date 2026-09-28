@@ -1,6 +1,7 @@
 import { getResponseHeader } from 'h3'
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 
+import { warnBestEffort } from '../../internal/best-effort-log'
 import {
   hasMintedNonce,
   isHtmlContentType,
@@ -76,8 +77,10 @@ export function warnIfNonceCspHtmlCacheRefused(
   const path = typeof event.path === 'string' && event.path.length > 0 ? event.path : '/'
   if (warnedPaths.has(path)) return
   warnedPaths.add(path)
-  console.warn(
-    `[narduk-core] ${path} is SSR HTML under a nonce CSP (nardukCore.security.headers), so its cacheable profile was refused and it ships Cache-Control: private, no-store. The nonce is minted per request; an edge cache would replay one visitor's nonce to everyone. Edge-cache the JSON endpoints this page fetches instead (narduk-libs#435).`,
+  warnBestEffort(
+    event,
+    'narduk-core',
+    `${path} is SSR HTML under a nonce CSP (nardukCore.security.headers), so its cacheable profile was refused and it ships Cache-Control: private, no-store. The nonce is minted per request; an edge cache would replay one visitor's nonce to everyone. Edge-cache the JSON endpoints this page fetches instead (narduk-libs#435).`,
   )
 }
 

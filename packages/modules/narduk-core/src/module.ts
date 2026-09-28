@@ -48,6 +48,7 @@ import { prependNitroErrorHandlers } from './nitro-error-handler'
 import { localIconDefaults, nuxtIconModuleEntry } from './nuxt-icon-module'
 import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 import { registerNuxtUiSources } from './nuxt-ui-sources'
+import { resolveOpenApiProductionMode } from './openapi-production'
 import {
   APP_RUNTIME_NUXT_IMPORTS,
   APP_RUNTIME_VUE_IMPORTS,
@@ -87,8 +88,6 @@ interface TypePrepareOptions {
 interface NuxtAppTemplateState {
   layouts: Record<string, { file: string; name: string }>
 }
-
-type OpenApiProductionMode = false | 'runtime' | 'prerender'
 
 interface MutableNuxtOptionsRecord {
   _installedModules?: Array<{ meta?: { name?: unknown } }>
@@ -546,17 +545,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
       const buildVersion = resolveBuildVersion(process.env, readGitSha, appVersion)
       const buildTime = process.env.BUILD_TIME || new Date().toISOString()
-      const openApiProduction: OpenApiProductionMode = (() => {
-        switch (process.env.NUXT_OPENAPI_PRODUCTION) {
-          case 'false':
-          case 'disabled':
-            return false
-          case 'runtime':
-            return 'runtime'
-          default:
-            return 'prerender'
-        }
-      })()
+      const openApiProduction = resolveOpenApiProductionMode(process.env.NUXT_OPENAPI_PRODUCTION)
       const colorModePreference = process.env.NUXT_COLOR_MODE_PREFERENCE || 'system'
       const devServerPort = resolveDevServerPort(process.env.NUXT_PORT, 3000)
       const ormTablesEntry =

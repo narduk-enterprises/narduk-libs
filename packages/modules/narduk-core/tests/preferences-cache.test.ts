@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
 import { createApp, createError, defineEventHandler, sendRedirect, toNodeListener } from 'h3'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setCacheProfile } from '../runtime/server/utils/cacheProfile'
 import { readPreferences } from '../runtime/server/utils/preferences'
@@ -10,6 +10,8 @@ import {
   markPreferencesInfluenced,
   NE_PREFERENCES_INFLUENCED_CONTEXT_KEY,
 } from '../runtime/shared/utils/preferences'
+
+import { logged, resetLogged } from './stubs/recording-logger'
 
 import type { H3Event } from 'h3'
 
@@ -19,6 +21,10 @@ vi.mock('nitropack/runtime', () => ({
 }))
 vi.mock('../runtime/server/utils/runtime-public', () => ({
   resolveRuntimePublicOverlay: () => ({ previewSafeMode: false }),
+}))
+vi.mock('../runtime/server/utils/logger', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useLogger: (await import('./stubs/recording-logger')).useRecordingLogger,
 }))
 
 const { applyPreferencesCacheHeaders, default: plugin } =
@@ -286,6 +292,10 @@ describe('preferences-cache render:response order (SSR)', () => {
 })
 
 describe('Nitro cached-handler incompatibility warning', () => {
+  beforeEach(() => {
+    resetLogged()
+  })
+
   afterEach(async () => {
     vi.restoreAllMocks()
     const { resetPreferenceCacheWarningsForTests } =
@@ -298,7 +308,6 @@ describe('Nitro cached-handler incompatibility warning', () => {
       await import('../runtime/server/plugins/preferences-cache')
     expect(typeof warnIfPreferenceResponseInsideNitroCache).toBe('function')
 
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const event = {
       path: '/stations',
       context: {
@@ -310,15 +319,15 @@ describe('Nitro cached-handler incompatibility warning', () => {
     warnIfPreferenceResponseInsideNitroCache(event, true)
     warnIfPreferenceResponseInsideNitroCache(event, true)
 
-    expect(warn).toHaveBeenCalledTimes(1)
-    expect(String(warn.mock.calls[0])).toMatch(/routeRules|cached handler/i)
-    expect(String(warn.mock.calls[0])).toMatch(/\/stations/)
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toMatchObject({ level: 'warn', scope: 'narduk-core' })
+    expect(logged[0]?.message).toMatch(/routeRules|cached handler/i)
+    expect(logged[0]?.message).toMatch(/\/stations/)
   })
 
   it('is silent outside development and when Nitro did not wrap the handler', async () => {
     const { warnIfPreferenceResponseInsideNitroCache } =
       await import('../runtime/server/plugins/preferences-cache')
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     warnIfPreferenceResponseInsideNitroCache(
       {
         path: '/live',
@@ -336,7 +345,7 @@ describe('Nitro cached-handler incompatibility warning', () => {
       },
       true,
     )
-    expect(warn).not.toHaveBeenCalled()
+    expect(logged).toEqual([])
   })
 })
 

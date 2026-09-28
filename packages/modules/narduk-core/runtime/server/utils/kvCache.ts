@@ -7,6 +7,8 @@
  * to the producer when KV is unavailable, stale, malformed, or bypassed.
  */
 
+import { warnBestEffort } from '../../internal/best-effort-log'
+
 import { kvDelete, kvGet, kvSet } from './kv'
 
 import type { H3Event } from 'h3'
@@ -98,7 +100,11 @@ export async function withKVCache<T>(
         return wrap(cached.data, cached, true)
       }
     } catch (err) {
-      console.warn(`[KVCache] GET error ${cacheKey}`, { bindingName, error: String(err) })
+      warnBestEffort(event, 'KVCache', `GET error ${cacheKey}`, {
+        bindingName,
+        cacheKey,
+        error: err,
+      })
     }
   }
 
@@ -114,7 +120,11 @@ export async function withKVCache<T>(
     try {
       await kvSet(event, cacheKey, envelope, expirationTtl, bindingName)
     } catch (err) {
-      console.warn(`[KVCache] SET error ${cacheKey}`, { bindingName, error: String(err) })
+      warnBestEffort(event, 'KVCache', `SET error ${cacheKey}`, {
+        bindingName,
+        cacheKey,
+        error: err,
+      })
     }
   }
 

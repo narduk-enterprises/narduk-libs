@@ -283,7 +283,13 @@ function normalizeVisibility(value: AppVisibility | undefined): AppVisibility {
 }
 
 function normalizeSiteUrl(value: string | undefined, localPort: number): string {
-  const siteUrl = value?.trim() || 'http://localhost:' + localPort
+  // 127.0.0.1, not localhost: nuxt-site-config's validator flags a "localhost"
+  // hostname as a bad site URL (it warns and the stack can resolve
+  // useSiteConfig().url to a different host than this literal), which made
+  // every unconfigured SEO scaffold's og:image mismatch its own
+  // Config/social-previews.json default and fail social-previews.spec.ts.
+  // 127.0.0.1 carries the same "local dev" meaning without tripping that check.
+  const siteUrl = value?.trim() || 'http://127.0.0.1:' + localPort
   let parsed: URL
   try {
     parsed = new URL(siteUrl)
@@ -444,11 +450,25 @@ interface NormalizedCreateOptions {
 
 function normalizeOptions(options: CreateNardukAppOptions): NormalizedCreateOptions {
   const appName = normalizeAppName(options)
-  const capabilities = normalizeCapabilities(options.capabilities)
-  const exposure = options.exposure ?? (capabilities.includes('auth') ? 'authenticated' : 'public')
+  const explicitCapabilities = options.capabilities !== undefined
+  const requestedCapabilities = normalizeCapabilities(options.capabilities)
+  const exposure =
+    options.exposure ?? (requestedCapabilities.includes('auth') ? 'authenticated' : 'public')
   if (!['public', 'authenticated'].includes(exposure)) {
     throw new CreateNardukAppError('exposure must be public or authenticated.')
   }
+  // No `--capabilities`/`--capability` at all, on a public app: without seo and
+  // analytics, `narduk-app foundation:check` item 3.1 fails a public site on
+  // day one. Default that no-flag case to both (Logan, askme 2026-09-28,
+  // narduk-libs#1229; option text: "No-flag public apps get narduk-seo and
+  // narduk-analytics, so every new app passes its own CI on day one."). An
+  // explicit `--capabilities`, even an empty or different set, always wins --
+  // only the no-flag case changes, and authenticated apps keep today's
+  // (empty) default.
+  const capabilities =
+    !explicitCapabilities && exposure === 'public'
+      ? normalizeCapabilities('seo,analytics')
+      : requestedCapabilities
   if (exposure === 'public' && capabilities.includes('auth')) {
     throw new CreateNardukAppError(
       'Auth apps require authenticated exposure; configure protected, isolated previews during onboarding.',

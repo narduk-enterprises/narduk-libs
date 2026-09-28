@@ -1,9 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/no-floating-promises": 2
-  },
-  "expires": {
-    "@typescript-eslint/no-floating-promises": "2026-10-05"
-  }
+  "rules": {}
 }

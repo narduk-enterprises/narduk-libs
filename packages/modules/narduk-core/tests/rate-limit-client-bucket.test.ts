@@ -93,3 +93,18 @@ describe('rateLimitCounterKey — ip-path path normalization', () => {
     expect(() => rateLimitCounterKey(ipPath, V4, '/api/%E0%A4%A')).not.toThrow()
   })
 })
+
+describe('rateLimitCounterKey — every scope is explicit', () => {
+  it('keys the ip scope by client address alone, ignoring the path', () => {
+    const ip = resolveRoutePolicy({ key: 'k', scope: 'ip' }, undefined)
+    expect(ip.scope).toBe('ip')
+    expect(rateLimitCounterKey(ip, V4, '/a')).toBe(rateLimitCounterKey(ip, V4, '/b'))
+    expect(rateLimitCounterKey(ip, undefined, '/a')).toBe('k:unknown')
+  })
+
+  it('keeps the per-address key for a scope outside the union from plain JS', () => {
+    const ip = resolveRoutePolicy({ key: 'k' }, undefined)
+    const handBuilt = { ...ip, scope: 'per-tenant' } as unknown as typeof ip
+    expect(rateLimitCounterKey(handBuilt, V4, '/a')).toBe(`k:${V4}`)
+  })
+})

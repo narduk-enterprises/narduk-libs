@@ -85,6 +85,31 @@ describe('xAI helpers', () => {
     })
   })
 
+  it('bounds the model list and rejects with the TimeoutError when xAI stalls', async () => {
+    const controller = new AbortController()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+    const fetchMock = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal
+          if (!signal) return // no signal: hangs forever, and the test times out
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = grokListModels('secret')
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.x.ai/v1/models',
+      expect.objectContaining({ signal: controller.signal }),
+    )
+    controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+
+    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' })
+    timeoutSpy.mockRestore()
+  })
+
   it('fails closed when a successful stream has no body', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })))
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { PRINCIPAL_HEADER } from '../src/worker/principal.js'
 import {
@@ -560,6 +560,9 @@ describe('withUpgradeRouter', () => {
     }
     const { namespace, names } = fakeNamespace()
     const wrapped = withUpgradeRouter(handler, createUpgradeRouter({ upgrades: [liveRoute()] }))
+    // The router's fetch is async even though this handler's own fetch is sync;
+    // the wrapper's type must say so, or awaiting it reads as a no-op.
+    expectTypeOf(wrapped.fetch).returns.toEqualTypeOf<Promise<Response>>()
 
     const passedThrough = await wrapped.fetch(
       new Request('https://app.test/api/app/vessels/v-1/live'),

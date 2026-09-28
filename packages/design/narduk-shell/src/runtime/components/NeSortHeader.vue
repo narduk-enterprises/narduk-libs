@@ -47,13 +47,13 @@ const direction = computed<false | NeSortDirection>(() => {
 const icon = computed(() => {
   if (direction.value === 'asc') return 'i-lucide-arrow-up'
   if (direction.value === 'desc') return 'i-lucide-arrow-down'
-  return undefined
+  return
 })
 
 const ariaSort = computed(() => {
   if (direction.value === 'asc') return 'ascending'
   if (direction.value === 'desc') return 'descending'
-  return undefined
+  return
 })
 
 function toggle(): void {

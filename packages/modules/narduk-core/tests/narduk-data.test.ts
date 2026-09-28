@@ -1269,3 +1269,239 @@ describe('narduk-data client secondary entries', () => {
     },
   )
 })
+
+/** A distinct client is a cold isolate; cloned responses emulate the Cache API. */
+function edgeStore() {
+  const entries = new Map<string, Response>()
+  const store = {
+    delete: async (key: string) => entries.delete(key),
+    match: async (key: string) => entries.get(key)?.clone(),
+    put: async (key: string, response: Response) => {
+      entries.set(key, response.clone())
+    },
+  }
+  return { entries, store }
+}
+
+const STORED_AT = 'x-narduk-stored-at'
+const MANIFEST_KEY = `${manifestUrl}?narduk-cache=manifest`
+
+describe('optional edge storage and stale-while-revalidate', () => {
+  it('serves a cold isolate from verified shared bytes with no origin request', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const { entries, store } = edgeStore()
+    const tasks: Array<Promise<unknown>> = []
+    const context = {
+      waitUntil: (task: Promise<unknown>) => {
+        tasks.push(task)
+      },
+    }
+    const options = { fetch: upstream.fetch, origin: ORIGIN, now: () => NOW, store }
+    const warm = await createNardukDataClient(options).read(productOf(), context)
+    await Promise.all(tasks)
+    expect(entries.size).toBe(2)
+    const cold = await createNardukDataClient(options).read(productOf(), context)
+    expect(upstream.calls).toHaveLength(2)
+    expect(cold.data).toEqual(warm.data)
+    expect(cold.freshness.source).toBe('cache')
+  })
+
+  it('expires the manifest even if a store replaces Date with the serve time', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const { entries, store } = edgeStore()
+    let clock = 0
+    const options = { fetch: upstream.fetch, origin: ORIGIN, now: () => clock, store }
+    await createNardukDataClient(options).read(productOf())
+    const stored = entries.get(MANIFEST_KEY)!
+    expect(stored.headers.get(STORED_AT)).toBe('0')
+    clock = 30_000
+    const headers = new Headers(stored.headers)
+    headers.set('date', new Date(clock).toUTCString())
+    entries.set(MANIFEST_KEY, new Response(await stored.text(), { headers }))
+    await createNardukDataClient(options).read(productOf())
+    expect(upstream.calls.map((call) => call.url)).toEqual([manifestUrl, artifactUrl, manifestUrl])
+  })
+
+  it('evicts corrupt artifact bytes before fetching and validating the real release', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const { entries, store } = edgeStore()
+    const options = { fetch: upstream.fetch, origin: ORIGIN, now: () => NOW, store }
+    await createNardukDataClient(options).read(productOf())
+    const key = [...entries.keys()].find((value) => value.includes('?sha256='))!
+    entries.set(key, json('{"stations":["tampered"]}'))
+    const result = await createNardukDataClient(options).read(productOf())
+    expect(result.data.stations).toEqual(['41008'])
+    expect(upstream.calls).toHaveLength(3)
+    expect(await entries.get(key)!.clone().text()).toContain('41008')
+  })
+
+  it('revalidates cached bytes against each consumer schema and validation hook', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const { store } = edgeStore()
+    const options = { fetch: upstream.fetch, origin: ORIGIN, now: () => NOW, store }
+    await createNardukDataClient(options).read(productOf())
+    const client = createNardukDataClient(options)
+    await expect(client.read(productOf({ schema: schemaOf(() => false) }))).rejects.toMatchObject({
+      reason: 'schema',
+    })
+    await expect(
+      client.read(
+        productOf({
+          validate: () => {
+            throw new Error('pair refused')
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'rejected' })
+    expect(upstream.calls).toHaveLength(2)
+  })
+
+  it('cancels an oversized cached artifact and recovers without draining the stream', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const { store } = edgeStore()
+    const options = { fetch: upstream.fetch, origin: ORIGIN, now: () => NOW, store }
+    await createNardukDataClient(options).read(productOf())
+    let pulls = 0
+    let cancelled = false
+    const oversizedStore = {
+      ...store,
+      match: async (key: string) => {
+        if (!key.includes('?sha256=')) return store.match(key)
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              pulls += 1
+              controller.enqueue(new Uint8Array(1024))
+            },
+            cancel() {
+              cancelled = true
+            },
+          }),
+        )
+      },
+    }
+    const result = await createNardukDataClient({ ...options, store: oversizedStore }).read(
+      productOf({ maxBytes: 100 }),
+    )
+    expect(result.data.stations).toEqual(['41008'])
+    expect(cancelled).toBe(true)
+    expect(pulls).toBeLessThanOrEqual(2)
+    expect(upstream.calls).toHaveLength(3)
+  })
+
+  it('falls back to the origin when shared storage is unavailable', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const store = {
+      delete: async () => false,
+      match: async () => {
+        throw new Error('store unavailable')
+      },
+      put: async () => {
+        throw new Error('store unavailable')
+      },
+    }
+    await expect(
+      createNardukDataClient({ fetch: upstream.fetch, origin: ORIGIN, store }).read(productOf()),
+    ).resolves.toMatchObject({ data: { stations: ['41008'] } })
+    expect(upstream.calls).toHaveLength(2)
+  })
+
+  it('returns soft-stale data immediately and coalesces a burst onto one background read', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    const hold = gate()
+    let clock = NOW
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      origin: ORIGIN,
+      now: () => clock,
+    })
+    const product = productOf({ staleWhileRevalidateMs: 600_000 })
+    const first = await client.read(product)
+    routes[manifestUrl] = [
+      async () => {
+        await hold.passed
+        return json((await publishedRelease()).manifestText)
+      },
+    ]
+    clock += 60_000
+    const tasks: Array<Promise<unknown>> = []
+    const context = {
+      waitUntil: (task: Promise<unknown>) => {
+        tasks.push(task)
+      },
+    }
+    const replies = await Promise.all(
+      Array.from({ length: 50 }, () => client.read(product, context)),
+    )
+    expect(
+      replies.every((reply) => reply.data === first.data && reply.freshness.source === 'swr'),
+    ).toBe(true)
+    expect(tasks).toHaveLength(1)
+    expect(upstream.calls).toHaveLength(3)
+    hold.open()
+    await Promise.all(tasks)
+    expect((await client.read(product)).freshness.source).toBe('memo')
+    expect(upstream.calls).toHaveLength(3)
+  })
+
+  it('does not serve past the hard age after repeated failed background refreshes', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    let clock = NOW
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      origin: ORIGIN,
+      retries: 0,
+      now: () => clock,
+    })
+    const product = productOf({ staleWhileRevalidateMs: 600_000 })
+    await client.read(product)
+    routes[manifestUrl] = [async () => json('{}', 503)]
+    const tasks: Array<Promise<unknown>> = []
+    const context = {
+      waitUntil: (task: Promise<unknown>) => {
+        tasks.push(task)
+      },
+    }
+    clock += 60_000
+    expect((await client.read(product, context)).freshness.source).toBe('swr')
+    await Promise.all(tasks)
+    clock = NOW + 600_000
+    await expect(client.read(product, context)).rejects.toMatchObject({
+      reason: 'http',
+      status: 503,
+    })
+    routes[manifestUrl] = [async () => json((await publishedRelease()).manifestText)]
+    await expect(client.read(product, context)).resolves.toMatchObject({
+      data: { stations: ['41008'] },
+    })
+  })
+
+  it('keeps refresh blocking without waitUntil and refuses a cancelled memo read', async () => {
+    const { routes } = await successRoutes()
+    const upstream = fakeFetch(routes)
+    let clock = NOW
+    const client = createNardukDataClient({
+      fetch: upstream.fetch,
+      origin: ORIGIN,
+      retries: 0,
+      now: () => clock,
+    })
+    const product = productOf({ staleWhileRevalidateMs: 600_000 })
+    await client.read(product)
+    const cancelled = AbortSignal.abort()
+    await expect(client.read(product, { signal: cancelled })).rejects.toMatchObject({
+      reason: 'aborted',
+    })
+    clock += 60_000
+    routes[manifestUrl] = [async () => json('{}', 503)]
+    await expect(client.read(product)).rejects.toMatchObject({ reason: 'http' })
+  })
+})

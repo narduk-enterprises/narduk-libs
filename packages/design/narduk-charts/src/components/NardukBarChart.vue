@@ -161,8 +161,14 @@ const estimatedCategoryLabelWidth = computed(() => {
   return estimated
 })
 
-function focusBarEl(index: number) {
-  nextTick(() => {
+/**
+ * Focus a bar once the pending re-render (its roving `tabindex`) has landed.
+ * The tick is returned, not dropped, so it travels back through
+ * `onBarKeydown` to Vue's event invoker, which hands a rejection to the app's
+ * `errorHandler` instead of leaving it unhandled.
+ */
+function focusBarEl(index: number): Promise<void> {
+  return nextTick(() => {
     const el = svgRef.value?.querySelector(`[data-nc-bar="${index}"]`)
     if (el instanceof SVGElement) el.focus()
   })
@@ -178,14 +184,14 @@ function barTooltipItems(b: BarRect): TooltipItem[] {
   ]
 }
 
-function focusBarAndTooltip(index: number) {
+async function focusBarAndTooltip(index: number): Promise<void> {
   focusedBarIndex.value = index
-  focusBarEl(index)
   const b = bars.value[index]
   showTooltip(8, 8, formatXAt(b.labelIndex), barTooltipItems(b))
+  await focusBarEl(index)
 }
 
-function onBarKeydown(e: KeyboardEvent, bi: number) {
+async function onBarKeydown(e: KeyboardEvent, bi: number): Promise<void> {
   const n = bars.value.length
   if (n === 0) return
 
@@ -198,25 +204,25 @@ function onBarKeydown(e: KeyboardEvent, bi: number) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       if (li >= nLab - 1) return
-      focusBarAndTooltip((li + 1) * numVis + si)
+      await focusBarAndTooltip((li + 1) * numVis + si)
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
       if (li <= 0) return
-      focusBarAndTooltip((li - 1) * numVis + si)
+      await focusBarAndTooltip((li - 1) * numVis + si)
       return
     }
     if (e.key === 'ArrowRight') {
       e.preventDefault()
       if (si >= numVis - 1) return
-      focusBarAndTooltip(li * numVis + si + 1)
+      await focusBarAndTooltip(li * numVis + si + 1)
       return
     }
     if (e.key === 'ArrowLeft') {
       e.preventDefault()
       if (si <= 0) return
-      focusBarAndTooltip(li * numVis + si - 1)
+      await focusBarAndTooltip(li * numVis + si - 1)
       return
     }
   }
@@ -224,23 +230,23 @@ function onBarKeydown(e: KeyboardEvent, bi: number) {
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     e.preventDefault()
     const next = Math.min(n - 1, bi + 1)
-    focusBarAndTooltip(next)
+    await focusBarAndTooltip(next)
     return
   }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault()
     const prev = Math.max(0, bi - 1)
-    focusBarAndTooltip(prev)
+    await focusBarAndTooltip(prev)
     return
   }
   if (e.key === 'Home') {
     e.preventDefault()
-    focusBarAndTooltip(0)
+    await focusBarAndTooltip(0)
     return
   }
   if (e.key === 'End') {
     e.preventDefault()
-    focusBarAndTooltip(n - 1)
+    await focusBarAndTooltip(n - 1)
     return
   }
   if (e.key === 'Enter' || e.key === ' ') {

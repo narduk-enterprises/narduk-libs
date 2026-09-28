@@ -14,6 +14,10 @@ import {
 } from '#narduk-analytics-server/utils/indexNow'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 
+// A stalled IndexNow endpoint must not hold this request open. A timeout is
+// caught below like any other failed ping and reported as `{ ok: false, status: 0 }`.
+const INDEXNOW_PING_TIMEOUT_MS = 10_000
+
 const bodySchema = z.object({
   urls: z.array(z.string().url()).optional().default([]),
 })
@@ -91,6 +95,7 @@ export default definePublicMutation(
           method: 'POST',
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
           body: JSON.stringify(indexNowPayload),
+          signal: AbortSignal.timeout(INDEXNOW_PING_TIMEOUT_MS),
         })
         results.push({
           engine,

@@ -109,7 +109,12 @@ describe('./nuxt/composables', () => {
         /name: '(useMapKit[A-Za-z]*)'/g,
       ),
     ].map((match) => match[1] as string)
-    expect(registered.toSorted()).toEqual(['useMapKit', 'useMapKitFullscreen', 'useMapKitView'])
+    expect(registered.toSorted()).toEqual([
+      'useMapKit',
+      'useMapKitFullscreen',
+      'useMapKitLayoutSettle',
+      'useMapKitView',
+    ])
     expect(registered.filter((name) => name !== 'useMapKit').toSorted()).toEqual(
       Object.keys(subpath).toSorted(),
     )

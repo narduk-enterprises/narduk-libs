@@ -1,13 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/switch-exhaustiveness-check": 2,
-    "no-console": 5,
-    "sonarjs/no-duplicate-string": 1
-  },
-  "expires": {
-    "@typescript-eslint/switch-exhaustiveness-check": "2026-10-05",
-    "no-console": "2026-10-05",
-    "sonarjs/no-duplicate-string": "2026-10-05"
-  }
+  "rules": {}
 }

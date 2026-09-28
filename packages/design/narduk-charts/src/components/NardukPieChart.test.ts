@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import NardukPieChart from './NardukPieChart.vue'
@@ -99,5 +99,57 @@ describe('NardukPieChart consumer ergonomics (#9)', () => {
     await w.find('svg').trigger('mousemove', { clientX: 150, clientY: 40 })
     expect(w.find('.narduk-tooltip').exists()).toBe(false)
     w.unmount()
+  })
+})
+
+describe('NardukPieChart keyboard focus (narduk-libs#1237)', () => {
+  function mountPie(errorHandler?: (error: unknown) => void) {
+    return mount(NardukPieChart, {
+      attachTo: document.body,
+      props: { data: sampleData(), width: 300, height: 300, animate: false },
+      ...(errorHandler ? { global: { config: { errorHandler } } } : {}),
+    })
+  }
+
+  it('moves focus to the next slice on ArrowRight', async () => {
+    const w = mountPie()
+    await nextTick()
+    const slices = w.findAll('.narduk-pie-slice')
+
+    await slices[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(slices[1]!.element)
+    })
+    w.unmount()
+  })
+
+  // The focus runs a tick after the keypress. A throw there must reach the
+  // app's error handler, never surface as an unhandled promise rejection.
+  it('hands a failed focus to the app error handler, not an unhandled rejection', async () => {
+    const failure = new Error('focus failed')
+    const focus = vi.spyOn(SVGElement.prototype, 'focus').mockImplementation(() => {
+      throw failure
+    })
+    const errorHandler = vi.fn()
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const w = mountPie(errorHandler)
+      await nextTick()
+
+      await w.findAll('.narduk-pie-slice')[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+      await vi.waitFor(() => {
+        expect(errorHandler).toHaveBeenCalledOnce()
+      })
+      expect(errorHandler.mock.calls[0]![0]).toBe(failure)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(unhandled).not.toHaveBeenCalled()
+      w.unmount()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+      focus.mockRestore()
+    }
   })
 })

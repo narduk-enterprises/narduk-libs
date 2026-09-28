@@ -15,11 +15,11 @@ import type { NeDataColumn, NeDataColumnGroup } from '../runtime/components/ne-d
 
 interface Reading {
   day: string
+  gust: number | null
   pressure: number | null
   time: string
   waves: number | null
   wind: number | null
-  gust: number | null
 }
 
 const groups: NeDataColumnGroup[] = [
@@ -28,7 +28,7 @@ const groups: NeDataColumnGroup[] = [
   { id: 'pressure', label: 'Pressure', unit: 'inHg' },
 ]
 
-const columns: NeDataColumn<Reading>[] = [
+const columns: Array<NeDataColumn<Reading>> = [
   { key: 'time', label: 'Time', sticky: true },
   { key: 'wind', label: 'avg', group: 'wind', numeric: true, emphasis: true },
   { key: 'gust', label: 'gust', group: 'wind', numeric: true },
@@ -53,7 +53,7 @@ interface Station {
   wind: number | null
 }
 
-const stationColumns: NeDataColumn<Station>[] = [
+const stationColumns: Array<NeDataColumn<Station>> = [
   { key: 'name', label: 'Station', sticky: true },
   {
     key: 'wind',

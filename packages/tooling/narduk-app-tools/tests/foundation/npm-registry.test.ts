@@ -459,8 +459,11 @@ describe('credential name resolution (narduk-farm#148)', () => {
   /** Local to this block: the `stubAny` above is scoped to the route describe.
    * Records the headers actually sent, which is the only place the resolved
    * credential is observable from outside. */
-  function stubRequests(status: number, body: unknown = {}): { headers: Record<string, string> }[] {
-    const seen: { headers: Record<string, string> }[] = []
+  function stubRequests(
+    status: number,
+    body: unknown = {},
+  ): Array<{ headers: Record<string, string> }> {
+    const seen: Array<{ headers: Record<string, string> }> = []
     vi.stubGlobal('fetch', (_url: string, init?: { headers?: Record<string, string> }) => {
       seen.push({ headers: { ...(init?.headers ?? {}) } })
       return Promise.resolve({

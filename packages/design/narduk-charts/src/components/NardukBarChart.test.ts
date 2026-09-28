@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import NardukBarChart from './NardukBarChart.vue'
 
 describe('NardukBarChart', () => {
@@ -212,5 +213,64 @@ describe('NardukBarChart signed values grow from zero (#928)', () => {
     expect(c!.y + c!.height).toBeCloseTo(a!.y, 6)
     expect(a!.height / b!.height).toBeCloseTo(2, 6)
     expect(c!.height / b!.height).toBeCloseTo(3, 6)
+  })
+})
+
+describe('NardukBarChart keyboard focus (narduk-libs#1237)', () => {
+  function mountBars(errorHandler?: (error: unknown) => void) {
+    return mount(NardukBarChart, {
+      attachTo: document.body,
+      props: {
+        series: [{ name: 'A', data: [10, 20, 30] }],
+        labels: ['x', 'y', 'z'],
+        width: 300,
+        height: 160,
+        animate: false,
+        barRadius: 0,
+      },
+      ...(errorHandler ? { global: { config: { errorHandler } } } : {}),
+    })
+  }
+
+  it('moves focus to the next bar on ArrowRight', async () => {
+    const w = mountBars()
+    await nextTick()
+    const rects = w.findAll('rect.narduk-bar-rect')
+
+    await rects[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(rects[1]!.element)
+    })
+    w.unmount()
+  })
+
+  // The focus runs a tick after the keypress. A throw there must reach the
+  // app's error handler, never surface as an unhandled promise rejection.
+  it('hands a failed focus to the app error handler, not an unhandled rejection', async () => {
+    const failure = new Error('focus failed')
+    const focus = vi.spyOn(SVGElement.prototype, 'focus').mockImplementation(() => {
+      throw failure
+    })
+    const errorHandler = vi.fn()
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const w = mountBars(errorHandler)
+      await nextTick()
+
+      await w.findAll('rect.narduk-bar-rect')[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+      await vi.waitFor(() => {
+        expect(errorHandler).toHaveBeenCalledOnce()
+      })
+      expect(errorHandler.mock.calls[0]![0]).toBe(failure)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(unhandled).not.toHaveBeenCalled()
+      w.unmount()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+      focus.mockRestore()
+    }
   })
 })

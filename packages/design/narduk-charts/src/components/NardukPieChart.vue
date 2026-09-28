@@ -208,45 +208,51 @@ watch(
   },
 )
 
-function focusSliceEl(index: number) {
-  nextTick(() => {
+/**
+ * Focus a slice once the pending re-render (its roving `tabindex`) has
+ * landed. The tick is returned, not dropped, so it travels back through
+ * `onSliceKeydown` to Vue's event invoker, which hands a rejection to the
+ * app's `errorHandler` instead of leaving it unhandled.
+ */
+function focusSliceEl(index: number): Promise<void> {
+  return nextTick(() => {
     const el = svgRef.value?.querySelector(`[data-nc-slice="${index}"]`)
     if (el instanceof SVGElement) el.focus()
   })
 }
 
-function onSliceKeydown(e: KeyboardEvent, i: number) {
+async function onSliceKeydown(e: KeyboardEvent, i: number): Promise<void> {
   const n = slices.value.length
   if (n === 0) return
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     e.preventDefault()
     const next = (i + 1) % n
     focusedSliceIndex.value = next
-    focusSliceEl(next)
     showSliceTooltip(next)
+    await focusSliceEl(next)
     return
   }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault()
     const prev = (i - 1 + n) % n
     focusedSliceIndex.value = prev
-    focusSliceEl(prev)
     showSliceTooltip(prev)
+    await focusSliceEl(prev)
     return
   }
   if (e.key === 'Home') {
     e.preventDefault()
     focusedSliceIndex.value = 0
-    focusSliceEl(0)
     showSliceTooltip(0)
+    await focusSliceEl(0)
     return
   }
   if (e.key === 'End') {
     e.preventDefault()
     const last = n - 1
     focusedSliceIndex.value = last
-    focusSliceEl(last)
     showSliceTooltip(last)
+    await focusSliceEl(last)
     return
   }
   if (e.key === 'Enter' || e.key === ' ') {

@@ -10,6 +10,11 @@ import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { assertAnalyticsWriteAllowed } from '#narduk-analytics-server/utils/siteConfig'
 
+// Up to 100 URL notifications go in one multipart request, so this is longer
+// than a single Google API call. A timeout rejects the fetch with a
+// `TimeoutError`, which the catch below answers as a 500 like a network error.
+const INDEXING_BATCH_TIMEOUT_MS = 30_000
+
 const bodySchema = z.object({
   urls: z.array(z.string().url()).min(1).max(100),
   type: z.enum(['URL_UPDATED', 'URL_DELETED']).optional().default('URL_UPDATED'),
@@ -48,6 +53,7 @@ export default defineAdminMutation(
           Authorization: `Bearer ${token}`,
         },
         body: batchBody,
+        signal: AbortSignal.timeout(INDEXING_BATCH_TIMEOUT_MS),
       })
 
       if (!response.ok) {

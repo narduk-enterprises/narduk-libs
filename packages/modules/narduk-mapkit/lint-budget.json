@@ -1,9 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/await-thenable": 2
-  },
-  "expires": {
-    "@typescript-eslint/await-thenable": "2026-10-05"
-  }
+  "rules": {}
 }

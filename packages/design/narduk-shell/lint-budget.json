@@ -1,25 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/array-type": 11,
-    "@typescript-eslint/consistent-type-definitions": 1,
-    "narduk/require-client-only-hydration-sensitive": 1,
-    "perfectionist/sort-imports": 1,
-    "perfectionist/sort-interfaces": 1,
-    "perfectionist/sort-object-types": 1,
-    "unicorn/no-for-each": 2,
-    "unicorn/no-useless-undefined": 2,
-    "vue/define-macros-order": 1
-  },
-  "expires": {
-    "@typescript-eslint/array-type": "2026-10-05",
-    "@typescript-eslint/consistent-type-definitions": "2026-10-05",
-    "narduk/require-client-only-hydration-sensitive": "2026-10-05",
-    "perfectionist/sort-imports": "2026-10-05",
-    "perfectionist/sort-interfaces": "2026-10-05",
-    "perfectionist/sort-object-types": "2026-10-05",
-    "unicorn/no-for-each": "2026-10-05",
-    "unicorn/no-useless-undefined": "2026-10-05",
-    "vue/define-macros-order": "2026-10-05"
-  }
+  "rules": {}
 }

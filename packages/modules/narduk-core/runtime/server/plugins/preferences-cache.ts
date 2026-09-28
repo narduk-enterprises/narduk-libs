@@ -1,5 +1,6 @@
 import { defineNitroPlugin } from 'nitropack/runtime'
 
+import { warnBestEffort } from '../../internal/best-effort-log'
 import {
   applyPreferencesCacheHeaders,
   applyPreferencesCacheToEvent,
@@ -47,8 +48,10 @@ export function warnIfPreferenceResponseInsideNitroCache(
   const path = typeof event.path === 'string' && event.path.length > 0 ? event.path : '/'
   if (warnedCachedPreferenceRoutes.has(path)) return
   warnedCachedPreferenceRoutes.add(path)
-  console.warn(
-    `[narduk-core] Preference-influenced response for ${path} ran inside a Nitro cached handler (routeRules swr/cache/isr). The first reader's formatted HTML is stored and replayed to everyone; HTTP Cache-Control cannot prevent that. Do not call usePreferences()/useFormatters()/readPreferences() on a cached route — format in the browser, or drop the cache rule.`,
+  warnBestEffort(
+    event,
+    'narduk-core',
+    `Preference-influenced response for ${path} ran inside a Nitro cached handler (routeRules swr/cache/isr). The first reader's formatted HTML is stored and replayed to everyone; HTTP Cache-Control cannot prevent that. Do not call usePreferences()/useFormatters()/readPreferences() on a cached route — format in the browser, or drop the cache rule.`,
   )
 }
 

@@ -1,11 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "narduk/require-fetch-timeout": 2,
-    "no-console": 2
-  },
-  "expires": {
-    "narduk/require-fetch-timeout": "2026-10-05",
-    "no-console": "2026-10-05"
-  }
+  "rules": {}
 }

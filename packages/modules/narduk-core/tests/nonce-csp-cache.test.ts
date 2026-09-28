@@ -16,6 +16,8 @@ import {
   NONCE_CSP_HTML_CONTEXT_KEY,
 } from '../runtime/shared/utils/nonce-csp'
 
+import { logged, resetLogged } from './stubs/recording-logger'
+
 import type { H3Event } from 'h3'
 
 const { runtime } = vi.hoisted(() => ({
@@ -28,6 +30,10 @@ vi.mock('nitropack/runtime', () => ({
 }))
 vi.mock('../runtime/server/utils/runtime-public', () => ({
   resolveRuntimePublicOverlay: () => ({ previewSafeMode: false }),
+}))
+vi.mock('../runtime/server/utils/logger', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useLogger: (await import('./stubs/recording-logger')).useRecordingLogger,
 }))
 
 const {
@@ -339,6 +345,10 @@ describe('nonce-csp-cache — report-only mode', () => {
 })
 
 describe('nonce-csp-cache — dev warning', () => {
+  beforeEach(() => {
+    resetLogged()
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     resetNonceCspCacheWarningsForTests()
@@ -355,36 +365,34 @@ describe('nonce-csp-cache — dev warning', () => {
   }
 
   it('warns once per path in dev when a nonce page asked for a cacheable profile', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
     warnIfNonceCspHtmlCacheRefused(refusedEvent('/stations'), true)
     warnIfNonceCspHtmlCacheRefused(refusedEvent('/stations'), true)
     warnIfNonceCspHtmlCacheRefused(refusedEvent('/history'), true)
 
-    expect(warn).toHaveBeenCalledTimes(2)
-    expect(String(warn.mock.calls[0])).toMatch(/\/stations/)
-    expect(String(warn.mock.calls[0])).toMatch(/nonce/i)
-    expect(String(warn.mock.calls[0])).toMatch(/#435/)
-    expect(String(warn.mock.calls[1])).toMatch(/\/history/)
+    expect(logged).toHaveLength(2)
+    expect(logged.map(({ level, scope }) => `${level}:${scope}`)).toEqual([
+      'warn:narduk-core',
+      'warn:narduk-core',
+    ])
+    expect(logged[0]?.message).toMatch(/\/stations/)
+    expect(logged[0]?.message).toMatch(/nonce/i)
+    expect(logged[0]?.message).toMatch(/#435/)
+    expect(logged[1]?.message).toMatch(/\/history/)
   })
 
   it('is silent outside development', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
     warnIfNonceCspHtmlCacheRefused(refusedEvent('/stations'), false)
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(logged).toEqual([])
   })
 
   it('is silent when the page never asked for a cacheable profile', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
     warnIfNonceCspHtmlCacheRefused(
       { path: '/about', context: { [NONCE_CSP_HTML_CONTEXT_KEY]: true } },
       true,
     )
 
-    expect(warn).not.toHaveBeenCalled()
+    expect(logged).toEqual([])
   })
 
   it('marks the event when a nonce page asks for live', async () => {

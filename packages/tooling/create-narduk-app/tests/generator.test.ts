@@ -144,6 +144,44 @@ describe('create-narduk-app generation contract', () => {
     },
   )
 
+  it('defaults the local siteUrl to 127.0.0.1, never localhost', () => {
+    // narduk-libs: nuxt-site-config's validator flags a "localhost" hostname
+    // and the stack can resolve `useSiteConfig().url` to a different host
+    // than the literal siteUrl the generator wrote everywhere else. That
+    // split made every unconfigured SEO scaffold's rendered `og:image` (from
+    // narduk-seo's runtime `useSiteConfig()` fallback) mismatch the
+    // `Config/social-previews.json` default the generator emitted from the
+    // same siteUrl literal, and `social-previews.spec.ts`'s default-route
+    // check failed with "Default route did not select defaultImage.path" on
+    // every fresh --capabilities seo scaffold with no --site-url. This is a
+    // static check on the generator's own output, not a repro of the runtime
+    // resolution mismatch (that needs a live Nuxt server, which is what
+    // `social-previews.spec.ts` proves in a generated app's own e2e run) --
+    // it exists so a future default that reintroduces "localhost" fails here
+    // instead of only downstream in every new app's CI.
+    const files = asFileMap(
+      buildGeneratedFiles({
+        appName: 'local-default-app',
+        capabilities: ['seo'],
+        localPort: 4321,
+        targetDir: '/tmp/local-default-app',
+      }),
+    )
+    const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
+    const socialConfig = JSON.parse(files.get('apps/web/Config/social-previews.json') ?? '{}') as {
+      siteUrl: string
+    }
+    const webPackage = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+      homepage: string
+      narduk: { url: string }
+    }
+    expect(nuxtConfig).toContain("const siteUrl = 'http://127.0.0.1:4321'")
+    expect(nuxtConfig).not.toContain('localhost')
+    expect(socialConfig.siteUrl).toBe('http://127.0.0.1:4321')
+    expect(webPackage.homepage).toBe('http://127.0.0.1:4321')
+    expect(webPackage.narduk.url).toBe('http://127.0.0.1:4321')
+  })
+
   it('produces byte-identical plans independent of target directory', () => {
     const options = {
       appName: 'harbor-notes',
@@ -390,6 +428,53 @@ describe('create-narduk-app generation contract', () => {
     // narduk-libs#123: the mapkit capability must never scaffold the dead
     // @narduk-geo scope (superseded by @narduk-enterprises/narduk-mapkit@2.x).
     expect([...files.values()].some((contents) => contents.includes('@narduk-geo'))).toBe(false)
+  })
+
+  // narduk-libs#1229 (Logan, askme 2026-09-28): a no-flag public app failed
+  // `narduk-app foundation:check` item 3.1 (missing narduk-seo/narduk-analytics).
+  // Default the no-flag case to both, but only that case.
+  describe('default capabilities for a no-flag app (narduk-libs#1229)', () => {
+    function rootNarduk(options: Partial<Parameters<typeof buildGeneratedFiles>[0]> = {}) {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'default-caps',
+          noGit: true,
+          targetDir: '/tmp/default-caps',
+          ...options,
+        }),
+      )
+      const rootManifest = JSON.parse(files.get('package.json') ?? '{}') as {
+        narduk?: { capabilities?: string[] }
+      }
+      return rootManifest.narduk?.capabilities ?? []
+    }
+
+    it('defaults a no-flag app to seo,analytics (it lands on public exposure)', () => {
+      expect(rootNarduk()).toEqual(['seo', 'analytics'])
+    })
+
+    it('still defaults to seo,analytics for an explicit public exposure', () => {
+      expect(rootNarduk({ exposure: 'public' })).toEqual(['seo', 'analytics'])
+    })
+
+    it('does not default an authenticated no-flag app', () => {
+      expect(rootNarduk({ exposure: 'authenticated' })).toEqual([])
+    })
+
+    it('an explicit empty --capabilities wins over the public default', () => {
+      expect(rootNarduk({ capabilities: [] })).toEqual([])
+      expect(rootNarduk({ capabilities: '' })).toEqual([])
+    })
+
+    it('an explicit --capabilities list wins over the public default', () => {
+      expect(rootNarduk({ capabilities: ['uploads'] })).toEqual(['uploads'])
+      expect(rootNarduk({ capabilities: 'ai' })).toEqual(['ai'])
+    })
+
+    it('an explicit auth capability still forces authenticated exposure', () => {
+      // auth needs a database; the default d1 backend supplies one.
+      expect(rootNarduk({ capabilities: ['auth'] })).toEqual(['auth'])
+    })
   })
 
   it('rejects permanently unsupported capabilities with actionable guidance', () => {
@@ -1190,10 +1275,13 @@ describe('create-narduk-app generation contract', () => {
         }),
       ).toThrow(/seo capability/u)
 
+      // An explicit empty capability list, not the no-flag case (narduk-libs#1229
+      // defaults a no-flag *public* app to seo+analytics), is what keeps this
+      // app off nardukSeo.
       expect(
-        asFileMap(buildGeneratedFiles({ appName: 'no-seo', targetDir: '/tmp/no-seo' })).get(
-          'apps/web/nuxt.config.ts',
-        ),
+        asFileMap(
+          buildGeneratedFiles({ appName: 'no-seo', capabilities: [], targetDir: '/tmp/no-seo' }),
+        ).get('apps/web/nuxt.config.ts'),
       ).not.toContain('nardukSeo')
     })
 
@@ -1311,12 +1399,12 @@ describe('create-narduk-app generation contract', () => {
       scripts: Record<string, string>
     }
     expect(webPackage.description).toBe('Fixture app')
-    expect(webPackage.homepage).toBe('http://localhost:4377')
+    expect(webPackage.homepage).toBe('http://127.0.0.1:4377')
     expect(webPackage.narduk).toMatchObject({
       name: 'generated-fixture',
       displayName: 'Generated Fixture',
       shortName: 'Generated Fixture',
-      url: 'http://localhost:4377',
+      url: 'http://127.0.0.1:4377',
       localDevNuxtPort: 4377,
     })
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
@@ -2156,6 +2244,21 @@ describe('CLI argument parsing', () => {
     expect(wrangler.workers_dev).toBe(true)
     expect(wrangler.preview_urls).toBe(true)
     expect(parsed.options.visibility).toBe('private')
+  })
+
+  // narduk-libs#1229: normalizeOptions tells a no-flag app apart from an
+  // explicit-but-empty one by `options.capabilities === undefined`, so the CLI
+  // has to preserve that distinction rather than joining both to `''`.
+  it('leaves capabilities undefined when neither flag was passed, but not otherwise', async () => {
+    const { parseCliArguments } = await import('../src/cli.js')
+    expect(parseCliArguments(['no-flags']).options.capabilities).toBeUndefined()
+    // `--capabilities ''` (a separate empty argument) reads as "flag with no
+    // value" and throws, same as any other flag -- `--capabilities=` is the
+    // form that carries an explicit empty value.
+    expect(parseCliArguments(['explicit-empty', '--capabilities=']).options.capabilities).toBe('')
+    expect(parseCliArguments(['explicit-one', '--capability', 'seo']).options.capabilities).toBe(
+      'seo',
+    )
   })
 
   // The flag carries no default on purpose (narduk-libs#384): parsing it is
