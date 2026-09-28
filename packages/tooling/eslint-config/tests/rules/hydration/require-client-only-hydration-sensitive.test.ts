@@ -37,23 +37,23 @@ vue.run('require-client-only-hydration-sensitive', rule, {
       code: '<template><ClientOnly><nav><UColorModeSelect /></nav></ClientOnly></template>',
     },
     { filename: VUE_FILE, code: '<template><UButton label="Menu" /></template>' },
+    // UNavigationMenu reads no client-only state: its active item comes from
+    // the route, identical on server and client, so it may server-render.
+    { filename: VUE_FILE, code: '<template><UNavigationMenu :items="items" /></template>' },
+    { filename: VUE_FILE, code: '<template><u-navigation-menu /></template>' },
     { filename: 'app/utils/nav.ts', code: 'export const items = []' },
   ],
   invalid: [
-    // Deep-review proof 1, case D: the actual bug, which v1 missed entirely.
-    {
-      filename: VUE_FILE,
-      code: '<template><UNavigationMenu :items="items" /></template>',
-      errors: [{ messageId: 'requireClientOnly' }],
-    },
-    {
-      filename: VUE_FILE,
-      code: '<template><u-navigation-menu /></template>',
-      errors: [{ messageId: 'requireClientOnly' }],
-    },
+    // Deep-review proof 1, case D: an unwrapped sensitive component, which v1
+    // missed entirely because it matched the lowercased `name`, not `rawName`.
     {
       filename: VUE_FILE,
       code: '<template><UColorModeButton /></template>',
+      errors: [{ messageId: 'requireClientOnly' }],
+    },
+    {
+      filename: VUE_FILE,
+      code: '<template><nav><UColorModeSwitch /></nav></template>',
       errors: [{ messageId: 'requireClientOnly' }],
     },
     {

@@ -1,13 +1,24 @@
 /**
  * Rule: require-client-only-hydration-sensitive
  *
- * Components whose first render depends on `localStorage` or `matchMedia`
- * (colour-mode controls, the active-item state of `UNavigationMenu`) produce
- * different server and client markup and must be wrapped in `<ClientOnly>`.
+ * Components whose first render depends on `localStorage` or `matchMedia` — the
+ * `UColorMode*` controls, which render the stored or system colour mode —
+ * produce different server and client markup and must be wrapped in
+ * `<ClientOnly>`.
+ *
+ * `UNavigationMenu` is deliberately not in the list (narduk-libs#1237 burndown).
+ * It was listed as reading client-only active-item state, but it reads none:
+ * `@nuxt/ui` 4.11.1's `NavigationMenu.vue` and the reka-ui 2.10.4
+ * `NavigationMenu` / `Accordion` primitives it renders touch no
+ * `localStorage`, `matchMedia`, `useMediaQuery`, `useStorage`, `window` or
+ * `document`. Its active item comes from the router's `RouterLink` match
+ * against the current route, which is the same on the server and the client.
+ * Forcing it into `<ClientOnly>` removed navigation from the server's first
+ * paint for no hydration benefit (narduk-shell's `NeAppShell` rail).
  *
  * v1 was **exactly inverted** for the same reason as `require-client-only-switch`
  * (deep-review proof 1): `VElement.name` is lowercased by `vue-eslint-parser`, so
- * every `VElement[name="UNavigationMenu"]` selector was dead while the
+ * every `VElement[name="..."]` selector was dead while the
  * `parent.name === 'ClientOnly'` ancestor test never matched. Rebuilt on
  * case-insensitive `rawName` matching and a real ancestor walk.
  */
@@ -18,7 +29,6 @@ import { getFilename, isInsideClientOnly, tagNameOf, templateBodyVisitor } from 
 
 /** Normalised (lowercase, dash-stripped) tag names — `<u-color-mode-button>` included. */
 const HYDRATION_SENSITIVE_TAGS = new Set([
-  'unavigationmenu',
   'ucolormodebutton',
   'ucolormodeselect',
   'ucolormodeswitch',
@@ -31,7 +41,7 @@ export default {
     type: 'problem',
     docs: {
       description:
-        'require hydration-sensitive components (UNavigationMenu, UColorMode*) to be wrapped in <ClientOnly>',
+        'require hydration-sensitive components (UColorMode*) to be wrapped in <ClientOnly>',
       recommended: true,
     },
     schema: [],
