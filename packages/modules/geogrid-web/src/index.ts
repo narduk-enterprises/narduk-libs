@@ -8,5 +8,21 @@
  */
 export * from './core/index.js'
 export * from './render/index.js'
-export * from './overlay/index.js'
+/**
+ * The overlay's own names only. `./overlay/index.js` also re-exports seven
+ * stretch types from `./core/stretch.js` so a `/overlay`-only consumer can type
+ * its listener and `setStretch` argument; the core barrel above already puts
+ * those on this entry, so `export *` of the overlay barrel would export each of
+ * them twice. `tests/package-entry-exports.test.ts` fails if a name the overlay
+ * barrel exports is missing here.
+ */
+export {
+  createGridOverlay,
+  type GridOverlay,
+  type GridOverlayOptions,
+  type GridOverlayStyleInput,
+  type SetScalarFrameOptions,
+  loadCoastlineStencil,
+  type LoadedCoastlineStencil,
+} from './overlay/index.js'
 export * from './tile/index.js'
