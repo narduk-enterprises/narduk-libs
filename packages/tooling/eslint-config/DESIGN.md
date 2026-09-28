@@ -431,6 +431,52 @@ Decisions inside that design:
 - **Turbo** declares `lint-budget.json` as a `lint` output, so a cache hit
   restores the file a real run would have written.
 
+### Total ceiling: `maxWarnings` (recorded 2026-09-27)
+
+Per-rule budgets stop warnings from growing rule by rule, but nothing capped the
+total, and a non-strict or hand-raised budget could hold any number of warnings.
+Logan, 2026-09-27: "we also meed to re enable the o error o wRning rule
+somewhere that got removed. it breaks apps i guess but thats ok we do them one
+at a time not massive switch and if we cant do them one at a time then we deal
+wifh it and fix one at a time as soon as we want to make a change" and "i guess
+a max warnings of 10 or something would let us eek by in a fast turn around
+pinch".
+
+So `lint-budget.json` takes an optional `"maxWarnings": <non-negative integer>`:
+
+- **Above the ceiling fails.** When the total warning count is above
+  `maxWarnings`, the run exits 1, locally and in CI alike, whatever the per-rule
+  entries allow. The output names the total, the ceiling and the count for each
+  rule.
+- **Nothing is recorded past it.** No run records new entries that would put the
+  recorded total above the ceiling. That covers `--accept-new-rules` and a
+  non-strict file's automatic recording. The run fails and names the entries it
+  refused. Lowering and clearing entries still happen, so the file can only
+  ratchet down.
+- **A bad value is a configuration error** (exit 2): a negative number, a
+  fraction, a string, `null` or a boolean.
+- **Absent means no ceiling**, the behavior before this field existed. No
+  consumer turns red on upgrade: the ceiling reaches an app only when its own
+  budget file adds the field.
+- **`--max-warnings` stays refused.** The ceiling lives in the budget file so
+  one mechanism owns every warning limit. A flag could only restate it, or
+  disagree with it.
+
+How the two fields combine into the estate policy (errors always fail, zero
+warnings, 10 at most in a pinch):
+
+- `{"strict": true, "rules": {}}` already means zero warnings. Any warning is in
+  a rule with no entry, and a strict file fails it.
+- `{"strict": true, "maxWarnings": 10, "rules": {}}` keeps zero as the normal
+  state and adds the pinch allowance. For a fast turnaround, a person runs
+  `narduk-lint --accept-new-rules` and commits up to 10 recorded warnings in
+  total, which review can see. The ceiling refuses an 11th, and the next change
+  to that app pays the recorded ones down.
+- `create-narduk-app` generates that file for new apps. Each existing app moves
+  to `narduk-lint` with this budget in its next change, one app at a time, never
+  as a fleet-wide switch. An app that cannot get under the ceiling straight away
+  fixes its warnings one at a time, starting with that change.
+
 ### Secrets rule choice
 
 The brief asked for a secrets rule at error, choosing between

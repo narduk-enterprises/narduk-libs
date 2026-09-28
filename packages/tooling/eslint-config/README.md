@@ -220,6 +220,14 @@ instead of `--max-warnings 0`. Use it as the lint script:
 - **CI never writes.** With `--ci` or `CI=true`, a count below its budget (or,
   in a non-strict file, an unbudgeted rule) prints a notice asking for a local
   `pnpm lint` and a commit.
+- **An optional total ceiling.** With `"maxWarnings": <n>`, more than `n`
+  warnings in total fail, locally and in CI, whatever the per-rule entries
+  allow, and no run records entries that would put the recorded total past `n`
+  (`--accept-new-rules` included). A value that is not a non-negative integer
+  exits 2. Without the field there is no ceiling. The estate default for an app
+  is `{"strict": true, "maxWarnings": 10, "rules": {}}`: zero warnings normally,
+  and at most 10, recorded on purpose, in a pinch. See DESIGN.md, "Total
+  ceiling".
 
 The budget file is read from the directory `narduk-lint` runs in (the package
 root under `pnpm run lint`), not from next to the ESLint config, so packages
@@ -231,9 +239,9 @@ Paths are positional (default `.`). `--fix`, `--cache`, `--cache-location` and
 `--ignore-pattern` pass through to ESLint. `--max-warnings` is refused.
 `--budget <path>` points at another file, `--verbose` prints every warning.
 
-Exit codes: `0` pass; `1` a lint error, a rule over budget, or an unbudgeted
-rule in a strict budget; `2` a usage or configuration error, or ESLint itself
-crashed.
+Exit codes: `0` pass; `1` a lint error, a rule over budget, an unbudgeted rule
+in a strict budget, or a total above `maxWarnings`; `2` a usage or configuration
+error, or ESLint itself crashed.
 
 If Turbo caches the lint task, declare `lint-budget.json` as an output so a
 cache hit restores it.

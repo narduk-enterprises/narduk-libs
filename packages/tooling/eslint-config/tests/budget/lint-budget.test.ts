@@ -41,8 +41,13 @@ interface BudgetModule {
       logError: (line: string) => void
     },
   ) => Promise<number>
-  serializeBudget: (rules: Record<string, number>, options?: { strict?: boolean }) => string
+  serializeBudget: (rules: Record<string, number>, options?: BudgetOptions) => string
   topLocations: (locations: Array<{ file: string; line: number }>, limit?: number) => string[]
+}
+
+interface BudgetOptions {
+  strict?: boolean
+  maxWarnings?: number
 }
 
 let budgetModule: BudgetModule
@@ -57,7 +62,7 @@ beforeAll(async () => {
   ;({ EXIT_OK, EXIT_LINT_FAILURE, EXIT_USAGE } = budgetModule)
 })
 
-const serializeBudget = (rules: Record<string, number>, options?: { strict?: boolean }) =>
+const serializeBudget = (rules: Record<string, number>, options?: BudgetOptions) =>
   budgetModule.serializeBudget(rules, options)
 
 const CONFIG = `export default [
@@ -308,6 +313,138 @@ describe('narduk-lint strict budgets (#673)', () => {
   })
 })
 
+describe('narduk-lint maxWarnings ceiling', () => {
+  const FIVE_WARNINGS = `${THREE_CONSOLES}var a = 1\nvar b = 2\nexport { a, b }\n`
+  const withCeiling = (rules: Record<string, number>, maxWarnings: number, strict = true) =>
+    serializeBudget(rules, { strict, maxWarnings })
+
+  it('over the ceiling fails locally and in CI, even when every rule is within budget', async () => {
+    const original = withCeiling({ 'no-console': 3, 'no-var': 2 }, 4)
+    const dir = fixture({ 'a.js': FIVE_WARNINGS, 'lint-budget.json': original })
+    const local = await run(dir)
+    expect(local.code).toBe(EXIT_LINT_FAILURE)
+    expect(local.err).toContain('over ceiling: 5 warning(s) in total, maxWarnings is 4')
+    expect(local.err).toContain('no-console: 3')
+    expect(local.err).toContain('no-var: 2')
+    expect(local.err).not.toContain('over budget')
+    expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(original)
+    const ci = await run(dir, [], { CI: 'true' })
+    expect(ci.code).toBe(EXIT_LINT_FAILURE)
+    expect(ci.err).toContain('over ceiling')
+  })
+
+  it('at the ceiling passes', async () => {
+    const original = withCeiling({ 'no-console': 3, 'no-var': 2 }, 5)
+    const dir = fixture({ 'a.js': FIVE_WARNINGS, 'lint-budget.json': original })
+    const result = await run(dir, ['--ci'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('5 warning(s) across 2 rule(s), maxWarnings 5')
+    expect(result.err).toBe('')
+  })
+
+  it('under the ceiling passes, and a local ratchet keeps the ceiling and strict', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': withCeiling({ 'no-console': 4, 'no-var': 1 }, 10),
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_OK)
+    expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(
+      '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {\n    "no-console": 3\n  }\n}\n',
+    )
+  })
+
+  it('strict with empty rules still means zero warnings under a ceiling', async () => {
+    const dir = fixture({ 'a.js': 'console.log(1)\n', 'lint-budget.json': withCeiling({}, 10) })
+    const result = await run(dir, ['--ci'])
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain('unbudgeted: no-console has 1 warning(s)')
+    expect(result.err).not.toContain('over ceiling')
+  })
+
+  it('--accept-new-rules records up to the ceiling', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': withCeiling({}, 3) })
+    const result = await run(dir, ['--accept-new-rules'])
+    expect(result.code).toBe(EXIT_OK)
+    expect(budgetOf(dir)).toEqual({ strict: true, maxWarnings: 3, rules: { 'no-console': 3 } })
+  })
+
+  it('--accept-new-rules refuses to record past the ceiling and leaves the file alone', async () => {
+    const original = withCeiling({ 'no-var': 2 }, 4)
+    const dir = fixture({ 'a.js': FIVE_WARNINGS, 'lint-budget.json': original })
+    const result = await run(dir, ['--accept-new-rules'])
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain(
+      'not recorded: no-console (3) would bring the recorded total to 5, past maxWarnings 4',
+    )
+    expect(result.out).not.toContain('recorded: no-console')
+    expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(original)
+  })
+
+  it('past the ceiling a local run still ratchets down, but records nothing new', async () => {
+    const dir = fixture({
+      'a.js': FIVE_WARNINGS,
+      'lint-budget.json': withCeiling({ 'no-var': 9 }, 4, false),
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.out).toContain('lowered: no-var 9 → 2')
+    expect(budgetOf(dir)).toEqual({ maxWarnings: 4, rules: { 'no-var': 2 } })
+  })
+
+  it('a non-strict budget under the ceiling records as before and keeps the ceiling', async () => {
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': withCeiling({}, 10, false) })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_OK)
+    expect(budgetOf(dir)).toEqual({ maxWarnings: 10, rules: { 'no-console': 3 } })
+  })
+
+  it('without the field nothing changes: no ceiling, no maxWarnings written', async () => {
+    const dir = fixture({
+      'a.js': FIVE_WARNINGS,
+      'lint-budget.json': serializeBudget({ 'no-console': 3, 'no-var': 9 }, { strict: true }),
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('5 warning(s) across 2 rule(s)\n')
+    expect(result.out).not.toContain('maxWarnings')
+    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3, 'no-var': 2 } })
+  })
+
+  it.each([
+    ['a negative number', '-1'],
+    ['a fraction', '2.5'],
+    ['a string', '"10"'],
+    ['null', 'null'],
+    ['a boolean', 'true'],
+  ])('exits 2 when maxWarnings is %s', async (_label, value) => {
+    const dir = fixture({
+      'a.js': 'export const a = 1\n',
+      'lint-budget.json': `{ "strict": true, "maxWarnings": ${value}, "rules": {} }`,
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.err).toContain('"maxWarnings" must be a non-negative integer')
+  })
+
+  it('maxWarnings 0 is valid and fails on any warning', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': withCeiling({ 'no-console': 3 }, 0),
+    })
+    const result = await run(dir, ['--ci'])
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain('maxWarnings is 0')
+  })
+
+  it('--max-warnings stays refused and points at the budget field', async () => {
+    const dir = fixture({ 'a.js': 'export const a = 1\n' })
+    const result = await run(dir, ['--max-warnings=10'])
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.err).toContain('"maxWarnings"')
+  })
+})
+
 describe('evaluateBudget', () => {
   it('classifies every branch', () => {
     const verdict = budgetModule.evaluateBudget(
@@ -346,6 +483,9 @@ describe('helpers', () => {
     )
     expect(serializeBudget({})).toBe('{\n  "rules": {}\n}\n')
     expect(serializeBudget({}, { strict: true })).toBe('{\n  "strict": true,\n  "rules": {}\n}\n')
+    expect(serializeBudget({}, { strict: true, maxWarnings: 10 })).toBe(
+      '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {}\n}\n',
+    )
   })
 
   it('topLocations favours the most-affected file and caps at five', () => {
