@@ -220,7 +220,9 @@ reimplementing a header stack: it is maintained, targets Nuxt 4 through
 `@nuxt/kit ^4`, and its runtime imports no Node builtin — `crypto.subtle`,
 `crypto.getRandomValues`, `btoa` and `TextEncoder` are all workerd APIs.
 nuxt-security is an **optional peer dependency**, so an app that never enables
-the preset installs nothing extra.
+the preset installs nothing extra. The estate baseline already allows the shared
+modules' origins, including `https://p.nard.uk`, the PostHog proxy
+narduk-analytics apps send to, so `allow` is only for the app's own hosts.
 
 ```ts
 // nuxt.config.ts
@@ -230,8 +232,7 @@ export default defineNuxtConfig({
       headers: {
         enabled: true,
         allow: {
-          script: ['https://p.nard.uk'],
-          connect: ['https://p.nard.uk', 'https://api.iconify.design'],
+          connect: ['https://api.iconify.design'],
           img: ['https://tiles.example'],
         },
       },
@@ -305,9 +306,8 @@ They are the app's own origins, so `baseline: 'self'` keeps them too.
 The estate baseline is a floor, and a floor is the wrong shape for an app that
 reaches no third party. Because `allow` can only add, such an app could not
 enforce the strict nonce policy without **widening** its CSP: it would trade
-`script-src 'unsafe-inline'` for the eleven origins in `BASELINE_ALLOWLIST`,
-eight of them on `connect-src` — the directive that governs where a page may
-send data.
+`script-src 'unsafe-inline'` for every origin in `BASELINE_ALLOWLIST`, most of
+them on `connect-src` — the directive that governs where a page may send data.
 
 ```ts
 nardukCore: {

@@ -161,8 +161,14 @@ export const DEFAULT_HSTS_MAX_AGE = 15_552_000
 export const BASELINE_ALLOWLIST: Required<SecurityHeadersAllowlist> = {
   // GTM and PostHog inject their own script tags; PostHog's asset host serves
   // the recorder and surveys bundles. Apple MapKit's loader is a script.
+  // https://p.nard.uk is the estate's PostHog reverse proxy, the POSTHOG_HOST
+  // every narduk-analytics app is enrolled with. The preset is resolved at
+  // build time and that host is a deploy-time var, so it cannot be read from
+  // the app's config the way the legacy middleware does; without it an
+  // enforced app blocks every PostHog request (cloudflarestat-us#7).
   script: [
     'https://*.googletagmanager.com',
+    'https://p.nard.uk',
     'https://us.i.posthog.com',
     'https://us-assets.i.posthog.com',
     'https://static.cloudflareinsights.com',
@@ -180,6 +186,7 @@ export const BASELINE_ALLOWLIST: Required<SecurityHeadersAllowlist> = {
     // https://developers.google.com/tag-platform/security/guides/csp,
     // 2026-07-30 revision, read 2026-09-18).
     'https://www.google.com',
+    'https://p.nard.uk',
     'https://us.i.posthog.com',
     'https://us-assets.i.posthog.com',
     'https://*.apple-mapkit.com',

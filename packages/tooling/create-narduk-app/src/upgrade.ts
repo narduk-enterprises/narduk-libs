@@ -5,6 +5,7 @@ import { applyCallerGate, applyCallerPermissions, applyPublicGate } from './ci-g
 import type { CiGateContext, CiGateEdit } from './ci-gate.js'
 import { CANDIDATE_SECURITY_HEADERS_STEP_NAME, REPOSITORY_GATE_STEP_NAME } from './ci-workflow.js'
 import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
+import { applyCspPreset, applyDevDependency, proxyOriginProblem } from './csp-preset.js'
 import type { CheckoutFacts } from './checkout-facts.js'
 import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
 import type { PackageRegistry } from './dependabot-registry.js'
@@ -12,7 +13,7 @@ import { unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
 import type { JsoncToken } from './jsonc.js'
-import { packageNamesForCapability } from './manifest.js'
+import { PACKAGE_VERSIONS, packageNamesForCapability } from './manifest.js'
 import {
   CI_CALLER_PIN_PATTERN,
   CREATE_ONLY_SCRIPT_KEYS,
@@ -328,9 +329,14 @@ function generatedContentsFor(
 
 function managedTargetsFor(facts: CheckoutFacts): readonly ManagedTarget[] {
   const wranglerPath = facts.wranglerPath ?? facts.wranglerReportPath
-  return MANAGED_TARGETS.map((target) =>
-    target.mode === 'jsonc-keys' ? { ...target, path: wranglerPath } : target,
-  )
+  return MANAGED_TARGETS.flatMap((target) => {
+    if (target.mode === 'jsonc-keys') return [{ ...target, path: wranglerPath }]
+    if (target.mode === 'csp-preset' && facts.nuxtConfigPath) {
+      return [{ ...target, path: facts.nuxtConfigPath }]
+    }
+    if (target.mode === 'dev-dependency' && facts.layout === 'root') return []
+    return [target]
+  })
 }
 
 /** Scaffold path and the wrangler filenames a checkout may actually have. */
@@ -966,6 +972,46 @@ interface ResolveContext {
   registry: PackageRegistry
   visibility: AppVisibility
   gate: CiGateContext
+  /** The root and web manifests as found, for the CSP preset's version guard. */
+  manifests: ReadonlyArray<Record<string, unknown> | null>
+}
+
+function resolveCspPreset(
+  current: string | null,
+  path: string,
+  manifests: ResolveContext['manifests'],
+): Resolution {
+  if (current === null) {
+    return { detail: 'No Nuxt config to edit.', status: 'absent' }
+  }
+  if (isDisowned(current)) {
+    return {
+      detail: 'Disowned by a ' + UNMANAGED_MARKER + ' header comment; left untouched.',
+      status: 'unmanaged',
+    }
+  }
+  const edit = applyCspPreset(current)
+  if (edit.status !== 'drift') return { detail: edit.detail, status: edit.status }
+  // The guard applies only to adding the preset: an app that already enforces
+  // it is reported clean whatever its narduk-core version.
+  const problem = proxyOriginProblem(manifests)
+  if (problem) {
+    return {
+      detail: "Not adding narduk-core's enforced CSP preset to " + path + ': ' + problem + '.',
+      status: 'unresolved',
+    }
+  }
+  return { detail: edit.detail, next: edit.contents, status: 'drift' }
+}
+
+function resolveDevDependency(current: string | null, target: ManagedTarget): Resolution {
+  const name = target.dependency ?? ''
+  const version = PACKAGE_VERSIONS[name as keyof typeof PACKAGE_VERSIONS]
+  if (current === null || !version) {
+    return { detail: 'No web manifest to edit.', status: 'absent' }
+  }
+  const edit = applyDevDependency(current, name, version)
+  return { detail: edit.detail, next: edit.contents, status: edit.status }
 }
 
 function resolveManagedTarget(
@@ -975,6 +1021,9 @@ function resolveManagedTarget(
   context: ResolveContext,
 ): Resolution {
   const { registry } = context
+  // Edits of app-owned files: neither compares against a generated file.
+  if (target.mode === 'csp-preset') return resolveCspPreset(current, target.path, context.manifests)
+  if (target.mode === 'dev-dependency') return resolveDevDependency(current, target)
   if (target.path === '.github/dependabot.yml' && desired !== undefined) {
     return resolveDependabot(current, desired, registry)
   }
@@ -1045,26 +1094,47 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
   const packageTarget = targets.find((target) => target.path === 'package.json')
   const packageNow =
     currentOf.get('package.json') ?? (await readIfExists(resolve(targetDir, 'package.json')))
+  const manifests = [
+    parseJsonOrNull(packageNow),
+    parseJsonOrNull(await readIfExists(resolve(targetDir, 'apps/web/package.json'))),
+  ]
   if (packageTarget) {
     resolved.set(
       'package.json',
       resolveManagedTarget(packageTarget, packageNow, generated.get('package.json'), {
         gate: emptyGate(facts),
+        manifests,
         registry,
         visibility: profile.visibility,
       }),
     )
   }
+  // The Nuxt config next: the CI gate only warns about item 10 when the
+  // config will still lack the enforced preset after this run.
+  const cspTarget = targets.find((target) => target.mode === 'csp-preset')
+  if (cspTarget) {
+    resolved.set(
+      cspTarget.path,
+      resolveManagedTarget(cspTarget, currentOf.get(cspTarget.path) ?? null, undefined, {
+        gate: emptyGate(facts),
+        manifests,
+        registry,
+        visibility: profile.visibility,
+      }),
+    )
+  }
+  const nuxtConfigAfter = (cspTarget && resolved.get(cspTarget.path)?.next) ?? facts.nuxtConfig
   const packageAfter = resolved.get('package.json')?.next ?? packageNow
   const scriptsAfterUpgrade = new Set(
     Object.keys((parseJsonOrNull(packageAfter)?.scripts as Record<string, string>) ?? {}),
   )
   const context: ResolveContext = {
     gate: {
-      cspEnforcedHint: /\benforce\s*:\s*true\b/u.test(facts.nuxtConfig),
+      cspEnforcedHint: /\benforce\s*:\s*true\b/u.test(nuxtConfigAfter),
       layout: facts.layout,
       scriptsAfterUpgrade,
     },
+    manifests,
     registry,
     visibility: profile.visibility,
   }

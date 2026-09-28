@@ -76,9 +76,9 @@ describe('upgrade ownership contract', () => {
   // with a contact, `nardukSeo.securityTxt` -- but the AI-crawler policy and
   // the security contact are exactly the kind of thing an app changes after
   // generation, and re-imposing either would be the continuing sync
-  // relationship this generator refuses. `apps/web/nuxt.config.ts` is not a
-  // managed target, so this is asserting an existing boundary still holds now
-  // that the generator writes policy into that file.
+  // relationship this generator refuses. The only unit upgrade owns in
+  // `apps/web/nuxt.config.ts` is the additive CSP preset, so the file is
+  // reported clean and byte-identical, never rewritten to the template.
   it('never re-imposes a scaffolded crawler policy or security contact', async () => {
     const targetDir = await scaffold()
     const generated = await read(targetDir, 'apps/web/nuxt.config.ts')
@@ -97,7 +97,7 @@ describe('upgrade ownership contract', () => {
     const report = await upgradeNardukApp({ targetDir })
 
     expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(edited)
-    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('missing-from-report')
+    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('clean')
     expect(report.driftCount).toBe(0)
   })
 
@@ -315,6 +315,129 @@ function withEdgeRoute(contents: string): string {
     '  "routes": [{ "pattern": "edge.example.com/*", "zone_name": "example.com" }],\n  "main": ',
   )
 }
+
+const PRESET_BLOCK = '    security: {\n      headers: { enabled: true, enforce: true },\n    },\n'
+
+/** A scaffold from before narduk-libs#1228: no CSP preset, no nuxt-security. */
+async function preCspScaffold(capabilities = 'seo'): Promise<string> {
+  const targetDir = await scaffold({ capabilities })
+  await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) => {
+    expect(contents, 'the template still emits the preset block').toContain(PRESET_BLOCK)
+    return contents.replace(PRESET_BLOCK, '')
+  })
+  await edit(targetDir, 'apps/web/package.json', (contents) => {
+    expect(contents).toMatch(/\n\s*"nuxt-security": "[^"]+",/u)
+    return contents.replace(/\n\s*"nuxt-security": "[^"]+",/u, '')
+  })
+  return targetDir
+}
+
+function detailOf(report: UpgradeReport, path: string): string {
+  return report.changes.find((change) => change.path === path)?.detail ?? ''
+}
+
+describe('upgrade CSP preset (cloudflarestat-us#7)', () => {
+  it('adds the enforced preset and nuxt-security to a pre-#1228 app, byte-identical to a scaffold', async () => {
+    const fresh = await scaffold({ capabilities: 'seo' })
+    const targetDir = await preCspScaffold()
+
+    const dryRun = await upgradeNardukApp({ targetDir })
+    expect(statusOf(dryRun, 'apps/web/nuxt.config.ts')).toBe('drift')
+    expect(statusOf(dryRun, 'apps/web/package.json')).toBe('drift')
+    expect(detailOf(dryRun, 'apps/web/package.json')).toContain('pnpm install')
+    expect(dryRun.driftCount).toBe(2)
+
+    await upgradeNardukApp({ targetDir, write: true })
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(
+      await read(fresh, 'apps/web/nuxt.config.ts'),
+    )
+    expect(await read(targetDir, 'apps/web/package.json')).toBe(
+      await read(fresh, 'apps/web/package.json'),
+    )
+    expect((await upgradeNardukApp({ targetDir })).driftCount).toBe(0)
+  })
+
+  it('expands a one-line nardukCore, the shape an older app carries', async () => {
+    const targetDir = await preCspScaffold()
+    await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) =>
+      contents.replace(
+        / {2}nardukCore: \{\n(?: {4}[^\n]*\n)* {2}\},\n/u,
+        "  nardukCore: { databaseBackend: 'none' },\n",
+      ),
+    )
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toContain(
+      "  nardukCore: { databaseBackend: 'none' },\n",
+    )
+
+    await upgradeNardukApp({ targetDir, write: true })
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toContain(
+      '  nardukCore: {\n' + PRESET_BLOCK + "    databaseBackend: 'none',\n  },\n",
+    )
+  })
+
+  it('adds nardukCore itself when the config has none', async () => {
+    const targetDir = await preCspScaffold()
+    await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) =>
+      contents.replace(/ {2}nardukCore: \{\n(?: {4}[^\n]*\n)* {2}\},\n/u, ''),
+    )
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).not.toContain('nardukCore')
+
+    await upgradeNardukApp({ targetDir, write: true })
+    const after = await read(targetDir, 'apps/web/nuxt.config.ts')
+    expect(after).toContain('defineNuxtConfig({\n  nardukCore: {\n' + PRESET_BLOCK + '  },\n')
+    expect((await upgradeNardukApp({ targetDir })).driftCount).toBe(0)
+  })
+
+  it('leaves a report-only soak or an explicit opt-out to the app', async () => {
+    const targetDir = await scaffold({ capabilities: 'seo' })
+    await edit(targetDir, 'apps/web/nuxt.config.ts', (contents) =>
+      contents.replace('enabled: true, enforce: true', 'enabled: true, enforce: false'),
+    )
+    const soaking = await read(targetDir, 'apps/web/nuxt.config.ts')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('unresolved')
+    expect(detailOf(report, 'apps/web/nuxt.config.ts')).toContain('left to the app')
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(soaking)
+  })
+
+  it('waits for a narduk-core that allows the PostHog proxy before enforcing an analytics app', async () => {
+    const targetDir = await preCspScaffold('seo,analytics')
+    const coreSpec = /"@narduk-enterprises\/narduk-core": "([^"]+)"/u
+    const manifestPath = (await read(targetDir, 'apps/web/package.json')).match(coreSpec)
+      ? 'apps/web/package.json'
+      : 'package.json'
+    await edit(targetDir, manifestPath, (contents) =>
+      contents.replace(coreSpec, '"@narduk-enterprises/narduk-core": "2.19.0"'),
+    )
+    const before = await read(targetDir, 'apps/web/nuxt.config.ts')
+
+    const blocked = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(blocked, 'apps/web/nuxt.config.ts')).toBe('unresolved')
+    expect(detailOf(blocked, 'apps/web/nuxt.config.ts')).toContain('https://p.nard.uk')
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(before)
+
+    await edit(targetDir, manifestPath, (contents) =>
+      contents.replace(coreSpec, '"@narduk-enterprises/narduk-core": "2.20.0"'),
+    )
+    const unblocked = await upgradeNardukApp({ targetDir })
+    expect(statusOf(unblocked, 'apps/web/nuxt.config.ts')).toBe('drift')
+  })
+
+  it('honours a narduk:unmanaged header on the Nuxt config', async () => {
+    const targetDir = await preCspScaffold()
+    await edit(
+      targetDir,
+      'apps/web/nuxt.config.ts',
+      (contents) => '// narduk:unmanaged\n' + contents,
+    )
+    const disowned = await read(targetDir, 'apps/web/nuxt.config.ts')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'apps/web/nuxt.config.ts')).toBe('unmanaged')
+    expect(await read(targetDir, 'apps/web/nuxt.config.ts')).toBe(disowned)
+  })
+})
 
 describe('upgrade Workers Cache key (narduk-libs#672)', () => {
   it('adds cache.enabled to an existing wrangler.jsonc and leaves bindings alone', async () => {

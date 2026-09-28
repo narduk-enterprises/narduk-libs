@@ -16,6 +16,8 @@ function directive(name: string, options: Parameters<typeof resolveSecurityHeade
 }
 
 const SCRIPT_SRC = 'script-src'
+const CONNECT_SRC = 'connect-src'
+const POSTHOG_PROXY = 'https://p.nard.uk'
 
 describe('security.headers mode', () => {
   it('is off unless an app asks for it, so upgrading narduk-core changes no headers', () => {
@@ -30,6 +32,22 @@ describe('security.headers mode', () => {
     expect(resolveSecurityHeadersMode({ enabled: true })).toBe('report-only')
     expect(resolveSecurityHeadersMode({ enabled: true, enforce: false })).toBe('report-only')
     expect(resolveSecurityHeadersMode({ enabled: true, enforce: true })).toBe('enforce')
+  })
+})
+
+describe('estate PostHog proxy (cloudflarestat-us#7)', () => {
+  // narduk-analytics apps are enrolled with POSTHOG_HOST=https://p.nard.uk, a
+  // deploy-time var the build-time preset cannot read. Without the baseline
+  // entry an enforcing app blocks posthog-js's loader and every capture.
+  it('allows the proxy on script-src and connect-src without an app allow entry', () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, enforce: true })
+    expect(resolved.csp[SCRIPT_SRC]).toContain(POSTHOG_PROXY)
+    expect(resolved.csp[CONNECT_SRC]).toContain(POSTHOG_PROXY)
+  })
+
+  it("is still dropped by baseline: 'self'", () => {
+    const resolved = resolveSecurityHeaders({ enabled: true, baseline: 'self' })
+    expect(resolved.csp[CONNECT_SRC]).not.toContain(POSTHOG_PROXY)
   })
 })
 
@@ -114,7 +132,7 @@ describe('allowlist surface', () => {
         frame: ['https://embed.example'],
         img: ['https://tiles.example'],
         media: ['https://media.example'],
-        script: ['https://p.nard.uk'],
+        script: ['https://scripts.example'],
         style: ['https://styles.example'],
         worker: ['https://worker.example'],
       },
@@ -124,7 +142,7 @@ describe('allowlist surface', () => {
     expect(resolved.csp['frame-src']).toContain('https://embed.example')
     expect(resolved.csp['img-src']).toContain('https://tiles.example')
     expect(resolved.csp['media-src']).toContain('https://media.example')
-    expect(resolved.csp[SCRIPT_SRC]).toContain('https://p.nard.uk')
+    expect(resolved.csp[SCRIPT_SRC]).toContain('https://scripts.example')
     expect(resolved.csp['style-src']).toContain('https://styles.example')
     expect(resolved.csp['worker-src']).toContain('https://worker.example')
   })
@@ -293,14 +311,14 @@ describe('legacy CSP_*_SRC environment variables', () => {
         cspConnectSrc: 'https://data.nard.uk',
         cspFrameSrc: 'https://frame.example',
         cspMediaSrc: 'blob:',
-        cspScriptSrc: 'https://p.nard.uk',
+        cspScriptSrc: 'https://scripts.example',
         cspWorkerSrc: 'https://worker.example',
       },
     )
     expect(resolved.csp['connect-src']).toContain('https://data.nard.uk')
     expect(resolved.csp['frame-src']).toContain('https://frame.example')
     expect(resolved.csp['media-src']).toContain('blob:')
-    expect(resolved.csp[SCRIPT_SRC]).toContain('https://p.nard.uk')
+    expect(resolved.csp[SCRIPT_SRC]).toContain('https://scripts.example')
     expect(resolved.csp['worker-src']).toContain('https://worker.example')
   })
 
