@@ -24,7 +24,9 @@ import {
 
 import { DEFAULT_MAPKIT_LIBRARIES, DEFAULT_MAPKIT_TOKEN_ROUTE } from './runtime/defaults.js'
 import { MAPKIT_MARKS_CSS } from '../marks/styles.js'
+import { MAPKIT_INSTRUMENT_MARKS_CSS } from '../instrument-marks/styles.js'
 import { MAPKIT_COMPONENT_CSS } from './runtime/styles.js'
+import { MAPKIT_CHROME_CSS } from './runtime/chrome-styles.js'
 
 import type { MapKitPublicRuntimeOptions } from './runtime/options.js'
 import type { ModuleOptions } from './types.js'
@@ -131,6 +133,7 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
     name: '@narduk-enterprises/narduk-mapkit/nuxt',
   },
   defaults: {
+    chrome: false,
     component: true,
     composables: true,
     marks: false,
@@ -200,12 +203,37 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
       })
       nuxt.options.css.unshift(stylesheet.dst)
     }
+    if (options.chrome) {
+      for (const name of [
+        'ControlStack',
+        'Icon',
+        'InstrumentKey',
+        'LensOptionButton',
+        'LensRail',
+        'Menu',
+        'Notice',
+        'ScaleStrip',
+        'StyleMenu',
+      ]) {
+        addComponent({
+          name: `Mapkit${name}`,
+          filePath: resolver.resolve(`../../components/Mapkit${name}.vue`),
+        })
+      }
+      const chromeStylesheet = addTemplate({
+        filename: 'narduk-mapkit-chrome.css',
+        getContents: () => MAPKIT_CHROME_CSS,
+        write: true,
+      })
+      nuxt.options.css.unshift(chromeStylesheet.dst)
+    }
     if (options.marks) {
       // After the host chrome, and still before the app's own stylesheets, so
       // an app rule for a mark wins on order.
       const marksStylesheet = addTemplate({
         filename: 'narduk-mapkit-marks.css',
-        getContents: () => MAPKIT_MARKS_CSS,
+        getContents: () =>
+          options.marks === 'instruments' ? MAPKIT_INSTRUMENT_MARKS_CSS : MAPKIT_MARKS_CSS,
         write: true,
       })
       nuxt.options.css.splice(options.component ? 1 : 0, 0, marksStylesheet.dst)
@@ -214,6 +242,10 @@ const module: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
       addImports([
         { from: resolver.resolve('./runtime/composables/useMapKit'), name: 'useMapKit' },
         { from: resolver.resolve('./runtime/composables/useMapKitView'), name: 'useMapKitView' },
+        {
+          from: resolver.resolve('./runtime/composables/useMapKitLayoutSettle'),
+          name: 'useMapKitLayoutSettle',
+        },
         {
           from: resolver.resolve('./runtime/composables/useMapKitFullscreen'),
           name: 'useMapKitFullscreen',

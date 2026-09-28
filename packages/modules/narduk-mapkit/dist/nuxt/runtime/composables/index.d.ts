@@ -1,5 +1,5 @@
 /**
- * The two framework-free composables, as an explicit import for callers
+ * The Vue-only composables, as an explicit import for callers
  * outside Nuxt's auto-import.
  *
  * `./nuxt` registers `useMapKitView` and `useMapKitFullscreen` with
@@ -14,7 +14,7 @@
  * `useMapKit()` is deliberately NOT here. It reads the module's runtime
  * options through `#imports`, a specifier that only resolves inside a Nuxt
  * build, so a subpath carrying it would throw on import anywhere else. These
- * two need only Vue: the view takes its MapKit namespace from the `map-ready`
+ * composables need only Vue: the view takes its MapKit namespace from the `map-ready`
  * payload (KIT DEFECT K-10) rather than from the kit handle.
  *
  * `./nuxt` itself stays the module entry and is not widened: importing it is
@@ -25,4 +25,5 @@ export { useMapKitFullscreen } from './useMapKitFullscreen.js';
 export { useMapKitView } from './useMapKitView.js';
 export type { UseMapKitFullscreenOptions, UseMapKitFullscreenResult, } from './useMapKitFullscreen.js';
 export type { UseMapKitViewOptions, UseMapKitViewResult } from './useMapKitView.js';
+export { useMapKitLayoutSettle } from './useMapKitLayoutSettle.js';
 //# sourceMappingURL=index.d.ts.map

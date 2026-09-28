@@ -12,15 +12,18 @@ export interface MapKitRateLimitOptions {
     windowSeconds: number;
 }
 export interface ModuleOptions {
+    /** Register the optional map control, menu, notice and legend components. */
+    chrome?: boolean;
     /** Register `<AppMapKit>`. */
     component: boolean;
     /** Register `useMapKit()`, `useMapKitView()` and `useMapKitFullscreen()`. */
     composables: boolean;
     /**
      * Add the stylesheet for the `./marks` DOM marks (`MAPKIT_MARKS_CSS`) to the
-     * app. Off by default: only an app that draws marks with `./marks` needs it.
+     * app. Use 'instruments' for the additive ./instrument-marks renderer; true
+     * keeps the existing disc renderer. Off by default.
      */
-    marks: boolean;
+    marks: boolean | 'instruments';
     /**
      * App-wide default for the `libraries` prop. MapKit JS 6's `mapkit.core.js`
      * is a stub, so without `'map'` there is no `mapkit.Map` at all -- which is
