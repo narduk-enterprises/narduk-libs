@@ -27,6 +27,15 @@ describe('defineStatusMap', () => {
     expect(descriptor).toEqual({ tone: 'warn', label: 'Action' })
   })
 
+  it('accepts "unreported" as a tuple tone, the same as any other tone', () => {
+    type SensorReading = 'live' | 'missing'
+    const sensor = defineStatusMap<SensorReading>({
+      live: ['ok', 'Live'],
+      missing: ['unreported', 'Not reported'],
+    })
+    expect(sensor('missing')).toEqual({ tone: 'unreported', label: 'Not reported' })
+  })
+
   it('falls back to neutral with the raw key as the label for an unmapped runtime value', () => {
     // An API can hand back a stage this app's union does not (yet, or no
     // longer) know about. The cast stands in for that: TypeScript's

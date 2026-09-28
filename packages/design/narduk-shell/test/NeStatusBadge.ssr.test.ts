@@ -10,19 +10,25 @@ import { describe, expect, it } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'
 
 import NeStatusBadge from '../src/runtime/components/NeStatusBadge.vue'
+import { NE_UNREPORTED_TEXT } from '../src/runtime/utils/unreported'
 
 import type { NeStatusTone } from '../src/runtime/utils/status-map'
 
 /** Same fake as test/NeStatusBadge.mount.test.ts -- see its header comment. */
 const FakeUBadge = defineComponent({
   name: 'UBadge',
-  props: ['color', 'variant', 'size', 'icon'],
+  props: ['color', 'variant', 'size', 'icon', 'ui'],
   setup(props, { attrs, slots }) {
-    return () => h('span', { ...attrs, 'data-color': props.color }, slots.default?.())
+    return () =>
+      h(
+        'span',
+        { ...attrs, 'data-color': props.color, 'data-ui-base': props.ui?.base },
+        slots.default?.(),
+      )
   },
 })
 
-function renderBadge(props: { tone: NeStatusTone; label: string }): Promise<string> {
+function renderBadge(props: { tone: NeStatusTone; label?: string }): Promise<string> {
   const app = createSSRApp(NeStatusBadge, props)
   app.component('UBadge', FakeUBadge)
   return renderToString(app)
@@ -34,7 +40,7 @@ it('runs in an environment with no DOM, which is the whole point of this file', 
 })
 
 describe('NeStatusBadge server rendering', () => {
-  const tones: NeStatusTone[] = ['ok', 'warn', 'error', 'info', 'neutral', 'pending']
+  const tones: NeStatusTone[] = ['ok', 'warn', 'error', 'info', 'neutral', 'pending', 'unreported']
 
   for (const tone of tones) {
     it(`renders tone "${tone}" without throwing and carries the label`, async () => {
@@ -53,5 +59,18 @@ describe('NeStatusBadge server rendering', () => {
   it('carries the word-safe label class into the server output', async () => {
     const html = await renderBadge({ tone: 'neutral', label: 'unknown' })
     expect(html).toContain('whitespace-nowrap')
+  })
+
+  it('defaults an omitted "unreported" label to NE_UNREPORTED_TEXT on the server too', async () => {
+    const html = await renderBadge({ tone: 'unreported' })
+    expect(html).toContain(NE_UNREPORTED_TEXT)
+    expect(html).toContain(`aria-label="unreported: ${NE_UNREPORTED_TEXT}"`)
+  })
+
+  it('carries the hatch material into the server output', async () => {
+    const html = await renderBadge({ tone: 'unreported' })
+    expect(html).toContain(
+      'data-ui-base="bg-[image:var(--ne-hatch-soft)] bg-(--ne-surface) text-[var(--ne-ink-muted)]"',
+    )
   })
 })
