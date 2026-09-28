@@ -15,7 +15,14 @@
  * that write at the source. Prevention and detection are separate on purpose:
  * the guard still catches the next writer nobody has found yet.
  *
- * Usage: pnpm run preflight [--base <ref>] [--no-fetch] [--no-consumer]
+ * On the `chore: release packages` PR's head, CI skips `release-plan:check`
+ * (ci.yml `IS_CHANGESET_RELEASE`): the version commit has consumed every
+ * Changeset, so the guard would demand new ones for the bump itself. Preflight
+ * skips it there too, but only on proof rather than a branch name: see
+ * `releasePrIdentity`. `--release-pr` asks for that proof on a detached head;
+ * a checkout of the `changeset-release/main` branch asks for it implicitly.
+ *
+ * Usage: pnpm run preflight [--base <ref>] [--no-fetch] [--no-consumer] [--release-pr]
  */
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
@@ -111,13 +118,14 @@ export function preflightChangedFiles(repositoryRoot, base) {
 }
 
 function parsePreflightArgs(argv) {
-  const options = { base: 'origin/main', fetch: true, consumer: true }
+  const options = { base: 'origin/main', fetch: true, consumer: true, releasePr: false }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--base') options.base = argv[(index += 1)]
     else if (argument.startsWith('--base=')) options.base = argument.slice('--base='.length)
     else if (argument === '--no-fetch') options.fetch = false
     else if (argument === '--no-consumer') options.consumer = false
+    else if (argument === '--release-pr') options.releasePr = true
     else throw new Error(`Unknown preflight argument: ${argument}`)
   }
   if (!options.base) throw new Error('--base requires a ref.')
@@ -141,6 +149,67 @@ export function fetchTargetForBase(base, remotes) {
   const ref = base.slice(separator + 1)
   if (!ref || !remotes.includes(remote)) return undefined
   return { remote, ref }
+}
+
+/** The branch Changesets opens the `chore: release packages` PR from. */
+export const releasePrBranch = 'changeset-release/main'
+
+/**
+ * Whether this run claims to be the release PR's head: asked for with
+ * `--release-pr`, or a checkout of the release branch itself -- the name CI
+ * keys its skip on. A claim is not a skip; `releasePrIdentity` decides that.
+ */
+export function claimsReleasePr({ releasePr, branch }) {
+  return releasePr === true || branch === releasePrBranch
+}
+
+/**
+ * The Changesets a commit still carries: `.changeset/*.md` except the README.
+ * A version commit has consumed all of them.
+ */
+export function pendingChangesets(repositoryRoot, execute = spawnSync) {
+  const result = execute('git', ['ls-tree', '--name-only', 'HEAD', '.changeset/'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  })
+  if (result.status !== 0) throw new Error('git ls-tree HEAD .changeset/ failed.')
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((path) => path.endsWith('.md') && path !== '.changeset/README.md')
+}
+
+/**
+ * CI skips `release-plan:check` for the release PR by branch name, which on
+ * GitHub only the release workflow's push can produce. A local branch name
+ * proves nothing, so the skip needs all of:
+ *
+ * - HEAD is exactly the tip of `<remote>/changeset-release/main` (fetched in
+ *   this run unless `--no-fetch`), i.e. the commit the release PR runs CI on;
+ * - the working tree is that commit, with no edit or untracked file; and
+ * - the commit carries no pending Changeset, as `changeset version` leaves it.
+ *
+ * Returns `{ proven, problems }`; any problem keeps the guard running.
+ */
+export function releasePrIdentity({ head, releaseRef, releaseTip, dirtyPaths, changesets }) {
+  const problems = []
+  if (!releaseTip) {
+    problems.push(`${releaseRef} does not resolve, so there is no release head to compare with`)
+  } else if (head !== releaseTip) {
+    problems.push(`HEAD ${head} is not ${releaseRef} ${releaseTip}`)
+  }
+  if (dirtyPaths.length > 0) {
+    problems.push(`the working tree is not HEAD (${dirtyPaths.slice(0, 5).join(', ')})`)
+  }
+  if (changesets.length > 0) {
+    problems.push(`HEAD still carries Changesets (${changesets.join(', ')})`)
+  }
+  return { proven: problems.length === 0, problems }
+}
+
+function gitOutput(repositoryRoot, args, execute = spawnSync) {
+  const result = execute('git', args, { cwd: repositoryRoot, encoding: 'utf8' })
+  return result.status === 0 ? result.stdout.trim() : ''
 }
 
 function gitRemotes(repositoryRoot, execute = spawnSync) {
@@ -232,18 +301,65 @@ async function main() {
   }
   guard('plan')
 
+  // --- Release PR identity (only when claimed) -----------------------------
+  let releaseIdentity = null
+  if (
+    claimsReleasePr({
+      releasePr: options.releasePr,
+      branch: gitOutput(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+    })
+  ) {
+    const remote = fetchTargetForBase(options.base, gitRemotes(root))?.remote ?? 'origin'
+    const releaseRef = `${remote}/${releasePrBranch}`
+    if (options.fetch) {
+      const fetched = run('git', ['fetch', '--quiet', remote, releasePrBranch])
+      if (fetched.status !== 0) console.warn(`preflight: could not fetch ${releaseRef}.`)
+    } else {
+      console.log(`preflight: ${releaseRef} is as fresh as its last fetch (--no-fetch).`)
+    }
+    const head = gitOutput(root, ['rev-parse', 'HEAD'])
+    releaseIdentity = {
+      head,
+      releaseRef,
+      ...releasePrIdentity({
+        head,
+        releaseRef,
+        releaseTip: gitOutput(root, [
+          'rev-parse',
+          '--verify',
+          '--quiet',
+          `refs/remotes/${releaseRef}^{commit}`,
+        ]),
+        dirtyPaths: [...baseline.keys()],
+        changesets: pendingChangesets(root),
+      }),
+    }
+  }
+
   // --- Contracts, in the contracts job's own order ------------------------
   phase('versions:check', 'pnpm', ['run', 'versions:check'])
   phase('scripts:test', 'pnpm', ['run', 'scripts:test'])
-  // Pass the ref the author asked for, which the fetch above just refreshed.
-  // The script's own default is `origin/<baseBranch>` (#619), which is only as
-  // fresh as the last fetch of that remote; `--base` keeps this phase on the
-  // exact ref preflight planned against.
-  phase('release-plan:check', 'node', [
-    'scripts/check-generator-release-plan.mjs',
-    '--base',
-    options.base,
-  ])
+  if (releaseIdentity?.proven) {
+    // ci.yml's IS_CHANGESET_RELEASE skip, on the same commit CI checks.
+    console.log(
+      `\n=== release-plan:check ===\nSkipped, as CI skips it on ${releasePrBranch}: HEAD ${releaseIdentity.head} is ${releaseIdentity.releaseRef}, the tree is clean, and no Changeset is pending (the version commit consumed them).`,
+    )
+  } else {
+    if (releaseIdentity) {
+      failures.push(
+        `release PR identity not proven, so release-plan:check ran: ${releaseIdentity.problems.join('; ')}`,
+      )
+    }
+    // Pass the ref the author asked for, which the fetch above just refreshed.
+    // The script's own default is `origin/<baseBranch>` (#619), which is only as
+    // fresh as the last fetch of that remote; `--base` keeps this phase on the
+    // exact ref preflight planned against.
+    phase('release-plan:check', 'node', [
+      'scripts/check-generator-release-plan.mjs',
+      '--base',
+      options.base,
+    ])
+  }
   phase('format:check', 'pnpm', ['run', 'format:check'])
   phase('surface:check', 'pnpm', ['run', 'surface:check'])
   // The estate security bar, and the last step of the contracts job. It can go
