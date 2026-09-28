@@ -144,6 +144,44 @@ describe('create-narduk-app generation contract', () => {
     },
   )
 
+  it('defaults the local siteUrl to 127.0.0.1, never localhost', () => {
+    // narduk-libs: nuxt-site-config's validator flags a "localhost" hostname
+    // and the stack can resolve `useSiteConfig().url` to a different host
+    // than the literal siteUrl the generator wrote everywhere else. That
+    // split made every unconfigured SEO scaffold's rendered `og:image` (from
+    // narduk-seo's runtime `useSiteConfig()` fallback) mismatch the
+    // `Config/social-previews.json` default the generator emitted from the
+    // same siteUrl literal, and `social-previews.spec.ts`'s default-route
+    // check failed with "Default route did not select defaultImage.path" on
+    // every fresh --capabilities seo scaffold with no --site-url. This is a
+    // static check on the generator's own output, not a repro of the runtime
+    // resolution mismatch (that needs a live Nuxt server, which is what
+    // `social-previews.spec.ts` proves in a generated app's own e2e run) --
+    // it exists so a future default that reintroduces "localhost" fails here
+    // instead of only downstream in every new app's CI.
+    const files = asFileMap(
+      buildGeneratedFiles({
+        appName: 'local-default-app',
+        capabilities: ['seo'],
+        localPort: 4321,
+        targetDir: '/tmp/local-default-app',
+      }),
+    )
+    const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
+    const socialConfig = JSON.parse(files.get('apps/web/Config/social-previews.json') ?? '{}') as {
+      siteUrl: string
+    }
+    const webPackage = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
+      homepage: string
+      narduk: { url: string }
+    }
+    expect(nuxtConfig).toContain("const siteUrl = 'http://127.0.0.1:4321'")
+    expect(nuxtConfig).not.toContain('localhost')
+    expect(socialConfig.siteUrl).toBe('http://127.0.0.1:4321')
+    expect(webPackage.homepage).toBe('http://127.0.0.1:4321')
+    expect(webPackage.narduk.url).toBe('http://127.0.0.1:4321')
+  })
+
   it('produces byte-identical plans independent of target directory', () => {
     const options = {
       appName: 'harbor-notes',
@@ -1361,12 +1399,12 @@ describe('create-narduk-app generation contract', () => {
       scripts: Record<string, string>
     }
     expect(webPackage.description).toBe('Fixture app')
-    expect(webPackage.homepage).toBe('http://localhost:4377')
+    expect(webPackage.homepage).toBe('http://127.0.0.1:4377')
     expect(webPackage.narduk).toMatchObject({
       name: 'generated-fixture',
       displayName: 'Generated Fixture',
       shortName: 'Generated Fixture',
-      url: 'http://localhost:4377',
+      url: 'http://127.0.0.1:4377',
       localDevNuxtPort: 4377,
     })
     expect(webPackage.scripts['db:migrate:local']).toContain('narduk-app db migrate')
