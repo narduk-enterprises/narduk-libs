@@ -283,7 +283,13 @@ function normalizeVisibility(value: AppVisibility | undefined): AppVisibility {
 }
 
 function normalizeSiteUrl(value: string | undefined, localPort: number): string {
-  const siteUrl = value?.trim() || 'http://localhost:' + localPort
+  // 127.0.0.1, not localhost: nuxt-site-config's validator flags a "localhost"
+  // hostname as a bad site URL (it warns and the stack can resolve
+  // useSiteConfig().url to a different host than this literal), which made
+  // every unconfigured SEO scaffold's og:image mismatch its own
+  // Config/social-previews.json default and fail social-previews.spec.ts.
+  // 127.0.0.1 carries the same "local dev" meaning without tripping that check.
+  const siteUrl = value?.trim() || 'http://127.0.0.1:' + localPort
   let parsed: URL
   try {
     parsed = new URL(siteUrl)
