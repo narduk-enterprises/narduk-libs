@@ -34,6 +34,10 @@ import type { H3Event } from 'h3'
 
 const INDEXNOW_ENDPOINT = 'https://api.indexnow.org/indexnow'
 const MAX_URLS_PER_BATCH = 10_000
+// A submission is fire-and-report: a stalled endpoint must not hold the
+// caller's request open. A timeout lands in the same `{ success: false }`
+// result as any other failed ping.
+const INDEXNOW_TIMEOUT_MS = 10_000
 
 /**
  * Resolve the IndexNow key from Worker runtime bindings first, then from
@@ -156,6 +160,7 @@ export async function notifyIndexNow(
         keyLocation: `https://${host}/${key}.txt`,
         urlList: batch,
       },
+      timeout: INDEXNOW_TIMEOUT_MS,
     })
 
     log.debug(`Submitted ${batch.length} URLs`)

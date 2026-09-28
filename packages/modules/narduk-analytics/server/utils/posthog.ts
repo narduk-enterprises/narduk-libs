@@ -11,6 +11,12 @@ import type { H3Event } from 'h3'
 
 export const POSTHOG_DEFAULT_PERIOD = '30d'
 
+// Upper bound for a PostHog API call. HogQL aggregations over a 30-day window
+// can take several seconds, so this is generous; it exists so a stalled
+// upstream cannot hold the admin request open. ofetch rejects with a
+// `FetchError` (no status), which the admin routes already answer as a 500.
+const POSTHOG_API_TIMEOUT_MS = 20_000
+
 export interface PosthogProjectConfig {
   apiHost: string
   apiKey: string
@@ -127,6 +133,7 @@ export async function posthogQueryFetch<T>(
       'Content-Type': 'application/json',
     },
     body: { query },
+    timeout: POSTHOG_API_TIMEOUT_MS,
   })) as T
 }
 
@@ -142,6 +149,7 @@ export async function posthogRecordingsFetch<T>(
         Authorization: `Bearer ${config.apiKey}`,
       },
       params,
+      timeout: POSTHOG_API_TIMEOUT_MS,
     },
   )) as T
 }
