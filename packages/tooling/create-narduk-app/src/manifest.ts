@@ -43,7 +43,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit': '2.11.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.27.3',
-  '@narduk-enterprises/eslint-config': '2.6.1',
+  '@narduk-enterprises/eslint-config': '2.7.0',
   '@narduk-enterprises/narduk-ai': '0.4.7',
   '@narduk-enterprises/narduk-analytics': '1.25.4',
   '@narduk-enterprises/narduk-auth': '1.32.6',
