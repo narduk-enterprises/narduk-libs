@@ -90,6 +90,47 @@ export function deploymentBlockLines(appName: string): string[] {
 const DEFAULT_DESCRIPTION = 'A production-ready Nuxt application built with Narduk libraries.'
 const DEFAULT_COMPATIBILITY_DATE = '2026-06-01'
 
+const HANDBOOK_CHAPTER_BASE =
+  'https://github.com/narduk-enterprises/coding-standards/blob/main/standards/'
+
+/** A markdown link to one coding-standards handbook chapter. */
+function handbookLink(chapterFile: string): string {
+  const chapter = chapterFile.slice(0, 2)
+  return '([ch' + chapter + '](' + HANDBOOK_CHAPTER_BASE + chapterFile + '))'
+}
+
+/**
+ * The quality bar in the managed AGENTS.md router region (coding-standards
+ * SPEC S3, 2026-09-27). Each rule is one checkable line with the handbook
+ * chapter behind it, because the handbook alone did not reach the agents who
+ * write app code: 0 of 27 product AGENTS.md files linked it. `upgrade`
+ * refreshes this region, so an existing app gets the list on its next upgrade
+ * run without anything else in the file moving. Social previews keep their own
+ * line above it.
+ */
+const AGENTS_QUALITY_BAR: readonly string[] = [
+  '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
+    handbookLink('07-quality-and-release.md'),
+  '- Every mutating API route goes through narduk-core `defineUserMutation` (or `definePublicMutation` / `defineAdminMutation`) and parses its body with `withValidatedBody(schema.parse)`; never a bare `readBody`. ' +
+    handbookLink('03-backend-and-apis.md'),
+  '- Every route under `/api/admin/**` requires an admin (`defineAdminMutation`, `defineAdminQuery`, or `requireAdmin` first) and answers 401 or 403 to anyone else, never 500 or data. ' +
+    handbookLink('03-backend-and-apis.md'),
+  '- Loading, empty and error states say only what is verified: no "all clear", "up to date" or zero count when the data failed to load or is stale. ' +
+    handbookLink('02-web-apps.md'),
+  '- At phone widths of 320 and 375 px, no page scrolls horizontally and no text is clipped. ' +
+    handbookLink('02-web-apps.md'),
+  '- Times are SSR-safe: no clock read during render (`narduk/no-render-clock`; use `useSsrNow(key)` or read it after mount), and formatting names its time zone. ' +
+    handbookLink('02-web-apps.md'),
+  "- CSP is narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven with `narduk-app foundation:check:security-headers`. " +
+    handbookLink('02-web-apps.md'),
+  '- Accessibility is gated in e2e with narduk-testkit `expectAccessible` on every primary route. ' +
+    handbookLink('02-web-apps.md'),
+  '- Performance is gated by `pnpm run performance-budget` (narduk-app performance-budget). ' +
+    handbookLink('02-web-apps.md'),
+  '- A test suite counts only if CI runs it; a suite CI skips, or a required check with a no-op path, counts as no suite. ' +
+    handbookLink('07-quality-and-release.md'),
+]
+
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
@@ -752,6 +793,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'The web app guidance in [apps/web/AGENTS.md](apps/web/AGENTS.md) covers Nuxt, Worker, database, and capability boundaries. [CONTRACT.md](CONTRACT.md) is the API surface this app promises to callers, kept current whenever a route changes. [docs/workers-builds.md](docs/workers-builds.md) covers deployment and recovery. [docs/e2e-testing.md](docs/e2e-testing.md) covers the Playwright layout and the visual QA toolkit.',
         'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+        '',
+        "**Quality bar.** Each rule is checkable, and its link is the handbook chapter behind it. A change that touches an area meets that area's rule.",
+        '',
+        ...AGENTS_QUALITY_BAR,
         '',
         'Shared packages: ' +
           sharedPackageList +
@@ -1511,8 +1556,12 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // budget starts empty. `strict` (eslint-config 2.2.0+, #673) makes a
       // warning in a rule with no entry fail instead of being recorded as that
       // rule's budget; `narduk-lint --accept-new-rules` adopts one on purpose.
+      // `maxWarnings` (eslint-config 2.6.0+) is the estate's pinch ceiling
+      // (coding-standards SPEC S1, Logan 2026-09-27): zero warnings is the
+      // normal state, at most 10 may be recorded for a fast turnaround, and
+      // nothing past 10 can be recorded at all. Older narduk-lint ignores it.
       path: 'apps/web/lint-budget.json',
-      contents: text('{', '  "strict": true,', '  "rules": {}', '}'),
+      contents: text('{', '  "strict": true,', '  "maxWarnings": 10,', '  "rules": {}', '}'),
     },
     {
       path: 'eslint.config.mjs',
@@ -2398,8 +2447,60 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
+      // Supply-chain settings (coding-standards SPEC S2), read by the pinned
+      // pnpm (PNPM_VERSION, 10.33.4). `minimumReleaseAge` (pnpm 10.16+) and
+      // `minimumReleaseAgeExclude` (name globs, and `name@version` entries
+      // since 10.19) apply only when pnpm resolves, so a frozen-lockfile
+      // install never meets them. `allowBuilds` (pnpm 10.26+) is the map form
+      // that `pnpm approve-builds` writes and that pnpm 11 keeps once
+      // `onlyBuiltDependencies` is gone; in 10.33.4 each `true` entry joins
+      // onlyBuiltDependencies and each `false` entry ignoredBuiltDependencies.
+      //
+      // The estate scope is excluded from the cooldown because the release
+      // flow depends on it: narduk-libs publishes a batch and then this
+      // generator, whose PACKAGE_VERSIONS pin the versions published minutes
+      // earlier (docs/package-releases.md). Without the exclusion, measured
+      // on 2026-09-28 against the 2026-09-27 release, a fresh app's first
+      // install fails ERR_PNPM_NO_MATURE_MATCHING_VERSION for a day after
+      // every release, and so does every hand-made estate bump.
+      //
+      // allowBuilds lists exactly the packages with install scripts in a
+      // generated app's tree (measured with every capability on: a fresh
+      // install with no allowlist reported exactly these five). esbuild,
+      // unrs-resolver and workerd fetch or verify a native binary. core-js's
+      // script prints a banner, and vue-demi's switches builds for Vue 2, but
+      // its default build is already the Vue 3 one, so both are refused on
+      // purpose, which also keeps pnpm's ignored-scripts warning quiet. sharp
+      // 0.35 ships no install script, and nothing in the tree pulls in
+      // @parcel/watcher's native build.
       path: 'pnpm-workspace.yaml',
-      contents: text('packages:', '  - apps/*'),
+      contents: text(
+        'packages:',
+        '  - apps/*',
+        '',
+        '# Supply chain: pnpm will not resolve a version published less than a day',
+        '# (1440 minutes) ago, so a compromised release is usually caught and pulled',
+        '# before it can reach this app. Frozen-lockfile installs are unaffected.',
+        'minimumReleaseAge: 1440',
+        'minimumReleaseAgeExclude:',
+        '  # Estate packages ship through the reviewed narduk-libs release, and new',
+        '  # apps pin versions published minutes before the generator itself.',
+        "  - '@narduk-enterprises/*'",
+        '  # An urgent security bump that cannot wait a day: add the exact release',
+        "  # here (for example '- nuxt@4.5.3'), install, and delete the line once",
+        '  # that release is a day old.',
+        '',
+        '# Dependency install scripts run only for packages set to true here; pnpm',
+        '# skips every other script. Read what a script does before adding it.',
+        'allowBuilds:',
+        '  # Prints a banner only.',
+        '  core-js: false',
+        '  esbuild: true',
+        '  unrs-resolver: true',
+        '  # Switches builds for Vue 2; the default build is already Vue 3.',
+        '  vue-demi: false',
+        '  workerd: true',
+      ),
     },
     {
       path: 'prettier.config.mjs',

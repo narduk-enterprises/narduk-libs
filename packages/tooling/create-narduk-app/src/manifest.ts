@@ -518,15 +518,8 @@ export function createRootPackageManifest(
         '@esbuild-kit/core-utils': '*',
         '@esbuild-kit/esm-loader': '*',
       },
-      onlyBuiltDependencies: [
-        '@parcel/watcher',
-        'core-js',
-        'esbuild',
-        'sharp',
-        'unrs-resolver',
-        'vue-demi',
-        'workerd',
-      ],
+      // The dependency build-script allowlist lives in pnpm-workspace.yaml
+      // (`allowBuilds`), next to the release-age cooldown (generate.ts).
     },
   })
 }

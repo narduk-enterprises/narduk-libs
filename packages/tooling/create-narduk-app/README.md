@@ -209,9 +209,13 @@ The region targets follow one rule. An existing `AGENTS.md` with no
 `docs/e2e-testing.md` with no `narduk:e2e-policy` markers gets the flake-policy
 block appended the same way. The rest of each file is untouched. A
 `<!-- narduk:unmanaged -->` header opts either file out. The router block names
-the app's shared packages and points at `narduk-app doctor`. A file with only
-one marker of a pair is reported `unresolved` and left alone. Apps generated
-from this version carry every marker already.
+the app's shared packages, points at `narduk-app doctor`, and carries the
+quality bar: ten checkable one-line rules (lint warnings, validated mutations,
+admin routes, honest states, phone widths, SSR-safe time, CSP, accessibility,
+performance budget, tests CI runs), each linking its coding-standards chapter.
+An app that predates the bar gets it on its next `upgrade --write`. A file with
+only one marker of a pair is reported `unresolved` and left alone. Apps
+generated from this version carry every marker already.
 
 ### Dependabot: two lanes
 
@@ -292,6 +296,26 @@ that match. Anything else is rewritten to the template for the registry the app
 actually uses. When the registry cannot be told, a missing file is left missing
 rather than created from the placeholder-token template. Opt out with
 `# narduk:unmanaged` when the app's rules should stay even if they disagree.
+
+### Supply chain: `pnpm-workspace.yaml`
+
+The generated `pnpm-workspace.yaml` is seed (app-owned after scaffolding) and
+carries two supply-chain settings for the pinned pnpm (10.33.4):
+
+- `minimumReleaseAge: 1440`: pnpm resolves no version published less than a day
+  ago. It applies only when pnpm resolves, so frozen-lockfile installs never
+  meet it. `minimumReleaseAgeExclude` lists `@narduk-enterprises/*`: the release
+  flow publishes the estate packages and then this generator, pinned to them,
+  minutes apart, so without the exclusion a new app's first install fails
+  `ERR_PNPM_NO_MATURE_MATCHING_VERSION` for a day after every release. An urgent
+  security bump that cannot wait a day adds the exact release (`name@version`)
+  to that list and removes it once the release is a day old.
+- `allowBuilds`: the dependency install-script allowlist, in the map form that
+  `pnpm approve-builds` writes and pnpm 11 keeps. It lists exactly the packages
+  with install scripts in a generated tree. `esbuild`, `unrs-resolver` and
+  `workerd` run theirs. `core-js` (a banner) and `vue-demi` (its default build
+  is already Vue 3) are refused on purpose. The root `package.json` no longer
+  carries `pnpm.onlyBuiltDependencies`.
 
 ### How a narduk-app stays current
 

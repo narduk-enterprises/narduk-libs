@@ -611,6 +611,36 @@ describe('upgrade opt-outs and notices', () => {
     expect(await read(targetDir, 'AGENTS.md')).toBe(after)
   })
 
+  // SPEC S3 (2026-09-27): an app scaffolded before the quality bar gets it on
+  // its next upgrade, inside the router region only.
+  it('adds the quality bar to a router region that predates it', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'AGENTS.md', (contents) =>
+      contents
+        .replace(/^\*\*Quality bar\.\*\*.*\n\n/mu, '')
+        .replaceAll(/^- .*\n/gmu, '')
+        .concat('\n## App notes\n\n- An app-owned bullet outside the region.\n'),
+    )
+    const before = await read(targetDir, 'AGENTS.md')
+    expect(before).not.toContain('Quality bar')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'AGENTS.md')).toBe('drift')
+
+    const after = await read(targetDir, 'AGENTS.md')
+    expect(after).toContain('**Quality bar.**')
+    expect(after).toContain(
+      '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
+    )
+    expect(after).toContain('Every shareable route needs a preview.')
+    expect(after.endsWith('\n## App notes\n\n- An app-owned bullet outside the region.\n')).toBe(
+      true,
+    )
+
+    const again = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(again, 'AGENTS.md')).toBe('clean')
+  })
+
   it('leaves an AGENTS.md with an unmanaged header and no markers alone', async () => {
     const targetDir = await scaffold()
     const optedOut = '<!-- narduk:unmanaged -->\n# App agent guide\n\nOwned entirely by the app.\n'
