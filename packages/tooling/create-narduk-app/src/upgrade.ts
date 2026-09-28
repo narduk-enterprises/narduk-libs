@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
-import { applyCallerGate, applyPublicGate } from './ci-gate.js'
+import { applyCallerGate, applyCallerPermissions, applyPublicGate } from './ci-gate.js'
 import type { CiGateContext, CiGateEdit } from './ci-gate.js'
 import { CANDIDATE_SECURITY_HEADERS_STEP_NAME, REPOSITORY_GATE_STEP_NAME } from './ci-workflow.js'
 import { adaptManagedPackageJson, readCheckoutFacts } from './checkout-facts.js'
@@ -517,8 +517,18 @@ function resolveCiCaller(
   const pin = resolvePin(current, desired)
   // A pin this generator cannot place leaves the whole file alone.
   if (pin.status === 'unresolved') return pin
-  const edit = applyCallerGate(pin.next ?? current, gate)
-  return withGateEdit(current, pin, edit, 'Repository gate inputs present.')
+  // A re-pin must never land the app on a workflow its caller cannot start.
+  const permissions = applyCallerPermissions(pin.next ?? current)
+  const edit = applyCallerGate(permissions.contents, gate)
+  const base = permissions.added.length
+    ? { ...pin, detail: pin.detail + ' Grants the caller ' + permissions.added.join(', ') + '.' }
+    : pin
+  return withGateEdit(
+    current,
+    base,
+    { ...edit, problems: [...permissions.problems, ...edit.problems] },
+    'Repository gate inputs present.',
+  )
 }
 
 function resolveRegion(

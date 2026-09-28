@@ -28,6 +28,7 @@ import {
   CANDIDATE_SECURITY_HEADERS_STEP_NAME,
   publicRepositoryGateSteps,
   REPOSITORY_GATE_STEP_NAME,
+  SHARED_WORKFLOW_CALLER_PERMISSIONS,
 } from './ci-workflow.js'
 import type { AppLayout } from './checkout-facts.js'
 import { REPOSITORY_GATE_SCRIPTS } from './ownership.js'
@@ -254,6 +255,102 @@ export function applyCallerGate(source: string, context: CiGateContext): CiGateE
   }
 
   return { added, contents: lines.join('\n'), problems, warnings }
+}
+
+/**
+ * Grants each shared-workflow caller the job-level permissions in
+ * {@link SHARED_WORKFLOW_CALLER_PERMISSIONS} it lacks, so a re-pin never moves
+ * an app onto a workflow its caller cannot start. Adds entries only: a grant
+ * the app already made is never narrowed or removed, and a scalar or flow
+ * `permissions:` value is reported, not rewritten.
+ */
+export function applyCallerPermissions(source: string): Omit<CiGateEdit, 'warnings'> {
+  const lines = source.split('\n')
+  const added = new Set<string>()
+  const problems: string[] = []
+  const callers = lines.flatMap((line, index) => (CALLER_USES.test(line) ? [index] : []))
+
+  // Bottom-up, as in applyCallerGate, so an insertion never moves a caller not yet edited.
+  for (const usesLine of [...callers].reverse()) {
+    const jobIndent = indentOf(lines[usesLine] as string)
+    let jobStart = usesLine
+    while (jobStart > 0) {
+      const previous = lines[jobStart - 1] as string
+      if (isMeaningful(previous) && indentOf(previous) < jobIndent) break
+      jobStart -= 1
+    }
+    let jobEnd = lines.length
+    for (let index = usesLine + 1; index < lines.length; index += 1) {
+      const line = lines[index] as string
+      if (isMeaningful(line) && indentOf(line) < jobIndent) {
+        jobEnd = index
+        break
+      }
+    }
+    const header = lines.findIndex(
+      (line, index) =>
+        index >= jobStart &&
+        index < jobEnd &&
+        indentOf(line) === jobIndent &&
+        /^\s*permissions:/u.test(line),
+    )
+    const pad = ' '.repeat(jobIndent + 2)
+    if (header === -1) {
+      lines.splice(
+        usesLine + 1,
+        0,
+        ' '.repeat(jobIndent) + 'permissions:',
+        ...SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => pad + entry),
+      )
+      for (const entry of SHARED_WORKFLOW_CALLER_PERMISSIONS) added.add(entry)
+      continue
+    }
+    if (!/^\s*permissions:\s*(?:#.*)?$/u.test(lines[header] as string)) {
+      problems.push(
+        'a shared-workflow caller sets `permissions:` on one line; grant ' +
+          SHARED_WORKFLOW_CALLER_PERMISSIONS.join(', ') +
+          ' by hand',
+      )
+      continue
+    }
+    const granted = new Map<string, number>()
+    let end = header + 1
+    let entryIndent = pad
+    for (let index = header + 1; index < jobEnd; index += 1) {
+      const line = lines[index] as string
+      if (!isMeaningful(line)) continue
+      if (indentOf(line) <= jobIndent) break
+      entryIndent = ' '.repeat(indentOf(line))
+      const match = /^\s*([a-z-]+):\s*[a-z]+/u.exec(line)
+      if (match) granted.set(match[1] as string, index)
+      end = index + 1
+    }
+    const inserts: string[] = []
+    for (const entry of SHARED_WORKFLOW_CALLER_PERMISSIONS) {
+      const [scope, level] = entry.split(': ') as [string, string]
+      const at = granted.get(scope)
+      if (at === undefined) {
+        inserts.push(entryIndent + entry)
+        added.add(entry)
+        continue
+      }
+      const current = /:\s*([a-z]+)/u.exec(lines[at] as string)?.[1]
+      if (current === 'none' || (current === 'read' && level === 'write')) {
+        problems.push(
+          'a shared-workflow caller grants `' +
+            scope +
+            ': ' +
+            current +
+            '`; the shared workflow needs `' +
+            entry +
+            '` to start (upgrade does not widen a grant the app wrote)',
+        )
+      }
+    }
+    if (inserts.length) lines.splice(end, 0, ...inserts)
+  }
+
+  return { added: [...added], contents: lines.join('\n'), problems }
 }
 
 /**
