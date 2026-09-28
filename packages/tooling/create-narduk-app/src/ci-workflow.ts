@@ -38,6 +38,22 @@ const workflowSha = NUXT_CLOUDFLARE_WORKFLOW_SHA
 // so this generator does not also adopt every change between the two commits.
 const validationWorkflowSha = '67968e304ba64e7733dc36d23d80eefda8d72e33'
 
+/**
+ * The job-level permissions every shared-workflow caller grants. A called
+ * workflow can only narrow what its caller grants, and GitHub validates every
+ * job's request before any job runs, skipped or not: the preview job asks for
+ * `pull-requests: write` and, from the ordinary CI pin on, the reuse-plan and
+ * e2e-plan jobs ask for `actions: read`. A caller that grants less gets a
+ * `startup_failure` with no jobs at all, which is how every private app
+ * generated with only `contents` and `packages` first ran.
+ */
+export const SHARED_WORKFLOW_CALLER_PERMISSIONS = [
+  'contents: read',
+  'packages: read',
+  'actions: read',
+  'pull-requests: write',
+] as const
+
 // Resolved from fleet's organization routes. Creating files does not grant
 // selected-repository membership; onboarding remains an explicit fleet action.
 const linuxRoute =
@@ -633,8 +649,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '  ci:',
       `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${workflowSha}`,
       '    permissions:',
-      '      contents: read',
-      '      packages: read',
+      ...SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => '      ' + entry),
       '    with:',
       ...privateCallerInputs(),
       '',
@@ -908,10 +923,7 @@ export function createValidationWorkflow(visibility: AppVisibility): string | nu
     '  ci:',
     `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${validationWorkflowSha}`,
     '    permissions:',
-    '      contents: read',
-    '      packages: read',
-    '      actions: read',
-    '      pull-requests: write',
+    ...SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => '      ' + entry),
     '    with:',
     '      expected-candidate-sha: ${{ github.sha }}',
     ...privateCallerInputs(),

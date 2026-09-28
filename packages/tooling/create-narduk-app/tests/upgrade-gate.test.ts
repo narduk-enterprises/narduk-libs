@@ -277,6 +277,75 @@ describe('upgrade completes a private caller', () => {
   })
 })
 
+describe("upgrade grants the shared workflow's caller permissions", () => {
+  /** The caller's permissions as every private app was generated before 2026-09-28. */
+  function toNarrowCaller(ci: string): string {
+    return ci.replace(/^ {6}actions: read\n {6}pull-requests: write\n/mu, '')
+  }
+
+  function callerPermissions(ci: string): Record<string, string> {
+    return (parse(ci) as { jobs: { ci: { permissions: Record<string, string> } } }).jobs.ci
+      .permissions
+  }
+
+  it('adds what the pinned workflow needs, keeps app-owned grants, and is then clean', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, CI, (text) =>
+      toNarrowCaller(text).replace(
+        '      packages: read\n',
+        '      packages: read\n      id-token: write # app-owned\n',
+      ),
+    )
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    const ci = change(report, CI)
+    expect(ci.status).toBe('drift')
+    expect(ci.detail).toContain('Grants the caller actions: read, pull-requests: write.')
+
+    const after = await read(targetDir, CI)
+    expect(callerPermissions(after)).toEqual({
+      actions: 'read',
+      contents: 'read',
+      'id-token': 'write',
+      packages: 'read',
+      'pull-requests': 'write',
+    })
+    expect(after).toContain('      id-token: write # app-owned\n')
+
+    const again = await upgradeNardukApp({ targetDir })
+    expect(change(again, CI).status).toBe('clean')
+  })
+
+  it('reports, rather than widens, a grant the app wrote narrower', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, CI, (text) =>
+      text.replace('      pull-requests: write\n', '      pull-requests: read\n'),
+    )
+    const before = await read(targetDir, CI)
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    const ci = change(report, CI)
+    expect(ci.status).toBe('unresolved')
+    expect(ci.detail).toContain('grants `pull-requests: read`')
+    expect(await read(targetDir, CI)).toBe(before)
+  })
+
+  it('reports a one-line permissions value instead of rewriting it', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, CI, (text) =>
+      text.replace(
+        /^ {4}permissions:\n(?: {6}[a-z-]+: [a-z]+\n)+(?= {4}with:)/mu,
+        '    permissions: read-all\n',
+      ),
+    )
+
+    const report = await upgradeNardukApp({ targetDir })
+    const ci = change(report, CI)
+    expect(ci.status).toBe('unresolved')
+    expect(ci.detail).toContain('sets `permissions:` on one line')
+  })
+})
+
 describe('upgrade completes a public workflow', () => {
   async function stripPublicGate(targetDir: string) {
     await edit(targetDir, CI, (text) => {

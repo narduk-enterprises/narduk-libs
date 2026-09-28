@@ -9,8 +9,10 @@ import {
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
   createRunnerOnboardingScript,
+  createValidationWorkflow,
   RUNNER_ONBOARDING_JOB_NAME,
   RUNNER_ONBOARDING_MESSAGE,
+  SHARED_WORKFLOW_CALLER_PERMISSIONS,
 } from '../src/ci-workflow.js'
 import {
   BUILD_CI_MARKS_OUTPUT,
@@ -99,6 +101,30 @@ describe('generated CI boundaries', () => {
     )
     expect(workflow).not.toContain('secrets.NUXT_OG_IMAGE_SECRET')
     expect(workflow).not.toContain('secrets.NUXT_SESSION_PASSWORD')
+  })
+
+  it('grants the shared-workflow caller every permission the pinned workflow requests', () => {
+    // The pin's preview job requests pull-requests: write and its reuse-plan and
+    // e2e-plan jobs request actions: read. GitHub validates every job's request
+    // before any job runs, so a caller granting less is a zero-job
+    // startup_failure (cloudflarestat-us, 2026-09-28).
+    const expected = {
+      actions: 'read',
+      contents: 'read',
+      packages: 'read',
+      'pull-requests': 'write',
+    }
+    const ci = YAML.parse(createCiWorkflow('private')) as {
+      jobs: { ci: { permissions: Record<string, string> } }
+    }
+    expect(ci.jobs.ci.permissions).toEqual(expected)
+    const validation = YAML.parse(createValidationWorkflow('private')!) as {
+      jobs: { ci: { permissions: Record<string, string> } }
+    }
+    expect(validation.jobs.ci.permissions).toEqual(expected)
+    expect(Object.keys(expected).sort()).toEqual(
+      SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => entry.split(':')[0]).sort(),
+    )
   })
 
   it('keeps the literal build:ci prefix in manifest.ts equal to ci-test-env.ts', () => {
