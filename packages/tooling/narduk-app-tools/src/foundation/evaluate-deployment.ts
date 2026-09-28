@@ -112,7 +112,10 @@ function adoptionOf(scan: DeploymentScan): DeploymentAdoption {
       return 'exempt'
     case 'absent':
       return 'not-adopted'
-    default:
+    // A block with no usable `standard` and one that claims the standard but
+    // fails it are both a declaration the repository got wrong.
+    case 'malformed':
+    case 'invalid':
       return 'invalid'
   }
 }
