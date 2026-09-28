@@ -172,7 +172,10 @@ test('no Actions reviewer caller: PR reviews come from the CT650 bot', () => {
   // The CT650 PR review bot (runners#212) answers `/review` and the
   // review-now/review-deep labels without runner time, so no workflow here
   // may call the retired reusable reviewer again.
-  assert.equal(existsSync(new URL('../.github/workflows/cursor-review.yml', import.meta.url)), false)
+  assert.equal(
+    existsSync(new URL('../.github/workflows/cursor-review.yml', import.meta.url)),
+    false,
+  )
   assert.doesNotMatch(ci, /cursor-review/u)
 })
 
