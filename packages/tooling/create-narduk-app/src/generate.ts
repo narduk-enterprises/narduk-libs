@@ -121,11 +121,11 @@ const AGENTS_QUALITY_BAR: readonly string[] = [
     handbookLink('02-web-apps.md'),
   '- Times are SSR-safe: no clock read during render (`narduk/no-render-clock`; use `useSsrNow(key)` or read it after mount), and formatting names its time zone. ' +
     handbookLink('02-web-apps.md'),
-  "- CSP is narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven with `narduk-app foundation:check:security-headers`. " +
+  "- CSP target: narduk-core's nonce + `strict-dynamic` preset, enforced (`nardukCore.security.headers: { enabled: true, enforce: true }`) and proven with `narduk-app foundation:check:security-headers`. A new app starts without it; turn it on in the first change that touches headers or page shells. " +
     handbookLink('02-web-apps.md'),
-  '- Accessibility is gated in e2e with narduk-testkit `expectAccessible` on every primary route. ' +
+  '- Accessibility: every primary route has an e2e check with narduk-testkit `expectAccessible`. Add it to any route spec you create or change. ' +
     handbookLink('02-web-apps.md'),
-  '- Performance is gated by `pnpm run performance-budget` (narduk-app performance-budget). ' +
+  "- Performance: `pnpm run performance-budget` must pass. CI does not run it until this app adopts the shared workflow's standard quality level, so run it yourself before you push. " +
     handbookLink('02-web-apps.md'),
   '- A test suite counts only if CI runs it; a suite CI skips, or a required check with a no-op path, counts as no suite. ' +
     handbookLink('07-quality-and-release.md'),
@@ -2460,7 +2460,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // flow depends on it: narduk-libs publishes a batch and then this
       // generator, whose PACKAGE_VERSIONS pin the versions published minutes
       // earlier (docs/package-releases.md). Without the exclusion, measured
-      // on 2026-09-28 against the 2026-09-27 release, a fresh app's first
+      // on 2026-09-27 (US Central) against the 2026-09-27 release, a fresh app's first
       // install fails ERR_PNPM_NO_MATURE_MATCHING_VERSION for a day after
       // every release, and so does every hand-made estate bump.
       //
