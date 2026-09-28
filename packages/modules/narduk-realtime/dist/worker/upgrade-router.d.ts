@@ -182,12 +182,20 @@ export declare function isWebSocketUpgrade(request: Request): boolean;
  */
 export declare function createUpgradeRouter<Env = unknown>(options: UpgradeRouterOptions<Env>): UpgradeRouterFetch<Env>;
 /**
+ * The handler {@link withUpgradeRouter} returns: the original with `fetch`
+ * replaced by the router's, which is always async -- even when the wrapped
+ * handler's own `fetch` answers synchronously.
+ */
+export type UpgradeRoutedHandler<Env, Handler extends UpgradeWrappableHandler<Env>> = Omit<Handler, 'fetch'> & {
+    fetch(request: Request, env: Env, executionContext: UpgradeExecutionContext): Promise<Response>;
+};
+/**
  * Wrap a Worker handler so `fetch` runs the upgrade router first.
  *
  * Every other handler the entry exports (`scheduled`, `queue`, `email`, `tail`,
  * `trace`) is copied across untouched, so wrapping is invisible to them.
  */
-export declare function withUpgradeRouter<Env, Handler extends UpgradeWrappableHandler<Env>>(handler: Handler, router: UpgradeRouterFetch<Env>): Handler;
+export declare function withUpgradeRouter<Env, Handler extends UpgradeWrappableHandler<Env>>(handler: Handler, router: UpgradeRouterFetch<Env>): UpgradeRoutedHandler<Env, Handler>;
 export { NARDUK_ROUTER_HEADER_PREFIX, PRINCIPAL_HEADER, principalFromRequest } from './principal.js';
 export type { PrincipalCarrier } from './principal.js';
 export { isOriginAllowed, parseUpgradeOrigin, sameOriginFor } from './upgrade-origin.js';

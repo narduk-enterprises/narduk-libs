@@ -124,6 +124,7 @@ export type {
   UpgradeLocalFetchInit,
   UpgradeRoute,
   UpgradeRouteProbe,
+  UpgradeRoutedHandler,
   UpgradeRouterFetch,
   UpgradeRouterOptions,
   UpgradeWrappableHandler,
