@@ -3,5 +3,9 @@
   "rules": {
     "@typescript-eslint/array-type": 2,
     "@typescript-eslint/switch-exhaustiveness-check": 1
+  },
+  "expires": {
+    "@typescript-eslint/array-type": "2026-10-05",
+    "@typescript-eslint/switch-exhaustiveness-check": "2026-10-05"
   }
 }

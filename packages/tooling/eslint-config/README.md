@@ -192,8 +192,12 @@ instead of `--max-warnings 0`. Use it as the lint script:
 ```json
 {
   "strict": true,
+  "maxWarnings": 10,
   "rules": {
     "narduk/require-fetch-timeout": 3
+  },
+  "expires": {
+    "narduk/require-fetch-timeout": "2026-10-05"
   }
 }
 ```
@@ -228,6 +232,16 @@ instead of `--max-warnings 0`. Use it as the lint script:
   is `{"strict": true, "maxWarnings": 10, "rules": {}}`: zero warnings normally,
   and at most 10, recorded on purpose, in a pinch. See DESIGN.md, "Total
   ceiling".
+- **Every entry expires 7 days after it is recorded.** Recording an entry
+  (`--accept-new-rules`, or a non-strict file's local run) stamps it in
+  `"expires"` with a UTC date 7 days out. After that date, an entry that still
+  has warnings fails, locally and in CI: fix them, run `narduk-lint` locally so
+  the cleared entry leaves the file, and commit it. No run moves an existing
+  date. Re-running `--accept-new-rules`, raising a count by hand and lowering it
+  all keep the original date. An entry with no date (written before 2.7.0) fails
+  in a strict file until `narduk-lint --accept-new-rules` stamps it, and a
+  non-strict file's local run stamps it. A malformed date, or a date for a rule
+  with no entry, exits 2. See DESIGN.md, "Entry expiry".
 
 The budget file is read from the directory `narduk-lint` runs in (the package
 root under `pnpm run lint`), not from next to the ESLint config, so packages
@@ -240,11 +254,14 @@ Paths are positional (default `.`). `--fix`, `--cache`, `--cache-location` and
 `--budget <path>` points at another file, `--verbose` prints every warning.
 
 Exit codes: `0` pass; `1` a lint error, a rule over budget, an unbudgeted rule
-in a strict budget, or a total above `maxWarnings`; `2` a usage or configuration
+or an entry with no expiry in a strict budget, an entry past its expiry that
+still has warnings, or a total above `maxWarnings`; `2` a usage or configuration
 error, or ESLint itself crashed.
 
 If Turbo caches the lint task, declare `lint-budget.json` as an output so a
-cache hit restores it.
+cache hit restores it. A cache hit replays the verdict of the run that produced
+it, so an expired entry in an unchanged package fails on that package's next
+change or uncached run.
 
 ## Rules added in the budget release
 

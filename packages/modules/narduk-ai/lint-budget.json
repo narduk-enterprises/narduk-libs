@@ -2,5 +2,8 @@
   "strict": true,
   "rules": {
     "narduk/require-fetch-timeout": 1
+  },
+  "expires": {
+    "narduk/require-fetch-timeout": "2026-10-05"
   }
 }

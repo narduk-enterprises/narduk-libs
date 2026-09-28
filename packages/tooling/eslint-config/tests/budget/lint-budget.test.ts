@@ -39,8 +39,18 @@ interface BudgetModule {
       env: Record<string, string>
       log: (line: string) => void
       logError: (line: string) => void
+      now?: () => Date
     },
   ) => Promise<number>
+  evaluateExpiry: (
+    counts: Record<string, number>,
+    rules: Record<string, number>,
+    expires: Record<string, string>,
+    nextRules: Record<string, number>,
+    options: { today: string; stampUnstamped: boolean },
+  ) => ExpiryVerdict
+  addDays: (isoDate: string, days: number) => string
+  isIsoDate: (value: unknown) => boolean
   serializeBudget: (rules: Record<string, number>, options?: BudgetOptions) => string
   topLocations: (locations: Array<{ file: string; line: number }>, limit?: number) => string[]
 }
@@ -48,6 +58,16 @@ interface BudgetModule {
 interface BudgetOptions {
   strict?: boolean
   maxWarnings?: number
+  expires?: Record<string, string>
+}
+
+interface ExpiryVerdict {
+  expired: Array<{ ruleId: string; count: number; expires: string }>
+  owed: Array<{ ruleId: string; count: number; expires: string }>
+  unstamped: Array<{ ruleId: string; count: number }>
+  blocked: Array<{ ruleId: string; count: number }>
+  stamped: Array<{ ruleId: string; expires: string }>
+  nextExpires: Record<string, string>
 }
 
 let budgetModule: BudgetModule
@@ -65,6 +85,18 @@ beforeAll(async () => {
 const serializeBudget = (rules: Record<string, number>, options?: BudgetOptions) =>
   budgetModule.serializeBudget(rules, options)
 
+/** An expiry of `date` for every entry that allows warnings. */
+const stamp = (rules: Record<string, number>, date = STAMPED) =>
+  Object.fromEntries(
+    Object.entries(rules)
+      .filter(([, count]) => count > 0)
+      .map(([ruleId]) => [ruleId, date]),
+  )
+
+/** A budget whose entries were recorded on TODAY, as 2.7.0+ writes them. */
+const entries = (rules: Record<string, number>, options: BudgetOptions = {}) =>
+  serializeBudget(rules, { expires: stamp(rules), ...options })
+
 const CONFIG = `export default [
   { files: ['**/*.js'], rules: { 'no-console': 'warn', 'no-var': 'warn', 'no-debugger': 'error' } },
 ]
@@ -80,7 +112,20 @@ function fixture(files: Record<string, string>): string {
   return dir
 }
 
-async function run(dir: string, argv: string[] = [], env: Record<string, string> = {}) {
+/**
+ * Every run reads a fixed clock, so no assertion depends on the wall clock.
+ * An entry recorded on TODAY expires on STAMPED.
+ */
+const TODAY = '2026-09-28'
+const STAMPED = '2026-10-05'
+const clockAt = (isoDate: string) => () => new Date(`${isoDate}T12:00:00Z`)
+
+async function run(
+  dir: string,
+  argv: string[] = [],
+  env: Record<string, string> = {},
+  today: string = TODAY,
+) {
   const out: string[] = []
   const err: string[] = []
   const code = await budgetModule.runNardukLint(argv, {
@@ -88,6 +133,7 @@ async function run(dir: string, argv: string[] = [], env: Record<string, string>
     env,
     log: (line) => out.push(line),
     logError: (line) => err.push(line),
+    now: clockAt(today),
   })
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
@@ -122,37 +168,44 @@ describe('narduk-lint end to end', () => {
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
     expect(result.out).toContain('unbudgeted: no-console has 3')
-    expect(budgetOf(dir)).toEqual({ rules: { 'no-console': 3 } })
+    expect(result.out).toContain(`recorded: no-console = 3, expires ${STAMPED}`)
+    expect(budgetOf(dir)).toEqual({
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('local: fails over budget, prints rule/count/budget/locations, and never raises', async () => {
     const dir = fixture({
       'a.js': THREE_CONSOLES,
-      'lint-budget.json': serializeBudget({ 'no-console': 1 }),
+      'lint-budget.json': entries({ 'no-console': 1 }),
     })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_LINT_FAILURE)
     expect(result.err).toContain('over budget: no-console has 3 warning(s), budget is 1')
     expect(result.err).toContain('a.js:1')
-    expect(budgetOf(dir)).toEqual({ rules: { 'no-console': 1 } })
+    expect(budgetOf(dir)).toEqual({
+      rules: { 'no-console': 1 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('local: lowers a budget when the count drops, and deletes entries that reach zero', async () => {
     const dir = fixture({
       'a.js': 'console.log(1)\n',
-      'lint-budget.json': serializeBudget({ 'no-console': 4, 'no-var': 2 }),
+      'lint-budget.json': entries({ 'no-console': 4, 'no-var': 2 }),
     })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
     expect(result.out).toContain('lowered: no-console 4 → 1')
     expect(result.out).toContain('cleared: no-var 2 → 0')
     expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(
-      '{\n  "rules": {\n    "no-console": 1\n  }\n}\n',
+      `{\n  "rules": {\n    "no-console": 1\n  },\n  "expires": {\n    "no-console": "${STAMPED}"\n  }\n}\n`,
     )
   })
 
   it('local: leaves an exactly-met budget untouched', async () => {
-    const original = serializeBudget({ 'no-console': 3 })
+    const original = entries({ 'no-console': 3 })
     const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
@@ -176,7 +229,7 @@ describe('narduk-lint end to end', () => {
   })
 
   it('ci: a count below budget passes with a ratchet notice and no write', async () => {
-    const original = serializeBudget({ 'no-console': 9 })
+    const original = entries({ 'no-console': 9 })
     const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
     const result = await run(dir, ['--ci'])
     expect(result.code).toBe(EXIT_OK)
@@ -187,7 +240,7 @@ describe('narduk-lint end to end', () => {
   it('ci: over budget fails', async () => {
     const dir = fixture({
       'a.js': THREE_CONSOLES,
-      'lint-budget.json': serializeBudget({ 'no-console': 2 }),
+      'lint-budget.json': entries({ 'no-console': 2 }),
     })
     const result = await run(dir, ['--ci'])
     expect(result.code).toBe(EXIT_LINT_FAILURE)
@@ -197,7 +250,10 @@ describe('narduk-lint end to end', () => {
     const dir = fixture({ 'a.js': THREE_CONSOLES })
     const result = await run(dir, ['--local'], { CI: 'true' })
     expect(result.code).toBe(EXIT_OK)
-    expect(budgetOf(dir)).toEqual({ rules: { 'no-console': 3 } })
+    expect(budgetOf(dir)).toEqual({
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('passes explicit paths through to ESLint', async () => {
@@ -219,6 +275,7 @@ describe('narduk-lint end to end', () => {
     await run(dir, ['--budget', 'custom-budget.json'])
     expect(JSON.parse(readFileSync(join(dir, 'custom-budget.json'), 'utf8'))).toEqual({
       rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
     })
   })
 
@@ -287,7 +344,11 @@ describe('narduk-lint strict budgets (#673)', () => {
     const result = await run(dir, ['--accept-new-rules'])
     expect(result.code).toBe(EXIT_OK)
     expect(result.out).toContain('recorded: no-console = 3')
-    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3 } })
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
     expect((await run(dir, ['--ci'])).code).toBe(EXIT_OK)
   })
 
@@ -300,11 +361,15 @@ describe('narduk-lint strict budgets (#673)', () => {
   it('ratcheting a strict budget down keeps it strict', async () => {
     const dir = fixture({
       'a.js': THREE_CONSOLES,
-      'lint-budget.json': serializeBudget({ 'no-console': 5, 'no-var': 2 }, { strict: true }),
+      'lint-budget.json': entries({ 'no-console': 5, 'no-var': 2 }, { strict: true }),
     })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
-    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3 } })
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('exits 2 when strict is not a boolean', async () => {
@@ -316,7 +381,7 @@ describe('narduk-lint strict budgets (#673)', () => {
 describe('narduk-lint maxWarnings ceiling', () => {
   const FIVE_WARNINGS = `${THREE_CONSOLES}var a = 1\nvar b = 2\nexport { a, b }\n`
   const withCeiling = (rules: Record<string, number>, maxWarnings: number, strict = true) =>
-    serializeBudget(rules, { strict, maxWarnings })
+    entries(rules, { strict, maxWarnings })
 
   it('over the ceiling fails locally and in CI, even when every rule is within budget', async () => {
     const original = withCeiling({ 'no-console': 3, 'no-var': 2 }, 4)
@@ -350,7 +415,7 @@ describe('narduk-lint maxWarnings ceiling', () => {
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
     expect(readFileSync(join(dir, 'lint-budget.json'), 'utf8')).toBe(
-      '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {\n    "no-console": 3\n  }\n}\n',
+      `{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {\n    "no-console": 3\n  },\n  "expires": {\n    "no-console": "${STAMPED}"\n  }\n}\n`,
     )
   })
 
@@ -366,7 +431,12 @@ describe('narduk-lint maxWarnings ceiling', () => {
     const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': withCeiling({}, 3) })
     const result = await run(dir, ['--accept-new-rules'])
     expect(result.code).toBe(EXIT_OK)
-    expect(budgetOf(dir)).toEqual({ strict: true, maxWarnings: 3, rules: { 'no-console': 3 } })
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      maxWarnings: 3,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('--accept-new-rules refuses to record past the ceiling and leaves the file alone', async () => {
@@ -389,26 +459,38 @@ describe('narduk-lint maxWarnings ceiling', () => {
     const result = await run(dir)
     expect(result.code).toBe(EXIT_LINT_FAILURE)
     expect(result.out).toContain('lowered: no-var 9 → 2')
-    expect(budgetOf(dir)).toEqual({ maxWarnings: 4, rules: { 'no-var': 2 } })
+    expect(budgetOf(dir)).toEqual({
+      maxWarnings: 4,
+      rules: { 'no-var': 2 },
+      expires: { 'no-var': STAMPED },
+    })
   })
 
   it('a non-strict budget under the ceiling records as before and keeps the ceiling', async () => {
     const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': withCeiling({}, 10, false) })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
-    expect(budgetOf(dir)).toEqual({ maxWarnings: 10, rules: { 'no-console': 3 } })
+    expect(budgetOf(dir)).toEqual({
+      maxWarnings: 10,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
   })
 
   it('without the field nothing changes: no ceiling, no maxWarnings written', async () => {
     const dir = fixture({
       'a.js': FIVE_WARNINGS,
-      'lint-budget.json': serializeBudget({ 'no-console': 3, 'no-var': 9 }, { strict: true }),
+      'lint-budget.json': entries({ 'no-console': 3, 'no-var': 9 }, { strict: true }),
     })
     const result = await run(dir)
     expect(result.code).toBe(EXIT_OK)
     expect(result.out).toContain('5 warning(s) across 2 rule(s)\n')
     expect(result.out).not.toContain('maxWarnings')
-    expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 3, 'no-var': 2 } })
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3, 'no-var': 2 },
+      expires: { 'no-console': STAMPED, 'no-var': STAMPED },
+    })
   })
 
   it.each([
@@ -442,6 +524,351 @@ describe('narduk-lint maxWarnings ceiling', () => {
     const result = await run(dir, ['--max-warnings=10'])
     expect(result.code).toBe(EXIT_USAGE)
     expect(result.err).toContain('"maxWarnings"')
+  })
+})
+
+describe('narduk-lint entry expiry (7 days)', () => {
+  const readRaw = (dir: string) => readFileSync(join(dir, 'lint-budget.json'), 'utf8')
+  const strictEntries = (rules: Record<string, number>, expires: Record<string, string>) =>
+    serializeBudget(rules, { strict: true, maxWarnings: 10, expires })
+
+  it('stamps a recorded entry 7 days out, across month and year ends', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': serializeBudget({}, { strict: true, maxWarnings: 10 }),
+    })
+    const result = await run(dir, ['--accept-new-rules'], {}, '2026-12-29')
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('recorded: no-console = 3, expires 2027-01-05')
+    expect(readRaw(dir)).toBe(
+      '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {\n    "no-console": 3\n  },\n  "expires": {\n    "no-console": "2027-01-05"\n  }\n}\n',
+    )
+    expect(budgetModule.addDays('2028-02-26', 7)).toBe('2028-03-04')
+    expect(budgetModule.addDays('2026-09-28', 7)).toBe(STAMPED)
+  })
+
+  it('a rewrite with nothing new is byte-identical, keys in a fixed order', async () => {
+    const original = strictEntries(
+      { 'no-var': 2, 'no-console': 3 },
+      stamp({ 'no-var': 2, 'no-console': 3 }),
+    )
+    expect(original).toBe(
+      `{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {\n    "no-console": 3,\n    "no-var": 2\n  },\n  "expires": {\n    "no-console": "${STAMPED}",\n    "no-var": "${STAMPED}"\n  }\n}\n`,
+    )
+    const dir = fixture({
+      'a.js': `${THREE_CONSOLES}var a = 1\nvar b = 2\nexport { a, b }\n`,
+      'lint-budget.json': original,
+    })
+    for (const argv of [[], ['--accept-new-rules']]) {
+      const result = await run(dir, argv, {}, '2026-10-01')
+      expect(result.code).toBe(EXIT_OK)
+      expect(result.out).not.toContain('updated lint-budget.json')
+      expect(readRaw(dir)).toBe(original)
+    }
+  })
+
+  it('no renewal: a later --accept-new-rules keeps the original expiry', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': serializeBudget({}, { strict: true }),
+    })
+    await run(dir, ['--accept-new-rules'])
+    const stamped = readRaw(dir)
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
+    const again = await run(dir, ['--accept-new-rules'], {}, '2026-10-04')
+    expect(again.code).toBe(EXIT_OK)
+    expect(readRaw(dir)).toBe(stamped)
+  })
+
+  it('no renewal: a new rule gets its own date and leaves the older entry alone', async () => {
+    const dir = fixture({
+      'a.js': `${THREE_CONSOLES}var a = 1\nexport { a }\n`,
+      'lint-budget.json': serializeBudget(
+        { 'no-console': 3 },
+        { strict: true, expires: { 'no-console': STAMPED } },
+      ),
+    })
+    const result = await run(dir, ['--accept-new-rules'], {}, '2026-10-02')
+    expect(result.code).toBe(EXIT_OK)
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3, 'no-var': 1 },
+      expires: { 'no-console': STAMPED, 'no-var': '2026-10-09' },
+    })
+  })
+
+  it('no renewal: a hand-raised count or a lowered count keeps the expiry', async () => {
+    const raised = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': serializeBudget(
+        { 'no-console': 9 },
+        { strict: true, expires: { 'no-console': STAMPED } },
+      ),
+    })
+    const result = await run(raised, [], {}, '2026-10-03')
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('lowered: no-console 9 → 3')
+    expect(budgetOf(raised)).toEqual({
+      strict: true,
+      rules: { 'no-console': 3 },
+      expires: { 'no-console': STAMPED },
+    })
+  })
+
+  it('names what is owed and when, while an entry is live', async () => {
+    const dir = fixture({
+      'a.js': THREE_CONSOLES,
+      'lint-budget.json': strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED }),
+    })
+    const result = await run(dir, ['--ci'], {}, STAMPED)
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain(
+      `owed: no-console has 3 warning(s); fix by ${STAMPED} (UTC), after which they fail`,
+    )
+  })
+
+  it('an entry past its expiry that still has warnings fails locally and in CI', async () => {
+    const original = strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED })
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    const local = await run(dir, [], {}, '2026-10-06')
+    expect(local.code).toBe(EXIT_LINT_FAILURE)
+    expect(local.err).toContain(
+      `expired: no-console has 3 warning(s); its budget entry expired after ${STAMPED} (today is 2026-10-06, UTC)`,
+    )
+    expect(local.err).toContain('a.js:1')
+    expect(local.err).toContain('Fix those warnings, run `narduk-lint` locally')
+    expect(local.err).toContain('`--accept-new-rules` does not renew it')
+    expect(readRaw(dir)).toBe(original)
+    const ci = await run(dir, [], { CI: 'true' }, '2026-10-06')
+    expect(ci.code).toBe(EXIT_LINT_FAILURE)
+    expect(ci.err).toContain('expired: no-console')
+  })
+
+  it('--accept-new-rules does not rescue or re-stamp an expired entry', async () => {
+    const original = strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED })
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    const result = await run(dir, ['--accept-new-rules'], {}, '2026-10-20')
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain('expired: no-console')
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('an expired entry lowered by a local run keeps its date and still fails', async () => {
+    const dir = fixture({
+      'a.js': 'console.log(1)\n',
+      'lint-budget.json': strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED }),
+    })
+    const result = await run(dir, [], {}, '2026-10-06')
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      maxWarnings: 10,
+      rules: { 'no-console': 1 },
+      expires: { 'no-console': STAMPED },
+    })
+  })
+
+  it('an expired entry with no warnings left passes and is cleared', async () => {
+    const dir = fixture({
+      'a.js': 'export const a = 1\n',
+      'lint-budget.json': strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED }),
+    })
+    const ci = await run(dir, ['--ci'], {}, '2026-10-06')
+    expect(ci.code).toBe(EXIT_OK)
+    expect(ci.out).toContain('budget can ratchet: no-console 3 → 0')
+    const local = await run(dir, [], {}, '2026-10-06')
+    expect(local.code).toBe(EXIT_OK)
+    expect(readRaw(dir)).toBe(serializeBudget({}, { strict: true, maxWarnings: 10 }))
+  })
+
+  it('a cleared rule that comes back is new debt with a new date', async () => {
+    const dir = fixture({
+      'a.js': 'export const a = 1\n',
+      'lint-budget.json': strictEntries({ 'no-console': 3 }, { 'no-console': STAMPED }),
+    })
+    await run(dir, [], {}, '2026-10-01')
+    writeFileSync(join(dir, 'a.js'), 'console.log(1)\n')
+    const strictFail = await run(dir, [], {}, '2026-10-10')
+    expect(strictFail.code).toBe(EXIT_LINT_FAILURE)
+    expect(strictFail.err).toContain('unbudgeted: no-console')
+    await run(dir, ['--accept-new-rules'], {}, '2026-10-10')
+    expect(budgetOf(dir)).toEqual({
+      strict: true,
+      maxWarnings: 10,
+      rules: { 'no-console': 1 },
+      expires: { 'no-console': '2026-10-17' },
+    })
+  })
+
+  describe('an entry with no expiry (budget written before 2.7.0)', () => {
+    const legacy = () => serializeBudget({ 'no-console': 3 }, { strict: true })
+
+    it('strict: fails locally and in CI with the exact fix command, and writes nothing', async () => {
+      const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': legacy() })
+      const local = await run(dir)
+      expect(local.code).toBe(EXIT_LINT_FAILURE)
+      expect(local.err).toContain(
+        'no expiry: no-console has 3 warning(s) under a budget entry with no "expires" date',
+      )
+      expect(local.err).toContain(
+        `start the 7-day clock on purpose with \`narduk-lint --accept-new-rules\` locally (it stamps "expires": "${STAMPED}") and commit lint-budget.json`,
+      )
+      expect(readRaw(dir)).toBe(legacy())
+      const ci = await run(dir, [], { CI: 'true' })
+      expect(ci.code).toBe(EXIT_LINT_FAILURE)
+      expect(ci.err).toContain('no expiry: no-console')
+    })
+
+    it('strict: --accept-new-rules stamps it once, and a later run keeps that date', async () => {
+      const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': legacy() })
+      const result = await run(dir, ['--accept-new-rules'])
+      expect(result.code).toBe(EXIT_OK)
+      expect(result.out).toContain(
+        `stamped: no-console expires ${STAMPED} (the entry had no expiry)`,
+      )
+      const stamped = readRaw(dir)
+      expect(budgetOf(dir)).toEqual({
+        strict: true,
+        rules: { 'no-console': 3 },
+        expires: { 'no-console': STAMPED },
+      })
+      expect((await run(dir, ['--ci'])).code).toBe(EXIT_OK)
+      await run(dir, ['--accept-new-rules'], {}, '2026-10-04')
+      expect(readRaw(dir)).toBe(stamped)
+    })
+
+    it('strict: a local ratchet lowers it but does not stamp it', async () => {
+      const dir = fixture({
+        'a.js': 'console.log(1)\n',
+        'lint-budget.json': legacy(),
+      })
+      const result = await run(dir)
+      expect(result.code).toBe(EXIT_LINT_FAILURE)
+      expect(budgetOf(dir)).toEqual({ strict: true, rules: { 'no-console': 1 } })
+    })
+
+    it('non-strict: a local run stamps it, as it records a new rule; CI notes it', async () => {
+      const original = serializeBudget({ 'no-console': 3 })
+      const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+      const ci = await run(dir, ['--ci'])
+      expect(ci.code).toBe(EXIT_OK)
+      expect(ci.out).toContain(
+        `no expiry: no-console has warnings and no "expires" date; a local run stamps ${STAMPED}`,
+      )
+      expect(ci.out).toContain('run `pnpm lint` locally and commit lint-budget.json')
+      expect(readRaw(dir)).toBe(original)
+      const local = await run(dir)
+      expect(local.code).toBe(EXIT_OK)
+      expect(budgetOf(dir)).toEqual({
+        rules: { 'no-console': 3 },
+        expires: { 'no-console': STAMPED },
+      })
+    })
+
+    it('an entry of 0 allows no warnings, so it needs no expiry', async () => {
+      const dir = fixture({
+        'a.js': THREE_CONSOLES,
+        'lint-budget.json': serializeBudget({ 'no-console': 0 }, { strict: true }),
+      })
+      const result = await run(dir, ['--ci'])
+      expect(result.code).toBe(EXIT_LINT_FAILURE)
+      expect(result.err).toContain('over budget: no-console has 3 warning(s), budget is 0')
+      expect(result.err).not.toContain('no expiry')
+    })
+  })
+
+  it('the ceiling refuses an entry before it is stamped', async () => {
+    const original = strictEntries({ 'no-var': 2 }, { 'no-var': STAMPED })
+    const dir = fixture({
+      'a.js': `${THREE_CONSOLES}var a = 1\nvar b = 2\nexport { a, b }\n`,
+      'lint-budget.json': original.replace('"maxWarnings": 10', '"maxWarnings": 4'),
+    })
+    const result = await run(dir, ['--accept-new-rules'])
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.err).toContain('not recorded: no-console (3)')
+    expect(readRaw(dir)).toBe(original.replace('"maxWarnings": 10', '"maxWarnings": 4'))
+  })
+
+  it.each([
+    ['not an object', '"expires": []', '"expires" must be an object'],
+    ['a string date', '"expires": { "no-console": "soon" }', 'must be a YYYY-MM-DD date'],
+    ['a number', '"expires": { "no-console": 20261005 }', 'must be a YYYY-MM-DD date'],
+    [
+      'an impossible date',
+      '"expires": { "no-console": "2026-02-30" }',
+      'must be a YYYY-MM-DD date',
+    ],
+    [
+      'a timestamp',
+      '"expires": { "no-console": "2026-10-05T00:00:00Z" }',
+      'must be a YYYY-MM-DD date',
+    ],
+    ['a rule with no entry', '"expires": { "no-var": "2026-10-05" }', 'has no entry in "rules"'],
+  ])('exits 2 when expires is %s', async (_label, field, message) => {
+    const dir = fixture({
+      'a.js': 'export const a = 1\n',
+      'lint-budget.json': `{ "strict": true, "rules": { "no-console": 1 }, ${field} }`,
+    })
+    const result = await run(dir)
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.err).toContain(message)
+  })
+})
+
+describe('evaluateExpiry', () => {
+  it('keeps, stamps, flags and expires each entry', () => {
+    const verdict = budgetModule.evaluateExpiry(
+      { live: 2, late: 1, legacy: 4, fresh: 3, gone: 0 },
+      { live: 2, late: 1, legacy: 4, gone: 5 },
+      { live: '2026-10-01', late: '2026-09-27', gone: '2026-09-30' },
+      { live: 2, late: 1, legacy: 4, fresh: 3 },
+      { today: TODAY, stampUnstamped: false },
+    )
+    expect(verdict.owed).toEqual([{ ruleId: 'live', count: 2, expires: '2026-10-01' }])
+    expect(verdict.expired).toEqual([{ ruleId: 'late', count: 1, expires: '2026-09-27' }])
+    expect(verdict.unstamped).toEqual([{ ruleId: 'legacy', count: 4 }])
+    expect(verdict.blocked).toEqual([{ ruleId: 'legacy', count: 4 }])
+    expect(verdict.stamped).toEqual([{ ruleId: 'fresh', expires: STAMPED }])
+    expect(verdict.nextExpires).toEqual({ fresh: STAMPED, late: '2026-09-27', live: '2026-10-01' })
+  })
+
+  it('stamps an unstamped entry only when asked to', () => {
+    const verdict = budgetModule.evaluateExpiry(
+      { legacy: 4 },
+      { legacy: 4 },
+      {},
+      { legacy: 4 },
+      { today: TODAY, stampUnstamped: true },
+    )
+    expect(verdict.blocked).toEqual([])
+    expect(verdict.nextExpires).toEqual({ legacy: STAMPED })
+  })
+
+  it('an expiry date is the last day that passes', () => {
+    const check = (today: string) =>
+      budgetModule.evaluateExpiry(
+        { r: 1 },
+        { r: 1 },
+        { r: STAMPED },
+        { r: 1 },
+        {
+          today,
+          stampUnstamped: false,
+        },
+      ).expired.length
+    expect(check(STAMPED)).toBe(0)
+    expect(check('2026-10-06')).toBe(1)
+  })
+
+  it('isIsoDate accepts only real calendar dates', () => {
+    expect(budgetModule.isIsoDate('2028-02-29')).toBe(true)
+    expect(budgetModule.isIsoDate('2026-02-29')).toBe(false)
+    expect(budgetModule.isIsoDate('2026-9-28')).toBe(false)
+    expect(budgetModule.isIsoDate(null)).toBe(false)
   })
 })
 

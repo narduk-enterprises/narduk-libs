@@ -477,6 +477,99 @@ warnings, 10 at most in a pinch):
   as a fleet-wide switch. An app that cannot get under the ceiling straight away
   fixes its warnings one at a time, starting with that change.
 
+### Entry expiry: 7 days (recorded 2026-09-28)
+
+The ceiling capped how many warnings a budget could hold, but not for how long.
+A pinch warning recorded with `--accept-new-rules` could sit in the file
+forever. Logan was asked on 2026-09-28, "Lint warnings: keep what shipped, or
+add expiring exceptions?", and answered "Add 7-day expiry", choosing the option
+"Each warning over zero must be fixed within 7 days, cap 10 stays as backstop; I
+build expiry into narduk-lint."
+
+So every entry that allows a warning carries an expiry:
+
+```json
+{
+  "strict": true,
+  "maxWarnings": 10,
+  "rules": { "no-console": 3 },
+  "expires": { "no-console": "2026-10-05" }
+}
+```
+
+- **Shape.** `expires` is a map beside `rules`, from rule id to a UTC calendar
+  date (`YYYY-MM-DD`). `rules` stays a plain map of counts, so the counts read
+  the same as before, and an older narduk-lint (2.6.0 and earlier), which
+  ignores unknown keys, still reads the file. Key order is fixed: `strict`,
+  `maxWarnings`, `rules`, `expires`, each map sorted. `expires` is left out when
+  it is empty, so a budget with no entries serializes byte for byte as before. A
+  rewrite with nothing new writes nothing, so it produces no diff.
+- **Stamping.** Any path that records a new entry stamps it with the recording
+  day plus 7: `--accept-new-rules`, and a non-strict file's automatic recording.
+  An entry the `maxWarnings` ceiling refuses is never recorded, so it is never
+  stamped. An entry of `0` allows no warnings and needs no expiry.
+- **The date is the last day that passes.** An entry recorded on 2026-09-28
+  expires on 2026-10-05, passes through that day (UTC), and fails from
+  2026-10-06. Using the UTC date both to stamp and to check keeps the answer the
+  same on a laptop in Central time and on a CI runner.
+- **No renewal.** No run moves an existing expiry. Re-running
+  `--accept-new-rules`, a hand-raised count and a local ratchet that lowers the
+  count all keep the original date. Only clearing the entry removes it: its
+  count reached zero, so the debt was paid. If that rule's warnings come back
+  later, recording them again is new debt with a new date, which in a strict
+  file again needs `--accept-new-rules`.
+- **Enforcement.** Once the date has passed, an entry that still has warnings
+  fails, locally and in CI (`--ci` / `CI=true`) alike, with exit 1. The output
+  names the rule, its count, the expiry and today's date, the top locations, and
+  the fix: fix the warnings, run `narduk-lint` locally so the cleared entry
+  leaves the file, and commit it. `--accept-new-rules` cannot rescue an expired
+  entry. An expired entry with no warnings left passes: CI says it can be
+  cleared, and a local run clears it. While an entry is live, every run prints
+  what it owes and by when.
+- **The ceiling is unchanged.** `maxWarnings` still caps the total and still
+  refuses to record past itself. Expiry bounds how long a recorded warning may
+  stay. The ceiling bounds how many there may be.
+- **The clock is injectable.** `runNardukLint(argv, { now })` takes a
+  `() => Date`, and every test passes a fixed one, so no test depends on the
+  wall clock. There is no environment variable or flag for the date, so a CI job
+  cannot turn the clock back.
+
+**An entry with no expiry** is what a budget written by 2.6.0 or earlier holds.
+It is treated exactly like a rule with no entry, because in both cases nobody
+has agreed to a date yet:
+
+- In a **strict** file it fails, locally and in CI, and nothing is written. The
+  message gives the exact fix: fix the warnings, or start the 7-day clock on
+  purpose with `narduk-lint --accept-new-rules` locally, which stamps today plus
+  7 (the message prints the date) and leaves the change for review. A local
+  ratchet still lowers or clears such an entry but does not stamp it.
+- In a **non-strict** file, a local run stamps it, just as that run records an
+  unbudgeted rule, and CI prints a notice asking for a local run and a commit. A
+  non-strict file cannot gate a rule with no entry, so failing an entry with no
+  date would gate less-recorded debt harder than unrecorded debt.
+
+This was chosen over grandfathering. An entry left without a date would never
+expire, which is the loophole Logan's answer closes. It was also chosen over
+stamping silently on the first local run. That would start the clock with nobody
+deciding to, and CI would have to pass unstamped entries until someone happened
+to lint locally. Failing costs the consumer one deliberate command when it
+upgrades, and that command is printed in full. The known consumers with entries:
+this repository's own packages, which this change stamps in the same PR, and
+been-sober-for (strict, one rule), which meets the message when it bumps
+eslint-config. acre-oracle's budget is non-strict and empty.
+
+Limits, stated so nobody relies on more:
+
+- A person can still edit the file by hand, moving a date or deleting an
+  `expires` key and re-running `--accept-new-rules`. That is the same standing
+  as a hand-raised count: the diff shows it, and review should refuse it.
+  Counting a subset of the lint paths clears the entries for the rest, as it
+  always has. The README tells you to lint the same paths the script does.
+- Turbo caches `lint` by its inputs, and the date is not one of them. A cache
+  hit replays the verdict of the run that produced it, so an unchanged package
+  whose entry has expired fails on its next change or uncached run, not on the
+  day it expires.
+
 ### Secrets rule choice
 
 The brief asked for a secrets rule at error, choosing between

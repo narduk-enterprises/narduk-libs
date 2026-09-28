@@ -29,17 +29,31 @@
  *   the total warning count is above n, locally and in CI alike, whatever the
  *   per-rule entries allow. No run records entries that would put the
  *   recorded total past it, `--accept-new-rules` included. Without the field
- *   there is no ceiling and nothing else changes.
+ *   there is no ceiling and nothing else changes;
+ * - every entry that allows warnings carries an expiry in `"expires"`, a UTC
+ *   date stamped 7 days after the entry is recorded. Once that date has passed,
+ *   an entry that still has warnings fails, locally and in CI alike. No run
+ *   ever moves an existing expiry: lowering, re-running `--accept-new-rules`
+ *   or a hand-raised count all keep it. An entry with no expiry (recorded
+ *   before expiries existed) is treated like a rule with no entry: a strict
+ *   budget fails it until `--accept-new-rules` stamps it, and a non-strict
+ *   budget stamps it on a local run.
  *
  * Budget file: `lint-budget.json` in the directory narduk-lint runs from (the
  * package root; override with `--budget <path>`):
  *
  * ```json
- * { "strict": true, "maxWarnings": 10, "rules": { "@typescript-eslint/no-explicit-any": 3 } }
+ * {
+ *   "strict": true,
+ *   "maxWarnings": 10,
+ *   "rules": { "@typescript-eslint/no-explicit-any": 3 },
+ *   "expires": { "@typescript-eslint/no-explicit-any": "2026-10-05" }
+ * }
  * ```
  *
  * Exit codes: 0 pass; 1 lint errors, a rule over budget, (strict) a rule with
- * warnings and no entry, or a total above maxWarnings; 2 usage or
+ * warnings and no entry or an entry with warnings and no expiry, an entry past
+ * its expiry that still has warnings, or a total above maxWarnings; 2 usage or
  * configuration error (bad flag, unreadable budget file, ESLint crash).
  */
 
@@ -57,6 +71,9 @@ export const EXIT_USAGE = 2
 export const UNUSED_DIRECTIVE_KEY = 'eslint/unused-disable-directive'
 export const NO_RULE_KEY = 'eslint/no-rule'
 
+/** Days between recording a budget entry and its expiry (Logan, 2026-09-28). */
+export const EXPIRY_DAYS = 7
+
 const USAGE = `Usage: narduk-lint [paths...] [options]
 
 ESLint with a checked-in warning budget (lint-budget.json).
@@ -66,7 +83,8 @@ Options:
   --local                 Force local mode even when CI=true
   --no-write              Local mode, but do not rewrite the budget file
   --accept-new-rules      Local mode: record rules that have no budget entry,
-                          even in a strict budget (review the diff, then commit)
+                          even in a strict budget, and stamp an expiry on
+                          entries that have none (review the diff, then commit)
   --budget <path>         Budget file (default: ./lint-budget.json)
   --fix                   Apply ESLint autofixes before counting
   --cache                 Use the ESLint cache
@@ -76,10 +94,13 @@ Options:
   -h, --help              Show this help
 
 Budget file keys: "strict" (a rule with no entry fails), "maxWarnings" (a total
-ceiling: more warnings than this fail, whatever the rules allow), "rules".
+ceiling: more warnings than this fail, whatever the rules allow), "rules", and
+"expires" (per entry, the UTC date after which its warnings fail; stamped ${EXPIRY_DAYS}
+days after the entry is recorded and never moved).
 
 Exit codes: 0 pass, 1 lint errors, a rule over budget, (strict budget) a rule
-with warnings and no entry, or more warnings than maxWarnings, 2 usage/config
+with warnings and no entry or an entry with no expiry, an entry past its expiry
+that still has warnings, or more warnings than maxWarnings, 2 usage/config
 error.`
 
 /**
@@ -216,7 +237,36 @@ export class UsageError extends Error {}
  * @property {boolean} strict
  * @property {number | undefined} maxWarnings  total ceiling; undefined = none
  * @property {Record<string, number>} rules
+ * @property {Record<string, string>} expires  per-entry expiry, `YYYY-MM-DD` (UTC)
  */
+
+/**
+ * The UTC calendar date of `date`, as `YYYY-MM-DD`.
+ *
+ * @param {Date} date
+ */
+export function utcDate(date) {
+  return date.toISOString().slice(0, 10)
+}
+
+/**
+ * `isoDate` plus `days` calendar days.
+ *
+ * @param {string} isoDate  `YYYY-MM-DD`
+ * @param {number} days
+ */
+export function addDays(isoDate, days) {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return utcDate(date)
+}
+
+/** @param {unknown} value */
+export function isIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && utcDate(date) === value
+}
 
 /**
  * Read and validate a budget file. A missing file is an empty, non-strict
@@ -227,7 +277,7 @@ export class UsageError extends Error {}
  */
 export function readBudget(budgetPath) {
   if (!existsSync(budgetPath)) {
-    return { exists: false, strict: false, maxWarnings: undefined, rules: {} }
+    return { exists: false, strict: false, maxWarnings: undefined, rules: {}, expires: {} }
   }
   let parsed
   try {
@@ -265,11 +315,28 @@ export function readBudget(budgetPath) {
       )
     }
   }
+  const expires = parsed.expires ?? {}
+  if (!expires || typeof expires !== 'object' || Array.isArray(expires)) {
+    throw new UsageError(`${budgetPath}: "expires" must be an object`)
+  }
+  for (const [ruleId, value] of Object.entries(expires)) {
+    if (!isIsoDate(value)) {
+      throw new UsageError(
+        `${budgetPath}: expiry for "${ruleId}" must be a YYYY-MM-DD date, got ${JSON.stringify(value)}`,
+      )
+    }
+    if (!Object.hasOwn(rules, ruleId)) {
+      throw new UsageError(
+        `${budgetPath}: "expires" names "${ruleId}", which has no entry in "rules"; remove it`,
+      )
+    }
+  }
   return {
     exists: true,
     strict,
     maxWarnings,
     rules: /** @type {Record<string, number>} */ (rules),
+    expires: /** @type {Record<string, string>} */ (expires),
   }
 }
 
@@ -277,20 +344,30 @@ export function readBudget(budgetPath) {
  * Serialize a budget with sorted keys, two-space indentation and a trailing
  * newline — byte-identical to what Prettier produces for the same object.
  *
+ * Key order is fixed: `strict`, `maxWarnings`, `rules`, `expires`. `expires`
+ * sits after `rules` so the counts read first, keeps only keys that still have
+ * an entry, and is left out when empty, so a budget with no entries serializes
+ * exactly as it did before expiries existed.
+ *
  * @param {Record<string, number>} rules
- * @param {{ strict?: boolean, maxWarnings?: number }} [options]  a strict
- *   budget keeps its flag, and a ceiling keeps its value
+ * @param {{ strict?: boolean, maxWarnings?: number, expires?: Record<string, string> }} [options]
+ *   a strict budget keeps its flag, a ceiling keeps its value, and entries keep
+ *   their expiries
  */
 export function serializeBudget(rules, options = {}) {
-  const sorted = Object.fromEntries(
-    Object.keys(rules)
-      .sort()
-      .map((ruleId) => [ruleId, rules[ruleId]]),
+  const ruleIds = Object.keys(rules).sort()
+  const sorted = Object.fromEntries(ruleIds.map((ruleId) => [ruleId, rules[ruleId]]))
+  const expires = options.expires ?? {}
+  const sortedExpires = Object.fromEntries(
+    ruleIds
+      .filter((ruleId) => Object.hasOwn(expires, ruleId))
+      .map((ruleId) => [ruleId, expires[ruleId]]),
   )
   const body = {
     ...(options.strict ? { strict: true } : {}),
     ...(options.maxWarnings === undefined ? {} : { maxWarnings: options.maxWarnings }),
     rules: sorted,
+    ...(Object.keys(sortedExpires).length > 0 ? { expires: sortedExpires } : {}),
   }
   return `${JSON.stringify(body, null, 2)}\n`
 }
@@ -413,11 +490,74 @@ export function evaluateBudget(counts, budget, options = {}) {
 }
 
 /**
+ * Decide each entry's expiry. Pure: decides, never writes.
+ *
+ * - An entry that already has an expiry keeps it, whatever happened to its
+ *   count. Lowering, a hand-raised count and a repeated `--accept-new-rules`
+ *   never move it; only clearing the entry (its count reached zero) removes it.
+ * - An entry recorded by this run (in `nextRules`, not in `rules`) is stamped
+ *   `today` + EXPIRY_DAYS.
+ * - An existing entry that allows warnings but has no expiry is `unstamped`.
+ *   With `stampUnstamped` (a non-strict budget, or `--accept-new-rules`) it is
+ *   stamped like a new entry; otherwise it is left alone and the caller fails
+ *   it, the way a strict budget fails a rule with no entry.
+ * - An entry whose expiry is before `today` and that still has warnings is
+ *   `expired`. An expired entry is never re-stamped.
+ *
+ * @param {Record<string, number>} counts  observed warnings per rule
+ * @param {Record<string, number>} rules  recorded entries before this run
+ * @param {Record<string, string>} expires  recorded expiries before this run
+ * @param {Record<string, number>} nextRules  entries after this run's ratchet and recording
+ * @param {{ today: string, stampUnstamped: boolean }} options
+ */
+export function evaluateExpiry(counts, rules, expires, nextRules, options) {
+  const { today, stampUnstamped } = options
+  const stampDate = addDays(today, EXPIRY_DAYS)
+  /** @type {Array<{ ruleId: string, count: number, expires: string }>} */
+  const expired = []
+  /** @type {Array<{ ruleId: string, count: number, expires: string }>} */
+  const owed = []
+  /** @type {Array<{ ruleId: string, count: number }>} */
+  const unstamped = []
+  /** @type {Array<{ ruleId: string, expires: string }>} */
+  const stamped = []
+
+  for (const ruleId of Object.keys(rules).sort()) {
+    const count = counts[ruleId] ?? 0
+    if (count <= 0) continue
+    const expiry = expires[ruleId]
+    if (expiry === undefined) {
+      if (rules[ruleId] > 0) unstamped.push({ ruleId, count })
+    } else if (today > expiry) {
+      expired.push({ ruleId, count, expires: expiry })
+    } else {
+      owed.push({ ruleId, count, expires: expiry })
+    }
+  }
+
+  /** @type {Record<string, string>} */
+  const nextExpires = {}
+  for (const ruleId of Object.keys(nextRules).sort()) {
+    if (nextRules[ruleId] <= 0) continue
+    if (Object.hasOwn(expires, ruleId)) {
+      nextExpires[ruleId] = expires[ruleId]
+    } else if (!Object.hasOwn(rules, ruleId) || stampUnstamped) {
+      nextExpires[ruleId] = stampDate
+      stamped.push({ ruleId, expires: stampDate })
+    }
+  }
+
+  const blocked = stampUnstamped ? [] : unstamped
+  return { expired, owed, unstamped, blocked, stamped, nextExpires }
+}
+
+/**
  * @typedef {object} RunOptions
  * @property {string} [cwd]
  * @property {Record<string, string | undefined>} [env]
  * @property {(line: string) => void} [log]
  * @property {(line: string) => void} [logError]
+ * @property {() => Date} [now]  the clock that dates expiries (tests inject it)
  */
 
 /**
@@ -432,6 +572,7 @@ export async function runNardukLint(argv, options = {}) {
   const env = options.env ?? process.env
   const log = options.log ?? ((line) => process.stdout.write(`${line}\n`))
   const logError = options.logError ?? ((line) => process.stderr.write(`${line}\n`))
+  const today = utcDate((options.now ?? (() => new Date()))())
 
   let args
   let budgetPath
@@ -485,9 +626,8 @@ export async function runNardukLint(argv, options = {}) {
   /** @type {Record<string, number>} */
   const counts = Object.fromEntries([...byRule].map(([ruleId, list]) => [ruleId, list.length]))
   // `--accept-new-rules` is the one way a strict budget takes a new entry.
-  const verdict = evaluateBudget(counts, budget.rules, {
-    strict: budget.strict && !args.acceptNewRules,
-  })
+  const strictGate = budget.strict && !args.acceptNewRules
+  const verdict = evaluateBudget(counts, budget.rules, { strict: strictGate })
   const budgetLabel = relative(cwd, budgetPath) || budgetPath
   const mode = args.ci ? 'ci' : 'local'
 
@@ -505,7 +645,19 @@ export async function runNardukLint(argv, options = {}) {
     for (const { ruleId } of refused) delete nextBudget[ruleId]
   }
   const recorded = refused.length > 0 ? [] : verdict.recorded
-  const stale = verdict.lowered.length > 0 || verdict.cleared.length > 0 || recorded.length > 0
+  // Expiry is decided on the entries that will actually be written, so an
+  // entry the ceiling refused is never stamped.
+  const expiry = evaluateExpiry(counts, budget.rules, budget.expires, nextBudget, {
+    today,
+    stampUnstamped: !strictGate,
+  })
+  const stampedAt = new Map(expiry.stamped.map(({ ruleId, expires }) => [ruleId, expires]))
+  const restamped = expiry.stamped.filter(({ ruleId }) => Object.hasOwn(budget.rules, ruleId))
+  const stale =
+    verdict.lowered.length > 0 ||
+    verdict.cleared.length > 0 ||
+    recorded.length > 0 ||
+    restamped.length > 0
 
   log(
     `narduk-lint (${mode}): ${results.length} files, ${errorCount} error(s), ${totalWarnings} warning(s) across ${byRule.size} rule(s)${ceiling === undefined ? '' : `, maxWarnings ${ceiling}`}`,
@@ -531,6 +683,25 @@ export async function runNardukLint(argv, options = {}) {
       logError(`    ${location}`)
     }
   }
+  for (const { ruleId, count, expires } of expiry.expired) {
+    logError(
+      `✖ expired: ${ruleId} has ${count} warning(s); its budget entry expired after ${expires} (today is ${today}, UTC)`,
+    )
+    for (const location of topLocations(byRule.get(ruleId) ?? [])) {
+      logError(`    ${location}`)
+    }
+  }
+  for (const { ruleId, count } of expiry.blocked) {
+    logError(
+      `✖ no expiry: ${ruleId} has ${count} warning(s) under a budget entry with no "expires" date`,
+    )
+    for (const location of topLocations(byRule.get(ruleId) ?? [])) {
+      logError(`    ${location}`)
+    }
+  }
+  for (const { ruleId, count, expires } of expiry.owed) {
+    log(`• owed: ${ruleId} has ${count} warning(s); fix by ${expires} (UTC), after which they fail`)
+  }
   for (const { ruleId, count } of verdict.recorded) {
     log(`• unbudgeted: ${ruleId} has ${count} warning(s)`)
   }
@@ -555,6 +726,11 @@ export async function runNardukLint(argv, options = {}) {
     for (const { ruleId, budget: allowed } of verdict.cleared) {
       log(`• budget can ratchet: ${ruleId} ${allowed} → 0 (entry can be removed)`)
     }
+    for (const { ruleId, expires } of restamped) {
+      log(
+        `• no expiry: ${ruleId} has warnings and no "expires" date; a local run stamps ${expires}`,
+      )
+    }
     if (stale) {
       log(`  ${budgetLabel} is stale; run \`pnpm lint\` locally and commit ${budgetLabel}.`)
     }
@@ -566,12 +742,20 @@ export async function runNardukLint(argv, options = {}) {
       log(`• cleared: ${ruleId} ${allowed} → 0 (entry removed)`)
     }
     for (const { ruleId, count } of recorded) {
-      log(`• recorded: ${ruleId} = ${count}`)
+      const expires = stampedAt.get(ruleId)
+      log(`• recorded: ${ruleId} = ${count}${expires ? `, expires ${expires}` : ''}`)
+    }
+    for (const { ruleId, expires } of restamped) {
+      log(`• stamped: ${ruleId} expires ${expires} (the entry had no expiry)`)
     }
     if (args.write) {
       writeFileSync(
         budgetPath,
-        serializeBudget(nextBudget, { strict: budget.strict, maxWarnings: ceiling }),
+        serializeBudget(nextBudget, {
+          strict: budget.strict,
+          maxWarnings: ceiling,
+          expires: expiry.nextExpires,
+        }),
       )
       log(`  updated ${budgetLabel}; commit it.`)
     } else {
@@ -583,6 +767,8 @@ export async function runNardukLint(argv, options = {}) {
     errorCount > 0 ||
     verdict.overBudget.length > 0 ||
     verdict.blocked.length > 0 ||
+    expiry.expired.length > 0 ||
+    expiry.blocked.length > 0 ||
     overCeiling ||
     refused.length > 0
   ) {
@@ -594,6 +780,16 @@ export async function runNardukLint(argv, options = {}) {
     if (verdict.blocked.length > 0) {
       logError(
         `narduk-lint: ${verdict.blocked.length} rule(s) have warnings but no entry in strict ${budgetLabel}. Fix them, or record them on purpose with \`narduk-lint --accept-new-rules\` locally and commit ${budgetLabel}.`,
+      )
+    }
+    if (expiry.expired.length > 0) {
+      logError(
+        `narduk-lint: ${expiry.expired.length} budget entr${expiry.expired.length === 1 ? 'y is' : 'ies are'} past expiry in ${budgetLabel}. Fix those warnings, run \`narduk-lint\` locally so the cleared entry leaves ${budgetLabel}, and commit it. An expiry is never extended; \`--accept-new-rules\` does not renew it.`,
+      )
+    }
+    if (expiry.blocked.length > 0) {
+      logError(
+        `narduk-lint: ${expiry.blocked.length} entr${expiry.blocked.length === 1 ? 'y' : 'ies'} in strict ${budgetLabel} allow${expiry.blocked.length === 1 ? 's' : ''} warnings with no expiry (recorded before expiries existed). Fix them, or start the ${EXPIRY_DAYS}-day clock on purpose with \`narduk-lint --accept-new-rules\` locally (it stamps "expires": "${addDays(today, EXPIRY_DAYS)}") and commit ${budgetLabel}.`,
       )
     }
     if (overCeiling) {

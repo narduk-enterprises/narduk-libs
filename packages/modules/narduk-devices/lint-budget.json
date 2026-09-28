@@ -2,5 +2,8 @@
   "strict": true,
   "rules": {
     "narduk/prefer-db-batch": 2
+  },
+  "expires": {
+    "narduk/prefer-db-batch": "2026-10-05"
   }
 }

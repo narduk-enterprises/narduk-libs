@@ -2,5 +2,8 @@
   "strict": true,
   "rules": {
     "import-x/export": 14
+  },
+  "expires": {
+    "import-x/export": "2026-10-05"
   }
 }
