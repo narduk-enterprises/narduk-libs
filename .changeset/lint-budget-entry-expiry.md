@@ -24,17 +24,21 @@ behaves exactly as before.
 narduk-lint never moves an existing expiry: re-running `--accept-new-rules`, a
 hand-raised count and a lowered count all keep it. The entry leaves the file
 only when a whole-package run sees its rule at zero; if the rule comes back, it
-is new debt with a new date. A narrowed run (paths other than the package root,
-`--ignore-pattern`, or a run from below the budget file's directory) now never
-writes the budget and refuses `--accept-new-rules`, because it would clear
-entries whose warnings live in files it skipped. It still fails what it saw.
-Package lint scripts should therefore be plain `narduk-lint`, with any
-exclusions in the ESLint config.
+is new debt with a new date. Only a whole-package run writes the budget: run
+from the budget file's directory (compared on real paths), with no path but
+that directory and no `--ignore-pattern`. Any other run, including a sibling
+directory pointed back with `--budget`, a subdirectory, or `.` plus another
+path, is narrowed: it never writes, refuses `--accept-new-rules`, and still
+fails what it saw. A run with lint errors never writes either, since a file
+that fails to parse hides its warnings. Package lint scripts should therefore
+be plain `narduk-lint`, with any exclusions in the ESLint config.
 
-Two things this cannot stop, documented in DESIGN.md: eslint-config 2.6.0 and
-earlier drop `expires` whenever they rewrite the file, so a stale install strips
-the dates (run `pnpm install` after pulling this bump, before linting), and a
-renamed rule is a new key with a new date.
+What this cannot stop, documented in DESIGN.md: eslint-config 2.6.0 and earlier
+drop `expires` whenever they rewrite the file, so a stale install strips the
+dates (run `pnpm install` after pulling this bump, before linting); an ESLint
+config edit that ignores the files or turns the rule off clears the entry, and
+undoing it records the warnings again with a new date; a renamed rule is a new
+key with a new date; and a hand edit to the file.
 
 A malformed date, or a date for a rule with no entry, exits 2. `runNardukLint`
 takes an injectable `now` clock for tests.

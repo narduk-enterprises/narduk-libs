@@ -519,25 +519,50 @@ So every entry that allows a warning carries an expiry:
   count all keep the original date. Only clearing the entry removes it: a
   whole-package run saw its count at zero, so the debt was paid. If that rule's
   warnings come back later, recording them again is new debt with a new date,
-  which in a strict file again needs `--accept-new-rules`.
-- **A narrowed run never writes.** A run given paths other than the package
-  root, given `--ignore-pattern`, or started below the budget file's directory
+  which in a strict file again needs `--accept-new-rules`. That is the one route
+  to a fresh date, and the next two rules keep a partial or broken run from
+  taking it. The ways it can still be taken on purpose or by accident (hand
+  edits, an older narduk-lint, ESLint config edits, a renamed rule) are listed
+  under "Limits" below.
+- **Only a whole-package run writes.** A run may lower, clear, record or stamp
+  only when its working directory is the budget file's directory, compared on
+  real paths (symlinks resolved, so `/tmp` and `/private/tmp` are one
+  directory), every path argument resolves to that directory, and there is no
+  `--ignore-pattern`. Every other run is narrowed: a subdirectory, a sibling or
+  parent directory pointed at the budget with `--budget`, a budget spelled
+  through a symlink from elsewhere, any other path, a glob, or `.` mixed with
+  another path. So is a run whose budget file does not exist while a directory
+  above it holds one: it is inside that budget's package, and writing would
+  leave a stray non-strict budget in the subdirectory (that stray write predates
+  expiry; it is closed here because the check is the same one). A narrowed run
   has not seen the whole package. Its counts are a lower bound, so an entry
   whose warnings live in files it skipped reads as zero. Before this rule, such
   a run cleared that entry, and the next full run recorded the rule again with a
-  fresh date: `narduk-lint b.js` on a clean file was enough to renew an expiry
-  (adversarial verify of narduk-libs#1237). Now a narrowed run writes nothing
-  and reports no lowered or cleared entries, says so in one line, and refuses
-  `--accept-new-rules` (exit 2). It still fails what it saw: errors, a rule over
-  budget, an unbudgeted or undated entry in a strict file, and an expired entry.
-  A lower bound can only under-report, so none of those is a false failure. The
-  whole package is whatever ESLint's config lints from the package root. A
-  package that must skip files puts them in its ESLint config, not in its lint
-  script, and `scripts/lint-budget-strict.test.mjs` fails any workspace package
-  whose `lint` script passes paths or `--ignore-pattern`. The eleven packages
+  fresh date: `narduk-lint b.js` on a clean file, or a run from a sibling
+  directory with `--budget ../pkg/lint-budget.json`, was enough to renew an
+  expiry (adversarial verifies of narduk-libs#1237). Now a narrowed run writes
+  nothing, reports no lowered or cleared entries, says so in one line, and
+  refuses `--accept-new-rules` (exit 2). It still fails what it saw: errors, a
+  rule over budget, an unbudgeted or undated entry in a strict file, and an
+  expired entry. A lower bound can only under-report, so none of those is a
+  false failure. The whole package is whatever ESLint's config lints from the
+  package root. A package that must skip files puts them in its ESLint config,
+  not in its lint script, and `scripts/lint-budget-strict.test.mjs` fails any
+  workspace package whose `lint` script runs narduk-lint with a path,
+  `--ignore-pattern`, a `--budget` in another directory, a directory-changing
+  package-manager flag, or after a `cd`, however the call is prefixed
+  (`pnpm exec`, `npx`, `cross-env`, an environment assignment,
+  `node …/narduk-lint.mjs`, `package-quality.mjs lint`). The eleven packages
   that did (`src tests` and the like) were moved to plain `narduk-lint` in the
   same change; each gives the same verdict and the same per-rule counts, and the
   extra files are only config and build scripts.
+- **A run with lint errors never writes.** A file that fails to parse reports an
+  error and no warnings, so its entries would read as zero and be cleared
+  exactly like a narrowed run's. The decision to fail is made before anything is
+  written, and a run with any error writes nothing and says so. Other failures
+  (a rule over budget, an expired or undated entry, the ceiling) come from
+  complete counts, so they still ratchet down, as the ceiling has always
+  promised.
 - **Enforcement.** Once the date has passed, an entry that still has warnings
   fails, locally and in CI (`--ci` / `CI=true`) alike, with exit 1. The output
   names the rule, its count, the expiry and today's date, the top locations, and
@@ -592,6 +617,12 @@ Limits, stated so nobody relies on more:
   procedural: after pulling a change that bumps eslint-config, reinstall
   (`pnpm install`) before linting locally, and review should refuse a
   `lint-budget.json` diff that deletes `expires` keys while their entries stay.
+- **ESLint config edits clear entries.** Ignoring files in the ESLint config, or
+  turning a rule off, is a whole-package run's truth: the rule's count drops to
+  zero and its entry (with its date) leaves the file. Turning the rule back on,
+  or un-ignoring the files, brings the warnings back as new debt with a fresh
+  today + 7. A strict file makes that a deliberate `--accept-new-rules`, and the
+  config diff is in review, but nothing links the new entry to the old date.
 - **A renamed rule is a new entry.** Entries are keyed by rule id. When a rule
   is renamed (a plugin major, or a move between plugins), the old entry clears
   and the new id is recorded with a fresh today + 7, carrying the same warnings.

@@ -244,17 +244,27 @@ instead of `--max-warnings 0`. Use it as the lint script:
   original date. An entry with no date (written before 2.7.0) fails in a strict
   file until `narduk-lint --accept-new-rules` stamps it, and a non-strict file's
   local run stamps it. A malformed date, or a date for a rule with no entry,
-  exits 2. Two things still give a rule a fresh date: an older narduk-lint
-  (2.6.0 and earlier drops `expires` when it rewrites the file, so run
-  `pnpm install` after pulling an eslint-config bump before you lint), and a
-  renamed rule, which is a new key. See DESIGN.md, "Entry expiry".
-- **A narrowed run never writes.** Given paths other than the package root, or
-  `--ignore-pattern`, or started below the budget file's directory,
-  `narduk-lint` has not seen the whole package. It still fails what it saw, but
-  it leaves the budget file alone, reports no lowered or cleared entries, says
-  so in one line, and refuses `--accept-new-rules`. Otherwise linting one clean
-  file would clear every entry whose warnings live elsewhere, and the next full
-  run would record them again with a new expiry.
+  exits 2. A rule gets a fresh date only when a whole-package run clears its
+  entry and the warnings come back, and that still happens when: an older
+  narduk-lint rewrites the file (2.6.0 and earlier drops `expires`, so run
+  `pnpm install` after pulling an eslint-config bump before you lint), the
+  ESLint config ignores the files or turns the rule off and later stops, a rule
+  is renamed (a new key), or someone edits the file by hand. See DESIGN.md,
+  "Entry expiry".
+- **Only a whole-package run writes.** `narduk-lint` may rewrite the budget only
+  when it runs from the budget file's directory (compared on real paths, so
+  symlinks do not matter), with no path but that directory and no
+  `--ignore-pattern`. Any other run (paths, `.` plus another path, a glob,
+  `--ignore-pattern`, a subdirectory, a sibling directory with `--budget`
+  pointing back, or a subdirectory with no budget of its own inside a package
+  that has one) is narrowed: it still fails what it saw, but it leaves the
+  budget file alone, reports no lowered or cleared entries, says so in one line,
+  and refuses `--accept-new-rules`. Otherwise linting one clean file would clear
+  every entry whose warnings live elsewhere, and the next full run would record
+  them again with a new expiry.
+- **A run with lint errors never writes.** A file that fails to parse hides its
+  warnings, so a run with any error leaves the budget alone. Other failures
+  still ratchet down.
 
 The budget file is read from the directory `narduk-lint` runs in (the package
 root under `pnpm run lint`), not from next to the ESLint config, so packages

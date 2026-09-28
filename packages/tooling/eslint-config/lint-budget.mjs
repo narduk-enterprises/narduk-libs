@@ -22,12 +22,16 @@
  *   raised, and deleted when they reach zero. A strict budget records an
  *   unbudgeted rule only under `--accept-new-rules`. Committing that file is
  *   the ratchet;
- * - a **narrowed** run (paths other than the package root, `--ignore-pattern`,
- *   or a run from below the budget file's directory) never writes the file and
- *   refuses `--accept-new-rules`: it has not seen the rest of the package, so
- *   it would clear entries whose warnings it skipped (see `narrowedBy`). It
- *   still fails errors, over-budget, unbudgeted (strict), unstamped (strict)
- *   and expired entries among the files it saw;
+ * - only a **whole-package** run writes: its working directory is the budget
+ *   file's directory (compared on real paths), it has no path other than that
+ *   directory and no `--ignore-pattern`. Every other run is narrowed: it never
+ *   writes the file and refuses `--accept-new-rules`, because it has not seen
+ *   the rest of the package and would clear entries whose warnings it skipped
+ *   (see `narrowedBy`). It still fails errors, over-budget, unbudgeted
+ *   (strict), unstamped (strict) and expired entries among the files it saw;
+ * - a run with any lint **error** never writes either: a file that fails to
+ *   parse hides its warnings, which would clear their entries. Other failures
+ *   come from complete counts and still ratchet down;
  * - in CI (`--ci`, or `CI=true`) the file is never written, and a stale budget
  *   (lower counts, unbudgeted rules) is a notice, not a failure — nobody has to
  *   intervene for the build to stay green;
@@ -69,8 +73,8 @@
  * configuration error (bad flag, unreadable budget file, ESLint crash).
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 
 import { ESLint } from 'eslint'
 
@@ -106,9 +110,11 @@ Options:
   --verbose               Print every warning, not only errors
   -h, --help              Show this help
 
-A narrowed run (any path other than the package root, --ignore-pattern, or a
-run from below the budget file's directory) never writes the budget: it has not
-seen the rest of the package's warnings. It still fails what it saw.
+Only a whole-package run writes the budget: run from the budget file's
+directory, with no path but that directory and no --ignore-pattern. Any other
+run is narrowed and never writes (it has not seen the rest of the package's
+warnings), and neither does a run with lint errors (a file that fails to parse
+hides its warnings). Both still fail what they saw.
 
 Budget file keys: "strict" (a rule with no entry fails), "maxWarnings" (a total
 ceiling: more warnings than this fail, whatever the rules allow), "rules", and
@@ -249,11 +255,30 @@ export function parseArgs(argv, env = {}) {
 
 export class UsageError extends Error {}
 
+/** @param {string} path */
+function realPath(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Why this run sees less than the whole package, or `undefined` when it sees
  * all of it. The whole package is what `narduk-lint` lints with no paths from
  * the budget file's directory: ESLint's own config decides the file set, so a
  * package that must skip files says so there, not on the command line.
+ *
+ * Only one shape counts as whole, compared on real paths (symlinks resolved,
+ * so `/tmp` and `/private/tmp` are one directory): the working directory IS
+ * the budget file's directory, every path argument resolves to that same
+ * directory, and there is no `--ignore-pattern`. Anything else — a sibling or
+ * parent directory, a subdirectory, a path that does not exist, a glob, or
+ * `.` mixed with another path — is narrowed. So is a run whose budget file
+ * does not exist while a directory above it holds one: that run is inside
+ * another budget's package, and writing would leave a stray, non-strict
+ * budget in a subdirectory.
  *
  * A narrowed run must never write the budget. Its counts are a lower bound:
  * an entry whose warnings live in files it skipped would read as zero and be
@@ -267,16 +292,23 @@ export class UsageError extends Error {}
  * @returns {string | undefined}
  */
 export function narrowedBy(args, cwd, budgetPath) {
-  const root = resolve(cwd)
-  if (!args.patterns.some((pattern) => resolve(root, pattern) === root)) {
+  const root = realPath(resolve(cwd))
+  if (root === undefined || realPath(dirname(resolve(cwd, budgetPath))) !== root) {
+    return "not run from the budget file's directory"
+  }
+  if (!args.patterns.every((pattern) => realPath(resolve(cwd, pattern)) === root)) {
     return `paths ${args.patterns.join(' ')}`
   }
   if (args.ignorePatterns.length > 0) {
     return `--ignore-pattern ${args.ignorePatterns.join(' ')}`
   }
-  const fromBudget = relative(dirname(budgetPath), root)
-  if (fromBudget !== '' && !fromBudget.startsWith('..') && !isAbsolute(fromBudget)) {
-    return 'a subdirectory of the budget directory'
+  if (!existsSync(resolve(cwd, budgetPath))) {
+    for (let dir = dirname(root); ; dir = dirname(dir)) {
+      if (existsSync(resolve(dir, BUDGET_FILENAME))) {
+        return `inside the package of ${resolve(dir, BUDGET_FILENAME)}`
+      }
+      if (dirname(dir) === dir) break
+    }
   }
   return undefined
 }
@@ -780,9 +812,28 @@ export async function runNardukLint(argv, options = {}) {
     )
   }
 
+  // Decided before anything is written. A run with any lint error never
+  // writes: a file that fails to parse reports no warnings, so its entries
+  // would read as zero and be cleared, and the next passing run would record
+  // them again with a fresh expiry. Other failures (over budget, expired, the
+  // ceiling) come from complete counts, so they still ratchet down, as the
+  // ceiling has always promised ("past it, the file only ratchets down").
+  const failed =
+    errorCount > 0 ||
+    verdict.overBudget.length > 0 ||
+    verdict.blocked.length > 0 ||
+    expiry.expired.length > 0 ||
+    expiry.blocked.length > 0 ||
+    overCeiling ||
+    refused.length > 0
+
   if (narrowed !== undefined) {
     log(
-      `  narrowed run (${narrowed}): ${budgetLabel} not written, and lowered or cleared entries are not reported; run \`narduk-lint\` with no paths to update it.`,
+      `  narrowed run (${narrowed}): ${budgetLabel} not written, and lowered or cleared entries are not reported; run \`narduk-lint\` with no paths from ${budgetLabel}'s directory to update it.`,
+    )
+  } else if (errorCount > 0 && stale) {
+    log(
+      `  this run has lint errors, so ${budgetLabel} is not ratcheted or written (a file that fails to parse hides its warnings); fix the errors and run \`narduk-lint\` again.`,
     )
   } else if (args.ci) {
     for (const { ruleId, count, budget: allowed } of verdict.lowered) {
@@ -828,15 +879,7 @@ export async function runNardukLint(argv, options = {}) {
     }
   }
 
-  if (
-    errorCount > 0 ||
-    verdict.overBudget.length > 0 ||
-    verdict.blocked.length > 0 ||
-    expiry.expired.length > 0 ||
-    expiry.blocked.length > 0 ||
-    overCeiling ||
-    refused.length > 0
-  ) {
+  if (failed) {
     if (verdict.overBudget.length > 0) {
       logError(
         `narduk-lint: ${verdict.overBudget.length} rule(s) over budget. Fix the new warnings; a recorded budget is never raised automatically.`,

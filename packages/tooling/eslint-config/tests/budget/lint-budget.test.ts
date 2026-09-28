@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -944,7 +944,86 @@ describe('narduk-lint narrowed runs never write the budget', () => {
     writeFileSync(join(dir, 'sub', 'b.js'), 'export const b = 1\n')
     const result = await run(join(dir, 'sub'), ['--budget', '../lint-budget.json'])
     expect(result.code).toBe(EXIT_OK)
-    expect(result.out).toContain('narrowed run (a subdirectory of the budget directory)')
+    expect(result.out).toContain("narrowed run (not run from the budget file's directory)")
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('a run from a sibling directory pointed at the budget is narrowed', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'narduk-lint-'))
+    tempDirs.push(parent)
+    const pkg = join(parent, 'pkg')
+    const sibling = join(parent, 'sibling')
+    const original = owed({ strict: true })
+    for (const [dir, files] of [
+      [pkg, { 'a.js': THREE_CONSOLES, 'lint-budget.json': original }],
+      [sibling, { 'b.js': 'export const b = 1\n' }],
+    ] as const) {
+      mkdirSync(dir)
+      writeFileSync(join(dir, 'eslint.config.mjs'), CONFIG)
+      for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content)
+    }
+    const result = await run(sibling, ['--budget', '../pkg/lint-budget.json'], {}, '2026-09-30')
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).not.toContain('• cleared')
+    expect(result.out).toContain("narrowed run (not run from the budget file's directory)")
+    expect(readFileSync(join(pkg, 'lint-budget.json'), 'utf8')).toBe(original)
+    const accept = await run(sibling, ['--budget', '../pkg/lint-budget.json', '--accept-new-rules'])
+    expect(accept.code).toBe(EXIT_USAGE)
+    // The whole-package run afterwards still sees the original date.
+    const full = await run(pkg, [], {}, '2026-10-02')
+    expect(full.code).toBe(EXIT_LINT_FAILURE)
+    expect(full.err).toContain(`expired after ${DUE}`)
+  })
+
+  it('compares real paths: a budget spelled through a symlink', async () => {
+    const original = owed()
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'b.js'), 'export const b = 1\n')
+    const link = `${dir}-link`
+    symlinkSync(dir, link)
+    tempDirs.push(link)
+    // From a subdirectory, through the link: narrowed, nothing written.
+    const narrowed = await run(join(dir, 'sub'), ['--budget', join(link, 'lint-budget.json')])
+    expect(narrowed.out).toContain("narrowed run (not run from the budget file's directory)")
+    expect(readRaw(dir)).toBe(original)
+    // From the package itself, through the link: the same directory, so it writes.
+    writeFileSync(join(dir, 'a.js'), 'export const a = 1\n')
+    const whole = await run(dir, ['--budget', join(link, 'lint-budget.json')])
+    expect(whole.out).toContain('cleared: no-console 3 → 0')
+    expect(readRaw(dir)).toBe(serializeBudget({}))
+  })
+
+  it('"." mixed with another path, or a glob, is narrowed', async () => {
+    const original = owed()
+    const dir = fixture({ 'a.js': 'export const a = 1\n', 'lint-budget.json': original })
+    for (const argv of [['.', 'a.js'], ['**/*.js']]) {
+      const result = await run(dir, argv)
+      expect(result.code).toBe(EXIT_OK)
+      expect(result.out).toContain(`narrowed run (paths ${argv.join(' ')})`)
+      expect(readRaw(dir)).toBe(original)
+    }
+  })
+
+  it('a run inside a package with no budget of its own writes no stray budget', async () => {
+    const original = owed()
+    const dir = fixture({ 'a.js': THREE_CONSOLES, 'lint-budget.json': original })
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'b.js'), 'console.log(1)\n')
+    const result = await run(join(dir, 'sub'))
+    expect(result.code).toBe(EXIT_OK)
+    expect(result.out).toContain('narrowed run (inside the package of ')
+    expect(() => readFileSync(join(dir, 'sub', 'lint-budget.json'))).toThrow()
+    expect(readRaw(dir)).toBe(original)
+  })
+
+  it('a run with a lint error never writes: a parse error hides its warnings', async () => {
+    const original = owed()
+    const dir = fixture({ 'a.js': 'console.log(1\n', 'lint-budget.json': original })
+    const result = await run(dir, [], {}, '2026-09-30')
+    expect(result.code).toBe(EXIT_LINT_FAILURE)
+    expect(result.out).not.toContain('• cleared')
+    expect(result.out).toContain('this run has lint errors, so lint-budget.json is not ratcheted')
     expect(readRaw(dir)).toBe(original)
   })
 })
