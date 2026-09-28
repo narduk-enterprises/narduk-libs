@@ -23,6 +23,9 @@ export const GENERATED_DATABASE_BACKENDS = ['d1', 'none'] as const
 export type GeneratedDatabaseBackend = (typeof GENERATED_DATABASE_BACKENDS)[number]
 
 export type AppVisibility = 'private' | 'public'
+
+/** The shared nuxt-cloudflare workflow's `quality-level` input. */
+export type CiQualityLevel = 'legacy' | 'standard'
 export type AppExposure = 'public' | 'authenticated'
 
 export interface ProductSpec {
@@ -37,6 +40,14 @@ export interface ProductSpec {
 export interface CreateNardukAppOptions {
   appName?: string
   capabilities?: readonly string[] | string
+  /**
+   * The shared-workflow `quality-level` the AGENTS.md quality bar describes.
+   * Defaults to `standard` for a private app, whose generated CI passes it,
+   * and `legacy` for a public app, which does not call the shared workflow.
+   * `upgrade` passes what the app's own `.github/workflows/ci.yml` declares,
+   * so a refreshed router block never claims a gate that app's CI does not run.
+   */
+  ciQualityLevel?: CiQualityLevel
   /**
    * `'d1'` (the default) scaffolds a D1 binding, schema and migrations.
    * `'none'` scaffolds an app with no database: narduk-core's `/api/health`

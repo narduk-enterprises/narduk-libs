@@ -19,6 +19,13 @@ export const PNPM_VERSION = '10.33.4'
 export const PACKAGE_MANAGER = `pnpm@${PNPM_VERSION}`
 
 /**
+ * The app's own `narduk-app performance-budget` arguments. Private CI passes
+ * the same ones through `performance-budget-args`, so a local run and the
+ * Build gate measure against one budget.
+ */
+export const PERFORMANCE_BUDGET_ARGS = '--font-total-budget-kb 140'
+
+/**
  * BUILD_CI_MARKS_OUTPUT in ci-test-env.ts, pasted here because this file cannot
  * import it. ci-workflow.test.ts pins the two copies. Root-layout upgrades
  * rewrite the directory in checkout-facts.ts. narduk-app deploy refuses the
@@ -28,6 +35,9 @@ const BUILD_CI_MARKS_OUTPUT =
   "node --eval 'const fs=require(`node:fs`);const path=require(`node:path`);const dir=path.join(`apps`,`web`,`.output`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`.narduk-build-ci`),`build:ci\\n`)'"
 
 export const PACKAGE_VERSIONS = {
+  // narduk-testkit's `expectAccessible` runs axe through this optional
+  // peer; the generated home e2e spec calls it, so the app installs it.
+  '@axe-core/playwright': '4.13.0',
   '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
   '@narduk-enterprises/narduk-mapkit': '2.10.3',
@@ -108,6 +118,9 @@ export const PACKAGE_VERSIONS = {
   // so the scaffold must install the peer -- otherwise packed-consumer-smoke
   // typecheck/build warns and the #316 /_og/ proofs receive /og.png.
   'nuxt-og-image': '6.8.0',
+  // narduk-core's `security.headers` preset wraps nuxt-security, an optional
+  // peer of narduk-core. The generated nuxt.config turns the preset on.
+  'nuxt-security': '2.6.0',
   '@nuxt/eslint': '1.15.2',
   prettier: '3.8.3',
   tailwindcss: '4.3.2',
@@ -201,6 +214,7 @@ function dependencyEntries(
 
 function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record<string, string> {
   const names = [
+    '@axe-core/playwright',
     '@cloudflare/workers-types',
     '@narduk-enterprises/narduk-app-tools',
     '@narduk-enterprises/narduk-testkit',
@@ -220,6 +234,7 @@ function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record
     // is itself gated at runtime (isCloudflareBuild) in nuxt.config.ts, not
     // by whether it is present in node_modules.
     'nitro-cloudflare-dev',
+    'nuxt-security',
     'prettier',
     'typescript',
     'vitest',
@@ -614,7 +629,7 @@ export function createWebPackageManifest(
       'foundation:deployment': 'narduk-app foundation:check:deployment --checkout ../..',
       'foundation:shared-ui-pinned':
         'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
-      'performance-budget': 'narduk-app performance-budget --font-total-budget-kb 140',
+      'performance-budget': 'narduk-app performance-budget ' + PERFORMANCE_BUDGET_ARGS,
       'og:generate': 'narduk-app og:generate',
       'og:check': 'narduk-app og:check',
       'og:check:live': 'narduk-app og:check --live',

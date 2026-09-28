@@ -29,7 +29,13 @@ import {
   GENERATOR_VERSION,
   SUPPORTED_CAPABILITIES,
 } from './types.js'
-import type { AppVisibility, Capability, GeneratedDatabaseBackend, GeneratedFile } from './types.js'
+import type {
+  AppVisibility,
+  Capability,
+  CiQualityLevel,
+  GeneratedDatabaseBackend,
+  GeneratedFile,
+} from './types.js'
 
 /**
  * `clean`, `unmanaged` and `absent` are notices; `drift`, `create` and
@@ -54,6 +60,12 @@ export interface UpgradeChange {
 export interface UpgradeProfile {
   appName: string
   capabilities: Capability[]
+  /**
+   * `standard` when the app's `.github/workflows/ci.yml` passes the shared
+   * workflow `quality-level: standard`; `legacy` otherwise. Only the AGENTS.md
+   * quality bar reads it, and `upgrade` never writes that input.
+   */
+  ciQualityLevel: CiQualityLevel
   databaseBackend: GeneratedDatabaseBackend
   localPort: number
   visibility: AppVisibility
@@ -255,7 +267,23 @@ export async function inferUpgradeProfile(
     visibility = overrides.visibility
   }
 
-  return { appName, capabilities, databaseBackend, inferred, localPort, notes, visibility }
+  // Read, never written: adopting the standard gates is the app's own change
+  // (narduk-enterprises/workflows#158), so the quality bar follows the caller.
+  const ciCaller = (await readIfExists(resolve(targetDir, '.github/workflows/ci.yml'))) ?? ''
+  const ciQualityLevel: CiQualityLevel =
+    /^\s*quality-level:\s*['"]?standard['"]?\s*(?:#.*)?$/mu.test(ciCaller) ? 'standard' : 'legacy'
+  inferred.push('ciQualityLevel')
+
+  return {
+    appName,
+    capabilities,
+    ciQualityLevel,
+    databaseBackend,
+    inferred,
+    localPort,
+    notes,
+    visibility,
+  }
 }
 
 function generatedContentsFor(
@@ -273,6 +301,7 @@ function generatedContentsFor(
   const files: GeneratedFile[] = buildGeneratedFiles({
     appName: profile.appName,
     capabilities,
+    ciQualityLevel: profile.ciQualityLevel,
     databaseBackend: profile.databaseBackend,
     localPort: profile.localPort,
     targetDir,

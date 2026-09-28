@@ -210,12 +210,17 @@ The region targets follow one rule. An existing `AGENTS.md` with no
 block appended the same way. The rest of each file is untouched. A
 `<!-- narduk:unmanaged -->` header opts either file out. The router block names
 the app's shared packages, points at `narduk-app doctor`, and carries the
-quality bar: ten checkable one-line rules (lint warnings, validated mutations,
-admin routes, honest states, phone widths, SSR-safe time, CSP, accessibility,
+quality bar: checkable one-line rules (lint warnings, validated mutations, admin
+routes, honest states, phone widths, SSR-safe time, CSP, accessibility,
 performance budget, tests CI runs), each linking its coding-standards chapter.
-An app that predates the bar gets it on its next `upgrade --write`. A file with
-only one marker of a pair is reported `unresolved` and left alone. Apps
-generated from this version carry every marker already.
+When the app's own `.github/workflows/ci.yml` passes `quality-level: standard`,
+the CSP, accessibility and performance lines state those gates and an eleventh
+line says CI runs the standard level; otherwise they read as adoption steps.
+`upgrade` reads that input and never writes it, so a refreshed block does not
+claim a gate the app's CI does not run. An app that predates the bar gets it on
+its next `upgrade --write`. A file with only one marker of a pair is reported
+`unresolved` and left alone. Apps generated from this version carry every marker
+already.
 
 ### Dependabot: two lanes
 
@@ -399,15 +404,16 @@ to `.node-version` plus one `--fix`.
 Passing `node-version-file` requires the shared workflow pin to be
 `6f56678ad7562234e465284e48f27008e0f32db7` (workflows#97) or later — a reusable
 workflow rejects an input it does not declare, so this is not an optional bump.
-The generator pins `1513b2a2f4b147b2e625478e56eb9de0cc5d5399` (workflows#116) so
-a tokenless `https://npm.nard.uk` caller also gets the install and
-foundation-check mirror skips (#108 / #116). That pin still includes #97's
-always-run required `caller-lint` job which actionlints the **calling**
-repository's own workflows and audits them for workflow-level concurrency, a
-top-level and per-job `permissions:` block, per-job `timeout-minutes`, and
-40-character SHA pins. Every workflow this generator emits satisfies those
-rules, and `tests/toolchain-single-source.test.ts` re-runs the gate's own checks
-over the generated output so the templates cannot drift back.
+The generator pins `59825ef09ce484e8189c1932d0ac18f3892dd8d0` (workflows#158),
+the first commit that declares `quality-level`. It keeps #116's tokenless
+`https://npm.nard.uk` install and foundation-check mirror skips (#108 / #116)
+and #97's always-run required `caller-lint` job which actionlints the
+**calling** repository's own workflows and audits them for workflow-level
+concurrency, a top-level and per-job `permissions:` block, per-job
+`timeout-minutes`, and 40-character SHA pins. Every workflow this generator
+emits satisfies those rules, and `tests/toolchain-single-source.test.ts` re-runs
+the gate's own checks over the generated output so the templates cannot drift
+back.
 
 ## Buoys-shape parity
 
@@ -454,9 +460,35 @@ Scaffolds match the reference app shape Buoys is being brought to
 
 A freshly generated app is web-foundation conformant once its database exists:
 `pnpm run foundation:check` reports `PASS`, before or after its first build,
-after one command. Generated CI calls the shared workflow with
-`foundation-check: true`, which fails the build on a `FAIL` **or** an `UNKNOWN`
-result.
+after one command. The exception is a public app scaffolded without `seo` and
+`analytics`: item 3.1 requires both for `exposureClass: public`, so pass
+`--capabilities seo,analytics` (or `auth`, which makes the app authenticated).
+Generated CI calls the shared workflow with `foundation-check: true`, which
+fails the build on a `FAIL` **or** an `UNKNOWN` result.
+
+### Standard quality gates
+
+The private CI caller passes `quality-level: standard` (workflows#158): Build
+runs `foundation:check` and `narduk-app performance-budget` over
+`apps/web/.output/public` (`performance-budget-args` carries
+`--app-dir apps/web` and the app's own budget arguments), and Preview runs
+`narduk-app foundation:check:security-headers` against the pull request's
+Workers Builds preview (`preview-checks` stays at its `og` default, which the
+probe needs). The scaffold is built to pass them:
+
+- `nardukCore.security.headers: { enabled: true, enforce: true }` with the
+  `nuxt-security` peer, so every SSR response carries the enforced nonce +
+  `strict-dynamic` policy. No page is prerendered: a static page is served
+  without any CSP, and a per-request nonce cannot be baked into it
+  (narduk-libs#1227).
+- `fonts.defaults.subsets: ['latin']`. The full Google Fonts subset set of Inter
+  and Outfit is about 212 KiB, over the 140 KiB font total.
+- `app.head.htmlAttrs.lang`, and `expectAccessible` (with the
+  `@axe-core/playwright` peer) in `apps/web/tests/e2e/home.spec.ts`.
+
+Turning a gate off takes `quality-opt-out: <check>=<reason>` in `ci.yml`. A
+public app does not call the shared workflow, so these CI gates do not apply to
+it.
 
 That one command is `pnpm exec narduk-app db create`. The generator never calls
 Cloudflare, so the `DB` binding in `apps/web/wrangler.jsonc` carries the

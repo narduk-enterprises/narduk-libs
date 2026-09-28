@@ -33,6 +33,7 @@ export {
 export type {
   AppVisibility,
   Capability,
+  CiQualityLevel,
   CreateNardukAppCliOptions,
   CreateNardukAppOptions,
   CreateNardukAppReport,

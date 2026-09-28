@@ -1,6 +1,6 @@
 /**
  * Parents of every commit reachable from narduk-enterprises/workflows
- * `main` at 9e3d72c62ea16205703a9c7bb294af8f4cd2cb21 (2026-09-24).
+ * `main` at 59825ef09ce484e8189c1932d0ac18f3892dd8d0 (2026-09-27 US Central).
  * `upgrade` uses this to order a caller pin against
  * {@link NUXT_CLOUDFLARE_WORKFLOW_SHA} without calling GitHub.
  * Refresh it in the same change that moves that pin.
@@ -139,4 +139,9 @@ export const WORKFLOWS_MAIN_PARENTS: Readonly<Record<string, readonly string[]>>
   '94a3ba46994dd99e2b4b2ccdbf8b019cbe302745': ['348828842dfac4e8a86ede85f85fbef65f1512b7'],
   '5defcb1e4415782e41dd8cb740f9f760d2962fbe': ['94a3ba46994dd99e2b4b2ccdbf8b019cbe302745'],
   '9e3d72c62ea16205703a9c7bb294af8f4cd2cb21': ['5defcb1e4415782e41dd8cb740f9f760d2962fbe'],
+  '71a06a264790373b3df35eb3783d5ffe690b527c': ['9e3d72c62ea16205703a9c7bb294af8f4cd2cb21'],
+  d227ba48650a08667c4a5bd25926617a1c931416: ['71a06a264790373b3df35eb3783d5ffe690b527c'],
+  '0207e2929fb919645a4f773a16570c7060a61f5a': ['d227ba48650a08667c4a5bd25926617a1c931416'],
+  '39c3a4131e944cf2a1cd6724dba556043739e770': ['0207e2929fb919645a4f773a16570c7060a61f5a'],
+  '59825ef09ce484e8189c1932d0ac18f3892dd8d0': ['39c3a4131e944cf2a1cd6724dba556043739e770'],
 }
