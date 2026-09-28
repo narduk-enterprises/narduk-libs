@@ -157,6 +157,17 @@ const buildTimingOnlyWarningPattern =
 const buildInfoBannerPattern =
   /^(?:\[WebServer\]\s+)?\[warn\]\s+\[console\.warn\]\s+\[build\] .+ v\S+ · \S+ · deployed [^·]+?(?: \(x\d+\))?$/u
 
+// narduk-app-tools' `foundation:check:coverage` (web foundation item 9) lists
+// every sub-check it did not pass, and a scaffold with no server/plugins
+// directory decides 9.7 as not applicable in exactly this line (NAC-GATE-PARITY
+// round trip; formatCapabilityCoverageSummary and item-9-capability-coverage.ts).
+// The sub-check's NAME contains "error plugin", so the token pattern read a
+// normal verdict as an error. The command's exit code and JSON artefact carry
+// the verdict. Only the not-applicable mark with its fixed detail passes: a
+// FAIL, WARN or UNKN 9.7 line, or any other detail, stays a finding.
+const coverageErrorPluginNotApplicablePattern =
+  /^\[N\/A \] 9\.7 no duplicate error plugin or response finish listener: no server\/plugins directory and no defineNitroPlugin in the scan$/u
+
 export function stripAnsi(value) {
   return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
 }
@@ -211,6 +222,7 @@ export function collectWarningFindings(output) {
         !isRecoveredRetryNotice(line) &&
         !isThirdPartyBundlerNotice(line) &&
         !buildTimingOnlyWarningPattern.test(line) &&
-        !buildInfoBannerPattern.test(line),
+        !buildInfoBannerPattern.test(line) &&
+        !coverageErrorPluginNotApplicablePattern.test(line),
     )
 }

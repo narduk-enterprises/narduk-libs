@@ -40,6 +40,33 @@ export function consumerSmokeGeneratorArgs(targetDirectory) {
   ]
 }
 
+// The public sibling of the fixture above, for the repository-gate round trip
+// (scripts/consumer-smoke-gate.mjs). Public apps emit a different CI gate, so
+// only a public scaffold proves it. No database: its foundation:check verdict
+// is then the one open sub-check the specification forces (5.1), without the
+// D1 placeholder the private fixture already pins.
+const publicAppName = 'narduk-libs-release-smoke-public'
+const publicCapabilities = ['seo', 'analytics']
+const publicPort = 3198
+
+export function consumerSmokePublicGeneratorArgs(targetDirectory) {
+  return [
+    'exec',
+    'create-narduk-app',
+    publicAppName,
+    '--display-name=Narduk Libs Release Smoke Public',
+    '--description=Tarball-only generated public release consumer',
+    '--site-url=https://narduk-libs-release-smoke-public.invalid',
+    `--target-dir=${targetDirectory}`,
+    `--capabilities=${publicCapabilities.join(',')}`,
+    '--visibility=public',
+    '--database=none',
+    `--local-dev-port=${publicPort}`,
+    '--json',
+    '--no-git',
+  ]
+}
+
 // Include build inputs as well as runtime/peer/optional dependencies. A private
 // build helper can change the tarball even though an app never installs it.
 const sections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']

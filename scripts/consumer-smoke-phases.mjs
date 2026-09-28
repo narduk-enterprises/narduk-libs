@@ -49,9 +49,12 @@ export function isGeneratedBuildPhase(phase) {
 // and starter-unit checks stay in the generated app's normal quality command;
 // repeating them here cost 33.4s in CI run 35144180293. Keep unknown future
 // phases, so a new correctness check does not silently disappear from smoke.
+// The repository-gate round trip skips the same style checks when it runs a
+// generated caller's extra-scripts (scripts/consumer-smoke-gate.mjs).
+export const scaffoldOnlyPhases = new Set(['format:check', 'lint', 'knip', 'test:unit'])
+
 export function consumerSmokePhases(scripts) {
-  const scaffoldOnly = new Set(['format:check', 'lint', 'knip', 'test:unit'])
-  return qualityPhases(scripts).filter((phase) => !scaffoldOnly.has(phase))
+  return qualityPhases(scripts).filter((phase) => !scaffoldOnlyPhases.has(phase))
 }
 
 // No more than two package tools at once; retain input-order results, and wait
