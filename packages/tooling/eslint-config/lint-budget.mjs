@@ -24,17 +24,22 @@
  *   the ratchet;
  * - in CI (`--ci`, or `CI=true`) the file is never written, and a stale budget
  *   (lower counts, unbudgeted rules) is a notice, not a failure — nobody has to
- *   intervene for the build to stay green.
+ *   intervene for the build to stay green;
+ * - an optional total ceiling, `"maxWarnings": <n>`, fails the run whenever
+ *   the total warning count is above n, locally and in CI alike, whatever the
+ *   per-rule entries allow. No run records entries that would put the
+ *   recorded total past it, `--accept-new-rules` included. Without the field
+ *   there is no ceiling and nothing else changes.
  *
  * Budget file: `lint-budget.json` in the directory narduk-lint runs from (the
  * package root; override with `--budget <path>`):
  *
  * ```json
- * { "strict": true, "rules": { "@typescript-eslint/no-explicit-any": 12 } }
+ * { "strict": true, "maxWarnings": 10, "rules": { "@typescript-eslint/no-explicit-any": 3 } }
  * ```
  *
- * Exit codes: 0 pass; 1 lint errors, a rule over budget, or (strict) a rule
- * with warnings and no entry; 2 usage or
+ * Exit codes: 0 pass; 1 lint errors, a rule over budget, (strict) a rule with
+ * warnings and no entry, or a total above maxWarnings; 2 usage or
  * configuration error (bad flag, unreadable budget file, ESLint crash).
  */
 
@@ -70,8 +75,12 @@ Options:
   --verbose               Print every warning, not only errors
   -h, --help              Show this help
 
-Exit codes: 0 pass, 1 lint errors, a rule over budget, or (strict budget) a rule
-with warnings and no entry, 2 usage/config error.`
+Budget file keys: "strict" (a rule with no entry fails), "maxWarnings" (a total
+ceiling: more warnings than this fail, whatever the rules allow), "rules".
+
+Exit codes: 0 pass, 1 lint errors, a rule over budget, (strict budget) a rule
+with warnings and no entry, or more warnings than maxWarnings, 2 usage/config
+error.`
 
 /**
  * @typedef {object} ParsedArgs
@@ -178,7 +187,7 @@ export function parseArgs(argv, env = {}) {
       default: {
         if (argument.startsWith('--max-warnings')) {
           throw new UsageError(
-            '--max-warnings is not supported: warning limits live in lint-budget.json',
+            '--max-warnings is not supported: warning limits live in lint-budget.json (a total ceiling is its "maxWarnings" field)',
           )
         }
         if (argument.startsWith('-')) {
@@ -202,14 +211,24 @@ export function parseArgs(argv, env = {}) {
 export class UsageError extends Error {}
 
 /**
+ * @typedef {object} Budget
+ * @property {boolean} exists
+ * @property {boolean} strict
+ * @property {number | undefined} maxWarnings  total ceiling; undefined = none
+ * @property {Record<string, number>} rules
+ */
+
+/**
  * Read and validate a budget file. A missing file is an empty, non-strict
- * budget.
+ * budget with no ceiling.
  *
  * @param {string} budgetPath
- * @returns {{ exists: boolean, strict: boolean, rules: Record<string, number> }}
+ * @returns {Budget}
  */
 export function readBudget(budgetPath) {
-  if (!existsSync(budgetPath)) return { exists: false, strict: false, rules: {} }
+  if (!existsSync(budgetPath)) {
+    return { exists: false, strict: false, maxWarnings: undefined, rules: {} }
+  }
   let parsed
   try {
     parsed = JSON.parse(readFileSync(budgetPath, 'utf8'))
@@ -225,6 +244,16 @@ export function readBudget(budgetPath) {
   if (typeof strict !== 'boolean') {
     throw new UsageError(`${budgetPath}: "strict" must be true or false`)
   }
+  /** @type {number | undefined} */
+  let maxWarnings
+  if (Object.hasOwn(parsed, 'maxWarnings')) {
+    maxWarnings = parsed.maxWarnings
+    if (!Number.isInteger(maxWarnings) || /** @type {number} */ (maxWarnings) < 0) {
+      throw new UsageError(
+        `${budgetPath}: "maxWarnings" must be a non-negative integer, got ${JSON.stringify(parsed.maxWarnings)}`,
+      )
+    }
+  }
   const rules = parsed.rules ?? {}
   if (!rules || typeof rules !== 'object' || Array.isArray(rules)) {
     throw new UsageError(`${budgetPath}: "rules" must be an object`)
@@ -236,7 +265,12 @@ export function readBudget(budgetPath) {
       )
     }
   }
-  return { exists: true, strict, rules: /** @type {Record<string, number>} */ (rules) }
+  return {
+    exists: true,
+    strict,
+    maxWarnings,
+    rules: /** @type {Record<string, number>} */ (rules),
+  }
 }
 
 /**
@@ -244,7 +278,8 @@ export function readBudget(budgetPath) {
  * newline — byte-identical to what Prettier produces for the same object.
  *
  * @param {Record<string, number>} rules
- * @param {{ strict?: boolean }} [options]  a strict budget keeps its flag
+ * @param {{ strict?: boolean, maxWarnings?: number }} [options]  a strict
+ *   budget keeps its flag, and a ceiling keeps its value
  */
 export function serializeBudget(rules, options = {}) {
   const sorted = Object.fromEntries(
@@ -252,8 +287,17 @@ export function serializeBudget(rules, options = {}) {
       .sort()
       .map((ruleId) => [ruleId, rules[ruleId]]),
   )
-  const body = options.strict ? { strict: true, rules: sorted } : { rules: sorted }
+  const body = {
+    ...(options.strict ? { strict: true } : {}),
+    ...(options.maxWarnings === undefined ? {} : { maxWarnings: options.maxWarnings }),
+    rules: sorted,
+  }
   return `${JSON.stringify(body, null, 2)}\n`
+}
+
+/** @param {Record<string, number>} counts */
+export function sumCounts(counts) {
+  return Object.values(counts).reduce((sum, count) => sum + count, 0)
 }
 
 /**
@@ -447,10 +491,33 @@ export async function runNardukLint(argv, options = {}) {
   const budgetLabel = relative(cwd, budgetPath) || budgetPath
   const mode = args.ci ? 'ci' : 'local'
 
-  const totalWarnings = Object.values(counts).reduce((sum, count) => sum + count, 0)
+  const totalWarnings = sumCounts(counts)
+  const ceiling = budget.maxWarnings
+  const overCeiling = ceiling !== undefined && totalWarnings > ceiling
+  // No run records entries that would put the recorded total past the ceiling,
+  // `--accept-new-rules` included: past it, the file only ratchets down.
+  let nextBudget = verdict.nextBudget
+  /** @type {Array<{ ruleId: string, count: number }>} */
+  let refused = []
+  if (ceiling !== undefined && verdict.recorded.length > 0 && sumCounts(nextBudget) > ceiling) {
+    refused = verdict.recorded
+    nextBudget = { ...nextBudget }
+    for (const { ruleId } of refused) delete nextBudget[ruleId]
+  }
+  const recorded = refused.length > 0 ? [] : verdict.recorded
+  const stale = verdict.lowered.length > 0 || verdict.cleared.length > 0 || recorded.length > 0
+
   log(
-    `narduk-lint (${mode}): ${results.length} files, ${errorCount} error(s), ${totalWarnings} warning(s) across ${byRule.size} rule(s)`,
+    `narduk-lint (${mode}): ${results.length} files, ${errorCount} error(s), ${totalWarnings} warning(s) across ${byRule.size} rule(s)${ceiling === undefined ? '' : `, maxWarnings ${ceiling}`}`,
   )
+
+  if (overCeiling) {
+    logError(
+      `✖ over ceiling: ${totalWarnings} warning(s) in total, maxWarnings is ${ceiling} (${budgetLabel})`,
+    )
+    const byCount = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    for (const [ruleId, count] of byCount) logError(`    ${ruleId}: ${count}`)
+  }
 
   for (const { ruleId, count, budget: allowed } of verdict.overBudget) {
     logError(`✖ over budget: ${ruleId} has ${count} warning(s), budget is ${allowed}`)
@@ -467,11 +534,17 @@ export async function runNardukLint(argv, options = {}) {
   for (const { ruleId, count } of verdict.recorded) {
     log(`• unbudgeted: ${ruleId} has ${count} warning(s)`)
   }
-  if (verdict.recorded.length > 0 && !budget.strict) {
+  if (recorded.length > 0 && !budget.strict) {
     log(
       budget.exists
         ? `  ${budgetLabel} is not strict, so a rule with no entry is recorded, never failed. Add "strict": true to gate it.`
         : `  no ${budgetLabel}: warnings are not gated at all. Commit one with "strict": true.`,
+    )
+  }
+
+  if (refused.length > 0) {
+    logError(
+      `✖ not recorded: ${refused.map(({ ruleId, count }) => `${ruleId} (${count})`).join(', ')} would bring the recorded total to ${sumCounts(verdict.nextBudget)}, past maxWarnings ${ceiling}`,
     )
   }
 
@@ -482,28 +555,37 @@ export async function runNardukLint(argv, options = {}) {
     for (const { ruleId, budget: allowed } of verdict.cleared) {
       log(`• budget can ratchet: ${ruleId} ${allowed} → 0 (entry can be removed)`)
     }
-    if (verdict.stale) {
+    if (stale) {
       log(`  ${budgetLabel} is stale; run \`pnpm lint\` locally and commit ${budgetLabel}.`)
     }
-  } else if (verdict.stale) {
+  } else if (stale) {
     for (const { ruleId, count, budget: allowed } of verdict.lowered) {
       log(`• lowered: ${ruleId} ${allowed} → ${count}`)
     }
     for (const { ruleId, budget: allowed } of verdict.cleared) {
       log(`• cleared: ${ruleId} ${allowed} → 0 (entry removed)`)
     }
-    for (const { ruleId, count } of verdict.recorded) {
+    for (const { ruleId, count } of recorded) {
       log(`• recorded: ${ruleId} = ${count}`)
     }
     if (args.write) {
-      writeFileSync(budgetPath, serializeBudget(verdict.nextBudget, { strict: budget.strict }))
+      writeFileSync(
+        budgetPath,
+        serializeBudget(nextBudget, { strict: budget.strict, maxWarnings: ceiling }),
+      )
       log(`  updated ${budgetLabel}; commit it.`)
     } else {
       log(`  --no-write: ${budgetLabel} left unchanged.`)
     }
   }
 
-  if (errorCount > 0 || verdict.overBudget.length > 0 || verdict.blocked.length > 0) {
+  if (
+    errorCount > 0 ||
+    verdict.overBudget.length > 0 ||
+    verdict.blocked.length > 0 ||
+    overCeiling ||
+    refused.length > 0
+  ) {
     if (verdict.overBudget.length > 0) {
       logError(
         `narduk-lint: ${verdict.overBudget.length} rule(s) over budget. Fix the new warnings; a recorded budget is never raised automatically.`,
@@ -512,6 +594,11 @@ export async function runNardukLint(argv, options = {}) {
     if (verdict.blocked.length > 0) {
       logError(
         `narduk-lint: ${verdict.blocked.length} rule(s) have warnings but no entry in strict ${budgetLabel}. Fix them, or record them on purpose with \`narduk-lint --accept-new-rules\` locally and commit ${budgetLabel}.`,
+      )
+    }
+    if (overCeiling) {
+      logError(
+        `narduk-lint: ${totalWarnings} warning(s) is more than the maxWarnings ceiling of ${ceiling} in ${budgetLabel}. Fix warnings until the total is at most ${ceiling}; the ceiling holds whatever the per-rule entries allow, and nothing past it can be recorded.`,
       )
     }
     return EXIT_LINT_FAILURE
