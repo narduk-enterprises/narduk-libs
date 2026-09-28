@@ -653,6 +653,18 @@ function authorizeContext<Env>(parts: {
 }
 
 /**
+ * The handler {@link withUpgradeRouter} returns: the original with `fetch`
+ * replaced by the router's, which is always async -- even when the wrapped
+ * handler's own `fetch` answers synchronously.
+ */
+export type UpgradeRoutedHandler<Env, Handler extends UpgradeWrappableHandler<Env>> = Omit<
+  Handler,
+  'fetch'
+> & {
+  fetch(request: Request, env: Env, executionContext: UpgradeExecutionContext): Promise<Response>
+}
+
+/**
  * Wrap a Worker handler so `fetch` runs the upgrade router first.
  *
  * Every other handler the entry exports (`scheduled`, `queue`, `email`, `tail`,
@@ -661,7 +673,7 @@ function authorizeContext<Env>(parts: {
 export function withUpgradeRouter<Env, Handler extends UpgradeWrappableHandler<Env>>(
   handler: Handler,
   router: UpgradeRouterFetch<Env>,
-): Handler {
+): UpgradeRoutedHandler<Env, Handler> {
   return Object.assign({}, handler, {
     fetch: (request: Request, env: Env, executionContext: UpgradeExecutionContext) =>
       router(request, env, executionContext, (forwarded) =>
