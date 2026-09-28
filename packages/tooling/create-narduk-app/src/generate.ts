@@ -119,7 +119,7 @@ function handbookLink(chapterFile: string): string {
 function agentsQualityBar(ciQualityLevel: CiQualityLevel): string[] {
   const standard = ciQualityLevel === 'standard'
   return [
-    '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
+    '- Lint: zero warnings, 10 max in a pinch, and each recorded warning expires 7 days after it is recorded; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
       handbookLink('07-quality-and-release.md'),
     '- Every mutating API route goes through narduk-core `defineUserMutation` (or `definePublicMutation` / `defineAdminMutation`) and parses its body with `withValidatedBody(schema.parse)`; never a bare `readBody`. ' +
       handbookLink('03-backend-and-apis.md'),

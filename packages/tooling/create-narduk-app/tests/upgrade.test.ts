@@ -630,7 +630,7 @@ describe('upgrade opt-outs and notices', () => {
     const after = await read(targetDir, 'AGENTS.md')
     expect(after).toContain('**Quality bar.**')
     expect(after).toContain(
-      '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
+      '- Lint: zero warnings, 10 max in a pinch, and each recorded warning expires 7 days after it is recorded; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
     )
     expect(after).toContain('Every shareable route needs a preview.')
     expect(after.endsWith('\n## App notes\n\n- An app-owned bullet outside the region.\n')).toBe(

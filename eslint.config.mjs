@@ -74,7 +74,10 @@ export default [
     // graph, so cycle detection through them has no product value anyway.
     // Scoped to the Vite/Vitest config files that import `vite` (or a
     // plugin that does). narduk-shell joins the list because item 9's
-    // SFC mount tests need `@vitejs/plugin-vue`.
+    // SFC mount tests need `@vitejs/plugin-vue`, and narduk-ui for the same
+    // import (its lint script used to skip the file with --ignore-pattern,
+    // which narduk-lint now treats as a narrowed run that never writes the
+    // budget).
     files: [
       'packages/design/narduk-charts/histoire.config.ts',
       'packages/design/narduk-charts/vite.config.ts',
@@ -82,6 +85,7 @@ export default [
       'packages/design/narduk-charts/vite.e2e.config.ts',
       'packages/design/narduk-charts/vitest.config.ts',
       'packages/design/narduk-shell/vitest.config.ts',
+      'packages/design/narduk-ui/vitest.config.ts',
     ],
     rules: {
       'import-x/no-cycle': 'off',

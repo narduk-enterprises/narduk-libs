@@ -89,7 +89,10 @@ const commands = {
     '--ignore-path',
     join(repoRoot, '.prettierignore'),
   ],
-  lint: ['narduk-lint', ...(extraArgs.length > 0 ? extraArgs : ['src/**/*.ts'])],
+  // No default paths: narduk-lint lints the whole package (ESLint's config
+  // decides the file set), and a run given paths is narrowed and never writes
+  // lint-budget.json (@narduk-enterprises/eslint-config DESIGN.md).
+  lint: ['narduk-lint', ...extraArgs],
   typecheck: ['tsc', '--noEmit', '--project', extraArgs[0] || 'tsconfig.json'],
 }
 

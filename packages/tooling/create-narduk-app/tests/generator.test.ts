@@ -1915,7 +1915,7 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(region, label).toContain('**Quality bar.**')
       expect(region, label).toContain(
-        '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
+        '- Lint: zero warnings, 10 max in a pinch, and each recorded warning expires 7 days after it is recorded; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
       )
       // The social-previews line stays as it was.
       expect(region, label).toContain(

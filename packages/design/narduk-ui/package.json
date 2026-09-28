@@ -33,8 +33,8 @@
     "build": "pnpm run typecheck",
     "check:package": "publint --strict && pnpm pack --dry-run",
     "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
-    "lint": "narduk-lint --ignore-pattern vitest.config.ts && narduk-stylelint tokens.css",
-    "//lint": "vitest.config.ts is ignored because @vitejs/plugin-vue → vite@7 trips eslint-plugin-import-x@4.17.1 import-x/no-cycle (\"node with invalid interface loaded as resolver\"). narduk-charts gets a root-eslint files override for the same crash; this lane cannot touch eslint.config.mjs.",
+    "lint": "narduk-lint && narduk-stylelint tokens.css",
+    "//lint": "vitest.config.ts is linted. It imports @vitejs/plugin-vue, and tracing import-x/no-cycle through vite@7 crashes eslint-plugin-import-x@4.17.1 (\"node with invalid interface loaded as resolver\"), so the root eslint.config.mjs turns that rule off for it, as for narduk-charts and narduk-shell. The script passes no --ignore-pattern: narduk-lint treats that as a narrowed run that never writes lint-budget.json.",
     "test:unit": "vitest run",
     "typecheck": "vue-tsc --noEmit --project tsconfig.json",
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"

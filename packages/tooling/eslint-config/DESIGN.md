@@ -477,6 +477,162 @@ warnings, 10 at most in a pinch):
   as a fleet-wide switch. An app that cannot get under the ceiling straight away
   fixes its warnings one at a time, starting with that change.
 
+### Entry expiry: 7 days (recorded 2026-09-28)
+
+The ceiling capped how many warnings a budget could hold, but not for how long.
+A pinch warning recorded with `--accept-new-rules` could sit in the file
+forever. Logan was asked on 2026-09-28, "Lint warnings: keep what shipped, or
+add expiring exceptions?", and answered "Add 7-day expiry", choosing the option
+"Each warning over zero must be fixed within 7 days, cap 10 stays as backstop; I
+build expiry into narduk-lint."
+
+So every entry that allows a warning carries an expiry:
+
+```json
+{
+  "strict": true,
+  "maxWarnings": 10,
+  "rules": { "no-console": 3 },
+  "expires": { "no-console": "2026-10-05" }
+}
+```
+
+- **Shape.** `expires` is a map beside `rules`, from rule id to a UTC calendar
+  date (`YYYY-MM-DD`). `rules` stays a plain map of counts, so the counts read
+  the same as before, and an older narduk-lint (2.6.0 and earlier), which
+  ignores unknown keys, still reads the file. Key order is fixed: `strict`,
+  `maxWarnings`, `rules`, `expires`, each map sorted. `expires` is left out when
+  it is empty, so a budget with no entries serializes byte for byte as before. A
+  rewrite with nothing new writes nothing, so it produces no diff.
+- **Stamping.** Any path that records a new entry stamps it with the recording
+  day plus 7: `--accept-new-rules`, and a non-strict file's automatic recording.
+  An entry the `maxWarnings` ceiling refuses is never recorded, so it is never
+  stamped. An entry of `0` allows no warnings and needs no expiry.
+- **The date is the last day that passes.** An entry recorded on 2026-09-28
+  expires on 2026-10-05, passes through that day (UTC), and fails from
+  2026-10-06 00:00 UTC: the 8th day after the day it was recorded, not the 7th.
+  The stamp is the record day plus 7, and the check fails only when today is
+  later than it. Using the UTC date both to stamp and to check keeps the answer
+  the same on a laptop in Central time and on a CI runner.
+- **No renewal.** narduk-lint never moves an existing expiry. Re-running
+  `--accept-new-rules`, a hand-raised count and a local ratchet that lowers the
+  count all keep the original date. Only clearing the entry removes it: a
+  whole-package run saw its count at zero, so the debt was paid. If that rule's
+  warnings come back later, recording them again is new debt with a new date,
+  which in a strict file again needs `--accept-new-rules`. That is the one route
+  to a fresh date, and the next two rules keep a partial or broken run from
+  taking it. The ways it can still be taken on purpose or by accident (hand
+  edits, an older narduk-lint, ESLint config edits, a renamed rule) are listed
+  under "Limits" below.
+- **Only a whole-package run writes.** A run may lower, clear, record or stamp
+  only when its working directory is the budget file's directory, compared on
+  real paths (symlinks resolved, so `/tmp` and `/private/tmp` are one
+  directory), every path argument resolves to that directory, and there is no
+  `--ignore-pattern`. Every other run is narrowed: a subdirectory, a sibling or
+  parent directory pointed at the budget with `--budget`, a budget spelled
+  through a symlink from elsewhere, any other path, a glob, or `.` mixed with
+  another path. So is a run whose budget file does not exist while a directory
+  above it holds one: it is inside that budget's package, and writing would
+  leave a stray non-strict budget in the subdirectory (that stray write predates
+  expiry; it is closed here because the check is the same one). A narrowed run
+  has not seen the whole package. Its counts are a lower bound, so an entry
+  whose warnings live in files it skipped reads as zero. Before this rule, such
+  a run cleared that entry, and the next full run recorded the rule again with a
+  fresh date: `narduk-lint b.js` on a clean file, or a run from a sibling
+  directory with `--budget ../pkg/lint-budget.json`, was enough to renew an
+  expiry (adversarial verifies of narduk-libs#1237). Now a narrowed run writes
+  nothing, reports no lowered or cleared entries, says so in one line, and
+  refuses `--accept-new-rules` (exit 2). It still fails what it saw: errors, a
+  rule over budget, an unbudgeted or undated entry in a strict file, and an
+  expired entry. A lower bound can only under-report, so none of those is a
+  false failure. The whole package is whatever ESLint's config lints from the
+  package root. A package that must skip files puts them in its ESLint config,
+  not in its lint script, and `scripts/lint-budget-strict.test.mjs` fails any
+  workspace package whose `lint` script runs narduk-lint with a path,
+  `--ignore-pattern`, a `--budget` in another directory, a directory-changing
+  package-manager flag, or after a `cd`, however the call is prefixed
+  (`pnpm exec`, `npx`, `cross-env`, an environment assignment,
+  `node …/narduk-lint.mjs`, `package-quality.mjs lint`). The eleven packages
+  that did (`src tests` and the like) were moved to plain `narduk-lint` in the
+  same change; each gives the same verdict and the same per-rule counts, and the
+  extra files are only config and build scripts.
+- **A run with lint errors never writes.** A file that fails to parse reports an
+  error and no warnings, so its entries would read as zero and be cleared
+  exactly like a narrowed run's. The decision to fail is made before anything is
+  written, and a run with any error writes nothing and says so. Other failures
+  (a rule over budget, an expired or undated entry, the ceiling) come from
+  complete counts, so they still ratchet down, as the ceiling has always
+  promised.
+- **Enforcement.** Once the date has passed, an entry that still has warnings
+  fails, locally and in CI (`--ci` / `CI=true`) alike, with exit 1. The output
+  names the rule, its count, the expiry and today's date, the top locations, and
+  the fix: fix the warnings, run `narduk-lint` locally so the cleared entry
+  leaves the file, and commit it. `--accept-new-rules` cannot rescue an expired
+  entry. An expired entry with no warnings left passes: CI says it can be
+  cleared, and a local run clears it. While an entry is live, every run prints
+  what it owes and by when.
+- **The ceiling is unchanged.** `maxWarnings` still caps the total and still
+  refuses to record past itself. Expiry bounds how long a recorded warning may
+  stay. The ceiling bounds how many there may be.
+- **The clock is injectable.** `runNardukLint(argv, { now })` takes a
+  `() => Date`, and every test passes a fixed one, so no test depends on the
+  wall clock. There is no environment variable or flag for the date, so a CI job
+  cannot turn the clock back.
+
+**An entry with no expiry** is what a budget written by 2.6.0 or earlier holds.
+It is treated exactly like a rule with no entry, because in both cases nobody
+has agreed to a date yet:
+
+- In a **strict** file it fails, locally and in CI, and nothing is written. The
+  message gives the exact fix: fix the warnings, or start the 7-day clock on
+  purpose with `narduk-lint --accept-new-rules` locally, which stamps today plus
+  7 (the message prints the date) and leaves the change for review. A local
+  ratchet still lowers or clears such an entry but does not stamp it.
+- In a **non-strict** file, a local run stamps it, just as that run records an
+  unbudgeted rule, and CI prints a notice asking for a local run and a commit. A
+  non-strict file cannot gate a rule with no entry, so failing an entry with no
+  date would gate less-recorded debt harder than unrecorded debt.
+
+This was chosen over grandfathering. An entry left without a date would never
+expire, which is the loophole Logan's answer closes. It was also chosen over
+stamping silently on the first local run. That would start the clock with nobody
+deciding to, and CI would have to pass unstamped entries until someone happened
+to lint locally. Failing costs the consumer one deliberate command when it
+upgrades, and that command is printed in full. The known consumers with entries:
+this repository's own packages, which this change stamps in the same PR, and
+been-sober-for (strict, one rule), which meets the message when it bumps
+eslint-config. acre-oracle's budget is non-strict and empty.
+
+Limits, stated so nobody relies on more:
+
+- A person can still edit the file by hand, moving a date or deleting an
+  `expires` key and re-running `--accept-new-rules`. That is the same standing
+  as a hand-raised count: the diff shows it, and review should refuse it.
+- **An older narduk-lint renews by accident.** eslint-config 2.6.0 and earlier
+  know nothing of `expires`: they ignore the key when they read the file and
+  drop it when they rewrite it (any local run that lowers, clears or records an
+  entry). The next run of this version then finds entries with no date, and in a
+  strict file its failure message offers `--accept-new-rules`, which stamps a
+  new today + 7. A published 2.6.0 cannot be changed, so the guard is
+  procedural: after pulling a change that bumps eslint-config, reinstall
+  (`pnpm install`) before linting locally, and review should refuse a
+  `lint-budget.json` diff that deletes `expires` keys while their entries stay.
+- **ESLint config edits clear entries.** Ignoring files in the ESLint config, or
+  turning a rule off, is a whole-package run's truth: the rule's count drops to
+  zero and its entry (with its date) leaves the file. Turning the rule back on,
+  or un-ignoring the files, brings the warnings back as new debt with a fresh
+  today + 7. A strict file makes that a deliberate `--accept-new-rules`, and the
+  config diff is in review, but nothing links the new entry to the old date.
+- **A renamed rule is a new entry.** Entries are keyed by rule id. When a rule
+  is renamed (a plugin major, or a move between plugins), the old entry clears
+  and the new id is recorded with a fresh today + 7, carrying the same warnings.
+  A strict file makes that a deliberate `--accept-new-rules`, so review sees the
+  pair; nothing links the two ids automatically.
+- Turbo caches `lint` by its inputs, and the date is not one of them. A cache
+  hit replays the verdict of the run that produced it, so an unchanged package
+  whose entry has expired fails on its next change or uncached run, not on the
+  day it expires.
+
 ### Secrets rule choice
 
 The brief asked for a secrets rule at error, choosing between
