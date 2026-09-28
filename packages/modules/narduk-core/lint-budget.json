@@ -1,7 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/switch-exhaustiveness-check": 2,
-    "no-console": 5
-  }
+  "rules": {}
 }
