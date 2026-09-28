@@ -197,6 +197,13 @@ export function createCopilotSetupWorkflow(): string {
  * validation caller reuses them verbatim so a release is validated by exactly the
  * suite ordinary CI runs, plus the exact-candidate guard.
  */
+// TODO(narduk-enterprises/workflows#158): emit `      quality-level: standard`
+// here, and add the matching quality-bar line to the AGENTS.md router region
+// ("CI: this app runs `quality-level: standard`; opting out of a check needs a
+// written reason."), once #158 has merged and NUXT_CLOUDFLARE_WORKFLOW_SHA
+// (workflow-pin.ts) has moved to a commit that declares the `quality-level`
+// input. The current pin, 1513b2a, does not declare it, and a caller that
+// passes an undeclared input to a reusable workflow fails at startup.
 function privateCallerInputs(): string[] {
   return [
     `      runner: '${linuxRoute}'`,

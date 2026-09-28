@@ -346,15 +346,6 @@ describe('create-narduk-app generation contract', () => {
         '@esbuild-kit/core-utils': '*',
         '@esbuild-kit/esm-loader': '*',
       },
-      onlyBuiltDependencies: [
-        '@parcel/watcher',
-        'core-js',
-        'esbuild',
-        'sharp',
-        'unrs-resolver',
-        'vue-demi',
-        'workerd',
-      ],
     })
     expect(files.get('.github/workflows/ci.yml')).toContain('"group":"linux-ci"')
     expect(dependencies['@narduk-enterprises/narduk-core']).toBe(
@@ -1756,9 +1747,10 @@ describe('generated app typecheck and lint surfaces', () => {
 
   // Logan 2026-09-18: warnings are held to a checked-in budget instead of
   // `--max-warnings 0`. The web app lints through narduk-lint, and a new app
-  // starts with an empty budget, so any warning it later accepts is recorded
-  // by a local `pnpm lint` and reviewed in the diff.
-  it('lints the web app through narduk-lint with an empty warning budget', () => {
+  // starts with an empty strict budget: zero warnings. Logan 2026-09-27 (SPEC
+  // S1): `maxWarnings: 10` is the pinch ceiling, so at most 10 can ever be
+  // recorded with `--accept-new-rules`, and any more fail.
+  it('lints the web app through narduk-lint with an empty strict budget and a 10-warning ceiling', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
       const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
@@ -1768,12 +1760,99 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(webManifest.scripts.lint, label).toBe('nuxt prepare && narduk-lint')
       expect(webManifest.scripts.lint, label).not.toContain('--max-warnings')
       expect(files.get('apps/web/lint-budget.json'), label).toBe(
-        '{\n  "strict": true,\n  "rules": {}\n}\n',
+        '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {}\n}\n',
       )
       expect(JSON.parse(files.get('apps/web/lint-budget.json') ?? ''), label).toEqual({
         strict: true,
+        maxWarnings: 10,
         rules: {},
       })
+    }
+  })
+
+  // SPEC S2 (2026-09-27): a one-day release-age cooldown and an explicit
+  // dependency build-script allowlist, both in pnpm-workspace.yaml, read by
+  // the pinned pnpm 10.33.4. The estate scope is excluded because the
+  // generator pins versions published minutes before it.
+  it('writes the supply-chain settings into pnpm-workspace.yaml for every capability set', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const files = generate(capabilities)
+      const source = files.get('pnpm-workspace.yaml') ?? ''
+      const workspace = YAML.parse(source) as Record<string, unknown>
+      expect(workspace, label).toEqual({
+        packages: ['apps/*'],
+        minimumReleaseAge: 1440,
+        minimumReleaseAgeExclude: ['@narduk-enterprises/*'],
+        allowBuilds: {
+          'core-js': false,
+          esbuild: true,
+          'unrs-resolver': true,
+          'vue-demi': false,
+          workerd: true,
+        },
+      })
+      // The urgent-bump path is documented where an agent will look for it.
+      expect(source, label).toContain('An urgent security bump that cannot wait a day')
+      // One allowlist, not two: the root manifest no longer carries one.
+      const rootManifest = JSON.parse(files.get('package.json') ?? '{}') as {
+        pnpm?: Record<string, unknown>
+      }
+      expect(rootManifest.pnpm?.onlyBuiltDependencies, label).toBeUndefined()
+      expect(rootManifest.pnpm?.allowBuilds, label).toBeUndefined()
+    }
+  })
+
+  it('pins a pnpm that reads minimumReleaseAgeExclude and allowBuilds', () => {
+    // allowBuilds arrived in pnpm 10.26; minimumReleaseAgeExclude in 10.16.
+    const rootManifest = JSON.parse(generate([]).get('package.json') ?? '{}') as {
+      packageManager: string
+    }
+    const match = /^pnpm@(\d+)\.(\d+)\.\d+$/u.exec(rootManifest.packageManager)
+    expect(match).not.toBeNull()
+    const [major, minor] = [Number(match?.[1]), Number(match?.[2])]
+    expect(major > 10 || (major === 10 && minor >= 26)).toBe(true)
+  })
+
+  // SPEC S3 (2026-09-27): the managed router region carries a checkable
+  // quality bar, one line per rule, each linking its handbook chapter.
+  it('puts the quality bar in the managed AGENTS.md router region', () => {
+    for (const { capabilities, label } of capabilitySets) {
+      const agents = generate(capabilities).get('AGENTS.md') ?? ''
+      const start = agents.indexOf('<!-- narduk:router:start -->')
+      const end = agents.indexOf('<!-- narduk:router:end -->')
+      const region = agents.slice(start, end)
+      expect(start, label).toBeGreaterThan(-1)
+      expect(end, label).toBeGreaterThan(start)
+
+      expect(region, label).toContain('**Quality bar.**')
+      expect(region, label).toContain(
+        '- Lint: zero warnings, 10 max in a pinch; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
+      )
+      // The social-previews line stays as it was.
+      expect(region, label).toContain(
+        'Every shareable route needs a preview. Maintain the route inventory and run the checks in [docs/social-previews.md](docs/social-previews.md) when adding pages or shipping.',
+      )
+      const rules = region.split('\n').filter((line) => line.startsWith('- '))
+      expect(rules.length, label).toBe(10)
+      for (const rule of rules) {
+        expect(rule, label).toMatch(
+          /\(\[ch\d{2}\]\(https:\/\/github\.com\/narduk-enterprises\/coding-standards\/blob\/main\/standards\/\d{2}-[a-z-]+\.md\)\)$/u,
+        )
+      }
+      for (const needle of [
+        '`defineUserMutation`',
+        '`withValidatedBody(schema.parse)`',
+        '`/api/admin/**`',
+        'only what is verified',
+        '320 and 375 px',
+        '`useSsrNow(key)`',
+        '`strict-dynamic`',
+        '`expectAccessible`',
+        '`pnpm run performance-budget`',
+        'only if CI runs it',
+      ]) {
+        expect(region, label + ': ' + needle).toContain(needle)
+      }
     }
   })
 
