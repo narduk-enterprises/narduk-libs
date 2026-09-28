@@ -147,10 +147,17 @@ export function createXaiSseStreamParser(): TransformStream<Uint8Array, Uint8Arr
   })
 }
 
+// Listing models is a small metadata read, not a generation, so it gets a
+// short bound: the admin model route awaits it, and a stalled xAI must not hold
+// that request open. A timeout rejects with a `TimeoutError` and propagates
+// exactly as a network failure does today.
+const XAI_LIST_MODELS_TIMEOUT_MS = 10_000
+
 export async function grokListModels(apiKey: string): Promise<XaiModel[]> {
   const response = await fetch('https://api.x.ai/v1/models', {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(XAI_LIST_MODELS_TIMEOUT_MS),
   })
 
   if (!response.ok) {
