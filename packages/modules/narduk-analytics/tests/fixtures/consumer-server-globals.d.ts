@@ -30,9 +30,14 @@ declare global {
   const setResponseHeader: typeof h3.setResponseHeader
   const setResponseStatus: typeof h3.setResponseStatus
 
-  const useRuntimeConfig: (
-    event?: h3.H3Event,
-  ) => Record<string, unknown> & { public: Record<string, unknown> }
+  const useRuntimeConfig: (event?: h3.H3Event) => Record<string, unknown> & {
+    // Generated consumer configs require their own keys as well as public.
+    // Omitting these made the analytics view structurally assignable back to
+    // this stub, hiding TS2352 in real Nuxt consumers such as Buoys.
+    app: { baseURL: string }
+    nitro: { envPrefix: string }
+    public: Record<string, unknown>
+  }
 
   const cachedAnalyticsFetch: typeof import('../../server/utils/analyticsCache').cachedAnalyticsFetch
   const resolveAnalyticsDateRange: typeof import('../../server/utils/analyticsCache').resolveAnalyticsDateRange
