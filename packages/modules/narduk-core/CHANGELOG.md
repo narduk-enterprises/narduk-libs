@@ -1,5 +1,18 @@
 # @narduk-enterprises/narduk-core
 
+## 2.18.4
+
+### Patch Changes
+
+- d679c3d: Documentation only: the README now documents the mutation wrappers
+  (`definePublicMutation`, `defineUserMutation`, `defineAdminMutation`,
+  `defineCronMutation`, `defineUserQuery`, `defineAdminQuery`) and the body
+  helpers (`withValidatedBody`, `withOptionalValidatedBody`,
+  `requireMutationBody`), with an example. It covers the fixed order (rate
+  limit, then auth, then body parse, then handler), the options, how a
+  validation failure is answered, and when to use `defineValidatedHandler`
+  instead. No code changes. The generator release picks up the new package pin.
+
 ## 2.18.3
 
 ### Patch Changes

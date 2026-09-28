@@ -1,5 +1,101 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.15.0
+
+### Minor Changes
+
+- 34e9517: New apps start on the coding-standards quality defaults (SPEC S1–S3,
+  2026-09-27):
+
+  - **Lint ceiling.** `apps/web/lint-budget.json` is
+    `{"strict": true, "maxWarnings": 10, "rules": {}}`. That means zero warnings
+    normally and at most 10 recorded with `--accept-new-rules` in a pinch,
+    enforced by `narduk-lint` from eslint-config 2.6.0. An older `narduk-lint`
+    ignores the field.
+  - **Supply chain.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` and
+    excludes `@narduk-enterprises/*`. The generator pins estate versions
+    published minutes before it, and without the exclusion the first install
+    fails for a day after every release. A comment names
+    `minimumReleaseAgeExclude` as the path for an urgent security bump. The
+    dependency install-script allowlist moves from the root `package.json`
+    `pnpm.onlyBuiltDependencies` into `pnpm-workspace.yaml` as `allowBuilds`,
+    the form `pnpm approve-builds` writes and pnpm 11 keeps. It lists exactly
+    the packages with install scripts in a generated tree: `esbuild`,
+    `unrs-resolver` and `workerd` allowed, `core-js` and `vue-demi` refused on
+    purpose. `sharp` and `@parcel/watcher` are dropped: sharp 0.35 has no
+    install script, and nothing in the tree builds `@parcel/watcher`. Both files
+    are seed, so existing apps are unaffected.
+  - **Quality bar.** The managed AGENTS.md router region gains ten checkable
+    one-line rules, each linking its coding-standards chapter: lint warnings
+    (move to `narduk-lint` with a strict budget and `maxWarnings` in the next
+    change), `defineUserMutation` / `withValidatedBody` on mutating routes,
+    admin-only `/api/admin/**`, honest loading/empty/error states, 320/375 px
+    phone widths, SSR-safe time, the narduk-core nonce CSP, `expectAccessible`,
+    the performance budget, and tests that CI actually runs.
+    `create-narduk-app upgrade` adds the bar to an existing app's region;
+    nothing outside the region moves.
+
+- 081f23f: New private apps run the shared workflow's `quality-level: standard`
+  (narduk-enterprises/workflows#158), and a fresh scaffold passes all three of
+  its gates. Minor, not patch: new apps get new CI gates, two new
+  devDependencies and a different `nuxt.config.ts`, and the package exports a
+  new `ciQualityLevel` option.
+
+  - **Workflow pin.** `nuxt-cloudflare.yml` moves from `1513b2a` to `59825ef`,
+    the first commit that declares `quality-level`. `upgrade` moves an older pin
+    forward as before. It never adds `quality-level`, so an existing app does
+    not get the gates from a pin bump.
+  - **CI caller.** The private `ci.yml` passes `quality-level: standard` and
+    `performance-budget-args: '--app-dir apps/web --font-total-budget-kb 140'`.
+    The budget runs from the repository root, so it has to be pointed at the
+    workspace app, with the same budget the app's own script uses.
+    `preview-checks` stays at `og`, which the security-headers probe needs.
+  - **Enforced CSP.**
+    `nardukCore.security.headers: { enabled: true, enforce: true }`, with the
+    `nuxt-security@2.6.0` peer. The seo scaffold no longer prerenders `/`. A
+    prerendered page is a static asset served with no Content-Security-Policy,
+    so the probe failed on the home page of a fresh seo app.
+  - **Font budget.** `fonts.defaults.subsets: ['latin']` now applies to every
+    scaffold, not only seo. The default Google Fonts subsets of Inter and Outfit
+    came to 211.6 KiB, over the 140 KiB font total.
+  - **Accessibility.** The home e2e spec calls narduk-testkit `expectAccessible`
+    (with the `@axe-core/playwright@4.13.0` peer), and the non-seo
+    `nuxt.config.ts` sets `htmlAttrs.lang`. A fresh app failed axe's
+    `html-has-lang` without it.
+  - **Quality bar.** When the app's `ci.yml` passes `quality-level: standard`,
+    the AGENTS.md CSP, accessibility and performance lines state those gates,
+    and a new line says CI runs the standard level and that an opt-out needs a
+    written reason in `quality-opt-out`. Otherwise those lines stay adoption
+    steps. `upgrade` reads the level from the app's own `ci.yml`, so a refreshed
+    block does not claim a gate that app's CI does not run. A public app, which
+    does not call the shared workflow, keeps the adoption wording.
+
+### Patch Changes
+
+- d679c3d: Documentation only: the README now documents the mutation wrappers
+  (`definePublicMutation`, `defineUserMutation`, `defineAdminMutation`,
+  `defineCronMutation`, `defineUserQuery`, `defineAdminQuery`) and the body
+  helpers (`withValidatedBody`, `withOptionalValidatedBody`,
+  `requireMutationBody`), with an example. It covers the fixed order (rate
+  limit, then auth, then body parse, then handler), the options, how a
+  validation failure is answered, and when to use `defineValidatedHandler`
+  instead. No code changes. The generator release picks up the new package pin.
+- 432df2c: `narduk-lint` reads an optional total ceiling from
+  `lint-budget.json`: `"maxWarnings": <non-negative integer>`. When the total
+  warning count is above it, the run fails (exit 1) locally and in CI alike,
+  whatever the per-rule entries allow, and the output names the total, the
+  ceiling and each rule's count. No run records entries that would put the
+  recorded total past the ceiling: `--accept-new-rules` (and a non-strict file's
+  automatic recording) fails and names what it refused, while lowering and
+  clearing entries still happen. A value that is not a non-negative integer is a
+  configuration error (exit 2). Local rewrites keep the field.
+
+  Without the field nothing changes, so no consumer turns red on upgrade.
+  `--max-warnings` stays refused; its message now points at the budget field.
+  `{"strict": true, "maxWarnings": 10, "rules": {}}` is the estate default: zero
+  warnings normally, at most 10 recorded on purpose in a pinch, adopted by each
+  app in its next change. The generator release picks up the new package pin.
+
 ## 0.14.11
 
 ### Patch Changes

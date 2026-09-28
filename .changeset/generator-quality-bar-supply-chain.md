@@ -1,9 +1,0 @@
----
-'@narduk-enterprises/create-narduk-app': minor
----
-
-New apps start on the coding-standards quality defaults (SPEC S1–S3, 2026-09-27):
-
-- **Lint ceiling.** `apps/web/lint-budget.json` is `{"strict": true, "maxWarnings": 10, "rules": {}}`. That means zero warnings normally and at most 10 recorded with `--accept-new-rules` in a pinch, enforced by `narduk-lint` from eslint-config 2.6.0. An older `narduk-lint` ignores the field.
-- **Supply chain.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` and excludes `@narduk-enterprises/*`. The generator pins estate versions published minutes before it, and without the exclusion the first install fails for a day after every release. A comment names `minimumReleaseAgeExclude` as the path for an urgent security bump. The dependency install-script allowlist moves from the root `package.json` `pnpm.onlyBuiltDependencies` into `pnpm-workspace.yaml` as `allowBuilds`, the form `pnpm approve-builds` writes and pnpm 11 keeps. It lists exactly the packages with install scripts in a generated tree: `esbuild`, `unrs-resolver` and `workerd` allowed, `core-js` and `vue-demi` refused on purpose. `sharp` and `@parcel/watcher` are dropped: sharp 0.35 has no install script, and nothing in the tree builds `@parcel/watcher`. Both files are seed, so existing apps are unaffected.
-- **Quality bar.** The managed AGENTS.md router region gains ten checkable one-line rules, each linking its coding-standards chapter: lint warnings (move to `narduk-lint` with a strict budget and `maxWarnings` in the next change), `defineUserMutation` / `withValidatedBody` on mutating routes, admin-only `/api/admin/**`, honest loading/empty/error states, 320/375 px phone widths, SSR-safe time, the narduk-core nonce CSP, `expectAccessible`, the performance budget, and tests that CI actually runs. `create-narduk-app upgrade` adds the bar to an existing app's region; nothing outside the region moves.
