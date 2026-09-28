@@ -167,23 +167,15 @@ test('every workspace package that pins a Volta Node pins the root one', () => {
   assert.deepEqual(disagreeing, [], `root volta.node is ${root.volta.node}`)
 })
 
-test('the Cursor reviewer workflow stays on the public hosted route with exactly one named secret', () => {
-  // The reviewer lives outside ci.yml so ci.yml stays credential-free for
-  // fork CI. That split only holds if this file cannot drift onto a
-  // self-hosted label, a moving tag, or a second secret.
-  const review = source('cursor-review.yml')
-  assert.doesNotMatch(review, /self-hosted|BLACKSMITH_|GH_PACKAGES_READ|linux-ci/u)
-  assert.match(review, /runner: '"ubuntu-latest"'/u)
-  assert.match(
-    review,
-    /uses: narduk-enterprises\/workflows\/\.github\/workflows\/cursor-review\.yml@[0-9a-f]{40}/u,
+test('no Actions reviewer caller: PR reviews come from the CT650 bot', () => {
+  // The Actions Cursor reviewer held a runner seat for the whole agent wait.
+  // The CT650 PR review bot (runners#212) answers `/review` and the
+  // review-now/review-deep labels without runner time, so no workflow here
+  // may call the retired reusable reviewer again.
+  assert.equal(
+    existsSync(new URL('../.github/workflows/cursor-review.yml', import.meta.url)),
+    false,
   )
-  assert.doesNotMatch(review, /cursor-review\.yml@(?:main|v\d)|pull_request_target/u)
-  assert.deepEqual(
-    [...review.matchAll(/secrets\.([A-Z_]+)/gu)].map((m) => m[1]),
-    ['CURSOR_CLOUD_AGENTS_API_KEY'],
-  )
-  assert.match(review, /pull-requests: write/u)
   assert.doesNotMatch(ci, /cursor-review/u)
 })
 
