@@ -4,6 +4,8 @@
  * `handlers/` rather than `routes/` — `addServerScanDir` would otherwise bind
  * a third, filesystem-derived path.
  */
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
+
 import {
   isSecurityTxtNearOrPastExpiry,
   resolveSecurityTxtExpiresAt,
@@ -30,11 +32,13 @@ export default defineEventHandler((event) => {
     const expiresAt = resolveSecurityTxtExpiresAt(result.body)
     if (expiresAt && isSecurityTxtNearOrPastExpiry(expiresAt)) {
       hasWarnedExpiry = true
-      console.warn(
-        `[@narduk-enterprises/narduk-seo] security.txt Expires (${expiresAt.toISOString()}) is ` +
-          `at or within ${SECURITY_TXT_EXPIRY_WARNING_WINDOW_DAYS} days of expiry. Redeploy the ` +
-          'app to refresh it.',
-      )
+      useLogger(event)
+        .child('SecurityTxt')
+        .warn(
+          `security.txt Expires (${expiresAt.toISOString()}) is at or within ` +
+            `${SECURITY_TXT_EXPIRY_WARNING_WINDOW_DAYS} days of expiry. Redeploy the app to refresh it.`,
+          { expiresAt: expiresAt.toISOString() },
+        )
     }
   }
 

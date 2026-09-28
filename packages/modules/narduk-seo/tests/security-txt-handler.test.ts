@@ -2,6 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveSecurityTxtBody, SECURITY_TXT_CONTENT_TYPE } from '../shared/securityTxt'
 
+const logger = vi.hoisted(() => {
+  const log = {
+    child: vi.fn(() => log),
+    debug: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  }
+  return log
+})
+
+vi.mock('@narduk-enterprises/narduk-core/server/utils/logger', () => ({
+  useLogger: () => logger,
+}))
+
 const CONTACT = 'mailto:security@example.com'
 
 interface StubbedEvent {
@@ -45,6 +60,7 @@ async function loadHandler() {
 describe('security.txt server handler', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.clearAllMocks()
   })
 
   it('serves the RFC 9116 body with a 200, the right content-type, and the exact body', async () => {
@@ -68,30 +84,31 @@ describe('security.txt server handler', () => {
     )
   })
 
-  it('warns once per isolate when Expires is at or past its warning window', async () => {
+  it('warns once per isolate, through the core logger, when Expires is at or past its warning window', async () => {
     const expiredBody = resolveSecurityTxtBody({ contact: CONTACT }, new Date('2000-01-01'))
     stubH3Globals({ nardukSeoSecurityTxt: expiredBody })
     const handler = await loadHandler()
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const consoleWarn = vi.spyOn(console, 'warn')
 
     handler(makeEvent())
     handler(makeEvent())
     handler(makeEvent())
 
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    expect(warnSpy.mock.calls[0]?.[0]).toContain('security.txt')
-    warnSpy.mockRestore()
+    expect(logger.child).toHaveBeenCalledWith('SecurityTxt')
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(logger.warn.mock.calls[0]?.[0]).toContain('security.txt Expires')
+    expect(logger.warn.mock.calls[0]?.[1]).toEqual({ expiresAt: expect.any(String) })
+    expect(consoleWarn).not.toHaveBeenCalled()
+    consoleWarn.mockRestore()
   })
 
   it('does not warn when Expires is comfortably in the future', async () => {
     const freshBody = resolveSecurityTxtBody({ contact: CONTACT }, new Date())
     stubH3Globals({ nardukSeoSecurityTxt: freshBody })
     const handler = await loadHandler()
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     handler(makeEvent())
 
-    expect(warnSpy).not.toHaveBeenCalled()
-    warnSpy.mockRestore()
+    expect(logger.warn).not.toHaveBeenCalled()
   })
 })

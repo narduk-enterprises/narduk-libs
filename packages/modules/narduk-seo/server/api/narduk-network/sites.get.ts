@@ -4,6 +4,11 @@ import {
   resolveNardukNetworkDirectoryUrl,
 } from '#narduk-seo-server/utils/nardukNetworkDirectory'
 
+// The directory is a footer nicety: a slow endpoint must not hold the request
+// open. A timeout rejects the fetch and lands in the catch below, which
+// renders the directory empty exactly as any other upstream failure does.
+const NETWORK_DIRECTORY_TIMEOUT_MS = 5_000
+
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig(event)
   const publicCatalogBaseUrl = runtimeConfig.public.publicCatalogBaseUrl
@@ -36,6 +41,7 @@ export default defineEventHandler(async (event) => {
       headers: {
         accept: 'application/json',
       },
+      signal: AbortSignal.timeout(NETWORK_DIRECTORY_TIMEOUT_MS),
     })
 
     if (!response.ok) {
