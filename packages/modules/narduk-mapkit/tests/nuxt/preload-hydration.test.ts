@@ -63,7 +63,7 @@ function mapKitScripts(): HTMLScriptElement[] {
  * content attribute to `nonce=""` while keeping `.nonce`. Measured in Chrome on
  * a built Nuxt 4.5.2 fixture, 2026-09-18.
  */
-async function serverRenderedPreload(options: { hiddenNonce?: boolean } = {}): Promise<void> {
+function serverRenderedPreload(options: { hiddenNonce?: boolean } = {}): void {
   const serverHead = createServerHead()
   const attributes = renderHTMLAttributes({
     libraries: [...DEFAULT_MAPKIT_LIBRARIES],
@@ -71,7 +71,8 @@ async function serverRenderedPreload(options: { hiddenNonce?: boolean } = {}): P
   })
   // Apple types the attributes as a plain record; unhead wants `src` named.
   serverHead.push({ script: [attributes] } as unknown as Parameters<typeof serverHead.push>[0])
-  const { headTags } = await renderSSRHead(serverHead)
+  // Synchronous since unhead 3 (it returned a Promise through unhead 2).
+  const { headTags } = renderSSRHead(serverHead)
   document.head.innerHTML = headTags
   if (options.hiddenNonce) {
     const script = document.head.querySelector(MAPKIT_SCRIPT)!
@@ -103,9 +104,12 @@ async function untilReady(wrapper: VueWrapper): Promise<void> {
   })
 }
 
-/** Nuxt renders the client head once the page has hydrated; so does this. */
-async function hydrateHead(): Promise<void> {
-  await renderDOMHead(head, { document })
+/**
+ * Nuxt renders the client head once the page has hydrated; so does this.
+ * `renderDOMHead` is synchronous since unhead 3: the DOM is final on return.
+ */
+function hydrateHead(): void {
+  renderDOMHead(head, { document })
 }
 
 beforeEach(() => {
@@ -133,12 +137,12 @@ afterEach(() => {
 
 describe('SSR page load, then hydration (narduk-libs#469)', () => {
   it('keeps the one server-rendered tag when a CSP nonce is hidden on it', async () => {
-    await serverRenderedPreload({ hiddenNonce: true })
+    serverRenderedPreload({ hiddenNonce: true })
     mapKitCoreExecutes()
 
     const wrapper = mountMap()
     await untilReady(wrapper)
-    await hydrateHead()
+    hydrateHead()
 
     expect(mapKitScripts()).toHaveLength(1)
     expect(mapKitScripts()[0]!.getAttribute('nonce')).toBe('')
@@ -147,23 +151,23 @@ describe('SSR page load, then hydration (narduk-libs#469)', () => {
   })
 
   it('keeps the one server-rendered tag without a nonce too', async () => {
-    await serverRenderedPreload()
+    serverRenderedPreload()
     mapKitCoreExecutes()
 
     const wrapper = mountMap()
     await untilReady(wrapper)
-    await hydrateHead()
+    hydrateHead()
 
     expect(mapKitScripts()).toHaveLength(1)
     expect(fake.inspect.tokenCalls).toBe(1)
   })
 
   it('adopts the server tag while it is still downloading instead of injecting another', async () => {
-    await serverRenderedPreload({ hiddenNonce: true })
+    serverRenderedPreload({ hiddenNonce: true })
     const serverTag = mapKitScripts()[0]!
 
     const wrapper = mountMap()
-    await hydrateHead()
+    hydrateHead()
     await vi.waitFor(() => {
       expect(wrapper.find('[data-mapkit-state="loading"]').exists()).toBe(true)
     })
@@ -173,7 +177,7 @@ describe('SSR page load, then hydration (narduk-libs#469)', () => {
     mapKitCoreExecutes()
     serverTag.dispatchEvent(new Event('load'))
     await untilReady(wrapper)
-    await hydrateHead()
+    hydrateHead()
 
     expect(mapKitScripts()).toStrictEqual([serverTag])
     expect(fake.inspect.tokenCalls).toBe(1)
@@ -181,7 +185,7 @@ describe('SSR page load, then hydration (narduk-libs#469)', () => {
   })
 
   it('asks the client head for no MapKit script at all', async () => {
-    await serverRenderedPreload({ hiddenNonce: true })
+    serverRenderedPreload({ hiddenNonce: true })
     mapKitCoreExecutes()
 
     const wrapper = mountMap()
@@ -199,7 +203,7 @@ describe('client-side navigation to a map page (no SSR tag)', () => {
 
     const wrapper = mountMap()
     await untilReady(wrapper)
-    await hydrateHead()
+    hydrateHead()
 
     const scripts = mapKitScripts()
     expect(scripts).toHaveLength(1)
@@ -214,7 +218,7 @@ describe('client-side navigation to a map page (no SSR tag)', () => {
 
     await untilReady(mountMap())
     await untilReady(mountMap())
-    await hydrateHead()
+    hydrateHead()
 
     expect(mapKitScripts()).toHaveLength(1)
     expect(fake.inspect.tokenCalls).toBe(1)
@@ -224,17 +228,17 @@ describe('client-side navigation to a map page (no SSR tag)', () => {
 
 describe('K-11: <AppMapKit> mounts after MapKit JS is already loaded', () => {
   it('still builds the map, off the one server-rendered tag', async () => {
-    await serverRenderedPreload({ hiddenNonce: true })
+    serverRenderedPreload({ hiddenNonce: true })
     mapKitCoreExecutes()
     const { ready } = useMapKit()
     await vi.waitFor(() => {
       expect(ready.value).toBe(true)
     })
-    await hydrateHead()
+    hydrateHead()
 
     const wrapper = mountMap()
     await untilReady(wrapper)
-    await hydrateHead()
+    hydrateHead()
 
     expect(fake.inspect.maps).toHaveLength(1)
     expect(wrapper.emitted('map-ready')).toHaveLength(1)

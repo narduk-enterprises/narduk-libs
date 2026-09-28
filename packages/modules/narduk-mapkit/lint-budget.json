@@ -1,6 +1,4 @@
 {
   "strict": true,
-  "rules": {
-    "@typescript-eslint/await-thenable": 2
-  }
+  "rules": {}
 }
