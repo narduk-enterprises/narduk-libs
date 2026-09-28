@@ -657,6 +657,57 @@ describe('the scoped namespace (K-10)', () => {
 })
 
 describe('the rect camera and its degenerate inputs (K-5)', () => {
+  it.each([false, true])(
+    'projects the visible rect into the padded frame (measured=%s)',
+    (measured) => {
+      const { fake, map } = readyMap({ viewport: { height: 600, width: 800 } })
+      if (measured) {
+        Object.defineProperties(map.element!.parentElement!, {
+          clientHeight: { value: 720 },
+          clientWidth: { value: 390 },
+        })
+      }
+      const height = measured ? 720 : 600
+      const width = measured ? 390 : 800
+      map.region = new fake.mapkit.CoordinateRegion(
+        { latitude: 36, longitude: -122 },
+        { latitudeDelta: 12, longitudeDelta: 16 },
+      )
+      const full = map.visibleMapRect
+      map.padding = new fake.mapkit.Padding({ bottom: 104, left: 20, right: 30, top: 68 })
+      const visible = map.visibleMapRect
+      expect(visible.origin.x).toBeCloseTo(full.origin.x + (full.size.width * 20) / width, 10)
+      expect(visible.origin.y).toBeCloseTo(full.origin.y + (full.size.height * 68) / height, 10)
+      expect(visible.size.width).toBeCloseTo((full.size.width * (width - 50)) / width, 10)
+      expect(visible.size.height).toBeCloseTo((full.size.height * (height - 172)) / height, 10)
+
+      // A same-size rect translation must move every annotation by the same
+      // pixel vector even off the equator and with asymmetric phone chrome.
+      const pins = [30, 36, 40].map(
+        (latitude) => new fake.mapkit.MarkerAnnotation({ latitude, longitude: -122 }),
+      )
+      map.addAnnotations(pins)
+      const before = pins.map((pin) => Number.parseFloat(pin.element.style.top))
+      const pan = full.size.height * 0.08
+      map.setVisibleMapRectAnimated(
+        new fake.mapkit.MapRect(
+          visible.origin.x,
+          visible.origin.y + pan,
+          visible.size.width,
+          visible.size.height,
+        ),
+      )
+      for (const [index, pin] of pins.entries()) {
+        expect(Number.parseFloat(pin.element.style.top) - before[index]!).toBeCloseTo(
+          -height * 0.08,
+          6,
+        )
+      }
+      expect(map.visibleMapRect.size.height).toBeCloseTo(visible.size.height, 10)
+      expect(fake.inspect.degenerateCameraInputs).toEqual([])
+    },
+  )
+
   it('derives visibleMapRect from the same projection the pins use', () => {
     const { fake, map } = readyMap()
     map.region = new fake.mapkit.CoordinateRegion(
