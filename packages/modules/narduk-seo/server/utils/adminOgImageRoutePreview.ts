@@ -1,3 +1,4 @@
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 import { getRequestHeaders } from 'h3'
 
 import { pickOgImageContentFromHtml } from './pickOgImageContentFromHtml'
@@ -14,6 +15,11 @@ export type {
   AdminOgImageRoutePreviewTarget,
 } from '../../app/types/adminOgImageRoutePreview'
 
+// The preview SSR-renders one of the app's own routes; a render that stalls
+// must not hold the admin request open. A timeout rejects the fetch and lands
+// in the catch below, which logs it and falls back to the static image.
+const OG_PREVIEW_FETCH_TIMEOUT_MS = 10_000
+
 export async function resolveAdminOgImageRoutePreviewEntry(
   event: H3Event,
   origin: string,
@@ -26,6 +32,7 @@ export async function resolveAdminOgImageRoutePreviewEntry(
         ...getRequestHeaders(event),
         accept: 'text/html',
       },
+      signal: AbortSignal.timeout(OG_PREVIEW_FETCH_TIMEOUT_MS),
     })
     if (!res.ok) {
       throw new Error(`OG preview fetch ${target.routePath}: ${res.status}`)
@@ -43,7 +50,12 @@ export async function resolveAdminOgImageRoutePreviewEntry(
       return { ...target, imageSrc: src }
     }
   } catch (error) {
-    console.warn('[admin/og-image-previews] failed to resolve', target.routePath, error)
+    useLogger(event)
+      .child('OgImagePreviews')
+      .warn('Failed to resolve OG image preview', {
+        routePath: target.routePath,
+        error: error instanceof Error ? error.message : String(error),
+      })
   }
   return { ...target, imageSrc: fallback }
 }
