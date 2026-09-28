@@ -40,14 +40,16 @@ export function createMigrationWorkflowFiles(visibility: AppVisibility): Generat
   return [
     {
       path: 'docs/deployment/promote-d1.steps.yml',
-      contents: `# Insert these steps in the existing serialized promote job, AFTER successful CI,
+      contents: `# Insert these steps in the existing serialized promote job, AFTER its gate job,
 # checkout of the gate's verified SHA and frozen install, BEFORE versions-promote.
-# The enclosing workflow must have cancel-in-progress: false and the gate job
-# from docs/workers-builds.md: it promotes main's head only once that commit's
-# ci / Required passed, whether a workflow_run or a dispatch started it. Never
-# use pull_request_target. VERSION_ID is empty unless a recovery dispatch chose
-# one of the commit's duplicate uploads (narduk-libs#1233); the dry run takes
-# it too, or the duplicate would stop the recovery here.
+# The enclosing workflow must have cancel-in-progress: false and the gate from
+# docs/workers-builds.md: same-repository, production-branch, successful CI, and
+# ci / Required proved in main's own CI run. Never use pull_request_target.
+# VERIFIED_SHA is the gate's output, never workflow_run.head_sha: the gate may
+# promote main's newer head, and a dispatched run has no workflow_run at all.
+# VERSION_ID is empty unless a recovery dispatch chose one of the commit's
+# duplicate uploads (narduk-libs#1233); the dry run takes it too, or the
+# duplicate would stop the recovery here.
 # D1_MIGRATE_API_TOKEN is materialized from the declared D1-only migrate persona;
 # CLOUDFLARE_API_TOKEN below remains the existing separate promote credential.
 # The first two steps hold no credential. Worker rollback restores code, never a
@@ -94,12 +96,13 @@ steps:
       include-hidden-files: true
       retention-days: 14
       if-no-files-found: ignore
-# Keep the app's existing versions-promote, live proof and rollback steps next.
-# All require preceding success. Only a completed promotion followed by failed
-# live proof can trigger Worker rollback; migration failure must never do so.
-# Rollback changes Worker traffic only. Never automate a database restore.
-# Automating rollback beside the migrate step is safe only with the 12.9 steps
-# above in place (narduk-libs#399); without them rollback stays a manual command.
+# Keep the app's existing versions-promote and live proof steps next. All
+# require preceding success. deployment.rollback.mode is manual: nothing rolls
+# back on its own. A completed promotion whose live proof fails leaves the run
+# red and prints the previous version and the rollback command for a person to
+# run; a migration failure blocks the promotion and triggers nothing. Worker
+# rollback changes traffic only and never restores a database. Never automate a
+# database restore.
 `,
     },
     {

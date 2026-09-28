@@ -79,10 +79,37 @@ export type RegionName = keyof typeof REGION_MARKERS
 /**
  * The shared-workflow reference in an app's own CI caller. The caller's inputs
  * are the app's policy (shard count, e2e arguments, build artefact path); the
- * pinned SHA is estate policy, and is the part that actually goes stale.
+ * pinned SHA is estate policy, and is the part that actually goes stale. So is
+ * the repository gate (NAC-GATE-PARITY): `upgrade` adds the gate's script
+ * names and `quality-level: standard` to the inputs, and edits nothing else in
+ * them (ci-gate.ts).
  */
 export const CI_CALLER_PIN_PATTERN =
   /narduk-enterprises\/workflows\/\.github\/workflows\/nuxt-cloudflare\.yml@[0-9a-f]{40}/u
+
+/**
+ * The repository-stage checks of company-hq NAC §3.0 that CI runs BY SCRIPT
+ * NAME (NAC-GATE-PARITY, §3.11): items 8, 9, 11 and 12. The private caller
+ * lists them in the shared workflow's `extra-scripts`, which fails a missing
+ * script (`require-scripts: true`); the public workflow runs them as one
+ * step. The other repository-stage items are not scripts in CI: items 1-7
+ * are the shared workflow's `foundation-check: true` input on the private
+ * path (a public app's own CI cannot decide them -- see
+ * `publicRepositoryGateSteps` in ci-workflow.ts), and item 10 is a live probe
+ * -- of the pull request's preview through `quality-level: standard` on the
+ * private path, of this commit's locally built Worker on the public path.
+ *
+ * Every name is create-only for `upgrade`: an app that has one keeps its own
+ * body (the reference app writes a JSON artefact per check, a delegate to
+ * `apps/web` is equally valid), and an app that lacks one gets the
+ * generator's, because a CI that names a script the app lacks fails.
+ */
+export const REPOSITORY_GATE_SCRIPTS = [
+  'foundation:shared-ui-pinned',
+  'foundation:check:coverage',
+  'foundation:check:toolchain',
+  'foundation:check:deployment',
+] as const
 
 /**
  * Root `package.json` scripts whose exact body is a contract rather than a
@@ -90,13 +117,16 @@ export const CI_CALLER_PIN_PATTERN =
  * that decides which Worker shape CI builds, or the migration-source and
  * database-name arguments `narduk-app db migrate` requires.
  *
- * Deliberately excluded: `foundation:shared-ui-pinned` (two valid shapes exist
- * in the estate -- delegate to `apps/web`, or run the checker at the root and
- * emit its own JSON -- so the script NAME is the contract, via the CI caller's
- * `extra-scripts`, and the body is app-local), every dependency version
- * (Dependabot owns estate package currency under D-TOOLCHAIN-1, and two
- * mechanisms editing the same lines is the reconcile relationship this
- * generator must not have), and every other script an app has added.
+ * The {@link REPOSITORY_GATE_SCRIPTS} are here too, create-only: two valid
+ * shapes of each exist in the estate (delegate to `apps/web`, or run the
+ * checker at the root and emit its own JSON), so the script NAME is the
+ * contract, via the CI caller's `extra-scripts`, and a present body is
+ * app-local.
+ *
+ * Deliberately excluded: every dependency version (Dependabot owns estate
+ * package currency under D-TOOLCHAIN-1, and two mechanisms editing the same
+ * lines is the reconcile relationship this generator must not have), and
+ * every other script an app has added.
  */
 export const MANAGED_SCRIPT_KEYS = [
   'build:ci',
@@ -104,6 +134,7 @@ export const MANAGED_SCRIPT_KEYS = [
   'db:migrate:remote',
   'foundation:check',
   'manifests:validate',
+  ...REPOSITORY_GATE_SCRIPTS,
 ] as const
 
 /**
@@ -113,9 +144,13 @@ export const MANAGED_SCRIPT_KEYS = [
  * `apps/web`'s bindings diff, riverstatus runs its state-contract and
  * template-independence proofs -- and `foundation:check` item 1.3 already
  * accepts either by name, so rewriting the body would replace a working proof
- * with a scaffold one that may not exist in that repo (narduk-libs#468).
+ * with a scaffold one that may not exist in that repo (narduk-libs#468). The
+ * {@link REPOSITORY_GATE_SCRIPTS} are create-only for the same reason.
  */
-export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set(['manifests:validate'])
+export const CREATE_ONLY_SCRIPT_KEYS: ReadonlySet<string> = new Set([
+  'manifests:validate',
+  ...REPOSITORY_GATE_SCRIPTS,
+])
 
 export type OwnershipMode = 'file' | 'jsonc-keys' | 'keys' | 'pin' | 'region'
 
@@ -150,7 +185,7 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
   {
     path: '.github/workflows/ci.yml',
     mode: 'pin',
-    unit: 'shared nuxt-cloudflare workflow pin',
+    unit: 'shared nuxt-cloudflare workflow pin and repository gate',
   },
   {
     path: '.github/workflows/copilot-setup-steps.yml',

@@ -825,9 +825,11 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toContain('VERIFIED_SHA: ${{ needs.gate.outputs.sha }}')
       // narduk-libs#787: the promotion can also be dispatched by ci.yml, and a
       // pending run can be replaced in the concurrency group, so the gate
-      // ignores whichever SHA started it and promotes main's head once the
-      // latest `ci / Required` on that exact commit passed. Pull-request
-      // workflow_runs never reach it.
+      // ignores whichever SHA started it and promotes main's head once
+      // `ci / Required` passed in main's own CI run for that exact commit.
+      // NAC-DEPLOY-CONFORM point 2: a pull-request run or a fork's never
+      // reaches it -- the event guard names the push/dispatch events and this
+      // repository, and the check runs are filtered to main's own CI suites.
       expect(runbook, label).toContain('  workflow_dispatch:\n    inputs:\n      verified-sha:')
       // narduk-libs#1233: a duplicate upload of one commit is a one-click
       // recovery. The dispatch takes an optional version-id (ci.yml's
@@ -848,11 +850,24 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toContain(
         'gh workflow run promote.yml --ref main -f verified-sha=<sha> -f version-id=<id>',
       )
-      expect(runbook, label).toContain("github.event.workflow_run.event != 'pull_request'")
+      expect(runbook, label).not.toContain("github.event.workflow_run.event != 'pull_request'")
+      expect(runbook, label).toContain(
+        `contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event)`,
+      )
+      expect(runbook, label).toContain(
+        'github.event.workflow_run.head_repository.full_name == github.repository',
+      )
       expect(runbook, label).toContain('head=$(gh api "repos/$REPO/commits/main" --jq .sha)')
+      expect(runbook, label).toContain(
+        'actions/workflows/ci.yml/runs?head_sha=$head&branch=main&per_page=100',
+      )
       expect(runbook, label).toContain('check-runs?check_name=ci%20%2F%20Required')
-      expect(runbook, label).toContain('| last | .conclusion == "success"')
+      expect(runbook, label).toContain('| sort_by(.id) | last |')
+      expect(runbook, label).not.toContain('completed_at')
       expect(runbook, label).toContain('echo "sha=$head" >> "$GITHUB_OUTPUT"')
+      // rollback.mode: manual -- the excerpt never rolls back on its own.
+      expect(runbook, label).not.toMatch(/^\s+run: narduk-app deploy rollback/mu)
+      expect(runbook, label).toContain('**Nothing rolls back automatically.**')
       expect(runbook, label).not.toContain('CANDIDATE')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')

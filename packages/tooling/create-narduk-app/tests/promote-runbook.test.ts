@@ -42,8 +42,13 @@ function runbookWorkflow(): RunbookWorkflow {
 const HEAD = 'f736b07d7f49a1b2c3d4e5f60718293a4b5c6d7e'
 const OLDER = '0123456789abcdef0123456789abcdef01234567'
 const VERSION = '60472572-1b2c-4d3e-8f90-a1b2c3d4e5f6'
+const REPO = 'narduk-enterprises/promote-runbook'
+const SUITE = 1
 
-/** Answers `commits/main` and the head's check-runs; applies `--jq` with jq. */
+/**
+ * Answers `commits/main`, main's own CI runs for the head and the head's
+ * check-runs; applies `--jq` with jq.
+ */
 const FAKE_GH = `#!/bin/bash
 path=''
 jq_expr=''
@@ -57,7 +62,8 @@ done
 dir="$(dirname "$0")"
 case "$path" in
   repos/*/commits/main) key=head ;;
-  repos/*/commits/*/check-runs\\?check_name=ci%20%2F%20Required) key=checks ;;
+  repos/*/actions/workflows/ci.yml/runs\\?head_sha=*) key=runs ;;
+  repos/*/commits/*/check-runs\\?check_name=ci%20%2F%20Required*) key=checks ;;
   *) echo "unexpected gh api $path" >&2; exit 2 ;;
 esac
 jq -r "$jq_expr" "$dir/$key.json"
@@ -68,8 +74,11 @@ function checkRuns(conclusion: string | null) {
     check_runs: [
       {
         app: { slug: 'github-actions' },
+        check_suite: { id: SUITE },
         completed_at: conclusion ? '2026-09-28T07:20:00Z' : null,
         conclusion,
+        id: 10,
+        status: conclusion ? 'completed' : 'queued',
       },
     ],
   }
@@ -87,6 +96,20 @@ async function runGate(options: {
     await chmod(join(directory, 'gh'), 0o755)
     await writeFile(join(directory, 'head.json'), JSON.stringify({ sha: HEAD }))
     await writeFile(join(directory, 'checks.json'), JSON.stringify(checkRuns(options.conclusion)))
+    // The head's own push run on main, whose check suite the gate reads.
+    await writeFile(
+      join(directory, 'runs.json'),
+      JSON.stringify({
+        workflow_runs: [
+          {
+            check_suite_id: SUITE,
+            event: 'push',
+            head_branch: 'main',
+            head_repository: { full_name: REPO },
+          },
+        ],
+      }),
+    )
     const output = join(directory, 'github-output')
     await writeFile(output, '')
     await writeFile(join(directory, 'gate.sh'), gate.run)
@@ -95,7 +118,7 @@ async function runGate(options: {
       env: {
         PATH: `${directory}:${process.env.PATH ?? ''}`,
         GITHUB_OUTPUT: output,
-        REPO: 'narduk-enterprises/promote-runbook',
+        REPO,
         STARTED_FOR: options.startedFor,
         VERSION_ID: options.versionId,
       },

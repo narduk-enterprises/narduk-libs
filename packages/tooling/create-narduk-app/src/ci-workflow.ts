@@ -3,7 +3,7 @@ import {
   CI_TEST_ONLY_NUXT_SESSION_PASSWORD,
 } from './ci-test-env.js'
 import { PERFORMANCE_BUDGET_ARGS } from './manifest.js'
-import { NODE_SOURCE_FILE } from './ownership.js'
+import { NODE_SOURCE_FILE, REPOSITORY_GATE_SCRIPTS } from './ownership.js'
 import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from './workflow-pin.js'
 
 import type { AppVisibility } from './types.js'
@@ -194,6 +194,93 @@ export function createCopilotSetupWorkflow(): string {
 }
 
 /**
+ * The private caller's `extra-scripts`: the static checks the public path
+ * gets from `quality:static`, then every repository-stage check CI runs by
+ * script name ({@link REPOSITORY_GATE_SCRIPTS}).
+ */
+export const PRIVATE_EXTRA_SCRIPTS: readonly string[] = [
+  'format:check',
+  'lint',
+  'knip',
+  'manifests:validate',
+  ...REPOSITORY_GATE_SCRIPTS,
+]
+
+/** Public CI step running web-foundation items 8, 9, 11 and 12. */
+export const REPOSITORY_GATE_STEP_NAME = 'Repository gate (web foundation items 8, 9, 11 and 12)'
+
+/** Public CI step probing item 10 on this commit's locally built Worker. */
+export const CANDIDATE_SECURITY_HEADERS_STEP_NAME =
+  "Security headers of this commit's built Worker (web foundation item 10)"
+
+/**
+ * The public workflow's steps after `quality:static` (which built the Worker
+ * with `build:ci`): the repository-stage checks of company-hq NAC §3.0 that a
+ * public repository's own CI can decide (NAC-GATE-PARITY, §3.11).
+ *
+ * Items 8, 9, 11 and 12 read the checkout, so they run as package scripts.
+ *
+ * Items 1-7 (`foundation:check`) are NOT here, and cannot be yet. Sub-check
+ * 5.1 passes on a call to the shared class callable, which a public
+ * repository cannot make, and otherwise resolves against company-hq's
+ * workflow adoption matrix -- which the spec requires an app's own check to
+ * report `unknown` (WEB-FOUNDATION-CHECK.md §3 item 5: "The app-side check
+ * cannot see the matrix and must report that half `unknown`"). So
+ * `foundation:check` exits 2 in every public app's CI whatever the app does,
+ * and gating on it would hold every public app red. Tolerating that one
+ * UNKNOWN here would be this template re-judging the checker's verdict. Until
+ * the spec gives public apps an app-side way to pass 5.1, items 1-7 of a
+ * public app are decided by the weekly company-hq rollup, which can read the
+ * matrix; `pnpm run foundation:check` still runs locally.
+ *
+ * Item 10 is a live probe, and a public repository cannot call the private
+ * shared workflow whose Preview job probes the pull request's Cloudflare
+ * preview. So the probe reads the candidate itself: the Worker `build:ci`
+ * just built from this commit, served on 127.0.0.1 by `narduk-app e2e-serve`
+ * (the launcher Playwright uses for a prebuilt artefact) and judged by the
+ * published `narduk-app foundation:check:security-headers`, the same checker
+ * and exit contract the shared workflow uses. It never reads production,
+ * which would be the previous release rather than this commit. What it
+ * cannot see is a header a Cloudflare zone adds or strips; the promote
+ * workflow's post-promotion proof covers production. A server that never
+ * answers fails the step, because "we did not look" is not a pass.
+ */
+export function publicRepositoryGateSteps(): string[] {
+  return [
+    '      # Web foundation items 1-7 are not run here: a public repository',
+    '      # cannot call the shared class callable, so foundation:check sub-check',
+    "      # 5.1 is UNKNOWN in this app's own CI by specification",
+    '      # (company-hq WEB-FOUNDATION-CHECK.md item 5). The company-hq rollup',
+    '      # decides items 1-7 for a public app.',
+    `      - name: ${REPOSITORY_GATE_STEP_NAME}`,
+    '        run: |',
+    '          set -euo pipefail',
+    ...REPOSITORY_GATE_SCRIPTS.map((script) => `          pnpm run ${script}`),
+    `      - name: ${CANDIDATE_SECURITY_HEADERS_STEP_NAME}`,
+    '        env:',
+    '          CANDIDATE_PORT: 8790',
+    '        run: |',
+    '          set -euo pipefail',
+    '          log="$RUNNER_TEMP/e2e-serve.log"',
+    '          pnpm exec narduk-app e2e-serve "$CANDIDATE_PORT" >"$log" 2>&1 &',
+    '          server=$!',
+    '          trap \'kill "$server" 2>/dev/null || true\' EXIT',
+    '          ready=',
+    '          for _ in $(seq 1 90); do',
+    '            if curl -fs -o /dev/null "http://127.0.0.1:$CANDIDATE_PORT/api/health"; then ready=1; break; fi',
+    '            kill -0 "$server" 2>/dev/null || break',
+    '            sleep 1',
+    '          done',
+    '          if [ -z "$ready" ]; then',
+    '            cat "$log"',
+    '            echo "::error::The built Worker never answered /api/health on 127.0.0.1:$CANDIDATE_PORT, so its security headers were not read."',
+    '            exit 1',
+    '          fi',
+    '          pnpm exec narduk-app foundation:check:security-headers --base-url "http://127.0.0.1:$CANDIDATE_PORT"',
+  ]
+}
+
+/**
  * The shared-workflow inputs of the private CI caller. The explicit
  * validation caller reuses them verbatim so a release is validated by exactly the
  * suite ordinary CI runs, plus the exact-candidate guard.
@@ -220,12 +307,13 @@ function privateCallerInputs(): string[] {
     // NUXT_OG_IMAGE_SECRET / NUXT_SESSION_PASSWORD values live on the
     // generated `build:ci` script (ci-test-env.ts) so this Build lane
     // still has them without a repository secret.
-    // The public path runs `quality:static`, which already chains
-    // `foundation:shared-ui-pinned` and `manifests:validate`. The private
-    // path calls the shared workflow instead, so each check has to be
-    // named here or CI never runs it. They read manifests only, so they
-    // need no extra credential (narduk-libs#282 review).
-    "      extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
+    // The public path runs `quality:static` and its own repository-gate
+    // step. The private path calls the shared workflow instead, so each
+    // check has to be named here or CI never runs it: the static checks,
+    // then web-foundation items 8, 9, 11 and 12 (NAC-GATE-PARITY). They
+    // read the checkout only, so they need no extra credential
+    // (narduk-libs#282 review).
+    `      extra-scripts: '${PRIVATE_EXTRA_SCRIPTS.join(' ')}'`,
     '      run-tests: true',
     '      test-script: test:unit',
     // Fails the build job on a FAIL/UNKNOWN web-foundation conformance
@@ -445,6 +533,74 @@ function createPromoteDispatchJob(visibility: AppVisibility, needs: string): str
   ]
 }
 
+/**
+ * The promote workflow's gate step (docs/workers-builds.md excerpt), company-hq
+ * NAC-DEPLOY-CONFORM point 2: promote exactly a commit whose `ci / Required`
+ * concluded green on the default branch of the app's own repository, never on
+ * a pull-request run or a fork's.
+ *
+ * Whatever started Promote, the candidate is main's current head, so an older
+ * commit whose CI finished late never replaces a newer one, and a queued
+ * Promote replaced in the concurrency group loses nothing. The proof is read,
+ * not trusted from the trigger: the head's check runs are filtered to the
+ * check suites of THIS repository's own `ci.yml` runs on main (a push, or a
+ * dispatch such as dependabot-merge.yml's), so a pull request's or a fork's
+ * `ci / Required` on the same commit never counts. The newest attempt wins by
+ * check-run id, because a re-run that is still queued or in progress has no
+ * `completed_at` and would otherwise sort behind an older success. Anything
+ * but `success` skips with a notice: that run's own completion starts Promote
+ * again.
+ *
+ * A recovery dispatch from a duplicate upload (narduk-libs#1233) sets
+ * VERSION_ID. Only the version choice is manual: the gate fails the run unless
+ * VERSION_ID is a Worker version id, STARTED_FOR is main's head and that proof
+ * above passed, and then passes the id through as `version_id`.
+ *
+ * Needs GH_TOKEN (actions: read, checks: read, contents: read), REPO,
+ * STARTED_FOR and optionally VERSION_ID; writes `sha=<head>` to GITHUB_OUTPUT
+ * only on a proven head.
+ */
+export function createPromoteGateScript(): string {
+  return `set -euo pipefail
+head=$(gh api "repos/$REPO/commits/main" --jq .sha)
+if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "::error::main's head is not a 40-character commit SHA; refusing to promote"
+  exit 1
+fi
+suites=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head&branch=main&per_page=100" \\
+  --jq "[.workflow_runs[] | select((.event == \\"push\\" or .event == \\"workflow_dispatch\\") and .head_branch == \\"main\\" and .head_repository.full_name == \\"$REPO\\") | .check_suite_id] | tojson")
+if [[ ! "$suites" =~ ^\\[[0-9,]*\\]$ ]]; then
+  echo "::error::could not read main's own CI runs for $head; refusing to promote"
+  exit 1
+fi
+required=$(gh api "repos/$REPO/commits/$head/check-runs?check_name=ci%20%2F%20Required&filter=all&per_page=100" \\
+  --jq "[.check_runs[] | select(.app.slug == \\"github-actions\\" and (.check_suite.id as \\$id | any(\${suites}[]; . == \\$id)))] | sort_by(.id) | last | if . == null then \\"missing\\" else (.conclusion // \\"not completed (\\\\(.status // \\"unknown\\"))\\") end")
+if [ -n "\${VERSION_ID:-}" ]; then
+  # Recovery dispatch: only the version choice is manual. The commit must
+  # still be main's head with ci / Required passed in main's own CI, and
+  # versions-promote refuses a version that does not carry that commit's tag.
+  if [[ ! "$VERSION_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+    echo "::error::version-id $VERSION_ID is not a Worker version id"
+    exit 1
+  fi
+  if [ "$STARTED_FOR" != "$head" ]; then
+    echo "::error::verified-sha $STARTED_FOR is not main's head $head; a version is chosen only for the head, and a newer head's own CI run promotes it."
+    exit 1
+  fi
+  if [ "$required" != success ]; then
+    echo "::error::the latest ci / Required in main's own CI for $head is '$required'; nothing to recover."
+    exit 1
+  fi
+  echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"
+elif [ "$required" != success ]; then
+  echo "::notice::main is at $head (this run started for $STARTED_FOR); ci / Required in main's own CI for it is '$required', so nothing is promoted. That run's completion starts Promote again."
+  exit 0
+fi
+echo "ci / Required passed for $head in main's own CI run"
+echo "sha=$head" >> "$GITHUB_OUTPUT"
+`
+}
+
 export function createCiWorkflow(visibility: AppVisibility): string {
   const header = [
     'name: CI',
@@ -508,6 +664,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
     '    steps:',
     ...setupSteps(),
     '      - run: pnpm run quality:static',
+    ...publicRepositoryGateSteps(),
     '',
     '  browser:',
     '    name: Chromium shard ${{ matrix.shard }}/3',

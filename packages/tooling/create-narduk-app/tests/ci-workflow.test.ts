@@ -52,7 +52,7 @@ describe('generated CI boundaries', () => {
     expect(workflow).toContain('run-e2e: true')
     expect(workflow).toContain('e2e-shards: 3')
     expect(workflow).toContain(
-      "extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned'",
+      "extra-scripts: 'format:check lint knip manifests:validate foundation:shared-ui-pinned foundation:check:coverage foundation:check:toolchain foundation:check:deployment'",
     )
     expect(workflow).toContain('foundation-check: true')
     // workflows#158: the standard gates, with the budget pointed at the
@@ -221,7 +221,9 @@ describe('generated CI boundaries', () => {
         'narduk-test-only-session-password-000000',
       )
     }
-    expect(workflow.jobs.quality?.steps?.at(-1)?.run).toBe('pnpm run quality:static')
+    // quality:static is the build the item-10 probe step serves, so every
+    // secret-free build env above also reaches that probe.
+    expect(workflow.jobs.quality?.steps?.at(-3)?.run).toBe('pnpm run quality:static')
     expect(createCiWorkflow('public')).not.toContain('${{ secrets.NUXT_')
   })
 

@@ -25,8 +25,9 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[1].env).toBeUndefined()
       expect(steps[2].run).toContain('--dry-run')
       // The dry run carries the same gate attestation as the real promote
-      // (narduk-libs#400), bound to the gate job's verified SHA -- the same
-      // commit under a workflow_run or a dispatch (narduk-libs#787).
+      // (narduk-libs#400), bound to the SHA the gate job verified -- never
+      // workflow_run.head_sha, which is empty on a dispatch and can be older
+      // than the head the gate promotes.
       expect(steps[2].run).toContain('--gate-verified "ci / Required@$VERIFIED_SHA"')
       expect(steps[2].env.VERIFIED_SHA).toBe('${{ needs.gate.outputs.sha }}')
       // narduk-libs#1233: a recovery dispatch's chosen version reaches the dry
@@ -35,6 +36,9 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[2].run).toContain('${VERSION_ID:+--version-id "$VERSION_ID"}')
       expect(steps[3].env.VERIFIED_SHA).toBe('${{ needs.gate.outputs.sha }}')
       expect(JSON.stringify(steps)).not.toContain('workflow_run.head_sha')
+      const promoteSteps = files.find((file) => file.path.endsWith('promote-d1.steps.yml'))!
+      expect(promoteSteps.contents).not.toContain('workflow_run.head_sha }}')
+      expect(promoteSteps.contents).toContain('rollback.mode is manual: nothing rolls')
       expect(steps[2].env.CLOUDFLARE_API_TOKEN).not.toBe(steps[3].env.CLOUDFLARE_API_TOKEN)
       expect(steps[3].run).toContain('migrate-deployment --target production --sha "$VERIFIED_SHA"')
       expect(steps[3].run).toContain('migrate-deployment --target production --check')
