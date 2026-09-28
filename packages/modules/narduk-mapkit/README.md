@@ -1762,6 +1762,13 @@ so the fake **applies the write and records it** rather than clamping, throwing,
 or pretending to know. `expect(fake.inspect.degenerateCameraInputs).toEqual([])`
 is the assertion that would have caught it.
 
+The rect camera uses the frame inset by `map.padding`, as documented by
+[Apple](https://developer.apple.com/documentation/mapkitjs/mapkit.map/padding).
+Annotation positions still use the whole container. Reading a rect and
+translating it without changing its size therefore pans at the same scale,
+including with asymmetric padding. The fake measures the container and uses the
+configured viewport only when the container has no measurable size.
+
 ### Scriptable authorization
 
 `auth.mode` picks the outcome:

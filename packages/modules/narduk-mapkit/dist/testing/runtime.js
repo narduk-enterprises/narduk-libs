@@ -743,12 +743,18 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         /**
          * The rect camera (K-5).
          *
-         * The rect is the unit-square Web-Mercator rect of the region the fake
-         * already projects with, so a coordinate lands in the same pixel whichever
-         * camera a page drives -- no second geometry is invented.
+         * Apple defines visibleMapRect in the frame inset by map.padding. Keep
+         * the annotation projection in whole-frame pixels and convert at this
+         * boundary, just as the library's view adapter does for real MapKit.
+         * https://developer.apple.com/documentation/mapkitjs/mapkit.map/padding
          */
         get visibleMapRect() {
-            return mapRectOfRegion(this.regionValue);
+            const rect = mapRectOfRegion(this.regionValue);
+            const padding = this.paddingValue;
+            if (!padding)
+                return rect;
+            const { height, width } = this.viewport();
+            return new MapRect(rect.origin.x + (padding.left / width) * rect.size.width, rect.origin.y + (padding.top / height) * rect.size.height, rect.size.width * (1 - (padding.left + padding.right) / width), rect.size.height * (1 - (padding.top + padding.bottom) / height));
         }
         set visibleMapRect(next) {
             this.assertOwnNamespace(next, 'visibleMapRect');
@@ -768,14 +774,24 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 });
                 log('camera-degenerate', [], 'visibleMapRect');
             }
-            const north = latitudeFromWorldY(rect.origin.y);
-            const south = latitudeFromWorldY(rect.origin.y + rect.size.height);
+            const padding = this.paddingValue;
+            const { height, width } = this.viewport();
+            const fullWidth = padding
+                ? (rect.size.width * width) / (width - padding.left - padding.right)
+                : rect.size.width;
+            const fullHeight = padding
+                ? (rect.size.height * height) / (height - padding.top - padding.bottom)
+                : rect.size.height;
+            const left = rect.origin.x - ((padding?.left ?? 0) / width) * fullWidth;
+            const top = rect.origin.y - ((padding?.top ?? 0) / height) * fullHeight;
+            const north = latitudeFromWorldY(top);
+            const south = latitudeFromWorldY(top + fullHeight);
             this.applyRegion({
                 center: {
                     latitude: (north + south) / 2,
-                    longitude: longitudeFromWorldX(rect.origin.x + rect.size.width / 2),
+                    longitude: longitudeFromWorldX(left + fullWidth / 2),
                 },
-                span: { latitudeDelta: north - south, longitudeDelta: rect.size.width * 360 },
+                span: { latitudeDelta: north - south, longitudeDelta: fullWidth * 360 },
             });
         }
         setVisibleMapRectAnimated(rect, _animated) {
