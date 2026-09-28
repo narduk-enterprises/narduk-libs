@@ -165,14 +165,11 @@ function onRailKeydown(event: KeyboardEvent) {
           <!-- The group already carries this text as its accessible name. -->
           <p class="ne-app-shell__section-label" aria-hidden="true">{{ section.label }}</p>
           <!-- Not in <ClientOnly>, on purpose: the rail must be in the
-               server's first paint (test/NeAppShell.ssr.test.ts). The
-               narduk/require-client-only-hydration-sensitive rule flags every
-               UNavigationMenu for client-only state; here the only state is
-               the active item, derived from the route, which is the same on
-               the server and the client, and no item has children, so there is
-               no accordion open state either. The one warning is recorded in
-               lint-budget.json rather than disabled: this lint config does not
-               honour eslint-disable comments inside <template>. -->
+               server's first paint (test/NeAppShell.ssr.test.ts). UNavigationMenu
+               reads no client-only state; its only state here is the active
+               item, derived from the route, which is the same on the server
+               and the client, and no item has children, so there is no
+               accordion open state either. -->
           <UNavigationMenu as="div" orientation="vertical" :items="items" />
         </div>
       </nav>
