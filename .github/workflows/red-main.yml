@@ -13,6 +13,14 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+# Caller-level group (the hygiene audit requires one) named differently from the
+# callable's own job-level group red-main-<repo>-<workflow>: an identical name
+# would deadlock the called job. Keyed by workflow so one workflow's completion
+# cannot displace another's pending verdict.
+concurrency:
+  group: red-main-caller-${{ github.repository }}-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
