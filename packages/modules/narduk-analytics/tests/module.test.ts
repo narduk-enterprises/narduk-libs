@@ -47,6 +47,17 @@ function makeNuxt() {
 }
 
 describe('narduk-analytics module', () => {
+  it('rejects non-registry app IDs before registering a runtime surface', async () => {
+    mockNuxtKit(() => true)
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    await expect(mod.setup({ appId: 'private@example.com' }, makeNuxt())).rejects.toThrow(
+      'registry slug',
+    )
+    await expect(mod.setup({ appId: null }, makeNuxt())).rejects.toThrow('registry slug')
+  })
+
   beforeEach(() => {
     vi.resetModules()
   })

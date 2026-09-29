@@ -13,6 +13,7 @@ import {
 } from './ci-workflow.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
+import { analyticsScaffoldFiles } from './analytics-scaffold.js'
 import { createMigrationWorkflowFiles, LINUX_DEPLOY_RUNNER_LABELS } from './migration-workflows.js'
 import { rateLimitNamespacePrefix } from './rate-limit-namespace.js'
 
@@ -609,6 +610,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // upgrade codemod deliberately does not manage this file.
     { path: NODE_SOURCE_FILE, contents: `${NODE_VERSION}\n` },
     ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
+    ...(capabilities.includes('analytics') ? analyticsScaffoldFiles() : []),
     {
       path: '.gitignore',
       contents: text(
@@ -1693,6 +1695,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           ? [
               '  alias: {',
               "    '#narduk-db': fileURLToPath(new URL('./server/database/schema.ts', import.meta.url)),",
+              '  },',
+            ]
+          : []),
+        ...(capabilities.includes('analytics')
+          ? [
+              '  nardukAnalytics: {',
+              '    appId: ' + tsString(appName) + ',',
+              "    privacy: '" + (exposure === 'authenticated' ? 'strict' : 'standard') + "',",
+              '    events: true,',
+              '    engagement: true,',
+              '    webVitals: true,',
+              '    identity: ' + String(capabilities.includes('auth')) + ',',
               '  },',
             ]
           : []),

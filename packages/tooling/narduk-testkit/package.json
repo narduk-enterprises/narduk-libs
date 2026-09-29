@@ -116,6 +116,10 @@
     "./server/handlers": {
       "types": "./dist/server/handlers/index.d.ts",
       "import": "./dist/server/handlers/index.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics.d.ts",
+      "import": "./dist/analytics.js"
     }
   },
   "files": [

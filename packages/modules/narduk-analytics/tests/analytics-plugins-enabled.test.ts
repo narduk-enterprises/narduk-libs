@@ -148,12 +148,22 @@ describe('posthog.client — enabled path', () => {
     for (const callback of pendingNextTicks.splice(0)) callback()
 
     expect(posthogCapture).toHaveBeenCalledTimes(2)
-    expect(posthogCapture).toHaveBeenNthCalledWith(1, '$pageview', {
-      $current_url: 'https://example.com/',
-    })
-    expect(posthogCapture).toHaveBeenNthCalledWith(2, '$pageview', {
-      $current_url: 'https://example.com/map',
-    })
+    expect(posthogCapture).toHaveBeenNthCalledWith(
+      1,
+      '$pageview',
+      expect.objectContaining({
+        $current_url: 'https://example.com/',
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
+    expect(posthogCapture).toHaveBeenNthCalledWith(
+      2,
+      '$pageview',
+      expect.objectContaining({
+        $current_url: 'https://example.com/map',
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
   })
 
   it('tags workers.dev preview traffic as internal, non-production', async () => {

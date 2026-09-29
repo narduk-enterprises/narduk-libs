@@ -1,0 +1,1 @@
+export const ANALYTICS_SCHEMA_VERSION = 1

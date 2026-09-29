@@ -23,7 +23,9 @@ export default defineNuxtPlugin({
       (report) => {
         // Read at report time, not at setup time: `posthog.client` provides the
         // client asynchronously under the idle/interaction load strategies.
-        const posthog = (nuxtApp as unknown as { $posthog?: PostHogExceptionClient }).$posthog
+        const posthog =
+          nuxtApp.$analytics ??
+          (nuxtApp as unknown as { $posthog?: PostHogExceptionClient }).$posthog
         reportExceptionToPostHog(posthog, report)
       },
     )

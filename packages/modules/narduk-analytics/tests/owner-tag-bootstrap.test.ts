@@ -342,7 +342,7 @@ describe('owner bootstrap route wiring', () => {
 
   it('keeps the PostHog plugin on the unsigned flag cookie', () => {
     const source = readFileSync(join(packageRoot, 'app/plugins/posthog.client.ts'), 'utf8')
-    expect(source).toContain("document.cookie.includes('narduk_owner=true')")
+    expect(source).toContain("cookie.trim() === 'narduk_owner=true'")
   })
 })
 

@@ -300,6 +300,7 @@ describe('posthog.client — strict privacy', () => {
 
     const config = posthogInit.mock.calls[0]?.[1] as Record<string, unknown>
     expect(config).toMatchObject({
+      cross_subdomain_cookie: false,
       autocapture: false,
       rageclick: false,
       capture_heatmaps: false,
@@ -317,14 +318,22 @@ describe('posthog.client — strict privacy', () => {
     )
     expect(sent.properties.$current_url).toBe(`${ORIGIN}/farms/:farmId/:year`)
 
-    expect(posthogCapture).toHaveBeenCalledWith('$pageview', {
-      $current_url: `${ORIGIN}/farms/:farmId/:year`,
-    })
+    expect(posthogCapture).toHaveBeenCalledWith(
+      '$pageview',
+      expect.objectContaining({
+        $current_url: `${ORIGIN}/farms/:farmId/:year`,
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
     afterEach?.({ path: '/farms/frm_1/2024/fields/fld_9' }, { path: '/' })
     await flush()
-    expect(posthogCapture).toHaveBeenLastCalledWith('$pageview', {
-      $current_url: `${ORIGIN}/farms/:farmId/:year/fields/:fieldId`,
-    })
+    expect(posthogCapture).toHaveBeenLastCalledWith(
+      '$pageview',
+      expect.objectContaining({
+        $current_url: `${ORIGIN}/farms/:farmId/:year/fields/:fieldId`,
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
   })
 
   it('does not turn on strict mode: paths stay raw and autocapture stays the default', async () => {
@@ -344,9 +353,13 @@ describe('posthog.client — strict privacy', () => {
     expect(config).not.toHaveProperty('autocapture')
     expect(config.mask_all_text).toBeUndefined()
     expect(typeof config.before_send).toBe('function')
-    expect(posthogCapture).toHaveBeenCalledWith('$pageview', {
-      $current_url: `${ORIGIN}/farms/frm_1/2024`,
-    })
+    expect(posthogCapture).toHaveBeenCalledWith(
+      '$pageview',
+      expect.objectContaining({
+        $current_url: `${ORIGIN}/farms/frm_1/2024`,
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
 
     const sent = (config.before_send as (r: CaptureResult) => CaptureResult)(
       event('$pageleave', {

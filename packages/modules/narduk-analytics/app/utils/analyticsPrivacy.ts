@@ -69,6 +69,9 @@ export function templateUrl(
 // `$prev_pageview_pathname`, … — PostHog's URL-bearing keys all end this way.
 const URL_KEY = /^\$.*(?:url|referrer)$/u
 const PATHNAME_KEY = /^\$.*pathname$/u
+// Campaign values can contain private freeform text, including persisted initial values.
+const STRICT_CAMPAIGN_KEY =
+  /^\$?(?:[a-z]+_)*(?:utm_.*|gclid|dclid|fbclid|msclkid|search_keyword|li_fat_id|gad_source|mc_cid|gclsrc|gbraid|wbraid|twclid|igshid|ttclid|rdt_cid|epik|qclid|sccid|irclid|_kx)$/iu
 // Element text and structure: autocapture, rage clicks and dead clicks. Strict
 // mode turns those off; standard mode drops the same keys so `$el_text` and
 // click structure cannot leak page copy, while the autocapture *setting* stays
@@ -127,7 +130,7 @@ function scrubProperties(
 ): Properties {
   const scrubbed: Properties = {}
   for (const [key, value] of Object.entries(properties)) {
-    if (DROPPED_KEYS.has(key)) continue
+    if (DROPPED_KEYS.has(key) || STRICT_CAMPAIGN_KEY.test(key)) continue
     if (typeof value === 'string' && URL_KEY.test(key)) {
       scrubbed[key] = templateUrl(value, origin, resolveRoute)
     } else if (typeof value === 'string' && PATHNAME_KEY.test(key)) {
