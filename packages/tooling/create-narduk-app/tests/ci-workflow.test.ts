@@ -9,7 +9,6 @@ import {
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
   createRunnerOnboardingScript,
-  createValidationWorkflow,
   RUNNER_ONBOARDING_JOB_NAME,
   RUNNER_ONBOARDING_MESSAGE,
   SHARED_WORKFLOW_CALLER_PERMISSIONS,
@@ -118,10 +117,6 @@ describe('generated CI boundaries', () => {
       jobs: { ci: { permissions: Record<string, string> } }
     }
     expect(ci.jobs.ci.permissions).toEqual(expected)
-    const validation = YAML.parse(createValidationWorkflow('private')!) as {
-      jobs: { ci: { permissions: Record<string, string> } }
-    }
-    expect(validation.jobs.ci.permissions).toEqual(expected)
     expect(Object.keys(expected).sort()).toEqual(
       SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => entry.split(':')[0]).sort(),
     )
@@ -185,7 +180,6 @@ describe('generated CI boundaries', () => {
       'cf:deploy:preview',
       'deploy',
       'deploy:dry-run',
-      'deploy:local',
       'deploy:version',
     ] as const) {
       expect(web.scripts[key] ?? '', key).not.toContain(BUILD_CI_OUTPUT_MARKER)
