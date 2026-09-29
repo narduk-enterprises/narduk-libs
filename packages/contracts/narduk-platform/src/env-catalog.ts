@@ -7,7 +7,8 @@
  *
  *   key     - the env var name consumers read at build or runtime.
  *   from    - where the value originates. One of:
- *               doppler:<project>/<config>/<source-key>
+ *               nvault:<project>/<environment>/<config>/<source-key>
+ *               doppler:<project>/<config>/<source-key>   (retired: no entry may use it)
  *               registry:global:<key>         shared registry-managed plain value
  *               registry:app:<key>            per-app registry-managed plain value
  *               derive:<formula>              computed; formulas below
@@ -221,6 +222,7 @@ export function isKnownModuleId(value: string | null | undefined): value is Modu
 }
 
 export type CatalogFrom =
+  | `nvault:${string}/${string}/${string}/${string}`
   | `doppler:${string}/${string}/${string}`
   | `registry:global:${string}`
   | `registry:app:${string}`
@@ -289,7 +291,7 @@ const APP_BASE: CatalogEntry[] = [
   },
   {
     key: 'GH_PACKAGES_READ',
-    from: 'doppler:narduk/tokens/GH_PACKAGES_READ',
+    from: 'nvault:github/prd/narduk-enterprises-packages-read/GH_PACKAGES_READ',
     to: ['cf:build-secret'],
     scope: 'every-app',
     secret: true,
@@ -332,7 +334,7 @@ const APP_BASE: CatalogEntry[] = [
 const SUPABASE_MODULE: CatalogEntry[] = [
   {
     key: 'AUTH_AUTHORITY_URL',
-    from: 'doppler:narduk/tokens/AUTH_AUTHORITY_URL',
+    from: 'nvault:narduk-auth/prd/app/AUTH_AUTHORITY_URL',
     to: ['cf:build-var', 'cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -349,7 +351,7 @@ const SUPABASE_MODULE: CatalogEntry[] = [
   },
   {
     key: 'SUPABASE_ANON_KEY',
-    from: 'doppler:narduk/tokens/SUPABASE_ANON_KEY',
+    from: 'nvault:narduk-auth/prd/app/SUPABASE_ANON_KEY',
     to: ['cf:build-var', 'cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -384,7 +386,7 @@ const SUPABASE_MODULE: CatalogEntry[] = [
   },
   {
     key: 'SUPABASE_SERVICE_ROLE_KEY',
-    from: 'doppler:narduk/tokens/SUPABASE_SERVICE_ROLE_KEY',
+    from: 'nvault:narduk-auth/prd/app/SUPABASE_SERVICE_ROLE_KEY',
     to: ['cf:runtime-secret'],
     scope: 'every-app',
     secret: true,
@@ -537,14 +539,6 @@ const POSTHOG_MODULE: CatalogEntry[] = [
     note: 'Server-side query context for admin analytics.',
   },
   {
-    key: 'POSTHOG_PERSONAL_API_KEY',
-    from: 'doppler:narduk/tokens/POSTHOG_PERSONAL_API_KEY',
-    to: ['cf:build-secret', 'cf:runtime-secret'],
-    scope: 'every-app',
-    secret: true,
-    module: 'posthog',
-  },
-  {
     key: 'POSTHOG_DOMAIN',
     from: 'derive:hostname:SITE_URL',
     to: ['cf:build-var', 'cf:runtime-var'],
@@ -642,15 +636,6 @@ const GA_MODULE: CatalogEntry[] = [
 
 const SEARCH_CONSOLE_MODULE: CatalogEntry[] = [
   {
-    key: 'GSC_SERVICE_ACCOUNT_JSON',
-    from: 'doppler:narduk/tokens/GSC_SERVICE_ACCOUNT_JSON',
-    to: ['cf:build-secret', 'cf:runtime-secret'],
-    scope: 'every-app',
-    secret: true,
-    module: 'search-console',
-    note: 'Shared Google service account JSON copied directly to the app provider planes during onboarding.',
-  },
-  {
     key: 'GSC_SITE_URL',
     from: 'derive:sc-domain:SITE_URL',
     to: ['cf:build-var', 'cf:runtime-var'],
@@ -714,7 +699,7 @@ const APPLE_MAPS_MODULE: CatalogEntry[] = [
   // paste per-app values into app-local config.
   {
     key: 'APPLE_TEAM_ID',
-    from: 'doppler:narduk/tokens/APPLE_TEAM_ID',
+    from: 'nvault:apple/prd/mapkit-signing/APPLE_TEAM_ID',
     to: ['cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -731,7 +716,7 @@ const APPLE_MAPS_MODULE: CatalogEntry[] = [
   },
   {
     key: 'APPLE_KEY_ID',
-    from: 'doppler:narduk/tokens/APPLE_KEY_ID',
+    from: 'nvault:apple/prd/mapkit-signing/APPLE_KEY_ID',
     to: ['cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -748,7 +733,7 @@ const APPLE_MAPS_MODULE: CatalogEntry[] = [
   },
   {
     key: 'APPLE_PRIVATE_KEY',
-    from: 'doppler:narduk/tokens/APPLE_PRIVATE_KEY',
+    from: 'nvault:apple/prd/mapkit-signing/APPLE_PRIVATE_KEY',
     to: ['cf:runtime-secret'],
     scope: 'every-app',
     secret: true,
@@ -869,6 +854,7 @@ export function listKeysForModules(modules: readonly ModuleId[]): string[] {
 // ─── from: parsing ───────────────────────────────────────────────────────────
 
 export type CatalogFromParsed =
+  | { kind: 'nvault'; project: string; environment: string; config: string; key: string }
   | { kind: 'doppler'; project: string; config: string; key: string }
   | { kind: 'registry-global'; key: string }
   | { kind: 'registry-app'; key: string }
@@ -886,6 +872,16 @@ export type DeriveFormula =
 export type GeneratePolicy = { policy: 'nonce-32' }
 
 export function parseCatalogFrom(from: CatalogFrom): CatalogFromParsed {
+  if (from.startsWith('nvault:')) {
+    const [project, environment, config, key, ...extra] = from.slice('nvault:'.length).split('/')
+    if (!project || !environment || !config || !key || extra.length > 0) {
+      throw new Error(
+        `Invalid nvault from: "${from}" (expected nvault:<project>/<environment>/<config>/<key>)`,
+      )
+    }
+    return { kind: 'nvault', project, environment, config, key }
+  }
+
   if (from.startsWith('doppler:')) {
     const rest = from.slice('doppler:'.length)
     const [project, config, key] = rest.split('/')
