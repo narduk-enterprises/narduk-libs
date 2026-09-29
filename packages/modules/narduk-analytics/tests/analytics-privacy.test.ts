@@ -194,18 +194,17 @@ describe('createStrictPrivacyBeforeSend', () => {
     ])
   })
 
-  it('replaces raw exception messages with the redacted copy', () => {
+  it('sends no exception message text in strict mode', () => {
     const result = scrub(
       event('$exception', {
-        redacted_message: 'Field not found',
+        redacted_message: 'Field "North 40" not found',
         $exception_message: 'Field "North 40" not found',
         $exception_list: [{ type: 'Error', value: 'Field "North 40" not found' }],
       }),
     )
-    expect(result?.properties?.$exception_list).toEqual([
-      { type: 'Error', value: 'Field not found' },
-    ])
+    expect(result?.properties?.$exception_list).toEqual([{ type: 'Error', value: '(redacted)' }])
     expect(result?.properties).not.toHaveProperty('$exception_message')
+    expect(result?.properties).not.toHaveProperty('redacted_message')
   })
 
   it('passes a dropped event through as dropped', () => {

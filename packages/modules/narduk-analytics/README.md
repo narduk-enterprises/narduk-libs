@@ -87,7 +87,7 @@ export default defineNuxtConfig({
 | Session replay, surveys                          | `POSTHOG_*_ENABLED` flags                 | off, whatever the flags say                                                                                                                                                                                                                               |
 | `/flags` request, remote extensions              | on                                        | off (`advanced_disable_flags`, `disable_external_dependency_loading`)                                                                                                                                                                                     |
 | Web-vitals attribution                           | `POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED`  | off (it carries element selectors and resource URLs); plain web vitals still allowed                                                                                                                                                                      |
-| `$exception` message                             | raw `error.message` in `$exception_list`  | narduk-core's `redacted_message` only                                                                                                                                                                                                                     |
+| `$exception` message                             | raw `error.message` in `$exception_list`  | none: every `$exception_list[].value` is `(redacted)`, and `$exception_message` and `redacted_message` are dropped; type, stack and route pattern stay                                                                                                    |
 | GA4 `page_path` / `page_location` / `page_title` | raw path, `document.title`                | route pattern for all three, also set with `gtag('set')` so tag-collected events inherit it; `page_referrer` cut to origin; Google signals and ad personalisation off                                                                                     |
 
 Why build-time: the option is written to `runtimeConfig.public.analyticsPrivacy`
@@ -403,15 +403,15 @@ switch that silently does nothing. `captureException()` is bundled in the main
 Every property is low cardinality and carries no identifier. The app id rides
 along as the `app` super property `posthog.client` registers.
 
-| Property           | Value                                               |
-| ------------------ | --------------------------------------------------- |
-| `route`            | Matched route **pattern**, never a raw path         |
-| `source`           | `client` or `server`                                |
-| `status_code`      | HTTP status the error carried, or 500               |
-| `fatal`            | Whether the error took down the app                 |
-| `redacted_message` | Message with query strings and emails removed       |
-| `build_version`    | Deployed commit SHA, when known                     |
-| `request_id`       | Correlation id, the same one `x-request-id` carries |
+| Property           | Value                                                                   |
+| ------------------ | ----------------------------------------------------------------------- |
+| `route`            | Matched route **pattern**, never a raw path                             |
+| `source`           | `client` or `server`                                                    |
+| `status_code`      | HTTP status the error carried, or 500                                   |
+| `fatal`            | Whether the error took down the app                                     |
+| `redacted_message` | Message with query strings and emails removed (not sent in strict mode) |
+| `build_version`    | Deployed commit SHA, when known                                         |
+| `request_id`       | Correlation id, the same one `x-request-id` carries                     |
 
 ### When nothing is captured
 

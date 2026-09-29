@@ -148,21 +148,32 @@ function scrubProperties(
   return scrubbed
 }
 
+/** What strict mode sends in place of every exception message. */
+export const STRICT_EXCEPTION_MESSAGE = '(redacted)'
+
 /**
- * `$exception_list[].value` is the raw `error.message`; narduk-core already
- * supplies a redacted copy as `redacted_message`. Strict mode reports only
- * that copy, so a record name inside an error message stays in the browser.
+ * Strict mode sends no exception message text at all: `$exception_list[].value`
+ * becomes {@link STRICT_EXCEPTION_MESSAGE}, and `$exception_message` and
+ * narduk-core's `redacted_message` are dropped. The exception `type`, the
+ * mechanism, the stack frames and the route pattern stay, so Error tracking
+ * still groups and locates the failure.
+ *
+ * Why not narduk-core's `redacted_message`: that redaction strips query strings
+ * and email addresses and nothing else, which is the right floor for standard
+ * mode but not strict. Real messages carry the record in the path or a quoted
+ * literal — ofetch's `[GET] "/api/farms/frm_1": 404 Not Found`, an app's
+ * `No field named "North 40"` — and no pattern list can know every shape an
+ * app or a library will put in a message. Dropping the text is the only rule
+ * that holds for messages nobody has seen yet.
  */
 function scrubExceptionList(properties: Properties): Properties {
-  const list = properties.$exception_list
-  if (!Array.isArray(list)) return properties
-  const redacted =
-    typeof properties.redacted_message === 'string' ? properties.redacted_message : '(redacted)'
-  const { $exception_message: _dropped, ...rest } = properties
+  const { $exception_message: _message, redacted_message: _redacted, ...rest } = properties
+  const list = rest.$exception_list
+  if (!Array.isArray(list)) return rest
   return {
     ...rest,
     $exception_list: list.map((entry: unknown) =>
-      isPlainObject(entry) ? { ...entry, value: redacted } : entry,
+      isPlainObject(entry) ? { ...entry, value: STRICT_EXCEPTION_MESSAGE } : entry,
     ),
   }
 }

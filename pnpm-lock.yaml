@@ -507,6 +507,9 @@ importers:
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(80204a7c3c5f791bea8badf904eb4385)
+      ofetch:
+        specifier: ^1.5.1
+        version: 1.5.1
       playwright:
         specifier: 1.61.1
         version: 1.61.1
