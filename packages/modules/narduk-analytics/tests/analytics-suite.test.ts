@@ -44,6 +44,36 @@ function fixture(enabled = true) {
 }
 
 describe('analytics transport', () => {
+  it('clears persisted identity before replaying unresolved-session events', () => {
+    const f = fixture()
+    const transport = createAnalyticsTransport({
+      enabled: true,
+      context: () => ({}),
+      resetOnAttach: true,
+    })
+    transport.capture('$pageview')
+    transport.attach(f.client)
+    expect(f.client.reset).toHaveBeenCalledTimes(1)
+    expect(f.client.reset.mock.invocationCallOrder[0]).toBeLessThan(
+      f.client.capture.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('fails closed if clearing persisted identity fails', () => {
+    const f = fixture()
+    f.client.reset.mockImplementation(() => {
+      throw new Error('reset failed')
+    })
+    const transport = createAnalyticsTransport({
+      enabled: true,
+      context: () => ({}),
+      resetOnAttach: true,
+    })
+    transport.capture('$pageview')
+    transport.attach(f.client)
+    expect(transport.status).toBe('failed')
+    expect(f.client.capture).not.toHaveBeenCalled()
+  })
   it('stops replay after a failed identity barrier', () => {
     const f = fixture()
     f.transport.identify('user')
@@ -114,6 +144,8 @@ describe('analytics transport', () => {
     expect(f.client.identify).not.toHaveBeenCalled()
     expect(f.client.capture).not.toHaveBeenCalled()
     expect(f.transport.dropped).toBe(2)
+    expect(f.transport.status).toBe('failed')
+    expect(f.transport.capture('later')).toBe(false)
   })
 
   it('fails closed on queue overflow without replaying a partial user history', () => {
@@ -191,6 +223,15 @@ describe('foreground engagement', () => {
 })
 
 describe('session identity', () => {
+  it('clears a previously persisted person for an initial ready anonymous session', () => {
+    const f = fixture()
+    f.transport.attach(f.client)
+    const synchronize = createAnalyticsIdentity(f.transport, 'app')
+    synchronize(undefined)
+    synchronize(undefined)
+    expect(f.client.reset).toHaveBeenCalledTimes(1)
+    expect(f.client.capture).not.toHaveBeenCalled()
+  })
   it('identifies restored sessions without inventing login or signup events', () => {
     const f = fixture()
     f.transport.attach(f.client)
@@ -210,7 +251,7 @@ describe('session identity', () => {
     synchronize('b')
     synchronize(null)
     synchronize(undefined)
-    expect(f.client.reset).toHaveBeenCalledTimes(2)
+    expect(f.client.reset).toHaveBeenCalledTimes(3)
     expect(f.client.identify.mock.calls.map((call) => call[0])).toEqual(['app:a', 'app:b'])
     expect(f.client.capture.mock.calls.map((call) => call[0])).toEqual([
       'auth_session_started',

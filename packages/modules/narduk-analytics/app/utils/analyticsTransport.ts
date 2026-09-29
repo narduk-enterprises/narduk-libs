@@ -17,6 +17,8 @@ interface TransportOptions {
   enabled: boolean
   maxQueue?: number
   now?: () => number
+  /** Clear persisted person state before replay when the session bridge owns identity. */
+  resetOnAttach?: boolean
   ttlMs?: number
 }
 
@@ -125,6 +127,7 @@ export function createAnalyticsTransport(options: TransportOptions) {
       client = value
       status = 'ready'
       try {
+        if (options.resetOnAttach) client.reset()
         client.register(options.context())
       } catch {
         dropped += queue.length
@@ -135,8 +138,16 @@ export function createAnalyticsTransport(options: TransportOptions) {
       }
       // Expired identity commands cannot safely be replayed or skipped independently.
       if (queue.some((entry) => now() - entry.at > ttlMs)) {
+        const lostIdentity = queue.some(
+          ({ command }) => command.kind === 'identify' || command.kind === 'reset',
+        )
         dropped += queue.length
         queue.length = 0
+        if (lostIdentity) {
+          status = 'failed'
+          client = undefined
+          return
+        }
       }
       const pending = queue.splice(0)
       for (const entry of pending) send(entry.command)

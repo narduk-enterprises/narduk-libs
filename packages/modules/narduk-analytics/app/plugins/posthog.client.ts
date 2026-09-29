@@ -81,7 +81,8 @@ export default defineNuxtPlugin({
       ? analyticsLandingAttribution(window.location.href, document.referrer, strict)
       : {}
     const context = () => ({ ...baseContext(), ...landing })
-    const transport = createAnalyticsTransport({ enabled, context })
+    const identityEnabled = runtimeConfig.public.analyticsIdentityEnabled === true
+    const transport = createAnalyticsTransport({ enabled, context, resetOnAttach: identityEnabled })
     nuxtApp.provide('analytics', transport)
 
     if (!enabled) return { provide: { posthog: undefined } }
@@ -115,7 +116,9 @@ export default defineNuxtPlugin({
       transport.disable()
     })
     runWithAnalyticsLoadStrategy(strategy, () => {
-      void initializePosthog().catch(() => transport.fail())
+      void initializePosthog().catch(() => {
+        if (transport.status === 'pending') transport.fail()
+      })
     })
 
     async function initializePosthog() {
@@ -132,6 +135,7 @@ export default defineNuxtPlugin({
         const webVitals = webVitalsAttributionEnabled
           ? await import('web-vitals/attribution')
           : await import('web-vitals')
+        if (transport.status !== 'pending') return
 
         installPostHogWebVitalsCallbacks(window as PostHogExtensionsWindow, {
           onCLS: webVitals.onCLS,
@@ -145,16 +149,20 @@ export default defineNuxtPlugin({
       // route. The strict scrub runs last, so nothing an earlier hook adds escapes.
       const beforeSend = composeBeforeSend(
         (result) =>
-          result
-            ? {
-                ...result,
-                properties: {
-                  ...context(),
-                  ...result.properties,
-                  analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
-                },
-              }
-            : result,
+          transport.status === 'failed' ||
+          transport.status === 'disabled' ||
+          (identityEnabled && transport.status === 'pending')
+            ? null
+            : result
+              ? {
+                  ...result,
+                  properties: {
+                    ...context(),
+                    ...result.properties,
+                    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+                  },
+                }
+              : result,
         webVitalsEnabled
           ? createWebVitalsBeforeSend({
               buildVersion: runtimeConfig.public.buildVersion,

@@ -222,6 +222,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
     const analyticsRuntimeConfigTypesPath = fileURLToPath(
       new URL('../app/types/runtime-config.d.ts', import.meta.url),
     )
+    const analyticsInjectionTypesPath = resolver.resolve('../app/types/posthog.d.ts')
 
     await ensureNardukCoreInstalled(nuxt)
     if (
@@ -278,6 +279,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         analyticsSurface: options.surface ?? 'web',
         analyticsEventsEnabled: options.events === true,
         analyticsEngagementEnabled: options.engagement === true,
+        analyticsIdentityEnabled: options.identity === true,
         // Build-time seeds only. Workers Builds does not copy wrangler.json
         // vars into `nuxt build`; narduk-core's request-time overlay fills
         // these from Worker bindings (short names or NUXT_PUBLIC_* aliases)
@@ -309,6 +311,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
 
     const registerAnalyticsTypes = (prepareOptions: TypePrepareOptions) => {
       registerTypeReference(prepareOptions, analyticsRuntimeConfigTypesPath)
+      if (options.app) registerTypeReference(prepareOptions, analyticsInjectionTypesPath)
     }
 
     nuxt.hook('nitro:prepare:types', registerAnalyticsTypes)

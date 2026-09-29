@@ -453,11 +453,14 @@ when initialization is deferred: calls made while loading are queued in memory
 (up to 100 commands for 30 seconds), with their original route, timestamp and
 properties. Disabled analytics never queues. Opt-out, initialization failure,
 expiry and overflow discard pending data; an overflow fails the transport rather
-than replaying part of an identity history. `useAnalytics().status`
-distinguishes `pending`, `ready`, `disabled` and `failed`; `dropped` reports
-local discarded commands. Acceptance into this queue does **not** prove provider
-intake. Blocked trackers and a tab closed before SDK initialization can still
-lose events.
+than replaying part of an identity history. Expiry that discards an identity
+barrier also fails the transport. When the identity bridge is enabled, the kit
+clears persisted person state before replay; events recorded before the session
+resolves can remain anonymous. Native SDK events are suppressed until that
+initial reset and after transport failure. `useAnalytics().status` distinguishes
+`pending`, `ready`, `disabled` and `failed`; `dropped` reports local discarded
+commands. Acceptance into this queue does **not** prove provider intake. Blocked
+trackers and a tab closed before SDK initialization can still lose events.
 
 Enable the recommended profile explicitly in an existing app:
 
@@ -533,12 +536,13 @@ The optional identity bridge observes ready sessions, namespaces an opaque user
 ID with `appId`, and resets identity on account changes and session end
 (including logout, expiry and revocation). Restoring an existing session
 identifies it but does not invent a login event. It reports subsequent sign-in
-edges with `method: 'session'`; call the typed auth events at the completed auth
-operation when a known method or sign-up distinction matters. Never identify
-with an email, name or credential. The accepted ID format is ASCII letters,
-digits, `_` and `-`. Strict mode uses a host-only PostHog cookie; it can still
-persist a raw landing URL **on that host** before `before_send`. Outgoing
-payload filtering and cookie isolation are different guarantees.
+edges as `auth_session_started` and `auth_session_ended`; call method-specific
+`auth_signed_in` and `auth_signed_up` at the completed auth operation when a
+known method or sign-up distinction matters. Never identify with an email, name
+or credential. The accepted ID format is ASCII letters, digits, `_` and `-`.
+Strict mode uses a host-only PostHog cookie; it can still persist a raw landing
+URL **on that host** before `before_send`. Outgoing payload filtering and cookie
+isolation are different guarantees.
 
 For a declarative click (never an operation success):
 

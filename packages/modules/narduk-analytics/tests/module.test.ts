@@ -76,6 +76,15 @@ describe('narduk-analytics module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addPlugin).toHaveBeenCalledWith(expect.stringContaining('/app/plugins/posthog.client'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
+    const typeHook = nuxt.hook.mock.calls.find(([name]) => name === 'prepare:types')?.[1]
+    const prepared: { references: Array<{ path: string }> } = { references: [] }
+    typeHook(prepared)
+    expect(prepared.references.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/app/types/runtime-config.d.ts'),
+        expect.stringContaining('/app/types/posthog.d.ts'),
+      ]),
+    )
   })
 
   it('auto-installs narduk-core when it is not already present', async () => {

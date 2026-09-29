@@ -9,6 +9,8 @@ export function createAnalyticsIdentity(transport: AnalyticsTransport, appId: st
     const next =
       typeof opaqueId === 'string' && /^[\w-]{1,128}$/u.test(opaqueId) ? opaqueId : undefined
     if (initialized && previous === next) return
+    // A ready anonymous session must clear a person restored from an older browser session.
+    if (!initialized && !next) transport.reset()
     if (previous) {
       transport.capture('auth_session_ended', {
         reason: next ? 'account_changed' : 'session_ended',
