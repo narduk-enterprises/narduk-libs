@@ -16,7 +16,7 @@ import { currentDeployment, soleDeployedVersionId, type WranglerVersionsClient }
  * Helpers `narduk-app ship` (src/ship.ts) and `narduk-app deploy` share: the
  * scrubbed build environment, the committed production target, the built-output
  * and secret-leak gates, and the sole-deployment read. They lived in the
- * deploy-local, deploy-hotfix and development modules until those were removed.
+ * removed local-deploy, hotfix and development-mode modules until those went.
  */
 
 /** The build identity the ship build environment pins. */
