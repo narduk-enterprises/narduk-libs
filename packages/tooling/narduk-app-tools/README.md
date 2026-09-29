@@ -59,28 +59,12 @@ selector. Doppler `ne/*` root provisioners remain a separately approved
 provider-root exception and are **not** an application development credential
 source.
 
-For incident patches from a workstation, use `narduk-app deploy-hotfix` and the
-[local break-glass runbook](docs/local-hotfix.md). It uses injected recovery
-credentials, a clean commit snapshot, required local checks, version promotion
-and live proof. Legacy `deploy-local` is not the new hotfix procedure; it no
-longer reads Doppler `narduk/tokens` (Doppler is retired except `ne`) and takes
-its build secrets from the environment. `GH_PACKAGES_READ` comes from its
-registered route (nvault `github/prd/narduk-enterprises-packages-read`) and the
-app's own secrets from the app's nvault config, so run it under both:
-
-```sh
-nvault run -p github -e prd -c narduk-enterprises-packages-read -- \
-  nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes
-```
-
-For an app still being built, an owner can enroll it in **development mode**:
-one approved workstation deploys its checkout, uncommitted edits included, with
-`narduk-app development deploy` (`pnpm run deploy:dev`), while push/merge
-automation and Workers Builds triggers are held and later restored exactly. Each
-deploy also reconciles the Worker's script-level crons and routes from the
-artifact; version promotion does not. Full validation runs on request and on
-exit. Nothing enrolls automatically. See the
-[development mode runbook](docs/development-mode.md).
+To put a committed feature branch into production from a workstation, use
+`narduk-app ship` (see [docs/ship.md](docs/ship.md)): checks and build, an
+artifact gate, upload, promote, live proof and automatic rollback, with an
+auto-merge PR afterwards. It also covers an incident patch. It replaces
+development mode and the older local-deploy and hotfix commands, which were
+removed; there is no separate break-glass command.
 
 ## Shared app scripts (`ensure-generated`, `check-starter-identity`)
 
@@ -406,10 +390,9 @@ neutralize `--dry-run`.
 `.narduk-build-ci`. `build:ci` writes that file after baking the public
 test-only `NUXT_SESSION_PASSWORD` and `NUXT_OG_IMAGE_SECRET`. narduk-seo writes
 it too whenever it lets a build sign with the `NUXT_OG_IMAGE_SECRET`
-placeholder, so a `cf:build` or `hotfix:build` that narduk-seo let through with
-the placeholder is refused here as well. The message names the marker and
-`cf:build`. `deploy-local`, `deploy-hotfix`, and `development deploy` publish
-through those commands, so the same output cannot leave on those paths.
+placeholder, so a `cf:build` that narduk-seo let through with the placeholder is
+refused here as well. The message names the marker and `cf:build`. `ship`
+uploads through `versions-upload`, so the same output cannot leave that way.
 `--dry-run` prints the fact and exits 0, because a dry run publishes nothing. A
 later `cf:build` with real secrets replaces `.output` and drops the marker.
 
@@ -987,11 +970,11 @@ report that shape as an unreadable zod error.
 `liveProof.healthAuth` is `"anonymous"` (the default) or `"authenticated"`.
 Declare `"authenticated"` when `healthPath` sits behind the app's auth and
 refuses an anonymous request: the path stays required, because the route exists,
-but `deploy hotfix` and `development deploy` pass `--no-health` instead of
-asserting it, item 12.3 says so in its detail, and `doctor --adoption --live`
-reports requirement 12 as unknown, with the reason, rather than failing on the
-401 the app is right to send (#585). An app whose promote workflow passes
-`--no-health` should declare it here, so the manifest and the workflow agree.
+but `ship` passes `--no-health` instead of asserting it, item 12.3 says so in
+its detail, and `doctor --adoption --live` reports requirement 12 as unknown,
+with the reason, rather than failing on the 401 the app is right to send (#585).
+An app whose promote workflow passes `--no-health` should declare it here, so
+the manifest and the workflow agree.
 
 `staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
 block that omits them still validates. `previewChecks` is accepted and optional

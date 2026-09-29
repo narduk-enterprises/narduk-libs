@@ -39,7 +39,6 @@
 import { z } from 'zod'
 
 import { databaseOwnershipSchema } from './database-ownership.js'
-import { developmentSchema } from './development-config.js'
 
 /** The conformance key. Any other value means the app is deliberately exempt
  * from the standard and must justify that elsewhere -- it is not a failure
@@ -289,9 +288,9 @@ export const deploymentBlockSchema = z.strictObject({
     /**
      * Whether `healthPath` answers an anonymous request. `authenticated` means
      * it sits behind the app's auth: the path stays declared, because the route
-     * exists, but nothing asserts it anonymously -- the hotfix and development
-     * deploy proofs skip the health assertion, and the adoption read reports it
-     * unknown rather than failing a 401 (narduk-libs#585).
+     * exists, but nothing asserts it anonymously -- the ship
+     * proof skips the health assertion, and the adoption read reports it unknown
+     * rather than failing a 401 (narduk-libs#585).
      */
     healthAuth: z.enum(['anonymous', 'authenticated']).default('anonymous'),
     smokePath: appPath,
@@ -329,8 +328,12 @@ export const deploymentBlockSchema = z.strictObject({
    * appear here too, so the manifest never leaves a binding's owner implied.
    */
   databaseOwnership: databaseOwnershipSchema.optional(),
-  /** Optional capability. Enrollment and publisher custody live outside source control. */
-  development: developmentSchema.optional(),
+  /**
+   * Ignored. Development mode was removed (`narduk-app ship` replaces it); the key is
+   * retained so existing Config/cloudflare-app.json files that still carry the block
+   * keep validating until they drop it.
+   */
+  development: z.unknown().optional(),
 })
 
 export type DeploymentBlock = z.infer<typeof deploymentBlockSchema>

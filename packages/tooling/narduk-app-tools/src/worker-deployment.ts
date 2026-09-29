@@ -3,7 +3,7 @@
  *
  * Cloudflare's deployments list has been observed both oldest-first
  * (`wrangler deployments list --json`, 2026-09-17 against `buoys`) and
- * newest-first (REST `GET .../deployments` in development-mode inspect).
+ * newest-first (REST `GET .../deployments`).
  * Identity is the version serving 100% of traffic on the current
  * deployment, decided by `created_on`. List position is not identity.
  */

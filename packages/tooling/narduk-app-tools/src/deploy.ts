@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
 
 import { readDeploymentBlock } from './deployment-config.js'
-import { mergeArtifactScriptTriggers } from './development-script-triggers.js'
+import { mergeArtifactScriptTriggers } from './script-triggers.js'
 import {
   describePreviewPlan,
   planPreviewConfig,
@@ -436,7 +436,9 @@ export function runDeploy(
         })
       : null
   if (options.keepVars && !productionConfigPath)
-    throw new Error('Preserving hotfix vars requires a source Wrangler config and built output')
+    throw new Error(
+      'Preserving runtime vars (keep_vars) requires a source Wrangler config and built output',
+    )
   const sourceConfigPath =
     configPath && productionConfigPath
       ? selectDeployConfig({

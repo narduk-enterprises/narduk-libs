@@ -23,13 +23,6 @@ import {
   runDeploy,
   writeFlattenedWranglerDeployConfig,
 } from '../src/deploy.js'
-import {
-  isGitWorkingTreeClean,
-  isNonLocalHttpsUrl,
-  normalizeDeployHostname,
-  parseDeployLocalArgs,
-  readDeployLocalSecrets,
-} from '../src/deploy-local.js'
 import { parsePerformanceBudgetArgs } from '../src/performance.js'
 
 const tempDirs: string[] = []
@@ -242,69 +235,16 @@ describe('app-local command planning', () => {
     expect(flattened).toBe(join(appDir, '.wrangler.deploy.production.json'))
   })
 
-  it('parses headless local deploy options', () => {
-    expect(
-      parseDeployLocalArgs(['--yes', '--dry-run', '--skip-migrate', '--no-probe', '--force']),
-    ).toEqual({
-      dryRun: true,
-      force: true,
-      noProbe: true,
-      skipMigrate: true,
-      yes: true,
-    })
-  })
-
-  it('reads deploy-local build secrets from the environment, never Doppler', () => {
-    expect(readDeployLocalSecrets({ A: ' one ', B: 'two' }, ['A', 'B'])).toEqual({
-      A: 'one',
-      B: 'two',
-    })
-    expect(() => readDeployLocalSecrets({ A: 'one', B: '  ' }, ['A', 'B', 'C'])).toThrow(
-      'deploy-local needs B, C in its environment.',
-    )
-    expect(() => readDeployLocalSecrets({}, ['A'])).toThrow('nvault run -p <app>')
-  })
-
-  it('names the registered route for GH_PACKAGES_READ, not the app config (#333)', () => {
-    const missing = () =>
-      readDeployLocalSecrets({ NUXT_SESSION_PASSWORD: 'x' }, [
-        'GH_PACKAGES_READ',
-        'NUXT_OG_IMAGE_SECRET',
-        'NUXT_SESSION_PASSWORD',
-      ])
-    expect(missing).toThrow(
-      'GH_PACKAGES_READ comes from its registered route, `nvault run -p github -e prd -c narduk-enterprises-packages-read --`.',
-    )
-    expect(missing).toThrow('NUXT_OG_IMAGE_SECRET comes from the app nvault config.')
-    expect(missing).toThrow(
-      '`nvault run -p github -e prd -c narduk-enterprises-packages-read -- nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`',
-    )
-    const onlyPackagesRead = () =>
-      readDeployLocalSecrets({ NUXT_OG_IMAGE_SECRET: 'x' }, [
-        'GH_PACKAGES_READ',
-        'NUXT_OG_IMAGE_SECRET',
-      ])
-    expect(onlyPackagesRead).toThrow('GH_PACKAGES_READ comes from its registered route')
-    expect(onlyPackagesRead).not.toThrow('from the app nvault config')
-    // A custom key list without GH_PACKAGES_READ never mentions its route.
-    const customList = () => readDeployLocalSecrets({}, ['APP_ONLY_SECRET'])
-    expect(customList).toThrow('APP_ONLY_SECRET comes from the app nvault config.')
-    expect(customList).toThrow(
-      'Run it under the app nvault config, for example `nvault run -p <app> -e prd -c <config> -- narduk-app deploy-local --yes`',
-    )
-    expect(customList).not.toThrow('narduk-enterprises-packages-read')
-  })
-
-  it('preserves hotfix runtime vars in generated configuration without changing source', () => {
-    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-config-'))
+  it('preserves runtime vars (ship) in generated configuration without changing source', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-keep-vars-config-'))
     tempDirs.push(root)
     const path = join(root, 'wrangler.jsonc')
     const source = JSON.stringify({ name: 'example', keep_vars: false, vars: { MODE: 'prod' } })
     writeFileSync(path, source)
     const ordinary = writeFlattenedWranglerDeployConfig(path)
     expect(JSON.parse(readFileSync(ordinary, 'utf8')).keep_vars).toBe(false)
-    const hotfix = writeFlattenedWranglerDeployConfig(path, { keepVars: true })
-    expect(JSON.parse(readFileSync(hotfix, 'utf8'))).toMatchObject({
+    const kept = writeFlattenedWranglerDeployConfig(path, { keepVars: true })
+    expect(JSON.parse(readFileSync(kept, 'utf8'))).toMatchObject({
       keep_vars: true,
       vars: { MODE: 'prod' },
       main: '.output/server/index.mjs',
@@ -313,22 +253,10 @@ describe('app-local command planning', () => {
   })
 
   it('refuses to silently ignore the keep-vars contract without a source config', () => {
-    const root = mkdtempSync(join(tmpdir(), 'narduk-hotfix-no-config-'))
+    const root = mkdtempSync(join(tmpdir(), 'narduk-keep-vars-no-config-'))
     tempDirs.push(root)
     expect(() => runDeploy(['versions-upload', '--dry-run'], root, {}, { keepVars: true })).toThrow(
       'requires a source Wrangler config and built output',
     )
-  })
-
-  it('rejects local deploy probe targets', () => {
-    expect(isNonLocalHttpsUrl('http://example.com')).toBe(false)
-    expect(isNonLocalHttpsUrl('https://localhost')).toBe(false)
-    expect(isNonLocalHttpsUrl('https://127.0.0.1')).toBe(false)
-    expect(isNonLocalHttpsUrl('https://example.com')).toBe(true)
-    expect(normalizeDeployHostname('[::1]')).toBe('::1')
-  })
-
-  it('treats a failed git status as unsafe', () => {
-    expect(isGitWorkingTreeClean('/path/that/does/not/exist')).toBe(false)
   })
 })
