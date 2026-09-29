@@ -126,7 +126,7 @@ to mutate sections at runtime (e.g. a feature-flagged admin section).
 - **operator-portal** — the app the redesign work exists for; first adopter,
   proves the shape.
 - **been-sober-for**, **borderwaitstat-us**, **gonogo** — the three `web-cf`
-  examples named in `Config/paved-paths.json`; each currently hand-rolls its own
+  examples named in company-hq `strategy/paved-paths.md`; each currently hand-rolls its own
   nav/layout and would collapse onto the shared shell once it exists, directly
   addressing the R4 finding that the flagship `web-cf` apps aren't dogfooding
   narduk-libs.

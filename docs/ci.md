@@ -115,7 +115,7 @@ the candidate's own `127.0.0.1` port. The `foundation:check` verdicts are pinned
 exactly, detail included: private FAIL on only 1.5, for the fixture's one D1
 binding still on the placeholder `database_id`
 `00000000-0000-0000-0000-000000000000`; public UNKNOWN on only 5.1, because the
-adoption matrix is cross-repository (by specification, company-hq
+exemption registry is cross-repository (by specification, company-hq
 WEB-FOUNDATION-CHECK.md item 5). Any other exit code or verdict fails the job,
 including one of those closing or failing for another reason. This half always
 executes; it is not part of the reusable proof.

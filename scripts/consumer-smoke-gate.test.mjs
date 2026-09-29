@@ -380,7 +380,7 @@ const foundationArtefact = (overrides = {}) => ({
           id: '5.1',
           status: 'unknown',
           detail:
-            "no callable found in .github/workflows, and company-hq Config/workflow-adoption-matrix.json is cross-repo -- an app's own CI cannot read it (spec §3 item 5)",
+            "no callable found in .github/workflows, and an app's own CI cannot read company-hq's APP_REGISTRY.yaml foundation_exception, so the rollup decides (spec §3 item 5)",
           ...overrides,
         },
       ],
