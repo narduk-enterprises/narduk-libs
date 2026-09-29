@@ -3,15 +3,15 @@ updates:
   # Keeps the narduk-enterprises/workflows pins (`# v2` comments) and other
   # action SHAs current. Weekly, grouped, one slot per repo (hash of the
   # repo name: Monday 04:00 UTC) so repos do not all open PRs at once.
-  - package-ecosystem: 'github-actions'
-    directory: '/'
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
-      interval: 'weekly'
-      day: 'monday'
-      time: '04:00'
-      timezone: 'Etc/UTC'
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
     open-pull-requests-limit: 5
     groups:
       github-actions:
         patterns:
-          - '*'
+          - "*"
