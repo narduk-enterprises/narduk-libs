@@ -424,8 +424,26 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     h.git('add', '.')
     h.git('commit', '-qm', 'promote')
     await expect(runShip(parseShipArgs(['--dry-run']), h.context)).resolves.toBe(SHIP_EXIT.refused)
-    expect(h.logs.join('\n')).toContain('pull-requests: read and GITHUB_TOKEN')
+    expect(h.logs.join('\n')).toContain('pull-requests: read on job promote and GITHUB_TOKEN')
     promote('      pull-requests: read\n', '          GITHUB_TOKEN: ${{ github.token }}\n')
+    expect(promoteWorkflowGap(h.root)).toBeUndefined()
+  })
+
+  it('needs the token on every versions-promote step, the wait dry-run included', () => {
+    const h = harness()
+    const dir = join(h.root, '.github/workflows')
+    mkdirSync(dir, { recursive: true })
+    const write = (jobEnv: string, waitEnv: string) =>
+      writeFileSync(
+        join(dir, 'promote.yml'),
+        `jobs:\n  promote:\n    permissions:\n      pull-requests: read\n${jobEnv}    steps:\n      - name: Wait for Workers Build\n${waitEnv}        run: pnpm exec narduk-app deploy versions-promote --dry-run\n      - name: Promote\n        env:\n          GITHUB_TOKEN: \${{ github.token }}\n        run: pnpm exec narduk-app deploy versions-promote\n`,
+      )
+    write('', '')
+    expect(promoteWorkflowGap(h.root)).toContain('on step "Wait for Workers Build"')
+    expect(promoteWorkflowGap(h.root)).not.toContain('on step "Promote"')
+    write('', '        env:\n          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n')
+    expect(promoteWorkflowGap(h.root)).toBeUndefined()
+    write('    env:\n      GITHUB_TOKEN: ${{ github.token }}\n', '')
     expect(promoteWorkflowGap(h.root)).toBeUndefined()
   })
 
