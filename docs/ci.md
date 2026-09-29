@@ -28,6 +28,10 @@ every other job succeeds. Invalid contracts may spend runner time on work that
 cannot pass the final gate; green runs avoid waiting for contracts before
 package installs begin.
 
+Browser suites (`package / browser tests`) run on pushes to main and on the
+release PR, not on other pull requests: they never failed a PR in the 150 runs
+before 2026-09-29, and a main failure raises the red-main issue.
+
 Actions starts one callable job per selected library. Each job installs its
 dependencies and invokes `pnpm ci:batch` with a single-package
 `PACKAGE_MATRIX_JSON` entry. The script runs lint → typecheck → build →
