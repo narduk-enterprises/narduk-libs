@@ -50,8 +50,9 @@ export interface NardukAnalyticsModuleOptions {
   /**
    * `'strict'` for an app whose pages hold private records: PostHog runs with
    * no autocapture, heatmaps, dead clicks, session replay, surveys or remote
-   * extensions, and every URL, pathname, title and exception message is
-   * reduced to its route pattern before it leaves the browser; GA4 receives
+   * extensions, every URL, pathname and title is reduced to its route pattern
+   * before it leaves the browser, and exception messages are not sent at all
+   * (type, stack and route pattern only); GA4 receives
    * route patterns only, with Google signals and ad personalisation off.
    * Decided here, at build time, and written to
    * `runtimeConfig.public.analyticsPrivacy`, which the runtime-public overlay
