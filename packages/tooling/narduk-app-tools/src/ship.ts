@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import { parse as parseYaml } from 'yaml'
@@ -11,6 +11,7 @@ import { resolveAppDir, runDeploy } from './deploy.js'
 import { readDeployment } from './deploy-hotfix.js'
 import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
 import { healthArgs } from './deployment-config.js'
+import { isAppSource, loadMigrationConfig } from './migrations.js'
 import {
   assertHotfixSnapshot,
   hotfixBuildEnv,
@@ -161,6 +162,31 @@ function canReadPullRequests(permissions: unknown): boolean {
  * `versions-promote` (the wait step's `--dry-run` included) needs
  * `pull-requests: read` and every such step needs GITHUB_TOKEN in scope.
  */
+/**
+ * What a schema change since the serving commit would touch. `sources` names a
+ * `migrations.sources.json` (a bare directory is taken as-is): the config
+ * itself, every source directory it lists, and, for a package source that
+ * lives in node_modules, the package name to look for in the lockfile diff.
+ */
+export function migrationWatch(
+  repoRoot: string,
+  sources: readonly string[],
+): { paths: string[]; packages: string[] } {
+  const paths: string[] = []
+  const packages: string[] = []
+  for (const entry of sources) {
+    paths.push(entry)
+    const file = resolve(repoRoot, entry)
+    if (statSync(file).isDirectory()) continue
+    const { baseDir, config } = loadMigrationConfig(file)
+    for (const source of config.sources) {
+      paths.push(relative(repoRoot, resolve(baseDir, source.path)))
+      if (!isAppSource(source.source)) packages.push(source.source)
+    }
+  }
+  return { paths, packages }
+}
+
 export function promoteWorkflowGap(repoRoot: string): string | undefined {
   const path = join(repoRoot, '.github/workflows/promote.yml')
   if (!existsSync(path)) return undefined
@@ -442,15 +468,28 @@ async function ship(
       target.deployment.migrations?.databases.map((database) => database.sources) ?? []
     if (sources.length) {
       let changed = ''
+      let bumped: string | undefined
       try {
+        const watch = migrationWatch(repoRoot, sources)
         git(['fetch', '--quiet', '--no-tags', 'origin', served], { withCredentials: true })
-        changed = git(['diff', '--name-only', served, sha, '--', ...sources])
+        changed = git(['diff', '--name-only', served, sha, '--', ...watch.paths])
+        if (watch.packages.length) {
+          const lock = git(['diff', '-U0', served, sha, '--', '*pnpm-lock.yaml'])
+            .split('\n')
+            .filter((line) => /^[+-](?![+-])/u.test(line))
+            .join('\n')
+          bumped = watch.packages.find((name) => lock.includes(`${name}@`))
+        }
       } catch {
         refuse(`Cannot compare migration files against the serving commit ${served.slice(0, 12)}`)
       }
       if (changed)
         refuse(
           'Migration files changed since the serving commit; land them through normal delivery',
+        )
+      if (bumped)
+        refuse(
+          `${bumped} carries migrations and changed since the serving commit; land it through normal delivery`,
         )
     }
   }

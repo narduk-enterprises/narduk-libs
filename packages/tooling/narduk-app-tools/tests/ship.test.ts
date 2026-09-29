@@ -85,6 +85,23 @@ function fixture(options: { migrations?: boolean } = {}) {
   mkdirSync(join(root, 'Config'))
   mkdirSync(join(app, 'migrations'))
   writeFileSync(join(app, 'migrations/0001.sql'), 'create table a (id int);\n')
+  // Apps name a sources config, not a directory; the SQL lives where it points.
+  writeFileSync(
+    join(app, 'migrations.sources.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        { id: '@narduk-enterprises/narduk-core', version: '1.0.0', dir: 'vendor/core-drizzle' },
+        { id: 'app', version: '1.0.0', dir: 'migrations' },
+      ],
+    }),
+  )
+  mkdirSync(join(app, 'vendor/core-drizzle'), { recursive: true })
+  writeFileSync(join(app, 'vendor/core-drizzle/0001.sql'), 'create table core (id int);\n')
+  writeFileSync(
+    join(root, 'pnpm-lock.yaml'),
+    "packages:\n  '@narduk-enterprises/narduk-core@1.0.0': {}\n",
+  )
   writeFileSync(
     join(root, 'package.json'),
     JSON.stringify({ scripts: { 'ship:check': 'check', 'ship:build': 'build' } }),
@@ -106,7 +123,7 @@ function fixture(options: { migrations?: boolean } = {}) {
             migrations: {
               compatibility: 'expand-contract',
               credential: 'cloudflare/prd/example-migrate',
-              databases: [{ binding: 'DB', sources: 'apps/web/migrations' }],
+              databases: [{ binding: 'DB', sources: 'apps/web/migrations.sources.json' }],
             },
           }
         : deployment,
@@ -398,6 +415,24 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
       SHIP_EXIT.refused,
     )
     expect(h.logs.join('\n')).toContain('Migration files changed')
+    expect(h.calls).toEqual([])
+  })
+
+  it('ships code-only changes when migrations are declared', async () => {
+    const h = harness({ migrations: true })
+    await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.ok)
+  })
+
+  it('refuses a lockfile change to a package that carries migrations', async () => {
+    const h = harness({ migrations: true })
+    writeFileSync(
+      join(h.root, 'pnpm-lock.yaml'),
+      "packages:\n  '@narduk-enterprises/narduk-core@1.1.0': {}\n",
+    )
+    await expect(runShip(parseShipArgs(['--no-pr', '-m', 'bump']), h.context)).resolves.toBe(
+      SHIP_EXIT.refused,
+    )
+    expect(h.logs.join('\n')).toContain('@narduk-enterprises/narduk-core carries migrations')
     expect(h.calls).toEqual([])
   })
 
