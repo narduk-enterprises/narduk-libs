@@ -133,8 +133,8 @@ export function promoteWorkflowGap(repoRoot: string): string | undefined {
   const workflow = readFileSync(path, 'utf8')
   if (!workflow.includes('versions-promote')) return undefined
   const missing = [
-    /^\s*pull-requests:\s*(read|write)\b/mu.test(workflow) ? '' : 'pull-requests: read',
-    /^\s*(GITHUB_TOKEN|GH_TOKEN):\s*\$\{\{\s*(github\.token|secrets\.GITHUB_TOKEN)\s*\}\}/mu.test(
+    /^\s*pull-requests:\s*(?:read|write)\b/mu.test(workflow) ? '' : 'pull-requests: read',
+    /^\s*(?:GITHUB_TOKEN|GH_TOKEN):\s*\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}/mu.test(
       workflow,
     )
       ? ''
