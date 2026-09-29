@@ -1,5 +1,21 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.10
+
+### Patch Changes
+
+- cca4386: Fix request tracking after reset, duplicate subscriptions during a
+  grace period, and subscription keys that match Object prototype properties.
+  Bound the analytics response cache even when all entries are fresh. Reject
+  fractional Influx windows, invalid timeouts and missing window markers, and
+  concatenate large query results without exceeding the JavaScript argument
+  limit. Use UTC calendar subtraction for analytics date ranges across
+  daylight-saving transitions. Honor caller cancellation before AI chat requests
+  and between retries. Start KV cache TTLs after production and re-check expiry
+  after asynchronous KV and D1 cache reads.
+- Updated dependencies [cca4386]
+  - @narduk-enterprises/narduk-core@2.20.2
+
 ## 0.4.9
 
 ### Patch Changes
