@@ -6,3 +6,4 @@ packages:
   - "packages/tooling/*"
   - "packages/design/*"
   - "packages/contracts/*"
+autoInstallPeers: false
