@@ -260,7 +260,8 @@ export function productionOrigin(manifest: unknown, override?: string): string {
   const parsed = z
     .object({
       environments: z
-        .array(z.object({ name: z.string(), hostname: z.string().optional() }))
+        // Non-production rows (a staging entry) may carry `hostname: null`.
+        .array(z.object({ name: z.string(), hostname: z.string().nullish() }))
         .nullish(),
       domains: z.object({ customDomains: z.array(z.string()).optional() }).nullish(),
     })
