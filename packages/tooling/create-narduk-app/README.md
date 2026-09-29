@@ -524,11 +524,11 @@ Cloudflare zone adds; the promote workflow's live proof covers production.
 A public app's own CI cannot pass items 1-7. Sub-check 5.1 passes on a call to
 the shared class callable, which a public repository cannot make, and company-hq
 `WEB-FOUNDATION-CHECK.md` item 5 requires the app-side check to report the
-registry-exemption half `unknown`. So `foundation:check` exits 2 in every
-public app's CI whatever the app does. The generated workflow says so in a
-comment rather than tolerate that `UNKNOWN`; the company-hq rollup, which can
-read the registry, scores items 1-7 for a public app. Closing it needs a spec
-change first.
+registry-exemption half `unknown`. So `foundation:check` exits 2 in every public
+app's CI whatever the app does. The generated workflow says so in a comment
+rather than tolerate that `UNKNOWN`; the company-hq rollup, which can read the
+registry, scores items 1-7 for a public app. Closing it needs a spec change
+first.
 
 `upgrade` brings an existing app to the same gate. It edits single lines of the
 caller's `with:` block and appends to the app's own `extra-scripts` in the app's
