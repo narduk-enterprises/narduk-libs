@@ -105,8 +105,6 @@ export async function withD1Cache<T>(
 ): Promise<T | { _meta: D1CacheMeta; data: T }> {
   const { staleWindowSeconds = 0, returnMeta = false } = options
   const d1 = getD1CacheDB(event)
-  const nowSec = Math.floor(Date.now() / 1000)
-
   const wrap = (
     data: T,
     stale: boolean,
@@ -126,6 +124,7 @@ export async function withD1Cache<T>(
     try {
       const row = await getCached(d1, cacheKey)
       if (row) {
+        const nowSec = Math.floor(Date.now() / 1000)
         const isExpired = row.expiresAt <= nowSec
         const cachedAtSec = row.expiresAt - ttlSeconds
         const withinStale = staleWindowSeconds > 0 && row.expiresAt + staleWindowSeconds > nowSec

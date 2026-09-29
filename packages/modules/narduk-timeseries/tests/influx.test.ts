@@ -172,3 +172,40 @@ describe('cancellation', () => {
     expect(query).not.toHaveBeenCalled()
   })
 })
+
+describe('window boundary regressions', () => {
+  it.each([0.1, 0.5, NaN, Infinity, 0, -1])('rejects invalid millisecond window %s', (size) => {
+    const range = { start: new Date(0), end: new Date(2) }
+    expect(() => splitRangeIntoWindows(range, size)).toThrow(/windowMs/iu)
+  })
+
+  it.each([NaN, Infinity, 0, -1])(
+    'rejects invalid timeout %s before querying',
+    async (timeoutMs) => {
+      const query = vi.fn(async () => [])
+      await expect(
+        readWindowed({ client: { query }, flux: SAFE_FLUX, range: RANGE, timeoutMs }),
+      ).rejects.toThrow(/timeout/iu)
+      expect(query).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([':start:', ':end:'])('rejects a query missing the %s marker', async (marker) => {
+    const query = vi.fn(async () => [])
+    await expect(
+      readWindowed({ client: { query }, flux: SAFE_FLUX.replace(marker, '-1y'), range: RANGE }),
+    ).rejects.toThrow(/marker/iu)
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('concatenates large result windows without exceeding the argument limit', async () => {
+    const result = Array.from({ length: 200_000 }, (_, index) => index)
+    const query = vi.fn(async () => result)
+    const rows = await readWindowed({
+      client: { query },
+      flux: SAFE_FLUX,
+      range: { start: new Date(0), end: new Date(1) },
+    })
+    expect(rows).toEqual(result)
+  })
+})

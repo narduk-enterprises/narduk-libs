@@ -12,7 +12,7 @@ vi.mock('nitropack/runtime', () => ({
 const NOW = new Date('2026-09-25T12:00:00.000Z')
 const NOW_SEC = NOW.getTime() / 1000
 
-function createD1(row: { expires_at: number; value: string } | null) {
+function createD1(row: { expires_at: number; value: string } | null, onRead?: () => void) {
   const writes: Array<{ expiresAt: number; key: string; value: string }> = []
   const db = {
     prepare(sql: string) {
@@ -20,6 +20,7 @@ function createD1(row: { expires_at: number; value: string } | null) {
         bind(...args: unknown[]) {
           return {
             async first() {
+              onRead?.()
               return sql.startsWith('SELECT') ? row : null
             },
             async run() {
@@ -53,6 +54,15 @@ describe('withD1Cache (narduk-libs#925)', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('re-checks freshness after a slow D1 read', async () => {
+    const { db } = createD1({ expires_at: NOW_SEC + 30, value: '"old"' }, () => {
+      vi.setSystemTime(new Date(NOW.getTime() + 40_000))
+    })
+    const fetcher = vi.fn(async () => 'fresh')
+    expect(await withD1Cache(createEvent(db), 'slow:read', 30, fetcher)).toBe('fresh')
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
   it('hands the stale-window refresh to event.waitUntil and writes the fresh value', async () => {

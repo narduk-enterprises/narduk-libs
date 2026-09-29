@@ -86,6 +86,37 @@ describe('KV cache helper', () => {
     })
   })
 
+  it('starts the logical TTL when a slow producer finishes', async () => {
+    const { kv } = createKV()
+    const event = createEvent('KV', kv)
+    const producer = vi.fn(async () => {
+      vi.setSystemTime(new Date('2026-07-07T12:00:40.000Z'))
+      return 'fresh'
+    })
+    const first = await withKVCache(event, 'slow:producer', 30, producer, { returnMeta: true })
+    expect(first._meta.cachedAt).toBe('2026-07-07T12:00:40.000Z')
+    expect(first._meta.expiresAt).toBe('2026-07-07T12:01:10.000Z')
+    expect(await withKVCache(event, 'slow:producer', 30, producer)).toBe('fresh')
+    expect(producer).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not serve an entry that expires during a slow KV read', async () => {
+    const { kv, values } = createKV()
+    const event = createEvent('KV', kv)
+    values.set(
+      'slow:read',
+      JSON.stringify({ cachedAt: 1783425600, expiresAt: 1783425630, data: 'old' }),
+    )
+    const get = kv.get.bind(kv)
+    vi.spyOn(kv, 'get').mockImplementation(async (...args: Parameters<typeof kv.get>) => {
+      vi.setSystemTime(new Date('2026-07-07T12:00:40.000Z'))
+      return get(...args)
+    })
+    const producer = vi.fn(async () => 'fresh')
+    expect(await withKVCache(event, 'slow:read', 30, producer)).toBe('fresh')
+    expect(producer).toHaveBeenCalledTimes(1)
+  })
+
   it('uses Cloudflare KV minimum expiration TTL for shorter logical caches', async () => {
     const { kv, puts } = createKV()
     const event = createEvent('KV', kv)

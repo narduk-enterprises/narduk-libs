@@ -189,3 +189,39 @@ describe('parseChatJson', () => {
     expect(() => parseChatJson('Sure! Here is JSON')).toThrow(/invalid JSON/)
   })
 })
+
+it('does not send a request when the caller signal is already aborted', async () => {
+  const reason = new Error('cancelled before submission')
+  const fetchMock = vi.fn().mockResolvedValue(completion('unexpected'))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(
+    chatCompletion(MESSAGES, {
+      apiKey: 'synthetic',
+      model: 'test',
+      signal: AbortSignal.abort(reason),
+    }),
+  ).rejects.toBe(reason)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+it('does not retry after the caller aborts while a failed response body is read', async () => {
+  const caller = new AbortController()
+  const reason = new Error('cancelled during error response')
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: false,
+    status: 503,
+    text: async () => {
+      caller.abort(reason)
+      return 'upstream unavailable'
+    },
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(
+    chatCompletion(MESSAGES, {
+      apiKey: 'synthetic',
+      model: 'test',
+      signal: caller.signal,
+    }),
+  ).rejects.toBe(reason)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})

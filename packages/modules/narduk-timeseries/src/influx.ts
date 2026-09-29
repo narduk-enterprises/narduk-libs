@@ -64,10 +64,10 @@ export function splitRangeIntoWindows(
   range: TimeRange,
   maxWindowMs: number = INFLUX_MAX_WINDOW_MS,
 ): TimeRange[] {
-  if (!Number.isFinite(maxWindowMs) || maxWindowMs <= 0) {
+  if (!Number.isSafeInteger(maxWindowMs) || maxWindowMs <= 0) {
     throw new NardukTimeseriesError(
       'INFLUX_WINDOW_INVALID',
-      'maxWindowMs must be a positive number of milliseconds.',
+      'maxWindowMs must be a positive integer number of milliseconds.',
       { maxWindowMs },
     )
   }
@@ -154,12 +154,18 @@ export function renderFluxWindow(flux: string, window: TimeRange): string {
  */
 export async function readWindowed(request: InfluxWindowedRead): Promise<unknown[]> {
   assertHostSafeFlux(request.flux)
+  if (!request.flux.includes(':start:') || !request.flux.includes(':end:')) {
+    throw new NardukTimeseriesError(
+      'FLUX_UNSAFE',
+      'The windowed query must carry both :start: and :end: markers.',
+    )
+  }
   const windows = splitRangeIntoWindows(request.range, request.maxWindowMs)
   const timeoutMs = request.timeoutMs ?? INFLUX_TIMEOUT_MS
-  if (timeoutMs > INFLUX_TIMEOUT_MS) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > INFLUX_TIMEOUT_MS) {
     throw new NardukTimeseriesError(
       'INFLUX_WINDOW_INVALID',
-      `The parity read timeout is capped at ${INFLUX_TIMEOUT_MS} ms.`,
+      `The parity read timeout must be positive and is capped at ${INFLUX_TIMEOUT_MS} ms.`,
       { ceiling: INFLUX_TIMEOUT_MS, timeoutMs },
     )
   }
@@ -171,7 +177,7 @@ export async function readWindowed(request: InfluxWindowedRead): Promise<unknown
       signal: request.signal,
       timeoutMs,
     })
-    rows.push(...result)
+    for (const row of result) rows.push(row)
   }
   return rows
 }

@@ -65,7 +65,6 @@ export async function withKVCache<T>(
   options: WithKVCacheOptions = {},
 ): Promise<T | { _meta: KVCacheMeta; data: T }> {
   const bindingName = options.bindingName ?? 'KV'
-  const nowSec = Math.floor(Date.now() / 1000)
 
   const wrap = (
     data: T,
@@ -94,7 +93,7 @@ export async function withKVCache<T>(
         !Array.isArray(cached) &&
         typeof cached.cachedAt === 'number' &&
         typeof cached.expiresAt === 'number' &&
-        cached.expiresAt > nowSec &&
+        cached.expiresAt > Math.floor(Date.now() / 1000) &&
         'data' in cached
       ) {
         return wrap(cached.data, cached, true)
@@ -109,6 +108,7 @@ export async function withKVCache<T>(
   }
 
   const data = await producer()
+  const nowSec = Math.floor(Date.now() / 1000)
   const envelope: KVCacheEnvelope<T> = {
     cachedAt: nowSec,
     data,

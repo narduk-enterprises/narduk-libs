@@ -160,11 +160,13 @@ export async function chatCompletion(
   }
   const retries = Math.max(0, options.retries ?? 1)
   for (let tries = 0; ; tries += 1) {
+    options.signal?.throwIfAborted()
     try {
       // eslint-disable-next-line no-await-in-loop -- retries are sequential by design: each attempt runs only after the previous one failed
       return await attempt(url, init, options)
     } catch (error) {
       if (!(error instanceof RetryableFailure)) throw error
+      options.signal?.throwIfAborted()
       if (tries >= retries) throw error.failure
     }
   }

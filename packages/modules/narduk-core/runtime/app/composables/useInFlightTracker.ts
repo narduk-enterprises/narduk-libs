@@ -38,7 +38,9 @@ export function useInFlightTracker<T>() {
     const existing = inFlight.get(key)
     if (existing) return existing
 
-    const promise = fn().finally(() => inFlight.delete(key))
+    const promise = fn().finally(() => {
+      if (inFlight.get(key) === promise) inFlight.delete(key)
+    })
     inFlight.set(key, promise)
     return promise
   }
