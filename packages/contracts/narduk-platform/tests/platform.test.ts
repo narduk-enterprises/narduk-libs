@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { ENV_CATALOG, MODULE_IDS } from '../src/env-catalog'
+import { type CatalogFrom, ENV_CATALOG, MODULE_IDS, parseCatalogFrom } from '../src/env-catalog'
 import { patchPackageRegistryNpmrcContent } from '../src/package-registry'
 import {
   buildAppEnvContract,
@@ -38,6 +38,46 @@ describe('neutral platform contracts', () => {
     })
     expect(entry?.note).not.toMatch(/Shared IndexNow key/u)
     expect(entry?.from).not.toMatch(/doppler:/u)
+  })
+
+  it('sources nothing from Doppler beyond the keys still waiting on an nvault home', () => {
+    // agent-infrastructure#2131: these three have no shared nvault config yet.
+    // The list only shrinks; a new Doppler source fails here.
+    expect(
+      ENV_CATALOG.filter((entry) => entry.from.startsWith('doppler:'))
+        .map((entry) => entry.key)
+        .sort(),
+    ).toEqual(['TURNSTILE_SECRET_KEY', 'TURNSTILE_SITE_KEY', 'XAI_API_KEY'])
+  })
+
+  it('parses every catalog source', () => {
+    for (const entry of ENV_CATALOG) {
+      expect(() => parseCatalogFrom(entry.from), entry.key).not.toThrow()
+    }
+  })
+
+  it('parses an nvault source into its four parts', () => {
+    expect(parseCatalogFrom('nvault:apple/prd/mapkit-signing/APPLE_KEY_ID')).toEqual({
+      kind: 'nvault',
+      project: 'apple',
+      environment: 'prd',
+      config: 'mapkit-signing',
+      key: 'APPLE_KEY_ID',
+    })
+    expect(() => parseCatalogFrom('nvault:apple/prd/APPLE_KEY_ID' as CatalogFrom)).toThrow(
+      /Invalid nvault from/u,
+    )
+    expect(() => parseCatalogFrom('nvault:apple/prd/mapkit-signing/APPLE_KEY_ID/x')).toThrow(
+      /Invalid nvault from/u,
+    )
+  })
+
+  it('hands apps no shared analytics reporting key', () => {
+    // agent-infrastructure#1692: the operator portal reports for every app, so
+    // no app Worker holds the shared Google or PostHog reporting credential.
+    const keys = ENV_CATALOG.map((entry) => entry.key)
+    expect(keys).not.toContain('GSC_SERVICE_ACCOUNT_JSON')
+    expect(keys).not.toContain('POSTHOG_PERSONAL_API_KEY')
   })
 
   it('contains only app capability environment entries', () => {
