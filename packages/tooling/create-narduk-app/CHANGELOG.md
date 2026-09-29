@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.19.1
+
+### Patch Changes
+
+- b2f2590: Register the optional analytics click directive on the server with a
+  no-op stub, so server-rendered tracked links remain available before
+  hydration. Client validation and click capture keep their existing behavior.
+
 ## 0.19.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.8.5
+
+### Patch Changes
+
+- 8acb896: Comments and README name `ship:build` and `narduk-app ship` instead
+  of the retired hotfix and deploy-local paths. No behaviour change.
+
 ## 2.8.4
 
 ### Patch Changes
