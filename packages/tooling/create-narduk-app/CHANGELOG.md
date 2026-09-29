@@ -1,5 +1,33 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.19.0
+
+### Minor Changes
+
+- 70d5353: Generated apps get `narduk-app ship` in place of `deploy-hotfix`:
+  root `ship:check`, `ship:build` and `ship` scripts (the `ship` script reads
+  the app's og-image and session build secrets and its deploy credential from
+  nvault), a ship section in the generated deployment doc, and the promote job
+  snippet grants `pull-requests: read` and passes `GITHUB_TOKEN` so
+  `versions-promote`'s ship guard can prove a shipped PR landed.
+
+### Patch Changes
+
+- 155467c: Add a typed, privacy-safe analytics event suite with bounded pending
+  delivery, consistent app/route/release context, opt-in foreground engagement
+  and session identity, strict host-only PostHog cookies, consumer journey
+  assertions, and app-owned analytics catalogs in newly generated apps. Existing
+  capture APIs and collection feature defaults remain supported.
+- cca4386: Fix request tracking after reset, duplicate subscriptions during a
+  grace period, and subscription keys that match Object prototype properties.
+  Bound the analytics response cache even when all entries are fresh. Reject
+  fractional Influx windows, invalid timeouts and missing window markers, and
+  concatenate large query results without exceeding the JavaScript argument
+  limit. Use UTC calendar subtraction for analytics date ranges across
+  daylight-saving transitions. Honor caller cancellation before AI chat requests
+  and between retries. Start KV cache TTLs after production and re-check expiry
+  after asynchronous KV and D1 cache reads.
+
 ## 0.18.1
 
 ### Patch Changes

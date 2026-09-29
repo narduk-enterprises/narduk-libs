@@ -1,5 +1,27 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.26.0
+
+### Minor Changes
+
+- 155467c: Add a typed, privacy-safe analytics event suite with bounded pending
+  delivery, consistent app/route/release context, opt-in foreground engagement
+  and session identity, strict host-only PostHog cookies, consumer journey
+  assertions, and app-owned analytics catalogs in newly generated apps. Existing
+  capture APIs and collection feature defaults remain supported.
+
+### Patch Changes
+
+- cca4386: Fix request tracking after reset, duplicate subscriptions during a
+  grace period, and subscription keys that match Object prototype properties.
+  Bound the analytics response cache even when all entries are fresh. Reject
+  fractional Influx windows, invalid timeouts and missing window markers, and
+  concatenate large query results without exceeding the JavaScript argument
+  limit. Use UTC calendar subtraction for analytics date ranges across
+  daylight-saving transitions. Honor caller cancellation before AI chat requests
+  and between retries. Start KV cache TTLs after production and re-check expiry
+  after asynchronous KV and D1 cache reads.
+
 ## 1.25.6
 
 ### Patch Changes
