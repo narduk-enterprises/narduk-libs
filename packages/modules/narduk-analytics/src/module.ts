@@ -252,7 +252,10 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         path: resolver.resolve('../app/components'),
         pathPrefix: false,
       })
-      if (options.events) addPlugin(resolver.resolve('../app/plugins/analytics-events.client'))
+      if (options.events) {
+        addPlugin(resolver.resolve('../app/plugins/analytics-events.server'))
+        addPlugin(resolver.resolve('../app/plugins/analytics-events.client'))
+      }
       if (options.identity) addPlugin(resolver.resolve('../app/plugins/analytics-identity.client'))
       addPlugin(resolver.resolve('../app/plugins/00-analytics-head.client'))
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))

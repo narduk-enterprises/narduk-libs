@@ -47,6 +47,17 @@ function makeNuxt() {
 }
 
 describe('narduk-analytics module', () => {
+  it.each([true, false])('registers the SSR directive stub only when events=%s', async (events) => {
+    const { addPlugin } = mockNuxtKit(() => true)
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    await mod.setup({ app: true, server: false, events }, makeNuxt())
+    const plugins = addPlugin.mock.calls.map(([path]) => path as string)
+    expect(plugins.some((path) => path.endsWith('/analytics-events.server'))).toBe(events)
+    expect(plugins.some((path) => path.endsWith('/analytics-events.client'))).toBe(events)
+  })
+
   it('rejects non-registry app IDs before registering a runtime surface', async () => {
     mockNuxtKit(() => true)
     const mod = (await import('../src/module')).default as unknown as {
