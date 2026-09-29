@@ -122,13 +122,10 @@ export interface ShipContext {
   now?: () => number
 }
 
-/**
- * After a ship, main's promote must prove the shipped commit landed: in a
- * shallow checkout only GitHub can say so, and a squash merge needs the
- * commit-to-PR lookup (Pull requests: read). Without both, every promotion
- * from main refuses until someone forces it, so ship refuses first.
- */
-const PROMOTE_TOKEN = /^\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}$/u
+// GitHub expressions ignore case, so `github.TOKEN` counts too.
+const PROMOTE_TOKEN = /^\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}$/iu
+// The command itself, not a mention of it in a comment or an error string.
+const PROMOTE_COMMAND = /\bnarduk-app\s+deploy\s+versions-promote\b/u
 
 type WorkflowNode = Record<string, unknown>
 
@@ -144,6 +141,14 @@ function hasPromoteToken(...envs: unknown[]): boolean {
   )
 }
 
+function runsPromote(step: WorkflowNode): boolean {
+  const run = String(step.run ?? '')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n')
+  return PROMOTE_COMMAND.test(run)
+}
+
 function canReadPullRequests(permissions: unknown): boolean {
   if (permissions === 'read-all' || permissions === 'write-all') return true
   return /^(?:read|write)$/u.test(String(asNode(permissions)['pull-requests'] ?? ''))
@@ -151,7 +156,8 @@ function canReadPullRequests(permissions: unknown): boolean {
 
 /**
  * What the app's promote workflow lacks for main's promote to accept a shipped
- * commit: the guard reads GitHub to prove containment, so every job that runs
+ * commit. In a shallow checkout only GitHub can prove the shipped commit landed,
+ * and a squash merge needs the commit-to-PR lookup, so every job that runs
  * `versions-promote` (the wait step's `--dry-run` included) needs
  * `pull-requests: read` and every such step needs GITHUB_TOKEN in scope.
  */
@@ -170,7 +176,7 @@ export function promoteWorkflowGap(repoRoot: string): string | undefined {
   for (const [jobId, jobValue] of Object.entries(asNode(workflow.jobs))) {
     const job = asNode(jobValue)
     const steps = Array.isArray(job.steps) ? job.steps.map(asNode) : []
-    const promoting = steps.filter((step) => JSON.stringify(step).includes('versions-promote'))
+    const promoting = steps.filter(runsPromote)
     if (promoting.length === 0) continue
     if (!canReadPullRequests(job.permissions ?? workflow.permissions))
       missing.add(`pull-requests: read on job ${jobId}`)

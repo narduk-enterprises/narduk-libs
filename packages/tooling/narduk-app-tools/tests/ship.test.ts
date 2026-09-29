@@ -447,6 +447,38 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     expect(promoteWorkflowGap(h.root)).toBeUndefined()
   })
 
+  it('ignores steps that only mention versions-promote', () => {
+    const h = harness()
+    const dir = join(h.root, '.github/workflows')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'promote.yml'),
+      [
+        'jobs:',
+        '  gate:',
+        '    permissions:',
+        '      checks: read',
+        '    steps:',
+        '      - run: |',
+        "          # versions-promote refuses a version that does not carry that commit's tag.",
+        '          echo gate',
+        '  promote:',
+        '    permissions:',
+        '      pull-requests: read',
+        '    steps:',
+        '      - env:',
+        '          GITHUB_TOKEN: ${{ github.TOKEN }}',
+        '        run: pnpm exec narduk-app deploy versions-promote \\',
+        '          --json',
+        '      - name: Read the promotion outcome',
+        '        run: |',
+        '          node -e "console.error(\'::error::versions-promote --json printed no JSON object\')"',
+        '',
+      ].join('\n'),
+    )
+    expect(promoteWorkflowGap(h.root)).toBeUndefined()
+  })
+
   it('reads the production origin from the manifest', () => {
     expect(
       productionOrigin({ environments: [{ name: 'production', hostname: 'buoystat.us' }] }),
