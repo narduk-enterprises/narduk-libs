@@ -23,19 +23,19 @@ const TOKEN = 'synthetic-cloudflare-secret-token'
 const OLD = '11111111-1111-4111-8111-111111111111'
 const NEW = '22222222-2222-4222-8222-222222222222'
 
-type Answer = { status: number | null; stdout: string }
-
-/** A fake `gh api`: compare answers by base, merged PR shas by served commit. */
+/** A fake GitHub: compare answers by base, merged PRs by served commit. */
 function fakeGh(options: { ahead?: string[]; pulls?: Record<string, string[]>; down?: boolean }) {
-  return (args: string[]): Answer => {
-    if (options.down) return { status: 1, stdout: '' }
-    const path = args[1]
-    const compare = /compare\/([a-f\d]+)\.\.\./u.exec(path)
-    if (compare)
-      return { status: 0, stdout: options.ahead?.includes(compare[1]) ? 'ahead' : 'diverged' }
-    const pulls = /commits\/([a-f\d]+)\/pulls/u.exec(path)
-    if (pulls) return { status: 0, stdout: (options.pulls?.[pulls[1]] ?? []).join('\n') }
-    return { status: 1, stdout: '' }
+  return (path: string): unknown => {
+    if (options.down) return null
+    const compare = /^compare\/([a-f\d]+)\.\.\./u.exec(path)
+    if (compare) return { status: options.ahead?.includes(compare[1]) ? 'ahead' : 'diverged' }
+    const pulls = /^commits\/([a-f\d]+)\/pulls$/u.exec(path)
+    if (pulls)
+      return (options.pulls?.[pulls[1]] ?? []).map((sha) => ({
+        merged_at: '2026-09-29T00:00:00Z',
+        merge_commit_sha: sha,
+      }))
+    return null
   }
 }
 
@@ -217,7 +217,7 @@ function harness(options: { migrations?: boolean; servedTag?: string | null } = 
     gh,
     // Real git; GitHub is offline unless a case says otherwise.
     containment: (root, candidate, served) =>
-      resolveContainment(root, candidate, served, { gh: fakeGh({ down: true }) }),
+      resolveContainment(root, candidate, served, { github: fakeGh({ down: true }) }),
   }
   return {
     ...f,
@@ -269,14 +269,14 @@ describe('commit containment', { timeout: GIT_TIMEOUT }, () => {
   it("takes GitHub's yes over a local no, and never fetches", () => {
     const f = fixture()
     const before = f.git('config', '--list')
-    expect(resolveContainment(f.root, f.mainSha, f.sha, { gh: fakeGh({ down: true }) })).toBe(
+    expect(resolveContainment(f.root, f.mainSha, f.sha, { github: fakeGh({ down: true }) })).toBe(
       'not-contained',
     )
-    expect(resolveContainment(f.root, f.mainSha, f.sha, { gh: fakeGh({ ahead: [f.sha] }) })).toBe(
-      'contained',
-    )
     expect(
-      resolveContainment(f.root, f.mainSha, 'f'.repeat(40), { gh: fakeGh({ down: true }) }),
+      resolveContainment(f.root, f.mainSha, f.sha, { github: fakeGh({ ahead: [f.sha] }) }),
+    ).toBe('contained')
+    expect(
+      resolveContainment(f.root, f.mainSha, 'f'.repeat(40), { github: fakeGh({ down: true }) }),
     ).toBe('unknown')
     expect(f.git('config', '--list')).toBe(before)
   })

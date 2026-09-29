@@ -11,11 +11,10 @@ export type Containment = 'contained' | 'not-contained' | 'unknown'
 
 type Exec = (args: string[]) => { status: number | null; stdout: string }
 
-function exec(command: string, cwd: string, env?: NodeJS.ProcessEnv): Exec {
+function exec(command: string, cwd: string): Exec {
   return (args) => {
     const result = spawnSync(command, args, {
       cwd,
-      env,
       encoding: 'utf8',
       timeout: 60_000,
       maxBuffer: 10 * 1024 * 1024,
@@ -53,6 +52,49 @@ export function commitContains(
   return merged.stdout.split('\n')[0] === tree.stdout ? 'contained' : 'not-contained'
 }
 
+/** One GitHub REST GET: the parsed JSON, or null when it could not answer. */
+export type GitHubGet = (path: string) => unknown
+
+/**
+ * With GH_TOKEN or GITHUB_TOKEN in the environment (a promote step passes
+ * `github.token`), curl reads the auth header from stdin, so the token never
+ * reaches argv or `ps`; runners carry curl but not `gh`. Without one, a
+ * workstation's `gh api` login answers.
+ */
+export function githubGet(cwd: string, env: NodeJS.ProcessEnv = process.env): GitHubGet {
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN
+  const repo = githubRepo(cwd, env)
+  return (path) => {
+    if (!repo) return null
+    const url = `https://api.github.com/repos/${repo}/${path}`
+    const options = {
+      cwd,
+      encoding: 'utf8' as const,
+      timeout: 60_000,
+      maxBuffer: 10 * 1024 * 1024,
+    }
+    const result = token
+      ? spawnSync('curl', ['-sS', '--fail', '--max-time', '30', '-K', '-', url], {
+          ...options,
+          input: `header = "Authorization: Bearer ${token}"\nheader = "Accept: application/vnd.github+json"\n`,
+        })
+      : spawnSync('gh', ['api', `repos/${repo}/${path}`], { ...options, stdio: 'pipe' })
+    if (result.error || result.status !== 0) return null
+    try {
+      return JSON.parse(result.stdout) as unknown
+    } catch {
+      return null
+    }
+  }
+}
+
+function githubRepo(cwd: string, env: NodeJS.ProcessEnv): string | undefined {
+  const named = env.GH_REPO || env.GITHUB_REPOSITORY
+  if (named) return named
+  const origin = exec('git', cwd)(['remote', 'get-url', 'origin'])
+  return /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/u.exec(origin.stdout)?.[1]
+}
+
 /**
  * GitHub's answer, for a shallow CI checkout that lacks the objects: `served`
  * is an ancestor of `candidate`, or a merged pull request carrying `served`
@@ -60,53 +102,40 @@ export function commitContains(
  * has it": the PR's final state, review fixes included, supersedes the
  * shipped commit even when a squash rewrote the lines it touched.
  */
-export function landedContains(candidate: string, served: string, gh: Exec): Containment {
+export function landedContains(candidate: string, served: string, get: GitHubGet): Containment {
   const ahead = (base: string): boolean | null => {
-    const result = gh([
-      'api',
-      `repos/{owner}/{repo}/compare/${base}...${candidate}?per_page=1`,
-      '--jq',
-      '.status',
-    ])
-    if (result.status !== 0) return null
-    return result.stdout === 'ahead' || result.stdout === 'identical'
+    const status = (get(`compare/${base}...${candidate}?per_page=1`) as { status?: unknown } | null)
+      ?.status
+    if (typeof status !== 'string') return null
+    return status === 'ahead' || status === 'identical'
   }
   const direct = ahead(served)
   if (direct) return 'contained'
-  const pulls = gh([
-    'api',
-    `repos/{owner}/{repo}/commits/${served}/pulls`,
-    '--jq',
-    '.[] | select(.merged_at != null) | .merge_commit_sha',
-  ])
-  if (pulls.status !== 0) return 'unknown'
-  for (const merge of pulls.stdout.split('\n').filter((line) => /^[a-f\d]{40}$/u.test(line))) {
-    const landed = ahead(merge)
+  const pulls = get(`commits/${served}/pulls`)
+  if (!Array.isArray(pulls)) return 'unknown'
+  for (const pull of pulls as { merged_at?: unknown; merge_commit_sha?: unknown }[]) {
+    if (!pull.merged_at || typeof pull.merge_commit_sha !== 'string') continue
+    if (!/^[a-f\d]{40}$/u.test(pull.merge_commit_sha)) continue
+    const landed = ahead(pull.merge_commit_sha)
     if (landed === null) return 'unknown'
     if (landed) return 'contained'
   }
   return direct === null ? 'unknown' : 'not-contained'
 }
 
-/**
- * Local git first, then GitHub. `gh` reads GH_TOKEN or GITHUB_TOKEN (a promote
- * workflow passes `github.token`) or a workstation login, and resolves the
- * repository from GH_REPO, GITHUB_REPOSITORY or the checkout's origin.
- */
+/** Local git first, then GitHub. */
 export function resolveContainment(
   cwd: string,
   candidate: string,
   served: string,
-  options: { git?: Exec; gh?: Exec; env?: NodeJS.ProcessEnv } = {},
+  options: { git?: Exec; github?: GitHubGet; env?: NodeJS.ProcessEnv } = {},
 ): Containment {
   const local = commitContains(cwd, candidate, served, options.git)
   if (local === 'contained') return local
-  const env = options.env ?? process.env
-  const repo = env.GH_REPO || env.GITHUB_REPOSITORY
   const landed = landedContains(
     candidate,
     served,
-    options.gh ?? exec('gh', cwd, repo ? { ...env, GH_REPO: repo } : env),
+    options.github ?? githubGet(cwd, options.env ?? process.env),
   )
   if (landed === 'contained') return landed
   return local === 'not-contained' || landed === 'not-contained' ? 'not-contained' : 'unknown'
