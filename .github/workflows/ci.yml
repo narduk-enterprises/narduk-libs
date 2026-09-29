@@ -39,8 +39,8 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       package-jobs: ${{ steps.plan.outputs.package-jobs }}
       browser-packages: ${{ steps.plan.outputs.browser-packages }}
-      packed-consumer: ${{ steps.plan.outputs.packed-consumer }}
-      generated-consumer: ${{ steps.plan.outputs.generated-consumer }}
+      packed-consumer: ${{ steps.smoke-gate.outputs.run == 'false' && 'false' || steps.plan.outputs.packed-consumer }}
+      generated-consumer: ${{ steps.smoke-gate.outputs.run == 'false' && 'false' || steps.plan.outputs.generated-consumer }}
       consumer-scope: ${{ steps.plan.outputs.consumer-scope }}
       full-run: ${{ steps.plan.outputs.full-run }}
       affected-count: ${{ steps.plan.outputs.affected-count }}
@@ -101,6 +101,37 @@ jobs:
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
           node scripts/auth-kit-ci-plan.mjs "${args[@]}"
+
+      # The packed-consumer smoke failed a pull request once in the last 150
+      # runs (via a changeset), so a PR pays for it only when the diff can change what it packs:
+      # manifests, lockfile/workspace, build config, changesets,
+      # create-narduk-app, or the smoke's own scripts and this workflow. Push,
+      # release and dispatch keep the planner's answer. Overriding both
+      # outputs to false makes the smoke and its `verify` expectation agree
+      # (verify requires `skipped` when the smoke is not applicable).
+      - name: Gate packed-consumer smoke on pull request paths
+        id: smoke-gate
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "${PR_HEAD_REF}" == changeset-release/* ]]; then
+            echo "run=true" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          pattern='(^|/)package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|(^|/)tsconfig[^/]*\.json$|(^|/)(tsup|vite|rollup|nuxt|turbo)\.config\.[cm]?[jt]s$|^turbo\.json$|^\.changeset/|^packages/([^/]+/)?create-narduk-app/|^\.npmrc$|(^|/)vite\.[a-z.]*config\.[cm]?[jt]s$|^scripts/(consumer-smoke|prepare-packed-consumer|packed-consumer|reuse-packed-consumer|ci-packages|ci-package-plan|compute-affected|release-packages|hosted-playwright-toolchain)|^\.github/workflows/(ci|packed-consumer-reuse-canary)\.yml$'
+          # Write the list first: `grep -q` exits at the first match, which
+          # would SIGPIPE `git diff` and (under pipefail) read as "no match".
+          git diff --name-only "${PR_BASE_SHA}...${PR_HEAD_SHA}" >"${RUNNER_TEMP}/changed-files.txt"
+          if grep -Eq "${pattern}" "${RUNNER_TEMP}/changed-files.txt"; then
+            echo "run=true" >>"${GITHUB_OUTPUT}"
+          else
+            echo "run=false" >>"${GITHUB_OUTPUT}"
+            echo "::notice::No manifest/build-config/create-narduk-app change; packed-consumer smoke skipped on this PR."
+          fi
 
   logging-languages:
     needs: [affected]
