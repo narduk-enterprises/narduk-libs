@@ -114,7 +114,7 @@ jobs:
 
   ci:
     needs: [affected]
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@d1026b280db8e3a2959a852961d5828f8ea294a9 # public hosted CI and no registry auth
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@dab7998f45f4eb2a9c1b5ad37535c19e552daf17 # v2
     permissions:
       contents: read
     with:
