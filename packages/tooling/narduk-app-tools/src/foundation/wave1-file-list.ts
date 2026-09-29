@@ -36,9 +36,10 @@ export const WAVE1_FORK_LIST: Wave1ForkEntry[] = [
   {
     id: 'narduk-toolchain-wrapper',
     description:
-      'the client-template db-migrate/deploy-local/registry-auth wrapper script, byte-identical ' +
+      'the client-template db-migrate/registry-auth wrapper script (it also carried a since-removed ' +
+      'local-deploy entry), byte-identical ' +
       'across harmony-hot-sauce, llb-cpa, tprinvest and papa-everetts-pizza per #76 Wave 1',
-    ownedBy: '@narduk-enterprises/narduk-app-tools (db migrate / deploy-local / registry-auth)',
+    ownedBy: '@narduk-enterprises/narduk-app-tools (db migrate / registry-auth)',
     sha256: '1b6f3139340b6db909f012d95302a0e1da55dd3ea52bb9eb76a173f6596e6acd',
     knownPaths: ['scripts/narduk-toolchain.mjs'],
   },

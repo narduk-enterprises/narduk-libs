@@ -5,10 +5,7 @@ import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
 import { parseDevArgs, runDev } from './dev.js'
 import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
-import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
-import { parseHotfixArgs, runHotfix } from './deploy-hotfix.js'
 import { parseShipArgs, runShip, SHIP_USAGE } from './ship.js'
-import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
 import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
@@ -178,13 +175,7 @@ function usage(): string {
     '                                       refuses to build when the artifact is missing.',
     '                                       Drops (and names) service bindings to other',
     '                                       Workers; --keep-service-bindings keeps them.',
-    '  deploy-local [options]              Build, migrate, deploy, and probe a recovery release',
-    '  deploy-hotfix --incident <id> --reason <text> --operator <name> --sha <full HEAD>',
-    '      --confirm-worker <name> --base-url <https origin> [--dry-run | --yes --automation-paused]',
-    '      [--access-client-id-env <name> --access-client-secret-env <name>]',
-    '                                       Local incident patch with checks, receipt and live proof',
     ...SHIP_USAGE,
-    ...DEVELOPMENT_USAGE,
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  gh-packages-run -- <command...>     Run a command with process-scoped',
     '                                       GitHub Packages auth (temp userconfig)',
@@ -428,17 +419,8 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       console.log(flags.json ? JSON.stringify(report, null, 2) : formatVerifyReport(report))
       return report.exitCode
     }
-    if (command === 'deploy-local') {
-      return await runDeployLocal({ flags: parseDeployLocalArgs(rest) })
-    }
-    if (command === 'development') {
-      return await runDevelopmentCommand(rest)
-    }
     if (command === 'ship') {
       return await runShip(parseShipArgs(rest))
-    }
-    if (command === 'deploy-hotfix') {
-      return await runHotfix(parseHotfixArgs(rest))
     }
     if (command === 'registry-auth') {
       console.log(`[registry-auth] configured ${configureRegistryAuth()}`)

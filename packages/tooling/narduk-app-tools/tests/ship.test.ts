@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { commitContains, landedContains, resolveContainment } from '../src/commit-containment.js'
+import { BUILD_CI_OUTPUT_MARKER, runDeploy } from '../src/deploy.js'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import type { WorkerDeployment, WorkerVersion, WranglerVersionsClient } from '../src/promote.js'
 import {
@@ -409,6 +410,21 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     }
     await expect(runShip(parseShipArgs([]), h.context)).resolves.toBe(SHIP_EXIT.refused)
     expect(h.calls).not.toContain('upload')
+  })
+
+  it('refuses a build:ci marker that survived ship:build, through the real upload', async () => {
+    const h = harness()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const build = h.context.run!
+    h.context.run = async (args, cwd, childEnv) => {
+      await build(args, cwd, childEnv)
+      if (args[1] === 'ship:build')
+        writeFileSync(join(h.app, '.output', BUILD_CI_OUTPUT_MARKER), 'build:ci\n')
+    }
+    h.context.upload = runDeploy
+    await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.logs.join('\n')).toContain('Upload failed')
+    expect(h.calls).not.toContain('promote new')
   })
 
   it("refuses until the app's promote job can see the ship PR land", async () => {

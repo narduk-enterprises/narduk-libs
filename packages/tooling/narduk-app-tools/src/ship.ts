@@ -8,15 +8,7 @@ import { z } from 'zod'
 
 import { resolveContainment, type Containment } from './commit-containment.js'
 import { resolveAppDir, runDeploy } from './deploy.js'
-import { readDeployment } from './deploy-hotfix.js'
-import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
 import { healthArgs } from './deployment-config.js'
-import {
-  assertHotfixSnapshot,
-  hotfixBuildEnv,
-  hotfixProductionEnv,
-  readProductionTarget,
-} from './hotfix-plan.js'
 import {
   createWranglerCli,
   ROLLBACK_MESSAGE_PREFIX,
@@ -26,6 +18,14 @@ import {
   VERSION_TAG_ANNOTATION,
   type WranglerVersionsClient,
 } from './promote.js'
+import {
+  assertHotfixSnapshot,
+  hotfixBuildEnv,
+  hotfixProductionEnv,
+  readDeployment,
+  readProductionTarget,
+  scanPublicAssetsForSecretLeaks,
+} from './ship-support.js'
 import {
   parseVerifyArgs,
   resolveAccessHeaders,

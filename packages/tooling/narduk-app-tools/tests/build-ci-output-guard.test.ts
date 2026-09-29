@@ -12,13 +12,9 @@ vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof ChildProcess>()),
   spawnSync,
 }))
-vi.mock('../src/cloudflare.js', () => ({
-  fetchWorkerPlainTextVars: vi.fn(async () => ({ SITE_URL: 'https://example.com' })),
-}))
 
 const { BUILD_CI_OUTPUT_MARKER, buildCiOutputNotice, resolveAppDir, runDeploy } =
   await import('../src/deploy.js')
-const { runDeployLocal } = await import('../src/deploy-local.js')
 
 /**
  * Same token the packed-consumer smoke fails on
@@ -144,23 +140,23 @@ describe('build:ci output cannot be published', () => {
       expect(stderrLines().join('\n')).not.toContain('refusing to publish')
     })
 
-    it('deploy-local refuses a marker that survived cf:build', async () => {
-      const { root } = fixture(layout, true)
-      const status = await runDeployLocal({
-        cwd: root,
-        env: {
-          CLOUDFLARE_ACCOUNT_ID: 'account',
-          CLOUDFLARE_API_TOKEN: 'token',
-          GH_PACKAGES_READ: 'packages-read-value',
-          NUXT_OG_IMAGE_SECRET: 'og-image-secret-value',
-          NUXT_SESSION_PASSWORD: 'session-password-value',
-        },
-        flags: { dryRun: false, force: true, noProbe: true, skipMigrate: true, yes: true },
-      })
+    it('the upload `ship` runs refuses a marker that survived its build', () => {
+      const { appDir } = fixture(layout, true)
+      // The exact call ship.ts makes after its build; tests/ship.test.ts drives it end to end.
+      const status = runDeploy(
+        [
+          'versions-upload',
+          '--tag',
+          'a'.repeat(40),
+          '--message',
+          'narduk-app ship feat-x 1234abcd',
+        ],
+        appDir,
+        { ...allowLocal, CI: 'true' },
+        { keepVars: true },
+      )
       expect(status).toBe(1)
-      const commands = spawnSync.mock.calls.map((call) => (call[1] ?? []).join(' '))
-      expect(commands.some((command) => command.includes('cf:build'))).toBe(true)
-      expect(commands.some((command) => command.includes('wrangler'))).toBe(false)
+      expect(spawnSync).not.toHaveBeenCalled()
       expect(stderrLines().join('\n')).toContain('refusing to publish')
     })
   })
