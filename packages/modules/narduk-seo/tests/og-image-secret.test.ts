@@ -169,7 +169,7 @@ describe('OG image signing secret', () => {
   it('accepts the placeholder on NARDUK_CLOUDFLARE_BUILD=1 and says the output must be marked', () => {
     // Generated nuxt.config.ts does `NARDUK_DEPLOY_TARGET ??= production`
     // when WORKERS_CI_BRANCH is unset, so build:ci also sees production.
-    // A local cf:build or hotfix:build sets the same variable, which is why
+    // A local cf:build or ship:build sets the same variable, which is why
     // acceptance is reported to the caller instead of trusted (#1155).
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
     vi.stubEnv('NARDUK_CLOUDFLARE_BUILD', '1')
