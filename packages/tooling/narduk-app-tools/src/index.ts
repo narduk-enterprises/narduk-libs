@@ -5,6 +5,8 @@ export * from './preview-proof.js'
 export * from './deploy.js'
 export * from './deploy-local.js'
 export * from './deploy-hotfix.js'
+export * from './ship.js'
+export * from './commit-containment.js'
 export * from './promote.js'
 export * from './verify-live.js'
 // Development mode's public surface is the capability schema; its lifecycle is

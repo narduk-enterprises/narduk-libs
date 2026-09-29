@@ -7,6 +7,7 @@ import { parseDevArgs, runDev } from './dev.js'
 import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
 import { parseDeployLocalArgs, runDeployLocal } from './deploy-local.js'
 import { parseHotfixArgs, runHotfix } from './deploy-hotfix.js'
+import { parseShipArgs, runShip, SHIP_USAGE } from './ship.js'
 import { DEVELOPMENT_USAGE, runDevelopmentCommand } from './development-cli.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
@@ -182,6 +183,7 @@ function usage(): string {
     '      --confirm-worker <name> --base-url <https origin> [--dry-run | --yes --automation-paused]',
     '      [--access-client-id-env <name> --access-client-secret-env <name>]',
     '                                       Local incident patch with checks, receipt and live proof',
+    ...SHIP_USAGE,
     ...DEVELOPMENT_USAGE,
     '  registry-auth                       Write scoped GitHub Packages auth',
     '  gh-packages-run -- <command...>     Run a command with process-scoped',
@@ -431,6 +433,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'development') {
       return await runDevelopmentCommand(rest)
+    }
+    if (command === 'ship') {
+      return await runShip(parseShipArgs(rest))
     }
     if (command === 'deploy-hotfix') {
       return await runHotfix(parseHotfixArgs(rest))

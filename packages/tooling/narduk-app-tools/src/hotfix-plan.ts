@@ -118,7 +118,10 @@ export function hotfixSystemEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   )
 }
 
-export function hotfixBuildEnv(env: NodeJS.ProcessEnv, flags: HotfixFlags): NodeJS.ProcessEnv {
+export function hotfixBuildEnv(
+  env: NodeJS.ProcessEnv,
+  flags: Pick<HotfixFlags, 'sha' | 'baseUrl'>,
+): NodeJS.ProcessEnv {
   const publicEnv = Object.fromEntries(
     Object.entries(env).filter(([key]) => key.startsWith('NUXT_PUBLIC_')),
   )
@@ -143,7 +146,10 @@ export function assertProductionBuildSecret(key: string, value: string): void {
   }
 }
 
-export function hotfixProductionEnv(env: NodeJS.ProcessEnv, flags: HotfixFlags): NodeJS.ProcessEnv {
+export function hotfixProductionEnv(
+  env: NodeJS.ProcessEnv,
+  flags: Pick<HotfixFlags, 'sha' | 'baseUrl'>,
+): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {
     ...hotfixBuildEnv(env, flags),
     NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1',
@@ -209,6 +215,30 @@ export function planHotfix(flags: HotfixFlags, cwd = process.cwd(), env = proces
     if (!pkg.scripts[script]?.trim())
       throw new Error(`Declare the repository-root ${script} script before adopting deploy-hotfix`)
   }
+  const target = readProductionTarget(appDir, env)
+  if (target.workerName !== flags.confirmWorker)
+    throw new Error('--confirm-worker must match the committed Wrangler name')
+  const commonDir = resolve(repoRoot, hotfixGit(repoRoot, ['rev-parse', '--git-common-dir'], env))
+  return {
+    repoRoot,
+    appRelative: relative(repoRoot, appDir),
+    ...target,
+    sha: flags.sha,
+    baseUrl: new URL(flags.baseUrl).origin,
+    evidenceDir: join(commonDir, 'narduk', 'hotfix'),
+  }
+}
+
+export interface ProductionTarget {
+  accountId: string
+  workerName: string
+  deployment: DeploymentBlock
+  /** The raw Config/cloudflare-app.json, for callers that read more of it. */
+  manifest: unknown
+}
+
+/** The committed production Worker a local publish targets: one account, one name, narduk-v1. */
+export function readProductionTarget(appDir: string, env: NodeJS.ProcessEnv): ProductionTarget {
   const configPath = resolveWranglerConfigPath(appDir)!
   const config = z
     .object({
@@ -219,10 +249,8 @@ export function planHotfix(flags: HotfixFlags, cwd = process.cwd(), env = proces
     .parse(readJsonc<unknown>(configPath))
   if (config.build?.command?.trim())
     throw new Error(
-      'Move Wrangler build.command into hotfix:build; upload must not rebuild with deployment credentials',
+      'Move Wrangler build.command into the build script; upload must not rebuild with deployment credentials',
     )
-  if (config.name !== flags.confirmWorker)
-    throw new Error('--confirm-worker must match the committed Wrangler name')
   const manifestPath = findCloudflareAppConfig(appDir)
   if (!manifestPath) throw new Error('Missing Config/cloudflare-app.json')
   const manifest = readJsonc<unknown>(manifestPath)
@@ -239,26 +267,16 @@ export function planHotfix(flags: HotfixFlags, cwd = process.cwd(), env = proces
       (value) => value !== undefined && value !== accountId,
     )
   ) {
-    throw new Error('Cloudflare account IDs disagree; refusing a cross-account hotfix')
+    throw new Error('Cloudflare account IDs disagree; refusing a cross-account publish')
   }
   if (outcome.block.staging.enabled && outcome.block.staging.workerName === config.name) {
-    throw new Error('The hotfix target must be the production Worker')
+    throw new Error('The publish target must be the production Worker')
   }
-  const commonDir = resolve(repoRoot, hotfixGit(repoRoot, ['rev-parse', '--git-common-dir'], env))
-  return {
-    repoRoot,
-    appRelative: relative(repoRoot, appDir),
-    accountId,
-    workerName: config.name,
-    sha: flags.sha,
-    baseUrl: new URL(flags.baseUrl).origin,
-    deployment: outcome.block,
-    evidenceDir: join(commonDir, 'narduk', 'hotfix'),
-  }
+  return { accountId, workerName: config.name, deployment: outcome.block, manifest }
 }
 
 export function assertHotfixSnapshot(
-  plan: HotfixPlan,
+  plan: Pick<HotfixPlan, 'sha' | 'appRelative'>,
   snapshot: string,
   env: NodeJS.ProcessEnv,
 ): void {

@@ -1854,3 +1854,75 @@ describe('--version-id recovers a duplicate upload of one commit (narduk-libs#12
     expect(checkVersionAgainstSha([first], 'v-gone', SHA)).toContain('not among the 1 version(s)')
   })
 })
+
+/* -------------------------------------------------------------------------- */
+/* Ship guard: a main promote never undoes a `narduk-app ship`                */
+/* -------------------------------------------------------------------------- */
+
+describe('ship guard', () => {
+  const SHIPPED = 'ccccccc3333333333333333333333333333333333'
+  const shipped: WorkerVersion = {
+    id: 'v-ship',
+    number: 11,
+    metadata: { source: 'wrangler', created_on: '2026-09-29T00:00:00Z' },
+    annotations: { 'workers/tag': SHIPPED, 'workers/message': 'narduk-app ship feat-x ab12cd34' },
+  }
+  const versions = [numbered('v-main', SHA_NEW, 12), shipped]
+  const live = [deployment('d1', 'v-ship', '2026-09-29T00:01:00Z')]
+
+  it('refuses a main commit that does not contain the shipped commit', async () => {
+    const { context: ctx, calls } = context(versions, live)
+    const seen: string[][] = []
+    ctx.containment = (candidate, served) => {
+      seen.push([candidate, served])
+      return 'not-contained'
+    }
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_NEW]), ctx)
+    expect(result.outcome).toBe('ship-not-contained')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.shipNotContained)
+    expect(result.detail).toContain('merge the ship PR')
+    expect(seen).toEqual([[SHA_NEW, SHIPPED]])
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('refuses when containment cannot be proven', async () => {
+    const { context: ctx, calls } = context(versions, live)
+    ctx.containment = () => 'unknown'
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_NEW]), ctx)
+    expect(result.outcome).toBe('ship-not-contained')
+    expect(result.detail).toContain('cannot be shown to contain')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('promotes once main contains the shipped commit (its PR merged)', async () => {
+    const { context: ctx, calls } = context(versions, live)
+    ctx.containment = () => 'contained'
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_NEW]), ctx)
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v-main')
+  })
+
+  it('ignores ordinary Workers Builds versions entirely', async () => {
+    const { context: ctx, calls } = context(
+      [numbered('v-new', SHA_NEW, 11), numbered('v-old', SHA_OLD, 10)],
+      [deployment('d1', 'v-old', '2026-09-17T01:00:00Z')],
+    )
+    ctx.containment = () => {
+      throw new Error('must not be consulted')
+    }
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', SHA_NEW]), ctx)
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v-new')
+  })
+
+  it('--force passes the guard loudly', async () => {
+    const { context: ctx } = context(versions, live)
+    ctx.containment = () => 'not-contained'
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', SHA_NEW, '--force']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(result.forced).toBe(true)
+  })
+})
