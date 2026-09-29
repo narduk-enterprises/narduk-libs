@@ -113,7 +113,7 @@ export function landedContains(candidate: string, served: string, get: GitHubGet
   if (direct) return 'contained'
   const pulls = get(`commits/${served}/pulls`)
   if (!Array.isArray(pulls)) return 'unknown'
-  for (const pull of pulls as { merged_at?: unknown; merge_commit_sha?: unknown }[]) {
+  for (const pull of pulls as Array<{ merged_at?: unknown; merge_commit_sha?: unknown }>) {
     if (!pull.merged_at || typeof pull.merge_commit_sha !== 'string') continue
     if (!/^[a-f\d]{40}$/u.test(pull.merge_commit_sha)) continue
     const landed = ahead(pull.merge_commit_sha)
