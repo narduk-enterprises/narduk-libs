@@ -486,6 +486,14 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     expect(productionOrigin({ domains: { customDomains: ['acreoracle.com'] } })).toBe(
       'https://acreoracle.com',
     )
+    expect(
+      productionOrigin({
+        environments: [
+          { name: 'staging', hostname: null },
+          { name: 'production', hostname: 'riverstat.us' },
+        ],
+      }),
+    ).toBe('https://riverstat.us')
     expect(productionOrigin({}, 'https://x.example/')).toBe('https://x.example')
     expect(() => productionOrigin({})).toThrow('--base-url')
   })
