@@ -376,6 +376,8 @@ async function ship(
   const listing = await client.listVersions(100)
   const served = listing.versions.find((version) => version.id === previousVersionId)
     ?.annotations?.[VERSION_TAG_ANNOTATION]
+  if (served !== undefined && !/^[a-f\d]{7,40}$/u.test(served))
+    refuse(`Production version ${previousVersionId} carries a commit tag that is not a SHA`)
   if (!served) {
     if (!flags.adopt)
       refuse(

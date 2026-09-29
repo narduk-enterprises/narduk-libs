@@ -130,6 +130,8 @@ export function resolveContainment(
   served: string,
   options: { git?: Exec; github?: GitHubGet; env?: NodeJS.ProcessEnv } = {},
 ): Containment {
+  // Both reach git argv and a URL path; a tag read from Cloudflare is input.
+  if (![candidate, served].every((sha) => /^[a-f\d]{7,40}$/u.test(sha))) return 'unknown'
   const local = commitContains(cwd, candidate, served, options.git)
   if (local === 'contained') return local
   const landed = landedContains(

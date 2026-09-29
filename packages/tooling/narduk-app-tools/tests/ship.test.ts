@@ -280,6 +280,11 @@ describe('commit containment', { timeout: GIT_TIMEOUT }, () => {
       resolveContainment(f.root, f.mainSha, 'f'.repeat(40), { github: fakeGh({ down: true }) }),
     ).toBe('unknown')
     expect(f.git('config', '--list')).toBe(before)
+    expect(
+      resolveContainment(f.root, f.mainSha, '--upload-pack=touch /tmp/x', {
+        github: fakeGh({ ahead: ['--upload-pack=touch /tmp/x'] }),
+      }),
+    ).toBe('unknown')
   })
 })
 
