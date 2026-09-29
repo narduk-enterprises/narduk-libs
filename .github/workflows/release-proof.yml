@@ -45,7 +45,7 @@ jobs:
       targets: ${{ steps.plan.outputs.targets }}
       count: ${{ steps.plan.outputs.count }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 2
@@ -76,7 +76,7 @@ jobs:
       served: ${{ steps.prove.outputs.served }}
       served-count: ${{ steps.prove.outputs.served-count }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
           persist-credentials: false
@@ -103,7 +103,7 @@ jobs:
       missing: ${{ steps.settle.outputs.missing }}
       missing-count: ${{ steps.settle.outputs.missing-count }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
           persist-credentials: false
@@ -197,7 +197,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
           persist-credentials: false
