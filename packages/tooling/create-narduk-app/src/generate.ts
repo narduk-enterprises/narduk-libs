@@ -5,7 +5,6 @@ import { createActionlintConfig, customRunnerLabels } from './actionlint-config.
 import {
   createCiWorkflow,
   createDependabotMergeWorkflow,
-  createValidationWorkflow,
   createCopilotSetupWorkflow,
   createGhPackagesRunScript,
   createPromoteGateScript,
@@ -696,10 +695,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     ...(visibility === 'private'
       ? [
           {
-            path: '.github/workflows/validate.yml',
-            contents: createValidationWorkflow(visibility)!,
-          },
-          {
             // caller-lint runs actionlint, which rejects a self-hosted label it
             // was not told about: dependabot-merge.yml names `proxmox` and
             // `linux-ci`, and preview-d1.yml (a template for .github/workflows)
@@ -987,12 +982,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Enable Workers Builds on protected `main`. Enable non-production branch builds and GitHub PR comments for trusted branches of public apps; the generated scripts alone do not create that connection. Version previews share Worker bindings, so private data and mutation-capable apps need isolated preview bindings before enabling them. Authenticated apps keep direct Worker and preview URLs disabled until equivalent protection is configured.',
         '',
-        ...(visibility === 'private'
-          ? [
-              'Development mode (`pnpm run deploy:dev`) is an owner-enrolled alternative for apps still being built; it is off until enrolled. See the Development mode section of [docs/workers-builds.md](docs/workers-builds.md).',
-              '',
-            ]
-          : []),
         'Cloudflare Workers Builds uses `pnpm run cf:build` as its build command, `pnpm run cf:deploy` for the production deploy command, and `pnpm run cf:deploy:preview` for non-production branches. Local `pnpm run deploy` remains recovery-only; `pnpm run deploy:dry-run` is credential-free.',
         '',
         'The app is configured for local Nuxt development on port ' +
@@ -1154,7 +1143,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         "The build command installs the frozen workspace lockfile from `https://npm.nard.uk` (anonymous `@narduk-enterprises/*` reads) and then builds the Cloudflare module artifact. Skipping Cloudflare's initial install keeps that install on the frozen lockfile. No GitHub Packages build secret is required. If the mirror is unavailable, break-glass is `scripts/gh-packages-run.mjs` with `GH_PACKAGES_READ` after temporarily routing `.npmrc` at `https://npm.pkg.github.com`. Do not make that the default.",
         '',
-        'Worker secrets are injected at runtime only and are not visible to `nuxt build`. Apps that enable runtime OG image generation (the `seo` capability default) must set `NUXT_OG_IMAGE_SECRET` as a Workers Builds _Build variable_ or the build throws. Set `NUXT_SESSION_PASSWORD` the same way. CI uses committed test-only placeholders; production must use the real Vault-issued values, never those placeholders. `build:ci` exits before it exports them when `WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is set. A successful `build:ci` also writes `.narduk-build-ci` beside the Nitro output (`apps/web/.output` on the apps/web layout, `.output` on a root-layout app). `narduk-app deploy` refuses to publish that output and names `cf:build`, including `deploy-local`, `deploy-hotfix`, and `development deploy`. A dry run prints the same fact and exits 0. A later real `pnpm run build` or `cf:build` replaces `.output` and clears the marker.',
+        'Worker secrets are injected at runtime only and are not visible to `nuxt build`. Apps that enable runtime OG image generation (the `seo` capability default) must set `NUXT_OG_IMAGE_SECRET` as a Workers Builds _Build variable_ or the build throws. Set `NUXT_SESSION_PASSWORD` the same way. CI uses committed test-only placeholders; production must use the real Vault-issued values, never those placeholders. `build:ci` exits before it exports them when `WORKERS_CI`, `WORKERS_CI_BRANCH`, or `NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY` is set. A successful `build:ci` also writes `.narduk-build-ci` beside the Nitro output (`apps/web/.output` on the apps/web layout, `.output` on a root-layout app). `narduk-app deploy` refuses to publish that output and names `cf:build`, including `ship`. A dry run prints the same fact and exits 0. A later real `pnpm run build` or `cf:build` replaces `.output` and clears the marker.',
         '',
         'Both deploy commands are the same command on purpose. `cf:deploy:preview` runs `narduk-app deploy versions-upload`, which uploads a version and changes no traffic; the name is historical. Setting the _production_ deploy command to anything that deploys would put a `main` push straight into production and defeat the standard. The separate `cf:deploy` script stays for authorized recovery only.',
         '',
@@ -1174,17 +1163,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '`narduk-app foundation:check:deployment` checks that block against the standard. It reads this repository only: it cannot see the deploy commands actually configured on the Workers Builds connection, so a green check here is not a green deployment. Until this app adopts the block the check reports `NOT ADOPTED` and exits 0.',
         '',
-        '## Development mode',
+        '## Ship',
         '',
-        ...(visibility === 'private'
-          ? [
-              "While an app is being built, one approved workstation can own its enrolled Cloudflare target and deploy straight from its checkout -- uncommitted edits included -- with `pnpm run deploy:dev`. Entering holds the automation that would otherwise overwrite that target (this repository's push/merge workflows and the Workers Builds triggers) and records exactly what it held; exiting restores it, after `.github/workflows/validate.yml` has validated the exact release commit. Ordinary pushes run no CI while the app is in development mode. Full validation happens only when you ask for it with `narduk-app development validate`, and on exit.",
-              '',
-              'Development mode is off until an owner enrolls the app. Enrollment needs live facts this generator does not have -- the account id, the approved hostname, deployment and build-control credential selectors, and every workflow classified -- so the `deployment.development` capability is added to `Config/cloudflare-app.json` during enrollment, not here. `pnpm run deploy:dev` refuses on a workstation without an activation record. Read the [development mode runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/development-mode.md) before enrolling, and use the normal promotion path above whenever the app is not enrolled.',
-            ]
-          : [
-              'Development mode needs a private explicit-validation caller, which a public repository cannot call, so this app always uses the normal promotion path above. `pnpm run deploy:dev` refuses without an activation record.',
-            ]),
+        '`pnpm ship` (`narduk-app ship`; see the [ship runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/ship.md)) is the workstation fast path for a committed branch. Normal Workers Builds promotion above stays the default.',
         '',
         ...(databaseBackend === 'd1'
           ? [

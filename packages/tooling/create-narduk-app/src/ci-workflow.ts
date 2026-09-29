@@ -26,17 +26,10 @@ import type { AppVisibility } from './types.js'
 // mirror skip. #99 is inert for generated apps (no `install-script`). #100
 // fails the build on fixable high/critical advisories.
 //
-// Still not main's tip. The development-mode validation caller stays on #141
-// below so ordinary CI does not also adopt every change between #116 and #141.
+// Still not main's tip.
 // `upgrade` will not write this over a caller pin that is not an older value
 // from workflow-pin.ts, so an app that has already moved past it stays there.
 const workflowSha = NUXT_CLOUDFLARE_WORKFLOW_SHA
-
-// workflows#141 (merged as 67968e3): the first commit whose callable accepts an
-// explicit exact-candidate request pushed to `narduk-validation/<sha>/<id>`. Only
-// the development-mode validation caller uses it; ordinary CI keeps the pin above
-// so this generator does not also adopt every change between the two commits.
-const validationWorkflowSha = '67968e304ba64e7733dc36d23d80eefda8d72e33'
 
 /**
  * The job-level permissions every shared-workflow caller grants. A called
@@ -888,45 +881,6 @@ export function createDependabotMergeWorkflow(visibility: AppVisibility): string
     '          GH_TOKEN: ${{ github.token }}',
     '          REPO: ${{ github.repository }}',
     '        run: gh workflow run ci.yml --repo "$REPO" --ref main',
-    '',
-  ].join('\n')
-}
-
-/**
- * Explicit full validation for development mode (company-hq#781). Ordinary
- * pushes stay quiet while automation is held; `narduk-app development validate`
- * pushes the exact commit to a reserved `narduk-validation/<sha>/<id>` ref, which
- * is the only trigger here. A push event on the candidate commit is what lets
- * the result satisfy the existing required `ci / Required` check -- a
- * `workflow_dispatch` run never can. It validates only; it never deploys.
- *
- * Public repositories cannot call the private shared workflow, so they get no
- * validation caller and cannot enter development mode until one exists.
- */
-export function createValidationWorkflow(visibility: AppVisibility): string | null {
-  if (visibility !== 'private') return null
-  return [
-    'name: Explicit full validation',
-    '',
-    'on:',
-    '  push:',
-    "    branches: ['narduk-validation/**']",
-    '',
-    'concurrency:',
-    '  group: explicit-validation-${{ github.ref }}',
-    '  cancel-in-progress: false',
-    '',
-    'permissions:',
-    '  contents: read',
-    '',
-    'jobs:',
-    '  ci:',
-    `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${validationWorkflowSha}`,
-    '    permissions:',
-    ...SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => '      ' + entry),
-    '    with:',
-    '      expected-candidate-sha: ${{ github.sha }}',
-    ...privateCallerInputs(),
     '',
   ].join('\n')
 }

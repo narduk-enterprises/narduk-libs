@@ -126,7 +126,7 @@ describe('every repository-stage command of NAC §3.0 is wired into the emitted 
   )
 
   describe('private', () => {
-    const { ci, files } = generated('private')
+    const { ci } = generated('private')
     const inputs = ci.jobs.ci!.with!
 
     it('items 1-7: the shared workflow runs foundation:check', () => {
@@ -144,14 +144,6 @@ describe('every repository-stage command of NAC §3.0 is wired into the emitted 
       expect(inputs['quality-level']).toBe('standard')
       expect(inputs['preview-checks']).toBeUndefined()
       expect(inputs['quality-opt-out']).toBeUndefined()
-    })
-
-    it('the explicit validation caller runs the identical gate', () => {
-      const validate = parse(files.get('.github/workflows/validate.yml')!) as Workflow
-      const validation = validate.jobs.ci!.with!
-      for (const key of ['extra-scripts', 'foundation-check', 'quality-level', 'require-scripts']) {
-        expect(validation[key], key).toEqual(inputs[key])
-      }
     })
   })
 

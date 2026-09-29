@@ -653,18 +653,8 @@ describe('create-narduk-app generation contract', () => {
     // Default CI and validation callers pass no package-read secret.
     // No setup-node registry-url writing a competing userconfig .npmrc
     // (company-hq#488).
-    // Development mode's explicit validation caller: a reserved-ref push is its
-    // only trigger, so held automation stays quiet and the run still satisfies
-    // the required check on the exact candidate (company-hq#781).
-    const validation = YAML.parse(
-      files.find((file) => file.path === '.github/workflows/validate.yml')?.contents ?? '',
-    )
-    expect(validation.on).toEqual({ push: { branches: ['narduk-validation/**'] } })
-    expect(validation.jobs.ci.uses).toBe(
-      'narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@67968e304ba64e7733dc36d23d80eefda8d72e33',
-    )
-    expect(validation.jobs.ci.with['expected-candidate-sha']).toBe('${{ github.sha }}')
-    expect(validation.jobs.ci.secrets).toBeUndefined()
+    // Development mode is gone: no explicit-validation caller is emitted.
+    expect(files.some((file) => file.path === '.github/workflows/validate.yml')).toBe(false)
     const generatedCi =
       files.find((file) => file.path === '.github/workflows/ci.yml')?.contents ?? ''
     expect(generatedCi).not.toContain('NODE_AUTH_TOKEN')
@@ -1407,7 +1397,14 @@ describe('create-narduk-app generation contract', () => {
     const rootPackage = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
-    expect(rootPackage.scripts['deploy:hotfix']).toBeUndefined()
+    for (const removed of [
+      'deploy:dev',
+      'deploy:local',
+      'deploy:hotfix',
+      'hotfix:check',
+      'hotfix:build',
+    ])
+      expect(rootPackage.scripts[removed], removed).toBeUndefined()
     expect(rootPackage.scripts.ship).toMatch(
       /-c narduk-enterprises-[a-z\d-]+-deploy -- pnpm --filter web exec narduk-app ship$/u,
     )
@@ -1457,7 +1454,14 @@ describe('create-narduk-app generation contract', () => {
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')
     expect(webPackage.scripts.deploy).toBe('narduk-app deploy deploy')
     expect(webPackage.scripts['deploy:dry-run']).toBe('narduk-app deploy deploy --dry-run')
-    expect(webPackage.scripts['deploy:dev']).toBe('narduk-app development deploy')
+    for (const removed of [
+      'deploy:dev',
+      'deploy:local',
+      'deploy:hotfix',
+      'hotfix:check',
+      'hotfix:build',
+    ])
+      expect(webPackage.scripts[removed], removed).toBeUndefined()
     expect(webPackage.scripts['performance-budget']).toContain('--font-total-budget-kb 140')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain('<UApp>')
     expect(await readFile(join(targetDir, 'apps/web/app/app.vue'), 'utf8')).toContain(
@@ -2607,7 +2611,7 @@ describe('a fresh scaffold passes its own gate', () => {
     expect(readme('public')).not.toContain('fleet runner groups')
   })
 
-  it('offers development mode only where a validation caller can exist, and enrolls nothing', () => {
+  it('carries no development mode, hotfix or validate.yml, and documents ship', () => {
     const files = (visibility: 'private' | 'public') =>
       new Map(
         buildGeneratedFiles({
@@ -2618,22 +2622,20 @@ describe('a fresh scaffold passes its own gate', () => {
           visibility,
         }).map((file) => [file.path, file.contents]),
       )
-    const privateFiles = files('private')
-    const publicFiles = files('public')
-    expect(privateFiles.has('.github/workflows/validate.yml')).toBe(true)
-    expect(publicFiles.has('.github/workflows/validate.yml')).toBe(false)
-    expect(privateFiles.get('docs/workers-builds.md')).toContain('## Development mode')
-    expect(privateFiles.get('docs/workers-builds.md')).toContain('docs/development-mode.md')
-    expect(publicFiles.get('docs/workers-builds.md')).toContain(
-      'always uses the normal promotion path',
-    )
-    // The capability needs live facts (account, hostname, credential selectors,
-    // workflow classification), so generation never declares it.
-    for (const map of [privateFiles, publicFiles])
+    for (const map of [files('private'), files('public')]) {
+      expect(map.has('.github/workflows/validate.yml')).toBe(false)
+      const docs = map.get('docs/workers-builds.md') ?? ''
+      expect(docs).not.toContain('## Development mode')
+      expect(docs).not.toContain('development-mode')
+      expect(docs).not.toContain('deploy:dev')
+      expect(docs).toContain('## Ship')
+      expect(docs).toContain('`pnpm ship`')
       expect(map.get('Config/cloudflare-app.json')).not.toContain('"development"')
-    expect(JSON.parse(privateFiles.get('package.json') ?? '{}').scripts['deploy:dev']).toBe(
-      'pnpm --filter web run deploy:dev',
-    )
+      const scripts = JSON.parse(map.get('package.json') ?? '{}').scripts
+      expect(scripts.ship).toBeDefined()
+      for (const removed of ['deploy:dev', 'deploy:local', 'deploy:hotfix', 'hotfix:check'])
+        expect(scripts[removed], removed).toBeUndefined()
+    }
   })
 
   it('declares its own half of Config/cloudflare-app.json, agreeing with wrangler.jsonc', async () => {
