@@ -13,13 +13,6 @@ on:
     workflows: ["CI"]
     types: [completed]
 
-# One listener at a time per repository, so an open and a close for the same
-# issue never race; keyed by workflow so one workflow's completion cannot
-# displace another's pending verdict. Not cancelled: the newest conclusion wins.
-concurrency:
-  group: red-main-${{ github.repository }}-${{ github.event.workflow_run.name }}
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
