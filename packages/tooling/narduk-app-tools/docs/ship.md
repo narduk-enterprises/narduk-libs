@@ -4,7 +4,7 @@ The one fast path from a committed feature branch to production. No mode to
 enter, no custody record, nothing to restore afterwards.
 
 ```bash
-nvault run --project cloudflare --config <app>-deploy -- pnpm exec narduk-app ship -m "what changed"
+nvault run -p cloudflare -e prd -c narduk-enterprises-<app>-deploy -- pnpm exec narduk-app ship -m "what changed"
 ```
 
 1. **Branch.** Refuses on the production branch or a detached HEAD. A dirty tree

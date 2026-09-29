@@ -351,6 +351,7 @@ describe('create-narduk-app generation contract', () => {
     expect(files.get('apps/web/nuxt.config.ts')).toContain('requestLogging: true')
     expect(files.get('docs/logging.md')).toContain('useLogger(event)')
     const knipConfig = JSON.parse(files.get('knip.json') ?? '') as {
+      ignoreBinaries: string[]
       ignoreDependencies: string[]
     }
 
@@ -414,6 +415,8 @@ describe('create-narduk-app generation contract', () => {
     // SEO apps still request runtime OG, so the scaffold must install it.
     expect(dependencies['nuxt-og-image']).toBe(PACKAGE_VERSIONS['nuxt-og-image'])
     expect(knipConfig.ignoreDependencies).toContain('nuxt-og-image')
+    // The ship script runs through nvault, which knip would flag as unlisted.
+    expect(knipConfig.ignoreBinaries).toEqual(['nvault'])
     expect(dependencies.nuxt).toBe('4.5.2')
     expect(Object.values(dependencies).every((version) => /^\d+\.\d+\.\d+$/u.test(version))).toBe(
       true,

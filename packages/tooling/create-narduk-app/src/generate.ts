@@ -2416,6 +2416,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           : []),
         '    }',
         '  },',
+        // `pnpm ship` wraps the deploy in nvault, a machine binary no package provides.
+        '  "ignoreBinaries": ["nvault"],',
         knipIgnoreDependenciesLine(knipIgnoreDependencies),
         '}',
       ),
