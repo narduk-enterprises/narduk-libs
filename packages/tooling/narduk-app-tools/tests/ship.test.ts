@@ -77,6 +77,9 @@ function fixture(options: { migrations?: boolean } = {}) {
   const root = temp('ship-app-')
   const git = gitIn(root)
   git('init', '-q')
+  // ship commits with the repo's own identity; CI runners have no global one.
+  git('config', 'user.name', 'Fixture')
+  git('config', 'user.email', 'fixture@example.test')
   const app = join(root, 'apps/web')
   mkdirSync(app, { recursive: true })
   mkdirSync(join(root, 'Config'))
