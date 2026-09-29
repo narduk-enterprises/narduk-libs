@@ -47,6 +47,17 @@ function makeNuxt() {
 }
 
 describe('narduk-analytics module', () => {
+  it('rejects non-registry app IDs before registering a runtime surface', async () => {
+    mockNuxtKit(() => true)
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    await expect(mod.setup({ appId: 'private@example.com' }, makeNuxt())).rejects.toThrow(
+      'registry slug',
+    )
+    await expect(mod.setup({ appId: null }, makeNuxt())).rejects.toThrow('registry slug')
+  })
+
   beforeEach(() => {
     vi.resetModules()
   })
@@ -65,6 +76,15 @@ describe('narduk-analytics module', () => {
     expect(addImportsDir).toHaveBeenCalledWith(expect.stringContaining('/app/composables'))
     expect(addPlugin).toHaveBeenCalledWith(expect.stringContaining('/app/plugins/posthog.client'))
     expect(addServerScanDir).toHaveBeenCalledWith(expect.stringContaining('/server'))
+    const typeHook = nuxt.hook.mock.calls.find(([name]) => name === 'prepare:types')?.[1]
+    const prepared: { references: Array<{ path: string }> } = { references: [] }
+    typeHook(prepared)
+    expect(prepared.references.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/app/types/runtime-config.d.ts'),
+        expect.stringContaining('/app/types/posthog.d.ts'),
+      ]),
+    )
   })
 
   it('auto-installs narduk-core when it is not already present', async () => {

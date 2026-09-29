@@ -56,6 +56,7 @@ export function useAsyncData<T>(
 }
 
 interface FixtureNuxtApp {
+  $analytics?: unknown
   $posthog?: unknown
 }
 

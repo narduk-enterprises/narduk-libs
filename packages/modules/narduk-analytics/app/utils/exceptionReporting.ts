@@ -25,7 +25,7 @@ import type { PostHog, Properties } from 'posthog-js'
 
 /** The subset of the PostHog client this reporter uses. */
 export interface PostHogExceptionClient {
-  captureException: PostHog['captureException']
+  captureException: (error: Error, properties?: Properties) => unknown
   has_opted_out_capturing?: PostHog['has_opted_out_capturing']
 }
 
@@ -68,6 +68,5 @@ export function reportExceptionToPostHog(
   if (!posthog) return false
   if (posthog.has_opted_out_capturing?.()) return false
 
-  posthog.captureException(report.error, buildPostHogExceptionProperties(report))
-  return true
+  return posthog.captureException(report.error, buildPostHogExceptionProperties(report)) !== false
 }

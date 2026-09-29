@@ -1,10 +1,11 @@
 import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
 
+import { analyticsLandingAttribution } from '../utils/analyticsAttribution'
+import { createAnalyticsContext } from '../utils/analyticsContext'
+import { installAnalyticsEngagement } from '../utils/analyticsEngagementBrowser'
 import {
-  isInternalAnalyticsTraffic,
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,
-  resolveAnalyticsEnvironment,
   runWithAnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
 import {
@@ -15,6 +16,8 @@ import {
   sanitizeStandardUrl,
   templatePath,
 } from '../utils/analyticsPrivacy'
+import { createAnalyticsTransport } from '../utils/analyticsTransport'
+import { ANALYTICS_SCHEMA_VERSION } from '../utils/analyticsVersion'
 import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
 
 import type {
@@ -22,12 +25,12 @@ import type {
   AnalyticsLoadStrategy,
 } from '../utils/analyticsLoadStrategy'
 import type { PostHogExtensionsHost } from '../utils/webVitals'
-import type { PostHog, Properties } from 'posthog-js'
+import type { PostHog } from 'posthog-js'
 
 type LegacyNuxtWindow = Window & { $nuxt?: { $posthog?: PostHog } }
 type PostHogExtensionsWindow = Window & PostHogExtensionsHost
 
-export default defineNuxtPlugin<{ posthog?: PostHog }>({
+export default defineNuxtPlugin({
   name: 'posthog',
   dependsOn: ['runtime-public'],
   setup(nuxtApp) {
@@ -54,28 +57,74 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
       webVitalsEnabled &&
       runtimeConfig.public.posthogWebVitalsAttributionEnabled === true
 
-    if (
-      !posthogApiKey ||
-      previewSafeMode ||
-      import.meta.server ||
-      isLocalhost ||
-      strategy === 'off'
-    ) {
-      return {
-        provide: {
-          posthog: undefined,
-        },
-      }
-    }
-
+    const enabled =
+      Boolean(posthogApiKey) &&
+      !previewSafeMode &&
+      !import.meta.server &&
+      !isLocalhost &&
+      strategy !== 'off'
     const router = useRouter()
+    const resolveRoute = (path: string) => router.resolve(path)
+    const baseContext = createAnalyticsContext({
+      appName,
+      appId: runtimeConfig.public.analyticsAppId,
+      surface: runtimeConfig.public.analyticsSurface,
+      appVersion: runtimeConfig.public.appVersion,
+      buildVersion: runtimeConfig.public.buildVersion,
+      hostname: window.location.hostname,
+      deploymentTarget: runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget,
+      owner: () =>
+        document.cookie.split(';').some((cookie) => cookie.trim() === 'narduk_owner=true'),
+      route: () => templatePath(router.currentRoute.value.path, resolveRoute),
+    })
+    const landing = enabled
+      ? analyticsLandingAttribution(window.location.href, document.referrer, strict)
+      : {}
+    const context = () => ({ ...baseContext(), ...landing })
+    const identityEnabled = runtimeConfig.public.analyticsIdentityEnabled === true
+    const transport = createAnalyticsTransport({ enabled, context, resetOnAttach: identityEnabled })
+    nuxtApp.provide('analytics', transport)
 
+    if (!enabled) return { provide: { posthog: undefined } }
+
+    let lastTrackedPath: string | undefined
+    const engagement =
+      runtimeConfig.public.analyticsEngagementEnabled === true
+        ? installAnalyticsEngagement(transport, router, nuxtApp.vueApp)
+        : undefined
+    const trackPageview = (path: string) => {
+      if (path === lastTrackedPath) return
+      // Flush the previous visit before changing its route context.
+      engagement?.navigate(path, { ...context(), route: templatePath(path, resolveRoute) })
+      lastTrackedPath = path
+      const pagePath = strict ? templatePath(path, resolveRoute) : path
+      transport.capture(
+        '$pageview',
+        {
+          $current_url: sanitizeStandardUrl(window.location.origin + pagePath),
+        },
+        { ...context(), route: templatePath(path, resolveRoute) },
+      )
+    }
+    void nextTick(() => trackPageview(router.currentRoute.value.path))
+    const removeRouteObserver = router.afterEach((to, _from, failure) => {
+      if (failure) return
+      void nextTick(() => trackPageview(to.path))
+    })
+    nuxtApp.vueApp?.onUnmount?.(() => {
+      removeRouteObserver?.()
+      transport.disable()
+    })
     runWithAnalyticsLoadStrategy(strategy, () => {
-      void initializePosthog()
+      void initializePosthog().catch(() => {
+        if (transport.status === 'pending') transport.fail()
+      })
     })
 
     async function initializePosthog() {
+      if (transport.status !== 'pending') return
       const { posthog } = await import('posthog-js')
+      if (transport.status !== 'pending') return
 
       // PostHog's `$web_vitals` autocapture reaches for an external
       // `web-vitals.js` asset unless the callbacks are already published, and
@@ -86,6 +135,7 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         const webVitals = webVitalsAttributionEnabled
           ? await import('web-vitals/attribution')
           : await import('web-vitals')
+        if (transport.status !== 'pending') return
 
         installPostHogWebVitalsCallbacks(window as PostHogExtensionsWindow, {
           onCLS: webVitals.onCLS,
@@ -95,10 +145,24 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         })
       }
 
-      const resolveRoute = (path: string) => router.resolve(path)
       // Web vitals first: it reads the raw URL on each nested metric to find the
       // route. The strict scrub runs last, so nothing an earlier hook adds escapes.
       const beforeSend = composeBeforeSend(
+        (result) =>
+          transport.status === 'failed' ||
+          transport.status === 'disabled' ||
+          (identityEnabled && transport.status === 'pending')
+            ? null
+            : result
+              ? {
+                  ...result,
+                  properties: {
+                    ...context(),
+                    ...result.properties,
+                    analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
+                  },
+                }
+              : result,
         webVitalsEnabled
           ? createWebVitalsBeforeSend({
               buildVersion: runtimeConfig.public.buildVersion,
@@ -124,6 +188,8 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         // — and every URL-bearing property reduced to its route pattern below.
         ...(strict
           ? {
+              cross_subdomain_cookie: false,
+              save_campaign_params: false,
               autocapture: false,
               rageclick: false,
               capture_heatmaps: false,
@@ -162,70 +228,17 @@ export default defineNuxtPlugin<{ posthog?: PostHog }>({
         },
       } as Parameters<typeof posthog.init>[1])
 
+      if (!posthogClient) {
+        transport.fail()
+        return
+      }
       nuxtApp.provide('posthog', posthogClient)
 
       const win = window as LegacyNuxtWindow
       win.$nuxt ??= {}
       win.$nuxt.$posthog = posthogClient
 
-      // ---------------------------------------------------------------------------
-      // Super properties — registered on every event for easy filtering.
-      //
-      // PostHog dashboard setup:
-      //   Project Settings → "Filter out internal and test users" →
-      //     • is_owner — is set        (owner traffic)
-      //     • is_internal_user — is set (preview deploy traffic)
-      //     • environment — does not equal "production"  (optional)
-      //
-      // To tag yourself as owner, POST /api/owner-tag with OWNER_TAG_SECRET.
-      // ---------------------------------------------------------------------------
-      const superProperties: Properties = {
-        app: appName,
-      }
-
-      const hostname = window.location.hostname
-      const deploymentTarget = runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget
-
-      // Tag internal/non-production traffic (deployment target first, preview
-      // hostname as a fallback for unset/misconfigured targets).
-      if (isInternalAnalyticsTraffic(hostname, deploymentTarget)) {
-        superProperties.is_internal_user = true
-      }
-
-      // Tag owner traffic. `narduk_owner=true` is the unsigned, client-readable
-      // flag from /api/owner-tag — not the httpOnly HMAC proof used by bootstrap.
-      const isOwner = document.cookie.includes('narduk_owner=true')
-      superProperties.is_owner = isOwner
-
-      // Correlate traffic with deploy versions
-      const appVersion = runtimeConfig.public.appVersion
-      if (appVersion) {
-        superProperties.app_version = appVersion
-      }
-
-      superProperties.environment = resolveAnalyticsEnvironment(hostname, deploymentTarget)
-
-      posthog.register(superProperties)
-
-      // Nuxt may report the hydrated route through afterEach before the initial
-      // next tick. Track the pathname once across both orderings, ignore failed
-      // navigations, and leave query/hash-only state changes out of pageview totals.
-      let lastTrackedPath: string | undefined
-      const trackPageview = (path: string) => {
-        if (path === lastTrackedPath) return
-
-        lastTrackedPath = path
-        const pagePath = strict ? templatePath(path, resolveRoute) : path
-        posthog.capture('$pageview', {
-          $current_url: sanitizeStandardUrl(window.location.origin + pagePath),
-        })
-      }
-
-      void nextTick(() => trackPageview(router.currentRoute.value.path))
-      router.afterEach((to, _from, failure) => {
-        if (failure) return
-        void nextTick(() => trackPageview(to.path))
-      })
+      transport.attach(posthog)
     }
 
     return

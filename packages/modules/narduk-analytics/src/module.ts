@@ -37,6 +37,8 @@ interface TypePrepareOptions {
 }
 
 export interface NardukAnalyticsModuleOptions {
+  admin?: boolean
+  app?: boolean
   /**
    * The `/api/admin/**` GA, Search Console, Indexing and PostHog routes. They
    * authorise with narduk-core's `requireAdmin`, which resolves the admin
@@ -45,8 +47,14 @@ export interface NardukAnalyticsModuleOptions {
    * 'none'` or `NUXT_DATABASE_BACKEND=none`), where every one of them could
    * only ever answer 401 (narduk-libs#524). `true` or `false` decides outright.
    */
-  admin?: boolean
-  app?: boolean
+  /** Stable registry ID, separate from the existing app display label. */
+  appId?: string
+  /** Foreground active-time deltas and once-per-visit scroll milestones. */
+  engagement?: boolean
+  /** Register v-track for explicitly declared click interactions. */
+  events?: boolean
+  /** Optional nuxt-auth-utils session identity bridge; opaque IDs only. */
+  identity?: boolean
   /**
    * `'strict'` for an app whose pages hold private records: PostHog runs with
    * no autocapture, heatmaps, dead clicks, session replay, surveys or remote
@@ -60,6 +68,9 @@ export interface NardukAnalyticsModuleOptions {
    */
   privacy?: 'standard' | 'strict'
   server?: boolean
+  surface?: 'web'
+  /** Opt into the existing native PostHog web-vitals pipeline. */
+  webVitals?: boolean
 }
 
 function pushUnique<T>(items: T[], item: T): void {
@@ -198,11 +209,20 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
     server: true,
   },
   async setup(options, nuxt) {
+    if (
+      options.appId !== undefined &&
+      (typeof options.appId !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,79}$/u.test(options.appId))
+    ) {
+      throw new Error(
+        'narduk-analytics appId must be a stable registry slug (1-80 lowercase letters, digits, underscores or hyphens).',
+      )
+    }
     const resolver = createResolver(import.meta.url)
     const nuxtOptions = nuxt.options as unknown as MutableNuxtOptionsRecord
     const analyticsRuntimeConfigTypesPath = fileURLToPath(
       new URL('../app/types/runtime-config.d.ts', import.meta.url),
     )
+    const analyticsInjectionTypesPath = resolver.resolve('../app/types/posthog.d.ts')
 
     await ensureNardukCoreInstalled(nuxt)
     if (
@@ -232,6 +252,8 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         path: resolver.resolve('../app/components'),
         pathPrefix: false,
       })
+      if (options.events) addPlugin(resolver.resolve('../app/plugins/analytics-events.client'))
+      if (options.identity) addPlugin(resolver.resolve('../app/plugins/analytics-identity.client'))
       addPlugin(resolver.resolve('../app/plugins/00-analytics-head.client'))
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog.client'))
@@ -253,6 +275,11 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       public: {
         analyticsLoadStrategy: readAnalyticsLoadStrategy(),
         analyticsPrivacy: 'standard',
+        analyticsAppId: options.appId ?? '',
+        analyticsSurface: options.surface ?? 'web',
+        analyticsEventsEnabled: options.events === true,
+        analyticsEngagementEnabled: options.engagement === true,
+        analyticsIdentityEnabled: options.identity === true,
         // Build-time seeds only. Workers Builds does not copy wrangler.json
         // vars into `nuxt build`; narduk-core's request-time overlay fills
         // these from Worker bindings (short names or NUXT_PUBLIC_* aliases)
@@ -268,7 +295,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         posthogFeatureFlagsEnabled: readBooleanEnv('POSTHOG_FEATURE_FLAGS_ENABLED'),
         posthogSessionReplayEnabled: readBooleanEnv('POSTHOG_SESSION_REPLAY_ENABLED'),
         posthogSurveysEnabled: readBooleanEnv('POSTHOG_SURVEYS_ENABLED'),
-        posthogWebVitalsEnabled: readBooleanEnv('POSTHOG_WEB_VITALS_ENABLED'),
+        posthogWebVitalsEnabled: options.webVitals ?? readBooleanEnv('POSTHOG_WEB_VITALS_ENABLED'),
         posthogWebVitalsAttributionEnabled: readBooleanEnv(
           'POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED',
         ),
@@ -284,6 +311,7 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
 
     const registerAnalyticsTypes = (prepareOptions: TypePrepareOptions) => {
       registerTypeReference(prepareOptions, analyticsRuntimeConfigTypesPath)
+      if (options.app) registerTypeReference(prepareOptions, analyticsInjectionTypesPath)
     }
 
     nuxt.hook('nitro:prepare:types', registerAnalyticsTypes)

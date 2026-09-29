@@ -12,6 +12,11 @@ interface AnalyticsRuntimeConfig {
 }
 
 interface AnalyticsPublicRuntimeConfig {
+  analyticsAppId: string
+  analyticsSurface: 'web'
+  analyticsEventsEnabled: boolean
+  analyticsEngagementEnabled: boolean
+  analyticsIdentityEnabled: boolean
   analyticsLoadStrategy: 'immediate' | 'idle' | 'interaction' | 'off'
   analyticsPrivacy: 'standard' | 'strict'
   gaMeasurementId: string

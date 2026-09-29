@@ -1056,3 +1056,20 @@ Pass `stubs: { imports: false, nitroRuntime: false }` to keep your own stubs.
 
 A module under `node_modules` that imports `#imports` (a published Nitro route)
 must be inlined with `test.server.deps.inline` so Vite applies the alias to it.
+
+## Analytics journey assertions
+
+`assertAnalyticsJourney` from `@narduk-enterprises/narduk-testkit/analytics`
+accepts decoded capture events and ordered expected steps. Each step names an
+`event`, optionally a subset of primitive `properties`, and optionally an exact
+`count` across the full journey. Missing steps, wrong order and wrong counts
+throw. Collect events using an SDK spy or browser request interceptor; this
+assertion does not instrument a product or prove live provider intake.
+
+```ts
+assertAnalyticsJourney(events, [
+  { event: '$pageview', properties: { route: '/signup' }, count: 1 },
+  { event: 'form_submitted', properties: { form_id: 'signup' }, count: 1 },
+  { event: 'form_succeeded', properties: { form_id: 'signup' }, count: 1 },
+])
+```

@@ -78,17 +78,18 @@ export default defineNuxtConfig({
 
 `standard` (the default) is unchanged. `strict` changes what leaves the browser:
 
-| Surface                                          | Standard                                  | Strict                                                                                                                                                                                                                                                    |
-| ------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostHog `$pageview` URL                          | raw path (`/farms/frm_1/2024`)            | route pattern (`/farms/:farmId/:year`)                                                                                                                                                                                                                    |
-| Every other PostHog URL                          | raw `window.location.href`, query and `#` | a final `before_send` hook reduces every `$…url`, `$…referrer` and `$…pathname` property — including `$set`, `$set_once` and nested web-vitals payloads — to the route pattern; another site's URL is cut to its origin; `title` and element text dropped |
-| Autocapture, rage/dead clicks                    | PostHog defaults (autocapture on)         | off, plus `mask_all_text` / `mask_all_element_attributes`                                                                                                                                                                                                 |
-| Heatmaps                                         | PostHog project setting decides           | off                                                                                                                                                                                                                                                       |
-| Session replay, surveys                          | `POSTHOG_*_ENABLED` flags                 | off, whatever the flags say                                                                                                                                                                                                                               |
-| `/flags` request, remote extensions              | on                                        | off (`advanced_disable_flags`, `disable_external_dependency_loading`)                                                                                                                                                                                     |
-| Web-vitals attribution                           | `POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED`  | off (it carries element selectors and resource URLs); plain web vitals still allowed                                                                                                                                                                      |
-| `$exception` message                             | raw `error.message` in `$exception_list`  | none: every `$exception_list[].value` is `(redacted)`, and `$exception_message` and `redacted_message` are dropped; type, stack and route pattern stay                                                                                                    |
-| GA4 `page_path` / `page_location` / `page_title` | raw path, `document.title`                | route pattern for all three, also set with `gtag('set')` so tag-collected events inherit it; `page_referrer` cut to origin; Google signals and ad personalisation off                                                                                     |
+| Surface                                          | Standard                                                                | Strict                                                                                                                                                                                                                                                    |
+| ------------------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostHog `$pageview` URL                          | raw path (`/farms/frm_1/2024`)                                          | route pattern (`/farms/:farmId/:year`)                                                                                                                                                                                                                    |
+| Every other PostHog URL                          | paths and permitted queries; sensitive query keys and fragments removed | a final `before_send` hook reduces every `$…url`, `$…referrer` and `$…pathname` property — including `$set`, `$set_once` and nested web-vitals payloads — to the route pattern; another site's URL is cut to its origin; `title` and element text dropped |
+| Autocapture, rage/dead clicks                    | PostHog defaults (autocapture on)                                       | off, plus `mask_all_text` / `mask_all_element_attributes`                                                                                                                                                                                                 |
+| Heatmaps                                         | PostHog project setting decides                                         | off                                                                                                                                                                                                                                                       |
+| Session replay, surveys                          | `POSTHOG_*_ENABLED` flags                                               | off, whatever the flags say                                                                                                                                                                                                                               |
+| `/flags` request, remote extensions              | on                                                                      | off (`advanced_disable_flags`, `disable_external_dependency_loading`)                                                                                                                                                                                     |
+| Web-vitals attribution                           | `POSTHOG_WEB_VITALS_ATTRIBUTION_ENABLED`                                | off (it carries element selectors and resource URLs); plain web vitals still allowed                                                                                                                                                                      |
+| `$exception` message                             | raw `error.message` in `$exception_list`                                | none: every `$exception_list[].value` is `(redacted)`, and `$exception_message` and `redacted_message` are dropped; type, stack and route pattern stay                                                                                                    |
+| GA4 `page_path` / `page_location` / `page_title` | raw path, `document.title`                                              | route pattern for all three, also set with `gtag('set')` so tag-collected events inherit it; `page_referrer` cut to origin; Google signals and ad personalisation off                                                                                     |
+| PostHog persistence                              | SDK default                                                             | Host-only cookie; campaign persistence disabled. Raw landing URL can still persist on that host.                                                                                                                                                          |
 
 Why build-time: the option is written to `runtimeConfig.public.analyticsPrivacy`
 and wins over an app's own value for that key. narduk-core's runtime-public
@@ -444,3 +445,150 @@ pnpm install
 pnpm --filter @narduk-enterprises/narduk-analytics run quality   # vitest
 pnpm --filter @narduk-enterprises/narduk-analytics run check:package  # publint + pack --dry-run
 ```
+
+## Typed event suite
+
+The suite is additive. Existing `usePosthog()` calls keep working, including
+when initialization is deferred: calls made while loading are queued in memory
+(up to 100 commands for 30 seconds), with their original route, timestamp and
+properties. Disabled analytics never queues. Opt-out, initialization failure,
+expiry and overflow discard pending data; an overflow fails the transport rather
+than replaying part of an identity history. Expiry that discards an identity
+barrier also fails the transport. When the identity bridge is enabled, the kit
+clears persisted person state before replay; events recorded before the session
+resolves can remain anonymous. Native SDK events are suppressed until that
+initial reset and after transport failure. `useAnalytics().status` distinguishes
+`pending`, `ready`, `disabled` and `failed`; `dropped` reports local discarded
+commands. Acceptance into this queue does **not** prove provider intake. Blocked
+trackers and a tab closed before SDK initialization can still lose events.
+
+Enable the recommended profile explicitly in an existing app:
+
+```ts
+nardukAnalytics: {
+  appId: 'your-registry-app-id',
+  privacy: 'strict', // private records; public sites can use 'standard'
+  events: true, // registers v-track for declared click interactions
+  engagement: true,
+  webVitals: true, // existing native PostHog pipeline
+  identity: true, // optional nuxt-auth-utils session bridge
+},
+```
+
+New generated apps with the analytics capability get this profile. They use
+strict privacy for authenticated exposure and enable identity only with auth.
+Existing apps keep engagement and identity off until adoption.
+
+Every event gets `app_id`, the existing display-name `app`, `surface: 'web'`,
+`route` (matched pattern), `analytics_schema_version: 1`, `environment`,
+explicit boolean `is_owner` / `is_internal_user`, and known `app_version` /
+`build_version`. Set `appId` to the registry ID; without it the hostname is the
+compatibility fallback. Keep the existing `app` label stable because current
+portal rollups join it exactly. PostHog still owns sessions, device/browser
+properties, referrer and campaign attribution. The URL privacy rules above
+remain in force.
+
+```ts
+const analytics = useAnalytics()
+analytics.capture('search_completed', {
+  search_id: 'station_search',
+  query_length_bucket: searchQueryLengthBucket(query.length),
+  result_count: results.length,
+})
+analytics.capture('form_submitted', { form_id: 'signup' })
+// Capture success only after the operation actually succeeded.
+analytics.capture('form_succeeded', { form_id: 'signup' })
+```
+
+Unknown event names and wrong property shapes fail typecheck. Runtime schema
+validation returns `false` for invalid properties and captures nothing. Shared
+schemas reject extra keys. IDs are declared catalog/UI identifiers, never record
+IDs or arbitrary user input. No shared event takes query text, form contents,
+page text, email addresses or full destination URLs.
+
+| Event                                    | Properties                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search_completed`                       | `search_id`, `query_length_bucket` (`empty`, `1-3`, `4-10`, `11-30`, `31+`), `result_count` |
+| `filter_changed`, `sort_changed`         | `filter_id` / `sort_id`, declared `value`                                                   |
+| `form_submitted`, `form_succeeded`       | `form_id`                                                                                   |
+| `form_failed`                            | `form_id`, declared `error_category`                                                        |
+| `share_clicked`                          | `action_id`, `channel` (`native`, `copy`, `email`, `sms`, `social`, `other`)                |
+| `clipboard_copied`                       | `action_id` (after successful copy)                                                         |
+| `file_downloaded`                        | `action_id`, `file_type` (after confirmed completion)                                       |
+| `outbound_link_clicked`                  | `action_id`, `destination_host` (hostname only)                                             |
+| `empty_state_shown`, `error_state_shown` | `state_id`, declared `reason`                                                               |
+| `auth_session_started`                   | none                                                                                        |
+| `auth_session_ended`                     | `reason` (`session_ended`, `account_changed`)                                               |
+| `auth_signed_in`, `auth_signed_up`       | `method`                                                                                    |
+| `auth_signed_out`                        | `reason` (`session_ended`, `account_changed`)                                               |
+| `page_engagement`                        | `active_ms` delta, `page_visit_id`                                                          |
+| `scroll_depth_reached`                   | `depth` (25, 50, 75, 100), `page_visit_id`                                                  |
+
+Engagement uses monotonic time, stops at 30 seconds without activity, excludes
+hidden-tab time and flushes deltas on navigation, visibility changes and
+`pagehide`. There is no periodic network heartbeat. Each scroll milestone is
+emitted once per visit and only for scrollable pages. Repeated flushes do not
+double-count active time. Browser termination can lose the last delta; it is not
+an exact billing timer. Visitors who never interact can contribute at most 30
+seconds for an uninterrupted visible visit.
+
+The optional identity bridge observes ready sessions, namespaces an opaque user
+ID with `appId`, and resets identity on account changes and session end
+(including logout, expiry and revocation). Restoring an existing session
+identifies it but does not invent a login event. It reports subsequent sign-in
+edges as `auth_session_started` and `auth_session_ended`; call method-specific
+`auth_signed_in` and `auth_signed_up` at the completed auth operation when a
+known method or sign-up distinction matters. Never identify with an email, name
+or credential. The accepted ID format is ASCII letters, digits, `_` and `-`.
+Strict mode uses a host-only PostHog cookie; it can still persist a raw landing
+URL **on that host** before `before_send`. Outgoing payload filtering and cookie
+isolation are different guarantees.
+
+For a declarative click (never an operation success):
+
+```vue
+<NuxtLink
+  v-track="{
+    event: 'outbound_link_clicked',
+    properties: { action_id: 'source_link', destination_host: 'example.com' },
+  }"
+  to="https://example.com"
+>
+  Source
+</NuxtLink>
+```
+
+## App-owned catalogs and consumer proof
+
+```ts
+import { z } from 'zod'
+import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/utils/analyticsEvents'
+
+const productEvents = defineAnalyticsEvents({
+  primary_action_completed: z
+    .object({ source: z.enum(['map', 'list']) })
+    .strict(),
+})
+const analytics = useAnalytics(productEvents)
+analytics.capture('primary_action_completed', { source: 'map' })
+```
+
+App events cannot redefine shared names or PostHog `$` events. Use strict
+schemas and enums/declared IDs; strict mode cannot recognize arbitrary private
+strings inside app-defined properties. Product vocabulary, activation
+definitions and funnels stay in the app repo. The generator creates
+`app/analytics/events.ts`, `useProductAnalytics()` and `docs/analytics.md` for
+this purpose.
+
+`assertAnalyticsJourney` from `@narduk-enterprises/narduk-testkit/analytics`
+asserts ordered event names, a subset of primitive properties and optional exact
+counts. Feed it SDK spy output or decoded browser requests. The package's
+`test:e2e` runs the real installed PostHog SDK in Chromium against a synthetic
+collector, checking ordering, payload privacy, opt-out and host-only cookies.
+This is local delivery proof, not live PostHog intake proof.
+
+Customer dashboards should select production traffic with `is_owner = false` and
+`is_internal_user = false`. Keep an owner view for time spent across apps. Use
+route patterns to aggregate pages, compare outcomes by `build_version`, and
+measure return usage through successful product actions rather than pageviews.
+Dashboard provisioning remains outside this module (narduk-libs#390).

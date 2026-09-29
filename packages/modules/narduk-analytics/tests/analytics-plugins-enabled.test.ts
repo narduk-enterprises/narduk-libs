@@ -37,12 +37,14 @@ vi.mock('#imports', () => ({
 const posthogInit = vi.fn()
 const posthogRegister = vi.fn()
 const posthogCapture = vi.fn()
+const posthogReset = vi.fn()
 
 vi.mock('posthog-js', () => ({
   posthog: {
     init: posthogInit.mockImplementation(() => ({ capture: posthogCapture })),
     register: posthogRegister,
     capture: posthogCapture,
+    reset: posthogReset,
   },
 }))
 
@@ -71,6 +73,36 @@ beforeEach(() => {
 })
 
 describe('posthog.client — enabled path', () => {
+  it('blocks native SDK capture until the identity baseline and after a failed barrier', async () => {
+    runtimeConfigValue = {
+      public: {
+        analyticsLoadStrategy: 'immediate',
+        posthogPublicKey: 'phc_fixture',
+        posthogHost: '',
+        appName: 'fixture',
+        analyticsIdentityEnabled: true,
+      },
+    }
+    let pendingEvent: unknown = 'unobserved'
+    posthogInit.mockImplementationOnce((_key, options) => {
+      pendingEvent = options.before_send({ event: 'native', properties: {} })
+      return { capture: posthogCapture }
+    })
+    const plugin = (await import('../app/plugins/posthog.client')).default
+    const provide = vi.fn()
+    plugin.setup?.({ provide })
+    await vi.waitFor(() => expect(posthogInit).toHaveBeenCalled())
+    const transport = provide.mock.calls.find(([key]) => key === 'analytics')?.[1]
+    const beforeSend = posthogInit.mock.calls[0]![1].before_send
+    expect(pendingEvent).toBeNull()
+    expect(posthogReset).toHaveBeenCalledTimes(1)
+    expect(transport.status).toBe('ready')
+    expect(beforeSend({ event: 'native', properties: {} })).not.toBeNull()
+    transport.fail()
+    expect(beforeSend({ event: 'native', properties: {} })).toBeNull()
+    transport.disable()
+    expect(beforeSend({ event: 'native', properties: {} })).toBeNull()
+  })
   it('does not initialize PostHog when disabled (key missing / preview-safe / off)', async () => {
     const plugin = (await import('../app/plugins/posthog.client')).default
 
@@ -148,12 +180,22 @@ describe('posthog.client — enabled path', () => {
     for (const callback of pendingNextTicks.splice(0)) callback()
 
     expect(posthogCapture).toHaveBeenCalledTimes(2)
-    expect(posthogCapture).toHaveBeenNthCalledWith(1, '$pageview', {
-      $current_url: 'https://example.com/',
-    })
-    expect(posthogCapture).toHaveBeenNthCalledWith(2, '$pageview', {
-      $current_url: 'https://example.com/map',
-    })
+    expect(posthogCapture).toHaveBeenNthCalledWith(
+      1,
+      '$pageview',
+      expect.objectContaining({
+        $current_url: 'https://example.com/',
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
+    expect(posthogCapture).toHaveBeenNthCalledWith(
+      2,
+      '$pageview',
+      expect.objectContaining({
+        $current_url: 'https://example.com/map',
+      }),
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+    )
   })
 
   it('tags workers.dev preview traffic as internal, non-production', async () => {
