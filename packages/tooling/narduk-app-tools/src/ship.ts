@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import { z } from 'zod'
@@ -119,6 +119,30 @@ export interface ShipContext {
   verify?: (flags: VerifyFlags, env: NodeJS.ProcessEnv) => Promise<VerifyReport>
   containment?: (repoRoot: string, candidate: string, served: string) => Containment
   now?: () => number
+}
+
+/**
+ * After a ship, main's promote must prove the shipped commit landed: in a
+ * shallow checkout only GitHub can say so, and a squash merge needs the
+ * commit-to-PR lookup (Pull requests: read). Without both, every promotion
+ * from main refuses until someone forces it, so ship refuses first.
+ */
+export function promoteWorkflowGap(repoRoot: string): string | undefined {
+  const path = join(repoRoot, '.github/workflows/promote.yml')
+  if (!existsSync(path)) return undefined
+  const workflow = readFileSync(path, 'utf8')
+  if (!workflow.includes('versions-promote')) return undefined
+  const missing = [
+    /^\s*pull-requests:\s*(read|write)\b/mu.test(workflow) ? '' : 'pull-requests: read',
+    /^\s*(GITHUB_TOKEN|GH_TOKEN):\s*\$\{\{\s*(github\.token|secrets\.GITHUB_TOKEN)\s*\}\}/mu.test(
+      workflow,
+    )
+      ? ''
+      : 'GITHUB_TOKEN: ${{ github.token }} on the promote step',
+  ].filter(Boolean)
+  return missing.length
+    ? `.github/workflows/promote.yml needs ${missing.join(' and ')} before this app can ship, or main's promote refuses after every ship`
+    : undefined
 }
 
 /** Exit codes a wrapper script or agent can act on. */
@@ -260,6 +284,8 @@ async function ship(
     )
 
   const target = readProductionTarget(appDir, env)
+  const promoteGap = promoteWorkflowGap(repoRoot)
+  if (promoteGap) refuse(promoteGap)
   const productionBranch = target.deployment.productionBranch
   const baseUrl = productionOrigin(target.manifest, flags.baseUrl)
 

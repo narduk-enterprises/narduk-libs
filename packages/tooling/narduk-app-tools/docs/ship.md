@@ -37,9 +37,9 @@ Until that PR merges, `narduk-app deploy versions-promote` refuses to promote a
 main commit that does not contain the shipped one (exit 10,
 `ship-not-contained`), so a merge to main can never undo a ship. Once the PR
 merges, every later main commit contains it, review fixes included. The promote
-step reads GitHub, so an app that ships must give it
-`GITHUB_TOKEN: ${{ github.token }}`; without it a shallow checkout cannot prove
-containment and promotion refuses.
+step reads GitHub, so an app that ships gives its promote job
+`pull-requests: read` (the squash-merge lookup) and the promote step
+`GITHUB_TOKEN: ${{ github.token }}`; ship refuses until `promote.yml` has both.
 
 | Exit | Meaning                                                                             |
 | ---- | ----------------------------------------------------------------------------------- |

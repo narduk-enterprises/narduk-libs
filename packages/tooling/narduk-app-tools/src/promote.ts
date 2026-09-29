@@ -1602,7 +1602,7 @@ async function promoteVersion(
         `Production serves shipped commit ${shippedSha ?? '(untagged)'} (version ` +
         `${String(previousVersionId)}), and ${candidate ?? 'this version'} ` +
         (containment === 'unknown'
-          ? 'cannot be shown to contain it (give this step GITHUB_TOKEN so GitHub can answer)'
+          ? 'cannot be shown to contain it (the step needs GITHUB_TOKEN and the job pull-requests: read)'
           : 'does not contain it') +
         '. Promoting would undo shipped work: merge the ship PR into main first, then re-run.'
       if (!flags.force) return refuse('ship-not-contained', PROMOTE_EXIT.shipNotContained, detail)

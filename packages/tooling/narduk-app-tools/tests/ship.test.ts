@@ -11,6 +11,7 @@ import type { WorkerDeployment, WorkerVersion, WranglerVersionsClient } from '..
 import {
   parseShipArgs,
   productionOrigin,
+  promoteWorkflowGap,
   runShip,
   SHIP_EXIT,
   type ShipContext,
@@ -400,6 +401,24 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     }
     await expect(runShip(parseShipArgs([]), h.context)).resolves.toBe(SHIP_EXIT.refused)
     expect(h.calls).not.toContain('upload')
+  })
+
+  it("refuses until the app's promote job can see the ship PR land", async () => {
+    const h = harness()
+    const dir = join(h.root, '.github/workflows')
+    mkdirSync(dir, { recursive: true })
+    const promote = (extra: string, stepEnv: string) =>
+      writeFileSync(
+        join(dir, 'promote.yml'),
+        `jobs:\n  promote:\n    permissions:\n      contents: read\n${extra}    steps:\n      - env:\n          CLOUDFLARE_API_TOKEN: x\n${stepEnv}        run: pnpm exec narduk-app deploy versions-promote\n`,
+      )
+    promote('', '')
+    h.git('add', '.')
+    h.git('commit', '-qm', 'promote')
+    await expect(runShip(parseShipArgs(['--dry-run']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.logs.join('\n')).toContain('pull-requests: read and GITHUB_TOKEN')
+    promote('      pull-requests: read\n', '          GITHUB_TOKEN: ${{ github.token }}\n')
+    expect(promoteWorkflowGap(h.root)).toBeUndefined()
   })
 
   it('reads the production origin from the manifest', () => {
