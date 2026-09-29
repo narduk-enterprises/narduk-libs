@@ -62,13 +62,12 @@ other non-dev build that carries it fails, including a plain `build` and a
 and `ship:build`, so the variable cannot prove the output stays in CI. A build
 that accepts the placeholder therefore writes `.narduk-build-ci` into its Nitro
 output (`.output/.narduk-build-ci`), and `narduk-app deploy` refuses to publish
-that output (`deploy`, `versions-upload`, and so `narduk-app ship`)
-whichever script built it
-(narduk-libs#1155). A plain `wrangler deploy` run outside `narduk-app` does not
-read the marker. `nuxt dev` and `nuxt prepare` stay permissive. A real
-`NUXT_OG_IMAGE_SECRET` is accepted on every build and writes no marker. Never
-set `ogImage.security.secret: false` -- that is the setting that actually
-disables signing and leaves `/_og/` an unauthenticated renderer.
+that output (`deploy`, `versions-upload`, and so `narduk-app ship`) whichever
+script built it (narduk-libs#1155). A plain `wrangler deploy` run outside
+`narduk-app` does not read the marker. `nuxt dev` and `nuxt prepare` stay
+permissive. A real `NUXT_OG_IMAGE_SECRET` is accepted on every build and writes
+no marker. Never set `ogImage.security.secret: false` -- that is the setting
+that actually disables signing and leaves `/_og/` an unauthenticated renderer.
 
 **A prerendered page bakes its OG card at build time** (narduk-libs#170).
 `nuxt-og-image` picks how to address an image while the page renders: during a
