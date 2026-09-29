@@ -30,6 +30,7 @@
     "runtime/app/composables/useLiveProduct.ts",
     "runtime/app/composables/useFormat.ts",
     "runtime/app/composables/useInFlightTracker.ts",
+    "runtime/app/composables/useRefCountedSubscription.ts",
     "runtime/app/composables/useIntervalRefresh.ts",
     "runtime/app/composables/useCurrentLocation.ts",
     "runtime/app/utils/ssrNowClock.ts",

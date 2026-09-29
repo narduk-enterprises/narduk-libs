@@ -56,7 +56,7 @@ export function useRefCountedSubscription(options: {
 
   // Reactive object — mutations trigger Vue reactivity and Pinia serialisation
   // when used as store state. Also readable as a plain snapshot in tests.
-  const refCounts: Record<string, number> = reactive({})
+  const refCounts: Record<string, number> = reactive(Object.create(null) as Record<string, number>)
 
   // Pending unsubscription timers (never serialized).
   const pendingUnsubscribes = new Map<string, ReturnType<typeof setTimeout>>()
@@ -80,7 +80,7 @@ export function useRefCountedSubscription(options: {
 
       const count = refCounts[key] ?? 0
       refCounts[key] = count + 1
-      if (count === 0) newKeys.push(key)
+      if (count === 0 && timer === undefined) newKeys.push(key)
     }
 
     if (newKeys.length > 0) options.onSubscribe(newKeys)

@@ -17,6 +17,8 @@ interface CacheEntry<T> {
 
 const cache = new Map<string, CacheEntry<unknown>>()
 
+const MAX_CACHE_ENTRIES = 50
+
 const DEFAULT_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
@@ -40,10 +42,15 @@ export async function cachedAnalyticsFetch<T>(
   cache.set(key, { data, expiry: Date.now() + ttlMs, fetchedAt })
 
   // Evict stale entries periodically (keep cache bounded)
-  if (cache.size > 50) {
+  if (cache.size > MAX_CACHE_ENTRIES) {
     const now = Date.now()
     for (const [k, v] of cache) {
       if (v.expiry <= now) cache.delete(k)
+    }
+    while (cache.size > MAX_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value
+      if (oldest === undefined) break
+      cache.delete(oldest)
     }
   }
 
@@ -70,7 +77,7 @@ export function resolveAnalyticsDateRange(
     startDate = endDate
   } else {
     const start = new Date(endDate)
-    start.setDate(start.getDate() - defaultDays)
+    start.setUTCDate(start.getUTCDate() - defaultDays)
     startDate = start.toISOString().split('T')[0]!
   }
 

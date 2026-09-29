@@ -74,3 +74,29 @@ describe('resolveAnalyticsDateRange', () => {
     expect(endDate).toBe('2026-02-01')
   })
 })
+
+it('bounds fresh cache entries rather than only evicting expired entries', async () => {
+  vi.resetModules()
+  const { cachedAnalyticsFetch: fetch } = await import('../server/utils/analyticsCache')
+  const first = vi.fn(async () => 0)
+  await fetch('bound:0', first, 60_000)
+  for (let index = 1; index <= 50; index++) {
+    await fetch(`bound:${index}`, async () => index, 60_000)
+  }
+  expect((await fetch('bound:0', first, 60_000)).cached).toBe(false)
+  expect(first).toHaveBeenCalledTimes(2)
+})
+
+it('subtracts calendar days in UTC across a daylight-saving transition', () => {
+  const previous = process.env.TZ
+  process.env.TZ = 'America/Chicago'
+  try {
+    expect(resolveAnalyticsDateRange({ endDate: '2026-11-03' }, 3)).toEqual({
+      startDate: '2026-10-31',
+      endDate: '2026-11-03',
+    })
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(process.env, 'TZ')
+    else process.env.TZ = previous
+  }
+})

@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -66,7 +66,7 @@ describe('import-x resolves TypeScript-spelled local imports (narduk-libs#973)',
   let dir: string
 
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), 'narduk-import-x-'))
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'narduk-import-x-')))
     mkdirSync(join(dir, 'src'))
     // import-x/default reads esModuleInterop from the nearest tsconfig; pin it
     // off so a missing default export is a finding, not a synthetic default.
