@@ -59,11 +59,11 @@ when `NARDUK_CLOUDFLARE_BUILD=1` is set and none of the deploy signals is
 other non-dev build that carries it fails, including a plain `build` and a
 `cf:build` that does not set `NARDUK_CLOUDFLARE_BUILD=1`. The generated
 `build:ci` sets that variable, but so do most hand-written `cf:build` scripts
-and `hotfix:build`, so the variable cannot prove the output stays in CI. A build
+and `ship:build`, so the variable cannot prove the output stays in CI. A build
 that accepts the placeholder therefore writes `.narduk-build-ci` into its Nitro
 output (`.output/.narduk-build-ci`), and `narduk-app deploy` refuses to publish
-that output (`deploy`, `versions-upload`, and so `deploy-local`,
-`deploy-hotfix`, and `development deploy`) whichever script built it
+that output (`deploy`, `versions-upload`, and so `narduk-app ship`)
+whichever script built it
 (narduk-libs#1155). A plain `wrangler deploy` run outside `narduk-app` does not
 read the marker. `nuxt dev` and `nuxt prepare` stay permissive. A real
 `NUXT_OG_IMAGE_SECRET` is accepted on every build and writes no marker. Never

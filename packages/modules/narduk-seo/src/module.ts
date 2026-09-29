@@ -544,7 +544,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     })
     if (signsWithCiPlaceholder) {
       // narduk-libs#1155: NARDUK_CLOUDFLARE_BUILD=1 is also set by most
-      // cf:build and hotfix:build scripts, so the script name cannot keep this
+      // cf:build and ship:build scripts, so the script name cannot keep this
       // output off a live Worker. The output itself carries the marker that
       // `narduk-app deploy` refuses. Nitro empties its output directory before
       // building, so the marker is written after compile.

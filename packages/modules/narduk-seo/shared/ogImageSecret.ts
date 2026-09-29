@@ -52,7 +52,7 @@ export function isDeployedBuild(): boolean {
 
 /**
  * Generated `build:ci` exports `NARDUK_CLOUDFLARE_BUILD=1` before `pnpm run build`.
- * So do most hand-written `cf:build` scripts and `hotfix:build`, so this
+ * So do most hand-written `cf:build` scripts and `ship:build`, so this
  * variable alone cannot tell a CI build from one a person will deploy
  * (narduk-libs#1155). A build that accepts the placeholder on this signal
  * therefore marks its own Nitro output (see `src/buildCiOutputMarker.ts`),
