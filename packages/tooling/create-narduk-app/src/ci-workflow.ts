@@ -238,10 +238,9 @@ export const CANDIDATE_SECURITY_HEADERS_STEP_NAME =
  *
  * Items 1-7 (`foundation:check`) are NOT here, and cannot be yet. Sub-check
  * 5.1 passes on a call to the shared class callable, which a public
- * repository cannot make, and otherwise resolves against company-hq's
- * workflow adoption matrix -- which the spec requires an app's own check to
- * report `unknown` (WEB-FOUNDATION-CHECK.md §3 item 5: "The app-side check
- * cannot see the matrix and must report that half `unknown`"). So
+ * repository cannot make, and otherwise depends on a company-hq
+ * `foundation_exception` -- which an app's own check cannot read and so
+ * reports `unknown` (WEB-FOUNDATION-CHECK.md §3 item 5). So
  * `foundation:check` exits 2 in every public app's CI whatever the app does,
  * and gating on it would hold every public app red. Tolerating that one
  * UNKNOWN here would be this template re-judging the checker's verdict. Until

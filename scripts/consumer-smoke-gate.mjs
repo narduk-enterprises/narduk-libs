@@ -58,9 +58,9 @@ export const expectedFoundationVerdicts = {
     result: 'UNKNOWN',
     exitCode: 2,
     open: { 5.1: 'unknown' },
-    // Unknown because the matrix is cross-repo, not for any other reason.
+    // Unknown because the exemption lives in the cross-repo registry, not for any other reason.
     details: {
-      5.1: /^no callable found in \.github\/workflows, and company-hq Config\/workflow-adoption-matrix\.json is cross-repo -- an app's own CI cannot read it \(spec §3 item 5\)$/u,
+      5.1: /^no callable found in \.github\/workflows, and an app's own CI cannot read company-hq's APP_REGISTRY\.yaml foundation_exception, so the rollup decides \(spec §3 item 5\)$/u,
     },
   },
 }

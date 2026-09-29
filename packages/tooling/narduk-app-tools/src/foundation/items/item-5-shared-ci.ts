@@ -1,10 +1,10 @@
 /**
  * Item 5 -- shared CI (spec §3 item 5, `[decided]` -- D-WF-1, both halves).
  *
- * 5.1's adoption-matrix fallback lives in company-hq
- * (`Config/workflow-adoption-matrix.json`), which an app's own CI cannot
- * read: spec §3 says so explicitly ("The app-side check cannot see the
- * matrix and must report that half `unknown`"). Everything else mirrors
+ * 5.1's hand-rolled-CI exemption is a `foundation_exception` in company-hq's
+ * `APP_REGISTRY.yaml`, which an app's own CI cannot read: with no callable
+ * found the app-side check reports `unknown` and the company-hq rollup
+ * decides (spec §3 item 5). Everything else mirrors
  * `check-web-foundation.py`'s static evaluator.
  */
 
@@ -48,9 +48,9 @@ function evaluate51(repo: AppRepo): FoundationSubCheck {
   }
   return check(
     '5.1',
-    'class callable, or recorded in the adoption matrix',
+    'class callable pinned @v1 or a 40-char SHA',
     STATUS_UNKNOWN,
-    "no callable found in .github/workflows, and company-hq Config/workflow-adoption-matrix.json is cross-repo -- an app's own CI cannot read it (spec §3 item 5)",
+    "no callable found in .github/workflows, and an app's own CI cannot read company-hq's APP_REGISTRY.yaml foundation_exception, so the rollup decides (spec §3 item 5)",
   )
 }
 
