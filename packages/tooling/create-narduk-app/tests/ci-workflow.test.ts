@@ -165,7 +165,7 @@ describe('generated CI boundaries', () => {
       expect(result.status, JSON.stringify(env)).toBe(1)
       expect(result.stderr).toContain('cannot run for a deployed build')
     }
-    for (const key of ['build', 'cf:build', 'hotfix:build']) {
+    for (const key of ['build', 'cf:build', 'ship:build']) {
       expect(manifest.scripts[key] ?? '').not.toContain('narduk-test-only')
     }
   })

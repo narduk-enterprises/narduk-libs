@@ -377,11 +377,14 @@ export function createRootPackageManifest(
       // and operator recovery.
       'quality:static':
         'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run build:ci && pnpm run test:unit',
-      'hotfix:check':
-        'pnpm run format:check && pnpm run lint && pnpm run knip && pnpm run manifests:validate && pnpm run foundation:shared-ui-pinned && pnpm run typecheck && pnpm run test:unit',
-      'deploy:hotfix': 'pnpm --filter web exec narduk-app deploy-hotfix',
-      'hotfix:build':
+      // `narduk-app ship`: the workstation fast path to production (see the
+      // tool's docs/ship.md). The checks stay fast because the PR runs the
+      // full suite; the build is the real production build, fed the app's
+      // own build secrets and the deploy credential from nvault.
+      'ship:check': 'pnpm run lint && pnpm run typecheck && pnpm run test:unit',
+      'ship:build':
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm --filter web run cf:build',
+      ship: `nvault run -p ${appName} -e prd -c og-image -- nvault run -p ${appName} -e prd -c session -- nvault run -p cloudflare -e prd -c narduk-enterprises-${appName}-deploy -- pnpm --filter web exec narduk-app ship`,
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
