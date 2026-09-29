@@ -84,10 +84,10 @@ set, so a Workers Builds or local-deploy command cannot use them. A successful
 `apps/web/.output` for the apps/web layout, and `.output` for a root-layout app.
 `upgrade` chooses that directory from the layout it already infers.
 `narduk-app deploy` refuses to publish a marked output and names `cf:build`;
-`deploy-local`, `deploy-hotfix`, and `development deploy` publish through that
-command. A dry run prints the same fact and exits 0. `build`, `cf:build`, and
-`hotfix:build` never receive the placeholders, and a later `cf:build` replaces
-`.output`, which clears the marker.
+`ship`, `deploy-local`, `deploy-hotfix`, and `development deploy` publish
+through that command. A dry run prints the same fact and exits 0. `build`,
+`cf:build`, and `ship:build` never receive the placeholders, and a later
+`cf:build` replaces `.output`, which clears the marker.
 
 ## Keeping an app current: `create-narduk-app upgrade`
 

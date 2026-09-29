@@ -1286,6 +1286,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    needs: gate',
         "    if: needs.gate.outputs.sha != ''",
         "    runs-on: <the promote job's credentialed runner route>",
+        '    permissions:',
+        '      contents: read',
+        "      # versions-promote's ship guard asks GitHub whether a shipped PR landed.",
+        '      pull-requests: read',
         '    env:',
         '      VERIFIED_SHA: ${{ needs.gate.outputs.sha }}',
         "      # Empty unless a recovery dispatch chose one of this commit's versions.",
@@ -1293,6 +1297,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '    steps:',
         '      # ...check out and install $VERIFIED_SHA, then:',
         '      - id: promote',
+        '        env:',
+        '          GITHUB_TOKEN: ${{ github.token }}',
         '        run: narduk-app deploy versions-promote --sha "$VERIFIED_SHA" ${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --json',
         '      - id: live-proof',
         '        run: narduk-app verify --live https://<hostname> --expect-sha "$VERIFIED_SHA"',
@@ -1331,17 +1337,19 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '## Recovery and live proof',
         '',
-        'Use the app-local `pnpm run deploy:hotfix` command only for an authorized production incident when normal delivery cannot restore service in time. The [local break-glass runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/local-hotfix.md) owns eligibility, credential readiness, the production hold, failure recovery and reconciliation.',
-        '',
-        'The root `hotfix:check` script runs the app checks; `hotfix:build` builds the production Worker using only its explicitly injected app build secrets, never the test placeholders from `build:ci`. A real hotfix checks out the exact clean local commit in a temporary clone, installs offline from the frozen lockfile/cache, checks/builds without the recovery token, uploads and promotes the exact version, and proves the live SHA, health and smoke route. It never applies database migrations.',
+        '`pnpm ship` is the fast path from a feature branch to production: `ship:check` and `ship:build` run concurrently, the branch is pushed, the version uploads and promotes to 100%, the live SHA, health and smoke route are proven, a failed proof rolls back on its own, and the branch PR gets squash auto-merge. It refuses unless the branch contains `main` and everything production serves, and it never applies database migrations; a migration lands through normal delivery. The [ship runbook](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/tooling/narduk-app-tools/docs/ship.md) has the exit codes.',
         '',
         '```sh',
-        'pnpm run deploy:hotfix --incident INC-123 --reason "Normal delivery unavailable" --operator "Incident operator" --sha "$(git rev-parse HEAD)" --confirm-worker ' +
-          appName +
-          ' --base-url https://<production-hostname> --dry-run',
+        'pnpm ship -m "what changed"',
         '```',
         '',
-        'TODO(onboarding): register and prove the app recovery credential route, warm the package cache, and rehearse against a disposable Worker. For a real incident, hold all production writers, run under the registered nvault selector with `--automation-paused --yes` instead of `--dry-run`, retain the receipt and merge the patch back through normal CI before restoring automation. The flags record operator intent; they do not pause workflows or grant approval.',
+        'The `ship` script reads `' +
+          appName +
+          '/prd/og-image`, `' +
+          appName +
+          '/prd/session` and the `cloudflare/prd/narduk-enterprises-' +
+          appName +
+          '-deploy` credential from nvault. Until the shipped PR merges, `versions-promote` refuses to promote a `main` commit that lacks the shipped one, and it proves that through GitHub: give the promote job `pull-requests: read` and the promote step `GITHUB_TOKEN: ${{ github.token }}`, or `ship` refuses.',
         '',
         '## Provider evidence',
         '',
@@ -2422,6 +2430,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           : []),
         '    }',
         '  },',
+        // `pnpm ship` wraps the deploy in nvault, a machine binary no package provides.
+        '  "ignoreBinaries": ["nvault"],',
         knipIgnoreDependenciesLine(knipIgnoreDependencies),
         '}',
       ),
