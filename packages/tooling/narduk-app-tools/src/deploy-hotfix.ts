@@ -103,12 +103,13 @@ const deploymentSchema = z.array(
   }),
 )
 
-async function readDeployment(client: WranglerVersionsClient) {
+/** The single version serving 100%, from a fresh listing; split or ambiguous traffic refuses. */
+export async function readDeployment(client: WranglerVersionsClient) {
   const rows = deploymentSchema.parse(await client.listDeployments())
   const current = currentDeployment(rows)
   if (!current || !soleDeployedVersionId(current))
     throw new Error(
-      'Hotfix requires an existing single-version deployment at 100%; split traffic is unsupported',
+      'A local publish requires an existing single-version deployment at 100%; split traffic is unsupported',
     )
   if (rows.filter((row) => row.created_on === current.created_on).length !== 1)
     throw new Error('Current deployment is ambiguous')

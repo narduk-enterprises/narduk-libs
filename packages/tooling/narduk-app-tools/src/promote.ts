@@ -71,6 +71,7 @@
 import { spawnSync } from 'node:child_process'
 
 import { fetchCloudflareEnvelope } from './cloudflare.js'
+import { commitContains, ensureCommits, type Containment } from './commit-containment.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
 import {
   currentDeployment,
@@ -162,6 +163,10 @@ export const VERSION_MESSAGE_ANNOTATION = 'workers/message'
  * rollback can recognise one it made and refuse to roll *forward*. */
 export const ROLLBACK_MESSAGE_PREFIX = 'narduk-app rollback'
 
+/** Prefix `narduk-app ship` puts on every version it uploads, so promote can
+ * recognise production serving a commit that has not reached main yet. */
+export const SHIP_MESSAGE_PREFIX = 'narduk-app ship'
+
 /**
  * Distinct exit codes, so a workflow step can branch on the failure class.
  *
@@ -199,6 +204,11 @@ export const PROMOTE_EXIT = {
    * the promoted version cannot be tied to that commit. Nothing was attempted.
    */
   gateMismatch: 9,
+  /**
+   * Production serves a `narduk-app ship` commit this commit does not contain
+   * (or containment could not be proven). Promoting would undo shipped work.
+   */
+  shipNotContained: 10,
 } as const
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on'])
@@ -1118,6 +1128,8 @@ export type PromoteOutcome =
   | 'branch-mismatch'
   /** `--gate-verified` does not name the commit being promoted. */
   | 'gate-mismatch'
+  /** Production serves a shipped commit that this commit does not contain. */
+  | 'ship-not-contained'
   /** Wrangler exited non-zero. `trafficMayHaveChanged` says whether traffic is at risk. */
   | 'wrangler-failed'
   | 'dry-run'
@@ -1219,6 +1231,8 @@ export interface PromoteContext {
    * so a `--json` stdout stays one parseable document.
    */
   log?: (line: string) => void
+  /** Injected in tests; `ensureCommits` + `commitContains` in the app checkout otherwise. */
+  containment?: (candidate: string, served: string) => Containment
 }
 
 function resolveWorker(
@@ -1524,7 +1538,7 @@ async function promoteVersion(
   }
 
   const refuse = (
-    outcome: 'stale-promote' | 'branch-mismatch',
+    outcome: 'stale-promote' | 'branch-mismatch' | 'ship-not-contained',
     exitCode: number,
     detail: string,
   ): PromoteResult => ({
@@ -1566,12 +1580,43 @@ async function promoteVersion(
     }
   }
 
+  let forced: true | undefined
+  // A `narduk-app ship` version serves a commit that may not be on main yet.
+  // Promoting a main commit that lacks it would silently undo shipped work, so
+  // promotion waits until main contains it (the ship's PR merges).
+  const liveMessage = liveVersion?.annotations?.[VERSION_MESSAGE_ANNOTATION] ?? ''
+  const shippedSha = liveVersion?.annotations?.[VERSION_TAG_ANNOTATION]
+  if (liveMessage.startsWith(SHIP_MESSAGE_PREFIX) && liveVersion?.id !== versionId) {
+    const candidate = sha ?? target?.annotations?.[VERSION_TAG_ANNOTATION]
+    const containment =
+      !shippedSha || !candidate
+        ? 'unknown'
+        : shaMatchesTag(candidate, shippedSha)
+          ? 'contained'
+          : (
+              context.containment ??
+              ((head: string, served: string) =>
+                ensureCommits(appDir, [head, served])
+                  ? commitContains(appDir, head, served)
+                  : 'unknown')
+            )(candidate, shippedSha)
+    if (containment !== 'contained') {
+      const detail =
+        `Production serves shipped commit ${shippedSha ?? '(untagged)'} (version ` +
+        `${String(previousVersionId)}), and ${candidate ?? 'this version'} ` +
+        (containment === 'unknown' ? 'cannot be shown to contain it' : 'does not contain it') +
+        '. Promoting would undo shipped work: merge the ship PR into main first, then re-run.'
+      if (!flags.force) return refuse('ship-not-contained', PROMOTE_EXIT.shipNotContained, detail)
+      forced = true
+      console.warn(`[promote] !! FORCED PAST THE SHIP GUARD -- ${detail}`)
+    }
+  }
+
   // B1: the ordering guard. Two promotes racing (PRs merged seconds apart, a
   // re-run of an older job, a manual recovery promote) would otherwise let the
   // older commit win simply by finishing last, with outcome `promoted` and exit
   // 0 -- and the live proof passes, because the older version really does serve
   // the SHA that job expects.
-  let forced: true | undefined
   if (liveVersion && target && liveVersion.id !== target.id) {
     const order = compareVersionRecency(target, liveVersion)
     if (order === null || order < 0) {
