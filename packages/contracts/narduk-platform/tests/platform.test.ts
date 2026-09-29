@@ -50,6 +50,12 @@ describe('neutral platform contracts', () => {
     ).toEqual(['TURNSTILE_SECRET_KEY', 'TURNSTILE_SITE_KEY', 'XAI_API_KEY'])
   })
 
+  it('parses every catalog source', () => {
+    for (const entry of ENV_CATALOG) {
+      expect(() => parseCatalogFrom(entry.from), entry.key).not.toThrow()
+    }
+  })
+
   it('parses an nvault source into its four parts', () => {
     expect(parseCatalogFrom('nvault:apple/prd/mapkit-signing/APPLE_KEY_ID')).toEqual({
       kind: 'nvault',

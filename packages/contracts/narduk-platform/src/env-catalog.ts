@@ -8,7 +8,7 @@
  *   key     - the env var name consumers read at build or runtime.
  *   from    - where the value originates. One of:
  *               nvault:<project>/<environment>/<config>/<source-key>
- *               doppler:<project>/<config>/<source-key>   (retired: no entry may use it)
+ *               doppler:<project>/<config>/<source-key>   (retired: only the keys agent-infrastructure#2131 tracks)
  *               registry:global:<key>         shared registry-managed plain value
  *               registry:app:<key>            per-app registry-managed plain value
  *               derive:<formula>              computed; formulas below
@@ -139,7 +139,7 @@ export const MODULE_CATALOG: Record<ModuleId, ModuleDefinition> = {
   posthog: {
     id: 'posthog',
     label: 'PostHog',
-    description: 'PostHog analytics and query credentials.',
+    description: 'PostHog analytics capture and query context.',
   },
   ga: {
     id: 'ga',
@@ -149,7 +149,7 @@ export const MODULE_CATALOG: Record<ModuleId, ModuleDefinition> = {
   'search-console': {
     id: 'search-console',
     label: 'Search Console',
-    description: 'Google Search Console credentials and site identity.',
+    description: 'Google Search Console site identity.',
   },
   indexnow: {
     id: 'indexnow',
@@ -694,7 +694,7 @@ const APPLE_MAPS_MODULE: CatalogEntry[] = [
   // Apple developer credentials are shared across the whole fleet: the same
   // Apple Developer Team publishes every Narduk property, so all maps-enabled
   // apps use the same KEY_ID / TEAM_ID / PRIVATE_KEY. Source them once from
-  // `narduk/tokens` Doppler and let the env-contract reconcile propagate to
+  // nvault `apple/prd/mapkit-signing` and let the env-contract reconcile propagate to
   // every app that declares the maps bundle, instead of forcing operators to
   // paste per-app values into app-local config.
   {
