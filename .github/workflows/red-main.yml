@@ -10,13 +10,14 @@ name: Red-main listener
 
 on:
   workflow_run:
-    workflows: ['CI']
+    workflows: ["CI"]
     types: [completed]
 
 # One listener at a time per repository, so an open and a close for the same
-# issue never race. Not cancelled: the newest CI conclusion should win.
+# issue never race; keyed by workflow so one workflow's completion cannot
+# displace another's pending verdict. Not cancelled: the newest conclusion wins.
 concurrency:
-  group: red-main-${{ github.repository }}
+  group: red-main-${{ github.repository }}-${{ github.event.workflow_run.name }}
   cancel-in-progress: false
 
 permissions:
