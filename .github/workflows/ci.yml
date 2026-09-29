@@ -40,7 +40,8 @@ jobs:
       package-jobs: ${{ steps.plan.outputs.package-jobs }}
       # Browser suites ran on 89 of the last 150 PRs and never failed one
       # (2026-09-29), so they run on main pushes and release PRs only; the
-      # red-main listener catches a break. `verify` then expects `skipped`.
+      # release PR's full run is the backstop before publish. `verify` then
+      # expects `skipped`.
       browser-packages: ${{ (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')) && '[]' || steps.plan.outputs.browser-packages }}
       packed-consumer: ${{ steps.smoke-gate.outputs.run == 'false' && 'false' || steps.plan.outputs.packed-consumer }}
       generated-consumer: ${{ steps.smoke-gate.outputs.run == 'false' && 'false' || steps.plan.outputs.generated-consumer }}
