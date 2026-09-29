@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
+import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 
 import { resolveContainment, type Containment } from './commit-containment.js'
@@ -121,27 +122,72 @@ export interface ShipContext {
   now?: () => number
 }
 
+// GitHub expressions ignore case, so `github.TOKEN` counts too.
+const PROMOTE_TOKEN = /^\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}$/iu
+// The command itself, not a mention of it in a comment or an error string.
+const PROMOTE_COMMAND = /\bnarduk-app\s+deploy\s+versions-promote\b/u
+
+type WorkflowNode = Record<string, unknown>
+
+function asNode(value: unknown): WorkflowNode {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as WorkflowNode) : {}
+}
+
+function hasPromoteToken(...envs: unknown[]): boolean {
+  return envs.some((env) =>
+    ['GITHUB_TOKEN', 'GH_TOKEN'].some((name) =>
+      PROMOTE_TOKEN.test(String(asNode(env)[name] ?? '').trim()),
+    ),
+  )
+}
+
+function runsPromote(step: WorkflowNode): boolean {
+  const run = String(step.run ?? '')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n')
+  return PROMOTE_COMMAND.test(run)
+}
+
+function canReadPullRequests(permissions: unknown): boolean {
+  if (permissions === 'read-all' || permissions === 'write-all') return true
+  return /^(?:read|write)$/u.test(String(asNode(permissions)['pull-requests'] ?? ''))
+}
+
 /**
- * After a ship, main's promote must prove the shipped commit landed: in a
- * shallow checkout only GitHub can say so, and a squash merge needs the
- * commit-to-PR lookup (Pull requests: read). Without both, every promotion
- * from main refuses until someone forces it, so ship refuses first.
+ * What the app's promote workflow lacks for main's promote to accept a shipped
+ * commit. In a shallow checkout only GitHub can prove the shipped commit landed,
+ * and a squash merge needs the commit-to-PR lookup, so every job that runs
+ * `versions-promote` (the wait step's `--dry-run` included) needs
+ * `pull-requests: read` and every such step needs GITHUB_TOKEN in scope.
  */
 export function promoteWorkflowGap(repoRoot: string): string | undefined {
   const path = join(repoRoot, '.github/workflows/promote.yml')
   if (!existsSync(path)) return undefined
-  const workflow = readFileSync(path, 'utf8')
-  if (!workflow.includes('versions-promote')) return undefined
-  const missing = [
-    /^\s*pull-requests:\s*(?:read|write)\b/mu.test(workflow) ? '' : 'pull-requests: read',
-    /^\s*(?:GITHUB_TOKEN|GH_TOKEN):\s*\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}/mu.test(
-      workflow,
-    )
-      ? ''
-      : 'GITHUB_TOKEN: ${{ github.token }} on the promote step',
-  ].filter(Boolean)
-  return missing.length
-    ? `.github/workflows/promote.yml needs ${missing.join(' and ')} before this app can ship, or main's promote refuses after every ship`
+  const text = readFileSync(path, 'utf8')
+  if (!text.includes('versions-promote')) return undefined
+  let workflow: WorkflowNode
+  try {
+    workflow = asNode(parseYaml(text))
+  } catch {
+    return '.github/workflows/promote.yml does not parse as YAML; fix it before this app can ship'
+  }
+  const missing = new Set<string>()
+  for (const [jobId, jobValue] of Object.entries(asNode(workflow.jobs))) {
+    const job = asNode(jobValue)
+    const steps = Array.isArray(job.steps) ? job.steps.map(asNode) : []
+    const promoting = steps.filter(runsPromote)
+    if (promoting.length === 0) continue
+    if (!canReadPullRequests(job.permissions ?? workflow.permissions))
+      missing.add(`pull-requests: read on job ${jobId}`)
+    for (const step of promoting)
+      if (!hasPromoteToken(step.env, job.env, workflow.env))
+        missing.add(
+          `GITHUB_TOKEN: \${{ github.token }} on step "${String(step.name ?? step.id ?? 'unnamed')}"`,
+        )
+  }
+  return missing.size
+    ? `.github/workflows/promote.yml needs ${[...missing].join(' and ')} before this app can ship, or main's promote refuses after every ship`
     : undefined
 }
 

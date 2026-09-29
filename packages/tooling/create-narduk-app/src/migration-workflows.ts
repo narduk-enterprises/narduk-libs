@@ -74,6 +74,9 @@ steps:
   - name: Require an eligible uploaded version before changing D1
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # The ship guard runs before the dry-run exit and asks GitHub whether a
+      # shipped commit landed, so this step needs the token as well.
+      GITHUB_TOKEN: \${{ github.token }}
       VERIFIED_SHA: \${{ needs.gate.outputs.sha }}
       VERSION_ID: \${{ needs.gate.outputs.version_id }}
     run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" \${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
