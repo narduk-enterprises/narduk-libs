@@ -1,0 +1,44 @@
+# Adopts workflows' red-main-listener.yml (Fast CI + ship, S1; narduk-reboot
+# O-D8). Opens or refreshes one "main is red: <workflow>" issue, labelled
+# `red-main`, when a push or workflow_dispatch run of a listed workflow goes
+# red on the default branch; closes it on the next green run of that workflow.
+# Heavy checks run after merge, so this alarm is what surfaces a red main.
+# No automatic revert or rollback.
+#
+# PREREQUISITE: the repository owns the `red-main` label.
+name: Red-main listener
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+# One listener at a time per repository, so an open and a close for the same
+# issue never race; keyed by workflow so one workflow's completion cannot
+# displace another's pending verdict. Not cancelled: the newest conclusion wins.
+concurrency:
+  group: red-main-${{ github.repository }}-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  red-main:
+    # Push/dispatch on the default branch only: a PR whose head branch is
+    # literally named `main` must not post a red-main issue.
+    if: |
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
+    uses: narduk-enterprises/workflows/.github/workflows/red-main-listener.yml@dab7998f45f4eb2a9c1b5ad37535c19e552daf17 # v2
+    permissions:
+      contents: read
+      issues: write
+    with:
+      workflow-name: ${{ github.event.workflow_run.name }}
+      conclusion: ${{ github.event.workflow_run.conclusion }}
+      run-id: ${{ github.event.workflow_run.id }}
+      run-number: ${{ github.event.workflow_run.run_number }}
+      run-url: ${{ github.event.workflow_run.html_url }}
+      run-completed-at: ${{ github.event.workflow_run.updated_at }}
+      head-sha: ${{ github.event.workflow_run.head_sha }}
