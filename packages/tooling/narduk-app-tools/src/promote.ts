@@ -71,7 +71,7 @@
 import { spawnSync } from 'node:child_process'
 
 import { fetchCloudflareEnvelope } from './cloudflare.js'
-import { commitContains, ensureCommits, type Containment } from './commit-containment.js'
+import { resolveContainment, type Containment } from './commit-containment.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
 import {
   currentDeployment,
@@ -1231,7 +1231,7 @@ export interface PromoteContext {
    * so a `--json` stdout stays one parseable document.
    */
   log?: (line: string) => void
-  /** Injected in tests; `ensureCommits` + `commitContains` in the app checkout otherwise. */
+  /** Injected in tests; `resolveContainment` (local git, then GitHub) otherwise. */
   containment?: (candidate: string, served: string) => Containment
 }
 
@@ -1595,16 +1595,15 @@ async function promoteVersion(
           ? 'contained'
           : (
               context.containment ??
-              ((head: string, served: string) =>
-                ensureCommits(appDir, [head, served])
-                  ? commitContains(appDir, head, served)
-                  : 'unknown')
+              ((head: string, served: string) => resolveContainment(appDir, head, served))
             )(candidate, shippedSha)
     if (containment !== 'contained') {
       const detail =
         `Production serves shipped commit ${shippedSha ?? '(untagged)'} (version ` +
         `${String(previousVersionId)}), and ${candidate ?? 'this version'} ` +
-        (containment === 'unknown' ? 'cannot be shown to contain it' : 'does not contain it') +
+        (containment === 'unknown'
+          ? 'cannot be shown to contain it (give this step GITHUB_TOKEN so GitHub can answer)'
+          : 'does not contain it') +
         '. Promoting would undo shipped work: merge the ship PR into main first, then re-run.'
       if (!flags.force) return refuse('ship-not-contained', PROMOTE_EXIT.shipNotContained, detail)
       forced = true

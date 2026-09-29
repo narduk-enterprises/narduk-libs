@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path'
 
 import { z } from 'zod'
 
-import { commitContains, ensureCommits, type Containment } from './commit-containment.js'
+import { resolveContainment, type Containment } from './commit-containment.js'
 import { resolveAppDir, runDeploy } from './deploy.js'
 import { readDeployment } from './deploy-hotfix.js'
 import { scanPublicAssetsForSecretLeaks } from './deploy-local.js'
@@ -18,6 +18,7 @@ import {
 } from './hotfix-plan.js'
 import {
   createWranglerCli,
+  ROLLBACK_MESSAGE_PREFIX,
   SHIP_MESSAGE_PREFIX,
   soleDeployedVersionId,
   VERSION_MESSAGE_ANNOTATION,
@@ -35,8 +36,8 @@ import {
 /**
  * `narduk-app ship`: the one fast path from a committed branch to production.
  *
- * checks + build (concurrently) -> artifact gate -> upload -> promote 100% ->
- * live proof -> automatic rollback on a failed proof -> push + auto-merge PR.
+ * checks + build (concurrently) -> artifact gate -> push -> upload -> promote
+ * 100% -> live proof -> automatic rollback on a failure -> auto-merge PR.
  *
  * There is no mode to enter and no custody record. The one rule that keeps two
  * publishers from overwriting each other is git's: HEAD must contain both the
@@ -127,7 +128,7 @@ export const SHIP_EXIT = {
   refused: 1,
   /** Promoted, the live proof failed, and the previous version serves again. */
   rolledBack: 3,
-  /** Shipped and proven, but pushing or opening the PR failed: do it by hand. */
+  /** Shipped and proven, but opening the PR failed: do it by hand. */
   prFailed: 4,
   /** Promoted, the proof failed, and the rollback did not take. Production needs a person. */
   rollbackFailed: 5,
@@ -262,19 +263,16 @@ async function ship(
   const productionBranch = target.deployment.productionBranch
   const baseUrl = productionOrigin(target.manifest, flags.baseUrl)
 
-  // 1. The commit. A dirty tree ships only as an explicit commit.
-  if (git(['status', '--porcelain', '--untracked-files=all'])) {
-    if (!flags.message)
-      refuse('Uncommitted changes: commit them, or pass -m "<message>" to commit everything')
-    git(['add', '--all'])
-    git(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '--message', flags.message!])
-  }
+  // 1. The branch. A dirty tree ships only as an explicit commit, made once the
+  // refusals that need no build have passed.
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (branch === 'HEAD' || branch === productionBranch)
     refuse(
       `Ship from a feature branch, not ${branch === 'HEAD' ? 'a detached HEAD' : productionBranch}`,
     )
-  const sha = git(['rev-parse', 'HEAD'])
+  const dirty = Boolean(git(['status', '--porcelain', '--untracked-files=all']))
+  if (dirty && !flags.message)
+    refuse('Uncommitted changes: commit them, or pass -m "<message>" to commit everything')
 
   // 2. HEAD must contain the production branch, so its PR can merge cleanly.
   git(['fetch', '--quiet', '--no-tags', 'origin', productionBranch], { withCredentials: true })
@@ -282,21 +280,24 @@ async function ship(
   const contains =
     context.containment ??
     ((root: string, candidate: string, served: string) =>
-      ensureCommits(root, [candidate, served])
-        ? commitContains(root, candidate, served)
-        : 'unknown')
-  if (contains(repoRoot, sha, upstream) !== 'contained')
+      resolveContainment(root, candidate, served, { env }))
+  if (contains(repoRoot, git(['rev-parse', 'HEAD']), upstream) !== 'contained')
     refuse(
       `HEAD does not contain origin/${productionBranch}; run: git rebase origin/${productionBranch}`,
     )
 
-  log(`[ship] ${target.workerName} ${branch}@${sha.slice(0, 12)} -> ${baseUrl}`)
   if (flags.dryRun) {
     log(
-      `[ship] dry run: ${checkScript} + ${buildScript}${assertScript ? ` -> ${assertScript}` : ''} -> upload -> promote 100% -> prove${flags.pr ? ' -> push + auto-merge PR' : ''}`,
+      `[ship] dry run: ${target.workerName} ${branch} -> ${baseUrl}: ${dirty ? 'commit -> ' : ''}${checkScript} + ${buildScript}${assertScript ? ` -> ${assertScript}` : ''} -> push -> upload -> promote 100% -> prove${flags.pr ? ' -> auto-merge PR' : ''}`,
     )
     return SHIP_EXIT.ok
   }
+  if (dirty) {
+    git(['add', '--all'])
+    git(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '--message', flags.message!])
+  }
+  const sha = git(['rev-parse', 'HEAD'])
+  log(`[ship] ${target.workerName} ${branch}@${sha.slice(0, 12)} -> ${baseUrl}`)
   if (!env.CLOUDFLARE_API_TOKEN?.trim())
     refuse('Inject the app deploy credential as CLOUDFLARE_API_TOKEN (nvault run -- pnpm ship)')
 
@@ -355,20 +356,28 @@ async function ship(
         `Production version ${previousVersionId} carries no commit tag, so HEAD cannot be shown to contain it; pass --adopt once to take it over`,
       )
   } else {
+    // --adopt only takes over an untagged version; it never overrides this.
     const containment = contains(repoRoot, sha, served)
-    if (containment !== 'contained' && !flags.adopt)
+    if (containment !== 'contained')
       refuse(
         `Production serves ${served.slice(0, 12)}, which HEAD ${containment === 'unknown' ? 'cannot be shown to contain' : 'does not contain'}; git fetch and rebase onto it (or merge its branch) first`,
       )
     // ship v1 does not migrate: a schema change lands through normal delivery.
     const sources =
       target.deployment.migrations?.databases.map((database) => database.sources) ?? []
-    if (
-      sources.length &&
-      containment === 'contained' &&
-      git(['diff', '--name-only', served, sha, '--', ...sources])
-    )
-      refuse('Migration files changed since the serving commit; land them through normal delivery')
+    if (sources.length) {
+      let changed = ''
+      try {
+        git(['fetch', '--quiet', '--no-tags', 'origin', served], { withCredentials: true })
+        changed = git(['diff', '--name-only', served, sha, '--', ...sources])
+      } catch {
+        refuse(`Cannot compare migration files against the serving commit ${served.slice(0, 12)}`)
+      }
+      if (changed)
+        refuse(
+          'Migration files changed since the serving commit; land them through normal delivery',
+        )
+    }
   }
 
   // 4. Checks and build run concurrently: neither writes what the other reads.
@@ -401,7 +410,16 @@ async function ship(
   if (scanPublicAssetsForSecretLeaks(appDir, secrets).length)
     refuse('Credential value found in public assets; refusing upload')
 
-  // 5. Upload, then promote only if nothing else changed production meanwhile.
+  // 5. Push first, so the serving commit is on GitHub where a promote guard in
+  // a shallow CI checkout can find it. Then upload, and promote only if
+  // nothing else changed production meanwhile.
+  try {
+    git(['push', '--quiet', '--set-upstream', 'origin', `HEAD:refs/heads/${branch}`], {
+      withCredentials: true,
+    })
+  } catch (error) {
+    refuse(`Push failed: ${(error as Error).message}`)
+  }
   const id = randomUUID().slice(0, 8)
   const message = `${SHIP_MESSAGE_PREFIX} ${branch} ${id}`
   log(`[ship] upload (${elapsed()})`)
@@ -425,25 +443,40 @@ async function ship(
   if ((await readDeployment(client)).id !== previous.id)
     refuse('Production changed during the ship; nothing promoted')
   log(`[ship] promote ${uploaded[0].id} (${elapsed()})`)
-  await client.deployVersion(uploaded[0].id, 100, message)
 
-  // 6. Prove it, or put the previous version back.
-  const proof = await (
-    context.verify ?? ((args, proofEnv) => runVerifyLive(args, { env: proofEnv }))
-  )(verifyFlags, env)
-  if (proof.exitCode !== 0 || proof.result !== 'PASS') {
-    const failing = proof.assertions
-      .filter((assertion) => assertion.status === 'fail' || assertion.status === 'unknown')
-      .map((assertion) => assertion.id)
-    log(
-      `[ship] live proof ${proof.result} (${failing.join(', ') || 'no detail'}); rolling back to ${previousVersionId}`,
-    )
+  // 6. Prove it, or put the previous version back. From here traffic may have
+  // moved, so any failure -- the promote itself included -- rolls back.
+  let failure: string | undefined
+  try {
+    await client.deployVersion(uploaded[0].id, 100, message)
+    const proof = await (
+      context.verify ?? ((args, proofEnv) => runVerifyLive(args, { env: proofEnv }))
+    )(verifyFlags, env)
+    if (proof.exitCode !== 0 || proof.result !== 'PASS') {
+      const failing = proof.assertions
+        .filter((assertion) => assertion.status === 'fail' || assertion.status === 'unknown')
+        .map((assertion) => assertion.id)
+      failure = `live proof ${proof.result} (${failing.join(', ') || 'no detail'})`
+    }
+  } catch (error) {
+    failure = `promote or proof failed: ${(error as Error).message}`
+  }
+  if (failure) {
+    log(`[ship] ${failure}; rolling back to ${previousVersionId}`)
     try {
-      await client.deployVersion(previousVersionId, 100, `${SHIP_MESSAGE_PREFIX} rollback ${id}`)
+      // The rollback prefix keeps a later `deploy rollback` from resolving
+      // "previous" to the version that just failed.
+      await client.deployVersion(
+        previousVersionId,
+        100,
+        `${ROLLBACK_MESSAGE_PREFIX} (ship ${branch} ${id})`,
+      )
       if (soleDeployedVersionId(await readDeployment(client)) !== previousVersionId)
         throw new Error('previous version is not serving after rollback')
     } catch (error) {
-      log(`[ship] ROLLBACK FAILED: ${(error as Error).message}. Run: narduk-app deploy rollback`)
+      log(
+        `[ship] ROLLBACK FAILED: ${(error as Error).message}. Run: narduk-app deploy rollback --to ${previousVersionId}`,
+      )
       return SHIP_EXIT.rollbackFailed
     }
     log(`[ship] rolled back; ${previousVersionId} serves again (${elapsed()})`)
@@ -458,9 +491,6 @@ async function ship(
   }
   const gh = context.gh ?? defaultGh
   try {
-    git(['push', '--quiet', '--set-upstream', 'origin', `HEAD:refs/heads/${branch}`], {
-      withCredentials: true,
-    })
     let url: string
     try {
       url = gh(['pr', 'view', branch, '--json', 'url', '--jq', '.url'], repoRoot)
@@ -471,7 +501,7 @@ async function ship(
     log(`[ship] auto-merge armed: ${url} (${elapsed()})`)
   } catch (error) {
     log(
-      `[ship] shipped, but the PR step failed: ${(error as Error).message}. Push and merge ${branch} by hand.`,
+      `[ship] shipped, but the PR step failed: ${(error as Error).message}. Open and merge the ${branch} PR by hand.`,
     )
     return SHIP_EXIT.prFailed
   }

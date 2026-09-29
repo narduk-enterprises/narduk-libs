@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { commitContains } from '../src/commit-containment.js'
+import { commitContains, landedContains, resolveContainment } from '../src/commit-containment.js'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import type { WorkerDeployment, WorkerVersion, WranglerVersionsClient } from '../src/promote.js'
 import {
@@ -22,6 +22,22 @@ const ACCOUNT = 'a'.repeat(32)
 const TOKEN = 'synthetic-cloudflare-secret-token'
 const OLD = '11111111-1111-4111-8111-111111111111'
 const NEW = '22222222-2222-4222-8222-222222222222'
+
+type Answer = { status: number | null; stdout: string }
+
+/** A fake `gh api`: compare answers by base, merged PR shas by served commit. */
+function fakeGh(options: { ahead?: string[]; pulls?: Record<string, string[]>; down?: boolean }) {
+  return (args: string[]): Answer => {
+    if (options.down) return { status: 1, stdout: '' }
+    const path = args[1]
+    const compare = /compare\/([a-f\d]+)\.\.\./u.exec(path)
+    if (compare)
+      return { status: 0, stdout: options.ahead?.includes(compare[1]) ? 'ahead' : 'diverged' }
+    const pulls = /commits\/([a-f\d]+)\/pulls/u.exec(path)
+    if (pulls) return { status: 0, stdout: (options.pulls?.[pulls[1]] ?? []).join('\n') }
+    return { status: 1, stdout: '' }
+  }
+}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -160,9 +176,12 @@ function harness(options: { migrations?: boolean; servedTag?: string | null } = 
       writeFileSync(join(f.app, '.output/server/index.mjs'), 'export default {}')
     }
   })
+  let pushedBeforeUpload: boolean | undefined
   const upload = vi.fn<NonNullable<ShipContext['upload']>>((args, _cwd, childEnv) => {
     calls.push('upload')
     expect(childEnv?.CLOUDFLARE_API_TOKEN).toBe(TOKEN)
+    pushedBeforeUpload =
+      gitIn(f.origin)('rev-parse', 'refs/heads/feat-x') === f.git('rev-parse', 'HEAD')
     versions = [
       {
         id: NEW,
@@ -196,8 +215,20 @@ function harness(options: { migrations?: boolean; servedTag?: string | null } = 
     upload,
     verify,
     gh,
+    // Real git; GitHub is offline unless a case says otherwise.
+    containment: (root, candidate, served) =>
+      resolveContainment(root, candidate, served, { gh: fakeGh({ down: true }) }),
   }
-  return { ...f, context, client, calls, proof, logs, upload }
+  return {
+    ...f,
+    context,
+    client,
+    calls,
+    proof,
+    logs,
+    upload,
+    pushedBeforeUpload: () => pushedBeforeUpload,
+  }
 }
 
 // Each case runs real git against a bare origin; under the full parallel suite
@@ -216,6 +247,38 @@ describe('commit containment', { timeout: GIT_TIMEOUT }, () => {
     expect(commitContains(f.root, squash, f.sha)).toBe('contained')
     expect(commitContains(f.root, f.mainSha, f.sha)).toBe('not-contained')
     expect(commitContains(f.root, squash, 'f'.repeat(40))).toBe('unknown')
+  })
+
+  it('asks GitHub when the checkout lacks the objects or a review fix rewrote the lines', () => {
+    const served = 'a'.repeat(40)
+    const candidate = 'b'.repeat(40)
+    const merge = 'c'.repeat(40)
+    expect(landedContains(candidate, served, fakeGh({ ahead: [served] }))).toBe('contained')
+    // The ship PR squash-merged with a follow-up fix: served is not an ancestor
+    // and conflicts textually, but its PR landed in the candidate's history.
+    expect(
+      landedContains(candidate, served, fakeGh({ ahead: [merge], pulls: { [served]: [merge] } })),
+    ).toBe('contained')
+    expect(landedContains(candidate, served, fakeGh({ pulls: { [served]: [merge] } }))).toBe(
+      'not-contained',
+    )
+    expect(landedContains(candidate, served, fakeGh({}))).toBe('not-contained')
+    expect(landedContains(candidate, served, fakeGh({ down: true }))).toBe('unknown')
+  })
+
+  it("takes GitHub's yes over a local no, and never fetches", () => {
+    const f = fixture()
+    const before = f.git('config', '--list')
+    expect(resolveContainment(f.root, f.mainSha, f.sha, { gh: fakeGh({ down: true }) })).toBe(
+      'not-contained',
+    )
+    expect(resolveContainment(f.root, f.mainSha, f.sha, { gh: fakeGh({ ahead: [f.sha] }) })).toBe(
+      'contained',
+    )
+    expect(
+      resolveContainment(f.root, f.mainSha, 'f'.repeat(40), { gh: fakeGh({ down: true }) }),
+    ).toBe('unknown')
+    expect(f.git('config', '--list')).toBe(before)
   })
 })
 
@@ -242,6 +305,7 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
       ]),
     )
     expect(gitIn(h.origin)('rev-parse', 'refs/heads/feat-x')).toBe(h.sha)
+    expect(h.pushedBeforeUpload()).toBe(true)
   })
 
   it('rolls back to the previous version when the live proof fails', async () => {
@@ -250,6 +314,24 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     h.proof.exitCode = 1
     await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.rolledBack)
     expect(h.calls.slice(-3)).toEqual(['promote new', 'verify', 'promote old'])
+    // A later `deploy rollback` must read this as a rollback, not "previous".
+    expect(vi.mocked(h.client.deployVersion).mock.calls.at(-1)?.[2]).toMatch(
+      /^narduk-app rollback /u,
+    )
+    expect(h.pushedBeforeUpload()).toBe(true)
+  })
+
+  it('rolls back when the promote itself fails after traffic moved', async () => {
+    const h = harness()
+    const deploy = vi.mocked(h.client.deployVersion)
+    const real = deploy.getMockImplementation()!
+    deploy.mockImplementationOnce(async (...args) => {
+      await real(...args)
+      throw new Error('wrangler versions deploy exited 1')
+    })
+    await expect(runShip(parseShipArgs([]), h.context)).resolves.toBe(SHIP_EXIT.rolledBack)
+    expect(h.calls.slice(-2)).toEqual(['promote new', 'promote old'])
+    expect(h.calls).not.toContain('gh pr create')
   })
 
   it('refuses a dirty tree unless -m commits it', async () => {
@@ -257,6 +339,10 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     writeFileSync(join(h.app, 'dirty.txt'), 'x\n')
     await expect(runShip(parseShipArgs(['--dry-run']), h.context)).resolves.toBe(SHIP_EXIT.refused)
     await expect(runShip(parseShipArgs(['--dry-run', '-m', 'wip']), h.context)).resolves.toBe(
+      SHIP_EXIT.ok,
+    )
+    expect(h.git('log', '-1', '--format=%s')).toBe('feature')
+    await expect(runShip(parseShipArgs(['--no-pr', '-m', 'wip']), h.context)).resolves.toBe(
       SHIP_EXIT.ok,
     )
     expect(h.git('log', '-1', '--format=%s')).toBe('wip')
@@ -282,6 +368,9 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     await expect(runShip(parseShipArgs([]), h.context)).resolves.toBe(SHIP_EXIT.refused)
     expect(h.calls).toEqual([])
     expect(h.logs.join('\n')).toContain('cannot be shown to contain')
+    // --adopt takes over an untagged version only; it never overrides this.
+    await expect(runShip(parseShipArgs(['--adopt']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.calls).toEqual([])
   })
 
   it('refuses an untagged production version unless --adopt', async () => {
