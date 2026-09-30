@@ -6,7 +6,7 @@
  * For narduk-core and narduk-auth, which register their directories with
  * `pathPrefix: false`, the app's file silently replaces the shared one; for the
  * others it is a fork that stops receiving fixes. Either way the fix belongs
- * upstream (company-hq `docs/NARDUK-APP-COMPLIANCE.md` §3.9).
+ * upstream (agent-infrastructure `docs/standards/NARDUK-APP-COMPLIANCE.md` §3.9).
  *
  * Both names are checked: the file name, which is what an author copies, and
  * the name Nuxt registers from the path, so `components/ne/StatePanel.vue`

@@ -126,10 +126,10 @@ to mutate sections at runtime (e.g. a feature-flagged admin section).
 - **operator-portal** — the app the redesign work exists for; first adopter,
   proves the shape.
 - **been-sober-for**, **borderwaitstat-us**, **gonogo** — the three `web-cf`
-  examples named in company-hq `strategy/paved-paths.md`; each currently
-  hand-rolls its own nav/layout and would collapse onto the shared shell once it
-  exists, directly addressing the R4 finding that the flagship `web-cf` apps
-  aren't dogfooding narduk-libs.
+  examples named in agent-infrastructure `docs/standards/paved-paths.md`; each
+  currently hand-rolls its own nav/layout and would collapse onto the shared
+  shell once it exists, directly addressing the R4 finding that the flagship
+  `web-cf` apps aren't dogfooding narduk-libs.
 - Any future `web-cf` or `apple-multi` web-half app scaffolded by
   `create-narduk-app` — the generator could add `narduk-shell` to its default
   module list once the package is proven on operator-portal, the same way it

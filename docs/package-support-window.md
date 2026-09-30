@@ -12,9 +12,9 @@ gets security fixes and critical-bugfix backports. It keeps getting them until
 every consumer that was on N-1 when N shipped has migrated to N, or for 90 days
 after N is published, whichever is longer.
 
-This is the window company-hq `docs/PACKAGE-STRATEGY.md` §2 defines for
-narduk-core's breaking changes. narduk-libs#124 item 8 asked for it to be stated
-for every published package. This file does that. Its `rule.id` is
+This is the window agent-infrastructure `docs/standards/PACKAGE-STRATEGY.md` §2
+defines for narduk-core's breaking changes. narduk-libs#124 item 8 asked for it
+to be stated for every published package. This file does that. Its `rule.id` is
 `n-and-n-minus-1`, the value that `project-lifecycle.json`'s
 `release.compatibility` enum already names.
 
@@ -53,8 +53,8 @@ So a new published package cannot land without stating its window.
   how Changesets publishes a lower major after a higher one) are not defined
   here. [`package-releases.md`](package-releases.md) describes releasing from
   `main` only.
-- company-hq `docs/PACKAGE-STRATEGY.md` should point at this file as the
-  per-package source of truth instead of describing narduk-core alone. That
-  change belongs in company-hq.
+- agent-infrastructure `docs/standards/PACKAGE-STRATEGY.md` should point at this
+  file as the per-package source of truth instead of describing narduk-core
+  alone. That change belongs in company-hq.
 - `narduk-app foundation:check`'s N-1 item reads narduk-core only. Having it
   read this file is a follow-up.

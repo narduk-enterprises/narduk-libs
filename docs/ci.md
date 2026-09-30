@@ -115,10 +115,10 @@ the candidate's own `127.0.0.1` port. The `foundation:check` verdicts are pinned
 exactly, detail included: private FAIL on only 1.5, for the fixture's one D1
 binding still on the placeholder `database_id`
 `00000000-0000-0000-0000-000000000000`; public UNKNOWN on only 5.1, because the
-exemption registry is cross-repository (by specification, company-hq
-WEB-FOUNDATION-CHECK.md item 5). Any other exit code or verdict fails the job,
-including one of those closing or failing for another reason. This half always
-executes; it is not part of the reusable proof.
+exemption registry is cross-repository (by specification, agent-infrastructure
+docs/standards/WEB-FOUNDATION-CHECK.md item 5). Any other exit code or verdict
+fails the job, including one of those closing or failing for another reason.
+This half always executes; it is not part of the reusable proof.
 
 Proof lookup accepts only the latest successful CI run/attempt for that
 same-repo PR head, its successful packed-consumer job, and one unexpired

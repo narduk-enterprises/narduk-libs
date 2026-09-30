@@ -85,7 +85,7 @@ export function buildArtefact(options: {
     generated: generated ?? new Date().toISOString(),
     app,
     contract: {
-      source: 'company-hq strategy/web-foundation-libs-plan.md#4',
+      source: 'agent-infrastructure docs/standards/web-foundation-libs-plan.md#4',
       ratifiedBy: 'D-WEBFOUND-2 Q9 (a), 2026-09-04; amended 2026-09-16',
       items: FOUNDATION_ITEM_COUNT,
     },

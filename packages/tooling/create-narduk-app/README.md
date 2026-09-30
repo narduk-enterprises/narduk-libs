@@ -206,9 +206,10 @@ version: 2
 
 `upgrade` then reports it as `unmanaged`, never rewrites it, and does not count
 it as drift. This is the sanctioned home for an app-owned Dependabot rule — a
-security exception's `ignore` entry (company-hq `NARDUK-APP-COMPLIANCE.md` §4)
-or a documented app-specific pin — and the reason the dry run prints the line
-count a whole-file rewrite would add and remove.
+security exception's `ignore` entry (agent-infrastructure
+`docs/standards/NARDUK-APP-COMPLIANCE.md` §4) or a documented app-specific pin —
+and the reason the dry run prints the line count a whole-file rewrite would add
+and remove.
 
 The region targets follow one rule. An existing `AGENTS.md` with no
 `narduk:router` markers gets the router block appended at the end, and
@@ -338,9 +339,10 @@ carries two supply-chain settings for the pinned pnpm (10.33.4):
    unit.
 3. **Decide which side is right.** If the app is right and the template is
    stale, the fix lands _here_, in the generator, and the app adopts the next
-   release — company-hq `NARDUK-APP-COMPLIANCE.md` §3.9, "shared behaviour is
-   fixed upstream, never worked around in the app". If the app genuinely needs
-   to differ, it opts the file out with a marker and records why.
+   release — agent-infrastructure `docs/standards/NARDUK-APP-COMPLIANCE.md`
+   §3.9, "shared behaviour is fixed upstream, never worked around in the app".
+   If the app genuinely needs to differ, it opts the file out with a marker and
+   records why.
 4. **Re-run until clean.** `upgrade` is idempotent: a second `--write` writes
    nothing and a following dry run exits 0.
 
@@ -521,13 +523,13 @@ the previous release), with the published checker. It cannot see a header a
 Cloudflare zone adds; the promote workflow's live proof covers production.
 
 A public app's own CI cannot pass items 1-7. Sub-check 5.1 passes on a call to
-the shared class callable, which a public repository cannot make, and company-hq
-`WEB-FOUNDATION-CHECK.md` item 5 requires the app-side check to report the
-registry-exemption half `unknown`. So `foundation:check` exits 2 in every public
-app's CI whatever the app does. The generated workflow says so in a comment
-rather than tolerate that `UNKNOWN`; the company-hq rollup, which can read the
-registry, scores items 1-7 for a public app. Closing it needs a spec change
-first.
+the shared class callable, which a public repository cannot make, and
+agent-infrastructure `docs/standards/WEB-FOUNDATION-CHECK.md` item 5 requires
+the app-side check to report the registry-exemption half `unknown`. So
+`foundation:check` exits 2 in every public app's CI whatever the app does. The
+generated workflow says so in a comment rather than tolerate that `UNKNOWN`; the
+company-hq rollup, which can read the registry, scores items 1-7 for a public
+app. Closing it needs a spec change first.
 
 `upgrade` brings an existing app to the same gate. It edits single lines of the
 caller's `with:` block and appends to the app's own `extra-scripts` in the app's

@@ -164,14 +164,14 @@ The app's promote workflow must follow these steps in one serialized job:
    Travel bookmark, not application records or credentials. Missing evidence on
    a no-op run is normal; a pending migration requires successful capture.
 
-**Rollback mode is outside certification.** Company-hq NARDUK-APP-COMPLIANCE.md
-§3.1 no longer requires a particular rollback mode; sub-check 12.10 is retired.
-Existing runtime and manual rollback paths are unchanged.
-`narduk-app deploy rollback` restores code, never a schema, and step 2 still
-keeps serving and rollback-target versions compatible with the migrated
-database. Whoever invokes rollback still checks what the schema did since that
-version. A migration failure must still block promotion; retiring 12.10 does not
-authorize restoring or deleting application data.
+**Rollback mode is outside certification.** agent-infrastructure
+docs/standards/NARDUK-APP-COMPLIANCE.md §3.1 no longer requires a particular
+rollback mode; sub-check 12.10 is retired. Existing runtime and manual rollback
+paths are unchanged. `narduk-app deploy rollback` restores code, never a schema,
+and step 2 still keeps serving and rollback-target versions compatible with the
+migrated database. Whoever invokes rollback still checks what the schema did
+since that version. A migration failure must still block promotion; retiring
+12.10 does not authorize restoring or deleting application data.
 
 `create-narduk-app` emits `promote-d1.steps.yml` for this insertion, step 2
 included. Keep workflow concurrency `cancel-in-progress: false`. Repository

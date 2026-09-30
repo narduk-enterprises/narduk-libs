@@ -12,7 +12,7 @@ reads its look from the shared token sheet. It is not a component kit that forks
 Nuxt UI, and it is not `narduk-ui`'s replacement — `narduk-ui` keeps owning the
 `Ns*` status instruments for the status apps.
 
-Standing decision: company-hq `DECISIONS.md` **D-WEBFOUND-2** and its
+Standing decision: Operator Portal decision log **D-WEBFOUND-2** and its
 **2026-09-11 amendment**. The suite lives here in
 `packages/design/narduk-shell`, the `Ne*` prefix is provisional under
 D-WEBFOUND-2 Q7's parked renames, and list routes use the `parseListQuery`
