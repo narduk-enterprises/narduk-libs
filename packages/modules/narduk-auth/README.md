@@ -98,6 +98,119 @@ Server code imports core-owned user, session, notification, and API-key tables
 through the private `#narduk-core/schema` alias registered by the core module.
 Apps continue to use their app-owned `#narduk-db` alias for combined schemas.
 
+## MCP OAuth (connected apps)
+
+Opt-in. Lets a user add the app's MCP endpoint to claude.ai, ChatGPT or any
+client that implements the
+[MCP authorization spec](https://modelcontextprotocol.io/specification/latest/basic/authorization):
+the client finds the sign-in route from the endpoint's 401, the user signs in
+with their normal session and approves the client, and the client gets an access
+token bound to that endpoint. API keys (`Bearer nk_…`) keep working alongside
+it.
+
+```ts
+// nuxt.config.ts
+nardukAuth: {
+  mcpOAuth: {
+    enabled: true,
+    resourceName: 'Family hub',
+    scopes: ['family:read', 'family:write'],
+    requiredScopes: ['family:read', 'family:write'],
+  },
+},
+```
+
+Options (all optional besides `enabled`): `resourcePath` (`/mcp`), `consentPath`
+(`/oauth/authorize`), `issuer` (defaults to the origin of
+`runtimeConfig.public.appUrl`; https, or http on loopback only),
+`accessTokenTtl` (3600 s), `refreshTokenTtl` (180 days), `refreshTokenIdleTtl`
+(30 days), `dynamicClientRegistration` (true), `clientIdMetadataDocuments`
+(true). Apply `drizzle/0005_mcp_oauth.sql`.
+
+The protocol is `@cloudflare/workers-oauth-provider` (pinned, no transitive
+dependencies) over the `auth_oauth_kv` D1 table. When enabled the module
+registers:
+
+| Route                                                         | Purpose                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `/.well-known/oauth-protected-resource[/mcp]`                 | RFC 9728 protected resource metadata                                   |
+| `/.well-known/oauth-authorization-server`                     | RFC 8414 metadata (S256 only, `iss` in responses)                      |
+| `/oauth/register`                                             | RFC 7591 dynamic client registration (https or loopback redirect URIs) |
+| `/oauth/token`                                                | code + PKCE, refresh (rotating), RFC 7009 revocation                   |
+| `/oauth/authorize`                                            | consent page (client-only render, `X-Frame-Options: DENY`)             |
+| `GET/POST /api/auth/mcp/consent`                              | consent state and the approve/deny decision                            |
+| `GET /api/auth/mcp/grants`, `DELETE /api/auth/mcp/grants/:id` | the signed-in user's connected apps                                    |
+
+`/oauth/token`, `/oauth/register` and the resource path are exempt from
+narduk-core's `X-Requested-With` check (they are called by OAuth clients, not
+the browser). So the module also installs a server middleware: every non-GET
+request to the resource path without a `Bearer` credential gets the 401
+challenge before any app route runs, and the session cookie can never
+authenticate it. The app's route should still resolve callers from the bearer
+only:
+
+```ts
+// server/routes/mcp.post.ts
+export default defineEventHandler(async (event) => {
+  const oauth = await resolveMcpOAuthPrincipal(event) // null for no bearer or an nk_ key
+  if (!oauth && !getHeader(event, 'authorization'))
+    throw mcpOAuthUnauthorized(event)
+  if (oauth && !oauth.scopes.includes('family:write')) {
+    throw mcpOAuthInsufficientScope(event, ['family:write'])
+  }
+  // oauth.attribution is "<client> for <user>", e.g. "Claude for Logan"
+})
+```
+
+A bearer that is not a live token for this endpoint gets a 401 with
+`error="invalid_token"`; clients refresh or sign in again.
+
+On top of the library, narduk-auth requires PKCE (S256) from every client,
+grants only scopes listed in `scopes` (an empty request gets `requiredScopes`;
+an unknown one goes back to the client as `invalid_scope`), registers only https
+or loopback-http redirect URIs, binds each consent to the user who opened it,
+and claims each authorization code atomically so racing exchanges redeem it
+once.
+
+Know the limits:
+
+- The policy's `authorize` runs at consent only. Signing out, resetting a
+  password or removing someone from the app does not disconnect their apps;
+  revoke them (`DELETE /api/auth/mcp/grants/:id`) where that matters.
+- A refresh token stays valid until its replacement is first used (the library's
+  rotation), for up to `refreshTokenIdleTtl` idle and `refreshTokenTtl` in all.
+- A self-registered client names itself. The consent page says so; a client with
+  a metadata document shows its verified domain instead.
+- The root `/.well-known/oauth-protected-resource` also answers with the MCP
+  resource (MCP clients fall back to it); the 401 points at the path-suffixed
+  document.
+
+App rules, from a Nitro plugin:
+
+```ts
+export default defineNitroPlugin(() => {
+  defineMcpOAuthPolicy({
+    // Return a message to refuse; shown on the consent page.
+    authorize: async ({ user }) =>
+      (await isMember(user.id)) ? undefined : 'Members only.',
+    attribution: ({ clientName, user }) =>
+      `${clientName} for ${user.name ?? user.email}`,
+  })
+})
+```
+
+The default consent page uses Nuxt UI. To restyle it, add your own
+`app/pages/oauth/authorize.vue` and drive it with `useMcpOAuthConsent()`
+(`state`, `loading`, `busy`, `failure`, `approve`, `deny`, `returnToClient`);
+the page must do nothing but show the returned state, because the decision is
+bound server-side to a one-use handle and an `__Host-` cookie. A consent POST
+must come from the issuer origin with the signed-in session.
+
+A client with a Client ID Metadata Document (ChatGPT, claude.ai) is only fetched
+when the Worker runs with the `global_fetch_strictly_public` compatibility flag;
+without it the library advertises dynamic registration only, which both clients
+also support.
+
 ## Migrations
 
 narduk-auth needs an app database: users, sessions and API keys live there. An
@@ -110,6 +223,8 @@ Apply every SQL file in `drizzle/` to the app database, in order:
 1. `drizzle/0001_auth_bridge.sql`
 2. `drizzle/0002_local_email_auth.sql`
 3. `drizzle/0003_webauthn_credentials.sql`
+4. `drizzle/0004_native_auth.sql`
+5. `drizzle/0005_mcp_oauth.sql`
 
 As of 1.20.0, `0002_local_email_auth.sql` is **required for the default local
 backend**, not just the optional email-link feature: every local email/password
@@ -124,6 +239,10 @@ version bump so it runs on deploy before traffic.
 applying it on an app that never enables passkeys is a no-op. There is no
 down-migration; reverting means dropping `auth_webauthn_credentials` and
 `auth_webauthn_challenges` by hand, which destroys every enrolled passkey.
+
+`0005_mcp_oauth.sql` is required only by apps that enable
+[MCP OAuth](#mcp-oauth-connected-apps). It is additive (`auth_oauth_kv` and one
+index); dropping the table disconnects every connected app.
 
 The shipped migrations use the D1/SQLite dialect only. This module does not
 publish a Postgres schema or migrations for the auth bridge tables

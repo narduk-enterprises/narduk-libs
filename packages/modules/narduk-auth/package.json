@@ -53,6 +53,9 @@
     },
     "./shared/types/native-auth": {
       "types": "./shared/types/native-auth.ts"
+    },
+    "./shared/types/mcp-oauth": {
+      "types": "./shared/types/mcp-oauth.ts"
     }
   },
   "files": [
@@ -92,6 +95,7 @@
     "prettier:fix": "prettier --write --log-level warn \"**/*.{ts,mts,vue,js,mjs,json,yaml,yml,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.1",
     "@narduk-enterprises/narduk-app": "workspace:*",
     "@narduk-enterprises/narduk-core": "workspace:*",
     "@narduk-enterprises/narduk-platform": "workspace:*",
