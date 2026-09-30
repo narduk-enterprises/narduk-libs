@@ -10,6 +10,7 @@ import { BUILD_CI_OUTPUT_MARKER, runDeploy } from '../src/deploy.js'
 import { defaultDeploymentBlock } from '../src/deployment-config.js'
 import type { WorkerDeployment, WorkerVersion, WranglerVersionsClient } from '../src/promote.js'
 import {
+  lockVersionChanged,
   parseShipArgs,
   productionOrigin,
   promoteWorkflowGap,
@@ -437,6 +438,17 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     expect(h.calls).toEqual([])
   })
 
+  it('ships when only the pnpm peer-resolution hash of a migration package changed', async () => {
+    const h = harness({ migrations: true })
+    writeFileSync(
+      join(h.root, 'pnpm-lock.yaml'),
+      "packages:\n  '@narduk-enterprises/narduk-core@1.0.0(15b02717ebadb59adb5a476b04c2c365)': {}\n",
+    )
+    await expect(runShip(parseShipArgs(['--no-pr', '-m', 'types']), h.context)).resolves.toBe(
+      SHIP_EXIT.ok,
+    )
+  })
+
   it('refuses before upload when the build fails', async () => {
     const h = harness()
     h.context.run = async (args) => {
@@ -547,5 +559,37 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     ).toBe('https://riverstat.us')
     expect(productionOrigin({}, 'https://x.example/')).toBe('https://x.example')
     expect(() => productionOrigin({})).toThrow('--base-url')
+  })
+})
+
+describe('lockVersionChanged', () => {
+  const core = '@narduk-enterprises/narduk-core'
+
+  it('ignores a peer-hash-only change', () => {
+    const diff = [
+      `-  '${core}@2.20.2(15b02717ebadb59adb5a476b04c2c365)':`,
+      `+  '${core}@2.20.2(1afe47900ffef3b722d7b07aedfe151a)':`,
+    ].join('\n')
+    expect(lockVersionChanged(diff, core)).toBe(false)
+  })
+
+  it('detects a version bump', () => {
+    const diff = [`-  '${core}@2.20.2(aaa)':`, `+  '${core}@2.21.0(bbb)':`].join('\n')
+    expect(lockVersionChanged(diff, core)).toBe(true)
+  })
+
+  it('detects a newly added or removed package', () => {
+    expect(lockVersionChanged(`+  '${core}@2.20.2':`, core)).toBe(true)
+    expect(lockVersionChanged(`-  '${core}@2.20.2':`, core)).toBe(true)
+  })
+
+  it('ignores other packages and diff headers', () => {
+    const diff = [
+      '--- a/pnpm-lock.yaml',
+      '+++ b/pnpm-lock.yaml',
+      "-  '@types/node@24.0.0':",
+      "+  '@types/node@24.19.0':",
+    ].join('\n')
+    expect(lockVersionChanged(diff, core)).toBe(false)
   })
 })
