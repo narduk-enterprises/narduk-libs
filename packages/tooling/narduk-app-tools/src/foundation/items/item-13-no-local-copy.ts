@@ -4,7 +4,7 @@
  *
  * The repository half of `narduk/no-shadowed-shared-component`: an app-local
  * component whose name matches one a shared package publishes is a local copy.
- * The fix belongs upstream (company-hq `docs/NARDUK-APP-COMPLIANCE.md` §3.9).
+ * The fix belongs upstream (agent-infrastructure `docs/standards/NARDUK-APP-COMPLIANCE.md` §3.9).
  *
  * One sub-check per owning package, decided from the app's own files:
  *

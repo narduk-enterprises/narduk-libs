@@ -35,7 +35,7 @@ dependency at all. The child defaults to `nuxt dev`.
 complete selector and runs
 `nvault run -p <project> -e <environment> -c <config> -- <command>`, so values
 stay process-local for that one run and are never written to a file (company-hq
-[`docs/SECRETS-MATRIX.md`](https://github.com/narduk-enterprises/company-hq/blob/main/docs/SECRETS-MATRIX.md),
+[`docs/SECRETS-MATRIX.md`](https://github.com/narduk-enterprises/agent-infrastructure/blob/main/docs/standards/SECRETS-MATRIX.md),
 plane 4 "Local workstation overlay"). A partial selector is refused by name
 rather than resolved to some nearby scope. `--dry-run` prints the exact command
 without running it.
@@ -1139,12 +1139,12 @@ in `limitations`.
 ## Web foundation conformance
 
 `narduk-app foundation:check [--checkout <dir>] [--json [path]]` evaluates the
-seven web-cf foundation items ratified by D-WEBFOUND-2 Q9 (a) (company-hq
-`strategy/web-foundation-libs-plan.md#4`) against the whole checkout. Every item
-resolves to `pass`, `fail`, `unknown`, or `not-applicable` -- there is no
-warning tier, and `unknown` is never a pass. Exit code `0` is PASS, `1` is FAIL,
-`2` is UNKNOWN (an app's own CI should treat that as a failure too). The
-`--json [path]` artefact is `schemaVersion: 1`,
+seven web-cf foundation items ratified by D-WEBFOUND-2 Q9 (a)
+(agent-infrastructure `docs/standards/web-foundation-libs-plan.md#4`) against
+the whole checkout. Every item resolves to `pass`, `fail`, `unknown`, or
+`not-applicable` -- there is no warning tier, and `unknown` is never a pass.
+Exit code `0` is PASS, `1` is FAIL, `2` is UNKNOWN (an app's own CI should treat
+that as a failure too). The `--json [path]` artefact is `schemaVersion: 1`,
 `tool: '@narduk-enterprises/narduk-app-tools'`, and is the exact shape
 company-hq's `scripts/check-web-foundation.py` `validate_artefact()` consumes
 for the weekly fleet rollup.
@@ -1396,7 +1396,7 @@ heuristic, not to reword the route.
 
 `narduk-app foundation:check:coverage [--checkout <dir>] [--json [path]]` --
 item 9, company-hq
-[`docs/NARDUK-APP-COMPLIANCE.md`](https://github.com/narduk-enterprises/company-hq/blob/main/docs/NARDUK-APP-COMPLIANCE.md)
+[`docs/NARDUK-APP-COMPLIANCE.md`](https://github.com/narduk-enterprises/agent-infrastructure/blob/main/docs/standards/NARDUK-APP-COMPLIANCE.md)
 §3.9 (Logan, 2026-09-16: _"the rule is to fix the lib if there is a bug rather
 than working around the issue in the app"_). Like item 8, it is a separate
 command and JSON artefact

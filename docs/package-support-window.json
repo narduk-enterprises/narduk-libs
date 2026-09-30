@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "source": "company-hq docs/PACKAGE-STRATEGY.md §2 (narduk-core breaking changes), stated for every published narduk-libs package by narduk-libs#1034. Prose: docs/package-support-window.md.",
+  "source": "agent-infrastructure docs/standards/PACKAGE-STRATEGY.md §2 (narduk-core breaking changes), stated for every published narduk-libs package by narduk-libs#1034. Prose: docs/package-support-window.md.",
   "rule": {
     "id": "n-and-n-minus-1",
     "minimumDays": 90,

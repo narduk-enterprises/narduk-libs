@@ -39,7 +39,7 @@ export const repositoryGateScripts = ['foundation:shared-ui-pinned', ...gateScri
  *   `database_id` until `narduk-app db create` runs against Cloudflare, which
  *   a credential-free CI job must not do.
  * - public, no database: sub-check 5.1 is UNKNOWN in any public app's own
- *   checkout by specification (company-hq WEB-FOUNDATION-CHECK.md item 5),
+ *   checkout by specification (agent-infrastructure docs/standards/WEB-FOUNDATION-CHECK.md item 5),
  *   which is why the emitted public workflow does not run items 1-7. Pinned
  *   here so that gap stays visible and cannot widen. A policy change that
  *   lets 5.1 pass app-side updates this entry in the same diff.

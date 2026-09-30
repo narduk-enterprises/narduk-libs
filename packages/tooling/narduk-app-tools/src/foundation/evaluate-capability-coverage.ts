@@ -37,7 +37,7 @@ import type { FoundationAppInfo, FoundationItemResult, FoundationResult } from '
 export const CAPABILITY_COVERAGE_TOOL_NAME =
   '@narduk-enterprises/narduk-app-tools/capability-coverage'
 export const CAPABILITY_COVERAGE_CONTRACT_SOURCE =
-  'company-hq docs/NARDUK-APP-COMPLIANCE.md#39 (shared behaviour is fixed upstream, never worked around in the app)'
+  'agent-infrastructure docs/standards/NARDUK-APP-COMPLIANCE.md#39 (shared behaviour is fixed upstream, never worked around in the app)'
 
 /** A one-item artefact, deliberately NOT shaped like `FoundationCheckArtefact`
  * (no `items` array, no claim of the ratified 7-item contract). */

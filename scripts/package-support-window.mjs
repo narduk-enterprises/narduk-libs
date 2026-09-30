@@ -2,7 +2,7 @@
 /**
  * The N-1 support window, stated for every published package (narduk-libs#1034).
  *
- * company-hq `docs/PACKAGE-STRATEGY.md` §2 defines the window for narduk-core
+ * agent-infrastructure `docs/standards/PACKAGE-STRATEGY.md` §2 defines the window for narduk-core
  * only: when a package ships a new major N, the prior major N-1 keeps security
  * and critical-bugfix backports until every then-current consumer has migrated,
  * or for 90 days, whichever is longer. narduk-libs#124 item 8 asked for the same

@@ -1,6 +1,6 @@
 /**
  * `narduk-app foundation:check` -- spec:
- * company-hq `docs/WEB-FOUNDATION-CHECK.md` §4, §5 (D-WEBFOUND-2 Q9 (a)).
+ * agent-infrastructure `docs/standards/WEB-FOUNDATION-CHECK.md` §4, §5 (D-WEBFOUND-2 Q9 (a)).
  *
  * Exit codes (spec §5, no warning tier):
  *   0  PASS    every applicable item passed; nothing is unknown.

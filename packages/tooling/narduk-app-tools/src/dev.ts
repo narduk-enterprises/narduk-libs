@@ -5,8 +5,8 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
  *
  * `none` runs the child directly. `nvault` runs it under the registered local
  * credential route, `nvault run -p <project> -e <environment> -c <config> --
- * <command>`, which keeps values process-local (company-hq
- * `docs/SECRETS-MATRIX.md`, plane 4 "Local workstation overlay").
+ * <command>`, which keeps values process-local (agent-infrastructure
+ * `docs/standards/SECRETS-MATRIX.md`, plane 4 "Local workstation overlay").
  *
  * There is deliberately no Doppler route. This command used to run every child
  * through `doppler run`, an implicit dependency on the retired app-secret store
@@ -50,8 +50,8 @@ const RETIRED_DOPPLER_MESSAGE = [
   '      -- nuxt dev --host 127.0.0.1',
   '',
   'The nvault route runs `nvault run -p <project> -e <environment> -c <config>',
-  '-- <command>`, which keeps values process-local (company-hq',
-  'docs/SECRETS-MATRIX.md, plane 4). Doppler ne/* root provisioners are not an',
+  '-- <command>`, which keeps values process-local (agent-infrastructure',
+  'docs/standards/SECRETS-MATRIX.md, plane 4). Doppler ne/* root provisioners are not an',
   'application development credential source.',
 ].join('\n')
 

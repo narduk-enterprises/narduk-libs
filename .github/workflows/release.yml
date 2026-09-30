@@ -298,7 +298,7 @@ jobs:
   # CREDENTIAL. `POST /repos/{owner}/{repo}/dispatches` needs `contents: write`
   # on package-delivery, which this repository's GITHUB_TOKEN cannot carry.
   # The job mints a per-run token from the estate write ceiling,
-  # `narduk-lane-automation` (company-hq docs/GITHUB-APPS.md, D-GHAPP-1),
+  # `narduk-lane-automation` (agent-infrastructure docs/standards/GITHUB-APPS.md, D-GHAPP-1),
   # downscoped to exactly package-delivery and `contents: write`, and reads it
   # back before use -- the same shape as company-hq's
   # operator-portal-read-model-dispatch.yml. Until LANE_AUTOMATION_APP_KEY

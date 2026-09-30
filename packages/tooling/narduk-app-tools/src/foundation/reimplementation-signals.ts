@@ -2,7 +2,7 @@
  * Part (b) of item 9: app-local reimplementations of behaviour a shared
  * `@narduk-enterprises/*` package already owns.
  *
- * This is the machine half of company-hq `docs/NARDUK-APP-COMPLIANCE.md` §3.9
+ * This is the machine half of agent-infrastructure `docs/standards/NARDUK-APP-COMPLIANCE.md` §3.9
  * ("shared behaviour is fixed upstream, never worked around in the app" --
  * Logan, 2026-09-16: "the rule is to fix the lib if there is a bug rather than
  * working around the issue in the app"). §3.9's own "Verified by" is an audit
@@ -239,7 +239,7 @@ const REGISTER_HEALTH_CHECK_RE = /\bregisterHealthCheck\b/
 /** A route file that answers `/api/health` without using narduk-core's
  * `registerHealthCheck`.
  *
- * company-hq `NARDUK-APP-COMPLIANCE.md` §3.6 rule 1 (narduk-libs#313, Logan
+ * agent-infrastructure `docs/standards/NARDUK-APP-COMPLIANCE.md` §3.6 rule 1 (narduk-libs#313, Logan
  * 2026-09-16): "The app serves the shared narduk-core `/api/health` route; it
  * does not own a hand-rolled copy." Core's route is
  * `packages/modules/narduk-core/runtime/server/api/health.get.ts`; an app

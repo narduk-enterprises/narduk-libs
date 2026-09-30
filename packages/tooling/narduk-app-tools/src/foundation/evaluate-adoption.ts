@@ -67,7 +67,7 @@ import type {
 
 export const ADOPTION_TOOL_NAME = '@narduk-enterprises/narduk-app-tools/adoption'
 export const ADOPTION_STANDARD_SOURCE =
-  'narduk-enterprises/company-hq docs/NARDUK-APP-COMPLIANCE.md (company-hq#746)'
+  'narduk-enterprises/agent-infrastructure docs/standards/NARDUK-APP-COMPLIANCE.md (company-hq#746)'
 export const ADOPTION_REQUIREMENT_COUNT = 15
 
 export type AdoptionVerdict = 'pass' | 'fail' | 'unknown' | 'not-applicable' | 'deviation'
