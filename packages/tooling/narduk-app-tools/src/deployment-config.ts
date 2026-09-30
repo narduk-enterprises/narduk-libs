@@ -299,10 +299,10 @@ export const deploymentBlockSchema = z.strictObject({
   }),
   rollback: z.strictObject({
     /**
-     * `manual` is the only mode anything honours: a person, or a step the app
-     * wrote into its own promote job, runs `narduk-app deploy rollback`.
-     * `auto` still parses so an older manifest does not stop the tools, but
-     * nothing reads it, and foundation sub-check 12.10 fails it (#399).
+     * Retained for existing manifests. Rollback mode is not a certification
+     * requirement: the declaration does not enable or disable execution.
+     * A person or an app-owned workflow invokes `narduk-app deploy rollback`,
+     * which restores code, never the database schema.
      */
     mode: z.enum(['auto', 'manual']),
     alert: z.enum(['resend', 'none']),

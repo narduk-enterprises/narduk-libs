@@ -1121,12 +1121,13 @@ records, and the failure prints that entry for you; a waiver whose file changed,
 vanished or drops nothing fails too. Package-owned sources are not read. The
 classifier cannot see a data rewrite or a new constraint the old code violates.
 
-**The declared rollback mode is the one that runs.** Nothing reads
-`rollback.mode`: no tool rolls back on its own. Rollback happens only when a
-person, or a step the app wrote into its own promote job, runs
-`narduk-app deploy rollback`; a failed migration triggers nothing and no
-database is ever restored. So the generated default is `manual`, and check 12.10
-fails `"auto"`, which still parses so an older manifest does not stop the tools.
+**Rollback mode is outside certification.** Sub-check 12.10 is retired; the
+checker emits no rollback-mode verdict. Existing `rollback.mode` declarations
+remain readable, and the generated default remains `manual`. Neither value
+activates or disables a rollback. A person or an app-owned workflow may invoke
+`narduk-app deploy rollback`, which restores code, never a database schema.
+Check 12.9 still rejects unreviewed destructive migrations; serving and
+rollback-target readers must remain compatible with the migrated schema.
 
 **What a green verdict does not mean.** This is a repository read with no
 credential. It cannot see the deploy commands actually configured on the Workers
