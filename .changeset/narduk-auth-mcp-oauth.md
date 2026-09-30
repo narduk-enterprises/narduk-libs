@@ -1,6 +1,0 @@
----
-'@narduk-enterprises/narduk-auth': minor
-'@narduk-enterprises/create-narduk-app': patch
----
-
-narduk-auth can now act as the OAuth 2.1 authorization server for an app's MCP endpoint, so a user adds the app to claude.ai or ChatGPT as a custom connector by pasting its `/mcp` URL and signing in. Opt in with `nardukAuth.mcpOAuth: { enabled: true, scopes, requiredScopes }`. It serves protected resource metadata (RFC 9728), authorization server metadata (RFC 8414), client ID metadata documents and dynamic client registration, the authorization code flow with PKCE (S256 only), audience-bound access tokens (RFC 8707), rotating refresh tokens and revocation (RFC 7009), all through the pinned `@cloudflare/workers-oauth-provider` 1.2.1 with its storage in the new `auth_oauth_kv` D1 table (migration `0005_mcp_oauth.sql`, hashed tokens only). Apps get a consent page at `/oauth/authorize` (override it with their own page and the `useMcpOAuthConsent` composable), `defineMcpOAuthPolicy` for who may connect and how changes are attributed, `resolveMcpOAuthPrincipal` / `mcpOAuthUnauthorized` for the MCP route, and `/api/auth/mcp/grants` to list and revoke connected apps. API keys (`nk_…`) are unchanged. Apps that do not enable it get no new routes. The generator pins the new narduk-auth minor.
