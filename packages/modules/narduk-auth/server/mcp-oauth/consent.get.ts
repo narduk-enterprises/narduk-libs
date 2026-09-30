@@ -1,8 +1,19 @@
 import { AuthorizationError, CimdFetchError } from '@cloudflare/workers-oauth-provider'
-import { appendResponseHeader, defineEventHandler, getRequestURL, setResponseHeaders } from 'h3'
+import {
+  appendResponseHeader,
+  defineEventHandler,
+  getRequestURL,
+  isError,
+  setResponseHeaders,
+} from 'h3'
 
 import { loadAuthUserRow } from '../lib/app-auth/session'
-import { mcpOAuthPolicy, useMcpOAuth } from '../utils/mcp-oauth'
+import {
+  assertMcpOAuthRequest,
+  bindMcpOAuthConsent,
+  mcpOAuthPolicy,
+  useMcpOAuth,
+} from '../utils/mcp-oauth'
 import { resolveRequestPrincipal } from '../utils/request-principal'
 
 import type { McpOAuthConsentState } from '../../shared/types/mcp-oauth'
@@ -24,6 +35,7 @@ export default defineEventHandler(async (event): Promise<McpOAuthConsentState> =
     const request = await api.parseAuthRequest(
       new Request(`${mcp.config.authorizeEndpoint}${search}`),
     )
+    const scopes = assertMcpOAuthRequest(mcp, request)
     const details = await api.describeConsent(request)
     const row = await loadAuthUserRow(event, principal.userId)
     const user = { id: principal.userId, email: principal.email, name: row?.name ?? null }
@@ -36,11 +48,12 @@ export default defineEventHandler(async (event): Promise<McpOAuthConsentState> =
       event,
       user,
       client,
-      scopes: request.scope,
+      scopes,
     })
     if (refusal) return { status: 'error', message: refusal }
 
     const transaction = await api.beginConsent(request)
+    await bindMcpOAuthConsent(mcp, transaction.handle, principal.userId)
     for (const cookie of transaction.headers.getSetCookie()) {
       appendResponseHeader(event, 'set-cookie', cookie)
     }
@@ -50,7 +63,7 @@ export default defineEventHandler(async (event): Promise<McpOAuthConsentState> =
       client: { ...client, ...(details.clientUri ? { uri: details.clientUri } : {}) },
       redirectHost: details.redirectHost,
       redirectIsLoopback: details.redirectIsLoopback,
-      scopes: details.scope,
+      scopes,
       resource: request.resource ?? mcp.config.resource,
       account: { email: user.email, name: user.name },
     }
@@ -62,9 +75,15 @@ export default defineEventHandler(async (event): Promise<McpOAuthConsentState> =
         ...(error.redirectTo ? { redirectTo: error.redirectTo } : {}),
       }
     }
-    if (error instanceof CimdFetchError) {
-      return { status: 'error', message: 'This app could not be verified. Try again later.' }
+    if (isError(error)) throw error
+    // CimdFetchError, or the library's plain Error for a metadata-document
+    // client it cannot fetch here: never a 500, never a redirect.
+    return {
+      status: 'error',
+      message:
+        error instanceof CimdFetchError
+          ? 'This app could not be verified. Try again later.'
+          : 'This app could not be identified. Start again from the app.',
     }
-    throw error
   }
 })

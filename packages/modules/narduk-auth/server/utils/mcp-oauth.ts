@@ -1,3 +1,4 @@
+import { AuthorizationError } from '@cloudflare/workers-oauth-provider'
 import {
   createError,
   getHeader,
@@ -16,6 +17,7 @@ import { createMcpOAuth, resolveMcpOAuthConfig } from '../lib/mcp-oauth/core'
 import { useAuthBridgeDatabase } from './auth-bridge-database'
 
 import type { McpOAuth, ResolvedMcpOAuthConfig } from '../lib/mcp-oauth/core'
+import type { AuthRequest } from '@cloudflare/workers-oauth-provider'
 import type { H3Error, H3Event } from 'h3'
 
 export type { McpOAuth, ResolvedMcpOAuthConfig }
@@ -261,4 +263,52 @@ export async function listMcpOAuthGrants(event: H3Event, userId: string) {
     return page.cursor ? [...page.items, ...(await collect(page.cursor))] : page.items
   }
   return collect()
+}
+
+/**
+ * narduk-auth's own rules on a request the library already validated: PKCE
+ * for every client (the library requires it only for public ones), and only
+ * scopes this server advertises (an empty request gets `requiredScopes`).
+ * Throws a redirectable `AuthorizationError`; returns the scopes to grant.
+ */
+export function assertMcpOAuthRequest(mcp: McpOAuth, request: AuthRequest): string[] {
+  const fail = (code: 'invalid_request' | 'invalid_scope', description: string) =>
+    new AuthorizationError(code, {
+      description,
+      redirectUri: request.redirectUri,
+      state: request.state,
+      issuer: request.issuer ?? mcp.config.issuer,
+    })
+  if (!request.codeChallenge || request.codeChallengeMethod !== 'S256') {
+    throw fail('invalid_request', 'PKCE with S256 is required.')
+  }
+  const scopes = request.scope.length > 0 ? request.scope : mcp.config.requiredScopes
+  const unknown = scopes.filter((scope) => !mcp.config.scopes.includes(scope))
+  if (unknown.length > 0)
+    throw fail('invalid_scope', 'The app asked for a permission this site does not offer.')
+  return [...new Set(scopes)]
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+const CONSENT_OWNER_TTL = 600
+
+/** Remember which user opened a consent handle, so only they can decide it. */
+export async function bindMcpOAuthConsent(mcp: McpOAuth, handle: string, userId: string) {
+  await mcp.kv.put(`narduk-consent-owner:${await sha256Hex(handle)}`, userId, {
+    expirationTtl: CONSENT_OWNER_TTL,
+  })
+}
+
+export async function mcpOAuthConsentOwner(mcp: McpOAuth, handle: string): Promise<string | null> {
+  const owner = await mcp.kv.get(`narduk-consent-owner:${await sha256Hex(handle)}`)
+  return typeof owner === 'string' ? owner : null
+}
+
+/** Claim an authorization code once, atomically, before the library redeems it. */
+export async function claimMcpOAuthCode(mcp: McpOAuth, code: string): Promise<boolean> {
+  return mcp.kv.claimOnce(`narduk-code-claim:${await sha256Hex(code)}`, CONSENT_OWNER_TTL)
 }

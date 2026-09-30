@@ -12,6 +12,7 @@ const CALLBACK = 'https://claude.ai/api/mcp/auth_callback'
 const SCOPE = 'family:read'
 const USERS: Record<string, { email: string; id: string; name: string | null }> = {
   owner: { id: 'owner', email: 'owner@family.example', name: 'Logan' },
+  other: { id: 'other', email: 'other@family.example', name: 'Sam' },
 }
 
 const holder: { db?: ReturnType<typeof drizzle> } = {}
@@ -62,13 +63,18 @@ const consentGet = (await import('../server/mcp-oauth/consent.get')).default
 const consentPost = (await import('../server/mcp-oauth/consent.post')).default
 const grantsGet = (await import('../server/mcp-oauth/grants.get')).default
 const grantDelete = (await import('../server/mcp-oauth/grant.delete')).default
+const resourceGuard = (await import('../server/mcp-oauth/resource-guard')).default
 
-/** The app's MCP route as an adopting app writes it: OAuth first, API keys after. */
+/**
+ * The app's MCP route: OAuth first, API keys after, and (as a careless app
+ * might) a session fallback that the resource guard must keep unreachable.
+ */
 const mcpRoute = defineEventHandler(async (event) => {
   const principal = await resolveMcpOAuthPrincipal(event)
   if (principal)
     return { via: 'oauth', attribution: principal.attribution, scopes: principal.scopes }
   if (getHeader(event, 'authorization')?.startsWith('Bearer nk_')) return { via: 'api-key' }
+  if (getHeader(event, 'x-test-user')) return { via: 'session' }
   throw mcpOAuthUnauthorized(event)
 })
 
@@ -83,7 +89,7 @@ const router = createRouter()
   .get('/api/auth/mcp/grants', grantsGet)
   .delete('/api/auth/mcp/grants/:id', grantDelete)
   .post('/mcp', mcpRoute)
-const handle = toWebHandler(createApp().use(router))
+const handle = toWebHandler(createApp().use(resourceGuard).use(router))
 const call = (path: string, init: RequestInit = {}) => {
   const headers = new Headers(init.headers)
   headers.set('host', new URL(ISSUER).host)
@@ -94,21 +100,26 @@ function b64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64url')
 }
 
-async function register(): Promise<string> {
-  const response = await call('/oauth/register', {
+function registerRaw(overrides: Record<string, unknown> = {}) {
+  return call('/oauth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       client_name: 'Claude',
       redirect_uris: [CALLBACK],
       token_endpoint_auth_method: 'none',
+      ...overrides,
     }),
   })
+}
+
+async function register(overrides: Record<string, unknown> = {}): Promise<string> {
+  const response = await registerRaw(overrides)
   expect(response.status).toBe(201)
   return ((await response.json()) as { client_id: string }).client_id
 }
 
-async function authorizeQuery(clientId: string) {
+async function authorizeQuery(clientId: string, overrides: Record<string, string | null> = {}) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = b64url(
     new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))),
@@ -123,6 +134,10 @@ async function authorizeQuery(clientId: string) {
     scope: SCOPE,
     resource: `${ISSUER}/mcp`,
   })
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === null) query.delete(name)
+    else query.set(name, value)
+  }
   return { verifier, query: `?${query}` }
 }
 
@@ -142,6 +157,7 @@ function decide(
   cookie: string,
   decision: 'approve' | 'deny',
   origin = ISSUER,
+  user = 'owner',
 ) {
   return call('/api/auth/mcp/consent', {
     method: 'POST',
@@ -149,16 +165,31 @@ function decide(
       'Content-Type': 'application/json',
       cookie,
       origin,
-      'x-test-user': 'owner',
+      'x-test-user': user,
     },
     body: JSON.stringify({ handle: handleValue, decision }),
   })
 }
 
-/** register → consent (approve) → token exchange, all over HTTP. */
-async function connect() {
+function exchange(clientId: string, code: string, verifier: string) {
+  return call('/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: CALLBACK,
+      client_id: clientId,
+      code_verifier: verifier,
+      resource: `${ISSUER}/mcp`,
+    }),
+  })
+}
+
+/** register → consent (approve): the client's code and verifier. */
+async function approvedCode(overrides: Record<string, string | null> = {}) {
   const clientId = await register()
-  const { verifier, query } = await authorizeQuery(clientId)
+  const { verifier, query } = await authorizeQuery(clientId, overrides)
   const consent = await openConsent(query)
   expect(consent.body.status).toBe('consent')
   const approved = await decide(String(consent.body.handle), consent.cookie, 'approve')
@@ -166,20 +197,18 @@ async function connect() {
   const redirect = new URL(((await approved.json()) as { redirectTo: string }).redirectTo)
   expect(`${redirect.origin}${redirect.pathname}`).toBe(CALLBACK)
   expect(redirect.searchParams.get('iss')).toBe(ISSUER)
-  const token = await call('/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: redirect.searchParams.get('code')!,
-      redirect_uri: CALLBACK,
-      client_id: clientId,
-      code_verifier: verifier,
-      resource: `${ISSUER}/mcp`,
-    }),
-  })
+  return { clientId, verifier, code: redirect.searchParams.get('code')! }
+}
+
+/** register → consent (approve) → token exchange, all over HTTP. */
+async function connect(overrides: Record<string, string | null> = {}) {
+  const { clientId, verifier, code } = await approvedCode(overrides)
+  const token = await exchange(clientId, code, verifier)
   expect(token.status).toBe(200)
-  return { clientId, ...((await token.json()) as { access_token: string; refresh_token: string }) }
+  return {
+    clientId,
+    ...((await token.json()) as { access_token: string; refresh_token: string; scope: string }),
+  }
 }
 
 const mcp = (authorization?: string) =>
@@ -364,5 +393,83 @@ describe('MCP OAuth routes', () => {
     expect(revoked.status).toBe(200)
     expect((await mcp(`Bearer ${token}`)).status).toBe(401)
     expect((await call('/api/auth/mcp/grants')).status).toBe(401)
+  })
+
+  it('keeps a cookie-only POST to the resource path away from the app route', async () => {
+    const response = await call('/mcp', {
+      method: 'POST',
+      headers: { 'x-test-user': 'owner' },
+      body: '{}',
+    })
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toContain('resource_metadata=')
+  })
+
+  it('refuses a scope the server does not offer, back to the client as invalid_scope', async () => {
+    const clientId = await register()
+    const { query } = await authorizeQuery(clientId, { scope: `${SCOPE} family:admin` })
+    const consent = await openConsent(query)
+    expect(consent.body.status).toBe('error')
+    const redirect = new URL(String(consent.body.redirectTo))
+    expect(`${redirect.origin}${redirect.pathname}`).toBe(CALLBACK)
+    expect(redirect.searchParams.get('error')).toBe('invalid_scope')
+    expect(redirect.searchParams.get('iss')).toBe(ISSUER)
+  })
+
+  it('grants the required scopes when the client asks for none', async () => {
+    const { access_token: token } = await connect({ scope: null })
+    expect(await (await mcp(`Bearer ${token}`)).json()).toMatchObject({ scopes: [SCOPE] })
+  })
+
+  it('requires PKCE from confidential clients too', async () => {
+    const response = await registerRaw({ token_endpoint_auth_method: 'client_secret_post' })
+    expect(response.status).toBe(201)
+    const { client_id: clientId } = (await response.json()) as { client_id: string }
+    const { query } = await authorizeQuery(clientId, {
+      code_challenge: null,
+      code_challenge_method: null,
+    })
+    const consent = await openConsent(query)
+    expect(consent.body.status).toBe('error')
+    expect(new URL(String(consent.body.redirectTo)).searchParams.get('error')).toBe(
+      'invalid_request',
+    )
+  })
+
+  it('refuses to register a remote http or custom-scheme redirect URI', async () => {
+    for (const uri of ['http://evil.example/cb', 'myapp://cb', 'https://ok.example/cb#frag']) {
+      const response = await registerRaw({ redirect_uris: [CALLBACK, uri] })
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ error: 'invalid_redirect_uri' })
+    }
+    expect((await registerRaw({ redirect_uris: ['http://127.0.0.1:8976/cb'] })).status).toBe(201)
+  })
+
+  it('lets only the user who opened a consent decide it', async () => {
+    const clientId = await register()
+    const consent = await openConsent((await authorizeQuery(clientId)).query)
+    const response = await decide(
+      String(consent.body.handle),
+      consent.cookie,
+      'approve',
+      ISSUER,
+      'other',
+    )
+    expect(response.status).toBe(400)
+  })
+
+  it('redeems an authorization code once even when exchanges race', async () => {
+    const { clientId, verifier, code } = await approvedCode()
+    const statuses = await Promise.all(
+      [1, 2, 3].map(async () => (await exchange(clientId, code, verifier)).status),
+    )
+    expect(statuses.filter((status) => status === 200)).toHaveLength(1)
+  })
+
+  it('answers a metadata-document client it cannot fetch with an error, not a 500', async () => {
+    const { query } = await authorizeQuery('https://client.example/oauth/client.json')
+    const consent = await openConsent(query)
+    expect(consent.body.status).toBe('error')
+    expect(consent.body.redirectTo).toBeUndefined()
   })
 })

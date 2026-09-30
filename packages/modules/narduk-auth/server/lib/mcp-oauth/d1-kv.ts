@@ -52,7 +52,10 @@ function parseMetadata(raw: string | null): unknown {
 export function createD1KvNamespace(
   db: McpOAuthDatabase,
   clock: () => number = () => Math.floor(Date.now() / 1000),
-): McpOAuthKvNamespace & { purgeExpired(): Promise<void> } {
+): McpOAuthKvNamespace & {
+  claimOnce(key: string, ttlSeconds: number): Promise<boolean>
+  purgeExpired(): Promise<void>
+} {
   const live = () => or(isNull(authOAuthKv.expiresAt), gt(authOAuthKv.expiresAt, clock()))
 
   return {
@@ -110,6 +113,19 @@ export function createD1KvNamespace(
         ...(complete ? {} : { cursor: page.at(-1)?.key }),
         cacheStatus: null,
       }
+    },
+
+    /**
+     * Atomically create `key` unless it exists. `true` for the first caller
+     * only; the single-statement insert is what makes it race-free on D1.
+     */
+    async claimOnce(key, ttlSeconds) {
+      const rows = await db
+        .insert(authOAuthKv)
+        .values({ key, value: '1', metadata: null, expiresAt: clock() + ttlSeconds })
+        .onConflictDoNothing()
+        .returning({ key: authOAuthKv.key })
+      return rows.length > 0
     },
 
     async purgeExpired() {

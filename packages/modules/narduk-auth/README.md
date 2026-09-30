@@ -143,8 +143,11 @@ registers:
 
 `/oauth/token`, `/oauth/register` and the resource path are exempt from
 narduk-core's `X-Requested-With` check (they are called by OAuth clients, not
-the browser), so **the MCP route must accept bearer credentials only, never the
-session cookie**:
+the browser). So the module also installs a server middleware: every non-GET
+request to the resource path without a `Bearer` credential gets the 401
+challenge before any app route runs, and the session cookie can never
+authenticate it. The app's route should still resolve callers from the bearer
+only:
 
 ```ts
 // server/routes/mcp.post.ts
@@ -161,6 +164,26 @@ export default defineEventHandler(async (event) => {
 
 A bearer that is not a live token for this endpoint gets a 401 with
 `error="invalid_token"`; clients refresh or sign in again.
+
+On top of the library, narduk-auth requires PKCE (S256) from every client,
+grants only scopes listed in `scopes` (an empty request gets `requiredScopes`;
+an unknown one goes back to the client as `invalid_scope`), registers only https
+or loopback-http redirect URIs, binds each consent to the user who opened it,
+and claims each authorization code atomically so racing exchanges redeem it
+once.
+
+Know the limits:
+
+- The policy's `authorize` runs at consent only. Signing out, resetting a
+  password or removing someone from the app does not disconnect their apps;
+  revoke them (`DELETE /api/auth/mcp/grants/:id`) where that matters.
+- A refresh token stays valid until its replacement is first used (the library's
+  rotation), for up to `refreshTokenIdleTtl` idle and `refreshTokenTtl` in all.
+- A self-registered client names itself. The consent page says so; a client with
+  a metadata document shows its verified domain instead.
+- The root `/.well-known/oauth-protected-resource` also answers with the MCP
+  resource (MCP clients fall back to it); the 401 points at the path-suffixed
+  document.
 
 App rules, from a Nitro plugin:
 

@@ -13,7 +13,12 @@ import { z } from 'zod'
 import { enforceRateLimitPolicy, RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 
 import { loadAuthUserRow } from '../lib/app-auth/session'
-import { mcpOAuthPolicy, useMcpOAuth } from '../utils/mcp-oauth'
+import {
+  assertMcpOAuthRequest,
+  mcpOAuthConsentOwner,
+  mcpOAuthPolicy,
+  useMcpOAuth,
+} from '../utils/mcp-oauth'
 import { resolveRequestPrincipal } from '../utils/request-principal'
 
 const decisionSchema = z.object({
@@ -45,6 +50,13 @@ export default defineEventHandler(async (event): Promise<{ redirectTo: string }>
   const parsed = decisionSchema.safeParse(await readBody(event).catch(() => null))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'Invalid decision.' })
   const { handle, decision } = parsed.data
+  // Only the user who opened this consent may decide it.
+  if ((await mcpOAuthConsentOwner(mcp, handle)) !== principal.userId) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'This sign-in page expired or was already used. Start again from the app.',
+    })
+  }
 
   const api = mcp.api()
   const browser = new Request(mcp.config.authorizeEndpoint, {
@@ -62,6 +74,7 @@ export default defineEventHandler(async (event): Promise<{ redirectTo: string }>
     }
     const approved = await api.approveConsent(browser, handle)
     forwardCookies(approved.headers)
+    const scopes = assertMcpOAuthRequest(mcp, approved.request)
     const details = await api.describeConsent(approved.request)
     const row = await loadAuthUserRow(event, principal.userId)
     const refusal = await mcpOAuthPolicy().authorize?.({
@@ -72,14 +85,14 @@ export default defineEventHandler(async (event): Promise<{ redirectTo: string }>
         name: details.clientName,
         ...(details.clientDomain ? { domain: details.clientDomain } : {}),
       },
-      scopes: approved.request.scope,
+      scopes,
     })
     if (refusal) throw createError({ statusCode: 403, statusMessage: refusal })
     const { redirectTo } = await api.completeAuthorization({
       request: approved.request,
       userId: principal.userId,
       metadata: { clientName: details.clientName },
-      scope: approved.request.scope,
+      scope: scopes,
       props: {
         userId: principal.userId,
         clientId: details.clientId,

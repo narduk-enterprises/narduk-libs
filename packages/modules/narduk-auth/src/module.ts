@@ -332,6 +332,8 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
       )
       if (options.server) {
         const handler = (file: string) => resolver.resolve(`../server/mcp-oauth/${file}`)
+        // Bearer-only on the (CSRF-exempt) resource path, before any app route.
+        addServerHandler({ middleware: true, handler: handler('resource-guard.ts') })
         const protocol = handler('protocol.ts')
         addServerHandler({ route: '/.well-known/oauth-authorization-server', handler: protocol })
         addServerHandler({ route: MCP_OAUTH_TOKEN_ROUTE, handler: protocol })
