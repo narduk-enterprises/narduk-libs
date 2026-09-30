@@ -1,8 +1,11 @@
+import type { McpOAuthRuntimeConfig } from '../../server/lib/mcp-oauth/config'
 import type { NativeAuthClient } from './native-auth'
 
 interface AuthRuntimeConfig {
   nardukSessionGrantRequired: boolean
   authNativeClients: NativeAuthClient[]
+  /** Set only when `nardukAuth.mcpOAuth.enabled`. */
+  authMcpOAuth?: McpOAuthRuntimeConfig
   authLocalEmailVerification: boolean
   appBackendPreset: 'default' | 'managed-supabase'
   authBackend: 'local' | 'supabase'

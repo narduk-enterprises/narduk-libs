@@ -47,6 +47,11 @@ describe('narduk-auth package exports', () => {
         return `/api${route}`
       }),
     )
+    // Routes the module registers only when a feature is enabled (MCP OAuth).
+    const moduleSource = readFileSync(join(packageRoot, 'src', 'module.ts'), 'utf8')
+    for (const [, route] of moduleSource.matchAll(/route: '(\/api\/[^']+)'/gu)) {
+      if (route) knownRoutes.add(route)
+    }
 
     const failures: string[] = []
     for (const sourcePath of listSourceFiles(join(packageRoot, 'app'))) {

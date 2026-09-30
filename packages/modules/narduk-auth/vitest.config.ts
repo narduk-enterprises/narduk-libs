@@ -49,6 +49,7 @@ export default defineConfig({
     // Each key is an exact module id: no other `#layer` / `#narduk-*` import in
     // this package shares one of these as a prefix.
     alias: {
+      'cloudflare:workers': join(packageRoot, 'server/lib/mcp-oauth/cloudflare-workers-stub.ts'),
       'nitropack/runtime': join(packageRoot, 'tests/stubs/nitropack-runtime.ts'),
       '#auth-test-imports': join(packageRoot, 'tests/fixtures/nuxt-auto-imports.ts'),
       '#layer/server/database/schema': join(packageRoot, 'tests/stubs/layer-schema.ts'),
@@ -133,6 +134,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Inlined so the `cloudflare:workers` alias above reaches its import.
+    server: { deps: { inline: ['@cloudflare/workers-oauth-provider'] } },
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',

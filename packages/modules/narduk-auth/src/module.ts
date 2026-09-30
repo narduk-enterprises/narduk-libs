@@ -4,6 +4,7 @@ import { registerNuxtUiSources } from '@narduk-enterprises/narduk-core/nuxt-ui-s
 import {
   addComponentsDir,
   addImportsDir,
+  addServerHandler,
   addServerScanDir,
   addTemplate,
   createResolver,
@@ -16,7 +17,10 @@ import { defu } from 'defu'
 // Explicit import (not a Nuxt auto-import): module setup runs in Node before Nuxt app auto-imports exist.
 import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../shared/utils/auth-environment'
 
+import { resolveMcpOAuthModuleOptions } from './mcp-oauth-options'
 import { AUTH_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
+
+import type { NardukAuthMcpOAuthOptions } from './mcp-oauth-options'
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-auth'
 const AUTH_PRIVATE_HEADERS = {
@@ -59,8 +63,18 @@ interface NuxtAppResolveState {
 
 export interface NardukAuthModuleOptions {
   app?: boolean
+  /**
+   * Opt-in MCP OAuth 2.1 authorization server, so an MCP client (claude.ai,
+   * ChatGPT) connects by URL and sign-in instead of a pasted API key. See the
+   * README section "MCP OAuth (connected apps)". Needs `drizzle/0005_mcp_oauth.sql`.
+   */
+  mcpOAuth?: NardukAuthMcpOAuthOptions
   server?: boolean
 }
+
+export type { NardukAuthMcpOAuthOptions }
+
+const OAUTH_PROVIDER_PACKAGE = '@cloudflare/workers-oauth-provider'
 
 function pushUnique<T>(items: T[], item: T): void {
   if (!items.includes(item)) {
@@ -104,6 +118,47 @@ function addNitroModuleSideEffect(nuxtOptions: MutableNuxtOptionsRecord, specifi
   }
   nitro.moduleSideEffects ??= []
   pushUnique(nitro.moduleSideEffects, specifier)
+}
+
+const MCP_OAUTH_TOKEN_ROUTE = '/oauth/token'
+const MCP_OAUTH_REGISTER_ROUTE = '/oauth/register'
+
+/**
+ * @cloudflare/workers-oauth-provider imports `WorkerEntrypoint` from
+ * `cloudflare:workers` only to recognise entrypoint-class handlers, which
+ * narduk-auth never passes. Nuxt's Node dev server and Nitro's prerenderer
+ * cannot load that scheme, so the one import is pointed at a local class.
+ * Scoped to the library's own file: other `cloudflare:workers` imports keep
+ * the real module.
+ */
+function addOAuthProviderWorkersStub(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  stubPath: string,
+): void {
+  const nitro = (nuxtOptions.nitro ??= {}) as {
+    rollupConfig?: { plugins?: Array<{ name?: string } | unknown> }
+  }
+  nitro.rollupConfig ??= {}
+  nitro.rollupConfig.plugins ??= []
+  const name = 'narduk-auth-oauth-provider-workers-stub'
+  if (nitro.rollupConfig.plugins.some((plugin) => (plugin as { name?: string })?.name === name)) {
+    return
+  }
+  nitro.rollupConfig.plugins.push({
+    name,
+    transform(code: string, id: string) {
+      if (!id.includes(`${OAUTH_PROVIDER_PACKAGE}/`) || !code.includes('cloudflare:workers')) {
+        return null
+      }
+      return {
+        code: code.replace(
+          /from\s*["']cloudflare:workers["']/u,
+          `from ${JSON.stringify(stubPath)}`,
+        ),
+        map: null,
+      }
+    },
+  })
 }
 
 function addFallbackLayout(
@@ -265,6 +320,80 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
 
     if (options.server) {
       addServerScanDir(resolver.resolve('../server'))
+    }
+
+    const mcpOAuth = resolveMcpOAuthModuleOptions(options.mcpOAuth)
+    if (mcpOAuth.enabled) {
+      nuxtOptions.runtimeConfig.authMcpOAuth = mcpOAuth
+      addNitroInlinePackage(nuxtOptions, OAUTH_PROVIDER_PACKAGE)
+      addOAuthProviderWorkersStub(
+        nuxtOptions,
+        resolver.resolve('../server/lib/mcp-oauth/cloudflare-workers-stub.ts'),
+      )
+      if (options.server) {
+        const handler = (file: string) => resolver.resolve(`../server/mcp-oauth/${file}`)
+        const protocol = handler('protocol.ts')
+        addServerHandler({ route: '/.well-known/oauth-authorization-server', handler: protocol })
+        addServerHandler({ route: MCP_OAUTH_TOKEN_ROUTE, handler: protocol })
+        if (mcpOAuth.dynamicClientRegistration) {
+          addServerHandler({ route: MCP_OAUTH_REGISTER_ROUTE, handler: protocol })
+        }
+        const metadata = handler('protected-resource-metadata.ts')
+        addServerHandler({ route: '/.well-known/oauth-protected-resource', handler: metadata })
+        addServerHandler({ route: '/.well-known/oauth-protected-resource/**', handler: metadata })
+        addServerHandler({
+          route: '/api/auth/mcp/consent',
+          method: 'get',
+          handler: handler('consent.get.ts'),
+        })
+        addServerHandler({
+          route: '/api/auth/mcp/consent',
+          method: 'post',
+          handler: handler('consent.post.ts'),
+        })
+        addServerHandler({
+          route: '/api/auth/mcp/grants',
+          method: 'get',
+          handler: handler('grants.get.ts'),
+        })
+        addServerHandler({
+          route: '/api/auth/mcp/grants/:id',
+          method: 'delete',
+          handler: handler('grant.delete.ts'),
+        })
+      }
+      if (options.app) {
+        extendPages((pages) => {
+          addPageIfMissing(pages, {
+            name: 'oauth-authorize',
+            path: mcpOAuth.consentPath,
+            file: resolver.resolve('../app/pages/oauth/authorize.vue'),
+          })
+        })
+      }
+      extendRouteRules(mcpOAuth.consentPath, {
+        ssr: false,
+        headers: { ...AUTH_PRIVATE_HEADERS, 'X-Frame-Options': 'DENY' },
+      })
+      // The token and registration endpoints take no cookie, and the MCP
+      // resource authenticates by bearer only, so none can be forged
+      // cross-site. Appended after every module ran: narduk-core assigns
+      // nardukCsrf in its own setup.
+      nuxt.hook('modules:done', () => {
+        const existing = nuxtOptions.runtimeConfig.nardukCsrf as
+          { exemptPaths?: unknown } | undefined
+        const exemptPaths = Array.isArray(existing?.exemptPaths)
+          ? [...(existing.exemptPaths as string[])]
+          : []
+        for (const path of [
+          MCP_OAUTH_TOKEN_ROUTE,
+          MCP_OAUTH_REGISTER_ROUTE,
+          mcpOAuth.resourcePath,
+        ]) {
+          pushUnique(exemptPaths, path)
+        }
+        nuxtOptions.runtimeConfig.nardukCsrf = { ...existing, exemptPaths }
+      })
     }
 
     nuxtOptions.appConfig = defu((nuxtOptions.appConfig ?? {}) as Record<string, unknown>, {

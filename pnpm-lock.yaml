@@ -565,6 +565,9 @@ importers:
 
   packages/modules/narduk-auth:
     dependencies:
+      '@cloudflare/workers-oauth-provider':
+        specifier: 1.2.1
+        version: 1.2.1
       '@narduk-enterprises/narduk-app':
         specifier: workspace:*
         version: link:../narduk-app
@@ -1967,6 +1970,9 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
+
+  '@cloudflare/workers-oauth-provider@1.2.1':
+    resolution: {integrity: sha512-5bw7JJI9Nd4ArHfNnvTF8H2OpSbA2GbqTmX80ly47h7dR+atgjFsn9Wfz+biKlAKClTEUYE0KAr791RkED41VA==}
 
   '@cloudflare/workers-types@4.20260511.1':
     resolution: {integrity: sha512-FA+si7cOq9i/gtCHhIc0XJL0l1F/ApF+m00752Aj7WZFJrj3ZulT2T8/+rT3BabMT0QEnqFEGIqCgrmqhgEfMg==}
@@ -10742,6 +10748,8 @@ snapshots:
 
   '@cloudflare/workerd-windows-64@1.20260921.1':
     optional: true
+
+  '@cloudflare/workers-oauth-provider@1.2.1': {}
 
   '@cloudflare/workers-types@4.20260511.1': {}
 
