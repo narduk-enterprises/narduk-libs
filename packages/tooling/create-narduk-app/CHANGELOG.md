@@ -1,5 +1,33 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.20.0
+
+### Minor Changes
+
+- 6290e37: Generated apps no longer get the `deploy:dev`, `deploy:local`,
+  `deploy:hotfix`, `hotfix:check` and `hotfix:build` scripts, the
+  `.github/workflows/validate.yml` explicit-validation caller, or the
+  Development-mode and local-hotfix docs. Use `pnpm ship` (`narduk-app ship`)
+  for the workstation fast path on a committed branch; the generated
+  `docs/workers-builds.md` now has a short Ship section in place of Development
+  mode.
+
+### Patch Changes
+
+- 2ccf531: The D1 promote template's "Require an eligible uploaded version"
+  dry-run step now sets `GITHUB_TOKEN`, which the ship guard in
+  `versions-promote` needs before its dry-run exit.
+- bed375c: `foundation:check` sub-check 5.1 is now named "class callable pinned
+  @v1 or a 40-char SHA", and its `unknown` detail no longer cites the retired
+  company-hq `Config/workflow-adoption-matrix.json`; a hand-rolled-CI exemption
+  is a `foundation_exception` in company-hq's registry, which an app's own CI
+  still cannot read, so the verdict stays `unknown`.
+- 0398bed: Retire deployment certification sub-check 12.10 at the user's
+  direction. Rollback mode no longer determines certification; existing manifest
+  values, generated defaults and rollback execution remain unchanged.
+  Expand-contract migration checks, historical-reader compatibility and the
+  other deployment checks remain required.
+
 ## 0.19.1
 
 ### Patch Changes
