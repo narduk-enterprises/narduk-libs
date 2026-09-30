@@ -187,6 +187,25 @@ export function migrationWatch(
   return { paths, packages }
 }
 
+/**
+ * True when a `pnpm-lock.yaml` diff changes the resolved version of `name`.
+ * pnpm keys a package as `name@version(peer-hash)`, and the hash moves whenever
+ * an unrelated peer (such as `@types/node`) is bumped, so compare the versions
+ * on the removed and added lines and ignore the peer suffix.
+ */
+export function lockVersionChanged(lockDiff: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')
+  const pattern = new RegExp(`${escaped}@([^\\s(':"]+)`, 'gu')
+  const removed = new Set<string>()
+  const added = new Set<string>()
+  for (const line of lockDiff.split('\n')) {
+    if (!/^[+-](?![+-])/u.test(line)) continue
+    const target = line.startsWith('-') ? removed : added
+    for (const match of line.matchAll(pattern)) target.add(match[1]!)
+  }
+  return [...removed].some((v) => !added.has(v)) || [...added].some((v) => !removed.has(v))
+}
+
 export function promoteWorkflowGap(repoRoot: string): string | undefined {
   const path = join(repoRoot, '.github/workflows/promote.yml')
   if (!existsSync(path)) return undefined
@@ -474,11 +493,8 @@ async function ship(
         git(['fetch', '--quiet', '--no-tags', 'origin', served], { withCredentials: true })
         changed = git(['diff', '--name-only', served, sha, '--', ...watch.paths])
         if (watch.packages.length) {
-          const lock = git(['diff', '-U0', served, sha, '--', '*pnpm-lock.yaml'])
-            .split('\n')
-            .filter((line) => /^[+-](?![+-])/u.test(line))
-            .join('\n')
-          bumped = watch.packages.find((name) => lock.includes(`${name}@`))
+          const lockDiff = git(['diff', '-U0', served, sha, '--', '*pnpm-lock.yaml'])
+          bumped = watch.packages.find((name) => lockVersionChanged(lockDiff, name))
         }
       } catch {
         refuse(`Cannot compare migration files against the serving commit ${served.slice(0, 12)}`)
