@@ -1412,34 +1412,6 @@ function evaluate129(scan: DeploymentScan): FoundationSubCheck {
   })
 }
 
-/** 12.10 -- the declared rollback mode is one something honours (#399). */
-function evaluate1210(scan: DeploymentScan): FoundationSubCheck {
-  const name = 'declared rollback mode is the one that runs'
-  return onlyWhenValid('12.10', name, scan, () => {
-    if (scan.outcome.kind !== 'valid') throw new Error('unreachable')
-    if (scan.outcome.block.rollback.mode === 'auto') {
-      return check(
-        '12.10',
-        name,
-        STATUS_FAIL,
-        `deployment.rollback.mode is "auto", but nothing reads it: no tool rolls back on its ` +
-          `own. A rollback happens only when a person, or a step the app wrote into its own ` +
-          `promote job, runs \`narduk-app deploy rollback\`; a failed migration triggers ` +
-          `nothing, and no database is ever restored. Set "mode": "manual".`,
-        scan.configFile,
-      )
-    }
-    return check(
-      '12.10',
-      name,
-      STATUS_PASS,
-      "Rollback is manual: `narduk-app deploy rollback` runs only when a person or the app's " +
-        'own promote step invokes it, and it never restores a database.',
-      scan.configFile,
-    )
-  })
-}
-
 export function evaluateItem12(scan: DeploymentScan, strict = false): FoundationSubCheck[] {
   return [
     evaluate120(scan, strict),
@@ -1452,6 +1424,5 @@ export function evaluateItem12(scan: DeploymentScan, strict = false): Foundation
     evaluate127(scan),
     evaluate128(scan),
     evaluate129(scan),
-    evaluate1210(scan),
   ]
 }

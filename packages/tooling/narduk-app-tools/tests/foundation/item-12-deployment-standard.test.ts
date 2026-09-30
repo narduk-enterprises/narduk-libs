@@ -1188,17 +1188,31 @@ describe('12.9 expand-only D1 migrations', () => {
   })
 })
 
-describe('12.10 rollback mode', () => {
-  it('generates manual and passes it', () => {
+describe('rollback mode is outside certification', () => {
+  it.each(['manual', 'auto'] as const)(
+    'keeps %s readable without a rollback-mode verdict',
+    (mode) => {
+      const root = baseline({ deployment: block({ rollback: { mode, alert: 'resend' } }) })
+      const checks = checksOf(root)
+      expect(checks.map((check) => check.id)).toEqual([
+        '12.0',
+        '12.1',
+        '12.2',
+        '12.3',
+        '12.4',
+        '12.5',
+        '12.6',
+        '12.7',
+        '12.8',
+        '12.9',
+      ])
+      expect(checks.some((check) => ['fail', 'unknown'].includes(check.status))).toBe(false)
+    },
+  )
+
+  it('preserves the generated manual default', () => {
     expect(defaultDeploymentBlock({ appSlug: 'fixture' })).toMatchObject({
       rollback: { mode: 'manual' },
     })
-    expect(statusOf(baseline(), '12.10')).toBe('pass')
-  })
-
-  it('fails "auto", which nothing reads', () => {
-    const root = baseline({ deployment: block({ rollback: { mode: 'auto', alert: 'resend' } }) })
-    expect(statusOf(root, '12.10')).toBe('fail')
-    expect(detailOf(root, '12.10')).toContain('Set "mode": "manual"')
   })
 })
