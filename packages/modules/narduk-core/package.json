@@ -174,7 +174,7 @@
     "wrangler": "^4.90.1"
   },
   "peerDependencies": {
-    "@narduk-enterprises/eslint-config": ">=1.2.17 <3",
+    "@narduk-enterprises/eslint-config": ">=1.2.17 <4",
     "@nuxt/schema": ">=4.0.0",
     "nuxt": ">=4.0.0",
     "nuxt-security": "^2.6.0",
