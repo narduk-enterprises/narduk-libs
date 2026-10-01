@@ -18,8 +18,8 @@ pnpm --filter @narduk-enterprises/narduk-charts run test:e2e
 pnpm --filter @narduk-enterprises/narduk-charts run size
 ```
 
-`quality` runs the format check, lint (`narduk-lint`: 0 errors, 0 warnings, no
-budget file), typecheck and unit tests.
+`quality` runs the format check, lint (with its `lint-budget.json`), typecheck
+and unit tests; `CI=true` keeps `narduk-lint` from rewriting the budget file.
 
 - **Histoire:** `pnpm --filter @narduk-enterprises/narduk-charts run dev` (alias
   of `story:dev`)

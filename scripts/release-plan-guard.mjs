@@ -206,9 +206,11 @@ export function classifyManifestChange(before, after) {
  * package's `files` list, so no tarball contains them (pinned by
  * scripts/lint-budget-strict.test.mjs). Changing one changes nothing a
  * consumer installs, so, like a devDependency bump, it owes no release.
- * `lint-budget.json` is narduk-lint's warning budget (#673).
+ * `lint-budget.json` and `stylelint-budget.json` were the warning budgets of
+ * narduk-lint and narduk-stylelint (#673); both are retired (strict 0/0,
+ * 2026-10-01), and deleting one owes no release either.
  */
-export const NEVER_PUBLISHED_FILES = new Set(['lint-budget.json'])
+export const NEVER_PUBLISHED_FILES = new Set(['lint-budget.json', 'stylelint-budget.json'])
 
 /**
  * Package paths that hold only tests and test configuration (#686). A change to
