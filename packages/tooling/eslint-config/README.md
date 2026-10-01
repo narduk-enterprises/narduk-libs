@@ -87,15 +87,16 @@ those community rules (`import-x/no-cycle`, `import-x/named`,
 `unicorn/no-instanceof-builtins`, `unicorn/throw-new-error`,
 `promise/no-return-wrap`, `regexp` recommended,
 `@eslint-community/eslint-comments/no-unused-disable`) will surface pre-existing
-findings; budget triage then, not on the first pack.
+findings; triage then, not on the first pack.
 
 `import-x/no-cycle`, `import-x/named`, `import-x/default` and `import-x/export`
 are `warn`. Since narduk-libs#973 the import-x resolver follows extensionless
 and `.js`-spelled TypeScript imports (`./b`, `./b.js` → `./b.ts`), so these
-rules check local code for the first time. They report through
-`lint-budget.json` and ratchet from there; moving them to `error` is a follow-up
-once budgets reach zero. `.vue` files are resolved but not parsed for exports,
-because a `<script setup>` SFC has no `export default` in its source.
+rules check local code for the first time. Under `narduk-lint` a warning fails
+the run, so a violation has to be fixed (or disabled with a reason) rather than
+recorded; moving them to `error` is a follow-up. `.vue` files are resolved but
+not parsed for exports, because a `<script setup>` SFC has no `export default`
+in its source.
 
 ## Capability packs
 
@@ -180,114 +181,42 @@ Prettier's formatting. It deliberately does **not** disable the `formatting`
 pack: perfectionist owns _ordering_, Prettier owns _whitespace_. Run
 `eslint --fix` first, then Prettier.
 
-## Warning budgets: `narduk-lint`
+## Strict lint: `narduk-lint`
 
-`narduk-lint` runs ESLint and holds warnings to a checked-in `lint-budget.json`
-instead of `--max-warnings 0`. Use it as the lint script:
+`narduk-lint` runs ESLint with the contract **0 errors, 0 warnings**. Use it as
+the lint script:
 
 ```json
 { "scripts": { "lint": "narduk-lint" } }
 ```
 
-```json
-{
-  "strict": true,
-  "maxWarnings": 10,
-  "rules": {
-    "narduk/require-fetch-timeout": 3
-  },
-  "expires": {
-    "narduk/require-fetch-timeout": "2026-10-05"
-  }
-}
-```
+- **Any error fails, and any warning fails.** It behaves exactly like
+  `eslint . --max-warnings 0`, whether or not a `lint-budget.json` exists. Every
+  error and warning is printed in ESLint's stylish format, followed by a count
+  per rule.
+- **There are no warning budgets.** Budgets, the `maxWarnings` ceiling, the
+  7-day expiry and `--accept-new-rules` are retired (v3, Logan 2026-10-01; see
+  DESIGN.md, "Strict, no budgets"). Shipping a new warn-level rule in this
+  package therefore turns every consumer that violates it red when it upgrades.
+  There is no opt-in pack to hide behind.
+- **A leftover `lint-budget.json` that allows warnings fails.** A file with a
+  rule count above 0 (or a `maxWarnings` above 0) exits 1 and says to fix those
+  warnings and delete the entries. A file that allows nothing
+  (`{"strict": true, "rules": {}}`) passes with a notice to delete it; delete
+  the file when you upgrade.
+- **It never writes a file.** Nothing records, ratchets, stamps or widens
+  anything, locally or in CI.
 
-- **Errors always fail.**
-- **A rule over its budget fails.** The output names the rule, its count, its
-  budget, and the top five `file:line` locations.
-- **In a strict budget, a rule with no entry fails.** With `"strict": true`, a
-  warning in any rule the file does not list is a failure, locally and in CI,
-  with the rule and its locations printed. Fix the warnings, or adopt the
-  current count on purpose with `narduk-lint --accept-new-rules`, which records
-  it and leaves the change for review to see. That flag is refused in CI and
-  with `--no-write`. Every package in this repository is strict, and
-  `scripts/lint-budget-strict.test.mjs` keeps it that way.
-- **A budget without `strict` records instead of gating.** An unbudgeted rule
-  passes: a local run records its count as the rule's budget, and CI prints a
-  notice. Every run says the file is not strict. With no `lint-budget.json` at
-  all, warnings are not gated at all and the run says that too.
-- **Local runs ratchet down, never up.** Outside CI, `narduk-lint` lowers an
-  entry to the current count, deletes an entry that reaches zero, and rewrites
-  the file (keys sorted, trailing newline, `strict` kept). A recorded budget is
-  never raised automatically: to accept more warnings, edit the file by hand and
-  let review see it.
-- **CI never writes.** With `--ci` or `CI=true`, a count below its budget (or,
-  in a non-strict file, an unbudgeted rule) prints a notice asking for a local
-  `pnpm lint` and a commit.
-- **An optional total ceiling.** With `"maxWarnings": <n>`, more than `n`
-  warnings in total fail, locally and in CI, whatever the per-rule entries
-  allow, and no run records entries that would put the recorded total past `n`
-  (`--accept-new-rules` included). A value that is not a non-negative integer
-  exits 2. Without the field there is no ceiling. The estate default for an app
-  is `{"strict": true, "maxWarnings": 10, "rules": {}}`: zero warnings normally,
-  and at most 10, recorded on purpose, in a pinch. See DESIGN.md, "Total
-  ceiling".
-- **Every entry expires 7 days after it is recorded.** Recording an entry
-  (`--accept-new-rules`, or a non-strict file's local run) stamps it in
-  `"expires"` with the record day plus 7 (UTC). That date is the last day the
-  warnings pass: an entry recorded on 2026-09-28 reads `"2026-10-05"` and fails
-  from 2026-10-06 00:00 UTC, the 8th day after it was recorded. From then on an
-  entry that still has warnings fails, locally and in CI: fix them, run
-  `narduk-lint` locally with no paths so the cleared entry leaves the file, and
-  commit it. narduk-lint never moves an existing date. Re-running
-  `--accept-new-rules`, raising a count by hand and lowering it all keep the
-  original date. An entry with no date (written before 2.7.0) fails in a strict
-  file until `narduk-lint --accept-new-rules` stamps it, and a non-strict file's
-  local run stamps it. A malformed date, or a date for a rule with no entry,
-  exits 2. A rule gets a fresh date only when a whole-package run clears its
-  entry and the warnings come back, and that still happens when: an older
-  narduk-lint rewrites the file (2.6.0 and earlier drops `expires`, so run
-  `pnpm install` after pulling an eslint-config bump before you lint), the
-  ESLint config ignores the files or turns the rule off and later stops, a rule
-  is renamed (a new key), or someone edits the file by hand. See DESIGN.md,
-  "Entry expiry".
-- **Only a whole-package run writes.** `narduk-lint` may rewrite the budget only
-  when it runs from the budget file's directory (compared on real paths, so
-  symlinks do not matter), with no path but that directory and no
-  `--ignore-pattern`. Any other run (paths, `.` plus another path, a glob,
-  `--ignore-pattern`, a subdirectory, a sibling directory with `--budget`
-  pointing back, or a subdirectory with no budget of its own inside a package
-  that has one) is narrowed: it still fails what it saw, but it leaves the
-  budget file alone, reports no lowered or cleared entries, says so in one line,
-  and refuses `--accept-new-rules`. Otherwise linting one clean file would clear
-  every entry whose warnings live elsewhere, and the next full run would record
-  them again with a new expiry.
-- **A run with lint errors never writes.** A file that fails to parse hides its
-  warnings, so a run with any error leaves the budget alone. Other failures
-  still ratchet down.
+The lint script should be plain `narduk-lint`: a package that must skip files
+lists them in its ESLint config's `ignores`, because a path or
+`--ignore-pattern` in the script hides warnings from the gate. `--fix`,
+`--cache`, `--cache-location` and `--ignore-pattern` pass through to ESLint.
+`--budget <path>` points at another obsolete budget file to check. `--ci`,
+`--local`, `--no-write` and `--verbose` are accepted and do nothing.
+`--max-warnings` and `--accept-new-rules` are refused (exit 2).
 
-The budget file is read from the directory `narduk-lint` runs in (the package
-root under `pnpm run lint`), not from next to the ESLint config, so packages
-that share one config still keep separate budgets. The lint script should be
-plain `narduk-lint`: a package that must skip files lists them in its ESLint
-config's `ignores`, because paths or `--ignore-pattern` in the script would make
-every run a narrowed one that never ratchets. `--no-write` counts without
-rewriting.
-
-Paths are positional (default `.`, the package root; any other path narrows the
-run). `--fix`, `--cache`, `--cache-location` and `--ignore-pattern` pass through
-to ESLint. `--max-warnings` is refused. `--budget <path>` points at another
-file, `--verbose` prints every warning.
-
-Exit codes: `0` pass; `1` a lint error, a rule over budget, an unbudgeted rule
-or an entry with no expiry in a strict budget, an entry past its expiry that
-still has warnings, or a total above `maxWarnings`; `2` a usage or configuration
-error, or ESLint itself crashed.
-
-If Turbo caches the lint task, declare `lint-budget.json` as an output so a
-cache hit restores it. A cache hit replays the verdict of the run that produced
-it, so an expired entry in an unchanged package fails on that package's next
-change or uncached run.
+Exit codes: `0` pass; `1` a lint error, any warning, or a budget file that still
+allows warnings; `2` a usage or configuration error, or ESLint itself crashed.
 
 ## Rules added in the budget release
 
@@ -341,15 +270,15 @@ change or uncached run.
 above (`no-floating-promises` and `no-misused-promises` in `server/**`,
 `narduk/no-render-clock`, `narduk/no-secret-in-public-runtime-config`, and the
 wider `require-limit-on-drizzle-list-queries`) report real defects, and an app
-that has them fails lint after the bump. That is the design: warnings are
-budgeted, and the super offenders go red and get fixed.
+that has them fails lint after the bump. That is the design: errors fail, and
+since v3 so do warnings.
 
 1. Switch the lint script from `eslint . --max-warnings 0` to `narduk-lint`
    (keep any `nuxt prepare &&` prefix).
-2. Run `pnpm lint` locally once. It writes `lint-budget.json` with the current
-   warning counts; commit it.
-3. Fix the errors it prints. For a list query that is bounded by construction,
-   add `// narduk-bounded: <reason>` instead of a `.limit()`.
+2. Fix the errors and warnings it prints (v3: warnings fail too; no budget file
+   is written, and an existing `lint-budget.json` should be deleted).
+3. For a list query that is bounded by construction, add
+   `// narduk-bounded: <reason>` instead of a `.limit()`.
 
 `createAppLintConfig()` also now uses the `@typescript-eslint` plugin that ships
 with this package's parser in place of the copy `withNuxt()` registers, so

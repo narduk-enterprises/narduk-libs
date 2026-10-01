@@ -120,7 +120,7 @@ function handbookLink(chapterFile: string): string {
 function agentsQualityBar(ciQualityLevel: CiQualityLevel): string[] {
   const standard = ciQualityLevel === 'standard'
   return [
-    '- Lint: zero warnings, 10 max in a pinch, and each recorded warning expires 7 days after it is recorded; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change. ' +
+    '- Lint: 0 errors, 0 warnings. `narduk-lint` fails any warning, and there is no warning budget: fix a warning, never record it, and delete any `lint-budget.json` the app still has. ' +
       handbookLink('07-quality-and-release.md'),
     '- Every mutating API route goes through narduk-core `defineUserMutation` (or `definePublicMutation` / `defineAdminMutation`) and parses its body with `withValidatedBody(schema.parse)`; never a bare `readBody`. ' +
       handbookLink('03-backend-and-apis.md'),
@@ -1621,19 +1621,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "  capabilityPacks: ['core', 'correctness', 'complexity', 'formatting', 'design-system', 'nuxt-ui'],",
         '})',
       ),
-    },
-    {
-      // narduk-lint's warning budget (see @narduk-enterprises/eslint-config's
-      // README, "Warning budgets"). A new app starts with no warnings, so the
-      // budget starts empty. `strict` (eslint-config 2.2.0+, #673) makes a
-      // warning in a rule with no entry fail instead of being recorded as that
-      // rule's budget; `narduk-lint --accept-new-rules` adopts one on purpose.
-      // `maxWarnings` (eslint-config 2.6.0+) is the estate's pinch ceiling
-      // (coding-standards SPEC S1, Logan 2026-09-27): zero warnings is the
-      // normal state, at most 10 may be recorded for a fast turnaround, and
-      // nothing past 10 can be recorded at all. Older narduk-lint ignores it.
-      path: 'apps/web/lint-budget.json',
-      contents: text('{', '  "strict": true,', '  "maxWarnings": 10,', '  "rules": {}', '}'),
     },
     {
       path: 'eslint.config.mjs',

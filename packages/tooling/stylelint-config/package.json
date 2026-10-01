@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": false,
   "type": "module",
-  "description": "Stylelint baseline and ratcheting warning budget for Narduk CSS token rules.",
+  "description": "Stylelint baseline for Narduk CSS token rules, strict: 0 errors, 0 warnings.",
   "license": "UNLICENSED",
   "author": "Narduk Enterprises",
   "repository": {
