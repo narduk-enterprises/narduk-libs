@@ -299,8 +299,8 @@ const sharedCommunityPluginTailConfigs = [
     //
     // Those four rules ship at `warn` because they now report findings the
     // estate has never been held to (Logan, 2026-09-25: "Warn first,
-    // ratchet"). Packages record them in `lint-budget.json`, and moving them
-    // to `error` is a follow-up once the budgets reach zero.
+    // ratchet"). Since 3.0.0 narduk-lint fails any warning, so a violation
+    // is fixed rather than recorded; moving them to `error` is a follow-up.
     //
     // `import-x/ignore: ['node_modules']` stops `no-cycle`, `named`,
     // `default` and `export` from parsing dependencies' sources and type

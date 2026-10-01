@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -68,43 +68,20 @@ describe('package manifest', () => {
   })
 
   /**
-   * The manifest must NOT already say `2.0.0`.
+   * The v2 major was released long ago, so the manifest reads 2.x or later.
    *
    * Changesets versions *from the manifest*: it applies the highest pending
-   * bump to whatever `version` currently reads. A manifest hand-set to `2.0.0`
-   * plus a `major` changeset resolves to **3.0.0**, silently burning the major
-   * this release is named for — and nothing in the pipeline objects, because
-   * both halves are individually valid. The manifest therefore stays at the
-   * last published v1 (`1.2.19`, the version the demoted incubator repo pushed
-   * on 2026-07-26) and the changeset is what produces 2.0.0.
-   *
-   * Asserted as "still pre-2.0.0, with a major changeset pending" rather than
-   * as an exact string, so the check keeps meaning something after the release
-   * commit lands and the manifest legitimately becomes 2.0.0.
+   * bump to whatever `version` currently reads. A manifest hand-set to the next
+   * major plus a `major` changeset resolves one major too far, silently
+   * burning a major, and nothing in the pipeline objects because both halves
+   * are individually valid. So a pending major (3.0.0, strict lint) leaves the
+   * manifest at the last released version and the changeset produces the new
+   * one. This guards only the floor: the manifest never reads pre-2.
    */
-  it('holds the major in a changeset pre-release, and reads 2.x once consumed', () => {
+  it('reads 2.x or later: the v2 major is released', () => {
     const [major] = pkg.version.split('.').map(Number)
     expect(Number.isFinite(major)).toBe(true)
-
-    const changesets = readdirSync(new URL('../../../../../.changeset', import.meta.url))
-      .filter((entry) => entry.endsWith('.md') && entry !== 'README.md')
-      .map((entry) =>
-        readFileSync(new URL(`../../../../../.changeset/${entry}`, import.meta.url), 'utf8'),
-      )
-
-    const majorBump = changesets.some((body) =>
-      /^'@narduk-enterprises\/eslint-config':\s*major$/m.test(body),
-    )
-
-    if (majorBump) {
-      // Feature-branch state: the manifest stays one release behind while the
-      // pending changeset carries the major (see the 3.0.0 trap above).
-      expect(major).toBeLessThan(2)
-    } else {
-      // Version-PR / released state: changesets consumed the entry into the
-      // manifest. Anything still pre-2 here means the major evaporated.
-      expect(major).toBeGreaterThanOrEqual(2)
-    }
+    expect(major).toBeGreaterThanOrEqual(2)
   })
 
   it('peers ESLint 10 and vue-eslint-parser 10', () => {

@@ -1876,12 +1876,10 @@ describe('generated app typecheck and lint surfaces', () => {
     }
   })
 
-  // Logan 2026-09-18: warnings are held to a checked-in budget instead of
-  // `--max-warnings 0`. The web app lints through narduk-lint, and a new app
-  // starts with an empty strict budget: zero warnings. Logan 2026-09-27 (SPEC
-  // S1): `maxWarnings: 10` is the pinch ceiling, so at most 10 can ever be
-  // recorded with `--accept-new-rules`, and any more fail.
-  it('lints the web app through narduk-lint with an empty strict budget and a 10-warning ceiling', () => {
+  // Logan 2026-10-01: strict, 0 errors and 0 warnings. The web app lints through
+  // narduk-lint, which fails any warning, so a new app has no warning budget at
+  // all (a scaffolded `maxWarnings: 10` would itself fail the lint).
+  it('lints the web app through narduk-lint with no warning budget file', () => {
     for (const { capabilities, label } of capabilitySets) {
       const files = generate(capabilities)
       const webManifest = JSON.parse(files.get('apps/web/package.json') ?? '{}') as {
@@ -1890,14 +1888,7 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(webManifest.scripts.lint, label).toBe('nuxt prepare && narduk-lint')
       expect(webManifest.scripts.lint, label).not.toContain('--max-warnings')
-      expect(files.get('apps/web/lint-budget.json'), label).toBe(
-        '{\n  "strict": true,\n  "maxWarnings": 10,\n  "rules": {}\n}\n',
-      )
-      expect(JSON.parse(files.get('apps/web/lint-budget.json') ?? ''), label).toEqual({
-        strict: true,
-        maxWarnings: 10,
-        rules: {},
-      })
+      expect(files.has('apps/web/lint-budget.json'), label).toBe(false)
     }
   })
 
@@ -1957,7 +1948,7 @@ describe('generated app typecheck and lint surfaces', () => {
 
       expect(region, label).toContain('**Quality bar.**')
       expect(region, label).toContain(
-        '- Lint: zero warnings, 10 max in a pinch, and each recorded warning expires 7 days after it is recorded; if this app is not on narduk-lint with a strict budget and maxWarnings, move it in your next change.',
+        '- Lint: 0 errors, 0 warnings. `narduk-lint` fails any warning, and there is no warning budget: fix a warning, never record it, and delete any `lint-budget.json` the app still has.',
       )
       // The social-previews line stays as it was.
       expect(region, label).toContain(

@@ -1,7 +1,7 @@
-// Every workspace package that lints with narduk-lint keeps a committed,
-// strict lint-budget.json (#673). Without one, narduk-lint cannot fail on a
-// warning in a rule that has no budget entry, and a package with no file has
-// no warning gate at all -- the gate reports "0 errors" and exits 0.
+// narduk-lint and narduk-stylelint are strict: 0 errors, 0 warnings (Logan,
+// 2026-10-01). Warning budgets are retired, so no workspace package keeps a
+// lint-budget.json or stylelint-budget.json: one that allows warnings fails the
+// lint run, and an empty one only earns an "obsolete" notice.
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -20,35 +20,31 @@ export function lintsWithNardukLint(manifest) {
   return lint.includes('narduk-lint') || /package-quality\.mjs\s+lint\b/u.test(lint)
 }
 
-test('every narduk-lint package has a strict lint-budget.json', () => {
-  const packages = loadWorkspace(root).packages.filter(({ manifest }) =>
-    lintsWithNardukLint(manifest),
+test('no workspace package keeps a warning budget file', () => {
+  const packages = loadWorkspace(root).packages
+  assert.ok(
+    packages.some(({ manifest }) => lintsWithNardukLint(manifest)),
+    'found no package that lints with narduk-lint',
   )
-  assert.ok(packages.length > 0, 'found no package that lints with narduk-lint')
   const problems = []
   for (const { relativeDirectory } of packages) {
-    const file = join(relativeDirectory, 'lint-budget.json')
-    if (!existsSync(join(root, file))) {
-      problems.push(`${file} is missing`)
-      continue
+    for (const name of ['lint-budget.json', 'stylelint-budget.json']) {
+      const file = join(relativeDirectory, name)
+      if (existsSync(join(root, file))) problems.push(file)
     }
-    const budget = JSON.parse(readFileSync(join(root, file), 'utf8'))
-    if (budget.strict !== true) problems.push(`${file} is not "strict": true`)
   }
   assert.deepEqual(
     problems,
     [],
-    `Commit {"strict": true, "rules": {}} (plus any deliberate entries) for:\n${problems.join('\n')}`,
+    `Warning budgets are retired (0 errors, 0 warnings); delete:\n${problems.join('\n')}`,
   )
 })
 
-// A narduk-lint run is narrowed unless it runs from the budget file's
-// directory with no path but that directory and no --ignore-pattern, and a
-// narrowed run never writes lint-budget.json: it would clear entries whose
-// warnings live in files it skipped, renewing their expiry on the next full
-// run (narduk-libs#1237). A package's lint script is its canonical run, so
-// every narduk-lint invocation in it must be a whole-package one; files a
-// package must skip belong in ESLint's config, not on the command line.
+// A narduk-lint run that names a path or --ignore-pattern sees only part of the
+// package, so warnings in the rest never reach the gate. A package's lint
+// script is its canonical run, so every narduk-lint invocation in it must be a
+// whole-package one; files a package must skip belong in ESLint's config, not
+// on the command line.
 const VALUE_FLAGS = new Set(['--budget', '--cache-location', '--ignore-pattern'])
 const DIRECTORY_FLAGS = new Set(['-C', '--dir', '--prefix', '--cwd'])
 

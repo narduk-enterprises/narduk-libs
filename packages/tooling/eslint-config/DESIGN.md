@@ -397,7 +397,94 @@ Consumer app migrations (per-repo follow-ups), archiving the incubator repo
 (publish workflow already disabled 2026-08-01), and the ESLint-10 rollout in
 apps (happens per app as they adopt v2).
 
-## Warning budgets and the 2026-09 rules (recorded 2026-09-18)
+## Strict, no budgets (recorded 2026-10-01, v3.0.0)
+
+**This supersedes the whole of "Warning budgets and the 2026-09 rules" below,
+which is kept as the history of how the budget worked.** The default contract of
+`narduk-lint` is now **0 errors, 0 warnings**: any warning fails, exactly like
+`eslint . --max-warnings 0`, whether or not a `lint-budget.json` exists.
+
+Logan, 2026-10-01: "lets get back to being strict in narduk apps.....i think we
+be strict 0 errors 0 warnings and see if i notice it again"
+
+What it replaces, in order:
+
+- 2026-09-18 (narduk-libs#531), asked how to keep warnings in check without the
+  opt-in "next pack": "I dont like the next pack....its hard on me cause it
+  requires i keep track of it and intervene.....i wonder how we can not enforce
+  warnings and keep the warnings in check maybe like max warnings? and just
+  accept the super offenders go red and have to be fixed?" That produced the
+  ratcheting `lint-budget.json`, with `strict` (#714, #673), the `maxWarnings`
+  ceiling (#1222) and the 7-day entry expiry (#1237).
+- 2026-09-28, the askme "Lint warnings: keep what shipped, or add expiring
+  exceptions?": "Each warning over zero must be fixed within 7 days, cap 10
+  stays as backstop; I build expiry into narduk-lint."
+
+### The trade-off, stated honestly
+
+The reason for #531 was real and is **not** solved by this change, it is
+accepted. A budget let a new warn-level rule ship without turning anyone red.
+Without one, **a new warn-level rule in this package turns every consumer that
+violates it red the moment it upgrades**, which is the coordination cost #531
+removed. Logan chose to pay it: a rule shipped as `warn` is now a rule consumers
+must satisfy to take the release, and the notice is the red build on the upgrade
+PR. This is why the release is a major version. Consequences to design for from
+here on:
+
+- **Do not reintroduce the "next pack".** A rule is shipped at the severity it
+  is meant to have, in the pack where it belongs. A rule too noisy to ship
+  strict is not shipped yet, it does not go into a parked opt-in pack.
+- **Count the fleet before shipping a new rule.** The cost of a new warn rule is
+  the number of apps that violate it. Run it over the fleet, read the count, and
+  say it in the changeset. The fleet inventory in narduk-libs's strict-lint PR
+  lists who depends on this package.
+- **A warning is a failure.** `warn` still means "not a defect worth `error`
+  severity in a rule's own documentation", but the gate no longer distinguishes
+  them. A rule whose findings should not block a build is a rule to not ship, or
+  to ship as a suggestion in an editor, not as a lint rule.
+
+### What `narduk-lint` does now
+
+- An **error** fails. A **warning**, from any rule, new or old, fails. ESLint's
+  own unused-disable-directive warnings count. Every one is printed in the
+  stylish format with a per-rule count.
+- A **`lint-budget.json` that still allows warnings** (a rule count above 0, a
+  `maxWarnings` above 0, or a malformed entry, which is not read as zero) fails
+  with exit 1 and a message to fix those warnings and delete the entries. Its
+  entries no longer permit anything. A file that allows nothing passes with a
+  notice that it is obsolete. That was the simplest behavior that does not leave
+  a budget quietly meaning something: delete the file when upgrading.
+- **No file is ever written.** `--accept-new-rules`, recording, ratcheting,
+  stamping and expiry are gone, so the "widening" defect (a local run raising a
+  budget) cannot happen, and neither can the expiry-renewal tricks recorded
+  below. `--accept-new-rules` and `--max-warnings` exit 2 with a message.
+  `--ci`, `--local`, `--no-write` and `--verbose` are accepted and ignored so a
+  lint script that passes them keeps running.
+- `lint-budget.mjs` keeps its file name and its package export
+  (`@narduk-enterprises/eslint-config/lint-budget`) to avoid breaking the `bin`
+  and any importer, though it no longer holds a budget.
+- The same contract applies to `narduk-stylelint`
+  (`@narduk-enterprises/stylelint-config`, major bump): any warning fails, and a
+  `stylelint-budget.json` that lists rule or file entries above 0 fails.
+
+### The loophole this closes
+
+`max-lines` (the `template` pack, `warn` at 200, 250 and 300 lines by surface)
+yields one warning per file however large the file is. Under a budget, a file
+already over the limit could keep growing and the count never moved. Now that
+one warning fails the run, a file over the limit has to be split (or carry an
+explicit `eslint-disable` with a reason that review sees) before anything
+merges.
+
+---
+
+## History: warning budgets and the 2026-09 rules (recorded 2026-09-18)
+
+_The budget subsections below ("Why budgets", "Total ceiling", "Entry expiry")
+are superseded on 2026-10-01 by "Strict, no budgets" above. They describe
+narduk-lint 2.x and are kept as the record of why it existed. The rule-specific
+subsections after them ("Secrets rule choice" onward) still stand; where they
+say a rule is "budgeted", read "a warning that now fails"._
 
 ### Why budgets
 

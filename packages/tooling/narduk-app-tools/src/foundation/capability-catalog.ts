@@ -212,7 +212,7 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
     id: 'stylelint-config',
     package: '@narduk-enterprises/stylelint-config',
     family: 'tooling',
-    description: 'Stylelint baseline and ratcheting warning budget for Narduk CSS token rules.',
+    description: 'Stylelint baseline for Narduk CSS token rules, strict: 0 errors, 0 warnings.',
   },
 ]
 

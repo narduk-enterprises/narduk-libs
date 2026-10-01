@@ -76,8 +76,7 @@ export default [
     // plugin that does). narduk-shell joins the list because item 9's
     // SFC mount tests need `@vitejs/plugin-vue`, and narduk-ui for the same
     // import (its lint script used to skip the file with --ignore-pattern,
-    // which narduk-lint now treats as a narrowed run that never writes the
-    // budget).
+    // which hid the file from narduk-lint's whole-package run).
     files: [
       'packages/design/narduk-charts/histoire.config.ts',
       'packages/design/narduk-charts/vite.config.ts',
