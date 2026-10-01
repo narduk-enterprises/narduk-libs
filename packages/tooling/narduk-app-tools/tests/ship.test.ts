@@ -410,6 +410,17 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     )
   })
 
+  it('treats a non-SHA production tag (a retired dev-mode tag) like no tag', async () => {
+    const h = harness({ servedTag: 'dev-20260929T202350926Z' })
+    await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.calls).toEqual([])
+    expect(h.logs.join('\n')).toContain('not a SHA (dev-20260929T202350926Z)')
+    expect(h.logs.join('\n')).toContain('pass --adopt once')
+    await expect(runShip(parseShipArgs(['--no-pr', '--adopt']), h.context)).resolves.toBe(
+      SHIP_EXIT.ok,
+    )
+  })
+
   it('refuses migration changes (ship v1 does not migrate)', async () => {
     const h = harness({ migrations: true })
     writeFileSync(join(h.app, 'migrations/0002.sql'), 'alter table a add b int;\n')
