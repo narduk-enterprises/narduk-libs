@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 2.20.3
+
+### Patch Changes
+
+- 9b84eb6: Accept `@narduk-enterprises/eslint-config` 3.x as the optional peer
+  (`>=1.2.17 <4`), so the strict-by-default 3.0.0 lint config does not force a
+  major on narduk-core and its dependents.
+
 ## 2.20.2
 
 ### Patch Changes
