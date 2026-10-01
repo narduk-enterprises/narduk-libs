@@ -71,7 +71,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.12.2',
+  '@narduk-enterprises/narduk-shell': '0.13.0',
   '@narduk-enterprises/narduk-testkit': '1.10.0',
   '@narduk-enterprises/narduk-uploads': '1.21.4',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
