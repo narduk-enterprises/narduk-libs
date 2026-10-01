@@ -113,6 +113,10 @@ export default defineNuxtConfig({
     // `false` leaves the app on Nuxt UI's own look and is the escape hatch for
     // an app with a finished design era of its own that only wants the markup.
     theme: true,
+    // Load bounce-guard.css (desktop overscroll guards). Default: false. Opt-in:
+    // it makes the page unscrollable on any document with a [data-app-shell]
+    // element. See "Bounce guard" below.
+    bounceGuard: false,
     // The two brand hooks, as config. Each sets its token app-wide, teleported
     // overlays included; unset sets nothing. See "Overriding: the two brand
     // hooks" below.
@@ -236,21 +240,73 @@ Do not add this package to `create-narduk-app`'s default module list. That is
 backlog item 4
 ([narduk-libs#251](https://github.com/narduk-enterprises/narduk-libs/issues/251)).
 
+## Bounce guard
+
+`bounce-guard.css` makes a shell-style app feel like a desktop app: no elastic
+rubber-band, no two-finger swipe back/forward inside the app, and no scroll
+chaining from an inner pane into the page. It is CSS only (no JavaScript) and
+**opt-in**, because it makes the page itself unscrollable on any document that
+contains an app shell; an app with ordinary page scrolling must not load it.
+
+Turn it on in config, or import the sheet by hand after the app's Tailwind
+entry:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-shell'],
+  nardukShell: { bounceGuard: true }, // appended after the app's own css
+})
+```
+
+```css
+/* or, from the app's main.css, after `@import 'tailwindcss'` */
+@import '@narduk-enterprises/narduk-shell/bounce-guard.css';
+```
+
+The shell marker is the `data-app-shell` attribute. `NeAppShell` sets it on its
+root; an app with its own shell sets it on that shell's root element
+(`<div class="app" data-app-shell>`). Opt any other scrolling pane in with
+`data-scroll-region`.
+
+| Rule                                                                                                    | Why                                                                                                            |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `html, body { overscroll-behavior: none; height: 100% }`                                                | Kills the rubber-band and the horizontal swipe-to-history on Safari and Chrome; a definite box for the shell.  |
+| `html:has([data-app-shell])` and its `body { overflow: hidden }`                                        | Only the shell's regions scroll, never the page. A page with no shell (sign-in, an error page) still scrolls.  |
+| `main, aside, nav, [data-scroll-region] { overscroll-behavior: contain }`                               | A pane that reaches its end does not hand the gesture to the page; `contain` keeps the pane's own edge effect. |
+| `[role=dialog\|alertdialog\|listbox\|menu]`, Reka popper wrapper, `[data-slot=content\|body\|viewport]` | Nuxt UI overlays render into a portal; their scrolling body must not chain into the page behind them.          |
+| `@media print`: `height: auto`, `overflow: visible` on html, body, the shell and `[data-scroll-region]` | The fixed-viewport shell would otherwise clip a printout to one screen.                                        |
+
+Every rule is inside `@layer base`, because unlayered CSS beats every Tailwind
+layer and a bare rule here would silently override utilities such as
+`overscroll-auto` on a component. The print block uses `!important`, which
+inside a layer outranks the app's unlayered normal declarations. An app whose
+own wrappers fix a height (a stage, a content frame) marks them
+`data-scroll-region` or releases them in its own `@media print`.
+
+Limits: a trackpad rubber-band is a compositor effect, so this is "the page and
+shell never scroll and every pane stops chaining", not a scroll hijack. It was
+verified in Chromium (computed styles, scroll metrics, print emulation, 375px);
+swipe-back suppression rests on the documented `overscroll-behavior: none` root
+opt-out in Chrome and Safari 16+, and a real trackpad swipe cannot be
+synthesised. If a device leaks, add a small `wheel` listener as a fallback.
+
 ## Reserved subpaths
 
-Exactly four subpaths are exported. Three carry app-facing content, resolving
+Exactly five subpaths are exported. Four carry app-facing content, resolving
 from an external install as soon as they are declared — the release pipeline's
 consumer fixture proves this — so that no app had to change an import specifier
-when the content arrived. The fourth, `./module`, is not app-facing: it exists
+when the content arrived. The fifth, `./module`, is not app-facing: it exists
 only so Nuxt itself can find the module definition, and no consumer ever writes
 it explicitly.
 
-| Subpath                                      | Today                                                                                                                | Filled by                                                                               |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-shell`           | The value-safe barrel: `defineStatusMap`, `NARDUK_SHELL_APP_CONFIG` and the suite's public types                     | Every component item adds a registry entry                                              |
-| `@narduk-enterprises/narduk-shell/module`    | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
-| `@narduk-enterprises/narduk-shell/format`    | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
-| `@narduk-enterprises/narduk-shell/theme.css` | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
+| Subpath                                             | Today                                                                                                                | Filled by                                                                               |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-shell`                  | The value-safe barrel: `defineStatusMap`, `NARDUK_SHELL_APP_CONFIG` and the suite's public types                     | Every component item adds a registry entry                                              |
+| `@narduk-enterprises/narduk-shell/module`           | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
+| `@narduk-enterprises/narduk-shell/format`           | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
+| `@narduk-enterprises/narduk-shell/theme.css`        | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
+| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Opt-in desktop overscroll guards (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
 
 Install and register the module exactly as before —
 `modules: ['@narduk-enterprises/narduk-shell']` in `nuxt.config.ts` — and it
@@ -700,10 +756,10 @@ enum, a job state — that needs to become a `{ tone, label }` pair.
 compile-time error and an unrecognised runtime value falls back to `neutral`
 instead of throwing. It is a **named export of the package root**
 (`@narduk-enterprises/narduk-shell`, `src/index.ts`) — not a subpath of its own;
-the reserved map is `.`, `./module`, `./format`, `./theme.css` (see
-[Reserved subpaths](#reserved-subpaths); narduk-libs#295 moved this export off
-`src/module.ts`). Nuxt apps that register the module also get it as an
-auto-import.
+the reserved map is `.`, `./module`, `./format`, `./theme.css`,
+`./bounce-guard.css` (see [Reserved subpaths](#reserved-subpaths);
+narduk-libs#295 moved this export off `src/module.ts`). Nuxt apps that register
+the module also get it as an auto-import.
 
 ```ts
 import { defineStatusMap } from '@narduk-enterprises/narduk-shell'

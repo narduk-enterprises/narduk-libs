@@ -36,7 +36,7 @@ const coreManifest = JSON.parse(
  * never has to write `./module` itself; `modules: ['@narduk-enterprises/narduk-shell']`
  * keeps resolving there unchanged.
  */
-const RESERVED_SUBPATHS = ['.', './module', './format', './theme.css']
+const RESERVED_SUBPATHS = ['.', './module', './format', './theme.css', './bounce-guard.css']
 
 /** Every file an exports entry points at, flattened out of its conditions. */
 function exportTargets(entry: unknown): string[] {
@@ -58,7 +58,7 @@ function packedFiles(): string[] {
 }
 
 describe('narduk-shell package shape', () => {
-  it('declares exactly the four reserved subpaths, none of them a pattern', () => {
+  it('declares exactly the five reserved subpaths, none of them a pattern', () => {
     expect(Object.keys(manifest.exports)).toEqual(RESERVED_SUBPATHS)
     for (const subpath of Object.keys(manifest.exports)) {
       expect(subpath).not.toContain('*')
@@ -66,7 +66,13 @@ describe('narduk-shell package shape', () => {
   })
 
   it('declares the files allowlist the packed-file test enforces', () => {
-    expect(manifest.files).toEqual(['src', 'theme.css', 'README.md', 'CHANGELOG.md'])
+    expect(manifest.files).toEqual([
+      'src',
+      'theme.css',
+      'bounce-guard.css',
+      'README.md',
+      'CHANGELOG.md',
+    ])
   })
 
   it('pins peers to nuxt 4, vue 3.5 and narduk-core exact @nuxt/ui version', () => {
@@ -106,7 +112,13 @@ describe('narduk-shell package shape', () => {
     // rule rather than an exact file list so a later backlog item adding a
     // component under src/ does not have to edit this test -- but tests/,
     // configs and scratch files still fail it.
-    const allowed = new Set(['package.json', 'README.md', 'CHANGELOG.md', 'theme.css'])
+    const allowed = new Set([
+      'package.json',
+      'README.md',
+      'CHANGELOG.md',
+      'theme.css',
+      'bounce-guard.css',
+    ])
     for (const file of files) {
       expect(
         allowed.has(file) || file.startsWith('src/'),
