@@ -2,6 +2,7 @@
 '@narduk-enterprises/eslint-config': major
 '@narduk-enterprises/stylelint-config': major
 '@narduk-enterprises/create-narduk-app': minor
+'@narduk-enterprises/narduk-app-tools': patch
 ---
 
 `narduk-lint` and `narduk-stylelint` are strict: 0 errors, 0 warnings. Logan,
@@ -30,3 +31,6 @@ strict 0 errors 0 warnings and see if i notice it again". This supersedes the
 `create-narduk-app` stops scaffolding `apps/web/lint-budget.json` and its
 `AGENTS.md` quality bar now says 0 errors, 0 warnings. It pins the new
 eslint-config major.
+
+`narduk-app-tools` patch: its generated capability catalog carries the new
+`stylelint-config` description.
