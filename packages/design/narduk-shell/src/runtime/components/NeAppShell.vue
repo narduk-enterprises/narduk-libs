@@ -131,7 +131,13 @@ function onRailKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <UDashboardGroup class="ne-app-shell" :data-variant="variant" unit="rem" :persistent="false">
+  <UDashboardGroup
+    class="ne-app-shell"
+    data-app-shell
+    :data-variant="variant"
+    unit="rem"
+    :persistent="false"
+  >
     <NeSkipLink class="ne-app-shell__skip" :target="mainId" :label="skipLinkLabel" />
 
     <UDashboardSidebar

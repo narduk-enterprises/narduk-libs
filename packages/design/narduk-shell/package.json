@@ -30,11 +30,13 @@
       "types": "./src/format.ts",
       "import": "./src/format.ts"
     },
-    "./theme.css": "./theme.css"
+    "./theme.css": "./theme.css",
+    "./bounce-guard.css": "./bounce-guard.css"
   },
   "files": [
     "src",
     "theme.css",
+    "bounce-guard.css",
     "README.md",
     "CHANGELOG.md"
   ],

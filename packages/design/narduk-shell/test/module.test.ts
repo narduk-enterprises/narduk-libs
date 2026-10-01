@@ -8,6 +8,7 @@ import { NARDUK_SHELL_APP_CONFIG } from '../src/app-config'
 import { NE_SHELL_COMPONENTS, type NeComponentRegistration } from '../src/registry'
 
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
+const BOUNCE_GUARD_STYLESHEET = '@narduk-enterprises/narduk-shell/bounce-guard.css'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -67,6 +68,7 @@ function makeNuxt(appConfig: Record<string, unknown> = {}, css: string[] = []) {
 
 interface ModuleOptions {
   accent?: string
+  bounceGuard?: boolean
   components?: boolean
   sections?: unknown[]
   structure?: string
@@ -227,11 +229,17 @@ describe('narduk-shell module', () => {
     importCall(addImports, 'defineStatusMap')
   })
 
-  it('keeps the four reserved package exports, with defineStatusMap a named export of the root', async () => {
+  it('keeps the five reserved package exports, with defineStatusMap a named export of the root', async () => {
     const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, unknown>
     }
-    expect(Object.keys(manifest.exports)).toEqual(['.', './module', './format', './theme.css'])
+    expect(Object.keys(manifest.exports)).toEqual([
+      '.',
+      './module',
+      './format',
+      './theme.css',
+      './bounce-guard.css',
+    ])
   })
 
   it('auto-imports useConfirm from the runtime composable it ships', async () => {
@@ -412,6 +420,76 @@ describe('narduk-shell theme wiring', () => {
     expect(manifest.exports['./theme.css']).toBe('./theme.css')
     expect(manifest.files).toContain('theme.css')
     expect(statSync(join(packageRoot, 'theme.css')).size).toBeGreaterThan(0)
+  })
+})
+
+describe('narduk-shell bounce guard (narduk-libs#1336)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.doUnmock('../src/registry')
+  })
+
+  it('is opt-in: off by default, and no stylesheet is added unless asked', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    expect(module_.defaults.bounceGuard).toBeUndefined()
+    const nuxt = makeNuxt({}, ['~/assets/app.css'])
+
+    await module_.setup({ theme: false }, nuxt)
+
+    expect(nuxt.options.css).toEqual(['~/assets/app.css'])
+  })
+
+  it('appends bounce-guard.css after the app css, exactly once', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt({}, ['~/assets/app.css'])
+
+    await module_.setup({ bounceGuard: true }, nuxt)
+    await module_.setup({ bounceGuard: true }, nuxt)
+
+    // After the app's entries, so Tailwind's `@layer` order statement (usually in the app's
+    // own main.css) is declared first and `base` keeps its place in it.
+    expect(nuxt.options.css).toEqual([
+      THEME_STYLESHEET,
+      '~/assets/app.css',
+      BOUNCE_GUARD_STYLESHEET,
+    ])
+  })
+
+  it('applies independently of the theme and of component registration', async () => {
+    mockNuxtKit()
+    const module_ = await loadModule()
+    const nuxt = makeNuxt()
+
+    await module_.setup({ bounceGuard: true, components: false, theme: false }, nuxt)
+
+    expect(nuxt.options.css).toEqual([BOUNCE_GUARD_STYLESHEET])
+  })
+
+  it('ships a sheet that keeps every rule in @layer base and releases the shell in print', () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>
+      files: string[]
+    }
+    expect(manifest.exports['./bounce-guard.css']).toBe('./bounce-guard.css')
+    expect(manifest.files).toContain('bounce-guard.css')
+
+    const css = readFileSync(join(packageRoot, 'bounce-guard.css'), 'utf8').replaceAll(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    )
+    // Strip the two layered blocks; nothing may be left over but the print wrapper.
+    expect(css).toContain('@layer base')
+    expect(css).toContain('@media print')
+    expect(css).toContain('html:has([data-app-shell])')
+    expect(css).not.toContain('.hb-app')
+    // Top level is exactly two blocks: `@layer base { ... }` and `@media print { @layer base { ... } }`.
+    expect(css.trimStart().startsWith('@layer base {')).toBe(true)
+    expect(css).toMatch(/@media print \{\s*@layer base \{/)
+    expect((css.match(/@layer base/g) ?? []).length).toBe(2)
+    expect(css).toMatch(/overscroll-behavior: none/)
+    expect(css).toMatch(/overscroll-behavior: contain/)
   })
 })
 

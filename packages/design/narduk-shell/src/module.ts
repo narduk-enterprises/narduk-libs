@@ -59,6 +59,16 @@ export interface NardukShellModuleOptions {
    */
   theme?: boolean
   /**
+   * Load `bounce-guard.css` — desktop-app overscroll guards — as a global
+   * stylesheet. Opt-in, default off: it makes the page itself unscrollable on
+   * any document that contains a `[data-app-shell]` element, so only a
+   * shell-style app wants it. `NeAppShell` carries the marker; an app with its
+   * own shell sets `data-app-shell` on that shell's root. Independent of
+   * `theme` and `components`. See the README's "Bounce guard"
+   * (narduk-libs#1336).
+   */
+  bounceGuard?: boolean
+  /**
    * Sets the `--ne-accent` brand token app-wide — one CSS colour value, e.g.
    * `'#1f7a76'` or `'var(--ui-primary)'`. Unset (the default) overrides
    * nothing. Reaches teleported overlays too: see the README's "Brand
@@ -78,6 +88,7 @@ export interface NardukShellModuleOptions {
 
 const PACKAGE_NAME = '@narduk-enterprises/narduk-shell'
 const THEME_STYLESHEET = '@narduk-enterprises/narduk-shell/theme.css'
+const BOUNCE_GUARD_STYLESHEET = '@narduk-enterprises/narduk-shell/bounce-guard.css'
 
 interface MinimalNuxt {
   options: {
@@ -129,6 +140,14 @@ export default defineNuxtModule<NardukShellModuleOptions>({
         (nuxtOptions.appConfig ?? {}) as Record<string, unknown>,
         NARDUK_SHELL_APP_CONFIG,
       )
+    }
+
+    // Opt-in desktop overscroll guards (narduk-libs#1336). Appended, not
+    // unshifted: the sheet sits in `@layer base`, and the app's own entries
+    // (which carry Tailwind's `@layer` order statement) must already be in the
+    // list so `base` keeps its place in that order.
+    if (options.bounceGuard === true && !nuxtOptions.css.includes(BOUNCE_GUARD_STYLESHEET)) {
+      nuxtOptions.css.push(BOUNCE_GUARD_STYLESHEET)
     }
 
     // The shell's runtime options (item 18, narduk-libs#265) travel to the app

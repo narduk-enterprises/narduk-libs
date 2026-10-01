@@ -1,0 +1,88 @@
+/*
+ * @narduk-enterprises/narduk-shell/bounce-guard.css: desktop-app overscroll guards.
+ *
+ * Opt-in. The module loads this sheet only when `nardukShell: { bounceGuard: true }` is set; an app
+ * can also import it by hand after its Tailwind entry. It names only `html`, `body`, `main`,
+ * `aside`, `nav`, `[data-scroll-region]`, the shell marker and Nuxt UI / Reka overlay roles.
+ *
+ * The shell marker is `[data-app-shell]`. `NeAppShell` sets it on its root; an app with its own
+ * shell sets the attribute on that shell's root. A document with no marked shell (sign-in, an
+ * error page) keeps natural page scrolling. Opt any other pane in with `data-scroll-region`.
+ *
+ * Everything sits in `@layer base`. Unlayered CSS beats every Tailwind layer (harbor#784), so a
+ * bare rule here would silently override utilities like `overscroll-auto` on a component.
+ *
+ * What it cannot do: a trackpad rubber-band is a compositor effect, so the guard is "the page and
+ * shell never scroll, and every inner pane stops chaining", not a scroll hijack. No JavaScript.
+ * Source: harbor PR #801 (apps/web/app/assets/css/bounce-guard.css), narduk-libs#1336.
+ */
+@layer base {
+  /* Why: `none` on the root scrollers kills the elastic bounce on macOS Safari and Chrome AND the
+     horizontal two-finger swipe that Chrome and Safari map to history back/forward. Both `html`
+     and `body` are set because browsers disagree on which one is the viewport scroller. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  /* Why: a fixed-viewport document means the shell's own regions scroll, never the page, so there
+     is no page scroll to bounce. `height: 100%` gives the shell a definite box to fill. */
+  html,
+  body {
+    height: 100%;
+  }
+
+  /* Why: `:has()` scopes "the body does not scroll" to documents that actually contain an app
+     shell, so a plain page (sign-in on a short window, an error page) keeps natural scrolling
+     instead of being clipped. Set on html as well: body's overflow only reaches the viewport when
+     html's is `visible`, and this makes the rule independent of that propagation. */
+  html:has([data-app-shell]),
+  html:has([data-app-shell]) body {
+    overflow: hidden;
+  }
+
+  /* Why: the shell's scrolling regions (content, sidebar, nav rails) are the panes users flick;
+     `contain` keeps the scroll inside them, so reaching the end of a list does not hand the
+     gesture to the page. `contain` (not `none`) keeps their own edge feedback. */
+  main,
+  aside,
+  nav,
+  [data-scroll-region] {
+    overscroll-behavior: contain;
+  }
+
+  /* Why: Nuxt UI modals, slideovers, popovers, dropdown menus, selects and the command palette
+     render through Reka UI into a portal; their scrolling body would otherwise chain into the
+     (locked, but still bounceable) page behind the overlay. Matched by ARIA role and Nuxt UI slot
+     so it holds across Nuxt UI minor versions without naming generated classes. */
+  [role='dialog'],
+  [role='alertdialog'],
+  [role='listbox'],
+  [role='menu'],
+  [data-reka-popper-content-wrapper],
+  [data-slot='content'],
+  [data-slot='body'],
+  [data-slot='viewport'] {
+    overscroll-behavior: contain;
+  }
+}
+
+/* Why: the fixed-viewport shell clips a printout to one screen. Print has no overscroll, so it
+   releases every height and overflow the guard and the shell set. `!important` is required and
+   safe here: inside `@layer`, an important declaration outranks the app's unlayered normal ones.
+   An app whose own wrappers fix a height (a stage, a content frame) marks them
+   `data-scroll-region` or releases them in its own `@media print`. */
+@media print {
+  @layer base {
+    html,
+    body,
+    html:has([data-app-shell]),
+    html:has([data-app-shell]) body,
+    [data-app-shell],
+    [data-scroll-region] {
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+    }
+  }
+}

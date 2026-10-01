@@ -152,6 +152,7 @@ test('the live workspace plans narduk-ui, narduk-charts and narduk-shell subpath
     '@narduk-enterprises/narduk-shell/module',
     '@narduk-enterprises/narduk-shell/format',
     '@narduk-enterprises/narduk-shell/theme.css',
+    '@narduk-enterprises/narduk-shell/bounce-guard.css',
   ])
   assert.deepEqual(shell.skipped, [])
 
