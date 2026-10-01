@@ -153,7 +153,7 @@ function harness(options: { migrations?: boolean; servedTag?: string | null } = 
   }
   const oldVersion: WorkerVersion = {
     id: OLD,
-    ...(servedTag ? { annotations: { 'workers/tag': servedTag } } : {}),
+    ...(typeof servedTag === 'string' ? { annotations: { 'workers/tag': servedTag } } : {}),
   }
   let versions: WorkerVersion[] = [oldVersion]
   const calls: string[] = []
@@ -408,6 +408,26 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     await expect(runShip(parseShipArgs(['--no-pr', '--adopt']), h.context)).resolves.toBe(
       SHIP_EXIT.ok,
     )
+  })
+
+  it('treats a retired dev-mode production tag like no tag', async () => {
+    const h = harness({ servedTag: 'dev-20260929T202350926Z' })
+    await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.calls).toEqual([])
+    expect(h.logs.join('\n')).toContain('development-mode tag')
+    await expect(runShip(parseShipArgs(['--no-pr', '--adopt']), h.context)).resolves.toBe(
+      SHIP_EXIT.ok,
+    )
+  })
+
+  it('refuses any other non-SHA production tag, even with --adopt', async () => {
+    for (const servedTag of ['', 'release-1', `${'a'.repeat(40)}-dirty`, 'A'.repeat(40)]) {
+      const h = harness({ servedTag })
+      await expect(runShip(parseShipArgs(['--no-pr', '--adopt']), h.context)).resolves.toBe(
+        SHIP_EXIT.refused,
+      )
+      expect(h.calls).toEqual([])
+    }
   })
 
   it('refuses migration changes (ship v1 does not migrate)', async () => {

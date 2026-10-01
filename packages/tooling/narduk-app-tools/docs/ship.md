@@ -51,5 +51,6 @@ step reads GitHub, so an app that ships gives its promote job
 
 Not in v1: D1 migrations. A change under a `deployment.migrations` source
 directory refuses; land it through normal delivery. The first ship onto a
-version with no commit tag needs `--adopt` once; `--adopt` never overrides a
-tagged version HEAD does not contain.
+version with no commit tag, or with a retired development-mode `dev-...` tag,
+needs `--adopt` once; `--adopt` never overrides a SHA-tagged version HEAD does
+not contain.

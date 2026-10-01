@@ -466,17 +466,22 @@ async function ship(
   const previous = await readDeployment(client)
   const previousVersionId = soleDeployedVersionId(previous)!
   const listing = await client.listVersions(100)
-  const served = listing.versions.find((version) => version.id === previousVersionId)
-    ?.annotations?.[VERSION_TAG_ANNOTATION]
-  if (served !== undefined && !/^[a-f\d]{7,40}$/u.test(served))
+  const tag = listing.versions.find((version) => version.id === previousVersionId)?.annotations?.[
+    VERSION_TAG_ANNOTATION
+  ]
+  // A retired development-mode deploy tags `dev-...`, which names no commit, so
+  // it is treated exactly like no tag. Any other non-SHA tag still refuses.
+  const devTag = tag?.startsWith('dev-') ?? false
+  if (tag !== undefined && !devTag && !/^[a-f\d]{7,40}$/u.test(tag))
     refuse(`Production version ${previousVersionId} carries a commit tag that is not a SHA`)
+  const served = devTag ? undefined : tag
   if (!served) {
     if (!flags.adopt)
       refuse(
-        `Production version ${previousVersionId} carries no commit tag, so HEAD cannot be shown to contain it; pass --adopt once to take it over`,
+        `Production version ${previousVersionId} carries ${devTag ? 'a development-mode tag' : 'no commit tag'}, so HEAD cannot be shown to contain it; pass --adopt once to take it over`,
       )
   } else {
-    // --adopt only takes over an untagged version; it never overrides this.
+    // --adopt only takes over an untagged or dev-mode version; it never overrides this.
     const containment = contains(repoRoot, sha, served)
     if (containment !== 'contained')
       refuse(
