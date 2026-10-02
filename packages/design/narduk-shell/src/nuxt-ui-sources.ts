@@ -35,6 +35,7 @@ export const SHELL_NUXT_UI_COMPONENTS = [
   'DashboardNavbar',
   'DashboardPanel',
   'DashboardSidebar',
+  'DashboardSidebarCollapse',
   'Empty',
   'Footer',
   'FooterColumns',
