@@ -418,9 +418,19 @@ release PR head, two jobs act on that head and no other:
   `narduk-lane-automation` (secret `LANE_AUTOMATION_APP_KEY`, variable
   `LANE_AUTOMATION_CLIENT_ID`, the same pair `notify-mirror` uses) downscoped to
   this repository and `actions: write`, reads the token's repositories back
-  before use, re-reads each planned run, and makes the one call the hand
-  procedure below makes. The estate App's installation on `narduk-enterprises`
-  already carries `actions: write` on every repository (agent-infrastructure
+  before use, and makes the one call the hand procedure below makes. Before each
+  call it re-reads the planned run (still the held `ci.yml` `pull_request` run
+  for exactly the planned head) and the pull request (still open, still on
+  `changeset-release/main`, still at the planned head); if either read differs
+  it warns and skips that run, so a head that moved after the plan job read it
+  is never approved. A failed read stops the step with no approval.
+  `scripts/approve-release-pr-ci.test.mjs` runs the step's own script against a
+  stub `gh` and fails if either skip is lost. The read-back of the token's
+  repositories is the accepted equality check, as in `notify-mirror`: a minted
+  token cannot report its own permissions, so `actions: write` rests on the mint
+  request, which GitHub refuses when the installation does not carry it. The
+  estate App's installation on `narduk-enterprises` already carries
+  `actions: write` on every repository (agent-infrastructure
   `docs/standards/GITHUB-APPS.md`, D-GHAPP-1), so no permission or installation
   changed.
 
