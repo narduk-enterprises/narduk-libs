@@ -18,15 +18,19 @@ export type NeAppShellVariant = 'rail'
 
 /** One destination in a rail section. */
 export interface NeAppShellItem {
-  /** The destination's name, always rendered. The link's accessible name. */
+  /** The destination's name, retained for assistive technology when collapsed. The link's accessible name. */
   label: string
   /**
    * The route. Active state comes from the router matching this location
    * against the current route, never from state the app keeps.
    */
   to: string
+  /** Include query state when matching selection-sensitive destinations. */
+  exactQuery?: boolean | 'partial'
   /** Nuxt UI icon name, e.g. `i-lucide-server`. Decorative. */
   icon?: string
+  /** Decorative asset URL, preferred over icon when supplied. */
+  iconSrc?: string
   /**
    * A short reading beside the label, e.g. an unread count. Rendered inside
    * the link, so it is part of the link's accessible name.
@@ -34,13 +38,19 @@ export interface NeAppShellItem {
   badge?: string | number
 }
 
-/** One labelled rail section. Sections are always expanded. */
+/** One labelled rail section. Sections are expanded unless explicitly collapsible. */
 export interface NeAppShellSection {
   /** Stable identifier; the key an app uses to find the section at runtime. */
   id: string
   /** The section's visible label and the accessible name of its group. */
   label: string
   items: NeAppShellItem[]
+  /** Opt in to a disclosure button for this section. */
+  collapsible?: boolean
+  /** Initial disclosure state. Ignored unless collapsible is true. */
+  defaultOpen?: boolean
+  /** Hide the visible heading while preserving the group's accessible name. */
+  hideLabel?: boolean
 }
 
 /**
@@ -70,4 +80,10 @@ export interface NeAppShellProps {
   navLabel?: string
   /** Text of the skip link that jumps past the rail to the page content. */
   skipLinkLabel?: string
+  /** Enable an icon rail on desktop. Defaults to false. */
+  collapsible?: boolean
+  /** Expanded rail width in rem. Defaults to 14.5. */
+  railWidth?: number
+  /** Collapsed rail width in rem. Defaults to 4. */
+  collapsedWidth?: number
 }

@@ -1,4 +1,5 @@
 import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js';
+import type { LabelCanvas, LabelHit, LabelLayer } from './label-layer.js';
 import type { PointLayer, PointLayerCanvas } from './point-layer.js';
 import type { VectorTileCanvas, VectorTileOverlaySource } from './vector-tiles.js';
 /** The device a pointer event came from, as `PointerEvent.pointerType` reports it. */
@@ -29,6 +30,15 @@ export type HitLayer<TArea = unknown> = {
     kind: 'point';
     layer: Pick<PointLayer<PointLayerCanvas>, 'nearestPoint'>;
 };
+/**
+ * A label layer as a hit layer. Kept apart from {@link HitLayer} so the types
+ * a caller already switches on do not gain a member: pass `LabelHitLayer`
+ * entries and the result type widens to {@link ResolvedHitWithLabel}.
+ */
+export interface LabelHitLayer {
+    kind: 'label';
+    layer: Pick<LabelLayer<LabelCanvas>, 'labelAt'>;
+}
 /** The one answer, carrying the answering layer's own hit. */
 export type ResolvedHit<TArea = unknown> = {
     hit: number;
@@ -40,10 +50,15 @@ export type ResolvedHit<TArea = unknown> = {
     hit: VectorTileHit;
     kind: 'line';
 };
-export interface ResolveHitOptions<TArea = unknown> {
+/** A label's hit is its anchor's index, id (when it has one) and text. */
+export type ResolvedHitWithLabel<TArea = unknown> = ResolvedHit<TArea> | {
+    hit: LabelHit;
+    kind: 'label';
+};
+export interface ResolveHitOptions<TArea = unknown, TLayer = HitLayer<TArea>> {
     coordinate: VectorTileCoordinate;
     /** Layers in priority order; the first to report a hit wins. */
-    layers: ReadonlyArray<HitLayer<TArea>>;
+    layers: readonly TLayer[];
     /** Default `'mouse'`. A pen is as precise as a mouse and gets its tolerance. */
     pointer?: HitPointerKind;
     /** Override the mouse (and pen) tolerance. Default {@link DEFAULT_MOUSE_HIT_TOLERANCE_PX}. */
@@ -67,4 +82,6 @@ export declare function hitTolerancePx(pointer: HitPointerKind, overrides?: {
  * layer is asked.
  */
 export declare function resolveHit<TArea = unknown>(options: ResolveHitOptions<TArea>): ResolvedHit<TArea> | null;
+/** With a {@link LabelHitLayer} in `layers`; a label hit is typed `label`. */
+export declare function resolveHit<TArea = unknown>(options: ResolveHitOptions<TArea, HitLayer<TArea> | LabelHitLayer>): ResolvedHitWithLabel<TArea> | null;
 //# sourceMappingURL=resolve-hit.d.ts.map

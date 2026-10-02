@@ -36,6 +36,13 @@ export const POINT_CLASS_NOT_REPORTING = 254
  */
 export const POINT_LAYER_NATIONAL_TILE_BUDGET_MS = 50
 
+/**
+ * Pixels one world-width tile spans at zoom 0 in MapKit's zoom convention. The
+ * screen helpers ({@link PointLayer.obstaclesInView} and the label layer) use
+ * it, so a screen position is the same number in both.
+ */
+export const MAP_WORLD_TILE_PX = 256
+
 const DEFAULT_TILE_SIZE = 256
 const DEFAULT_STROKE_WIDTH = 1
 const MAX_ZOOM = 22
@@ -112,11 +119,42 @@ export interface PointLayer<TCanvas extends PointLayerCanvas> {
     toleranceInPixels: number,
     zoom: number,
   ) => number | null
+  /**
+   * The painted dots inside the view (grown by `marginPx`, default 0) as screen
+   * circles, in index order, for a label layer to avoid. Dots whose class has
+   * no style entry are not painted and are not returned. Reads only the
+   * projected typed arrays: synchronous, no index build, nothing awaited. The
+   * cost is one pass over the points per call.
+   */
+  obstaclesInView: (view: PointLayerView, marginPx?: number) => PointLayerScreenCircle[]
   readonly pointCount: number
   /** Replace the class column. Positions stay as they were projected. */
   setClasses: (classes: Uint8Array) => void
   /** Swap the style table. Cached projection and the spatial index stay. */
   setStyle: (style: PointClassTable) => void
+}
+
+/**
+ * The map as the screen shows it: the centre, a (possibly fractional) MapKit
+ * zoom and the size in CSS pixels. Screen positions are CSS pixels from the
+ * top-left corner of that rectangle.
+ */
+export interface PointLayerView {
+  /** Height of the visible map in CSS pixels. */
+  height: number
+  latitude: number
+  longitude: number
+  /** Width of the visible map in CSS pixels. */
+  width: number
+  zoom: number
+}
+
+/** A painted dot in screen space, with its stroke: the footprint a label must avoid. */
+export interface PointLayerScreenCircle {
+  /** Radius in CSS pixels, stroke included. */
+  radius: number
+  x: number
+  y: number
 }
 
 /** Style after defaults (`strokeWidth`) are filled in. One slot per class byte. */
@@ -327,6 +365,25 @@ export function createPointLayer<TCanvas extends PointLayerCanvas>(
 
       return best ? best.index : null
     },
+    obstaclesInView(view, marginPx = 0) {
+      const { halfHeight, halfWidth, pixelsPerWorld } = requirePointLayerView(view)
+      if (!Number.isFinite(marginPx) || marginPx < 0) {
+        throw new RangeError('marginPx must be a finite number >= 0')
+      }
+      const center = projectWorld(view.longitude, view.latitude)
+      const circles: PointLayerScreenCircle[] = []
+      for (let index = 0; index < pointCount; index += 1) {
+        const paint = style[classes[index] ?? -1]
+        if (!paint) continue
+        const radius = reachPixels(paint.radius, paint.strokeWidth)
+        const dx = -wrapDelta(center.x, worldX[index] ?? 0) * pixelsPerWorld
+        const dy = ((worldY[index] ?? 0) - center.y) * pixelsPerWorld
+        if (Math.abs(dx) > halfWidth + marginPx + radius) continue
+        if (Math.abs(dy) > halfHeight + marginPx + radius) continue
+        circles.push({ radius, x: halfWidth + dx, y: halfHeight + dy })
+      }
+      return circles
+    },
     get pointCount() {
       return pointCount
     },
@@ -386,6 +443,44 @@ function requireColumn(column: Uint8Array, pointCount: number, name: string): Ui
     )
   }
   return column
+}
+
+/** Validate a view and return the numbers every screen projection needs. */
+export function requirePointLayerView(view: PointLayerView): {
+  halfHeight: number
+  halfWidth: number
+  pixelsPerWorld: number
+} {
+  const { height, latitude, longitude, width, zoom } = view
+  if (![height, latitude, longitude, width, zoom].every(Number.isFinite)) {
+    throw new RangeError('view must have finite longitude, latitude, zoom, width and height')
+  }
+  if (width <= 0 || height <= 0) throw new RangeError('view width and height must be > 0')
+  if (zoom < 0 || zoom > MAX_ZOOM) {
+    throw new RangeError(`zoom must be a finite number between 0 and ${MAX_ZOOM}`)
+  }
+  return {
+    halfHeight: height / 2,
+    halfWidth: width / 2,
+    pixelsPerWorld: MAP_WORLD_TILE_PX * 2 ** zoom,
+  }
+}
+
+/**
+ * Longitude/latitude as a fraction of the world (x wraps into [0, 1), y is
+ * Web Mercator from the north edge). The one projection the point layer paints
+ * with, exported so the label layer places against the same numbers.
+ */
+export function projectToWorldFraction(
+  longitude: number,
+  latitude: number,
+): { x: number; y: number } {
+  return projectWorld(longitude, latitude)
+}
+
+/** Signed world-fraction distance `from - to` the short way round the antimeridian. */
+export function worldFractionDelta(from: number, to: number): number {
+  return wrapDelta(from, to)
 }
 
 function requireZoom(zoom: number): number {

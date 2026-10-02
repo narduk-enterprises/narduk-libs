@@ -41,6 +41,7 @@ const sections: NeAppShellSection[] = [
   },
   {
     id: 'infrastructure',
+    collapsible: true,
     label: 'Infrastructure',
     items: [
       { label: 'Hosts', to: '#hosts', icon: 'i-lucide-hard-drive' },
@@ -74,8 +75,9 @@ provide(routeLocationKey, router.resolve('/#runners') as RouteLocationNormalized
   >
     <h2>App shell</h2>
     <p>
-      The application frame: a rail of labelled, always-expanded sections, a navbar row and the
-      page. The active row is the one the router matches; the arrow keys walk the rail; below
+      The application frame: a rail of labelled sections with optional disclosures and collapse, a
+      navbar row and the page. The active row is the one the router matches; the arrow keys walk the
+      rail; below
       <code>lg</code> the rail becomes a drawer. Opt-in: an app writes it in its own layout.
     </p>
     <div class="preview-row">
@@ -88,7 +90,7 @@ provide(routeLocationKey, router.resolve('/#runners') as RouteLocationNormalized
           transform: translateZ(0);
         "
       >
-        <NeAppShell :sections="sections" nav-label="Portal">
+        <NeAppShell :sections="sections" nav-label="Portal" collapsible>
           <template #rail-top>
             <strong>Operator</strong>
           </template>

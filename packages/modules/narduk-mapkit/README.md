@@ -1003,6 +1003,89 @@ inside `POINT_LAYER_NATIONAL_TILE_BUDGET_MS` (50ms per tile), measured in
 
 See `examples/canvas-point-layer.ts` for the tap-and-lens wiring.
 
+## Label Layer
+
+Names on the map that never cover a mark. On the national river map a visitor
+cannot tell the Ohio from the Tennessee without names, and the map already draws
+tens of thousands of line stretches and gauge dots. The label layer is generic:
+the caller gives anchors (text, position, a priority, a first zoom, an optional
+id), a style, and a function that returns the marks to avoid. Nothing in the
+package knows what an anchor names.
+
+```ts
+import {
+  createLabelLayer,
+  createPointLayer,
+} from '@narduk-enterprises/narduk-mapkit/client'
+
+const labels = createLabelLayer({
+  anchors, // { text, longitude, latitude, priority, minZoom, id? }[]
+  canvas, // where requestPaint() draws
+  createCanvas: (w, h) => new OffscreenCanvas(w, h), // or pass measureText
+  style: { fill, halo, haloWidth: 3, fontFamily, fontSize: 11 }, // all from you
+  obstacles: (view) => gauges.obstaclesInView(view),
+})
+
+// From the map's region-change handler. Many calls in a frame paint once.
+labels.requestPaint({ longitude, latitude, zoom, width, height, pixelRatio })
+```
+
+The view is the centre, a (possibly fractional) MapKit zoom and the size in CSS
+pixels. Screen positions are CSS pixels from its top-left; the canvas is backed
+at `width * pixelRatio` and drawn through a scale transform, so the font stays
+in CSS pixels and the text centre snaps to a whole device pixel: crisp at 1x, 2x
+and 3x, with the same labels at each. Repaints are coalesced by the render
+scheduler (see Render Coalescing); `place(view)` and `paint(view, canvas)` run
+synchronously.
+
+**Placement is deterministic.** Anchors are ranked once: higher `priority`
+first, then a stable key (the `id`, else text and position), and input order
+only for exact duplicates. Each frame walks that ranking and keeps a label only
+if its box (the measured text, plus `padding` and half the halo) touches no kept
+label and no obstacle. A label that does not fit is dropped for the frame. It is
+not moved, shrunk or abbreviated. The same anchors, view and size always give
+the same labels.
+
+- **Region and zoom.** Only anchors inside the view plus `marginPx`
+  (default 128) are considered, and an anchor below its `minZoom` is skipped.
+- **Cap.** At most `maxLabels` per frame, default
+  `LABEL_LAYER_DEFAULT_MAX_LABELS` (200); the highest priorities are kept and
+  `stats.capped` says the cap stopped the walk.
+- **Obstacles** are screen circles (`{ x, y, radius }`, centre) or rectangles
+  (`{ x, y, width, height }`, top-left), returned by a function called once per
+  placement. `pointLayer.obstaclesInView(view, marginPx?)` returns the painted
+  dots from its typed arrays: synchronous, one pass over the points, nothing
+  awaited; a class with no style entry is not painted and not returned.
+- **Text measure cache.** Width is measured once per distinct string and font
+  and cached, at most `measureCacheLimit` entries (default 1,024, least recently
+  used leaves first). `cacheStats` reports hits, misses and size. A string that
+  cannot be measured to a positive width is skipped, not given a guessed width.
+- **Style.** Fill, halo colour, halo width, font family and size come from your
+  style (one object, or a function per anchor). No colour is assumed.
+
+`labelAt(coordinate, toleranceInPixels, zoom)` returns the label under a point
+as `{ index, id, text }`, from the last placed frame only: `null` before any
+frame, after `setAnchors`, when the zoom is not the one that frame was placed
+at, or when the label was dropped. An anchor with no id gives `id: undefined`,
+not 0. `resolveHit` accepts `{ kind: 'label', layer }` and answers
+`{ kind: 'label', hit }`; the existing `HitLayer` and `ResolvedHit` types are
+unchanged, and passing a label layer widens the result type
+(`ResolvedHitWithLabel`).
+
+**Budget.** Every stat in `LabelPlacementStats` is a count, so the budget cannot
+flake under load. Placing and painting a national view of 3,000 candidate
+anchors against 5,000 obstacle dots stays inside
+`LABEL_LAYER_NATIONAL_FRAME_BUDGET` (`tests/label-layer.test.ts`): at most 3,000
+anchors considered, 60,000 overlap tests (measured 27,860 with dots everywhere,
+9,854 with the cap reached), 5,000 obstacles gridded, 400 text calls, and text
+measured once per distinct string. Obstacles and kept labels share one grid, so
+a candidate is tested only against what shares a cell with it. The test also
+logs the wall time it saw, for information; it is not asserted.
+
+Not here: labels that follow a curve, painting in a worker.
+
+See `examples/label-layer.ts`.
+
 ## Layer Registry
 
 Use the layer registry when a map needs multiple raster layers live at the same
@@ -2100,26 +2183,27 @@ The `examples/` directory contains copyable integration patterns:
 - `annotation-callouts.ts`
 - `vector-tile-network.ts`
 - `canvas-point-layer.ts`
+- `label-layer.ts`
 
 These are intentionally small. Keep app styling, marker HTML, and data loading
 in the app.
 
 ## API Surface
 
-| Export                                               | Purpose                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                                                                            |
-| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                                                                        |
-| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                                                                             |
-| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                                                                            |
-| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, canvas point layer, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling, `rectBeside`, leader overlay |
-| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                                                                            |
-| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                                                                     |
-| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                                                                   |
-| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                                                                                 |
-| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                                                  |
-| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                                             |
+| Export                                               | Purpose                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                                                                                         |
+| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                                                                                     |
+| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                                                                                         |
+| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, canvas point layer, label layer, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling, `rectBeside`, leader overlay |
+| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                                                                                         |
+| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                                                                                  |
+| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                                                                                |
+| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                                                                                              |
+| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                                                               |
+| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                                                       |
+| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                                                          |
 
 ## Maintainer Migration Notes
 
