@@ -40,14 +40,13 @@ describe('neutral platform contracts', () => {
     expect(entry?.from).not.toMatch(/doppler:/u)
   })
 
-  it('sources nothing from Doppler beyond the keys still waiting on an nvault home', () => {
-    // agent-infrastructure#2131: these three have no shared nvault config yet.
-    // The list only shrinks; a new Doppler source fails here.
-    expect(
-      ENV_CATALOG.filter((entry) => entry.from.startsWith('doppler:'))
-        .map((entry) => entry.key)
-        .sort(),
-    ).toEqual(['TURNSTILE_SECRET_KEY', 'TURNSTILE_SITE_KEY', 'XAI_API_KEY'])
+  it('sources nothing from the retired Doppler narduk/tokens config', () => {
+    // agent-infrastructure#2131: TURNSTILE_* moved to nvault cloudflare/prd/turnstile-shared;
+    // the every-app XAI_API_KEY is gone (apps that call Grok keep per-app values).
+    expect(ENV_CATALOG.filter((entry) => entry.from.startsWith('doppler:narduk/tokens'))).toEqual(
+      [],
+    )
+    expect(ENV_CATALOG.find((entry) => entry.key === 'XAI_API_KEY')).toBeUndefined()
   })
 
   it('parses every catalog source', () => {
