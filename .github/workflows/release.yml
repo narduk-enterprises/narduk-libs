@@ -105,6 +105,8 @@ jobs:
     outputs:
       published: ${{ steps.publish-first.outputs.published == 'true' || steps.changesets.outputs.published == 'true' }}
       current: ${{ steps.main-state.outputs.current }}
+      release-pr-head: ${{ steps.release-pr.outputs.head }}
+      release-pr-number: ${{ steps.release-pr.outputs.number }}
     env:
       VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -266,6 +268,27 @@ jobs:
           HOME: ${{ runner.temp }}/changesets-home
           GITHUB_TOKEN: ${{ github.token }}
 
+      # The commit this run just pushed to the release PR's branch, for the
+      # approve-release-pr-ci jobs below. Read from this checkout, never from the
+      # API, so "pushed by this run" is a fact of the run. The action leaves the
+      # working tree on the release branch in version mode.
+      - name: Record the release PR head this run pushed
+        id: release-pr
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          if [[ "${head}" =~ ^[0-9a-f]{40}$ && "${PR_NUMBER}" =~ ^[0-9]+$ && "${branch}" == 'changeset-release/main' ]]; then
+            echo "head=${head}" >> "$GITHUB_OUTPUT"
+            echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Release PR CI left to manual approval::the checkout is on '${branch}' at '${head}', not the release branch, so no head was recorded for approval."
+          fi
+
       - name: Verify immutable published package versions
         if: steps.release-mode.outputs.publish == 'true'
         run: pnpm run release:verify-published
@@ -308,16 +331,56 @@ jobs:
           VERIFIED_SHA: ${{ needs.verify-ci.outputs.sha }}
         run: node scripts/recheck-release-main.mjs
 
-  # No job here starts CI for the "chore: release packages" PR. That PR is
-  # pushed with the job-scoped GITHUB_TOKEN above, so GitHub holds its
-  # pull_request CI run as `action_required` until someone approves it. A
-  # `release-pr-ci` job used to dispatch ci.yml on changeset-release/main
-  # instead (#837). Its `ci / Required` and `verify` check runs landed on the
-  # head commit but never counted toward the PR's required checks: on #805,
-  # two heads stayed `required=0/2` until the held run was approved (#861,
-  # #865). It only doubled CI. Approving the held run for the current head is
-  # the path: docs/package-releases.md, "Approving `chore: release packages`
-  # PR runs". #198 tracks authoring the PR with an App token instead.
+  # narduk-libs#1354, cut 1. The "chore: release packages" PR is pushed with
+  # the job-scoped GITHUB_TOKEN above, so GitHub holds its pull_request CI run
+  # as `action_required` until someone approves it (median 574 s on 2026-10-02).
+  # Two jobs start it, split so the estate App key never shares a job with
+  # checked-out code:
+  #
+  #   plan-release-pr-approval  holds no secret. It checks out main for
+  #                             scripts/approve-release-pr-ci.mjs and, with the
+  #                             read-only job token, decides which held run
+  #                             may be approved (see the script for the guard).
+  #   approve-release-pr-ci     holds the App key (environment npm-release),
+  #                             checks out nothing and runs no script from this
+  #                             repository: it mints, verifies the scope and
+  #                             approves only the run ids the plan job emitted.
+  #
+  # Approving the held run is the path docs/package-releases.md already
+  # documents. Dispatching ci.yml on changeset-release/main is not: its checks
+  # never counted toward the PR's required checks (#837, #861, #865). Do not
+  # reintroduce it. #198 tracks authoring the PR with an App token instead,
+  # which would need the key beside `pnpm install`; that stays out.
+  plan-release-pr-approval:
+    needs: [release]
+    if: needs.release.outputs.release-pr-head != ''
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    outputs:
+      runs: ${{ steps.plan.outputs.runs }}
+      head: ${{ steps.plan.outputs.head }}
+      pr: ${{ steps.plan.outputs.pr }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Decide which held run for this run's release PR head may be approved
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ needs.release.outputs.release-pr-head }}
+          PR_NUMBER: ${{ needs.release.outputs.release-pr-number }}
+        run: node scripts/approve-release-pr-ci.mjs
 
   # npm.nard.uk mirrors GitHub Packages through package-delivery's "Sync to R2"
   # workflow. Its schedule is the correctness mechanism; this dispatch only
@@ -406,3 +469,107 @@ jobs:
       - name: Report a failed mirror dispatch without failing the release
         if: failure()
         run: echo "::warning title=Mirror dispatch failed::package-delivery was not notified; npm.nard.uk picks up this release on its next scheduled sync. The packages themselves published and verified."
+
+  # Credential shape is notify-mirror's: a per-run token from the estate write
+  # ceiling `narduk-lane-automation` (agent-infrastructure
+  # docs/standards/GITHUB-APPS.md, D-GHAPP-1; its installation on
+  # narduk-enterprises already carries `actions: write`, so nothing is widened),
+  # downscoped to exactly this repository and `actions: write`, and read back
+  # before use (the repository list is the only part of a minted token that the
+  # token itself can report; its permissions cannot be read back, so
+  # `permission-actions: write` rests on the mint request, which GitHub refuses
+  # if the installation lacks it -- the same accepted check notify-mirror has,
+  # recorded in docs/package-releases.md). The only call it makes is the approve
+  # call the hand procedure in
+  # docs/package-releases.md makes, for run ids the plan job validated. With the
+  # key or the variable absent it records a notice and the manual approval still
+  # works. It can never fail a release.
+  approve-release-pr-ci:
+    needs: [release, plan-release-pr-approval]
+    if: needs.plan-release-pr-approval.outputs.runs != ''
+    environment: npm-release
+    permissions: {}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Check for the approval credential
+        id: credential
+        env:
+          LANE_AUTOMATION_APP_KEY: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          LANE_AUTOMATION_CLIENT_ID: ${{ vars.LANE_AUTOMATION_CLIENT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${LANE_AUTOMATION_APP_KEY:-}" ] && [ -n "${LANE_AUTOMATION_CLIENT_ID:-}" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Release PR CI left to manual approval::LANE_AUTOMATION_APP_KEY (environment npm-release) or LANE_AUTOMATION_CLIENT_ID (repository variable) is absent, so the held CI run was not approved. Approve it as docs/package-releases.md describes."
+          fi
+
+      - name: Mint an approval token scoped to this repository
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.LANE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.LANE_AUTOMATION_APP_KEY }}
+          owner: narduk-enterprises
+          repositories: narduk-libs
+          permission-actions: write
+
+      - name: Verify the token sees exactly narduk-libs
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          seen="$(gh api /installation/repositories --paginate --jq '.repositories[].full_name' | sort | tr '\n' ' ')"
+          if [ "${seen}" != "narduk-enterprises/narduk-libs " ]; then
+            echo "::error title=Unscoped mint::the minted token sees [${seen}] rather than exactly narduk-enterprises/narduk-libs; refusing to approve with it."
+            exit 1
+          fi
+
+      # Two re-reads through the scoped token, each of which skips the run (a
+      # warning, then `continue`, before the POST) rather than approving it:
+      # the run must still be the held ci.yml pull_request run for exactly the
+      # planned head, and the pull request must still be open at that head. A
+      # head that moved since the plan job read it is superseded, and approving
+      # its held run would take the PR's concurrency group and cancel the
+      # current head's run (2026-09-22). scripts/approve-release-pr-ci.test.mjs
+      # runs this script against a stub `gh` and fails if either skip is lost.
+      - name: Approve the held CI run for the release PR head
+        if: steps.credential.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+          RUN_IDS: ${{ needs.plan-release-pr-approval.outputs.runs }}
+          RELEASE_PR_HEAD: ${{ needs.plan-release-pr-approval.outputs.head }}
+          RELEASE_PR_NUMBER: ${{ needs.plan-release-pr-approval.outputs.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_PR_HEAD}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${RELEASE_PR_NUMBER}" =~ ^[0-9]+$ ]]
+          for id in ${RUN_IDS}; do
+            [[ "${id}" =~ ^[0-9]+$ ]]
+            # Re-read the run through the scoped token: it must still be the
+            # held ci.yml pull_request run for exactly the planned head.
+            held="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}" --jq '[.head_sha, .head_branch, .event, .conclusion, .head_repository.full_name] | join(" ")')"
+            if [ "${held}" != "${RELEASE_PR_HEAD} changeset-release/main pull_request action_required ${GITHUB_REPOSITORY}" ]; then
+              echo "::warning title=Release PR CI left to manual approval::run ${id} is no longer the held run for ${RELEASE_PR_HEAD} (${held}); approving nothing for it."
+              continue
+            fi
+            # Re-read the pull request: its head must still be the planned one.
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR_NUMBER}" --jq '[.state, .head.sha, .head.ref] | join(" ")')"
+            if [ "${current}" != "open ${RELEASE_PR_HEAD} changeset-release/main" ]; then
+              echo "::warning title=Release PR CI left to manual approval::pull request #${RELEASE_PR_NUMBER} is no longer open at ${RELEASE_PR_HEAD} (${current}); a newer head's run approves its own, and run ${id} is left alone."
+              continue
+            fi
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"
+            echo "::notice title=Release PR CI started::approved held ci.yml run ${id} for release PR head ${RELEASE_PR_HEAD}."
+          done
+
+      - name: Report a failed approval without failing the release
+        if: failure()
+        run: echo "::warning title=Release PR CI approval failed::the held run was not approved. The release is unaffected; approve it as docs/package-releases.md describes."
