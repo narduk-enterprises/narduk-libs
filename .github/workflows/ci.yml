@@ -256,11 +256,25 @@ jobs:
       # remain open and are deliberately below the bar). The gate is therefore
       # fail-capable, not merely absent of findings.
       #
-      # No allowlist exists on purpose. `pnpm audit --audit-level high` is 0
-      # high / 0 critical on main today, so there is nothing to except, and a
-      # speculative allowlist is a hole waiting for a real advisory to fall into
-      # it. If an unfixable high ever appears, add the exception here with its
-      # GHSA id and the reason it cannot be fixed -- never by lowering the bar.
+      # The allowlist is `pnpm.auditConfig.ignoreGhsas` in the root package.json,
+      # which `pnpm audit` and `scripts/preflight.mjs` both read, so the two
+      # cannot disagree. It holds exactly one entry, and each entry needs its GHSA
+      # id, the reason it cannot be fixed and a review date, recorded here (JSON
+      # has no comments). A speculative entry is a hole waiting for a real
+      # advisory to fall into it. If another unfixable high appears, add it the
+      # same way -- never by lowering the bar.
+      #
+      #   GHSA-86w9-cpqp-85rv (node-forge <= 1.4.0, RSA PKCS#1 v1.5 signature
+      #   verification). Unfixable: no patched version exists (npm `latest` is
+      #   1.4.0, the advisory's first-patched version is null), and the newest
+      #   listhen (1.10.1) and @nuxt/cli (3.37.0) still depend on it. Reached only
+      #   through `design-system-build > nuxt > @nuxt/cli > listhen`, the dev
+      #   server of a private package; no published package ships it. Added
+      #   2026-10-02 (narduk-libs#1341). Re-check by 2026-11-01: drop this entry
+      #   as soon as a patched node-forge or a listhen without it exists.
+      #
+      #   The entry matches that one id, so any other high or critical still fails
+      #   the step; the level stays `high`.
       #
       # This step can go red without a change to this repository, when an
       # advisory is newly published against an already-pinned version. That is
