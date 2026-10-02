@@ -8,8 +8,17 @@ import type { Notification } from '#narduk-core/schema'
 import type { ListSort } from '@narduk-enterprises/narduk-platform/list-query'
 import type { H3Event } from 'h3'
 
-/** API-key scope for notification mutations. Empty-scope `nk_` keys must not pass. */
+/**
+ * API-key scopes for the notification routes. A session needs none; an `nk_`
+ * key must carry the scope (or `*`) for the route it calls, so a key minted
+ * for something else, such as a household MCP key (`harbor:mcp:household:…`),
+ * or one with no scopes cannot read or change its owner's notifications
+ * (narduk-libs: harbor#841).
+ */
 export const AUTH_NOTIFICATION_SCOPES = {
+  /** `GET /api/notifications` and `GET /api/notifications/unread-count`. */
+  read: 'auth:notifications:read',
+  /** Create, mark read (single and all) and delete. */
   write: 'auth:notifications:write',
 } as const
 
