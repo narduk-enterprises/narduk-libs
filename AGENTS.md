@@ -154,3 +154,26 @@ baseline 190 drained, and the count admitted since the freeze.
   unrelated packages (#619).
 - Release mechanics, the `chore: release packages` PR's run approvals and the
   post-merge publication proof are in `docs/package-releases.md`.
+
+<!-- narduk-quality-bar:cli:start (managed by agent-infrastructure skills/project-lifecycle/scripts/agents_quality_bar.py; edits are overwritten) -->
+
+<!-- prettier-ignore-start -->
+
+## Quality bar (CLI and tooling)
+
+Ten checkable rules from the coding-standards handbook. The repo's own decisions above win; this is the floor.
+
+1. Python is managed with uv: `uv.lock` committed, CI runs `uv sync --frozen`. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
+2. `ruff check` and `ruff format --check` are clean. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
+3. `pyright` is clean on changed code; no new blanket `# type: ignore`. [14-python](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/14-python.md) · enforced: none yet
+4. Tests cover the interface (argument parsing, exit codes, `--json` shape); a repo on `unittest` stays on it, new repos use pytest. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
+5. Shell is thin glue and `shellcheck` clean; once it grows flags, parsing or recovery, rewrite it in Python. [15-shell](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/15-shell.md) · enforced: none yet
+6. Exit codes are contract: 0 success, non-zero failure, a distinct code for "inconclusive". [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
+7. Data goes to stdout, diagnostics to stderr; an agent-consumed tool has a stable, documented `--json`. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
+8. Secrets come from the environment or a secret runner, never argv, never echoed or logged. [01-universal-engineering](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/01-universal-engineering.md) · enforced: none yet
+9. A run interrupted halfway is safe to repeat without hand cleanup. [05-local-services-and-tooling](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/05-local-services-and-tooling.md) · enforced: none yet
+10. Dependencies and tool versions are exact pins with the lockfile committed; nothing floats. [10-reusable-libraries-and-packages](https://github.com/narduk-enterprises/coding-standards/blob/main/standards/10-reusable-libraries-and-packages.md) · enforced: none yet
+
+<!-- prettier-ignore-end -->
+
+<!-- narduk-quality-bar:cli:end -->
