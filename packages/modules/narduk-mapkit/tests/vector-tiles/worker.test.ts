@@ -79,9 +79,40 @@ describe('the worker decode protocol', () => {
     expect(tile.coordinates).toBeInstanceOf(Int16Array)
     expect([...tile.coordinates]).toEqual([0, 0, 2048, 2048])
     expect(tile.properties[0]).toEqual({ ri: 9, so: 6 })
+    expect(tile.so).toEqual(new Uint8Array([6]))
+    expect(tile.ri).toEqual(new Uint32Array([9]))
+    expect(tile.si).toBeUndefined()
     expect(decoder.pending).toBe(0)
-    // Request bytes out, then the three tile buffers back: nothing is copied.
-    expect(transferred.map((batch) => batch.length)).toEqual([1, 3])
+    // Request bytes out, then geometry plus the `so` and `ri` columns back.
+    expect(transferred.map((batch) => batch.length)).toEqual([1, 5])
+  })
+
+  it('transfers a v2 si column and still accepts a v1 tile without one', async () => {
+    const { workerPort, workerScope } = createChannel()
+    serveVectorTileDecoder(workerScope, createMvtDecoder())
+    const decoder = createWorkerDecoder({ worker: workerPort })
+    const v2 = encodeVectorTile([
+      {
+        features: [
+          {
+            lines: [
+              [
+                { x: 0, y: 0 },
+                { x: 4, y: 4 },
+              ],
+            ],
+            properties: { ri: 2, si: 17, so: 3 },
+            type: 2,
+          },
+        ],
+        name: 'reaches',
+      },
+    ])
+
+    const tile = (await decoder.decode(v2, address)) as DecodedVectorTile
+    expect(tile.si).toEqual(new Uint32Array([17]))
+    expect(tile.ri).toEqual(new Uint32Array([2]))
+    expect(tile.so).toEqual(new Uint8Array([3]))
   })
 
   it('correlates replies by id, so one worker serves a screenful at once', async () => {
