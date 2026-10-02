@@ -182,13 +182,34 @@ function estimatePropertyBytes(properties) {
     }
     return bytes;
 }
-/** Smallest LRU that does the job: Map preserves insertion order. */
+/**
+ * Default decoded-tile budget, in bytes.
+ *
+ * A dense river-network tile (about 10^5 points and a couple of thousand
+ * features) retains roughly 0.7 MB by {@link decodedVectorTileBytes}; 64 MiB
+ * holds on the order of ninety of them, several screens of a phone map plus the
+ * ring MapKit prefetches, and a third of what the old 256-tile count cap would
+ * have kept for the same tiles. See the measurement in the pull request that
+ * introduced it (narduk-libs#1345 L6) and the README. Pass `cacheBytes:
+ * Infinity` to cap by count only.
+ */
+export const DEFAULT_VECTOR_TILE_CACHE_BYTES = 64 * 1024 * 1024;
+/**
+ * LRU over decoded tiles, capped by count and by total decoded bytes.
+ *
+ * Map preserves insertion order, so the first key is the least recently used.
+ * A tile larger than the whole byte budget is not retained at all -- keeping it
+ * would evict everything else for one tile -- but the caller still has it in
+ * hand to paint.
+ */
 class TileCache {
+    #byteLimit;
     #limit;
     #tiles = new Map();
     #bytes = 0;
-    constructor(limit) {
+    constructor(limit, byteLimit) {
         this.#limit = Math.max(1, limit);
+        this.#byteLimit = Number.isNaN(byteLimit) ? Number.POSITIVE_INFINITY : Math.max(0, byteLimit);
     }
     get bytes() {
         return this.#bytes;
@@ -201,18 +222,21 @@ class TileCache {
         this.#bytes = 0;
     }
     get(key) {
-        const tile = this.#tiles.get(key);
-        if (!tile)
+        const entry = this.#tiles.get(key);
+        if (!entry)
             return null;
         this.#tiles.delete(key);
-        this.#tiles.set(key, tile);
-        return tile;
+        this.#tiles.set(key, entry);
+        return entry.tile;
     }
     set(key, tile) {
         this.#drop(key);
-        this.#tiles.set(key, tile);
-        this.#bytes += decodedVectorTileBytes(tile);
-        while (this.#tiles.size > this.#limit) {
+        const bytes = decodedVectorTileBytes(tile);
+        if (bytes > this.#byteLimit)
+            return;
+        this.#tiles.set(key, { bytes, tile });
+        this.#bytes += bytes;
+        while (this.#tiles.size > this.#limit || this.#bytes > this.#byteLimit) {
             const oldest = this.#tiles.keys().next().value;
             if (oldest === undefined)
                 break;
@@ -223,11 +247,13 @@ class TileCache {
         const existing = this.#tiles.get(key);
         if (!existing)
             return;
-        this.#bytes -= decodedVectorTileBytes(existing);
+        this.#bytes -= existing.bytes;
         this.#tiles.delete(key);
     }
 }
 export const DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD = 8;
+/** Reads in flight at once unless `readConcurrency` says otherwise. */
+export const DEFAULT_VECTOR_TILE_READ_CONCURRENCY = 6;
 /**
  * Whether a class table may colour these tiles.
  *
@@ -341,6 +367,95 @@ function appendFeaturePath(context, tile, feature, scale) {
     }
     return added;
 }
+function overzoomView(overzoom, extent, tileSize, pixelRatio, marginPx) {
+    const span = extent / 2 ** overzoom.levels;
+    const originX = overzoom.column * span;
+    const originY = overzoom.row * span;
+    const scale = (tileSize * pixelRatio) / span;
+    const margin = marginPx / scale;
+    return {
+        originX,
+        originY,
+        scale,
+        x0: originX - margin,
+        x1: originX + span + margin,
+        y0: originY - margin,
+        y1: originY + span + margin,
+    };
+}
+/**
+ * Clip the segment `a -> b` to the view window (Liang-Barsky). Returns the
+ * parameter range `[t0, t1]` that lies inside, or `null` if none does.
+ */
+function clipSegment(view, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    let t0 = 0;
+    let t1 = 1;
+    const edges = [
+        [-dx, ax - view.x0],
+        [dx, view.x1 - ax],
+        [-dy, ay - view.y0],
+        [dy, view.y1 - ay],
+    ];
+    for (const [p, q] of edges) {
+        if (p === 0) {
+            if (q < 0)
+                return null;
+            continue;
+        }
+        const t = q / p;
+        if (p < 0) {
+            if (t > t1)
+                return null;
+            if (t > t0)
+                t0 = t;
+        }
+        else {
+            if (t < t0)
+                return null;
+            if (t < t1)
+                t1 = t;
+        }
+    }
+    return [t0, t1];
+}
+/**
+ * Like {@link appendFeaturePath}, for a child of the decoded tile: points are
+ * moved into the child's pixel frame and each line is cut to the child's
+ * window, so a river that crosses the edge ends there instead of running off
+ * to coordinates the canvas has to clip.
+ */
+function appendOverzoomFeaturePath(context, tile, feature, view) {
+    const { coordinates, featureLines, lineStarts } = tile;
+    const lastLine = featureLines[feature + 1] ?? 0;
+    const { originX, originY, scale } = view;
+    let added = false;
+    for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
+        const start = lineStarts[line] ?? 0;
+        const end = lineStarts[line + 1] ?? start;
+        let open = false;
+        for (let point = start; point + 1 < end; point += 1) {
+            const ax = coordinates[point * 2] ?? 0;
+            const ay = coordinates[point * 2 + 1] ?? 0;
+            const bx = coordinates[point * 2 + 2] ?? 0;
+            const by = coordinates[point * 2 + 3] ?? 0;
+            const range = clipSegment(view, ax, ay, bx, by);
+            if (!range) {
+                open = false;
+                continue;
+            }
+            const [t0, t1] = range;
+            if (!open || t0 > 0) {
+                context.moveTo((ax + (bx - ax) * t0 - originX) * scale, (ay + (by - ay) * t0 - originY) * scale);
+            }
+            context.lineTo((ax + (bx - ax) * t1 - originX) * scale, (ay + (by - ay) * t1 - originY) * scale);
+            open = t1 === 1;
+            added = true;
+        }
+    }
+    return added;
+}
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.
@@ -354,7 +469,7 @@ export function paintVectorTile(canvas, tile, options) {
     const context = canvas.getContext('2d');
     if (!context)
         return false;
-    const { pixelRatio, style, tileNetwork, tileSize, zoom } = options;
+    const { overzoom, pixelRatio, style, tileNetwork, tileSize, zoom } = options;
     const scale = (tileSize * pixelRatio) / tile.extent;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.lineCap = 'round';
@@ -392,13 +507,19 @@ export function paintVectorTile(canvas, tile, options) {
         }
         context.beginPath();
         let added = false;
+        const paint = head.paint;
+        const view = overzoom
+            ? overzoomView(overzoom, tile.extent, tileSize, pixelRatio, (paint.width + (paint.casing?.extraWidth ?? 0)) * pixelRatio)
+            : null;
         for (const entry of batch) {
-            if (appendFeaturePath(context, tile, entry.feature, scale))
+            const appended = view
+                ? appendOverzoomFeaturePath(context, tile, entry.feature, view)
+                : appendFeaturePath(context, tile, entry.feature, scale);
+            if (appended)
                 added = true;
         }
         if (!added)
             continue;
-        const paint = head.paint;
         context.globalAlpha = paint.opacity ?? 1;
         if (paint.casing) {
             context.strokeStyle = paint.casing.color;
@@ -413,6 +534,11 @@ export function paintVectorTile(canvas, tile, options) {
     context.globalAlpha = 1;
     return painted;
 }
+function normaliseMaxDataZoom(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+        return undefined;
+    return Math.floor(value);
+}
 const DEFAULT_RESTYLE_REPLACE = {
     activateWhen: 'first-image',
     crossfadeDurationMs: 0,
@@ -422,18 +548,35 @@ const DEFAULT_RESTYLE_REPLACE = {
  *
  * An empty tile, a missing tile and a failed decode all resolve to `null`, so
  * MapKit draws nothing there instead of a blank square over the basemap.
+ *
+ * Reads go through a bounded queue (`readConcurrency`) served newest first. A
+ * read for a zoom the map has since left is dropped before it starts, or
+ * aborted through the `AbortSignal` handed to `tileBytes` if it already has.
+ * Either way the tile resolves to `null`, is not reported to `onError`, is not
+ * cached, and loads normally if it is asked for again.
+ *
+ * Above `maxDataZoom` a tile is painted from its ancestor at that zoom: one
+ * read and one decode, shared by every descendant through the cache.
  */
 export function createVectorTileOverlaySource(options) {
-    const { cacheSize = 256, createCanvas, decode, onError, tileBytes, tileSize = 256 } = options;
-    const cache = new TileCache(cacheSize);
+    const { archive, cacheBytes: byteBudget = DEFAULT_VECTOR_TILE_CACHE_BYTES, cacheSize = 256, createCanvas, decode, onError, tileBytes, tileSize = 256, } = options;
+    const concurrency = Math.max(1, Math.floor(options.readConcurrency ?? DEFAULT_VECTOR_TILE_READ_CONCURRENCY) || 1);
+    const cache = new TileCache(cacheSize, byteBudget);
     // MapKit asks for a screenful at once and re-asks on every render pass, so
     // the same address is commonly requested again while its first read is
     // still in flight. Without this the archive is fetched twice and the tile
     // decoded twice, for one tile drawn.
     const inFlight = new Map();
+    // Reads wait here when `concurrency` are already running. Newest on top: the
+    // tile the user is looking at now is the last one MapKit asked for.
+    const queued = [];
+    const running = new Set();
+    // The zoom MapKit asked for most recently. A read for a zoom the map has
+    // left is dropped (if queued) or aborted (if running).
+    let latestZoom = null;
     // Bumped by clearCache. A read started against the previous archive must
-    // not land in the cache afterwards, and it cannot be cancelled, so it is
-    // stamped with the generation it belongs to and discarded if that moved.
+    // not land in the cache afterwards, so it is stamped with the generation it
+    // belongs to and discarded if that moved.
     let generation = 0;
     let style = options.style;
     let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null;
@@ -443,6 +586,25 @@ export function createVectorTileOverlaySource(options) {
     let restyleApplied = 0;
     let restylePumping = false;
     const restyleWaiters = [];
+    // The deepest zoom with data. `undefined` once settled means there is none.
+    let maxDataZoom = normaliseMaxDataZoom(options.maxDataZoom);
+    let maxDataZoomPending = null;
+    if (maxDataZoom === undefined && options.maxDataZoom === undefined && archive?.getMaxZoom) {
+        maxDataZoomPending = (async () => {
+            try {
+                maxDataZoom = normaliseMaxDataZoom(await archive.getMaxZoom?.());
+            }
+            catch {
+                // No answer is no overzoom; the tile reads report their own failures.
+            }
+            finally {
+                maxDataZoomPending = null;
+            }
+        })();
+    }
+    function dataZoomFor(zoom) {
+        return maxDataZoom !== undefined && zoom > maxDataZoom ? maxDataZoom : zoom;
+    }
     function liveStyle() {
         if (isVectorTileClassStyle(style) && classTable) {
             return { ...style, classTable };
@@ -458,9 +620,62 @@ export function createVectorTileOverlaySource(options) {
             ...(tileNetwork ? { tileNetwork } : {}),
         };
     }
-    async function readTile(key, z, x, y, startedAt) {
-        const bytes = await tileBytes(z, x, y);
-        if (!bytes)
+    function isStale(read) {
+        return latestZoom !== null && read.z !== dataZoomFor(latestZoom);
+    }
+    /** Forget a read that will not complete, so the next ask starts a fresh one. */
+    function release(read) {
+        if (inFlight.get(read.key) === read)
+            inFlight.delete(read.key);
+    }
+    /** Drop what is queued for a zoom the map has left; abort what is running. */
+    function dropStale() {
+        for (let index = queued.length - 1; index >= 0; index -= 1) {
+            const read = queued[index];
+            if (!read || !isStale(read))
+                continue;
+            queued.splice(index, 1);
+            release(read);
+            read.settle(null);
+        }
+        for (const read of running) {
+            if (!isStale(read))
+                continue;
+            release(read);
+            read.controller.abort();
+        }
+    }
+    function pump() {
+        while (running.size < concurrency) {
+            const read = queued.pop();
+            if (!read)
+                return;
+            if (isStale(read)) {
+                release(read);
+                read.settle(null);
+                continue;
+            }
+            running.add(read);
+            read.settle(execute(read));
+        }
+    }
+    async function execute(read) {
+        const { controller, generation: startedAt, key, x, y, z } = read;
+        let bytes;
+        try {
+            bytes = await tileBytes(z, x, y, controller.signal);
+        }
+        catch (reason) {
+            // An aborted read is the map moving on, not a failure.
+            if (controller.signal.aborted)
+                return null;
+            throw reason;
+        }
+        finally {
+            running.delete(read);
+            pump();
+        }
+        if (controller.signal.aborted || !bytes)
             return null;
         const tile = await decode(bytes, { x, y, z });
         if (!tile)
@@ -476,20 +691,41 @@ export function createVectorTileOverlaySource(options) {
             return Promise.resolve(cached);
         const existing = inFlight.get(key);
         if (existing)
-            return existing;
-        const startedAt = generation;
-        const started = readTile(key, z, x, y, startedAt).finally(() => {
-            // Only if it is still this read: clearCache may have dropped the entry
-            // and a newer read may already own the key.
-            if (inFlight.get(key) === started)
-                inFlight.delete(key);
-        });
-        inFlight.set(key, started);
-        return started;
+            return existing.promise;
+        let settle;
+        const read = {
+            controller: new AbortController(),
+            generation,
+            key,
+            promise: new Promise((resolve) => {
+                settle = resolve;
+            }),
+            settle: (value) => settle(value),
+            x,
+            y,
+            z,
+        };
+        // Only if it is still this read: clearCache may have dropped the entry
+        // and a newer read may already own the key.
+        void read.promise.then(() => release(read), () => release(read));
+        inFlight.set(key, read);
+        queued.push(read);
+        pump();
+        return read.promise;
     }
     async function imageForTile(x, y, z, scale) {
         try {
-            const tile = await decodedTile(z, x, y);
+            if (maxDataZoomPending)
+                await maxDataZoomPending;
+            latestZoom = z;
+            dropStale();
+            // Above the archive's last zoom the data lives in one ancestor, shared
+            // by every descendant through the cache.
+            const levels = z - dataZoomFor(z);
+            const factor = 2 ** levels;
+            const ancestorX = Math.floor(x / factor);
+            const ancestorY = Math.floor(y / factor);
+            const tile = await decodedTile(z - levels, ancestorX, ancestorY);
             if (!tile || vectorTileFeatureCount(tile) === 0)
                 return null;
             const pixelRatio = scale > 0 ? scale : 1;
@@ -498,6 +734,9 @@ export function createVectorTileOverlaySource(options) {
             const painted = paintVectorTile(canvas, tile, {
                 ...paintOptions(z),
                 pixelRatio,
+                ...(levels > 0
+                    ? { overzoom: { column: x - ancestorX * factor, levels, row: y - ancestorY * factor } }
+                    : {}),
             });
             return painted ? canvas : null;
         }
@@ -576,24 +815,28 @@ export function createVectorTileOverlaySource(options) {
         hitTest({ coordinate, tolerancePx = DEFAULT_HIT_TOLERANCE_PX, zoom }) {
             // Everything is computed in tile fractions and converted per tile, so a
             // source whose tiles use different extents still compares like for like.
-            const point = projectToTilePoint(coordinate, zoom, 1);
-            const tolerance = tolerancePx / tileSize;
+            // Above the data zoom the tiles are the ancestors', and a displayed tile
+            // is `1 / 2 ** levels` of one, so a pixel is that much smaller a fraction.
+            const dataZoom = dataZoomFor(zoom);
+            const pixelsPerTile = tileSize * 2 ** (zoom - dataZoom);
+            const point = projectToTilePoint(coordinate, dataZoom, 1);
+            const tolerance = tolerancePx / pixelsPerTile;
             let best = null;
-            for (const candidate of hitTestNeighbours(point, zoom, 1, tolerance)) {
-                const tile = cache.get(`${zoom}/${candidate.offsetX}/${candidate.offsetY}`);
+            for (const candidate of hitTestNeighbours(point, dataZoom, 1, tolerance)) {
+                const tile = cache.get(`${dataZoom}/${candidate.offsetX}/${candidate.offsetY}`);
                 if (!tile)
                     continue;
                 const hit = hitTestTile(tile, candidate.x * tile.extent, candidate.y * tile.extent, tolerance * tile.extent);
                 if (!hit)
                     continue;
-                const distancePx = (hit.distance / tile.extent) * tileSize;
+                const distancePx = (hit.distance / tile.extent) * pixelsPerTile;
                 if (best && best.distancePx <= distancePx)
                     continue;
                 best = {
                     distancePx,
                     feature: hit.feature,
                     properties: tile.properties[hit.feature] ?? {},
-                    tile: { x: candidate.offsetX, y: candidate.offsetY, z: zoom },
+                    tile: { x: candidate.offsetX, y: candidate.offsetY, z: dataZoom },
                 };
             }
             return best;
