@@ -78,18 +78,19 @@ Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
 main. The publishing job does not use the main-only `npm-release` environment:
 that environment holds the estate App key, and GitHub gives environment secrets
 to every job that uses the environment. Only install-free jobs use it
-(`notify-mirror` in `release.yml`, `mirror-redispatch` in `release-proof.yml`),
-so the key never shares a runner with dependency install scripts. GitHub
-Packages must grant this repository Actions access to every existing package,
-including packages not automatically linked to this repository. Before writing
-registry auth, the job checks that its token can read metadata for every
-publication target that has a release tag (`<name>@<version>`); a missing or
-foreign package among those fails closed. A target with no release tag has never
-been published and has no GitHub Packages metadata to read yet, so it is named
-in the log and left to its first publish, which creates both the package and its
-tag. Changesets gets a mode-0600 temporary home for its git push credential,
-created only after the dependency install and removed on exit. The release's
-exact version registry proof uses the same temporary token config.
+(`notify-mirror` and `approve-release-pr-ci` in `release.yml`,
+`mirror-redispatch` in `release-proof.yml`), so the key never shares a runner
+with dependency install scripts. GitHub Packages must grant this repository
+Actions access to every existing package, including packages not automatically
+linked to this repository. Before writing registry auth, the job checks that its
+token can read metadata for every publication target that has a release tag
+(`<name>@<version>`); a missing or foreign package among those fails closed. A
+target with no release tag has never been published and has no GitHub Packages
+metadata to read yet, so it is named in the log and left to its first publish,
+which creates both the package and its tag. Changesets gets a mode-0600
+temporary home for its git push credential, created only after the dependency
+install and removed on exit. The release's exact version registry proof uses the
+same temporary token config.
 
 ## Packed consumer preparation
 
@@ -397,8 +398,41 @@ Prevention:
 The Release workflow pushes the release PR with the job-scoped `GITHUB_TOKEN`.
 GitHub creates that PR's `pull_request` CI run but holds it as
 `action_required`, so `verify-pr-gate.py` reports no result on the head
-(`required=0/2`) until someone approves the run. Every release PR head needs
-this approval: nothing in the workflow starts or approves CI for it.
+(`required=0/2`) until someone approves the run (a median 574 s wait on
+2026-10-02, narduk-libs#1354).
+
+**The workflow now approves it** (narduk-libs#1354, Logan, 2026-10-02, askme:
+"Use the estate App token (Recommended)"). After the Release job pushes a
+release PR head, two jobs act on that head and no other:
+
+- `plan-release-pr-approval` holds no secret. It checks out `main` for
+  `scripts/approve-release-pr-ci.mjs` and, with the read-only job token, names a
+  run only when the PR is open, targets `main`, has head branch
+  `changeset-release/main` in this repository (never a fork), its head is the
+  commit the Release job of this run left checked out, that commit is authored
+  and committed by `github-actions[bot]` with the `chore: release packages`
+  title, and the run is the held `ci.yml` `pull_request` run for exactly that
+  head. It waits up to a minute for the run to appear.
+- `approve-release-pr-ci` runs in the `npm-release` environment, checks out
+  nothing and installs nothing. It mints a per-run token from the estate App
+  `narduk-lane-automation` (secret `LANE_AUTOMATION_APP_KEY`, variable
+  `LANE_AUTOMATION_CLIENT_ID`, the same pair `notify-mirror` uses) downscoped to
+  this repository and `actions: write`, reads the token's repositories back
+  before use, re-reads each planned run, and makes the one call the hand
+  procedure below makes. The estate App's installation on `narduk-enterprises`
+  already carries `actions: write` on every repository (agent-infrastructure
+  `docs/standards/GITHUB-APPS.md`, D-GHAPP-1), so no permission or installation
+  changed.
+
+Neither job can fail a release (`continue-on-error: true`; the script turns
+every error into a warning). When the key or the variable is absent, or the
+planned run is no longer the held run, the job records a
+`Release PR CI left to manual approval` notice and the hand procedure below
+still works. To confirm the automation on a real release PR, read the Release
+run's `approve-release-pr-ci` job (its notice names the run it approved) and the
+approved CI run's `created_at` against its first job's `started_at`: seconds
+mean the App approved it, minutes mean someone did by hand or nothing did. The
+`plan-release-pr-approval` notice says why when nothing was planned.
 
 A `workflow_dispatch` CI run on `changeset-release/main` does not replace the
 approval. Until #861 and #865, a `release-pr-ci` job dispatched one after each
@@ -408,7 +442,8 @@ head commit, but the PR's required checks never counted them: on #805 heads
 approved. The job was removed. Do not dispatch CI by hand for a release PR, and
 do not wait on `gate-wait` for a head whose run is still held.
 
-Approve only the held run for the release PR's current head:
+Hand procedure, for when the automation did not run or declined: approve only
+the held run for the release PR's current head:
 
 ```bash
 head=$(gh pr view changeset-release/main --repo narduk-enterprises/narduk-libs \
@@ -425,9 +460,10 @@ concurrency group. On 2026-09-22 an unfiltered approve released 20 runs, 19 of
 them stale. They took the group and cancelled the current head's run, which then
 had to be re-run.
 
-Authoring the release PR with a GitHub App token would avoid the held run.
-Widening that App's grant on this repository remains Logan's decision and is
-tracked on #198.
+Authoring the release PR with a GitHub App token would also avoid the held run,
+but it would put the App key in the job that runs `pnpm install` and the
+Changesets action, which this workflow keeps apart on purpose (#198). The
+approval above needs no widening of the App's grant.
 
 ## Bad release rollback
 

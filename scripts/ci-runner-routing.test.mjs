@@ -36,15 +36,18 @@ test('every public CI and language job uses a hosted runner without package cred
 const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 
 test('only the verified main release receives a job-scoped package write token', () => {
-  // verify-ci, release, recheck-main (#1119) and notify-mirror.
-  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 4)
+  // verify-ci, release, recheck-main (#1119), plan-release-pr-approval,
+  // notify-mirror and approve-release-pr-ci (#1354).
+  assert.equal((release.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 6)
   assert.match(release, /github\.ref == 'refs\/heads\/main'/u)
   // npm-release holds the estate App key, and environment secrets reach every
-  // job that uses the environment. Only the install-free notify-mirror may.
+  // job that uses the environment. Only the install-free notify-mirror and
+  // approve-release-pr-ci may; neither checks out code (approve-release-pr-ci
+  // is asserted in approve-release-pr-ci.test.mjs).
   assert.doesNotMatch(releasePublish, /^\s+environment:/mu)
   assert.deepEqual(
     [...release.matchAll(/^ {4}environment: (\S+)$/gmu)].map((match) => match[1]),
-    ['npm-release'],
+    ['npm-release', 'npm-release'],
   )
   assert.match(releaseNotify, /^ {4}environment: npm-release$/mu)
   assert.match(release, /packages: write/u)
