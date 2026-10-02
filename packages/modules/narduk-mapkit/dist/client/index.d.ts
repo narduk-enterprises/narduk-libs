@@ -10,6 +10,7 @@ export * from './pmtiles.js';
 export * from './probe.js';
 export * from './rect-beside.js';
 export * from './render.js';
+export * from './resolve-hit.js';
 export * from './runtime.js';
 export * from './scaling.js';
 export * from './temporal.js';
