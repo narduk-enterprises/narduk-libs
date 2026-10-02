@@ -868,7 +868,7 @@ miss is `null`, not 0.
 Device pixel ratio is the `scale` MapKit already passes to `imageForTile`.
 Painting the 23,597-point national set at zoom 3–4, including a 2× scale, stays
 inside `POINT_LAYER_NATIONAL_TILE_BUDGET_MS` (50ms per tile), measured in
-`tests/point-layer.test.ts`.
+`tests/point-layer.test.ts` as the mean of repeated paints of the densest tile.
 
 See `examples/canvas-point-layer.ts` for the tap-and-lens wiring.
 

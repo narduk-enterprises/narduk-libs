@@ -25,8 +25,9 @@ export const POINT_CLASS_NOT_REPORTING = 254;
 /**
  * Per-tile CPU budget for painting the national gauge set (23,597 points) at
  * zoom 3–4, including a 2× device pixel ratio. Measured in
- * `tests/point-layer.test.ts`. The work is the index walk plus draw calls;
- * rasterisation cost is the host's.
+ * `tests/point-layer.test.ts` as the mean of repeated paints of the densest
+ * tile, so a loaded host's scheduler spikes do not fail the suite. The work
+ * is the index walk plus draw calls; rasterisation cost is the host's.
  */
 export const POINT_LAYER_NATIONAL_TILE_BUDGET_MS = 50;
 const DEFAULT_TILE_SIZE = 256;
