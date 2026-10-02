@@ -392,9 +392,13 @@ local. Passkey user-verification is not treated as AAL2. For the same reason
 `501 MFA is only available when Supabase auth is enabled.` on the local backend,
 rather than a 401 that reads as an expired session.
 
-Notification mutations require the API-key scope `auth:notifications:write`.
-Account deletion, password change, profile update, and MFA enroll/verify refuse
-API-key principals entirely.
+Notification routes are session-or-scoped-key: reading
+(`GET /api/notifications`, `GET /api/notifications/unread-count`) requires the
+API-key scope `auth:notifications:read`, and mutations require
+`auth:notifications:write`. A session needs no scope; a key without the scope
+(or `*`), such as a key minted only for an app's MCP surface, gets 403. Account
+deletion, password change, profile update, and MFA enroll/verify refuse API-key
+principals entirely.
 
 **Account deletion re-authentication (Supabase backend).** An account with the
 `email` provider proves its current Supabase password; the sign-in that checks

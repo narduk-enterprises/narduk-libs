@@ -1,9 +1,12 @@
 import { defineEventHandler } from 'h3'
 import { z } from 'zod'
 
-import { requireAuth } from '#layer/server/utils/auth'
+import { requireAuth, requireAuthScopes } from '#layer/server/utils/auth'
 import { listResponse, parseListQuery } from '#layer/server/utils/listQuery'
-import { getUserNotifications } from '#narduk-auth-server/utils/notifications'
+import {
+  AUTH_NOTIFICATION_SCOPES,
+  getUserNotifications,
+} from '#narduk-auth-server/utils/notifications'
 
 /** Page ceiling this route has always enforced; now a clamp, not a silent cap. */
 const MAX_LIMIT = 100
@@ -29,6 +32,8 @@ const FILTERS = z.object({ unreadOnly: z.string().optional() })
  */
 export default defineEventHandler(async (event) => {
   const user = await requireAuth(event)
+  // A session passes; an API key needs `auth:notifications:read` (or `*`).
+  requireAuthScopes(user, [AUTH_NOTIFICATION_SCOPES.read])
   const query = parseListQuery(event, {
     defaultLimit: DEFAULT_LIMIT,
     defaultSort: 'createdAt:desc',
