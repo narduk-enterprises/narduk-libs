@@ -80,7 +80,6 @@ export const APP_CAPABILITY_IDS = [
   'search-console',
   'indexnow',
   'ingestion',
-  'xai',
   'apple-maps',
   'r2-uploads',
 ] as const
@@ -160,11 +159,6 @@ export const MODULE_CATALOG: Record<ModuleId, ModuleDefinition> = {
     id: 'ingestion',
     label: 'Ingestion',
     description: 'Protected scheduled ingestion and external trigger access.',
-  },
-  xai: {
-    id: 'xai',
-    label: 'xAI',
-    description: 'xAI / Grok API key.',
   },
   'apple-maps': {
     id: 'apple-maps',
@@ -478,7 +472,7 @@ const AUTH_CONFIG_MODULE: CatalogEntry[] = [
   },
   {
     key: 'TURNSTILE_SECRET_KEY',
-    from: 'doppler:narduk/tokens/TURNSTILE_SECRET_KEY',
+    from: 'nvault:cloudflare/prd/turnstile-shared/TURNSTILE_SECRET_KEY',
     to: ['cf:runtime-secret'],
     scope: 'every-app',
     secret: true,
@@ -486,7 +480,7 @@ const AUTH_CONFIG_MODULE: CatalogEntry[] = [
   },
   {
     key: 'TURNSTILE_SITE_KEY',
-    from: 'doppler:narduk/tokens/TURNSTILE_SITE_KEY',
+    from: 'nvault:cloudflare/prd/turnstile-shared/TURNSTILE_SITE_KEY',
     to: ['cf:build-var', 'cf:runtime-var'],
     scope: 'every-app',
     secret: false,
@@ -675,19 +669,6 @@ const INGESTION_MODULE: CatalogEntry[] = [
   },
 ]
 
-// ─── xai ─────────────────────────────────────────────────────────────────────
-
-const XAI_MODULE: CatalogEntry[] = [
-  {
-    key: 'XAI_API_KEY',
-    from: 'doppler:narduk/tokens/XAI_API_KEY',
-    to: ['cf:runtime-secret'],
-    scope: 'every-app',
-    secret: true,
-    module: 'xai',
-  },
-]
-
 // ─── apple-maps ──────────────────────────────────────────────────────────────
 
 const APPLE_MAPS_MODULE: CatalogEntry[] = [
@@ -808,7 +789,6 @@ export const ENV_CATALOG: readonly CatalogEntry[] = Object.freeze(
     ...SEARCH_CONSOLE_MODULE,
     ...INDEXNOW_MODULE,
     ...INGESTION_MODULE,
-    ...XAI_MODULE,
     ...APPLE_MAPS_MODULE,
     ...R2_UPLOADS_MODULE,
   ].sort((left, right) => left.key.localeCompare(right.key)),
