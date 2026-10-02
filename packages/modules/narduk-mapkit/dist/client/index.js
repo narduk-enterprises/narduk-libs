@@ -14,6 +14,7 @@ export * from './runtime.js';
 export * from './scaling.js';
 export * from './temporal.js';
 export * from './timers.js';
+export * from './point-layer.js';
 export * from './vector-tile-worker.js';
 export * from './vector-tiles.js';
 //# sourceMappingURL=index.js.map

@@ -28,6 +28,8 @@ These examples are small integration patterns, not standalone apps.
   updates and a render/cleanup contract.
 - `vector-tile-network.ts`: A PMTiles vector network painted through a worker
   decoder, and a tap answered from the decoded tiles.
+- `canvas-point-layer.ts`: National gauge dots painted from typed arrays,
+  restyled by replacing the class column, and a tap answered by `nearestPoint`.
 
 Copy the pattern that matches your runtime, then keep app-specific data
 fetching, styles, and marker HTML in the app.
