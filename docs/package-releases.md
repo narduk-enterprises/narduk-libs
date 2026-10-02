@@ -29,7 +29,61 @@ package needs an entry there, or `scripts:test` fails.
    job before the release job receives write permissions. Manual dispatch must
    pass the same proof. The commit must remain in main's history; a later merge
    does not invalidate its completed tests. Version commits have their own CI
-   concurrency group so later development cannot cancel them.
+   concurrency group so later development cannot cancel them. The proof is one
+   of two rules, both checked by `scripts/verify-release-ci.mjs`
+   (narduk-libs#1354):
+
+   - **Push rule.** A completed, successful `push` CI run on `main` for the
+     exact SHA, whose `verify` aggregate succeeded in that run attempt. This is
+     the rule for every Release run that CI's completion starts, and for a
+     manual dispatch.
+   - **Tree rule (release PR merges only).** The `chore: release packages` PR's
+     own `pull_request` CI run, when all of these hold: the PR was merged into
+     that exact commit; its head branch is `changeset-release/main` in this
+     repository, never a fork; the head commit and the main commit have the same
+     git tree hash; both have one parent and it is the same commit (so `main`
+     did not move between the head and the merge, and the tested merge ref was
+     the head's own tree); and the run is the full suite: `affected packages`,
+     `contracts`, `ci / Required`, `package / packed-consumer-smoke`,
+     `package / browser tests` and `verify` each succeeded (a path-filtered run
+     skips the smoke and browser jobs), at least one `ci / package / *` job
+     succeeded, and no job in the attempt failed or was cancelled. The run log
+     prints `Verified full CI for <sha> by the tree rule` with the PR number,
+     the run, the PR head and both tree hashes.
+
+   Which rule may answer, by mode:
+
+   - An early run (a CI `requested` event, below) uses the tree rule alone. If
+     it cannot prove the commit, or the push CI for that SHA has already
+     reported (a delayed early run), it ends green and publishes nothing.
+   - Any other run (CI completion, manual dispatch) tries the push rule first.
+     It tries the tree rule only when the push CI for that SHA has not reported:
+     no `ci.yml` push run exists for it, or the run is still in progress on its
+     first attempt (a dispatch made while the push CI runs). Once a push run for
+     the SHA has completed, or is being re-run after an earlier attempt, the
+     push rule's answer is final: a red, cancelled or incomplete push run
+     refuses the release in every mode, whatever the tree rule would say,
+     because the release PR's run skips `release-plan:check` and the push run
+     does not. A failed read of the push runs refuses as well. A tree that
+     differs by one byte, or a tree read that fails, leaves the push rule's
+     refusal standing.
+
+   `release.yml` also listens for CI `requested` events on `main`, but only a
+   commit whose message starts with `chore: release packages` takes part: that
+   run proves by the tree rule alone, so publishing starts when the merge lands
+   instead of after a second full CI run of the same tree. If the tree rule
+   cannot prove it, that run ends green with a `Release waits for push CI`
+   notice and publishes nothing; the run that the push CI's completion starts
+   proves and publishes it as before. For a release merge both runs occur, and
+   only the completed run prepares the next release PR: an early run skips drift
+   synthesis and the Changesets version step, so `changeset-release/main` is
+   pushed once per merge, not twice. The completed run finds every version
+   already published and then does the preparation. `requested` runs for any
+   other commit take a concurrency group of their own and skip every job, so
+   they never displace a queued Release run. `scripts/release-wait.mjs` still
+   waits for the push CI before it looks for the Release run; it is an operator
+   convenience and does not gate the release.
+
 3. Let app CI validate the release PR from a fresh frozen install. The packed
    consumer gate must prove every runtime dependency between local packages was
    rewritten from `workspace:*` to the exact coordinated release version; this
