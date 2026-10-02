@@ -22,14 +22,6 @@ export function hitTolerancePx(pointer, overrides = {}) {
     }
     return value;
 }
-/**
- * Ask the layers in order and return the first hit, or `null`.
- *
- * A point layer's hit is the index of the dot; a line layer's is the overlay's
- * {@link VectorTileHit}; an area's is whatever the tester returned. A layer
- * that reports nothing is a miss and the next is asked; after a hit no later
- * layer is asked.
- */
 export function resolveHit(options) {
     const pointer = options.pointer ?? 'mouse';
     const tolerancePx = hitTolerancePx(pointer, options);
@@ -40,6 +32,11 @@ export function resolveHit(options) {
             const index = layer.layer.nearestPoint(coordinate, tolerancePx, zoom);
             if (index !== null)
                 return { hit: index, kind: 'point' };
+        }
+        else if (layer.kind === 'label') {
+            const hit = layer.layer.labelAt(coordinate, tolerancePx, zoom);
+            if (hit)
+                return { hit, kind: 'label' };
         }
         else if (layer.kind === 'line') {
             const hit = layer.source.hitTest({ coordinate, tolerancePx, zoom });
