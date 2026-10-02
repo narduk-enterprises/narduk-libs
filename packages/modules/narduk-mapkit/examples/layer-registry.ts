@@ -84,6 +84,13 @@ export async function mountLayerRegistryMap(container: HTMLElement) {
     })
   }
 
+  /**
+   * A vector-network restyle uses the same swap-when-drawn path: pass
+   * `registry.replace` to `source.setRestyleHost`, then call `source.restyle`
+   * or `source.setClassTable`. The old overlay stays until the new one has
+   * drawn; tiles are not refetched.
+   */
+
   async function setStack(
     layers: Array<typeof vegetationLayer | typeof moistureLayer>,
   ): Promise<void> {

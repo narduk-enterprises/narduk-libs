@@ -11,8 +11,44 @@
  * changing the style repaints from memory and never refetches.
  */
 import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js';
+/**
+ * Sentinel in `si` / `ri` columns when that feature did not carry the key.
+ * A class-table lookup treats it as unknown, never as id 0.
+ */
+export declare const VECTOR_TILE_MISSING_ID = 4294967295;
+/** Reserved class byte: a gauge is on this stretch but is not reporting. */
+export declare const VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING = 254;
+/**
+ * Reserved class byte: no gauge on this stretch. Drawn in the style's
+ * `noGauge` paint — a neutral water colour — not the unknown grey.
+ */
+export declare const VECTOR_TILE_CLASS_NO_GAUGE = 255;
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>;
+export type VectorTileClassKey = 'si' | 'ri';
+/**
+ * Identity of the tile archive a class table must match.
+ *
+ * The table's declared version and length are compared to this, not guessed
+ * from the bytes on a feature. A mismatch paints every feature as unknown
+ * rather than a colour that belongs to a different network revision.
+ */
+export interface VectorTileNetworkIdentity {
+    length: number;
+    version: number | string;
+}
+/**
+ * One byte per dense id (`si` or `ri`). Index `i` is the class of that id.
+ *
+ * `length` is the declared id-space, and must equal `classes.length` as well
+ * as the tile archive's length. `networkVersion` is the revision those ids
+ * were assigned under.
+ */
+export interface VectorTileClassTable {
+    classes: Uint8Array;
+    length: number;
+    networkVersion: number | string;
+}
 /**
  * A decoded tile, stored columnar rather than as objects.
  *
@@ -22,6 +58,11 @@ export type VectorTileProperties = Record<string, boolean | number | string | nu
  * mobile Safari gives a tab before it discards it. The same points in an
  * `Int16Array` cost 4 bytes, which is the difference between a cache that
  * survives a pan across the country and one that doesn't.
+ *
+ * `so`, `si` and `ri` are the same idea for the properties a national river
+ * network styles by: one typed column per tile, not one object per feature.
+ * A class-table style reads only those columns. The `properties` array stays
+ * for the existing per-feature style function and for hit-test.
  *
  * Build one with {@link buildDecodedVectorTile} rather than by hand.
  */
@@ -49,6 +90,18 @@ export interface DecodedVectorTile {
     lineStarts: Uint32Array;
     /** One entry per feature, in the order `featureLines` indexes them. */
     properties: readonly VectorTileProperties[];
+    /**
+     * Reach index per feature, present from zoom 8 in tiles v2. Omitted when no
+     * feature in the tile carried `ri` (a v1 low-zoom tile).
+     */
+    ri?: Uint32Array;
+    /**
+     * Dense segment id per feature, present at every zoom in tiles v2. Omitted
+     * when no feature carried `si` — that is a v1 tile, and it still paints.
+     */
+    si?: Uint32Array;
+    /** Stream order per feature. Omitted when no feature carried `so`. */
+    so?: Uint8Array;
 }
 /** A feature as a caller describes it, before it is packed into flat arrays. */
 export interface VectorTileFeatureInput {
@@ -58,6 +111,12 @@ export interface VectorTileFeatureInput {
         y: number;
     }>>;
     properties: VectorTileProperties;
+    /** Overrides `properties.ri` when packing the `ri` column. */
+    ri?: number;
+    /** Overrides `properties.si` when packing the `si` column. */
+    si?: number;
+    /** Overrides `properties.so` when packing the `so` column. */
+    so?: number;
 }
 /**
  * Pack features into the columnar layout {@link DecodedVectorTile} holds.
@@ -70,18 +129,72 @@ export interface VectorTileFeatureInput {
  *
  * A line of fewer than two points is dropped: it can't be stroked, and keeping
  * it would put empty ranges in `lineStarts` for the painter to skip.
+ *
+ * `so`, `si` and `ri` become typed columns when at least one feature carries
+ * them. A missing id in an otherwise-present `si`/`ri` column is
+ * {@link VECTOR_TILE_MISSING_ID}, so a class-table lookup cannot mistake it
+ * for id 0.
  */
 export declare function buildDecodedVectorTile(extent: number, features: readonly VectorTileFeatureInput[]): DecodedVectorTile;
 /** Features in a decoded tile, which is one less than `featureLines.length`. */
 export declare function vectorTileFeatureCount(tile: DecodedVectorTile): number;
 /** How a feature is painted, or `null` to skip it at this zoom. */
 export interface VectorTileStyle {
+    /**
+     * Optional outline drawn under the line so it stays readable on the
+     * basemap. `extraWidth` is added to `width` for that stroke only.
+     */
+    casing?: VectorTileCasing;
     color: string;
+    opacity?: number;
+    /**
+     * Draw-order key after stream order. Higher sits on top. A class-table
+     * style uses the class byte; a function style may set this explicitly.
+     */
+    severity?: number;
     /** Line width in CSS pixels, before the device pixel ratio. */
     width: number;
-    opacity?: number;
+}
+export interface VectorTileCasing {
+    color: string;
+    extraWidth: number;
 }
 export type VectorTileStyleFunction = (properties: VectorTileProperties, zoom: number) => VectorTileStyle | null;
+/**
+ * Colour by a class byte looked up in a table, not by calling a style
+ * function per feature.
+ *
+ * Below `zoomThreshold` the table is indexed by `keyBelowZoom` (`si` by
+ * default); from that zoom it is indexed by `keyFromZoom` (`ri` by default).
+ * Reserved bytes stay distinct from `paintByClass` even if that array has
+ * entries at 254 or 255.
+ */
+export interface VectorTileClassStyle {
+    /**
+     * Outline drawn under every batch. A per-feature `casing` on the resolved
+     * paint, if present, wins for that feature.
+     */
+    casing?: VectorTileCasing;
+    classTable: VectorTileClassTable;
+    gaugeNotReporting: VectorTileStyle;
+    keyBelowZoom?: VectorTileClassKey;
+    keyFromZoom?: VectorTileClassKey;
+    noGauge: VectorTileStyle;
+    /**
+     * Paint for class bytes 0–253. A missing entry, and every reserved or
+     * unknown state, uses `unknown` / `gaugeNotReporting` / `noGauge` instead.
+     */
+    paintByClass: ReadonlyArray<VectorTileStyle | null | undefined>;
+    /**
+     * Archive this style was built for. When omitted, the overlay source's
+     * `tileNetwork` is the one compared to the table.
+     */
+    tileNetwork?: VectorTileNetworkIdentity;
+    unknown: VectorTileStyle;
+    zoomThreshold?: number;
+}
+export type VectorTileOverlayStyle = VectorTileStyleFunction | VectorTileClassStyle;
+export declare function isVectorTileClassStyle(style: VectorTileOverlayStyle): style is VectorTileClassStyle;
 /**
  * Turn tile bytes into geometry.
  *
@@ -118,6 +231,39 @@ export interface VectorTileCanvasContext {
     moveTo: (x: number, y: number) => void;
     stroke: () => void;
 }
+/**
+ * The registry half of a restyle. Structural so `./client` does not have to
+ * name `MapKitLayerRegistry` here: any object that can `replace` a layer
+ * with `activateWhen: 'first-image'` is enough.
+ */
+export interface VectorTileRestyleHost<TImage = unknown> {
+    descriptor?: {
+        data?: unknown;
+        maximumZ?: number;
+        minimumZ?: number;
+        onTileError?: (reason: unknown) => void;
+        opacity?: number;
+        order?: number;
+    };
+    layerId: string;
+    replace: (id: string, descriptor: {
+        data?: unknown;
+        id: string;
+        imageForTile: (x: number, y: number, z: number, scale: number, data?: unknown) => Promise<TImage | null>;
+        maximumZ?: number;
+        minimumZ?: number;
+        onTileError?: (reason: unknown) => void;
+        opacity?: number;
+        order?: number;
+    }, options?: VectorTileRestyleReplaceOptions) => Promise<void>;
+    replaceOptions?: VectorTileRestyleReplaceOptions;
+}
+export interface VectorTileRestyleReplaceOptions {
+    activateWhen?: 'immediate' | 'first-image';
+    crossfadeDurationMs?: number;
+    readinessTimeoutMs?: number;
+    signal?: AbortSignal;
+}
 export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas> {
     /** Decoded-tile cache size. Tiles are small; the default covers a few screens. */
     cacheSize?: number;
@@ -125,8 +271,14 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     decode: VectorTileDecoder;
     /** Reported per tile; the tile itself resolves to `null` and draws nothing. */
     onError?: (reason: unknown) => void;
-    style: VectorTileStyleFunction;
+    restyleHost?: VectorTileRestyleHost<TCanvas>;
+    style: VectorTileOverlayStyle;
     tileBytes: (z: number, x: number, y: number, signal?: AbortSignal) => Promise<Uint8Array | null>;
+    /**
+     * Version and id-space the loaded tiles were built for. A class table that
+     * does not declare the same pair paints every feature as unknown.
+     */
+    tileNetwork?: VectorTileNetworkIdentity;
     /** Logical tile size before `scale`. MapKit asks for 256 or 512. */
     tileSize?: number;
 }
@@ -155,33 +307,78 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
     hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null;
     /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
     imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>;
+    /**
+     * Repaint from the decoded cache and, when a restyle host is attached,
+     * swap the overlay through the registry's swap-when-drawn path. Rapid
+     * successive calls coalesce to the latest style.
+     */
+    restyle: (style: VectorTileOverlayStyle) => Promise<void>;
+    /**
+     * Replace the class table and restyle. A table whose version or length
+     * does not match the tiles draws unknown, never a wrong colour.
+     */
+    setClassTable: (table: VectorTileClassTable) => Promise<void>;
+    setRestyleHost: (host: VectorTileRestyleHost<TCanvas> | null) => void;
+    /**
+     * Swap the style in memory. Cached tiles repaint on the next request
+     * without a refetch or a re-decode. Prefer {@link VectorTileOverlaySource.restyle}
+     * when the overlay is on a map: `setStyle` alone cannot ask MapKit to
+     * re-request tiles without a blank frame.
+     */
+    setStyle: (style: VectorTileOverlayStyle) => void;
     /** Decoded tiles held right now. */
     readonly size: number;
-    /**
-     * Swap the style. Cached tiles repaint on the next request without a
-     * refetch or a re-decode, which is what makes a lens change fast.
-     */
-    setStyle: (style: VectorTileStyleFunction) => void;
 }
 /**
  * Bytes a decoded tile retains.
  *
- * Geometry and indexes are exact. Properties are estimated, because they are
- * ordinary objects and only the engine knows their real footprint -- but
- * leaving them out would understate a dense archive badly, since a `name`
- * string on each of a few thousand features per tile is what actually grows
- * the cache. The estimate charges two bytes per character of every key and
- * string value, eight for a number, and a flat per-entry overhead; it is
- * meant for sizing `cacheSize` against a budget, not for exact accounting.
+ * Geometry, indexes and class columns are exact. Properties are estimated,
+ * because they are ordinary objects and only the engine knows their real
+ * footprint -- but leaving them out would understate a dense archive badly,
+ * since a `name` string on each of a few thousand features per tile is what
+ * actually grows the cache. The estimate charges two bytes per character of
+ * every key and string value, eight for a number, and a flat per-entry
+ * overhead; it is meant for sizing `cacheSize` against a budget, not for
+ * exact accounting.
  */
 export declare function decodedVectorTileBytes(tile: DecodedVectorTile): number;
+export declare const DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD = 8;
+/**
+ * Whether a class table may colour these tiles.
+ *
+ * The table's own `length` must equal `classes.length`. When a tile-network
+ * identity is supplied it must also match the table's declared version and
+ * length. Anything else is a different network, and the painter must not
+ * guess.
+ */
+export declare function classTableMatchesNetwork(table: VectorTileClassTable, tileNetwork?: VectorTileNetworkIdentity): boolean;
+/** Which column a class-table style reads at `zoom`. */
+export declare function vectorTileClassKeyAtZoom(style: VectorTileClassStyle, zoom: number): VectorTileClassKey;
+/**
+ * Class byte for one feature, or `null` when the chosen column is absent,
+ * the id is missing, or the id sits outside the table.
+ *
+ * `null` is "no data", never 0 and never a reserved byte.
+ */
+export declare function vectorTileClassByte(tile: DecodedVectorTile, feature: number, key: VectorTileClassKey, table: VectorTileClassTable): number | null;
+/**
+ * Paint for a looked-up class byte. Reserved 254/255 and unknown stay
+ * distinct from `paintByClass`, including from any entry at those indexes.
+ */
+export declare function paintForVectorTileClass(style: VectorTileClassStyle, classByte: number | null, compatible: boolean): VectorTileStyle;
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.
+ *
+ * Lines are grouped by colour and width into one stroke per batch, then
+ * drawn in stream-order then severity so a flooded stretch sits on top of
+ * the same-order water under it. An optional casing is the same path,
+ * stroked wider, underneath the batch.
  */
 export declare function paintVectorTile(canvas: VectorTileCanvas, tile: DecodedVectorTile, options: {
     pixelRatio: number;
-    style: VectorTileStyleFunction;
+    style: VectorTileOverlayStyle;
+    tileNetwork?: VectorTileNetworkIdentity;
     tileSize: number;
     zoom: number;
 }): boolean;

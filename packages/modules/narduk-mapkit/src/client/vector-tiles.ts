@@ -18,8 +18,50 @@ import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js'
 /** A fingertip, not a pixel. */
 const DEFAULT_HIT_TOLERANCE_PX = 8
 
+/**
+ * Sentinel in `si` / `ri` columns when that feature did not carry the key.
+ * A class-table lookup treats it as unknown, never as id 0.
+ */
+export const VECTOR_TILE_MISSING_ID = 0xffff_ffff
+
+/** Reserved class byte: a gauge is on this stretch but is not reporting. */
+export const VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING = 254
+
+/**
+ * Reserved class byte: no gauge on this stretch. Drawn in the style's
+ * `noGauge` paint — a neutral water colour — not the unknown grey.
+ */
+export const VECTOR_TILE_CLASS_NO_GAUGE = 255
+
 /** A decoded feature's properties, as a vector tile carries them. */
 export type VectorTileProperties = Record<string, boolean | number | string | null>
+
+export type VectorTileClassKey = 'si' | 'ri'
+
+/**
+ * Identity of the tile archive a class table must match.
+ *
+ * The table's declared version and length are compared to this, not guessed
+ * from the bytes on a feature. A mismatch paints every feature as unknown
+ * rather than a colour that belongs to a different network revision.
+ */
+export interface VectorTileNetworkIdentity {
+  length: number
+  version: number | string
+}
+
+/**
+ * One byte per dense id (`si` or `ri`). Index `i` is the class of that id.
+ *
+ * `length` is the declared id-space, and must equal `classes.length` as well
+ * as the tile archive's length. `networkVersion` is the revision those ids
+ * were assigned under.
+ */
+export interface VectorTileClassTable {
+  classes: Uint8Array
+  length: number
+  networkVersion: number | string
+}
 
 /**
  * A decoded tile, stored columnar rather than as objects.
@@ -30,6 +72,11 @@ export type VectorTileProperties = Record<string, boolean | number | string | nu
  * mobile Safari gives a tab before it discards it. The same points in an
  * `Int16Array` cost 4 bytes, which is the difference between a cache that
  * survives a pan across the country and one that doesn't.
+ *
+ * `so`, `si` and `ri` are the same idea for the properties a national river
+ * network styles by: one typed column per tile, not one object per feature.
+ * A class-table style reads only those columns. The `properties` array stays
+ * for the existing per-feature style function and for hit-test.
  *
  * Build one with {@link buildDecodedVectorTile} rather than by hand.
  */
@@ -57,6 +104,18 @@ export interface DecodedVectorTile {
   lineStarts: Uint32Array
   /** One entry per feature, in the order `featureLines` indexes them. */
   properties: readonly VectorTileProperties[]
+  /**
+   * Reach index per feature, present from zoom 8 in tiles v2. Omitted when no
+   * feature in the tile carried `ri` (a v1 low-zoom tile).
+   */
+  ri?: Uint32Array
+  /**
+   * Dense segment id per feature, present at every zoom in tiles v2. Omitted
+   * when no feature carried `si` — that is a v1 tile, and it still paints.
+   */
+  si?: Uint32Array
+  /** Stream order per feature. Omitted when no feature carried `so`. */
+  so?: Uint8Array
 }
 
 /** A feature as a caller describes it, before it is packed into flat arrays. */
@@ -64,6 +123,12 @@ export interface VectorTileFeatureInput {
   /** One entry per line; each is a run of tile-local points. */
   lines: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>
   properties: VectorTileProperties
+  /** Overrides `properties.ri` when packing the `ri` column. */
+  ri?: number
+  /** Overrides `properties.si` when packing the `si` column. */
+  si?: number
+  /** Overrides `properties.so` when packing the `so` column. */
+  so?: number
 }
 
 /** Int16 range, the bound {@link buildDecodedVectorTile} clamps coordinates to. */
@@ -81,6 +146,11 @@ const COORDINATE_MAX = 32_767
  *
  * A line of fewer than two points is dropped: it can't be stroked, and keeping
  * it would put empty ranges in `lineStarts` for the painter to skip.
+ *
+ * `so`, `si` and `ri` become typed columns when at least one feature carries
+ * them. A missing id in an otherwise-present `si`/`ri` column is
+ * {@link VECTOR_TILE_MISSING_ID}, so a class-table lookup cannot mistake it
+ * for id 0.
  */
 export function buildDecodedVectorTile(
   extent: number,
@@ -100,6 +170,14 @@ export function buildDecodedVectorTile(
   const lineStarts = new Uint32Array(lineCount + 1)
   const featureLines = new Uint32Array(features.length + 1)
   const properties: VectorTileProperties[] = []
+  const so = new Uint8Array(features.length)
+  const si = new Uint32Array(features.length)
+  const ri = new Uint32Array(features.length)
+  si.fill(VECTOR_TILE_MISSING_ID)
+  ri.fill(VECTOR_TILE_MISSING_ID)
+  let anySo = false
+  let anySi = false
+  let anyRi = false
 
   let pointIndex = 0
   let lineIndex = 0
@@ -117,17 +195,62 @@ export function buildDecodedVectorTile(
       }
     }
     properties.push(feature.properties)
+    const streamOrder = readColumnNumber(feature.so, feature.properties, 'so')
+    if (streamOrder !== null) {
+      anySo = true
+      so[featureIndex] = clampByte(streamOrder)
+    }
+    const segmentId = readColumnNumber(feature.si, feature.properties, 'si')
+    if (segmentId !== null) {
+      anySi = true
+      si[featureIndex] = toClassId(segmentId)
+    }
+    const reachId = readColumnNumber(feature.ri, feature.properties, 'ri')
+    if (reachId !== null) {
+      anyRi = true
+      ri[featureIndex] = toClassId(reachId)
+    }
     featureIndex += 1
   }
   lineStarts[lineIndex] = pointIndex
   featureLines[featureIndex] = lineIndex
 
-  return { coordinates, extent, featureLines, lineStarts, properties }
+  return {
+    coordinates,
+    extent,
+    featureLines,
+    lineStarts,
+    properties,
+    ...(anyRi ? { ri } : {}),
+    ...(anySi ? { si } : {}),
+    ...(anySo ? { so } : {}),
+  }
 }
 
 function clampCoordinate(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.min(COORDINATE_MAX, Math.max(COORDINATE_MIN, Math.round(value)))
+}
+
+function clampByte(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(255, Math.max(0, Math.round(value)))
+}
+
+function toClassId(value: number): number {
+  if (!Number.isFinite(value) || value < 0) return VECTOR_TILE_MISSING_ID
+  return Math.min(VECTOR_TILE_MISSING_ID, Math.round(value))
+}
+
+function readColumnNumber(
+  explicit: number | undefined,
+  properties: VectorTileProperties,
+  key: string,
+): number | null {
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) return explicit
+  const value = properties[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return null
 }
 
 /** Features in a decoded tile, which is one less than `featureLines.length`. */
@@ -137,16 +260,73 @@ export function vectorTileFeatureCount(tile: DecodedVectorTile): number {
 
 /** How a feature is painted, or `null` to skip it at this zoom. */
 export interface VectorTileStyle {
+  /**
+   * Optional outline drawn under the line so it stays readable on the
+   * basemap. `extraWidth` is added to `width` for that stroke only.
+   */
+  casing?: VectorTileCasing
   color: string
+  opacity?: number
+  /**
+   * Draw-order key after stream order. Higher sits on top. A class-table
+   * style uses the class byte; a function style may set this explicitly.
+   */
+  severity?: number
   /** Line width in CSS pixels, before the device pixel ratio. */
   width: number
-  opacity?: number
+}
+
+export interface VectorTileCasing {
+  color: string
+  extraWidth: number
 }
 
 export type VectorTileStyleFunction = (
   properties: VectorTileProperties,
   zoom: number,
 ) => VectorTileStyle | null
+
+/**
+ * Colour by a class byte looked up in a table, not by calling a style
+ * function per feature.
+ *
+ * Below `zoomThreshold` the table is indexed by `keyBelowZoom` (`si` by
+ * default); from that zoom it is indexed by `keyFromZoom` (`ri` by default).
+ * Reserved bytes stay distinct from `paintByClass` even if that array has
+ * entries at 254 or 255.
+ */
+export interface VectorTileClassStyle {
+  /**
+   * Outline drawn under every batch. A per-feature `casing` on the resolved
+   * paint, if present, wins for that feature.
+   */
+  casing?: VectorTileCasing
+  classTable: VectorTileClassTable
+  gaugeNotReporting: VectorTileStyle
+  keyBelowZoom?: VectorTileClassKey
+  keyFromZoom?: VectorTileClassKey
+  noGauge: VectorTileStyle
+  /**
+   * Paint for class bytes 0–253. A missing entry, and every reserved or
+   * unknown state, uses `unknown` / `gaugeNotReporting` / `noGauge` instead.
+   */
+  paintByClass: ReadonlyArray<VectorTileStyle | null | undefined>
+  /**
+   * Archive this style was built for. When omitted, the overlay source's
+   * `tileNetwork` is the one compared to the table.
+   */
+  tileNetwork?: VectorTileNetworkIdentity
+  unknown: VectorTileStyle
+  zoomThreshold?: number
+}
+
+export type VectorTileOverlayStyle = VectorTileStyleFunction | VectorTileClassStyle
+
+export function isVectorTileClassStyle(
+  style: VectorTileOverlayStyle,
+): style is VectorTileClassStyle {
+  return typeof style === 'object' && style !== null && 'classTable' in style
+}
 
 /**
  * Turn tile bytes into geometry.
@@ -186,6 +366,51 @@ export interface VectorTileCanvasContext {
   stroke: () => void
 }
 
+/**
+ * The registry half of a restyle. Structural so `./client` does not have to
+ * name `MapKitLayerRegistry` here: any object that can `replace` a layer
+ * with `activateWhen: 'first-image'` is enough.
+ */
+export interface VectorTileRestyleHost<TImage = unknown> {
+  descriptor?: {
+    data?: unknown
+    maximumZ?: number
+    minimumZ?: number
+    onTileError?: (reason: unknown) => void
+    opacity?: number
+    order?: number
+  }
+  layerId: string
+  replace: (
+    id: string,
+    descriptor: {
+      data?: unknown
+      id: string
+      imageForTile: (
+        x: number,
+        y: number,
+        z: number,
+        scale: number,
+        data?: unknown,
+      ) => Promise<TImage | null>
+      maximumZ?: number
+      minimumZ?: number
+      onTileError?: (reason: unknown) => void
+      opacity?: number
+      order?: number
+    },
+    options?: VectorTileRestyleReplaceOptions,
+  ) => Promise<void>
+  replaceOptions?: VectorTileRestyleReplaceOptions
+}
+
+export interface VectorTileRestyleReplaceOptions {
+  activateWhen?: 'immediate' | 'first-image'
+  crossfadeDurationMs?: number
+  readinessTimeoutMs?: number
+  signal?: AbortSignal
+}
+
 export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas> {
   /** Decoded-tile cache size. Tiles are small; the default covers a few screens. */
   cacheSize?: number
@@ -193,8 +418,14 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
   decode: VectorTileDecoder
   /** Reported per tile; the tile itself resolves to `null` and draws nothing. */
   onError?: (reason: unknown) => void
-  style: VectorTileStyleFunction
+  restyleHost?: VectorTileRestyleHost<TCanvas>
+  style: VectorTileOverlayStyle
   tileBytes: (z: number, x: number, y: number, signal?: AbortSignal) => Promise<Uint8Array | null>
+  /**
+   * Version and id-space the loaded tiles were built for. A class table that
+   * does not declare the same pair paints every feature as unknown.
+   */
+  tileNetwork?: VectorTileNetworkIdentity
   /** Logical tile size before `scale`. MapKit asks for 256 or 512. */
   tileSize?: number
 }
@@ -225,31 +456,49 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
   hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null
   /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
   imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>
+  /**
+   * Repaint from the decoded cache and, when a restyle host is attached,
+   * swap the overlay through the registry's swap-when-drawn path. Rapid
+   * successive calls coalesce to the latest style.
+   */
+  restyle: (style: VectorTileOverlayStyle) => Promise<void>
+  /**
+   * Replace the class table and restyle. A table whose version or length
+   * does not match the tiles draws unknown, never a wrong colour.
+   */
+  setClassTable: (table: VectorTileClassTable) => Promise<void>
+  setRestyleHost: (host: VectorTileRestyleHost<TCanvas> | null) => void
+  /**
+   * Swap the style in memory. Cached tiles repaint on the next request
+   * without a refetch or a re-decode. Prefer {@link VectorTileOverlaySource.restyle}
+   * when the overlay is on a map: `setStyle` alone cannot ask MapKit to
+   * re-request tiles without a blank frame.
+   */
+  setStyle: (style: VectorTileOverlayStyle) => void
   /** Decoded tiles held right now. */
   readonly size: number
-  /**
-   * Swap the style. Cached tiles repaint on the next request without a
-   * refetch or a re-decode, which is what makes a lens change fast.
-   */
-  setStyle: (style: VectorTileStyleFunction) => void
 }
 
 /**
  * Bytes a decoded tile retains.
  *
- * Geometry and indexes are exact. Properties are estimated, because they are
- * ordinary objects and only the engine knows their real footprint -- but
- * leaving them out would understate a dense archive badly, since a `name`
- * string on each of a few thousand features per tile is what actually grows
- * the cache. The estimate charges two bytes per character of every key and
- * string value, eight for a number, and a flat per-entry overhead; it is
- * meant for sizing `cacheSize` against a budget, not for exact accounting.
+ * Geometry, indexes and class columns are exact. Properties are estimated,
+ * because they are ordinary objects and only the engine knows their real
+ * footprint -- but leaving them out would understate a dense archive badly,
+ * since a `name` string on each of a few thousand features per tile is what
+ * actually grows the cache. The estimate charges two bytes per character of
+ * every key and string value, eight for a number, and a flat per-entry
+ * overhead; it is meant for sizing `cacheSize` against a budget, not for
+ * exact accounting.
  */
 export function decodedVectorTileBytes(tile: DecodedVectorTile): number {
   return (
     tile.coordinates.byteLength +
     tile.lineStarts.byteLength +
     tile.featureLines.byteLength +
+    (tile.so?.byteLength ?? 0) +
+    (tile.si?.byteLength ?? 0) +
+    (tile.ri?.byteLength ?? 0) +
     estimatePropertyBytes(tile.properties)
   )
 }
@@ -320,55 +569,246 @@ class TileCache {
   }
 }
 
+export const DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD = 8
+
+/**
+ * Whether a class table may colour these tiles.
+ *
+ * The table's own `length` must equal `classes.length`. When a tile-network
+ * identity is supplied it must also match the table's declared version and
+ * length. Anything else is a different network, and the painter must not
+ * guess.
+ */
+export function classTableMatchesNetwork(
+  table: VectorTileClassTable,
+  tileNetwork?: VectorTileNetworkIdentity,
+): boolean {
+  if (table.length !== table.classes.length) return false
+  if (!tileNetwork) return true
+  return table.networkVersion === tileNetwork.version && table.length === tileNetwork.length
+}
+
+/** Which column a class-table style reads at `zoom`. */
+export function vectorTileClassKeyAtZoom(
+  style: VectorTileClassStyle,
+  zoom: number,
+): VectorTileClassKey {
+  const threshold = style.zoomThreshold ?? DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD
+  return zoom < threshold ? (style.keyBelowZoom ?? 'si') : (style.keyFromZoom ?? 'ri')
+}
+
+/**
+ * Class byte for one feature, or `null` when the chosen column is absent,
+ * the id is missing, or the id sits outside the table.
+ *
+ * `null` is "no data", never 0 and never a reserved byte.
+ */
+export function vectorTileClassByte(
+  tile: DecodedVectorTile,
+  feature: number,
+  key: VectorTileClassKey,
+  table: VectorTileClassTable,
+): number | null {
+  const column = key === 'si' ? tile.si : tile.ri
+  if (!column) return null
+  const id = column[feature]
+  if (id === undefined || id === VECTOR_TILE_MISSING_ID) return null
+  if (id >= table.classes.length) return null
+  return table.classes[id] ?? null
+}
+
+/**
+ * Paint for a looked-up class byte. Reserved 254/255 and unknown stay
+ * distinct from `paintByClass`, including from any entry at those indexes.
+ */
+export function paintForVectorTileClass(
+  style: VectorTileClassStyle,
+  classByte: number | null,
+  compatible: boolean,
+): VectorTileStyle {
+  let paint: VectorTileStyle
+  if (!compatible || classByte === null) paint = style.unknown
+  else if (classByte === VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING) paint = style.gaugeNotReporting
+  else if (classByte === VECTOR_TILE_CLASS_NO_GAUGE) paint = style.noGauge
+  else paint = style.paintByClass[classByte] ?? style.unknown
+  const severity =
+    paint.severity ??
+    (compatible && classByte !== null && classByte < VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING
+      ? classByte
+      : -1)
+  return withCasing({ ...paint, severity }, style.casing)
+}
+
+function withCasing(
+  paint: VectorTileStyle,
+  fallback: VectorTileCasing | undefined,
+): VectorTileStyle {
+  if (paint.casing || !fallback) return paint
+  return { ...paint, casing: fallback }
+}
+
+function resolveFeaturePaint(
+  tile: DecodedVectorTile,
+  feature: number,
+  zoom: number,
+  style: VectorTileOverlayStyle,
+  tileNetwork: VectorTileNetworkIdentity | undefined,
+): VectorTileStyle | null {
+  if (isVectorTileClassStyle(style)) {
+    const compatible = classTableMatchesNetwork(style.classTable, tileNetwork ?? style.tileNetwork)
+    const key = vectorTileClassKeyAtZoom(style, zoom)
+    const classByte = compatible ? vectorTileClassByte(tile, feature, key, style.classTable) : null
+    return paintForVectorTileClass(style, classByte, compatible)
+  }
+  const properties = tile.properties[feature]
+  if (!properties) return null
+  return style(properties, zoom)
+}
+
+function streamOrderOf(tile: DecodedVectorTile, feature: number, properties: VectorTileProperties) {
+  const column = tile.so?.[feature]
+  if (column !== undefined) return column
+  const value = properties.so
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function severityOf(paint: VectorTileStyle, properties: VectorTileProperties) {
+  if (typeof paint.severity === 'number' && Number.isFinite(paint.severity)) return paint.severity
+  const value = properties.severity
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function batchKey(paint: VectorTileStyle): string {
+  const casing = paint.casing
+  return [
+    paint.color,
+    String(paint.width),
+    String(paint.opacity ?? 1),
+    casing ? `${casing.color}:${casing.extraWidth}` : '',
+  ].join('|')
+}
+
+function appendFeaturePath(
+  context: VectorTileCanvasContext,
+  tile: DecodedVectorTile,
+  feature: number,
+  scale: number,
+): boolean {
+  const { coordinates, featureLines, lineStarts } = tile
+  const lastLine = featureLines[feature + 1] ?? 0
+  let added = false
+  for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
+    const start = lineStarts[line] ?? 0
+    const end = lineStarts[line + 1] ?? start
+    if (end - start < 2) continue
+    context.moveTo((coordinates[start * 2] ?? 0) * scale, (coordinates[start * 2 + 1] ?? 0) * scale)
+    for (let point = start + 1; point < end; point += 1) {
+      context.lineTo(
+        (coordinates[point * 2] ?? 0) * scale,
+        (coordinates[point * 2 + 1] ?? 0) * scale,
+      )
+    }
+    added = true
+  }
+  return added
+}
+
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.
+ *
+ * Lines are grouped by colour and width into one stroke per batch, then
+ * drawn in stream-order then severity so a flooded stretch sits on top of
+ * the same-order water under it. An optional casing is the same path,
+ * stroked wider, underneath the batch.
  */
 export function paintVectorTile(
   canvas: VectorTileCanvas,
   tile: DecodedVectorTile,
-  options: { pixelRatio: number; style: VectorTileStyleFunction; tileSize: number; zoom: number },
+  options: {
+    pixelRatio: number
+    style: VectorTileOverlayStyle
+    tileNetwork?: VectorTileNetworkIdentity
+    tileSize: number
+    zoom: number
+  },
 ): boolean {
   const context = canvas.getContext('2d')
   if (!context) return false
-  const { pixelRatio, style, tileSize, zoom } = options
+  const { pixelRatio, style, tileNetwork, tileSize, zoom } = options
   const scale = (tileSize * pixelRatio) / tile.extent
   context.clearRect(0, 0, canvas.width, canvas.height)
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  const { coordinates, featureLines, lineStarts } = tile
-  let painted = false
-  for (let feature = 0; feature < featureLines.length - 1; feature += 1) {
-    const properties = tile.properties[feature]
-    if (!properties) continue
-    const paint = style(properties, zoom)
+  const featureCount = vectorTileFeatureCount(tile)
+  const paintedFeatures: Array<{
+    feature: number
+    key: string
+    paint: VectorTileStyle
+    severity: number
+    so: number
+  }> = []
+
+  for (let feature = 0; feature < featureCount; feature += 1) {
+    const paint = resolveFeaturePaint(tile, feature, zoom, style, tileNetwork)
     if (!paint) continue
+    const properties = tile.properties[feature] ?? {}
+    paintedFeatures.push({
+      feature,
+      key: batchKey(paint),
+      paint,
+      severity: severityOf(paint, properties),
+      so: streamOrderOf(tile, feature, properties),
+    })
+  }
+
+  paintedFeatures.sort((left, right) => left.so - right.so || left.severity - right.severity)
+
+  let painted = false
+  let index = 0
+  while (index < paintedFeatures.length) {
+    const head = paintedFeatures[index]
+    if (!head) break
+    const batch = [head]
+    index += 1
+    while (index < paintedFeatures.length) {
+      const next = paintedFeatures[index]
+      if (!next || next.key !== head.key) break
+      batch.push(next)
+      index += 1
+    }
+
+    context.beginPath()
+    let added = false
+    for (const entry of batch) {
+      if (appendFeaturePath(context, tile, entry.feature, scale)) added = true
+    }
+    if (!added) continue
+
+    const paint = head.paint
+    context.globalAlpha = paint.opacity ?? 1
+    if (paint.casing) {
+      context.strokeStyle = paint.casing.color
+      context.lineWidth = Math.max(
+        (paint.width + paint.casing.extraWidth) * pixelRatio,
+        pixelRatio * 0.5,
+      )
+      context.stroke()
+    }
     context.strokeStyle = paint.color
     context.lineWidth = Math.max(paint.width * pixelRatio, pixelRatio * 0.5)
-    context.globalAlpha = paint.opacity ?? 1
-    const lastLine = featureLines[feature + 1] ?? 0
-    for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
-      const start = lineStarts[line] ?? 0
-      const end = lineStarts[line + 1] ?? start
-      if (end - start < 2) continue
-      context.beginPath()
-      context.moveTo(
-        (coordinates[start * 2] ?? 0) * scale,
-        (coordinates[start * 2 + 1] ?? 0) * scale,
-      )
-      for (let point = start + 1; point < end; point += 1) {
-        context.lineTo(
-          (coordinates[point * 2] ?? 0) * scale,
-          (coordinates[point * 2 + 1] ?? 0) * scale,
-        )
-      }
-      context.stroke()
-      painted = true
-    }
+    context.stroke()
+    painted = true
   }
+
   context.globalAlpha = 1
   return painted
+}
+
+const DEFAULT_RESTYLE_REPLACE: VectorTileRestyleReplaceOptions = {
+  activateWhen: 'first-image',
+  crossfadeDurationMs: 0,
 }
 
 /**
@@ -392,6 +832,34 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
   // stamped with the generation it belongs to and discarded if that moved.
   let generation = 0
   let style = options.style
+  let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null
+  let restyleHost = options.restyleHost ?? null
+  const tileNetwork = options.tileNetwork
+  let restyleQueued = 0
+  let restyleApplied = 0
+  let restylePumping = false
+  const restyleWaiters: Array<{
+    epoch: number
+    reject: (reason: unknown) => void
+    resolve: () => void
+  }> = []
+
+  function liveStyle(): VectorTileOverlayStyle {
+    if (isVectorTileClassStyle(style) && classTable) {
+      return { ...style, classTable }
+    }
+    return style
+  }
+
+  function paintOptions(zoom: number) {
+    return {
+      pixelRatio: 1,
+      style: liveStyle(),
+      tileSize,
+      zoom,
+      ...(tileNetwork ? { tileNetwork } : {}),
+    }
+  }
 
   async function readTile(key: string, z: number, x: number, y: number, startedAt: number) {
     const bytes = await tileBytes(z, x, y)
@@ -416,6 +884,79 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     })
     inFlight.set(key, started)
     return started
+  }
+
+  async function imageForTile(x: number, y: number, z: number, scale: number) {
+    try {
+      const tile = await decodedTile(z, x, y)
+      if (!tile || vectorTileFeatureCount(tile) === 0) return null
+      const pixelRatio = scale > 0 ? scale : 1
+      const size = Math.round(tileSize * pixelRatio)
+      const canvas = createCanvas(size, size)
+      const painted = paintVectorTile(canvas, tile, {
+        ...paintOptions(z),
+        pixelRatio,
+      })
+      return painted ? canvas : null
+    } catch (reason) {
+      onError?.(reason)
+      return null
+    }
+  }
+
+  function requestRestyle(): Promise<void> {
+    const epoch = ++restyleQueued
+    const done = new Promise<void>((resolve, reject) => {
+      restyleWaiters.push({ epoch, reject, resolve })
+    })
+    void pumpRestyle()
+    return done
+  }
+
+  function settleWaiters(upTo: number, error?: unknown) {
+    const remaining: typeof restyleWaiters = []
+    for (const waiter of restyleWaiters) {
+      if (waiter.epoch > upTo) {
+        remaining.push(waiter)
+        continue
+      }
+      if (error) waiter.reject(error)
+      else waiter.resolve()
+    }
+    restyleWaiters.length = 0
+    restyleWaiters.push(...remaining)
+  }
+
+  async function pumpRestyle() {
+    if (restylePumping) return
+    restylePumping = true
+    try {
+      // Collapse a same-turn burst (lens + theme + table) to one swap.
+      await Promise.resolve()
+      while (restyleApplied !== restyleQueued) {
+        const target = restyleQueued
+        const host = restyleHost
+        if (host) {
+          const descriptor = {
+            ...host.descriptor,
+            id: host.layerId,
+            imageForTile,
+          }
+          await host.replace(host.layerId, descriptor, {
+            ...DEFAULT_RESTYLE_REPLACE,
+            ...host.replaceOptions,
+          })
+        }
+        restyleApplied = target
+        settleWaiters(target)
+      }
+    } catch (reason) {
+      settleWaiters(restyleQueued, reason)
+      restyleApplied = restyleQueued
+    } finally {
+      restylePumping = false
+      if (restyleApplied !== restyleQueued) void pumpRestyle()
+    }
   }
 
   return {
@@ -456,30 +997,26 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
 
       return best
     },
-    async imageForTile(x, y, z, scale) {
-      try {
-        const tile = await decodedTile(z, x, y)
-        if (!tile || vectorTileFeatureCount(tile) === 0) return null
-        const pixelRatio = scale > 0 ? scale : 1
-        const size = Math.round(tileSize * pixelRatio)
-        const canvas = createCanvas(size, size)
-        const painted = paintVectorTile(canvas, tile, {
-          pixelRatio,
-          style,
-          tileSize,
-          zoom: z,
-        })
-        return painted ? canvas : null
-      } catch (reason) {
-        onError?.(reason)
-        return null
-      }
+    imageForTile,
+    restyle(next) {
+      style = next
+      classTable = isVectorTileClassStyle(next) ? next.classTable : classTable
+      return requestRestyle()
+    },
+    setClassTable(table) {
+      classTable = table
+      if (isVectorTileClassStyle(style)) style = { ...style, classTable: table }
+      return requestRestyle()
+    },
+    setRestyleHost(host) {
+      restyleHost = host
     },
     get size() {
       return cache.size
     },
     setStyle(next) {
       style = next
+      if (isVectorTileClassStyle(next)) classTable = next.classTable
     },
   }
 }

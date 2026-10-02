@@ -6,7 +6,11 @@ import {
 } from '@narduk-enterprises/narduk-mapkit/client'
 import { PMTiles } from 'pmtiles'
 
-import type { VectorTileHit } from '@narduk-enterprises/narduk-mapkit/client'
+import type {
+  VectorTileClassTable,
+  VectorTileHit,
+  VectorTileRestyleHost,
+} from '@narduk-enterprises/narduk-mapkit/client'
 
 interface MapCoordinate {
   latitude: number
@@ -32,6 +36,11 @@ interface Point {
  * MapKit JS draws raster tiles only, so the network has to be painted before
  * MapKit sees it -- which also means MapKit cannot say what a tap landed on,
  * and `hitTest` answers that from the same decoded tiles.
+ *
+ * Colour comes from a class table (one byte per `si` below zoom 8, per `ri`
+ * from zoom 8). `restyle` / `setClassTable` repaint from that cache and swap
+ * the overlay only once the new tiles have drawn, so a 5-minute status
+ * refresh does not blank the network.
  */
 export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
   // The worker script belongs to the app: a published worker chunk is the one
@@ -55,14 +64,17 @@ export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
     cacheSize: 500,
     createCanvas: (width, height) => new OffscreenCanvas(width, height),
     decode: decoder.decode,
-    style: (properties, zoom) => {
-      // Small headwaters are noise at continental zooms; returning null draws
-      // nothing rather than drawing a hairline nobody asked for.
-      const order = Number(properties.so ?? 0)
-      if (order < 5 && zoom < 8) return null
-      return { color: '#2563eb', width: order > 6 ? 2.5 : 1.25 }
+    style: {
+      casing: { color: '#0f172a', extraWidth: 1 },
+      classTable: emptyClassTable(),
+      gaugeNotReporting: { color: '#f59e0b', width: 1.25 },
+      noGauge: { color: '#93c5fd', width: 1.25 },
+      paintByClass: statusPaint(),
+      tileNetwork: { length: NETWORK_LENGTH, version: NETWORK_VERSION },
+      unknown: { color: '#6b7280', width: 1.25 },
     },
     tileBytes: (z, x, y, signal) => tiles.getTile(z, x, y, signal),
+    tileNetwork: { length: NETWORK_LENGTH, version: NETWORK_VERSION },
     tileSize: 256,
   })
 
@@ -78,13 +90,41 @@ export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
   })
 
   return {
-    /** Pass to `createMapKitAsyncTileOverlay`. */
+    /** Pass to `createMapKitAsyncTileOverlay` or a registry descriptor. */
     imageForTile: network.imageForTile,
+    /**
+     * Attach the layer registry so `restyle` / `setClassTable` swap the
+     * overlay only after the new image has drawn.
+     */
+    bindRegistry(host: VectorTileRestyleHost<OffscreenCanvas>) {
+      network.setRestyleHost(host)
+    },
+    restyleForLens(table: VectorTileClassTable) {
+      return network.setClassTable(table)
+    },
     dispose() {
       network.clearCache()
       decoder.dispose()
     },
   }
+}
+
+const NETWORK_VERSION = 2
+const NETWORK_LENGTH = 3_002_168
+
+function emptyClassTable(): VectorTileClassTable {
+  return {
+    classes: new Uint8Array(NETWORK_LENGTH),
+    length: NETWORK_LENGTH,
+    networkVersion: NETWORK_VERSION,
+  }
+}
+
+function statusPaint() {
+  const paint = new Array<{ color: string; width: number } | undefined>(254)
+  paint[1] = { color: '#2563eb', width: 1.25 }
+  paint[9] = { color: '#dc2626', width: 2 }
+  return paint
 }
 
 declare function currentZoom(): number

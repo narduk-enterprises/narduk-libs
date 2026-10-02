@@ -594,15 +594,25 @@ A missing tile, an empty tile, a declined style and a failed decode all resolve
 to `null`, so the overlay draws nothing there rather than covering the basemap
 with an empty square. Failures reach `onError` instead of rejecting.
 
-Decoded tiles are cached, so `setStyle()` repaints from memory:
+Decoded tiles are cached, so a style change repaints from memory. `setStyle()`
+updates the next paint; `restyle()` / `setClassTable()` do that and, when a
+layer registry is attached, swap the overlay only after the new image has drawn,
+so the network never vanishes for a frame:
 
 ```ts
-network.setStyle(nextLensStyle)
-overlay.reload() // MapKit re-requests the visible tiles; no refetch, no re-decode
+network.setRestyleHost({
+  layerId: 'rivers',
+  replace: (id, descriptor, options) =>
+    registry.replace(id, descriptor, options),
+})
+await network.setClassTable(nextStatusTable)
+await network.restyle(darkClassStyle)
 ```
 
-That is what makes a lens change cheap. The cache is an LRU (`cacheSize`,
-default 256 tiles); `clearCache()` drops it when the archive itself changes.
+Rapid successive restyles coalesce to the latest. `setStyle()` alone still works
+for callers that already own the overlay refresh. The cache is an LRU
+(`cacheSize`, default 256 tiles); `clearCache()` drops it when the archive
+itself changes.
 
 `createPmTilesFetchSource` is the range-request `Source` for the `pmtiles`
 reader, taking the `fetch` it uses so a test needs no network. The `pmtiles`
@@ -621,13 +631,14 @@ import { createMvtDecoder } from '@narduk-enterprises/narduk-mapkit/vector-tiles
 
 const decode = createMvtDecoder({
   layers: ['reaches'],
-  properties: ['ri', 'so'], // drop `name` from the cached tiles; fetch it on click
+  properties: ['ri', 'si', 'so'], // drop `name` from the cached tiles; fetch it on click
 })
 ```
 
-`layers` and `properties` are worth setting on a dense archive. Geometry is
-already flat buffers; properties are not, so a string on each of a few thousand
-features per tile is what actually grows the cache.
+`layers` and `properties` are worth setting on a dense archive. Geometry and the
+`so` / `si` / `ri` columns are already flat buffers; leftover strings are not,
+so a `name` on each of a few thousand features per tile is what actually grows
+the cache.
 
 Empty bytes, a tile whose layers the filter excludes, and a layer with no
 features all decode to `null` -- nothing to draw, and not reported. A body that
@@ -653,7 +664,10 @@ import {
   serveVectorTileDecoder,
 } from '@narduk-enterprises/narduk-mapkit/vector-tiles'
 
-serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'] }))
+serveVectorTileDecoder(
+  self,
+  createMvtDecoder({ layers: ['reaches'], properties: ['ri', 'si', 'so'] }),
+)
 ```
 
 ```ts
@@ -715,10 +729,50 @@ Without that, a river drawn a pixel inside the next tile would be untappable
 along every tile boundary on the map -- a grid of dead lines the user cannot
 see.
 
+### Class-table style
+
+A national river network is coloured by a status byte that changes every few
+minutes, not by a style function per feature. Hold `so`, `si` and `ri` as
+typed-array columns (the worker already does this) and pass a class table:
+
+```ts
+const network = createVectorTileOverlaySource({
+  createCanvas,
+  decode,
+  tileBytes,
+  tileNetwork: { version: 2, length: 3_002_168 },
+  style: {
+    classTable: { classes, length: 3_002_168, networkVersion: 2 },
+    keyBelowZoom: 'si',
+    keyFromZoom: 'ri',
+    zoomThreshold: 8,
+    paintByClass,
+    gaugeNotReporting: { color: '#f59e0b', width: 1.25 },
+    noGauge: { color: '#93c5fd', width: 1.25 },
+    unknown: { color: '#6b7280', width: 1.25 },
+    casing: { color: '#0f172a', extraWidth: 1 },
+  },
+})
+```
+
+Below zoom 8 the table is indexed by `si`; from zoom 8, by `ri`. Reserved bytes
+stay distinct: `254` is "gauge not reporting", `255` is "no gauge on this
+stretch" and is drawn in the style's `noGauge` water colour, not the unknown
+grey. A table whose declared version or length does not match the tiles paints
+every feature as unknown, never a colour from the wrong revision. A v1 tile
+without `si` still decodes and paints; below the threshold it is unknown, and
+from zoom 8 it colours by `ri` when that column is present.
+
+The existing per-feature style function keeps working beside this. The painter
+groups lines by colour and width (one stroke per batch), draws stream order then
+severity so a flooded stretch sits on top, and strokes an optional casing under
+each batch.
+
 ### What a decoded tile costs
 
 A decoded tile is columnar: one `Int16Array` of interleaved `x, y` pairs, plus
-two `Uint32Array` indexes describing where each feature and line begins.
+two `Uint32Array` indexes describing where each feature and line begins, plus
+optional `so` / `si` / `ri` columns.
 
 That is not a micro-optimisation. A tile of flowlines carries on the order of
 10^5 points; one `{ x, y }` object per point costs roughly 40 bytes once V8 has

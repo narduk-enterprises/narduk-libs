@@ -13,6 +13,18 @@
 import { hitTestNeighbours, hitTestTile, projectToTilePoint } from './hit-test.js';
 /** A fingertip, not a pixel. */
 const DEFAULT_HIT_TOLERANCE_PX = 8;
+/**
+ * Sentinel in `si` / `ri` columns when that feature did not carry the key.
+ * A class-table lookup treats it as unknown, never as id 0.
+ */
+export const VECTOR_TILE_MISSING_ID = 0xffff_ffff;
+/** Reserved class byte: a gauge is on this stretch but is not reporting. */
+export const VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING = 254;
+/**
+ * Reserved class byte: no gauge on this stretch. Drawn in the style's
+ * `noGauge` paint — a neutral water colour — not the unknown grey.
+ */
+export const VECTOR_TILE_CLASS_NO_GAUGE = 255;
 /** Int16 range, the bound {@link buildDecodedVectorTile} clamps coordinates to. */
 const COORDINATE_MIN = -32_768;
 const COORDINATE_MAX = 32_767;
@@ -27,6 +39,11 @@ const COORDINATE_MAX = 32_767;
  *
  * A line of fewer than two points is dropped: it can't be stroked, and keeping
  * it would put empty ranges in `lineStarts` for the painter to skip.
+ *
+ * `so`, `si` and `ri` become typed columns when at least one feature carries
+ * them. A missing id in an otherwise-present `si`/`ri` column is
+ * {@link VECTOR_TILE_MISSING_ID}, so a class-table lookup cannot mistake it
+ * for id 0.
  */
 export function buildDecodedVectorTile(extent, features) {
     let pointCount = 0;
@@ -43,6 +60,14 @@ export function buildDecodedVectorTile(extent, features) {
     const lineStarts = new Uint32Array(lineCount + 1);
     const featureLines = new Uint32Array(features.length + 1);
     const properties = [];
+    const so = new Uint8Array(features.length);
+    const si = new Uint32Array(features.length);
+    const ri = new Uint32Array(features.length);
+    si.fill(VECTOR_TILE_MISSING_ID);
+    ri.fill(VECTOR_TILE_MISSING_ID);
+    let anySo = false;
+    let anySi = false;
+    let anyRi = false;
     let pointIndex = 0;
     let lineIndex = 0;
     let featureIndex = 0;
@@ -60,36 +85,85 @@ export function buildDecodedVectorTile(extent, features) {
             }
         }
         properties.push(feature.properties);
+        const streamOrder = readColumnNumber(feature.so, feature.properties, 'so');
+        if (streamOrder !== null) {
+            anySo = true;
+            so[featureIndex] = clampByte(streamOrder);
+        }
+        const segmentId = readColumnNumber(feature.si, feature.properties, 'si');
+        if (segmentId !== null) {
+            anySi = true;
+            si[featureIndex] = toClassId(segmentId);
+        }
+        const reachId = readColumnNumber(feature.ri, feature.properties, 'ri');
+        if (reachId !== null) {
+            anyRi = true;
+            ri[featureIndex] = toClassId(reachId);
+        }
         featureIndex += 1;
     }
     lineStarts[lineIndex] = pointIndex;
     featureLines[featureIndex] = lineIndex;
-    return { coordinates, extent, featureLines, lineStarts, properties };
+    return {
+        coordinates,
+        extent,
+        featureLines,
+        lineStarts,
+        properties,
+        ...(anyRi ? { ri } : {}),
+        ...(anySi ? { si } : {}),
+        ...(anySo ? { so } : {}),
+    };
 }
 function clampCoordinate(value) {
     if (!Number.isFinite(value))
         return 0;
     return Math.min(COORDINATE_MAX, Math.max(COORDINATE_MIN, Math.round(value)));
 }
+function clampByte(value) {
+    if (!Number.isFinite(value))
+        return 0;
+    return Math.min(255, Math.max(0, Math.round(value)));
+}
+function toClassId(value) {
+    if (!Number.isFinite(value) || value < 0)
+        return VECTOR_TILE_MISSING_ID;
+    return Math.min(VECTOR_TILE_MISSING_ID, Math.round(value));
+}
+function readColumnNumber(explicit, properties, key) {
+    if (typeof explicit === 'number' && Number.isFinite(explicit))
+        return explicit;
+    const value = properties[key];
+    if (typeof value === 'number' && Number.isFinite(value))
+        return value;
+    return null;
+}
 /** Features in a decoded tile, which is one less than `featureLines.length`. */
 export function vectorTileFeatureCount(tile) {
     return Math.max(0, tile.featureLines.length - 1);
 }
+export function isVectorTileClassStyle(style) {
+    return typeof style === 'object' && style !== null && 'classTable' in style;
+}
 /**
  * Bytes a decoded tile retains.
  *
- * Geometry and indexes are exact. Properties are estimated, because they are
- * ordinary objects and only the engine knows their real footprint -- but
- * leaving them out would understate a dense archive badly, since a `name`
- * string on each of a few thousand features per tile is what actually grows
- * the cache. The estimate charges two bytes per character of every key and
- * string value, eight for a number, and a flat per-entry overhead; it is
- * meant for sizing `cacheSize` against a budget, not for exact accounting.
+ * Geometry, indexes and class columns are exact. Properties are estimated,
+ * because they are ordinary objects and only the engine knows their real
+ * footprint -- but leaving them out would understate a dense archive badly,
+ * since a `name` string on each of a few thousand features per tile is what
+ * actually grows the cache. The estimate charges two bytes per character of
+ * every key and string value, eight for a number, and a flat per-entry
+ * overhead; it is meant for sizing `cacheSize` against a budget, not for
+ * exact accounting.
  */
 export function decodedVectorTileBytes(tile) {
     return (tile.coordinates.byteLength +
         tile.lineStarts.byteLength +
         tile.featureLines.byteLength +
+        (tile.so?.byteLength ?? 0) +
+        (tile.si?.byteLength ?? 0) +
+        (tile.ri?.byteLength ?? 0) +
         estimatePropertyBytes(tile.properties));
 }
 /** Per property entry: a key slot, a value slot and the map overhead around them. */
@@ -153,49 +227,196 @@ class TileCache {
         this.#tiles.delete(key);
     }
 }
+export const DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD = 8;
+/**
+ * Whether a class table may colour these tiles.
+ *
+ * The table's own `length` must equal `classes.length`. When a tile-network
+ * identity is supplied it must also match the table's declared version and
+ * length. Anything else is a different network, and the painter must not
+ * guess.
+ */
+export function classTableMatchesNetwork(table, tileNetwork) {
+    if (table.length !== table.classes.length)
+        return false;
+    if (!tileNetwork)
+        return true;
+    return table.networkVersion === tileNetwork.version && table.length === tileNetwork.length;
+}
+/** Which column a class-table style reads at `zoom`. */
+export function vectorTileClassKeyAtZoom(style, zoom) {
+    const threshold = style.zoomThreshold ?? DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD;
+    return zoom < threshold ? (style.keyBelowZoom ?? 'si') : (style.keyFromZoom ?? 'ri');
+}
+/**
+ * Class byte for one feature, or `null` when the chosen column is absent,
+ * the id is missing, or the id sits outside the table.
+ *
+ * `null` is "no data", never 0 and never a reserved byte.
+ */
+export function vectorTileClassByte(tile, feature, key, table) {
+    const column = key === 'si' ? tile.si : tile.ri;
+    if (!column)
+        return null;
+    const id = column[feature];
+    if (id === undefined || id === VECTOR_TILE_MISSING_ID)
+        return null;
+    if (id >= table.classes.length)
+        return null;
+    return table.classes[id] ?? null;
+}
+/**
+ * Paint for a looked-up class byte. Reserved 254/255 and unknown stay
+ * distinct from `paintByClass`, including from any entry at those indexes.
+ */
+export function paintForVectorTileClass(style, classByte, compatible) {
+    let paint;
+    if (!compatible || classByte === null)
+        paint = style.unknown;
+    else if (classByte === VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING)
+        paint = style.gaugeNotReporting;
+    else if (classByte === VECTOR_TILE_CLASS_NO_GAUGE)
+        paint = style.noGauge;
+    else
+        paint = style.paintByClass[classByte] ?? style.unknown;
+    const severity = paint.severity ??
+        (compatible && classByte !== null && classByte < VECTOR_TILE_CLASS_GAUGE_NOT_REPORTING
+            ? classByte
+            : -1);
+    return withCasing({ ...paint, severity }, style.casing);
+}
+function withCasing(paint, fallback) {
+    if (paint.casing || !fallback)
+        return paint;
+    return { ...paint, casing: fallback };
+}
+function resolveFeaturePaint(tile, feature, zoom, style, tileNetwork) {
+    if (isVectorTileClassStyle(style)) {
+        const compatible = classTableMatchesNetwork(style.classTable, tileNetwork ?? style.tileNetwork);
+        const key = vectorTileClassKeyAtZoom(style, zoom);
+        const classByte = compatible ? vectorTileClassByte(tile, feature, key, style.classTable) : null;
+        return paintForVectorTileClass(style, classByte, compatible);
+    }
+    const properties = tile.properties[feature];
+    if (!properties)
+        return null;
+    return style(properties, zoom);
+}
+function streamOrderOf(tile, feature, properties) {
+    const column = tile.so?.[feature];
+    if (column !== undefined)
+        return column;
+    const value = properties.so;
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function severityOf(paint, properties) {
+    if (typeof paint.severity === 'number' && Number.isFinite(paint.severity))
+        return paint.severity;
+    const value = properties.severity;
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function batchKey(paint) {
+    const casing = paint.casing;
+    return [
+        paint.color,
+        String(paint.width),
+        String(paint.opacity ?? 1),
+        casing ? `${casing.color}:${casing.extraWidth}` : '',
+    ].join('|');
+}
+function appendFeaturePath(context, tile, feature, scale) {
+    const { coordinates, featureLines, lineStarts } = tile;
+    const lastLine = featureLines[feature + 1] ?? 0;
+    let added = false;
+    for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
+        const start = lineStarts[line] ?? 0;
+        const end = lineStarts[line + 1] ?? start;
+        if (end - start < 2)
+            continue;
+        context.moveTo((coordinates[start * 2] ?? 0) * scale, (coordinates[start * 2 + 1] ?? 0) * scale);
+        for (let point = start + 1; point < end; point += 1) {
+            context.lineTo((coordinates[point * 2] ?? 0) * scale, (coordinates[point * 2 + 1] ?? 0) * scale);
+        }
+        added = true;
+    }
+    return added;
+}
 /**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.
+ *
+ * Lines are grouped by colour and width into one stroke per batch, then
+ * drawn in stream-order then severity so a flooded stretch sits on top of
+ * the same-order water under it. An optional casing is the same path,
+ * stroked wider, underneath the batch.
  */
 export function paintVectorTile(canvas, tile, options) {
     const context = canvas.getContext('2d');
     if (!context)
         return false;
-    const { pixelRatio, style, tileSize, zoom } = options;
+    const { pixelRatio, style, tileNetwork, tileSize, zoom } = options;
     const scale = (tileSize * pixelRatio) / tile.extent;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.lineCap = 'round';
     context.lineJoin = 'round';
-    const { coordinates, featureLines, lineStarts } = tile;
-    let painted = false;
-    for (let feature = 0; feature < featureLines.length - 1; feature += 1) {
-        const properties = tile.properties[feature];
-        if (!properties)
-            continue;
-        const paint = style(properties, zoom);
+    const featureCount = vectorTileFeatureCount(tile);
+    const paintedFeatures = [];
+    for (let feature = 0; feature < featureCount; feature += 1) {
+        const paint = resolveFeaturePaint(tile, feature, zoom, style, tileNetwork);
         if (!paint)
             continue;
+        const properties = tile.properties[feature] ?? {};
+        paintedFeatures.push({
+            feature,
+            key: batchKey(paint),
+            paint,
+            severity: severityOf(paint, properties),
+            so: streamOrderOf(tile, feature, properties),
+        });
+    }
+    paintedFeatures.sort((left, right) => left.so - right.so || left.severity - right.severity);
+    let painted = false;
+    let index = 0;
+    while (index < paintedFeatures.length) {
+        const head = paintedFeatures[index];
+        if (!head)
+            break;
+        const batch = [head];
+        index += 1;
+        while (index < paintedFeatures.length) {
+            const next = paintedFeatures[index];
+            if (!next || next.key !== head.key)
+                break;
+            batch.push(next);
+            index += 1;
+        }
+        context.beginPath();
+        let added = false;
+        for (const entry of batch) {
+            if (appendFeaturePath(context, tile, entry.feature, scale))
+                added = true;
+        }
+        if (!added)
+            continue;
+        const paint = head.paint;
+        context.globalAlpha = paint.opacity ?? 1;
+        if (paint.casing) {
+            context.strokeStyle = paint.casing.color;
+            context.lineWidth = Math.max((paint.width + paint.casing.extraWidth) * pixelRatio, pixelRatio * 0.5);
+            context.stroke();
+        }
         context.strokeStyle = paint.color;
         context.lineWidth = Math.max(paint.width * pixelRatio, pixelRatio * 0.5);
-        context.globalAlpha = paint.opacity ?? 1;
-        const lastLine = featureLines[feature + 1] ?? 0;
-        for (let line = featureLines[feature] ?? 0; line < lastLine; line += 1) {
-            const start = lineStarts[line] ?? 0;
-            const end = lineStarts[line + 1] ?? start;
-            if (end - start < 2)
-                continue;
-            context.beginPath();
-            context.moveTo((coordinates[start * 2] ?? 0) * scale, (coordinates[start * 2 + 1] ?? 0) * scale);
-            for (let point = start + 1; point < end; point += 1) {
-                context.lineTo((coordinates[point * 2] ?? 0) * scale, (coordinates[point * 2 + 1] ?? 0) * scale);
-            }
-            context.stroke();
-            painted = true;
-        }
+        context.stroke();
+        painted = true;
     }
     context.globalAlpha = 1;
     return painted;
 }
+const DEFAULT_RESTYLE_REPLACE = {
+    activateWhen: 'first-image',
+    crossfadeDurationMs: 0,
+};
 /**
  * Build the `imageForTile` function for a vector tile archive.
  *
@@ -215,6 +436,28 @@ export function createVectorTileOverlaySource(options) {
     // stamped with the generation it belongs to and discarded if that moved.
     let generation = 0;
     let style = options.style;
+    let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null;
+    let restyleHost = options.restyleHost ?? null;
+    const tileNetwork = options.tileNetwork;
+    let restyleQueued = 0;
+    let restyleApplied = 0;
+    let restylePumping = false;
+    const restyleWaiters = [];
+    function liveStyle() {
+        if (isVectorTileClassStyle(style) && classTable) {
+            return { ...style, classTable };
+        }
+        return style;
+    }
+    function paintOptions(zoom) {
+        return {
+            pixelRatio: 1,
+            style: liveStyle(),
+            tileSize,
+            zoom,
+            ...(tileNetwork ? { tileNetwork } : {}),
+        };
+    }
     async function readTile(key, z, x, y, startedAt) {
         const bytes = await tileBytes(z, x, y);
         if (!bytes)
@@ -243,6 +486,83 @@ export function createVectorTileOverlaySource(options) {
         });
         inFlight.set(key, started);
         return started;
+    }
+    async function imageForTile(x, y, z, scale) {
+        try {
+            const tile = await decodedTile(z, x, y);
+            if (!tile || vectorTileFeatureCount(tile) === 0)
+                return null;
+            const pixelRatio = scale > 0 ? scale : 1;
+            const size = Math.round(tileSize * pixelRatio);
+            const canvas = createCanvas(size, size);
+            const painted = paintVectorTile(canvas, tile, {
+                ...paintOptions(z),
+                pixelRatio,
+            });
+            return painted ? canvas : null;
+        }
+        catch (reason) {
+            onError?.(reason);
+            return null;
+        }
+    }
+    function requestRestyle() {
+        const epoch = ++restyleQueued;
+        const done = new Promise((resolve, reject) => {
+            restyleWaiters.push({ epoch, reject, resolve });
+        });
+        void pumpRestyle();
+        return done;
+    }
+    function settleWaiters(upTo, error) {
+        const remaining = [];
+        for (const waiter of restyleWaiters) {
+            if (waiter.epoch > upTo) {
+                remaining.push(waiter);
+                continue;
+            }
+            if (error)
+                waiter.reject(error);
+            else
+                waiter.resolve();
+        }
+        restyleWaiters.length = 0;
+        restyleWaiters.push(...remaining);
+    }
+    async function pumpRestyle() {
+        if (restylePumping)
+            return;
+        restylePumping = true;
+        try {
+            // Collapse a same-turn burst (lens + theme + table) to one swap.
+            await Promise.resolve();
+            while (restyleApplied !== restyleQueued) {
+                const target = restyleQueued;
+                const host = restyleHost;
+                if (host) {
+                    const descriptor = {
+                        ...host.descriptor,
+                        id: host.layerId,
+                        imageForTile,
+                    };
+                    await host.replace(host.layerId, descriptor, {
+                        ...DEFAULT_RESTYLE_REPLACE,
+                        ...host.replaceOptions,
+                    });
+                }
+                restyleApplied = target;
+                settleWaiters(target);
+            }
+        }
+        catch (reason) {
+            settleWaiters(restyleQueued, reason);
+            restyleApplied = restyleQueued;
+        }
+        finally {
+            restylePumping = false;
+            if (restyleApplied !== restyleQueued)
+                void pumpRestyle();
+        }
     }
     return {
         get cacheBytes() {
@@ -278,32 +598,28 @@ export function createVectorTileOverlaySource(options) {
             }
             return best;
         },
-        async imageForTile(x, y, z, scale) {
-            try {
-                const tile = await decodedTile(z, x, y);
-                if (!tile || vectorTileFeatureCount(tile) === 0)
-                    return null;
-                const pixelRatio = scale > 0 ? scale : 1;
-                const size = Math.round(tileSize * pixelRatio);
-                const canvas = createCanvas(size, size);
-                const painted = paintVectorTile(canvas, tile, {
-                    pixelRatio,
-                    style,
-                    tileSize,
-                    zoom: z,
-                });
-                return painted ? canvas : null;
-            }
-            catch (reason) {
-                onError?.(reason);
-                return null;
-            }
+        imageForTile,
+        restyle(next) {
+            style = next;
+            classTable = isVectorTileClassStyle(next) ? next.classTable : classTable;
+            return requestRestyle();
+        },
+        setClassTable(table) {
+            classTable = table;
+            if (isVectorTileClassStyle(style))
+                style = { ...style, classTable: table };
+            return requestRestyle();
+        },
+        setRestyleHost(host) {
+            restyleHost = host;
         },
         get size() {
             return cache.size;
         },
         setStyle(next) {
             style = next;
+            if (isVectorTileClassStyle(next))
+                classTable = next.classTable;
         },
     };
 }

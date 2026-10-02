@@ -84,9 +84,14 @@ describe('paintVectorTile', () => {
 
     expect(painted).toBe(true)
     expect(canvas.calls[0]).toEqual({ op: 'clearRect', args: [0, 0, 512, 512] })
-    expect(canvas.calls[1]).toEqual({ op: 'moveTo', args: [0, 0] })
-    expect(canvas.calls[2]).toEqual({ op: 'lineTo', args: [512, 512] })
-    expect(canvas.calls[3]).toMatchObject({ op: 'stroke', lineWidth: 3, strokeStyle: '#0e7490' })
+    // Same colour and width become one stroke. Stream order draws `so: 2`
+    // (the second reach) before `so: 5`.
+    expect(canvas.calls[1]).toEqual({ op: 'moveTo', args: [0, 512] })
+    expect(canvas.calls[2]).toEqual({ op: 'lineTo', args: [512, 0] })
+    expect(canvas.calls[3]).toEqual({ op: 'moveTo', args: [0, 0] })
+    expect(canvas.calls[4]).toEqual({ op: 'lineTo', args: [512, 512] })
+    expect(canvas.calls[5]).toMatchObject({ op: 'stroke', lineWidth: 3, strokeStyle: '#0e7490' })
+    expect(canvas.calls.filter((call) => call.op === 'stroke')).toHaveLength(1)
   })
 
   it('skips the features the style declines, so low orders can drop out', () => {
@@ -309,6 +314,9 @@ describe('buildDecodedVectorTile', () => {
     expect(packed.featureLines).toEqual(new Uint32Array([0, 2, 3]))
     expect(packed.lineStarts).toEqual(new Uint32Array([0, 2, 5, 7]))
     expect([...packed.coordinates]).toEqual([0, 0, 10, 10, 20, 20, 30, 30, 40, 40, 5, 5, 6, 6])
+    expect(packed.ri).toEqual(new Uint32Array([1, 2]))
+    expect(packed.si).toBeUndefined()
+    expect(packed.so).toBeUndefined()
     // 7 points at 4 bytes each; the object-per-point shape this replaced cost
     // roughly ten times that, which is what made a 256-tile cache unaffordable.
     expect(packed.coordinates.byteLength).toBe(28)

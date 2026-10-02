@@ -35,6 +35,9 @@ export function receiveVectorTile(transfer) {
         featureLines: new Uint32Array(transfer.featureLines),
         lineStarts: new Uint32Array(transfer.lineStarts),
         properties: transfer.properties,
+        ...(transfer.ri ? { ri: new Uint32Array(transfer.ri) } : {}),
+        ...(transfer.si ? { si: new Uint32Array(transfer.si) } : {}),
+        ...(transfer.so ? { so: new Uint8Array(transfer.so) } : {}),
     };
 }
 /**
@@ -53,7 +56,20 @@ export function sendVectorTile(tile) {
         lineStarts: tightBuffer(tile.lineStarts),
         properties: tile.properties,
     };
-    return { message, transfer: [message.coordinates, message.featureLines, message.lineStarts] };
+    const transfer = [message.coordinates, message.featureLines, message.lineStarts];
+    if (tile.so) {
+        message.so = tightBuffer(tile.so);
+        transfer.push(message.so);
+    }
+    if (tile.si) {
+        message.si = tightBuffer(tile.si);
+        transfer.push(message.si);
+    }
+    if (tile.ri) {
+        message.ri = tightBuffer(tile.ri);
+        transfer.push(message.ri);
+    }
+    return { message, transfer };
 }
 /**
  * Talk to a worker that hosts {@link VECTOR_TILE_DECODE_CHANNEL}.
