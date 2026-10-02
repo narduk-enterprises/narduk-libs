@@ -12,6 +12,21 @@
  */
 import type { DecodedVectorTile, VectorTileProperties } from './vector-tiles.js'
 
+/**
+ * Tap and hover tolerance for a mouse, in CSS pixels. This is the radius
+ * `hitTest` has always defaulted to; it is kept so nothing that relies on it
+ * moves.
+ */
+export const DEFAULT_MOUSE_HIT_TOLERANCE_PX = 8
+
+/**
+ * Tap tolerance for a touch screen, in CSS pixels. It comes from the 44-point
+ * minimum touch target in Apple's Human Interface Guidelines (and the 44 CSS
+ * px of WCAG 2.5.5): a 44 px square target is a 22 px radius around the point
+ * the finger reports.
+ */
+export const DEFAULT_TOUCH_HIT_TOLERANCE_PX = 22
+
 export interface VectorTileCoordinate {
   latitude: number
   longitude: number

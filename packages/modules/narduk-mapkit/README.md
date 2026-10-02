@@ -729,6 +729,76 @@ Without that, a river drawn a pixel inside the next tile would be untappable
 along every tile boundary on the map -- a grid of dead lines the user cannot
 see.
 
+### Selection highlight
+
+`network.setHighlight({ id, style })` lights up one river stretch: every decoded
+piece whose `si` column equals `id`, in every tile that is drawn, in the colour,
+width and optional casing the caller gives. It is drawn on its own overlay, so
+changing it never re-reads, re-decodes or repaints the network tiles.
+
+```ts
+const network = createVectorTileOverlaySource({
+  // ...
+  highlightHost, // the registry entry for the highlight layer, above the network
+})
+registry.add({
+  id: 'highlight',
+  imageForTile: network.highlightImageForTile,
+  order: 11,
+})
+
+await network.setHighlight({
+  id: hit.properties.si as number,
+  style: {
+    casing: { color: '#fff', extraWidth: 2 },
+    color: '#f97316',
+    width: 4,
+  },
+})
+await network.clearHighlight() // removes it everywhere
+```
+
+`highlightImageForTile` is the highlight layer's `imageForTile`. It reads only
+the decoded cache: a tile whose read is already in flight is awaited, but a tile
+that is not cached is **not** fetched for the highlight's sake. It resolves
+`null` and, when its base tile next arrives, the highlight overlay is refreshed
+through `highlightHost` so the piece appears (so a tile that lands after the
+highlight was set shows it too). Above `maxDataZoom` it draws from the
+ancestor's geometry, scaled and clipped like the base tile.
+`VECTOR_TILE_MISSING_ID` never matches, so a feature with no `si` is never
+highlighted. Without a `highlightHost`, reload your own highlight overlay after
+`setHighlight`.
+
+### One tap and hover resolver
+
+On a map with dots, lines and areas, a touch can land on all three. `resolveHit`
+asks the layers in the order you give (dots, then lines, then areas) and returns
+the first hit as one result typed by kind, carrying that layer's own hit; a
+layer after a hit is not asked. It is synchronous.
+
+```ts
+const hit = resolveHit({
+  coordinate,
+  zoom: currentZoom(),
+  pointer: event.pointerType, // 'mouse' | 'touch' | 'pen'
+  layers: [
+    { kind: 'point', layer: gauges }, // hit: dot index
+    { kind: 'line', source: network }, // hit: VectorTileHit
+    { kind: 'area', test: ({ coordinate }) => alertAt(coordinate) }, // hit: yours
+  ],
+})
+if (hit?.kind === 'line')
+  network.setHighlight({ id: hit.hit.properties.si as number, style })
+```
+
+The tolerance is a screen radius in CSS pixels. `DEFAULT_MOUSE_HIT_TOLERANCE_PX`
+is 8, what `hitTest` has always defaulted to, and a pen uses it too.
+`DEFAULT_TOUCH_HIT_TOLERANCE_PX` is 22: the 44-point minimum touch target in
+Apple's Human Interface Guidelines (44 CSS px in WCAG 2.5.5) is a 44 px square,
+and a 22 px radius around the reported point is half of it. Override either with
+`mouseTolerancePx` / `touchTolerancePx`. The area tester receives the resolved
+`{ coordinate, pointer, tolerancePx, zoom }`.
+
 ### Class-table style
 
 A national river network is coloured by a status byte that changes every few
@@ -921,7 +991,10 @@ Higher `order` paints later, so the more severe status stays on top.
 `nearestPoint(coordinate, toleranceInPixels, zoom)` returns the index of the
 nearest painted dot within the tolerance, or `null`. When the tap sits inside
 more than one disc, the higher draw order wins -- the status the user can see. A
-miss is `null`, not 0.
+miss is `null`, not 0. Dots with no style entry (hidden classes) are not hit;
+no-data and not-reporting dots are. It reads only the typed arrays and is
+synchronous. `resolveHit` (see Vector Tiles) takes a point layer as its dot
+layer, with a 22 px radius for touch.
 
 Device pixel ratio is the `scale` MapKit already passes to `imageForTile`.
 Painting the 23,597-point national set at zoom 3–4, including a 2× scale, stays

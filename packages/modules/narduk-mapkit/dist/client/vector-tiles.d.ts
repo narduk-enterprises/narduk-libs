@@ -292,6 +292,14 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     createCanvas: (width: number, height: number) => TCanvas;
     decode: VectorTileDecoder;
     /**
+     * The overlay the highlight is drawn on, swapped when the highlight changes.
+     * Structural like `restyleHost`, and a different layer from the network's:
+     * changing the highlight never swaps, repaints or re-reads the base tiles.
+     * Without one, {@link VectorTileOverlaySource.highlightImageForTile} still
+     * answers and the app reloads its own highlight overlay.
+     */
+    highlightHost?: VectorTileRestyleHost<TCanvas>;
+    /**
      * The deepest zoom the archive has data for. A tile asked for above it is
      * painted from its ancestor at this zoom, scaled and clipped into the child,
      * so the archive is read and decoded once for every descendant.
@@ -324,6 +332,16 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
     /** Logical tile size before `scale`. MapKit asks for 256 or 512. */
     tileSize?: number;
 }
+/** How the highlighted stretch is drawn: one stroke, with an optional casing under it. */
+export type VectorTileHighlightStyle = Omit<VectorTileStyle, 'severity'>;
+/**
+ * A stretch to light up: every decoded piece whose `si` column equals `id`.
+ * `VECTOR_TILE_MISSING_ID` is allowed and matches nothing.
+ */
+export interface VectorTileHighlight {
+    id: number;
+    style: VectorTileHighlightStyle;
+}
 export interface VectorTileHitTestOptions {
     coordinate: VectorTileCoordinate;
     /**
@@ -339,6 +357,21 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
     readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
     clearCache: () => void;
+    /** Remove the highlight everywhere. Same as `setHighlight(null)`. */
+    clearHighlight: () => Promise<void>;
+    /** The highlighted stretch, or `null`. */
+    readonly highlight: VectorTileHighlight | null;
+    /**
+     * The highlight's own `imageForTile`, for a second overlay above the
+     * network. Draws every cached piece whose `si` equals the highlighted id,
+     * from the decoded cache alone: it never reads, never decodes and never
+     * touches the read queue. A tile whose read is still in flight is awaited; a
+     * tile that is not cached and not loading resolves `null` and is drawn when
+     * its base tile next arrives (the overlay is refreshed through the
+     * `highlightHost`). Above `maxDataZoom` it draws from the ancestor's
+     * geometry, as the base tile does.
+     */
+    highlightImageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>;
     /**
      * The nearest feature to a coordinate, or `null`.
      *
@@ -363,6 +396,14 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
      * does not match the tiles draws unknown, never a wrong colour.
      */
     setClassTable: (table: VectorTileClassTable) => Promise<void>;
+    /**
+     * Highlight a stretch, or pass `null` to clear it. Only the highlight
+     * overlay is swapped (through `highlightHost` when one is attached); the
+     * base network tiles are not re-read, re-decoded or repainted. Rapid calls
+     * coalesce to the latest.
+     */
+    setHighlight: (highlight: VectorTileHighlight | null) => Promise<void>;
+    setHighlightHost: (host: VectorTileRestyleHost<TCanvas> | null) => void;
     setRestyleHost: (host: VectorTileRestyleHost<TCanvas> | null) => void;
     /**
      * Swap the style in memory. Cached tiles repaint on the next request
@@ -462,6 +503,21 @@ export declare function paintVectorTile(canvas: VectorTileCanvas, tile: DecodedV
     tileNetwork?: VectorTileNetworkIdentity;
     tileSize: number;
     zoom: number;
+}): boolean;
+/**
+ * Paint the pieces of one decoded tile whose `si` equals `id`, in one style.
+ *
+ * The highlight's counterpart to {@link paintVectorTile}, over the same
+ * geometry and the same overzoom window, so a highlighted stretch lies exactly
+ * on the line under it. A tile with no `si` column, or no matching feature,
+ * paints nothing and returns `false`.
+ */
+export declare function paintVectorTileHighlight(canvas: VectorTileCanvas, tile: DecodedVectorTile, options: {
+    id: number;
+    overzoom?: VectorTileOverzoom;
+    pixelRatio: number;
+    style: VectorTileHighlightStyle;
+    tileSize: number;
 }): boolean;
 /**
  * Build the `imageForTile` function for a vector tile archive.

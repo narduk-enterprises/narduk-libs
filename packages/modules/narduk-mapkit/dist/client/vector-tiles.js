@@ -10,9 +10,7 @@
  * fixture geometry without building a tile. Decoded tiles are cached, so
  * changing the style repaints from memory and never refetches.
  */
-import { hitTestNeighbours, hitTestTile, projectToTilePoint } from './hit-test.js';
-/** A fingertip, not a pixel. */
-const DEFAULT_HIT_TOLERANCE_PX = 8;
+import { DEFAULT_MOUSE_HIT_TOLERANCE_PX, hitTestNeighbours, hitTestTile, projectToTilePoint, } from './hit-test.js';
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
  * A class-table lookup treats it as unknown, never as id 0.
@@ -534,11 +532,62 @@ export function paintVectorTile(canvas, tile, options) {
     context.globalAlpha = 1;
     return painted;
 }
+/**
+ * Paint the pieces of one decoded tile whose `si` equals `id`, in one style.
+ *
+ * The highlight's counterpart to {@link paintVectorTile}, over the same
+ * geometry and the same overzoom window, so a highlighted stretch lies exactly
+ * on the line under it. A tile with no `si` column, or no matching feature,
+ * paints nothing and returns `false`.
+ */
+export function paintVectorTileHighlight(canvas, tile, options) {
+    const { id, overzoom, pixelRatio, style, tileSize } = options;
+    const column = tile.si;
+    if (!column || id === VECTOR_TILE_MISSING_ID)
+        return false;
+    const context = canvas.getContext('2d');
+    if (!context)
+        return false;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    const view = overzoom
+        ? overzoomView(overzoom, tile.extent, tileSize, pixelRatio, (style.width + (style.casing?.extraWidth ?? 0)) * pixelRatio)
+        : null;
+    const scale = (tileSize * pixelRatio) / tile.extent;
+    context.beginPath();
+    let added = false;
+    const featureCount = vectorTileFeatureCount(tile);
+    for (let feature = 0; feature < featureCount; feature += 1) {
+        if (column[feature] !== id)
+            continue;
+        const appended = view
+            ? appendOverzoomFeaturePath(context, tile, feature, view)
+            : appendFeaturePath(context, tile, feature, scale);
+        if (appended)
+            added = true;
+    }
+    if (!added)
+        return false;
+    context.globalAlpha = style.opacity ?? 1;
+    if (style.casing) {
+        context.strokeStyle = style.casing.color;
+        context.lineWidth = Math.max((style.width + style.casing.extraWidth) * pixelRatio, pixelRatio * 0.5);
+        context.stroke();
+    }
+    context.strokeStyle = style.color;
+    context.lineWidth = Math.max(style.width * pixelRatio, pixelRatio * 0.5);
+    context.stroke();
+    context.globalAlpha = 1;
+    return true;
+}
 function normaliseMaxDataZoom(value) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
         return undefined;
     return Math.floor(value);
 }
+/** Tiles the highlight overlay may be waiting on at once; the oldest is forgotten past it. */
+const MAX_HIGHLIGHT_MISSES = 1024;
 const DEFAULT_RESTYLE_REPLACE = {
     activateWhen: 'first-image',
     crossfadeDurationMs: 0,
@@ -581,6 +630,11 @@ export function createVectorTileOverlaySource(options) {
     let style = options.style;
     let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null;
     let restyleHost = options.restyleHost ?? null;
+    let highlight = null;
+    let highlightHost = options.highlightHost ?? null;
+    // Tiles the highlight overlay asked for before they were decoded. When one
+    // lands, the highlight overlay is refreshed so its piece appears.
+    const highlightMissed = new Set();
     const tileNetwork = options.tileNetwork;
     let restyleQueued = 0;
     let restyleApplied = 0;
@@ -680,8 +734,11 @@ export function createVectorTileOverlaySource(options) {
         const tile = await decode(bytes, { x, y, z });
         if (!tile)
             return null;
-        if (startedAt === generation)
+        if (startedAt === generation) {
             cache.set(key, tile);
+            if (highlightMissed.delete(key))
+                void refreshHighlight().catch((reason) => onError?.(reason));
+        }
         return tile;
     }
     function decodedTile(z, x, y) {
@@ -803,16 +860,145 @@ export function createVectorTileOverlaySource(options) {
                 void pumpRestyle();
         }
     }
+    async function highlightImageForTile(x, y, z, scale) {
+        try {
+            if (!highlight)
+                return null;
+            if (maxDataZoomPending)
+                await maxDataZoomPending;
+            const levels = z - dataZoomFor(z);
+            const factor = 2 ** levels;
+            const ancestorX = Math.floor(x / factor);
+            const ancestorY = Math.floor(y / factor);
+            const key = `${z - levels}/${ancestorX}/${ancestorY}`;
+            // Cache, or a read the base layer already started. Never a read of its own.
+            let tile = cache.get(key);
+            if (!tile) {
+                try {
+                    tile = (await inFlight.get(key)?.promise) ?? null;
+                }
+                catch {
+                    // The base layer reports its own failed read.
+                    tile = null;
+                }
+            }
+            if (!tile) {
+                highlightMissed.add(key);
+                if (highlightMissed.size > MAX_HIGHLIGHT_MISSES) {
+                    const oldest = highlightMissed.values().next().value;
+                    if (oldest !== undefined)
+                        highlightMissed.delete(oldest);
+                }
+                return null;
+            }
+            const current = highlight;
+            if (!current)
+                return null;
+            const pixelRatio = scale > 0 ? scale : 1;
+            const size = Math.round(tileSize * pixelRatio);
+            const canvas = createCanvas(size, size);
+            const painted = paintVectorTileHighlight(canvas, tile, {
+                id: current.id,
+                pixelRatio,
+                style: current.style,
+                tileSize,
+                ...(levels > 0
+                    ? { overzoom: { column: x - ancestorX * factor, levels, row: y - ancestorY * factor } }
+                    : {}),
+            });
+            return painted ? canvas : null;
+        }
+        catch (reason) {
+            onError?.(reason);
+            return null;
+        }
+    }
+    // Swaps only the highlight overlay. Coalesces a burst to the latest state.
+    let highlightQueued = 0;
+    let highlightApplied = 0;
+    let highlightPumping = false;
+    const highlightWaiters = [];
+    function refreshHighlight() {
+        const epoch = ++highlightQueued;
+        const done = new Promise((resolve, reject) => {
+            highlightWaiters.push({ epoch, reject, resolve });
+        });
+        void pumpHighlight();
+        return done;
+    }
+    function settleHighlightWaiters(upTo, error) {
+        for (let index = highlightWaiters.length - 1; index >= 0; index -= 1) {
+            const waiter = highlightWaiters[index];
+            if (!waiter || waiter.epoch > upTo)
+                continue;
+            highlightWaiters.splice(index, 1);
+            if (error)
+                waiter.reject(error);
+            else
+                waiter.resolve();
+        }
+    }
+    async function pumpHighlight() {
+        if (highlightPumping)
+            return;
+        highlightPumping = true;
+        try {
+            await Promise.resolve();
+            while (highlightApplied !== highlightQueued) {
+                const target = highlightQueued;
+                const host = highlightHost;
+                if (host) {
+                    const descriptor = {
+                        ...host.descriptor,
+                        id: host.layerId,
+                        imageForTile: highlightImageForTile,
+                    };
+                    await host.replace(host.layerId, descriptor, {
+                        ...DEFAULT_RESTYLE_REPLACE,
+                        // A cleared highlight has no first image to wait for.
+                        ...(highlight ? {} : { activateWhen: 'immediate' }),
+                        ...host.replaceOptions,
+                    });
+                }
+                highlightApplied = target;
+                settleHighlightWaiters(target);
+            }
+        }
+        catch (reason) {
+            settleHighlightWaiters(highlightQueued, reason);
+            highlightApplied = highlightQueued;
+        }
+        finally {
+            highlightPumping = false;
+            if (highlightApplied !== highlightQueued)
+                void pumpHighlight();
+        }
+    }
+    function setHighlight(next) {
+        if (next !== null && (!Number.isInteger(next.id) || next.id < 0)) {
+            throw new RangeError('highlight id must be a non-negative integer');
+        }
+        highlight = next ? { id: next.id, style: next.style } : null;
+        highlightMissed.clear();
+        return refreshHighlight();
+    }
     return {
         get cacheBytes() {
             return cache.bytes;
         },
+        clearHighlight() {
+            return setHighlight(null);
+        },
+        get highlight() {
+            return highlight;
+        },
+        highlightImageForTile,
         clearCache() {
             cache.clear();
             generation += 1;
             inFlight.clear();
         },
-        hitTest({ coordinate, tolerancePx = DEFAULT_HIT_TOLERANCE_PX, zoom }) {
+        hitTest({ coordinate, tolerancePx = DEFAULT_MOUSE_HIT_TOLERANCE_PX, zoom }) {
             // Everything is computed in tile fractions and converted per tile, so a
             // source whose tiles use different extents still compares like for like.
             // Above the data zoom the tiles are the ancestors', and a displayed tile
@@ -852,6 +1038,10 @@ export function createVectorTileOverlaySource(options) {
             if (isVectorTileClassStyle(style))
                 style = { ...style, classTable: table };
             return requestRestyle();
+        },
+        setHighlight,
+        setHighlightHost(host) {
+            highlightHost = host;
         },
         setRestyleHost(host) {
             restyleHost = host;

@@ -28,7 +28,9 @@ These examples are small integration patterns, not standalone apps.
   updates and a render/cleanup contract.
 - `vector-tile-network.ts`: A PMTiles vector network painted through a worker
   decoder, coloured from a class table, restyled without a blank frame, and a
-  tap answered from the decoded tiles.
+  tap answered from the decoded tiles by one resolver (dot, then line, then
+  area; 8 px mouse, 22 px touch), with the touched stretch highlighted on its
+  own overlay.
 - `canvas-point-layer.ts`: National gauge dots painted from typed arrays,
   restyled by replacing the class column, and a tap answered by `nearestPoint`.
 

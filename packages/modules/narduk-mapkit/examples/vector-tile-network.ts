@@ -3,10 +3,14 @@ import {
   createPmTilesTileSource,
   createVectorTileOverlaySource,
   createWorkerDecoder,
+  resolveHit,
 } from '@narduk-enterprises/narduk-mapkit/client'
 import { PMTiles } from 'pmtiles'
 
 import type {
+  HitPointerKind,
+  PointLayer,
+  PointLayerCanvas,
   VectorTileClassTable,
   VectorTileHit,
   VectorTileRestyleHost,
@@ -42,7 +46,11 @@ interface Point {
  * the overlay only once the new tiles have drawn, so a 5-minute status
  * refresh does not blank the network.
  */
-export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
+export function attachRiverNetwork(
+  map: MapHandle,
+  archiveUrl: string,
+  gauges?: PointLayer<PointLayerCanvas>,
+) {
   // The worker script belongs to the app: a published worker chunk is the one
   // thing Vite, webpack and Nuxt do not agree on. It should call
   // `serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'] }))`.
@@ -85,12 +93,37 @@ export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
   map.addEventListener('single-tap', (event) => {
     const coordinate = map.convertPointOnPageToCoordinate(event.pointOnPage)
     if (!coordinate) return
-    // Synchronous, and only over tiles already decoded: a tap has to be
-    // answered inside the gesture, and a tile the user can see is a tile the
-    // cache holds. The default tolerance is a fingertip, not a pixel.
-    const hit = network.hitTest({ coordinate, zoom: currentZoom() })
-    if (hit) showReach(hit)
-    else dismissReach()
+    // One answer, in priority order: a gauge dot wins over a river line, a
+    // line over an alert area. Synchronous, and only over what is already
+    // decoded: a tap has to be answered inside the gesture. The tolerance is
+    // 8 px for a mouse and 22 px (half of a 44 px touch target) for a finger.
+    const hit = resolveHit({
+      coordinate,
+      layers: [
+        ...(gauges ? [{ kind: 'point' as const, layer: gauges }] : []),
+        { kind: 'line', source: network },
+        { kind: 'area', test: ({ coordinate: at }) => alertAreaAt(at) },
+      ],
+      pointer: lastPointerKind(),
+      zoom: currentZoom(),
+    })
+    if (hit?.kind === 'point') showGauge(hit.hit)
+    else if (hit?.kind === 'line') {
+      showReach(hit.hit)
+      // Light the whole stretch, in every tile that is drawn, on its own
+      // overlay: the network tiles are not re-read, decoded or repainted.
+      const segment = hit.hit.properties.si
+      if (typeof segment === 'number') {
+        void network.setHighlight({
+          id: segment,
+          style: { casing: { color: '#ffffff', extraWidth: 2 }, color: '#f97316', width: 4 },
+        })
+      }
+    } else if (hit?.kind === 'area') showAlert(hit.hit)
+    else {
+      dismissReach()
+      void network.clearHighlight()
+    }
   })
 
   return {
@@ -102,6 +135,14 @@ export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
      */
     bindRegistry(host: VectorTileRestyleHost<OffscreenCanvas>) {
       network.setRestyleHost(host)
+    },
+    /**
+     * The highlight's own layer, registered above the network with
+     * `imageForTile: network.highlightImageForTile`. Changing the highlight
+     * swaps only this one.
+     */
+    bindHighlightRegistry(host: VectorTileRestyleHost<OffscreenCanvas>) {
+      network.setHighlightHost(host)
     },
     restyleForLens(table: VectorTileClassTable) {
       return network.setClassTable(table)
@@ -131,7 +172,11 @@ function statusPaint() {
   return paint
 }
 
+declare function alertAreaAt(at: MapCoordinate): { id: string } | null
 declare function currentZoom(): number
 declare function dismissReach(): void
+declare function lastPointerKind(): HitPointerKind
 declare function reportDegraded(reason: unknown): void
+declare function showAlert(area: { id: string }): void
+declare function showGauge(index: number): void
 declare function showReach(hit: VectorTileHit): void
