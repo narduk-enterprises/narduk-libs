@@ -491,6 +491,15 @@ describe('point-layer paint', () => {
     expect(arcs[1]).toMatchObject({ args: [256, 256, 8, 0, Math.PI * 2] })
   })
 
+  it('paints the eastern hemisphere on the single zoom-0 tile instead of wrapping it west', async () => {
+    const layer = layerAt(lonLat(90, 0), new Uint8Array([1]), { 1: statusStyle() })
+    const canvas = await layer.imageForTile(0, 0, 0, 1)
+    const arc = canvas?.calls.find((call) => call.op === 'arc')
+
+    expect(arc?.args[0]).toBeCloseTo(192, 5)
+    expect(arc?.args[1]).toBeCloseTo(128, 5)
+  })
+
   it('sizes imageForTile for the requested scale and returns null for an empty tile', async () => {
     const layer = layerAt(lonLat(ST_PAUL.longitude, ST_PAUL.latitude), new Uint8Array([1]), {
       1: statusStyle(),

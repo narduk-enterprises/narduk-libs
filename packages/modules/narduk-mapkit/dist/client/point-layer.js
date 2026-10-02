@@ -390,10 +390,14 @@ function pointReachesTile(worldX, worldY, tileX, tileY, n, reachPx, tileSize) {
 }
 function tileLocal(worldX, worldY, tileX, tileY, n) {
     let x = worldX * n - tileX;
-    if (x > n / 2)
-        x -= n;
-    if (x < -n / 2)
-        x += n;
+    // Zoom 0 is one tile covering the whole world. Wrapping there would move
+    // the eastern hemisphere onto the western margin (0.75 -> -0.25).
+    if (n > 1) {
+        if (x > n / 2)
+            x -= n;
+        if (x < -n / 2)
+            x += n;
+    }
     return { x, y: worldY * n - tileY };
 }
 function orderIndexes(indexes, classes, style) {
