@@ -4,6 +4,7 @@ export * from './callouts.js';
 export * from './fullscreen.js';
 export * from './hit-test.js';
 export * from './layers.js';
+export * from './label-layer.js';
 export * from './layout.js';
 export * from './leader-overlay.js';
 export * from './pmtiles.js';
