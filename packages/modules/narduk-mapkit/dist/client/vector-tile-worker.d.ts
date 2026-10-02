@@ -29,6 +29,12 @@ export interface VectorTileTransfer {
     featureLines: ArrayBuffer;
     lineStarts: ArrayBuffer;
     properties: readonly VectorTileProperties[];
+    /** Present when the tile carried a `ri` column. */
+    ri?: ArrayBuffer;
+    /** Present when the tile carried a `si` column. */
+    si?: ArrayBuffer;
+    /** Present when the tile carried a `so` column. */
+    so?: ArrayBuffer;
 }
 export interface VectorTileDecodeResponse {
     channel: typeof VECTOR_TILE_DECODE_CHANNEL;

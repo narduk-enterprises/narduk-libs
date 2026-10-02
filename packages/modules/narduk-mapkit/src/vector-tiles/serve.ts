@@ -10,7 +10,7 @@
  * // app/workers/river-network.ts
  * import { createMvtDecoder, serveVectorTileDecoder } from '@narduk-enterprises/narduk-mapkit/vector-tiles'
  *
- * serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'], properties: ['ri', 'so'] }))
+ * serveVectorTileDecoder(self, createMvtDecoder({ layers: ['reaches'], properties: ['ri', 'si', 'so'] }))
  * ```
  */
 import { sendVectorTile, VECTOR_TILE_DECODE_CHANNEL } from '../client/vector-tile-worker.js'

@@ -28,9 +28,9 @@ export interface MvtDecoderOptions {
   /**
    * Property keys to keep. Omit to keep every key.
    *
-   * Worth setting on a dense archive: properties are the only part of a
-   * decoded tile that is not a flat buffer, so a `name` string on each of a
-   * few thousand reaches per tile is what actually grows the cache.
+   * Worth setting on a dense archive: leftover strings are the only part of a
+   * decoded tile that is not a flat buffer. `so`, `si` and `ri` become typed
+   * columns either way; dropping `name` is what actually shrinks the cache.
    */
   properties?: readonly string[]
 }

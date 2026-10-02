@@ -47,6 +47,11 @@ export async function mountAnimatedTileMap(container: HTMLElement) {
 
   let currentOverlay: TileOverlay | null = null
 
+  /**
+   * Raster time-series still crossfade here. A vector river network should
+   * not: `createVectorTileOverlaySource().restyle()` routes through the
+   * registry's swap-when-drawn path so the network never vanishes for a frame.
+   */
   function setFrame(urlTemplate: string, opacity = 0.82): void {
     const nextOverlay = createMapKitTileOverlay(mapkit, urlTemplate, {
       maximumZ: 10,
