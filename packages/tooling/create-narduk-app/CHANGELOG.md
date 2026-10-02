@@ -1,5 +1,23 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.3
+
+### Patch Changes
+
+- bc97f1c: Add a canvas point layer for the national gauge map (narduk-libs#1345
+  L1): paint dots into tile images from columnar typed arrays, restyle a class
+  column from memory without re-projecting, and answer `nearestPoint` for a tap.
+  Reserved class bytes keep no-data and not-reporting visually distinct from
+  each other and from the lowest real class; nothing defaults to zero.
+- a51613a: Colour a national river network from columnar `so` / `si` / `ri` and
+  a class table, paint in colour-width batches with stream-order then severity
+  and an optional casing, and restyle through the registry's swap-when-drawn
+  path so the overlay never blanks (narduk-libs#1345 L7/L3/L2). The existing
+  per-feature style function keeps working. Reserved class bytes 254 (gauge not
+  reporting) and 255 (no gauge, neutral water) stay distinct from unknown, and a
+  table whose version or length does not match the tiles paints unknown rather
+  than a wrong colour.
+
 ## 0.21.2
 
 ### Patch Changes
