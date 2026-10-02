@@ -120,7 +120,12 @@
       "unrs-resolver",
       "vue-demi",
       "workerd"
-    ]
+    ],
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-86w9-cpqp-85rv"
+      ]
+    }
   },
   "volta": {
     "node": "24.21.0"
