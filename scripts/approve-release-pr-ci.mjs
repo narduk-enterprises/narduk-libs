@@ -35,7 +35,7 @@
  *
  *   GH_TOKEN=... GITHUB_REPOSITORY=... EXPECTED_HEAD=... PR_NUMBER=... \
  *     node scripts/approve-release-pr-ci.mjs
- * Writes `runs` (space-separated run ids) and `head` to $GITHUB_OUTPUT.
+ * Writes `runs` (space-separated run ids), `head` and `pr` to $GITHUB_OUTPUT.
  */
 
 import { appendFileSync } from 'node:fs'
@@ -163,6 +163,7 @@ async function main() {
   if (result.approve.length > 0) {
     setOutput('runs', result.approve.join(' '))
     setOutput('head', expectedHead)
+    setOutput('pr', prNumber)
     summarize(
       `::notice title=Release PR CI approval planned::held ci.yml run(s) ${result.approve.join(', ')} for release PR #${prNumber} head ${expectedHead} may be approved.`,
     )

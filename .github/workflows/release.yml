@@ -331,6 +331,7 @@ jobs:
     outputs:
       runs: ${{ steps.plan.outputs.runs }}
       head: ${{ steps.plan.outputs.head }}
+      pr: ${{ steps.plan.outputs.pr }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -441,7 +442,12 @@ jobs:
   # docs/standards/GITHUB-APPS.md, D-GHAPP-1; its installation on
   # narduk-enterprises already carries `actions: write`, so nothing is widened),
   # downscoped to exactly this repository and `actions: write`, and read back
-  # before use. The only call it makes is the approve call the hand procedure in
+  # before use (the repository list is the only part of a minted token that the
+  # token itself can report; its permissions cannot be read back, so
+  # `permission-actions: write` rests on the mint request, which GitHub refuses
+  # if the installation lacks it -- the same accepted check notify-mirror has,
+  # recorded in docs/package-releases.md). The only call it makes is the approve
+  # call the hand procedure in
   # docs/package-releases.md makes, for run ids the plan job validated. With the
   # key or the variable absent it records a notice and the manual approval still
   # works. It can never fail a release.
@@ -492,16 +498,26 @@ jobs:
             exit 1
           fi
 
+      # Two re-reads through the scoped token, each of which skips the run (a
+      # warning, then `continue`, before the POST) rather than approving it:
+      # the run must still be the held ci.yml pull_request run for exactly the
+      # planned head, and the pull request must still be open at that head. A
+      # head that moved since the plan job read it is superseded, and approving
+      # its held run would take the PR's concurrency group and cancel the
+      # current head's run (2026-09-22). scripts/approve-release-pr-ci.test.mjs
+      # runs this script against a stub `gh` and fails if either skip is lost.
       - name: Approve the held CI run for the release PR head
         if: steps.credential.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ steps.mint.outputs.token }}
           RUN_IDS: ${{ needs.plan-release-pr-approval.outputs.runs }}
           RELEASE_PR_HEAD: ${{ needs.plan-release-pr-approval.outputs.head }}
+          RELEASE_PR_NUMBER: ${{ needs.plan-release-pr-approval.outputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "${RELEASE_PR_HEAD}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${RELEASE_PR_NUMBER}" =~ ^[0-9]+$ ]]
           for id in ${RUN_IDS}; do
             [[ "${id}" =~ ^[0-9]+$ ]]
             # Re-read the run through the scoped token: it must still be the
@@ -509,6 +525,12 @@ jobs:
             held="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}" --jq '[.head_sha, .head_branch, .event, .conclusion, .head_repository.full_name] | join(" ")')"
             if [ "${held}" != "${RELEASE_PR_HEAD} changeset-release/main pull_request action_required ${GITHUB_REPOSITORY}" ]; then
               echo "::warning title=Release PR CI left to manual approval::run ${id} is no longer the held run for ${RELEASE_PR_HEAD} (${held}); approving nothing for it."
+              continue
+            fi
+            # Re-read the pull request: its head must still be the planned one.
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR_NUMBER}" --jq '[.state, .head.sha, .head.ref] | join(" ")')"
+            if [ "${current}" != "open ${RELEASE_PR_HEAD} changeset-release/main" ]; then
+              echo "::warning title=Release PR CI left to manual approval::pull request #${RELEASE_PR_NUMBER} is no longer open at ${RELEASE_PR_HEAD} (${current}); a newer head's run approves its own, and run ${id} is left alone."
               continue
             fi
             gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"

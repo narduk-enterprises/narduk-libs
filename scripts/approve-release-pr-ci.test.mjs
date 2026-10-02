@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { botEmail, plan, selectRunsToApprove } from './approve-release-pr-ci.mjs'
@@ -249,4 +252,160 @@ test('the release job records the head it pushed from its own checkout, and neve
 test('the workflow still never dispatches ci.yml for the release PR', () => {
   assert.doesNotMatch(workflow, /gh workflow run ci\.yml|^  release-pr-ci:$/mu)
   assert.doesNotMatch(workflow, /workflows\/ci\.yml\/dispatches/u)
+})
+
+// The approve step is bash in YAML, and the job it lives in checks out no code,
+// so the decision cannot be a function this file imports. Instead the step's own
+// script is extracted and run against a stub `gh` that serves canned reads and
+// records every call. A test that only matched the script's text passed with
+// the `continue` after the warning deleted (verify of #1359); this one cannot.
+function approveStepScript() {
+  const step = job('approve-release-pr-ci')
+    .split('      - name: Approve the held CI run for the release PR head\n')[1]
+    .split('      - name: Report a failed approval')[0]
+  assert.ok(step, 'approve step found')
+  return step
+    .split('        run: |\n')[1]
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/u, ''))
+    .join('\n')
+}
+
+const heldRun = (overrides = {}) => ({
+  head_sha: head,
+  head_branch: 'changeset-release/main',
+  event: 'pull_request',
+  conclusion: 'action_required',
+  head_repository: { full_name: repository },
+  ...overrides,
+})
+const openPull = (overrides = {}) => ({
+  state: 'open',
+  head: { sha: head, ref: 'changeset-release/main' },
+  ...overrides,
+})
+
+// `reads` maps a stub file name to its JSON; a name left out makes that read fail.
+function runApproveStep({ runIds = '31', reads }) {
+  const dir = mkdtempSync(join(tmpdir(), 'narduk-approve-step-'))
+  try {
+    for (const [name, value] of Object.entries(reads))
+      writeFileSync(join(dir, name), JSON.stringify(value))
+    const log = join(dir, 'calls.log')
+    writeFileSync(log, '')
+    // Serves `gh api <path> [--jq <expr>]` from $STUB_DIR the way gh does (the
+    // expression is applied with jq) and logs every call.
+    writeFileSync(
+      join(dir, 'gh'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "$STUB_DIR/calls.log"
+method=GET; path=; expr=.
+args=("$@"); i=1
+while [ $i -lt ${'$'}{#args[@]} ]; do
+  case "${'$'}{args[$i]}" in
+    --method) method="${'$'}{args[$((i+1))]}"; i=$((i+2)) ;;
+    --jq) expr="${'$'}{args[$((i+1))]}"; i=$((i+2)) ;;
+    *) path="${'$'}{args[$i]}"; i=$((i+1)) ;;
+  esac
+done
+if [ "$method" = POST ]; then exit 0; fi
+case "$path" in
+  */pulls/*) file=pull.json ;;
+  */actions/runs/*) file="run-${'$'}{path##*/}.json" ;;
+  *) exit 1 ;;
+esac
+[ -f "$STUB_DIR/$file" ] || { echo "stub: no $file" >&2; exit 1; }
+jq -r "$expr" "$STUB_DIR/$file"
+`,
+    )
+    chmodSync(join(dir, 'gh'), 0o755)
+    const result = spawnSync('bash', ['-c', approveStepScript()], {
+      encoding: 'utf8',
+      env: {
+        PATH: `${dir}:${process.env.PATH}`,
+        STUB_DIR: dir,
+        GITHUB_REPOSITORY: repository,
+        RUN_IDS: runIds,
+        RELEASE_PR_HEAD: head,
+        RELEASE_PR_NUMBER: '1352',
+      },
+    })
+    const calls = readFileSync(log, 'utf8').split('\n').filter(Boolean)
+    return { ...result, calls, posts: calls.filter((call) => call.includes('--method POST')) }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('the approve step approves a run that is still held for the planned open head', () => {
+  const result = runApproveStep({
+    reads: { 'run-31.json': heldRun(), 'pull.json': openPull() },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(result.posts, [`api --method POST repos/${repository}/actions/runs/31/approve`])
+  assert.match(result.stdout, /::notice title=Release PR CI started::approved held ci\.yml run 31/u)
+})
+
+test('the approve step skips, with a warning and no POST, every run that fails its re-read', () => {
+  const stale = {
+    'a run that is no longer held': { 'run-31.json': heldRun({ conclusion: 'success' }) },
+    'a run for another head': { 'run-31.json': heldRun({ head_sha: 'b'.repeat(40) }) },
+    'a run for another branch': { 'run-31.json': heldRun({ head_branch: 'feature' }) },
+    'a run from another event': { 'run-31.json': heldRun({ event: 'push' }) },
+    'a run from a fork': {
+      'run-31.json': heldRun({ head_repository: { full_name: 'fork/narduk-libs' } }),
+    },
+  }
+  for (const [label, run] of Object.entries(stale)) {
+    const result = runApproveStep({ reads: { 'pull.json': openPull(), ...run } })
+    assert.equal(result.status, 0, `${label}: ${result.stderr}`)
+    assert.deepEqual(result.posts, [], label)
+    assert.match(result.stdout, /::warning title=Release PR CI left to manual approval::/u, label)
+  }
+})
+
+test('the approve step skips a run whose pull request head moved or closed since the plan', () => {
+  const moved = {
+    'a head that moved on': openPull({
+      head: { sha: 'b'.repeat(40), ref: 'changeset-release/main' },
+    }),
+    'a pull request that closed': openPull({ state: 'closed' }),
+    'a head branch that changed': openPull({ head: { sha: head, ref: 'feature' } }),
+  }
+  for (const [label, pull] of Object.entries(moved)) {
+    const result = runApproveStep({ reads: { 'run-31.json': heldRun(), 'pull.json': pull } })
+    assert.equal(result.status, 0, `${label}: ${result.stderr}`)
+    assert.deepEqual(result.posts, [], label)
+    assert.match(result.stdout, /is no longer open at/u, label)
+  }
+})
+
+test('the approve step fails closed when a re-read fails, and skips one run without ending the loop', () => {
+  const noPull = runApproveStep({ reads: { 'run-31.json': heldRun() } })
+  assert.notEqual(noPull.status, 0)
+  assert.deepEqual(noPull.posts, [])
+  const noRun = runApproveStep({ reads: { 'pull.json': openPull() } })
+  assert.notEqual(noRun.status, 0)
+  assert.deepEqual(noRun.posts, [])
+  // Run 31 is stale and run 32 is held: only 32 is approved, so a skipped run
+  // must `continue` to the next one rather than fall through to the POST.
+  const mixed = runApproveStep({
+    runIds: '31 32',
+    reads: {
+      'run-31.json': heldRun({ conclusion: 'cancelled' }),
+      'run-32.json': heldRun(),
+      'pull.json': openPull(),
+    },
+  })
+  assert.equal(mixed.status, 0, mixed.stderr)
+  assert.deepEqual(mixed.posts, [`api --method POST repos/${repository}/actions/runs/32/approve`])
+})
+
+test('the plan job hands the approve job the pull request number it validated', () => {
+  assert.match(job('plan-release-pr-approval'), /pr: \$\{\{ steps\.plan\.outputs\.pr \}\}/u)
+  assert.match(
+    job('approve-release-pr-ci'),
+    /RELEASE_PR_NUMBER: \$\{\{ needs\.plan-release-pr-approval\.outputs\.pr \}\}/u,
+  )
 })
