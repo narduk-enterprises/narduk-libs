@@ -158,11 +158,15 @@ function readEvidence(api, repository, sha) {
   return { sha, repository, currentMain, comparison }
 }
 
-function readPushEvidence(api, base) {
-  const { repository, sha } = base
-  const runs = api(
+function readPushRuns(api, repository, sha) {
+  return api(
     `repos/${repository}/actions/workflows/ci.yml/runs?event=push&head_sha=${sha}&per_page=100`,
   ).workflow_runs
+}
+
+function readPushEvidence(api, base) {
+  const { repository, sha } = base
+  const runs = readPushRuns(api, repository, sha)
   const latest = [...runs].sort((a, b) => b.id - a.id)[0]
   const jobs = latest
     ? api(
@@ -194,10 +198,37 @@ function readTreeEvidence(api, base) {
 }
 
 /**
+ * Whether the push CI for `sha` has already reported (or reported once and is
+ * being re-run). A run in that state is the answer about this commit's own
+ * push CI, and the tree rule must never overrule it: the release PR's run
+ * does not execute `release-plan:check` (ci.yml skips it on the release PR),
+ * and a red push run means the commit failed where the PR run did not.
+ * Deliberately broad (any `ci.yml` push run for the SHA, any branch or
+ * repository label, any attempt after the first): it only ever *removes* the
+ * tree rule's chance to answer, so a looser match is the safe direction.
+ */
+export function pushRunHasReported(runs, sha) {
+  return runs.some(
+    (entry) =>
+      entry.head_sha === sha &&
+      entry.event === 'push' &&
+      (entry.status === 'completed' || Number(entry.run_attempt) > 1),
+  )
+}
+
+/**
  * `early` is the Release run that starts while the release commit's push CI is
  * still running: only the tree rule can answer then, and not being able to is
  * not a failure, because the run the push CI's completion starts proves the
- * commit the old way.
+ * commit the old way. It also defers when the push CI has already reported,
+ * so no mode publishes over a push run that finished without success.
+ *
+ * In every other mode the push rule answers first. The tree rule is the
+ * fallback only while the commit's push CI has not reported (a manual dispatch
+ * made while it is still running); once a push run has completed without
+ * success, or is being re-run after an earlier attempt, the push rule's
+ * refusal stands. A failed read of the push runs is also a refusal: without it
+ * the run cannot tell which of those two states it is in.
  */
 export function decideRelease({ early, api, repository, sha }) {
   const treeProof = () => {
@@ -211,15 +242,31 @@ export function decideRelease({ early, api, repository, sha }) {
   }
   if (early) {
     try {
+      // A push run that has already reported (a delayed early run) is that
+      // commit's answer: the early run defers to the Release run its
+      // completion starts, which publishes it or refuses it by the push rule.
+      if (pushRunHasReported(readPushRuns(api, repository, sha), sha))
+        return {
+          verified: false,
+          rule: 'tree',
+          reason: 'the push CI run for this commit has already reported',
+        }
       return treeProof()
     } catch (error) {
       return { verified: false, rule: 'tree', reason: error.message }
     }
   }
+  const pushEvidence = readPushEvidence(api, readEvidence(api, repository, sha))
   try {
-    const runId = verifyReleaseEvidence(readPushEvidence(api, readEvidence(api, repository, sha)))
+    const runId = verifyReleaseEvidence(pushEvidence)
     return { verified: true, rule: 'push', runId }
   } catch (pushError) {
+    if (pushRunHasReported(pushEvidence.runs, sha)) {
+      console.log(
+        `Tree rule not tried: the push CI run for ${sha} has reported and did not succeed (${pushError.message}).`,
+      )
+      throw pushError
+    }
     try {
       return treeProof()
     } catch (treeError) {

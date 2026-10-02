@@ -85,9 +85,23 @@ test('only the release PR merge may start a Release run before its push CI compl
     verifyCi,
     /RELEASE_VERIFY_MODE: \$\{\{ github\.event\.action == 'requested' && 'early' \|\| 'standard' \}\}/u,
   )
+  // The group's skip condition is the exact negation of verify-ci's `requested`
+  // branch (event, branch and message), so a fork PR run from a branch named
+  // `main` cannot join the shared group with every job skipped.
   assert.match(
     release,
-    /group: >-\n\s+\$\{\{ \(github\.event\.action == 'requested' && !startsWith\(github\.event\.workflow_run\.head_commit\.message, 'chore: release packages'\) && format\('narduk-libs-release-skipped-\{0\}', github\.run_id\)\) \|\| 'narduk-libs-release' \}\}/u,
+    /group: >-\n\s+\$\{\{ \(github\.event\.action == 'requested' && !\(github\.event\.workflow_run\.event == 'push' && github\.event\.workflow_run\.head_branch == 'main' && startsWith\(github\.event\.workflow_run\.head_commit\.message, 'chore: release packages'\)\) && format\('narduk-libs-release-skipped-\{0\}', github\.run_id\)\) \|\| 'narduk-libs-release' \}\}/u,
+  )
+  // An early run publishes and nothing else: neither drift synthesis nor the
+  // changesets version path (which force-pushes the release PR) may run in it,
+  // or a release merge would push changeset-release/main twice.
+  assert.match(
+    release,
+    /name: Synthesize patch changesets for published manifest drift\n\s+if: steps\.main-state\.outputs\.current == 'true' && github\.event\.action != 'requested'\n/u,
+  )
+  assert.match(
+    release,
+    /id: changesets\n\s+(?:#.*\n\s+)*if: steps\.release-mode\.outputs\.publish == 'true' \|\| \(steps\.release-mode\.outputs\.current == 'true' && github\.event\.action != 'requested'\)\n/u,
   )
   // An early run that could not prove the commit publishes nothing.
   assert.match(release, /if: needs\.verify-ci\.outputs\.verified == 'true'/u)

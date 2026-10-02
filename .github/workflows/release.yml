@@ -28,13 +28,13 @@ on:
     branches:
       - main
 
-# A `requested` run for any commit but the release PR's merge gets a group of its
-# own. Workflow-level concurrency is evaluated before job `if:`, so a skipped
+# A `requested` run for anything but the release PR's merge on main (the same
+# three conditions as verify-ci's `if:`) gets a group of its own. Workflow-level concurrency is evaluated before job `if:`, so a skipped
 # run in the shared group would replace a real queued Release run (the #477
 # lesson that recheck-main also follows).
 concurrency:
   group: >-
-    ${{ (github.event.action == 'requested' && !startsWith(github.event.workflow_run.head_commit.message, 'chore: release packages') && format('narduk-libs-release-skipped-{0}', github.run_id)) || 'narduk-libs-release' }}
+    ${{ (github.event.action == 'requested' && !(github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && startsWith(github.event.workflow_run.head_commit.message, 'chore: release packages')) && format('narduk-libs-release-skipped-{0}', github.run_id)) || 'narduk-libs-release' }}
   cancel-in-progress: false
 
 permissions:
@@ -192,8 +192,14 @@ jobs:
       # by hand with `verified-sha` set to current main; that is what puts
       # `main-state.current` back to `true`. See docs/package-releases.md,
       # "When a Changeset is required".
+      #
+      # Not in an early run (a `requested` CI event, narduk-libs#1354): that run
+      # publishes the release merge and nothing else. Release-PR preparation
+      # belongs to the run the push CI's completion starts, so a release merge
+      # never force-pushes changeset-release/main twice (two heads, two CI runs,
+      # two approvals).
       - name: Synthesize patch changesets for published manifest drift
-        if: steps.main-state.outputs.current == 'true'
+        if: steps.main-state.outputs.current == 'true' && github.event.action != 'requested'
         run: pnpm run release:synthesize-drift
 
       - name: Select publication or current-main version preparation
@@ -247,7 +253,9 @@ jobs:
 
       - name: Prepare or publish the independently verified package versions
         id: changesets
-        if: steps.release-mode.outputs.publish == 'true' || steps.release-mode.outputs.current == 'true'
+        # An early run takes this step only to publish (nothing pending); the
+        # version path, which pushes the release PR, is the completed run's.
+        if: steps.release-mode.outputs.publish == 'true' || (steps.release-mode.outputs.current == 'true' && github.event.action != 'requested')
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm run release:version

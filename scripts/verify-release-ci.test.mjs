@@ -283,6 +283,9 @@ test('the tree rule rejects every way the proof could be about something else', 
     'a run from a fork': (e) => {
       e.runs[0].head_repository.full_name = 'fork/libs'
     },
+    'a run in another repository': (e) => {
+      e.runs[0].repository.full_name = 'fork/libs'
+    },
     'a run of another workflow': (e) => {
       e.runs[0].path = '.github/workflows/other.yml'
     },
@@ -374,7 +377,7 @@ function routedApi(treeInput, { pushRuns = [], pushJobs = [], failing = [], call
   }
 }
 
-test('an early run proves by the tree rule alone and never reads the push run', () => {
+test('an early run proves by the tree rule alone and never reads the push verdict', () => {
   const input = treeEvidence()
   const calls = []
   const result = decideRelease({
@@ -386,10 +389,26 @@ test('an early run proves by the tree rule alone and never reads the push run', 
   assert.equal(result.verified, true)
   assert.equal(result.rule, 'tree')
   assert.equal(result.mainTree, treeSha)
+  // It lists the push runs to see whether any has reported, but never reads one's jobs.
   assert.equal(
-    calls.some((path) => path.includes('event=push')),
+    calls.some((path) => path.includes('/attempts/') && path.includes('/runs/7/')),
     false,
   )
+})
+
+test('an early run defers when the push run has already reported, green or red', () => {
+  const input = treeEvidence()
+  for (const conclusion of ['success', 'failure']) {
+    const push = pushRunFor(input, { run_attempt: 1, conclusion })
+    const result = decideRelease({
+      early: true,
+      api: routedApi(input, { pushRuns: push.runs, pushJobs: push.jobs }),
+      repository,
+      sha: input.sha,
+    })
+    assert.equal(result.verified, false, conclusion)
+    assert.match(result.reason, /already reported/u)
+  }
 })
 
 test('an early run that cannot prove by tree is not a failure and does not publish', () => {
@@ -407,7 +426,13 @@ test('an early run that cannot prove by tree is not a failure and does not publi
 
 test('an API read that fails during an early run falls back instead of throwing', () => {
   const input = treeEvidence()
-  for (const failing of ['/commits/', '/git/commits/', 'event=pull_request', '/attempts/']) {
+  for (const failing of [
+    '/commits/',
+    '/git/commits/',
+    'event=pull_request',
+    'event=push',
+    '/attempts/',
+  ]) {
     const result = decideRelease({
       early: true,
       api: routedApi(input, { failing: [failing] }),
@@ -436,28 +461,89 @@ test('a completed push run keeps the old rule and never reads the tree evidence'
   )
 })
 
-test('without a green push run the tree rule applies, and without either the push error stands', () => {
-  const input = treeEvidence()
-  const redPush = evidence()
-  redPush.runs[0].head_sha = input.sha
-  redPush.runs[0].conclusion = 'failure'
-  const viaTree = decideRelease({
+// The push run for `input.sha`, as the push-runs read returns it, altered by `patch`.
+function pushRunFor(input, patch) {
+  const push = evidence()
+  Object.assign(push.runs[0], { head_sha: input.sha, ...patch })
+  return push
+}
+
+function decideStandard(input, push, extra = {}) {
+  return decideRelease({
     early: false,
-    api: routedApi(input, { pushRuns: redPush.runs, pushJobs: redPush.jobs }),
+    api: routedApi(input, { pushRuns: push.runs, pushJobs: push.jobs, ...extra }),
     repository,
     sha: input.sha,
   })
-  assert.equal(viaTree.rule, 'tree')
-  assert.equal(viaTree.runId, 21)
-  input.headCommit.tree.sha = `${treeSha.slice(0, 39)}f`
+}
+
+test('a push run still in progress leaves the tree rule able to prove a dispatched release', () => {
+  const input = treeEvidence()
+  const push = pushRunFor(input, { status: 'in_progress', conclusion: null, run_attempt: 1 })
+  push.jobs = []
+  const result = decideStandard(input, push)
+  assert.equal(result.verified, true)
+  assert.equal(result.rule, 'tree')
+  assert.equal(result.runId, 21)
+})
+
+test('no push run at all leaves the tree rule able to prove', () => {
+  const input = treeEvidence()
+  const result = decideStandard(input, { runs: [], jobs: [] })
+  assert.equal(result.rule, 'tree')
+})
+
+test('a red push run refuses the release even when the tree rule would hold', () => {
+  const input = treeEvidence()
+  const calls = []
+  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'action_required']) {
+    const push = pushRunFor(input, { run_attempt: 1, conclusion })
+    assert.throws(
+      () => decideStandard(input, push, { calls }),
+      /latest main CI run for this exact SHA must have succeeded/u,
+      conclusion,
+    )
+  }
+  // The refusal does not depend on reading the tree evidence at all.
+  assert.equal(
+    calls.some((path) => path.includes('/pulls')),
+    false,
+  )
+})
+
+test('a completed push run without a successful verify aggregate refuses too', () => {
+  const input = treeEvidence()
+  const push = pushRunFor(input, { run_attempt: 1 })
+  push.jobs = []
+  assert.throws(() => decideStandard(input, push), /one successful full verify aggregate/u)
+})
+
+test('a push run re-run after an earlier attempt is not overruled by the tree rule', () => {
+  const input = treeEvidence()
+  const push = pushRunFor(input, { run_attempt: 2, status: 'in_progress', conclusion: null })
+  push.jobs = []
+  assert.throws(() => decideStandard(input, push), /must have succeeded/u)
+})
+
+test('a failed read of the push runs refuses instead of falling back to the tree rule', () => {
+  const input = treeEvidence()
   assert.throws(
     () =>
       decideRelease({
         early: false,
-        api: routedApi(input, { pushRuns: redPush.runs, pushJobs: redPush.jobs }),
+        api: routedApi(input, { failing: ['event=push'] }),
         repository,
         sha: input.sha,
       }),
+    /Unable to read CI evidence/u,
+  )
+})
+
+test('with no push run to overrule it, a tree that does not match leaves the push error standing', () => {
+  const input = treeEvidence()
+  input.headCommit.tree.sha = `${treeSha.slice(0, 39)}f`
+  assert.throws(
+    () => decideStandard(input, { runs: [], jobs: [] }),
     /latest main CI run for this exact SHA must have succeeded/u,
   )
 })
