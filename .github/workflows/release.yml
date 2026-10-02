@@ -7,21 +7,34 @@ on:
         description: Exact CI-verified commit retained in main history
         required: true
         type: string
-  # Only main-branch CI completions can release. Without this filter every
+  # Only main-branch CI runs can release. Without this filter every
   # pull_request CI completion queued a Release run that the job-level `if:`
   # then skipped, and those skipped runs read as failed publishes. The
   # job-level `if:` below stays as defense in depth (a PR head branch can
   # itself be named `main`).
+  #
+  # `requested` exists for one commit shape only (narduk-libs#1354): the
+  # release PR's merge. Its own full CI run already tested the identical tree,
+  # so `verify-ci` proves it by the tree rule the moment the push CI is
+  # requested, and publishing no longer waits for a second full run of the same
+  # suite. For every other main push the `requested` run's jobs are skipped (see
+  # the concurrency group), and `completed` is unchanged.
   workflow_run:
     workflows:
       - CI
     types:
+      - requested
       - completed
     branches:
       - main
 
+# A `requested` run for any commit but the release PR's merge gets a group of its
+# own. Workflow-level concurrency is evaluated before job `if:`, so a skipped
+# run in the shared group would replace a real queued Release run (the #477
+# lesson that recheck-main also follows).
 concurrency:
-  group: narduk-libs-release
+  group: >-
+    ${{ (github.event.action == 'requested' && !startsWith(github.event.workflow_run.head_commit.message, 'chore: release packages') && format('narduk-libs-release-skipped-{0}', github.run_id)) || 'narduk-libs-release' }}
   cancel-in-progress: false
 
 permissions:
@@ -32,16 +45,25 @@ jobs:
   verify-ci:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main')
+      github.event.workflow_run.head_branch == 'main') ||
+      (github.event.action == 'requested' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      startsWith(github.event.workflow_run.head_commit.message, 'chore: release packages'))
     # Verify the exact main commit before the publishing job runs.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.verify.outputs.sha }}
+      verified: ${{ steps.verify.outputs.verified }}
     env:
       VERIFIED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.verified-sha || github.event.workflow_run.head_sha }}
+      # `early`: the push CI is only requested, so only the tree rule can
+      # answer, and "cannot" ends this run quietly instead of failing it.
+      RELEASE_VERIFY_MODE: ${{ github.event.action == 'requested' && 'early' || 'standard' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -51,7 +73,7 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
-      - name: Verify successful full CI for this exact main commit
+      - name: Verify successful full CI for this exact main commit (push run, or the release PR's tree-identical run)
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,6 +93,9 @@ jobs:
   # pinned the run to a CI-verified commit on main.
   release:
     needs: verify-ci
+    # An early run that could not prove the commit by the tree rule ends here;
+    # the run main's push CI completion starts proves and publishes it.
+    if: needs.verify-ci.outputs.verified == 'true'
     permissions:
       contents: write
       packages: write

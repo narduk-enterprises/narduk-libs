@@ -64,12 +64,34 @@ test('only the verified main release receives a job-scoped package write token',
   )
   assert.match(release, /verify-release-ci\.mjs/u)
   assert.match(release, /git merge-base --is-ancestor "\$\{VERIFIED_SHA\}" origin\/main/u)
-  // PR-branch CI completions must not queue Release runs at all.
+  // PR-branch CI runs must not queue Release runs at all.
   assert.match(
     release,
-    /  workflow_run:\n(?:    #.*\n)*    workflows:\n      - CI\n    types:\n      - completed\n    branches:\n      - main\n/u,
+    /  workflow_run:\n(?:    #.*\n)*    workflows:\n      - CI\n    types:\n      - requested\n      - completed\n    branches:\n      - main\n/u,
   )
   assert.match(release, /github\.event\.workflow_run\.head_branch == 'main'/u)
+})
+
+test('only the release PR merge may start a Release run before its push CI completes', () => {
+  // narduk-libs#1354: a `requested` run proves by the tree rule alone. Every
+  // other `requested` run must skip its jobs and stay out of the shared
+  // concurrency group, or it would replace a queued Release run.
+  const verifyCi = release.split(/^  release:$/mu)[0]
+  assert.match(
+    verifyCi,
+    /github\.event\.action == 'requested' &&\n\s+github\.event\.workflow_run\.event == 'push' &&\n\s+github\.event\.workflow_run\.head_branch == 'main' &&\n\s+startsWith\(github\.event\.workflow_run\.head_commit\.message, 'chore: release packages'\)/u,
+  )
+  assert.match(
+    verifyCi,
+    /RELEASE_VERIFY_MODE: \$\{\{ github\.event\.action == 'requested' && 'early' \|\| 'standard' \}\}/u,
+  )
+  assert.match(
+    release,
+    /group: >-\n\s+\$\{\{ \(github\.event\.action == 'requested' && !startsWith\(github\.event\.workflow_run\.head_commit\.message, 'chore: release packages'\) && format\('narduk-libs-release-skipped-\{0\}', github\.run_id\)\) \|\| 'narduk-libs-release' \}\}/u,
+  )
+  // An early run that could not prove the commit publishes nothing.
+  assert.match(release, /if: needs\.verify-ci\.outputs\.verified == 'true'/u)
+  assert.match(release, /verified: \$\{\{ steps\.verify\.outputs\.verified \}\}/u)
 })
 
 test('release.yml does not dispatch CI for the release PR', () => {
