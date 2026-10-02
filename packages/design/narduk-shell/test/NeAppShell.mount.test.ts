@@ -292,7 +292,7 @@ describe('NeAppShell: useNardukShellSections() drives the rail', () => {
 
   it('re-renders the rail when the shared state is mutated', async () => {
     const sections = useNardukShellSections()
-    sections.value = [SECTIONS[0]!]
+    sections.value = structuredClone([SECTIONS[0]!])
     const shell = await render({})
 
     sections.value.push({
@@ -419,5 +419,102 @@ describe('NeAppShell: nardukShell accent and structure override the brand tokens
     applyShellBrand()
     ;(useAppConfig().nardukShell as { accent: string }).accent = '#be123c'
     expect(brandStyles()[0]!.textContent).toContain('--ne-accent: #be123c;')
+  })
+})
+
+describe('NeAppShell: optional rail controls', () => {
+  it('collapses through the actual dashboard control and keeps link labels available', async () => {
+    const shell = await render({
+      sections: SECTIONS,
+      collapsible: true,
+      railWidth: 15,
+      collapsedWidth: 4.5,
+    })
+    const button = shell.get('button[aria-label="Collapse sidebar"]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(shell.get('.ne-app-shell__rail').attributes('data-collapsed')).toBe('true')
+    expect(shell.emitted('update:collapsed')?.at(-1)).toEqual([true])
+    expect(links(shell).map((link) => link.text())).toEqual([
+      'Overview',
+      'Runners3',
+      'Hosts',
+      'Networks',
+    ])
+    await shell.get('button[aria-label="Expand sidebar"]').trigger('click')
+    await flushPromises()
+    expect(shell.get('.ne-app-shell__rail').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('discloses a section and skips its hidden links when walking with arrow keys', async () => {
+    const shell = await render({
+      sections: [{ ...SECTIONS[0]!, collapsible: true, defaultOpen: false }, SECTIONS[1]!],
+    })
+    const toggle = shell.get('[data-section-toggle]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(links(shell)[0]!.isVisible()).toBe(false)
+    await toggle.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(links(shell)[2]!.element)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(links(shell)[0]!.isVisible()).toBe(true)
+    await toggle.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(links(shell)[0]!.element)
+  })
+
+  it('shows closed-section destinations in the collapsed rail and restores disclosure state', async () => {
+    const shell = await render({
+      sections: [{ ...SECTIONS[0]!, collapsible: true, defaultOpen: false }],
+      collapsible: true,
+    })
+    await shell.setProps({ collapsed: true })
+    await flushPromises()
+    expect(shell.find('[data-section-toggle]').exists()).toBe(false)
+    expect(links(shell)[0]!.isVisible()).toBe(true)
+    await shell.setProps({ collapsed: false })
+    await flushPromises()
+    expect(shell.get('[data-section-toggle]').attributes('aria-expanded')).toBe('false')
+    expect(links(shell)[0]!.isVisible()).toBe(false)
+  })
+
+  it('renders decorative asset icons without removing the destination label', async () => {
+    const shell = await render({
+      sections: [
+        {
+          id: 'main',
+          label: 'Main',
+          hideLabel: true,
+          items: [{ label: 'Overview', to: '/', iconSrc: '/icons/overview.svg' }],
+        },
+      ],
+    })
+    expect(shell.get('nav img').attributes('src')).toBe('/icons/overview.svg')
+    expect(shell.get('nav img').attributes('alt')).toBe('')
+    expect(links(shell)[0]!.text()).toBe('Overview')
+    expect(shell.find('.ne-app-shell__section-label').exists()).toBe(false)
+    expect(shell.get('[role="group"]').attributes('aria-label')).toBe('Main')
+  })
+})
+
+describe('NeAppShell: query matching', () => {
+  it('marks only the selected query-sensitive destination', async () => {
+    await router.push('/runners?region=east')
+    const shell = await render({
+      sections: [
+        {
+          id: 'regions',
+          label: 'Regions',
+          items: [
+            { label: 'East', to: '/runners?region=east', exactQuery: true },
+            { label: 'West', to: '/runners?region=west', exactQuery: true },
+          ],
+        },
+      ],
+    })
+    expect(
+      links(shell)
+        .filter((link) => link.attributes('data-active') !== undefined)
+        .map((link) => link.text()),
+    ).toEqual(['East'])
   })
 })

@@ -2963,21 +2963,24 @@ D2) and built on Nuxt UI's dashboard primitives — `UDashboardGroup`,
 `UDashboardSidebar`, `UDashboardPanel`, `UDashboardNavbar` and one
 `UNavigationMenu` per section.
 
-- **Sections are labelled and always expanded.** Not a tree, not icon-only, and
-  nothing collapses. The rail is one `nav` landmark (`navLabel`), and each
-  section is a `role="group"` named by its label.
+- **Sections are labelled and expanded by default.** Set a section's
+  `collapsible` to opt into a disclosure, with `defaultOpen: false` to start
+  closed. The rail is one `nav` landmark (`navLabel`), and each section is a
+  `role="group"` named by its label.
 - **Active comes from the router.** Every item is a `to`; the item that lights
   is the one vue-router matches against the current route (the link's own active
   state, surfaced as `aria-current="page"` and `data-active`). A parent route
   stays active on its nested child routes. There is no `active` input.
 - **The drawer exists only below the breakpoint.** At Nuxt UI's `lg` (1024px)
-  and up the rail is a fixed 14.5rem column. Below it the rail is hidden and a
-  toggle in the navbar row opens the same rail in a slide-over, which closes on
-  navigation.
+  and up the rail defaults to a fixed 14.5rem column. Set `collapsible` to
+  enable the desktop icon rail and `railWidth` / `collapsedWidth` to size it.
+  Below it the rail is hidden and a toggle in the navbar row opens the same rail
+  in a slide-over, which closes on navigation.
 - **Arrow keys walk the rail.** With focus on a rail link, ArrowDown / ArrowUp
   move to the next / previous link across section boundaries, wrapping; Home /
   End go to the first / last. Focus only: every link stays in the Tab order and
-  nothing navigates until Enter.
+  nothing navigates until Enter. Disclosure buttons participate in this order;
+  hidden section links do not.
 - **One `main`.** The page renders inside the shell's `<main>`, and a
   [`NeSkipLink`](#neskiplink) (visible on focus) moves focus to it.
 
@@ -3040,22 +3043,41 @@ nardukShell: {
 | `navLabel`      | `string`                       | `'Main'`            | The rail `nav`'s accessible name.                                                             |
 | `skipLinkLabel` | `string`                       | `'Skip to content'` | Text of the skip link to the page's `<main>`.                                                 |
 
+| `collapsible` | `boolean` | `false` | Allow desktop rail collapse. | |
+`railWidth` | `number` | `14.5` | Expanded width in rem. | | `collapsedWidth` |
+`number` | `4` | Collapsed width in rem. | | `v-model:collapsed` | `boolean` |
+`false` | Controlled desktop collapse state. |
+
+Each item can use `exactQuery` to include query parameters in active matching,
+following Nuxt UI (`true` for an exact query, `partial` for the supplied keys).
+Each item can use `iconSrc` for a decorative asset instead of a Nuxt UI `icon`.
+Each section can set `hideLabel` while retaining its accessible group name.
+Collapsed rails expose all destinations, including those in closed sections;
+expanding restores each section's disclosure state. Mobile drawers always use
+full labels and their normal disclosure state, independently of desktop
+collapse.
+
 #### Slots
 
 | Slot           | Description                                                                                               |
 | -------------- | --------------------------------------------------------------------------------------------------------- |
 | `default`      | The page, rendered inside the shell's `<main>`.                                                           |
-| `rail-top`     | Top of the rail: the logo or app switcher. No header is drawn when empty.                                 |
-| `rail-bottom`  | Bottom of the rail: the user / account control. No footer is drawn when empty.                            |
+| `rail-top`     | Top of the rail: the logo or app switcher. Receives `{ collapsed }`.                                      |
+| `rail-bottom`  | Bottom of the rail: the user / account control. Receives `{ collapsed }`.                                 |
 | `navbar`       | Left of the navbar row: breadcrumbs, a context line. The page's `h1` belongs to the page, not the navbar. |
 | `navbar-right` | Right of the navbar row: search, page actions. With neither navbar slot, the row shows only below `lg`.   |
+
+| `rail-toggle` | Replaces the default desktop collapse button. Receives
+`{ collapsed, toggle }`; available when `collapsible` is true. |
 
 The rail slots render in the desktop column and again in the mobile slide-over
 while it is open, so their content should not carry element ids.
 
 #### Events
 
-None.
+`update:collapsed` reports desktop collapse changes. Use `v-model:collapsed` to
+store the state in the app if persistence is desired; the shell does not persist
+it.
 
 #### `useNardukShellSections()`
 

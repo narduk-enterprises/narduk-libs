@@ -1,5 +1,18 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.14.0
+
+### Minor Changes
+
+- f96461d: Add optional desktop rail collapse, configurable widths, section
+  disclosures and asset icons to NeAppShell. Existing shells retain their
+  expanded defaults; mobile drawers always render full labels.
+
+### Patch Changes
+
+- Updated dependencies [8524c31]
+  - @narduk-enterprises/narduk-platform@2.4.0
+
 ## 0.13.0
 
 ### Minor Changes

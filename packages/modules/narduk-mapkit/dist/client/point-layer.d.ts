@@ -29,6 +29,12 @@ export declare const POINT_CLASS_NOT_REPORTING = 254;
  * rasterisation cost is the host's.
  */
 export declare const POINT_LAYER_NATIONAL_TILE_BUDGET_MS = 50;
+/**
+ * Pixels one world-width tile spans at zoom 0 in MapKit's zoom convention. The
+ * screen helpers ({@link PointLayer.obstaclesInView} and the label layer) use
+ * it, so a screen position is the same number in both.
+ */
+export declare const MAP_WORLD_TILE_PX = 256;
 /** How a class byte is painted. Higher `order` is drawn later, on top. */
 export interface PointClassStyle {
     fill: string;
@@ -91,11 +97,40 @@ export interface PointLayer<TCanvas extends PointLayerCanvas> {
      * order wins -- that is the one the user can see. A miss is `null`, not 0.
      */
     nearestPoint: (coordinate: VectorTileCoordinate, toleranceInPixels: number, zoom: number) => number | null;
+    /**
+     * The painted dots inside the view (grown by `marginPx`, default 0) as screen
+     * circles, in index order, for a label layer to avoid. Dots whose class has
+     * no style entry are not painted and are not returned. Reads only the
+     * projected typed arrays: synchronous, no index build, nothing awaited. The
+     * cost is one pass over the points per call.
+     */
+    obstaclesInView: (view: PointLayerView, marginPx?: number) => PointLayerScreenCircle[];
     readonly pointCount: number;
     /** Replace the class column. Positions stay as they were projected. */
     setClasses: (classes: Uint8Array) => void;
     /** Swap the style table. Cached projection and the spatial index stay. */
     setStyle: (style: PointClassTable) => void;
+}
+/**
+ * The map as the screen shows it: the centre, a (possibly fractional) MapKit
+ * zoom and the size in CSS pixels. Screen positions are CSS pixels from the
+ * top-left corner of that rectangle.
+ */
+export interface PointLayerView {
+    /** Height of the visible map in CSS pixels. */
+    height: number;
+    latitude: number;
+    longitude: number;
+    /** Width of the visible map in CSS pixels. */
+    width: number;
+    zoom: number;
+}
+/** A painted dot in screen space, with its stroke: the footprint a label must avoid. */
+export interface PointLayerScreenCircle {
+    /** Radius in CSS pixels, stroke included. */
+    radius: number;
+    x: number;
+    y: number;
 }
 /** Style after defaults (`strokeWidth`) are filled in. One slot per class byte. */
 export interface PointLayerStyleSlot {
@@ -130,4 +165,21 @@ export declare function paintPointLayerTile(canvas: PointLayerCanvas, options: {
     zoom: number;
 }): boolean;
 export declare function createPointLayer<TCanvas extends PointLayerCanvas>(options: PointLayerOptions<TCanvas>): PointLayer<TCanvas>;
+/** Validate a view and return the numbers every screen projection needs. */
+export declare function requirePointLayerView(view: PointLayerView): {
+    halfHeight: number;
+    halfWidth: number;
+    pixelsPerWorld: number;
+};
+/**
+ * Longitude/latitude as a fraction of the world (x wraps into [0, 1), y is
+ * Web Mercator from the north edge). The one projection the point layer paints
+ * with, exported so the label layer places against the same numbers.
+ */
+export declare function projectToWorldFraction(longitude: number, latitude: number): {
+    x: number;
+    y: number;
+};
+/** Signed world-fraction distance `from - to` the short way round the antimeridian. */
+export declare function worldFractionDelta(from: number, to: number): number;
 //# sourceMappingURL=point-layer.d.ts.map

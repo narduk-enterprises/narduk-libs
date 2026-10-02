@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-core
 
+## 2.20.4
+
+### Patch Changes
+
+- Updated dependencies [8524c31]
+  - @narduk-enterprises/narduk-platform@2.4.0
+
 ## 2.20.3
 
 ### Patch Changes

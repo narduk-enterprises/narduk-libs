@@ -1,5 +1,59 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.5
+
+### Patch Changes
+
+- f96461d: Add optional desktop rail collapse, configurable widths, section
+  disclosures and asset icons to NeAppShell. Existing shells retain their
+  expanded defaults; mobile drawers always render full labels.
+
+## 0.21.4
+
+### Patch Changes
+
+- be3ff69: Selection highlight and one hit resolver (narduk-libs#1345 L10/L11).
+  `resolveHit` asks a point layer, the vector-tile overlay's `hitTest` and a
+  caller-supplied area tester in the order given and returns one result typed
+  `point`, `line` or `area`, or `null`; a layer after a hit is not asked. The
+  tolerance is `DEFAULT_MOUSE_HIT_TOLERANCE_PX` (8, today's default; also used
+  for a pen) or `DEFAULT_TOUCH_HIT_TOLERANCE_PX` (22, half the 44-point touch
+  target), each overridable. The overlay source gains `setHighlight` /
+  `clearHighlight` / `highlightImageForTile` / `setHighlightHost`: every cached
+  piece whose `si` equals the highlighted id is drawn on its own overlay in the
+  caller's style, from the decoded cache only, without re-reading, re-decoding
+  or repainting the base tiles; a tile that arrives later shows it, an
+  overzoomed tile highlights from its ancestor, and `VECTOR_TILE_MISSING_ID`
+  never matches. Everything new is optional.
+- 7be597c: Label layer that avoids marks (narduk-libs#1345 L9).
+  `createLabelLayer` places caller-supplied anchors (text, position, priority,
+  first zoom, optional id) on a canvas without covering an obstacle or another
+  label: higher priority first, ties on a stable key, a label that does not fit
+  is dropped for the frame and is never moved or shrunk. Only anchors in the
+  view plus a margin are considered, a per-frame cap defaults to 200, text is
+  measured once per distinct string and style in a bounded cache, a halo keeps
+  it legible, and colours and font come from the caller's style. Pixel-ratio
+  aware; repaints coalesce through the render scheduler. `labelAt` is the hit
+  test, and `resolveHit` accepts a `label` layer kind (the existing result types
+  are unchanged). The point layer gains `obstaclesInView(view, marginPx?)`, the
+  visible dots as screen circles from its typed arrays, and exports the
+  projection the label layer shares. Everything new is optional.
+- a2e5de2: Vector tile overlays get a read queue, a byte budget and overzoom
+  (narduk-libs#1345 L5/L6/L4). Tile reads go through a bounded queue
+  (`readConcurrency`, default 6) served newest first; a read for a zoom the map
+  has left is dropped before it starts or aborted through the `AbortSignal`
+  `tileBytes` already accepts, and is neither reported to `onError` nor cached.
+  The decoded-tile cache evicts least-recently-used tiles by total decoded bytes
+  (`cacheBytes`, default 64 MiB, `Infinity` to disable) alongside the
+  `cacheSize` count cap; a tile larger than the whole budget still paints but is
+  not retained. `maxDataZoom` (defaulting to the archive's max zoom through the
+  new `archive` option and `PmTilesTileSource.getMaxZoom`) paints tiles above it
+  from the ancestor at that zoom, scaled and clipped into the child, with one
+  read and one decode shared by every descendant; the class-table key follows
+  the display zoom and `hitTest` answers from the ancestor.
+  `createPmTilesTileSource` no longer reports an aborted read to `onError`.
+  Every new option is optional.
+
 ## 0.21.3
 
 ### Patch Changes

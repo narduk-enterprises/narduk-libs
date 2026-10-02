@@ -4,24 +4,9 @@
  * and the page (components backlog item 18, narduk-libs#265; plan
  * docs/plans/components-library-plan.md §2 item 18).
  *
- * The rail is promoted from operator-portal's `app/layouts/default.vue`, the
- * reference implementation (plan decision D2), and keeps its four rules:
- *
- * 1. **Sections are labelled and always expanded.** Not a tree, not icon-only,
- *    and nothing on the desktop collapses. Each section is a `role="group"`
- *    named by its label; the rail is one `nav` landmark.
- * 2. **Active comes from the router.** Every item is a `to`, and the item that
- *    lights is the one the router matches against the current route — the
- *    link's own `RouterLink` active state, surfaced by `UNavigationMenu` as
- *    `data-active` and `aria-current="page"`. There is no `active` input.
- * 3. **The drawer exists only below the breakpoint.** At and above Nuxt UI's
- *    `lg` (1024px) the rail is a fixed-width column; below it the rail is
- *    hidden and the navbar's toggle opens the same rail in a slide-over.
- *    There is no icon-only mode at any width.
- * 4. **Arrow keys walk the rail.** ArrowDown / ArrowUp move focus to the
- *    next / previous link across section boundaries (wrapping), Home / End to
- *    the first / last. Every link stays in the Tab order: this is a faster
- *    path, not a roving tabindex.
+ * The default rail has labelled, expanded sections and a mobile drawer.
+ * Desktop collapse and section disclosures are opt-in. Active state always
+ * comes from the router, and arrow keys walk the visible navigation controls.
  *
  * It wraps Nuxt UI's dashboard primitives rather than re-implementing them:
  * `UDashboardGroup` is the frame, `UDashboardSidebar` the rail and its mobile
@@ -45,8 +30,9 @@ import UDashboardGroup from '@nuxt/ui/components/DashboardGroup.vue'
 import UDashboardNavbar from '@nuxt/ui/components/DashboardNavbar.vue'
 import UDashboardPanel from '@nuxt/ui/components/DashboardPanel.vue'
 import UDashboardSidebar from '@nuxt/ui/components/DashboardSidebar.vue'
+import UDashboardSidebarCollapse from '@nuxt/ui/components/DashboardSidebarCollapse.vue'
 import UNavigationMenu from '@nuxt/ui/components/NavigationMenu.vue'
-import { computed, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 import { useNardukShellSections } from '../composables/use-narduk-shell-sections'
 
@@ -55,6 +41,9 @@ import NeSkipLink from './NeSkipLink.vue'
 import type { NeAppShellItem, NeAppShellProps, NeAppShellSection } from './ne-app-shell-types'
 
 const props = withDefaults(defineProps<NeAppShellProps>(), {
+  collapsible: false,
+  railWidth: 14.5,
+  collapsedWidth: 4,
   navLabel: 'Main',
   sections: undefined,
   skipLinkLabel: 'Skip to content',
@@ -65,28 +54,44 @@ const slots = defineSlots<{
   /** Top of the navbar row, right side: search, page-level actions. */
   'navbar-right'?(): unknown
   /** Bottom of the rail: the user / account control. */
-  'rail-bottom'?(): unknown
+  'rail-bottom'?(props: { collapsed: boolean }): unknown
+  /** Optional desktop collapse button; replaces the Nuxt UI default. */
+  'rail-toggle'?(props: { collapsed: boolean; toggle: () => void }): unknown
   /** Top of the rail: the logo or app switcher. */
-  'rail-top'?(): unknown
+  'rail-top'?(props: { collapsed: boolean }): unknown
   /** The page. Rendered inside the shell's one `<main>` landmark. */
   default?(): unknown
   /** Top of the navbar row, left side: a breadcrumb, a page context line. */
   navbar?(): unknown
 }>()
 
-/**
- * The rail's width, in rem. operator-portal's rail is 232px
- * (`--op-rail-width`); 14.5rem is that at the default 16px root size and
- * scales with the reader's text size where a pixel width would not.
- */
-const RAIL_WIDTH_REM = 14.5
+const collapsed = defineModel<boolean>('collapsed', { default: false })
+const sectionOpen = ref<Record<string, boolean>>({})
+function isSectionOpen(section: NeAppShellSection): boolean {
+  return !section.collapsible || (sectionOpen.value[section.id] ?? section.defaultOpen !== false)
+}
+function toggleSection(section: NeAppShellSection) {
+  sectionOpen.value[section.id] = !isSectionOpen(section)
+}
 
 const shared = useNardukShellSections()
 const sections = computed<readonly NeAppShellSection[]>(() => props.sections ?? shared.value)
 
 /** `UNavigationMenu`'s item shape. Only routing fields; no `active` input. */
 function menuItem(item: NeAppShellItem) {
-  return { badge: item.badge, icon: item.icon, label: item.label, to: item.to }
+  return {
+    badge: item.badge,
+    exactQuery: item.exactQuery,
+    icon: item.icon,
+    iconSrc: item.iconSrc,
+    slot: item.iconSrc ? 'asset' : undefined,
+    label: item.label,
+    to: item.to,
+  }
+}
+
+function assetIcon(item: NeAppShellItem): string | undefined {
+  return item.iconSrc
 }
 
 const menus = computed(() =>
@@ -115,7 +120,9 @@ const RAIL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'End', 'Home'])
 function onRailKeydown(event: KeyboardEvent) {
   if (!RAIL_KEYS.has(event.key)) return
   const rail = event.currentTarget as HTMLElement
-  const links = [...rail.querySelectorAll<HTMLElement>('[data-slot="link"]')]
+  const links = [
+    ...rail.querySelectorAll<HTMLElement>('[data-slot="link"], [data-section-toggle]'),
+  ].filter((element) => !element.closest('[hidden]'))
   const current = links.indexOf(event.target as HTMLElement)
   if (current === -1 || links.length === 0) return
 
@@ -143,46 +150,78 @@ function onRailKeydown(event: KeyboardEvent) {
     <UDashboardSidebar
       class="ne-app-shell__rail"
       mode="slideover"
-      :default-size="RAIL_WIDTH_REM"
-      :min-size="RAIL_WIDTH_REM"
-      :max-size="RAIL_WIDTH_REM"
+      v-model:collapsed="collapsed"
+      :default-size="railWidth"
+      :min-size="railWidth"
+      :max-size="railWidth"
+      :collapsed-size="collapsedWidth"
       :resizable="false"
-      :collapsible="false"
+      :collapsible="collapsible"
     >
-      <template v-if="$slots['rail-top']" #header>
+      <template
+        v-if="$slots['rail-top'] || collapsible"
+        #header="{ collapsed: railCollapsed, collapse }"
+      >
         <div class="ne-app-shell__rail-top" data-ne-slot="rail-top">
-          <slot name="rail-top" />
+          <slot name="rail-top" :collapsed="railCollapsed" />
+          <slot
+            v-if="collapsible"
+            name="rail-toggle"
+            :collapsed="railCollapsed"
+            :toggle="() => collapse(!railCollapsed)"
+          >
+            <UDashboardSidebarCollapse />
+          </slot>
         </div>
       </template>
 
-      <!-- Rendered twice by UDashboardSidebar: once in the desktop column and
-           once in the mobile slide-over, which is only mounted while open.
-           Groups are named with aria-label rather than aria-labelledby for
-           that reason — two copies of one id would collide while both exist. -->
-      <nav class="ne-app-shell__nav" :aria-label="navLabel" @keydown.capture="onRailKeydown">
-        <div
-          v-for="{ section, items } in menus"
-          :key="section.id"
-          class="ne-app-shell__section"
-          role="group"
-          :aria-label="section.label"
-          :data-section="section.id"
-        >
-          <!-- The group already carries this text as its accessible name. -->
-          <p class="ne-app-shell__section-label" aria-hidden="true">{{ section.label }}</p>
-          <!-- Not in <ClientOnly>, on purpose: the rail must be in the
-               server's first paint (test/NeAppShell.ssr.test.ts). UNavigationMenu
-               reads no client-only state; its only state here is the active
-               item, derived from the route, which is the same on the server
-               and the client, and no item has children, so there is no
-               accordion open state either. -->
-          <UNavigationMenu as="div" orientation="vertical" :items="items" />
-        </div>
-      </nav>
+      <!-- Sidebar slot state is always expanded inside the mobile drawer. -->
+      <template #default="{ collapsed: railCollapsed }">
+        <nav class="ne-app-shell__nav" :aria-label="navLabel" @keydown.capture="onRailKeydown">
+          <div
+            v-for="{ section, items } in menus"
+            :key="section.id"
+            class="ne-app-shell__section"
+            role="group"
+            :aria-label="section.label"
+            :data-section="section.id"
+          >
+            <button
+              v-if="section.collapsible && !railCollapsed"
+              type="button"
+              class="ne-app-shell__section-label ne-app-shell__section-toggle"
+              data-section-toggle
+              :aria-expanded="isSectionOpen(section)"
+              @click="toggleSection(section)"
+            >
+              {{ section.label }}
+            </button>
+            <p
+              v-else-if="!railCollapsed && !section.hideLabel"
+              class="ne-app-shell__section-label"
+              aria-hidden="true"
+            >
+              {{ section.label }}
+            </p>
+            <div :hidden="!railCollapsed && !isSectionOpen(section)">
+              <UNavigationMenu
+                as="div"
+                orientation="vertical"
+                :items="items"
+                :collapsed="railCollapsed"
+              >
+                <template #asset-leading="{ item }">
+                  <img :src="assetIcon(item)" alt="" class="ne-app-shell__asset-icon" />
+                </template>
+              </UNavigationMenu>
+            </div>
+          </div>
+        </nav>
+      </template>
 
-      <template v-if="$slots['rail-bottom']" #footer>
+      <template v-if="$slots['rail-bottom']" #footer="{ collapsed: railCollapsed }">
         <div class="ne-app-shell__rail-bottom" data-ne-slot="rail-bottom">
-          <slot name="rail-bottom" />
+          <slot name="rail-bottom" :collapsed="railCollapsed" />
         </div>
       </template>
     </UDashboardSidebar>
@@ -226,6 +265,19 @@ function onRailKeydown(event: KeyboardEvent) {
  * Tokens only (README § Styling contract). Everything here reads an `--ne-*`
  * token or is layout; colour, radius, shadow and type size come from tokens.
  */
+.ne-app-shell__asset-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.ne-app-shell__section-toggle {
+  display: block;
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+}
+
 .ne-app-shell__nav {
   display: flex;
   flex-direction: column;
