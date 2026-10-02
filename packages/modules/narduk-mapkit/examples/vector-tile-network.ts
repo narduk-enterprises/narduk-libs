@@ -58,10 +58,14 @@ export function attachRiverNetwork(map: MapHandle, archiveUrl: string) {
   })
 
   const network = createVectorTileOverlaySource({
-    // 500 tiles of flowlines, not 500 tiles of pixels: `cacheBytes` reports
-    // what this is actually holding, so the number can be set against a
-    // budget instead of guessed.
+    // The cache is capped by bytes (64 MiB by default) as well as by count;
+    // `network.cacheBytes` reports what it is actually holding.
     cacheSize: 500,
+    // Reads for a zoom the map has left are dropped or aborted; at most six
+    // are in flight at once, newest first.
+    readConcurrency: 6,
+    // Past the archive's last zoom, paint from its zoom-12 ancestor.
+    archive: tiles,
     createCanvas: (width, height) => new OffscreenCanvas(width, height),
     decode: decoder.decode,
     style: {

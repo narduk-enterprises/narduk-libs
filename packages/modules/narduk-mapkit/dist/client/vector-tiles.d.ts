@@ -264,15 +264,57 @@ export interface VectorTileRestyleReplaceOptions {
     readinessTimeoutMs?: number;
     signal?: AbortSignal;
 }
+/**
+ * Where a tile source reports the deepest zoom its archive holds. A
+ * {@link PmTilesTileSource} does, from the archive header.
+ */
+export interface VectorTileArchive {
+    getMaxZoom?: () => number | Promise<number | undefined> | undefined;
+}
 export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas> {
-    /** Decoded-tile cache size. Tiles are small; the default covers a few screens. */
+    /**
+     * The tile source, when it can say how deep the archive goes. Used for the
+     * default `maxDataZoom`. Optional, and only read when `maxDataZoom` is unset.
+     */
+    archive?: VectorTileArchive;
+    /**
+     * Decoded-tile cache budget in bytes, by {@link decodedVectorTileBytes}. Least
+     * recently used tiles are evicted to stay under it. Default
+     * {@link DEFAULT_VECTOR_TILE_CACHE_BYTES}; `Infinity` means no byte cap. A
+     * tile larger than the whole budget still paints but is not retained.
+     */
+    cacheBytes?: number;
+    /**
+     * Decoded-tile count cap. Default 256. It holds alongside `cacheBytes`:
+     * whichever limit is reached first evicts.
+     */
     cacheSize?: number;
     createCanvas: (width: number, height: number) => TCanvas;
     decode: VectorTileDecoder;
-    /** Reported per tile; the tile itself resolves to `null` and draws nothing. */
+    /**
+     * The deepest zoom the archive has data for. A tile asked for above it is
+     * painted from its ancestor at this zoom, scaled and clipped into the child,
+     * so the archive is read and decoded once for every descendant.
+     * Default: `archive.getMaxZoom()` when that exists, else no overzoom.
+     */
+    maxDataZoom?: number;
+    /**
+     * Reported per tile; the tile itself resolves to `null` and draws nothing.
+     * A read that was dropped or aborted because the map left its zoom is not an
+     * error and is not reported.
+     */
     onError?: (reason: unknown) => void;
+    /**
+     * Tile reads in flight at once, default 6. Reads past it wait in a queue
+     * served newest first; see {@link createVectorTileOverlaySource}.
+     */
+    readConcurrency?: number;
     restyleHost?: VectorTileRestyleHost<TCanvas>;
     style: VectorTileOverlayStyle;
+    /**
+     * Read one tile's bytes. `signal` aborts when the map has left the tile's
+     * zoom; pass it to the range fetch. Resolve `null` or reject once it aborts.
+     */
     tileBytes: (z: number, x: number, y: number, signal?: AbortSignal) => Promise<Uint8Array | null>;
     /**
      * Version and id-space the loaded tiles were built for. A class table that
@@ -303,6 +345,9 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
      * Synchronous and cache-only: a tap must be answered during the gesture, and
      * a tile the user can see has already been decoded to be drawn. It never
      * fetches, so a probe over a tile that has not loaded yet is a miss.
+     *
+     * Above the data zoom the probe is answered from the ancestor tile, and the
+     * hit's `tile` is that ancestor -- the tile `feature` indexes into.
      */
     hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null;
     /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
@@ -342,7 +387,21 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
  * exact accounting.
  */
 export declare function decodedVectorTileBytes(tile: DecodedVectorTile): number;
+/**
+ * Default decoded-tile budget, in bytes.
+ *
+ * A dense river-network tile (about 10^5 points and a couple of thousand
+ * features) retains roughly 0.7 MB by {@link decodedVectorTileBytes}; 64 MiB
+ * holds on the order of ninety of them, several screens of a phone map plus the
+ * ring MapKit prefetches, and a third of what the old 256-tile count cap would
+ * have kept for the same tiles. See the measurement in the pull request that
+ * introduced it (narduk-libs#1345 L6) and the README. Pass `cacheBytes:
+ * Infinity` to cap by count only.
+ */
+export declare const DEFAULT_VECTOR_TILE_CACHE_BYTES: number;
 export declare const DEFAULT_VECTOR_TILE_CLASS_ZOOM_THRESHOLD = 8;
+/** Reads in flight at once unless `readConcurrency` says otherwise. */
+export declare const DEFAULT_VECTOR_TILE_READ_CONCURRENCY = 6;
 /**
  * Whether a class table may colour these tiles.
  *
@@ -367,6 +426,21 @@ export declare function vectorTileClassByte(tile: DecodedVectorTile, feature: nu
  */
 export declare function paintForVectorTileClass(style: VectorTileClassStyle, classByte: number | null, compatible: boolean): VectorTileStyle;
 /**
+ * Which part of an ancestor tile a child tile shows, for overzoom.
+ *
+ * The child is `levels` zooms deeper than the decoded tile, so it covers
+ * `1 / 2 ** levels` of the ancestor's width and height, starting at `column` /
+ * `row` in units of that fraction.
+ */
+export interface VectorTileOverzoom {
+    /** The child's column within the ancestor, `0` to `2 ** levels - 1`. */
+    column: number;
+    /** Zoom levels between the decoded tile and the tile being painted. */
+    levels: number;
+    /** The child's row within the ancestor, `0` to `2 ** levels - 1`. */
+    row: number;
+}
+/**
  * Paint one decoded tile. Exported because the hit-test and the overlay need
  * the same tile-to-pixel mapping, and a test can call it directly.
  *
@@ -376,6 +450,13 @@ export declare function paintForVectorTileClass(style: VectorTileClassStyle, cla
  * stroked wider, underneath the batch.
  */
 export declare function paintVectorTile(canvas: VectorTileCanvas, tile: DecodedVectorTile, options: {
+    /**
+     * Paint a child of `tile` -- a tile `levels` zooms deeper -- from its
+     * geometry, scaled and clipped into the child. `zoom` stays the zoom being
+     * displayed: line width, the style function and the class-table key all
+     * follow it, while the columns come from `tile`.
+     */
+    overzoom?: VectorTileOverzoom;
     pixelRatio: number;
     style: VectorTileOverlayStyle;
     tileNetwork?: VectorTileNetworkIdentity;
@@ -387,6 +468,15 @@ export declare function paintVectorTile(canvas: VectorTileCanvas, tile: DecodedV
  *
  * An empty tile, a missing tile and a failed decode all resolve to `null`, so
  * MapKit draws nothing there instead of a blank square over the basemap.
+ *
+ * Reads go through a bounded queue (`readConcurrency`) served newest first. A
+ * read for a zoom the map has since left is dropped before it starts, or
+ * aborted through the `AbortSignal` handed to `tileBytes` if it already has.
+ * Either way the tile resolves to `null`, is not reported to `onError`, is not
+ * cached, and loads normally if it is asked for again.
+ *
+ * Above `maxDataZoom` a tile is painted from its ancestor at that zoom: one
+ * read and one decode, shared by every descendant through the cache.
  */
 export declare function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(options: VectorTileOverlaySourceOptions<TCanvas>): VectorTileOverlaySource<TCanvas>;
 //# sourceMappingURL=vector-tiles.d.ts.map

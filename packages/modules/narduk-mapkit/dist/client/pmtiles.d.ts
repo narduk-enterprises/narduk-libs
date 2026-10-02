@@ -23,6 +23,10 @@ export interface PmTilesSource {
 }
 /** The subset of the `pmtiles` reader a tile source uses. */
 export interface PmTilesReader {
+    /** The archive header. Present on a `pmtiles` `PMTiles`; optional so a fake need not have it. */
+    getHeader?: () => Promise<{
+        maxZoom: number;
+    }>;
     getZxy: (z: number, x: number, y: number, signal?: AbortSignal) => Promise<{
         data: ArrayBuffer;
     } | undefined>;
@@ -34,6 +38,12 @@ export interface PmTilesTileSourceOptions {
     reader: PmTilesReader;
 }
 export interface PmTilesTileSource {
+    /**
+     * The deepest zoom the archive holds, or `undefined` when the reader cannot
+     * say or the header read fails. Never throws. Pass the source to a vector
+     * overlay as `archive` to default its `maxDataZoom` to this.
+     */
+    getMaxZoom?: () => Promise<number | undefined>;
     /** Bytes for a tile, or `null` when the archive has no tile there. */
     getTile: (z: number, x: number, y: number, signal?: AbortSignal) => Promise<Uint8Array | null>;
 }
@@ -42,7 +52,9 @@ export interface PmTilesTileSource {
  *
  * A missing tile and a failed read both resolve to `null`: an overlay draws
  * nothing rather than tearing down the map. Failures still reach `onError`,
- * so a caller can count them or surface a degraded state.
+ * so a caller can count them or surface a degraded state. A read cancelled
+ * through `signal` is the caller moving on, not a failure: it resolves to
+ * `null` and is not reported.
  */
 export declare function createPmTilesTileSource(options: PmTilesTileSourceOptions): PmTilesTileSource;
 export interface PmTilesFetchSourceOptions {

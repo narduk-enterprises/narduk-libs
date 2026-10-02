@@ -610,9 +610,9 @@ await network.restyle(darkClassStyle)
 ```
 
 Rapid successive restyles coalesce to the latest. `setStyle()` alone still works
-for callers that already own the overlay refresh. The cache is an LRU
-(`cacheSize`, default 256 tiles); `clearCache()` drops it when the archive
-itself changes.
+for callers that already own the overlay refresh. The cache is an LRU capped by
+bytes and by count (see [Cache budget](#cache-budget)); `clearCache()` drops it
+when the archive itself changes.
 
 `createPmTilesFetchSource` is the range-request `Source` for the `pmtiles`
 reader, taking the `fetch` it uses so a test needs no network. The `pmtiles`
@@ -781,7 +781,7 @@ gigabyte -- past what mobile Safari gives a tab before discarding it. The same
 points cost 4 bytes each here.
 
 `source.cacheBytes` reports what the cache is holding, so an app can set
-`cacheSize` against a real budget rather than a guess. Geometry and indexes are
+`cacheBytes` against a real budget rather than a guess. Geometry and indexes are
 exact; properties are estimated, since only the engine knows an object's real
 footprint -- but they are counted, because a `name` string on each of a few
 thousand features per tile is the part that actually grows a dense archive.
@@ -794,6 +794,64 @@ second one -- MapKit re-asks for the same tile on every render pass, so without
 that the archive is fetched twice and the tile decoded twice for one tile drawn.
 `clearCache()` also discards whatever is in the air, so a read started against
 the archive being replaced cannot land in the cleared cache.
+
+### Read queue
+
+Tile reads go through a bounded queue, because a fast zoom across the country
+otherwise leaves hundreds of reads for zoom levels that are already off screen
+ahead of the ones the user is looking at. `readConcurrency` (default 6) is how
+many are in flight at once; the rest wait and are served **newest first**, since
+the last tile MapKit asked for is the one on screen now.
+
+When MapKit asks for a different zoom, reads for the zoom it left are dropped: a
+queued one never starts, a running one is aborted through the `AbortSignal` that
+`tileBytes` receives -- pass it on, as `createPmTilesTileSource` does to the
+range fetch. A dropped or aborted tile resolves to `null`, is not reported to
+`onError`, is not cached (so it is not remembered as empty), and loads normally
+when asked for again. A real read failure is still reported.
+
+### Cache budget
+
+The decoded-tile cache evicts least-recently-used tiles by **total decoded
+bytes** (`cacheBytes`, default `DEFAULT_VECTOR_TILE_CACHE_BYTES`, 64 MiB) as
+well as by count (`cacheSize`, default 256). When both are set both hold, and
+whichever is reached first evicts. Pass `cacheBytes: Infinity` to cap by count
+only. A single tile larger than the whole budget still paints; it is simply not
+retained, and does not push the other tiles out to make room.
+
+The default comes from measuring a synthetic dense river-network tile: 10^5
+points over 2,000 features with `so`/`si`/`ri` columns and properties costs
+about 0.67 MB by `decodedVectorTileBytes` (0.53 MB of real heap, so the estimate
+errs high), and a 4 x denser z8-style tile about 2.7 MB (1.6 MB real). 64 MiB is
+about ninety typical tiles or twenty-four of the dense ones -- a phone screen's
+tiles plus the ring MapKit prefetches -- where the old 256-tile cap would have
+held about 170 MiB of the same tiles. `source.cacheBytes` reports the real
+figure for your own archive.
+
+### Overzoom
+
+A PMTiles archive ends at some zoom; a gauge-page map keeps going. Set
+`maxDataZoom` (or pass `archive: tiles`, and it defaults to the archive header's
+`maxZoom`) and a tile asked for above it is painted from its ancestor at
+`maxDataZoom`: that one tile is read and decoded once, shared by every
+descendant through the cache, and its geometry is scaled and clipped into the
+child. Line width, class-table colour, draw order, casing and the tap test
+behave as at the data zoom. With no `maxDataZoom` and no archive that reports
+one, nothing is overzoomed.
+
+```ts
+const network = createVectorTileOverlaySource({
+  archive: tiles, // maxDataZoom defaults to the archive's last zoom (12)
+  // ...
+})
+```
+
+Two things follow from "the columns come from the ancestor, the zoom is the
+displayed one": a class-table style picks `si` or `ri` by the display zoom, and
+a style function receives the display zoom. `hitTest({ zoom: 14 })` answers from
+the zoom-12 ancestor with the tolerance in zoom-14 screen pixels; the hit's
+`tile` is the ancestor the `feature` index belongs to. Because the ancestor is
+what is cached, a tile bigger than `cacheBytes` is re-read for each child.
 
 ## Canvas Point Layer
 

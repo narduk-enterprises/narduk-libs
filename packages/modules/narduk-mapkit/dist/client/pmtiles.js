@@ -14,11 +14,31 @@
  *
  * A missing tile and a failed read both resolve to `null`: an overlay draws
  * nothing rather than tearing down the map. Failures still reach `onError`,
- * so a caller can count them or surface a degraded state.
+ * so a caller can count them or surface a degraded state. A read cancelled
+ * through `signal` is the caller moving on, not a failure: it resolves to
+ * `null` and is not reported.
  */
 export function createPmTilesTileSource(options) {
     const { onError, reader } = options;
+    let maxZoom = null;
     return {
+        async getMaxZoom() {
+            const header = reader.getHeader;
+            if (!header)
+                return;
+            maxZoom ??= (async () => {
+                try {
+                    const { maxZoom: deepest } = await header();
+                    return Number.isFinite(deepest) ? deepest : undefined;
+                }
+                catch {
+                    // Try again next time; a transient failure should not pin "no data".
+                    maxZoom = null;
+                    return;
+                }
+            })();
+            return maxZoom;
+        },
         async getTile(z, x, y, signal) {
             try {
                 const tile = await reader.getZxy(z, x, y, signal);
@@ -27,6 +47,8 @@ export function createPmTilesTileSource(options) {
                 return new Uint8Array(tile.data);
             }
             catch (reason) {
+                if (signal?.aborted)
+                    return null;
                 onError?.(reason);
                 return null;
             }
