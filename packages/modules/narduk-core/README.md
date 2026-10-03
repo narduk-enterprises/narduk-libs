@@ -353,6 +353,25 @@ Nuxt major, or the nuxt-security version moves.
 `tests/nuxt-security-contract.test.ts` is the cheap tripwire that runs in CI
 instead.
 
+## Design-system fonts (`@nuxt/fonts`)
+
+An app that loads `@narduk-enterprises/narduk-ui/tokens.css` or
+`@narduk-enterprises/narduk-shell/theme.css` (in `css`, or the shell module with
+its theme on) gets Instrument Sans (400/500/600/700) and IBM Plex Mono
+(400/500/600), upright, self-hosted: the module declares both families to
+`@nuxt/fonts` before it installs it, and the files ship from `/_fonts/` on the
+app's origin with an immutable cache and metric-matched fallbacks. There is no
+third-party request and no `app.head.link` entry (narduk-libs#1366).
+
+Both families are declared `global: true`. The sheets set them through custom
+properties (`--ns-font-text`, `--ns-font-mono`, `--ne-font-sans`,
+`--ne-font-mono`), and `@nuxt/fonts` follows a `var()` to a literal name only
+within one file, so without `global` it would emit no `@font-face`.
+
+An entry of your own in `fonts.families` wins by name (case-insensitive), so a
+narrower `weights` list, another `provider` or `provider: 'none'` is respected.
+An app that loads neither stylesheet is untouched.
+
 ## Adding a row to the footer
 
 `LayerAppFooter` renders an `after` slot below its content. By default the slot

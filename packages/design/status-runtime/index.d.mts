@@ -9,20 +9,17 @@
 export function resolveSourceRevision(env?: Record<string, string | undefined>): string;
 
 /**
- * The Narduk Status Design System font request shared by all five status apps.
+ * Retired (narduk-libs#1366): always empty. narduk-core 2.22.0 or later
+ * self-hosts the design system's families through `@nuxt/fonts`; remove the
+ * spread from `app.head.link`.
+ *
+ * @deprecated
  */
-export const designSystemFontLinks: ReadonlyArray<
-  | {
-      crossorigin?: undefined;
-      href: string;
-      rel: string;
-    }
-  | {
-      crossorigin: "";
-      href: string;
-      rel: string;
-    }
->;
+export const designSystemFontLinks: ReadonlyArray<{
+  crossorigin?: "";
+  href: string;
+  rel: string;
+}>;
 
 /**
  * The design system's page-ground colour for `<meta name="theme-color">`.
