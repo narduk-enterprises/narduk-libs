@@ -78,7 +78,7 @@ export function sendVectorTile(tile) {
  * A reply that never comes fails that tile alone rather than the overlay.
  */
 export function createWorkerDecoder(options) {
-    const { scheduleTimeout = defaultScheduleTimeout, timeoutMs = 15_000, transfer = true, worker, } = options;
+    const { retain, scheduleTimeout = defaultScheduleTimeout, timeoutMs = 15_000, transfer = true, worker, } = options;
     const waiting = new Map();
     let nextId = 1;
     let disposed = false;
@@ -100,8 +100,11 @@ export function createWorkerDecoder(options) {
             entry.reject(new Error(event.data.error));
             return;
         }
-        const tile = event.data.tile;
-        entry.resolve(tile ? receiveVectorTile(tile) : null);
+        const transferred = event.data.tile;
+        const tile = transferred ? receiveVectorTile(transferred) : null;
+        if (tile && entry.retainAs !== undefined)
+            retain?.(tile, entry.retainAs);
+        entry.resolve(tile);
     };
     worker.addEventListener('message', onMessage);
     return {
@@ -115,12 +118,20 @@ export function createWorkerDecoder(options) {
                     const entry = settle(id);
                     entry?.reject(new Error(`vector tile decode timed out after ${timeoutMs}ms`));
                 }, timeoutMs);
-                waiting.set(id, { cancelTimeout, reject, resolve });
+                // Unique per decode, so a key never names two different tiles.
+                const retainAs = retain ? `d${id}` : undefined;
+                waiting.set(id, {
+                    cancelTimeout,
+                    reject,
+                    resolve,
+                    ...(retainAs === undefined ? {} : { retainAs }),
+                });
                 const buffer = tightBuffer(bytes);
                 const request = {
                     bytes: buffer,
                     channel: VECTOR_TILE_DECODE_CHANNEL,
                     id,
+                    ...(retainAs === undefined ? {} : { retainAs }),
                     x: tile.x,
                     y: tile.y,
                     z: tile.z,

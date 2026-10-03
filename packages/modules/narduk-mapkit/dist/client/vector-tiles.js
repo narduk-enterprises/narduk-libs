@@ -143,6 +143,13 @@ export function vectorTileFeatureCount(tile) {
 export function isVectorTileClassStyle(style) {
     return typeof style === 'object' && style !== null && 'classTable' in style;
 }
+/** A painter could not take a request; the overlay paints it on the main thread. */
+export class VectorTilePaintUnavailableError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'VectorTilePaintUnavailableError';
+    }
+}
 /**
  * Bytes a decoded tile retains.
  *
@@ -199,8 +206,11 @@ export const DEFAULT_VECTOR_TILE_CACHE_BYTES = 64 * 1024 * 1024;
  * A tile larger than the whole byte budget is not retained at all -- keeping it
  * would evict everything else for one tile -- but the caller still has it in
  * hand to paint.
+ *
+ * Exported for the worker half of the paint protocol, which keeps its own
+ * copy of the tiles it paints under the same rules.
  */
-class TileCache {
+export class DecodedVectorTileCache {
     #byteLimit;
     #limit;
     #tiles = new Map();
@@ -608,9 +618,9 @@ const DEFAULT_RESTYLE_REPLACE = {
  * read and one decode, shared by every descendant through the cache.
  */
 export function createVectorTileOverlaySource(options) {
-    const { archive, cacheBytes: byteBudget = DEFAULT_VECTOR_TILE_CACHE_BYTES, cacheSize = 256, createCanvas, decode, onError, tileBytes, tileSize = 256, } = options;
+    const { archive, cacheBytes: byteBudget = DEFAULT_VECTOR_TILE_CACHE_BYTES, cacheSize = 256, createCanvas, decode, onError, painter, tileBytes, tileSize = 256, } = options;
     const concurrency = Math.max(1, Math.floor(options.readConcurrency ?? DEFAULT_VECTOR_TILE_READ_CONCURRENCY) || 1);
-    const cache = new TileCache(cacheSize, byteBudget);
+    const cache = new DecodedVectorTileCache(cacheSize, byteBudget);
     // MapKit asks for a screenful at once and re-asks on every render pass, so
     // the same address is commonly requested again while its first read is
     // still in flight. Without this the archive is fetched twice and the tile
@@ -659,11 +669,15 @@ export function createVectorTileOverlaySource(options) {
     function dataZoomFor(zoom) {
         return maxDataZoom !== undefined && zoom > maxDataZoom ? maxDataZoom : zoom;
     }
+    // One object per style change, not per tile: a painter keys what it has
+    // already sent to its worker by identity, and a fresh spread per tile would
+    // resend the whole class table with every tile.
+    let live = null;
     function liveStyle() {
-        if (isVectorTileClassStyle(style) && classTable) {
-            return { ...style, classTable };
-        }
-        return style;
+        if (live)
+            return live;
+        live = isVectorTileClassStyle(style) && classTable ? { ...style, classTable } : style;
+        return live;
     }
     function paintOptions(zoom) {
         return {
@@ -786,15 +800,27 @@ export function createVectorTileOverlaySource(options) {
             if (!tile || vectorTileFeatureCount(tile) === 0)
                 return null;
             const pixelRatio = scale > 0 ? scale : 1;
-            const size = Math.round(tileSize * pixelRatio);
-            const canvas = createCanvas(size, size);
-            const painted = paintVectorTile(canvas, tile, {
+            const request = {
                 ...paintOptions(z),
                 pixelRatio,
                 ...(levels > 0
                     ? { overzoom: { column: x - ancestorX * factor, levels, row: y - ancestorY * factor } }
                     : {}),
-            });
+            };
+            const offThread = painter?.paint(tile, request) ?? null;
+            if (offThread) {
+                try {
+                    return await offThread;
+                }
+                catch (reason) {
+                    if (!(reason instanceof VectorTilePaintUnavailableError))
+                        throw reason;
+                    // Declined after the fact: paint it here, below.
+                }
+            }
+            const size = Math.round(tileSize * pixelRatio);
+            const canvas = createCanvas(size, size);
+            const painted = paintVectorTile(canvas, tile, request);
             return painted ? canvas : null;
         }
         catch (reason) {
@@ -1031,12 +1057,14 @@ export function createVectorTileOverlaySource(options) {
         restyle(next) {
             style = next;
             classTable = isVectorTileClassStyle(next) ? next.classTable : classTable;
+            live = null;
             return requestRestyle();
         },
         setClassTable(table) {
             classTable = table;
             if (isVectorTileClassStyle(style))
                 style = { ...style, classTable: table };
+            live = null;
             return requestRestyle();
         },
         setHighlight,
@@ -1053,6 +1081,7 @@ export function createVectorTileOverlaySource(options) {
             style = next;
             if (isVectorTileClassStyle(next))
                 classTable = next.classTable;
+            live = null;
         },
     };
 }

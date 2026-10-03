@@ -421,7 +421,43 @@ export interface VectorTileArchive {
   getMaxZoom?: () => number | Promise<number | undefined> | undefined
 }
 
-export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas> {
+/** Everything a painter needs besides the decoded tile itself. */
+export interface VectorTilePaintRequest {
+  /** Present when the tile is painted from an ancestor's geometry. */
+  overzoom?: VectorTileOverzoom
+  pixelRatio: number
+  style: VectorTileOverlayStyle
+  tileNetwork?: VectorTileNetworkIdentity
+  tileSize: number
+  zoom: number
+}
+
+/**
+ * Paints a decoded tile somewhere other than the main thread.
+ *
+ * `paint` returns `null` when it cannot take this request at all (a style it
+ * cannot carry, a browser without `OffscreenCanvas`), and its promise rejects
+ * with {@link VectorTilePaintUnavailableError} when it found that out later.
+ * Either way the overlay paints that tile on the main thread instead, so a
+ * painter can only ever move work, never lose a tile. Any other rejection is
+ * a failed tile, reported to `onError`.
+ */
+export interface VectorTilePainter<TImage> {
+  paint: (tile: DecodedVectorTile, request: VectorTilePaintRequest) => Promise<TImage | null> | null
+}
+
+/** A painter could not take a request; the overlay paints it on the main thread. */
+export class VectorTilePaintUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'VectorTilePaintUnavailableError'
+  }
+}
+
+export interface VectorTileOverlaySourceOptions<
+  TCanvas extends VectorTileCanvas,
+  TImage = TCanvas,
+> {
   /**
    * The tile source, when it can say how deep the archive goes. Used for the
    * default `maxDataZoom`. Optional, and only read when `maxDataZoom` is unset.
@@ -463,11 +499,18 @@ export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas
    */
   onError?: (reason: unknown) => void
   /**
+   * Paint network tiles off the main thread, for example
+   * `createWorkerTileService(...).painter`. A request the painter declines is
+   * painted here with `createCanvas`, as it is without one. The highlight is
+   * always painted here: it strokes a handful of lines.
+   */
+  painter?: VectorTilePainter<TImage>
+  /**
    * Tile reads in flight at once, default 6. Reads past it wait in a queue
    * served newest first; see {@link createVectorTileOverlaySource}.
    */
   readConcurrency?: number
-  restyleHost?: VectorTileRestyleHost<TCanvas>
+  restyleHost?: VectorTileRestyleHost<TCanvas | TImage>
   style: VectorTileOverlayStyle
   /**
    * Read one tile's bytes. `signal` aborts when the map has left the tile's
@@ -506,7 +549,7 @@ export interface VectorTileHitTestOptions {
   zoom: number
 }
 
-export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
+export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
   /** Retained bytes, exact for geometry and estimated for properties. */
   readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
@@ -537,8 +580,12 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
    * hit's `tile` is that ancestor -- the tile `feature` indexes into.
    */
   hitTest: (options: VectorTileHitTestOptions) => VectorTileHit | null
-  /** Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`. */
-  imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>
+  /**
+   * Pass to `createMapKitAsyncTileOverlay` or a `MapKitAsyncLayerDescriptor`.
+   * With a `painter` it resolves the painter's image, or a canvas for a tile
+   * the painter declined.
+   */
+  imageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | TImage | null>
   /**
    * Repaint from the decoded cache and, when a restyle host is attached,
    * swap the overlay through the registry's swap-when-drawn path. Rapid
@@ -558,7 +605,7 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas> {
    */
   setHighlight: (highlight: VectorTileHighlight | null) => Promise<void>
   setHighlightHost: (host: VectorTileRestyleHost<TCanvas> | null) => void
-  setRestyleHost: (host: VectorTileRestyleHost<TCanvas> | null) => void
+  setRestyleHost: (host: VectorTileRestyleHost<TCanvas | TImage> | null) => void
   /**
    * Swap the style in memory. Cached tiles repaint on the next request
    * without a refetch or a re-decode. Prefer {@link VectorTileOverlaySource.restyle}
@@ -630,8 +677,11 @@ export const DEFAULT_VECTOR_TILE_CACHE_BYTES = 64 * 1024 * 1024
  * A tile larger than the whole byte budget is not retained at all -- keeping it
  * would evict everything else for one tile -- but the caller still has it in
  * hand to paint.
+ *
+ * Exported for the worker half of the paint protocol, which keeps its own
+ * copy of the tiles it paints under the same rules.
  */
-class TileCache {
+export class DecodedVectorTileCache {
   readonly #byteLimit: number
   readonly #limit: number
   readonly #tiles = new Map<string, { bytes: number; tile: DecodedVectorTile }>()
@@ -1188,9 +1238,9 @@ const DEFAULT_RESTYLE_REPLACE: VectorTileRestyleReplaceOptions = {
  * Above `maxDataZoom` a tile is painted from its ancestor at that zoom: one
  * read and one decode, shared by every descendant through the cache.
  */
-export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
-  options: VectorTileOverlaySourceOptions<TCanvas>,
-): VectorTileOverlaySource<TCanvas> {
+export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas>(
+  options: VectorTileOverlaySourceOptions<TCanvas, TImage>,
+): VectorTileOverlaySource<TCanvas, TImage> {
   const {
     archive,
     cacheBytes: byteBudget = DEFAULT_VECTOR_TILE_CACHE_BYTES,
@@ -1198,6 +1248,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     createCanvas,
     decode,
     onError,
+    painter,
     tileBytes,
     tileSize = 256,
   } = options
@@ -1205,7 +1256,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     1,
     Math.floor(options.readConcurrency ?? DEFAULT_VECTOR_TILE_READ_CONCURRENCY) || 1,
   )
-  const cache = new TileCache(cacheSize, byteBudget)
+  const cache = new DecodedVectorTileCache(cacheSize, byteBudget)
   // MapKit asks for a screenful at once and re-asks on every render pass, so
   // the same address is commonly requested again while its first read is
   // still in flight. Without this the archive is fetched twice and the tile
@@ -1259,11 +1310,14 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     return maxDataZoom !== undefined && zoom > maxDataZoom ? maxDataZoom : zoom
   }
 
+  // One object per style change, not per tile: a painter keys what it has
+  // already sent to its worker by identity, and a fresh spread per tile would
+  // resend the whole class table with every tile.
+  let live: VectorTileOverlayStyle | null = null
   function liveStyle(): VectorTileOverlayStyle {
-    if (isVectorTileClassStyle(style) && classTable) {
-      return { ...style, classTable }
-    }
-    return style
+    if (live) return live
+    live = isVectorTileClassStyle(style) && classTable ? { ...style, classTable } : style
+    return live
   }
 
   function paintOptions(zoom: number) {
@@ -1383,15 +1437,25 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
       const tile = await decodedTile(z - levels, ancestorX, ancestorY)
       if (!tile || vectorTileFeatureCount(tile) === 0) return null
       const pixelRatio = scale > 0 ? scale : 1
-      const size = Math.round(tileSize * pixelRatio)
-      const canvas = createCanvas(size, size)
-      const painted = paintVectorTile(canvas, tile, {
+      const request: VectorTilePaintRequest = {
         ...paintOptions(z),
         pixelRatio,
         ...(levels > 0
           ? { overzoom: { column: x - ancestorX * factor, levels, row: y - ancestorY * factor } }
           : {}),
-      })
+      }
+      const offThread = painter?.paint(tile, request) ?? null
+      if (offThread) {
+        try {
+          return await offThread
+        } catch (reason) {
+          if (!(reason instanceof VectorTilePaintUnavailableError)) throw reason
+          // Declined after the fact: paint it here, below.
+        }
+      }
+      const size = Math.round(tileSize * pixelRatio)
+      const canvas = createCanvas(size, size)
+      const painted = paintVectorTile(canvas, tile, request)
       return painted ? canvas : null
     } catch (reason) {
       onError?.(reason)
@@ -1626,11 +1690,13 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     restyle(next) {
       style = next
       classTable = isVectorTileClassStyle(next) ? next.classTable : classTable
+      live = null
       return requestRestyle()
     },
     setClassTable(table) {
       classTable = table
       if (isVectorTileClassStyle(style)) style = { ...style, classTable: table }
+      live = null
       return requestRestyle()
     },
     setHighlight,
@@ -1646,6 +1712,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas>(
     setStyle(next) {
       style = next
       if (isVectorTileClassStyle(next)) classTable = next.classTable
+      live = null
     },
   }
 }

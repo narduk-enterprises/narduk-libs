@@ -18,6 +18,13 @@ export interface VectorTileDecodeRequest {
     bytes: ArrayBuffer;
     channel: typeof VECTOR_TILE_DECODE_CHANNEL;
     id: number;
+    /**
+     * Keep the decoded tile in the worker under this key, so a painter in the
+     * same worker can draw it without the main thread sending it back. The reply
+     * then carries a copy. Absent: the worker keeps nothing (the original
+     * protocol).
+     */
+    retainAs?: string;
     x: number;
     y: number;
     z: number;
@@ -60,6 +67,12 @@ export interface VectorTileWorkerPort {
     }) => void) => void;
 }
 export interface WorkerDecoderOptions {
+    /**
+     * Ask the worker to keep each decoded tile, and learn the key it kept it
+     * under. `createWorkerTileService` wires this to its painter; a decoder on
+     * its own leaves it unset and the worker keeps nothing.
+     */
+    retain?: (tile: DecodedVectorTile, key: string) => void;
     /**
      * Cancel handle factory for the reply deadline. Injected so a test drives
      * the clock; defaults to `setTimeout`/`clearTimeout`.
