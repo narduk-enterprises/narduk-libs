@@ -45,6 +45,50 @@ describe('createPmTilesTileSource', () => {
   })
 })
 
+describe('createPmTilesTileSource getMaxZoom', () => {
+  // Shaped like the `pmtiles` reader: the header lives behind `this`.
+  class ThisBoundReader implements PmTilesReader {
+    readonly #header = { maxZoom: 12 }
+    getHeader() {
+      return Promise.resolve(this.#header)
+    }
+    getZxy() {
+      return Promise.resolve(undefined)
+    }
+  }
+
+  it('reads the header through the reader, so a this-bound reader answers', async () => {
+    const failures: unknown[] = []
+    const source = createPmTilesTileSource({
+      onError: (value) => failures.push(value),
+      reader: new ThisBoundReader(),
+    })
+
+    await expect(source.getMaxZoom?.()).resolves.toBe(12)
+    expect(failures).toEqual([])
+  })
+
+  it('reports a failed header read and asks again next time', async () => {
+    const failures: unknown[] = []
+    const reason = new Error('header read failed')
+    let calls = 0
+    const source = createPmTilesTileSource({
+      onError: (value) => failures.push(value),
+      reader: {
+        getHeader: () => {
+          calls += 1
+          return calls === 1 ? Promise.reject(reason) : Promise.resolve({ maxZoom: 9 })
+        },
+        getZxy: () => Promise.resolve(undefined),
+      },
+    })
+
+    await expect(source.getMaxZoom?.()).resolves.toBeUndefined()
+    expect(failures).toEqual([reason])
+    await expect(source.getMaxZoom?.()).resolves.toBe(9)
+  })
+})
+
 describe('createPmTilesFetchSource', () => {
   function respond(body: ArrayBuffer, init: { headers?: Record<string, string>; status?: number }) {
     return new Response(body, {
