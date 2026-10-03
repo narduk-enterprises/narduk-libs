@@ -2586,6 +2586,13 @@ features are opt-in; existing clients keep their existing behavior.
   not an outage. A custom `manifestSchema` must keep `artifacts[]` in its parsed
   output, since entries are looked up there. Each `entryPath` is its own cache
   entry, so size `maxEntries` to the working set you expect to serve.
+- **Gzip entries** — set `product.encoding: 'gzip'` to read a file published as
+  a gzip of its JSON, such as `parts/states/mo/index.json.gz`. The listed
+  SHA-256 covers the compressed bytes: they are verified, and stored in `store`
+  as published, then decompressed and parsed. `maxBytes` bounds the body as
+  served and `maxDecodedBytes` (default 16 MiB) the decompressed body, which is
+  cancelled mid-stream at the ceiling (`reason: 'too-large'`). Verified bytes
+  that are not valid gzip fail with `reason: 'schema'`.
 - **Timeout** — every attempt carries its own `AbortSignal.timeout`
   (`timeoutMs`, default 15000). A caller's `signal` cancels **that caller's**
   read only; it is never given to the shared upstream read, so one client

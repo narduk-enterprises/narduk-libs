@@ -299,6 +299,14 @@ export interface NardukDataProduct<
    */
   artifactPath?: string
   /**
+   * How the artifact's bytes are encoded at rest. `gzip` means the release
+   * file is a gzip of the JSON (e.g. `parts/states/mo/index.json.gz`): its
+   * manifest SHA-256 covers the compressed bytes, which are verified and
+   * stored as published, then decompressed under `maxDecodedBytes` and parsed.
+   * Omitted, the bytes are the JSON itself.
+   */
+  encoding?: 'gzip'
+  /**
    * Read a secondary artifact the manifest lists in `artifacts[]` instead of
    * the primary `artifact` — e.g. `consumer/lakes/texas/canyon-lake/history-1y.json`.
    * The release-relative path may have several segments, each of which must be
@@ -315,8 +323,10 @@ export interface NardukDataProduct<
   manifestSchema?: NardukDataSchema<TManifest>
   /** Edge manifest TTL; defaults to 30 seconds when a store is configured. */
   manifestTtlMs?: number
-  /** Hard ceiling on the artifact body. Defaults to 16 MiB. */
+  /** Hard ceiling on the artifact body as served (compressed, for `encoding`). Defaults to 16 MiB. */
   maxBytes?: number
+  /** With `encoding`, the hard ceiling on the decompressed body. Defaults to 16 MiB. */
+  maxDecodedBytes?: number
   /**
    * How long a last-good value may be served after an upstream failure,
    * measured from when that value was fetched — it never ratchets forward.
@@ -634,6 +644,35 @@ function decodeJson(url: string, bytes: Uint8Array<ArrayBuffer>): unknown {
   } catch (error) {
     throw new NardukDataError(
       `narduk-data response from ${url} is not valid JSON.`,
+      'schema',
+      url,
+      null,
+      error,
+    )
+  }
+}
+
+/**
+ * Undo a product's at-rest `encoding` on checksum-verified bytes, holding at
+ * most `maxDecodedBytes` of the result: a small gzip that inflates past the
+ * ceiling is cancelled mid-stream, never buffered whole.
+ */
+async function decodeEncoding(
+  url: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  encoding: 'gzip' | undefined,
+  maxDecodedBytes: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (encoding === undefined) return bytes
+  const inflated = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(encoding))
+  try {
+    return await readBoundedBody(new Response(inflated), maxDecodedBytes, {
+      tooLarge: () => tooLargeError(url, maxDecodedBytes),
+    })
+  } catch (error) {
+    if (error instanceof NardukDataError) throw error
+    throw new NardukDataError(
+      `narduk-data response from ${url} is not valid ${encoding}.`,
       'schema',
       url,
       null,
@@ -1066,7 +1105,9 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       product.productId,
       product.artifactPath ?? '',
       product.entryPath ?? '',
+      product.encoding ?? '',
       product.maxBytes ?? DEFAULT_MAX_BYTES,
+      product.maxDecodedBytes ?? DEFAULT_MAX_BYTES,
       product.manifestMaxBytes ?? DEFAULT_MANIFEST_MAX_BYTES,
       identityOf(product.schema),
       identityOf(product.manifestSchema),
@@ -1240,9 +1281,15 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       )
     }
 
-    const { data, mayMark } = acceptArtifact(
+    const decoded = await decodeEncoding(
       artifactUrl,
       bytes,
+      product.encoding,
+      product.maxDecodedBytes ?? DEFAULT_MAX_BYTES,
+    )
+    const { data, mayMark } = acceptArtifact(
+      artifactUrl,
+      decoded,
       product.schema,
       storedArtifact?.trusted === true,
       mark !== undefined,
@@ -1276,7 +1323,7 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       fetchedAtMs: now(),
       manifest,
       manifestUrl,
-      retainedBytes: bytes.byteLength,
+      retainedBytes: decoded.byteLength,
     }
   }
 

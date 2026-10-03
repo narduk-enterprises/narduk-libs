@@ -1270,6 +1270,142 @@ describe('narduk-data client secondary entries', () => {
   )
 })
 
+describe('narduk-data client gzip entries', () => {
+  const GZ_PATH = 'parts/states/mo/index.json.gz'
+  const gzUrl = `${ORIGIN}/${PRODUCT_ID}/releases/${RELEASE_ID}/${GZ_PATH}`
+
+  async function gzip(text: string): Promise<Uint8Array<ArrayBuffer>> {
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
+    return new Uint8Array(await new Response(stream).arrayBuffer())
+  }
+
+  async function bytesSha256(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  /** A release listing one gzip entry whose checksum covers the compressed bytes. */
+  async function releaseWithGzip(gz: Uint8Array<ArrayBuffer>, sha256?: string) {
+    const release = await publishedRelease()
+    const manifest = {
+      ...release.manifest,
+      artifacts: [
+        release.manifest.artifact,
+        { path: GZ_PATH, sha256: sha256 ?? (await bytesSha256(gz)) },
+      ],
+    }
+    return JSON.stringify(manifest)
+  }
+
+  function gzResponse(gz: Uint8Array<ArrayBuffer>): Response {
+    return new Response(gz.slice(), { headers: { 'content-type': 'application/gzip' } })
+  }
+
+  it('verifies the compressed bytes, then decompresses and parses them', async () => {
+    const gz = await gzip(JSON.stringify({ stations: ['mo'] }))
+    const manifestText = await releaseWithGzip(gz)
+    const upstream = fakeFetch({
+      [gzUrl]: [async () => gzResponse(gz)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    const result = await client.read(productOf({ encoding: 'gzip', entryPath: GZ_PATH }))
+
+    expect(result.data).toEqual({ stations: ['mo'] })
+    expect(result.artifactUrl).toBe(gzUrl)
+  })
+
+  it('stores the verified compressed bytes, which a cold isolate reads back', async () => {
+    const gz = await gzip(JSON.stringify({ stations: ['mo'] }))
+    const manifestText = await releaseWithGzip(gz)
+    const edge = edgeStore()
+    const warm = fakeFetch({
+      [gzUrl]: [async () => gzResponse(gz)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const product = productOf({ encoding: 'gzip', entryPath: GZ_PATH })
+    await createNardukDataClient({
+      fetch: warm.fetch,
+      now: () => NOW,
+      origin: ORIGIN,
+      store: edge.store,
+    }).read(product)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const stored = [...edge.entries.entries()].find(([key]) => key.startsWith(`${gzUrl}?sha256=`))
+    expect(new Uint8Array(await stored![1].clone().arrayBuffer())).toEqual(gz)
+
+    const cold = fakeFetch({})
+    const result = await createNardukDataClient({
+      fetch: cold.fetch,
+      now: () => NOW,
+      origin: ORIGIN,
+      store: edge.store,
+    }).read(product)
+    expect(result.data).toEqual({ stations: ['mo'] })
+    expect(cold.calls).toEqual([])
+  })
+
+  it('checks the checksum against the compressed bytes, not the JSON', async () => {
+    const text = JSON.stringify({ stations: ['mo'] })
+    const gz = await gzip(text)
+    const manifestText = await releaseWithGzip(gz, await sha256Hex(text))
+    const upstream = fakeFetch({
+      [gzUrl]: [async () => gzResponse(gz)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(
+      client.read(productOf({ encoding: 'gzip', entryPath: GZ_PATH })),
+    ).rejects.toMatchObject({ reason: 'checksum' })
+  })
+
+  it('refuses a body that inflates past maxDecodedBytes', async () => {
+    const gz = await gzip(JSON.stringify({ stations: ['x'.repeat(10_000)] }))
+    const manifestText = await releaseWithGzip(gz)
+    const upstream = fakeFetch({
+      [gzUrl]: [async () => gzResponse(gz)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    expect(gz.byteLength).toBeLessThan(1_000)
+    await expect(
+      client.read(productOf({ encoding: 'gzip', entryPath: GZ_PATH, maxDecodedBytes: 1_000 })),
+    ).rejects.toMatchObject({ reason: 'too-large' })
+  })
+
+  it('reports verified bytes that are not gzip as a schema failure', async () => {
+    const plain = new TextEncoder().encode(JSON.stringify({ stations: ['mo'] }))
+    const manifestText = await releaseWithGzip(plain)
+    const upstream = fakeFetch({
+      [gzUrl]: [async () => gzResponse(plain)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await expect(
+      client.read(productOf({ encoding: 'gzip', entryPath: GZ_PATH })),
+    ).rejects.toMatchObject({ reason: 'schema' })
+  })
+
+  it('keeps an encoded and a plain read of one path as separate cache entries', async () => {
+    const gz = await gzip(JSON.stringify({ stations: ['mo'] }))
+    const manifestText = await releaseWithGzip(gz)
+    const upstream = fakeFetch({
+      [gzUrl]: [async () => gzResponse(gz)],
+      [manifestUrl]: [async () => json(manifestText)],
+    })
+    const client = createNardukDataClient({ fetch: upstream.fetch, now: () => NOW, origin: ORIGIN })
+
+    await client.read(productOf({ encoding: 'gzip', entryPath: GZ_PATH }))
+    await expect(client.read(productOf({ entryPath: GZ_PATH }))).rejects.toMatchObject({
+      reason: 'schema',
+    })
+  })
+})
+
 /** A distinct client is a cold isolate; cloned responses emulate the Cache API. */
 function edgeStore() {
   const entries = new Map<string, Response>()
