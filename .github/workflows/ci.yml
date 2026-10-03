@@ -258,7 +258,7 @@ jobs:
       #
       # The allowlist is `pnpm.auditConfig.ignoreGhsas` in the root package.json,
       # which `pnpm audit` and `scripts/preflight.mjs` both read, so the two
-      # cannot disagree. It holds exactly one entry, and each entry needs its GHSA
+      # cannot disagree. It holds exactly two entries, and each entry needs its GHSA
       # id, the reason it cannot be fixed and a review date, recorded here (JSON
       # has no comments). A speculative entry is a hole waiting for a real
       # advisory to fall into it. If another unfixable high appears, add it the
@@ -273,7 +273,18 @@ jobs:
       #   2026-10-02 (narduk-libs#1341). Re-check by 2026-11-01: drop this entry
       #   as soon as a patched node-forge or a listhen without it exists.
       #
-      #   The entry matches that one id, so any other high or critical still fails
+      #   GHSA-vfj7-8cjw-p6xm (braces <= 3.0.3, stack exhaustion on deeply nested
+      #   patterns). Unfixable: no patched version exists (npm `latest` is 3.0.3,
+      #   the advisory's first-patched version is null). Reached through
+      #   `fast-glob > micromatch > braces`: fast-glob 3.3.3 and micromatch 4.0.8
+      #   are both npm `latest` and still depend on it, and fast-glob comes in via
+      #   globby, stylelint, histoire and the Nuxt toolchain (also
+      #   `@changesets/cli` 2 through micromatch), so no upgrade removes it.
+      #   Added 2026-10-03 on Logan's decision (narduk-libs#1372). Expires
+      #   2026-11-02: drop this entry as soon as a patched braces or a micromatch
+      #   or fast-glob release without it ships, and re-decide on that date if not.
+      #
+      #   Each entry matches its one id, so any other high or critical still fails
       #   the step; the level stays `high`.
       #
       # This step can go red without a change to this repository, when an
