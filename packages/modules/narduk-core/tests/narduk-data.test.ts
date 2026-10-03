@@ -1505,3 +1505,188 @@ describe('optional edge storage and stale-while-revalidate', () => {
     await expect(client.read(product)).rejects.toMatchObject({ reason: 'http' })
   })
 })
+
+const VALIDATED = 'x-narduk-validated'
+
+/** A schema that counts its walks; `strip` keeps only `stations`, like a zod object does. */
+function countingSchema(strip = false) {
+  const state = { walks: 0 }
+  const schema: NardukDataSchema<Payload> = {
+    safeParse: (value) => {
+      state.walks += 1
+      if (!payloadSchema.safeParse(value).success) return { error: 'nope', success: false }
+      const data = strip ? { stations: (value as Payload).stations } : (value as Payload)
+      return { data, success: true }
+    },
+  }
+  return { schema, state }
+}
+
+describe('trustValidatedStoreHits', () => {
+  function setup(payload?: Payload) {
+    return successRoutes(payload).then(({ routes }) => {
+      const upstream = fakeFetch(routes)
+      const edge = edgeStore()
+      const base = { fetch: upstream.fetch, origin: ORIGIN, now: () => NOW, store: edge.store }
+      const artifactKey = () => [...edge.entries.keys()].find((key) => key.includes('?sha256='))!
+      return { ...edge, artifactKey, base, upstream }
+    })
+  }
+  const settle = () => {
+    const tasks: Array<Promise<unknown>> = []
+    return {
+      context: {
+        waitUntil: (task: Promise<unknown>) => {
+          tasks.push(task)
+        },
+      },
+      done: () => Promise.all(tasks),
+    }
+  }
+
+  it('marks an upstream read and lets the next cold isolate skip the schema', async () => {
+    const { artifactKey, base, entries, upstream } = await setup()
+    const first = countingSchema()
+    const second = countingSchema()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    const warm = await createNardukDataClient(options).read(
+      productOf({ schema: first.schema }),
+      context,
+    )
+    await done()
+    expect(first.state.walks).toBe(1)
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBe('build-1')
+
+    const cold = await createNardukDataClient(options).read(
+      productOf({ schema: second.schema }),
+      context,
+    )
+    await done()
+    expect(second.state.walks).toBe(0)
+    expect(cold.data).toEqual(warm.data)
+    expect(cold.freshness.source).toBe('cache')
+    expect(upstream.calls).toHaveLength(2)
+  })
+
+  it('still runs the validate hook on a trusted hit', async () => {
+    const { base } = await setup()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    await createNardukDataClient(options).read(productOf(), context)
+    await done()
+    await expect(
+      createNardukDataClient(options).read(
+        productOf({
+          validate: () => {
+            throw new Error('pair refused')
+          },
+        }),
+        context,
+      ),
+    ).rejects.toMatchObject({ reason: 'rejected' })
+  })
+
+  it('validates a hit another build marked, then marks it for this one', async () => {
+    const { artifactKey, base, entries } = await setup()
+    const { context, done } = settle()
+    await createNardukDataClient({ ...base, trustValidatedStoreHits: { mark: 'build-1' } }).read(
+      productOf(),
+      context,
+    )
+    await done()
+    const next = countingSchema()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-2' } }
+    await createNardukDataClient(options).read(productOf({ schema: next.schema }), context)
+    await done()
+    expect(next.state.walks).toBe(1)
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBe('build-2')
+
+    const after = countingSchema()
+    await createNardukDataClient(options).read(productOf({ schema: after.schema }), context)
+    expect(after.state.walks).toBe(0)
+  })
+
+  it('validates an unmarked entry (a prefetched copy) and marks it after a clean parse', async () => {
+    const { artifactKey, base, entries } = await setup()
+    const { context, done } = settle()
+    await createNardukDataClient(base).read(productOf(), context)
+    await done()
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBeNull()
+
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const walked = countingSchema()
+    await createNardukDataClient(options).read(productOf({ schema: walked.schema }), context)
+    await done()
+    expect(walked.state.walks).toBe(1)
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBe('build-1')
+  })
+
+  it('never marks a schema that changes its input, so every cold isolate validates', async () => {
+    const { artifactKey, base, entries } = await setup({
+      extra: 'dropped',
+      stations: ['41008'],
+    } as Payload)
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    for (let isolate = 1; isolate <= 3; isolate += 1) {
+      const stripping = countingSchema(true)
+      const result = await createNardukDataClient(options).read(
+        productOf({ schema: stripping.schema }),
+        context,
+      )
+      await done()
+      expect(stripping.state.walks).toBe(1)
+      expect(result.data).toEqual({ stations: ['41008'] })
+      expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBeNull()
+    }
+  })
+
+  it('does not trust a marked hit that fails its checksum', async () => {
+    const { artifactKey, base, entries, upstream } = await setup()
+    const options = { ...base, trustValidatedStoreHits: { mark: 'build-1' } }
+    const { context, done } = settle()
+    await createNardukDataClient(options).read(productOf(), context)
+    await done()
+    const stored = entries.get(artifactKey())!
+    entries.set(
+      artifactKey(),
+      new Response('{"stations":["tampered"]}', { headers: stored.headers }),
+    )
+    const after = countingSchema()
+    const result = await createNardukDataClient(options).read(
+      productOf({ schema: after.schema }),
+      context,
+    )
+    await done()
+    expect(result.data.stations).toEqual(['41008'])
+    expect(after.state.walks).toBe(1)
+    expect(upstream.calls).toHaveLength(3)
+  })
+
+  it('keeps today’s behaviour without the option', async () => {
+    const { artifactKey, base, entries } = await setup()
+    const { context, done } = settle()
+    await createNardukDataClient(base).read(productOf(), context)
+    await done()
+    expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBeNull()
+    const next = countingSchema()
+    await createNardukDataClient(base).read(productOf({ schema: next.schema }), context)
+    expect(next.state.walks).toBe(1)
+  })
+
+  it.each(['', 'has space', 'x'.repeat(129), 'café'])(
+    'is off for the unusable mark %j',
+    async (mark) => {
+      const { artifactKey, base, entries } = await setup()
+      const options = { ...base, trustValidatedStoreHits: { mark } }
+      const { context, done } = settle()
+      await createNardukDataClient(options).read(productOf(), context)
+      await done()
+      expect(entries.get(artifactKey())!.headers.get(VALIDATED)).toBeNull()
+      const next = countingSchema()
+      await createNardukDataClient(options).read(productOf({ schema: next.schema }), context)
+      expect(next.state.walks).toBe(1)
+    },
+  )
+})
