@@ -44,6 +44,7 @@ import {
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { seedDesignSystemFonts } from './design-system-fonts'
+import { addIconCssScanPlugin } from './icon-css-scan'
 import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
 import { localIconDefaults, nuxtIconModuleEntry } from './nuxt-icon-module'
@@ -616,6 +617,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         await installModule('@pinia/nuxt')
         await installModule('@nuxtjs/color-mode')
         await installModule(nuxtIconModuleEntry())
+        addIconCssScanPlugin(nuxtOptions)
         await installModule('@nuxt/ui')
         // Self-host the design system's two families when the app loads its
         // tokens or theme (narduk-libs#1366). Before the install: the module
