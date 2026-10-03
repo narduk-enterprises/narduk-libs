@@ -384,9 +384,30 @@ export async function enrollMfa(
   }
 }
 
+/**
+ * Whether verifying `factorId` completes its enrollment rather than stepping an
+ * existing factor up to aal2. A factor is `unverified` until its first verify.
+ * An unreadable factor list counts as an enrollment: the cost of a wrong guess
+ * is one extra sign-out of the user's other sessions.
+ */
+async function verifyCompletesMfaEnrollment(
+  client: Awaited<ReturnType<typeof getCurrentSupabaseContext>>['client'],
+  factorId: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await client.mfa.listFactors()
+    if (error || !data) return true
+    const factor = data.all.find((candidate) => candidate.id === factorId)
+    return !factor || factor.status !== 'verified'
+  } catch {
+    return true
+  }
+}
+
 export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
   requireSupabaseMfa(event)
   const context = await getCurrentSupabaseContext(event)
+  const completesEnrollment = await verifyCompletesMfaEnrollment(context.client, body.factorId)
   const { data, error } = await context.client.mfa.challengeAndVerify({
     factorId: body.factorId,
     code: body.code,
@@ -409,6 +430,18 @@ export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
       ...(persisted ? { aal: persisted.aal } : {}),
     },
   })
+
+  // A new factor changes what signing in takes, so sessions opened before it
+  // (possibly stolen ones) end here; this browser just proved the factor
+  // (narduk-libs#1043). A login step-up on an enrolled factor revokes nothing.
+  if (completesEnrollment) {
+    if (useRuntimeConfig(event).authNativeClients?.length) {
+      await useNativeAuth(event).revokeUser(context.localUser.id)
+    }
+    await revokeUserAuthSessions(event, context.localUser.id, {
+      exceptSessionId: context.authSessionId,
+    })
+  }
 
   return {
     success: true,
