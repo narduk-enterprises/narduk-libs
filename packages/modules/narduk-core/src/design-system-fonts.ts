@@ -22,11 +22,11 @@
  * 400/500/600/700 upright and IBM Plex Mono 400/500/600 upright.
  */
 export interface DesignSystemFontFamily {
+  global: true
   name: string
   provider: 'google'
-  weights: number[]
   styles: ['normal']
-  global: true
+  weights: number[]
 }
 
 export const DESIGN_SYSTEM_FONT_FAMILIES: readonly DesignSystemFontFamily[] = Object.freeze([

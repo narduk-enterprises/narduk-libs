@@ -10,6 +10,8 @@ import {
   seedDesignSystemFonts,
 } from '../src/design-system-fonts'
 
+const PLEX_MONO = 'IBM Plex Mono'
+const INSTRUMENT_SANS = 'Instrument Sans'
 const TOKENS = '@narduk-enterprises/narduk-ui/tokens.css'
 const SHELL_THEME = '@narduk-enterprises/narduk-shell/theme.css'
 const designDir = join(__dirname, '../../../design')
@@ -17,8 +19,8 @@ const designDir = join(__dirname, '../../../design')
 describe('the design-system font declaration (narduk-libs#1366)', () => {
   it('declares both families global, so @nuxt/fonts emits them from a var() it cannot trace', () => {
     expect(DESIGN_SYSTEM_FONT_FAMILIES.map((family) => family.name)).toEqual([
-      'Instrument Sans',
-      'IBM Plex Mono',
+      INSTRUMENT_SANS,
+      PLEX_MONO,
     ])
     for (const family of DESIGN_SYSTEM_FONT_FAMILIES) {
       expect(family.global).toBe(true)
@@ -31,8 +33,8 @@ describe('the design-system font declaration (narduk-libs#1366)', () => {
     const weights = Object.fromEntries(
       DESIGN_SYSTEM_FONT_FAMILIES.map((family) => [family.name, family.weights]),
     )
-    expect(weights['Instrument Sans']).toEqual([400, 500, 600, 700])
-    expect(weights['IBM Plex Mono']).toEqual([400, 500, 600])
+    expect(weights[INSTRUMENT_SANS]).toEqual([400, 500, 600, 700])
+    expect(weights[PLEX_MONO]).toEqual([400, 500, 600])
   })
 
   it('names the families the design system stylesheets actually set', () => {
@@ -52,18 +54,18 @@ describe('the design-system font declaration (narduk-libs#1366)', () => {
 describe('seedDesignSystemFonts', () => {
   it('seeds both families for an app that loads the narduk-ui tokens', () => {
     const options: { css: string[]; fonts?: unknown } = { css: [TOKENS, './app/theme.css'] }
-    expect(seedDesignSystemFonts(options)).toEqual(['Instrument Sans', 'IBM Plex Mono'])
+    expect(seedDesignSystemFonts(options)).toEqual([INSTRUMENT_SANS, PLEX_MONO])
     expect(options.fonts).toEqual({
       families: [
         {
-          name: 'Instrument Sans',
+          name: INSTRUMENT_SANS,
           provider: 'google',
           weights: [400, 500, 600, 700],
           styles: ['normal'],
           global: true,
         },
         {
-          name: 'IBM Plex Mono',
+          name: PLEX_MONO,
           provider: 'google',
           weights: [400, 500, 600],
           styles: ['normal'],
@@ -77,7 +79,9 @@ describe('seedDesignSystemFonts', () => {
     expect(loadsDesignSystemFonts({ css: [SHELL_THEME] })).toBe(true)
     expect(loadsDesignSystemFonts({ modules: ['@narduk-enterprises/narduk-shell'] })).toBe(true)
     expect(
-      loadsDesignSystemFonts({ modules: [['@narduk-enterprises/narduk-shell', { accent: 'red' }]] }),
+      loadsDesignSystemFonts({
+        modules: [['@narduk-enterprises/narduk-shell', { accent: 'red' }]],
+      }),
     ).toBe(true)
   })
 
@@ -107,12 +111,12 @@ describe('seedDesignSystemFonts', () => {
         ],
       },
     }
-    expect(seedDesignSystemFonts(options)).toEqual(['IBM Plex Mono'])
+    expect(seedDesignSystemFonts(options)).toEqual([PLEX_MONO])
     expect(options.fonts.defaults).toEqual({ subsets: ['latin'] })
     expect(options.fonts.families.map((family) => family.name)).toEqual([
       'instrument sans',
       'Inter',
-      'IBM Plex Mono',
+      PLEX_MONO,
     ])
     expect(options.fonts.families[0]).toEqual({ name: 'instrument sans', provider: 'none' })
   })
@@ -120,7 +124,7 @@ describe('seedDesignSystemFonts', () => {
   it('is idempotent when the app already declares both families', () => {
     const options = {
       css: [TOKENS],
-      fonts: { families: [{ name: 'Instrument Sans' }, { name: 'IBM Plex Mono' }] },
+      fonts: { families: [{ name: INSTRUMENT_SANS }, { name: PLEX_MONO }] },
     }
     expect(seedDesignSystemFonts(options)).toEqual([])
     expect(options.fonts.families).toHaveLength(2)

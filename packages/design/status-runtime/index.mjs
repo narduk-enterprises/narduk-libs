@@ -30,7 +30,7 @@ export function resolveSourceRevision(env = process.env) {
 /**
  * Retired: the design system's Google Fonts request (narduk-libs#1366).
  *
- * This used to be a render-blocking `fonts.googleapis.com` stylesheet and two
+ * This used to be a render-blocking third-party font stylesheet and two
  * preconnects. It cost about 900 ms of mobile first paint on riverstat.us for
  * two families an app can serve from its own origin. The families are now
  * declared to `@nuxt/fonts` by `@narduk-enterprises/narduk-core` (2.22.0 or
