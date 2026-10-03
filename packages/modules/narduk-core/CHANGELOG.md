@@ -1,5 +1,84 @@
 # @narduk-enterprises/narduk-core
 
+## 2.23.0
+
+### Minor Changes
+
+- 6a1f3b2: narduk-core ships three first-paint defaults (#1369), each
+  overridable by the app's own config and switchable off with
+  `nardukCore.performance`: `ui.experimental.componentDetection: true` (the
+  entry stylesheet carries only the Nuxt UI themes the app renders; in the
+  fixture it drops from 194 KB to 57 KB), a `build:manifest` hook that sets
+  `prefetch = false` on every entry and `preload = false` on script entries (no
+  `modulepreload` or `prefetch` links in the page head; stylesheet preload
+  stays), and
+  `experimental.defaults.nuxtLink.prefetchOn: { visibility: false, interaction: true }`.
+  Detection never scans a module, so core also names the `U*` components that
+  narduk-ai, narduk-analytics and narduk-seo render when they are installed;
+  narduk-auth and narduk-shell already name their own. Opt out with
+  `performance: { componentDetection: false }`, `{ resourceHints: false }` or
+  `{ linkPrefetch: false }`. An app that renders a Nuxt UI component only
+  through a module outside this repo lists it:
+  `ui.experimental.componentDetection: ['UCard']`. create-narduk-app: pin the
+  new narduk-core.
+- e50abc0: Self-host the design-system fonts instead of linking Google Fonts
+  (narduk-libs#1366). narduk-core now declares Instrument Sans (400/500/600/700)
+  and IBM Plex Mono (400/500/600) to `@nuxt/fonts` for any app that loads the
+  `narduk-ui` tokens or the `narduk-shell` theme, with `global: true` because
+  both sheets set the families through custom properties (`--ns-font-text`,
+  `--ns-font-mono`, `--ne-font-sans`, `--ne-font-mono`) that `@nuxt/fonts` does
+  not scan. The files ship same-origin from `/_fonts/`; an app's own
+  `fonts.families` entry for a family wins by name. No local override is needed
+  any more.
+
+  status-runtime (major): `designSystemFontLinks` was a render-blocking
+  `fonts.googleapis.com` stylesheet plus two preconnects, about 900 ms of mobile
+  first paint on riverstat.us. It stays exported so a spread keeps building, but
+  is deprecated and always empty. Upgrade narduk-core to this release in the
+  same change as status-runtime, or the app renders the system fallback faces.
+  An app that spreads the export can delete the spread; one that declared the
+  two families locally (riverstatus) can delete that block.
+
+  create-narduk-app: pin the new narduk-core.
+
+### Patch Changes
+
+- 94a2848: Build plugins keep `Intl.DateTimeFormat` off the hydration path
+  (#1380). `build-meta` and `build-info.client` no longer format the build time
+  during plugin setup: the client-only `build-time-local` meta tag and the
+  `[build] ...` console line appear after `app:mounted` once the browser is
+  idle, and `window.__NARDUK_BUILD__.localBuildTime` is formatted on first read.
+  The formatter is built once on first use and shared by both plugins and every
+  `formatBuildTimeLocal` caller. Output, the `__NARDUK_BUILD__` fields and
+  `__NARDUK_BUILD_LOGGED__` marker, and the server-rendered `build-time` and
+  `build-version` markers are unchanged; SSR HTML does not differ.
+  create-narduk-app: pin the new narduk-core.
+- ad252ce: narduk-core: the `@nuxt/icon` css-mode stylesheet scan leaves the
+  hydration path (#1379). Stock `NuxtIconCss` reads every rule of every
+  stylesheet on the first client icon mount (about 10% of the hydration task on
+  a 194 KB Tailwind and Nuxt UI app at 4x CPU throttle, 10.4 to 11.2 ms median);
+  a client-only Vite transform now looks the icon class up in the inline
+  `<style>` text instead, where the server's icon style and any client-injected
+  one live. Markup, CSS and pixels are unchanged (built fixture: identical first
+  paint with JavaScript off, identical hydrated screenshot and DOM, zero
+  `cssRules` reads versus three), and an icon the server did not render is
+  mounted exactly as before. The app's `icon` config is untouched. The transform
+  stands down under UnoCSS, when `@nuxt/icon`'s `css.js` no longer matches the
+  pinned 2.5.1 source (build warning), or with `NARDUK_ICON_CSS_SCAN=upstream`
+  at build time. create-narduk-app: pin the new narduk-core.
+- b68bc6b: narduk-core: hydration no longer waits on `GET /api/runtime/public`
+  (#1368). A live SSR response now embeds the request's full public overlay in
+  the payload (a new `runtime-public-payload` server plugin; the Nitro
+  `00-runtime-public` plugin leaves it on `event.context.runtimePublicOverlay`),
+  and the browser `runtime-public` plugin applies it synchronously, so no Worker
+  round trip sits between the entry script and the mount. Every key (deployment
+  target, preview-safe mode, auth, analytics) is still applied before any plugin
+  that `dependsOn: ['runtime-public']` runs. HTML with no trustworthy embedded
+  overlay (prerendered pages, or a server that predates this plugin) keeps the
+  awaited fetch; embedded values older than a minute (cached HTML) are refreshed
+  in the background. `/api/runtime/public` is unchanged. create-narduk-app: pin
+  the new narduk-core.
+
 ## 2.22.0
 
 ### Minor Changes
