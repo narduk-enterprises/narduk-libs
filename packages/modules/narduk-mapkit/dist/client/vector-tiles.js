@@ -598,6 +598,12 @@ function normaliseMaxDataZoom(value) {
 }
 /** Tiles the highlight overlay may be waiting on at once; the oldest is forgotten past it. */
 const MAX_HIGHLIGHT_MISSES = 1024;
+/**
+ * Quiet time after the last tile request before tiles dropped for a zoom
+ * change are asked for again. A gesture asks every frame, so this fires once
+ * the zoom has settled, not between frames.
+ */
+export const VECTOR_TILE_DROP_REFRESH_MS = 300;
 const DEFAULT_RESTYLE_REPLACE = {
     activateWhen: 'first-image',
     crossfadeDurationMs: 0,
@@ -613,6 +619,13 @@ const DEFAULT_RESTYLE_REPLACE = {
  * aborted through the `AbortSignal` handed to `tileBytes` if it already has.
  * Either way the tile resolves to `null`, is not reported to `onError`, is not
  * cached, and loads normally if it is asked for again.
+ *
+ * MapKit keeps that `null` as an empty tile and does not ask again, so a zoom
+ * that comes back, or requests that alternate between two zooms, would leave
+ * blank tiles. Once requests have been quiet for
+ * {@link VECTOR_TILE_DROP_REFRESH_MS} after any drop, the overlay is swapped
+ * through `restyleHost` (after the new overlay's first image, as a restyle is),
+ * so every displayed tile is asked for again from the decoded cache.
  *
  * Above `maxDataZoom` a tile is painted from its ancestor at that zoom: one
  * read and one decode, shared by every descendant through the cache.
@@ -696,6 +709,27 @@ export function createVectorTileOverlaySource(options) {
         if (inFlight.get(read.key) === read)
             inFlight.delete(read.key);
     }
+    // Reads dropped or aborted since the overlay was last refreshed for them.
+    let dropped = 0;
+    let dropRefresh = null;
+    /** (Re)start the quiet timer after which dropped tiles are asked for again. */
+    function armDropRefresh() {
+        if (dropRefresh !== null)
+            clearTimeout(dropRefresh);
+        dropRefresh = setTimeout(() => {
+            dropRefresh = null;
+            if (dropped === 0)
+                return;
+            dropped = 0;
+            if (restyleHost)
+                void requestRestyle().catch((reason) => onError?.(reason));
+        }, VECTOR_TILE_DROP_REFRESH_MS);
+    }
+    function noteDrop(read) {
+        release(read);
+        dropped += 1;
+        armDropRefresh();
+    }
     /** Drop what is queued for a zoom the map has left; abort what is running. */
     function dropStale() {
         for (let index = queued.length - 1; index >= 0; index -= 1) {
@@ -703,13 +737,13 @@ export function createVectorTileOverlaySource(options) {
             if (!read || !isStale(read))
                 continue;
             queued.splice(index, 1);
-            release(read);
+            noteDrop(read);
             read.settle(null);
         }
         for (const read of running) {
             if (!isStale(read))
                 continue;
-            release(read);
+            noteDrop(read);
             read.controller.abort();
         }
     }
@@ -719,7 +753,7 @@ export function createVectorTileOverlaySource(options) {
             if (!read)
                 return;
             if (isStale(read)) {
-                release(read);
+                noteDrop(read);
                 read.settle(null);
                 continue;
             }
@@ -789,6 +823,9 @@ export function createVectorTileOverlaySource(options) {
             if (maxDataZoomPending)
                 await maxDataZoomPending;
             latestZoom = z;
+            // Still asking: the zoom has not settled, so hold the refresh back.
+            if (dropped > 0)
+                armDropRefresh();
             dropStale();
             // Above the archive's last zoom the data lives in one ancestor, shared
             // by every descendant through the cache.

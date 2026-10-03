@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { buildDecodedVectorTile, createVectorTileOverlaySource } from '../../src/client/index.js'
+import {
+  buildDecodedVectorTile,
+  createVectorTileOverlaySource,
+  VECTOR_TILE_DROP_REFRESH_MS,
+} from '../../src/client/index.js'
 import { createPmTilesTileSource } from '../../src/client/pmtiles.js'
 
 import { createFakeCanvas, until } from './fake-canvas.js'
 
-import type { DecodedVectorTile } from '../../src/client/index.js'
+import type { DecodedVectorTile, VectorTileRestyleHost } from '../../src/client/index.js'
 import type { FakeCanvas } from './fake-canvas.js'
 
 const line = buildDecodedVectorTile(4096, [
@@ -22,6 +26,7 @@ const line = buildDecodedVectorTile(4096, [
 
 interface Read {
   abort: boolean
+  done?: boolean
   finish: (bytes: Uint8Array | null) => void
   fail: (reason: unknown) => void
   signal: AbortSignal | undefined
@@ -225,6 +230,123 @@ describe('read queue', () => {
     control.reads[0]?.finish(bytes)
     await Promise.all(pending)
     expect(decode).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * MapKit as the source sees it: each tile keeps the last image it was given,
+ * `null` included, and is asked for again only when the overlay is swapped.
+ */
+function fakeMapKit(view: Array<[number, number, number]>) {
+  const shown = new Map<string, unknown>()
+  let replaces = 0
+  const host: VectorTileRestyleHost<FakeCanvas> = {
+    layerId: 'network',
+    async replace(_id, descriptor) {
+      replaces += 1
+      await Promise.all(
+        view.map(async ([x, y, z]) => {
+          shown.set(`${z}/${x}/${y}`, await descriptor.imageForTile(x, y, z, 3))
+        }),
+      )
+    },
+  }
+  return {
+    host,
+    replaces: () => replaces,
+    show: (key: string, image: unknown) => shown.set(key, image),
+    blank: () =>
+      view.filter(([x, y, z]) => !shown.get(`${z}/${x}/${y}`)).map(([x, y, z]) => `${z}/${x}/${y}`),
+  }
+}
+
+describe('tiles dropped for a zoom change', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('asks again for every tile on screen once requests interleaved across z10 and z11 settle on z11', async () => {
+    vi.useFakeTimers()
+    const control = controlledReads()
+    const z11: Array<[number, number, number]> = [0, 1, 2, 3, 4, 5].map((x) => [x, 0, 11])
+    const mapkit = fakeMapKit(z11)
+    const { overlay } = source(control.tileBytes, { readConcurrency: 2 })
+    overlay.setRestyleHost(mapkit.host)
+    const ask = (x: number, z: number) =>
+      overlay.imageForTile(x, 0, z, 3).then((image) => mapkit.show(`${z}/${x}/0`, image))
+
+    // A pinch on iOS: z11 tiles, then the neighbouring zoom, then z11 again.
+    const asks = [0, 1, 2, 3].map((x) => ask(x, 11))
+    asks.push(...[0, 1].map((x) => ask(x, 10)))
+    asks.push(...[4, 5].map((x) => ask(x, 11)))
+    for (let turn = 0; turn < 4; turn += 1) {
+      await until(() => control.reads.some((read) => !read.abort && !read.done), 'a live read')
+      const live = control.reads.find((read) => !read.abort && !read.done)
+      if (!live) break
+      live.done = true
+      live.finish(bytes)
+      if (
+        z11.every(([x]) => control.reads.some((read) => read.z === 11 && read.x === x && read.done))
+      )
+        break
+      if (!control.reads.some((read) => !read.abort && !read.done)) break
+    }
+    await Promise.all(asks)
+    // Without a refresh, the z11 tiles dropped by the z10 asks stay blank.
+    expect(mapkit.blank().length).toBeGreaterThan(0)
+    expect(mapkit.replaces()).toBe(0)
+
+    // The zoom settles: after the quiet period the overlay is swapped and re-asked.
+    vi.advanceTimersByTime(VECTOR_TILE_DROP_REFRESH_MS)
+    await until(() => mapkit.replaces() === 1, 'refresh')
+    for (let turn = 0; turn < 20 && mapkit.blank().length > 0; turn += 1) {
+      const live = control.reads.find((read) => !read.abort && !read.done)
+      if (live) {
+        live.done = true
+        live.finish(bytes)
+      }
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+    await until(() => mapkit.blank().length === 0, 'every z11 tile painted')
+    expect(mapkit.replaces()).toBe(1)
+  })
+
+  it('waits for requests to stop before refreshing, and refreshes once', async () => {
+    vi.useFakeTimers()
+    const control = controlledReads()
+    const mapkit = fakeMapKit([])
+    const { overlay } = source(control.tileBytes, { readConcurrency: 1 })
+    overlay.setRestyleHost(mapkit.host)
+
+    void overlay.imageForTile(0, 0, 10, 3)
+    void overlay.imageForTile(1, 0, 10, 3)
+    void overlay.imageForTile(0, 0, 11, 3)
+    // Still asking every frame: no refresh yet.
+    for (let frame = 0; frame < 5; frame += 1) {
+      vi.advanceTimersByTime(VECTOR_TILE_DROP_REFRESH_MS - 1)
+      void overlay.imageForTile(frame, 1, 11, 3)
+    }
+    expect(mapkit.replaces()).toBe(0)
+    vi.advanceTimersByTime(VECTOR_TILE_DROP_REFRESH_MS)
+    await until(() => mapkit.replaces() === 1, 'refresh')
+    vi.advanceTimersByTime(VECTOR_TILE_DROP_REFRESH_MS * 4)
+    await Promise.resolve()
+    expect(mapkit.replaces()).toBe(1)
+  })
+
+  it('never refreshes when nothing was dropped', async () => {
+    vi.useFakeTimers()
+    const control = controlledReads()
+    const mapkit = fakeMapKit([])
+    const { overlay } = source(control.tileBytes)
+    overlay.setRestyleHost(mapkit.host)
+    const pending = overlay.imageForTile(0, 0, 11, 3)
+    control.reads[0]?.finish(bytes)
+    await expect(pending).resolves.not.toBeNull()
+    vi.advanceTimersByTime(VECTOR_TILE_DROP_REFRESH_MS * 4)
+    await Promise.resolve()
+    expect(mapkit.replaces()).toBe(0)
   })
 })
 
