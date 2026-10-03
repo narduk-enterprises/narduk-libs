@@ -1,5 +1,15 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.10
+
+### Patch Changes
+
+- b98d96d: `createPmTilesTileSource().getMaxZoom()` reads the header through the
+  reader. It called a detached `PMTiles.getHeader`, which throws, so it always
+  answered `undefined`: a vector overlay over a PMTiles archive never overzoomed
+  and drew nothing, and hit nothing, past the archive's deepest zoom. A failed
+  header read now reaches `onError`.
+
 ## 0.21.9
 
 ### Patch Changes

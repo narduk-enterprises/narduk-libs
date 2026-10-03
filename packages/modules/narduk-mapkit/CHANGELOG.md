@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.14.2
+
+### Patch Changes
+
+- b98d96d: `createPmTilesTileSource().getMaxZoom()` reads the header through the
+  reader. It called a detached `PMTiles.getHeader`, which throws, so it always
+  answered `undefined`: a vector overlay over a PMTiles archive never overzoomed
+  and drew nothing, and hit nothing, past the archive's deepest zoom. A failed
+  header read now reaches `onError`.
+
 ## 2.14.1
 
 ### Patch Changes
