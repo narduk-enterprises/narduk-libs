@@ -74,6 +74,19 @@ refuses the first unbundled icon's fetch from `api.iconify.design`. The build
 warns in that case, unless the app sets `icon.fallbackToApi: false` itself
 (narduk-libs#467).
 
+**No stylesheet scan at hydration.** Stock `@nuxt/icon` in css mode reads every
+rule of every stylesheet on the first client icon mount, to learn which icon
+classes the server already emitted. On a Tailwind and Nuxt UI app that scan is
+about 10% of the hydration task and grows with the stylesheet. narduk-core's
+client build looks the class up in the inline `<style>` text instead (the
+server's icon style, or one the client injected), which is the only place an
+icon rule can live without UnoCSS. Markup, CSS and pixels are the same, an icon
+the server did not render is mounted exactly as before, and the scan stays if
+UnoCSS is installed or `NARDUK_ICON_CSS_SCAN=upstream` is set at build time
+(narduk-libs#1379). The patch pins to `@nuxt/icon` 2.5.1's `css.js`; a bump that
+moves its call site fails `tests/icon-css-scan-patch.test.ts`, and the build
+warns and keeps the scan rather than shipping a broken patch.
+
 ## Session module (`nuxt-auth-utils`)
 
 `coreModules` still installs
