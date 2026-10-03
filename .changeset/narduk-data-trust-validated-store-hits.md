@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-core': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 narduk-data client: opt-in `trustValidatedStoreHits: { mark }` skips the schema
@@ -11,3 +12,4 @@ checksum verifies, it returns the decoded JSON without running the schema
 prefetched copy and a schema that strips or transforms keys all validate as
 before, and a hit another build marked is re-marked after a clean parse. Off
 unless the option is set; an empty or non-header-safe `mark` leaves it off.
+create-narduk-app: pin the new narduk-core.
