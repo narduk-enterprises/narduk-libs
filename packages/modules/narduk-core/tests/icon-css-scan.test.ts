@@ -115,10 +115,9 @@ async function serve(variant: 'patched' | 'upstream'): Promise<string> {
 
 const chromiumInstalled = existsSync(chromium.executablePath())
 
-/** Asset hashes, build ids and scripts differ between two builds of one source. */
+/** Asset hashes and build ids differ between two builds of one source. */
 function normalize(html: string): string {
   return html
-    .replaceAll(/<script[\s\S]*?<\/script>/g, '')
     .replaceAll(/\/_nuxt\/[\w.-]+\.(js|css)/g, '/_nuxt/HASH.$1')
     .replaceAll(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'UUID')
 }
@@ -166,7 +165,14 @@ async function capture(url: string): Promise<Capture> {
       { timeout: 10_000 },
     )
     const hydrated = await page.screenshot()
-    const dom = normalize(await page.evaluate(() => document.documentElement.outerHTML))
+    // Scripts carry the build id; they are not what is compared.
+    const dom = normalize(
+      await page.evaluate(() => {
+        const root = document.documentElement.cloneNode(true) as HTMLElement
+        for (const script of root.querySelectorAll('script')) script.remove()
+        return root.outerHTML
+      }),
+    )
     const cssomReads = await page.evaluate(
       () => (window as unknown as { __cssomReads: number }).__cssomReads,
     )
