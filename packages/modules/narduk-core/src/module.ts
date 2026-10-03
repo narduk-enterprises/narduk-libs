@@ -43,6 +43,7 @@ import {
   USER_SESSION_IMPORT_NAME,
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
+import { seedDesignSystemFonts } from './design-system-fonts'
 import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
 import { localIconDefaults, nuxtIconModuleEntry } from './nuxt-icon-module'
@@ -104,6 +105,7 @@ interface MutableNuxtOptionsRecord {
   compatibilityDate?: string
   css: string[]
   devServer?: Record<string, unknown>
+  fonts?: unknown
   future?: Record<string, unknown>
   icon?: unknown
   modules?: unknown[]
@@ -598,6 +600,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         await installModule('@nuxtjs/color-mode')
         await installModule(nuxtIconModuleEntry())
         await installModule('@nuxt/ui')
+        // Self-host the design system's two families when the app loads its
+        // tokens or theme (narduk-libs#1366). Before the install: the module
+        // reads `nuxt.options.fonts` once, in its own setup.
+        seedDesignSystemFonts(nuxtOptions)
         await installModule('@nuxt/fonts')
         if (options.image !== false) {
           await installModule('@nuxt/image')

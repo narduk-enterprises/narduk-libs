@@ -35,6 +35,7 @@
     "runtime/app/composables/useRefCountedSubscription.ts",
     "runtime/app/composables/useIntervalRefresh.ts",
     "runtime/app/composables/useCurrentLocation.ts",
+    "runtime/app/utils/formatBuildTimeLocal.ts",
     "runtime/app/utils/ssrNowClock.ts",
     "runtime/app/utils/liveProduct.ts",
     "runtime/app/utils/preferencesState.ts",

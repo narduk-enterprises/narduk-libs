@@ -11,7 +11,12 @@ This package has no status-data service, health endpoint, or Nuxt module.
 - `resolveSourceRevision(env?)` — the exact source revision a build is produced
   from, resolved in a fixed precedence so an authorized exact-SHA release always
   stamps the SHA it was authorized for.
-- `designSystemFontLinks` — the design system's single two-family font request.
+- `designSystemFontLinks` — deprecated and always empty (narduk-libs#1366). It was
+  a render-blocking Google Fonts request. `@narduk-enterprises/narduk-core`
+  2.22.0 or later self-hosts Instrument Sans and IBM Plex Mono through
+  `@nuxt/fonts` for any app that loads the narduk-ui tokens or the narduk-shell
+  theme; remove the spread from `app.head.link` and any local `fonts` override
+  that only restates those two families.
 - `designSystemThemeColor` — `--ns-ink`, for `<meta name="theme-color">`.
 
 ## Publication
