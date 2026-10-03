@@ -1,5 +1,9 @@
 import { vectorTileFeatureCount } from '../../src/client/index.js'
-import { createMvtDecoder, decodeMvtTile } from '../../src/vector-tiles/index.js'
+import {
+  createMvtDecoder,
+  decodeMvtTile,
+  smoothCoarseNetwork,
+} from '../../src/vector-tiles/index.js'
 
 import { encodeVectorTile } from './fixture.js'
 
@@ -268,5 +272,82 @@ describe('createMvtDecoder', () => {
     expect(() => decodeMvtTile(new Uint8Array([0x08, 0x01, 0x10, 0x02]))).toThrow(
       'not a vector tile',
     )
+  })
+})
+
+describe('coarse-grid tiles', () => {
+  // A low-zoom tile on a 512 grid, as river-network v3 builds z0-3 (z4 is 256):
+  // a gentle diagonal quantised into unit steps, each step its own two-point
+  // line, which is how v3 stores it.
+  const staircase = [
+    { x: 100, y: 100 },
+    { x: 101, y: 100 },
+    { x: 101, y: 101 },
+    { x: 102, y: 101 },
+    { x: 102, y: 102 },
+    { x: 103, y: 102 },
+    { x: 103, y: 103 },
+    { x: 104, y: 103 },
+    { x: 104, y: 104 },
+  ]
+  const steps = staircase.slice(1).map((point, index) => [[staircase[index]!, point]])
+
+  /** Perpendicular distance from the diagonal y = x. */
+  const offDiagonal = (point: { x: number; y: number }) => Math.abs(point.x - point.y) / Math.SQRT2
+
+  it('straightens a staircase stored as separate two-point lines', () => {
+    const smoothed = smoothCoarseNetwork(steps)
+    const points = smoothed.flatMap((lines) => lines.flat())
+    // The ends of the run stay put.
+    expect(smoothed[0]?.[0]?.[0]).toEqual({ x: 100, y: 100 })
+    expect(smoothed.at(-1)?.[0]?.at(-1)).toEqual({ x: 104, y: 104 })
+    // The corners sat 0.707 off the diagonal; the interior is now a straight
+    // line well inside half of that.
+    const interior = points.filter(
+      (point) => !(point.x === 100 && point.y === 100) && !(point.x === 104 && point.y === 104),
+    )
+    for (const point of interior) expect(offDiagonal(point)).toBeLessThan(0.36)
+    // And every shared point moved as one: each step still meets the next.
+    for (let index = 0; index + 1 < smoothed.length; index += 1) {
+      expect(smoothed[index]?.[0]?.at(-1)).toEqual(smoothed[index + 1]?.[0]?.[0])
+    }
+  })
+
+  it('leaves a junction and a line end exactly where they were', () => {
+    const junction = { x: 10, y: 10 }
+    const smoothed = smoothCoarseNetwork([
+      [[{ x: 0, y: 10 }, junction]],
+      [[junction, { x: 20, y: 10 }]],
+      [[junction, { x: 10, y: 0 }]],
+    ])
+    expect(smoothed[0]?.[0]).toEqual([{ x: 0, y: 10 }, junction])
+    expect(smoothed[1]?.[0]).toEqual([junction, { x: 20, y: 10 }])
+    expect(smoothed[2]?.[0]).toEqual([junction, { x: 10, y: 0 }])
+  })
+
+  it('decodes a 512-extent tile onto a 4096 grid with the staircase smoothed', () => {
+    const bytes = encodeVectorTile([
+      {
+        extent: 512,
+        features: steps.map((lines) => ({ lines, type: 2 })),
+        name: 'rivers',
+      },
+    ])
+    const tile = decodeMvtTile(bytes) as DecodedVectorTile
+
+    expect(tile.extent).toBe(4096)
+    expect(lineOf(tile, 0)[0]).toEqual({ x: 800, y: 800 })
+    expect(lineOf(tile, steps.length - 1).at(-1)).toEqual({ x: 832, y: 832 })
+    // No staircase corner survives (8 units off the diagonal at this scale).
+    for (let feature = 1; feature < steps.length - 1; feature += 1) {
+      for (const point of lineOf(tile, feature)) expect(offDiagonal(point)).toBeLessThan(3)
+    }
+  })
+
+  it('leaves a 4096-extent tile exactly as encoded', () => {
+    const bytes = encodeVectorTile([
+      { extent: 4096, features: [{ lines: [staircase], type: 2 }], name: 'rivers' },
+    ])
+    expect(lineOf(decodeMvtTile(bytes) as DecodedVectorTile, 0)).toEqual(staircase)
   })
 })

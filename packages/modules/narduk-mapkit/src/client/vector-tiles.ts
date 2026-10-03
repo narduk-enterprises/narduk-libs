@@ -881,6 +881,25 @@ function appendFeaturePath(
   return added
 }
 
+/** The thinnest stroke the painter puts on the canvas, in device pixels. */
+export const VECTOR_TILE_MIN_DEVICE_WIDTH = 1
+
+/**
+ * A stroke width in device pixels, as the canvas should draw it.
+ *
+ * A line asked for under one device pixel is drawn one device pixel wide and
+ * proportionally fainter, so a 0.3 CSS px hairline on a 3x screen is a crisp
+ * 1 px line at 90% of its opacity rather than a 1.5 px one (the old floor was
+ * half a CSS pixel, which made a 3x screen's hairlines thicker than asked).
+ * Sub-pixel strokes are what a canvas antialiases into a grey grid; one solid
+ * device pixel with the coverage moved into alpha draws the same ink, crisp.
+ */
+export function hairlineStroke(deviceWidth: number): { alpha: number; width: number } {
+  if (!(deviceWidth > 0)) return { alpha: 0, width: VECTOR_TILE_MIN_DEVICE_WIDTH }
+  if (deviceWidth >= VECTOR_TILE_MIN_DEVICE_WIDTH) return { alpha: 1, width: deviceWidth }
+  return { alpha: deviceWidth / VECTOR_TILE_MIN_DEVICE_WIDTH, width: VECTOR_TILE_MIN_DEVICE_WIDTH }
+}
+
 /**
  * Which part of an ancestor tile a child tile shows, for overzoom.
  *
@@ -1113,17 +1132,18 @@ export function paintVectorTile(
     }
     if (!added) continue
 
-    context.globalAlpha = paint.opacity ?? 1
+    const opacity = paint.opacity ?? 1
     if (paint.casing) {
+      const casing = hairlineStroke((paint.width + paint.casing.extraWidth) * pixelRatio)
+      context.globalAlpha = opacity * casing.alpha
       context.strokeStyle = paint.casing.color
-      context.lineWidth = Math.max(
-        (paint.width + paint.casing.extraWidth) * pixelRatio,
-        pixelRatio * 0.5,
-      )
+      context.lineWidth = casing.width
       context.stroke()
     }
+    const line = hairlineStroke(paint.width * pixelRatio)
+    context.globalAlpha = opacity * line.alpha
     context.strokeStyle = paint.color
-    context.lineWidth = Math.max(paint.width * pixelRatio, pixelRatio * 0.5)
+    context.lineWidth = line.width
     context.stroke()
     painted = true
   }
