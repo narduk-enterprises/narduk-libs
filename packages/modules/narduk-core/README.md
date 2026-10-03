@@ -57,6 +57,31 @@ app that wants light-only sets
 `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
 still override `classSuffix`.
 
+## First-paint defaults
+
+narduk-core sets three defaults that cost first paint and LCP on server-rendered
+pages when left at Nuxt's own values (narduk-libs#1369). An app's own config
+wins over each, and `nardukCore.performance` switches each off:
+
+| Default                                                                               | What it does                                                                                                                                                                            | Opt out                                                                                                |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `ui.experimental.componentDetection: true`                                            | The entry stylesheet carries only the Nuxt UI themes the app renders, not every component's.                                                                                            | `performance: { componentDetection: false }`, or `ui: { experimental: { componentDetection: false } }` |
+| a `build:manifest` hook                                                               | Sets `prefetch = false` on every manifest entry and `preload = false` on script entries, so the page head loses its `modulepreload` and `prefetch` links. The stylesheet preload stays. | `performance: { resourceHints: false }`                                                                |
+| `experimental.defaults.nuxtLink.prefetchOn: { visibility: false, interaction: true }` | A link prefetches its route on hover or focus, not when it scrolls into view. A key the app sets itself is kept.                                                                        | `performance: { linkPrefetch: false }`, or set `experimental.defaults.nuxtLink.prefetchOn`             |
+
+Component detection scans the app and its Nuxt layers for the `U*` components
+they render, and never a module. narduk-core names its own components, and those
+of narduk-ai, narduk-analytics and narduk-seo when installed; narduk-auth and
+narduk-shell name theirs. A component that only a module outside this repo
+renders, or one picked by a computed name, must be listed. A list means "detect,
+and always include these":
+
+```ts
+export default defineNuxtConfig({
+  ui: { experimental: { componentDetection: ['UCard', 'UModal'] } },
+})
+```
+
 narduk-core depends on `@nuxt/icon` 2.5.1 and, when `coreModules` is on,
 registers that module itself after seeding a local-only contract:
 `provider: 'server'`, `fallbackToApi: false`, the Lucide collection bundled on
