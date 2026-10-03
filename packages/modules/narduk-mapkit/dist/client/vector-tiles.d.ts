@@ -578,6 +578,12 @@ export declare function paintVectorTileHighlight(canvas: VectorTileCanvas, tile:
     tileSize: number;
 }): boolean;
 /**
+ * Quiet time after the last tile request before tiles dropped for a zoom
+ * change are asked for again. A gesture asks every frame, so this fires once
+ * the zoom has settled, not between frames.
+ */
+export declare const VECTOR_TILE_DROP_REFRESH_MS = 300;
+/**
  * Build the `imageForTile` function for a vector tile archive.
  *
  * An empty tile, a missing tile and a failed decode all resolve to `null`, so
@@ -588,6 +594,13 @@ export declare function paintVectorTileHighlight(canvas: VectorTileCanvas, tile:
  * aborted through the `AbortSignal` handed to `tileBytes` if it already has.
  * Either way the tile resolves to `null`, is not reported to `onError`, is not
  * cached, and loads normally if it is asked for again.
+ *
+ * MapKit keeps that `null` as an empty tile and does not ask again, so a zoom
+ * that comes back, or requests that alternate between two zooms, would leave
+ * blank tiles. Once requests have been quiet for
+ * {@link VECTOR_TILE_DROP_REFRESH_MS} after any drop, the overlay is swapped
+ * through `restyleHost` (after the new overlay's first image, as a restyle is),
+ * so every displayed tile is asked for again from the decoded cache.
  *
  * Above `maxDataZoom` a tile is painted from its ancestor at that zoom: one
  * read and one decode, shared by every descendant through the cache.
