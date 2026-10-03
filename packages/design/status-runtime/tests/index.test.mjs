@@ -21,11 +21,19 @@ describe("status runtime configuration", () => {
   });
 
   it("ships one immutable shared design-system contract", () => {
-    expect(Object.isFrozen(designSystemFontLinks)).toBe(true);
-    expect(designSystemFontLinks).toHaveLength(3);
-    expect(designSystemFontLinks.at(-1)?.href).toContain("Instrument+Sans");
-    expect(designSystemFontLinks.at(-1)?.href).toContain("IBM+Plex+Mono");
     expect(designSystemThemeColor).toBe("rgb(14 20 24)");
+  });
+
+  // narduk-libs#1366: the Google Fonts stylesheet cost about 900 ms of mobile
+  // first paint. narduk-core self-hosts the families through @nuxt/fonts now.
+  it("emits no third-party font link, and stays exported for apps that still spread it", async () => {
+    expect(Object.isFrozen(designSystemFontLinks)).toBe(true);
+    expect(designSystemFontLinks).toEqual([]);
+    expect([...designSystemFontLinks]).toEqual([]);
+
+    const source = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
+    expect(source).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    expect(source).not.toMatch(/https?:\/\//);
   });
 
   it("publishes declarations without changing the runtime export", async () => {

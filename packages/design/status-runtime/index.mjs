@@ -28,27 +28,25 @@ export function resolveSourceRevision(env = process.env) {
 }
 
 /**
- * The design system's font request.
+ * Retired: the design system's Google Fonts request (narduk-libs#1366).
  *
- * Narduk Status Design System v1.0 uses exactly two families in three weights
- * each, in a single request: Instrument Sans for interface and prose, IBM Plex
- * Mono for every measured number and all metadata. Schibsted Grotesk, Inter and
- * Outfit are dropped from the estate.
+ * This used to be a render-blocking third-party font stylesheet and two
+ * preconnects. It cost about 900 ms of mobile first paint on riverstat.us for
+ * two families an app can serve from its own origin. The families are now
+ * declared to `@nuxt/fonts` by `@narduk-enterprises/narduk-core` (2.22.0 or
+ * later), which self-hosts Instrument Sans and IBM Plex Mono from `/_fonts/`
+ * for any app that loads the narduk-ui tokens or the narduk-shell theme; an
+ * app needs no font config of its own.
  *
- * Spread into `app.head.link` so all five apps make the identical request and
- * share one browser cache entry.
+ * The export stays, empty, so an app that still spreads it into
+ * `app.head.link` keeps building and emits no third-party link. Delete the
+ * spread; it has no effect.
+ *
+ * @deprecated Remove the spread. Fonts come from narduk-core's `@nuxt/fonts`.
  */
-export const designSystemFontLinks = Object.freeze([
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  // `crossorigin` is annotated rather than inferred: Nuxt's head Link type
-  // accepts only "" | "anonymous" | "use-credentials", and a widened `string`
-  // fails every consuming app's `nuxt typecheck`.
-  { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: /** @type {""} */ ("") },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap",
-  },
-]);
+export const designSystemFontLinks = Object.freeze(
+  /** @type {Array<{ rel: string; href: string; crossorigin?: "" }>} */ ([]),
+);
 
 /**
  * The design system's page-ground colour, for `<meta name="theme-color">`.
