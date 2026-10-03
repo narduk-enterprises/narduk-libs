@@ -693,6 +693,81 @@ reply deadline (`timeoutMs`, default 15s) fails that one tile instead of leaving
 it pending for the life of the map. `dispose()` fails everything in flight and
 stops listening.
 
+### Painting off the main thread
+
+Painting a dense tile is tens of thousands of `lineTo` calls plus the
+rasterization of every stroke, and MapKit asks for a screenful at once; on a
+phone that is hundreds of milliseconds to seconds of main-thread time.
+`serveVectorTileWorker` hosts decode **and** paint in one worker. It keeps each
+tile it decodes (up to `cacheBytes`, default 32 MiB), paints it on an
+`OffscreenCanvas` with the same `paintVectorTile`, and transfers an
+`ImageBitmap` back. A paint request names the tile; it does not ship it.
+
+A style function cannot be posted to a worker, so build it from data with
+`portableVectorTileStyle`, and register the same factory in the worker. A class
+style is data already and needs nothing.
+
+```ts
+// app/utils/river-styles.ts -- imported by both threads
+export const riverStyles = {
+  river: (params: RiverParams) => riverStyle(params),
+}
+```
+
+```ts
+// app/workers/river-network.ts
+import {
+  createMvtDecoder,
+  serveVectorTileWorker,
+} from '@narduk-enterprises/narduk-mapkit/vector-tiles'
+import { riverStyles } from '../utils/river-styles'
+
+serveVectorTileWorker(self, {
+  decode: createMvtDecoder({
+    layers: ['rivers'],
+    properties: ['ri', 'si', 'so'],
+  }),
+  styles: riverStyles,
+})
+```
+
+```ts
+// on the main thread
+import {
+  createVectorTileOverlaySource,
+  createWorkerTileService,
+  portableVectorTileStyle,
+} from '@narduk-enterprises/narduk-mapkit/client'
+
+const tiles = createWorkerTileService({ worker })
+const network = createVectorTileOverlaySource({
+  decode: tiles.decode,
+  painter: tiles.painter,
+  style: portableVectorTileStyle('river', params, riverStyles.river),
+  ...rest,
+})
+```
+
+What stays on the main thread, and why:
+
+- **Anything the worker cannot paint** is painted here exactly as before: a
+  browser without `OffscreenCanvas` (the worker says so once, and the painter
+  stops asking), a plain style function, a factory the worker does not know, a
+  reply that never comes (`paintTimeoutMs`, default 30s). A painter can move
+  work; it cannot lose a tile.
+- **Hit testing**, because `hitTest` is synchronous and must answer during a
+  gesture. The main thread still keeps its decoded copy, so memory is the main
+  cache plus the worker's.
+- **The highlight**, which strokes a handful of lines.
+
+MapKit is handed a canvas, not the bitmap: the default `toImage` is
+`imageBitmapToCanvas`, which puts the bitmap in a `bitmaprenderer` canvas
+without copying it. MapKit JS 6 accepts an `ImageBitmap` directly but draws its
+translucent pixels darker than the same pixels from a canvas (measured on River
+Status `/map`), so a canvas is the image that matches main-thread painting pixel
+for pixel. Pass `toImage: (bitmap) => bitmap` for a consumer that handles
+premultiplied bitmaps itself.
+
 ### Hit testing
 
 A painted tile is pixels, so MapKit cannot say which river a tap landed on.

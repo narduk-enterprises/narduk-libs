@@ -19,4 +19,5 @@ export * from './timers.js';
 export * from './point-layer.js';
 export * from './vector-tile-worker.js';
 export * from './vector-tiles.js';
+export * from './vector-tile-paint-worker.js';
 //# sourceMappingURL=index.js.map

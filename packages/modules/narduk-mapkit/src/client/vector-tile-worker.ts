@@ -20,6 +20,13 @@ export interface VectorTileDecodeRequest {
   bytes: ArrayBuffer
   channel: typeof VECTOR_TILE_DECODE_CHANNEL
   id: number
+  /**
+   * Keep the decoded tile in the worker under this key, so a painter in the
+   * same worker can draw it without the main thread sending it back. The reply
+   * then carries a copy. Absent: the worker keeps nothing (the original
+   * protocol).
+   */
+  retainAs?: string
   x: number
   y: number
   z: number
@@ -62,6 +69,12 @@ export interface VectorTileWorkerPort {
 }
 
 export interface WorkerDecoderOptions {
+  /**
+   * Ask the worker to keep each decoded tile, and learn the key it kept it
+   * under. `createWorkerTileService` wires this to its painter; a decoder on
+   * its own leaves it unset and the worker keeps nothing.
+   */
+  retain?: (tile: DecodedVectorTile, key: string) => void
   /**
    * Cancel handle factory for the reply deadline. Injected so a test drives
    * the clock; defaults to `setTimeout`/`clearTimeout`.
@@ -178,6 +191,7 @@ export function sendVectorTile(tile: DecodedVectorTile): {
  */
 export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVectorTileDecoder {
   const {
+    retain,
     scheduleTimeout = defaultScheduleTimeout,
     timeoutMs = 15_000,
     transfer = true,
@@ -188,6 +202,7 @@ export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVector
     cancelTimeout: () => void
     reject: (reason: Error) => void
     resolve: (tile: DecodedVectorTile | null) => void
+    retainAs?: string
   }
 
   const waiting = new Map<number, Waiting>()
@@ -210,8 +225,10 @@ export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVector
       entry.reject(new Error(event.data.error))
       return
     }
-    const tile = event.data.tile
-    entry.resolve(tile ? receiveVectorTile(tile) : null)
+    const transferred = event.data.tile
+    const tile = transferred ? receiveVectorTile(transferred) : null
+    if (tile && entry.retainAs !== undefined) retain?.(tile, entry.retainAs)
+    entry.resolve(tile)
   }
 
   worker.addEventListener('message', onMessage)
@@ -226,12 +243,20 @@ export function createWorkerDecoder(options: WorkerDecoderOptions): WorkerVector
           const entry = settle(id)
           entry?.reject(new Error(`vector tile decode timed out after ${timeoutMs}ms`))
         }, timeoutMs)
-        waiting.set(id, { cancelTimeout, reject, resolve })
+        // Unique per decode, so a key never names two different tiles.
+        const retainAs = retain ? `d${id}` : undefined
+        waiting.set(id, {
+          cancelTimeout,
+          reject,
+          resolve,
+          ...(retainAs === undefined ? {} : { retainAs }),
+        })
         const buffer = tightBuffer(bytes)
         const request: VectorTileDecodeRequest = {
           bytes: buffer,
           channel: VECTOR_TILE_DECODE_CHANNEL,
           id,
+          ...(retainAs === undefined ? {} : { retainAs }),
           x: tile.x,
           y: tile.y,
           z: tile.z,
