@@ -50,6 +50,10 @@ import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 import { registerNuxtUiSources } from './nuxt-ui-sources'
 import { resolveOpenApiProductionMode } from './openapi-production'
 import {
+  type NardukCorePerformanceOptions,
+  registerPerformanceDefaults,
+} from './performance-defaults'
+import {
   APP_RUNTIME_NUXT_IMPORTS,
   APP_RUNTIME_VUE_IMPORTS,
   selectMissingRuntimeImports,
@@ -142,6 +146,12 @@ export interface NardukCoreModuleOptions {
    */
   databaseBackend?: DatabaseBackend
   image?: boolean
+  /**
+   * First-paint defaults (narduk-libs#1369): Nuxt UI component detection, no
+   * `modulepreload`/`prefetch` head links, and interaction-only link prefetch.
+   * Each is on; `false` opts that one out. See `./performance-defaults.ts`.
+   */
+  performance?: NardukCorePerformanceOptions
   /**
    * The opt-in shared security-headers preset. `false` or omitted leaves an
    * app's headers exactly as they are today; see
@@ -590,6 +600,13 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxtOptions.icon = defu(
         (nuxtOptions.icon ?? {}) as Record<string, unknown>,
         localIconDefaults(nuxt.options.rootDir),
+      )
+
+      // First-paint defaults (narduk-libs#1369), set before @nuxt/ui installs
+      // and reads component detection during its own setup.
+      registerPerformanceDefaults(
+        nuxt as unknown as Parameters<typeof registerPerformanceDefaults>[0],
+        options.performance,
       )
 
       if (options.coreModules) {
