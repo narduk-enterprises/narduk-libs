@@ -82,14 +82,14 @@ daily aggregate — this summarizes what the page holds, it does not fetch more.
 
 ## What is bounded, and by what
 
-| Path           | Bound                                                                               |
-| -------------- | ----------------------------------------------------------------------------------- |
-| Numeric write  | 6 parameters per row, chunked to the 32768-parameter budget                         |
-| Track write    | 8 parameters per row, same budget                                                   |
-| Series resolve | 4 parameters per descriptor, one statement per distinct descriptor set              |
-| Rollup read    | **5 parameters, whatever the series cardinality** (`= ANY($2::bigint[])`)           |
-| Track read     | 4 or 5 parameters; decimated in the database above `maxPoints`                      |
-| Retention      | one `drop_chunks` per level plus per-tier track/raw deletes chunked at 1000 vessels |
+| Path           | Bound                                                                                                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| Numeric write  | 6 parameters per row, chunked to the 32768-parameter budget                                                    |
+| Track write    | 8 parameters per row, same budget                                                                              |
+| Series resolve | 4 parameters per descriptor, one statement per distinct descriptor set                                         |
+| Rollup read    | **5 parameters, whatever the series cardinality** (`= ANY($2::bigint[])`)                                      |
+| Track read     | 4 or 5 parameters; decimated in the database above `maxPoints`                                                 |
+| Retention      | one `drop_chunks` per level plus per-tier track deletes chunked at 1000 vessels; tier raw depth is a read clip |
 
 Nothing scales with retained history: no statement this package issues has a
 cost that grows with how much history the database happens to hold. The unit
@@ -137,7 +137,7 @@ await store.applyRetention({
   tiers: {
     free: {
       vesselIds: [...],
-      rawWindowMs: 24 * 60 * 60 * 1000, // round 20: Free keeps raw 24 h
+      rawWindowMs: 24 * 60 * 60 * 1000, // round 20: Free reads raw 24 h deep
       rollupWindowMs: { '1m': 7 * 86_400_000, '1h': 30 * 86_400_000 },
       trackWindowMs: 7 * 86_400_000,
     },
@@ -226,9 +226,23 @@ summarizes, and a window that is not a positive finite number.
 - **rollups, global** — one `drop_chunks` per level. Cheap, one parameter each,
   and independent of fleet size.
 - **track, per tier** — row deletes chunked at `maxVesselsPerStatement`.
-- **raw, per tier** — the expensive one, and it exists only because round 20
-  chose both a 7-day global raw window and a 24-hour Free window: it deletes
-  rows from a hypertable whose older chunks are in the columnstore.
+- **raw, per tier** — no sweep. See below.
+
+### A tier's raw window is a read depth, not a delete
+
+`tiers.<name>.rawWindowMs` deletes nothing. Raw is kept for `globalRawWindowMs`
+for every vessel, and a consumer that reads raw for a tier clips the range start
+to `now - rawWindowMs` — the same contract `RollupQuery.tierWindowMs` enforces
+for rollups.
+
+It used to be a per-vessel row delete, and that lost rollups (narduk-libs#1081).
+Deleting raw rows inside a continuous aggregate's refresh window invalidates the
+buckets over them, and the next refresh re-materializes those buckets from the
+raw that is left — none — so the tier's 1m rollups inside the 7-day refresh
+window emptied. `tests/live-integration.test.ts` reproduces it against
+TimescaleDB 2.30.1: 2 rows before the sweep, 0 after the refresh on the old
+code, 2 and 2 now. Free vessels therefore hold the same 7 days of raw on disk as
+every other tier; the storage is the price of rollups that stay whole.
 
 ## Migrations
 

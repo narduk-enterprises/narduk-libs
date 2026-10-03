@@ -20,12 +20,13 @@
  *    generous tier's depth, and a shorter tier is enforced on READ, where
  *    `queryRollup` clips the requested range to the tier window the consumer
  *    passes in.
- *  - **Per-tier track and raw** are the remaining per-vessel deletes, chunked
- *    by vessel so one statement never carries an unbounded array. Per-tier raw
- *    exists only because round 20 chose both a 7-day global raw window (1A)
- *    and a 24-hour Free raw window (2B); it is a row delete against a
- *    hypertable whose older chunks are in the columnstore, so it is the
- *    expensive one, and the README says plainly what it costs.
+ *  - **Per-tier track** is the remaining per-vessel delete, chunked by vessel
+ *    so one statement never carries an unbounded array.
+ *  - **Per-tier raw is enforced on READ, like rollups** (narduk-libs#1081).
+ *    A per-tier raw row delete invalidated the continuous aggregates over
+ *    that range, and the next refresh emptied the tier's rollups inside the
+ *    refresh window. Raw is kept for the global window for every vessel and
+ *    a tier's `rawWindowMs` is the depth a consumer's raw read clips to.
  */
 
 import { NardukTimeseriesError } from '../errors.js'
@@ -106,18 +107,13 @@ export function buildRetentionStatements(policy: RetentionPolicyInput): Retentio
       }
     }
 
-    if (tier.rawWindowMs !== undefined) {
-      for (const vesselIds of batches) {
-        statements.push({
-          kind: 'delete',
-          params: [vesselIds.join(','), cutoff(validated.now, tier.rawWindowMs)],
-          rollup: null,
-          target: NUMERIC_TABLE,
-          text: `DELETE FROM ${NUMERIC_TABLE} WHERE vessel_id = ANY(string_to_array($1::text, ',')::uuid[]) AND ts < $2::timestamptz`,
-          tier: tierName,
-        })
-      }
-    }
+    // No per-tier raw DELETE (narduk-libs#1081). A row DELETE on the raw
+    // hypertable invalidates the continuous aggregates over that range, and
+    // the next refresh re-materializes those buckets from the raw that is
+    // left: none. Live on TimescaleDB 2.30.1 a Free vessel's 1m rollups 3
+    // days back went from 2 rows to 0. `tier.rawWindowMs` is a read depth
+    // the consumer clips raw reads to; Logan 2026-09-26: "Prove, then
+    // read-gate (Recommended)".
   }
 
   for (const statement of statements) assertRetentionTarget(statement.target)
