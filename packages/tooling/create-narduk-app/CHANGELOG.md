@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.11
+
+### Patch Changes
+
+- 6f5bf79: Pin `@narduk-enterprises/narduk-mapkit` 2.15.0 (crisp national-zoom
+  vector tiles on 2x and 3x screens).
+
 ## 0.21.10
 
 ### Patch Changes
