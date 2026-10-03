@@ -32,4 +32,30 @@ export interface MvtDecoderOptions {
 export declare function createMvtDecoder(options?: MvtDecoderOptions): VectorTileDecoder;
 /** The synchronous core, so a worker can call it without a microtask hop. */
 export declare function decodeMvtTile(bytes: Uint8Array, options?: MvtDecoderOptions): DecodedVectorTile | null;
+/**
+ * Take the staircase a coarse tile grid leaves out of a layer's lines.
+ *
+ * A low-zoom tile built on a 256 or 512 grid quantises every gentle curve into
+ * horizontal and vertical unit steps, and river-network v3 stores those steps
+ * as separate two-point lines (about 2.1 points a line at z3 and z4). Drawn on
+ * a 2x or 3x canvas each step is a visible stair and the network reads as a
+ * blocky mesh. No single line holds a staircase, so this works on the layer's
+ * whole network: every point is a node, joined to the points it is drawn to.
+ * A node joined to exactly two others (the middle of a run, whichever lines
+ * carry it) moves halfway towards their average, `SMOOTHING_PASSES` times;
+ * a staircase of unit steps becomes a straight line about a third of a unit
+ * from its centre. Junctions, ends and crossings (any other number of joins)
+ * stay exactly where the tile put them, so lines still meet where they met,
+ * and a shared point moves once for every line that carries it. Nothing moves
+ * more than about one grid unit, which is the quantisation itself.
+ *
+ * Takes and returns one entry per feature, each a list of lines.
+ */
+export declare function smoothCoarseNetwork(features: ReadonlyArray<ReadonlyArray<ReadonlyArray<{
+    x: number;
+    y: number;
+}>>>, passes?: number): Array<Array<Array<{
+    x: number;
+    y: number;
+}>>>;
 //# sourceMappingURL=mvt.d.ts.map

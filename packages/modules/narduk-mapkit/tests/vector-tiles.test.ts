@@ -107,6 +107,41 @@ describe('paintVectorTile', () => {
     expect(canvas.calls.filter((call) => call.op === 'stroke')).toHaveLength(1)
   })
 
+  it('draws a sub-pixel hairline one device pixel wide and fainter, never wider', () => {
+    // 0.3 CSS px on a 3x screen is 0.9 device px: drawn 1 px at 0.9 of its
+    // opacity. The old half-CSS-pixel floor drew it 1.5 px wide.
+    const canvas = createFakeCanvas(768, 768)
+
+    paintVectorTile(canvas, twoReaches, {
+      pixelRatio: 3,
+      style: () => ({ color: '#4a7aa0', opacity: 0.5, width: 0.3 }),
+      tileSize: 256,
+      zoom: 3,
+    })
+
+    const stroke = canvas.calls.find((call) => call.op === 'stroke')
+    expect(stroke).toMatchObject({ lineWidth: 1 })
+    expect((stroke as { globalAlpha: number }).globalAlpha).toBeCloseTo(0.45, 5)
+  })
+
+  it('keeps a line at or over a device pixel at its own width and opacity', () => {
+    const canvas = createFakeCanvas(768, 768)
+
+    paintVectorTile(canvas, twoReaches, {
+      pixelRatio: 3,
+      style: () => ({ color: '#4a7aa0', opacity: 0.5, width: 1.4 }),
+      tileSize: 256,
+      zoom: 3,
+    })
+
+    const stroke = canvas.calls.find((call) => call.op === 'stroke') as {
+      globalAlpha: number
+      lineWidth: number
+    }
+    expect(stroke.lineWidth).toBeCloseTo(4.2, 5)
+    expect(stroke.globalAlpha).toBe(0.5)
+  })
+
   it('reports nothing painted when every feature is declined', () => {
     const canvas = createFakeCanvas(256, 256)
 

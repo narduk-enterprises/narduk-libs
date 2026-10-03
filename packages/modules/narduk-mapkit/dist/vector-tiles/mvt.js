@@ -66,7 +66,9 @@ function decodeMvt(bytes, layerFilter, propertyFilter) {
     if (names.length === 0)
         return null;
     // Layers may declare different extents. Scale every layer onto the largest
-    // one rather than the first, so the rescale only ever adds precision.
+    // one rather than the first, so the rescale only ever adds precision. A
+    // coarse grid is lifted to FINE_EXTENT so its smoothed points keep their
+    // sub-unit positions through the Int16 packing.
     let extent = 0;
     for (const name of names) {
         const layer = tile.layers[name];
@@ -75,28 +77,127 @@ function decodeMvt(bytes, layerFilter, propertyFilter) {
     }
     if (extent <= 0)
         return null;
+    if (extent < FINE_EXTENT)
+        extent = FINE_EXTENT;
     const features = [];
     for (const name of names) {
         const layer = tile.layers[name];
         if (!layer)
             continue;
         const scale = extent / layer.extent;
+        const start = features.length;
         for (let index = 0; index < layer.length; index += 1) {
             const feature = layer.feature(index);
             const lines = feature.loadGeometry();
             if (lines.length === 0)
                 continue;
-            features.push({
-                lines: scale === 1
-                    ? lines
-                    : lines.map((line) => line.map((point) => ({ x: point.x * scale, y: point.y * scale }))),
-                properties: readProperties(feature.properties, propertyFilter),
-            });
+            features.push({ lines, properties: readProperties(feature.properties, propertyFilter) });
+        }
+        const own = features.slice(start);
+        const smoothed = layer.extent < FINE_EXTENT ? smoothCoarseNetwork(own.map((feature) => feature.lines)) : null;
+        if (scale === 1 && !smoothed)
+            continue;
+        for (const [offset, feature] of own.entries()) {
+            const lines = smoothed?.[offset] ?? feature.lines;
+            features[start + offset] = {
+                ...feature,
+                lines: lines.map((line) => line.map((point) => ({ x: point.x * scale, y: point.y * scale }))),
+            };
         }
     }
     if (features.length === 0)
         return null;
     return buildDecodedVectorTile(extent, features);
+}
+/** A layer on a grid coarser than this has its grid staircases smoothed. */
+const FINE_EXTENT = 4096;
+/** Smoothing passes over a coarse layer's network; see {@link smoothCoarseNetwork}. */
+const SMOOTHING_PASSES = 2;
+/**
+ * Take the staircase a coarse tile grid leaves out of a layer's lines.
+ *
+ * A low-zoom tile built on a 256 or 512 grid quantises every gentle curve into
+ * horizontal and vertical unit steps, and river-network v3 stores those steps
+ * as separate two-point lines (about 2.1 points a line at z3 and z4). Drawn on
+ * a 2x or 3x canvas each step is a visible stair and the network reads as a
+ * blocky mesh. No single line holds a staircase, so this works on the layer's
+ * whole network: every point is a node, joined to the points it is drawn to.
+ * A node joined to exactly two others (the middle of a run, whichever lines
+ * carry it) moves halfway towards their average, `SMOOTHING_PASSES` times;
+ * a staircase of unit steps becomes a straight line about a third of a unit
+ * from its centre. Junctions, ends and crossings (any other number of joins)
+ * stay exactly where the tile put them, so lines still meet where they met,
+ * and a shared point moves once for every line that carries it. Nothing moves
+ * more than about one grid unit, which is the quantisation itself.
+ *
+ * Takes and returns one entry per feature, each a list of lines.
+ */
+export function smoothCoarseNetwork(features, passes = SMOOTHING_PASSES) {
+    const ids = new Map();
+    const xs = [];
+    const ys = [];
+    const nodeOf = (x, y) => {
+        const key = (Math.round(x) + 32_768) * 65_536 + (Math.round(y) + 32_768);
+        let id = ids.get(key);
+        if (id === undefined) {
+            id = xs.length;
+            ids.set(key, id);
+            xs.push(x);
+            ys.push(y);
+        }
+        return id;
+    };
+    const lineNodes = features.map((lines) => lines.map((line) => {
+        const nodes = [];
+        for (const point of line) {
+            const id = nodeOf(point.x, point.y);
+            if (nodes[nodes.length - 1] !== id)
+                nodes.push(id);
+        }
+        return nodes;
+    }));
+    // Neighbours per node, as at most two ids plus a count past two.
+    const count = xs.length;
+    const first = new Int32Array(count).fill(-1);
+    const second = new Int32Array(count).fill(-1);
+    const degree = new Uint16Array(count);
+    const join = (a, b) => {
+        if (degree[a] === 0)
+            first[a] = b;
+        else if (degree[a] === 1)
+            second[a] = b;
+        if (degree[a] < 65_535)
+            degree[a] += 1;
+    };
+    for (const lines of lineNodes) {
+        for (const nodes of lines) {
+            for (let index = 0; index + 1 < nodes.length; index += 1) {
+                join(nodes[index], nodes[index + 1]);
+                join(nodes[index + 1], nodes[index]);
+            }
+        }
+    }
+    let px = Float64Array.from(xs);
+    let py = Float64Array.from(ys);
+    for (let pass = 0; pass < passes; pass += 1) {
+        const nx = px.slice();
+        const ny = py.slice();
+        for (let node = 0; node < count; node += 1) {
+            if (degree[node] !== 2)
+                continue;
+            const a = first[node];
+            const b = second[node];
+            if (a === b)
+                continue;
+            nx[node] = px[node] / 2 + (px[a] + px[b]) / 4;
+            ny[node] = py[node] / 2 + (py[a] + py[b]) / 4;
+        }
+        px = nx;
+        py = ny;
+    }
+    return lineNodes.map((lines) => lines
+        .filter((nodes) => nodes.length >= 2)
+        .map((nodes) => nodes.map((node) => ({ x: px[node], y: py[node] }))));
 }
 function readProperties(source, filter) {
     if (!filter)

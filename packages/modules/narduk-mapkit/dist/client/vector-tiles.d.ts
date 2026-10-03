@@ -524,6 +524,22 @@ export declare function vectorTileClassByte(tile: DecodedVectorTile, feature: nu
  * distinct from `paintByClass`, including from any entry at those indexes.
  */
 export declare function paintForVectorTileClass(style: VectorTileClassStyle, classByte: number | null, compatible: boolean): VectorTileStyle;
+/** The thinnest stroke the painter puts on the canvas, in device pixels. */
+export declare const VECTOR_TILE_MIN_DEVICE_WIDTH = 1;
+/**
+ * A stroke width in device pixels, as the canvas should draw it.
+ *
+ * A line asked for under one device pixel is drawn one device pixel wide and
+ * proportionally fainter, so a 0.3 CSS px hairline on a 3x screen is a crisp
+ * 1 px line at 90% of its opacity rather than a 1.5 px one (the old floor was
+ * half a CSS pixel, which made a 3x screen's hairlines thicker than asked).
+ * Sub-pixel strokes are what a canvas antialiases into a grey grid; one solid
+ * device pixel with the coverage moved into alpha draws the same ink, crisp.
+ */
+export declare function hairlineStroke(deviceWidth: number): {
+    alpha: number;
+    width: number;
+};
 /**
  * Which part of an ancestor tile a child tile shows, for overzoom.
  *
