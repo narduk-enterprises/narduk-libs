@@ -21,9 +21,10 @@ This module has a hard runtime dependency on
 `deploymentTarget`, and `previewSafeMode` from the **runtime-public overlay**
 that `narduk-core` applies on every request (Nitro `00-runtime-public` plugin so
 `__NUXT__` is filled from Worker bindings, plus `/api/runtime/public` and the
-`00-runtime-public.client` fetch). See narduk-core README § "Public runtime
-overlay (Workers Builds)". Do not read `wrangler.json` from `nuxt.config.ts` to
-paper over empty baked keys.
+`00-runtime-public.client` plugin, which applies the overlay embedded in the SSR
+payload and fetches it only for HTML that lacks one). See narduk-core README §
+"Public runtime overlay (Workers Builds)". Do not read `wrangler.json` from
+`nuxt.config.ts` to paper over empty baked keys.
 
 If `narduk-core` is not already installed, this module **installs it
 automatically** during `setup()` so analytics still works — you do not need to

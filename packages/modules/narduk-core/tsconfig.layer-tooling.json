@@ -21,6 +21,8 @@
     "runtime/internal/**/*.ts",
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/error-page.ts",
+    "runtime/app/plugins/00-runtime-public.client.ts",
+    "runtime/app/plugins/00-runtime-public.server.ts",
     "runtime/app/stored-state.ts",
     "runtime/app/session/useUserSessionStub.ts",
     "runtime/app/share.ts",

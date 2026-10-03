@@ -1,6 +1,7 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import type { Logger } from '../utils/logger'
 import type { LayerDatabase } from '../utils/database'
+import type { RuntimePublicOverlay } from '../utils/runtime-public'
 
 declare module 'h3' {
   interface H3EventContext {
@@ -33,5 +34,10 @@ declare module 'h3' {
     _requestId?: string
     /** Per-request structured logger, memoized by useLogger() */
     _logger?: Logger
+    /**
+     * The request's full public overlay, left by the `00-runtime-public` Nitro
+     * plugin on page renders for the SSR payload (narduk-libs#1368).
+     */
+    runtimePublicOverlay?: RuntimePublicOverlay
   }
 }

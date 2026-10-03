@@ -319,6 +319,9 @@ export type RuntimePublicSsrOverlay = Pick<
  * (which Nitro deep-freezes), so one request's host or bindings cannot leak
  * into another request served by the same isolate.
  *
+ * It also leaves the full, unapplied overlay on
+ * `event.context.runtimePublicOverlay` for the SSR payload.
+ *
  * Apps should not read `wrangler.json` from `nuxt.config.ts` to paper over
  * the empty bake. Short Worker names (`GA_MEASUREMENT_ID`,
  * `POSTHOG_PUBLIC_KEY`) are enough; optional `NUXT_PUBLIC_*` aliases are
@@ -326,6 +329,11 @@ export type RuntimePublicSsrOverlay = Pick<
  */
 export function applyRuntimePublicOverlay(event: H3Event): RuntimePublicSsrOverlay {
   const overlay = resolveRuntimePublicOverlay(event)
+  // The full overlay, resolved before any key above is written to the config
+  // it falls back on, so it equals what `/api/runtime/public` returns. The
+  // `runtime-public-payload` Nuxt plugin embeds it in the SSR payload so the
+  // browser applies it without a fetch (narduk-libs#1368).
+  event.context.runtimePublicOverlay = overlay
   const applied = {} as Record<string, unknown>
   for (const key of RUNTIME_PUBLIC_SSR_KEYS) applied[key] = overlay[key]
 
