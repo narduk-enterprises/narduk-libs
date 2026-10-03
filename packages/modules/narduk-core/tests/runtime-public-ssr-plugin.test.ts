@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { applyRuntimePublicOverlay } from '../runtime/server/utils/runtime-public'
+import {
+  applyRuntimePublicOverlay,
+  resolveRuntimePublicOverlay,
+} from '../runtime/server/utils/runtime-public'
 
 import type { H3Event } from 'h3'
 
@@ -201,6 +204,39 @@ describe('00-runtime-public Nitro plugin', () => {
     hook(request)
 
     expect(publicConfig(request)).toMatchObject({ gaMeasurementId: 'G-LIVE' })
+  })
+
+  it('leaves the full unapplied overlay on the event for the SSR payload (#1368)', async () => {
+    nitro.setInline({
+      public: { appUrl: CANONICAL_URL, deploymentTarget: 'production', previewSafeMode: false },
+    })
+    const hook = await requestHook()
+    const request = event({ GA_MEASUREMENT_ID: 'G-LIVE' }, 'app.account.workers.dev')
+
+    hook(request)
+
+    // The browser applies this in place of fetching `/api/runtime/public`, so
+    // it must be that endpoint's body: every key, including the ones SSR keeps
+    // at build values, and the preview-host verdict.
+    const stashed = (request.context as { runtimePublicOverlay?: Record<string, unknown> })
+      .runtimePublicOverlay
+    expect(stashed).toEqual(
+      resolveRuntimePublicOverlay(
+        event({ GA_MEASUREMENT_ID: 'G-LIVE' }, 'app.account.workers.dev'),
+      ),
+    )
+    expect(stashed).toMatchObject({ previewSafeMode: true, deploymentTarget: 'preview' })
+    expect(publicConfig(request)).toMatchObject({ previewSafeMode: false })
+  })
+
+  it('does not stash an overlay for requests that render no page', async () => {
+    nitro.setInline({ public: {} })
+    const hook = await requestHook()
+    const request = event({ GA_MEASUREMENT_ID: 'G-LIVE' }, 'app.example', '/api/users')
+
+    hook(request)
+
+    expect(request.context).not.toHaveProperty('runtimePublicOverlay')
   })
 
   it('returns exactly the keys it wrote', () => {

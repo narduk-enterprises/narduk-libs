@@ -648,6 +648,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           path: resolver.resolve('../runtime/app/components'),
           pathPrefix: false,
         })
+        addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.server'))
         addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))

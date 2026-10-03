@@ -188,9 +188,20 @@ narduk-core owns the request-time contract:
 3. The `00-runtime-public` Nitro plugin runs that apply on every page request
    (everything outside `/api/` and `/_nuxt/`) **before SSR**, so `__NUXT__`
    matches the Worker env, crawlers included.
-4. `GET /api/runtime/public` returns the whole overlay. The client plugin
-   `runtime-public` still fetches it before the app mounts and applies all of
-   it, including the keys SSR leaves alone.
+4. `GET /api/runtime/public` returns the whole overlay. The same page request
+   also leaves that full overlay on `event.context.runtimePublicOverlay`, and
+   the `runtime-public-payload` server plugin embeds it in the SSR payload
+   (`payload.runtimePublic`). The client plugin `runtime-public` applies it
+   before any other plugin runs, including the keys SSR leaves alone, with no
+   request: hydration does not wait on a Worker round trip, and plugins that
+   `dependsOn: ['runtime-public']` (analytics, gtag, PostHog) still see every
+   key (narduk-libs#1368).
+5. HTML that carries no trustworthy embedded overlay (a prerendered page, or a
+   response from a server that predates the payload plugin) fetches
+   `/api/runtime/public` and waits for it before mounting, as the plugin always
+   did. Embedded values more than a minute old (cached HTML) are applied at once
+   and refreshed from the endpoint in the background; plugins that already ran
+   keep what they read.
 
 SSR deliberately leaves `previewSafeMode`, `deploymentTarget`, `appUrl` /
 `siteUrl` and the `auth*` / `supabase*` keys at their build values. Server code

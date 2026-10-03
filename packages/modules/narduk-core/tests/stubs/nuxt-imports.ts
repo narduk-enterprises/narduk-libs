@@ -10,8 +10,8 @@ export function useCookie<T>(_name: string, _options?: object): Ref<T | null> {
   return ref(null)
 }
 
-export function useRequestEvent(): undefined {
-  return
+export function useRequestEvent(): { context: Record<string, unknown> } | undefined {
+  return undefined
 }
 
 export function useRequestHeaders(_keys: string[]): Record<string, string | undefined> {
@@ -20,4 +20,21 @@ export function useRequestHeaders(_keys: string[]): Record<string, string | unde
 
 export function useState<T>(_key: string, init?: () => T): Ref<T> {
   return ref(init ? init() : (undefined as T)) as Ref<T>
+}
+
+export interface StubNuxtApp {
+  payload: Record<string, unknown>
+}
+
+/** The plugin shape the `runtime-public` plugins use; Nuxt supplies the real one. */
+export function defineNuxtPlugin(plugin: {
+  dependsOn?: string[]
+  name?: string
+  setup: (nuxtApp: StubNuxtApp) => unknown
+}) {
+  return plugin
+}
+
+export function useRuntimeConfig(): { public: Record<string, unknown> } {
+  return { public: {} }
 }
