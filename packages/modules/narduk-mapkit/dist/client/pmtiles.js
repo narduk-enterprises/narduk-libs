@@ -23,17 +23,19 @@ export function createPmTilesTileSource(options) {
     let maxZoom = null;
     return {
         async getMaxZoom() {
-            const header = reader.getHeader;
-            if (!header)
+            if (!reader.getHeader)
                 return;
             maxZoom ??= (async () => {
                 try {
-                    const { maxZoom: deepest } = await header();
+                    // Called on the reader: `PMTiles.getHeader` reads its own cache
+                    // through `this`, so a detached call throws and overzoom never starts.
+                    const { maxZoom: deepest } = await reader.getHeader();
                     return Number.isFinite(deepest) ? deepest : undefined;
                 }
-                catch {
+                catch (reason) {
                     // Try again next time; a transient failure should not pin "no data".
                     maxZoom = null;
+                    onError?.(reason);
                     return;
                 }
             })();

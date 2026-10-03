@@ -40,7 +40,7 @@ export interface PmTilesTileSourceOptions {
 export interface PmTilesTileSource {
     /**
      * The deepest zoom the archive holds, or `undefined` when the reader cannot
-     * say or the header read fails. Never throws. Pass the source to a vector
+     * say or the header read fails. Never throws; a failed read reaches `onError`. Pass the source to a vector
      * overlay as `archive` to default its `maxDataZoom` to this.
      */
     getMaxZoom?: () => Promise<number | undefined>;
