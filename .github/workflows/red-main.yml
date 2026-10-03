@@ -31,7 +31,7 @@ jobs:
     if: |
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
       github.event.workflow_run.head_branch == github.event.repository.default_branch
-    uses: narduk-enterprises/workflows/.github/workflows/red-main-listener.yml@dab7998f45f4eb2a9c1b5ad37535c19e552daf17 # v2
+    uses: narduk-enterprises/workflows/.github/workflows/red-main-listener.yml@aaa35998abc4efe4c79926effbea7b71514a5aa9 # v2
     permissions:
       contents: read
       issues: write
