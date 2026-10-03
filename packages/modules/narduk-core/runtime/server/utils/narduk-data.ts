@@ -168,6 +168,32 @@ interface NardukDataRequestPolicy {
   retries?: number
   /** Timeout for each attempt, in milliseconds. Defaults to 15000. */
   timeoutMs?: number
+  /**
+   * Skip the schema walk on a `store` hit this build already validated.
+   *
+   * On a multi-megabyte artifact the schema is the largest CPU item of a cold
+   * isolate. The client has already validated the bytes it hands to
+   * `store.put`, and the checksum of a hit is re-verified against the manifest
+   * on every read, so a hit that names `mark` carries the same value parsing
+   * it again would. `mark` names the build (a deploy id or commit sha) whose
+   * schemas ran:
+   *
+   * - **On `store.put`:** the entry is written with the header
+   *   `x-narduk-validated` set to `mark`, but only when the schema returned its
+   *   input structurally unchanged. A schema that strips unknown keys,
+   *   transforms or defaults values never marks, so it is never skipped later.
+   * - **On a store hit:** a matching header and a verified checksum return the
+   *   decoded JSON without the schema. `validate` still runs.
+   * - **Otherwise:** a missing or different mark, a prefetched copy and an
+   *   upstream read validate as before. A hit marked by another build that
+   *   validates cleanly is re-marked for this one.
+   *
+   * The caller's side of the contract: every schema this client applies to an
+   * artifact URL is the one `mark`'s build ships, so a build must not read one
+   * artifact through two schemas that disagree. A new schema means a new mark.
+   * An empty or non-header-safe `mark` disables the option (fail closed).
+   */
+  trustValidatedStoreHits?: { mark: string } | null
   /** `user-agent` to send; omitted when unset. */
   userAgent?: string
 }
@@ -354,6 +380,32 @@ export interface NardukDataClientOptions {
   store?: NardukDataStore | (() => NardukDataStore | null) | null
   /** Timeout for each attempt, in milliseconds. Defaults to 15000. */
   timeoutMs?: number
+  /**
+   * Skip the schema walk on a `store` hit this build already validated.
+   *
+   * On a multi-megabyte artifact the schema is the largest CPU item of a cold
+   * isolate. The client has already validated the bytes it hands to
+   * `store.put`, and the checksum of a hit is re-verified against the manifest
+   * on every read, so a hit that names `mark` carries the same value parsing
+   * it again would. `mark` names the build (a deploy id or commit sha) whose
+   * schemas ran:
+   *
+   * - **On `store.put`:** the entry is written with the header
+   *   `x-narduk-validated` set to `mark`, but only when the schema returned its
+   *   input structurally unchanged. A schema that strips unknown keys,
+   *   transforms or defaults values never marks, so it is never skipped later.
+   * - **On a store hit:** a matching header and a verified checksum return the
+   *   decoded JSON without the schema. `validate` still runs.
+   * - **Otherwise:** a missing or different mark, a prefetched copy and an
+   *   upstream read validate as before. A hit marked by another build that
+   *   validates cleanly is re-marked for this one.
+   *
+   * The caller's side of the contract: every schema this client applies to an
+   * artifact URL is the one `mark`'s build ships, so a build must not read one
+   * artifact through two schemas that disagree. A new schema means a new mark.
+   * An empty or non-header-safe `mark` disables the option (fail closed).
+   */
+  trustValidatedStoreHits?: { mark: string } | null
   /** `user-agent` to send; omitted when unset. */
   userAgent?: string
 }
@@ -866,22 +918,94 @@ async function readStoredManifest<T>(
   }
 }
 
+/** Names the build whose schema accepted a stored artifact's bytes unchanged. */
+const VALIDATED_HEADER = 'x-narduk-validated'
+const MARK_PATTERN = /^[\x21-\x7e]{1,128}$/u
+
+/** The mark when it is usable as a header value; otherwise the option is off. */
+function trustMark(options: NardukDataClientOptions): string | undefined {
+  const mark = options.trustValidatedStoreHits?.mark
+  return typeof mark === 'string' && MARK_PATTERN.test(mark) ? mark : undefined
+}
+
+/** The input and the schema's output hold the same keys and values all the way down. */
+function structurallyUnchanged(input: unknown, output: unknown): boolean {
+  if (Object.is(input, output)) return true
+  if (typeof input !== 'object' || typeof output !== 'object' || !input || !output) return false
+  if (Array.isArray(input)) {
+    if (!Array.isArray(output) || input.length !== output.length) return false
+    for (let index = 0; index < input.length; index += 1) {
+      if (!structurallyUnchanged(input[index], output[index])) return false
+    }
+    return true
+  }
+  if (Array.isArray(output)) return false
+  const keys = Object.keys(input)
+  if (keys.length !== Object.keys(output).length) return false
+  for (const key of keys) {
+    if (!Object.hasOwn(output, key)) return false
+    const inner = (input as Record<string, unknown>)[key]
+    if (!structurallyUnchanged(inner, (output as Record<string, unknown>)[key])) return false
+  }
+  return true
+}
+
+interface StoredArtifact {
+  bytes: Uint8Array<ArrayBuffer>
+  /** The entry names the current mark: its schema walk may be skipped. */
+  trusted: boolean
+}
+
 async function readStoredArtifact(
   store: NardukDataStore,
   key: string,
   sha256: string,
   maxBytes: number,
-): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  mark: string | undefined,
+): Promise<StoredArtifact | undefined> {
   const stored = await readDataStore(store, key)
   if (!stored) return undefined
   try {
     const bytes = await readBoundedBody(stored, maxBytes)
-    if ((await sha256Hex(bytes)) === sha256) return bytes
+    if ((await sha256Hex(bytes)) === sha256) {
+      return { bytes, trusted: mark !== undefined && stored.headers.get(VALIDATED_HEADER) === mark }
+    }
   } catch {
     /* Corrupt and oversized entries both fail closed. */
   }
   await store.delete(key).catch(() => false)
   return undefined
+}
+
+/** A verified artifact as the shared store keeps it, named for the build that validated it. */
+function artifactResponse(bytes: Uint8Array<ArrayBuffer>, mark: string | undefined): Response {
+  const headers = new Headers({
+    'content-type': 'application/json',
+    'cache-control': 'public, max-age=604800, immutable',
+  })
+  if (mark !== undefined) headers.set(VALIDATED_HEADER, mark)
+  return new Response(bytes, { headers })
+}
+
+/**
+ * Decode a checksum-verified artifact and apply the product's schema to it.
+ *
+ * A `trusted` store hit (this build's schema accepted these exact bytes
+ * unchanged when the entry was marked) skips the schema: parsing again would
+ * return the same value. `mayMark` says the entry may be written with this
+ * build's mark: the schema ran, and it handed the input back unchanged.
+ */
+function acceptArtifact<T>(
+  url: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  schema: NardukDataSchema<T>,
+  trusted: boolean,
+  marking: boolean,
+): { data: T; mayMark: boolean } {
+  const decoded = decodeJson(url, bytes)
+  if (trusted) return { data: decoded as T, mayMark: false }
+  const data = applySchema(url, decoded, schema)
+  return { data, mayMark: marking && structurallyUnchanged(decoded, data) }
 }
 
 function canRevalidateInBackground(
@@ -1087,10 +1211,18 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       return { ...previous, loadSource, cooldownUntilMs: 0, fetchedAtMs: now(), manifest }
     }
     const artifactKey = `${artifactUrl}?sha256=${sha256}`
-    let bytes = store
-      ? await readStoredArtifact(store, artifactKey, sha256, product.maxBytes ?? DEFAULT_MAX_BYTES)
+    const mark = trustMark(options)
+    const storedArtifact = store
+      ? await readStoredArtifact(
+          store,
+          artifactKey,
+          sha256,
+          product.maxBytes ?? DEFAULT_MAX_BYTES,
+          mark,
+        )
       : undefined
-    const artifactFromStore = bytes !== undefined
+    let bytes = storedArtifact?.bytes
+    const artifactFromStore = storedArtifact !== undefined
     if (!bytes) {
       bytes = await requestBytes(
         artifactUrl,
@@ -1108,7 +1240,13 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
       )
     }
 
-    const data = applySchema(artifactUrl, decodeJson(artifactUrl, bytes), product.schema)
+    const { data, mayMark } = acceptArtifact(
+      artifactUrl,
+      bytes,
+      product.schema,
+      storedArtifact?.trusted === true,
+      mark !== undefined,
+    )
     if (product.validate) {
       const validate = product.validate
       runHook(artifactUrl, 'validate', () => {
@@ -1117,16 +1255,14 @@ export function createNardukDataClient(options: NardukDataClientOptions = {}): N
     }
 
     rememberManifest()
-    if (store && !artifactFromStore)
+    // An upstream read is stored; so is a hit another build marked (or nobody
+    // did) that this build's schema just accepted unchanged, so the next cold
+    // isolate can skip it. The mark is written only for an unchanged parse.
+    if (store && (!artifactFromStore || mayMark))
       persistDataStore(
         store,
         artifactKey,
-        new Response(bytes, {
-          headers: {
-            'content-type': 'application/json',
-            'cache-control': 'public, max-age=604800, immutable',
-          },
-        }),
+        artifactResponse(bytes, mayMark ? mark : undefined),
         context?.waitUntil,
       )
     context?.onPhase?.('artifact')
