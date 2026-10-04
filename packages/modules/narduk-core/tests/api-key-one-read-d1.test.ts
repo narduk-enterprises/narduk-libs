@@ -15,7 +15,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { createEvent } from 'h3'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createD1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
+import { createD1QueryHarness, expectQueryPlan } from '../../../tooling/narduk-testkit/src/d1'
 import * as schema from '../runtime/server/database/schema'
 import { authenticateApiKey } from '../runtime/server/utils/auth'
 import { hashApiKeyText } from '../runtime/server/utils/authApiKeyText'
@@ -45,13 +45,12 @@ const PAST_SECONDS = Math.floor(Date.now() / 1000) - 3600
 const FUTURE_SECONDS = Math.floor(Date.now() / 1000) + 3600
 
 interface Case {
-  name: string
-  /** Rows to seed; the default seeds a live key and its user. */
+  expect: 'authenticated' | 'refused'
   expiresAt?: number | null
   keyHash?: 'unknown'
+  name: string
   orphan?: boolean
   revoked?: boolean
-  expect: 'authenticated' | 'refused'
 }
 
 const CASES: Case[] = [
@@ -184,5 +183,47 @@ describe('authenticateApiKey answers', () => {
       scopes: ['control:operator'],
       user: { id: USER_ID, email: 'owner@example.com', name: 'Owner', isAdmin: true },
     })
+  })
+
+  it('reads the key and its user in one statement, then touches last_used_at', async () => {
+    await seed(harness, CASES[0]!)
+    harness.reset()
+
+    await authenticateApiKey(bearerEvent(db))
+    // last_used_at is written fire-and-forget; let it land before counting.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const reads = harness.statements.filter((sql) => /^\s*select\b/iu.test(sql))
+    expect(reads).toHaveLength(1)
+    expect(reads[0]).toMatch(/\bapi_keys\b/u)
+    expect(reads[0]).toMatch(/\busers\b/u)
+    expect(harness.statements.filter((sql) => /^\s*update\b/iu.test(sql))).toHaveLength(1)
+    expect(harness.statements).toHaveLength(2)
+  })
+
+  it.each(CASES.filter((testCase) => testCase.expect === 'refused'))(
+    'refuses $name after one statement and writes nothing',
+    async (testCase) => {
+      await seed(harness, testCase)
+      harness.reset()
+
+      await expect(authenticateApiKey(bearerEvent(db))).resolves.toBeNull()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(harness.statements).toHaveLength(1)
+    },
+  )
+
+  it('finds the key by its hash index and the user by primary key, never a scan', async () => {
+    await seed(harness, CASES[0]!)
+    harness.reset()
+    await authenticateApiKey(bearerEvent(db))
+    const read = harness.statements.find((sql) => /^\s*select\b/iu.test(sql))
+    expect(read).toBeDefined()
+
+    const plan = await expectQueryPlan(harness, read!, [await hashApiKeyText(RAW_KEY), 1], {
+      forbidFullScanOf: ['api_keys', 'users'],
+    })
+    expect(plan.join('\n')).toMatch(/SEARCH api_keys USING INDEX api_keys_key_hash_idx/u)
   })
 })

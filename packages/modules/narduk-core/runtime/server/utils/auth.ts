@@ -209,21 +209,25 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
   const db = useDatabase(event)
   const keyHash = await hashApiKeyText(rawKey)
 
-  const key = await getDatabaseRow<typeof apiKeys.$inferSelect>(
-    db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).limit(1),
+  // One statement answers the key and its owner (narduk-libs#1396). Every
+  // refusal below still returns null: an unknown key and a key whose user row
+  // is gone both yield no row, exactly as the former key read then user read did.
+  const found = await getDatabaseRow<{ apiKey: typeof apiKeys.$inferSelect; user: User }>(
+    db
+      .select({ apiKey: apiKeys, user: users })
+      .from(apiKeys)
+      .innerJoin(users, eq(users.id, apiKeys.userId))
+      .where(eq(apiKeys.keyHash, keyHash))
+      .limit(1),
   )
-  if (!key) return null
+  if (!found) return null
+  const { apiKey: key, user } = found
 
   // A revoked key keeps its row (and its audit trail) but never authenticates.
   if (key.revokedAt) return null
 
   // Check expiration
   if (key.expiresAt && key.expiresAt < nowSec()) return null
-
-  const user = await getDatabaseRow<User>(
-    db.select().from(users).where(eq(users.id, key.userId)).limit(1),
-  )
-  if (!user) return null
 
   // Update last_used_at (fire-and-forget, don't block the response)
   executeDatabaseQuery(

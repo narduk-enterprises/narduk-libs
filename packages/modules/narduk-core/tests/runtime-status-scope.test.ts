@@ -26,7 +26,7 @@ vi.mock('../runtime/server/utils/worker-env', () => ({
 }))
 vi.mock('../runtime/server/utils/database', () => {
   const chain: Record<string, () => unknown> = {}
-  for (const method of ['from', 'limit', 'select', 'set', 'update', 'where']) {
+  for (const method of ['from', 'innerJoin', 'limit', 'select', 'set', 'update', 'where']) {
     chain[method] = () => chain
   }
   return {
@@ -62,7 +62,7 @@ function keyRow(scopes: string[]) {
 }
 
 async function callStatus(scopes: string[], owner = ADMIN) {
-  db.rows = [keyRow(scopes), owner]
+  db.rows = [{ apiKey: keyRow(scopes), user: owner }]
   const { default: handler } = await import('../runtime/server/api/runtime/status.get')
   return handler(bearerEvent())
 }
