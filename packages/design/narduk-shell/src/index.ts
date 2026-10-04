@@ -146,6 +146,43 @@ export type {
 } from './runtime/components/ne-data-table-types'
 
 /**
+ * The client collection (narduk-libs#1400): `NeCollectionTable`'s engine as
+ * pure functions, so a server route or a test reads a set of rows exactly as
+ * the table does. No Vue, no DOM. `useClientCollection` itself reaches app
+ * code through `addImports`, like `useCollection`.
+ */
+export {
+  collectRows,
+  firstDirectionOf,
+  isSortableColumn,
+  NE_COLLECTION_ALL,
+  NE_COLLECTION_TOOLBAR_FROM,
+  rowMatches,
+  sortRows,
+  sortValueOf,
+} from './runtime/utils/collection-engine'
+export type {
+  NeClientCollection,
+  NeClientCollectionOptions,
+} from './runtime/composables/use-client-collection'
+export type {
+  NeCollectionCellSlotProps,
+  NeCollectionColumn,
+  NeCollectionFilter,
+  NeCollectionFilterItem,
+  NeCollectionGroup,
+  NeCollectionGroupSlotProps,
+  NeCollectionMissingSlotProps,
+  NeCollectionMore,
+  NeClientCollectionQuery,
+  NeCollectionStackBreakpoint,
+  NeCollectionTableProps,
+  NeCollectionTableSlots,
+  NeCollectionView,
+  NeSortValue,
+} from './runtime/components/ne-collection-table-types'
+
+/**
  * NeProse's parser and AST (narduk-libs#1005). `parseProse` and
  * `proseOutline` are pure functions with no Vue or DOM import, so a page can
  * parse a document once, build its table of contents from the outline and

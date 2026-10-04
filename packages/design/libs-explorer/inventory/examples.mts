@@ -128,6 +128,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'UTable with grouped units, tabular numerals, missing-last sorting and a phone column switch.',
     { interactive: true },
   ),
+  shell(
+    'NeCollectionTable',
+    'Collection table',
+    'Sorts from its column heads, searches and filters in the browser, groups, limits and links rows.',
+  ),
   shell('NeSortHeader', 'Sort header', 'A sortable column header for server or client sorting.'),
   shell(
     'NeCsvDownload',

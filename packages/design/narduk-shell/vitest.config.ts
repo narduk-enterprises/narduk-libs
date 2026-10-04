@@ -1,8 +1,24 @@
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
 import { defineConfig } from 'vitest/config'
 
+/*
+ * `ULink` outside Nuxt. Nuxt UI's Vite plugin swaps its Nuxt-only `Link.vue`
+ * for the vue-router one, but only for imports made from inside Nuxt UI's own
+ * runtime (`UButton`'s `./Link.vue`). `NeCollectionTable` imports
+ * `@nuxt/ui/components/Link.vue` directly, which in a Nuxt app is the right
+ * file and in this plain Vite graph is not, so the same swap is made here.
+ */
+const nuxtUiLink = createRequire(import.meta.url).resolve('@nuxt/ui/components/Link.vue')
+const vueRouterLink = join(dirname(nuxtUiLink), '../vue/overrides/vue-router/Link.vue')
+
 export default defineConfig({
+  resolve: {
+    alias: [{ find: /^@nuxt\/ui\/components\/Link\.vue$/, replacement: vueRouterLink }],
+  },
   define: {
     // Nuxt replaces this at build time. Tests are a plain Vite graph, so the
     // click path behind `import.meta.client` (NeCsvDownload) needs a value.

@@ -92,4 +92,7 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // only the scroll position. NeAppShell renders one; a layout without the
   // shell writes its own.
   { name: 'NeSkipLink', filePath: './runtime/components/NeSkipLink.vue' },
+  // narduk-libs#1400: one sortable, searchable, filterable table over rows the
+  // page holds, merging operator-portal's KitTable and CollectionTable.
+  { name: 'NeCollectionTable', filePath: './runtime/components/NeCollectionTable.vue' },
 ]
