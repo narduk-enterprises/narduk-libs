@@ -64,6 +64,12 @@ export interface McpOAuthPolicy {
 }
 
 let policy: McpOAuthPolicy = {}
+let runnerAudiencePolicy: McpOAuthPolicy['runner']
+
+/** Independent, opt-in runner audience. Never replaces the native app policy. */
+export function defineRunnerMcpOAuthPolicy(next: NonNullable<McpOAuthPolicy['runner']>): void {
+  runnerAudiencePolicy = next
+}
 
 /** Register the app's connected-app rules. Call once, from a Nitro plugin. */
 export function defineMcpOAuthPolicy(next: McpOAuthPolicy): void {
@@ -126,6 +132,14 @@ export function useMcpOAuth(event: H3Event): McpOAuth {
           runner: {
             ...policy.runner,
             eligible: (subject: string) => policy.runner!.eligible(subject, event),
+          },
+        }
+      : {}),
+    ...(runnerAudiencePolicy
+      ? {
+          runnerAudience: {
+            ...runnerAudiencePolicy,
+            eligible: (subject: string) => runnerAudiencePolicy!.eligible(subject, event),
           },
         }
       : {}),
@@ -302,11 +316,39 @@ export function assertMcpOAuthRequest(mcp: McpOAuth, request: AuthRequest): stri
   if (!request.codeChallenge || request.codeChallengeMethod !== 'S256') {
     throw fail('invalid_request', 'PKCE with S256 is required.')
   }
-  const scopes = request.scope.length > 0 ? request.scope : mcp.config.requiredScopes
-  const unknown = scopes.filter((scope) => !mcp.config.scopes.includes(scope))
+  const config =
+    mcp.runnerConfig && request.resource === mcp.runnerConfig.resource
+      ? mcp.runnerConfig
+      : mcp.config
+  if (request.resource && request.resource !== config.resource)
+    throw fail('invalid_request', 'The app asked for an audience this site does not offer.')
+  const scopes = request.scope.length > 0 ? request.scope : config.requiredScopes
+  const unknown = scopes.filter((scope) => !config.scopes.includes(scope))
   if (unknown.length > 0)
     throw fail('invalid_scope', 'The app asked for a permission this site does not offer.')
   return [...new Set(scopes)]
+}
+
+/** Dispatch only after SDK audience/PKCE validation and per-resource scope validation. */
+export async function authorizeMcpOAuthRequest(
+  mcp: McpOAuth,
+  request: AuthRequest,
+  context: Parameters<NonNullable<McpOAuthPolicy['authorize']>>[0],
+): Promise<string | undefined> {
+  const scopes = assertMcpOAuthRequest(mcp, request)
+  if (mcp.runnerConfig && request.resource === mcp.runnerConfig.resource) {
+    const runner = runnerAudiencePolicy
+    if (
+      !runner ||
+      context.user.id !== runner.subject ||
+      context.client.id !== runner.clientId ||
+      !scopes.includes('runner:transitions:read') ||
+      !(await runner.eligible(context.user.id, context.event))
+    )
+      return 'This runner connection is not approved.'
+    return undefined
+  }
+  return policy.authorize?.({ ...context, scopes })
 }
 
 async function sha256Hex(value: string): Promise<string> {

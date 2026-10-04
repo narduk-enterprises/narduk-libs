@@ -2,7 +2,7 @@ import { OAuthAuthorizationServer } from '@cloudflare/workers-oauth-provider'
 
 import { MCP_OAUTH_REGISTER_PATH, MCP_OAUTH_TOKEN_PATH } from './config'
 import { createD1KvNamespace } from './d1-kv'
-import { createRunnerBridge, runnerTokenExchange } from './runner-provider'
+import { createRunnerBridge, runnerCoexistenceConfig, runnerTokenExchange } from './runner-provider'
 
 import type { ResolvedMcpOAuthConfig } from './config'
 import type { McpOAuthDatabase } from './d1-kv'
@@ -49,24 +49,40 @@ export function createMcpOAuth(options: {
   db: McpOAuthDatabase
   logger?: McpOAuthLogger
   runner?: RunnerOAuthPolicy
+  /** Explicit separate policy for the one additional runner audience. Absent means OFF. */
+  runnerAudience?: RunnerOAuthPolicy
 }) {
   const { config } = options
   if (config.resource !== `${config.issuer}${config.resourcePath}` && !options.runner) {
     throw new Error('External resource requires an exact runner policy')
   }
+  if (options.runner && options.runnerAudience) throw new Error('Choose one runner issuer mode')
+  const runnerConfig = options.runnerAudience ? runnerCoexistenceConfig(config) : undefined
+  const runnerPolicy = options.runnerAudience ?? options.runner
   const kv = createD1KvNamespace(options.db)
   const env = { OAUTH_KV: kv }
+  const exchangeRunner = runnerPolicy
+    ? runnerTokenExchange({ kv, config: runnerConfig ?? config, policy: runnerPolicy })
+    : undefined
   const server = new OAuthAuthorizationServer<typeof env>({
     issuer: config.issuer,
-    resources: [config.resource],
+    resources: runnerConfig ? [config.resource, runnerConfig.resource] : [config.resource],
+    ...(runnerConfig
+      ? { defaultResource: config.resource, legacyGrantResource: config.resource }
+      : {}),
     authorizeEndpoint: config.authorizeEndpoint,
     tokenEndpoint: `${config.issuer}${MCP_OAUTH_TOKEN_PATH}`,
     ...(config.dynamicClientRegistration
       ? { clientRegistrationEndpoint: `${config.issuer}${MCP_OAUTH_REGISTER_PATH}` }
       : {}),
-    ...(config.scopes.length > 0 ? { scopesSupported: config.scopes } : {}),
-    ...(options.runner
-      ? { tokenExchangeCallback: runnerTokenExchange({ kv, config, policy: options.runner }) }
+    ...(config.scopes.length > 0 || runnerConfig
+      ? { scopesSupported: [...new Set([...config.scopes, ...(runnerConfig?.scopes ?? [])])] }
+      : {}),
+    ...(exchangeRunner
+      ? {
+          tokenExchangeCallback: (input) =>
+            runnerConfig && input.resource === config.resource ? undefined : exchangeRunner(input),
+        }
       : {}),
     accessTokenTTL: config.accessTokenTtl,
     refreshTokenTTL: config.refreshTokenTtl,
@@ -103,14 +119,15 @@ export function createMcpOAuth(options: {
    * Validate an access token for this server's one resource. `null` for an
    * unknown, expired, revoked or wrong-audience token.
    */
-  async function validate(
+  async function validateAudience(
+    resource: string,
     token: string,
     now = Math.floor(Date.now() / 1000),
   ): Promise<(ValidatedAccessToken<McpOAuthGrantProps> & { grantId: string }) | null> {
     const parts = token.split(':')
     if (parts.length !== 3 || parts.some((part) => part.length === 0)) return null
-    const result = await server.validateToken(config.resource, token, env)
-    if (!result || result.audience !== config.resource || result.expiresAt <= now) return null
+    const result = await server.validateToken(resource, token, env)
+    if (!result || result.audience !== resource || result.expiresAt <= now) return null
     return { ...result, grantId: parts[1]! }
   }
 
@@ -124,11 +141,23 @@ export function createMcpOAuth(options: {
       server.fetch(request, env, ctx as Parameters<typeof server.fetch>[2]),
     protectedResourceMetadata,
     challenge,
-    validate,
+    validate: (token: string, now?: number) => validateAudience(config.resource, token, now),
   }
   return {
     ...mcp,
-    runnerBridge: options.runner ? createRunnerBridge(mcp, options.runner) : undefined,
+    runnerConfig,
+    runnerBridge: runnerPolicy
+      ? createRunnerBridge(
+          runnerConfig
+            ? {
+                ...mcp,
+                config: runnerConfig,
+                validate: (token: string) => validateAudience(runnerConfig.resource, token),
+              }
+            : mcp,
+          runnerPolicy,
+        )
+      : undefined,
   }
 }
 
