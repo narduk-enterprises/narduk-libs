@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.12
+
+### Patch Changes
+
+- 155de5c: Pin `@narduk-enterprises/eslint-config` 3.0.1 (type-aware lint of
+  `.vue` files keeps one TypeScript program instead of building one per file).
+
 ## 0.21.11
 
 ### Patch Changes
