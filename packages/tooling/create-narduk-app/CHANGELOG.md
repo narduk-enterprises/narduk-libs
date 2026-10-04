@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.22
+
+### Patch Changes
+
+- d7473b1: New apps pin `@narduk-enterprises/narduk-mapkit` 2.17.0, whose
+  `hitTest` can rank and filter the features within reach.
+
 ## 0.21.21
 
 ### Patch Changes
