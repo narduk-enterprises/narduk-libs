@@ -476,7 +476,8 @@ narduk-app deploy versions-promote [--sha <commit>] [--version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
   [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
   [--max-versions <n>] [--wait-for-version <seconds>] \
-  [--wait-interval <seconds>] [--gate-verified "<check>@<sha>"] \
+  [--wait-interval <seconds>] \
+  [--gate-verified "<check>@<sha>" | --no-gate-attestation "<reason>"] \
   [--dry-run] [--json]
 ```
 
@@ -578,6 +579,20 @@ carries `gateVerified: null`. `promote.yml` is app-owned — the generator only
 documents it — so each app adds the flag to its own workflow; the generated
 `docs/workers-builds.md` and `docs/deployment/promote-d1.steps.yml` templates
 already pass it.
+
+**`--no-gate-attestation "<reason>"` is the deliberate opt-out.** A workflow
+that promotes without waiting for the gate on purpose (for example one that
+promotes on `push` and runs its end-to-end suite after the deploy) has no gate
+result to attest, and the missing-attestation warning would only teach readers
+to ignore warnings. Passing the reason logs
+`[promote] gate attestation: none, by design (--no-gate-attestation): <reason>`
+in place of the warning, prints `NOT ATTESTED -- opted out by the workflow` in
+the result, and carries the reason as `gateOptOutReason`. The reason is
+required: an empty or whitespace-only one is a usage error (exit 2), as are
+control characters and more than 300 characters. It is mutually exclusive with
+`--gate-verified` (usage error, exit 2), and it changes nothing else: the
+production-branch check and the ordering guard still apply. It is a recorded
+choice, not a safer default; a workflow that waits for a gate should attest it.
 
 It carries **its own** GitHub Actions guard, not `deploy`'s Workers Builds one:
 reusing that would force every promotion through

@@ -11,6 +11,7 @@ import {
   compareVersionRecency,
   GATE_ATTESTATION_MISSING_WARNING,
   parseGateAttestation,
+  parseGateOptOutReason,
   createWranglerCli,
   currentDeployment,
   DEFAULT_VERSION_SEARCH_LIMIT,
@@ -1649,6 +1650,56 @@ describe('--gate-verified binds the gate result to the promoted commit (narduk-l
     expect(lines).toEqual([GATE_ATTESTATION_MISSING_WARNING])
     expect(lines[0]).toContain('--gate-verified')
     expect(formatPromoteResult(promoted)).toContain('gate       NOT ATTESTED')
+  })
+
+  it('logs a deliberate opt-out instead of the missing-attestation warning', async () => {
+    const reason = 'promotes on push without waiting for CI by design'
+    const { result, calls, lines } = run(['--sha', SHA, '--no-gate-attestation', reason])
+    const promoted = await result
+    expect(promoted.outcome).toBe('promoted')
+    expect(promoted.gateVerified).toBeNull()
+    expect(promoted.gateOptOutReason).toBe(reason)
+    expect(calls.deployed.map((call) => call.versionId)).toEqual(['v-target'])
+    expect(lines).toEqual([
+      `[promote] gate attestation: none, by design (--no-gate-attestation): ${reason}`,
+    ])
+    expect(lines.join('\n')).not.toContain('warning')
+    expect(formatPromoteResult(promoted)).toContain(`opted out by the workflow: ${reason}`)
+  })
+
+  it('parses the opt-out, trims its reason, and defaults to none', () => {
+    expect(parseVersionsPromoteArgs([]).gateOptOutReason).toBeNull()
+    expect(
+      parseVersionsPromoteArgs(['--no-gate-attestation', '  by design  ']).gateOptOutReason,
+    ).toBe('by design')
+    expect(parseGateOptOutReason('by design')).toBe('by design')
+  })
+
+  it('refuses the opt-out beside --gate-verified, and an empty or unsafe reason', async () => {
+    expect(() =>
+      parseVersionsPromoteArgs(['--gate-verified', `${GATE}@${SHA}`, '--no-gate-attestation', 'x']),
+    ).toThrow('mutually exclusive')
+    expect(() =>
+      parseVersionsPromoteArgs(['--no-gate-attestation', 'x', '--gate-verified', `${GATE}@${SHA}`]),
+    ).toThrow('mutually exclusive')
+    expect(() => parseVersionsPromoteArgs(['--no-gate-attestation'])).toThrow(
+      '--no-gate-attestation requires a value',
+    )
+    expect(() => parseVersionsPromoteArgs(['--no-gate-attestation', ''])).toThrow(
+      '--no-gate-attestation requires a value',
+    )
+    expect(() => parseVersionsPromoteArgs(['--no-gate-attestation', '   '])).toThrow(
+      'non-empty reason',
+    )
+    expect(() => parseGateOptOutReason('line\n::error::forged')).toThrow('control characters')
+    expect(() => parseGateOptOutReason('x'.repeat(301))).toThrow('longer than')
+    expect(
+      await main(['deploy', 'versions-promote', '--sha', SHA, '--no-gate-attestation', '  ']),
+    ).toBe(PROMOTE_EXIT.usage)
+  })
+
+  it('mentions the opt-out in the missing-attestation warning', () => {
+    expect(GATE_ATTESTATION_MISSING_WARNING).toContain('--no-gate-attestation')
   })
 
   it('says nothing about the gate on a guard refusal or a rollback', async () => {

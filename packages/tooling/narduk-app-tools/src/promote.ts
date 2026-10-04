@@ -394,13 +394,41 @@ export function parseGateAttestation(raw: string): GateAttestation {
   return { check, sha }
 }
 
+const MAX_GATE_OPT_OUT_REASON_LENGTH = 300
+
+/**
+ * Validates `--no-gate-attestation "<reason>"`: the explicit, logged alternative
+ * to `--gate-verified` for a workflow that deliberately promotes without waiting
+ * for the gate (narduk-libs#1405). The reason is mandatory and non-empty so the
+ * choice is recorded in the log rather than silenced, and control characters are
+ * refused because the reason is echoed into the log, where a newline could forge
+ * a line (or a GitHub Actions `::` command).
+ */
+export function parseGateOptOutReason(raw: string): string {
+  const reason = raw.trim()
+  if (!reason) {
+    throw new Error('--no-gate-attestation requires a non-empty reason')
+  }
+  if (reason.length > MAX_GATE_OPT_OUT_REASON_LENGTH) {
+    throw new Error(
+      `--no-gate-attestation reason is longer than ${String(MAX_GATE_OPT_OUT_REASON_LENGTH)} characters`,
+    )
+  }
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (/[\u0000-\u001f\u007f]/u.test(reason)) {
+    throw new Error('--no-gate-attestation reason must not contain control characters or newlines')
+  }
+  return reason
+}
+
 /** The warning a promote prints when the workflow passed no attestation. */
 export const GATE_ATTESTATION_MISSING_WARNING =
   '[promote] warning: no --gate-verified attestation. This promote is not bound to a gate ' +
   'result: nothing ties the commit being promoted to the one the gate check (ci / Required) ' +
   'ran on, beyond the workflow step ordering. Pass --gate-verified ' +
   '"ci / Required@${{ github.event.workflow_run.head_sha }}" from the promote workflow ' +
-  '(narduk-libs#400).'
+  '(narduk-libs#400), or --no-gate-attestation "<reason>" if the workflow deliberately ' +
+  'promotes without waiting for the gate (narduk-libs#1405).'
 
 /**
  * The binding check, run twice: before any Cloudflare read against the SHA the
@@ -985,6 +1013,12 @@ export interface PromoteFlags {
    * before, with a warning.
    */
   gateVerified: GateAttestation | null
+  /**
+   * `--no-gate-attestation "<reason>"`: the workflow promotes without a gate
+   * attestation on purpose. The reason is logged instead of the missing-
+   * attestation warning. Mutually exclusive with `gateVerified`.
+   */
+  gateOptOutReason: string | null
   json: boolean
   dryRun: boolean
 }
@@ -1034,6 +1068,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     waitForVersionSeconds: 0,
     waitIntervalSeconds: 30,
     gateVerified: null,
+    gateOptOutReason: null,
     json: false,
     dryRun: false,
   }
@@ -1066,11 +1101,21 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
       )
     else if (arg === '--gate-verified')
       flags.gateVerified = parseGateAttestation(requireValue(args, (index += 1), '--gate-verified'))
+    else if (arg === '--no-gate-attestation')
+      flags.gateOptOutReason = parseGateOptOutReason(
+        requireValue(args, (index += 1), '--no-gate-attestation'),
+      )
     else if (arg === '--any-branch') flags.anyBranch = true
     else if (arg === '--force') flags.force = true
     else if (arg === '--json') flags.json = true
     else if (arg === '--dry-run') flags.dryRun = true
     else throw new Error(`Unknown deploy versions-promote option: ${arg}`)
+  }
+  if (flags.gateVerified && flags.gateOptOutReason !== null) {
+    throw new Error(
+      '--gate-verified and --no-gate-attestation are mutually exclusive: attest the gate ' +
+        'result, or record why this promote does not wait for one',
+    )
   }
   if (flags.sha && !SHA_PATTERN.test(flags.sha)) {
     throw new Error(`--sha must be a hex commit SHA, got ${JSON.stringify(flags.sha)}`)
@@ -1164,6 +1209,11 @@ export interface PromoteResult {
    * on a rollback, which promotes no new commit.
    */
   gateVerified?: GateAttestation | null
+  /**
+   * `versions-promote` only: the reason the workflow passed with
+   * `--no-gate-attestation`, or `null` when it did not opt out (narduk-libs#1405).
+   */
+  gateOptOutReason?: string | null
   detail: string
   exitCode: number
 }
@@ -1197,7 +1247,9 @@ export function formatPromoteResult(result: PromoteResult): string {
     lines.push(
       result.gateVerified
         ? `  gate       ${result.gateVerified.check} @ ${result.gateVerified.sha} (attested by the workflow)`
-        : '  gate       NOT ATTESTED -- no --gate-verified was passed',
+        : result.gateOptOutReason
+          ? `  gate       NOT ATTESTED -- opted out by the workflow: ${result.gateOptOutReason}`
+          : '  gate       NOT ATTESTED -- no --gate-verified was passed',
     )
   }
   if (result.forced) {
@@ -1338,7 +1390,7 @@ export async function runVersionsPromote(
   context: PromoteContext = {},
 ): Promise<PromoteResult> {
   const result = await promoteVersion(flags, context)
-  return { ...result, gateVerified: flags.gateVerified }
+  return { ...result, gateVerified: flags.gateVerified, gateOptOutReason: flags.gateOptOutReason }
 }
 
 async function promoteVersion(
@@ -1386,7 +1438,11 @@ async function promoteVersion(
     exitCode: PROMOTE_EXIT.gateMismatch,
   })
   if (!gate) {
-    log(GATE_ATTESTATION_MISSING_WARNING)
+    log(
+      flags.gateOptOutReason === null
+        ? GATE_ATTESTATION_MISSING_WARNING
+        : `[promote] gate attestation: none, by design (--no-gate-attestation): ${flags.gateOptOutReason}`,
+    )
   } else if (sha) {
     const mismatch = checkGateAgainstSha(gate, sha)
     if (mismatch) return gateRefusal(mismatch)
