@@ -1,5 +1,17 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.33.8
+
+### Patch Changes
+
+- f93c8a8: Add opt-in external runner resource support with exact owner/client
+  policy, bounded token/grant lifetimes and a signed read-only token/grant
+  bridge. External runner tokens cannot authenticate local application
+  principals. Existing local-resource behavior and disabled defaults are
+  preserved.
+- Updated dependencies [88dc92f]
+  - @narduk-enterprises/narduk-core@2.23.2
+
 ## 1.33.7
 
 ### Patch Changes
