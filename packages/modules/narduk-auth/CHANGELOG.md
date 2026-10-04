@@ -1,5 +1,20 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.33.7
+
+### Patch Changes
+
+- 1e94797: `refreshSessionUser` starts the `auth_sessions` row read and the
+  `users` row read together instead of one after the other (narduk-libs#1397),
+  since both ids come from the unsealed cookie. A signed-in request now waits
+  for the slower of the two reads, not their sum. Authentication answers are
+  unchanged: a missing session row, a missing user row, an expired session row
+  and a failing read each end as they did (a missing session row discards the
+  user read, even a failing one), and the per-request memoization of both rows
+  is untouched.
+- Updated dependencies [1e94797]
+  - @narduk-enterprises/narduk-core@2.23.1
+
 ## 1.33.6
 
 ### Patch Changes
