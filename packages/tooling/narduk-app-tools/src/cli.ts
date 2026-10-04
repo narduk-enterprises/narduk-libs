@@ -7,6 +7,11 @@ import { parseDevArgs, runDev } from './dev.js'
 import { formatDevSeedPlan, parseDevSeedArgs, runDevSeed } from './dev-seed.js'
 import { parseShipArgs, runShip, SHIP_USAGE } from './ship.js'
 import { parseAdoptionReportArgs, runAdoptionReportCommand } from './commands/adoption-report.js'
+import {
+  ADOPTION_PUBLISH_USAGE,
+  parseAdoptionPublishArgs,
+  runAdoptionPublish,
+} from './commands/adoption-publish.js'
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
 import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
 import { parseBareDoctorArgs, runBareDoctorCommand } from './commands/doctor-bare.js'
@@ -189,6 +194,11 @@ function usage(): string {
     '                    [--path <p>]... [--json [path]]',
     '                                      Report the six Narduk app checks, status and upToDate',
     '                                      (D-NAC-STATUS-1), plus the legacy R1-R15 requirements',
+    '  adoption publish --report <adoption.json> [--origin <url>] [--dry-run]',
+    '                                      Post a `doctor --adoption --json` artefact to the Operator',
+    '                                      Portal. The key is read from OPERATOR_PORTAL_ADOPTION_INGEST_TOKEN,',
+    '                                      never argv. Exit 0 stored, 1 not a publishable report,',
+    '                                      2 key not provisioned (nothing sent), 3 refused/unreachable',
     '  doctor --audit [--checkout <dir>] [--json] [--no-cache]',
     '                                      Fail on undeclared high/critical advisories',
     '  doctor --all [--checkout <dir>] [--live <url>] [--expect-sha <sha>] [--path <p>]...',
@@ -503,6 +513,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         withAppCheckout(parseDeploymentCheckArgs(rest), command),
       )
       return exitCode
+    }
+    if (command === 'adoption') {
+      const [subcommand, ...publishArgs] = rest
+      if (subcommand !== 'publish') throw new Error(ADOPTION_PUBLISH_USAGE)
+      return await runAdoptionPublish(parseAdoptionPublishArgs(publishArgs))
     }
     if (command === 'manifests') {
       const [subcommand, ...manifestArgs] = rest

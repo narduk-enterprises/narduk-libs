@@ -27,6 +27,8 @@ const COMMANDS: string[][] = [
   ['ship'],
   ['registry-auth'],
   ['gh-packages-run'],
+  ['adoption'],
+  ['adoption', 'publish'],
   ['doctor'],
   ['doctor', '--adoption'],
   ['doctor', '--all'],
