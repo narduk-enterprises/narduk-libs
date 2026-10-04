@@ -1,12 +1,14 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 
+import { sanitizeFields } from '@narduk-enterprises/narduk-logging'
 import { createApp, createEvent, toNodeListener } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import cspReportHandler, {
   CSP_REPORT_RATE_LIMIT,
   cspReportDeclaredLengthExceedsLimit,
+  cspViolationLogFields,
   isCspReportContentType,
   MAX_CSP_REPORT_BODY_BYTES,
   normalizeCspReports,
@@ -145,6 +147,40 @@ describe('hostile and malformed input', () => {
       'csp-report': { [DIRECTIVE]: SCRIPT_SRC, 'line-number': -1 },
     })
     expect(report?.lineNumber).toBeUndefined()
+  })
+})
+
+describe('what the log line says was blocked (narduk-libs#1402)', () => {
+  /** What narduk-logging prints for one violation, with its real sanitiser. */
+  function logged(blockedUri: string) {
+    const [violation] = normalizeCspReports({
+      'csp-report': { [DIRECTIVE]: SCRIPT_SRC, 'blocked-uri': blockedUri },
+    })
+    if (!violation) throw new Error('expected a violation')
+    return sanitizeFields(cspViolationLogFields(violation))
+  }
+
+  it.each(['eval', 'inline', 'data', 'blob', 'self', 'wasm-eval'])(
+    'keeps the %s keyword instead of printing [invalid URL]',
+    (keyword) => {
+      const fields = logged(keyword)
+      expect(fields.blockedKind).toBe(keyword)
+      expect(JSON.stringify(fields)).not.toContain('invalid URL')
+      expect(fields.effectiveDirective).toBe(SCRIPT_SRC)
+    },
+  )
+
+  it('still strips the query and credentials from a real URL', () => {
+    const fields = logged('https://user:pw@evil.example/x.js?token=abc#frag')
+    expect(fields.blockedUri).toBe('https://evil.example/x.js')
+    expect(fields.blockedKind).toBeUndefined()
+    expect(JSON.stringify(fields)).not.toMatch(/token=abc|user:pw/)
+  })
+
+  it('does not let a look-alike string through as a keyword', () => {
+    const fields = logged('evalx?secret=1')
+    expect(fields.blockedKind).toBeUndefined()
+    expect(JSON.stringify(fields)).not.toContain('secret=1')
   })
 })
 

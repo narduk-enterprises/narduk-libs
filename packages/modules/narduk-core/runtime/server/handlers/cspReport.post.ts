@@ -97,6 +97,51 @@ export interface NormalizedCspViolation {
   sourceFile: string
 }
 
+/**
+ * The closed vocabulary a browser sends in `blocked-uri` when what it blocked
+ * is not a URL (CSP3 "Obtain the blocked URI"): `eval` for `eval` / `new
+ * Function`, `inline` for an inline script or style (what a missing nonce looks
+ * like), and the scheme or resource-kind names. None carries a query or a
+ * credential, so they are safe to log verbatim.
+ */
+const BLOCKED_KEYWORDS: ReadonlySet<string> = new Set([
+  'about',
+  'blob',
+  'data',
+  'eval',
+  'filesystem',
+  'http',
+  'https',
+  'inline',
+  'mediastream',
+  'self',
+  'trusted-types-policy',
+  'trusted-types-sink',
+  'wasm-eval',
+  'ws',
+  'wss',
+])
+
+/**
+ * The fields written to the log for one violation (narduk-libs#1402).
+ *
+ * narduk-logging sanitises every field whose key ends in `url` or `uri` as a
+ * URL and prints `[invalid URL]` for anything `new URL()` rejects, so a
+ * `blockedUri` of `eval` or `inline` used to read the same as every other
+ * keyword and the operator could not tell Zod's inert `new Function('')` probe
+ * from a missing nonce. A keyword therefore goes out under `blockedKind`, a key
+ * the URL rule does not touch; a real URL stays under `blockedUri` so the
+ * logger still strips its query and credentials.
+ */
+export function cspViolationLogFields(
+  violation: NormalizedCspViolation,
+): Record<string, string | number | undefined> {
+  const { blockedUri, ...rest } = violation
+  return BLOCKED_KEYWORDS.has(blockedUri.toLowerCase())
+    ? { ...rest, blockedKind: blockedUri.toLowerCase() }
+    : { ...rest, blockedUri }
+}
+
 function text(value: unknown): string {
   if (typeof value !== 'string') return ''
   const trimmed = value.trim()
@@ -250,7 +295,7 @@ const cspReportSink = defineRateLimitedHandler(async (event) => {
   }
 
   for (const violation of normalizeCspReports(payload)) {
-    logger.warn('CSP violation', { ...violation })
+    logger.warn('CSP violation', cspViolationLogFields(violation))
   }
 
   // 204 keeps the browser from parsing or caching anything; a report endpoint
