@@ -13,6 +13,7 @@ import {
 
 import type { AuditReport } from '../src/audit.js'
 import type { DoctorReport } from '../src/doctor.js'
+import { buildNacStatus, summariseDependabot } from '../src/foundation/evaluate-nac-status.js'
 import type { AdoptionArtefact } from '../src/foundation/evaluate-adoption.js'
 
 const tempDirs: string[] = []
@@ -33,6 +34,13 @@ function prerequisites(...statuses: Array<'pass' | 'warn' | 'fail'>): DoctorRepo
 function adoption(result: AdoptionArtefact['result']): AdoptionArtefact {
   const exitCode = { DEVIATION: 3, FAIL: 1, PASS: 0, UNKNOWN: 2 }[result] as 0 | 1 | 2 | 3
   return {
+    ...buildNacStatus({
+      dependabot: summariseDependabot({ kind: 'unknown', reason: 'fixture' }),
+      generated: '2026-10-04T12:00:00.000Z',
+      requirements: [],
+      toolVersion: '0.0.0-test',
+      waiverEntries: [],
+    }),
     app: { commit: 'abc1234', repo: 'narduk-enterprises/example' },
     exitCode,
     live: null,

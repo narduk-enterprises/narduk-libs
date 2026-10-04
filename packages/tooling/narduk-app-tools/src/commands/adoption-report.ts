@@ -1,5 +1,7 @@
 /**
- * `narduk-app doctor --adoption` -- the fifteen-requirement adoption report.
+ * `narduk-app doctor --adoption` -- the six-check Narduk app status
+ * (D-NAC-STATUS-1: `checks`, `status`, `upToDate`), with the fifteen
+ * requirements R1-R15 it is rolled up from kept beside it for one minor.
  *
  * WHY A MODE ON `doctor` AND NOT A NEW COMMAND. `doctor` is already the "tell
  * me the state of this app" entry point, and a declaration is that question
