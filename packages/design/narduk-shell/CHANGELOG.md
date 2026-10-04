@@ -1,5 +1,33 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.15.1
+
+### Patch Changes
+
+- 5a59f41: `NeCollectionTable`'s `phoneLayout: 'columns'` now fits a phone. A
+  dropped (`phone: false`) column hides its `<col>` along with its cells, so the
+  next cell no longer slides into that column's width. The table also stays
+  `table-fixed`, so a truncating cell shrinks to the width that is left instead
+  of pushing the table past the screen. Measured in operator-portal /products at
+  375px: the table was 381px wide in a 341px panel with Health clipped, and now
+  fits at 341px.
+- 906d61c: Make a `[Vue warn]` fail the unit test that caused it
+  (narduk-libs#1403).
+
+  `narduk-testkit` gains two Vitest subpaths. `vue-warn-guard`:
+  `installVueWarnGuard()` from a setup file fails any test during which Vue
+  warned (an unresolved component, a missing `inject()`, a component with no
+  render function), with a required-reason `allow` list and a per-test
+  `allowVueWarning()`. `vue-test-env`: `createVueTestEnv()` installs a memory
+  router and a `NuxtLink` that renders an `<a href>`, so `UButton` / `ULink` /
+  `<NuxtLink>` resolve in a plain `mount()` or `createSSRApp()`;
+  `fallback: true` suits `config.global.plugins`. `vue` and `vue-router` are
+  optional peers.
+
+  `narduk-shell`'s `useConfirm()` marks the `body` component raw before it
+  reaches Nuxt UI's reactive overlay state, so a body dialog no longer makes Vue
+  warn "a Component that was made a reactive object".
+
 ## 0.15.0
 
 ### Minor Changes
