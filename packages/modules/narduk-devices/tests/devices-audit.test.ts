@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { AUDIT_EVENTS_MAX_LIMIT } from '../server/utils/devices'
+import { DEVICES_AUDIT_EVENTS_MAX_LIMIT } from '../server/utils/devices'
 import { DEVICES_AUDIT_ACTIONS } from '../shared/types/devices'
 
 import {
@@ -47,7 +47,10 @@ describe('audit trail', () => {
     clock.advance(1)
     await devices.revokeClaimToken({ claimTokenId: pending.minted.tokenId, actorUserId: 'owner-1' })
 
-    const events = await devices.listAuditEvents({ orgId: ORG, limit: AUDIT_EVENTS_MAX_LIMIT })
+    const events = await devices.listAuditEvents({
+      orgId: ORG,
+      limit: DEVICES_AUDIT_EVENTS_MAX_LIMIT,
+    })
     const actions = events.map((event) => event.action)
     // Several mutations share one clock tick, so compare as a multiset.
     expect([...actions].sort()).toEqual(
@@ -168,7 +171,7 @@ describe('audit trail', () => {
     // One claim writes several audit rows on the same clock tick.
     await claimDevice(harness)
 
-    const all = await devices.listAuditEvents({ orgId: ORG, limit: AUDIT_EVENTS_MAX_LIMIT })
+    const all = await devices.listAuditEvents({ orgId: ORG, limit: DEVICES_AUDIT_EVENTS_MAX_LIMIT })
     const newestAt = all[0]!.createdAt
     expect(all.filter((event) => event.createdAt === newestAt).length).toBeGreaterThanOrEqual(2)
 

@@ -115,7 +115,7 @@ export function contextBoundSigningBytes(context: string, canonicalRequest: stri
  * fixed-width digest first, so neither the position of the first difference
  * nor either length is observable from the comparison.
  */
-export async function timingSafeEqualText(a: string, b: string): Promise<boolean> {
+export async function timingSafeEqualDigestText(a: string, b: string): Promise<boolean> {
   const [left, right] = await Promise.all([sha256Hex(a), sha256Hex(b)])
   return timingSafeEqualHex(left, right)
 }
