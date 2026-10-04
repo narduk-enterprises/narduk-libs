@@ -521,6 +521,28 @@ describe('NeCollectionTable: phone', () => {
     expect(header(wrapper, 'issues').attributes('aria-sort')).toBe('descending')
   })
 
+  it('spans a group heading over the kept columns only, once stacked in the `columns` layout', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        addEventListener: vi.fn(),
+        matches: query === '(width < 48rem)',
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const groups = [{ key: 'all', label: 'All', rows: repos }]
+    const wide = render({ caption: 'R', columns, groups })
+    expect(wide.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(columns.length))
+    const narrow = render({ caption: 'R', columns, groups, phoneLayout: 'columns' })
+    // Before mount the server's span covers every column; after, only the kept ones.
+    expect(narrow.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(columns.length))
+    await flushPromises()
+    const kept = columns.filter((column) => column.phone !== false).length
+    expect(kept).toBeLessThan(columns.length)
+    expect(narrow.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(kept))
+    vi.unstubAllGlobals()
+  })
+
   it('floors the width-less columns on the table, above the breakpoint only', () => {
     const wrapper = render({ caption: 'R', columns, rows: repos })
     const scroll = wrapper.find('[data-ne-collection-scroll]')
