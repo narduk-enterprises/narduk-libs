@@ -844,6 +844,44 @@ ancestor's geometry, scaled and clipped like the base tile.
 highlighted. Without a `highlightHost`, reload your own highlight overlay after
 `setHighlight`.
 
+### Highlighting many stretches at once
+
+`network.setHighlightPlan({ strokes })` lights many stretches in many styles: a
+river, the path it flows down and the tributaries above it, say. The overlay
+asks `strokes(si, streamOrder, zoom)` about every piece of every cached tile it
+paints and draws what it is given: one stroke, several (a faint wide halo under
+the line), or `null` to leave the piece out. `zoom` is the zoom being displayed,
+so a plan can follow the width ladder of the network under it, and a stretch can
+keep the colour the network gives it and only gain width.
+
+```ts
+await network.setHighlightPlan({
+  strokes: (si, streamOrder, zoom) => {
+    if (onRiver.has(si)) {
+      return [
+        {
+          color,
+          layer: 0,
+          opacity: 0.14,
+          width: baseWidth(streamOrder, zoom) * 1.5 + 5,
+        },
+        { color, layer: 1, width: baseWidth(streamOrder, zoom) * 1.5 + 0.8 },
+      ]
+    }
+    return upstream.has(si)
+      ? { color, layer: 0, opacity: 0.6, width: 1.2 }
+      : null
+  },
+})
+await network.clearHighlight() // removes a plan or a single highlight
+```
+
+Strokes batch by style into one path each and draw by `layer`, then by stream
+order. `strokes` runs for every feature of every painted tile, so keep it a
+lookup: no I/O, no allocation beyond the strokes it returns. A plan and a single
+highlight replace each other, and the same cache, miss and `highlightHost` rules
+apply.
+
 ### One tap and hover resolver
 
 On a map with dots, lines and areas, a touch can land on all three. `resolveHit`

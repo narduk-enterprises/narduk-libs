@@ -11,6 +11,7 @@ import { createFakeCanvas } from './fake-canvas.js'
 import type {
   DecodedVectorTile,
   VectorTileHighlight,
+  VectorTileHighlightPlan,
   VectorTileOverlaySourceOptions,
   VectorTileRestyleHost,
 } from '../../src/client/index.js'
@@ -308,5 +309,148 @@ describe('selection highlight', () => {
     ])
     expect(replace).toHaveBeenCalledTimes(1)
     expect(overlay.highlight?.id).toBe(7)
+  })
+})
+
+describe('highlight plan', () => {
+  /** Segment 7 is a trunk (so 9) in two strokes, 8 a tributary (so 5) in one; the rest are unlit. */
+  function planTile(): DecodedVectorTile {
+    return buildDecodedVectorTile(4096, [
+      {
+        lines: [
+          [
+            { x: 0, y: 1024 },
+            { x: 4096, y: 1024 },
+          ],
+        ],
+        properties: { so: 9 },
+        si: 7,
+        so: 9,
+      },
+      {
+        lines: [
+          [
+            { x: 0, y: 3072 },
+            { x: 4096, y: 3072 },
+          ],
+        ],
+        properties: { so: 5 },
+        si: 8,
+        so: 5,
+      },
+      {
+        lines: [
+          [
+            { x: 0, y: 2048 },
+            { x: 4096, y: 2048 },
+          ],
+        ],
+        properties: { so: 6 },
+        si: 9,
+        so: 6,
+      },
+    ])
+  }
+
+  const plan: VectorTileHighlightPlan = {
+    strokes: (si, order) => {
+      if (si === 7) {
+        return [
+          { color: '#0000ff', layer: 1, width: 3 },
+          { color: '#0000ff', layer: 0, opacity: 0.14, width: 9 },
+        ]
+      }
+      if (si === 8) return { color: '#00ff00', layer: 0, opacity: 0.5, width: order * 0.2 }
+      return null
+    },
+  }
+
+  it('draws each stretch the plan names in its own style, by layer, and skips the rest', async () => {
+    const { overlay } = setup({ decode: async () => planTile() })
+    await overlay.imageForTile(100, 200, 12, 1)
+    await overlay.setHighlightPlan(plan)
+    expect(overlay.highlightPlan).toBe(plan)
+    expect(overlay.highlight).toBeNull()
+
+    const canvas = await overlay.highlightImageForTile(100, 200, 12, 1)
+    // Layer 0 first (the so 5 tributary under the so 9 halo), then the layer 1 line.
+    expect(strokes(canvas)).toEqual([
+      { globalAlpha: 0.5, lineWidth: 1, op: 'stroke', strokeStyle: '#00ff00' },
+      { globalAlpha: 0.14, lineWidth: 9, op: 'stroke', strokeStyle: '#0000ff' },
+      { globalAlpha: 1, lineWidth: 3, op: 'stroke', strokeStyle: '#0000ff' },
+    ])
+    // Segment 9 (y=2048 -> 128px) is never drawn.
+    expect(segments(canvas).filter((call) => call[2] === 128)).toEqual([])
+  })
+
+  it('hands the plan the zoom being displayed, including over an overzoomed tile', async () => {
+    const seen: number[] = []
+    const { overlay } = setup({ decode: async () => planTile() })
+    await overlay.imageForTile(400, 800, 14, 1)
+    await overlay.setHighlightPlan({
+      strokes: (_si, _order, zoom) => {
+        seen.push(zoom)
+        return null
+      },
+    })
+    expect(await overlay.highlightImageForTile(400, 800, 14, 1)).toBeNull()
+    expect(new Set(seen)).toEqual(new Set([14]))
+  })
+
+  it('draws a stroke under one device pixel as one device pixel at lower opacity', async () => {
+    const { overlay } = setup({ decode: async () => planTile() })
+    await overlay.imageForTile(100, 200, 12, 1)
+    await overlay.setHighlightPlan({
+      strokes: (si) => (si === 7 ? { color: '#123456', width: 0.5 } : null),
+    })
+    const canvas = await overlay.highlightImageForTile(100, 200, 12, 2)
+    expect(strokes(canvas)).toEqual([
+      { globalAlpha: 1, lineWidth: 1, op: 'stroke', strokeStyle: '#123456' },
+    ])
+    await overlay.setHighlightPlan({
+      strokes: (si) => (si === 7 ? { color: '#123456', width: 0.25 } : null),
+    })
+    const faint = await overlay.highlightImageForTile(100, 200, 12, 2)
+    expect(strokes(faint)).toEqual([
+      { globalAlpha: 0.5, lineWidth: 1, op: 'stroke', strokeStyle: '#123456' },
+    ])
+  })
+
+  it('is replaced by a single highlight, and cleared by clearHighlight', async () => {
+    const replace = vi.fn(async () => {})
+    const { overlay } = setup({
+      decode: async () => planTile(),
+      highlightHost: { layerId: 'highlight', replace },
+    })
+    await overlay.imageForTile(100, 200, 12, 1)
+    await overlay.setHighlightPlan(plan)
+    await overlay.setHighlight(HIGHLIGHT)
+    expect(overlay.highlightPlan).toBeNull()
+    expect(overlay.highlight).toEqual(HIGHLIGHT)
+
+    await overlay.setHighlightPlan(plan)
+    expect(overlay.highlight).toBeNull()
+    await overlay.clearHighlight()
+    expect(overlay.highlightPlan).toBeNull()
+    expect(await overlay.highlightImageForTile(100, 200, 12, 1)).toBeNull()
+    expect(replace).toHaveBeenLastCalledWith(
+      'highlight',
+      expect.anything(),
+      expect.objectContaining({ activateWhen: 'immediate' }),
+    )
+  })
+
+  it('shows a plan on a tile that arrives after it was set', async () => {
+    const replace = vi.fn(async () => {})
+    const { overlay } = setup({
+      decode: async () => planTile(),
+      highlightHost: { layerId: 'highlight', replace },
+    })
+    await overlay.setHighlightPlan(plan)
+    replace.mockClear()
+    expect(await overlay.highlightImageForTile(100, 200, 12, 1)).toBeNull()
+    await overlay.imageForTile(100, 200, 12, 1)
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1))
+    expect(strokes(await overlay.highlightImageForTile(100, 200, 12, 1))).toHaveLength(3)
   })
 })
