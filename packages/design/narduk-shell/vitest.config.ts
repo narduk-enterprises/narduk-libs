@@ -66,5 +66,8 @@ export default defineConfig({
     // the same way narduk-charts' suites do.
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    // Fails a test on any `[Vue warn]` and gives every mount a router
+    // (narduk-libs#1403). The file says why.
+    setupFiles: ['./test/support/setup.ts'],
   },
 })

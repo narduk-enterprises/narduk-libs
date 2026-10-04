@@ -90,6 +90,54 @@ import { registerUsersApiSpec } from '@narduk-enterprises/narduk-testkit/e2e/spe
 registerUsersApiSpec({ apiPath: '/api/users' })
 ```
 
+## Vue warnings fail unit tests
+
+Vue renders an unresolved component as an unknown element
+(`<nuxtlink to="/x">`), an un-provided `inject()` as `undefined`, and a
+component with no template as an empty comment, each with a `[Vue warn]` line
+and nothing else. A unit test that mounts such a tree stays green while
+asserting against markup the app never ships, and a negative assertion
+(`not.toContain`) cannot fail at all (#1403).
+
+Two Vitest subpaths close that. Both need `vitest`; the second also needs `vue`
+and `vue-router` (optional peers).
+
+```ts
+// test/support/setup.ts  (vitest `setupFiles`)
+import { config } from '@vue/test-utils'
+import { createVueTestEnv } from '@narduk-enterprises/narduk-testkit/vue-test-env'
+import { installVueWarnGuard } from '@narduk-enterprises/narduk-testkit/vue-warn-guard'
+import { beforeEach } from 'vitest'
+
+installVueWarnGuard()
+
+beforeEach(() => {
+  // A memory router and a rendering NuxtLink for every mount(), unless the
+  // test brings its own.
+  config.global.plugins = [createVueTestEnv({ fallback: true })]
+})
+```
+
+- `installVueWarnGuard({ allow })` records every `[Vue warn]` and fails the test
+  in `afterEach` (or `afterAll` for module scope). It does not throw from
+  `console.warn`, because Vue calls that from inside a render or watcher and
+  swallows the throw. Each `allow` entry is `{ match, reason }`; the reason is
+  required, and the list is meant to shrink. `allowVueWarning(match, reason)`
+  allows one warning for the current test, for a test that provokes it on
+  purpose (it is not printed). A suite-wide allowance still prints.
+- `createVueTestEnv({ routes, initialPath, components, fallback })` returns one
+  plugin that installs a `vue-router` memory router and a `NuxtLink` rendering
+  an `<a href>` with the slot inside it. `createSSRApp` has no global config, so
+  an SSR test calls `createSSRApp(Page).use(createVueTestEnv())`. `components`
+  registers extra globals by their Nuxt name.
+
+Nuxt UI components that read `#build/ui/*` are not importable outside Nuxt; use
+`@nuxt/ui/vite` in the Vitest config (as `narduk-shell` does) to import the real
+ones, or register a double with `components`.
+
+Under an agent harness (`AI_AGENT` set) Vitest hides a passing test's console
+output. Run with `--reporter=default` to see Vue's warnings while measuring.
+
 ## Reproducible screenshots
 
 `playwright/deterministic-capture` is for a suite that commits screenshots and

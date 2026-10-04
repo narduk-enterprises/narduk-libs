@@ -9,6 +9,7 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createVueTestEnv } from '@narduk-enterprises/narduk-testkit/vue-test-env'
 import { createSSRApp, defineComponent, h, type Component } from 'vue'
 
 import NeCollectionTable from '../src/runtime/components/NeCollectionTable.vue'
@@ -183,7 +184,7 @@ describe('useClientCollection gives NeDataTable a client mode', () => {
           })
       },
     })
-    const html = await renderToString(createSSRApp(Host))
+    const html = await renderToString(createSSRApp(Host).use(createVueTestEnv()))
     const names = [
       ...html.matchAll(
         /<td[^>]*>(?:<!--[^>]*-->)*(Port Isabel|Port Aransas|Aransas Bay|Apalachicola)</g,

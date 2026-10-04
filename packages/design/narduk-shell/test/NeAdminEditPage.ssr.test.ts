@@ -4,7 +4,8 @@
  */
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
-import { createSSRApp, h, reactive } from 'vue'
+import { h, reactive } from 'vue'
+import { createSSRAppWithEnv as createSSRApp } from './support/ssr-app'
 
 import NeAdminEditPage from '../src/runtime/components/NeAdminEditPage.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'

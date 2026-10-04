@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { renderToString } from '@vue/server-renderer'
-import { createSSRApp, reactive } from 'vue'
+import { reactive } from 'vue'
+import { createSSRAppWithEnv as createSSRApp } from './support/ssr-app'
 
 import NeForm from '../src/runtime/components/NeForm.vue'
 

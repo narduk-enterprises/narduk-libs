@@ -58,6 +58,7 @@
   },
   "//devDependencies": "@vitejs/plugin-vue, @vue/test-utils, @vue/server-renderer and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
+    "@narduk-enterprises/narduk-testkit": "workspace:*",
     "@nuxt/schema": "^4.5.2",
     "@nuxt/ui": "4.11.1",
     "@types/node": "^22.19.19",

@@ -3,7 +3,7 @@
 /* The triple-slash directive must stay the first thing in the file (see
    preferences-state.test.ts): this test hydrates into a real document. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
+import { createApp, createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
 import { createLiveProduct } from '../runtime/app/utils/liveProduct'
@@ -58,7 +58,10 @@ function mount(refresh: () => unknown, options: LiveProductOptions): Harness {
   let captured: LiveProductHandle | undefined
   const container = document.createElement('div')
   document.body.appendChild(container)
-  const app = createSSRApp(
+  // A client-only mount into an empty container. `createSSRApp` here would
+  // try to hydrate it and warn "container is empty"; the hydration path is
+  // pinned separately below.
+  const app = createApp(
     liveComponent(now, refresh, options, (handle) => {
       captured = handle
     }),

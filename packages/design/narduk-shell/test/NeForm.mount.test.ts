@@ -16,6 +16,7 @@
  * against real `input`/`change` events flowing through `useFormField` and
  * back into `state` — a static slot string never fires those.
  */
+import { allowVueWarning } from '@narduk-enterprises/narduk-testkit/vue-warn-guard'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { h, reactive } from 'vue'
@@ -160,6 +161,10 @@ describe('NeForm', () => {
     // bug. The listener below is this test's own, so vitest does not fail
     // the run over an error the test is deliberately provoking and asserting
     // on the effect of.
+    allowVueWarning(
+      /Unhandled error during execution of native event handler/,
+      'UForm re-throws a non-validation rejection out of its own submit wrapper, and Vue reports a throw from a native handler as a warning; this test provokes it on purpose',
+    )
     let unhandled: unknown
     const onUnhandledRejection = (reason: unknown) => {
       unhandled = reason

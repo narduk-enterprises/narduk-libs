@@ -3,7 +3,7 @@
 /* The triple-slash directive must stay the first thing in the file (see
    preferences-state.test.ts): this test hydrates into a real document. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
+import { createApp, createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
 import { createSsrNowClock } from '../runtime/app/utils/ssrNowClock'
@@ -154,7 +154,7 @@ describe('useSsrNow', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
 
-    const app = createSSRApp(ageComponent(60_000))
+    const app = createApp(ageComponent(60_000))
     app.mount(container)
     const now = store.state.get(STATE_KEY) as Ref<number>
     expect(now.value).toBe(CLIENT_NOW)
@@ -180,7 +180,7 @@ describe('useSsrNow', () => {
     document.body.appendChild(container)
     const visibility = vi.spyOn(document, 'visibilityState', 'get')
 
-    const app = createSSRApp(ageComponent(60_000))
+    const app = createApp(ageComponent(60_000))
     app.mount(container)
     const now = store.state.get(STATE_KEY) as Ref<number>
 
@@ -209,7 +209,7 @@ describe('useSsrNow', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
 
-    const app = createSSRApp(ageComponent())
+    const app = createApp(ageComponent())
     app.mount(container)
     const now = store.state.get(STATE_KEY) as Ref<number>
     vi.setSystemTime(CLIENT_NOW + 60_000)
@@ -225,7 +225,7 @@ describe('useSsrNow', () => {
       const container = document.createElement('div')
       document.body.appendChild(container)
 
-      const app = createSSRApp(ageComponent(tickMs))
+      const app = createApp(ageComponent(tickMs))
       app.mount(container)
 
       expect((store.state.get(STATE_KEY) as Ref<number>).value).toBe(CLIENT_NOW)
@@ -239,7 +239,7 @@ describe('useSsrNow', () => {
     const captured = captureWarnings()
     let now: Readonly<Ref<number>> | undefined
     try {
-      const app = createSSRApp(
+      const app = createApp(
         defineComponent({
           setup() {
             now = useSsrNow('readonly')
