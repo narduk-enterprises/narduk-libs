@@ -118,10 +118,26 @@ export interface TileHit {
   /** Tile-local distance, in extent units. */
   distance: number
   feature: number
+  /** The rank the winning feature was given (0 when the test ranks nothing). */
+  rank: number
 }
 
 /**
- * Nearest feature in one decoded tile, or `null` if none is within `within`.
+ * Which features of a tile are candidates, and which of those wins.
+ *
+ * Both take the feature's index in the tile. A feature `accept` refuses is not
+ * a candidate at all, so it cannot hide a candidate behind it. Among the
+ * candidates within reach the highest `rank` wins and, for equal ranks, the
+ * nearest. With neither, the nearest feature wins.
+ */
+export interface TileHitSelect {
+  accept?: ((feature: number) => boolean) | undefined
+  rank?: ((feature: number) => number) | undefined
+}
+
+/**
+ * The best feature in one decoded tile within `within`, or `null` if none is.
+ * With no `select` that is the nearest; see {@link TileHitSelect}.
  *
  * The walk is over the flat arrays directly: a tile of flowlines is on the
  * order of 10^5 points, and materialising a point object per candidate during
@@ -137,13 +153,22 @@ export function hitTestTile(
   x: number,
   y: number,
   within: number,
+  select?: TileHitSelect,
 ): TileHit | null {
   const limit = within * within
   let bestSquared = limit
   let bestFeature = -1
+  let bestRank = Number.NEGATIVE_INFINITY
 
   const featureCount = Math.max(0, tile.featureLines.length - 1)
   for (let feature = 0; feature < featureCount; feature += 1) {
+    if (select?.accept && !select.accept(feature)) continue
+    const rank = select?.rank ? select.rank(feature) : 0
+    // A feature ranked below the best so far cannot win, however near it is.
+    if (rank < bestRank) continue
+    // Within one rank, only a nearer feature displaces the best.
+    let featureSquared = rank > bestRank ? limit : bestSquared
+    let found = false
     const lineStart = tile.featureLines[feature] ?? 0
     const lineEnd = tile.featureLines[feature + 1] ?? lineStart
     for (let line = lineStart; line < lineEnd; line += 1) {
@@ -155,16 +180,21 @@ export function hitTestTile(
         const bx = tile.coordinates[point * 2 + 2] ?? 0
         const by = tile.coordinates[point * 2 + 3] ?? 0
         const squared = segmentDistanceSquared(x, y, ax, ay, bx, by)
-        if (squared < bestSquared) {
-          bestSquared = squared
-          bestFeature = feature
+        if (squared < featureSquared) {
+          featureSquared = squared
+          found = true
         }
       }
+    }
+    if (found) {
+      bestSquared = featureSquared
+      bestFeature = feature
+      bestRank = rank
     }
   }
 
   if (bestFeature < 0) return null
-  return { distance: Math.sqrt(bestSquared), feature: bestFeature }
+  return { distance: Math.sqrt(bestSquared), feature: bestFeature, rank: bestRank }
 }
 
 /** The tile addresses a probe can reach, given how close it is to an edge. */

@@ -57,7 +57,8 @@ function segmentDistanceSquared(px, py, ax, ay, bx, by) {
     return zx * zx + zy * zy;
 }
 /**
- * Nearest feature in one decoded tile, or `null` if none is within `within`.
+ * The best feature in one decoded tile within `within`, or `null` if none is.
+ * With no `select` that is the nearest; see {@link TileHitSelect}.
  *
  * The walk is over the flat arrays directly: a tile of flowlines is on the
  * order of 10^5 points, and materialising a point object per candidate during
@@ -68,12 +69,22 @@ function segmentDistanceSquared(px, py, ax, ay, bx, by) {
  * asked whether its geometry reaches back across the shared edge -- so nothing
  * here assumes the point is inside the tile.
  */
-export function hitTestTile(tile, x, y, within) {
+export function hitTestTile(tile, x, y, within, select) {
     const limit = within * within;
     let bestSquared = limit;
     let bestFeature = -1;
+    let bestRank = Number.NEGATIVE_INFINITY;
     const featureCount = Math.max(0, tile.featureLines.length - 1);
     for (let feature = 0; feature < featureCount; feature += 1) {
+        if (select?.accept && !select.accept(feature))
+            continue;
+        const rank = select?.rank ? select.rank(feature) : 0;
+        // A feature ranked below the best so far cannot win, however near it is.
+        if (rank < bestRank)
+            continue;
+        // Within one rank, only a nearer feature displaces the best.
+        let featureSquared = rank > bestRank ? limit : bestSquared;
+        let found = false;
         const lineStart = tile.featureLines[feature] ?? 0;
         const lineEnd = tile.featureLines[feature + 1] ?? lineStart;
         for (let line = lineStart; line < lineEnd; line += 1) {
@@ -85,16 +96,21 @@ export function hitTestTile(tile, x, y, within) {
                 const bx = tile.coordinates[point * 2 + 2] ?? 0;
                 const by = tile.coordinates[point * 2 + 3] ?? 0;
                 const squared = segmentDistanceSquared(x, y, ax, ay, bx, by);
-                if (squared < bestSquared) {
-                    bestSquared = squared;
-                    bestFeature = feature;
+                if (squared < featureSquared) {
+                    featureSquared = squared;
+                    found = true;
                 }
             }
+        }
+        if (found) {
+            bestSquared = featureSquared;
+            bestFeature = feature;
+            bestRank = rank;
         }
     }
     if (bestFeature < 0)
         return null;
-    return { distance: Math.sqrt(bestSquared), feature: bestFeature };
+    return { distance: Math.sqrt(bestSquared), feature: bestFeature, rank: bestRank };
 }
 /** The tile addresses a probe can reach, given how close it is to an edge. */
 export function hitTestNeighbours(point, zoom, extent, within) {

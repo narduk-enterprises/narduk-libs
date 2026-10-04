@@ -1187,7 +1187,7 @@ export function createVectorTileOverlaySource(options) {
             generation += 1;
             inFlight.clear();
         },
-        hitTest({ coordinate, tolerancePx = DEFAULT_MOUSE_HIT_TOLERANCE_PX, zoom }) {
+        hitTest({ accept, coordinate, rank, tolerancePx = DEFAULT_MOUSE_HIT_TOLERANCE_PX, zoom }) {
             // Everything is computed in tile fractions and converted per tile, so a
             // source whose tiles use different extents still compares like for like.
             // Above the data zoom the tiles are the ancestors', and a displayed tile
@@ -1197,16 +1197,27 @@ export function createVectorTileOverlaySource(options) {
             const point = projectToTilePoint(coordinate, dataZoom, 1);
             const tolerance = tolerancePx / pixelsPerTile;
             let best = null;
+            let bestRank = Number.NEGATIVE_INFINITY;
             for (const candidate of hitTestNeighbours(point, dataZoom, 1, tolerance)) {
                 const tile = cache.get(`${dataZoom}/${candidate.offsetX}/${candidate.offsetY}`);
                 if (!tile)
                     continue;
-                const hit = hitTestTile(tile, candidate.x * tile.extent, candidate.y * tile.extent, tolerance * tile.extent);
+                const select = accept || rank
+                    ? {
+                        accept: accept ? (feature) => accept(tile.properties[feature] ?? {}) : undefined,
+                        rank: rank ? (feature) => rank(tile.properties[feature] ?? {}) : undefined,
+                    }
+                    : undefined;
+                const hit = hitTestTile(tile, candidate.x * tile.extent, candidate.y * tile.extent, tolerance * tile.extent, select);
                 if (!hit)
                     continue;
                 const distancePx = (hit.distance / tile.extent) * pixelsPerTile;
-                if (best && best.distancePx <= distancePx)
+                // Across the tiles a probe reaches, the same order: rank, then nearness.
+                if (best &&
+                    (hit.rank < bestRank || (hit.rank === bestRank && best.distancePx <= distancePx))) {
                     continue;
+                }
+                bestRank = hit.rank;
                 best = {
                     distancePx,
                     feature: hit.feature,
