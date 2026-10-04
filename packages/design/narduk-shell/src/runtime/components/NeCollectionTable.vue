@@ -321,6 +321,20 @@ onBeforeUnmount(() => stopStacked?.())
 /** The header draws plain labels where the card layout has hidden it. */
 const headerButtons = computed(() => !(cards.value && stacked.value))
 
+/**
+ * What a full-width cell (a group heading, the empty row, the footer) spans.
+ * In the stacked `columns` layout the `phone: false` columns are gone, and a
+ * span over them makes the browser invent that many anonymous columns, which
+ * then split the free width with the primary column and starve it (measured in
+ * operator-portal's grouped /projects at 375px: four phantom columns left the
+ * name 22px). The server render spans every column; the count settles on mount.
+ */
+const fullSpan = computed(() =>
+  stacked.value && !cards.value
+    ? Math.max(1, props.columns.filter((column) => column.phone !== false).length)
+    : props.columns.length,
+)
+
 /** The phone sort select, for the card layout, whose header is hidden. */
 const DEFAULT_SORT = '__ne-default'
 const sortColumns = computed(() =>
@@ -664,7 +678,7 @@ const filterModel = computed({
             <td
               role="cell"
               data-ne-collection-empty
-              :colspan="columns.length"
+              :colspan="fullSpan"
               class="px-3 py-6 text-center text-sm text-muted"
               :class="cards ? stack.block : ''"
             >
@@ -683,7 +697,7 @@ const filterModel = computed({
               scope="rowgroup"
               role="rowheader"
               data-ne-collection-group
-              :colspan="columns.length"
+              :colspan="fullSpan"
               class="border-b border-default bg-muted px-3 pt-3 pb-1.5 text-start text-sm font-medium text-highlighted"
               :class="cards ? stack.block : ''"
               v-bind="groupAttrs(group.group)"
@@ -771,7 +785,7 @@ const filterModel = computed({
             <td
               role="cell"
               data-ne-collection-more
-              :colspan="columns.length"
+              :colspan="fullSpan"
               class="bg-muted px-3 py-2.5 font-mono text-xs text-muted"
               :class="cards ? stack.block : ''"
             >
