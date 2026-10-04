@@ -1,5 +1,14 @@
 # @narduk-enterprises/eslint-config
 
+## 3.0.2
+
+### Patch Changes
+
+- 8554113: The shared component lists (eslint-config's rules and
+  narduk-app-tools' foundation check) name narduk-shell's `NeCollectionTable`
+  (narduk-libs#1400), so the shared-component rules treat it like every other
+  `Ne*` component.
+
 ## 3.0.1
 
 ### Patch Changes
