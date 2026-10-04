@@ -1629,11 +1629,13 @@ value, sorted last” break row, and a loading reading that keeps the rows on
 screen.
 
 **It never reorders rows.** Sorting belongs to whoever owns the set — the
-server, through `useCollection().setSort`. The table draws the arrow,
-`aria-sort` and the column tint for `sort`, emits `update:sort` on a header
-click, and renders `rows` in the order they arrived. A table that sorted the 25
-rows it holds is exactly the “Wind ↓ sorts one page” bug the buoys round-2 board
-opens with.
+server, through `useCollection().setSort`. For a set the page holds whole, hand
+it `useClientCollection()`'s rows (see
+[`NeCollectionTable`](#necollectiontable)): the composable sorts, and the table
+still only draws. The table draws the arrow, `aria-sort` and the column tint for
+`sort`, emits `update:sort` on a header click, and renders `rows` in the order
+they arrived. A table that sorted the 25 rows it holds is exactly the “Wind ↓
+sorts one page” bug the buoys round-2 board opens with.
 
 Group and break rows are extra entries in the data handed to `UTable`: their
 first cell spans every column and the remaining cells are `hidden`, so the
@@ -1879,6 +1881,256 @@ import type {
   NeSortDirection,
   NeSortHeaderProps,
   NeSortableColumn,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+### NeCollectionTable
+
+One sortable, searchable, filterable table over the rows a page already holds
+([narduk-libs#1400](https://github.com/narduk-enterprises/narduk-libs/issues/1400)).
+It merges operator-portal's two hand-rolled tables, `KitTable` (header sort,
+`phone: false` columns) and `CollectionTable` (groups, row links, selection, a
+row limit with "Show all", the bounded-read footer, a phone card reflow), and
+reads its rows through `useClientCollection()`, the engine both of those already
+shared.
+
+Use it when the set fits in the page. A set that does not is the server's to
+sort: `NeDataTable` with `useCollection().setSort`.
+
+**Why a second table, not a `NeDataTable` mode.** `NeDataTable` is `UTable`, and
+its contract is that it never reorders rows. This table needs markup `UTable`
+keeps out of reach: a `<tbody>` per group under a `rowgroup` heading, a
+`<tfoot>`, attributes and clicks on each `<tr>`, and rows that reflow into cards
+on a phone. `NeDataTable`'s client mode is the composable on its own (see
+[`useClientCollection()`](#useclientcollection)), so both tables share one
+engine and neither contract bends.
+
+What it does, in order:
+
+- **Sort** from any column whose rows hold a string, a finite number or a date,
+  or that declares `sortValue`. The first click takes `firstDirection`, else
+  `desc` for a `numeric` or `align: 'end'` column and `asc` for text; the second
+  flips it. A row with no value sorts **last in both directions**. `aria-sort`
+  is bound on the `<th>` itself, so the server's first paint already carries it.
+- **Toolbar**: `NeSearchInput`, `NeFilterBar` chips (each chip's count is taken
+  within the current search) and a count ("3 of 41 repos"). Shown from
+  `NE_COLLECTION_TOOLBAR_FROM` (25) rows with `toolbar: true`, from a number of
+  rows you pass, `'always'`, or never with `false`. While the toolbar is hidden
+  the rows are not narrowed by a search nobody can see; the sort still applies.
+  When search and chips leave nothing, a `role="status"` line says so with a
+  "Show all" reset.
+- **Groups**: pass `groups` instead of `rows`. Each group is a `<tbody>` under a
+  `scope="rowgroup"` heading with its optional `count`; a group the search
+  empties is dropped rather than heading nothing. Rows sort within their group
+  by default (`groupSort: 'within'`). With `groupSort: 'across'`, a header sort
+  other than the grouped one (`groupedSort`, default the `sort` prop) sets the
+  headings aside and orders every matched row as one run (`limit` still applies;
+  the root carries `data-ne-sorted-across`). A "Back to groups" control
+  (`data-ne-collection-group-reset`, label `groupResetLabel`) returns to the
+  grouped sort and emits `update:sort`. It shows even when the rest of the
+  toolbar is off. With `v-model:sort`, pass `groupedSort`, since the prop then
+  follows every header click.
+- **Row links**: `rowHref` makes the primary cell a `ULink` (a real `href` on
+  the server) and a click anywhere else on the row follows it. A click on a link
+  or control inside the row is that control's, and a modified click is left to
+  the link itself.
+- **Selection**: `selectedKey` (`null` for "selectable, nothing picked") marks
+  the row `aria-current="true"`, makes rows focusable, and emits `select` on a
+  click, Enter or Space. The caller owns the state.
+- **Limit**: `limit` rows, counted after search, filter and sort, then a "Show
+  all N" button.
+- **Footer**: `more` is the bounded-read footer, the caller's sentence ("showing
+  10 of 41") and, when there is one, a link to the rest. Never a figure this
+  component computes.
+- **Missing values**: `null`, `undefined`, `''` and a non-finite number. A
+  missing cell reads the column's `missingText`, else the table's, else the
+  `missing` slot, else an em dash named "No value" for a screen reader. Set
+  `missing-text="unreported"` and no dash is drawn.
+
+#### The phone
+
+Below `stackBelow` (`'md'`, i.e. under 768px; `'sm'` and `'lg'` are the other
+two lines) the table takes its phone layout, in CSS, so the server's markup is
+already the phone's:
+
+- `phoneLayout: 'cards'` (default) keeps the same cells in the same DOM order
+  and drops only the **visual** header (it stays for a screen reader): the
+  primary cell takes a line, the other cells share a wrapped line, a `freeText`
+  column takes its own line clamped to two. After mount the hidden header's sort
+  buttons become plain labels (a button clipped to one pixel would still take
+  focus) and a sort select appears in the toolbar instead.
+- `phoneLayout: 'columns'` keeps the table, and fixed widths become hints.
+
+Either way a `phone: false` column is dropped, and the search, chips, sort
+select, "Show all", sortable headers and every linked or selectable row hold a
+44px tap floor (`min-h-11`).
+
+Above the line, a column with a `width` is fixed and the width-less ones share
+the rest. Once any column declares a width the table is floored at
+`calc(<each width, or 200px> + …)` (`dataTableMinWidth`, the same floor as
+`NeDataTable`), and its own scroll box, not the page, scrolls sideways.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+import type {
+  NeCollectionColumn,
+  NeCollectionFilter,
+} from '@narduk-enterprises/narduk-shell'
+
+const columns: Array<NeCollectionColumn<Repo>> = [
+  { key: 'name', label: 'Repository' },
+  { key: 'owner', label: 'Owner', width: '8rem' },
+  { key: 'issues', label: 'Issues', numeric: true, width: '6rem' },
+  { key: 'note', label: 'Note', freeText: true, phone: false, sortable: false },
+]
+const filters: Array<NeCollectionFilter<Repo>> = [
+  { key: 'open', label: 'Has issues', test: (repo) => (repo.issues ?? 0) > 0 },
+]
+</script>
+
+<template>
+  <NeCollectionTable
+    caption="Repositories"
+    :columns="columns"
+    :rows="repos"
+    :filters="filters"
+    :row-key="(repo) => repo.id"
+    :row-href="(repo) => `/repos/${repo.id}`"
+    :limit="20"
+    noun="repos"
+    sort="issues:desc"
+    missing-text="unreported"
+  >
+    <template #owner-cell="{ row }">
+      <NeStatusBadge tone="neutral" :label="row.owner" />
+    </template>
+  </NeCollectionTable>
+</template>
+```
+
+#### Props
+
+| Prop                | Type                                   | Default     | Notes                                                                           |
+| ------------------- | -------------------------------------- | ----------- | ------------------------------------------------------------------------------- |
+| `caption`           | `string`                               | —           | Required. A visually hidden caption, and the scroll region's label.             |
+| `columns`           | `NeCollectionColumn<T>[]`              | —           | Required. See the column contract below.                                        |
+| `rows`              | `T[]`                                  | —           | Flat rows. Ignored when `groups` is given.                                      |
+| `groups`            | `NeCollectionGroup<T>[]`               | —           | `{ key, label, rows, count?, attrs? }`.                                         |
+| `groupSort`         | `'within' \| 'across'`                 | `'within'`  | Whether a header sort keeps the groups or orders across them.                   |
+| `groupedSort`       | `string \| null`                       | `sort`      | The sort under which `'across'` shows the groups.                               |
+| `groupResetLabel`   | `string`                               | —           | The label of the return-to-groups control. Default "Back to groups".            |
+| `rowKey`            | `(row, index) => string \| number`     | id/key/i    | Default: `row.id`, else `row.key`, else the row's position in the caller's set. |
+| `rowAttrs`          | `(row) => Record<string, string \| …>` | —           | Spread onto each `<tr>` (`data-testid`). `undefined` values are dropped.        |
+| `rowHref`           | `(row) => string \| null`              | —           | The row is a link. `null` for a row with nowhere to go.                         |
+| `selectedKey`       | `string \| number \| null`             | —           | Absent: no selection. `null`: selectable, nothing picked.                       |
+| `primaryColumn`     | `string`                               | 1st column  | The link and card headline.                                                     |
+| `sort`              | `string \| null`                       | —           | Initial sort, `key:asc\|desc`. Followed when it changes.                        |
+| `sortable`          | `boolean`                              | `true`      | `false` turns header sorting off.                                               |
+| `toolbar`           | `boolean \| number \| 'always'`        | `true`      | `true` from 25 rows; a number from that many; `'always'`; `false` never.        |
+| `filters`           | `NeCollectionFilter<T>[]`              | —           | `{ key, label, test, title? }`. "All" is added in front.                        |
+| `defaultFilter`     | `string`                               | `'all'`     | The chip selected on first render.                                              |
+| `initialQuery`      | `string`                               | —           | A search the page arrives with. Followed when it changes.                       |
+| `searchText`        | `(row) => string`                      | —           | Text a row is found by that no column shows.                                    |
+| `searchPlaceholder` | `string`                               | `'Search'`  |                                                                                 |
+| `searchDebounce`    | `number`                               | `250`       | `NeSearchInput`'s debounce.                                                     |
+| `noun`              | `string`                               | `row(s)`    | The count's noun.                                                               |
+| `limit`             | `number`                               | —           | Rows drawn before "Show all N".                                                 |
+| `more`              | `{ label, href?, linkLabel? }`         | —           | The bounded-read footer.                                                        |
+| `missingText`       | `string`                               | —           | What a missing cell reads. Unset: an em dash named "No value".                  |
+| `empty`             | `string`                               | `'No rows'` | A table with no rows at all.                                                    |
+| `noMatchText`       | `string`                               | see source  | When search and filter leave nothing.                                           |
+| `stackBelow`        | `'sm' \| 'md' \| 'lg'`                 | `'md'`      | Where the phone layout starts.                                                  |
+| `phoneLayout`       | `'cards' \| 'columns'`                 | `'cards'`   | Rows reflow into cards, or the table keeps its columns.                         |
+
+#### Column contract (`NeCollectionColumn`)
+
+`key`, `label`, `unit`, `numeric`, `emphasis`, `width`, `value`, `format`,
+`missingText`, `firstDirection`, `csv` and `csvLabel` mean exactly what they
+mean on `NeDataColumn`, so one column array also feeds `NeCsvDownload` and
+`toCsv` (hand them `c.rows.value` to export what the reader sees). The rest:
+
+| Field        | Type                                | Notes                                                                                |
+| ------------ | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| `align`      | `'start' \| 'end'`                  | `'end'` right-aligns a column that is not `numeric`, and starts its sort descending. |
+| `sortValue`  | `(row) => number \| string \| null` | What the column sorts by. `null` sorts last both ways.                               |
+| `sortable`   | `false`                             | Keeps a column unsortable even when its cells hold values.                           |
+| `searchText` | `(row) => string`                   | What the search matches here. Default: the cell's text and its `format` output.      |
+| `phone`      | `boolean`                           | `false` drops the column below `stackBelow`.                                         |
+| `freeText`   | `boolean`                           | Free text: its own line in the card, clamped to two.                                 |
+
+#### Slots and events
+
+| Slot           | Props                    | Notes                                                                     |
+| -------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `<key>-cell`   | `{ column, row, value }` | The cell. A written slot always renders, even empty; a missing value too. |
+| `<key>-header` | `{ column }`             | The header cell's content (a glyph head). Replaces the sort button.       |
+| `missing`      | `{ column, row }`        | A missing cell, when neither the column nor the table names a word.       |
+| `group`        | `{ group, rows }`        | A group heading's content.                                                |
+| `more`         | `{ more }`               | The footer's content.                                                     |
+| `toolbar`      | —                        | Appended to the toolbar row (an export button).                           |
+
+| Event         | Payload          | Notes                                        |
+| ------------- | ---------------- | -------------------------------------------- |
+| `select`      | `key, row`       | Only when `selectedKey` is given.            |
+| `update:sort` | `string \| null` | The reader changed the sort. `v-model:sort`. |
+
+#### `useClientCollection()`
+
+The engine, as a composable (auto-imported) and as pure functions (package root:
+`collectRows`, `sortRows`, `sortValueOf`, `rowMatches`, `isSortableColumn`,
+`firstDirectionOf`, `NE_COLLECTION_ALL`, `NE_COLLECTION_TOOLBAR_FROM`), so a
+server route or a test reads a set exactly as the table does.
+
+```ts
+const c = useClientCollection<Station>({
+  rows: () => stations.value, // MaybeRefOrGetter
+  columns,
+  filters, // optional
+  searchText, // optional
+  query,
+  filter,
+  sort, // optional starting values; a getter is followed
+  narrowing, // optional; false ignores search and filter, keeps the sort
+})
+c.query // Ref<string>          bind to NeSearchInput
+c.filter // Ref<string>         bind to NeFilterBar
+c.sort // Ref<string | null>    'wind:desc'
+c.rows // ComputedRef<T[]>      searched, filtered, sorted
+c.items // NeFilterBar items, "All" first, counted within the search
+;(c.total, c.matched, c.narrowed, c.sortableKeys)
+c.apply(rows) // the same reading over another set (one group)
+;(c.setSort(sort), c.reset()) // reset clears search and filter, keeps the sort
+```
+
+It is also `NeDataTable`'s client mode. The table still never reorders; the
+composable does, before the table sees the rows:
+
+```vue
+<NeDataTable
+  :columns="columns"
+  :rows="c.rows.value"
+  :sort="c.sort.value"
+  @update:sort="c.setSort"
+/>
+```
+
+#### Types
+
+```ts
+import type {
+  NeClientCollection,
+  NeClientCollectionOptions,
+  NeClientCollectionQuery,
+  NeCollectionColumn,
+  NeCollectionFilter,
+  NeCollectionGroup,
+  NeCollectionMore,
+  NeCollectionTableProps,
+  NeCollectionTableSlots,
+  NeCollectionView,
+  NeSortValue,
 } from '@narduk-enterprises/narduk-shell'
 ```
 

@@ -42,6 +42,7 @@ export const SHELL_NUXT_UI_COMPONENTS = [
   'Form',
   'FormField',
   'Input',
+  'Link',
   'Modal',
   'NavigationMenu',
   'OverlayProvider',

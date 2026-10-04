@@ -233,6 +233,12 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'termsOfServiceTemplate',
       from: resolver.resolve('./runtime/utils/legal-templates'),
     })
+    // narduk-libs#1400: the client-mode twin of useCollection — search, filter
+    // and sort over rows the page already holds. No component on its path.
+    addImports({
+      name: 'useClientCollection',
+      from: resolver.resolve('./runtime/composables/use-client-collection'),
+    })
     addImports({
       name: 'useCollection',
       from: resolver.resolve('./runtime/composables/use-collection'),
