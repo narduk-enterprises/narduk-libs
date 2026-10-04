@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-seo': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Sitemaps now carry a real per-page `<lastmod>` (narduk-libs#1414). Each page
