@@ -246,6 +246,23 @@ A canonical hostname that does not normalize fails open and returns the
 canonical directive, as the module guard does, so a misconfigured canonical host
 cannot noindex production.
 
+## Sitemap `<lastmod>`
+
+Production builds give every page a real `<lastmod>`, from the first of these
+that exists:
+
+1. `definePageMeta({ sitemap: { lastmod } })` on the page.
+2. A literal `modifiedAt` in the page's `useSeo()` call, so the sitemap matches
+   the `article:modified_time` the page emits. Bump it when the content changes.
+3. The page file's last commit date, from one `git log` for all pages. A shallow
+   clone reports HEAD's date for every file, so it is skipped there (one info
+   line in the build log).
+
+Otherwise the page gets no `<lastmod>`. The build or request time is never used,
+because identical dates teach search engines to ignore the field. Opt out with
+`nardukSeo: { sitemapLastmod: false }`. Dynamic URLs from
+`sitemapUrlsFromListing` set their own `lastmod`.
+
 ## Canonical URLs: pass a path, never an absolute
 
 `useSeo` resolves the canonical and `og:url` itself, from `canonicalUrl` when
