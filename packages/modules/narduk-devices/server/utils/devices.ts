@@ -29,7 +29,7 @@ import {
   DEVICE_PROOF_CONTEXT_PATTERN,
   isContextBoundProof,
   parseContextBoundRequest,
-  timingSafeEqualText,
+  timingSafeEqualDigestText,
 } from './devices-context-proof'
 import { DevicesError } from './devices-error'
 import {
@@ -125,8 +125,8 @@ export const APPROVAL_DEFAULT_TTL_SECONDS = 300
 export const CHALLENGE_DEFAULT_TTL_SECONDS = 300
 export const SESSION_DEFAULT_TTL_SECONDS = 1800
 export const TIMESTAMP_SKEW_DEFAULT_SECONDS = 300
-export const AUDIT_EVENTS_DEFAULT_LIMIT = 50
-export const AUDIT_EVENTS_MAX_LIMIT = 200
+export const DEVICES_AUDIT_EVENTS_DEFAULT_LIMIT = 50
+export const DEVICES_AUDIT_EVENTS_MAX_LIMIT = 200
 export const DEVICE_LIST_MAX_LIMIT = 200
 
 /**
@@ -1309,12 +1309,12 @@ export function createDevices(
     const request = parseContextBoundRequest(proof.canonicalRequest)
     if (request === null) return false
     const matches = await Promise.all([
-      timingSafeEqualText(proof.context, proofContext),
-      timingSafeEqualText(request.claimSessionId, session.id),
-      timingSafeEqualText(request.devicePublicKey, session.publicKey),
-      timingSafeEqualText(request.devicePublicKey, bound.devicePublicKey),
-      timingSafeEqualText(request.hardwareFingerprint, bound.hardwareFingerprint),
-      timingSafeEqualText(request.idempotencyKey, bound.idempotencyKey),
+      timingSafeEqualDigestText(proof.context, proofContext),
+      timingSafeEqualDigestText(request.claimSessionId, session.id),
+      timingSafeEqualDigestText(request.devicePublicKey, session.publicKey),
+      timingSafeEqualDigestText(request.devicePublicKey, bound.devicePublicKey),
+      timingSafeEqualDigestText(request.hardwareFingerprint, bound.hardwareFingerprint),
+      timingSafeEqualDigestText(request.idempotencyKey, bound.idempotencyKey),
     ])
     if (!matches.every(Boolean)) return false
     if (!isWithinTimestampSkew(request.signedAt, now(), skewSeconds)) return false
@@ -2649,8 +2649,8 @@ export function createDevices(
 
     async listAuditEvents(input = {}) {
       const limit = Math.min(
-        Math.max(input.limit ?? AUDIT_EVENTS_DEFAULT_LIMIT, 1),
-        AUDIT_EVENTS_MAX_LIMIT,
+        Math.max(input.limit ?? DEVICES_AUDIT_EVENTS_DEFAULT_LIMIT, 1),
+        DEVICES_AUDIT_EVENTS_MAX_LIMIT,
       )
       const filters: Array<SQL | undefined> = []
       if (input.orgId !== undefined) filters.push(eq(devicesAuditEvents.orgId, input.orgId))

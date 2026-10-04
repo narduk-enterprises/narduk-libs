@@ -7,7 +7,7 @@ import {
   type ContextBoundCompletionProof,
   contextBoundSigningBytes,
   parseContextBoundRequest,
-  timingSafeEqualText,
+  timingSafeEqualDigestText,
 } from '../server/utils/devices-context-proof'
 import { base64UrlEncode, canonicalJson, toHex } from '../server/utils/devices-signing'
 
@@ -303,8 +303,8 @@ describe('the consumer-shaped completion proof (narduk-libs#237)', () => {
   })
 
   it('compares text in constant time over fixed-width digests', async () => {
-    expect(await timingSafeEqualText('abc', 'abc')).toBe(true)
-    expect(await timingSafeEqualText('abc', 'abd')).toBe(false)
-    expect(await timingSafeEqualText('abc', 'abcd')).toBe(false)
+    expect(await timingSafeEqualDigestText('abc', 'abc')).toBe(true)
+    expect(await timingSafeEqualDigestText('abc', 'abd')).toBe(false)
+    expect(await timingSafeEqualDigestText('abc', 'abcd')).toBe(false)
   })
 })
