@@ -17,6 +17,7 @@ import { createMcpOAuth, resolveMcpOAuthConfig } from '../lib/mcp-oauth/core'
 import { useAuthBridgeDatabase } from './auth-bridge-database'
 
 import type { McpOAuth, ResolvedMcpOAuthConfig } from '../lib/mcp-oauth/core'
+import type { RunnerOAuthPolicy } from '../lib/mcp-oauth/runner-provider'
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider'
 import type { H3Error, H3Event } from 'h3'
 
@@ -56,6 +57,10 @@ export interface McpOAuthPolicy {
     scopes: string[]
     user: McpOAuthUser
   }) => string | undefined | Promise<string | undefined>
+  /** Exact external runner policy. No default; read eligibility afresh per request. */
+  runner?: Omit<RunnerOAuthPolicy, 'eligible'> & {
+    eligible(subject: string, event: H3Event): Promise<boolean>
+  }
 }
 
 let policy: McpOAuthPolicy = {}
@@ -110,9 +115,20 @@ export function useMcpOAuth(event: H3Event): McpOAuth {
   const config = mcpOAuthConfig(event)
   if (!config) throw createError({ statusCode: 404, statusMessage: 'Not Found' })
   const log = useLogger(event).child('McpOAuth')
+  const external = config.resource !== `${config.issuer}${config.resourcePath}`
+  if (external && !policy.runner)
+    throw createError({ statusCode: 503, statusMessage: 'Runner OAuth policy unavailable' })
   const mcp = createMcpOAuth({
     db: useAuthBridgeDatabase(event),
     config,
+    ...(external && policy.runner
+      ? {
+          runner: {
+            ...policy.runner,
+            eligible: (subject: string) => policy.runner!.eligible(subject, event),
+          },
+        }
+      : {}),
     logger: { warn: (message, data) => log.warn(message, data) },
   })
   event.context.nardukMcpOAuth = mcp
@@ -215,6 +231,10 @@ export async function resolveMcpOAuthPrincipal(event: H3Event): Promise<McpOAuth
   const token = bearer(event)
   if (!token || token.startsWith('nk_') || !mcpOAuthConfig(event)) return null
   const mcp = useMcpOAuth(event)
+  // External runner tokens can never become local application/operator credentials.
+  if (mcp.config.resource !== `${mcp.config.issuer}${mcp.config.resourcePath}`) {
+    throw mcpOAuthUnauthorized(event, { error: 'invalid_token' })
+  }
   const valid = await mcp.validate(token)
   if (!valid) {
     throw mcpOAuthUnauthorized(event, {

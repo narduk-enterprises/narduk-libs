@@ -2,9 +2,11 @@ import { OAuthAuthorizationServer } from '@cloudflare/workers-oauth-provider'
 
 import { MCP_OAUTH_REGISTER_PATH, MCP_OAUTH_TOKEN_PATH } from './config'
 import { createD1KvNamespace } from './d1-kv'
+import { createRunnerBridge, runnerTokenExchange } from './runner-provider'
 
 import type { ResolvedMcpOAuthConfig } from './config'
 import type { McpOAuthDatabase } from './d1-kv'
+import type { RunnerOAuthPolicy } from './runner-provider'
 import type { OAuthHelpers, ValidatedAccessToken } from '@cloudflare/workers-oauth-provider'
 
 export interface McpOAuthLogger {
@@ -46,8 +48,12 @@ export function createMcpOAuth(options: {
   config: ResolvedMcpOAuthConfig
   db: McpOAuthDatabase
   logger?: McpOAuthLogger
+  runner?: RunnerOAuthPolicy
 }) {
   const { config } = options
+  if (config.resource !== `${config.issuer}${config.resourcePath}` && !options.runner) {
+    throw new Error('External resource requires an exact runner policy')
+  }
   const kv = createD1KvNamespace(options.db)
   const env = { OAUTH_KV: kv }
   const server = new OAuthAuthorizationServer<typeof env>({
@@ -59,6 +65,9 @@ export function createMcpOAuth(options: {
       ? { clientRegistrationEndpoint: `${config.issuer}${MCP_OAUTH_REGISTER_PATH}` }
       : {}),
     ...(config.scopes.length > 0 ? { scopesSupported: config.scopes } : {}),
+    ...(options.runner
+      ? { tokenExchangeCallback: runnerTokenExchange({ kv, config, policy: options.runner }) }
+      : {}),
     accessTokenTTL: config.accessTokenTtl,
     refreshTokenTTL: config.refreshTokenTtl,
     refreshTokenIdleTTL: config.refreshTokenIdleTtl,
@@ -105,7 +114,7 @@ export function createMcpOAuth(options: {
     return { ...result, grantId: parts[1]! }
   }
 
-  return {
+  const mcp = {
     config,
     env,
     kv,
@@ -116,6 +125,10 @@ export function createMcpOAuth(options: {
     protectedResourceMetadata,
     challenge,
     validate,
+  }
+  return {
+    ...mcp,
+    runnerBridge: options.runner ? createRunnerBridge(mcp, options.runner) : undefined,
   }
 }
 

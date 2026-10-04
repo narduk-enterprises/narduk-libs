@@ -13,6 +13,8 @@ export const mcpOAuthRuntimeConfigSchema = z.object({
   enabled: z.boolean(),
   /** Canonical issuer origin; defaults to `public.appUrl`'s origin. */
   issuer: z.string().optional(),
+  /** Optional external protected resource; issuer-only mode, never a Portal principal. */
+  resourceUri: z.string().url().optional(),
   /** Path of the protected MCP endpoint on the issuer's origin. */
   resourcePath: z.string().regex(/^\/[\w\-./]*$/u),
   resourceName: z.string().optional(),
@@ -81,10 +83,31 @@ export function resolveMcpOAuthConfig(
     throw new Error('The MCP OAuth issuer must be https (http only on a loopback host)')
   }
   const issuer = origin.origin
+  const resource = config.resourceUri
+    ? new URL(config.resourceUri)
+    : new URL(`${issuer}${config.resourcePath}`)
+  if (
+    config.resourceUri &&
+    (resource.protocol !== 'https:' ||
+      resource.username ||
+      resource.password ||
+      resource.search ||
+      resource.hash ||
+      resource.port ||
+      resource.hostname === 'localhost' ||
+      !resource.hostname.includes('.') ||
+      resource.hostname.endsWith('.local') ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(resource.hostname) ||
+      resource.hostname.includes(':') ||
+      resource.pathname !== '/mcp' ||
+      resource.href !== config.resourceUri)
+  ) {
+    throw new Error('External MCP resource must be one canonical public HTTPS /mcp URI')
+  }
   return {
     ...config,
     issuer,
-    resource: `${issuer}${config.resourcePath}`,
+    resource: resource.href,
     resourceMetadataUrl: `${issuer}${MCP_OAUTH_PRM_PATH}${config.resourcePath}`,
     authorizeEndpoint: `${issuer}${config.consentPath}`,
   }
