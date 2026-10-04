@@ -87,6 +87,21 @@ export interface NeCollectionTableProps<TRow = Record<string, unknown>> {
   /** Flat rows. Ignored when `groups` is given. */
   rows?: readonly TRow[]
   groups?: ReadonlyArray<NeCollectionGroup<TRow>>
+  /**
+   * How a header sort meets `groups`. `'within'` (default) sorts each group's
+   * rows and keeps the headings. `'across'` lets a sort other than the grouped
+   * one set the headings aside and order every matched row as one run, with a
+   * "Back to groups" control that returns to the grouped sort.
+   */
+  groupSort?: 'within' | 'across'
+  /**
+   * The sort under which `groupSort: 'across'` shows the groups. Default: the
+   * `sort` prop. Pass it when you bind `v-model:sort`, since the prop then
+   * follows every header click.
+   */
+  groupedSort?: string | null
+  /** The label of the control that returns an `'across'` sort to the groups. Default "Back to groups". */
+  groupResetLabel?: string
   rowKey?: (row: TRow, index: number) => string | number
   rowAttrs?: (row: TRow) => Record<string, string | undefined>
   /** The row leads somewhere: the primary cell becomes a link, and a click elsewhere on the row follows it. */

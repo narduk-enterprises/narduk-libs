@@ -123,6 +123,49 @@ describe('NeCollectionTable on the server', () => {
   })
 })
 
+describe('NeCollectionTable groups on the server', () => {
+  const groups = [
+    {
+      key: 'coastal',
+      label: 'Coastal Bend',
+      rows: stations.filter((s) => s.region === 'Coastal Bend'),
+    },
+    { key: 'other', label: 'Elsewhere', rows: stations.filter((s) => s.region !== 'Coastal Bend') },
+  ]
+
+  it('paints the groups under the grouped sort, and sorts within them by default', async () => {
+    const within = await render({ caption: 'Stations', columns, groups, sort: 'wind:desc' })
+    expect(within.match(/scope="rowgroup"/g)).toHaveLength(2)
+    expect(order(within)).toEqual(['Port Aransas', 'Aransas Bay', 'Port Isabel', 'Apalachicola'])
+
+    const across = await render({
+      caption: 'Stations',
+      columns,
+      groupSort: 'across',
+      groups,
+      sort: 'wind:desc',
+    })
+    expect(across.match(/scope="rowgroup"/g)).toHaveLength(2)
+    expect(across).not.toContain('data-ne-collection-group-reset')
+  })
+
+  it('paints one run across the groups, with the way back, when a link arrives sorted', async () => {
+    const html = await render({
+      caption: 'Stations',
+      columns,
+      groupSort: 'across',
+      groupedSort: null,
+      groups,
+      sort: 'wind:desc',
+      toolbar: false,
+    })
+    expect(html).not.toContain('scope="rowgroup"')
+    expect(order(html)).toEqual(['Port Isabel', 'Port Aransas', 'Aransas Bay', 'Apalachicola'])
+    expect(html).toContain('data-ne-sorted-across')
+    expect(html).toMatch(/data-ne-collection-group-reset[\s\S]*?Back to groups/)
+  })
+})
+
 describe('useClientCollection gives NeDataTable a client mode', () => {
   it('sorts the rows before the table sees them, and the table marks the column', async () => {
     const Host = defineComponent({

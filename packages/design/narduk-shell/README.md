@@ -1921,7 +1921,15 @@ What it does, in order:
   "Show all" reset.
 - **Groups**: pass `groups` instead of `rows`. Each group is a `<tbody>` under a
   `scope="rowgroup"` heading with its optional `count`; a group the search
-  empties is dropped rather than heading nothing. Rows sort within their group.
+  empties is dropped rather than heading nothing. Rows sort within their group
+  by default (`groupSort: 'within'`). With `groupSort: 'across'`, a header sort
+  other than the grouped one (`groupedSort`, default the `sort` prop) sets the
+  headings aside and orders every matched row as one run (`limit` still applies;
+  the root carries `data-ne-sorted-across`). A "Back to groups" control
+  (`data-ne-collection-group-reset`, label `groupResetLabel`) returns to the
+  grouped sort and emits `update:sort`. It shows even when the rest of the
+  toolbar is off. With `v-model:sort`, pass `groupedSort`, since the prop then
+  follows every header click.
 - **Row links**: `rowHref` makes the primary cell a `ULink` (a real `href` on
   the server) and a click anywhere else on the row follows it. A click on a link
   or control inside the row is that control's, and a modified click is left to
@@ -2010,6 +2018,9 @@ const filters: Array<NeCollectionFilter<Repo>> = [
 | `columns`           | `NeCollectionColumn<T>[]`              | —           | Required. See the column contract below.                                        |
 | `rows`              | `T[]`                                  | —           | Flat rows. Ignored when `groups` is given.                                      |
 | `groups`            | `NeCollectionGroup<T>[]`               | —           | `{ key, label, rows, count?, attrs? }`.                                         |
+| `groupSort`         | `'within' \| 'across'`                 | `'within'`  | Whether a header sort keeps the groups or orders across them.                   |
+| `groupedSort`       | `string \| null`                       | `sort`      | The sort under which `'across'` shows the groups.                               |
+| `groupResetLabel`   | `string`                               | —           | The label of the return-to-groups control. Default "Back to groups".            |
 | `rowKey`            | `(row, index) => string \| number`     | id/key/i    | Default: `row.id`, else `row.key`, else the row's position in the caller's set. |
 | `rowAttrs`          | `(row) => Record<string, string \| …>` | —           | Spread onto each `<tr>` (`data-testid`). `undefined` values are dropped.        |
 | `rowHref`           | `(row) => string \| null`              | —           | The row is a link. `null` for a row with nowhere to go.                         |

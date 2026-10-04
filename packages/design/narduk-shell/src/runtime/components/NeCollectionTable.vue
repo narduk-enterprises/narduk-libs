@@ -77,6 +77,9 @@ const props = withDefaults(defineProps<NeCollectionTableProps<T>>(), {
   defaultFilter: undefined,
   empty: 'No rows',
   filters: undefined,
+  groupResetLabel: 'Back to groups',
+  groupSort: 'within',
+  groupedSort: undefined,
   groups: undefined,
   initialQuery: undefined,
   limit: undefined,
@@ -229,10 +232,34 @@ function setSort(next: string | null) {
   emit('update:sort', next)
 }
 
+/** The sort under which `groupSort: 'across'` shows the groups. */
+const groupedSortValue = computed(() =>
+  props.groupedSort === undefined ? (props.sort ?? null) : props.groupedSort,
+)
+
+/** An `'across'` table whose sort has set the group headings aside. */
+const sortedAcross = computed(
+  () =>
+    props.groupSort === 'across' &&
+    props.groups !== undefined &&
+    collection.sort.value !== null &&
+    collection.sort.value !== groupedSortValue.value,
+)
+
+function backToGroups() {
+  setSort(groupedSortValue.value)
+}
+
 /** Every row search and filter keep, grouped, before `limit` cuts it. Empty groups are dropped. */
 const matchedGroups = computed<RenderGroup[]>(() => {
-  if (!props.groups) {
-    return [{ grouped: false, key: '__ne-rows', rows: collection.rows.value }]
+  if (!props.groups || sortedAcross.value) {
+    return [
+      {
+        grouped: false,
+        key: sortedAcross.value ? '__ne-across' : '__ne-rows',
+        rows: collection.rows.value,
+      },
+    ]
   }
   return props.groups
     .map((group) => ({
@@ -483,11 +510,12 @@ const filterModel = computed({
   <div
     data-ne-collection-table
     :data-ne-phone-layout="phoneLayout"
+    :data-ne-sorted-across="sortedAcross ? '' : undefined"
     :data-ne-stack-below="stackBelow"
     class="min-w-0 max-w-full"
   >
     <div
-      v-if="toolbarOn || $slots.toolbar"
+      v-if="toolbarOn || sortedAcross || $slots.toolbar"
       data-ne-collection-toolbar
       class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2"
       :class="stack.controls"
@@ -538,6 +566,17 @@ const filterModel = computed({
             @click="flipSort"
           />
         </span>
+        <UButton
+          v-if="sortedAcross"
+          data-ne-collection-group-reset
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-list-tree"
+          :class="stack.tap"
+          :label="groupResetLabel"
+          @click="backToGroups"
+        />
         <slot name="toolbar" />
       </div>
     </div>

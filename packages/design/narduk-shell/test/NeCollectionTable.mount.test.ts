@@ -259,6 +259,74 @@ describe('NeCollectionTable: groups, limit, footer', () => {
     expect(wrapper.find('[data-ne-collection-show-all]').exists()).toBe(false)
   })
 
+  it('keeps the headings under a header sort when `groupSort` is `within`, the default', async () => {
+    const wrapper = render({ caption: 'Repositories', columns, groups, toolbar: false })
+    await header(wrapper, 'issues').find('button').trigger('click')
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(2)
+    expect(rowNames(wrapper)).toEqual(['tideye', 'buoys', 'stonx', 'operator-portal'])
+    expect(wrapper.find('[data-ne-collection-group-reset]').exists()).toBe(false)
+    expect(wrapper.attributes('data-ne-sorted-across')).toBeUndefined()
+  })
+
+  it('sorts across every group when `groupSort` is `across`, then goes back to the groups', async () => {
+    const wrapper = render({
+      caption: 'Repositories',
+      columns,
+      groupSort: 'across',
+      groups,
+      limit: 3,
+      sort: 'name:asc',
+      toolbar: false,
+    })
+    // The caller's own sort keeps the groups.
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(2)
+    expect(wrapper.find('[data-ne-collection-toolbar]').exists()).toBe(false)
+
+    await header(wrapper, 'issues').find('button').trigger('click')
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(0)
+    expect(wrapper.findAll('tbody[role="rowgroup"]')).toHaveLength(1)
+    // One run in sort order, missing last, and the limit still applies.
+    expect(rowNames(wrapper)).toEqual(['stonx', 'operator-portal', 'tideye'])
+    await wrapper.find('[data-ne-collection-show-all]').trigger('click')
+    expect(rowNames(wrapper)).toEqual(['stonx', 'operator-portal', 'tideye', 'buoys'])
+    expect(wrapper.attributes('data-ne-sorted-across')).toBe('')
+
+    // Reachable with the toolbar otherwise off.
+    const reset = wrapper.find('[data-ne-collection-group-reset]')
+    expect(reset.text()).toBe('Back to groups')
+    expect(reset.classes()).toContain('max-md:min-h-11')
+    await reset.trigger('click')
+    expect(wrapper.emitted('update:sort')?.at(-1)).toEqual(['name:asc'])
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(2)
+    expect(rowNames(wrapper)).toEqual(['buoys', 'tideye', 'operator-portal', 'stonx'])
+    expect(header(wrapper, 'name').attributes('aria-sort')).toBe('ascending')
+    expect(wrapper.find('[data-ne-collection-group-reset]').exists()).toBe(false)
+  })
+
+  it('keeps the grouped sort under `v-model:sort` through `groupedSort`, with its own reset label', async () => {
+    const wrapper = render({
+      caption: 'Repositories',
+      columns,
+      groupResetLabel: 'By kind',
+      groupSort: 'across',
+      groupedSort: null,
+      groups,
+      sort: null,
+      toolbar: false,
+    })
+    await header(wrapper, 'name').find('button').trigger('click')
+    // The parent writes the emitted sort back, as v-model does.
+    await wrapper.setProps({ sort: 'name:asc' } as never)
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(0)
+    expect(rowNames(wrapper)).toEqual(['buoys', 'operator-portal', 'stonx', 'tideye'])
+    const reset = wrapper.find('[data-ne-collection-group-reset]')
+    expect(reset.text()).toBe('By kind')
+    await reset.trigger('click')
+    expect(wrapper.emitted('update:sort')?.at(-1)).toEqual([null])
+    expect(wrapper.findAll('th[scope="rowgroup"]')).toHaveLength(2)
+    expect(rowNames(wrapper)).toEqual(['buoys', 'tideye', 'operator-portal', 'stonx'])
+  })
+
   it('closes on the caller’s bounded-read footer, with a link to the rest', async () => {
     const wrapper = render({
       caption: 'Repositories',
