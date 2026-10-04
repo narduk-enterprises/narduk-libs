@@ -101,6 +101,55 @@ describe('hitTestTile', () => {
     expect(hitTestTile(pair, 2000, 140, 500)?.feature).toBe(0)
   })
 
+  describe('with accept and rank', () => {
+    // A creek 2 units from the probe, a river 30 units away, both within reach.
+    const creekBesideRiver = tile(
+      [
+        [
+          { x: 0, y: 1998 },
+          { x: 4000, y: 1998 },
+        ],
+        [
+          { x: 0, y: 2030 },
+          { x: 4000, y: 2030 },
+        ],
+      ],
+      [{ so: '3' }, { so: '9' }],
+    )
+    const orderOf = (feature: number) => Number(creekBesideRiver.properties[feature]?.so)
+
+    it('keeps the nearest when nothing is ranked', () => {
+      expect(hitTestTile(creekBesideRiver, 2000, 2000, 100)?.feature).toBe(0)
+    })
+
+    it('takes the higher rank over the nearer feature', () => {
+      const hit = hitTestTile(creekBesideRiver, 2000, 2000, 100, { rank: orderOf })
+
+      expect(hit?.feature).toBe(1)
+      expect(hit?.rank).toBe(9)
+      expect(hit?.distance).toBeCloseTo(30, 6)
+    })
+
+    it('falls back to the nearest among equal ranks', () => {
+      const hit = hitTestTile(creekBesideRiver, 2000, 2000, 100, { rank: () => 5 })
+
+      expect(hit?.feature).toBe(0)
+    })
+
+    it('does not rank a higher feature that is out of reach', () => {
+      expect(hitTestTile(creekBesideRiver, 2000, 2000, 10, { rank: orderOf })?.feature).toBe(0)
+    })
+
+    it('skips a refused feature instead of letting it shadow a farther one', () => {
+      const hit = hitTestTile(creekBesideRiver, 2000, 2000, 100, {
+        accept: (feature) => feature === 1,
+      })
+
+      expect(hit?.feature).toBe(1)
+      expect(hitTestTile(creekBesideRiver, 2000, 2000, 100, { accept: () => false })).toBeNull()
+    })
+  })
+
   it('reaches a probe outside the tile, which is how an edge is crossed', () => {
     const edge = tile([
       [
@@ -272,6 +321,44 @@ describe('the overlay source hit test', () => {
 
     expect(hit?.properties).toEqual({ name: 'border river' })
     expect(hit?.tile.x).toBe(0)
+  })
+
+  it('lets a river outrank a nearer creek, and a refused feature step aside', async () => {
+    // Zoom 1 at the equator: a tile is 256 px, so 16 extent units are one pixel.
+    // A creek 1 px south of the probe, a river 4 px north of it.
+    const lines = buildDecodedVectorTile(EXTENT, [
+      {
+        lines: [
+          [
+            { x: 0, y: 16 },
+            { x: EXTENT, y: 16 },
+          ],
+        ],
+        properties: { name: 'creek', so: '3' },
+      },
+      {
+        lines: [
+          [
+            { x: 0, y: -64 },
+            { x: EXTENT, y: -64 },
+          ],
+        ],
+        properties: { name: 'river', so: '9' },
+      },
+    ])
+    const source = createSource({ '1/1/1': lines })
+    await source.imageForTile(1, 1, 1, 1)
+    const probe = { coordinate: { latitude: 0, longitude: 1 }, tolerancePx: 8, zoom: 1 }
+    const order = (properties: Record<string, unknown>) => Number(properties.so)
+
+    expect(source.hitTest(probe)?.properties.name).toBe('creek')
+    expect(source.hitTest({ ...probe, rank: order })?.properties.name).toBe('river')
+    expect(
+      source.hitTest({ ...probe, accept: (properties) => order(properties) < 5 })?.properties.name,
+    ).toBe('creek')
+    expect(
+      source.hitTest({ ...probe, accept: (properties) => order(properties) > 5 })?.properties.name,
+    ).toBe('river')
   })
 
   it('stops answering after the archive is swapped', async () => {

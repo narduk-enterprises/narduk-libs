@@ -407,6 +407,19 @@ export interface VectorTileHitTestOptions {
     tolerancePx?: number;
     /** The zoom the map is displaying, which decides which tiles are consulted. */
     zoom: number;
+    /**
+     * Which features can be hit at all. A feature this refuses is skipped before
+     * the nearest is chosen, so it cannot shadow one behind it (a stream the
+     * current zoom does not draw, beside one it does). Default: every feature.
+     */
+    accept?: (properties: VectorTileProperties) => boolean;
+    /**
+     * Which candidate within `tolerancePx` wins: the highest rank, and the
+     * nearest among equal ranks. Rank a stream by its order and a creek beside a
+     * big river no longer takes the pointer from it. Default: every feature
+     * ranks the same, so the nearest wins.
+     */
+    rank?: (properties: VectorTileProperties) => number;
 }
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
     /** Retained bytes, exact for geometry and estimated for properties. */

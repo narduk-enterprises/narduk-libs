@@ -61,9 +61,24 @@ export interface TileHit {
     /** Tile-local distance, in extent units. */
     distance: number;
     feature: number;
+    /** The rank the winning feature was given (0 when the test ranks nothing). */
+    rank: number;
 }
 /**
- * Nearest feature in one decoded tile, or `null` if none is within `within`.
+ * Which features of a tile are candidates, and which of those wins.
+ *
+ * Both take the feature's index in the tile. A feature `accept` refuses is not
+ * a candidate at all, so it cannot hide a candidate behind it. Among the
+ * candidates within reach the highest `rank` wins and, for equal ranks, the
+ * nearest. With neither, the nearest feature wins.
+ */
+export interface TileHitSelect {
+    accept?: ((feature: number) => boolean) | undefined;
+    rank?: ((feature: number) => number) | undefined;
+}
+/**
+ * The best feature in one decoded tile within `within`, or `null` if none is.
+ * With no `select` that is the nearest; see {@link TileHitSelect}.
  *
  * The walk is over the flat arrays directly: a tile of flowlines is on the
  * order of 10^5 points, and materialising a point object per candidate during
@@ -74,7 +89,7 @@ export interface TileHit {
  * asked whether its geometry reaches back across the shared edge -- so nothing
  * here assumes the point is inside the tile.
  */
-export declare function hitTestTile(tile: DecodedVectorTile, x: number, y: number, within: number): TileHit | null;
+export declare function hitTestTile(tile: DecodedVectorTile, x: number, y: number, within: number, select?: TileHitSelect): TileHit | null;
 /** The tile addresses a probe can reach, given how close it is to an edge. */
 export declare function hitTestNeighbours(point: TilePoint, zoom: number, extent: number, within: number): Array<{
     offsetX: number;

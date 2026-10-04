@@ -18,7 +18,7 @@ import {
   projectToTilePoint,
 } from './hit-test.js'
 
-import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js'
+import type { TileHitSelect, VectorTileCoordinate, VectorTileHit } from './hit-test.js'
 
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
@@ -575,6 +575,19 @@ export interface VectorTileHitTestOptions {
   tolerancePx?: number
   /** The zoom the map is displaying, which decides which tiles are consulted. */
   zoom: number
+  /**
+   * Which features can be hit at all. A feature this refuses is skipped before
+   * the nearest is chosen, so it cannot shadow one behind it (a stream the
+   * current zoom does not draw, beside one it does). Default: every feature.
+   */
+  accept?: (properties: VectorTileProperties) => boolean
+  /**
+   * Which candidate within `tolerancePx` wins: the highest rank, and the
+   * nearest among equal ranks. Rank a stream by its order and a creek beside a
+   * big river no longer takes the pointer from it. Default: every feature
+   * ranks the same, so the nearest wins.
+   */
+  rank?: (properties: VectorTileProperties) => number
 }
 
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
@@ -1869,7 +1882,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       generation += 1
       inFlight.clear()
     },
-    hitTest({ coordinate, tolerancePx = DEFAULT_MOUSE_HIT_TOLERANCE_PX, zoom }) {
+    hitTest({ accept, coordinate, rank, tolerancePx = DEFAULT_MOUSE_HIT_TOLERANCE_PX, zoom }) {
       // Everything is computed in tile fractions and converted per tile, so a
       // source whose tiles use different extents still compares like for like.
       // Above the data zoom the tiles are the ancestors', and a displayed tile
@@ -1879,19 +1892,35 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       const point = projectToTilePoint(coordinate, dataZoom, 1)
       const tolerance = tolerancePx / pixelsPerTile
       let best: VectorTileHit | null = null
+      let bestRank = Number.NEGATIVE_INFINITY
 
       for (const candidate of hitTestNeighbours(point, dataZoom, 1, tolerance)) {
         const tile = cache.get(`${dataZoom}/${candidate.offsetX}/${candidate.offsetY}`)
         if (!tile) continue
+        const select: TileHitSelect | undefined =
+          accept || rank
+            ? {
+                accept: accept ? (feature) => accept(tile.properties[feature] ?? {}) : undefined,
+                rank: rank ? (feature) => rank(tile.properties[feature] ?? {}) : undefined,
+              }
+            : undefined
         const hit = hitTestTile(
           tile,
           candidate.x * tile.extent,
           candidate.y * tile.extent,
           tolerance * tile.extent,
+          select,
         )
         if (!hit) continue
         const distancePx = (hit.distance / tile.extent) * pixelsPerTile
-        if (best && best.distancePx <= distancePx) continue
+        // Across the tiles a probe reaches, the same order: rank, then nearness.
+        if (
+          best &&
+          (hit.rank < bestRank || (hit.rank === bestRank && best.distancePx <= distancePx))
+        ) {
+          continue
+        }
+        bestRank = hit.rank
         best = {
           distancePx,
           feature: hit.feature,
