@@ -40,7 +40,7 @@ export const PACKAGE_VERSIONS = {
   '@axe-core/playwright': '4.13.0',
   '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.15.0',
+  '@narduk-enterprises/narduk-mapkit': '2.16.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.33.0',
   '@narduk-enterprises/eslint-config': '3.0.2',
@@ -56,7 +56,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.4.0',
-  '@narduk-enterprises/narduk-seo': '2.9.1',
+  '@narduk-enterprises/narduk-seo': '2.9.2',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
