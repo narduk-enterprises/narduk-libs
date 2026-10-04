@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.9.2
+
+### Patch Changes
+
+- 25eb9bd: Send `X-Robots-Tag: noindex, nofollow` on 4xx and 5xx responses. A
+  404 page used to keep the route's `index, follow` header, which @nuxtjs/robots
+  sets before the status is known.
+
 ## 2.9.1
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.21
+
+### Patch Changes
+
+- 4ade4e0: New apps pin `@narduk-enterprises/narduk-mapkit` 2.16.0, which adds
+  `setHighlightPlan` for lighting many stretches in many styles at once.
+- 25eb9bd: Send `X-Robots-Tag: noindex, nofollow` on 4xx and 5xx responses. A
+  404 page used to keep the route's `index, follow` header, which @nuxtjs/robots
+  sets before the status is known.
+
 ## 0.21.20
 
 ### Patch Changes
