@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { isReadonly, ref } from 'vue'
+import { effectScope, isReadonly, ref } from 'vue'
 
 /**
  * The `#imports` half of `useLiveProduct()`: that its label reads the
@@ -29,15 +29,21 @@ describe('useLiveProduct wiring', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_758_628_800_000)
     const { useLiveProduct } = await import('../runtime/app/composables/useLiveProduct')
 
-    const live = useLiveProduct(async () => {}, {
-      intervalMs: 60_000,
-      updatedAt: 1_758_628_800_000 - 120_000,
-    })
-    useLiveProduct(async () => {}, { clockKey: 'buoys', intervalMs: 60_000 })
+    // A composable is called inside a component's setup, which is an effect
+    // scope; outside one `onScopeDispose` has nothing to attach to and Vue warns.
+    const scope = effectScope()
+    const live = scope.run(() =>
+      useLiveProduct(async () => {}, {
+        intervalMs: 60_000,
+        updatedAt: 1_758_628_800_000 - 120_000,
+      }),
+    )!
+    scope.run(() => useLiveProduct(async () => {}, { clockKey: 'buoys', intervalMs: 60_000 }))
 
     expect(stateKeys).toEqual(['narduk:now:live-product', 'narduk:now:buoys'])
     expect(live.updatedAgo.value).toBe('2 minutes ago')
     expect(isReadonly(live.pending)).toBe(true)
     expect(typeof live.refresh).toBe('function')
+    scope.stop()
   })
 })

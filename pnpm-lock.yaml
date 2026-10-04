@@ -251,6 +251,9 @@ importers:
         specifier: 6.1.7
         version: 6.1.7
     devDependencies:
+      '@narduk-enterprises/narduk-testkit':
+        specifier: workspace:*
+        version: link:../../tooling/narduk-testkit
       '@nuxt/schema':
         specifier: ^4.5.2
         version: 4.5.2
@@ -760,6 +763,9 @@ importers:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
         version: link:../../tooling/eslint-config
+      '@narduk-enterprises/narduk-testkit':
+        specifier: workspace:*
+        version: link:../../tooling/narduk-testkit
       '@nuxt/schema':
         specifier: ^4.5.2
         version: 4.5.2
@@ -946,6 +952,9 @@ importers:
         specifier: ^5.1.2
         version: 5.1.2
     devDependencies:
+      '@narduk-enterprises/narduk-testkit':
+        specifier: workspace:*
+        version: link:../../tooling/narduk-testkit
       '@nuxt/schema':
         specifier: ^4.5.2
         version: 4.5.2
@@ -1576,6 +1585,12 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vue:
+        specifier: ^3.5.39
+        version: 3.5.39(typescript@6.0.3)
+      vue-router:
+        specifier: ^5.3.1
+        version: 5.3.1(@vue/compiler-sfc@3.5.42)(esbuild@0.28.1)(pinia@4.0.3(@vue/devtools-api@8.1.5)(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(rolldown@1.2.9)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue@3.5.39(typescript@6.0.3))
 
   packages/tooling/stylelint-config:
     dependencies:

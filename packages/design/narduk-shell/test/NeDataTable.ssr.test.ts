@@ -15,7 +15,8 @@
  */
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
-import { createSSRApp, h } from 'vue'
+import { h } from 'vue'
+import { createSSRAppWithEnv as createSSRApp } from './support/ssr-app'
 
 import NeDataTable from '../src/runtime/components/NeDataTable.vue'
 

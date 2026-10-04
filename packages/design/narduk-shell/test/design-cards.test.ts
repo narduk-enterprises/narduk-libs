@@ -13,6 +13,7 @@
  * that only works once a browser has hydrated it produces an empty card in
  * NE Base while every DOM-based test stays green.
  */
+import { createVueTestEnv } from '@narduk-enterprises/narduk-testkit/vue-test-env'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, type Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
@@ -20,6 +21,7 @@ import { renderToString } from 'vue/server-renderer'
 import { PENDING_CARDS } from '../src/pending-cards'
 import { NE_SHELL_COMPONENTS } from '../src/registry'
 import { NE_SHELL_SURFACE_CARDS } from '../src/surface-cards'
+import { nuxtUiGlobals } from './support/nuxt-ui-globals'
 
 /** `NeStatePanel` -> `ne-state-panel`; the id a card must declare. */
 export function kebabCase(name: string): string {
@@ -109,7 +111,12 @@ describe('every registered component has a card, and every card a component', ()
 describe('cards server-render into the markup NE Base consumes', () => {
   for (const card of [...cards, ...templates]) {
     it(`${card.file} renders a card section without throwing`, async () => {
-      const html = await renderToString(createSSRApp(card.component))
+      // The app a card renders in has a router and the Nuxt UI primitives
+      // registered; without them each draws as an unknown element, the render
+      // still clears `html.length > 120`, and the warning is the only trace.
+      const html = await renderToString(
+        createSSRApp(card.component).use(createVueTestEnv({ components: nuxtUiGlobals })),
+      )
       // design-system-build's renderBundle keys every card off these three
       // attributes and rejects a section missing `data-name`/`data-group`.
       expect(html).toContain(`data-design-card="${kebabCase(card.name)}"`)

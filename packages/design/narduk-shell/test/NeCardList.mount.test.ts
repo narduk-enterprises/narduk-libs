@@ -5,7 +5,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { defineComponent, h, reactive } from 'vue'
+import { defineComponent, h, markRaw, reactive } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import NeCardList from '../src/runtime/components/NeCardList.vue'
@@ -72,7 +72,7 @@ describe('NeCardList: the same collection the table draws', () => {
   })
 
   it("renders :card as the per-item component, the plan's RiverCard form", () => {
-    const wrapper = render({ card: RiverCard })
+    const wrapper = render({ card: markRaw(RiverCard) })
     expect(wrapper.get('[data-river-card="des-plaines"]').text()).toBe('Des Plaines')
     expect(wrapper.get('[data-river-card="fox"]').text()).toBe('Fox')
   })

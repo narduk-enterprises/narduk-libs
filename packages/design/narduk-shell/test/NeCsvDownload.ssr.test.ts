@@ -13,7 +13,7 @@
  */
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
-import { createSSRApp } from 'vue'
+import { createSSRAppWithEnv as createSSRApp } from './support/ssr-app'
 
 import NeCsvDownload from '../src/runtime/components/NeCsvDownload.vue'
 

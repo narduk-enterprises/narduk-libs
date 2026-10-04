@@ -9,6 +9,7 @@
  * real implementation, so the SSR assertions below are about the tag Apple
  * actually generates. Nothing here asserts on source text.
  */
+import { allowVueWarning } from '@narduk-enterprises/narduk-testkit/vue-warn-guard'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
@@ -833,6 +834,10 @@ describe('pins that are not controls (K-8)', () => {
 
 describe('a pin with no accessible name fails at mount (K-9)', () => {
   it('throws from setup, naming the component and both ways out', () => {
+    allowVueWarning(
+      /missing template or render function/,
+      'setup throws on purpose, so Vue reports the component as having no render function',
+    )
     // 2.1.0 threw from inside the pin layer, asynchronously, after the map had
     // half-built itself -- so an app saw a broken map and a stack with no
     // component in it.
@@ -845,6 +850,10 @@ describe('a pin with no accessible name fails at mount (K-9)', () => {
   })
 
   it('throws when items become non-empty later', async () => {
+    allowVueWarning(
+      /Unhandled error during execution of (watcher callback|component update)/,
+      'the prop watcher throws on purpose, and Vue reports a throw from a watcher or update as a warning',
+    )
     const wrapper = mount(AppMapKit, {
       attachTo: document.body,
       props: { createPinElement: pinElement, items: [] },

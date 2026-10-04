@@ -4,7 +4,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { renderToString } from '@vue/server-renderer'
-import { createSSRApp, reactive } from 'vue'
+import { reactive } from 'vue'
+import { createSSRAppWithEnv as createSSRApp } from './support/ssr-app'
 
 import NeSettingsPage from '../src/runtime/components/NeSettingsPage.vue'
 

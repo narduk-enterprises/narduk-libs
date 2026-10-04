@@ -19,7 +19,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, markRaw } from 'vue'
 
 import NeConfirmDialog from '../src/runtime/components/NeConfirmDialog.vue'
 
@@ -86,14 +86,18 @@ describe('NeConfirmDialog rendering', () => {
   })
 
   it('renders the body component with its props, and the #body slot', async () => {
-    const TradeSummary = defineComponent({
-      props: {
-        symbol: { type: String, required: true },
-        quantity: { type: Number, required: true },
-      },
-      setup: (props) => () =>
-        h('p', { 'data-test': 'summary' }, `${props.quantity} x ${props.symbol}`),
-    })
+    // `mount()` keeps props in a `reactive()`; a component passed through it
+    // must be `markRaw` or Vue warns and tracks the component's internals.
+    const TradeSummary = markRaw(
+      defineComponent({
+        props: {
+          symbol: { type: String, required: true },
+          quantity: { type: Number, required: true },
+        },
+        setup: (props) => () =>
+          h('p', { 'data-test': 'summary' }, `${props.quantity} x ${props.symbol}`),
+      }),
+    )
 
     await open(
       { body: TradeSummary, props: { symbol: 'AAPL', quantity: 12 } },

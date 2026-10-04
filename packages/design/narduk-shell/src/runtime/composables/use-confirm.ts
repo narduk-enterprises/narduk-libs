@@ -1,4 +1,5 @@
 import { useOverlay } from '@nuxt/ui/composables/useOverlay'
+import { markRaw } from 'vue'
 import type { Component } from 'vue'
 
 import NeConfirmDialog from '../components/NeConfirmDialog.vue'
@@ -136,6 +137,10 @@ export function useConfirm() {
 
     const opened = dialog.open({
       ...dialogProps,
+      // Nuxt UI keeps the open props in a `reactive()`, which would proxy a
+      // component object and make Vue warn "a Component that was made a
+      // reactive object" (and track its internals) on every body dialog.
+      body: dialogProps.body ? markRaw(dialogProps.body) : undefined,
       // Always reset: the same overlay instance is reused across calls, so a
       // previous failure's pending/error state would otherwise leak forward.
       pending: false,

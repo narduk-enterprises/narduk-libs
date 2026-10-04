@@ -147,6 +147,7 @@
   },
   "//devDependencies": "@vitejs/plugin-vue is pinned to the exact version already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen it in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
+    "@narduk-enterprises/narduk-testkit": "workspace:*",
     "@cloudflare/workers-types": "^4.20260511.1",
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@nuxt/schema": "^4.5.2",

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, h } from 'vue'
+import { createSSRApp, defineComponent } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
 import AppSnapStrip from '../runtime/app/components/shared/AppSnapStrip.vue'
@@ -55,15 +55,27 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/*
+ * The strip is mounted through a compiled template, the way an app writes it.
+ * Passing `slots: { default: () => [...] }` to `mount` hands Vue a plain slot
+ * function, and Vue warns whenever the component reads one outside its render
+ * function (AppSnapStrip counts its children in a computed). A compiled slot is
+ * flagged stable and does not.
+ */
+const Host = defineComponent({
+  components: { AppSnapStrip },
+  props: {
+    itemCount: { default: 6, type: Number },
+    itemsPerView: { default: 2, type: Number },
+  },
+  template: `<AppSnapStrip :items-per-view="itemsPerView">
+    <figure v-for="index in itemCount" :key="index" :data-item="String(index - 1)">Item {{ index }}</figure>
+  </AppSnapStrip>`,
+})
+
 function render(itemCount = 6, itemsPerView = 2) {
-  return mount(AppSnapStrip, {
-    props: { itemsPerView },
-    slots: {
-      default: () =>
-        Array.from({ length: itemCount }, (_, index) =>
-          h('figure', { 'data-item': String(index) }, `Item ${index + 1}`),
-        ),
-    },
+  return mount(Host, {
+    props: { itemCount, itemsPerView },
     global: { components: nuxtUiStubs },
   })
 }
@@ -115,19 +127,7 @@ describe('AppSnapStrip readout', () => {
   })
 
   it('renders a first-page readout on the server without IntersectionObserver', async () => {
-    const app = createSSRApp({
-      setup() {
-        return () =>
-          h(
-            AppSnapStrip,
-            { itemsPerView: 2 },
-            {
-              default: () =>
-                Array.from({ length: 6 }, (_, index) => h('figure', `Item ${index + 1}`)),
-            },
-          )
-      },
-    })
+    const app = createSSRApp(Host, { itemCount: 6, itemsPerView: 2 })
     app.component('UButton', nuxtUiStubs.UButton)
     const html = await renderToString(app)
     expect(html).toContain('1–2 of 6')

@@ -120,6 +120,14 @@
     "./analytics": {
       "types": "./dist/analytics.d.ts",
       "import": "./dist/analytics.js"
+    },
+    "./vue-warn-guard": {
+      "types": "./dist/vue-warn-guard.d.ts",
+      "import": "./dist/vue-warn-guard.js"
+    },
+    "./vue-test-env": {
+      "types": "./dist/vue-test-env.d.ts",
+      "import": "./dist/vue-test-env.js"
     }
   },
   "files": [
@@ -159,6 +167,12 @@
     },
     "miniflare": {
       "optional": true
+    },
+    "vue": {
+      "optional": true
+    },
+    "vue-router": {
+      "optional": true
     }
   },
   "peerDependencies": {
@@ -167,7 +181,9 @@
     "@playwright/test": ">=1.50.0",
     "h3": "^1.15.11",
     "miniflare": ">=4.20260701.0",
-    "vitest": ">=2.0.0"
+    "vitest": ">=2.0.0",
+    "vue": ">=3.5.0",
+    "vue-router": "^5.3.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
@@ -181,7 +197,9 @@
     "miniflare": "5.20260921.0-alpha",
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "vue": "^3.5.39",
+    "vue-router": "^5.3.1"
   },
   "engines": {
     "node": ">=22.22.0"
