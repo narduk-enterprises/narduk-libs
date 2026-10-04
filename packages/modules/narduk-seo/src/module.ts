@@ -46,6 +46,7 @@ import {
 import { assertResolvedSeoUnheadCompatibility } from '../shared/seoUnheadCompat'
 
 import { writeBuildCiOutputMarker } from './buildCiOutputMarker'
+import { applySitemapLastmod } from './sitemapLastmod'
 
 export {
   AI_CRAWLERS,
@@ -189,6 +190,13 @@ export interface NardukSeoModuleOptions {
   securityTxt?: NardukSecurityTxtOptions | false
   seoModule?: boolean
   server?: boolean
+  /**
+   * Per-page sitemap `<lastmod>` from the page's literal `useSeo({ modifiedAt })`,
+   * else its file's last commit date (one `git log`; skipped on shallow clones).
+   * Never the build or request time; a page with no trustworthy date gets none.
+   * `definePageMeta({ sitemap: { lastmod } })` always wins. Default `true`.
+   */
+  sitemapLastmod?: boolean
 }
 
 function pushUnique<T>(items: T[], item: T): void {
@@ -428,6 +436,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     indexNonProduction: false,
     seoModule: true,
     server: true,
+    sitemapLastmod: true,
   },
   async setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
@@ -569,6 +578,18 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         (nuxtOptions.robots ?? {}) as Record<string, unknown>,
         options.aiCrawlers,
       )
+      if (options.sitemapLastmod && !nuxtBuildFlags._prepare) {
+        // Registered during setup, so it runs before @nuxtjs/sitemap reads the
+        // pages (its own pages:resolved hook is added at modules:done).
+        nuxt.hook('pages:resolved', (pages) => {
+          const result = applySitemapLastmod(pages, { cwd: nuxt.options.rootDir })
+          if (result.skipped === 'shallow-clone') {
+            useLogger(PACKAGE_NAME).info(
+              'sitemap lastmod: shallow clone, so pages without useSeo({ modifiedAt }) get no <lastmod>',
+            )
+          }
+        })
+      }
     }
     if (hostAwareIndexing) {
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
