@@ -1011,6 +1011,34 @@ parse error is not copied onto every row. R6 is not-applicable when the wrangler
 config declares no D1 binding. R7 is not-applicable when it declares no D1, KV,
 or R2 binding.
 
+### Publishing the report (`narduk-app adoption publish`)
+
+```sh
+narduk-app doctor --adoption --checkout ../.. --live <origin> --expect-sha "$SHA" --json "$RUNNER_TEMP/adoption.json"
+narduk-app adoption publish --report "$RUNNER_TEMP/adoption.json" [--origin <url>] [--dry-run]
+```
+
+Posts the artefact `--json` wrote to the Operator Portal's estate ingest, where
+`/products/adoption` keeps the newest report per repository. An app's promote
+run is what feeds the page, so the publisher is owned here, beside the schema it
+publishes, rather than copied into each app.
+
+The key is the single-purpose `producer:narduk-app-adoption` key, read only from
+the `OPERATOR_PORTAL_ADOPTION_INGEST_TOKEN` environment variable (`--token` is
+refused: argv is visible to every process on the runner). It is never printed,
+and is scrubbed from anything the portal's response echoes. `--origin`, then
+`OPERATOR_PORTAL_URL`, then the production portal picks the target.
+
+| Exit | Meaning                                                                 |
+| ---- | ----------------------------------------------------------------------- |
+| 0    | the portal stored the report (or `--dry-run` built the body)            |
+| 1    | the report is unreadable or not a schema-1 adoption artefact, or a typo |
+| 2    | the key is not provisioned: nothing was sent, and the message says so   |
+| 3    | the portal refused the report, or could not be reached                  |
+
+Run it `continue-on-error` in a promote workflow: it is a reporter, and a
+refused publish must not stop a production fix shipping.
+
 ## The deployment standard block
 
 An app declares its half of the standard in the `deployment` block of
