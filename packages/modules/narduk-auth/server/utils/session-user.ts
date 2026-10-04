@@ -106,9 +106,16 @@ async function refreshSessionUser(event: H3Event): Promise<AppSessionUser | null
   let authSession
   let dbUser
   try {
-    authSession = await loadAuthSessionRow(event, sessionUser.authSessionId)
+    // Both ids come from the unsealed cookie, so neither read needs the
+    // other's answer: start both and wait on the session row first. A missing
+    // session row ends the request below and the user read is discarded; its
+    // failure is then of no interest, so it is marked handled up front.
+    const authSessionRead = loadAuthSessionRow(event, sessionUser.authSessionId)
+    const dbUserRead = loadAuthUserRow(event, sessionUser.id)
+    dbUserRead.catch(() => {})
+    authSession = await authSessionRead
     if (authSession) {
-      dbUser = await loadAuthUserRow(event, sessionUser.id)
+      dbUser = await dbUserRead
     }
   } catch (error) {
     useLogger(event)

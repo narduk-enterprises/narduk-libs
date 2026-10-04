@@ -21,7 +21,7 @@ vi.mock('../runtime/server/utils/user-session', () => ({
 }))
 vi.mock('../runtime/server/utils/database', () => {
   const chain: Record<string, () => unknown> = {}
-  for (const method of ['from', 'limit', 'select', 'set', 'update', 'where']) {
+  for (const method of ['from', 'innerJoin', 'limit', 'select', 'set', 'update', 'where']) {
     chain[method] = () => chain
   }
   return {
@@ -61,7 +61,7 @@ describe('requireAuth API-key principal', () => {
   })
 
   it('carries the authenticating key id and expiry', async () => {
-    db.rows = [keyRow(FUTURE), USER]
+    db.rows = [{ apiKey: keyRow(FUTURE), user: USER }]
 
     await expect(requireAuth(bearerEvent())).resolves.toMatchObject({
       authMethod: 'api-key',
@@ -71,7 +71,7 @@ describe('requireAuth API-key principal', () => {
   })
 
   it('reports a never-expiring key as expiresAt null', async () => {
-    db.rows = [keyRow(null), USER]
+    db.rows = [{ apiKey: keyRow(null), user: USER }]
 
     await expect(requireAuth(bearerEvent())).resolves.toMatchObject({
       apiKey: { id: 'key-1', expiresAt: null },
