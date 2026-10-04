@@ -201,6 +201,12 @@ targets; otherwise the branch decides, and with no branch the result is
 explicit and branch answers and never the default, and it still passes an
 unrecognised explicit value through unchanged, as it always has.
 
+## Error responses
+
+Any 4xx or 5xx response, a missing page or an API error alike, sends
+`X-Robots-Tag: noindex, nofollow`. @nuxtjs/robots sets its header before the
+status is known, so without this a 404 kept the route's `index` directive.
+
 ## Host-aware indexing
 
 A production build that sets `nardukSeo: { hostAwareIndexing: true }` (or
