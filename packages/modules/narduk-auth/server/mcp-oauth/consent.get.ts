@@ -10,8 +10,8 @@ import {
 import { loadAuthUserRow } from '../lib/app-auth/session'
 import {
   assertMcpOAuthRequest,
+  authorizeMcpOAuthRequest,
   bindMcpOAuthConsent,
-  mcpOAuthPolicy,
   useMcpOAuth,
 } from '../utils/mcp-oauth'
 import { resolveRequestPrincipal } from '../utils/request-principal'
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event): Promise<McpOAuthConsentState> =
       name: details.clientName,
       ...(details.clientDomain ? { domain: details.clientDomain } : {}),
     }
-    const refusal = await mcpOAuthPolicy().authorize?.({
+    const refusal = await authorizeMcpOAuthRequest(mcp, request, {
       event,
       user,
       client,

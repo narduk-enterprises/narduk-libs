@@ -848,3 +848,31 @@ Optional cross-repository local proof (synthetic D1/accounts/secrets only):
 ```sh
 RUNNERS_MCP_TEST_SOURCE=/absolute/path/to/runners pnpm --filter @narduk-enterprises/narduk-auth exec vitest run tests/mcp-runner-provider.test.ts --config vitest.config.ts
 ```
+
+## Native Portal and runner OAuth coexistence (opt-in)
+
+The existing Portal issuer can additionally issue tokens for exactly
+`https://runner-hooks.nard.uk/mcp`. This fixed adapter accepts only the native
+`https://ops.nardukenterprises.com/mcp` primary audience. An app registers
+`defineRunnerMcpOAuthPolicy({ subject, clientId, eligible })` separately from
+`defineMcpOAuthPolicy`; without that registration the additional audience is
+OFF. The existing app policy, routes, scopes, attribution and token lifetimes
+stay native. Registration order cannot replace either policy. Both resources
+share one D1 and the existing OAuth endpoints; no schema or new issuer is
+introduced.
+
+The SDK's `defaultResource` and `legacyGrantResource` remain the native
+audience. Consent and approval dispatch by the SDK-validated resource and
+enforce separate scope sets. The authorization server advertises their union;
+protected-resource metadata and local principal validation stay native. Runner
+exchanges alone apply the existing one-hour access, original seven-day absolute
+and one-day idle caps and current owner/client eligibility. The signed runner
+bridge uses its own audience-bound validator; a runner token never becomes a
+Portal principal. Reauthorization and revocation remain resource-scoped.
+
+This is source support, not authorization to publish or activate. Keep the app
+runner runtime gate disabled and subject/client/key empty until separately
+approved. The code uses the installed SDK 1.2.1; no dependency or schema change.
+The D1 route/consent compatibility proof is
+`tests/mcp-runner-coexistence.test.ts`; set `RUNNERS_MCP_TEST_SOURCE` for its
+optional synthetic signed event lifecycle.

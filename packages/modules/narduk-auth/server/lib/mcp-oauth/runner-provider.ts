@@ -9,6 +9,8 @@ import type {
   ValidatedAccessToken,
 } from '@cloudflare/workers-oauth-provider'
 
+export const RUNNER_ISSUER = 'https://ops.nardukenterprises.com'
+export const RUNNER_RESOURCE = 'https://runner-hooks.nard.uk/mcp'
 export const RUNNER_BRIDGE_PATH = '/api/auth/mcp/runner-bridge'
 export const RUNNER_SCOPES = ['runner:transitions:read', 'runner:events:subscribe'] as const
 const DAY = 86400
@@ -24,6 +26,27 @@ export interface RunnerOAuthPolicy {
   /** Fresh authoritative account/allowlist check; failure throws, false is verified refusal. */
   eligible(subject: string): Promise<boolean>
   subject: string
+}
+
+/** One fixed opt-in audience alongside the Portal; never an arbitrary resource registry. */
+export function runnerCoexistenceConfig(config: ResolvedMcpOAuthConfig): ResolvedMcpOAuthConfig {
+  if (
+    config.issuer !== RUNNER_ISSUER ||
+    config.resource !== `${RUNNER_ISSUER}/mcp` ||
+    config.resourcePath !== '/mcp' ||
+    config.scopes.some((scope) => RUNNER_SCOPES.includes(scope as (typeof RUNNER_SCOPES)[number]))
+  )
+    throw new Error('Runner coexistence requires the unchanged native Portal audience and scopes')
+  return {
+    ...config,
+    resourceUri: RUNNER_RESOURCE,
+    resource: RUNNER_RESOURCE,
+    scopes: [...RUNNER_SCOPES],
+    requiredScopes: [RUNNER_SCOPES[0]],
+    accessTokenTtl: 3600,
+    refreshTokenTtl: 7 * DAY,
+    refreshTokenIdleTtl: DAY,
+  }
 }
 
 function checkPolicy(config: ResolvedMcpOAuthConfig, policy: RunnerOAuthPolicy) {

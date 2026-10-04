@@ -15,8 +15,8 @@ import { enforceRateLimitPolicy, RATE_LIMIT_POLICIES } from '#layer/server/utils
 import { loadAuthUserRow } from '../lib/app-auth/session'
 import {
   assertMcpOAuthRequest,
+  authorizeMcpOAuthRequest,
   mcpOAuthConsentOwner,
-  mcpOAuthPolicy,
   useMcpOAuth,
 } from '../utils/mcp-oauth'
 import { resolveRequestPrincipal } from '../utils/request-principal'
@@ -77,7 +77,7 @@ export default defineEventHandler(async (event): Promise<{ redirectTo: string }>
     const scopes = assertMcpOAuthRequest(mcp, approved.request)
     const details = await api.describeConsent(approved.request)
     const row = await loadAuthUserRow(event, principal.userId)
-    const refusal = await mcpOAuthPolicy().authorize?.({
+    const refusal = await authorizeMcpOAuthRequest(mcp, approved.request, {
       event,
       user: { id: principal.userId, email: principal.email, name: row?.name ?? null },
       client: {
