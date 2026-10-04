@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.33.9
+
+### Patch Changes
+
+- fc71018: Add an opt-in fixed runner OAuth audience alongside native Portal
+  authorization, preserving native default and legacy audiences, policy, scopes
+  and lifetimes.
+
 ## 1.33.8
 
 ### Patch Changes
