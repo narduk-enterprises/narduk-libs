@@ -538,6 +538,34 @@ export interface VectorTileHighlight {
   style: VectorTileHighlightStyle
 }
 
+/**
+ * One stroke of a highlight plan: a highlight style with a draw order. Lower
+ * `layer`s are stroked first, so a wide faint halo (layer 0) sits under the
+ * line it surrounds (layer 1). Strokes in the same layer draw in stream order,
+ * trunks over tributaries.
+ */
+export interface VectorTileHighlightStroke extends VectorTileHighlightStyle {
+  layer?: number
+}
+
+/**
+ * Many stretches lit at once, each in its own style (a river, the path it
+ * flows down and the tributaries above it).
+ *
+ * The overlay asks the plan about every piece of every cached tile it paints,
+ * so `strokes` must be a plain lookup: no allocation beyond the strokes it
+ * returns and nothing asynchronous. A stretch it returns `null` or `[]` for is
+ * not drawn. `zoom` is the zoom being displayed, so a plan can follow the same
+ * width ladder as the network under it.
+ */
+export interface VectorTileHighlightPlan {
+  strokes: (
+    si: number,
+    streamOrder: number,
+    zoom: number,
+  ) => VectorTileHighlightStroke | readonly VectorTileHighlightStroke[] | null
+}
+
 export interface VectorTileHitTestOptions {
   coordinate: VectorTileCoordinate
   /**
@@ -558,9 +586,12 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
   clearHighlight: () => Promise<void>
   /** The highlighted stretch, or `null`. */
   readonly highlight: VectorTileHighlight | null
+  /** The highlight plan, or `null`. A plan and a single highlight are never both set. */
+  readonly highlightPlan: VectorTileHighlightPlan | null
   /**
    * The highlight's own `imageForTile`, for a second overlay above the
-   * network. Draws every cached piece whose `si` equals the highlighted id,
+   * network. Draws every cached piece whose `si` equals the highlighted id (or
+   * that the highlight plan strokes),
    * from the decoded cache alone: it never reads, never decodes and never
    * touches the read queue. A tile whose read is still in flight is awaited; a
    * tile that is not cached and not loading resolves `null` and is drawn when
@@ -604,6 +635,12 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
    * coalesce to the latest.
    */
   setHighlight: (highlight: VectorTileHighlight | null) => Promise<void>
+  /**
+   * Light many stretches in many styles (see {@link VectorTileHighlightPlan}),
+   * or pass `null` to clear. Replaces a single highlight, and is replaced by
+   * one. Swaps only the highlight overlay, like `setHighlight`.
+   */
+  setHighlightPlan: (plan: VectorTileHighlightPlan | null) => Promise<void>
   setHighlightHost: (host: VectorTileRestyleHost<TCanvas> | null) => void
   setRestyleHost: (host: VectorTileRestyleHost<TCanvas | TImage> | null) => void
   /**
@@ -1218,6 +1255,104 @@ export function paintVectorTileHighlight(
   return true
 }
 
+/**
+ * Paint a highlight plan over one decoded tile: every piece the plan strokes,
+ * batched by style into one path per stroke, layers in order.
+ *
+ * The plan counterpart of {@link paintVectorTileHighlight}, over the same
+ * geometry and overzoom window. A tile with no `si` column, or none the plan
+ * strokes, paints nothing and returns `false`.
+ */
+export function paintVectorTileHighlightPlan(
+  canvas: VectorTileCanvas,
+  tile: DecodedVectorTile,
+  options: {
+    overzoom?: VectorTileOverzoom
+    pixelRatio: number
+    plan: VectorTileHighlightPlan
+    tileSize: number
+    zoom: number
+  },
+): boolean {
+  const { overzoom, pixelRatio, plan, tileSize, zoom } = options
+  const column = tile.si
+  if (!column) return false
+  const context = canvas.getContext('2d')
+  if (!context) return false
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+
+  const batches = new Map<
+    string,
+    { features: number[]; layer: number; order: number; stroke: VectorTileHighlightStroke }
+  >()
+  const featureCount = vectorTileFeatureCount(tile)
+  for (let feature = 0; feature < featureCount; feature += 1) {
+    const si = column[feature]
+    if (si === undefined || si === VECTOR_TILE_MISSING_ID) continue
+    const order = tile.so?.[feature] ?? 0
+    const answer = plan.strokes(si, order, zoom)
+    if (!answer) continue
+    const strokes: readonly VectorTileHighlightStroke[] = Array.isArray(answer)
+      ? answer
+      : [answer as VectorTileHighlightStroke]
+    for (const stroke of strokes) {
+      const layer = stroke.layer ?? 0
+      const key = `${layer}|${order}|${batchKey({ ...stroke, severity: 0 })}`
+      let batch = batches.get(key)
+      if (!batch) {
+        batch = { features: [], layer, order, stroke }
+        batches.set(key, batch)
+      }
+      batch.features.push(feature)
+    }
+  }
+  if (batches.size === 0) return false
+
+  const scale = (tileSize * pixelRatio) / tile.extent
+  let painted = false
+  const ordered = [...batches.values()].sort(
+    (left, right) => left.layer - right.layer || left.order - right.order,
+  )
+  for (const { features, stroke } of ordered) {
+    const view = overzoom
+      ? overzoomView(
+          overzoom,
+          tile.extent,
+          tileSize,
+          pixelRatio,
+          (stroke.width + (stroke.casing?.extraWidth ?? 0)) * pixelRatio,
+        )
+      : null
+    context.beginPath()
+    let added = false
+    for (const feature of features) {
+      const appended = view
+        ? appendOverzoomFeaturePath(context, tile, feature, view)
+        : appendFeaturePath(context, tile, feature, scale)
+      if (appended) added = true
+    }
+    if (!added) continue
+    const opacity = stroke.opacity ?? 1
+    if (stroke.casing) {
+      const casing = hairlineStroke((stroke.width + stroke.casing.extraWidth) * pixelRatio)
+      context.globalAlpha = opacity * casing.alpha
+      context.strokeStyle = stroke.casing.color
+      context.lineWidth = casing.width
+      context.stroke()
+    }
+    const line = hairlineStroke(stroke.width * pixelRatio)
+    context.globalAlpha = opacity * line.alpha
+    context.strokeStyle = stroke.color
+    context.lineWidth = line.width
+    context.stroke()
+    painted = true
+  }
+  context.globalAlpha = 1
+  return painted
+}
+
 /** A tile read, from the moment it is asked for until it settles. */
 interface PendingRead {
   controller: AbortController
@@ -1311,6 +1446,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
   let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null
   let restyleHost = options.restyleHost ?? null
   let highlight: VectorTileHighlight | null = null
+  let highlightPlan: VectorTileHighlightPlan | null = null
   let highlightHost = options.highlightHost ?? null
   // Tiles the highlight overlay asked for before they were decoded. When one
   // lands, the highlight overlay is refreshed so its piece appears.
@@ -1577,7 +1713,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
 
   async function highlightImageForTile(x: number, y: number, z: number, scale: number) {
     try {
-      if (!highlight) return null
+      if (!highlight && !highlightPlan) return null
       if (maxDataZoomPending) await maxDataZoomPending
       const levels = z - dataZoomFor(z)
       const factor = 2 ** levels
@@ -1603,19 +1739,31 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
         return null
       }
       const current: VectorTileHighlight | null = highlight
-      if (!current) return null
+      const plan: VectorTileHighlightPlan | null = highlightPlan
+      if (!current && !plan) return null
       const pixelRatio = scale > 0 ? scale : 1
       const size = Math.round(tileSize * pixelRatio)
       const canvas = createCanvas(size, size)
-      const painted = paintVectorTileHighlight(canvas, tile, {
-        id: current.id,
-        pixelRatio,
-        style: current.style,
-        tileSize,
-        ...(levels > 0
-          ? { overzoom: { column: x - ancestorX * factor, levels, row: y - ancestorY * factor } }
-          : {}),
-      })
+      const overzoom =
+        levels > 0
+          ? { column: x - ancestorX * factor, levels, row: y - ancestorY * factor }
+          : undefined
+      const painted = plan
+        ? paintVectorTileHighlightPlan(canvas, tile, {
+            pixelRatio,
+            plan,
+            tileSize,
+            zoom: z,
+            ...(overzoom ? { overzoom } : {}),
+          })
+        : current !== null &&
+          paintVectorTileHighlight(canvas, tile, {
+            id: current.id,
+            pixelRatio,
+            style: current.style,
+            tileSize,
+            ...(overzoom ? { overzoom } : {}),
+          })
       return painted ? canvas : null
     } catch (reason) {
       onError?.(reason)
@@ -1669,7 +1817,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
           await host.replace(host.layerId, descriptor, {
             ...DEFAULT_RESTYLE_REPLACE,
             // A cleared highlight has no first image to wait for.
-            ...(highlight ? {} : { activateWhen: 'immediate' as const }),
+            ...(highlight || highlightPlan ? {} : { activateWhen: 'immediate' as const }),
             ...host.replaceOptions,
           })
         }
@@ -1690,6 +1838,14 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       throw new RangeError('highlight id must be a non-negative integer')
     }
     highlight = next ? { id: next.id, style: next.style } : null
+    highlightPlan = null
+    highlightMissed.clear()
+    return refreshHighlight()
+  }
+
+  function setHighlightPlan(next: VectorTileHighlightPlan | null): Promise<void> {
+    highlightPlan = next
+    highlight = null
     highlightMissed.clear()
     return refreshHighlight()
   }
@@ -1703,6 +1859,9 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
     },
     get highlight() {
       return highlight
+    },
+    get highlightPlan() {
+      return highlightPlan
     },
     highlightImageForTile,
     clearCache() {
@@ -1757,6 +1916,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       return requestRestyle()
     },
     setHighlight,
+    setHighlightPlan,
     setHighlightHost(host) {
       highlightHost = host
     },

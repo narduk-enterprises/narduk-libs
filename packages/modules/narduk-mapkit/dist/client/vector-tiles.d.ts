@@ -376,6 +376,28 @@ export interface VectorTileHighlight {
     id: number;
     style: VectorTileHighlightStyle;
 }
+/**
+ * One stroke of a highlight plan: a highlight style with a draw order. Lower
+ * `layer`s are stroked first, so a wide faint halo (layer 0) sits under the
+ * line it surrounds (layer 1). Strokes in the same layer draw in stream order,
+ * trunks over tributaries.
+ */
+export interface VectorTileHighlightStroke extends VectorTileHighlightStyle {
+    layer?: number;
+}
+/**
+ * Many stretches lit at once, each in its own style (a river, the path it
+ * flows down and the tributaries above it).
+ *
+ * The overlay asks the plan about every piece of every cached tile it paints,
+ * so `strokes` must be a plain lookup: no allocation beyond the strokes it
+ * returns and nothing asynchronous. A stretch it returns `null` or `[]` for is
+ * not drawn. `zoom` is the zoom being displayed, so a plan can follow the same
+ * width ladder as the network under it.
+ */
+export interface VectorTileHighlightPlan {
+    strokes: (si: number, streamOrder: number, zoom: number) => VectorTileHighlightStroke | readonly VectorTileHighlightStroke[] | null;
+}
 export interface VectorTileHitTestOptions {
     coordinate: VectorTileCoordinate;
     /**
@@ -395,9 +417,12 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
     clearHighlight: () => Promise<void>;
     /** The highlighted stretch, or `null`. */
     readonly highlight: VectorTileHighlight | null;
+    /** The highlight plan, or `null`. A plan and a single highlight are never both set. */
+    readonly highlightPlan: VectorTileHighlightPlan | null;
     /**
      * The highlight's own `imageForTile`, for a second overlay above the
-     * network. Draws every cached piece whose `si` equals the highlighted id,
+     * network. Draws every cached piece whose `si` equals the highlighted id (or
+     * that the highlight plan strokes),
      * from the decoded cache alone: it never reads, never decodes and never
      * touches the read queue. A tile whose read is still in flight is awaited; a
      * tile that is not cached and not loading resolves `null` and is drawn when
@@ -441,6 +466,12 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
      * coalesce to the latest.
      */
     setHighlight: (highlight: VectorTileHighlight | null) => Promise<void>;
+    /**
+     * Light many stretches in many styles (see {@link VectorTileHighlightPlan}),
+     * or pass `null` to clear. Replaces a single highlight, and is replaced by
+     * one. Swaps only the highlight overlay, like `setHighlight`.
+     */
+    setHighlightPlan: (plan: VectorTileHighlightPlan | null) => Promise<void>;
     setHighlightHost: (host: VectorTileRestyleHost<TCanvas> | null) => void;
     setRestyleHost: (host: VectorTileRestyleHost<TCanvas | TImage> | null) => void;
     /**
@@ -592,6 +623,21 @@ export declare function paintVectorTileHighlight(canvas: VectorTileCanvas, tile:
     pixelRatio: number;
     style: VectorTileHighlightStyle;
     tileSize: number;
+}): boolean;
+/**
+ * Paint a highlight plan over one decoded tile: every piece the plan strokes,
+ * batched by style into one path per stroke, layers in order.
+ *
+ * The plan counterpart of {@link paintVectorTileHighlight}, over the same
+ * geometry and overzoom window. A tile with no `si` column, or none the plan
+ * strokes, paints nothing and returns `false`.
+ */
+export declare function paintVectorTileHighlightPlan(canvas: VectorTileCanvas, tile: DecodedVectorTile, options: {
+    overzoom?: VectorTileOverzoom;
+    pixelRatio: number;
+    plan: VectorTileHighlightPlan;
+    tileSize: number;
+    zoom: number;
 }): boolean;
 /**
  * Quiet time after the last tile request before tiles dropped for a zoom
