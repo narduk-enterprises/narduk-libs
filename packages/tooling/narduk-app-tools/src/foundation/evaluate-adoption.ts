@@ -1,6 +1,12 @@
 /**
- * `narduk-app doctor --adoption` -- the fifteen-requirement adoption report
- * (company-hq#745, standard company-hq#746).
+ * `narduk-app doctor --adoption` -- the adoption report (company-hq#745, standard
+ * company-hq#746).
+ *
+ * THE STATUS IS THE SIX CHECKS (D-NAC-STATUS-1, narduk-libs#1409). The fifteen
+ * requirements below are rolled up into six by `evaluate-nac-status.ts`, which
+ * adds `checks`, `status`, `upToDate`, `waivers`, `dependabot` and `freshness`.
+ * R1-R15 stay at the top level for one minor because the portal's ingest reads
+ * them; they are deprecated, and what decides the status is `checks`.
  *
  * THIS COMPOSES, IT DOES NOT REIMPLEMENT. Every requirement that an existing
  * foundation check already decides is answered by running that check and
@@ -56,6 +62,16 @@ import {
   runMapKitProvenanceCheck,
   type MapKitProvenanceReport,
 } from './evaluate-mapkit-provenance.js'
+import {
+  buildNacStatus,
+  createGithubDependabotReality,
+  formatNacStatus,
+  readWaiverConfig,
+  summariseDependabot,
+  NAC_STATUS_DECISION,
+  type DependabotReality,
+  type NacStatus,
+} from './evaluate-nac-status.js'
 import { createLiveProbe, type LiveProbe } from '../live-probe.js'
 import { FilesystemRegistryReality, type RegistryReality } from './npm-registry.js'
 import type {
@@ -67,8 +83,9 @@ import type {
 
 export const ADOPTION_TOOL_NAME = '@narduk-enterprises/narduk-app-tools/adoption'
 export const ADOPTION_STANDARD_SOURCE =
-  'narduk-enterprises/agent-infrastructure docs/standards/NARDUK-APP-COMPLIANCE.md (company-hq#746)'
+  'narduk-enterprises/agent-infrastructure docs/standards/NARDUK-APP-COMPLIANCE.md (D-NAC-STATUS-1)'
 export const ADOPTION_REQUIREMENT_COUNT = 15
+export const ADOPTION_CHECK_COUNT = 6
 
 export type AdoptionVerdict = 'pass' | 'fail' | 'unknown' | 'not-applicable' | 'deviation'
 
@@ -110,13 +127,21 @@ export interface AdoptionLiveReading {
   healthOk: boolean | null
 }
 
-export interface AdoptionArtefact {
+export interface AdoptionArtefact extends NacStatus {
+  /** Stays 1: the portal ingest refuses any other value and reads the R*
+   * fields below. The six-check status is additive (`statusSchemaVersion`). */
   schemaVersion: 1
   tool: typeof ADOPTION_TOOL_NAME
   toolVersion: string
   generated: string
   app: FoundationAppInfo
-  standard: { source: string; requirements: typeof ADOPTION_REQUIREMENT_COUNT }
+  standard: {
+    source: string
+    /** The R1..R15 list, kept for one minor beside the six checks. */
+    requirements: typeof ADOPTION_REQUIREMENT_COUNT
+    checks: typeof ADOPTION_CHECK_COUNT
+    decision: typeof NAC_STATUS_DECISION
+  }
   /** Null when no `--live` was given. */
   live: AdoptionLiveReading | null
   /** Requirement 2's evidence, kept as data so a reader does not parse prose. */
@@ -321,6 +346,10 @@ export interface RunAdoptionCheckOptions {
    * requirement 8 would then be evidence about production rather than about
    * this code. */
   headerProbe?: HeaderProbe
+  /** The Dependabot alerts read behind check 3. Injectable like the other
+   * probes: a test that reached GitHub would be evidence about GitHub. The
+   * default answers `unknown` when the run's token cannot read alerts. */
+  dependabotReality?: DependabotReality
 }
 
 export async function runAdoptionCheck(
@@ -417,7 +446,19 @@ export async function runAdoptionCheck(
         ? 'DEVIATION'
         : 'PASS'
 
+  const dependabot = summariseDependabot(
+    await (options.dependabotReality ?? createGithubDependabotReality()).read(app.repo),
+  )
+  const status = buildNacStatus({
+    dependabot,
+    generated,
+    requirements,
+    toolVersion,
+    waiverEntries: readWaiverConfig(root),
+  })
+
   return {
+    ...status,
     app,
     exitCode: EXIT_CODE[result],
     generated,
@@ -429,7 +470,12 @@ export async function runAdoptionCheck(
     result,
     schemaVersion: 1,
     score,
-    standard: { requirements: ADOPTION_REQUIREMENT_COUNT, source: ADOPTION_STANDARD_SOURCE },
+    standard: {
+      checks: ADOPTION_CHECK_COUNT,
+      decision: NAC_STATUS_DECISION,
+      requirements: ADOPTION_REQUIREMENT_COUNT,
+      source: ADOPTION_STANDARD_SOURCE,
+    },
     tool: ADOPTION_TOOL_NAME,
     toolVersion,
   }
@@ -936,7 +982,9 @@ export function formatAdoptionSummary(artefact: AdoptionArtefact): string {
       `  live       ${artefact.live.smokeUrl} -> ${artefact.live.buildVersion ?? '(no header)'}`,
     )
   }
+  lines.push(...formatNacStatus(artefact), '')
   lines.push(
+    '  Legacy requirements R1-R15 (kept for one minor; the six checks above are the status)',
     `  score      ${artefact.score.pass}P ${artefact.score.fail}F ${artefact.score.unknown}U ${artefact.score.notApplicable}N/A` +
       (artefact.score.deviation > 0 ? ` ${artefact.score.deviation}DEV` : ''),
     '',

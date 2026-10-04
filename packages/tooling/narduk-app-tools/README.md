@@ -915,6 +915,77 @@ present and nothing failed.
 
 ## Adoption report (`narduk-app doctor --adoption`)
 
+### The six-check status (D-NAC-STATUS-1)
+
+The report answers the six checks of agent-infrastructure
+`docs/standards/NARDUK-APP-COMPLIANCE.md`. Each is one column on the Operator
+Portal's `/products/adoption` row. They are emitted under `checks`, in this
+order, each with `id`, `number`, `title`, `group`, `verdict`, `measured`,
+`detail`, `reason`, `from`, `diagnostics`, `evidence` and `waiver`.
+
+| #   | `id`        | `group`      | Rolled up from           | Answered by                                                                              |
+| --- | ----------- | ------------ | ------------------------ | ---------------------------------------------------------------------------------------- |
+| 1   | `platform`  | `structural` | R4, R10                  | `foundation:check` items 1-9, shared-UI pins, capability coverage                        |
+| 2   | `delivery`  | `structural` | R1, R5, R6, R7           | `foundation:check:deployment` 12.x, live `x-build-version` vs `--expect-sha`             |
+| 3   | `security`  | `structural` | R8 + the Dependabot read | `foundation:check:security-headers --live`, open fixable high/critical alerts            |
+| 4   | `health`    | `structural` | R12                      | the live health route (`liveProof.healthPath`)                                           |
+| 5   | `packages`  | `currency`   | R2, R3, R9               | the package table against the estate's newest releases, the toolchain, MapKit provenance |
+| 6   | `freshness` | `currency`   | R15                      | `generated` and `toolVersion` of this artefact                                           |
+
+`verdict` is `pass`, `fail`, `unknown` or `waived`. `measured` is what the
+checker saw before any waiver (`pass`, `fail` or `unknown`). Within a check,
+`fail` beats `unknown` beats `pass`, a requirement that does not apply is
+ignored, and a declared deviation from `narduk-v1` counts as a failure. R11, R13
+and R14 feed no check: they are manual and always `unknown`.
+
+The artefact adds:
+
+- `status`: `narduk-app` when checks 1-4 pass or are waived, else `not-yet`;
+  `blocking` lists the structural checks that are not.
+- `upToDate`: checks 5 and 6 pass or are waived. It does not depend on `status`.
+- `freshness`: `{ generated, toolVersion, maxAgeDays: 14, freshUntil }`. The
+  checker is fresh by construction when it runs; the portal measures the age of
+  the stored report against `maxAgeDays`.
+- `dependabot`: `{ read, reason, fixableCritical, fixableHigh }`.
+- `waivers`: every declared waiver with its `state`.
+- `statusSchemaVersion`: `1`. A reader tells a report with the status from an
+  older one by the presence of `checks`.
+
+`schemaVersion` stays `1` and `requirements` (R1-R15), `score`, `manualReview`,
+`result` and `exitCode` stay where they were, with the same meaning and the same
+exit codes. The portal's ingest refuses any other `schemaVersion` and reads
+`requirements` from the top level (operator-portal#1635), so the status is
+additive. The R1-R15 fields are deprecated and are removed one minor after this
+one, with a `schemaVersion` bump.
+
+**The Dependabot read.** `security` counts open `critical` or `high` alerts that
+have a patched release (`first_patched_version` is not null), read from
+`GET /repos/{repo}/dependabot/alerts` with `GH_TOKEN` or `GITHUB_TOKEN`. That
+read needs the "Dependabot alerts: read" permission (`security_events` on a
+classic token). The default Actions token does not have it, and the checker
+never asks for a wider one: a run that cannot read alerts reports `security` as
+`unknown`, with the reason and the missing permission, never as a pass or a
+failure. The repository is `GITHUB_REPOSITORY`, else `product.repository` in
+`Config/cloudflare-app.json`.
+
+**Waivers.** `Config/cloudflare-app.json` may carry
+
+```jsonc
+"waivers": [{ "check": "packages", "issue": "#1500", "expires": "2026-11-15" }]
+```
+
+`check` is one of the six ids, `issue` names a GitHub issue (`#123`,
+`owner/repo#123` or its URL) and `expires` is a real `YYYY-MM-DD` date. A waiver
+needs no sign-off. While the report's UTC date is on or before `expires`, a
+failing or unknown check reports `waived` and counts as passing; the day after,
+it reports its real verdict. `delivery` and `security` cannot be waived: the
+entry is reported with `state: "refused"` and the check keeps its real verdict.
+A waiver on a check that passes is `unneeded` and changes nothing; a malformed
+entry (unknown check, no issue, bad date, or a `waivers` that is not an array)
+is `invalid` and applies to nothing.
+
+### The legacy requirements
+
 R4 is foundation evidence for items 1-9 (`foundation:check`, shared-UI pins, and
 capability coverage). Its title says `items 1-9`. Items 10, 11, and 12 are R8,
 R3, and the deployment requirements; a passing R4 does not mean those passed.
