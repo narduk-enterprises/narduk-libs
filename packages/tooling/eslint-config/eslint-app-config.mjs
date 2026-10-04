@@ -50,6 +50,7 @@ import nuxtUiConfigs from './configs/nuxt-ui.mjs'
 import seoConfigs from './configs/seo.mjs'
 import serverConfigs from './configs/server.mjs'
 import templateConfigs from './configs/template.mjs'
+import { createProgramWarmingVueParser } from './configs/vue-program-warm.mjs'
 
 export { default as nardukPlugin } from './dist/index.js'
 
@@ -914,6 +915,32 @@ function patchCorrectnessProjectServiceConfig(config, appRootDir) {
   }
 }
 
+/**
+ * Last entry in the composition, so it decides the `.vue` parser whichever pack
+ * or Nuxt entry set one before it: the same `vue-eslint-parser`, wrapped so a
+ * run that lints several `.vue` files keeps one TypeScript program (and one
+ * type checker) for all of them. See `configs/vue-program-warm.mjs`
+ * (narduk-libs#1393). Omitted without an app root, the same condition under
+ * which the project service is not pointed at the app's tsconfig either.
+ *
+ * @param {string | undefined} appRootDir
+ */
+function buildVueProgramWarmConfig(appRootDir) {
+  if (!appRootDir) {
+    return []
+  }
+
+  return [
+    {
+      name: 'narduk/vue-program-warm',
+      files: ['**/*.vue'],
+      languageOptions: {
+        parser: createProgramWarmingVueParser(vueParser, { appRootDir }),
+      },
+    },
+  ]
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -1156,6 +1183,7 @@ export function createAppLintConfig({
     ...tailwindThemeOverrides,
     ...appTypeOverrides,
     ...extraOverrides,
+    ...buildVueProgramWarmConfig(appRootDir),
   )
 
   // Type-aware rules read the TypeScript program the parser built, so the
