@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, isNull, lt, lte, or } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm'
 
 import { authOAuthKv } from '../../database/mcp-oauth-schema'
 
@@ -55,6 +55,7 @@ export function createD1KvNamespace(
 ): McpOAuthKvNamespace & {
   claimOnce(key: string, ttlSeconds: number): Promise<boolean>
   purgeExpired(): Promise<void>
+  purgeExpiredPrefix(prefix: string, limit?: number): Promise<void>
 } {
   const live = () => or(isNull(authOAuthKv.expiresAt), gt(authOAuthKv.expiresAt, clock()))
 
@@ -126,6 +127,35 @@ export function createD1KvNamespace(
         .onConflictDoNothing()
         .returning({ key: authOAuthKv.key })
       return rows.length > 0
+    },
+
+    /** Bounded request-path cleanup for signed bridge replay markers only. */
+    async purgeExpiredPrefix(prefix, requested = 50) {
+      if (!prefix || prefix.length > 96 || !Number.isSafeInteger(requested) || requested < 1) {
+        throw new Error('Invalid bounded OAuth cleanup')
+      }
+      const rows = await db
+        .select({ key: authOAuthKv.key })
+        .from(authOAuthKv)
+        .where(
+          and(
+            gte(authOAuthKv.key, prefix),
+            lt(authOAuthKv.key, prefix + PREFIX_CEILING),
+            lte(authOAuthKv.expiresAt, clock()),
+          ),
+        )
+        .orderBy(asc(authOAuthKv.key))
+        .limit(Math.min(requested, 250))
+      if (rows.length)
+        await db.delete(authOAuthKv).where(
+          and(
+            inArray(
+              authOAuthKv.key,
+              rows.map((row) => row.key),
+            ),
+            lte(authOAuthKv.expiresAt, clock()),
+          ),
+        )
     },
 
     async purgeExpired() {

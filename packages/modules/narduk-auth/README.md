@@ -803,3 +803,48 @@ const tokenProfiles = [
   />
 </template>
 ```
+
+## External runner OAuth resource (disabled by default)
+
+`mcpOAuth.resourceUri` opts into one canonical external HTTPS `/mcp` resource.
+It does not add a second resource: tokens for it are refused by local
+application principal resolution, and the issuer's local MCP resource/metadata
+routes return 404. Without this option the existing local-resource behavior is
+unchanged.
+
+External mode requires
+`defineMcpOAuthPolicy({ runner: { subject, clientId, eligible } })`, registered
+by trusted app code. `eligible(subject, event)` must read current
+account/allowlist state, returning false only for a verified refusal and
+throwing on unavailable evidence. There is no default account/client.
+
+The runner policy permits authorization-code and refresh exchanges only, with
+the same exact grant/client/subject/resource. Access tokens are capped at one
+hour, original grant lifetime at seven days and idle lifetime at one day.
+Activity advances only at validated token exchange. Missing activity on refresh
+fails closed; reads cannot reseed or prolong it. OAuth's original D1 grant and
+revocation remain authoritative. The activity key lives in the existing OAuth KV
+table and requires no new schema beyond the unapplied existing OAuth migration.
+
+`useMcpOAuth(event).runnerBridge(request, secret)` provides a read-only signed
+`POST /api/auth/mcp/runner-bridge` protocol. The host app owns registering/rate
+limiting this exact route. Empty signing key disables it. Requests use Standard
+Webhooks HMAC over original bytes, 30-second freshness and an atomic 120-second
+nonce. Each signed call cleans at most 50 expired nonce rows, leaving unrelated
+OAuth records untouched. Body and response contracts are bounded. No session or
+user bearer authenticates the bridge. It returns only normalized token/grant
+identity/scopes/timestamps, never token material, email or encrypted grant
+props. The grant lookup is version-coupled to pinned workers-oauth-provider
+1.2.1; real D1/PKCE/refresh/revocation tests protect its exact record shape.
+
+No production issuer is enabled, no key/grant is created and no package is
+published by this draft. Portal must consume a reviewed released version before
+activation. Public routes, consent/account/client selection, signing-key
+custody, the existing D1 migration and live delivery each need separate
+approval.
+
+Optional cross-repository local proof (synthetic D1/accounts/secrets only):
+
+```sh
+RUNNERS_MCP_TEST_SOURCE=/absolute/path/to/runners pnpm --filter @narduk-enterprises/narduk-auth exec vitest run tests/mcp-runner-provider.test.ts --config vitest.config.ts
+```

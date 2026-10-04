@@ -1,4 +1,4 @@
-import { defineEventHandler, getHeader, getRequestURL } from 'h3'
+import { createError, defineEventHandler, getHeader, getRequestURL } from 'h3'
 
 import { mcpOAuthConfig, mcpOAuthUnauthorized } from '../utils/mcp-oauth'
 
@@ -13,9 +13,12 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
  * MCP sign-in, before any app handler can fall back to the session cookie.
  */
 export default defineEventHandler((event) => {
-  if (SAFE_METHODS.has(event.method.toUpperCase())) return
   const config = mcpOAuthConfig(event)
   if (!config || getRequestURL(event).pathname !== config.resourcePath) return
+  if (config.resource !== `${config.issuer}${config.resourcePath}`) {
+    throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+  }
+  if (SAFE_METHODS.has(event.method.toUpperCase())) return
   if (!BEARER.test(getHeader(event, 'authorization')?.trim() ?? '')) {
     throw mcpOAuthUnauthorized(event)
   }
