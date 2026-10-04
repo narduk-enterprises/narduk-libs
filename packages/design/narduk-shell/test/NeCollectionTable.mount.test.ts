@@ -484,7 +484,15 @@ describe('NeCollectionTable: phone', () => {
     expect(wrapper.find('[data-ne-collection-row]').classes()).not.toContain('max-lg:flex')
     expect(wrapper.find('td[data-ne-column="note"]').classes()).toContain('max-lg:hidden')
     expect(header(wrapper, 'name').classes()).toContain('max-lg:[&_button]:min-h-11')
-    expect(wrapper.find('table').classes()).toContain('max-lg:table-auto')
+    // A dropped column's <col> goes with its cells; otherwise the next cell takes its width.
+    const cols = wrapper.findAll('col')
+    const noteIndex = columns.findIndex((column) => column.key === 'note')
+    expect(cols[noteIndex]!.classes()).toContain('max-lg:hidden')
+    expect(cols.filter((col) => col.classes().includes('max-lg:hidden'))).toHaveLength(
+      columns.filter((column) => column.phone === false).length,
+    )
+    expect(wrapper.find('table').classes()).toContain('table-fixed')
+    expect(wrapper.find('table').classes()).not.toContain('max-lg:table-auto')
     expect(wrapper.find('[data-ne-collection-phone-sort]').exists()).toBe(false)
   })
 

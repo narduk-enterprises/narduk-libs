@@ -30,7 +30,11 @@
  * Below `stackBelow` (`md` by default) the layout is CSS, so the server and the
  * first client render agree: `cards` keeps the same cells in the same DOM
  * order and drops only the visual header (the header stays for a screen
- * reader), `columns` keeps the table and drops `phone: false` columns. In the
+ * reader), `columns` keeps the table and drops `phone: false` columns, their
+ * `<col>` with their cells: a cell that is gone while its `<col>` stays slides
+ * the next cell into that column's width. The layout stays `table-fixed`, so a
+ * truncating cell (`white-space: nowrap` with an ellipsis) shrinks to the
+ * width left over instead of widening the table past the screen. In the
  * card layout the header's sort buttons are swapped for plain labels after
  * mount (a button clipped to one pixel would still take focus), and a sort
  * select in the toolbar takes their place. Every control in the toolbar, the
@@ -128,7 +132,6 @@ type StackClass =
   | 'hide'
   | 'phoneOnly'
   | 'primary'
-  | 'tableAuto'
   | 'tap'
   | 'thTap'
 
@@ -145,7 +148,6 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     hide: 'max-sm:hidden',
     phoneOnly: 'hidden max-sm:inline-flex',
     primary: 'max-sm:basis-full',
-    tableAuto: 'max-sm:table-auto',
     tap: 'max-sm:min-h-11',
     thTap: 'max-sm:[&_button]:min-h-11',
   },
@@ -161,7 +163,6 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     hide: 'max-md:hidden',
     phoneOnly: 'hidden max-md:inline-flex',
     primary: 'max-md:basis-full',
-    tableAuto: 'max-md:table-auto',
     tap: 'max-md:min-h-11',
     thTap: 'max-md:[&_button]:min-h-11',
   },
@@ -177,7 +178,6 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     hide: 'max-lg:hidden',
     phoneOnly: 'hidden max-lg:inline-flex',
     primary: 'max-lg:basis-full',
-    tableAuto: 'max-lg:table-auto',
     tap: 'max-lg:min-h-11',
     thTap: 'max-lg:[&_button]:min-h-11',
   },
@@ -609,7 +609,7 @@ const filterModel = computed({
       <table
         role="table"
         class="w-full table-fixed border-separate border-spacing-0 bg-default"
-        :class="[tableMinWidth ? stack.floor : '', cards ? stack.block : stack.tableAuto]"
+        :class="[tableMinWidth ? stack.floor : '', cards ? stack.block : '']"
       >
         <caption class="sr-only">
           {{
@@ -620,6 +620,7 @@ const filterModel = computed({
           <col
             v-for="column in columns"
             :key="column.key"
+            :class="column.phone === false ? stack.hide : ''"
             :style="column.width ? { width: column.width } : undefined"
           />
         </colgroup>
