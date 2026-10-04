@@ -54,6 +54,42 @@ describe('gitLastCommitDates', () => {
     expect(calls).toHaveLength(1)
   })
 
+  it('fetches full history on a shallow clone when asked, then reads the log', () => {
+    const calls: string[][] = []
+    const result = gitLastCommitDates(
+      [HOME],
+      ROOT,
+      (args) => {
+        calls.push(args)
+        if (args[0] === 'rev-parse' && args.length === 3) return `${ROOT}\ntrue\n`
+        if (args[0] === 'fetch') return ''
+        if (args[0] === 'rev-parse') return 'false\n'
+        return `\0${'2026-10-04T12:00:00-05:00'}\n\napp/pages/index.vue\n`
+      },
+      true,
+    )
+    expect(calls.map((c) => c[0])).toEqual(['rev-parse', 'fetch', 'rev-parse', 'log'])
+    expect(calls[1]).toEqual(['fetch', '--unshallow', '--quiet'])
+    expect(result.skipped).toBeUndefined()
+    expect(result.dates.get(HOME)).toBe('2026-10-04T17:00:00.000Z')
+  })
+
+  it('stays skipped when the unshallow fetch fails', () => {
+    const calls: string[][] = []
+    const result = gitLastCommitDates(
+      [HOME],
+      ROOT,
+      (args) => {
+        calls.push(args)
+        if (args[0] === 'fetch') throw new Error('no network')
+        return `${ROOT}\ntrue\n`
+      },
+      true,
+    )
+    expect(result).toEqual({ dates: new Map(), skipped: 'shallow-clone' })
+    expect(calls.map((c) => c[0])).toEqual(['rev-parse', 'fetch'])
+  })
+
   it('runs one git log for every file inside the repository', () => {
     const calls: string[][] = []
     gitLastCommitDates([HOME, ABOUT, '/elsewhere/layer/page.vue'], ROOT, (args) => {

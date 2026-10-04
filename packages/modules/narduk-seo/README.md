@@ -255,8 +255,10 @@ that exists:
 2. A literal `modifiedAt` in the page's `useSeo()` call, so the sitemap matches
    the `article:modified_time` the page emits. Bump it when the content changes.
 3. The page file's last commit date, from one `git log` for all pages. A shallow
-   clone reports HEAD's date for every file, so it is skipped there (one info
-   line in the build log).
+   clone reports HEAD's date for every file. In Cloudflare builds (`WORKERS_CI`
+   or `CF_PAGES` set), which clone with depth 1, the module first runs
+   `git fetch --unshallow`; anywhere else, or if that fetch fails, the shallow
+   clone is skipped (one info line in the build log).
 
 Otherwise the page gets no `<lastmod>`. The build or request time is never used,
 because identical dates teach search engines to ignore the field. Opt out with

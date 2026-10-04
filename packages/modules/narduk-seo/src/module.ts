@@ -192,7 +192,8 @@ export interface NardukSeoModuleOptions {
   server?: boolean
   /**
    * Per-page sitemap `<lastmod>` from the page's literal `useSeo({ modifiedAt })`,
-   * else its file's last commit date (one `git log`; skipped on shallow clones).
+   * else its file's last commit date (one `git log`; Cloudflare builds fetch full
+   * history first, other shallow clones are skipped).
    * Never the build or request time; a page with no trustworthy date gets none.
    * `definePageMeta({ sitemap: { lastmod } })` always wins. Default `true`.
    */
@@ -582,7 +583,10 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         // Registered during setup, so it runs before @nuxtjs/sitemap reads the
         // pages (its own pages:resolved hook is added at modules:done).
         nuxt.hook('pages:resolved', (pages) => {
-          const result = applySitemapLastmod(pages, { cwd: nuxt.options.rootDir })
+          const result = applySitemapLastmod(pages, {
+            cwd: nuxt.options.rootDir,
+            unshallow: Boolean(process.env.WORKERS_CI || process.env.CF_PAGES),
+          })
           if (result.skipped === 'shallow-clone') {
             useLogger(PACKAGE_NAME).info(
               'sitemap lastmod: shallow clone, so pages without useSeo({ modifiedAt }) get no <lastmod>',

@@ -72,13 +72,29 @@ const runGit: RunGit = (args, cwd) =>
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 120_000,
   })
+
+/**
+ * Cloudflare builds (Workers Builds, Pages) clone with depth 1, so every file
+ * would date to the build commit. Fetch the rest of the history once; any
+ * failure leaves the clone shallow and those pages without `<lastmod>`.
+ */
+function fetchFullHistory(topLevel: string, git: RunGit): boolean {
+  try {
+    git(['fetch', '--unshallow', '--quiet'], topLevel)
+    return git(['rev-parse', '--is-shallow-repository'], topLevel).trim() === 'false'
+  } catch {
+    return false
+  }
+}
 
 /** Last commit date per file, from a single `git log` over every given file. */
 export function gitLastCommitDates(
   files: string[],
   cwd: string,
   git: RunGit = runGit,
+  unshallow = false,
 ): GitLastmodResult {
   let topLevel: string
   let shallow: string
@@ -93,7 +109,9 @@ export function gitLastCommitDates(
     return { dates: new Map(), skipped: 'not-a-repository' }
   }
   if (!topLevel) return { dates: new Map(), skipped: 'not-a-repository' }
-  if (shallow.trim() === 'true') return { dates: new Map(), skipped: 'shallow-clone' }
+  if (shallow.trim() === 'true' && !(unshallow && fetchFullHistory(topLevel, git))) {
+    return { dates: new Map(), skipped: 'shallow-clone' }
+  }
 
   // Layer and package pages live outside the app's history; git refuses paths outside the repo.
   const inside = files
@@ -127,6 +145,8 @@ export interface ApplySitemapLastmodOptions {
   cwd: string
   git?: RunGit
   readSource?: (file: string) => string | undefined
+  /** Fetch full history when the clone is shallow (set in Cloudflare builds). */
+  unshallow?: boolean
 }
 
 export interface ApplySitemapLastmodResult {
@@ -169,6 +189,7 @@ export function applySitemapLastmod(
     needGit.map((page) => resolve(page.file!)),
     options.cwd,
     options.git,
+    options.unshallow,
   )
   result.skipped = git.skipped
   for (const page of needGit) {
