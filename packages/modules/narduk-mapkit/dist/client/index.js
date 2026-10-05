@@ -1,6 +1,7 @@
 export * from './mapkit.js';
 export * from './annotations.js';
 export * from './area-hover-label.js';
+export * from './area-mask-tiles.js';
 export * from './area-outline-tiles.js';
 export * from './callouts.js';
 export * from './flow-pulse.js';
