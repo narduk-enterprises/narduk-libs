@@ -87,6 +87,28 @@ export interface ChartYBand {
 }
 
 /**
+ * **NardukLineChart only.** A filled band between two series that vary along
+ * the X axis, e.g. a 25th to 75th percentile "normal range". Drawn behind the
+ * lines and the grid, inside the plot clip. A `null` (or `NaN`) in either
+ * array breaks the fill at that index, the same way it breaks a line; the
+ * band is never interpolated across a gap.
+ */
+export interface ChartBand {
+  /** Legend and tooltip label; also the key the legend toggle hides. */
+  name: string
+  /** Lower edge, aligned index-for-index with `labels`. */
+  low: Array<number | null>
+  /** Upper edge, aligned index-for-index with `labels`. */
+  high: Array<number | null>
+  /** Any CSS colour or token. Default `var(--color-chart-accent)`. */
+  color?: string
+  /** 0-1. Default: a low theme-aware opacity (`0.18`, `0.26` in dark). */
+  opacity?: number
+  /** Which scale to use when `dualYAxis` is true. Default `primary`. */
+  yAxis?: ChartYAxisId
+}
+
+/**
  * Markers for line charts (category index + Y in data space).
  * On **bar charts**, `vline` is vertical at the category in default orientation;
  * with `orientation: 'horizontal'` it renders as a horizontal guide at that category row.
@@ -152,6 +174,8 @@ export interface BarClickPayload {
  */
 export interface NardukLineChartProps {
   series: ChartSeries[]
+  /** Filled bands between two time-varying series (behind the lines). */
+  bands?: ChartBand[]
   labels: string[]
   width?: number
   height?: number

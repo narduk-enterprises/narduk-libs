@@ -56,6 +56,24 @@ All opt-in; nothing changes for a chart that sets none of them
 - `showValues` + `formatValue(value, index)` — always-visible value text above
   each point (drawn outside the plot clip).
 
+**`NardukLineChart` — `bands` (a filled band between two time-varying series):**
+
+`bands: ChartBand[]`, each `{ name, low, high, color?, opacity?, yAxis? }` with
+`low` and `high` aligned index-for-index with `labels`. Use it for a range that
+changes along X, such as a day-of-year 25th to 75th percentile "normal range";
+`yBands` stays the fixed horizontal stripe.
+
+- The fill sits behind the grid and the lines, inside the plot clip, in a
+  low-opacity `color` (default `var(--color-chart-accent)`; `0.18`, `0.26` in
+  the dark theme; `opacity` overrides it).
+- A `null` or `NaN` in either array breaks the fill at that index, like a line
+  gap; the band is never interpolated across it. An index where `low > high` is
+  drawn with the edges swapped.
+- Both edges take part in the Y domain (and the zoom-auto-Y window), with
+  `maxRenderPoints` decimation, and `smooth` curves them like the lines.
+- It has a legend entry (click to hide), a `low – high` tooltip row, a live
+  summary part and a `showDataTable` low and high column.
+
 **`NardukLineChart` — chart props and annotations:**
 
 - `xTickIndices: number[]` — label exactly these category indices (e.g. month

@@ -535,6 +535,17 @@
     opacity: 0.24;
   }
 
+  /* A filled band between two series: behind the lines, so kept faint. */
+  .narduk-band-path {
+    opacity: 0.18;
+    stroke: none;
+    pointer-events: none;
+  }
+
+  .narduk-chart--dark .narduk-band-path {
+    opacity: 0.26;
+  }
+
   .narduk-ref-line {
     stroke-width: 1;
     pointer-events: none;
