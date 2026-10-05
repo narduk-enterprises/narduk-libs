@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { Writable } from 'node:stream'
 
 import { afterEach, describe, expect, it } from 'vitest'
+import { parse as parseYaml } from 'yaml'
 
 import {
   createNardukApp,
@@ -1143,5 +1144,146 @@ describe('upgrade report formatting', () => {
     for (const target of MANAGED_TARGETS) expect(text).toContain(target.path)
     expect(text).toContain('Drift in 1 of ' + MANAGED_TARGETS.length + ' managed unit(s)')
     expect(text).toContain('lines)')
+  })
+})
+
+describe('app-owned workflow runner labels (#1192, #1279)', () => {
+  const path = '.github/actionlint.yaml'
+
+  it('accepts group-only routes and retains singleton custom labels with hosted prefixes', async () => {
+    const targetDir = await scaffold({ databaseBackend: 'none' })
+    await writeFile(
+      join(targetDir, '.github/workflows/group.yml'),
+      'jobs:\n  group:\n    runs-on: {group: deploy}\n  custom:\n    runs-on: ubuntu-private\n  hosted:\n    runs-on: ubuntu-24.04\n',
+    )
+    const report = await upgradeNardukApp({ targetDir, only: [path], write: true })
+    expect(statusOf(report, path)).toBe('drift')
+    expect(await read(targetDir, path)).toContain('    - ubuntu-private\n')
+    expect(await read(targetDir, path)).not.toContain('    - ubuntu-24.04\n')
+    expect(statusOf(await upgradeNardukApp({ targetDir, only: [path] }), path)).toBe('clean')
+  })
+
+  it('round-trips scalar-like string labels without changing their types', async () => {
+    const targetDir = await scaffold({ databaseBackend: 'none' })
+    const labels = ['123', 'true', 'null', 'YES', '1.25', '.inf', '-1', '0x10']
+    await writeFile(
+      join(targetDir, '.github/workflows/scalars.yml'),
+      'jobs:\n  scalar:\n    runs-on: ' + JSON.stringify(labels) + '\n',
+    )
+    await upgradeNardukApp({ targetDir, only: [path], write: true })
+    const parsed = parseYaml(await read(targetDir, path)) as {
+      'self-hosted-runner': { labels: unknown[] }
+    }
+    for (const label of labels) expect(parsed['self-hosted-runner'].labels).toContain(label)
+    expect(parsed['self-hosted-runner'].labels.every((label) => typeof label === 'string')).toBe(
+      true,
+    )
+  })
+
+  it('derives labels from managed workflow edits that will land in this run', async () => {
+    const targetDir = await scaffold({ databaseBackend: 'none' })
+    const workflowPath = '.github/workflows/copilot-setup-steps.yml'
+    const original = await read(targetDir, workflowPath)
+    await writeFile(
+      join(targetDir, workflowPath),
+      'jobs:\n  old:\n    runs-on: removed-custom-route\n',
+    )
+    await edit(targetDir, path, (contents) => contents + '    - removed-custom-route\n')
+    await upgradeNardukApp({ targetDir, only: [workflowPath, path], write: true })
+    expect(await read(targetDir, workflowPath)).toBe(original)
+    expect(await read(targetDir, path)).not.toContain('removed-custom-route')
+    expect(statusOf(await upgradeNardukApp({ targetDir, only: [path] }), path)).toBe('clean')
+  })
+
+  it('retains used literal labels, removes unused labels, and is repeatable without changing workflows', async () => {
+    const targetDir = await scaffold({ databaseBackend: 'none' })
+    const workflow = [
+      'name: App runner routes',
+      'on: workflow_dispatch',
+      'jobs:',
+      '  browser:',
+      '    runs-on: [self-hosted, Linux, X64, proxmox, proxmox-playwright-x64]',
+      '    steps: [{run: "true"}]',
+      '  promote:',
+      '    runs-on:',
+      '      group: deploy',
+      '      labels: [self-hosted, Linux, X64, proxmox, proxmox-deploy]',
+      '    steps: [{run: "true"}]',
+      '',
+    ].join('\n')
+    await writeFile(join(targetDir, '.github/workflows/app-routes.yaml'), workflow)
+    await edit(
+      targetDir,
+      path,
+      (contents) =>
+        contents + '    - proxmox-playwright-x64\n    - proxmox-deploy\n    - unused-old-runner\n',
+    )
+    const before = await read(targetDir, path)
+    const dry = await upgradeNardukApp({ targetDir, only: [path] })
+    expect(statusOf(dry, path)).toBe('drift')
+    expect(await read(targetDir, path)).toBe(before)
+    expect(dry.changes[0]?.diff).toContain('-    - unused-old-runner')
+    expect(dry.changes[0]?.diff).not.toContain('-    - proxmox-deploy')
+    expect(dry.changes[0]?.diff).not.toContain('-    - proxmox-playwright-x64')
+
+    const written = await upgradeNardukApp({ targetDir, only: [path], write: true })
+    expect(written.changes[0]?.applied).toBe(true)
+    const after = await read(targetDir, path)
+    expect(after).toContain('    - proxmox-playwright-x64\n')
+    expect(after).toContain('    - proxmox-deploy\n')
+    expect(after).not.toContain('unused-old-runner')
+    expect(after.match(/ {4}- proxmox\n/gu)).toHaveLength(1)
+    expect(await read(targetDir, '.github/workflows/app-routes.yaml')).toBe(workflow)
+    expect(statusOf(await upgradeNardukApp({ targetDir, only: [path], write: true }), path)).toBe(
+      'clean',
+    )
+
+    await rm(join(targetDir, '.github/workflows/app-routes.yaml'))
+    await upgradeNardukApp({ targetDir, only: [path], write: true })
+    expect(await read(targetDir, path)).not.toContain('proxmox-playwright-x64')
+    expect(await read(targetDir, path)).not.toContain('proxmox-deploy')
+  })
+
+  it('adds a used label missing from the old config and preserves YAML scalar values', async () => {
+    const targetDir = await scaffold({ databaseBackend: 'none' })
+    await writeFile(
+      join(targetDir, '.github/workflows/custom.yml'),
+      'jobs:\n  custom:\n    runs-on: [self-hosted, "route: special", "#runner"]\n    steps: [{run: "true"}]\n',
+    )
+    await upgradeNardukApp({ targetDir, only: [path], write: true })
+    expect(await read(targetDir, path)).toContain('    - "route: special"\n')
+    expect(await read(targetDir, path)).toContain('    - "#runner"\n')
+    expect(statusOf(await upgradeNardukApp({ targetDir, only: [path] }), path)).toBe('clean')
+  })
+
+  it.each([
+    ['expression', 'jobs:\n  custom:\n    runs-on: ${{ matrix.runner }}\n'],
+    ['mixed expression', 'jobs:\n  custom:\n    runs-on: [self-hosted, "${{ matrix.label }}"]\n'],
+    ['invalid YAML', 'jobs: [\n'],
+    ['invalid route', 'jobs:\n  custom:\n    runs-on: 123\n'],
+  ])('leaves uncertain %s routes and existing declarations untouched', async (_name, workflow) => {
+    const targetDir = await scaffold()
+    await writeFile(join(targetDir, '.github/workflows/custom.yml'), workflow)
+    await edit(targetDir, path, (contents) => contents + '    - custom-retained\n')
+    const before = await read(targetDir, path)
+    const report = await upgradeNardukApp({ targetDir, only: [path], write: true })
+    expect(statusOf(report, path)).toBe('unresolved')
+    expect(report.changes[0]?.applied).toBe(false)
+    expect(report.changes[0]?.detail).toContain('.github/workflows/custom.yml')
+    expect(await read(targetDir, path)).toBe(before)
+  })
+
+  it('respects opt-out even when an app-owned workflow has a dynamic route', async () => {
+    const targetDir = await scaffold()
+    await writeFile(
+      join(targetDir, '.github/workflows/custom.yml'),
+      'jobs:\n  x:\n    runs-on: ${{ inputs.runner }}\n',
+    )
+    await edit(targetDir, path, (contents) => '# narduk:unmanaged\n' + contents)
+    const before = await read(targetDir, path)
+    expect(statusOf(await upgradeNardukApp({ targetDir, only: [path], write: true }), path)).toBe(
+      'unmanaged',
+    )
+    expect(await read(targetDir, path)).toBe(before)
   })
 })

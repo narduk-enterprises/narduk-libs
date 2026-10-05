@@ -50,7 +50,10 @@ export function createActionlintConfig(labels: readonly string[]): string {
     '# when a workflow here names one fleet already routes.',
     'self-hosted-runner:',
     '  labels:',
-    ...labels.map((label) => `    - ${label}`),
+    ...labels.map(
+      (label) =>
+        `    - ${/^[a-z][\w.-]*$/iu.test(label) && !/^(?:true|false|null|yes|no|on|off)$/iu.test(label) ? label : JSON.stringify(label)}`,
+    ),
     '',
   ].join('\n')
 }

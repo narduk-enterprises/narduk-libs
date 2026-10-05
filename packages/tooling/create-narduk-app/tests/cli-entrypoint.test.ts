@@ -1,8 +1,8 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -16,6 +16,17 @@ const alias = join(scratch, 'bin alias')
 
 beforeAll(() => {
   writeFileSync(join(scratch, 'package.json'), JSON.stringify({ type: 'module' }))
+  // The compiled fixture is outside the workspace. Materialize its declared
+  // runtime dependencies as an installed consumer would; packed installation
+  // is proved separately by the repository's external consumer smoke.
+  const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>
+  }
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    const destination = join(scratch, 'node_modules', name)
+    mkdirSync(dirname(destination), { recursive: true })
+    symlinkSync(dirname(require.resolve(name + '/package.json')), destination, 'dir')
+  }
   execFileSync(process.execPath, [
     require.resolve('typescript/bin/tsc'),
     '--project',
