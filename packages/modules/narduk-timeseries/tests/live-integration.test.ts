@@ -226,8 +226,9 @@ describe.skipIf(!dsn)(`live TimescaleDB (${SKIP_REASON})`, () => {
       executor: client,
       retention: { executor: client, maxConnections: 1 },
     })
-    const minute = 60_000
-    const start = new Date(Math.floor((Date.now() - 3 * 86_400_000) / minute) * minute)
+    // Keep both minute buckets inside one 15-minute bucket at every wall-clock minute.
+    const bucketMs = 15 * 60_000
+    const start = new Date(Math.floor((Date.now() - 3 * 86_400_000) / bucketMs) * bucketMs)
     await store.writeNumeric(
       Array.from({ length: 120 }, (_, index) => ({
         path: 'navigation.speedOverGround',
