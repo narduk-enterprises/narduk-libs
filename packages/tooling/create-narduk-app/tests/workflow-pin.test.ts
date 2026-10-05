@@ -170,3 +170,97 @@ describe('upgrade workflow pin', () => {
     expect(await read(targetDir, CALLER)).toBe(before)
   })
 })
+
+describe('mixed caller pins (#1181)', () => {
+  it('keeps an unselected caller comment even when its abbreviated SHA matches the older pin', () => {
+    const old = NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0]
+    const newer = old.slice(0, 8) + 'b'.repeat(32)
+    const selected = `uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${old} # workflows@${old.slice(0, 8)}`
+    const unselected = `uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${newer} # workflows@${newer.slice(0, 8)}`
+    const result = rewriteWorkflowPins(
+      selected + '\n' + unselected + '\n',
+      GENERATOR_PIN,
+      new Set([old]),
+    )
+    expect(result).toContain(
+      `nuxt-cloudflare.yml@${GENERATOR_PIN} # workflows@${GENERATOR_PIN.slice(0, 8)}`,
+    )
+    expect(result).toContain(unselected)
+  })
+
+  async function mixed(
+    secondPin: string,
+    reverse: boolean,
+  ): Promise<{ targetDir: string; before: string }> {
+    const targetDir = await scaffold()
+    const generated = await read(targetDir, CALLER)
+    const start = generated.indexOf('  ci:\n')
+    const end = generated.indexOf('\n  promote-dispatch:', start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const caller = generated.slice(start, end)
+    const extra = caller
+      .replace('  ci:', '  second:')
+      .replaceAll(GENERATOR_PIN, secondPin)
+      .replace(
+        `nuxt-cloudflare.yml@${secondPin}`,
+        `nuxt-cloudflare.yml@${secondPin} # workflows@${secondPin.slice(0, 8)}`,
+      )
+    const firstPin = reverse ? secondPin : NEWER_APP_PIN
+    const nextPin = reverse ? NEWER_APP_PIN : secondPin
+    const first = generated
+      .replaceAll(GENERATOR_PIN, firstPin)
+      .replace(
+        `nuxt-cloudflare.yml@${firstPin}`,
+        `nuxt-cloudflare.yml@${firstPin} # workflows@${firstPin.slice(0, 8)}`,
+      )
+    const before =
+      first +
+      '\n' +
+      extra.replaceAll(secondPin, nextPin).replaceAll(secondPin.slice(0, 8), nextPin.slice(0, 8)) +
+      '\n'
+    await writeFile(join(targetDir, CALLER), before)
+    return { targetDir, before }
+  }
+
+  it.each([false, true])(
+    'moves only the older caller and preserves the newer caller and comment (reverse=%s)',
+    async (reverse) => {
+      const old = NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS[0]
+      const { targetDir, before } = await mixed(old, reverse)
+      const dry = await upgradeNardukApp({ only: [CALLER], targetDir })
+      expect(dry.changes[0]?.status).toBe('drift')
+      expect(await read(targetDir, CALLER)).toBe(before)
+
+      const report = await upgradeNardukApp({ only: [CALLER], targetDir, write: true })
+      expect(report.changes[0]?.status).toBe('drift')
+      const after = await read(targetDir, CALLER)
+      expect(after).toContain(
+        `nuxt-cloudflare.yml@${GENERATOR_PIN} # workflows@${GENERATOR_PIN.slice(0, 8)}`,
+      )
+      expect(after).toContain(
+        `nuxt-cloudflare.yml@${NEWER_APP_PIN} # workflows@${NEWER_APP_PIN.slice(0, 8)}`,
+      )
+      expect(after).not.toContain(old)
+      expect(after.match(new RegExp(GENERATOR_PIN, 'gu'))).toHaveLength(1)
+      expect(after.match(new RegExp(NEWER_APP_PIN, 'gu'))).toHaveLength(1)
+      expect(
+        (await upgradeNardukApp({ only: [CALLER], targetDir, write: true })).changes[0]?.status,
+      ).toBe('clean')
+      expect(await read(targetDir, CALLER)).toBe(after)
+    },
+  )
+
+  it.each([false, true])(
+    'reports an unknown caller even alongside a newer one and writes nothing (reverse=%s)',
+    async (reverse) => {
+      const { targetDir, before } = await mixed(UNKNOWN_PIN, reverse)
+      const report = await upgradeNardukApp({ only: [CALLER], targetDir, write: true })
+      expect(report.changes[0]?.status).toBe('unresolved')
+      expect(report.changes[0]?.applied).toBe(false)
+      expect(report.changes[0]?.detail).toContain(UNKNOWN_PIN)
+      expect(report.driftCount).toBeGreaterThan(0)
+      expect(await read(targetDir, CALLER)).toBe(before)
+    },
+  )
+})
