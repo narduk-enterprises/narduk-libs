@@ -1,5 +1,41 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.28
+
+### Patch Changes
+
+- 3782e39: Stop the shared analytics catalog from triggering Zod's
+  `new Function` probe. Zod 4 probes `Function` the first time it builds an
+  object schema, and an enforced no-eval CSP reports that caught probe as a
+  `script-src` violation on every page load (#1310). The standard events are now
+  built inside `withJitlessSchemas`, which sets Zod's `jitless` flag only for
+  the duration of the build and restores the app's value, so no global Zod
+  configuration is imposed. `defineAnalyticsEvents` also accepts a factory
+  (`defineAnalyticsEvents(() => ({ ... }))`) so an app's own `z.object` schemas
+  are built in the same scope. Validation results are unchanged.
+
+## 0.21.27
+
+### Patch Changes
+
+- 7e212f0: `createFlowPulseLayer` draws a train of comet streaks instead of one
+  pulse.
+
+  - The old default (one 22 px dash every 200 px) put a single faint dash on a
+    river that is only 200 px long at national zoom. The defaults are now a 30
+    px streak every 56 px at 90 px a second, so a short path carries several.
+  - A streak has a bright head and a tail that fades back (`tail` steps, default
+    4), over an optional halo (`glowColor`, `glowScale`, `glowOpacity`) so it
+    reads on a dark line and a light one.
+  - `setPath(stretches, branches?)` takes fainter, thinner streaks for
+    tributaries (`branchOpacity`, `branchWidth`): `branches` is
+    `[{ opacity, stretches }]`. Their lines are batched per brightness into a
+    few strokes and spread over four start phases, so a lit basin of thousands
+    of stretches still costs a handful of strokes a frame.
+  - Lines are kept as `Path2D`s between frames (`createPath` overrides it).
+  - Reduced motion still draws static chevrons, over the halo too, at their own
+    `chevronWidth` (default 2.2).
+
 ## 0.21.26
 
 ### Patch Changes

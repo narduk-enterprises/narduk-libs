@@ -491,6 +491,34 @@ describe('point-layer paint', () => {
     expect(arcs[1]).toMatchObject({ args: [256, 256, 8, 0, Math.PI * 2] })
   })
 
+  it('does not stroke a dot whose style asks for no outline', () => {
+    const canvas = createFakeCanvas(256, 256)
+    const painted = paintPointLayerTile(canvas, {
+      classes: new Uint8Array([1, 2]),
+      indexes: [0, 1],
+      pixelRatio: 1,
+      style: [
+        undefined,
+        { fill: '#16a34a', order: 2, radius: 3, stroke: '#14532d', strokeWidth: 1.5 },
+        { fill: '#dc2626', order: 3, radius: 3, stroke: '#7f1d1d', strokeWidth: 0 },
+      ],
+      tileSize: 256,
+      tileX: 0,
+      tileY: 0,
+      worldX: new Float64Array([0.25, 0.75]),
+      worldY: new Float64Array([0.5, 0.5]),
+      zoom: 0,
+    })
+
+    expect(painted).toBe(true)
+    // A canvas ignores lineWidth = 0 and strokes with the last width, so the
+    // second dot must not be stroked at all.
+    expect(canvas.calls.filter((call) => call.op === 'fill')).toHaveLength(2)
+    expect(canvas.calls.filter((call) => call.op === 'stroke')).toEqual([
+      { lineWidth: 1.5, op: 'stroke', strokeStyle: '#14532d' },
+    ])
+  })
+
   it('paints the eastern hemisphere on the single zoom-0 tile instead of wrapping it west', async () => {
     const layer = layerAt(lonLat(90, 0), new Uint8Array([1]), { 1: statusStyle() })
     const canvas = await layer.imageForTile(0, 0, 0, 1)

@@ -517,6 +517,28 @@ if (mapkitRegion) map.setRegionAnimated(mapkitRegion)
 Region helpers handle invalid points, minimum spans, padding, and antimeridian
 crossings.
 
+### Fitting a box into a canvas of a known size
+
+`computeMapKitRegionForLngLatBounds` hands MapKit a padded box and leaves the
+fit to MapKit. When the canvas is much wider than it is tall (a map card), or
+the box sits far from the equator, the box can be cut at its top and leave room
+at its bottom: MapKit centres the visible rectangle on the region's centre in
+Mercator space, and a centre that is the mean latitude is not the box's middle
+on screen. `fitMapKitRegionToViewport` works the fit out in Mercator space from
+the canvas's pixel size, taking the tighter of the two axes, so the whole box
+plus its padding is visible at any aspect. Re-run it when the canvas resizes.
+
+```ts
+import { fitMapKitRegionToViewport } from '@narduk-enterprises/narduk-mapkit/geometry'
+
+const region = fitMapKitRegionToViewport(
+  [west, south, east, north],
+  { width: canvas.clientWidth, height: canvas.clientHeight },
+  { padding: 0.12, minSpanDegrees: 1.5 },
+)
+// { center: { lat, lng }, span: { latDelta, lngDelta } }, or null for an unusable box or canvas
+```
+
 ## Tile Overlay Crossfade
 
 Map viewers can share tile overlay construction and fade-out cleanup:

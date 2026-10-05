@@ -232,9 +232,13 @@ export function paintPointLayerTile(
     context.arc(cx, cy, radius, 0, Math.PI * 2)
     context.fillStyle = paint.fill
     context.fill()
-    context.strokeStyle = paint.stroke
-    context.lineWidth = paint.strokeWidth * pixelRatio
-    context.stroke()
+    // A canvas ignores `lineWidth = 0` and strokes with the width it had before,
+    // so a style that asks for no outline would get the previous dot's. Skip it.
+    if (paint.strokeWidth > 0) {
+      context.strokeStyle = paint.stroke
+      context.lineWidth = paint.strokeWidth * pixelRatio
+      context.stroke()
+    }
     painted = true
   }
   return painted
