@@ -208,8 +208,8 @@ version: 2
 it as drift. This is the sanctioned home for an app-owned Dependabot rule — a
 security exception's `ignore` entry (agent-infrastructure
 `docs/standards/NARDUK-APP-COMPLIANCE.md` §4) or a documented app-specific pin —
-and the reason the dry run prints the line count a whole-file rewrite would add
-and remove.
+and the reason the dry run counts the added and removed lines from the proposed
+diff, rather than counting the entire file.
 
 The region targets follow one rule. An existing `AGENTS.md` with no
 `narduk:router` markers gets the router block appended at the end, and

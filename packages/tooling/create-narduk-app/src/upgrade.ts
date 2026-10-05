@@ -9,7 +9,7 @@ import { applyCspPreset, applyDevDependency, proxyOriginProblem } from './csp-pr
 import type { CheckoutFacts } from './checkout-facts.js'
 import { detectPackageRegistry, resolveDependabot } from './dependabot-registry.js'
 import type { PackageRegistry } from './dependabot-registry.js'
-import { unifiedDiff } from './diff.js'
+import { diffLineCounts, unifiedDiff } from './diff.js'
 import { buildGeneratedFiles } from './generate.js'
 import { findTopLevelValue, parseJsoncObject, scanJsonc } from './jsonc.js'
 import type { JsoncToken } from './jsonc.js'
@@ -378,12 +378,11 @@ function replaceRegion(
 }
 
 /**
- * Line counts, so a whole-file rewrite that would delete a lot of app-written
- * content is legible in the one-line summary and not only in the diff body.
+ * Changed-line counts from the same operations that render the proposed diff.
  */
 function lineDelta(before: string, after: string): string {
-  const count = (value: string): number => value.replace(/\n$/u, '').split('\n').length
-  return '+' + count(after) + '/-' + count(before) + ' lines'
+  const { added, removed } = diffLineCounts(before, after)
+  return '+' + added + '/-' + removed + ' lines'
 }
 
 function resolveFile(current: string | null, desired: string, path: string): Resolution {
@@ -399,7 +398,7 @@ function resolveFile(current: string | null, desired: string, path: string): Res
   if (current === desired) return { detail: 'Matches the generator template.', status: 'clean' }
   return {
     detail:
-      'Rewrites the whole file (' +
+      'Updates the file (' +
       lineDelta(current, desired) +
       '). Add ' +
       unmanagedMarkerFor(path) +

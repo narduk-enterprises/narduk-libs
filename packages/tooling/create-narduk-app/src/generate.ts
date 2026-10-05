@@ -1653,7 +1653,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "const isBranchPreview = Boolean(buildBranch && buildBranch !== 'main')",
         'const deploymentTarget =',
         "  process.env.NARDUK_DEPLOY_TARGET || (isBranchPreview ? 'preview' : 'production')",
-        'process.env.NARDUK_DEPLOY_TARGET ??= deploymentTarget',
         // Gates the local-only nitro-cloudflare-dev module (see moduleList)
         // and the nitro.cloudflareDev binding-emulation block below.
         // build:ci is the only script that sets this; local `nuxt dev` and
