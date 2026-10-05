@@ -21,6 +21,7 @@ export {
   signInWithNativeApple,
   exchangeSupabaseCode,
   requestPasswordReset,
+  logoutEverywhere,
   logoutUser,
   deleteSupabaseAuthUser,
   getAuthUiState,

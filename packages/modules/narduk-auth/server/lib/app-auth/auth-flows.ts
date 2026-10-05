@@ -11,6 +11,7 @@ import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-sessio
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { resolveAppleSignInForEvent } from '../../utils/auth-runtime-env'
+import { useNativeAuth } from '../../utils/native-auth'
 import { getLocalEmailVerification } from '../../utils/verified-email'
 
 import { verifyAppleIdentityToken } from './apple-identity'
@@ -36,6 +37,7 @@ import {
   getCurrentSessionUser,
   getCurrentSupabaseContext,
   persistSupabaseSession,
+  revokeUserAuthSessions,
   setCurrentSessionUser,
 } from './session'
 import {
@@ -631,6 +633,30 @@ export async function logoutUser(event: H3Event) {
 
   await clearCurrentSession(event)
   return { success: true }
+}
+
+/**
+ * Log out everywhere (narduk-libs#1043): revoke the user's native-client tokens
+ * and every other `auth_sessions` row, then end this browser's session like
+ * `logoutUser`. The revokes run first so a failure leaves this browser signed in
+ * to retry, and because the Supabase sign-out below reads this session's row.
+ * That sign-out stays app-local, like logout: `signOut({ scope: 'global' })`
+ * would also end the user's sessions in every other app on the shared
+ * authority (#921).
+ */
+export async function logoutEverywhere(event: H3Event) {
+  const sessionUser = await getCurrentSessionUser(event)
+  if (!sessionUser) {
+    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+  }
+
+  if (useRuntimeConfig(event).authNativeClients?.length) {
+    await useNativeAuth(event).revokeUser(sessionUser.id)
+  }
+  await revokeUserAuthSessions(event, sessionUser.id, {
+    exceptSessionId: sessionUser.authSessionId,
+  })
+  return logoutUser(event)
 }
 
 /**
