@@ -79,3 +79,31 @@ const { data } = await chatCompletionJson(messages, schema.parse, {
   one-line wrapper.
 
 `grokChat` and `grokChatStream` are unchanged.
+
+### Provider-call records
+
+Pass a `logger` to get one structured record per provider call:
+`chatCompletion`'s options take `logger`, and `grokChat`, `grokChatStream` and
+`grokListModels` take an optional trailing `{ logger }`. Without one nothing is
+written, so existing callers are unaffected. In a route, use narduk-core's
+request logger so the record carries the request ID:
+
+```ts
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
+
+await chatCompletion(messages, {
+  apiKey,
+  model,
+  logger: useLogger(event).child('AI'),
+})
+```
+
+- `info` `AI provider call completed` (`AI provider stream opened` for a stream,
+  timed to the response headers): `provider` (host only), `operation`, `model`,
+  `responseModel`, `statusCode`, `durationMs`, `attempts` and token usage.
+- `warn` `AI provider call retrying` per retried attempt, and
+  `AI provider call aborted` when the caller's `signal` aborts.
+- `error` `AI provider call failed`: `reason` (`http_status`, `timeout`,
+  `network` or `invalid_response`), `statusCode`, `durationMs`, `attempts`.
+- A record never holds the API key, the messages, the model output or the
+  provider's error text. The admin model route already logs its model listing.

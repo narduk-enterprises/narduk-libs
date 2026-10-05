@@ -1,6 +1,9 @@
 import { createError } from 'h3'
 
+import { aiProviderHost, logAiCallFailure, statusCodeOf } from './aiCallLog'
 import { parseXaiError } from './xai'
+
+import type { AiCallFailureReason, AiCallLogger } from './aiCallLog'
 
 /*
  * A provider-neutral client for OpenAI-compatible `POST {base}/chat/completions`
@@ -25,6 +28,12 @@ export interface ChatCompletionOptions {
   baseUrl?: string
   /** `response_format: { type: 'json_object' }`. */
   json?: boolean
+  /**
+   * Receives one record per call (and a warn per retry): provider host, model,
+   * status, duration, attempts and token usage, never the messages, output or
+   * key. narduk-core's `useLogger(event).child('AI')` fits. Default: no records.
+   */
+  logger?: AiCallLogger
   maxTokens?: number
   model: string
   /** Extra attempts after a 5xx, a network error or a timeout. Default 1. */
@@ -75,9 +84,20 @@ function readUsage(value: unknown): ChatCompletionUsage | null {
 }
 
 class RetryableFailure extends Error {
-  constructor(readonly failure: unknown) {
+  constructor(
+    readonly failure: unknown,
+    readonly reason: AiCallFailureReason,
+  ) {
     super('retryable')
   }
+}
+
+/** Why a non-retryable attempt failed, for the call record. */
+const failureReasons = new WeakMap<object, AiCallFailureReason>()
+
+function tagged<T extends object>(error: T, reason: AiCallFailureReason): T {
+  failureReasons.set(error, reason)
+  return error
 }
 
 async function attempt(
@@ -104,6 +124,7 @@ async function attempt(
             ? `The chat completion provider did not answer within ${timeoutMs} ms.`
             : FALLBACK_ERROR_MESSAGE,
         }),
+        timedOut ? 'timeout' : 'network',
       )
     }
     if (!response.ok) {
@@ -112,8 +133,8 @@ async function attempt(
         statusCode: response.status,
         message: parseXaiError(body) ?? FALLBACK_ERROR_MESSAGE,
       })
-      if (response.status >= 500) throw new RetryableFailure(error)
-      throw error
+      if (response.status >= 500) throw new RetryableFailure(error, 'http_status')
+      throw tagged(error, 'http_status')
     }
     const payload = (await response.json().catch(() => null)) as {
       choices?: Array<{ message?: { content?: unknown } }>
@@ -122,10 +143,13 @@ async function attempt(
     } | null
     const content = payload?.choices?.[0]?.message?.content
     if (typeof content !== 'string') {
-      throw createError({
-        statusCode: 502,
-        message: 'The chat completion provider returned no message content.',
-      })
+      throw tagged(
+        createError({
+          statusCode: 502,
+          message: 'The chat completion provider returned no message content.',
+        }),
+        'invalid_response',
+      )
     }
     return {
       content: content.trim(),
@@ -135,6 +159,51 @@ async function attempt(
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', onAbort)
+  }
+}
+
+function failureReasonOf(error: unknown): AiCallFailureReason {
+  if (!error || typeof error !== 'object') return 'network'
+  return failureReasons.get(error) ?? 'network'
+}
+
+/** The call's records; each is a no-op without `options.logger`. */
+function createCallRecorder(url: string, options: ChatCompletionOptions) {
+  const fields = {
+    provider: aiProviderHost(url),
+    operation: 'chat.completions',
+    model: options.model,
+  }
+  const startedAt = Date.now()
+  return {
+    completed(result: ChatCompletionResult, attempts: number): ChatCompletionResult {
+      options.logger?.info('AI provider call completed', {
+        ...fields,
+        responseModel: result.model,
+        attempts,
+        durationMs: Date.now() - startedAt,
+        promptTokens: result.usage?.promptTokens ?? null,
+        completionTokens: result.usage?.completionTokens ?? null,
+        totalTokens: result.usage?.totalTokens ?? null,
+      })
+      return result
+    },
+    failed(error: unknown, reason: AiCallFailureReason, attempts: number): void {
+      logAiCallFailure(options.logger, fields, {
+        attempts,
+        durationMs: Date.now() - startedAt,
+        reason,
+        statusCode: statusCodeOf(error),
+      })
+    },
+    retrying(error: RetryableFailure, attempt: number): void {
+      options.logger?.warn('AI provider call retrying', {
+        ...fields,
+        attempt,
+        reason: error.reason,
+        statusCode: statusCodeOf(error.failure) ?? null,
+      })
+    },
   }
 }
 
@@ -159,15 +228,27 @@ export async function chatCompletion(
     }),
   }
   const retries = Math.max(0, options.retries ?? 1)
+  const record = createCallRecorder(url, options)
   for (let tries = 0; ; tries += 1) {
-    options.signal?.throwIfAborted()
     try {
-      // eslint-disable-next-line no-await-in-loop -- retries are sequential by design: each attempt runs only after the previous one failed
-      return await attempt(url, init, options)
-    } catch (error) {
-      if (!(error instanceof RetryableFailure)) throw error
       options.signal?.throwIfAborted()
-      if (tries >= retries) throw error.failure
+      // eslint-disable-next-line no-await-in-loop -- retries are sequential by design: each attempt runs only after the previous one failed
+      return record.completed(await attempt(url, init, options), tries + 1)
+    } catch (error) {
+      if (!(error instanceof RetryableFailure)) {
+        const reason = options.signal?.aborted ? 'aborted' : failureReasonOf(error)
+        record.failed(error, reason, tries + 1)
+        throw error
+      }
+      if (options.signal?.aborted) {
+        record.failed(error.failure, 'aborted', tries + 1)
+        options.signal.throwIfAborted()
+      }
+      if (tries >= retries) {
+        record.failed(error.failure, error.reason, tries + 1)
+        throw error.failure
+      }
+      record.retrying(error, tries + 1)
     }
   }
 }

@@ -1,4 +1,5 @@
 import { kvGet, kvSet } from '@narduk-enterprises/narduk-core/server/utils/kv'
+import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
 
 import { buildXaiModelCatalog } from '../../app/utils/xaiModels'
 
@@ -22,7 +23,11 @@ export async function setStoredChatModel(event: H3Event, model: string): Promise
 
 export async function resolveStoredChatModel(event: H3Event, apiKey: string): Promise<string> {
   const storedModel = await getStoredChatModel(event)
-  const catalog = buildXaiModelCatalog((await grokListModels(apiKey)).map((model) => model.id))
+  const catalog = buildXaiModelCatalog(
+    (await grokListModels(apiKey, { logger: useLogger(event).child('AI') })).map(
+      (model) => model.id,
+    ),
+  )
 
   if (catalog.chatModels.includes(storedModel)) {
     return storedModel

@@ -1,9 +1,21 @@
 import { createError } from 'h3'
 
+import { logAiCallFailure, statusCodeOf } from './aiCallLog'
+
+import type { AiCallFields, AiCallLogger } from './aiCallLog'
+
 export interface GrokChatMessage {
   content: string
   role: 'system' | 'user' | 'assistant'
 }
+
+/** Optional trailing argument of the xAI helpers; omitting it changes nothing. */
+export interface XaiCallOptions {
+  /** Receives the call record (see `aiCallLog.ts`). Default: no records. */
+  logger?: AiCallLogger
+}
+
+const XAI_PROVIDER = 'api.x.ai'
 
 export interface XaiModel {
   created?: number
@@ -63,45 +75,108 @@ async function throwXaiResponseError(response: Response): Promise<never> {
   })
 }
 
+/**
+ * Run one xAI request and record it: a fetch that rejects is a `network` (or
+ * `timeout`) failure, a non-2xx is `http_status`. Only `onResponse` sees the
+ * body, and whatever it throws is recorded as `invalid_response` unless it
+ * carries a status of its own.
+ */
+async function xaiCall<T>(
+  url: string,
+  init: RequestInit,
+  fields: AiCallFields,
+  options: XaiCallOptions,
+  onResponse: (response: Response) => Promise<T>,
+  completedMessage = 'AI provider call completed',
+): Promise<T> {
+  const startedAt = Date.now()
+  const elapsed = () => Date.now() - startedAt
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch (error) {
+    logAiCallFailure(options.logger, fields, {
+      durationMs: elapsed(),
+      reason: error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'network',
+    })
+    throw error
+  }
+  if (!response.ok) {
+    logAiCallFailure(options.logger, fields, {
+      durationMs: elapsed(),
+      reason: 'http_status',
+      statusCode: response.status,
+    })
+  }
+  try {
+    const result = await onResponse(response)
+    options.logger?.info(completedMessage, {
+      ...fields,
+      statusCode: response.status,
+      durationMs: elapsed(),
+    })
+    return result
+  } catch (error) {
+    if (response.ok) {
+      logAiCallFailure(options.logger, fields, {
+        durationMs: elapsed(),
+        reason: 'invalid_response',
+        statusCode: statusCodeOf(error),
+      })
+    }
+    throw error
+  }
+}
+
 export async function grokChat(
   apiKey: string,
   messages: GrokChatMessage[],
   model: string,
+  options: XaiCallOptions = {},
 ): Promise<string> {
-  const response = await fetch(
+  return xaiCall(
     'https://api.x.ai/v1/chat/completions',
     createXaiRequest(apiKey, messages, model),
+    { provider: XAI_PROVIDER, operation: 'chat.completions', model },
+    options,
+    async (response) => {
+      if (!response.ok) {
+        await throwXaiResponseError(response)
+      }
+
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>
+      }
+      const content = payload.choices?.[0]?.message?.content
+      return typeof content === 'string' ? content.trim() : ''
+    },
   )
-
-  if (!response.ok) {
-    await throwXaiResponseError(response)
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: unknown } }>
-  }
-  const content = payload.choices?.[0]?.message?.content
-  return typeof content === 'string' ? content.trim() : ''
 }
 
 export async function grokChatStream(
   apiKey: string,
   messages: GrokChatMessage[],
   model: string,
+  options: XaiCallOptions = {},
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(
+  return xaiCall(
     'https://api.x.ai/v1/chat/completions',
     createXaiRequest(apiKey, messages, model, true),
+    { provider: XAI_PROVIDER, operation: 'chat.completions.stream', model },
+    options,
+    async (response) => {
+      if (!response.ok) {
+        await throwXaiResponseError(response)
+      }
+      if (!response.body) {
+        throw createError({ statusCode: 502, message: 'xAI returned an empty stream.' })
+      }
+
+      return response.body.pipeThrough(createXaiSseStreamParser())
+    },
+    // Time to headers: the stream itself is consumed after this returns.
+    'AI provider stream opened',
   )
-
-  if (!response.ok) {
-    await throwXaiResponseError(response)
-  }
-  if (!response.body) {
-    throw createError({ statusCode: 502, message: 'xAI returned an empty stream.' })
-  }
-
-  return response.body.pipeThrough(createXaiSseStreamParser())
 }
 
 export function createXaiSseStreamParser(): TransformStream<Uint8Array, Uint8Array> {
@@ -153,18 +228,27 @@ export function createXaiSseStreamParser(): TransformStream<Uint8Array, Uint8Arr
 // exactly as a network failure does today.
 const XAI_LIST_MODELS_TIMEOUT_MS = 10_000
 
-export async function grokListModels(apiKey: string): Promise<XaiModel[]> {
-  const response = await fetch('https://api.x.ai/v1/models', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(XAI_LIST_MODELS_TIMEOUT_MS),
-  })
+export async function grokListModels(
+  apiKey: string,
+  options: XaiCallOptions = {},
+): Promise<XaiModel[]> {
+  return xaiCall(
+    'https://api.x.ai/v1/models',
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(XAI_LIST_MODELS_TIMEOUT_MS),
+    },
+    { provider: XAI_PROVIDER, operation: 'models.list' },
+    options,
+    async (response) => {
+      if (!response.ok) {
+        await response.text()
+        throw createError({ statusCode: response.status, message: 'Failed to list xAI models.' })
+      }
 
-  if (!response.ok) {
-    await response.text()
-    throw createError({ statusCode: response.status, message: 'Failed to list xAI models.' })
-  }
-
-  const data = (await response.json()) as { data?: XaiModel[] }
-  return Array.isArray(data.data) ? data.data : []
+      const data = (await response.json()) as { data?: XaiModel[] }
+      return Array.isArray(data.data) ? data.data : []
+    },
+  )
 }
