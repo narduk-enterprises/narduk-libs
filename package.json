@@ -27,6 +27,7 @@
     "release:publish": "node scripts/publish-verified-packages.mjs",
     "release:synthesize-drift": "node scripts/synthesize-manifest-drift.mjs",
     "release:verify-published": "node scripts/verify-published-packages.mjs",
+    "release:wait": "node scripts/release-wait.mjs",
     "release-plan:check": "node scripts/check-generator-release-plan.mjs",
     "versions:check": "node scripts/sync-generator-package-versions.mjs --check",
     "versions:sync": "node scripts/sync-generator-package-versions.mjs",
