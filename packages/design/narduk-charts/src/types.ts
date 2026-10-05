@@ -36,6 +36,13 @@ export interface ChartSeries {
   /** **NardukLineChart only.** 0–1 opacity for everything this series draws. Default `1`. */
   opacity?: number
   /**
+   * **NardukLineChart only.** Draw the line dashed, so a projection reads
+   * differently from a measurement. `true` is `6 4`; a string is an SVG
+   * `stroke-dasharray` in px (`'2 3'`). A dashed line skips the draw-in
+   * animation. Default: solid.
+   */
+  dashed?: boolean | string
+  /**
    * **NardukLineChart only.** Print each value as text above its point, always
    * visible (not a hover tooltip). Pair with `formatValue`.
    */

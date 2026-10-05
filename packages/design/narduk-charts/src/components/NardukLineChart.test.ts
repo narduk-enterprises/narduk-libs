@@ -476,6 +476,34 @@ describe('NardukLineChart series palette is themable', () => {
   })
 })
 
+describe('NardukLineChart dashed series', () => {
+  const labels = ['x', 'y', 'z']
+
+  it('draws a dashed series with a px pattern and the others solid', () => {
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [
+          { name: 'Observed', data: [1, 2, 3] },
+          { name: 'Forecast', data: [3, 2, 1], dashed: true },
+          { name: 'Custom', data: [2, 2, 2], dashed: '2 3' },
+        ],
+        labels,
+        width: 300,
+        height: 150,
+        animate: false,
+      },
+    })
+
+    const paths = w.findAll('.narduk-line-path')
+    expect(paths[0]!.attributes('stroke-dasharray')).toBe('1')
+    expect(paths[0]!.attributes('pathLength')).toBe('1')
+    expect(paths[1]!.attributes('stroke-dasharray')).toBe('6 4')
+    expect(paths[1]!.attributes('pathLength')).toBeUndefined()
+    expect(paths[1]!.attributes('stroke-dashoffset')).toBeUndefined()
+    expect(paths[2]!.attributes('stroke-dasharray')).toBe('2 3')
+  })
+})
+
 describe('NardukLineChart isolated values', () => {
   /*
    * A series whose measured entries never neighbour one another. Every run is
