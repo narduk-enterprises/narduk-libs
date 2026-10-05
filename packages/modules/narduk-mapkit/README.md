@@ -1118,6 +1118,13 @@ moves, `show({ latitude, longitude, text }, pointer)` on a hit and `hide()` on
 leave. The text is centred on its anchor while the anchor is at least `insetPx`
 (default 48) inside the view, and sits beside the pointer otherwise.
 
+**A cut-out.** `createAreaMaskTileSource({ createCanvas, layer })` is the
+inverse of the outline source: a flat `fillColor` with the areas in `ids` cut
+out of it, and an optional `edge` line round the cut. Register it above the
+network and a page about one state shows that state and nothing else. It is
+drawn with one even-odd fill, so a multi-polygon is cut out in every part, and a
+tile no area reaches is one shared flat image.
+
 **A pulse down a path.** `source.pathPieces({ stretches, view })` returns the
 screen-space geometry of the named stretches (`{ id, meters }`, in path order)
 from the tiles already decoded, so it never fetches. `createFlowPulseLayer`
