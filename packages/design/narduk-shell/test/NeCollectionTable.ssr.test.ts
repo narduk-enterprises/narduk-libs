@@ -108,6 +108,15 @@ describe('NeCollectionTable on the server', () => {
     expect(html).toMatch(/data-ne-column="wind"[^>]*>[\s\S]*?data-ne-sort-header/)
   })
 
+  it('paints each card cell’s label from the server, so a phone never reads an unnamed value (#1704)', async () => {
+    const html = await render({ caption: 'Stations', columns, rows: stations })
+    expect(html).toMatch(/<td[^>]*data-ne-column="wind" data-ne-label="Wind kt"/)
+    // The primary cell heads the card; it prints no label.
+    expect(html).not.toMatch(/data-ne-column="name" data-ne-label/)
+    // A missing value's dash marks itself empty, so the card drops the cell.
+    expect(html).toMatch(/data-ne-missing data-ne-empty/)
+  })
+
   it('renders real hrefs for row links, the selected row, and the missing word', async () => {
     const html = await render({
       caption: 'Stations',

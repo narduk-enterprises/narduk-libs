@@ -35,7 +35,7 @@ export interface NeCollectionColumn<TRow = Record<string, unknown>> extends Pick
   align?: 'start' | 'end'
   /**
    * The column holds free text that can run several lines (a reason, a note).
-   * In the phone card it takes a line of its own, clamped to two.
+   * In the phone card its value is clamped to two lines.
    */
   freeText?: boolean
   /** `false` drops the column below the stack breakpoint, in both phone layouts. */
