@@ -314,6 +314,18 @@ describe('createFlowPulseLayer', () => {
     expect(firstWing[0]!).toBeLessThan(firstTip[0]!)
   })
 
+  it('draws chevrons at their own width, over the halo when there is one', () => {
+    const { layer, strokes } = harness(
+      { reducedMotion: true, style: { color: '#fff', glowColor: '#04121c', width: 6 } },
+      LINE,
+    )
+    layer.setPath(PATH)
+    layer.update(VIEW)
+    expect(strokes()).toHaveLength(2)
+    expect(strokes()[0]).toMatchObject({ strokeStyle: '#04121c', lineWidth: 2.2 * 2.2 })
+    expect(strokes()[1]).toMatchObject({ strokeStyle: '#fff', lineWidth: 2.2, alpha: 1 })
+  })
+
   it('switches to chevrons when the visitor turns reduced motion on', () => {
     const listeners: Array<() => void> = []
     const preference = { matches: false }

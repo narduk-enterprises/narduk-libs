@@ -16,4 +16,5 @@
   start phases, so a lit basin of thousands of stretches still costs a handful
   of strokes a frame.
 - Lines are kept as `Path2D`s between frames (`createPath` overrides it).
-- Reduced motion still draws static chevrons, now over the halo too.
+- Reduced motion still draws static chevrons, over the halo too, at their own
+  `chevronWidth` (default 2.2).

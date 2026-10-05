@@ -37,6 +37,7 @@ export const FLOW_PULSE_DEFAULTS = {
     branchOpacity: 0.85,
     chevron: 4,
     chevronSpacing: 64,
+    chevronWidth: 2.2,
     dash: 30,
     glowOpacity: 0.45,
     glowScale: 1.8,
@@ -306,12 +307,12 @@ export function createFlowPulseLayer(options) {
         context2d.lineJoin = 'round';
         if (style.glowColor) {
             context2d.strokeStyle = style.glowColor;
-            context2d.lineWidth = style.width * 1.9;
+            context2d.lineWidth = value('chevronWidth') * 2.2;
             context2d.globalAlpha = value('glowOpacity') * value('opacity');
             context2d.stroke();
         }
         context2d.strokeStyle = style.color;
-        context2d.lineWidth = style.width;
+        context2d.lineWidth = value('chevronWidth');
         context2d.globalAlpha = value('opacity');
         context2d.stroke();
     }

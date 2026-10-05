@@ -10,6 +10,8 @@ export interface FlowPulseStyle {
     chevron?: number;
     /** Distance between two chevrons along the path. Default 64. */
     chevronSpacing?: number;
+    /** Stroke width of a chevron. Default 2.2. */
+    chevronWidth?: number;
     /** The streak head's colour; the tail is the same colour, fainter. */
     color: string;
     /** Length of one streak, head to the end of its tail. Default 30. */
@@ -35,6 +37,7 @@ export declare const FLOW_PULSE_DEFAULTS: {
     readonly branchOpacity: 0.85;
     readonly chevron: 4;
     readonly chevronSpacing: 64;
+    readonly chevronWidth: 2.2;
     readonly dash: 30;
     readonly glowOpacity: 0.45;
     readonly glowScale: 1.8;

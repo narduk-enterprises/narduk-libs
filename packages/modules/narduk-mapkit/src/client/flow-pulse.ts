@@ -47,6 +47,8 @@ export interface FlowPulseStyle {
   chevron?: number
   /** Distance between two chevrons along the path. Default 64. */
   chevronSpacing?: number
+  /** Stroke width of a chevron. Default 2.2. */
+  chevronWidth?: number
   /** The streak head's colour; the tail is the same colour, fainter. */
   color: string
   /** Length of one streak, head to the end of its tail. Default 30. */
@@ -73,6 +75,7 @@ export const FLOW_PULSE_DEFAULTS = {
   branchOpacity: 0.85,
   chevron: 4,
   chevronSpacing: 64,
+  chevronWidth: 2.2,
   dash: 30,
   glowOpacity: 0.45,
   glowScale: 1.8,
@@ -512,12 +515,12 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     context2d.lineJoin = 'round'
     if (style.glowColor) {
       context2d.strokeStyle = style.glowColor
-      context2d.lineWidth = style.width * 1.9
+      context2d.lineWidth = value('chevronWidth') * 2.2
       context2d.globalAlpha = value('glowOpacity') * value('opacity')
       context2d.stroke()
     }
     context2d.strokeStyle = style.color
-    context2d.lineWidth = style.width
+    context2d.lineWidth = value('chevronWidth')
     context2d.globalAlpha = value('opacity')
     context2d.stroke()
   }
