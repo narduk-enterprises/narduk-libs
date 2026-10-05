@@ -129,7 +129,7 @@ const description = computed(() => {
   top: 0;
   bottom: 0;
   background: color-mix(in oklab, var(--ns-accent) 18%, var(--ns-surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--ns-ink-rgb) / 0.05);
+  box-shadow: inset 0 0 0 1px rgb(var(--ns-shadow-rgb) / 0.05);
 }
 
 .ns-range__fill {
