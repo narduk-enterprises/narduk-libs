@@ -12,13 +12,16 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
+// pnpm's bin shim can contain workspace-relative paths that break when
+// node_modules is linked into the isolated fixture. Resolve the real CLI.
+const viteCli = join(dirname(require.resolve('vite/package.json')), 'bin/vite.js')
 
 function run(
   command: string,
@@ -78,7 +81,7 @@ describe('published types entry', () => {
     outDir = mkdtempSync(join(tmpdir(), 'narduk-charts-types-'))
     const stage = join(outDir, 'package')
     buildFixture(stage)
-    run('pnpm', ['exec', 'vite', 'build'], stage)
+    run(process.execPath, [viteCli, 'build'], stage)
     const dist = join(stage, 'dist')
 
     const emitted = readdirSync(dist)
@@ -103,9 +106,9 @@ describe('published types entry', () => {
     const stage = join(outDir, 'package')
     const dist = join(stage, 'dist')
     buildFixture(stage)
-    run('pnpm', ['exec', 'vite', 'build'], stage)
+    run(process.execPath, [viteCli, 'build'], stage)
     for (const entry of ['line', 'bar', 'pie', 'candle', 'studies', 'spark']) {
-      run('pnpm', ['exec', 'vite', 'build', '--config', 'vite.entries.config.ts'], stage, {
+      run(process.execPath, [viteCli, 'build', '--config', 'vite.entries.config.ts'], stage, {
         NC_ENTRY: entry,
       })
     }
