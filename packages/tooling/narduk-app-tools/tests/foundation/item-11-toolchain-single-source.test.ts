@@ -168,6 +168,48 @@ describe('item 11.0 -- a missing or inexact source', () => {
 })
 
 describe('item 11.1 / 11.2 -- mirrors that disagree with the source', () => {
+  it.each(['>=24.0.0', '^24.0.0', '~24.21.0', '24.x', '22 || >=24', '24.0.0 - 24.99.0'])(
+    'accepts compatible engines.node %s and preserves it under --fix',
+    (range) => {
+      const root = baseline()
+      const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+      manifest.engines.node = range
+      writeJson(root, 'package.json', manifest)
+      const before = readFileSync(join(root, 'package.json'), 'utf8')
+      const artefact = run(root, true)
+      expect(artefact.result).toBe('PASS')
+      expect(artefact.sites.find((site) => site.locator === 'engines.node')?.status).toBe('pass')
+      expect(artefact.fixes).toEqual([])
+      expect(readFileSync(join(root, 'package.json'), 'utf8')).toBe(before)
+    },
+  )
+
+  it.each(['>=25', '<24.0.0', '^22', 'not-a-range'])(
+    'fails incompatible or malformed engines.node %s',
+    (range) => {
+      const root = baseline()
+      const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+      manifest.engines.node = range
+      writeJson(root, 'package.json', manifest)
+      const artefact = run(root)
+      expect(statusOf(root, '11.1')).toBe('fail')
+      expect(artefact.sites.find((site) => site.locator === 'engines.node')?.status).toBe('fail')
+    },
+  )
+
+  it('keeps launcher versions exact even when engines.node allows the source', () => {
+    const root = baseline()
+    writeJson(root, 'package.json', {
+      name: 'fixture-app',
+      packageManager: `pnpm@${PNPM}`,
+      engines: { node: '>=24' },
+      volta: { node: '>=24' },
+    })
+    expect(statusOf(root, '11.1')).toBe('fail')
+    expect(detailOf(root, '11.1')).toContain('volta.node')
+    expect(detailOf(root, '11.1')).not.toContain('(engines.node)')
+  })
+
   it.each([
     [
       'engines.node',

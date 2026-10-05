@@ -81,7 +81,7 @@ function usage(): string {
     'Usage: narduk-app <command> [options]',
     '',
     '  --help, -h                       Print this help and exit 0. Accepted on every',
-    '                                   command. A --help after -- is left for the child.',
+    '                                   command. Child-command help is left for the child.',
     '',
     'Commands:',
     '  dev [--credentials <none|nvault>] [--project <name>] [--environment <name>]',
@@ -295,8 +295,11 @@ export function parseMigrationArgs(args: string[]): {
   }
 }
 
-/** `--help` / `-h` before a `--` separator asks for help and must not run the command. */
+/** Help belongs to the app only before a separator or a passthrough child command. */
 export function argsRequestHelp(args: readonly string[]): boolean {
+  if (args[0] === 'gh-packages-run') {
+    return args[1] === '--help' || args[1] === '-h'
+  }
   for (const arg of args) {
     if (arg === '--') return false
     if (arg === '--help' || arg === '-h') return true

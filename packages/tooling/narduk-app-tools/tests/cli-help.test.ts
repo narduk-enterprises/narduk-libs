@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { argsRequestHelp, main } from '../src/cli.js'
@@ -81,5 +85,20 @@ describe('subcommand --help', () => {
     expect(argsRequestHelp(['gh-packages-run', '--', 'pnpm', '--help'])).toBe(false)
     expect(argsRequestHelp(['og:check', '--help'])).toBe(true)
     expect(argsRequestHelp(['foundation:check', '--json', '--help'])).toBe(true)
+  })
+
+  it('forwards help without a separator and preserves the child exit status', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-child-help-'))
+    const child = join(root, 'child.cjs')
+    writeFileSync(child, 'process.exit(process.argv[2] === "--help" ? 7 : 8)\n')
+    vi.stubEnv('NPM_CONFIG_USERCONFIG', '/dev/null')
+    try {
+      expect(await main(['gh-packages-run', process.execPath, child, '--help'])).toBe(7)
+      expect(argsRequestHelp(['gh-packages-run', 'pnpm', 'test', '-h'])).toBe(false)
+      expect(argsRequestHelp(['gh-packages-run', '-h'])).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
