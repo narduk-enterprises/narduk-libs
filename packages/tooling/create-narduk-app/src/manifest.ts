@@ -44,12 +44,12 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.33.1',
   '@narduk-enterprises/eslint-config': '3.0.3',
-  '@narduk-enterprises/narduk-ai': '0.4.18',
+  '@narduk-enterprises/narduk-ai': '0.4.19',
   '@narduk-enterprises/narduk-analytics': '1.26.2',
-  '@narduk-enterprises/narduk-auth': '1.33.10',
+  '@narduk-enterprises/narduk-auth': '1.34.0',
   '@narduk-enterprises/narduk-charts': '2.9.0',
-  '@narduk-enterprises/narduk-core': '2.23.3',
-  '@narduk-enterprises/narduk-logging': '0.4.1',
+  '@narduk-enterprises/narduk-core': '2.23.4',
+  '@narduk-enterprises/narduk-logging': '0.4.2',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
@@ -73,7 +73,7 @@ export const PACKAGE_VERSIONS = {
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.17.0',
   '@narduk-enterprises/narduk-testkit': '1.11.0',
-  '@narduk-enterprises/narduk-uploads': '1.21.4',
+  '@narduk-enterprises/narduk-uploads': '1.21.5',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
   // deep in the setup chain to finish registering the icon client-bundle

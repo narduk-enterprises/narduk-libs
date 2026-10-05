@@ -1,5 +1,56 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.33
+
+### Patch Changes
+
+- 6264e85: Add log out everywhere (narduk-libs#1043).
+  `POST /api/auth/logout-everywhere` and `useAuth().logoutEverywhere()` revoke
+  native sessions when configured and delete every other `auth_sessions` row,
+  then sign this browser out. On the Supabase backend the upstream sign-out
+  stays app-local (#921).
+
+  Completing an MFA enrollment now ends the user's other sessions too; the
+  browser that proved the factor keeps its session. A sign-in step-up on an
+  enrolled factor ends nothing. narduk-auth has no email-change or MFA-unenroll
+  route; the README says a later one must revoke the same way.
+
+- 9b3e5dc: Record AI provider calls through an injected logger. `chatCompletion`
+  takes a `logger` option, and `grokChat`, `grokChatStream` and `grokListModels`
+  take an optional trailing `{ logger }`; each call then writes one record with
+  the provider host, operation, model, status, duration, attempts and token
+  usage (a warn per retry, an error on the final failure with its reason).
+  Records never hold the API key, messages, model output or the provider's error
+  text. Without a logger nothing is written. The admin model route now records
+  its xAI model listing through narduk-core's request logger.
+- 860143c: Record local auth throttling and Sign in with Apple web-callback
+  refusals through narduk-core's request logger. Each failed local
+  email/password attempt writes an `info` record, a lockout that begins writes a
+  `warn` with the failure count and lock length, and a request refused while
+  locked writes a `warn` with the `Retry-After` it sent; records name the
+  attempt kind and never the email address, link token, client IP or attempt
+  key. The Apple web callback records a refusal with its fixed code
+  (`apple_state_mismatch`, `apple_token_missing`) or token-verification reason
+  (`nonce_mismatch`, `wrong_audience`, ...) and a user cancel at `info`, never
+  the identity token or its claims. Responses are unchanged.
+- 33e6556: Record every upload refusal and storage failure through narduk-core's
+  request logger. Each 4xx from `POST /api/upload` writes one `Upload rejected`
+  warn with its `statusCode` and a stable `reason` (missing or oversized
+  `Content-Length`, an oversized body, no file, an unsupported type, an
+  oversized file, bytes that are not an image); a failed R2 write or read writes
+  an error record with the sanitized error. The performance-budget warning no
+  longer records the client's file name, which can name a person; records carry
+  sizes, counts, keys and normalized types only. Responses are unchanged.
+- 3b8183c: `applyRetention` no longer deletes raw rows per tier. That row delete
+  invalidated the continuous aggregates, and their next refresh emptied the
+  tier's 1m rollups inside the refresh window (narduk-libs#1081, reproduced on
+  TimescaleDB 2.30.1). A tier's `rawWindowMs` is now a read depth: raw is kept
+  for `globalRawWindowMs` for every vessel, and a consumer reading raw for a
+  tier clips the range start to `now - rawWindowMs`. Consumers that relied on
+  the sweep to hide older raw from a tier must clip their raw reads.
+- 509c3e3: Update the Python logging SDK lockfile to urllib3 2.8.0, including
+  its proxy TLS, chunked response, and URL parsing security fixes.
+
 ## 0.21.32
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+### Patch Changes
+
+- 509c3e3: Update the Python logging SDK lockfile to urllib3 2.8.0, including
+  its proxy TLS, chunked response, and URL parsing security fixes.
+
 ## 0.4.1
 
 ### Patch Changes
