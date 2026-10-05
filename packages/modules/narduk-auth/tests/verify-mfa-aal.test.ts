@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSessionUser } from '../server/lib/app-auth/types'
 import type { H3Event } from 'h3'
 
+const logError = vi.hoisted(() => vi.fn())
+
+vi.mock('#layer/server/utils/logger', () => ({
+  useLogger: () => ({ child: () => ({ error: logError }) }),
+}))
+
 const replaceLayerUserSession = vi.hoisted(() => vi.fn())
 const commitSupabaseSessionFromClient = vi.hoisted(() =>
   vi.fn(async () => ({ aal: 'aal2' as const })),
@@ -138,6 +144,26 @@ describe('verifyMfa completing an enrollment ends the other sessions (#1043)', (
       exceptSessionId: 'sess-1',
     })
     expect(revokeNativeUser).not.toHaveBeenCalled()
+  })
+
+  it('refuses success and records safe recovery when enrollment revocation fails', async () => {
+    factors.listFactors.mockResolvedValueOnce({
+      data: { all: [{ id: 'factor-1', status: 'unverified' }] },
+      error: null,
+    })
+    const failure = new Error('private database detail')
+    revokeUserAuthSessions.mockRejectedValueOnce(failure)
+    const { verifyMfa } = await import('../server/lib/app-auth/profile')
+
+    await expect(
+      verifyMfa({ context: {} } as H3Event, { factorId: 'factor-1', code: '123456' }),
+    ).rejects.toBe(failure)
+    expect(logError).toHaveBeenCalledWith('MFA enrollment session revocation failed', {
+      reason: 'mfa_enrollment_revoke_failed',
+      recovery: 'logout_everywhere',
+    })
+    expect(JSON.stringify(logError.mock.calls)).not.toContain('private database detail')
+    expect(JSON.stringify(logError.mock.calls)).not.toContain('123456')
   })
 
   it('also revokes native-client tokens when the app has native clients', async () => {

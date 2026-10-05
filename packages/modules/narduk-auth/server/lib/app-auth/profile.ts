@@ -435,12 +435,22 @@ export async function verifyMfa(event: H3Event, body: VerifyMfaInput) {
   // (possibly stolen ones) end here; this browser just proved the factor
   // (narduk-libs#1043). A login step-up on an enrolled factor revokes nothing.
   if (completesEnrollment) {
-    if (useRuntimeConfig(event).authNativeClients?.length) {
-      await useNativeAuth(event).revokeUser(context.localUser.id)
+    try {
+      if (useRuntimeConfig(event).authNativeClients?.length) {
+        await useNativeAuth(event).revokeUser(context.localUser.id)
+      }
+      await revokeUserAuthSessions(event, context.localUser.id, {
+        exceptSessionId: context.authSessionId,
+      })
+    } catch (error) {
+      // Enrollment has already succeeded upstream. Do not report success or log
+      // the provider error/OTP; name the explicit recovery that revokes again.
+      useLogger(event).child('AppAuth').error('MFA enrollment session revocation failed', {
+        reason: 'mfa_enrollment_revoke_failed',
+        recovery: 'logout_everywhere',
+      })
+      throw error
     }
-    await revokeUserAuthSessions(event, context.localUser.id, {
-      exceptSessionId: context.authSessionId,
-    })
   }
 
   return {

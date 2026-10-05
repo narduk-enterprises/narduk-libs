@@ -253,16 +253,15 @@ server authorization goes through `requireAuth`, which asks the validator.
 
 ## Log out everywhere
 
-`POST /api/auth/logout-everywhere` (`useAuth().logoutEverywhere()`) signs this
-browser out like `POST /api/auth/logout`, then deletes every `auth_sessions` row
-the user holds and, when native clients are configured, revokes their native
-sessions. Other browsers are signed out on their next request: the session-grant
-validator reads the row before anything else. On the Supabase backend the
-upstream sign-out stays `scope: 'local'`, as logout does (#921): a global
-sign-out would also end the user's sessions in every other app on the shared
-authority. The route refuses API-key principals and is not on the recovery or
-MFA step-up allowlists, so a restricted session cannot sign the user out of
-their full sessions.
+`POST /api/auth/logout-everywhere` (`useAuth().logoutEverywhere()`) revokes
+native sessions when configured, deletes every other `auth_sessions` row the
+user holds, then signs this browser out like `POST /api/auth/logout`. Other
+browsers are signed out on their next request: the session-grant validator reads
+the row before anything else. On the Supabase backend the upstream sign-out
+stays `scope: 'local'`, as logout does (#921): a global sign-out would also end
+the user's sessions in every other app on the shared authority. The route
+refuses API-key principals and is not on the recovery or MFA step-up allowlists,
+so a restricted session cannot sign the user out of their full sessions.
 
 The same revocation runs where a credential changes. Native sessions exist only
 on the local backend (`POST /api/auth/native/authorize` refuses any other
@@ -278,6 +277,13 @@ session), so on Supabase only `auth_sessions` rows are revoked:
 - narduk-auth has no email-change or MFA-unenroll route. One added later must
   call `revokeUserAuthSessions` (and `useNativeAuth(event).revokeUser` when
   native clients are configured) the same way.
+
+If MFA verification returns 5xx after enrollment, the factor may already be
+verified while revoking the other sessions failed. The server records
+`mfa_enrollment_revoke_failed` at error level and does not report success.
+Retrying factor verification alone does not retry revocation: call
+`useAuth().logoutEverywhere()` (or `POST /api/auth/logout-everywhere`) and retry
+that operation if it fails. Enrollment and session revocation are not atomic.
 
 ## Restricted sessions (recovery and MFA)
 
