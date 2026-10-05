@@ -1666,6 +1666,10 @@ either derives from the source (a workflow's `node-version-file`, an unpinned
 mirror's literal in place, so bumping Node is: edit `.node-version`, run
 `narduk-app foundation:check:toolchain --fix`.
 
+`engines.node` declares compatibility: its semver range must include the exact
+`.node-version`. A compatible range such as `>=24.0.0` passes and is preserved
+by `--fix`; launcher versions such as `volta.node` still require equality.
+
 `.nvmrc` is **optional**. Every consumer in this estate that reads it also reads
 `.node-version`; the only tool that reads `.nvmrc` and not `.node-version` is
 `nvm`, which is not the installed manager here. The generator emits

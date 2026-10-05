@@ -29,6 +29,8 @@
  * reported and still fails on a mismatch -- it just cannot be auto-fixed.
  */
 
+import satisfies from 'semver/functions/satisfies.js'
+
 import { check } from '../schema.js'
 import { isRecord, parseJson, PACKAGE_JSON_CANDIDATES, type AppRepo } from '../source.js'
 import { STATUS_FAIL, STATUS_NA, STATUS_PASS, STATUS_UNKNOWN } from '../types.js'
@@ -492,6 +494,13 @@ function mismatchDetail(sites: ToolchainSite[], expected: string): string {
   )
 }
 
+/** Engines declare compatibility; launchers and version mirrors still require equality. */
+export function siteMatchesSource(site: ToolchainSite, expected: string): boolean {
+  return site.locator === 'engines.node'
+    ? site.value !== null && satisfies(expected, site.value)
+    : site.value === expected
+}
+
 /** 11.0 -- both sources are present and declare an exact version. */
 function evaluate110(scan: ToolchainScan): FoundationSubCheck {
   const { node, pnpm } = scan.sources
@@ -557,7 +566,7 @@ function evaluateMirrors(
       `no ${toolchain} mirror restates a version; the source stands alone`,
     )
   }
-  const wrong = sites.filter((site) => site.value !== expected)
+  const wrong = sites.filter((site) => !siteMatchesSource(site, expected))
   if (wrong.length > 0) {
     return check(
       id,
@@ -759,5 +768,5 @@ export function siteStatus(site: ToolchainSite, scan: ToolchainScan): Foundation
   const expected = site.toolchain === 'node' ? scan.sources.node.value : scan.sources.pnpm.value
   if (expected === null) return STATUS_UNKNOWN
   if (site.file.startsWith('.github/workflows/') && site.derivable !== false) return STATUS_FAIL
-  return site.value === expected ? STATUS_PASS : STATUS_FAIL
+  return siteMatchesSource(site, expected) ? STATUS_PASS : STATUS_FAIL
 }

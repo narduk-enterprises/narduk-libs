@@ -23,6 +23,7 @@ import {
   evaluateItem11,
   scanToolchain,
   siteStatus,
+  siteMatchesSource,
   NODE_SOURCE_FILE,
   PNPM_SOURCE_KEY,
   TOOLCHAIN_ITEM_ID,
@@ -142,7 +143,7 @@ export function planToolchainFixes(scan: ToolchainScan): ToolchainFix[] {
   for (const site of scan.mirrors) {
     if (!site.fixable || site.line === null || site.value === null) continue
     const expected = site.toolchain === 'node' ? scan.sources.node.value : scan.sources.pnpm.value
-    if (expected === null || site.value === expected) continue
+    if (expected === null || siteMatchesSource(site, expected)) continue
     fixes.push({
       file: site.file,
       line: site.line,

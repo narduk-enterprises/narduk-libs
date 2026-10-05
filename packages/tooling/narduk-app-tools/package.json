@@ -47,13 +47,15 @@
   "dependencies": {
     "jsonc-parser": "^3.3.1",
     "parse5": "^8.0.0",
+    "semver": "7.8.5",
     "sharp": "^0.35.4",
-    "zod": "^4.4.3",
-    "yaml": "^2.8.4"
+    "yaml": "^2.8.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@narduk-enterprises/eslint-config": "workspace:*",
     "@types/node": "^22.19.19",
+    "@types/semver": "7.8.0",
     "@vitest/coverage-v8": "4.1.6",
     "eslint": "^10.8.0",
     "prettier": "^3.8.3",

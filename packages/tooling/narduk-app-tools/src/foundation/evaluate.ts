@@ -28,6 +28,15 @@ function gitOutput(root: string, args: string[]): string | null {
 
 const UNKNOWN_COMMIT = '0'.repeat(40)
 
+function githubRepository(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const match =
+    /^(?:(?:git\+)?(?:https:\/\/|ssh:\/\/(?:git@)?)github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/u.exec(
+      value.trim(),
+    )
+  return match?.[1]
+}
+
 export function resolveAppInfo(
   root: string,
   overrides: Partial<FoundationAppInfo> = {},
@@ -55,6 +64,8 @@ export function resolveAppInfo(
       ? cfApp.product.repository
       : undefined
   const envRepo = process.env.GITHUB_REPOSITORY
+  const repository = isRecord(packageJson) ? packageJson.repository : undefined
+  const repoFromManifest = githubRepository(isRecord(repository) ? repository.url : repository)
   const commit = gitOutput(root, ['rev-parse', 'HEAD']) ?? process.env.GITHUB_SHA ?? UNKNOWN_COMMIT
   const ref =
     gitOutput(root, ['symbolic-ref', '-q', 'HEAD']) ??
@@ -65,7 +76,13 @@ export function resolveAppInfo(
       ? packageJson.name
       : (root.split('/').pop() ?? 'app')
   return {
-    repo: overrides.repo ?? envRepo ?? repoFromConfig ?? 'unknown/unknown',
+    repo:
+      overrides.repo ??
+      envRepo ??
+      repoFromConfig ??
+      repoFromManifest ??
+      githubRepository(gitOutput(root, ['remote', 'get-url', 'origin'])) ??
+      'unknown/unknown',
     name: overrides.name ?? name,
     commit: overrides.commit ?? commit,
     ref: overrides.ref ?? ref,
