@@ -425,15 +425,6 @@ function resolvePin(current: string, desired: string): Resolution {
   }
   const currentShas = [...new Set(found.map((match) => match.split('@')[1] ?? ''))]
   const moves = currentShas.map((sha) => workflowPinMove(sha, desiredSha))
-  if (moves.includes('refuse')) {
-    return {
-      detail:
-        'App pin ' +
-        (currentShas.find((sha) => workflowPinMove(sha, desiredSha) === 'refuse') ?? desiredSha) +
-        ' is newer than this generator pin, so upgrade will not move it backward.',
-      status: 'clean',
-    }
-  }
   if (moves.includes('unknown')) {
     return {
       detail:
@@ -443,9 +434,19 @@ function resolvePin(current: string, desired: string): Resolution {
       status: 'unresolved',
     }
   }
+  const forward = new Set(
+    currentShas.filter((sha) => workflowPinMove(sha, desiredSha) === 'forward'),
+  )
+  if (!forward.size) {
+    return {
+      detail: 'Every caller is already at this generator pin or newer; newer pins are preserved.',
+      status: 'clean',
+    }
+  }
   return {
-    detail: 'Re-pins the shared workflow to ' + desiredSha + '.',
-    next: rewriteWorkflowPins(current, desiredSha),
+    detail:
+      'Re-pins older shared workflow callers to ' + desiredSha + '; newer pins are preserved.',
+    next: rewriteWorkflowPins(current, desiredSha, forward),
     status: 'drift',
   }
 }

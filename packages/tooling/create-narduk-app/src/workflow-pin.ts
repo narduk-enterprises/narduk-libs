@@ -61,14 +61,25 @@ const CALLER_PIN =
  * Replaces caller pins with `desiredSha` and moves a `workflows@<prefix>`
  * comment onto that same SHA. A comment whose hex is already a prefix of
  * the desired SHA is left alone.
+ * With `onlyFrom`, comments move only on the selected caller's own line.
  */
-export function rewriteWorkflowPins(contents: string, desiredSha: string): string {
+export function rewriteWorkflowPins(
+  contents: string,
+  desiredSha: string,
+  onlyFrom?: ReadonlySet<string>,
+): string {
+  if (onlyFrom && contents.includes('\n')) {
+    return contents
+      .split('\n')
+      .map((line) => rewriteWorkflowPins(line, desiredSha, onlyFrom))
+      .join('\n')
+  }
   const desiredPin =
     'narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@' + desiredSha
   const oldShas = new Set<string>()
   const rewritten = contents.replaceAll(CALLER_PIN, (pin) => {
     const sha = pin.slice(pin.lastIndexOf('@') + 1)
-    if (sha === desiredSha) return pin
+    if (sha === desiredSha || (onlyFrom && !onlyFrom.has(sha))) return pin
     oldShas.add(sha)
     return desiredPin
   })
