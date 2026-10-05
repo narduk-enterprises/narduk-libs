@@ -1959,7 +1959,11 @@ already the phone's:
   column takes its own line clamped to two. After mount the hidden header's sort
   buttons become plain labels (a button clipped to one pixel would still take
   focus) and a sort select appears in the toolbar instead.
-- `phoneLayout: 'columns'` keeps the table, and fixed widths become hints.
+- `phoneLayout: 'columns'` keeps the table, and fixed widths become hints. A
+  full-width cell (a group heading, the empty row, the footer) spans the kept
+  columns from the server render on, padded above the line by one hidden filler
+  cell per `phone: false` column, so the first paint on a phone has no phantom
+  columns and needs no viewport measured on mount.
 
 Either way a `phone: false` column is dropped, and the search, chips, sort
 select, "Show all", sortable headers and every linked or selectable row hold a

@@ -521,26 +521,25 @@ describe('NeCollectionTable: phone', () => {
     expect(header(wrapper, 'issues').attributes('aria-sort')).toBe('descending')
   })
 
-  it('spans a group heading over the kept columns only, once stacked in the `columns` layout', async () => {
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn((query: string) => ({
-        addEventListener: vi.fn(),
-        matches: query === '(width < 48rem)',
-        removeEventListener: vi.fn(),
-      })),
-    )
+  it('spans a group heading over the kept columns only in the `columns` layout, from the first render', async () => {
     const groups = [{ key: 'all', label: 'All', rows: repos }]
     const wide = render({ caption: 'R', columns, groups })
     expect(wide.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(columns.length))
+    expect(wide.find('[data-ne-collection-fill]').exists()).toBe(false)
     const narrow = render({ caption: 'R', columns, groups, phoneLayout: 'columns' })
-    // Before mount the server's span covers every column; after, only the kept ones.
-    expect(narrow.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(columns.length))
-    await flushPromises()
     const kept = columns.filter((column) => column.phone !== false).length
     expect(kept).toBeLessThan(columns.length)
+    // No viewport is measured: the span is the kept columns before and after mount (#1432).
     expect(narrow.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(kept))
-    vi.unstubAllGlobals()
+    await flushPromises()
+    expect(narrow.find('th[scope="rowgroup"]').attributes('colspan')).toBe(String(kept))
+    // Above the breakpoint one filler per dropped column carries the band out to the edge.
+    const fill = narrow.findAll('tr:has(th[scope="rowgroup"]) [data-ne-collection-fill]')
+    expect(fill).toHaveLength(columns.length - kept)
+    for (const cell of fill) {
+      expect(cell.classes()).toContain('max-md:hidden')
+      expect(cell.attributes('aria-hidden')).toBe('true')
+    }
   })
 
   it('floors the width-less columns on the table, above the breakpoint only', () => {

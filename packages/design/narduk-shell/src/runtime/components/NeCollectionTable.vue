@@ -327,13 +327,23 @@ const headerButtons = computed(() => !(cards.value && stacked.value))
  * span over them makes the browser invent that many anonymous columns, which
  * then split the free width with the primary column and starve it (measured in
  * operator-portal's grouped /projects at 375px: four phantom columns left the
- * name 22px). The server render spans every column; the count settles on mount.
+ * name 22px, #1425; and until hydration, 34px, #1432).
+ *
+ * So the `columns` layout spans the kept columns only, and pads the row with
+ * one filler cell per dropped column, hidden below the breakpoint with those
+ * columns. Above it the span plus the fillers cover every column; below it
+ * only the span is left, over exactly the columns that are left. Both are
+ * CSS, so the server's markup is already right at either width, with no
+ * viewport to measure and no count to settle on mount.
  */
 const fullSpan = computed(() =>
-  stacked.value && !cards.value
-    ? Math.max(1, props.columns.filter((column) => column.phone !== false).length)
-    : props.columns.length,
+  cards.value
+    ? props.columns.length
+    : Math.max(1, props.columns.filter((column) => column.phone !== false).length),
 )
+
+/** How many filler cells pad a full-width row out to every column above the breakpoint. */
+const spanFill = computed(() => Math.max(0, props.columns.length - fullSpan.value))
 
 /** The phone sort select, for the card layout, whose header is hidden. */
 const DEFAULT_SORT = '__ne-default'
@@ -684,6 +694,14 @@ const filterModel = computed({
             >
               {{ empty }}
             </td>
+            <td
+              v-for="n in spanFill"
+              :key="`fill-${n}`"
+              aria-hidden="true"
+              data-ne-collection-fill
+              class="px-0 py-6"
+              :class="stack.hide"
+            />
           </tr>
         </tbody>
         <tbody
@@ -718,6 +736,14 @@ const filterModel = computed({
                 >
               </template>
             </th>
+            <td
+              v-for="n in spanFill"
+              :key="`fill-${n}`"
+              aria-hidden="true"
+              data-ne-collection-fill
+              class="border-b border-default bg-muted p-0"
+              :class="stack.hide"
+            />
           </tr>
           <tr
             v-for="row in group.rows"
@@ -799,6 +825,14 @@ const filterModel = computed({
                 >
               </slot>
             </td>
+            <td
+              v-for="n in spanFill"
+              :key="`fill-${n}`"
+              aria-hidden="true"
+              data-ne-collection-fill
+              class="bg-muted p-0"
+              :class="stack.hide"
+            />
           </tr>
         </tfoot>
       </table>
