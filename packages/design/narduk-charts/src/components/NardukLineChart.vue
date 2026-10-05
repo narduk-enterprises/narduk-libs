@@ -887,6 +887,12 @@ function markerRadius(s: ChartSeries): number {
   return s.marker?.radius ?? props.pointRadius
 }
 
+/** The line's `stroke-dasharray`: `1` is the draw-in trick on the normalised path; a dashed series sets its own px pattern. */
+function dashArray(s: ChartSeries): string {
+  if (!s.dashed) return '1'
+  return typeof s.dashed === 'string' ? s.dashed : '6 4'
+}
+
 function markerHollow(s: ChartSeries): boolean {
   return s.marker?.filled === false
 }
@@ -1545,9 +1551,9 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               class="narduk-line-path"
               :d="d"
               :stroke="resolveColor(s)"
-              pathLength="1"
-              stroke-dasharray="1"
-              :stroke-dashoffset="animated ? 0 : 1"
+              :pathLength="s.dashed ? undefined : 1"
+              :stroke-dasharray="dashArray(s)"
+              :stroke-dashoffset="s.dashed ? undefined : animated ? 0 : 1"
             />
 
             <circle

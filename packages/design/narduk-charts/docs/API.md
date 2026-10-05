@@ -50,6 +50,9 @@ All opt-in; nothing changes for a chart that sets none of them
   colour over the plot background (`--color-chart-plot-tint`: white in the light
   theme).
 - `opacity` — 0–1 for everything the series draws.
+- `dashed: true | string` — a dashed line, for a projection beside a
+  measurement. `true` is `6 4`; a string is an SVG `stroke-dasharray` in px. A
+  dashed line skips the draw-in animation.
 - `showValues` + `formatValue(value, index)` — always-visible value text above
   each point (drawn outside the plot clip).
 
