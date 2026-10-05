@@ -548,7 +548,17 @@ const actionHint = computed(() =>
   color: var(--ne-ink);
   font: inherit;
   font-size: 1.0625rem;
+  --ne-cmd-no-ring: none;
   outline: none;
+  box-shadow: var(--ne-cmd-no-ring);
+}
+
+/* The field is the dialog's one focus target, so it needs no ring of its own; an app's global
+   `:focus-visible` ring would otherwise box the field inside the panel. */
+.ne-cmd__input:focus,
+.ne-cmd__input:focus-visible {
+  outline: none;
+  box-shadow: var(--ne-cmd-no-ring);
 }
 
 .ne-cmd__input::placeholder {
