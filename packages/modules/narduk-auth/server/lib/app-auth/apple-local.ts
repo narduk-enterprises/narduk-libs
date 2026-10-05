@@ -154,7 +154,11 @@ export function appleFormDisplayName(user: string | undefined): string | null {
   }
 }
 
-function callbackError(message: string, code: string): never {
+function callbackError(event: H3Event, message: string, code: string): never {
+  // A cancel is the user's choice; anything else is a broken or replayed flow.
+  const log = appleLog(event)
+  if (code === 'apple_cancelled') log.info('Apple sign-in cancelled')
+  else log.warn('Apple sign-in callback refused', { code })
   throw createError({ statusCode: 400, statusMessage: message, data: { code } })
 }
 
@@ -170,21 +174,33 @@ export async function completeLocalAppleWebSignIn(
   // Single use: whatever happens next, this binding is spent.
   deleteAppCookie(event, APPLE_COOKIE, appleCookieOptions(event))
 
-  if (form.error) callbackError('Sign in with Apple was cancelled.', 'apple_cancelled')
+  if (form.error) callbackError(event, 'Sign in with Apple was cancelled.', 'apple_cancelled')
   if (!binding || !form.state || !constantTimeEqual(binding.state, form.state)) {
-    callbackError('Sign in with Apple expired. Start again.', 'apple_state_mismatch')
+    callbackError(event, 'Sign in with Apple expired. Start again.', 'apple_state_mismatch')
   }
-  if (!form.id_token) callbackError('Apple returned no identity token.', 'apple_token_missing')
+  if (!form.id_token)
+    callbackError(event, 'Apple returned no identity token.', 'apple_token_missing')
 
   const claims = await verifyAppleIdentityToken(form.id_token, {
     audiences: [apple.servicesId],
     rawNonce: binding.rawNonce,
     ...(options.fetchJwks ? { fetchJwks: options.fetchJwks } : {}),
+  }).catch((error: unknown) => {
+    // `reason` is a fixed code from verifyAppleIdentityToken; never the token.
+    const reason = (error as { data?: { reason?: unknown } } | null)?.data?.reason
+    appleLog(event).warn('Apple identity token refused', {
+      reason: typeof reason === 'string' ? reason : 'verification_failed',
+    })
+    throw error
   })
   const user = await signInWithAppleIdentity(event, claims, {
     displayName: appleFormDisplayName(form.user),
   })
   return { redirectTo: binding.next, user }
+}
+
+function appleLog(event: H3Event) {
+  return useLogger(event).child('AppAuth')
 }
 
 async function findUser(event: H3Event, column: 'appleId' | 'email', value: string) {

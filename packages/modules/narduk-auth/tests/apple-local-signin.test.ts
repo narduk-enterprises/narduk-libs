@@ -25,7 +25,21 @@ const state = vi.hoisted(() => ({
   sqlite: null as unknown,
   verified: new Map<string, string>(),
   recorded: [] as Array<{ email: string; userId: string }>,
+  logs: [] as Array<{ data?: Record<string, unknown>; level: string; message: string }>,
 }))
+
+vi.mock('#layer/server/utils/logger', () => {
+  const record = (level: string) => (message: string, data?: Record<string, unknown>) =>
+    state.logs.push({ level, message, data })
+  const logger = {
+    child: () => logger,
+    debug: record('debug'),
+    error: record('error'),
+    info: record('info'),
+    warn: record('warn'),
+  }
+  return { useLogger: () => logger }
+})
 
 vi.mock('#layer/server/utils/database', () => ({
   executeDatabaseQuery: async (query: unknown) => query,
@@ -167,6 +181,7 @@ describe('Sign in with Apple on the local backend (#164)', () => {
     state.sessions = []
     state.verified = new Map()
     state.recorded = []
+    state.logs = []
     const { resetAppleJwksCache } = await import('../server/lib/app-auth/apple-identity')
     resetAppleJwksCache()
   })
@@ -244,6 +259,29 @@ describe('Sign in with Apple on the local backend (#164)', () => {
       completeLocalAppleWebSignIn(event, APPLE, { ...form, state: 'attacker' }, { fetchJwks }),
     ).rejects.toMatchObject({ statusCode: 400, data: { code: 'apple_state_mismatch' } })
     expect(userRows()).toEqual([])
+    expect(state.logs).toEqual([
+      {
+        level: 'warn',
+        message: 'Apple sign-in callback refused',
+        data: { code: 'apple_state_mismatch' },
+      },
+    ])
+  })
+
+  it('records a cancelled callback at info, not as a refusal', async () => {
+    const { form } = await startAndAuthorize()
+    const { completeLocalAppleWebSignIn } = await load()
+    await expect(
+      completeLocalAppleWebSignIn(
+        event,
+        APPLE,
+        { ...form, error: 'user_cancelled_authorize' },
+        {
+          fetchJwks,
+        },
+      ),
+    ).rejects.toMatchObject({ data: { code: 'apple_cancelled' } })
+    expect(state.logs).toEqual([{ level: 'info', message: 'Apple sign-in cancelled' }])
   })
 
   it('refuses a callback with no binding cookie (login CSRF)', async () => {
@@ -267,6 +305,24 @@ describe('Sign in with Apple on the local backend (#164)', () => {
       ),
     ).rejects.toMatchObject({ statusCode: 401, data: { reason: 'nonce_mismatch' } })
     expect(userRows()).toEqual([])
+    expect(state.logs).toEqual([
+      {
+        level: 'warn',
+        message: 'Apple identity token refused',
+        data: { reason: 'nonce_mismatch' },
+      },
+    ])
+  })
+
+  it('records the refusal reason only, never the identity token or its email', async () => {
+    const { form } = await startAndAuthorize({ aud: 'com.example.ios' })
+    const { completeLocalAppleWebSignIn } = await load()
+    await expect(completeLocalAppleWebSignIn(event, APPLE, form, { fetchJwks })).rejects.toThrow()
+    expect(state.logs).toEqual([expect.objectContaining({ data: { reason: 'wrong_audience' } })])
+    const serialized = JSON.stringify(state.logs)
+    expect(serialized).not.toContain(form.id_token.slice(0, 40))
+    expect(serialized).not.toContain('person@example.com')
+    expect(serialized).not.toContain('apple-sub-1')
   })
 
   it('refuses a native-audience token on the web flow', async () => {

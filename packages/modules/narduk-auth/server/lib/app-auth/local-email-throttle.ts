@@ -2,6 +2,7 @@ import { and, eq, lt, sql } from 'drizzle-orm'
 import { createError, getHeader, setResponseHeader } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/database'
+import { useLogger } from '#layer/server/utils/logger'
 import { authLocalEmailAttempts } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 
@@ -43,8 +44,26 @@ function rethrowThrottleError(error: unknown): never {
   throw error
 }
 
-function throwLocked(event: H3Event, lockedUntil: number, now: number): never {
+/*
+ * Throttle records name the attempt kind and counts only. The principal (an
+ * email address or a link token hash) and the client IP stay out of the logs;
+ * the key hash is per-IP, so it is not logged either.
+ */
+function throttleLog(event: H3Event) {
+  return useLogger(event).child('AppAuth')
+}
+
+function throwLocked(
+  event: H3Event,
+  kind: LocalEmailAttemptKind,
+  lockedUntil: number,
+  now: number,
+): never {
   const retryAfter = Math.max(1, lockedUntil - now)
+  throttleLog(event).warn('Local auth attempt refused while locked out', {
+    kind,
+    retryAfterSeconds: retryAfter,
+  })
   setResponseHeader(event, 'Retry-After', retryAfter)
   throw createError({
     statusCode: 429,
@@ -65,7 +84,7 @@ export async function assertLocalEmailAttemptAllowed(
   ).catch(rethrowThrottleError)
 
   if (attempt?.lockedUntil && attempt.lockedUntil > now) {
-    throwLocked(event, attempt.lockedUntil, now)
+    throwLocked(event, kind, attempt.lockedUntil, now)
   }
 
   if (attempt && attempt.windowStartedAt < now - ATTEMPT_WINDOW_SECONDS) {
@@ -118,7 +137,11 @@ export async function recordLocalEmailAttemptFailure(
 
   if (!attempt) return
   const lockSeconds = localEmailLockSeconds(attempt.failures)
+  const log = throttleLog(event)
+  log.info('Local auth attempt failed', { kind, failures: attempt.failures })
   if (!lockSeconds) return
+
+  log.warn('Local auth lockout started', { kind, failures: attempt.failures, lockSeconds })
 
   const lockedUntil = now + lockSeconds
   await executeDatabaseQuery(
