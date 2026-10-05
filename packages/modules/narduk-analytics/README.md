@@ -573,6 +573,23 @@ const analytics = useAnalytics(productEvents)
 analytics.capture('primary_action_completed', { source: 'map' })
 ```
 
+Under an enforced no-eval CSP, build the catalog with a factory instead. Zod 4
+probes `new Function('')` when it builds its first object schema, and the
+browser reports that caught probe as a `script-src` violation
+(narduk-libs#1310). The factory runs inside `withJitlessSchemas`, which sets
+Zod's `jitless` flag only while the schemas are built and then restores your
+setting; validation results do not change. The shared events are built the same
+way. The app and this package must resolve one `zod` instance, the normal
+deduplicated install.
+
+```ts
+const productEvents = defineAnalyticsEvents(() => ({
+  primary_action_completed: z
+    .object({ source: z.enum(['map', 'list']) })
+    .strict(),
+}))
+```
+
 App events cannot redefine shared names or PostHog `$` events. Use strict
 schemas and enums/declared IDs; strict mode cannot recognize arbitrary private
 strings inside app-defined properties. Product vocabulary, activation
