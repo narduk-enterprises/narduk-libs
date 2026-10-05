@@ -66,7 +66,8 @@ describe('unprepared text-parameter connections (narduk-libs#311)', () => {
     await store.applyRetention(policy)
 
     const deletes = database.statements.filter((statement) => /DELETE FROM/u.test(statement.text))
-    expect(deletes).toHaveLength(2)
+    // Track only: a tier's raw window is a read depth, never a DELETE (#1081).
+    expect(deletes).toHaveLength(1)
     for (const statement of deletes) {
       expect(statement.params[0]).toBe(`${VESSEL},${OTHER_VESSEL}`)
     }
