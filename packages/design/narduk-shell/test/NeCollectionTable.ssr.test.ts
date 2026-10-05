@@ -167,6 +167,74 @@ describe('NeCollectionTable groups on the server', () => {
   })
 })
 
+/**
+ * The grid each table row makes at one width: the columns its `<col>`s leave,
+ * and the columns each row's cells span. A cell or `<col>` carrying the
+ * breakpoint's `max-md:hidden` is `display: none` below it, and a hidden cell
+ * takes no slot in the table grid, so the phone's grid is what is left.
+ */
+function grid(html: string, phone: boolean): { cols: number; rows: number[] } {
+  const shown = (tag: string) => !(phone && /class="[^"]*\bmax-md:hidden\b/.test(tag))
+  const cols = [...html.matchAll(/<col\b[^>]*>/g)].filter((m) => shown(m[0])).length
+  const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((row) =>
+    [...row[1]!.matchAll(/<t[hd]\b[^>]*>/g)]
+      .filter((cell) => shown(cell[0]))
+      .reduce((sum, cell) => sum + Number(/colspan="(\d+)"/.exec(cell[0])?.[1] ?? 1), 0),
+  )
+  return { cols, rows }
+}
+
+describe('NeCollectionTable `columns` layout on the server (#1432)', () => {
+  const groups = [
+    {
+      key: 'coastal',
+      label: 'Coastal Bend',
+      rows: stations.filter((s) => s.region === 'Coastal Bend'),
+    },
+    { key: 'other', label: 'Elsewhere', rows: stations.filter((s) => s.region !== 'Coastal Bend') },
+  ]
+  const kept = columns.filter((column) => column.phone !== false).length
+
+  it('paints no phantom column on a phone before hydration: every row spans exactly the kept columns', async () => {
+    const html = await render({
+      caption: 'Stations',
+      columns,
+      groups,
+      more: { label: 'showing 4 of 41' },
+      phoneLayout: 'columns',
+    })
+    expect(kept).toBeLessThan(columns.length)
+    expect(html.match(/scope="rowgroup"/g)).toHaveLength(2)
+    expect(html).toMatch(
+      /data-ne-collection-group[^>]*colspan="2"|colspan="2"[^>]*data-ne-collection-group/,
+    )
+
+    const phone = grid(html, true)
+    expect(phone.cols).toBe(kept)
+    expect(phone.rows.length).toBeGreaterThan(4)
+    for (const span of phone.rows) expect(span).toBe(kept)
+
+    const wide = grid(html, false)
+    expect(wide.cols).toBe(columns.length)
+    for (const span of wide.rows) expect(span).toBe(columns.length)
+  })
+
+  it('pads the empty row the same way', async () => {
+    const html = await render({ caption: 'Stations', columns, phoneLayout: 'columns', rows: [] })
+    expect(html).toContain('data-ne-collection-empty')
+    for (const span of grid(html, true).rows) expect(span).toBe(kept)
+    for (const span of grid(html, false).rows) expect(span).toBe(columns.length)
+  })
+
+  it('leaves the card layout spanning every column, with no filler', async () => {
+    const html = await render({ caption: 'Stations', columns, groups })
+    expect(html).not.toContain('data-ne-collection-fill')
+    expect(html).toMatch(
+      /data-ne-collection-group[^>]*colspan="3"|colspan="3"[^>]*data-ne-collection-group/,
+    )
+  })
+})
+
 describe('useClientCollection gives NeDataTable a client mode', () => {
   it('sorts the rows before the table sees them, and the table marks the column', async () => {
     const Host = defineComponent({
