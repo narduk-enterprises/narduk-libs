@@ -18,7 +18,10 @@ import {
   projectToTilePoint,
 } from './hit-test.js'
 
+import { paintVectorTileAreas, vectorTileAreasReach } from './vector-tile-areas.js'
+
 import type { TileHitSelect, VectorTileCoordinate, VectorTileHit } from './hit-test.js'
+import type { VectorTileAddress, VectorTileArea, VectorTileAreaLayer } from './vector-tile-areas.js'
 
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
@@ -366,6 +369,14 @@ export interface VectorTileCanvasContext {
   lineTo: (x: number, y: number) => void
   moveTo: (x: number, y: number) => void
   stroke: () => void
+  /**
+   * Only the area pass needs these four. A context without them still paints
+   * lines; it draws no areas and no composed tile.
+   */
+  closePath?: () => void
+  drawImage?: (image: never, dx: number, dy: number) => void
+  fill?: (fillRule?: 'evenodd' | 'nonzero') => void
+  fillStyle?: string | object
 }
 
 /**
@@ -458,6 +469,8 @@ export interface VectorTileOverlaySourceOptions<
   TCanvas extends VectorTileCanvas,
   TImage = TCanvas,
 > {
+  /** Areas painted under the lines from the first tile. See `setAreas`. */
+  areas?: VectorTileAreaLayer
   /**
    * The tile source, when it can say how deep the archive goes. Used for the
    * default `maxDataZoom`. Optional, and only read when `maxDataZoom` is unset.
@@ -591,6 +604,11 @@ export interface VectorTileHitTestOptions {
 }
 
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
+  /**
+   * The areas painted under the lines, or `null`. See
+   * {@link VectorTileOverlaySource.setAreas}.
+   */
+  readonly areas: VectorTileAreaLayer | null
   /** Retained bytes, exact for geometry and estimated for properties. */
   readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
@@ -613,6 +631,14 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
    * geometry, as the base tile does.
    */
   highlightImageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>
+  /**
+   * The drawn area under a coordinate (the most important when several
+   * overlap), or `null`. Synchronous and from memory: it needs no tile. An
+   * area the layer's `style` declines is not drawn and not hit.
+   */
+  hitTestArea: <TData = unknown>(coordinate: VectorTileCoordinate) => VectorTileArea<TData> | null
+  /** Every drawn area under a coordinate, most important first. */
+  hitTestAreas: <TData = unknown>(coordinate: VectorTileCoordinate) => Array<VectorTileArea<TData>>
   /**
    * The nearest feature to a coordinate, or `null`.
    *
@@ -641,6 +667,20 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
    * does not match the tiles draws unknown, never a wrong colour.
    */
   setClassTable: (table: VectorTileClassTable) => Promise<void>
+  /**
+   * Paint areas (flood-alert shapes) into every tile beneath the lines, or pass
+   * `null` for none. Like a restyle it repaints from the decoded cache and swaps
+   * the overlay through the restyle host once the new image has drawn, so the
+   * network never blanks; nothing is re-read or re-decoded. A tile no area
+   * reaches is painted exactly as before, off the main thread when a `painter`
+   * is attached. A tile an area does reach is composed here: the areas, then
+   * the painter's image of the lines over them (the lines are painted here only
+   * when the painter declines the tile).
+   *
+   * Change a style, or which areas are drawn, by calling this again with a new
+   * `style`; the index is only rebuilt when the shapes change.
+   */
+  setAreas: <TData = unknown>(layer: VectorTileAreaLayer<TData> | null) => Promise<void>
   /**
    * Highlight a stretch, or pass `null` to clear it. Only the highlight
    * overlay is swapped (through `highlightHost` when one is attached); the
@@ -1103,6 +1143,11 @@ export function paintVectorTile(
   tile: DecodedVectorTile,
   options: {
     /**
+     * Areas to paint first, so the lines sit on top of them. `tile` is the
+     * address of the tile being painted (the child's, with `overzoom`).
+     */
+    areas?: { layer: VectorTileAreaLayer; tile: VectorTileAddress }
+    /**
      * Paint a child of `tile` -- a tile `levels` zooms deeper -- from its
      * geometry, scaled and clipped into the child. `zoom` stays the zoom being
      * displayed: line width, the style function and the class-table key all
@@ -1118,9 +1163,12 @@ export function paintVectorTile(
 ): boolean {
   const context = canvas.getContext('2d')
   if (!context) return false
-  const { overzoom, pixelRatio, style, tileNetwork, tileSize, zoom } = options
+  const { areas, overzoom, pixelRatio, style, tileNetwork, tileSize, zoom } = options
   const scale = (tileSize * pixelRatio) / tile.extent
   context.clearRect(0, 0, canvas.width, canvas.height)
+  const areasPainted = areas
+    ? paintVectorTileAreas(canvas, areas.layer, { pixelRatio, tile: areas.tile, tileSize })
+    : false
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
@@ -1148,7 +1196,7 @@ export function paintVectorTile(
 
   paintedFeatures.sort((left, right) => left.so - right.so || left.severity - right.severity)
 
-  let painted = false
+  let painted = areasPainted
   let index = 0
   while (index < paintedFeatures.length) {
     const head = paintedFeatures[index]
@@ -1458,6 +1506,7 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
   let style = options.style
   let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null
   let restyleHost = options.restyleHost ?? null
+  let areas: VectorTileAreaLayer | null = options.areas ?? null
   let highlight: VectorTileHighlight | null = null
   let highlightPlan: VectorTileHighlightPlan | null = null
   let highlightHost = options.highlightHost ?? null
@@ -1641,8 +1690,21 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       const ancestorX = Math.floor(x / factor)
       const ancestorY = Math.floor(y / factor)
       const tile = await decodedTile(z - levels, ancestorX, ancestorY)
-      if (!tile || vectorTileFeatureCount(tile) === 0) return null
+      const hasLines = tile !== null && vectorTileFeatureCount(tile) > 0
+      // Areas go under the lines in the same image. A tile they do not reach is
+      // painted exactly as it was without them.
+      const address: VectorTileAddress = { x, y, z }
+      const layer = areas
+      const underlay = layer !== null && vectorTileAreasReach(layer, address, tileSize)
+      if (!hasLines && !underlay) return null
       const pixelRatio = scale > 0 ? scale : 1
+      const size = Math.round(tileSize * pixelRatio)
+      const areaOptions = { pixelRatio, tile: address, tileSize }
+      if (!tile || !hasLines) {
+        // Nothing to draw but the areas: the archive holds no lines for this tile.
+        const canvas = createCanvas(size, size)
+        return layer && paintVectorTileAreas(canvas, layer, areaOptions) ? canvas : null
+      }
       const request: VectorTilePaintRequest = {
         ...paintOptions(z),
         pixelRatio,
@@ -1653,15 +1715,27 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       const offThread = painter?.paint(tile, request) ?? null
       if (offThread) {
         try {
-          return await offThread
+          const image = await offThread
+          if (!underlay || !layer) return image
+          // The painter's lines go over the areas painted here.
+          const composed = createCanvas(size, size)
+          const context = composed.getContext('2d')
+          if (context?.drawImage) {
+            paintVectorTileAreas(composed, layer, areaOptions)
+            if (image) context.drawImage(image as never, 0, 0)
+            return composed
+          }
+          // A context that cannot compose: paint the whole tile here, below.
         } catch (reason) {
           if (!(reason instanceof VectorTilePaintUnavailableError)) throw reason
           // Declined after the fact: paint it here, below.
         }
       }
-      const size = Math.round(tileSize * pixelRatio)
       const canvas = createCanvas(size, size)
-      const painted = paintVectorTile(canvas, tile, request)
+      const painted = paintVectorTile(canvas, tile, {
+        ...request,
+        ...(underlay && layer ? { areas: { layer, tile: address } } : {}),
+      })
       return painted ? canvas : null
     } catch (reason) {
       onError?.(reason)
@@ -1863,9 +1937,35 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
     return refreshHighlight()
   }
 
+  function hitTestArea<TData = unknown>(coordinate: VectorTileCoordinate) {
+    const layer = areas
+    if (!layer) return null
+    return layer.index.hitTest(
+      coordinate,
+      (area) => layer.style(area) !== null,
+    ) as VectorTileArea<TData> | null
+  }
+
+  function hitTestAreas<TData = unknown>(coordinate: VectorTileCoordinate) {
+    const layer = areas
+    if (!layer) return []
+    return layer.index.hitTestAll(coordinate, (area) => layer.style(area) !== null) as Array<
+      VectorTileArea<TData>
+    >
+  }
+
   return {
+    get areas() {
+      return areas
+    },
     get cacheBytes() {
       return cache.bytes
+    },
+    hitTestArea,
+    hitTestAreas,
+    setAreas(next) {
+      areas = next as VectorTileAreaLayer | null
+      return requestRestyle()
     },
     clearHighlight() {
       return setHighlight(null)

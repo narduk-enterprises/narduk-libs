@@ -882,6 +882,59 @@ lookup: no I/O, no allocation beyond the strokes it returns. A plan and a single
 highlight replace each other, and the same cache, miss and `highlightHost` rules
 apply.
 
+### Areas under the lines
+
+Flood-alert shapes belong beneath the river network, so a stretch inside a
+warning still reads as a river. MapKit JS offers no layer order between its
+vector overlays and a tile overlay that an app can rely on, so the overlay
+paints the areas into the same tile image as the network, first, and the lines
+go on top. `setAreas` takes an index of GeoJSON Polygons and MultiPolygons and a
+style for each:
+
+```ts
+const index = createVectorTileAreaIndex(
+  alerts.map((alert) => ({
+    data: alert, // carried to the hit
+    geometry: alert.geometry, // null: listed in index.skipped, never drawn
+    id: alert.id,
+    priority: alert.class, // higher draws on top and wins a hit
+  })),
+)
+
+await network.setAreas({
+  index,
+  // null: the area is not drawn and not hit (a selection, a lens, a filter)
+  style: (area) => ({
+    fillColor: colour(area.data),
+    fillOpacity: 0.2,
+    strokeColor: colour(area.data),
+    lineWidth: 1.5,
+  }),
+})
+
+network.hitTestArea(coordinate) // the drawn area under a point, or null
+network.hitTestAreas(coordinate) // every one, most important first
+index.hitTestAll(coordinate) // every area of the index, drawn or not
+index.boundsOf(id) // [west, south, east, north] in degrees, to frame an area
+await network.setAreas(null)
+```
+
+Every vertex is projected to Web Mercator once, when the index is built.
+Painting a tile subtracts and scales; a tile no area reaches is painted exactly
+as it was, in the worker when a `painter` is attached. A tile an area does reach
+is composed on the main thread: the areas are painted, then the painter's image
+of the lines is drawn over them (the lines are painted here only when the
+painter declines the tile). A tile the archive holds no lines for still gets its
+areas.
+
+`setAreas` repaints from the decoded cache and swaps the overlay through the
+restyle host once the new image has drawn, like `restyle`, so nothing blanks and
+nothing is re-read. Calling it again with the same index and another `style`
+changes what is drawn without rebuilding the shapes. A hit tests the same
+Mercator shape that is painted, even-odd across rings, so a hole is outside.
+Among equal priorities the area given earlier is on top and wins. Pass the areas
+most severe first.
+
 ### One tap and hover resolver
 
 On a map with dots, lines and areas, a touch can land on all three. `resolveHit`
@@ -897,7 +950,7 @@ const hit = resolveHit({
   layers: [
     { kind: 'point', layer: gauges }, // hit: dot index
     { kind: 'line', source: network }, // hit: VectorTileHit
-    { kind: 'area', test: ({ coordinate }) => alertAt(coordinate) }, // hit: yours
+    { kind: 'area', test: ({ coordinate }) => network.hitTestArea(coordinate) }, // hit: yours
   ],
 })
 if (hit?.kind === 'line')
