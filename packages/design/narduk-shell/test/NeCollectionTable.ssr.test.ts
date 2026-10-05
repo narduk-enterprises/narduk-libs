@@ -108,15 +108,11 @@ describe('NeCollectionTable on the server', () => {
     expect(html).toMatch(/data-ne-column="wind"[^>]*>[\s\S]*?data-ne-sort-header/)
   })
 
-  it('paints each card cell’s label before its value, so a phone never reads an unnamed value (#1704)', async () => {
+  it('paints each card cell’s label from the server, so a phone never reads an unnamed value (#1704)', async () => {
     const html = await render({ caption: 'Stations', columns, rows: stations })
-    expect(html).toMatch(
-      /data-ne-column="wind"[^>]*><span aria-hidden="true" data-ne-cell-label class="hidden max-md:block[^"]*">Wind\s*<span data-ne-unit[^>]*>kt<\/span><\/span><span data-ne-cell-value class="contents[^"]*">/,
-    )
+    expect(html).toMatch(/<td[^>]*data-ne-column="wind" data-ne-label="Wind kt"/)
     // The primary cell heads the card; it prints no label.
-    expect(html).not.toMatch(
-      /data-ne-column="name"[^>]*><span aria-hidden="true" data-ne-cell-label/,
-    )
+    expect(html).not.toMatch(/data-ne-column="name" data-ne-label/)
     // A missing value's dash marks itself empty, so the card drops the cell.
     expect(html).toMatch(/data-ne-missing data-ne-empty/)
   })
