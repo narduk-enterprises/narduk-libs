@@ -25,6 +25,7 @@ import {
   unmanagedMarkerFor,
 } from './ownership.js'
 import { rewriteWorkflowPins, workflowPinMove } from './workflow-pin.js'
+import { actionlintConfigForCheckout } from './workflow-runner-labels.js'
 import type { ManagedTarget, OwnershipMode, RegionName } from './ownership.js'
 import {
   CreateNardukAppError,
@@ -1161,6 +1162,49 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
       }
       generated = generatedContentsFor(profile, targetDir, facts)
     }
+  }
+
+  // Resolve all workflow edits before deriving the validator's labels. Its
+  // config describes the checkout after this one-shot upgrade, including
+  // app-owned workflows and selected managed workflow changes.
+  for (const target of targets) {
+    if (resolved.has(target.path)) continue
+    const desiredPath = target.mode === 'jsonc-keys' ? 'apps/web/wrangler.jsonc' : target.path
+    resolved.set(
+      target.path,
+      resolveManagedTarget(
+        target,
+        currentOf.get(target.path) ?? null,
+        generated.get(desiredPath),
+        context,
+      ),
+    )
+  }
+  const actionlintPath = '.github/actionlint.yaml'
+  const actionlintTarget = targets.find((target) => target.path === actionlintPath)
+  const generatedActionlint = generated.get(actionlintPath)
+  const currentActionlint = currentOf.get(actionlintPath) ?? null
+  if (actionlintTarget && generatedActionlint && !isDisowned(currentActionlint ?? '')) {
+    const workflowOverrides = new Map<string, string>()
+    for (const [path, resolution] of resolved) {
+      if (path.startsWith('.github/workflows/') && resolution.next !== undefined) {
+        workflowOverrides.set(path, resolution.next)
+      }
+    }
+    const config = await actionlintConfigForCheckout(
+      targetDir,
+      generatedActionlint,
+      workflowOverrides,
+    )
+    resolved.set(
+      actionlintPath,
+      'problem' in config
+        ? {
+            status: 'unresolved',
+            detail: 'Leaving runner labels untouched: ' + config.problem + '.',
+          }
+        : resolveFile(currentActionlint, config.contents, actionlintPath),
+    )
   }
 
   const changes: UpgradeChange[] = []

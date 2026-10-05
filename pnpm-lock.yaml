@@ -1356,6 +1356,10 @@ importers:
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)(@types/node@22.19.19)
 
   packages/tooling/create-narduk-app:
+    dependencies:
+      yaml:
+        specifier: 2.8.4
+        version: 2.8.4
     devDependencies:
       '@narduk-enterprises/eslint-config':
         specifier: workspace:*
@@ -1375,9 +1379,6 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
-      yaml:
-        specifier: 2.8.4
-        version: 2.8.4
 
   packages/tooling/eslint-config:
     dependencies:
