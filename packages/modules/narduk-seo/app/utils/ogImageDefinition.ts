@@ -51,7 +51,18 @@ interface SeoOgImageDefinition {
   }
 }
 
+/**
+ * App-wide OG card colours, set once as `nardukSeo.ogImage` and read from
+ * `runtimeConfig.public.nardukSeoOgImageColors`. An empty string means unset.
+ */
+export interface SeoOgImageAppColors {
+  primaryColor?: string
+  secondaryColor?: string
+}
+
 interface ResolveSeoOgImageDefinitionOptions {
+  /** App-wide colour defaults: below a per-call `ogImage` colour, above the package default. */
+  appColors?: SeoOgImageAppColors
   canonicalUrl?: string
   description: string
   image?: string
@@ -117,7 +128,8 @@ export function hasNoindexRobots(robots?: string): boolean {
 export function resolveSeoOgImageDefinition(
   input: ResolveSeoOgImageDefinitionOptions,
 ): SeoOgImageDefinition | null {
-  const { title, description, type, image, canonicalUrl, siteUrl, siteName, ogImage } = input
+  const { title, description, type, image, canonicalUrl, siteUrl, siteName, ogImage, appColors } =
+    input
 
   if (ogImage === false) return null
 
@@ -132,11 +144,11 @@ export function resolveSeoOgImageDefinition(
   const resolvedHost = normalizeHost(canonicalUrl ?? siteUrl)
   const resolvedPrimaryColor = normalizeSeoOgImageHexColor(
     ogImage?.primaryColor,
-    SEO_OG_IMAGE_DEFAULT_PRIMARY,
+    normalizeSeoOgImageHexColor(appColors?.primaryColor, SEO_OG_IMAGE_DEFAULT_PRIMARY),
   )
   const resolvedSecondaryColor = normalizeSeoOgImageHexColor(
     ogImage?.secondaryColor,
-    SEO_OG_IMAGE_DEFAULT_SECONDARY,
+    normalizeSeoOgImageHexColor(appColors?.secondaryColor, SEO_OG_IMAGE_DEFAULT_SECONDARY),
   )
 
   return {

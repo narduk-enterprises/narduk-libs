@@ -28,6 +28,12 @@ interface SeoPublicRuntimeConfig {
    * then emits the static image instead of calling `defineOgImage`.
    */
   nardukSeoOgImageModule: boolean
+  /**
+   * App-wide OG card colours baked from `nardukSeo.ogImage`. An empty string is
+   * unset. A colour passed to `useSeo({ ogImage })` wins over these, and these
+   * win over the package defaults.
+   */
+  nardukSeoOgImageColors: { primaryColor: string; secondaryColor: string }
   /** Enables the internal OG image preview lab in local and approved preview envs. */
   ogImagePreviewLab: boolean
   /**

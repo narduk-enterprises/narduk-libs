@@ -20,6 +20,7 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
+import { isSeoOgImageHexColor, normalizeSeoOgImageHexColor } from '../app/utils/ogImageDefinition'
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
 import {
   DEPLOYMENT_TARGET_ENV_KEYS,
@@ -176,6 +177,16 @@ export interface NardukSeoModuleOptions {
    */
   networkDirectoryUrl?: string
   /**
+   * App-wide colours for the runtime OG card, so a page does not have to pass
+   * them to every `useSeo` call. Precedence: `useSeo({ ogImage: { primaryColor } })`,
+   * then this option, then the package default (`#10b981` and `#38bdf8`). Each
+   * value is a `#rgb` or `#rrggbb` hex colour; anything else fails the build
+   * rather than silently falling back to the package default. Also settable at
+   * runtime with `NUXT_PUBLIC_NARDUK_SEO_OG_IMAGE_COLORS_PRIMARY_COLOR` and
+   * `..._SECONDARY_COLOR`.
+   */
+  ogImage?: { primaryColor?: string; secondaryColor?: string }
+  /**
    * Branch whose Workers Builds (or Pages) builds are production when no
    * `NARDUK_DEPLOY_TARGET` is set; every other branch builds as `preview` and
    * is noindexed. Default `'main'`. An app that deploys production from
@@ -198,6 +209,17 @@ export interface NardukSeoModuleOptions {
    * `definePageMeta({ sitemap: { lastmod } })` always wins. Default `true`.
    */
   sitemapLastmod?: boolean
+}
+
+function resolveOgImageColor(name: string, value: string | undefined): string {
+  const trimmed = value?.trim()
+  if (!trimmed) return ''
+  if (!isSeoOgImageHexColor(trimmed)) {
+    throw new Error(
+      `[${PACKAGE_NAME}] nardukSeo.ogImage.${name} must be a #rgb or #rrggbb hex colour, got "${trimmed}"`,
+    )
+  }
+  return normalizeSeoOgImageHexColor(trimmed, '')
 }
 
 function pushUnique<T>(items: T[], item: T): void {
@@ -482,6 +504,10 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         nardukSeoDefaultImage: options.defaultOgImage ?? null,
         nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
+        nardukSeoOgImageColors: {
+          primaryColor: resolveOgImageColor('primaryColor', options.ogImage?.primaryColor),
+          secondaryColor: resolveOgImageColor('secondaryColor', options.ogImage?.secondaryColor),
+        },
         nardukSeoOgImageModule: true,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,

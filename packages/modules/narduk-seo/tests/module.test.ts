@@ -211,6 +211,30 @@ describe('narduk-seo module', () => {
     )
   })
 
+  it('bakes app-wide OG card colours from nardukSeo.ogImage, normalized', async () => {
+    const { nuxt } = await setupModule({
+      moduleOptions: { ogImage: { primaryColor: '#062B45', secondaryColor: '#abc' } },
+    })
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: {
+        nardukSeoOgImageColors: { primaryColor: '#062b45', secondaryColor: '#aabbcc' },
+      },
+    })
+  })
+
+  it('leaves the OG card colours empty (overridable by env) when the app sets none', async () => {
+    const { nuxt } = await setupModule()
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: { nardukSeoOgImageColors: { primaryColor: '', secondaryColor: '' } },
+    })
+  })
+
+  it('fails the build on an OG card colour that is not a hex colour', async () => {
+    await expect(
+      setupModule({ moduleOptions: { ogImage: { primaryColor: 'navy' } } }),
+    ).rejects.toThrow(/nardukSeo\.ogImage\.primaryColor must be a #rgb or #rrggbb hex colour/)
+  })
+
   it('registers SEO surface without Nuxt layer inheritance', async () => {
     const {
       addImportsDir,
