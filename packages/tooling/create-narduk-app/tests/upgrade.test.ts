@@ -17,6 +17,7 @@ import {
   upgradeNardukApp,
 } from '../src/index.js'
 import { NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS } from '../src/workflow-pin.js'
+import { diffLineCounts } from '../src/diff.js'
 import { findTopLevelValue, scanJsonc, stripJsonc } from '../src/jsonc.js'
 import type { UpgradeReport } from '../src/index.js'
 
@@ -1061,6 +1062,16 @@ describe('upgrade CLI', () => {
 })
 
 describe('unified diff rendering', () => {
+  it.each([
+    ['', '', { added: 0, removed: 0 }],
+    ['', 'a\nb\n', { added: 2, removed: 0 }],
+    ['a\n', '', { added: 0, removed: 1 }],
+    ['same\nold\nsame\n', 'same\nnew\nsame\n', { added: 1, removed: 1 }],
+    ['a\nb\na\n', 'b\na\nb\n', { added: 1, removed: 1 }],
+  ])('counts changed lines for %j -> %j', (before, after, counts) => {
+    expect(diffLineCounts(before as string, after as string)).toEqual(counts)
+  })
+
   it('returns nothing for identical input', () => {
     expect(unifiedDiff('a.txt', 'one\ntwo\n', 'one\ntwo\n')).toBe('')
   })
@@ -1098,6 +1109,31 @@ describe('unified diff rendering', () => {
 })
 
 describe('upgrade report formatting', () => {
+  it('reports a comment-only workflow diff that matches the write result (#1193)', async () => {
+    const targetDir = await scaffold()
+    const path = '.github/workflows/dependabot-merge.yml'
+    const desired = await read(targetDir, path)
+    const comment = desired.split('\n').find((line) => line.trimStart().startsWith('#'))
+    expect(comment).toBeDefined()
+    const current = desired.replace(comment as string, comment + ' (app comment reflow)')
+    await writeFile(join(targetDir, path), current, 'utf8')
+
+    const dryRun = await upgradeNardukApp({ only: [path], targetDir })
+    const change = dryRun.changes[0]
+    expect(change?.status).toBe('drift')
+    expect(change?.detail).toContain('Updates the file (+1/-1 lines)')
+    expect(change?.detail).not.toContain('Rewrites the whole file')
+    const body = (change?.diff ?? '').split('\n').slice(2)
+    expect(body.filter((line) => line.startsWith('+'))).toHaveLength(1)
+    expect(body.filter((line) => line.startsWith('-'))).toHaveLength(1)
+    expect(await read(targetDir, path)).toBe(current)
+
+    const written = await upgradeNardukApp({ only: [path], targetDir, write: true })
+    expect(written.changes[0]?.diff).toBe(change?.diff)
+    expect(await read(targetDir, path)).toBe(desired)
+    expect(statusOf(await upgradeNardukApp({ only: [path], targetDir }), path)).toBe('clean')
+  })
+
   it('names the profile, every unit and the drift verdict', async () => {
     const targetDir = await scaffold()
     await edit(targetDir, '.github/dependabot.yml', () => 'version: 2\n')

@@ -1383,6 +1383,9 @@ async function proveGeneratedConsumer({
       try {
         const output = await runChecked('pnpm', ['run', phase], {
           cwd: generatedDirectory,
+          // Prove production-target SEO on the fixture's preview origin without
+          // relying on the scaffold to mutate its build environment (#1092).
+          env: { NARDUK_DEPLOY_TARGET: 'production' },
           label: `generated app ${phase}`,
         })
         // Bound to whichever phase actually runs `nuxt build`, not to one

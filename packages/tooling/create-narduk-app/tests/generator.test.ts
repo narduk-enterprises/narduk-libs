@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
+import { runInNewContext } from 'node:vm'
 
 import * as prettier from 'prettier'
 import ts from 'typescript'
@@ -209,7 +210,12 @@ describe('create-narduk-app generation contract', () => {
     expect([...first.values()].join('\n')).not.toContain('/two/target')
   })
 
-  it('preserves an explicit deployment target before inferring a branch preview', () => {
+  it.each([
+    [{ WORKERS_CI_BRANCH: 'main' }, 'production'],
+    [{ WORKERS_CI_BRANCH: 'feature/preview' }, 'preview'],
+    [{ NARDUK_DEPLOY_TARGET: 'staging', WORKERS_CI_BRANCH: 'feature/preview' }, 'staging'],
+    [{}, 'production'],
+  ])('resolves a fresh app target without environment write-back (#1092): %j', (env, target) => {
     const files = asFileMap(
       buildGeneratedFiles({
         appName: 'preview-aware-app',
@@ -221,7 +227,18 @@ describe('create-narduk-app generation contract', () => {
     expect(config).toContain(
       "process.env.NARDUK_DEPLOY_TARGET || (isBranchPreview ? 'preview' : 'production')",
     )
-    expect(config).toContain('process.env.NARDUK_DEPLOY_TARGET ??= deploymentTarget')
+    expect(config).not.toContain('process.env.NARDUK_DEPLOY_TARGET ??=')
+    const prelude = config.slice(
+      config.indexOf('const buildBranch ='),
+      config.indexOf('const isCloudflareBuild ='),
+    )
+    const environment = { ...env }
+    expect(runInNewContext(prelude + '\ndeploymentTarget', { process: { env: environment } })).toBe(
+      target,
+    )
+    expect(environment).toEqual(env)
+    const [major, minor] = PACKAGE_VERSIONS['@narduk-enterprises/narduk-seo'].split('.').map(Number)
+    expect((major ?? 0) > 2 || (major === 2 && (minor ?? 0) >= 8)).toBe(true)
     expect(config).not.toContain('hostAwareIndexing: true')
   })
 

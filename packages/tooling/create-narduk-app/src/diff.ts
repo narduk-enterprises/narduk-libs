@@ -66,6 +66,16 @@ function diffOperations(left: readonly string[], right: readonly string[]): Diff
   return operations
 }
 
+/** Counts only changed lines, using the renderer's line matching and tie breaks. */
+export function diffLineCounts(before: string, after: string): { added: number; removed: number } {
+  const counts = { added: 0, removed: 0 }
+  for (const operation of diffOperations(splitLines(before), splitLines(after))) {
+    if (operation.kind === '+') counts.added += 1
+    if (operation.kind === '-') counts.removed += 1
+  }
+  return counts
+}
+
 /**
  * Renders a unified diff, or an empty string when the two texts are identical.
  *
