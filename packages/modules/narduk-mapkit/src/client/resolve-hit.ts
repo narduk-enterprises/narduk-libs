@@ -37,7 +37,8 @@ export type AreaHitTester<TArea> = (probe: HitProbe) => TArea | null | undefined
 /**
  * One hit-testable layer, in the order the caller wants it asked. `point` is a
  * canvas point layer, `line` a vector-tile overlay source, `area` a tester the
- * caller owns (this package does not paint areas).
+ * caller owns; the overlay source's `hitTestArea` answers one for the areas it
+ * paints (`(probe) => source.hitTestArea(probe.coordinate)`).
  */
 export type HitLayer<TArea = unknown> =
   | { kind: 'area'; test: AreaHitTester<TArea> }

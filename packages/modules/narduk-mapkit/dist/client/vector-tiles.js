@@ -11,6 +11,7 @@
  * changing the style repaints from memory and never refetches.
  */
 import { DEFAULT_MOUSE_HIT_TOLERANCE_PX, hitTestNeighbours, hitTestTile, projectToTilePoint, } from './hit-test.js';
+import { paintVectorTileAreas, vectorTileAreasReach } from './vector-tile-areas.js';
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
  * A class-table lookup treats it as unknown, never as id 0.
@@ -496,9 +497,12 @@ export function paintVectorTile(canvas, tile, options) {
     const context = canvas.getContext('2d');
     if (!context)
         return false;
-    const { overzoom, pixelRatio, style, tileNetwork, tileSize, zoom } = options;
+    const { areas, overzoom, pixelRatio, style, tileNetwork, tileSize, zoom } = options;
     const scale = (tileSize * pixelRatio) / tile.extent;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    const areasPainted = areas
+        ? paintVectorTileAreas(canvas, areas.layer, { pixelRatio, tile: areas.tile, tileSize })
+        : false;
     context.lineCap = 'round';
     context.lineJoin = 'round';
     const featureCount = vectorTileFeatureCount(tile);
@@ -517,7 +521,7 @@ export function paintVectorTile(canvas, tile, options) {
         });
     }
     paintedFeatures.sort((left, right) => left.so - right.so || left.severity - right.severity);
-    let painted = false;
+    let painted = areasPainted;
     let index = 0;
     while (index < paintedFeatures.length) {
         const head = paintedFeatures[index];
@@ -757,6 +761,7 @@ export function createVectorTileOverlaySource(options) {
     let style = options.style;
     let classTable = isVectorTileClassStyle(options.style) ? options.style.classTable : null;
     let restyleHost = options.restyleHost ?? null;
+    let areas = options.areas ?? null;
     let highlight = null;
     let highlightPlan = null;
     let highlightHost = options.highlightHost ?? null;
@@ -939,9 +944,22 @@ export function createVectorTileOverlaySource(options) {
             const ancestorX = Math.floor(x / factor);
             const ancestorY = Math.floor(y / factor);
             const tile = await decodedTile(z - levels, ancestorX, ancestorY);
-            if (!tile || vectorTileFeatureCount(tile) === 0)
+            const hasLines = tile !== null && vectorTileFeatureCount(tile) > 0;
+            // Areas go under the lines in the same image. A tile they do not reach is
+            // painted exactly as it was without them.
+            const address = { x, y, z };
+            const layer = areas;
+            const underlay = layer !== null && vectorTileAreasReach(layer, address, tileSize);
+            if (!hasLines && !underlay)
                 return null;
             const pixelRatio = scale > 0 ? scale : 1;
+            const size = Math.round(tileSize * pixelRatio);
+            const areaOptions = { pixelRatio, tile: address, tileSize };
+            if (!tile || !hasLines) {
+                // Nothing to draw but the areas: the archive holds no lines for this tile.
+                const canvas = createCanvas(size, size);
+                return layer && paintVectorTileAreas(canvas, layer, areaOptions) ? canvas : null;
+            }
             const request = {
                 ...paintOptions(z),
                 pixelRatio,
@@ -952,7 +970,19 @@ export function createVectorTileOverlaySource(options) {
             const offThread = painter?.paint(tile, request) ?? null;
             if (offThread) {
                 try {
-                    return await offThread;
+                    const image = await offThread;
+                    if (!underlay || !layer)
+                        return image;
+                    // The painter's lines go over the areas painted here.
+                    const composed = createCanvas(size, size);
+                    const context = composed.getContext('2d');
+                    if (context?.drawImage) {
+                        paintVectorTileAreas(composed, layer, areaOptions);
+                        if (image)
+                            context.drawImage(image, 0, 0);
+                        return composed;
+                    }
+                    // A context that cannot compose: paint the whole tile here, below.
                 }
                 catch (reason) {
                     if (!(reason instanceof VectorTilePaintUnavailableError))
@@ -960,9 +990,11 @@ export function createVectorTileOverlaySource(options) {
                     // Declined after the fact: paint it here, below.
                 }
             }
-            const size = Math.round(tileSize * pixelRatio);
             const canvas = createCanvas(size, size);
-            const painted = paintVectorTile(canvas, tile, request);
+            const painted = paintVectorTile(canvas, tile, {
+                ...request,
+                ...(underlay && layer ? { areas: { layer, tile: address } } : {}),
+            });
             return painted ? canvas : null;
         }
         catch (reason) {
@@ -1168,9 +1200,30 @@ export function createVectorTileOverlaySource(options) {
         highlightMissed.clear();
         return refreshHighlight();
     }
+    function hitTestArea(coordinate) {
+        const layer = areas;
+        if (!layer)
+            return null;
+        return layer.index.hitTest(coordinate, (area) => layer.style(area) !== null);
+    }
+    function hitTestAreas(coordinate) {
+        const layer = areas;
+        if (!layer)
+            return [];
+        return layer.index.hitTestAll(coordinate, (area) => layer.style(area) !== null);
+    }
     return {
+        get areas() {
+            return areas;
+        },
         get cacheBytes() {
             return cache.bytes;
+        },
+        hitTestArea,
+        hitTestAreas,
+        setAreas(next) {
+            areas = next;
+            return requestRestyle();
         },
         clearHighlight() {
             return setHighlight(null);

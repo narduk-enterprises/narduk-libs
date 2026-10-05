@@ -20,4 +20,5 @@ export * from './point-layer.js';
 export * from './vector-tile-worker.js';
 export * from './vector-tiles.js';
 export * from './vector-tile-paint-worker.js';
+export * from './vector-tile-areas.js';
 //# sourceMappingURL=index.js.map

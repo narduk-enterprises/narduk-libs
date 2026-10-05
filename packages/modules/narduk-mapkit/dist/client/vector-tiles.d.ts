@@ -11,6 +11,7 @@
  * changing the style repaints from memory and never refetches.
  */
 import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js';
+import type { VectorTileAddress, VectorTileArea, VectorTileAreaLayer } from './vector-tile-areas.js';
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
  * A class-table lookup treats it as unknown, never as id 0.
@@ -230,6 +231,14 @@ export interface VectorTileCanvasContext {
     lineTo: (x: number, y: number) => void;
     moveTo: (x: number, y: number) => void;
     stroke: () => void;
+    /**
+     * Only the area pass needs these four. A context without them still paints
+     * lines; it draws no areas and no composed tile.
+     */
+    closePath?: () => void;
+    drawImage?: (image: never, dx: number, dy: number) => void;
+    fill?: (fillRule?: 'evenodd' | 'nonzero') => void;
+    fillStyle?: string | object;
 }
 /**
  * The registry half of a restyle. Structural so `./client` does not have to
@@ -299,6 +308,8 @@ export declare class VectorTilePaintUnavailableError extends Error {
     constructor(message: string);
 }
 export interface VectorTileOverlaySourceOptions<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
+    /** Areas painted under the lines from the first tile. See `setAreas`. */
+    areas?: VectorTileAreaLayer;
     /**
      * The tile source, when it can say how deep the archive goes. Used for the
      * default `maxDataZoom`. Optional, and only read when `maxDataZoom` is unset.
@@ -422,6 +433,11 @@ export interface VectorTileHitTestOptions {
     rank?: (properties: VectorTileProperties) => number;
 }
 export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImage = TCanvas> {
+    /**
+     * The areas painted under the lines, or `null`. See
+     * {@link VectorTileOverlaySource.setAreas}.
+     */
+    readonly areas: VectorTileAreaLayer | null;
     /** Retained bytes, exact for geometry and estimated for properties. */
     readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
@@ -444,6 +460,14 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
      * geometry, as the base tile does.
      */
     highlightImageForTile: (x: number, y: number, z: number, scale: number) => Promise<TCanvas | null>;
+    /**
+     * The drawn area under a coordinate (the most important when several
+     * overlap), or `null`. Synchronous and from memory: it needs no tile. An
+     * area the layer's `style` declines is not drawn and not hit.
+     */
+    hitTestArea: <TData = unknown>(coordinate: VectorTileCoordinate) => VectorTileArea<TData> | null;
+    /** Every drawn area under a coordinate, most important first. */
+    hitTestAreas: <TData = unknown>(coordinate: VectorTileCoordinate) => Array<VectorTileArea<TData>>;
     /**
      * The nearest feature to a coordinate, or `null`.
      *
@@ -472,6 +496,20 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
      * does not match the tiles draws unknown, never a wrong colour.
      */
     setClassTable: (table: VectorTileClassTable) => Promise<void>;
+    /**
+     * Paint areas (flood-alert shapes) into every tile beneath the lines, or pass
+     * `null` for none. Like a restyle it repaints from the decoded cache and swaps
+     * the overlay through the restyle host once the new image has drawn, so the
+     * network never blanks; nothing is re-read or re-decoded. A tile no area
+     * reaches is painted exactly as before, off the main thread when a `painter`
+     * is attached. A tile an area does reach is composed here: the areas, then
+     * the painter's image of the lines over them (the lines are painted here only
+     * when the painter declines the tile).
+     *
+     * Change a style, or which areas are drawn, by calling this again with a new
+     * `style`; the index is only rebuilt when the shapes change.
+     */
+    setAreas: <TData = unknown>(layer: VectorTileAreaLayer<TData> | null) => Promise<void>;
     /**
      * Highlight a stretch, or pass `null` to clear it. Only the highlight
      * overlay is swapped (through `highlightHost` when one is attached); the
@@ -609,6 +647,14 @@ export interface VectorTileOverzoom {
  * stroked wider, underneath the batch.
  */
 export declare function paintVectorTile(canvas: VectorTileCanvas, tile: DecodedVectorTile, options: {
+    /**
+     * Areas to paint first, so the lines sit on top of them. `tile` is the
+     * address of the tile being painted (the child's, with `overzoom`).
+     */
+    areas?: {
+        layer: VectorTileAreaLayer;
+        tile: VectorTileAddress;
+    };
     /**
      * Paint a child of `tile` -- a tile `levels` zooms deeper -- from its
      * geometry, scaled and clipped into the child. `zoom` stays the zoom being
