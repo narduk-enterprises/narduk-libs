@@ -160,6 +160,29 @@ describe('upload rejection records', () => {
       maxFileBytes: 10 * 1024 * 1024,
     })
   })
+
+  it('records the first refusal when a later multipart file has an unsupported type', async () => {
+    const route = await uploadRoute()
+    const big = new Uint8Array(10 * 1024 * 1024 + 1)
+    big.set(PNG)
+
+    await expect(
+      route.handler({
+        event: requestEvent(UPLOAD_PATH),
+        body: [
+          { data: big, filename: 'a.png', type: 'image/png' },
+          { data: new Uint8Array([1]), filename: 'private.html', type: 'text/html' },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'File exceeds 10MB limit' })
+    expect(rejections()[0]?.data).toEqual({
+      statusCode: 400,
+      reason: 'file_too_large',
+      fileCount: 2,
+      maxFileBytes: 10 * 1024 * 1024,
+    })
+    expect(JSON.stringify(sink.records)).not.toContain('private.html')
+  })
 })
 
 describe('upload storage records', () => {

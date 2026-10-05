@@ -70,7 +70,12 @@ function validateFiles(files, log) {
   try {
     validateUploadFiles(files)
   } catch (error) {
-    const unsupported = files.find((file) => !isAllowedUploadContentType(file.type))
+    // Match the validator's per-file type-then-size order so later files cannot
+    // replace the reason that actually refused this request.
+    const invalid = files.find(
+      (file) => !isAllowedUploadContentType(file.type) || file.data.byteLength > MAX_FILE_SIZE,
+    )
+    const unsupported = invalid && !isAllowedUploadContentType(invalid.type) ? invalid : undefined
     rejected(log, error?.statusCode ?? 400, unsupported ? 'unsupported_type' : 'file_too_large', {
       fileCount: files.length,
       ...(unsupported
