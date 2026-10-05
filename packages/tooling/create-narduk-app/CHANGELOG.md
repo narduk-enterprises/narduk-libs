@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.36
+
+### Patch Changes
+
+- 6fc2a89: Forward child-command help without swallowing its exit status, infer
+  adoption report repository identity from a GitHub origin when declarations are
+  absent, and accept Node engine ranges satisfied by the declared toolchain
+  version.
+
 ## 0.21.35
 
 ### Patch Changes
