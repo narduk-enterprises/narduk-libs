@@ -1,5 +1,18 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.34
+
+### Patch Changes
+
+- 5563126: Count upgrade summary additions and removals using the same line
+  matching as the displayed diff, so small comment changes no longer look like
+  full rewrites.
+
+  Stop writing the inferred deployment target into the build environment. The
+  pinned narduk-seo release resolves its own target; fresh apps still preserve
+  an explicit target and infer production or preview for their site/runtime
+  settings.
+
 ## 0.21.33
 
 ### Patch Changes
