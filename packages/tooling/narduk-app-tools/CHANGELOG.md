@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.33.1
+
+### Patch Changes
+
+- f7b3b5d: List `NeCommandPalette` and `NeCommandPaletteTrigger` as narduk-shell
+  components, so `no-shadowed-shared-component` and the item 13 no-local-copy
+  check know them and the drift test matches the shell's registry.
+
 ## 0.33.0
 
 ### Minor Changes
