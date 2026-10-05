@@ -458,8 +458,8 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     "onUpdate:selectedId"?: (id: string | null) => any;
 }>, {
     readonly language: string;
-    readonly geojson: GeoJSONFeatureCollection | null;
     readonly minSpanDelta: number;
+    readonly geojson: GeoJSONFeatureCollection | null;
     readonly libraries: readonly string[];
     readonly nonce: string;
     readonly overlayStyleFn: (properties: GeoJSONFeatureProperties) => OverlayStyle;

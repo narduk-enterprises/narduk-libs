@@ -19,9 +19,16 @@ import {
 } from './hit-test.js'
 
 import { paintVectorTileAreas, vectorTileAreasReach } from './vector-tile-areas.js'
+import {
+  candidateTileZooms,
+  collectVectorTilePathPieces,
+  tilesInView,
+} from './vector-tile-paths.js'
 
 import type { TileHitSelect, VectorTileCoordinate, VectorTileHit } from './hit-test.js'
+import type { PointLayerView } from './point-layer.js'
 import type { VectorTileAddress, VectorTileArea, VectorTileAreaLayer } from './vector-tile-areas.js'
+import type { VectorTilePathPiece, VectorTilePathStretch } from './vector-tile-paths.js'
 
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
@@ -609,6 +616,19 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
    * {@link VectorTileOverlaySource.setAreas}.
    */
   readonly areas: VectorTileAreaLayer | null
+  /**
+   * The screen lines of a path of stretches (feature ids in order, upstream
+   * first), read from the decoded tiles already in memory. Nothing is fetched:
+   * a tile not decoded yet adds no piece. Each line is clipped to its tile's
+   * own bounds, so a stretch the tiles repeat across an edge is not doubled,
+   * and ordered along the path with the distance it starts at; see
+   * {@link collectVectorTilePathPieces}. For an effect that follows a river.
+   */
+  pathPieces: (options: {
+    marginPx?: number
+    stretches: readonly VectorTilePathStretch[]
+    view: PointLayerView
+  }) => VectorTilePathPiece[]
   /** Retained bytes, exact for geometry and estimated for properties. */
   readonly cacheBytes: number
   /** Drop every decoded tile, for example when the archive is replaced. */
@@ -1977,6 +1997,34 @@ export function createVectorTileOverlaySource<TCanvas extends VectorTileCanvas, 
       return highlightPlan
     },
     highlightImageForTile,
+    pathPieces({ marginPx = 64, stretches, view }) {
+      // MapKit asks for the tile zoom it likes; the cache holds whichever it asked
+      // for, so read the zoom whose screenful is most complete, nearest the view's.
+      let best = -1
+      let bestShare = 0
+      for (const candidate of candidateTileZooms(view.zoom, dataZoomFor)) {
+        const tiles = 2 ** candidate
+        const needed = tilesInView(view, candidate, marginPx)
+        let present = 0
+        for (const address of needed) {
+          const wrapped = ((address.x % tiles) + tiles) % tiles
+          if (cache.get(`${candidate}/${wrapped}/${address.y}`)) present += 1
+        }
+        const share = needed.length > 0 ? present / needed.length : 0
+        if (share > bestShare + 1e-9) {
+          best = candidate
+          bestShare = share
+        }
+      }
+      if (best < 0) return []
+      return collectVectorTilePathPieces({
+        marginPx,
+        stretches,
+        tileAt: (z, x, y) => cache.get(`${z}/${x}/${y}`),
+        view,
+        zoom: best,
+      })
+    },
     clearCache() {
       cache.clear()
       generation += 1

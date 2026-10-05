@@ -1089,6 +1089,52 @@ the zoom-12 ancestor with the tolerance in zoom-14 screen pixels; the hit's
 `tile` is the ancestor the `feature` index belongs to. Because the ancestor is
 what is cached, a tile bigger than `cacheBytes` is re-read for each child.
 
+## Area outlines, area hover labels and flow pulses
+
+Three small pieces for a map of linear data (rivers, roads) over administrative
+areas (states, counties). All three are generic: the app supplies shapes,
+colours and text.
+
+**Outlines beneath the network.** `createAreaOutlineTileSource` wraps
+`paintVectorTileAreas` as an `imageForTile` that strokes outlines and never
+fills. Give it a `layer` of `{ index, style }` (the same shape `setAreas`
+takes), attach it to its own `MapKitLayerRegistry` entry ordered below the
+network, and set the entry's opacity to quiet it. The index also answers the
+pointer: `index.hitTest({ latitude, longitude })` names the area under it.
+
+```ts
+const states = createAreaOutlineTileSource({
+  createCanvas,
+  layer: {
+    index: createVectorTileAreaIndex(features),
+    style: () => ({ lineWidth: 0.8, strokeColor }),
+  },
+})
+```
+
+**A name on hover.** `createAreaHoverLabel({ container })` makes one element,
+`pointer-events: none` and `aria-hidden`. Call `update(view)` whenever the map
+moves, `show({ latitude, longitude, text }, pointer)` on a hit and `hide()` on
+leave. The text is centred on its anchor while the anchor is at least `insetPx`
+(default 48) inside the view, and sits beside the pointer otherwise.
+
+**A pulse down a path.** `source.pathPieces({ stretches, view })` returns the
+screen-space geometry of the named stretches (`{ id, meters }`, in path order)
+from the tiles already decoded, so it never fetches. `createFlowPulseLayer`
+draws it on a canvas you place over the map:
+
+```ts
+const pulse = createFlowPulseLayer({ canvas, source, style: { color, width } })
+pulse.setPath(stretches) // null clears it
+map.addEventListener('region-change-start', () => pulse.suspend())
+map.addEventListener('region-change-end', () => pulse.update(view()))
+```
+
+The geometry is read once per path or view change; each frame sets one dash
+offset and strokes once per chain, and the loop stops when there is no path or
+while the map moves. With `prefers-reduced-motion: reduce` (read live) nothing
+moves: chevrons point downstream along the path instead.
+
 ## Canvas Point Layer
 
 The national gauge map has to show every site at once -- 23,597 today -- at
