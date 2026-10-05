@@ -694,8 +694,10 @@ instead: `CANONICAL_REDIRECT_HOSTS=www.example.com` (env, comma-separated) or
 `runtimeConfig.public.canonicalRedirectHosts` (a string or a list). A named list
 turns the redirect on without `ENFORCE_CANONICAL_HOST`, and when set it is the
 whole rule: only the named hosts redirect, every other host is served where it
-was asked, and a `*.workers.dev` entry is ignored (narduk-libs#515). The
-navigation-only rule below applies either way.
+was asked, and a `*.workers.dev` entry is ignored (narduk-libs#515). The one
+exception is plain `http:` on the canonical host itself, which answers a `308`
+to the same path on `https:` (narduk-libs#1483). The navigation-only rule below
+applies either way.
 
 **It redirects top-level document navigations only.** Canonicalisation is worth
 something on a navigation: search engines, bookmarks, and an auth cookie that

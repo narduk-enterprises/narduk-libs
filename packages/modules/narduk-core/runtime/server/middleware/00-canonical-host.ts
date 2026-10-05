@@ -142,9 +142,15 @@ export default defineEventHandler((event) => {
 
   const requestUrl = getRequestURL(event)
   if (redirectHosts.length > 0) {
-    // A named host list is the whole rule: every other host, including the
-    // canonical one, is served where it was asked.
-    if (requestHost === canonicalHost || !redirectHosts.includes(requestHost)) return
+    // A named host list is the whole rule: every other host is served where it
+    // was asked. The canonical host is the one exception, and only for the
+    // protocol: plain http there is a duplicate indexable host, so it is
+    // upgraded to the canonical https URL (narduk-libs#1483).
+    if (requestHost === canonicalHost) {
+      if (requestUrl.protocol === canonicalUrl.protocol) return
+    } else if (!redirectHosts.includes(requestHost)) {
+      return
+    }
   } else if (requestHost === canonicalHost && requestUrl.protocol === canonicalUrl.protocol) {
     return
   }
