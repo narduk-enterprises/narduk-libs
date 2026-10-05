@@ -20,6 +20,10 @@ vi.mock('@narduk-enterprises/narduk-core/server/utils/kv', () => ({
   kvSet: mocks.kvSet,
 }))
 
+vi.mock('@narduk-enterprises/narduk-core/server/utils/logger', () => ({
+  useLogger: () => ({ child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
+}))
+
 vi.mock('../server/utils/xai', () => ({
   grokListModels: mocks.grokListModels,
 }))
