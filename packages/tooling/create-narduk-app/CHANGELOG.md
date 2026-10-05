@@ -1,5 +1,29 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.29
+
+### Patch Changes
+
+- 8ef9a96: `NeCollectionTable`'s phone card names every value (#1704,
+  narduk-libs#1400). Below `stackBelow` in the default `cards` layout, the
+  primary cell heads the card and every other cell is one line of label and
+  value. The label is the cell's `::before`, read from a new `data-ne-label`
+  attribute (the column's `label` and `unit`), so the cell's text is still the
+  value alone, and its alt text is empty because the header already names the
+  cell for a screen reader. The value shrinks and wraps, so no cell is wider
+  than its card. One divider under each card separates the rows and the cells
+  draw none. A cell with nothing to say is dropped from the card: one that
+  renders nothing, or whose only element carries `data-ne-empty`, which the
+  default em dash now does; an app marks its own "no value" mark the same way. A
+  missing word (`missingText`) stays. The sorted column's tint stays above the
+  line. The `columns` layout is unchanged.
+- 53b1b46: Move the generator's `@narduk-enterprises/narduk-mapkit` pin to the
+  release that carries the `fitMapKitRegionToViewport` geometry helper and the
+  canvas point layer zero-stroke fix. The mapkit changesets (#1469, #1470)
+  landed without this entry, which turned the `release-plan:check` contract red
+  on main and withheld every release, including
+  `@narduk-enterprises/narduk-analytics` 1.26.2 (#1310).
+
 ## 0.21.28
 
 ### Patch Changes
