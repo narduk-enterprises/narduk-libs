@@ -504,6 +504,154 @@ describe('NardukLineChart dashed series', () => {
   })
 })
 
+describe('NardukLineChart filled bands', () => {
+  const labels = ['a', 'b', 'c', 'd', 'e', 'f']
+  const mountBand = (
+    extra: Record<string, unknown> = {},
+    bandProps: Record<string, unknown> = {},
+  ) =>
+    mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Flow', data: [5, 6, 7, 8, 7, 6] }],
+        labels,
+        width: 400,
+        height: 200,
+        animate: false,
+        smooth: false,
+        bands: [
+          {
+            name: 'Normal range',
+            low: [2, 3, 4, 5, 4, 3],
+            high: [8, 9, 10, 11, 10, 9],
+            ...bandProps,
+          },
+        ],
+        ...extra,
+      },
+    })
+
+  const filled = (w: ReturnType<typeof mountBand>) =>
+    w.findAll('.narduk-band-path').filter(p => (p.attributes('d') ?? '') !== '')
+
+  it('draws one closed fill that follows both edges, behind the lines', () => {
+    const w = mountBand()
+    const paths = filled(w)
+    expect(paths).toHaveLength(1)
+    const d = paths[0]!.attributes('d')!
+    expect(d.startsWith('M')).toBe(true)
+    expect(d.endsWith('Z')).toBe(true)
+    /* Upper edge forward then lower edge back: 6 + 6 vertices. */
+    expect((d.match(/[ML]/g) ?? []).length).toBe(12)
+    const html = w.html()
+    expect(html.indexOf('narduk-band-path')).toBeLessThan(html.indexOf('narduk-line-path'))
+  })
+
+  it('breaks the fill at a null in either edge instead of bridging it', () => {
+    const w = mountBand(
+      {},
+      {
+        low: [2, 3, null, 5, 4, 3],
+        high: [8, 9, 10, 11, null, 9],
+      },
+    )
+    /* Runs: a-b (2 points) and d alone (1 point -> nothing), then f alone. */
+    const paths = filled(w)
+    expect(paths).toHaveLength(1)
+    expect((paths[0]!.attributes('d')!.match(/[ML]/g) ?? []).length).toBe(4)
+  })
+
+  it('draws two separate fills around a gap', () => {
+    const w = mountBand(
+      {},
+      {
+        low: [2, 3, null, 5, 4, 3],
+        high: [8, 9, null, 11, 10, 9],
+      },
+    )
+    expect(filled(w)).toHaveLength(2)
+  })
+
+  it('draws nothing for a band with no complete pair', () => {
+    const w = mountBand(
+      {},
+      { low: [null, 3, null, 5, null, 3], high: [8, null, 10, null, 10, null] },
+    )
+    expect(filled(w)).toHaveLength(0)
+  })
+
+  it('swaps the edges where low is above high', () => {
+    const a = mountBand({}, { low: [8, 9, 10, 11, 10, 9], high: [2, 3, 4, 5, 4, 3] })
+    const b = mountBand()
+    expect(filled(a)[0]!.attributes('d')).toBe(filled(b)[0]!.attributes('d'))
+  })
+
+  it('uses the accent token by default and honours colour and opacity', () => {
+    const def = mountBand()
+    expect(def.find('.narduk-band-path').attributes('fill')).toBe(
+      'var(--color-chart-accent, #6366f1)',
+    )
+    expect(def.find('.narduk-band-path').attributes('style')).toBeUndefined()
+    const custom = mountBand({}, { color: 'var(--color-primary)', opacity: 0.3 })
+    const p = custom.find('.narduk-band-path')
+    expect(p.attributes('fill')).toBe('var(--color-primary)')
+    expect(p.attributes('style')).toContain('opacity: 0.3')
+  })
+
+  it('widens the Y domain to the band edges', () => {
+    const withBand = mountBand({ series: [{ name: 'Flow', data: [5, 6, 7, 8, 7, 6] }] })
+    const without = mountBand({ bands: [] })
+    const ticks = (w: ReturnType<typeof mountBand>) =>
+      w.findAll('.narduk-axis text').map(t => t.text())
+    expect(ticks(withBand).length).toBeGreaterThan(0)
+    expect(ticks(withBand)).not.toEqual(ticks(without))
+  })
+
+  it('adds a legend entry that hides the band', async () => {
+    const w = mountBand()
+    const items = w.findAll('.narduk-legend-item, .narduk-chart__legend button, button')
+    const btn = items.find(b => b.text().includes('Normal range'))
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+    expect(w.findAll('.narduk-band-path')).toHaveLength(0)
+  })
+
+  it('adds low and high columns to the data table', () => {
+    const w = mountBand({ showDataTable: true })
+    const text = w.find('table').text()
+    expect(text).toContain('Normal range (low)')
+    expect(text).toContain('Normal range (high)')
+  })
+
+  it('does nothing for a chart with no bands', () => {
+    const w = mountBand({ bands: undefined })
+    expect(w.find('.narduk-bands').exists()).toBe(false)
+  })
+
+  it('aligns a decimated band with the decimated series', () => {
+    const n = 40
+    const w = mount(NardukLineChart, {
+      props: {
+        series: [{ name: 'Flow', data: Array.from({ length: n }, (_, i) => i) }],
+        labels: Array.from({ length: n }, (_, i) => `d${i}`),
+        bands: [
+          {
+            name: 'Range',
+            low: Array.from({ length: n }, (_, i) => i - 1),
+            high: Array.from({ length: n }, (_, i) => i + 1),
+          },
+        ],
+        maxRenderPoints: 10,
+        width: 400,
+        height: 200,
+        animate: false,
+        smooth: false,
+      },
+    })
+    const d = w.find('.narduk-band-path').attributes('d')!
+    expect((d.match(/[ML]/g) ?? []).length).toBe(20)
+  })
+})
+
 describe('NardukLineChart isolated values', () => {
   /*
    * A series whose measured entries never neighbour one another. Every run is

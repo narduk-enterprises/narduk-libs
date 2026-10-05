@@ -21,6 +21,7 @@ import ChartLegend from './ChartLegend.vue'
 import ChartTooltip from './ChartTooltip.vue'
 
 import type {
+  ChartBand,
   ChartLineAnnotation,
   ChartPadding,
   ChartReferenceLine,
@@ -41,6 +42,13 @@ const props = withDefaults(
     animate?: boolean
     /** Vertical lines, points, and labels in data space. */
     annotations?: ChartLineAnnotation[]
+    /**
+     * Filled bands between a `low` and a `high` array that vary along X (a
+     * percentile range). Drawn behind the grid and the lines; a `null` in
+     * either array breaks the fill. They take part in the Y domain, the legend
+     * and the tooltip.
+     */
+    bands?: ChartBand[]
     /** Longer description for screen readers and SVG `<desc>`. */
     chartDescription?: string
     /** Short visible title (figcaption) and primary accessible name when set. */
@@ -250,6 +258,30 @@ const effSeries = computed(() => {
   return props.series
 })
 
+/** Bands decimated with the same index map as the series. */
+const effBands = computed<ChartBand[]>(() => {
+  const bands = props.bands ?? []
+  const map = effIndexMap.value
+  if (!map) return bands
+  return bands.map(b => ({
+    ...b,
+    low: map.map(i => b.low[i] ?? null),
+    high: map.map(i => b.high[i] ?? null),
+  }))
+})
+
+const visibleBands = computed(() => effBands.value.filter(b => !hiddenSeries.value.has(b.name)))
+
+/** A band edge as a pseudo-series so the Y domain code treats it like data. */
+function bandEdgeSeries(axis: ChartYAxisId): ChartSeries[] {
+  return visibleBands.value
+    .filter(b => (useDual.value ? (b.yAxis ?? 'primary') : 'primary') === axis)
+    .flatMap(b => [
+      { name: `${b.name}\u0000low`, data: b.low },
+      { name: `${b.name}\u0000high`, data: b.high },
+    ])
+}
+
 const effTimes = computed(() => {
   if (!props.times) return
   const map = effIndexMap.value
@@ -272,6 +304,7 @@ const showRightAxis = computed(() => {
     visibleSeries.value.some(s => s.yAxis === 'secondary') ||
     (props.referenceLines ?? []).some(r => r.yAxis === 'secondary') ||
     (props.yBands ?? []).some(b => b.yAxis === 'secondary') ||
+    visibleBands.value.some(b => b.yAxis === 'secondary') ||
     (props.annotations ?? []).some(
       a =>
         (a.type === 'point' || a.type === 'label') &&
@@ -749,9 +782,8 @@ const primaryMap = computed(() => {
     })
     .map(a => a.y)
 
-  const seriesVals = sliceY
-    ? numericValuesSlice(primarySeriesList.value, i0, i1)
-    : numericValues(primarySeriesList.value)
+  const domainSeries = [...primarySeriesList.value, ...bandEdgeSeries('primary')]
+  const seriesVals = sliceY ? numericValuesSlice(domainSeries, i0, i1) : numericValues(domainSeries)
 
   return createYAxisMap(
     props.yScale,
@@ -781,9 +813,8 @@ const secondaryMap = computed(() => {
     })
     .map(a => a.y)
 
-  const seriesVals = sliceY
-    ? numericValuesSlice(secondarySeriesList.value, i0, i1)
-    : numericValues(secondarySeriesList.value)
+  const domainSeries = [...secondarySeriesList.value, ...bandEdgeSeries('secondary')]
+  const seriesVals = sliceY ? numericValuesSlice(domainSeries, i0, i1) : numericValues(domainSeries)
 
   return createYAxisMap(
     props.yScaleSecondary,
@@ -874,6 +905,52 @@ const seriesRender = computed(() =>
     return { segments, lineDs, areaDs, isolated }
   }),
 )
+
+function isNum(v: number | null | undefined): v is number {
+  return v != null && !Number.isNaN(v)
+}
+
+/**
+ * One closed path per run of indices where BOTH edges have a value. Either edge
+ * being missing ends the run, so the fill never bridges a gap. A run of one
+ * index has no width to fill and draws nothing.
+ */
+const bandRender = computed(() =>
+  visibleBands.value.map(b => {
+    const axis: ChartYAxisId = useDual.value ? (b.yAxis ?? 'primary') : 'primary'
+    const n = effLabels.value.length
+    const lo: Array<number | null> = []
+    const hi: Array<number | null> = []
+    for (let i = 0; i < n; i++) {
+      const l = b.low[i]
+      const h = b.high[i]
+      if (isNum(l) && isNum(h)) {
+        lo.push(Math.min(l, h))
+        hi.push(Math.max(l, h))
+      } else {
+        lo.push(null)
+        hi.push(null)
+      }
+    }
+    const toPoint = (i: number, v: number): [number, number] => [xPos(i), yAtDataValue(v, axis)]
+    const upper = lineSegmentsToPaths(segmentLinePoints(hi, toPoint), props.smooth)
+    const lowerSegs = segmentLinePoints(lo, toPoint).map(seg => [...seg].reverse())
+    const lower = lineSegmentsToPaths(lowerSegs, props.smooth)
+    const ds = upper.map((u, i) => (u && lower[i] ? `${u} L${lower[i]!.slice(1)} Z` : ''))
+    return {
+      ds,
+      fill: b.color || 'var(--color-chart-accent, #6366f1)',
+      opacity: b.opacity,
+    }
+  }),
+)
+
+function bandRangeText(b: ChartBand, i: number): string | null {
+  const l = b.low[i]
+  const h = b.high[i]
+  if (!isNum(l) || !isNum(h)) return null
+  return `${formatValue(Math.min(l, h))} – ${formatValue(Math.max(l, h))}`
+}
 
 function resolveColor(s: ChartSeries): string {
   const idx = props.series.findIndex(x => x.name === s.name)
@@ -1015,7 +1092,9 @@ const displayIndex = computed(() =>
 const liveSummary = computed(() => {
   const i = displayIndex.value
   if (i === null || isEmpty.value) return ''
-  return linePointSummary(formatXAxisLabel(i), visibleSeries.value, i)
+  const base = linePointSummary(formatXAxisLabel(i), visibleSeries.value, i)
+  const bandParts = visibleBands.value.map(b => `${b.name} ${bandRangeText(b, i) ?? 'no value'}`)
+  return bandParts.length ? `${base}; ${bandParts.join('; ')}` : base
 })
 
 function formatXAxisLabel(i: number): string {
@@ -1029,20 +1108,32 @@ function formatXAxisLabel(i: number): string {
   return props.formatXLabel ? props.formatXLabel(raw, i) : raw
 }
 
+/** One tooltip row per visible band: its `low – high` range at that index. */
+function bandTooltipItems(i: number): TooltipItem[] {
+  return visibleBands.value.map(b => ({
+    color: b.color || 'var(--color-chart-accent, #6366f1)',
+    label: b.name,
+    value: bandRangeText(b, i) ?? '—',
+  }))
+}
+
 function formatTooltipTitle(i: number): string {
   if (props.xAxisType === 'time') return formatXAxisLabel(i)
   return effLabels.value[i] ?? ''
 }
 
 function showTooltipAtIndex(idx: number) {
-  const items: TooltipItem[] = visibleSeries.value.map(s => {
-    const v = s.data[idx]
-    return {
-      color: resolveColor(s),
-      label: s.name,
-      value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
-    }
-  })
+  const items: TooltipItem[] = [
+    ...visibleSeries.value.map(s => {
+      const v = s.data[idx]
+      return {
+        color: resolveColor(s),
+        label: s.name,
+        value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
+      }
+    }),
+    ...bandTooltipItems(idx),
+  ]
   const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
   const py = padding.value.top + priceInnerHeight.value / 2
   showTooltip(px, py, formatTooltipTitle(idx), items)
@@ -1153,14 +1244,17 @@ function onMouseMove(event: MouseEvent) {
 
   activeIndex.value = nearest
 
-  const items: TooltipItem[] = visibleSeries.value.map(s => {
-    const v = s.data[nearest]
-    return {
-      color: resolveColor(s),
-      label: s.name,
-      value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
-    }
-  })
+  const items: TooltipItem[] = [
+    ...visibleSeries.value.map(s => {
+      const v = s.data[nearest]
+      return {
+        color: resolveColor(s),
+        label: s.name,
+        value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
+      }
+    }),
+    ...bandTooltipItems(nearest),
+  ]
 
   showTooltip(mouseX, mouseY, formatTooltipTitle(nearest), items)
 }
@@ -1208,13 +1302,18 @@ onMounted(() => {
   }
 })
 
-const legendItems = computed<LegendItem[]>(() =>
-  props.series.map((s, i) => ({
+const legendItems = computed<LegendItem[]>(() => [
+  ...props.series.map((s, i) => ({
     name: s.name,
     color: s.color || getColor(props.colors, i),
     hidden: hiddenSeries.value.has(s.name),
   })),
-)
+  ...(props.bands ?? []).map(b => ({
+    name: b.name,
+    color: b.color || 'var(--color-chart-accent, #6366f1)',
+    hidden: hiddenSeries.value.has(b.name),
+  })),
+])
 
 /** Integer label indices along X for the visible window (readability). */
 const xAxisLabelIndices = computed(() => {
@@ -1371,6 +1470,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               <th v-for="s in series" :key="s.name" scope="col">
                 {{ s.name }}
               </th>
+              <template v-for="b in bands ?? []" :key="'band-h-' + b.name">
+                <th scope="col">{{ b.name }} (low)</th>
+                <th scope="col">{{ b.name }} (high)</th>
+              </template>
             </tr>
           </thead>
           <tbody>
@@ -1381,6 +1484,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               <td v-for="s in series" :key="s.name">
                 {{ s.data[ri] ?? '' }}
               </td>
+              <template v-for="b in bands ?? []" :key="'band-d-' + b.name">
+                <td>{{ b.low[ri] ?? '' }}</td>
+                <td>{{ b.high[ri] ?? '' }}</td>
+              </template>
             </tr>
           </tbody>
         </table>
@@ -1465,6 +1572,21 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               :fill="bandRect(b, 'secondary').fill"
               :opacity="bandRect(b, 'secondary').opacity"
             />
+          </g>
+
+          <!-- Filled bands between two time-varying series (behind the grid and lines) -->
+          <g v-if="bandRender.length" class="narduk-bands">
+            <template v-for="(br, bi) in bandRender" :key="'band-' + bi">
+              <path
+                v-for="(bd, bdi) in br.ds"
+                v-show="bd"
+                :key="'band-' + bi + '-' + bdi"
+                class="narduk-band-path"
+                :d="bd"
+                :fill="br.fill"
+                :style="br.opacity === undefined ? undefined : { opacity: br.opacity }"
+              />
+            </template>
           </g>
 
           <!-- Grid (primary scale) -->

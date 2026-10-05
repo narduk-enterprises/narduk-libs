@@ -102,6 +102,7 @@ export type {
   ChartYAxisId,
   ChartYScaleMode,
   ChartYBand,
+  ChartBand,
   ChartLineAnnotation,
   LinePointClickPayload,
   LineZoomRange,
