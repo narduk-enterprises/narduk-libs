@@ -17,6 +17,9 @@ export default defineConfig({
         rootDir: resolve(__dirname, 'src'),
       },
       insertTypesEntry: true,
+      // Flatten local re-exports so ./studies cannot resolve to the JavaScript
+      // subpath bundle, and NodeNext consumers need no extensionless imports.
+      rollupTypes: true,
     }),
   ],
   build: {
