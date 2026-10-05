@@ -205,6 +205,11 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'NE_MAIN_ID',
       from: resolver.resolve('./runtime/components/ne-skip-link-types'),
     })
+    // The command palette's in-flight search sharing (several groups, one request).
+    addImports({
+      name: 'createSharedSearch',
+      from: resolver.resolve('./runtime/utils/command-palette'),
+    })
     addImports({
       name: 'defineStatusMap',
       from: resolver.resolve('./runtime/utils/status-map'),
@@ -242,6 +247,17 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     addImports({
       name: 'useCollection',
       from: resolver.resolve('./runtime/composables/use-collection'),
+    })
+    // The command palette's open state and shortcuts (Cmd/Ctrl+K, "/"), and its
+    // engine helpers. Plain composables and functions: an app keeps these in
+    // its first bundle and loads `NeCommandPalette` itself lazily.
+    addImports({
+      name: 'useCommandPalette',
+      from: resolver.resolve('./runtime/composables/use-command-palette'),
+    })
+    addImports({
+      name: 'useCommandPaletteShortcuts',
+      from: resolver.resolve('./runtime/composables/use-command-palette'),
     })
     addImports({
       name: 'useConfirm',

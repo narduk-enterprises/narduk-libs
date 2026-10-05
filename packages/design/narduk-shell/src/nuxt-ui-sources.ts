@@ -41,6 +41,7 @@ export const SHELL_NUXT_UI_COMPONENTS = [
   'FooterColumns',
   'Form',
   'FormField',
+  'Icon',
   'Input',
   'Link',
   'Modal',
