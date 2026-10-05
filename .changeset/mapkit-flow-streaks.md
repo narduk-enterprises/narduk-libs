@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-mapkit': minor
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 `createFlowPulseLayer` draws a train of comet streaks instead of one pulse.
