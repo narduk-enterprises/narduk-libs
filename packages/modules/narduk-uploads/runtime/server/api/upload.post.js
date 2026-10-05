@@ -6,8 +6,11 @@ import {
   capIncomingMessageBytes,
   enforceUploadBodyByteCap,
   getUploadPerformanceWarnings,
+  isAllowedUploadContentType,
+  MAX_FILE_SIZE,
   MAX_UPLOAD_REQUEST_SIZE,
   normalizeExtension,
+  normalizeUploadContentType,
   sniffUploadImageType,
   validateUploadFiles,
 } from '@narduk-enterprises/narduk-uploads/runtime/server/utils/upload'
@@ -17,28 +20,64 @@ import { useLogger } from '#layer/server/utils/logger'
 import { defineUserMutation } from '#layer/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '#layer/server/utils/rateLimit'
 
-function rejectOversizedUploadRequest(event) {
+const TOO_LARGE_MESSAGE = `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`
+
+/**
+ * Every refusal writes one `Upload rejected` warn with a stable `reason`, so a
+ * client stuck on 4xx is visible without the request body. Records carry
+ * sizes, counts and normalized types only: never the file name (client text
+ * that can name a person) or the bytes.
+ */
+function rejected(log, statusCode, reason, fields = {}) {
+  log.warn('Upload rejected', { statusCode, reason, ...fields })
+}
+
+function refuse(log, statusCode, message, reason, fields) {
+  rejected(log, statusCode, reason, fields)
+  return createError({ statusCode, message })
+}
+
+function rejectOversizedUploadRequest(event, log) {
   const contentLengthHeader = getHeader(event, 'content-length')
   if (!contentLengthHeader) {
-    throw createError({
-      statusCode: 411,
-      message: 'Content-Length is required',
-    })
+    throw refuse(log, 411, 'Content-Length is required', 'content_length_missing')
   }
 
   const contentLength = Number.parseInt(contentLengthHeader, 10)
   if (!Number.isFinite(contentLength) || contentLength < 0) {
-    throw createError({
-      statusCode: 411,
-      message: 'Content-Length is required',
-    })
+    throw refuse(log, 411, 'Content-Length is required', 'content_length_invalid')
   }
 
   if (contentLength > MAX_UPLOAD_REQUEST_SIZE) {
-    throw createError({
-      statusCode: 413,
-      message: `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`,
+    throw refuse(log, 413, TOO_LARGE_MESSAGE, 'request_too_large', { contentLength })
+  }
+}
+
+async function readBoundedFormData(event, log) {
+  capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
+  try {
+    await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
+    return await readMultipartFormData(event)
+  } catch (cause) {
+    if (cause?.statusCode === 413) {
+      throw refuse(log, 413, TOO_LARGE_MESSAGE, 'body_too_large')
+    }
+    throw cause
+  }
+}
+
+function validateFiles(files, log) {
+  try {
+    validateUploadFiles(files)
+  } catch (error) {
+    const unsupported = files.find((file) => !isAllowedUploadContentType(file.type))
+    rejected(log, error?.statusCode ?? 400, unsupported ? 'unsupported_type' : 'file_too_large', {
+      fileCount: files.length,
+      ...(unsupported
+        ? { declaredType: normalizeUploadContentType(unsupported.type).slice(0, 100) }
+        : { maxFileBytes: MAX_FILE_SIZE }),
     })
+    throw error
   }
 }
 
@@ -46,23 +85,11 @@ export default defineUserMutation(
   {
     rateLimit: RATE_LIMIT_POLICIES.upload,
     parseBody: async (event) => {
-      rejectOversizedUploadRequest(event)
-      capIncomingMessageBytes(event?.node?.req, MAX_UPLOAD_REQUEST_SIZE)
-      await enforceUploadBodyByteCap(event, MAX_UPLOAD_REQUEST_SIZE)
-      let formData
-      try {
-        formData = await readMultipartFormData(event)
-      } catch (cause) {
-        if (cause?.statusCode === 413) {
-          throw createError({
-            statusCode: 413,
-            message: `Upload request exceeds ${MAX_UPLOAD_REQUEST_SIZE / 1024 / 1024}MB limit`,
-          })
-        }
-        throw cause
-      }
+      const log = useLogger(event).child('Upload')
+      rejectOversizedUploadRequest(event, log)
+      const formData = await readBoundedFormData(event, log)
       if (!formData || formData.length === 0) {
-        throw createError({ statusCode: 400, message: 'No file uploaded' })
+        throw refuse(log, 400, 'No file uploaded', 'no_file')
       }
 
       return formData
@@ -76,19 +103,21 @@ export default defineUserMutation(
     )
 
     if (files.length === 0) {
-      throw createError({ statusCode: 400, message: 'No valid files in upload' })
+      throw refuse(log, 400, 'No valid files in upload', 'no_valid_file', {
+        partCount: formData.length,
+      })
     }
 
-    validateUploadFiles(files)
+    validateFiles(files, log)
 
     // The declared type is a client header. Identify every file from its
     // bytes before anything is written, so one bad part stores nothing.
     const contentTypes = files.map((file) => {
       const sniffed = sniffUploadImageType(file.data)
       if (!sniffed) {
-        throw createError({
-          statusCode: 415,
-          message: 'File content is not a supported image',
+        throw refuse(log, 415, 'File content is not a supported image', 'content_not_image', {
+          fileCount: files.length,
+          declaredType: normalizeUploadContentType(file.type).slice(0, 100),
         })
       }
       return sniffed
@@ -104,12 +133,23 @@ export default defineUserMutation(
       const performanceWarnings = getUploadPerformanceWarnings({ ...file, type: contentType })
       new Uint8Array(payload).set(file.data)
 
-      await uploadToR2(event, key, payload, contentType)
+      try {
+        await uploadToR2(event, key, payload, contentType)
+      } catch (error) {
+        log.error('Upload storage write failed', {
+          key,
+          contentType,
+          sizeBytes: file.data.byteLength,
+          storedCount: results.length,
+          error,
+        })
+        throw error
+      }
 
       if (performanceWarnings.length > 0) {
         log.warn('Uploaded image exceeds public performance budget', {
-          filename: file.filename,
           key,
+          sizeBytes: file.data.byteLength,
           performanceWarnings,
         })
       }
