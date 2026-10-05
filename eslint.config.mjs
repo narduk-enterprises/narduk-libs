@@ -13,6 +13,10 @@ export default [
       'node_modules/**',
       'output/**',
       'packages/*/*/dist/**',
+      // Only package-root test output; src/coverage and fixture folders remain source.
+      'packages/*/*/coverage/**',
+      'packages/*/*/playwright-report/**',
+      'packages/*/*/test-results/**',
       'playwright-report/**',
       'vendor/**',
       // narduk-charts's Playwright e2e harness and Histoire setup file sit
