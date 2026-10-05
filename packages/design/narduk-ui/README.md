@@ -45,6 +45,13 @@ workspace protocol dependency.
    that proof — `narduk-shell` requires the same of `--ne-*` overrides, and
    `operator-portal#238` is what happens when nobody does.
 
+   `--ns-shadow-rgb` defaults to `var(--ns-ink-rgb)`, preserving the existing
+   depth colours. Set it separately in the same root override rule to keep
+   shadows and bezel fills dark when text ink becomes light. Elevations, wells,
+   bezels and missing-tile/range-band inset shadows use this channel; hatches,
+   well ticks and dashed medians continue to use `--ns-ink-rgb`. The app supplies
+   its own surface, line and signal palette.
+
 ## Design rules these components encode
 
 From the design system, in priority order:
