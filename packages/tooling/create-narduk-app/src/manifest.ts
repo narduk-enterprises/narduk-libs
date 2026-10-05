@@ -45,7 +45,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-app-tools': '0.33.1',
   '@narduk-enterprises/eslint-config': '3.0.3',
   '@narduk-enterprises/narduk-ai': '0.4.17',
-  '@narduk-enterprises/narduk-analytics': '1.26.1',
+  '@narduk-enterprises/narduk-analytics': '1.26.2',
   '@narduk-enterprises/narduk-auth': '1.33.9',
   '@narduk-enterprises/narduk-charts': '2.7.4',
   '@narduk-enterprises/narduk-core': '2.23.2',

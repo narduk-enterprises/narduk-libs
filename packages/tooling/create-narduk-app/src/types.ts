@@ -1,7 +1,7 @@
 import type { Writable } from 'node:stream'
 
 export const GENERATOR_NAME = '@narduk-enterprises/create-narduk-app'
-export const GENERATOR_VERSION = '0.21.27'
+export const GENERATOR_VERSION = '0.21.28'
 
 export const SUPPORTED_CAPABILITIES = [
   'auth',
