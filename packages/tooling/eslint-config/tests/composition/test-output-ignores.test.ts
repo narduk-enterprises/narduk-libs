@@ -9,6 +9,7 @@
  */
 
 import { ESLint } from 'eslint'
+import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 interface AppConfigModule {
@@ -47,5 +48,36 @@ describe('shared baseline ignores test output', () => {
   it('still lints source files that merely mention coverage', async () => {
     expect(await linter().isPathIgnored('src/coverage.ts')).toBe(false)
     expect(await linter().isPathIgnored('app/components/coverage/CoverageCard.ts')).toBe(false)
+  })
+})
+
+describe('repository root config ignores package test output (#1267)', () => {
+  const rootConfig = fileURLToPath(new URL('../../../../../eslint.config.mjs', import.meta.url))
+  const packageRoot = fileURLToPath(
+    new URL('../../../../modules/narduk-postgres/', import.meta.url),
+  )
+  const eslint = new ESLint({ cwd: packageRoot, overrideConfigFile: rootConfig })
+
+  it.each([
+    'coverage/block-navigation.js',
+    'coverage/lcov-report/prettify.js',
+    'playwright-report/trace/index.js',
+    'test-results/run/attachment.js',
+  ])('ignores package-root generated %s', async (filePath) => {
+    expect(await eslint.isPathIgnored(filePath)).toBe(true)
+  })
+
+  it.each(['src/index.ts', 'src/coverage/feature.js', 'tests/fixtures/coverage/fixture.js'])(
+    'keeps ordinary source %s lintable',
+    async (filePath) => {
+      expect(await eslint.isPathIgnored(filePath)).toBe(false)
+    },
+  )
+
+  it('still reports violations inside a source folder named coverage', async () => {
+    const results = await eslint.lintText('debugger\n', { filePath: 'src/coverage/feature.js' })
+    expect(results.flatMap((result) => result.messages).map((message) => message.ruleId)).toContain(
+      'no-debugger',
+    )
   })
 })
