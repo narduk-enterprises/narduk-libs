@@ -1,5 +1,16 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.35
+
+### Patch Changes
+
+- 0cbe593: Read Dependabot alert continuation cursors from GitHub's Link header
+  instead of sending the unsupported page parameter. Preserve the repository,
+  open high/critical filters, 100-alert page size and ten-page ceiling. Invalid,
+  repeated, denied or unfinished continuation remains UNKNOWN; the reader never
+  forwards a token to a response-provided origin or repository. Bad-request
+  diagnostics no longer claim that an existing read permission was absent.
+
 ## 0.21.34
 
 ### Patch Changes
