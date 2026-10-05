@@ -363,8 +363,8 @@ describe('the Dependabot read behind security (D-NAC-STATUS-1: unknown, never pa
 })
 
 describe('the GitHub Dependabot reader', () => {
-  const response = (status: number, body: unknown): Response =>
-    new Response(JSON.stringify(body), { status })
+  const response = (status: number, body: unknown, link?: string): Response =>
+    new Response(JSON.stringify(body), { status, headers: link ? { link } : {} })
 
   it('is unknown with the missing permission named when there is no token', async () => {
     const saved = { gh: process.env.GH_TOKEN, github: process.env.GITHUB_TOKEN }
@@ -449,22 +449,193 @@ describe('the GitHub Dependabot reader', () => {
     expect(summariseDependabot(read)).toMatchObject({ fixableCritical: 0, fixableHigh: 1 })
   })
 
-  it('follows pages until a short one', async () => {
-    let pages = 0
+  it('uses cursor links, including a fixable alert after a short first page', async () => {
+    const urls: string[] = []
     const row = {
       security_vulnerability: { first_patched_version: { identifier: '1' }, severity: 'high' },
     }
     const reality = createGithubDependabotReality({
-      fetchImpl: async () => {
-        pages += 1
-        return response(200, pages === 1 ? Array.from({ length: 100 }, () => row) : [row])
+      fetchImpl: async (url) => {
+        urls.push(String(url))
+        if (new URL(String(url)).searchParams.has('page')) {
+          return response(400, {
+            message: 'Pagination using the `page` parameter is not supported.',
+          })
+        }
+        return urls.length === 1
+          ? response(
+              200,
+              [],
+              '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=opaque%2Bcursor>; rel="next"',
+            )
+          : response(200, [row])
       },
       token: 't',
     })
     const read = await reality.read('narduk-enterprises/x')
 
-    expect(pages).toBe(2)
-    expect(read.kind === 'read' && read.alerts.length).toBe(101)
+    expect(urls).toHaveLength(2)
+    expect(new URL(urls[1]!).searchParams.get('after')).toBe('opaque+cursor')
+    for (const url of urls) {
+      expect(new URL(url).searchParams.has('page')).toBe(false)
+      expect(new URL(url).searchParams.get('state')).toBe('open')
+      expect(new URL(url).searchParams.get('severity')).toBe('critical,high')
+      expect(new URL(url).searchParams.get('per_page')).toBe('100')
+    }
+    expect(summariseDependabot(read)).toMatchObject({ read: 'ok', fixableHigh: 1 })
+  })
+
+  it('accepts a full terminal page without inventing a next request', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      fetchImpl: async () => {
+        calls += 1
+        return response(
+          200,
+          Array.from({ length: 100 }, () => ({ security_advisory: { severity: 'high' } })),
+        )
+      },
+      token: 't',
+    })
+    const read = await reality.read('narduk-enterprises/x')
+    expect(calls).toBe(1)
+    expect(read.kind === 'read' && read.alerts.length).toBe(100)
+  })
+
+  it('supports the Link before cursor on the configured API origin', async () => {
+    const urls: string[] = []
+    const reality = createGithubDependabotReality({
+      apiUrl: 'https://github.example/api/v3',
+      token: 't',
+      fetchImpl: async (url) => {
+        urls.push(String(url))
+        return response(
+          200,
+          [],
+          urls.length === 1
+            ? '<https://github.example/api/v3/repos/narduk-enterprises/x/dependabot/alerts?before=cursor>; rel="next"'
+            : undefined,
+        )
+      },
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({ kind: 'read' })
+    expect(new URL(urls[1]!).searchParams.get('before')).toBe('cursor')
+  })
+
+  it.each([
+    '<https://foreign.example/repos/narduk-enterprises/x/dependabot/alerts?after=c>; rel="next"',
+    '<https://api.github.com/repos/other/repo/dependabot/alerts?after=c>; rel="next"',
+    '<https://user:secret@api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=c>; rel="next"',
+    '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?page=2>; rel="next"',
+    '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=c&before=d>; rel="next"',
+    '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=>; rel="next"',
+    '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=c>; rel="next", <https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=d>; rel="next"',
+    '<https://api.github.com/prev>; rel="prev", broken; rel="next"',
+  ])('refuses invalid continuation without forwarding the token: %s', async (link) => {
+    let calls = 0
+    const token = 'ghs_NEVER_RETURN_THIS'
+    const reality = createGithubDependabotReality({
+      token,
+      fetchImpl: async () => {
+        calls += 1
+        return response(200, [], link)
+      },
+    })
+    const read = await reality.read('narduk-enterprises/x')
+    expect(read.kind).toBe('unknown')
+    expect(calls).toBe(1)
+    expect(JSON.stringify(read)).not.toContain(token)
+    expect(JSON.stringify(read)).not.toContain('user:secret')
+  })
+
+  it('is unknown if a later page is denied; partial results cannot pass', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      token: 't',
+      fetchImpl: async () => {
+        calls += 1
+        return calls === 1
+          ? response(
+              200,
+              [],
+              '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=c>; rel="next"',
+            )
+          : response(403, { message: 'Resource not accessible by integration' })
+      },
+    })
+    expect(summariseDependabot(await reality.read('narduk-enterprises/x'))).toMatchObject({
+      read: 'unknown',
+      fixableHigh: null,
+      fixableCritical: null,
+    })
+  })
+
+  it('stops a repeated cursor without returning a partial clean bill', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      token: 't',
+      fetchImpl: async () => {
+        calls += 1
+        return response(
+          200,
+          [],
+          '<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=c>; rel="next"',
+        )
+      },
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({
+      kind: 'unknown',
+      reason: expect.stringContaining('repeated'),
+    })
+    expect(calls).toBe(2)
+  })
+
+  it('retains the ten-page ceiling and is unknown if pagination has not ended', async () => {
+    let calls = 0
+    const reality = createGithubDependabotReality({
+      token: 't',
+      fetchImpl: async () => {
+        calls += 1
+        return response(
+          200,
+          [],
+          `<https://api.github.com/repos/narduk-enterprises/x/dependabot/alerts?after=${calls}>; rel="next"`,
+        )
+      },
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({
+      kind: 'unknown',
+      reason: expect.stringContaining('10 pages'),
+    })
+    expect(calls).toBe(10)
+  })
+
+  it('does not misdiagnose a bad request as a missing permission', async () => {
+    const reality = createGithubDependabotReality({
+      token: 't',
+      fetchImpl: async () =>
+        response(400, { message: 'Pagination using the `page` parameter is not supported.' }),
+    })
+    const read = await reality.read('narduk-enterprises/x')
+    expect(read.kind).toBe('unknown')
+    expect(JSON.stringify(read)).toContain('400')
+    expect(JSON.stringify(read)).not.toContain('vulnerability-alerts')
+    expect(JSON.stringify(read)).not.toContain('checker does not widen')
+  })
+
+  it('refuses an oversized page instead of returning an unbounded clean bill', async () => {
+    const reality = createGithubDependabotReality({
+      token: 't',
+      fetchImpl: async () =>
+        response(
+          200,
+          Array.from({ length: 101 }, () => ({})),
+        ),
+    })
+    expect(await reality.read('narduk-enterprises/x')).toMatchObject({
+      kind: 'unknown',
+      reason: expect.stringContaining('page-size bound'),
+    })
   })
 })
 

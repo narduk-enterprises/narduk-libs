@@ -317,7 +317,7 @@ export interface NacDependabotReading {
 const DEPENDABOT_PAGE_SIZE = 100
 const DEPENDABOT_MAX_PAGES = 10
 const DEPENDABOT_MISSING_PERMISSION =
-  'needs "Dependabot alerts: read" (fine-grained token) or security_events (classic); this run was not given it and the checker does not widen a token'
+  'needs vulnerability-alerts: read (native job token), "Dependabot alerts: read" (fine-grained token) or security_events (classic); the checker does not widen a token'
 
 export interface GithubDependabotOptions {
   /** Defaults to `GH_TOKEN`, then `GITHUB_TOKEN`. Never logged or returned. */
@@ -349,6 +349,41 @@ function parseAlertRows(body: unknown): DependabotAlertRow[] | null {
   })
 }
 
+/** Follow GitHub's cursor, retaining our repository, filters and page bound.
+ * Never send the token to a URL supplied by a response. */
+function nextDependabotUrl(link: string | null, initial: string): string | null | 'invalid' {
+  if (!link) return null
+  const pattern = /<([^>]+)>\s*;\s*rel="([^"]+)"/gu
+  const links = [...link.matchAll(pattern)]
+  if (links.length === 0 || link.replaceAll(pattern, '').replaceAll(/[\s,]+/gu, '') !== '')
+    return 'invalid'
+  const next = links.filter((match) => match[2]?.split(/\s+/u).includes('next'))
+  if (next.length === 0) return null
+  if (next.length !== 1) return 'invalid'
+  try {
+    const target = new URL(next[0]![1]!, initial)
+    const url = new URL(initial)
+    if (
+      target.origin !== url.origin ||
+      target.pathname !== url.pathname ||
+      target.username ||
+      target.password ||
+      target.hash ||
+      target.searchParams.has('page')
+    )
+      return 'invalid'
+    const cursors = ['after', 'before'].filter((key) => target.searchParams.has(key))
+    if (cursors.length !== 1) return 'invalid'
+    const key = cursors[0]!
+    const values = target.searchParams.getAll(key)
+    if (values.length !== 1 || !values[0]) return 'invalid'
+    url.searchParams.set(key, values[0])
+    return url.toString()
+  } catch {
+    return 'invalid'
+  }
+}
+
 /**
  * The real reader: GitHub's REST Dependabot alerts list for the app repository.
  * Every non-200 answer becomes `unknown` with the reason, because the token an
@@ -376,8 +411,14 @@ export function createGithubDependabotReality(
       const doFetch = options.fetchImpl ?? fetch
       const base = options.apiUrl ?? 'https://api.github.com'
       const alerts: DependabotAlertRow[] = []
+      const initial = `${base}/repos/${repo}/dependabot/alerts?state=open&severity=critical,high&per_page=${DEPENDABOT_PAGE_SIZE}`
+      let url = initial
+      const visited = new Set<string>()
       for (let page = 1; page <= DEPENDABOT_MAX_PAGES; page += 1) {
-        const url = `${base}/repos/${repo}/dependabot/alerts?state=open&severity=critical,high&per_page=${DEPENDABOT_PAGE_SIZE}&page=${page}`
+        if (visited.has(url)) {
+          return { kind: 'unknown', reason: 'GitHub repeated a Dependabot pagination cursor' }
+        }
+        visited.add(url)
         let response: Response
         try {
           response = await doFetch(url, {
@@ -404,7 +445,7 @@ export function createGithubDependabotReality(
           }
           return {
             kind: 'unknown',
-            reason: `GitHub answered ${response.status}${message ? ` (${clip(message)})` : ''} to the Dependabot alerts read, which ${DEPENDABOT_MISSING_PERMISSION}`,
+            reason: `GitHub answered ${response.status}${message ? ` (${clip(message)})` : ''} to the Dependabot alerts read${response.status === 401 || response.status === 403 ? `, which ${DEPENDABOT_MISSING_PERMISSION}` : ''}`,
           }
         }
         let rows: DependabotAlertRow[] | null
@@ -419,12 +460,23 @@ export function createGithubDependabotReality(
             reason: 'GitHub answered the Dependabot alerts read with a body that is not a list',
           }
         }
+        if (rows.length > DEPENDABOT_PAGE_SIZE) {
+          return { kind: 'unknown', reason: 'GitHub exceeded the Dependabot alert page-size bound' }
+        }
         alerts.push(...rows)
-        if (rows.length < DEPENDABOT_PAGE_SIZE) return { kind: 'read', alerts }
+        const next = nextDependabotUrl(response.headers.get('link'), initial)
+        if (next === 'invalid') {
+          return {
+            kind: 'unknown',
+            reason: 'GitHub returned an invalid Dependabot pagination link',
+          }
+        }
+        if (next === null) return { kind: 'read', alerts }
+        url = next
       }
       return {
         kind: 'unknown',
-        reason: `more than ${DEPENDABOT_PAGE_SIZE * DEPENDABOT_MAX_PAGES} open critical or high alerts; the read stopped paging`,
+        reason: `the Dependabot read did not finish within ${DEPENDABOT_MAX_PAGES} pages (${DEPENDABOT_PAGE_SIZE * DEPENDABOT_MAX_PAGES} alerts); the read stopped paging`,
       }
     },
   }
