@@ -7,6 +7,8 @@ const packageRoot = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   root: packageRoot,
+  // `useSeo` declares the card only on the server, as Nuxt compiles it.
+  define: { 'import.meta.server': 'true' },
   resolve: {
     alias: {
       '#imports': fileURLToPath(new URL('./tests/fixtures/nuxt-imports.ts', import.meta.url)),

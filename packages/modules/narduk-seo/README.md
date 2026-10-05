@@ -104,6 +104,22 @@ from `narduk-app-tools`; the
 [shared guide](../../tooling/narduk-app-tools/docs/social-previews.md) covers
 route inventory, rendering, crawler delivery, and existing-app adoption.
 
+An app with its own palette sets the runtime card colours once instead of on
+every `useSeo` call:
+
+```ts
+nardukSeo: {
+  ogImage: { primaryColor: '#062b45', secondaryColor: '#1f7fc4' },
+}
+```
+
+The precedence is `useSeo({ ogImage: { primaryColor } })`, then
+`nardukSeo.ogImage`, then the package default (`#10b981`, `#38bdf8`). A value
+that is not a `#rgb` or `#rrggbb` hex colour fails the build. The same values
+can be overridden at runtime with
+`NUXT_PUBLIC_NARDUK_SEO_OG_IMAGE_COLORS_PRIMARY_COLOR` and
+`NUXT_PUBLIC_NARDUK_SEO_OG_IMAGE_COLORS_SECONDARY_COLOR`.
+
 Typical app setup:
 
 ```ts

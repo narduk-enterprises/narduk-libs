@@ -80,6 +80,7 @@ export function useSeo(options: SeoOptions) {
     hasOgImageModule && ogImage !== false && (!hasNoindexRobots(robots) || Boolean(ogImage))
   const dynamicOgImage = shouldDefineDynamicOgImage
     ? resolveSeoOgImageDefinition({
+        appColors: runtimeConfig.public.nardukSeoOgImageColors,
         title: resolveTitle(),
         description: resolveDescription(),
         type,
