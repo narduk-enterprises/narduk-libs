@@ -310,6 +310,15 @@ unknown addresses. Stored links contain only a SHA-256 token digest and expire
 after one use. Repeated credential attempts use persistent exponential lockout
 in addition to the package's outer IP rate limit.
 
+The throttle writes through narduk-core's request logger (scope `AppAuth`): an
+`info` `Local auth attempt failed` per failure, a `warn`
+`Local auth lockout started` when a lock begins (`failures`, `lockSeconds`), and
+a `warn` `Local auth attempt refused while locked out` with the
+`retryAfterSeconds` it sent. Each names the attempt `kind` (`login`, `request`
+or `complete`) and never the email address, link token, client IP or attempt
+key. Set `LOG_LEVEL=info` to see the per-failure records; the production default
+(`warn`) keeps the lockouts.
+
 ### Branded password emails
 
 The setup and reset emails are plain by default. An app replaces them with a
