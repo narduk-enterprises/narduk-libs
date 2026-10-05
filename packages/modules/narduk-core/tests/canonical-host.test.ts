@@ -340,11 +340,46 @@ describe('canonical-host middleware', () => {
       expect(result.status).toBe(200)
     })
 
-    it('serves the canonical host and an unnamed host where they were asked', async () => {
-      for (const host of ['example.com', 'staging.example.com']) {
-        const result = await probe(PAGE_PATH, onHost(host))
-        expect(result.status, host).toBe(200)
-      }
+    it('serves an unnamed host where it was asked', async () => {
+      const result = await probe(PAGE_PATH, onHost('staging.example.com'))
+      expect(result.status).toBe(200)
+    })
+
+    describe('plain http on the canonical host (narduk-libs#1483)', () => {
+      // The probe listener is plain http, so a request is https only when the
+      // edge says so, as Cloudflare does with x-forwarded-proto.
+      const canonicalOver = (proto: 'http' | 'https', headers = DOCUMENT_NAVIGATION) => ({
+        headers: { ...headers, host: 'example.com', 'x-forwarded-proto': proto },
+      })
+
+      it('redirects http to https, keeping the path and query', async () => {
+        const result = await probe('/a?b=1', canonicalOver('http'))
+
+        expect(result.status).toBe(308)
+        expect(result.location).toBe('https://example.com/a?b=1')
+      })
+
+      it('serves the canonical host over https where it was asked', async () => {
+        const result = await probe('/a?b=1', canonicalOver('https'))
+
+        expect(result.status).toBe(200)
+        expect(result.location).toBeNull()
+      })
+
+      it('does not redirect http on a workers.dev host', async () => {
+        const result = await probe(PAGE_PATH, {
+          headers: { ...DOCUMENT_NAVIGATION, host: PREVIEW_HOST, 'x-forwarded-proto': 'http' },
+        })
+
+        expect(result.status).toBe(200)
+      })
+
+      it('does not redirect a fetch() with Sec-Fetch-Dest: empty', async () => {
+        const result = await probe('/a?b=1', canonicalOver('http', SAME_ORIGIN_FETCH))
+
+        expect(result.status).toBe(200)
+        expect(result.location).toBeNull()
+      })
     })
 
     it('reads the list from the env, which beats runtimeConfig', async () => {
