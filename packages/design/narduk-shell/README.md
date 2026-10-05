@@ -3477,6 +3477,10 @@ icon, a title, a secondary line, an optional status badge and optional actions
 such as "Show on map". It knows nothing about any one app: the rivers, the
 gauges and the routes are the app's groups.
 
+Below 520px, result names wrap to at most two lines so similar long names remain
+distinguishable beside a status badge and action. Descriptions stay on one line;
+wider layouts keep the compact single-line name.
+
 Arrow keys (and Ctrl+N / Ctrl+P, PageUp / PageDown) move, Enter goes,
 Cmd/Ctrl+Enter runs the row's first action, Escape closes. Picks are kept as
 recent items in `localStorage` and listed first the next time it opens.
