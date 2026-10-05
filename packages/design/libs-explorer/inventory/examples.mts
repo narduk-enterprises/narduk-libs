@@ -154,6 +154,16 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'Skip link',
     'Skip to content that moves keyboard focus to the target, not only the scroll position.',
   ),
+  shell(
+    'NeCommandPalette',
+    'Command palette',
+    'The Cmd/Ctrl+K search dialog: grouped results, async providers, recent items and a phone sheet.',
+  ),
+  shell(
+    'NeCommandPaletteTrigger',
+    'Command palette trigger',
+    'The header button that looks like a search field and opens the palette.',
+  ),
   shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
   shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),
   shell('NeCta', 'Call to action', 'A panel with a title, a description and buttons.'),

@@ -3456,6 +3456,173 @@ still exports it, for code outside a Nuxt app build such as a unit test.
 import type { NeSkipLinkProps } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeCommandPalette
+
+The shared "find anything" palette, and `NeCommandPaletteTrigger`, the header
+button that opens it. One dialog opened from a button, from Cmd/Ctrl+K and from
+"/" (outside a text field), that searches the **groups the app hands it**: a
+fixed list (pages, states), a function of the query, or an async provider (a
+search endpoint). Results are listed under group headings, each row with an
+icon, a title, a secondary line, an optional status badge and optional actions
+such as "Show on map". It knows nothing about any one app: the rivers, the
+gauges and the routes are the app's groups.
+
+Arrow keys (and Ctrl+N / Ctrl+P, PageUp / PageDown) move, Enter goes,
+Cmd/Ctrl+Enter runs the row's first action, Escape closes. Picks are kept as
+recent items in `localStorage` and listed first the next time it opens.
+
+#### It is a native `<dialog>`
+
+`showModal()` gives the focus trap, the inert page behind, Escape and the top
+layer (no z-index) without a hand-built overlay, and returns focus to the opener
+on close. The dialog is named by `title`. The input is an ARIA combobox that
+owns a listbox of `group`s of `option`s with `aria-activedescendant` (focus
+never leaves the input), and a polite live region says how many results arrived.
+The shortcut hints are `aria-hidden`; the real shortcut is `aria-keyshortcuts`
+on the trigger.
+
+#### Keep it out of the first load
+
+`NeCommandPaletteTrigger` and the two composables are small and belong in the
+first bundle. The palette is the heavy part: mount it lazily, behind the shared
+flag.
+
+```vue
+<!-- the shell, e.g. app/components/AppShell.vue -->
+<script setup lang="ts">
+const palette = useCommandPaletteShortcuts() // Cmd/Ctrl+K and "/"
+</script>
+
+<template>
+  <NeCommandPaletteTrigger
+    placeholder="Find a river or state"
+    fallback-action="/search"
+  />
+  <!-- `armed` is set by the first open, and by pointer-enter, focus or touch on
+       the trigger, so the chunk is usually in before the click. -->
+  <LazyNeCommandPalette
+    v-if="palette.armed.value"
+    :groups="groups"
+    title="Search"
+  />
+</template>
+```
+
+`open()` sets `armed` and `open`; the palette opens itself the moment it mounts,
+so the first keypress is never lost. `preload()` sets `armed` only.
+
+#### Groups and providers
+
+```ts
+const groups: NeCommandGroup[] = [
+  {
+    id: 'pages',
+    label: 'Pages',
+    idleLimit: 4, // shown before anything is typed
+    items: [{ id: 'map', label: 'Map', to: '/map', icon: 'i-lucide-map' }],
+  },
+  {
+    id: 'rivers',
+    label: 'Rivers',
+    minQuery: 2,
+    debounceMs: 150,
+    async search(query, { signal }) {
+      const found = await $fetch('/api/search', { query: { q: query }, signal })
+      return found.map((river) => ({
+        id: river.id,
+        label: river.name,
+        to: `/rivers/${river.id}`,
+      }))
+    },
+  },
+]
+```
+
+- **Debounce and cancellation.** A provider is called after `debounceMs` of
+  quiet and at least `minQuery` characters. Typing again aborts the call before
+  it (its `signal`), and an answer for a query that is no longer current is
+  dropped even when the provider ignored the signal. The last answer stays on
+  screen while the next is out. Closing the palette aborts everything.
+- **A failure is not an empty answer.** A provider that rejects (other than an
+  abort) shows its heading with "could not be loaded just now", never an empty
+  group, so a gap is not read as "nothing matched".
+- **One request, several groups.** `createSharedSearch(fetcher)` (auto-imported)
+  lets sibling groups share an in-flight request; it aborts only when every
+  caller has given up.
+- **Ranking.** Static groups are ranked: a match at the start of the title beats
+  a word start, which beats the middle; the title beats a keyword (an exact
+  keyword such as a state code beats a longer title), which beats the
+  description; every word of the query must match. Ties keep the group's own
+  order. Provider answers keep the provider's order (`rank: 'match'` re-ranks).
+  `limit` (default 5) cuts each group after ranking.
+
+#### Phone
+
+Under 640px (or a short landscape screen) the dialog is a full-screen sheet:
+16px input (iOS does not zoom), a Cancel button, 48px rows, 44px icon-only
+actions, no keyboard hints, and a height that follows the visual viewport so the
+on-screen keyboard never covers the last row. The trigger hides its shortcut
+hint on touch screens.
+
+#### NeCommandPalette props
+
+| Prop               | Type                                    | Default                           | What it does                                                          |
+| ------------------ | --------------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
+| `groups`           | `NeCommandGroup[]`                      | required                          | The sections searched.                                                |
+| `title`            | `string`                                | `'Search'`                        | The dialog's accessible name.                                         |
+| `placeholder`      | `string`                                | `'Search'`                        | The input's placeholder.                                              |
+| `inputLabel`       | `string`                                | `title`                           | The input's accessible name.                                          |
+| `recentsKey`       | `string`                                | `'ne-command-palette:recents'`    | `localStorage` key for recent items. Give each app its own.           |
+| `maxRecents`       | `number`                                | `6`                               | Recent items kept. `0` turns them off.                                |
+| `recentLabel`      | `string`                                | `'Recent'`                        | The recent section's heading.                                         |
+| `emptyTitle`       | `string`                                | `'No results'`                    | Shown, with the query, when nothing matches.                          |
+| `emptyDescription` | `string`                                | `'Check the spelling or try...'`  | The line under it. Replace both with the `empty` slot.                |
+| `idleHint`         | `string`                                | `'Start typing to search.'`       | Shown before a query when no group has idle rows.                     |
+| `navigate`         | `(to: string) => void \| Promise<void>` | `router.push` / `location.assign` | Goes to a row's `to`. Absolute URLs use `location.assign` by default. |
+
+#### NeCommandPaletteTrigger props
+
+| Prop             | Type      | Default       | What it does                                                                                 |
+| ---------------- | --------- | ------------- | -------------------------------------------------------------------------------------------- |
+| `placeholder`    | `string`  | `'Search'`    | The text in the button.                                                                      |
+| `label`          | `string`  | `placeholder` | The accessible name.                                                                         |
+| `compact`        | `boolean` | `false`       | Icon only (a phone header).                                                                  |
+| `shortcuts`      | `boolean` | `true`        | Bind Cmd/Ctrl+K and "/" from this component. Turn off when a layout binds them itself.       |
+| `fallbackAction` | `string`  | none          | A search page. The button sits in a GET form that submits there if pressed before hydration. |
+
+Class and attributes land on the button.
+
+#### Slots and events
+
+`NeCommandPalette` has one slot, `empty` (`{ query }`), replacing the empty
+state. Events: `open`, `close`, and `select` with `{ item, groupId, action? }`
+(fired before navigation). `NeCommandPaletteTrigger` has no slots or events.
+
+#### Composables (auto-imported)
+
+`useCommandPalette()` returns `{ armed, isOpen, open, close, toggle, preload }`
+over per-request `useState`. `useCommandPaletteShortcuts({ slash? })` binds one
+window `keydown` listener however many components ask, and returns the same
+controls.
+
+#### Types
+
+```ts
+import type {
+  NeCommandAction,
+  NeCommandBadge,
+  NeCommandGroup,
+  NeCommandItem,
+  NeCommandPaletteProps,
+  NeCommandPaletteTriggerProps,
+  NeCommandSelection,
+} from '@narduk-enterprises/narduk-shell'
+```
+
+The matching and grouping engine (`matchItems`, `scoreItem`, `buildSections`,
+`createSearchRunner`) is exported from the root barrel too, so an app can unit
+test its own groups without mounting anything.
+
 ### NeHero
 
 The top of a landing page: a headline, the page's one `<h1>`, a description,

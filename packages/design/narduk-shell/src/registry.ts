@@ -95,4 +95,9 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // narduk-libs#1400: one sortable, searchable, filterable table over rows the
   // page holds, merging operator-portal's KitTable and CollectionTable.
   { name: 'NeCollectionTable', filePath: './runtime/components/NeCollectionTable.vue' },
+  // The shared Cmd/Ctrl+K search palette and the header button that opens it.
+  // Register both: an app mounts the palette lazily (`LazyNeCommandPalette`)
+  // and keeps only the small trigger in its first bundle.
+  { name: 'NeCommandPalette', filePath: './runtime/components/NeCommandPalette.vue' },
+  { name: 'NeCommandPaletteTrigger', filePath: './runtime/components/NeCommandPaletteTrigger.vue' },
 ]

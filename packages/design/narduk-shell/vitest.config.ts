@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
@@ -14,10 +15,18 @@ import { defineConfig } from 'vitest/config'
  */
 const nuxtUiLink = createRequire(import.meta.url).resolve('@nuxt/ui/components/Link.vue')
 const vueRouterLink = join(dirname(nuxtUiLink), '../vue/overrides/vue-router/Link.vue')
+// Likewise `UIcon`: the Nuxt file renders `@nuxt/icon`, which needs Nuxt's
+// `#imports`, and the Vue-mode file fetches glyphs from Iconify's API.
+// `NeCommandPalette` imports it directly, so tests get a stub that renders the
+// icon's name and touches no network.
+const iconStub = join(dirname(fileURLToPath(import.meta.url)), 'test/support/IconStub.vue')
 
 export default defineConfig({
   resolve: {
-    alias: [{ find: /^@nuxt\/ui\/components\/Link\.vue$/, replacement: vueRouterLink }],
+    alias: [
+      { find: /^@nuxt\/ui\/components\/Link\.vue$/, replacement: vueRouterLink },
+      { find: /^@nuxt\/ui\/components\/Icon\.vue$/, replacement: iconStub },
+    ],
   },
   define: {
     // Nuxt replaces this at build time. Tests are a plain Vite graph, so the

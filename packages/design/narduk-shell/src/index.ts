@@ -200,6 +200,40 @@ export type {
 } from './runtime/components/ne-prose-types'
 
 /**
+ * The command palette (`NeCommandPalette`, `NeCommandPaletteTrigger`): its
+ * shapes, and the engine as pure functions. Scoring, grouping, recents and the
+ * async runner have no Vue or DOM import, so an app can unit test its groups
+ * and a server route can rank with the same rules. `createSharedSearch` lets
+ * several groups share one request. `useCommandPalette` and
+ * `useCommandPaletteShortcuts` reach app code through `addImports`, like
+ * `useCollection`.
+ */
+export {
+  buildSections,
+  createSearchRunner,
+  createSharedSearch,
+  highlightParts,
+  matchItems,
+  normalizeQuery,
+  scoreItem,
+} from './runtime/utils/command-palette'
+export type {
+  NeCommandAction,
+  NeCommandBadge,
+  NeCommandGroup,
+  NeCommandGroupState,
+  NeCommandItem,
+  NeCommandPaletteProps,
+  NeCommandPaletteTriggerProps,
+  NeCommandRecent,
+  NeCommandRow,
+  NeCommandSearchContext,
+  NeCommandSection,
+  NeCommandSelection,
+  NeCommandTone,
+} from './runtime/components/ne-command-palette-types'
+
+/**
  * The admin page blocks (components backlog item 20, narduk-libs#267):
  * `NeAdminListPage`, `NeAdminDetailPage`, `NeAdminEditPage`. Types only; a
  * page wrapping one of them can state its props without importing the SFC.
