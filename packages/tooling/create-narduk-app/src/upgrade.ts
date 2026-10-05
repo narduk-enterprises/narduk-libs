@@ -969,6 +969,35 @@ function resolveKeys(current: string | null, desired: string): Resolution {
   }
 }
 
+/** A preserved wrapper is still unresolved when its named callee does not exist. */
+function withMigrateWrapperCheck(
+  resolution: Resolution,
+  current: string | null,
+  facts: CheckoutFacts,
+): Resolution {
+  if (resolution.status === 'absent' || resolution.status === 'unmanaged') return resolution
+  const scripts =
+    (parseJsonOrNull(resolution.next ?? current)?.scripts as Record<string, string>) ?? {}
+  const missing = ['db:migrate:local', 'db:migrate:remote'].filter((key) => {
+    const wrapper = scripts[key]
+    return (
+      typeof wrapper === 'string' &&
+      wrapper.trim() === 'pnpm --filter web run ' + key &&
+      (facts.layout !== 'apps-web' || !facts.webScripts[key]?.trim())
+    )
+  })
+  if (!missing.length) return resolution
+  return {
+    ...resolution,
+    detail:
+      resolution.detail +
+      ' Root wrapper(s) ' +
+      missing.join(', ') +
+      ' target missing script(s) in apps/web/package.json; wrappers left untouched. Choose an explicit valid migration callee.',
+    status: 'unresolved',
+  }
+}
+
 interface ResolveContext {
   registry: PackageRegistry
   visibility: AppVisibility
@@ -1102,12 +1131,16 @@ export async function upgradeNardukApp(options: UpgradeNardukAppOptions): Promis
   if (packageTarget) {
     resolved.set(
       'package.json',
-      resolveManagedTarget(packageTarget, packageNow, generated.get('package.json'), {
-        gate: emptyGate(facts),
-        manifests,
-        registry,
-        visibility: profile.visibility,
-      }),
+      withMigrateWrapperCheck(
+        resolveManagedTarget(packageTarget, packageNow, generated.get('package.json'), {
+          gate: emptyGate(facts),
+          manifests,
+          registry,
+          visibility: profile.visibility,
+        }),
+        packageNow,
+        facts,
+      ),
     )
   }
   // The Nuxt config next: the CI gate only warns about item 10 when the

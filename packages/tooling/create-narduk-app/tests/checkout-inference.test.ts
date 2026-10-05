@@ -32,6 +32,66 @@ function packageJson(scripts: Record<string, string>): string {
 }
 
 describe('upgrade checkout inference', () => {
+  it.each(['db:migrate:local', 'db:migrate:remote'])(
+    'reports a dangling %s wrapper without guessing another migration command',
+    async (key) => {
+      const targetDir = await checkout()
+      await write(targetDir, 'apps/web/nuxt.config.ts', 'export default defineNuxtConfig({})\n')
+      const webManifest =
+        JSON.stringify({ name: 'web', scripts: { 'db:migrate': 'app-owned-migration' } }, null, 2) +
+        '\n'
+      await write(targetDir, 'apps/web/package.json', webManifest)
+      const wrapper = 'pnpm --filter web run ' + key
+      await write(targetDir, 'package.json', packageJson({ [key]: wrapper }))
+      for (const writeChanges of [false, true, false]) {
+        const report = await upgradeNardukApp({
+          only: ['package.json'],
+          targetDir,
+          write: writeChanges,
+        })
+        const change = report.changes.find((entry) => entry.path === 'package.json')
+        expect(change?.status).toBe('unresolved')
+        expect(change?.detail).toContain(key)
+        expect(change?.detail).toContain('apps/web/package.json')
+        const scripts = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')).scripts
+        expect(scripts[key]).toBe(wrapper)
+        expect(await readFile(join(targetDir, 'apps/web/package.json'), 'utf8')).toBe(webManifest)
+      }
+    },
+  )
+
+  it('does not add a migration wrapper to a missing callee, and accepts an existing callee', async () => {
+    const targetDir = await checkout()
+    await write(targetDir, 'apps/web/nuxt.config.ts', 'export default defineNuxtConfig({})\n')
+    await write(
+      targetDir,
+      'apps/web/wrangler.json',
+      JSON.stringify({
+        name: 'gonogo',
+        d1_databases: [{ binding: 'DB', database_name: 'gonogo-db' }],
+      }),
+    )
+    await write(
+      targetDir,
+      'apps/web/package.json',
+      JSON.stringify({
+        name: 'web',
+        scripts: { 'db:migrate': 'app-owned-migration', 'db:migrate:remote': 'app-owned-remote' },
+      }),
+    )
+    await write(targetDir, 'package.json', packageJson({ build: 'pnpm --filter web run build' }))
+    await upgradeNardukApp({ capabilities: 'auth', only: ['package.json'], targetDir, write: true })
+    const scripts = JSON.parse(await readFile(join(targetDir, 'package.json'), 'utf8')).scripts
+    expect(scripts['db:migrate:local']).toBeUndefined()
+    expect(scripts['db:migrate:remote']).toBe('pnpm --filter web run db:migrate:remote')
+    const second = await upgradeNardukApp({
+      capabilities: 'auth',
+      only: ['package.json'],
+      targetDir,
+    })
+    expect(second.changes[0]?.status).toBe('clean')
+  })
+
   it('reads a root app dev port and does not call a web package', async () => {
     const targetDir = await checkout()
     await write(
