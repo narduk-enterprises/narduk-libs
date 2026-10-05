@@ -370,6 +370,20 @@ publishes (narduk-libs#589).
 
 ### Release publication proof
 
+From the repository root, wait for a release merge's exact-SHA proof:
+
+```sh
+pnpm run release:wait <full-40-character-release-merge-sha>
+pnpm run release:wait <full-40-character-release-merge-sha> --timeout-minutes 30
+```
+
+The command waits for successful push CI on that SHA, a Release run whose
+verified SHA matches, publication tags, and the exact versions on `npm.nard.uk`.
+It polls every 15 seconds with a 90-minute default deadline. It may approve a
+held CI run for the current release-PR head; it does not merge a PR or publish
+packages. Use the full release merge SHA, and pass arguments directly after the
+alias without an extra `--`.
+
 Every push to `main` that changes a package manifest starts the **Release
 publication proof** workflow. It lists the publishable versions that exact
 commit bumped (a commit that bumps none finishes in seconds), then:

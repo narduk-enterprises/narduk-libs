@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
 import { readFileSync } from 'node:fs'
@@ -510,4 +511,20 @@ test('confirmed empty targets after a readable comparison are a no-op', async ()
   })
   assert.deepEqual(result.versions, [])
   assert.equal(result.releaseRunId, 2)
+})
+
+test('the root release:wait alias forwards SHA and timeout before network access', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.scripts['release:wait'], 'node scripts/release-wait.mjs')
+  const result = spawnSync(
+    'pnpm',
+    ['run', 'release:wait', 'a'.repeat(40), '--timeout-minutes', '0'],
+    {
+      cwd: new URL('../', import.meta.url),
+      encoding: 'utf8',
+      timeout: 15_000,
+    },
+  )
+  assert.equal(result.status, 1, result.error?.message || result.stdout)
+  assert.match(result.stderr, /--timeout-minutes must be a positive number/u)
 })
