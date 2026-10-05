@@ -1954,11 +1954,20 @@ two lines) the table takes its phone layout, in CSS, so the server's markup is
 already the phone's:
 
 - `phoneLayout: 'cards'` (default) keeps the same cells in the same DOM order
-  and drops only the **visual** header (it stays for a screen reader): the
-  primary cell takes a line, the other cells share a wrapped line, a `freeText`
-  column takes its own line clamped to two. After mount the hidden header's sort
-  buttons become plain labels (a button clipped to one pixel would still take
-  focus) and a sort select appears in the toolbar instead.
+  and drops only the **visual** header (it stays for a screen reader). The
+  primary cell heads the card; every other cell is one line of **label and
+  value**: the column's `label` (and `unit`), `aria-hidden` because the header
+  already names the cell for a screen reader, then the value
+  (`data-ne-cell-label`, `data-ne-cell-value`). The value track is
+  `minmax(0, 1fr)`, so no cell is wider than its card, and a `freeText` value is
+  clamped to two lines. One divider under each card separates the rows; the
+  cells draw none. A cell with nothing to say is **dropped from the card**: one
+  whose value renders nothing, or whose only element carries `data-ne-empty`
+  (the default em dash does; mark an app's own "no value" mark the same way to
+  drop it). A missing word (`missingText`) is a statement and stays. After mount
+  the hidden header's sort buttons become plain labels (a button clipped to one
+  pixel would still take focus) and a sort select appears in the toolbar
+  instead.
 - `phoneLayout: 'columns'` keeps the table, and fixed widths become hints. A
   full-width cell (a group heading, the empty row, the footer) spans the kept
   columns from the server render on, padded above the line by one hidden filler

@@ -30,7 +30,14 @@
  * Below `stackBelow` (`md` by default) the layout is CSS, so the server and the
  * first client render agree: `cards` keeps the same cells in the same DOM
  * order and drops only the visual header (the header stays for a screen
- * reader), `columns` keeps the table and drops `phone: false` columns, their
+ * reader). The primary cell heads the card, and every other cell is one line
+ * of label and value: the column's label, hidden from a screen reader that
+ * already has the header, then the value, in a grid whose value track is
+ * `minmax(0, 1fr)`, so no cell is wider than the card. One divider under the
+ * card separates rows; the cells draw none. A cell with nothing to say is
+ * dropped from the card: one whose value renders nothing, or whose only
+ * element is marked `data-ne-empty` (the default dash is). `columns` keeps
+ * the table and drops `phone: false` columns, their
  * `<col>` with their cells: a cell that is gone while its `<col>` stays slides
  * the next cell into that column's width. The layout stays `table-fixed`, so a
  * truncating cell (`white-space: nowrap` with an ellipsis) shrinks to the
@@ -53,7 +60,7 @@
 import UButton from '@nuxt/ui/components/Button.vue'
 import ULink from '@nuxt/ui/components/Link.vue'
 import USelect from '@nuxt/ui/components/Select.vue'
-import { computed, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
+import { computed, type FunctionalComponent, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 
 import { formatNumber } from '../../format'
 import { useClientCollection } from '../composables/use-client-collection'
@@ -130,56 +137,67 @@ type StackClass =
   | 'free'
   | 'head'
   | 'hide'
+  | 'label'
   | 'phoneOnly'
   | 'primary'
   | 'tap'
   | 'thTap'
+  | 'value'
 
 const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
   sm: {
     block: 'max-sm:block',
-    card: 'max-sm:flex max-sm:flex-wrap max-sm:items-baseline max-sm:gap-x-3 max-sm:gap-y-1 max-sm:px-3 max-sm:py-2.5 max-sm:border-b max-sm:border-default',
-    cell: 'max-sm:p-0 max-sm:border-0 max-sm:text-start',
+    card: 'max-sm:flex max-sm:flex-col max-sm:gap-y-1 max-sm:min-w-0 max-sm:px-3 max-sm:py-2.5 max-sm:border-b max-sm:border-default',
+    cell: 'max-sm:grid max-sm:grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] max-sm:items-baseline max-sm:gap-x-3 max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start max-sm:[&:has(>[data-ne-cell-value]:empty)]:hidden max-sm:[&:has(>[data-ne-cell-value]>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-sm:[&_input]:min-h-11 max-sm:[&_button]:min-h-11 max-sm:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'sm:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-sm:basis-full max-sm:line-clamp-2',
+    free: 'contents max-sm:min-w-0 max-sm:line-clamp-2',
     head: 'max-sm:sr-only',
     hide: 'max-sm:hidden',
+    label: 'hidden max-sm:block max-sm:text-xs max-sm:font-medium max-sm:text-muted',
     phoneOnly: 'hidden max-sm:inline-flex',
-    primary: 'max-sm:basis-full',
+    primary:
+      'max-sm:block max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start',
     tap: 'max-sm:min-h-11',
     thTap: 'max-sm:[&_button]:min-h-11',
+    value: 'contents max-sm:block max-sm:min-w-0',
   },
   md: {
     block: 'max-md:block',
-    card: 'max-md:flex max-md:flex-wrap max-md:items-baseline max-md:gap-x-3 max-md:gap-y-1 max-md:px-3 max-md:py-2.5 max-md:border-b max-md:border-default',
-    cell: 'max-md:p-0 max-md:border-0 max-md:text-start',
+    card: 'max-md:flex max-md:flex-col max-md:gap-y-1 max-md:min-w-0 max-md:px-3 max-md:py-2.5 max-md:border-b max-md:border-default',
+    cell: 'max-md:grid max-md:grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] max-md:items-baseline max-md:gap-x-3 max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start max-md:[&:has(>[data-ne-cell-value]:empty)]:hidden max-md:[&:has(>[data-ne-cell-value]>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-md:[&_input]:min-h-11 max-md:[&_button]:min-h-11 max-md:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'md:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-md:basis-full max-md:line-clamp-2',
+    free: 'contents max-md:min-w-0 max-md:line-clamp-2',
     head: 'max-md:sr-only',
     hide: 'max-md:hidden',
+    label: 'hidden max-md:block max-md:text-xs max-md:font-medium max-md:text-muted',
     phoneOnly: 'hidden max-md:inline-flex',
-    primary: 'max-md:basis-full',
+    primary:
+      'max-md:block max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start',
     tap: 'max-md:min-h-11',
     thTap: 'max-md:[&_button]:min-h-11',
+    value: 'contents max-md:block max-md:min-w-0',
   },
   lg: {
     block: 'max-lg:block',
-    card: 'max-lg:flex max-lg:flex-wrap max-lg:items-baseline max-lg:gap-x-3 max-lg:gap-y-1 max-lg:px-3 max-lg:py-2.5 max-lg:border-b max-lg:border-default',
-    cell: 'max-lg:p-0 max-lg:border-0 max-lg:text-start',
+    card: 'max-lg:flex max-lg:flex-col max-lg:gap-y-1 max-lg:min-w-0 max-lg:px-3 max-lg:py-2.5 max-lg:border-b max-lg:border-default',
+    cell: 'max-lg:grid max-lg:grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] max-lg:items-baseline max-lg:gap-x-3 max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start max-lg:[&:has(>[data-ne-cell-value]:empty)]:hidden max-lg:[&:has(>[data-ne-cell-value]>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-lg:[&_input]:min-h-11 max-lg:[&_button]:min-h-11 max-lg:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'lg:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-lg:basis-full max-lg:line-clamp-2',
+    free: 'contents max-lg:min-w-0 max-lg:line-clamp-2',
     head: 'max-lg:sr-only',
     hide: 'max-lg:hidden',
+    label: 'hidden max-lg:block max-lg:text-xs max-lg:font-medium max-lg:text-muted',
     phoneOnly: 'hidden max-lg:inline-flex',
-    primary: 'max-lg:basis-full',
+    primary:
+      'max-lg:block max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start',
     tap: 'max-lg:min-h-11',
     thTap: 'max-lg:[&_button]:min-h-11',
+    value: 'contents max-lg:block max-lg:min-w-0',
   },
 }
 
@@ -369,6 +387,9 @@ function flipSort() {
 
 /* ---- cells ----------------------------------------------------------- */
 
+/** Renders its slot and nothing else: the value wrapper for a cell that prints no label. */
+const CellPassthrough: FunctionalComponent = (_props, { slots }) => slots.default?.()
+
 const primaryKey = computed(() => props.primaryColumn ?? props.columns[0]?.key)
 
 const tableMinWidth = computed(() => dataTableMinWidth(props.columns))
@@ -403,12 +424,20 @@ function tdClass(column: NeCollectionColumn<T>): string {
     sortState.value?.key === column.key ? 'bg-elevated/50' : '',
   ]
   if (dropped) classes.push(stack.value.hide)
-  else if (cards.value) {
-    classes.push(stack.value.cell)
-    if (column.freeText) classes.push(stack.value.free)
-    else classes.push(stack.value.block, primary ? stack.value.primary : '')
-  }
+  else if (cards.value) classes.push(primary ? stack.value.primary : stack.value.cell)
   return classes.join(' ')
+}
+
+/**
+ * A card cell prints its column's label before its value: every cell but the
+ * primary one, which heads the card. The `columns` layout keeps its header.
+ */
+function labelled(column: NeCollectionColumn<T>): boolean {
+  return cards.value && column.phone !== false && column.key !== primaryKey.value
+}
+
+function valueClass(column: NeCollectionColumn<T>): string {
+  return column.freeText ? stack.value.free : stack.value.value
 }
 
 function rowClass(row: T): string {
@@ -765,44 +794,63 @@ const filterModel = computed({
               :class="tdClass(column)"
               :data-ne-column="column.key"
             >
-              <ULink
-                v-if="column.key === primaryKey && hrefOf(row) !== null"
-                data-ne-row-link
-                :to="hrefOf(row) ?? undefined"
-                class="text-inherit hover:underline focus-visible:underline"
-                raw
+              <span
+                v-if="labelled(column)"
+                aria-hidden="true"
+                data-ne-cell-label
+                :class="stack.label"
+                >{{ column.label
+                }}<template v-if="column.unit">
+                  <span data-ne-unit class="font-normal text-dimmed">{{
+                    column.unit
+                  }}</span></template
+                ></span
               >
+              <component
+                :is="labelled(column) ? 'span' : CellPassthrough"
+                v-bind="
+                  labelled(column) ? { 'data-ne-cell-value': '', class: valueClass(column) } : {}
+                "
+              >
+                <ULink
+                  v-if="column.key === primaryKey && hrefOf(row) !== null"
+                  data-ne-row-link
+                  :to="hrefOf(row) ?? undefined"
+                  class="text-inherit hover:underline focus-visible:underline"
+                  raw
+                >
+                  <slot
+                    v-if="hasSlot(`${column.key}-cell`)"
+                    :name="`${column.key}-cell`"
+                    :column="column"
+                    :row="row"
+                    :value="readColumnValue(column, row)"
+                  />
+                  <template v-else>{{ linkText(column, row) }}</template>
+                </ULink>
                 <slot
-                  v-if="hasSlot(`${column.key}-cell`)"
+                  v-else-if="hasSlot(`${column.key}-cell`)"
                   :name="`${column.key}-cell`"
                   :column="column"
                   :row="row"
                   :value="readColumnValue(column, row)"
                 />
-                <template v-else>{{ linkText(column, row) }}</template>
-              </ULink>
-              <slot
-                v-else-if="hasSlot(`${column.key}-cell`)"
-                :name="`${column.key}-cell`"
-                :column="column"
-                :row="row"
-                :value="readColumnValue(column, row)"
-              />
-              <template v-else-if="cellText(column, row) !== null">{{
-                cellText(column, row)
-              }}</template>
-              <span
-                v-else-if="missingWord(column, row) !== undefined"
-                data-ne-missing
-                class="text-dimmed"
-                >{{ missingWord(column, row) }}</span
-              >
-              <span v-else-if="$slots.missing" data-ne-missing>
-                <slot name="missing" :column="column" :row="row" />
-              </span>
-              <span v-else data-ne-missing class="text-dimmed"
-                ><span aria-hidden="true">—</span><span class="sr-only">No value</span></span
-              >
+                <template v-else-if="cellText(column, row) !== null">{{
+                  cellText(column, row)
+                }}</template>
+                <span
+                  v-else-if="missingWord(column, row) !== undefined"
+                  data-ne-missing
+                  class="text-dimmed"
+                  >{{ missingWord(column, row) }}</span
+                >
+                <span v-else-if="$slots.missing" data-ne-missing>
+                  <slot name="missing" :column="column" :row="row" />
+                </span>
+                <span v-else data-ne-missing data-ne-empty class="text-dimmed"
+                  ><span aria-hidden="true">—</span><span class="sr-only">No value</span></span
+                >
+              </component>
             </td>
           </tr>
         </tbody>
