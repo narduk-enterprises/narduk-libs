@@ -126,7 +126,7 @@ describe('published types entry', () => {
         dependencies: { '@narduk-enterprises/narduk-charts': 'file:' + tarball, vue: vue.version },
       }),
     )
-    run('pnpm', ['install', '--offline', '--ignore-scripts'], consumer)
+    run('pnpm', ['install', '--prefer-offline', '--ignore-scripts'], consumer)
 
     const proof = (entry: string) => `
 import { sma, ema, vwap, bollinger, rsi, macd, type ChartSeries } from '${entry}'
