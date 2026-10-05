@@ -32,7 +32,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const r2 = useR2(event)
-  const object = await r2.get(slug)
+  let object
+  try {
+    object = await r2.get(slug)
+  } catch (error) {
+    log.error('Image storage read failed', { slug, error })
+    throw error
+  }
 
   if (!object) {
     log.warn('Image not found', { slug })
