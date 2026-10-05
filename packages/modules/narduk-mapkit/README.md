@@ -1125,22 +1125,37 @@ network and a page about one state shows that state and nothing else. It is
 drawn with one even-odd fill, so a multi-polygon is cut out in every part, and a
 tile no area reaches is one shared flat image.
 
-**A pulse down a path.** `source.pathPieces({ stretches, view })` returns the
+**Streaks down a path.** `source.pathPieces({ stretches, view })` returns the
 screen-space geometry of the named stretches (`{ id, meters }`, in path order)
 from the tiles already decoded, so it never fetches. `createFlowPulseLayer`
-draws it on a canvas you place over the map:
+draws a train of comet streaks along it, on a canvas you place over the map:
 
 ```ts
-const pulse = createFlowPulseLayer({ canvas, source, style: { color, width } })
-pulse.setPath(stretches) // null clears it
+const pulse = createFlowPulseLayer({
+  canvas,
+  source,
+  style: { color: '#fff', glowColor: '#6fb7e6', width: 6 },
+})
+pulse.setPath(stretches, branches) // null clears it
 map.addEventListener('region-change-start', () => pulse.suspend())
 map.addEventListener('region-change-end', () => pulse.update(view()))
 ```
 
-The geometry is read once per path or view change; each frame sets one dash
-offset and strokes once per chain, and the loop stops when there is no path or
-while the map moves. With `prefers-reduced-motion: reduce` (read live) nothing
-moves: chevrons point downstream along the path instead.
+A streak is a bright head and a tail that fades away behind it (`tail` steps),
+over an optional halo (`glowColor`); several are on the path at once, `period`
+pixels apart, running at `speed` pixels a second. `dash` is a streak's length.
+Give `color` the opposite of the lit line's lightness and `glowColor` the
+opposite of `color`, and the streak reads on a dark river and a light one.
+`branches` is `[{ opacity, stretches }]`: fainter, thinner streaks
+(`branchOpacity`, `branchWidth`) on tributaries. List each tributary's stretches
+upstream first so they join into one line; the lines of a group are spread over
+a few start phases so they do not march together.
+
+The geometry is read once per path or view change and kept as `Path2D`s; each
+frame sets a dash offset and strokes a handful of times however many tributaries
+are lit, and the loop stops when there is no path or while the map moves. With
+`prefers-reduced-motion: reduce` (read live) nothing moves: chevrons point
+downstream along the main path instead.
 
 ## Canvas Point Layer
 
