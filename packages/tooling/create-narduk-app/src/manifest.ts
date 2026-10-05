@@ -40,7 +40,7 @@ export const PACKAGE_VERSIONS = {
   '@axe-core/playwright': '4.13.0',
   '@cloudflare/workers-types': '5.20260922.1',
   '@iconify-json/lucide': '1.2.108',
-  '@narduk-enterprises/narduk-mapkit': '2.20.0',
+  '@narduk-enterprises/narduk-mapkit': '2.21.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.33.1',
   '@narduk-enterprises/eslint-config': '3.0.3',
@@ -71,7 +71,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.16.0',
+  '@narduk-enterprises/narduk-shell': '0.17.0',
   '@narduk-enterprises/narduk-testkit': '1.11.0',
   '@narduk-enterprises/narduk-uploads': '1.21.4',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own

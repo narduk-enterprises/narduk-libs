@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.21.0
+
+### Minor Changes
+
+- 881cf03: Add `fitMapKitRegionToViewport(bounds, viewport, options)` to
+  `/geometry`: the MapKit region that shows a longitude/latitude box whole in a
+  canvas of a known pixel size. It centres on the box's Mercator midpoint (not
+  the mean latitude, which sits about a degree off for Alaska and cuts the box
+  at its top) and takes the tighter of the width and height fits, so a wide,
+  short card and a tall, narrow one both show the whole box plus its padding.
+  Also exports `mercatorDegreesFromLatitude` and `latitudeFromMercatorDegrees`.
+  Pure numbers, no `mapkit` global.
+
+### Patch Changes
+
+- 69a0ffa: The canvas point layer no longer strokes a dot whose style has
+  `strokeWidth: 0`. A canvas ignores `lineWidth = 0` and strokes with the width
+  it had before, so a style that asked for no outline got the previous dot's
+  outline in its `stroke` colour: a halo round every flat dot (River Status
+  gauges at state zoom). A dot with a stroke width of 0 is now only filled.
+
 ## 2.20.0
 
 ### Minor Changes
