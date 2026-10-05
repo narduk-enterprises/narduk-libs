@@ -1,11 +1,16 @@
 /**
- * A pulse that travels along a path of stretches: which way the water flows.
+ * Streaks that travel along a path of stretches: which way the water flows.
  *
  * The desktop hover on the national river map lights a river, its path
  * downstream and its tributaries. This is the part of that picture that moves:
- * short dashes that run along the downstream path, in the direction the path
- * is listed. It draws on one canvas laid over the map, never in the network's
- * tile images, so it costs only what it draws and repaints nothing underneath.
+ * a train of bright comet streaks, evenly spaced, running along the path in the
+ * direction it is listed, with fainter streaks on any tributaries. It draws on
+ * one canvas laid over the map, never in the network's tile images, so it costs
+ * only what it draws and repaints nothing underneath.
+ *
+ * A streak is a bright head with a tail that fades away behind it, over an
+ * optional halo of a second colour: the head reads against a dark river
+ * because it is light, and against a light one because the halo is dark.
  *
  * What it costs, by design:
  *
@@ -13,8 +18,10 @@
  *   path's pieces come from decoded tiles already in memory
  *   ({@link FlowPulsePathSource.pathPieces}); neighbouring pieces are joined
  *   into a few long lines, so the dashes run unbroken across stretches.
- * - A frame is a clear and one stroke per line (a handful), with the dash
- *   pattern offset by the clock. It allocates nothing.
+ * - Each line is built once into a `Path2D` (when the platform has one). A
+ *   frame is a clear and a few strokes per line, with the dash pattern offset
+ *   by the clock. Tributaries are batched by brightness into a stroke or two
+ *   each, however many stretches they hold. It allocates nothing.
  * - The loop runs only while there is a path to draw and the map is still.
  *   `suspend()` stops it and clears the canvas while the map moves; `update()`
  *   starts it again for the settled view.
@@ -27,12 +34,17 @@
  */
 import { pixelsPerMeter } from './vector-tile-paths.js';
 export const FLOW_PULSE_DEFAULTS = {
+    branchOpacity: 0.85,
     chevron: 4,
     chevronSpacing: 64,
-    dash: 22,
+    chevronWidth: 2.2,
+    dash: 30,
+    glowOpacity: 0.45,
+    glowScale: 1.8,
     opacity: 1,
-    period: 200,
-    speed: 125,
+    period: 56,
+    speed: 90,
+    tail: 4,
 };
 /** Pieces whose ends are this close, in CSS pixels, are one line. */
 const JOIN_PX = 2.5;
@@ -42,6 +54,8 @@ const MARGIN_PX = 48;
 const EMPTY_RETRIES = 3;
 const EMPTY_RETRY_MS = 350;
 const MAX_PIXEL_RATIO = 2;
+/** Tributary lines of a group are spread over this many start phases, so they do not march together. */
+const BRANCH_PHASES = 4;
 function positiveModulo(value, modulus) {
     return ((value % modulus) + modulus) % modulus;
 }
@@ -103,22 +117,33 @@ export function createFlowPulseLayer(options) {
     const cancelFrame = options.cancelAnimationFrame ??
         (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : undefined);
     const clock = options.now ?? (() => performance.now());
+    const createPath = options.createPath ??
+        (typeof Path2D === 'function'
+            ? () => new Path2D()
+            : null);
     const query = options.reducedMotion === undefined && typeof matchMedia === 'function'
         ? matchMedia('(prefers-reduced-motion: reduce)')
         : null;
     const reduced = () => options.reducedMotion ?? query?.matches ?? false;
     let style = options.style;
     let stretches = null;
+    let branches = null;
     let view = null;
     let held = false;
     let destroyed = false;
     let chains = [];
+    let groups = [];
+    let branchChains = 0;
     let frame = 0;
     let frames = 0;
     let retries = 0;
     let retryTimer = null;
     let pixelRatio = 1;
-    let dashPattern = [];
+    let passes = [];
+    let branchPass = { alpha: 1, color: '', length: 1, width: 1 };
+    let period = FLOW_PULSE_DEFAULTS.period;
+    let speed = FLOW_PULSE_DEFAULTS.speed;
+    let dash = FLOW_PULSE_DEFAULTS.dash;
     let mode = 'idle';
     const value = (key) => style[key] ?? FLOW_PULSE_DEFAULTS[key];
     function context() {
@@ -142,36 +167,93 @@ export function createFlowPulseLayer(options) {
             clearTimeout(retryTimer);
         retryTimer = null;
     }
-    function strokeChain(context2d, chain) {
-        const { points } = chain;
-        context2d.beginPath();
-        context2d.moveTo(points[0], points[1]);
+    function traceLine(target, points) {
+        target.moveTo(points[0], points[1]);
         for (let at = 2; at < points.length; at += 2) {
-            context2d.lineTo(points[at], points[at + 1]);
+            target.lineTo(points[at], points[at + 1]);
         }
+    }
+    function strokeChain(context2d, chain) {
+        if (chain.path) {
+            context2d.stroke(chain.path);
+            return;
+        }
+        context2d.beginPath();
+        traceLine(context2d, chain.points);
         context2d.stroke();
     }
-    function configure(context2d) {
-        context2d.strokeStyle = style.color;
-        context2d.lineWidth = style.width;
-        context2d.globalAlpha = value('opacity');
-        context2d.lineCap = 'round';
-        context2d.lineJoin = 'round';
-        const dash = value('dash');
-        const period = Math.max(value('period'), dash + 1);
-        dashPattern = [dash, period - dash];
+    /** Read the style into the passes a frame draws: a halo, then the tail steps, head last. */
+    function configure() {
+        dash = Math.max(value('dash'), 2);
+        period = Math.max(value('period'), dash + 2);
+        speed = value('speed');
+        const width = style.width;
+        const opacity = value('opacity');
+        passes = [];
+        if (style.glowColor) {
+            passes.push({
+                alpha: value('glowOpacity') * opacity,
+                color: style.glowColor,
+                length: dash,
+                width: width * value('glowScale'),
+            });
+        }
+        const steps = Math.max(1, Math.round(value('tail')));
+        for (let step = 0; step < steps; step += 1) {
+            const strength = steps === 1 ? 1 : step / (steps - 1);
+            passes.push({
+                alpha: opacity * (steps === 1 ? 1 : 0.28 + 0.72 * strength),
+                color: style.color,
+                length: dash * (1 - step / steps),
+                width: steps === 1 ? width : width * (0.55 + 0.45 * strength),
+            });
+        }
+        branchPass = {
+            alpha: opacity * value('branchOpacity'),
+            color: style.color,
+            length: Math.max(6, dash * 0.65),
+            width: style.branchWidth ?? Math.max(1.4, width * 0.6),
+        };
     }
-    /** The moving dashes, one frame. No allocation: a clear, an offset and a stroke per line. */
+    /** Tributary streaks: plain dashes, a stroke for each brightness and start phase. */
+    function paintBranches(context2d, travelled) {
+        if (groups.length === 0)
+            return;
+        context2d.strokeStyle = branchPass.color;
+        context2d.lineWidth = branchPass.width;
+        context2d.setLineDash([branchPass.length, period - branchPass.length]);
+        for (const group of groups) {
+            context2d.globalAlpha = Math.min(1, branchPass.alpha * group.opacity);
+            context2d.lineDashOffset = positiveModulo(-(travelled + group.shift * period), period);
+            if (group.path) {
+                context2d.stroke(group.path);
+                continue;
+            }
+            context2d.beginPath();
+            for (const line of group.lines)
+                traceLine(context2d, line);
+            context2d.stroke();
+        }
+    }
+    /** The moving streaks, one frame. No allocation: a clear, an offset and a stroke per line and pass. */
     function paintPulse(time) {
         const context2d = context();
         if (!context2d || !view)
             return;
         context2d.clearRect(0, 0, view.width, view.height);
-        const period = dashPattern[0] + dashPattern[1];
-        const travelled = (time / 1000) * value('speed');
-        for (const chain of chains) {
-            context2d.lineDashOffset = positiveModulo(chain.phase - travelled, period);
-            strokeChain(context2d, chain);
+        const travelled = (time / 1000) * speed;
+        paintBranches(context2d, travelled);
+        for (const pass of passes) {
+            context2d.strokeStyle = pass.color;
+            context2d.lineWidth = pass.width;
+            context2d.globalAlpha = pass.alpha;
+            context2d.setLineDash([pass.length, period - pass.length]);
+            for (const chain of chains) {
+                // The head sits at the downstream end of the streak; every pass shares it.
+                const head = travelled - chain.phase + dash;
+                context2d.lineDashOffset = positiveModulo(pass.length - head, period);
+                strokeChain(context2d, chain);
+            }
         }
     }
     function loop(time) {
@@ -221,6 +303,17 @@ export function createFlowPulseLayer(options) {
                 context2d.lineTo(tipX + size * (backX * cos + backY * sin), tipY + size * (-backX * sin + backY * cos));
             }
         }
+        context2d.lineCap = 'round';
+        context2d.lineJoin = 'round';
+        if (style.glowColor) {
+            context2d.strokeStyle = style.glowColor;
+            context2d.lineWidth = value('chevronWidth') * 2.2;
+            context2d.globalAlpha = value('glowOpacity') * value('opacity');
+            context2d.stroke();
+        }
+        context2d.strokeStyle = style.color;
+        context2d.lineWidth = value('chevronWidth');
+        context2d.globalAlpha = value('opacity');
         context2d.stroke();
     }
     function resize(next) {
@@ -239,11 +332,77 @@ export function createFlowPulseLayer(options) {
         const context2d = context();
         context2d?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     }
+    /** Keep each main line as a path, so a frame replays it instead of tracing it. */
+    function keepPaths(lines) {
+        if (!createPath)
+            return;
+        for (const chain of lines) {
+            const path = createPath();
+            if (!path)
+                return;
+            traceLine(path, chain.points);
+            chain.path = path;
+        }
+    }
+    /** Read the tributary pieces and gather their lines into a path per brightness and start phase. */
+    function buildBranches(pixelsPerMetre) {
+        groups = [];
+        branchChains = 0;
+        if (!view || !branches)
+            return;
+        const merged = [];
+        const bandOf = [];
+        for (const [band, branch] of branches.entries()) {
+            for (const stretch of branch.stretches) {
+                merged.push(stretch);
+                bandOf.push(band);
+            }
+        }
+        if (merged.length === 0)
+            return;
+        const buckets = branches.map(() => []);
+        for (const piece of source.pathPieces({ marginPx: MARGIN_PX, stretches: merged, view })) {
+            buckets[bandOf[piece.rank] ?? 0]?.push(piece);
+        }
+        for (const [band, bucket] of buckets.entries()) {
+            const lines = joinPathPieces(bucket, pixelsPerMetre);
+            if (lines.length === 0)
+                continue;
+            branchChains += lines.length;
+            const opacity = Math.max(0, Math.min(1, branches[band]?.opacity ?? 1));
+            const made = [];
+            for (let phase = 0; phase < BRANCH_PHASES; phase += 1) {
+                made.push({
+                    count: 0,
+                    lines: [],
+                    opacity,
+                    path: createPath ? createPath() : null,
+                    shift: phase / BRANCH_PHASES,
+                });
+            }
+            for (const [index, line] of lines.entries()) {
+                const group = made[index % BRANCH_PHASES];
+                group.count += 1;
+                const path = group.path;
+                if (path)
+                    traceLine(path, line.points);
+                else
+                    group.lines.push(line.points);
+            }
+            for (const group of made)
+                if (group.count > 0)
+                    groups.push(group);
+        }
+    }
     function rebuild() {
         stop();
         cancelRetry();
         chains = [];
-        if (destroyed || held || !view || !stretches || stretches.length === 0) {
+        groups = [];
+        branchChains = 0;
+        const hasPath = stretches !== null && stretches.length > 0;
+        const hasBranches = branches?.some((branch) => branch.stretches.length > 0) ?? false;
+        if (destroyed || held || !view || (!hasPath && !hasBranches)) {
             mode = 'idle';
             if (view) {
                 resize(view);
@@ -253,9 +412,15 @@ export function createFlowPulseLayer(options) {
         }
         resize(view);
         clear();
-        const pieces = source.pathPieces({ marginPx: MARGIN_PX, stretches, view });
-        chains = joinPathPieces(pieces, pixelsPerMeter(view));
-        if (chains.length === 0) {
+        const pixelsPerMetre = pixelsPerMeter(view);
+        if (hasPath) {
+            const pieces = source.pathPieces({ marginPx: MARGIN_PX, stretches: stretches, view });
+            chains = joinPathPieces(pieces, pixelsPerMetre);
+            keepPaths(chains);
+        }
+        if (hasBranches)
+            buildBranches(pixelsPerMetre);
+        if (chains.length === 0 && groups.length === 0) {
             mode = 'idle';
             if (retries < EMPTY_RETRIES) {
                 retries += 1;
@@ -272,14 +437,16 @@ export function createFlowPulseLayer(options) {
             mode = 'idle';
             return;
         }
-        configure(context2d);
+        configure();
+        context2d.lineCap = 'round';
+        context2d.lineJoin = 'round';
         if (reduced() || !requestFrame) {
             mode = 'chevrons';
+            groups = [];
             paintChevrons();
             return;
         }
         mode = 'pulse';
-        context2d.setLineDash(dashPattern);
         paintPulse(clock());
         frame = requestFrame(loop);
     }
@@ -297,12 +464,14 @@ export function createFlowPulseLayer(options) {
             cancelRetry();
             query?.removeEventListener('change', onMotionChange);
             chains = [];
+            groups = [];
             mode = 'idle';
             if (view)
                 clear();
         },
-        setPath(next) {
+        setPath(next, nextBranches = null) {
             stretches = next && next.length > 0 ? next : null;
+            branches = nextBranches && nextBranches.length > 0 ? nextBranches : null;
             retries = 0;
             rebuild();
         },
@@ -315,7 +484,7 @@ export function createFlowPulseLayer(options) {
             let points = 0;
             for (const chain of chains)
                 points += chain.points.length / 2;
-            return { chains: chains.length, frames, mode, points };
+            return { branchChains, chains: chains.length, frames, mode, points };
         },
         suspend() {
             if (destroyed)
