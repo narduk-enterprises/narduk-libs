@@ -12,6 +12,7 @@
  */
 import { DEFAULT_MOUSE_HIT_TOLERANCE_PX, hitTestNeighbours, hitTestTile, projectToTilePoint, } from './hit-test.js';
 import { paintVectorTileAreas, vectorTileAreasReach } from './vector-tile-areas.js';
+import { candidateTileZooms, collectVectorTilePathPieces, tilesInView, } from './vector-tile-paths.js';
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
  * A class-table lookup treats it as unknown, never as id 0.
@@ -1235,6 +1236,36 @@ export function createVectorTileOverlaySource(options) {
             return highlightPlan;
         },
         highlightImageForTile,
+        pathPieces({ marginPx = 64, stretches, view }) {
+            // MapKit asks for the tile zoom it likes; the cache holds whichever it asked
+            // for, so read the zoom whose screenful is most complete, nearest the view's.
+            let best = -1;
+            let bestShare = 0;
+            for (const candidate of candidateTileZooms(view.zoom, dataZoomFor)) {
+                const tiles = 2 ** candidate;
+                const needed = tilesInView(view, candidate, marginPx);
+                let present = 0;
+                for (const address of needed) {
+                    const wrapped = ((address.x % tiles) + tiles) % tiles;
+                    if (cache.get(`${candidate}/${wrapped}/${address.y}`))
+                        present += 1;
+                }
+                const share = needed.length > 0 ? present / needed.length : 0;
+                if (share > bestShare + 1e-9) {
+                    best = candidate;
+                    bestShare = share;
+                }
+            }
+            if (best < 0)
+                return [];
+            return collectVectorTilePathPieces({
+                marginPx,
+                stretches,
+                tileAt: (z, x, y) => cache.get(`${z}/${x}/${y}`),
+                view,
+                zoom: best,
+            });
+        },
         clearCache() {
             cache.clear();
             generation += 1;

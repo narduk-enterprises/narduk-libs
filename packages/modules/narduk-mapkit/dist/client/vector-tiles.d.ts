@@ -11,7 +11,9 @@
  * changing the style repaints from memory and never refetches.
  */
 import type { VectorTileCoordinate, VectorTileHit } from './hit-test.js';
+import type { PointLayerView } from './point-layer.js';
 import type { VectorTileAddress, VectorTileArea, VectorTileAreaLayer } from './vector-tile-areas.js';
+import type { VectorTilePathPiece, VectorTilePathStretch } from './vector-tile-paths.js';
 /**
  * Sentinel in `si` / `ri` columns when that feature did not carry the key.
  * A class-table lookup treats it as unknown, never as id 0.
@@ -438,6 +440,19 @@ export interface VectorTileOverlaySource<TCanvas extends VectorTileCanvas, TImag
      * {@link VectorTileOverlaySource.setAreas}.
      */
     readonly areas: VectorTileAreaLayer | null;
+    /**
+     * The screen lines of a path of stretches (feature ids in order, upstream
+     * first), read from the decoded tiles already in memory. Nothing is fetched:
+     * a tile not decoded yet adds no piece. Each line is clipped to its tile's
+     * own bounds, so a stretch the tiles repeat across an edge is not doubled,
+     * and ordered along the path with the distance it starts at; see
+     * {@link collectVectorTilePathPieces}. For an effect that follows a river.
+     */
+    pathPieces: (options: {
+        marginPx?: number;
+        stretches: readonly VectorTilePathStretch[];
+        view: PointLayerView;
+    }) => VectorTilePathPiece[];
     /** Retained bytes, exact for geometry and estimated for properties. */
     readonly cacheBytes: number;
     /** Drop every decoded tile, for example when the archive is replaced. */
