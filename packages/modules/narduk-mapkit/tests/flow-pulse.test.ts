@@ -134,6 +134,35 @@ describe('joinPathPieces', () => {
   it('drops a piece of fewer than two points', () => {
     expect(joinPathPieces([piece(0, 0, [0, 0])], 1)).toEqual([])
   })
+
+  it('turns round a piece the tiles draw against the flow, so the river is one line', () => {
+    const chains = joinPathPieces(
+      [
+        piece(0, 0, [0, 0], [100, 0]),
+        // Drawn from its downstream end: it still follows the first on the path.
+        piece(1, 1000, [200, 0], [100, 1]),
+        piece(2, 2000, [200, 1], [300, 0]),
+      ],
+      0.1,
+    )
+    expect(chains).toHaveLength(1)
+    expect(Array.from(chains[0]?.points ?? [])).toEqual([0, 0, 100, 0, 200, 0, 300, 0])
+    expect(chains[0]?.length).toBeCloseTo(300, 6)
+  })
+
+  it('turns round a first piece whose start is where the next piece meets it', () => {
+    const chains = joinPathPieces(
+      [piece(0, 0, [100, 0], [0, 0]), piece(1, 500, [100, 1], [200, 0])],
+      0.1,
+    )
+    expect(chains).toHaveLength(1)
+    expect(Array.from(chains[0]?.points ?? [])).toEqual([0, 0, 100, 0, 200, 0])
+  })
+
+  it('leaves out a point that repeats the one before it', () => {
+    const chains = joinPathPieces([piece(0, 0, [0, 0], [0.1, 0], [50, 0], [50, 0.05], [90, 0])], 1)
+    expect(Array.from(chains[0]?.points ?? [])).toEqual([0, 0, 50, 0, 90, 0])
+  })
 })
 
 describe('createFlowPulseLayer', () => {
@@ -422,7 +451,7 @@ describe('createFlowPulseLayer', () => {
       // One read of the main path, one of every tributary together.
       expect(pathPieces).toHaveBeenCalledTimes(2)
       const frame = strokes().slice(-6)
-      // Two brightness groups, each on its own start phase, then the four passes of the main line.
+      // Two lines, one per brightness, then the four passes of the main line.
       const branch = frame.slice(0, 2) as Array<{ alpha: number; lineWidth: number }>
       expect(branch[0]!.alpha).toBeCloseTo(0.85 * 0.9, 6)
       expect(branch[1]!.alpha).toBeCloseTo(0.85 * 0.3, 6)
@@ -430,24 +459,167 @@ describe('createFlowPulseLayer', () => {
       expect(branch[0]!.lineWidth).toBeGreaterThanOrEqual(1.4)
     })
 
-    it('spreads the lines of a brightness over start phases so they do not march together', () => {
-      const lines = Array.from({ length: 8 }, (_, index) => ({
-        distanceM: index * 1000,
-        id: 200 + index,
-        points: new Float32Array([0, index * 20, 50, index * 20 + 5]),
-        rank: index,
-      }))
-      const { layer, pathPieces, strokes } = harness({
+    /** A tributary line along y, `length` px long, in two pieces that meet in the middle. */
+    function line(rank: number, y: number, length: number, flip = false): VectorTilePathPiece[] {
+      const half = length / 2
+      return [
+        piece(rank, 0, [0, y], [half, y]),
+        // The second piece drawn the other way when asked.
+        flip
+          ? piece(rank + 1, 500, [length, y], [half, y])
+          : piece(rank + 1, 500, [half, y], [length, y]),
+      ]
+    }
+
+    function branchLayer(extra: Partial<FlowPulseLayerOptions> = {}) {
+      return harness({
         style: { color: '#fff', tail: 1, width: 3 },
+        ...extra,
       })
-      pathPieces.mockImplementation((() => lines) as never)
+    }
+
+    it('stitches the pieces of each line into one, however the tiles draw them', () => {
+      const pieces = [...line(0, 10, 200, true), ...line(2, 30, 200)]
+      const { layer, pathPieces } = branchLayer()
+      pathPieces.mockImplementation((() => pieces) as never)
       layer.setPath(null, [
-        { opacity: 1, stretches: lines.map((line) => ({ id: line.id, meters: 1000 })) },
+        {
+          lineSizes: [2, 2],
+          opacity: 1,
+          stretches: pieces.map((entry) => ({ id: entry.id, meters: 1000 })),
+        },
       ])
       layer.update(VIEW)
-      expect(layer.stats).toMatchObject({ branchChains: 8, chains: 0, mode: 'pulse' })
-      const offsets = strokes().map((call) => (call as { dashOffset: number }).dashOffset)
-      expect(new Set(offsets.map((offset) => offset.toFixed(3))).size).toBe(4)
+      expect(layer.stats).toMatchObject({ branchChains: 2, branchDropped: 0 })
+    })
+
+    it('never runs two lines together where they meet', () => {
+      // The first line ends where the second starts; as one group with no line sizes they
+      // join, with sizes they stay two.
+      const pieces = [piece(0, 0, [0, 10], [100, 10]), piece(1, 0, [100, 10], [200, 10])]
+      const stretches = pieces.map((entry) => ({ id: entry.id, meters: 1000 }))
+      const apart = branchLayer()
+      apart.pathPieces.mockImplementation((() => pieces) as never)
+      apart.layer.setPath(null, [{ lineSizes: [1, 1], opacity: 1, stretches }])
+      apart.layer.update(VIEW)
+      expect(apart.layer.stats.branchChains).toBe(2)
+      const together = branchLayer()
+      together.pathPieces.mockImplementation((() => pieces) as never)
+      together.layer.setPath(null, [{ opacity: 1, stretches }])
+      together.layer.update(VIEW)
+      expect(together.layer.stats.branchChains).toBe(1)
+    })
+
+    it('leaves a line too short to carry a streak to the lit line underneath', () => {
+      const pieces = [...line(0, 10, 200), ...line(2, 30, 40), ...line(4, 50, 12)]
+      const { layer, pathPieces, strokes } = branchLayer()
+      pathPieces.mockImplementation((() => pieces) as never)
+      layer.setPath(null, [
+        {
+          lineSizes: [2, 2, 2],
+          opacity: 1,
+          stretches: pieces.map((entry) => ({ id: entry.id, meters: 1000 })),
+        },
+      ])
+      layer.update(VIEW)
+      expect(layer.stats).toMatchObject({ branchChains: 2, branchDropped: 1 })
+      expect(strokes()).toHaveLength(2)
+      // The minimum is the style's to set.
+      const longer = branchLayer({
+        style: { branchMinLength: 100, color: '#fff', tail: 1, width: 3 },
+      })
+      longer.pathPieces.mockImplementation((() => pieces) as never)
+      longer.layer.setPath(null, [
+        {
+          lineSizes: [2, 2, 2],
+          opacity: 1,
+          stretches: pieces.map((entry) => ({ id: entry.id, meters: 1000 })),
+        },
+      ])
+      longer.layer.update(VIEW)
+      expect(longer.layer.stats).toMatchObject({ branchChains: 1, branchDropped: 2 })
+    })
+
+    it('runs one slow streak per short line, two per long one, all reaching the end together', () => {
+      const pieces = [
+        piece(0, 0, [0, 10], [150, 10]),
+        piece(1, 0, [0, 30], [500, 30]),
+        piece(2, 0, [0, 60], [90, 60]),
+      ]
+      const { layer, pathPieces, strokes, tick } = branchLayer({
+        style: { branchPeriod: 200, color: '#fff', speed: 100, tail: 1, width: 3 },
+      })
+      pathPieces.mockImplementation((() => pieces) as never)
+      layer.setPath(null, [
+        {
+          lineSizes: [1, 1, 1],
+          opacity: 1,
+          stretches: pieces.map((entry) => ({ id: entry.id, meters: 1000 })),
+        },
+      ])
+      layer.update(VIEW)
+      // Longest first. 500 px needs a period of 400 to carry two streaks at most.
+      const at = (time: number) => {
+        const before = strokes().length
+        tick(time)
+        return strokes()
+          .slice(before)
+          .map((call) => call as { dash: number[]; dashOffset: number })
+      }
+      const sum = (call: { dash: number[] }) => call.dash[0]! + call.dash[1]!
+      const frame = at(0)
+      expect(frame.map(sum)).toEqual([400, 200, 200])
+      // A streak head sits at (dash - offset) along the line, mod the period. At a multiple
+      // of the shared period every head is at the end of its own line.
+      const heads = (calls: Array<{ dash: number[]; dashOffset: number }>, lengths: number[]) =>
+        calls.map((call, index) => {
+          const period = sum(call)
+          return (((call.dash[0]! - call.dashOffset - lengths[index]!) % period) + period) % period
+        })
+      for (const head of heads(frame, [500, 150, 90])) expect(head).toBeCloseTo(0, 4)
+      // Half a period later (1 s at 100 px/s is half of 200) every head is half a period back.
+      const later = at(1000)
+      const lengths = [500, 150, 90]
+      for (const [index, call] of later.entries()) {
+        const period = sum(call)
+        const head =
+          (((call.dash[0]! - call.dashOffset - lengths[index]!) % period) + period) % period
+        expect(head).toBeCloseTo(100, 4)
+      }
+    })
+
+    it('draws tributary tails as steps of one brightness each, when the style says so', () => {
+      const pieces = [piece(0, 0, [0, 10], [300, 10])]
+      const { layer, pathPieces, strokes } = branchLayer({
+        style: { branchDash: 40, branchTail: 3, color: '#fff', tailOpacity: 0.3, width: 3 },
+      })
+      pathPieces.mockImplementation((() => pieces) as never)
+      layer.setPath(null, [{ opacity: 0.5, stretches: [{ id: pieces[0]!.id, meters: 1000 }] }])
+      layer.update(VIEW)
+      const calls = strokes() as Array<{ alpha: number; dash: number[]; lineWidth: number }>
+      expect(calls).toHaveLength(3)
+      for (const [index, call] of calls.entries())
+        expect(call.dash[0]).toBeCloseTo(40 * (1 - index / 3), 6)
+      for (const call of calls) expect(call.alpha).toBeCloseTo(0.85 * 0.3 * 0.5, 6)
+      expect(calls[0]!.lineWidth).toBeLessThan(calls[2]!.lineWidth)
+    })
+
+    it('keeps only the longest lines when a basin lights thousands', () => {
+      const pieces = Array.from({ length: 400 }, (_, index) =>
+        piece(index, 0, [0, index], [40 + index, index]),
+      )
+      const { layer, pathPieces } = branchLayer()
+      pathPieces.mockImplementation((() => pieces) as never)
+      layer.setPath(null, [
+        {
+          lineSizes: pieces.map(() => 1),
+          opacity: 1,
+          stretches: pieces.map((entry) => ({ id: entry.id, meters: 1000 })),
+        },
+      ])
+      layer.update(VIEW)
+      expect(layer.stats.branchChains).toBe(160)
+      expect(layer.stats.branchDropped).toBe(240)
     })
 
     it('holds still with reduced motion: chevrons on the main path only', () => {

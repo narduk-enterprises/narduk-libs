@@ -1168,10 +1168,20 @@ over an optional halo (`glowColor`); several are on the path at once, `period`
 pixels apart, running at `speed` pixels a second. `dash` is a streak's length.
 Give `color` the opposite of the lit line's lightness and `glowColor` the
 opposite of `color`, and the streak reads on a dark river and a light one.
-`branches` is `[{ opacity, stretches }]`: fainter, thinner streaks
-(`branchOpacity`, `branchWidth`) on tributaries. List each tributary's stretches
-upstream first so they join into one line; the lines of a group are spread over
-a few start phases so they do not march together.
+`tailOpacity` makes every tail step the same brightness, so the steps stack into
+a smooth fade (ten steps at `0.3` read as a soft comet; a few steps at the
+default read as bands).
+
+`branches` is `[{ opacity, stretches, lineSizes? }]`: fainter, thinner, slower
+streaks on tributaries. List each tributary's stretches upstream first and give
+`lineSizes` (how many stretches each line holds) so the layer stitches the
+pieces of one line into a single path, whichever way the tiles draw them, and
+never joins two lines that meet. A line shorter than `branchMinLength` carries
+no streak (the lit line under it is enough); a longer one carries one, or two
+when it is long (`branchPeriod`), reaching the line's end together with every
+other line, so the water seems to run into the river. `branchSpeed`,
+`branchDash` and `branchTail` shape them, and at most the 160 longest lines are
+animated.
 
 The geometry is read once per path or view change and kept as `Path2D`s; each
 frame sets a dash offset and strokes a handful of times however many tributaries

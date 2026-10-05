@@ -20,8 +20,15 @@
  *   into a few long lines, so the dashes run unbroken across stretches.
  * - Each line is built once into a `Path2D` (when the platform has one). A
  *   frame is a clear and a few strokes per line, with the dash pattern offset
- *   by the clock. Tributaries are batched by brightness into a stroke or two
- *   each, however many stretches they hold. It allocates nothing.
+ *   by the clock. It allocates nothing.
+ * - Pieces are joined whichever way the tiles draw them: a stretch drawn
+ *   against the flow is turned round, so a river is one long line and a streak
+ *   runs it unbroken.
+ * - Tributaries are stitched into one line each (when the caller says where a
+ *   line ends, see {@link FlowPulseBranch.lineSizes}), the lines too short to
+ *   carry a streak are left to the lit line underneath, and each remaining
+ *   line gets one or two slow streaks timed to reach the end together, so they
+ *   read as water running into the river.
  * - The loop runs only while there is a path to draw and the map is still.
  *   `suspend()` stops it and clears the canvas while the map moves; `update()`
  *   starts it again for the settled view.
@@ -41,6 +48,20 @@ import type { VectorTilePathPiece, VectorTilePathStretch } from './vector-tile-p
 export interface FlowPulseStyle {
   /** Brightness of the tributary streaks against the main ones, 0 to 1. Default 0.85. */
   branchOpacity?: number
+  /** Length of one tributary streak, head to tail end. Default `dash * 0.65`, at least 6. */
+  branchDash?: number
+  /** Tributary lines shorter than this, in CSS pixels, carry no streak. Default 30. */
+  branchMinLength?: number
+  /**
+   * Distance between two streaks on a tributary line. A line carries at most two, so
+   * a longer line stretches this. Streaks on every line reach its end at the same
+   * moment (they are in phase). Default 190.
+   */
+  branchPeriod?: number
+  /** How fast tributary streaks travel, in pixels a second. Default `speed`. */
+  branchSpeed?: number
+  /** Steps in a tributary streak's tail; 1 is a plain dash. Default 1. */
+  branchTail?: number
   /** Stroke width of a tributary streak. Default `width * 0.6`, at least 1.4. */
   branchWidth?: number
   /** Half the width of a chevron, from its tip to a wing's end. Default 4. */
@@ -67,6 +88,12 @@ export interface FlowPulseStyle {
   speed?: number
   /** Steps in a streak's tail, from the bright head back to its faint end; 1 is a plain dash. Default 4. */
   tail?: number
+  /**
+   * Brightness of each tail step, 0 to 1. The steps stack, so the head shows the sum:
+   * with ten steps at 0.3 the tail fades in smoothly. Default: steps that brighten
+   * toward the head, from 0.28 to 1.
+   */
+  tailOpacity?: number
   /** Stroke width of a streak head. */
   width: number
 }
@@ -87,6 +114,13 @@ export const FLOW_PULSE_DEFAULTS = {
 
 /** Tributaries of one brightness: stretches listed upstream first within each line. */
 export interface FlowPulseBranch {
+  /**
+   * How many stretches each line of this group holds, in order, summing to
+   * `stretches.length`. Pieces are stitched within a line only, so two
+   * tributaries that meet are never run together. Without it the whole group is
+   * one line.
+   */
+  lineSizes?: readonly number[]
   /** How bright this group is, 0 to 1, before the style's `branchOpacity`. */
   opacity: number
   /** Stretches of this group. Lines (a tributary and what feeds it) are listed upstream first. */
@@ -160,8 +194,10 @@ export interface FlowPulsePathBuilder {
 export type FlowPulseMode = 'chevrons' | 'idle' | 'pulse'
 
 export interface FlowPulseStats {
-  /** Lines of tributary streaks. */
+  /** Tributary lines that carry streaks. */
   branchChains: number
+  /** Tributary lines left without, being shorter than `branchMinLength` or past the cap. */
+  branchDropped: number
   /** Lines the pieces of the main path were joined into. */
   chains: number
   /** Frames the loop has drawn since the layer was made. */
@@ -192,7 +228,11 @@ export interface FlowPulseLayer {
 }
 
 /** Pieces whose ends are this close, in CSS pixels, are one line. */
-const JOIN_PX = 2.5
+const JOIN_PX = 3
+/** A point closer than this to the one before it adds nothing to a line. */
+const SAME_POINT_PX = 0.3
+/** Most tributary lines that carry streaks: the longest ones, so a lit basin of thousands stays cheap. */
+const MAX_BRANCH_CHAINS = 160
 /** Pieces and lines this far past the view are still read. */
 const MARGIN_PX = 48
 /** Times an empty read is repeated, a beat apart, while tiles may still be decoding. */
@@ -201,6 +241,8 @@ const EMPTY_RETRY_MS = 350
 const MAX_PIXEL_RATIO = 2
 
 interface Chain {
+  /** Length of the line in CSS pixels. */
+  length: number
   /** Cumulative length at each point, for chevron placement. */
   lengths: Float32Array
   /** Where the pattern starts along this line, in pixels, from the path's start. */
@@ -210,22 +252,17 @@ interface Chain {
   points: Float32Array
 }
 
-/** A tributary line, kept as a path for stroking. */
-interface BranchGroup {
-  /** The brightness of the group's streaks, before the style's `branchOpacity`. */
+/** A tributary line that carries streaks. */
+interface BranchChain {
+  /** Length of the line in CSS pixels. */
+  length: number
+  /** The brightness of the line's streaks, before the style's `branchOpacity`. */
   opacity: number
-  /** How many lines the group holds. */
-  count: number
-  /** The lines of this group and one start phase, as one path. */
-  path: FlowPulsePath | null
-  /** Where in the period this set of lines starts, as a share of it. */
-  shift: number
   /** Without `Path2D`: the points to draw each frame. */
-  lines: Float32Array[]
+  points: Float32Array
+  /** The line kept for stroking, when the platform can. */
+  path: FlowPulsePath | null
 }
-
-/** Tributary lines of a group are spread over this many start phases, so they do not march together. */
-const BRANCH_PHASES = 4
 
 function positiveModulo(value: number, modulus: number): number {
   return ((value % modulus) + modulus) % modulus
@@ -245,48 +282,86 @@ function lengthsOf(points: Float32Array): Float32Array {
   return lengths
 }
 
+function turnRound(points: Float32Array): Float32Array {
+  const turned = new Float32Array(points.length)
+  const count = points.length / 2
+  for (let index = 0; index < count; index += 1) {
+    turned[index * 2] = points[(count - 1 - index) * 2] as number
+    turned[index * 2 + 1] = points[(count - 1 - index) * 2 + 1] as number
+  }
+  return turned
+}
+
 /**
  * Join the pieces of a path, in path order, into lines: a piece that starts
- * where the last one ended continues it. A gap (a tile not decoded, a stretch
- * off the screen) starts a new line whose pattern phase comes from the ground
- * distance, so the dashes on the far side of a gap still line up with the
- * ones before it, to within the difference between ground and drawn length.
+ * where the last one ended continues it, and so does one that ends there (the
+ * tiles draw a stretch in either direction, and the path knows which way the
+ * water goes), which is then turned round. A line made of one piece is turned
+ * round too when the next piece meets its start. A gap (a tile not decoded, a
+ * stretch off the screen) starts a new line whose pattern phase comes from the
+ * ground distance, so the dashes on the far side of a gap still line up with
+ * the ones before it, to within the difference between ground and drawn
+ * length. Points that repeat one another are dropped.
  */
 export function joinPathPieces(
   pieces: readonly VectorTilePathPiece[],
   pixelsPerMetre: number,
+  joinPx = JOIN_PX,
 ): Chain[] {
   const chains: Chain[] = []
   let run: number[] = []
+  let members = 0
   let phase = 0
   let last = -1
   const flush = () => {
     if (run.length >= 4) {
       const points = new Float32Array(run)
-      chains.push({ lengths: lengthsOf(points), phase, points })
+      const lengths = lengthsOf(points)
+      chains.push({ length: lengths[lengths.length - 1] as number, lengths, phase, points })
     }
     run = []
+    members = 0
   }
+  const near = (x: number, y: number, at: number) =>
+    Math.hypot(x - (run[at] as number), y - (run[at + 1] as number)) <= joinPx
   for (const piece of pieces) {
-    const { points } = piece
-    if (points.length < 4) continue
-    const startX = points[0] as number
-    const startY = points[1] as number
-    const joins =
-      run.length >= 2 &&
-      piece.rank >= last &&
-      Math.hypot(
-        startX - (run[run.length - 2] as number),
-        startY - (run[run.length - 1] as number),
-      ) <= JOIN_PX
-    if (!joins) {
+    if (piece.points.length < 4) continue
+    let { points } = piece
+    const end = points.length - 2
+    let joined = false
+    if (run.length >= 2 && piece.rank >= last) {
+      const tail = run.length - 2
+      const meets = (at: number) =>
+        near(points[0] as number, points[1] as number, at) ||
+        near(points[end] as number, points[end + 1] as number, at)
+      if (members === 1 && !meets(tail) && meets(0)) {
+        run = Array.from(turnRound(new Float32Array(run)))
+      }
+      if (near(points[0] as number, points[1] as number, tail)) {
+        joined = true
+      } else if (near(points[end] as number, points[end + 1] as number, tail)) {
+        points = turnRound(points)
+        joined = true
+      }
+    }
+    if (!joined) {
       flush()
       phase = piece.distanceM * pixelsPerMetre
     }
     // A joined piece's first point is the last one's end, within a pixel or two.
-    for (let at = joins ? 2 : 0; at < points.length; at += 2) {
-      run.push(points[at] as number, points[at + 1] as number)
+    for (let at = joined ? 2 : 0; at < points.length; at += 2) {
+      const x = points[at] as number
+      const y = points[at + 1] as number
+      if (
+        run.length >= 2 &&
+        Math.hypot(x - (run[run.length - 2] as number), y - (run[run.length - 1] as number)) <
+          SAME_POINT_PX
+      ) {
+        continue
+      }
+      run.push(x, y)
     }
+    members += 1
     last = piece.rank
   }
   flush()
@@ -328,15 +403,17 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
   let held = false
   let destroyed = false
   let chains: Chain[] = []
-  let groups: BranchGroup[] = []
-  let branchChains = 0
+  let branchLines: BranchChain[] = []
+  let branchDropped = 0
   let frame = 0
   let frames = 0
   let retries = 0
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let pixelRatio = 1
   let passes: Pass[] = []
-  let branchPass: Pass = { alpha: 1, color: '', length: 1, width: 1 }
+  let branchPasses: Pass[] = []
+  let branchPeriod = 190
+  let branchSpeed = FLOW_PULSE_DEFAULTS.speed as number
   let period = FLOW_PULSE_DEFAULTS.period as number
   let speed = FLOW_PULSE_DEFAULTS.speed as number
   let dash = FLOW_PULSE_DEFAULTS.dash as number
@@ -384,6 +461,29 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     context2d.stroke()
   }
 
+  /** The steps of a streak's tail: long and faint first, the short bright head last. */
+  function tailPasses(options: {
+    alpha: number
+    color: string
+    dash: number
+    steps: number
+    width: number
+  }): Pass[] {
+    const { alpha, color, dash: length, steps, width } = options
+    const each = style.tailOpacity
+    const made: Pass[] = []
+    for (let step = 0; step < steps; step += 1) {
+      const strength = steps === 1 ? 1 : step / (steps - 1)
+      made.push({
+        alpha: alpha * (steps === 1 ? 1 : each === undefined ? 0.28 + 0.72 * strength : each),
+        color,
+        length: length * (1 - step / steps),
+        width: steps === 1 ? width : width * (0.55 + 0.45 * strength),
+      })
+    }
+    return made
+  }
+
   /** Read the style into the passes a frame draws: a halo, then the tail steps, head last. */
   function configure() {
     dash = Math.max(value('dash'), 2)
@@ -400,40 +500,53 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
         width: width * value('glowScale'),
       })
     }
-    const steps = Math.max(1, Math.round(value('tail')))
-    for (let step = 0; step < steps; step += 1) {
-      const strength = steps === 1 ? 1 : step / (steps - 1)
-      passes.push({
-        alpha: opacity * (steps === 1 ? 1 : 0.28 + 0.72 * strength),
+    passes.push(
+      ...tailPasses({
+        alpha: opacity,
         color: style.color,
-        length: dash * (1 - step / steps),
-        width: steps === 1 ? width : width * (0.55 + 0.45 * strength),
-      })
-    }
-    branchPass = {
+        dash,
+        steps: Math.max(1, Math.round(value('tail'))),
+        width,
+      }),
+    )
+    const branchDash = Math.max(6, style.branchDash ?? dash * 0.65)
+    branchPeriod = Math.max(style.branchPeriod ?? 190, branchDash * 2)
+    branchSpeed = style.branchSpeed ?? speed
+    branchPasses = tailPasses({
       alpha: opacity * value('branchOpacity'),
       color: style.color,
-      length: Math.max(6, dash * 0.65),
+      dash: branchDash,
+      steps: Math.max(1, Math.round(style.branchTail ?? 1)),
       width: style.branchWidth ?? Math.max(1.4, width * 0.6),
-    }
+    })
   }
 
-  /** Tributary streaks: plain dashes, a stroke for each brightness and start phase. */
-  function paintBranches(context2d: FlowPulseContext, travelled: number) {
-    if (groups.length === 0) return
-    context2d.strokeStyle = branchPass.color
-    context2d.lineWidth = branchPass.width
-    context2d.setLineDash([branchPass.length, period - branchPass.length])
-    for (const group of groups) {
-      context2d.globalAlpha = Math.min(1, branchPass.alpha * group.opacity)
-      context2d.lineDashOffset = positiveModulo(-(travelled + group.shift * period), period)
-      if (group.path) {
-        context2d.stroke(group.path)
-        continue
+  /**
+   * Tributary streaks. Every line has its own period (one streak, or two on a long
+   * line) in whole multiples of the shared one, and the pattern is anchored to the
+   * line's end: each streak's head reaches the end when the clock is a multiple of
+   * the shared period, on every line at once, so the water seems to arrive together.
+   */
+  function paintBranches(context2d: FlowPulseContext, time: number) {
+    if (branchLines.length === 0) return
+    const seconds = time / 1000
+    for (const line of branchLines) {
+      const per = branchPeriod * Math.max(1, Math.ceil(line.length / (2 * branchPeriod)))
+      const arrival = positiveModulo(seconds * branchSpeed, per)
+      for (const pass of branchPasses) {
+        context2d.strokeStyle = pass.color
+        context2d.lineWidth = pass.width
+        context2d.globalAlpha = Math.min(1, pass.alpha * line.opacity)
+        context2d.setLineDash([pass.length, per - pass.length])
+        context2d.lineDashOffset = positiveModulo(pass.length - (line.length - per + arrival), per)
+        if (line.path) {
+          context2d.stroke(line.path)
+          continue
+        }
+        context2d.beginPath()
+        traceLine(context2d, line.points)
+        context2d.stroke()
       }
-      context2d.beginPath()
-      for (const line of group.lines) traceLine(context2d, line)
-      context2d.stroke()
     }
   }
 
@@ -443,7 +556,7 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     if (!context2d || !view) return
     context2d.clearRect(0, 0, view.width, view.height)
     const travelled = (time / 1000) * speed
-    paintBranches(context2d, travelled)
+    paintBranches(context2d, time)
     for (const pass of passes) {
       context2d.strokeStyle = pass.color
       context2d.lineWidth = pass.width
@@ -551,47 +664,70 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     }
   }
 
-  /** Read the tributary pieces and gather their lines into a path per brightness and start phase. */
+  /**
+   * Read the tributary pieces, stitch each line's into one, and keep the lines long
+   * enough to carry a streak (the longest, when there are very many).
+   */
   function buildBranches(pixelsPerMetre: number) {
-    groups = []
-    branchChains = 0
+    branchLines = []
+    branchDropped = 0
     if (!view || !branches) return
     const merged: VectorTilePathStretch[] = []
-    const bandOf: number[] = []
-    for (const [band, branch] of branches.entries()) {
-      for (const stretch of branch.stretches) {
-        merged.push(stretch)
-        bandOf.push(band)
+    const lineOf: number[] = []
+    const opacityOf: number[] = []
+    let lineCount = 0
+    for (const branch of branches) {
+      const sizes = branch.lineSizes ?? [branch.stretches.length]
+      let offset = 0
+      for (const size of sizes) {
+        const end = Math.min(branch.stretches.length, offset + Math.max(0, size))
+        for (; offset < end; offset += 1) {
+          merged.push(branch.stretches[offset] as VectorTilePathStretch)
+          lineOf.push(lineCount)
+        }
+        opacityOf.push(Math.max(0, Math.min(1, branch.opacity)))
+        lineCount += 1
+      }
+      // Stretches past the sizes are one more line.
+      if (offset < branch.stretches.length) {
+        for (; offset < branch.stretches.length; offset += 1) {
+          merged.push(branch.stretches[offset] as VectorTilePathStretch)
+          lineOf.push(lineCount)
+        }
+        opacityOf.push(Math.max(0, Math.min(1, branch.opacity)))
+        lineCount += 1
       }
     }
     if (merged.length === 0) return
-    const buckets: VectorTilePathPiece[][] = branches.map(() => [])
+    const buckets: VectorTilePathPiece[][] = Array.from({ length: lineCount }, () => [])
     for (const piece of source.pathPieces({ marginPx: MARGIN_PX, stretches: merged, view })) {
-      buckets[bandOf[piece.rank] ?? 0]?.push(piece)
+      buckets[lineOf[piece.rank] ?? 0]?.push(piece)
     }
-    for (const [band, bucket] of buckets.entries()) {
-      const lines = joinPathPieces(bucket, pixelsPerMetre)
-      if (lines.length === 0) continue
-      branchChains += lines.length
-      const opacity = Math.max(0, Math.min(1, branches[band]?.opacity ?? 1))
-      const made: BranchGroup[] = []
-      for (let phase = 0; phase < BRANCH_PHASES; phase += 1) {
-        made.push({
-          count: 0,
-          lines: [],
-          opacity,
-          path: createPath ? createPath() : null,
-          shift: phase / BRANCH_PHASES,
+    const minLength = style.branchMinLength ?? 30
+    const kept: BranchChain[] = []
+    for (const [line, bucket] of buckets.entries()) {
+      for (const chain of joinPathPieces(bucket, pixelsPerMetre)) {
+        if (chain.length < minLength) {
+          branchDropped += 1
+          continue
+        }
+        kept.push({
+          length: chain.length,
+          opacity: opacityOf[line] ?? 1,
+          path: null,
+          points: chain.points,
         })
       }
-      for (const [index, line] of lines.entries()) {
-        const group = made[index % BRANCH_PHASES] as BranchGroup
-        group.count += 1
-        const path = group.path as (FlowPulsePath & FlowPulsePathBuilder) | null
-        if (path) traceLine(path, line.points)
-        else group.lines.push(line.points)
-      }
-      for (const group of made) if (group.count > 0) groups.push(group)
+    }
+    kept.sort((left, right) => right.length - left.length)
+    branchDropped += Math.max(0, kept.length - MAX_BRANCH_CHAINS)
+    branchLines = kept.slice(0, MAX_BRANCH_CHAINS)
+    if (!createPath) return
+    for (const line of branchLines) {
+      const path = createPath()
+      if (!path) break
+      traceLine(path, line.points)
+      line.path = path
     }
   }
 
@@ -599,8 +735,8 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     stop()
     cancelRetry()
     chains = []
-    groups = []
-    branchChains = 0
+    branchLines = []
+    branchDropped = 0
     const hasPath = stretches !== null && stretches.length > 0
     const hasBranches = branches?.some((branch) => branch.stretches.length > 0) ?? false
     if (destroyed || held || !view || (!hasPath && !hasBranches)) {
@@ -620,7 +756,7 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
       keepPaths(chains)
     }
     if (hasBranches) buildBranches(pixelsPerMetre)
-    if (chains.length === 0 && groups.length === 0) {
+    if (chains.length === 0 && branchLines.length === 0) {
       mode = 'idle'
       if (retries < EMPTY_RETRIES) {
         retries += 1
@@ -642,7 +778,7 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     context2d.lineJoin = 'round'
     if (reduced() || !requestFrame) {
       mode = 'chevrons'
-      groups = []
+      branchLines = []
       paintChevrons()
       return
     }
@@ -664,7 +800,7 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
       cancelRetry()
       query?.removeEventListener('change', onMotionChange)
       chains = []
-      groups = []
+      branchLines = []
       mode = 'idle'
       if (view) clear()
     },
@@ -681,7 +817,14 @@ export function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseL
     get stats() {
       let points = 0
       for (const chain of chains) points += chain.points.length / 2
-      return { branchChains, chains: chains.length, frames, mode, points }
+      return {
+        branchChains: branchLines.length,
+        branchDropped,
+        chains: chains.length,
+        frames,
+        mode,
+        points,
+      }
     },
     suspend() {
       if (destroyed) return

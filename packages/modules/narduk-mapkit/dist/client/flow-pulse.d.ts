@@ -4,6 +4,20 @@ import type { VectorTilePathPiece, VectorTilePathStretch } from './vector-tile-p
 export interface FlowPulseStyle {
     /** Brightness of the tributary streaks against the main ones, 0 to 1. Default 0.85. */
     branchOpacity?: number;
+    /** Length of one tributary streak, head to tail end. Default `dash * 0.65`, at least 6. */
+    branchDash?: number;
+    /** Tributary lines shorter than this, in CSS pixels, carry no streak. Default 30. */
+    branchMinLength?: number;
+    /**
+     * Distance between two streaks on a tributary line. A line carries at most two, so
+     * a longer line stretches this. Streaks on every line reach its end at the same
+     * moment (they are in phase). Default 190.
+     */
+    branchPeriod?: number;
+    /** How fast tributary streaks travel, in pixels a second. Default `speed`. */
+    branchSpeed?: number;
+    /** Steps in a tributary streak's tail; 1 is a plain dash. Default 1. */
+    branchTail?: number;
     /** Stroke width of a tributary streak. Default `width * 0.6`, at least 1.4. */
     branchWidth?: number;
     /** Half the width of a chevron, from its tip to a wing's end. Default 4. */
@@ -30,6 +44,12 @@ export interface FlowPulseStyle {
     speed?: number;
     /** Steps in a streak's tail, from the bright head back to its faint end; 1 is a plain dash. Default 4. */
     tail?: number;
+    /**
+     * Brightness of each tail step, 0 to 1. The steps stack, so the head shows the sum:
+     * with ten steps at 0.3 the tail fades in smoothly. Default: steps that brighten
+     * toward the head, from 0.28 to 1.
+     */
+    tailOpacity?: number;
     /** Stroke width of a streak head. */
     width: number;
 }
@@ -48,6 +68,13 @@ export declare const FLOW_PULSE_DEFAULTS: {
 };
 /** Tributaries of one brightness: stretches listed upstream first within each line. */
 export interface FlowPulseBranch {
+    /**
+     * How many stretches each line of this group holds, in order, summing to
+     * `stretches.length`. Pieces are stitched within a line only, so two
+     * tributaries that meet are never run together. Without it the whole group is
+     * one line.
+     */
+    lineSizes?: readonly number[];
     /** How bright this group is, 0 to 1, before the style's `branchOpacity`. */
     opacity: number;
     /** Stretches of this group. Lines (a tributary and what feeds it) are listed upstream first. */
@@ -116,8 +143,10 @@ export interface FlowPulsePathBuilder {
 }
 export type FlowPulseMode = 'chevrons' | 'idle' | 'pulse';
 export interface FlowPulseStats {
-    /** Lines of tributary streaks. */
+    /** Tributary lines that carry streaks. */
     branchChains: number;
+    /** Tributary lines left without, being shorter than `branchMinLength` or past the cap. */
+    branchDropped: number;
     /** Lines the pieces of the main path were joined into. */
     chains: number;
     /** Frames the loop has drawn since the layer was made. */
@@ -143,6 +172,8 @@ export interface FlowPulseLayer {
     update: (view: PointLayerView) => void;
 }
 interface Chain {
+    /** Length of the line in CSS pixels. */
+    length: number;
     /** Cumulative length at each point, for chevron placement. */
     lengths: Float32Array;
     /** Where the pattern starts along this line, in pixels, from the path's start. */
@@ -153,12 +184,16 @@ interface Chain {
 }
 /**
  * Join the pieces of a path, in path order, into lines: a piece that starts
- * where the last one ended continues it. A gap (a tile not decoded, a stretch
- * off the screen) starts a new line whose pattern phase comes from the ground
- * distance, so the dashes on the far side of a gap still line up with the
- * ones before it, to within the difference between ground and drawn length.
+ * where the last one ended continues it, and so does one that ends there (the
+ * tiles draw a stretch in either direction, and the path knows which way the
+ * water goes), which is then turned round. A line made of one piece is turned
+ * round too when the next piece meets its start. A gap (a tile not decoded, a
+ * stretch off the screen) starts a new line whose pattern phase comes from the
+ * ground distance, so the dashes on the far side of a gap still line up with
+ * the ones before it, to within the difference between ground and drawn
+ * length. Points that repeat one another are dropped.
  */
-export declare function joinPathPieces(pieces: readonly VectorTilePathPiece[], pixelsPerMetre: number): Chain[];
+export declare function joinPathPieces(pieces: readonly VectorTilePathPiece[], pixelsPerMetre: number, joinPx?: number): Chain[];
 export declare function createFlowPulseLayer(options: FlowPulseLayerOptions): FlowPulseLayer;
 export {};
 //# sourceMappingURL=flow-pulse.d.ts.map
