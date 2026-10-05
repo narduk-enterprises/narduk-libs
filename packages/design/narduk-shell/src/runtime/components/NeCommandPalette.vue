@@ -696,6 +696,15 @@ const actionHint = computed(() =>
   white-space: nowrap;
 }
 
+@media (width < 520px) {
+  .ne-cmd__label {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+}
+
 .ne-cmd__hit {
   background: transparent;
   color: var(--ne-accent);

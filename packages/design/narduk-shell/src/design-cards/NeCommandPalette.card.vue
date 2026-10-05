@@ -17,30 +17,51 @@ import type { NeCommandGroup, NeCommandItem } from '../runtime/components/ne-com
 
 const palette = useCommandPalette()
 
+const DEMO_DESTINATION = '#'
+const RIVER_ICON = 'i-lucide-waves'
+
 const RIVERS: NeCommandItem[] = [
+  {
+    id: 'brazos-san-felipe',
+    label: 'Brazos River above San Felipe, Texas',
+    description: 'Fort Bend County, Texas',
+    to: DEMO_DESTINATION,
+    badge: { label: 'Normal', tone: 'success' },
+    icon: RIVER_ICON,
+    actions: [{ id: 'map', label: 'Show on map', icon: 'i-lucide-map-pin', to: DEMO_DESTINATION }],
+  },
+  {
+    id: 'brazos-aspermont',
+    label: 'Brazos River at Aspermont, Texas',
+    description: 'Stonewall County, Texas',
+    to: DEMO_DESTINATION,
+    badge: { label: 'Action', tone: 'warning' },
+    icon: RIVER_ICON,
+    actions: [{ id: 'map', label: 'Show on map', icon: 'i-lucide-map-pin', to: DEMO_DESTINATION }],
+  },
   {
     id: 'missouri',
     label: 'Missouri River',
     description: 'Missouri',
-    to: '#',
+    to: DEMO_DESTINATION,
     badge: { label: 'Normal', tone: 'success' },
-    icon: 'i-lucide-waves',
+    icon: RIVER_ICON,
   },
   {
     id: 'mississippi',
     label: 'Mississippi River',
     description: 'Louisiana, Mississippi',
-    to: '#',
+    to: DEMO_DESTINATION,
     badge: { label: 'Action', tone: 'warning' },
-    icon: 'i-lucide-waves',
+    icon: RIVER_ICON,
   },
   {
     id: 'milk',
     label: 'Milk River',
     description: 'Montana',
-    to: '#',
+    to: DEMO_DESTINATION,
     badge: { label: 'Low', tone: 'neutral' },
-    icon: 'i-lucide-waves',
+    icon: RIVER_ICON,
   },
 ]
 
@@ -63,7 +84,7 @@ const groups: NeCommandGroup[] = [
         label: 'Missouri',
         description: '412 gauges',
         keywords: ['MO'],
-        to: '#',
+        to: DEMO_DESTINATION,
         icon: 'i-lucide-map',
       },
       {
@@ -71,7 +92,7 @@ const groups: NeCommandGroup[] = [
         label: 'Mississippi',
         description: '188 gauges',
         keywords: ['MS'],
-        to: '#',
+        to: DEMO_DESTINATION,
         icon: 'i-lucide-map',
       },
       {
@@ -79,7 +100,7 @@ const groups: NeCommandGroup[] = [
         label: 'Montana',
         description: '305 gauges',
         keywords: ['MT'],
-        to: '#',
+        to: DEMO_DESTINATION,
         icon: 'i-lucide-map',
       },
     ],
@@ -89,9 +110,9 @@ const groups: NeCommandGroup[] = [
     label: 'Pages',
     idleLimit: 3,
     items: [
-      { id: 'map', label: 'Map', to: '#', icon: 'i-lucide-map-pin' },
-      { id: 'rivers', label: 'Rivers', to: '#', icon: 'i-lucide-waves' },
-      { id: 'about', label: 'About', to: '#', icon: 'i-lucide-info' },
+      { id: 'map', label: 'Map', to: DEMO_DESTINATION, icon: 'i-lucide-map-pin' },
+      { id: 'rivers', label: 'Rivers', to: DEMO_DESTINATION, icon: RIVER_ICON },
+      { id: 'about', label: 'About', to: DEMO_DESTINATION, icon: 'i-lucide-info' },
     ],
   },
 ]
