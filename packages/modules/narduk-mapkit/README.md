@@ -233,6 +233,32 @@ const selectedId = ref<string | null>(null)
   `'muted'` from 2.1.1, and both it and `colorScheme` are now written to a live
   map when the prop changes, not only in the constructor.
 
+#### App colour mode and CSP nonce
+
+Import the injection keys from
+`@narduk-enterprises/narduk-mapkit/injection-keys` in runtime code. This subpath
+loads no Nuxt module or Vue runtime; its types use Vue's `InjectionKey`. The
+`./nuxt` module continues to export the same symbols.
+
+```vue
+<script setup lang="ts">
+import { provide } from 'vue'
+import {
+  mapKitColorModeInjectionKey,
+  mapKitNonceInjectionKey,
+} from '@narduk-enterprises/narduk-mapkit/injection-keys'
+
+// This parent component receives the nonce from the app's CSP integration.
+const props = defineProps<{ nonce?: string }>()
+const colorMode = useColorMode()
+provide(mapKitColorModeInjectionKey, colorMode)
+if (props.nonce) provide(mapKitNonceInjectionKey, props.nonce)
+</script>
+```
+
+`colorScheme="auto"` reads the provided object's reactive `.value`. An explicit
+`colorScheme` or `nonce` prop takes precedence over its injected value.
+
 #### Styling
 
 2.1.1 ships the host chrome the component's DOM contract always implied. The

@@ -89,6 +89,10 @@
       "types": "./dist/nuxt/runtime/composables/index.d.ts",
       "import": "./dist/nuxt/runtime/composables/index.js"
     },
+    "./injection-keys": {
+      "types": "./dist/nuxt/runtime/injection-keys.d.ts",
+      "import": "./dist/nuxt/runtime/injection-keys.js"
+    },
     "./instrument-marks": {
       "types": "./dist/instrument-marks/index.d.ts",
       "import": "./dist/instrument-marks/index.js"
