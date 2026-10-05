@@ -52,7 +52,7 @@ jobs:
       auth-kit-swift: ${{ steps.plan.outputs.auth-kit-swift }}
     steps:
       - name: Check out source and comparison history
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -149,7 +149,7 @@ jobs:
 
   ci:
     needs: [affected]
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@dab7998f45f4eb2a9c1b5ad37535c19e552daf17 # v2
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@802d9f0a1586b96adbafcc9888a0af12de3a9eae # v2
     permissions:
       contents: read
     with:
@@ -179,7 +179,7 @@ jobs:
       contents: read
     steps:
       - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -342,7 +342,7 @@ jobs:
       TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo-cache
     steps:
       - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -486,7 +486,7 @@ jobs:
       contents: read
     steps:
       - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
