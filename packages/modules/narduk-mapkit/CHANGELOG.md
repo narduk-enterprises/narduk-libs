@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.19.0
+
+### Minor Changes
+
+- 31d968f: `createAreaMaskTileSource({ createCanvas, layer })` is a tile image
+  source that covers everything outside some areas: a cut-out for a page about
+  one state.
+
+  - The layer is `{ index, ids?, fillColor, fillOpacity?, edge? }` over the same
+    `createVectorTileAreaIndex` the outline source and the pointer use. `ids`
+    picks the areas left uncovered (default every area); `edge` draws a line
+    round each cut-out, over the mask.
+  - One even-odd fill of the tile's rectangle plus the areas' rings, so every
+    part of a multi-polygon is cut out (Michigan's peninsulas, Hawaii's islands,
+    the Aleutians either side of the antimeridian). Shapes are also tried one
+    world east and west for a map that repeats the world.
+  - A tile no area reaches is one flat image shared per size. Place the layer
+    above the network in a `MapKitLayerRegistry` and the network and the basemap
+    show only inside the areas.
+
+- 5c1806f: Three generic pieces for a national river map: area outlines, a quiet
+  area label on hover, and a flow pulse along a chosen path of a vector tile
+  overlay.
+
+  - `createAreaOutlineTileSource({ createCanvas, layer })` is a tile image
+    source that strokes the outlines of a `createVectorTileAreaIndex` layer and
+    nothing else (state borders beneath a river network). It answers `null` for
+    a tile no area reaches. `setLayer` swaps the shapes. Opacity belongs to the
+    layer registry, so shared edges do not double-darken.
+  - `createAreaHoverLabel({ container, ... })` is one DOM element that names the
+    area under a desktop pointer: centred on a caller-supplied anchor, or beside
+    the pointer when the anchor is off the screen. It takes no pointer events,
+    is `aria-hidden`, fades, and is told nothing about what an area is.
+  - `source.pathPieces({ stretches, view })` reads the decoded tiles already in
+    memory and returns the clipped, screen-space pieces of the named stretches,
+    ordered along the path (`collectVectorTilePathPieces` is the pure core).
+  - `createFlowPulseLayer({ canvas, source, style })` draws a dashed pulse that
+    runs down a path: one stroke per chain per frame, the geometry read once per
+    view or path change, no per-frame allocation, and a loop that runs only
+    while a path is set and the map is still (`suspend` and `update`). With
+    `prefers-reduced-motion` it holds still and draws downstream chevrons, and
+    it follows the preference when it changes.
+
 ## 2.18.0
 
 ### Minor Changes
