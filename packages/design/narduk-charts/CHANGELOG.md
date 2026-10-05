@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0
+
+### Minor Changes
+
+- ea97c0a: `ChartSeries.dashed` (NardukLineChart): draw a series' line dashed,
+  so a projection such as a model forecast reads differently from a measurement.
+  `true` is a `6 4` px pattern; a string is an SVG `stroke-dasharray`.
+
 ## 2.7.4
 
 ### Patch Changes
