@@ -1,5 +1,34 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.0
+
+### Minor Changes
+
+- 6264e85: Add log out everywhere (narduk-libs#1043).
+  `POST /api/auth/logout-everywhere` and `useAuth().logoutEverywhere()` revoke
+  native sessions when configured and delete every other `auth_sessions` row,
+  then sign this browser out. On the Supabase backend the upstream sign-out
+  stays app-local (#921).
+
+  Completing an MFA enrollment now ends the user's other sessions too; the
+  browser that proved the factor keeps its session. A sign-in step-up on an
+  enrolled factor ends nothing. narduk-auth has no email-change or MFA-unenroll
+  route; the README says a later one must revoke the same way.
+
+### Patch Changes
+
+- 860143c: Record local auth throttling and Sign in with Apple web-callback
+  refusals through narduk-core's request logger. Each failed local
+  email/password attempt writes an `info` record, a lockout that begins writes a
+  `warn` with the failure count and lock length, and a request refused while
+  locked writes a `warn` with the `Retry-After` it sent; records name the
+  attempt kind and never the email address, link token, client IP or attempt
+  key. The Apple web callback records a refusal with its fixed code
+  (`apple_state_mismatch`, `apple_token_missing`) or token-verification reason
+  (`nonce_mismatch`, `wrong_audience`, ...) and a user cancel at `info`, never
+  the identity token or its claims. Responses are unchanged.
+  - @narduk-enterprises/narduk-core@2.23.4
+
 ## 1.33.10
 
 ### Patch Changes
