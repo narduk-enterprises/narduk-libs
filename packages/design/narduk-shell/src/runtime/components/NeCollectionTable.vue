@@ -142,6 +142,7 @@ type StackClass =
   | 'phoneOnly'
   | 'primary'
   | 'tap'
+  | 'tapSquare'
   | 'thTap'
   | 'tint'
 
@@ -162,6 +163,7 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     primary:
       'max-sm:block max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start',
     tap: 'max-sm:min-h-11',
+    tapSquare: 'max-sm:min-h-11 max-sm:min-w-11',
     thTap: 'max-sm:[&_button]:min-h-11',
     tint: 'sm:bg-elevated/50',
   },
@@ -181,6 +183,7 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     primary:
       'max-md:block max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start',
     tap: 'max-md:min-h-11',
+    tapSquare: 'max-md:min-h-11 max-md:min-w-11',
     thTap: 'max-md:[&_button]:min-h-11',
     tint: 'md:bg-elevated/50',
   },
@@ -200,6 +203,7 @@ const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
     primary:
       'max-lg:block max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start',
     tap: 'max-lg:min-h-11',
+    tapSquare: 'max-lg:min-h-11 max-lg:min-w-11',
     thTap: 'max-lg:[&_button]:min-h-11',
     tint: 'lg:bg-elevated/50',
   },
@@ -620,6 +624,8 @@ const filterModel = computed({
             variant="outline"
             size="sm"
             :icon="sortState.direction === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'"
+            data-ne-collection-sort-direction
+            :class="stack.tapSquare"
             :aria-label="`Sorted ${sortState.direction === 'asc' ? 'ascending' : 'descending'}; reverse`"
             @click="flipSort"
           />

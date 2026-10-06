@@ -592,6 +592,19 @@ describe('NeCollectionTable: phone', () => {
     expect(sort.classes()).toEqual(expect.arrayContaining(['hidden', 'max-md:inline-flex']))
   })
 
+  it('gives the phone sort-direction button a 44px tap target, wide as well as tall (#1547)', () => {
+    const wrapper = render({
+      caption: 'R',
+      columns,
+      rows: repos,
+      sort: 'issues:desc',
+      toolbar: 'always',
+    })
+    const flip = wrapper.find('[data-ne-collection-sort-direction]')
+    expect(flip.exists()).toBe(true)
+    expect(flip.classes()).toEqual(expect.arrayContaining(['max-md:min-h-11', 'max-md:min-w-11']))
+  })
+
   it('swaps the hidden header’s sort buttons for labels once mounted on a phone', async () => {
     vi.stubGlobal(
       'matchMedia',
