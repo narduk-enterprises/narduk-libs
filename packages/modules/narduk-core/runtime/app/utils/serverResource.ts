@@ -158,6 +158,8 @@ export type ServerResource<T, W extends ServerResourceWriteArgs> = ServerResourc
 interface ResourceEntry {
   force: boolean
   pollers: number
+  /** The freshness stamp, held so code outside a setup context reaches it without one. */
+  readAt?: Ref<number | null>
   stopPolling: (() => void) | undefined
 }
 
@@ -166,7 +168,11 @@ interface AppWithResources {
   _nardukServerResources?: Map<string, ResourceEntry>
   isHydrating?: boolean
   payload: { data: Record<string, unknown> }
-  runWithContext: <R>(fn: () => R) => R
+  /**
+   * Synchronous in the browser; on the server Nuxt answers with a promise
+   * (`callWithNuxt` goes through unctx `callAsync`), so every result is awaited.
+   */
+  runWithContext: <R>(fn: () => R) => R | Promise<R>
 }
 
 const readAtKey = (key: string) => `narduk:resource:${key}:read-at`
@@ -214,8 +220,10 @@ export async function invalidateServerResourcesWith(
 ): Promise<void> {
   const nuxtApp = nuxt.useNuxtApp() as AppWithResources
   for (const key of keys) {
-    nuxtApp.runWithContext(() => nuxt.useState<number | null>(readAtKey(key), () => null)).value =
-      null
+    const stamp =
+      nuxtApp._nardukServerResources?.get(key)?.readAt ??
+      (await nuxtApp.runWithContext(() => nuxt.useState<number | null>(readAtKey(key), () => null)))
+    stamp.value = null
   }
   await nuxt.refreshNuxtData([...keys])
 }
@@ -247,11 +255,13 @@ export function createServerResource<T, W extends ServerResourceWriteArgs = Reco
     const entry = entryOf(nuxtApp, key)
     const force = entry.force
     entry.force = false
-    const { fetch, readAt, error } = nuxtApp.runWithContext(() => ({
+    const scoped = nuxtApp.runWithContext(() => ({
       fetch: nuxt.useRequestFetch(),
       readAt: nuxt.useState<number | null>(readAtKey(key), () => null),
       error: nuxt.useState<ServerResourceError | null>(errorKey(key), () => null),
     }))
+    /* Awaited only on the server: the browser keeps its read synchronous with the caller. */
+    const { fetch, readAt, error } = scoped instanceof Promise ? await scoped : scoped
     try {
       const value = await options.fetch({ fetch, force, signal })
       readAt.value = Date.now()
@@ -276,10 +286,9 @@ export function createServerResource<T, W extends ServerResourceWriteArgs = Reco
     ? (cacheKey: string, app: unknown, context: { cause: string }) => {
         const nuxtApp = app as AppWithResources
         if (!(import.meta.server || nuxtApp.isHydrating || context.cause === 'initial')) return
-        const stamp = nuxtApp.runWithContext(() =>
-          nuxt.useState<number | null>(readAtKey(cacheKey), () => null),
-        )
-        return stamp.value === null && !nuxtApp.isHydrating
+        /* Every consumer registers the stamp before its useAsyncData, so it is here. */
+        const stamp = nuxtApp._nardukServerResources?.get(cacheKey)?.readAt
+        return (stamp?.value ?? null) === null && !nuxtApp.isHydrating
           ? undefined
           : (nuxtApp.payload.data[cacheKey] as T | undefined)
       }
@@ -288,6 +297,7 @@ export function createServerResource<T, W extends ServerResourceWriteArgs = Reco
   return function useServerResource(call: ServerResourceCallOptions = {}) {
     const nuxtApp = nuxt.useNuxtApp() as AppWithResources
     const readAt = nuxt.useState<number | null>(readAtKey(key), () => null)
+    entryOf(nuxtApp, key).readAt = readAt
     const error = nuxt.useState<ServerResourceError | null>(errorKey(key), () => null)
     const appFetch = withMutationHeader(nuxt.useRequestFetch())
     const request = nuxt.useAsyncData(key, handler, {

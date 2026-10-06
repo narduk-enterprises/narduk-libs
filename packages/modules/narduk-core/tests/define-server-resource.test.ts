@@ -3,7 +3,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
-import { createServerResource } from '../runtime/app/utils/serverResource'
+import {
+  createServerResource,
+  invalidateServerResourcesWith,
+} from '../runtime/app/utils/serverResource'
 
 import type { ServerResourceNuxt } from '../runtime/app/utils/serverResource'
 import type { Ref } from 'vue'
@@ -22,11 +25,13 @@ interface FakeEntry {
   status: Ref<string>
 }
 
+const syncContext = <R>(fn: () => R): R | Promise<R> => fn()
 const app = {
   _asyncData: {} as Record<string, FakeEntry>,
+  _nardukServerResources: undefined as Map<string, unknown> | undefined,
   isHydrating: false,
   payload: { data: {} as Record<string, unknown> },
-  runWithContext: <R>(fn: () => R) => fn(),
+  runWithContext: syncContext,
 }
 const state = new Map<string, Ref<unknown>>()
 const requestFetch = vi.fn()
@@ -125,6 +130,8 @@ const alpha = (name = 'Alpha'): Catalog => ({ available: true, products: [{ id: 
 
 beforeEach(() => {
   app._asyncData = {}
+  app._nardukServerResources = undefined
+  app.runWithContext = syncContext
   app.isHydrating = false
   app.payload.data = {}
   state.clear()
@@ -141,6 +148,20 @@ afterEach(() => {
 })
 
 describe('defineServerResource', () => {
+  it('reads and invalidates when runWithContext answers with a promise, as on the Nuxt server', async () => {
+    app.runWithContext = async <R>(fn: () => R) => fn()
+    const catalog = await useCatalog()
+    expect(catalog.state.value).toBe('ready')
+    expect(catalog.data.value).toEqual(alpha())
+    expect(catalog.readAt.value).not.toBeNull()
+    expect(catalog.error.value).toBeNull()
+
+    const summary = await useSummary()
+    expect(summary.data.value).toEqual({ count: 1 })
+    await invalidateServerResourcesWith(nuxt, ['catalog-summary'])
+    expect(requestFetch.mock.calls.filter(([path]) => path === '/api/summary')).toHaveLength(2)
+  })
+
   it('reads once, and a second caller inside the TTL reuses the answer', async () => {
     const first = await useCatalog()
     const second = await useCatalog()
