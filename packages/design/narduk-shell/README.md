@@ -2000,8 +2000,9 @@ already the phone's:
   columns and needs no viewport measured on mount.
 
 Either way a `phone: false` column is dropped, and the search, chips, sort
-select, "Show all", sortable headers and every linked or selectable row hold a
-44px tap floor (`min-h-11`).
+select, its sort-direction button (44px wide as well, `min-w-11`), "Show all",
+sortable headers and every linked or selectable row hold a 44px tap floor
+(`min-h-11`).
 
 Above the line, a column with a `width` is fixed and the width-less ones share
 the rest. Once any column declares a width the table is floored at
