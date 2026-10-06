@@ -41,6 +41,16 @@ describe('isPreviewAnalyticsHost', () => {
     expect(isPreviewAnalyticsHost('contest.example.com')).toBe(false)
   })
 
+  it('flags Tailscale dev hosts and any host with an explicit port', () => {
+    expect(isPreviewAnalyticsHost('phantom.curl-banjo.ts.net')).toBe(true)
+    expect(isPreviewAnalyticsHost('phantom.curl-banjo.ts.net:3099')).toBe(true)
+    expect(isPreviewAnalyticsHost('acreoracle.com:8443')).toBe(true)
+    expect(isPreviewAnalyticsHost('acreoracle.com')).toBe(false)
+    expect(isInternalAnalyticsTraffic('acreoracle.com', 'production', 'acreoracle.com:3099')).toBe(
+      true,
+    )
+  })
+
   it('does not flag the canonical production host', () => {
     expect(isPreviewAnalyticsHost(PRODUCTION_HOST)).toBe(false)
   })

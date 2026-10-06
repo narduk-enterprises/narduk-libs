@@ -73,6 +73,7 @@ export default defineNuxtPlugin({
       surface: runtimeConfig.public.analyticsSurface,
       appVersion: runtimeConfig.public.appVersion,
       buildVersion: runtimeConfig.public.buildVersion,
+      host: window.location.host,
       hostname: window.location.hostname,
       deploymentTarget: runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget,
       owner: () =>

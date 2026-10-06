@@ -273,13 +273,13 @@ can tell Logan's browsers and our automation from real visitors. Nothing is
 dropped: events are tagged, and readers filter. Events sent before this version
 carry no `traffic_class`; readers treat that as `unmarked`.
 
-| `traffic_class` | `traffic_evidence`      | When                                                                                                                                                                                                |
-| --------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `automation`    | `ua_marker`             | The user agent contains `NardukAutomation/<tool>`; `automation_tool=<tool>` is added.                                                                                                               |
-| `owner`         | `signed_enrollment`     | The browser holds a verified `__Host-narduk_traffic` class claim for this origin.                                                                                                                   |
-| `owner`         | `authenticated_session` | A signed-in narduk-auth session on an app that sets `nardukAnalytics.authenticatedOwner: true` (every account is the owner, e.g. the operator portal). Never set it on an app with public accounts. |
-| `owner`         | `unsigned_claim`        | Only the legacy, client-settable `narduk_owner=true` cookie. Lower evidence (inferred).                                                                                                             |
-| `unmarked`      | `none`                  | Everybody else.                                                                                                                                                                                     |
+| `traffic_class` | `traffic_evidence`      | When                                                                                                                                                                                                            |
+| --------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `automation`    | `ua_marker`             | The user agent contains `NardukAutomation/<tool>`; `automation_tool=<tool>` is added.                                                                                                                           |
+| `owner`         | `signed_enrollment`     | The browser holds a verified `__Host-narduk_traffic` class claim for this origin.                                                                                                                               |
+| `owner`         | `authenticated_session` | A signed-in narduk-auth **admin** session on an app that sets `nardukAnalytics.authenticatedOwner: true` (its admins are the estate owner). Other signed-in users stay unmarked. Never set it on a client site. |
+| `owner`         | `unsigned_claim`        | Only the legacy, client-settable `narduk_owner=true` cookie. Lower evidence (inferred).                                                                                                                         |
+| `unmarked`      | `none`                  | Everybody else.                                                                                                                                                                                                 |
 
 Precedence is the table order. Hosts ending in `.test` count as preview
 (`is_internal_user`), never production. PostHog gets them as super properties

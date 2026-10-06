@@ -81,8 +81,16 @@ export type AnalyticsDeploymentTarget = 'preview' | 'production' | 'staging' | u
  */
 export function isPreviewAnalyticsHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
-  // `.test` is reserved for local and lab hosts (RFC 2606); never production.
-  return h.endsWith('.pages.dev') || h.endsWith('.workers.dev') || h.endsWith('.test')
+  // `.test` is reserved for lab hosts (RFC 2606), `.ts.net` is a Tailscale dev
+  // host, and an explicit port (`host:3099`) is a dev server: never production.
+  // Pass `location.host` (not `hostname`) so the port is visible.
+  return (
+    h.endsWith('.pages.dev') ||
+    h.endsWith('.workers.dev') ||
+    h.endsWith('.test') ||
+    h.endsWith('.ts.net') ||
+    /:\d+$/u.test(h)
+  )
 }
 
 /**
@@ -94,9 +102,11 @@ export function isPreviewAnalyticsHost(hostname: string): boolean {
 export function isInternalAnalyticsTraffic(
   hostname: string,
   deploymentTarget: AnalyticsDeploymentTarget,
+  /** `location.host`, so an explicit dev-server port counts as preview. */
+  host?: string,
 ): boolean {
   if (deploymentTarget && deploymentTarget !== 'production') return true
-  return isPreviewAnalyticsHost(hostname)
+  return isPreviewAnalyticsHost(host || hostname)
 }
 
 /**
@@ -108,10 +118,11 @@ export function isInternalAnalyticsTraffic(
 export function resolveAnalyticsEnvironment(
   hostname: string,
   deploymentTarget: AnalyticsDeploymentTarget,
+  host?: string,
 ): 'development' | 'preview' | 'production' | 'staging' {
   if (isLocalAnalyticsHost(hostname)) return 'development'
   if (deploymentTarget === 'staging' || deploymentTarget === 'preview') return deploymentTarget
-  if (isPreviewAnalyticsHost(hostname)) return 'preview'
+  if (isPreviewAnalyticsHost(host || hostname)) return 'preview'
   return 'production'
 }
 

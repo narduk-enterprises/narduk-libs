@@ -50,10 +50,10 @@ export interface NardukAnalyticsModuleOptions {
   /** Stable registry ID, separate from the existing app display label. */
   appId?: string
   /**
-   * Every account on this app is the owner (an app wholly behind narduk-auth,
-   * like the operator portal): a signed-in session tags events
-   * `traffic_class=owner`, `traffic_evidence=authenticated_session`. Needs
-   * `useUserSession` (narduk-auth). Never set it on an app with public accounts.
+   * This app's narduk-auth admins are the estate owner: a signed-in admin
+   * session tags events `traffic_class=owner`,
+   * `traffic_evidence=authenticated_session`; other users stay unmarked. Needs
+   * `useUserSession` (narduk-auth). Never set it on a client site.
    */
   authenticatedOwner?: boolean
   /** Foreground active-time deltas and once-per-visit scroll milestones. */
