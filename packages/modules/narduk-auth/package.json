@@ -119,7 +119,7 @@
     "@types/node": "^22.19.19",
     "@vitejs/plugin-vue": "6.0.7",
     "@vitest/coverage-v8": "4.1.6",
-    "@vue/server-renderer": "3.5.39",
+    "@vue/server-renderer": "3.5.43",
     "@vue/test-utils": "2.4.11",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
