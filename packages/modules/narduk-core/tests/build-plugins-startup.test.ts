@@ -216,6 +216,27 @@ describe('build-info.client plugin', () => {
     expect(warn).toHaveBeenCalledWith(`[build] Demo v1.2.3 · abc123def456 · deployed ${LOCAL}`)
   })
 
+  it('names the banner by appDisplayName and leaves the analytics appName alone (#1498)', async () => {
+    state.config = { ...state.config, appName: 'LakeStat', appDisplayName: 'Lake Status' }
+    const plugin = await loadPlugin(INFO_PLUGIN)
+    plugin(nuxtApp())
+    runMountedAndIdle()
+
+    expect(warn).toHaveBeenCalledWith(
+      `[build] Lake Status v1.2.3 · abc123def456 · deployed ${LOCAL}`,
+    )
+    expect((buildWindow.__NARDUK_BUILD__ as { appName: string }).appName).toBe('LakeStat')
+  })
+
+  it('falls back to appName when appDisplayName is empty (#1498)', async () => {
+    state.config = { ...state.config, appDisplayName: '' }
+    const plugin = await loadPlugin(INFO_PLUGIN)
+    plugin(nuxtApp())
+    runMountedAndIdle()
+
+    expect(warn).toHaveBeenCalledWith(`[build] Demo v1.2.3 · abc123def456 · deployed ${LOCAL}`)
+  })
+
   it('keeps the unknown fallbacks and does not log twice for one build', async () => {
     state.config = { appName: '', appVersion: '', buildVersion: '', buildTime: '' }
     const plugin = await loadPlugin(INFO_PLUGIN)
