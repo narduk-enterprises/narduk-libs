@@ -1,5 +1,25 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.46
+
+### Patch Changes
+
+- 08db525: The `colorMode` defaults, `classSuffix: ''` among them, now reach the
+  built page. narduk-core wrote them after it had already installed
+  `@nuxtjs/color-mode`, which reads its options once in its own setup, so an app
+  that stated no `colorMode` key still shipped `class="dark-mode"` and every
+  `.dark` rule stayed inert. The defaults are now written before the install,
+  and an app's own `colorMode` values still win. Proved on a real build of a
+  consumer that names no `colorMode` (#1464).
+- 789f683: A freshly scaffolded app now passes its own CI dependency audit. The
+  root `pnpm.overrides` floors `simple-git` at `^4.0.2`,
+  `@simple-git/argv-parser` at `^2.0.1` and `sharp` at `^0.35.5`, which clears
+  the five fixable high and critical advisories (simple-git and argv-parser
+  through `@nuxt/devtools`, sharp through miniflare), and
+  `apps/web/nuxt.config.ts` sets `devtools: { enabled: false }`, because
+  devtools 3.x default-imports simple-git and 4.x has no default export, so the
+  floor breaks `nuxt prepare` with devtools on (#1531).
+
 ## 0.21.45
 
 ### Patch Changes
