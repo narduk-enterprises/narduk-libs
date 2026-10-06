@@ -153,7 +153,7 @@
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   },
   "peerDependenciesMeta": {
     "@axe-core/playwright": {
