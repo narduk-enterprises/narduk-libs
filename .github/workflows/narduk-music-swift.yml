@@ -78,6 +78,22 @@ jobs:
               -derivedDataPath "${derived}" build
             echo "::endgroup::"
           done
+      - name: Build the SoundGallery app for macOS and the iOS simulator
+        # The gallery (narduk-libs#1570) is an XcodeGen project over this package: one multiplatform SwiftUI app.
+        # Unsigned builds only; no identity, profile or entitlement is involved.
+        working-directory: packages/modules/narduk-music/swift/Apps/SoundGallery
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen generate
+          derived="$(mktemp -d "${RUNNER_TEMP}/soundgallery-XXXXXX")"
+          for destination in 'platform=macOS' 'generic/platform=iOS Simulator'; do
+            echo "::group::SoundGallery (${destination})"
+            xcodebuild -quiet -project SoundGallery.xcodeproj -scheme SoundGallery \
+              -destination "${destination}" -derivedDataPath "${derived}" \
+              CODE_SIGNING_ALLOWED=NO build
+            echo "::endgroup::"
+          done
       - name: Resolve and build the consumer with the fleet Apple runner's Xcode 26.0.1 (Swift 6.2)
         env:
           DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
