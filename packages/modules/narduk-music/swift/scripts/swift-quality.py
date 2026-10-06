@@ -149,8 +149,8 @@ def main() -> None:
     # One regex over every product of the package (Music, SoundAnalysis, Sonify, SoundVisuals).
     run("swift", "test", *BUILD_FLAGS, "--filter", "NardukMusic|NardukSound|NardukSonify")
     if DARWIN:
-        # The allocation check means something only in an optimized build.
-        run("swift", "test", "-c", "release", "--filter", "RenderThreadAllocationTests")
+        # The allocation checks (every *AllocationTests suite) mean something only in an optimized build.
+        run("swift", "test", "-c", "release", "--filter", "AllocationTests")
     cli()
     consumer()
 
