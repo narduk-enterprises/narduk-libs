@@ -7,6 +7,7 @@ import {
   addServerScanDir,
   createResolver,
   defineNuxtModule,
+  extendPages,
   hasNuxtModule,
   installModule,
 } from '@nuxt/kit'
@@ -36,8 +37,19 @@ interface TypePrepareOptions {
   }
 }
 
+const ADMIN_ANALYTICS_ROUTE = '/admin/analytics'
+
 export interface NardukAnalyticsModuleOptions {
   admin?: boolean
+  /**
+   * The admin Analytics page at `/admin/analytics`: range presets and a custom
+   * range, a time-zone toggle, External by default with the traffic classes,
+   * origins, behavior, search and tracking health, all for this one app. It
+   * needs the admin routes (`admin`) and the app half (`app`), and it is
+   * skipped when the app already has a page at that path. `false` turns it off
+   * (mount `<AdminAnalyticsPage />` on a route of your own instead).
+   */
+  adminPage?: boolean
   app?: boolean
   /**
    * The `/api/admin/**` GA, Search Console, Indexing and PostHog routes. They
@@ -275,12 +287,33 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         addPlugin(resolver.resolve('../app/plugins/analytics-owner-session.client'))
     }
 
+    let adminRoutes = false
     if (options.server) {
       addServerScanDir(resolver.resolve('../server'))
-      const admin =
+      adminRoutes =
         options.admin ??
         !declaresNoDatabase(nuxt.options as unknown as Parameters<typeof declaresNoDatabase>[0])
-      if (admin) addServerScanDir(resolver.resolve('../server/admin'))
+      if (adminRoutes) addServerScanDir(resolver.resolve('../server/admin'))
+    }
+
+    if (options.app && adminRoutes && options.adminPage !== false) {
+      const nuxtCss = (nuxt.options as unknown as { css?: string[] }).css
+      const stylesheet = resolver.resolve('../app/assets/admin-analytics.css')
+      if (nuxtCss && !nuxtCss.includes(stylesheet)) nuxtCss.push(stylesheet)
+      extendPages((pages) => {
+        const taken = (list: typeof pages): boolean =>
+          list.some(
+            (page) =>
+              page.path === ADMIN_ANALYTICS_ROUTE || (page.children ? taken(page.children) : false),
+          )
+        // An app that already has its own /admin/analytics keeps it.
+        if (taken(pages)) return
+        pages.push({
+          name: 'narduk-analytics-admin',
+          path: ADMIN_ANALYTICS_ROUTE,
+          file: resolver.resolve('../app/routes/AdminAnalyticsRoute.vue'),
+        })
+      })
     }
 
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {

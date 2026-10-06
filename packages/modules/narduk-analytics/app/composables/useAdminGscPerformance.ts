@@ -10,6 +10,7 @@ export const ADMIN_GSC_DIMENSIONS = [
   'device',
   'country',
   'searchAppearance',
+  'date',
 ] as const
 
 export type AdminGscDimension = (typeof ADMIN_GSC_DIMENSIONS)[number]

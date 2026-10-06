@@ -1,20 +1,19 @@
 import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
-import { z } from 'zod'
 
 import {
   buildPosthogCurrentUrlClause,
-  POSTHOG_DEFAULT_PERIOD,
-  posthogQueryFetch,
-  type PosthogQueryResults,
-  resolvePosthogPeriod,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'
+import {
+  analyticsCacheTtl,
+  buildPosthogTrafficClause,
+  buildPosthogWindowClause,
+  posthogNumber,
+  posthogRows,
+  posthogUpstreamError,
+  readAnalyticsQuery,
+} from '#narduk-analytics-server/utils/posthogQuery'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
-
-const querySchema = z.object({
-  period: z.string().optional().default(POSTHOG_DEFAULT_PERIOD),
-  noCache: z.coerce.boolean().optional(),
-})
 
 interface PosthogEntryExitPage {
   count: number
@@ -30,81 +29,77 @@ interface PosthogEntryExitResponse extends PosthogEntryExitPayload {
   cached: boolean
   fetchedAt: string
   period: string
+  traffic: string
 }
+
+/**
+ * A session's first and last pageview, by timestamp. This replaces the old
+ * `$is_initial_landing` and `$pageleave` counts, which miss sessions that
+ * never fire either (a closed tab, a blocked unload beacon).
+ */
+const sessionEdges = (where: string) => `
+  SELECT
+    argMin(replaceRegexpAll(properties.$pathname, '\\\\?.*', ''), timestamp) AS entry_page,
+    argMax(replaceRegexpAll(properties.$pathname, '\\\\?.*', ''), timestamp) AS exit_page
+  FROM events
+  WHERE event = '$pageview'
+    AND ${where}
+    AND nullIf(toString(properties.$session_id), '') IS NOT NULL
+  GROUP BY properties.$session_id
+`
 
 export default defineEventHandler(async (event): Promise<PosthogEntryExitResponse> => {
   await requireAdmin(event)
 
   const config = analyticsRuntimeConfig(event)
   const project = resolvePosthogProjectConfig(config, event)
-  const query = await getValidatedQuery(event, querySchema.parse)
-  const period = resolvePosthogPeriod(query.period)
-  const domainClause = buildPosthogCurrentUrlClause(project.domain)
-  const cacheKey = `posthog:entry-exit:${project.projectId}:${project.domain}:${period.dateFrom}`
+  const { window, traffic, noCache } = await readAnalyticsQuery(event)
+  const cacheKey = `posthog:entry-exit:${project.projectId}:${project.domain}:${window.key}:${traffic.key}`
+  const where = [
+    buildPosthogWindowClause(window),
+    buildPosthogCurrentUrlClause(project.domain).replace(/^\s*AND\s+/u, ''),
+    buildPosthogTrafficClause(traffic).replace(/^\s*AND\s+/u, ''),
+  ]
+    .filter(Boolean)
+    .join(' AND ')
 
   try {
     const { data, cached, fetchedAt } = await cachedAnalyticsFetch<PosthogEntryExitPayload>(
       cacheKey,
       async (): Promise<PosthogEntryExitPayload> => {
-        const [entryResponse, exitResponse] = await Promise.all([
-          posthogQueryFetch<PosthogQueryResults>(project, {
-            kind: 'HogQLQuery',
-            query: `
-              SELECT
-                replaceRegexpAll(properties.$pathname, '\\\\?.*', '') AS page,
-                count() AS entries
-              FROM events
-              WHERE event = '$pageview'
-                AND timestamp >= now() - ${period.intervalExpression}
-                ${domainClause}
-                AND properties.$is_initial_landing = true
+        const [entryRows, exitRows] = await Promise.all([
+          posthogRows(
+            project,
+            `
+              SELECT entry_page AS page, count() AS sessions
+              FROM (${sessionEdges(where)})
               GROUP BY page
-              ORDER BY entries DESC
+              ORDER BY sessions DESC
               LIMIT 10
             `,
-          }),
-          posthogQueryFetch<PosthogQueryResults>(project, {
-            kind: 'HogQLQuery',
-            query: `
-              SELECT
-                replaceRegexpAll(properties.$pathname, '\\\\?.*', '') AS page,
-                count() AS exits
-              FROM events
-              WHERE event = '$pageleave'
-                AND timestamp >= now() - ${period.intervalExpression}
-                ${domainClause}
+          ),
+          posthogRows(
+            project,
+            `
+              SELECT exit_page AS page, count() AS sessions
+              FROM (${sessionEdges(where)})
               GROUP BY page
-              ORDER BY exits DESC
+              ORDER BY sessions DESC
               LIMIT 10
             `,
-          }),
+          ),
         ])
 
-        return {
-          entryPages: (entryResponse.results ?? []).map((row) => ({
-            page: String(row[0] ?? '/'),
-            count: Number(row[1] ?? 0),
-          })),
-          exitPages: (exitResponse.results ?? []).map((row) => ({
-            page: String(row[0] ?? '/'),
-            count: Number(row[1] ?? 0),
-          })),
-        }
+        const toPages = (rows: typeof entryRows): PosthogEntryExitPage[] =>
+          rows.map((row) => ({ page: String(row[0] ?? '/') || '/', count: posthogNumber(row[1]) }))
+
+        return { entryPages: toPages(entryRows), exitPages: toPages(exitRows) }
       },
-      query.noCache ? 0 : undefined,
+      analyticsCacheTtl(window, noCache),
     )
 
-    return {
-      ...data,
-      cached,
-      fetchedAt,
-      period: period.dateFrom,
-    }
+    return { ...data, cached, fetchedAt, period: window.label, traffic: traffic.key }
   } catch (error: unknown) {
-    const err = error as { message?: string; status?: number; statusCode?: number }
-    throw createError({
-      statusCode: err.status ?? err.statusCode ?? 500,
-      statusMessage: `PostHog Error: ${err.message}`,
-    })
+    throw posthogUpstreamError(error)
   }
 })

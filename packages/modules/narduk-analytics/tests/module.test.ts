@@ -9,6 +9,7 @@ function mockNuxtKit(hasNuxtModuleImpl: (name: string) => boolean) {
   const addImportsDir = vi.fn()
   const addPlugin = vi.fn()
   const addServerScanDir = vi.fn()
+  const extendPages = vi.fn()
   const hasNuxtModule = vi.fn(hasNuxtModuleImpl)
   const installModule = vi.fn().mockResolvedValue(undefined)
 
@@ -21,6 +22,7 @@ function mockNuxtKit(hasNuxtModuleImpl: (name: string) => boolean) {
       resolve: (path: string) => new URL(path, url).pathname,
     }),
     defineNuxtModule: (definition: unknown) => definition,
+    extendPages,
     hasNuxtModule,
     installModule,
   }))
@@ -30,6 +32,7 @@ function mockNuxtKit(hasNuxtModuleImpl: (name: string) => boolean) {
     addImportsDir,
     addPlugin,
     addServerScanDir,
+    extendPages,
     hasNuxtModule,
     installModule,
   }
@@ -371,6 +374,58 @@ describe('narduk-analytics module', () => {
       ])
       expect(await scanned({ admin: false })).toEqual(['server'])
       expect(await scanned({ admin: true, server: false })).toEqual([])
+    })
+  })
+
+  describe('the admin Analytics page', () => {
+    interface Page {
+      children?: Page[]
+      file?: string
+      name?: string
+      path: string
+    }
+
+    async function register(options: Record<string, unknown>, existing: Page[] = []) {
+      vi.resetModules()
+      const { extendPages } = mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      const nuxt = makeNuxt()
+      ;(nuxt.options as Record<string, unknown>).css = []
+      await mod.setup({ app: true, server: true, ...options }, nuxt)
+      const pages: Page[] = [...existing]
+      for (const [callback] of extendPages.mock.calls) (callback as (list: Page[]) => void)(pages)
+      return {
+        called: extendPages.mock.calls.length,
+        css: (nuxt.options as { css: string[] }).css,
+        pages,
+      }
+    }
+
+    it('registers /admin/analytics and its stylesheet by default', async () => {
+      const { pages, css } = await register({})
+      expect(pages).toEqual([
+        expect.objectContaining({
+          path: '/admin/analytics',
+          file: expect.stringContaining('/app/routes/AdminAnalyticsRoute.vue'),
+        }),
+      ])
+      expect(css).toEqual([expect.stringContaining('/app/assets/admin-analytics.css')])
+    })
+
+    it('leaves an app that already owns /admin/analytics alone, nested pages included', async () => {
+      expect((await register({}, [{ path: '/admin/analytics' }])).pages).toHaveLength(1)
+      expect(
+        (await register({}, [{ path: '/admin', children: [{ path: '/admin/analytics' }] }])).pages,
+      ).toHaveLength(1)
+    })
+
+    it('is off with adminPage: false, with no admin routes, and with no app half', async () => {
+      expect((await register({ adminPage: false })).called).toBe(0)
+      expect((await register({ admin: false })).called).toBe(0)
+      expect((await register({ app: false })).called).toBe(0)
+      expect((await register({ server: false })).called).toBe(0)
     })
   })
 })
