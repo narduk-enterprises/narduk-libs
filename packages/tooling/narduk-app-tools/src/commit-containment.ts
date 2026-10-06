@@ -142,3 +142,75 @@ export function resolveContainment(
   if (landed === 'contained') return landed
   return local === 'not-contained' || landed === 'not-contained' ? 'not-contained' : 'unknown'
 }
+
+/**
+ * How `candidate` (the commit a promote wants to deploy) stands against `live`
+ * (the commit production serves), by git history alone:
+ *
+ * - `ancestor`: `candidate` is a strict ancestor of `live`, so `live` already
+ *   contains it and promoting it would roll production back;
+ * - `equal`: the same commit;
+ * - `descendant`: `live` is a strict ancestor of `candidate`, a plain forward promote;
+ * - `diverged`: neither contains the other;
+ * - `unknown`: neither local git nor GitHub could answer.
+ *
+ * Unlike `Containment` this never looks at content: a squash that rewrote a
+ * commit is not an ancestor, and a promote guard that skips on "same changes"
+ * would skip a revert. `unknown` is never read as permission by the caller; it
+ * falls back to the version-recency guard.
+ */
+export type Ancestry = 'ancestor' | 'equal' | 'descendant' | 'diverged' | 'unknown'
+
+/** Local git only, from objects already in the checkout; it never fetches. */
+export function commitAncestry(
+  cwd: string,
+  candidate: string,
+  live: string,
+  git: Exec = exec('git', cwd),
+): Ancestry {
+  for (const sha of [candidate, live]) {
+    if (git(['cat-file', '-e', `${sha}^{commit}`]).status !== 0) return 'unknown'
+  }
+  const resolved = [candidate, live].map((sha) => git(['rev-parse', `${sha}^{commit}`]))
+  if (resolved.some((r) => r.status !== 0 || !r.stdout)) return 'unknown'
+  if (resolved[0]?.stdout === resolved[1]?.stdout) return 'equal'
+  const candidateInLive = git(['merge-base', '--is-ancestor', candidate, live]).status
+  if (candidateInLive === 0) return 'ancestor'
+  if (candidateInLive !== 1) return 'unknown'
+  const liveInCandidate = git(['merge-base', '--is-ancestor', live, candidate]).status
+  if (liveInCandidate === 0) return 'descendant'
+  return liveInCandidate === 1 ? 'diverged' : 'unknown'
+}
+
+/**
+ * GitHub's answer, for a shallow CI checkout that lacks the objects. The
+ * compare endpoint reports `live` relative to `candidate`: `ahead` means `live`
+ * has commits `candidate` lacks, and `candidate` is its ancestor.
+ */
+export function landedAncestry(candidate: string, live: string, get: GitHubGet): Ancestry {
+  const status = (get(`compare/${candidate}...${live}?per_page=1`) as { status?: unknown } | null)
+    ?.status
+  if (status === 'ahead') return 'ancestor'
+  if (status === 'behind') return 'descendant'
+  if (status === 'identical') return 'equal'
+  if (status === 'diverged') return 'diverged'
+  return 'unknown'
+}
+
+/** Local git first, then GitHub. */
+export function resolveAncestry(
+  cwd: string,
+  candidate: string,
+  live: string,
+  options: { git?: Exec; github?: GitHubGet; env?: NodeJS.ProcessEnv } = {},
+): Ancestry {
+  // Both reach git argv and a URL path; a tag read from Cloudflare is input.
+  if (![candidate, live].every((sha) => /^[a-f\d]{7,40}$/u.test(sha))) return 'unknown'
+  const local = commitAncestry(cwd, candidate, live, options.git)
+  if (local !== 'unknown') return local
+  return landedAncestry(
+    candidate,
+    live,
+    options.github ?? githubGet(cwd, options.env ?? process.env),
+  )
+}
