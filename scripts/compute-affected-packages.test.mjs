@@ -267,6 +267,106 @@ test('inert repository paths select no packages and do not force a full run', ()
   }
 })
 
+test('a Swift-only narduk-music change selects no npm package and forces no full run (#1538)', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const result = computeAffectedSet({
+      root,
+      changedFiles: [
+        'packages/modules/narduk-music/swift/Sources/NardukMusicDSP/SpectrumAnalyzer.swift',
+        'packages/modules/narduk-music/swift/Tests/NardukMusicDSPTests/SpectrumAnalyzerTests.swift',
+      ],
+    })
+    assert.deepEqual(names(result), [])
+    assert.equal(result.fullRun, false)
+    assert.equal(result.packedConsumer, false)
+    assert.equal(result.generatedConsumer, false)
+    assert.equal(result.matrix.length, 0)
+    assert.deepEqual(result.reasons, [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the root Package.swift selects no npm package; it fans out to the Swift gates only (#1538)', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    for (const file of ['Package.swift', 'Package.resolved', '.swift-format']) {
+      const result = computeAffectedSet({ root, changedFiles: [file] })
+      assert.deepEqual(names(result), [], file)
+      assert.equal(result.fullRun, false, file)
+      assert.equal(result.packedConsumer, false, file)
+      assert.equal(result.matrix.length, 0, file)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Swift-only paths do not hide a real package change or an unclassified path', () => {
+  const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
+  try {
+    const swift = 'packages/modules/narduk-music/swift/Sources/NardukMusicCore/Note.swift'
+    const mixed = computeAffectedSet({
+      root,
+      changedFiles: [swift, 'packages/one/src/index.ts'],
+    })
+    assert.deepEqual(names(mixed), ['one'])
+    assert.equal(mixed.fullRun, false)
+
+    const unclassified = computeAffectedSet({ root, changedFiles: [swift, 'config/unknown.yaml'] })
+    assert.equal(unclassified.fullRun, true)
+    assert.match(unclassified.reasons.join('\n'), /config\/unknown\.yaml/u)
+
+    // Only the narduk-music swift tree is exempt: a sibling path stays unclassified.
+    const sibling = computeAffectedSet({
+      root,
+      changedFiles: ['packages/modules/narduk-music/notes.txt'],
+    })
+    assert.equal(sibling.fullRun, true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the planned narduk-music Swift gate stays on for the paths the npm planner now skips', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'narduk-libs-music-plan-'))
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+  try {
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.invalid')
+    git('config', 'user.name', 'test')
+    writeFileSync(join(repo, 'README.md'), 'base\n')
+    git('add', '.')
+    git('commit', '-q', '-m', 'base')
+    const base = git('rev-parse', 'HEAD').trim()
+
+    for (const [file, expected] of [
+      ['packages/modules/narduk-music/swift/Sources/NardukMusicDSP/A.swift', 'true'],
+      ['Package.swift', 'true'],
+      ['docs/notes.md', 'false'],
+    ]) {
+      mkdirSync(dirname(join(repo, file)), { recursive: true })
+      writeFileSync(join(repo, file), 'x\n')
+      git('add', '.')
+      git('commit', '-q', '-m', file)
+      const head = git('rev-parse', 'HEAD').trim()
+      const output = `${repo}.github-output`
+      writeFileSync(output, '')
+      execFileSync(
+        process.execPath,
+        [join(repoRoot, 'scripts/narduk-music-ci-plan.mjs'), '--base', base, '--head', head],
+        { cwd: repo, env: { ...process.env, GITHUB_OUTPUT: output } },
+      )
+      assert.equal(readFileSync(output, 'utf8').trim(), `narduk-music-swift=${expected}`, file)
+      git('reset', '-q', '--hard', base)
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(`${repo}.github-output`, { force: true })
+  }
+})
+
 test('an inert path mixed with a real package change only selects that package', () => {
   const root = createWorkspace([{ directory: 'one' }, { directory: 'two' }])
   try {
