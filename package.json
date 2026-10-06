@@ -88,7 +88,11 @@
       "minimatch@10>brace-expansion": "^5.0.9",
       "vitest": "4.1.11",
       "vue-router": "^5.3.1",
-      "@types/node@^22": "22.19.19"
+      "@types/node@^22": "22.19.19",
+      "vue": "3.5.42",
+      "@vue/server-renderer": "3.5.42",
+      "source-map-js": "^1.2.2",
+      "@nuxt/devtools>simple-git": "^4.0.2"
     },
     "peerDependencyRules": {
       "allowAny": [
@@ -127,6 +131,9 @@
         "GHSA-86w9-cpqp-85rv",
         "GHSA-vfj7-8cjw-p6xm"
       ]
+    },
+    "patchedDependencies": {
+      "@nuxt/devtools@3.4.2": "patches/@nuxt__devtools@3.4.2.patch"
     }
   },
   "volta": {
