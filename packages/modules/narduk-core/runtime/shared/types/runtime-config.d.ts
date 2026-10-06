@@ -80,7 +80,16 @@ interface CorePublicRuntimeConfig {
   appUrl: string
   /** Backward-compatible alias for appUrl used by older shared/app share surfaces. */
   siteUrl: string
+  /**
+   * The app's key. Also the analytics `app` super-property, so changing it
+   * breaks every dashboard that joins on it. Not a display name.
+   */
   appName: string
+  /**
+   * Optional name for readers (the `[build]` console banner). Falls back to
+   * `appName`; set it when the product name differs from the analytics key.
+   */
+  appDisplayName?: string
   /**
    * Runtime analytics/telemetry guard. Per `docs/architecture/platform.md`
    * the fleet only has one deploy environment (`production`), but the

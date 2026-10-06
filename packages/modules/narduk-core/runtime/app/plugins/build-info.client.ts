@@ -22,6 +22,9 @@ export default defineNuxtPlugin((nuxtApp) => {
   const buildWindow = window as BuildInfoWindow
   const config = useRuntimeConfig().public
   const appName = readRuntimeConfigString(config.appName, 'Unknown App')
+  // The banner's label. `appName` is also the analytics `app` key (narduk-analytics),
+  // so an app whose product name differs sets `appDisplayName` and keeps its key (#1498).
+  const bannerName = readRuntimeConfigString(config.appDisplayName, appName)
   const appVersion = readRuntimeConfigString(config.appVersion, 'unknown')
   const buildVersion = readRuntimeConfigString(config.buildVersion, appVersion)
   const buildTime = readRuntimeConfigString(config.buildTime, 'unknown')
@@ -51,7 +54,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.hooks.hookOnce('app:mounted', () => {
     runWhenBrowserIdle(() => {
       console.warn(
-        `[build] ${payload.appName} v${payload.appVersion} · ${payload.buildVersion} · deployed ${payload.localBuildTime}`,
+        `[build] ${bannerName} v${payload.appVersion} · ${payload.buildVersion} · deployed ${payload.localBuildTime}`,
       )
     })
   })
