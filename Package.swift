@@ -38,7 +38,7 @@ package.targets += [
         name: "NardukMusicCore", path: "packages/modules/narduk-music/swift/Sources/NardukMusicCore"
     ),
     .target(
-        name: "NardukMusicDSP", dependencies: ["NardukMusicCore"],
+        name: "NardukMusicDSP", dependencies: ["NardukMusicCore", "NardukSoundAnalysis"],
         path: "packages/modules/narduk-music/swift/Sources/NardukMusicDSP"
     ),
     .target(
@@ -122,7 +122,8 @@ package.targets += [
     package.products.append(.library(name: "NardukMusicEngine", targets: ["NardukMusicEngine"]))
     package.targets += [
         .target(
-            name: "NardukMusicEngine", dependencies: ["NardukMusicCore", "NardukMusicDSP"],
+            name: "NardukMusicEngine",
+            dependencies: ["NardukMusicCore", "NardukMusicDSP", "NardukSoundAnalysis"],
             path: "packages/modules/narduk-music/swift/Sources/NardukMusicEngine"
         ),
         .testTarget(
