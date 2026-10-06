@@ -5,7 +5,7 @@ public enum Loudness {
     public static let silenceDB: Float = -120
 
     /// 20 log10 of a linear amplitude; anything at or below 1e-6 reads as silence.
-    @inline(__always) public static func decibels(_ amplitude: Float) -> Float {
+    @inlinable public static func decibels(_ amplitude: Float) -> Float {
         amplitude > 1e-6 ? 20 * log10f(amplitude) : silenceDB
     }
 
