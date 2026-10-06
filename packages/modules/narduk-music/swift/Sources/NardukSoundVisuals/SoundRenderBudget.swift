@@ -3,6 +3,11 @@ import Foundation
 /// How fast the visuals may animate right now (docs/sound-contract.md section 5). One place decides when a stage
 /// runs, slows or holds still, so no view takes its rate from the display. Taken from Wirewatcher's `DropFrameRate`,
 /// written after a 2026-10-06 WindowServer watchdog panic from rendering every layer at 120 Hz on a hot Mac.
+/// The device's thermal pressure, mirroring `ProcessInfo.ThermalState`, which Foundation on Linux does not have.
+public enum SoundThermalState: Sendable, Hashable {
+    case nominal, fair, serious, critical
+}
+
 public enum SoundRenderBudget {
     /// The cap on any display: the visuals are soft glows and beat-locked motion, and 60 fps looks the same as 120.
     public static let normal = 60
@@ -16,7 +21,7 @@ public enum SoundRenderBudget {
     ///   - thermal: `.critical` holds the stage still; `.serious` drops to `reduced`.
     ///   - lowPowerMode: `ProcessInfo.isLowPowerModeEnabled`; drops to `reduced`.
     public static func framesPerSecond(
-        isVisible: Bool, thermal: ProcessInfo.ThermalState, lowPowerMode: Bool = false
+        isVisible: Bool, thermal: SoundThermalState, lowPowerMode: Bool = false
     ) -> Int {
         guard isVisible else { return 0 }
         switch thermal {
@@ -28,9 +33,20 @@ public enum SoundRenderBudget {
 
     /// The budget from the process's own thermal and power state.
     public static func current(isVisible: Bool) -> Int {
-        let info = ProcessInfo.processInfo
-        return framesPerSecond(
-            isVisible: isVisible, thermal: info.thermalState, lowPowerMode: info.isLowPowerModeEnabled)
+        #if canImport(Darwin)
+            let info = ProcessInfo.processInfo
+            let thermal: SoundThermalState
+            switch info.thermalState {
+            case .nominal: thermal = .nominal
+            case .fair: thermal = .fair
+            case .serious: thermal = .serious
+            case .critical: thermal = .critical
+            @unknown default: thermal = .serious
+            }
+            return framesPerSecond(isVisible: isVisible, thermal: thermal, lowPowerMode: info.isLowPowerModeEnabled)
+        #else
+            return framesPerSecond(isVisible: isVisible, thermal: .nominal)
+        #endif
     }
 
     /// The effective rate for a view that wants at most `cap` fps under the budget `fps`. At least 1 unless paused.
