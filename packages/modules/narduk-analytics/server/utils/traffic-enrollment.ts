@@ -8,6 +8,7 @@ import {
   TRAFFIC_CLASS_TYP,
   TRAFFIC_ENROLL_TYP,
   TRAFFIC_ENROLLMENT_ISSUERS,
+  TRAFFIC_ENROLLMENT_STEP_PATH,
   verifyOwnerClassClaim,
   verifyTrafficToken,
 } from '#narduk-analytics-server/utils/traffic/trafficClaim'
@@ -163,9 +164,6 @@ export async function verifyEnrollmentToken(
 
   return { ok: true, grant: { action, claim, claimMaxAge, returnTo } }
 }
-
-/** The issuer's chain step: the only path an unverified fallback may name. */
-export const TRAFFIC_ENROLLMENT_STEP_PATH = '/traffic/enroll'
 
 /**
  * Best-effort return for a failed hop, read from an UNVERIFIED token: only

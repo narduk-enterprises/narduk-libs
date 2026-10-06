@@ -10,6 +10,15 @@
  */
 import { z } from 'zod'
 
+import {
+  analyticsAddDays,
+  analyticsLocalDateKey,
+  analyticsLocalMidnightMs,
+  AnalyticsWindowError,
+  assertAnalyticsTimeZone,
+  parseAnalyticsDateKey,
+} from './analyticsZone'
+
 export const ANALYTICS_MAX_DAYS = 180
 export const ANALYTICS_MAX_HOURS = 72
 
@@ -24,15 +33,6 @@ const BUCKET_MS: Record<AnalyticsBucket, number> = {
   '15m': 15 * MINUTE,
   '1h': HOUR,
   '1d': DAY,
-}
-
-/** A bad window or time zone: the route answers 400 with this message. */
-export class AnalyticsWindowError extends Error {
-  readonly statusCode = 400
-  constructor(message: string) {
-    super(message)
-    this.name = 'AnalyticsWindowError'
-  }
 }
 
 export interface AnalyticsSlot {
@@ -59,106 +59,6 @@ export interface AnalyticsWindow {
   toIso: string
   toMs: number
   tz: string
-}
-
-// ── time zones ───────────────────────────────────────────────────────────
-
-const ZONE_SHAPE = /^[\w+\-/]{1,64}$/u
-
-/** Throws unless `tz` is an IANA zone this runtime knows. Defaults to UTC. */
-export function assertAnalyticsTimeZone(tz: string | undefined): string {
-  const zone = (tz ?? 'UTC').trim() || 'UTC'
-  if (zone === 'UTC') return zone
-  if (!ZONE_SHAPE.test(zone)) throw new AnalyticsWindowError('Unknown time zone.')
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(0)
-  } catch {
-    throw new AnalyticsWindowError('Unknown time zone.')
-  }
-  return zone
-}
-
-interface ZoneParts {
-  day: number
-  hour: number
-  minute: number
-  month: number
-  second: number
-  year: number
-}
-
-function zoneParts(ms: number, tz: string): ZoneParts {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(ms))
-  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0)
-  return {
-    year: get('year'),
-    month: get('month'),
-    day: get('day'),
-    hour: get('hour') % 24,
-    minute: get('minute'),
-    second: get('second'),
-  }
-}
-
-/** Milliseconds the zone is ahead of UTC at this instant. */
-function zoneOffsetMs(ms: number, tz: string): number {
-  const p = zoneParts(ms, tz)
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-  return asUtc - Math.floor(ms / 1000) * 1000
-}
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const dateKey = (year: number, month: number, day: number) =>
-  `${String(year).padStart(4, '0')}-${pad(month)}-${pad(day)}`
-
-/** The local `YYYY-MM-DD` of an instant. */
-export function analyticsLocalDateKey(ms: number, tz: string): string {
-  const p = zoneParts(ms, tz)
-  return dateKey(p.year, p.month, p.day)
-}
-
-const DATE_SHAPE = /^(\d{4})-(\d{2})-(\d{2})$/u
-
-function parseDateKey(value: string): { day: number; month: number; year: number } | null {
-  const match = DATE_SHAPE.exec(value)
-  if (!match) return null
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const check = new Date(Date.UTC(year, month - 1, day))
-  if (
-    check.getUTCFullYear() !== year ||
-    check.getUTCMonth() !== month - 1 ||
-    check.getUTCDate() !== day
-  ) {
-    return null
-  }
-  return { year, month, day }
-}
-
-/** Calendar arithmetic on a `YYYY-MM-DD` key (no zone involved). */
-export function analyticsAddDays(key: string, days: number): string {
-  const parsed = parseDateKey(key)
-  if (!parsed) throw new AnalyticsWindowError('Dates are YYYY-MM-DD.')
-  const moved = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + days))
-  return dateKey(moved.getUTCFullYear(), moved.getUTCMonth() + 1, moved.getUTCDate())
-}
-
-/** The UTC instant of local midnight on `key` in `tz` (DST-safe). */
-export function analyticsLocalMidnightMs(key: string, tz: string): number {
-  const parsed = parseDateKey(key)
-  if (!parsed) throw new AnalyticsWindowError('Dates are YYYY-MM-DD.')
-  const wall = Date.UTC(parsed.year, parsed.month - 1, parsed.day)
-  let guess = wall - zoneOffsetMs(wall, tz)
-  guess = wall - zoneOffsetMs(guess, tz)
-  return guess
 }
 
 // ── window ───────────────────────────────────────────────────────────────
@@ -235,7 +135,7 @@ export function resolveAnalyticsWindow(
     if (!input.start || !input.end) {
       throw new AnalyticsWindowError('A custom range needs a start and an end date.')
     }
-    if (!parseDateKey(input.start) || !parseDateKey(input.end)) {
+    if (!parseAnalyticsDateKey(input.start) || !parseAnalyticsDateKey(input.end)) {
       throw new AnalyticsWindowError('Dates are YYYY-MM-DD.')
     }
     if (input.end <= input.start) {

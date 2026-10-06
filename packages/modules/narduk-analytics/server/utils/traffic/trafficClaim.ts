@@ -28,6 +28,9 @@ export const TRAFFIC_ENROLL_TYP = 'narduk-traffic-enroll'
 /** The only issuer whose return URLs an enrollment may redirect to. */
 export const TRAFFIC_ENROLLMENT_ISSUERS = ['https://ops.nardukenterprises.com'] as const
 
+/** The issuer's chain step: the only path an unverified fallback may name. */
+export const TRAFFIC_ENROLLMENT_STEP_PATH = '/traffic/enroll'
+
 /** Allow a host clock a little ahead of the portal's. */
 const CLOCK_SKEW_SECONDS = 60
 

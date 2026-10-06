@@ -39,6 +39,7 @@ const AI_ENGINES = [
   'chat.openai.com',
   'perplexity.ai',
   'gemini.google.com',
+  'bard.google.com',
   'copilot.microsoft.com',
   'claude.ai',
   'you.com',
@@ -48,6 +49,7 @@ const AI_ENGINES = [
 
 const SOCIAL = [
   'facebook.com',
+  'fb.com',
   'instagram.com',
   'x.com',
   'twitter.com',
@@ -60,24 +62,43 @@ const SOCIAL = [
   'tiktok.com',
   'threads.net',
   'bsky.app',
+  'mastodon.social',
   'news.ycombinator.com',
 ]
 
 const OWN_SITES = ['nardukenterprises.com']
 
-// An entry ending in a dot ("google.") matches anywhere in the host, so it
-// covers every country domain; any other entry matches the host or a subdomain.
+// An entry ending in a dot ("google.") names a label with any suffix, so it
+// covers every country domain (google.co.uk, uk.search.yahoo.com) but not a
+// host that merely contains it (notgoogle.com); any other entry matches the
+// host or a subdomain.
 const matches = (domain: string, list: readonly string[]) =>
   list.some((item) =>
-    item.endsWith('.') ? domain.includes(item) : domain === item || domain.endsWith(`.${item}`),
+    item.endsWith('.')
+      ? domain.startsWith(item) || domain.includes(`.${item}`)
+      : domain === item || domain.endsWith(`.${item}`),
   )
 
-/** Lowercase host with a leading `www.` removed; `''` when there is none. */
+/**
+ * What PostHog and browsers write when there was no referrer. `$direct` means
+ * only "the browser sent none", which is as often a privacy setting, an app
+ * webview or a stripped redirect as a typed URL, so it is unknown, never
+ * "direct".
+ */
+const BLANK_REFERRERS = new Set(['$direct', '(direct)', 'null', 'undefined'])
+
+/**
+ * Lowercase host with any scheme, path and leading `www.` removed; `''` when
+ * there is none (including PostHog's `$direct`).
+ */
 export function normalizeReferrerDomain(value: string | null | undefined): string {
-  return String(value ?? '')
+  const host = String(value ?? '')
     .trim()
     .toLowerCase()
+    .replace(/^https?:\/\//u, '')
+    .replace(/\/.*$/u, '')
     .replace(/^www\./u, '')
+  return BLANK_REFERRERS.has(host) ? '' : host
 }
 
 export function classifyReferrerGroup(domain: string, ownHost = ''): AnalyticsReferrerGroup {

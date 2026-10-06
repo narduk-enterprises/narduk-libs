@@ -9,6 +9,8 @@ import {
   truncateOriginGroups,
 } from '../server/utils/analyticsOrigins'
 
+const SEARCH = 'Search engines'
+
 describe('referrers', () => {
   it('lowercases and drops www', () => {
     expect(normalizeReferrerDomain(' WWW.Google.COM ')).toBe('google.com')
@@ -16,8 +18,8 @@ describe('referrers', () => {
   })
 
   it('groups search, AI engines, social and our own sites', () => {
-    expect(classifyReferrerGroup('google.co.uk')).toBe('Search engines')
-    expect(classifyReferrerGroup('duckduckgo.com')).toBe('Search engines')
+    expect(classifyReferrerGroup('google.co.uk')).toBe(SEARCH)
+    expect(classifyReferrerGroup('duckduckgo.com')).toBe(SEARCH)
     expect(classifyReferrerGroup('chatgpt.com')).toBe('AI and answer engines')
     expect(classifyReferrerGroup('perplexity.ai')).toBe('AI and answer engines')
     expect(classifyReferrerGroup('m.facebook.com')).toBe('Social')
@@ -37,6 +39,27 @@ describe('referrers', () => {
   it('does not match a look-alike suffix', () => {
     expect(classifyReferrerGroup('notnardukenterprises.com')).toBe('Other')
     expect(classifyReferrerGroup('evil-x.com')).toBe('Other')
+  })
+
+  it('does not read a host that merely contains a search label as that engine', () => {
+    expect(classifyReferrerGroup('notgoogle.com')).toBe('Other')
+    expect(classifyReferrerGroup('uk.search.yahoo.com')).toBe(SEARCH)
+    expect(classifyReferrerGroup('yandex.com')).toBe(SEARCH)
+  })
+
+  it('knows the hosts the operator portal grouped on its own', () => {
+    expect(classifyReferrerGroup('bard.google.com')).toBe('AI and answer engines')
+    expect(classifyReferrerGroup('fb.com')).toBe('Social')
+    expect(classifyReferrerGroup('mastodon.social')).toBe('Social')
+    expect(classifyReferrerGroup('search.brave.com')).toBe(SEARCH)
+  })
+
+  it("reads PostHog's $direct and a full URL as what they are", () => {
+    for (const blank of ['$direct', '(direct)', 'null', 'undefined', '  ']) {
+      expect(normalizeReferrerDomain(blank)).toBe('')
+    }
+    expect(normalizeReferrerDomain('https://www.Reddit.com/r/x?y=1')).toBe('reddit.com')
+    expect(classifyChannel(normalizeReferrerDomain('$direct'), '')).toBe('No referrer (unknown)')
   })
 
   it('never calls a blank referrer direct', () => {

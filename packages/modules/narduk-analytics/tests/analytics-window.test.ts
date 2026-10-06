@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  analyticsAddDays,
-  analyticsLocalDateKey,
-  analyticsLocalMidnightMs,
-  AnalyticsWindowError,
   resolveAnalyticsQuery,
   resolveAnalyticsTraffic,
   resolveAnalyticsWindow,
 } from '../server/utils/analyticsWindow'
+import {
+  analyticsAddDays,
+  analyticsLocalDateKey,
+  analyticsLocalMidnightMs,
+  AnalyticsWindowError,
+  analyticsZoneParts,
+} from '../server/utils/analyticsZone'
+
+const CHICAGO = 'America/Chicago'
 
 // 2026-10-05 18:09 UTC, a Monday; 13:09 in Chicago (CDT).
 const NOW = Date.UTC(2026, 9, 5, 18, 9, 0)
@@ -27,7 +32,7 @@ describe('resolveAnalyticsWindow presets', () => {
   })
 
   it('takes the day edges in the display zone, not UTC', () => {
-    const window = resolveAnalyticsWindow({ period: '1d', tz: 'America/Chicago' }, NOW)
+    const window = resolveAnalyticsWindow({ period: '1d', tz: CHICAGO }, NOW)
     expect(window.slots).toHaveLength(1)
     expect(window.fromIso).toBe('2026-10-05T05:00:00.000Z')
     expect(window.toIso).toBe('2026-10-06T05:00:00.000Z')
@@ -36,7 +41,7 @@ describe('resolveAnalyticsWindow presets', () => {
   it('is DST-safe: a 25-hour fall-back day is one slot', () => {
     // 2026-11-01 is the US fall-back day.
     const now = Date.UTC(2026, 10, 1, 18, 0, 0)
-    const window = resolveAnalyticsWindow({ period: '1d', tz: 'America/Chicago' }, now)
+    const window = resolveAnalyticsWindow({ period: '1d', tz: CHICAGO }, now)
     expect(window.slots).toHaveLength(1)
     expect((window.toMs - window.fromMs) / 3_600_000).toBe(25)
   })
@@ -100,10 +105,19 @@ describe('resolveAnalyticsWindow custom ranges', () => {
 
 describe('local date helpers', () => {
   it('reads the local date of an instant in a zone', () => {
-    expect(analyticsLocalDateKey(Date.UTC(2026, 9, 5, 2, 0, 0), 'America/Chicago')).toBe(
-      '2026-10-04',
-    )
+    expect(analyticsLocalDateKey(Date.UTC(2026, 9, 5, 2, 0, 0), CHICAGO)).toBe('2026-10-04')
     expect(analyticsLocalDateKey(Date.UTC(2026, 9, 5, 2, 0, 0), 'UTC')).toBe('2026-10-05')
+  })
+
+  it('reads wall-clock parts across the fall-back hour', () => {
+    // 2026-11-01 06:30 UTC is 01:30 CDT; an hour later it is 01:30 CST again.
+    expect(analyticsZoneParts(Date.UTC(2026, 10, 1, 6, 30), CHICAGO)).toMatchObject({
+      day: 1,
+      hour: 1,
+      minute: 30,
+    })
+    expect(analyticsZoneParts(Date.UTC(2026, 10, 1, 7, 30), CHICAGO).hour).toBe(1)
+    expect(analyticsZoneParts(Date.UTC(2026, 10, 1, 8, 30), CHICAGO).hour).toBe(2)
   })
 
   it('adds days across months and leap days', () => {
@@ -114,7 +128,7 @@ describe('local date helpers', () => {
 
   it('finds local midnight, skipping a DST gap rather than landing in it', () => {
     // 2026-03-08 02:00 does not exist in Chicago; midnight that day is still CST.
-    expect(new Date(analyticsLocalMidnightMs('2026-03-08', 'America/Chicago')).toISOString()).toBe(
+    expect(new Date(analyticsLocalMidnightMs('2026-03-08', CHICAGO)).toISOString()).toBe(
       '2026-03-08T06:00:00.000Z',
     )
   })
