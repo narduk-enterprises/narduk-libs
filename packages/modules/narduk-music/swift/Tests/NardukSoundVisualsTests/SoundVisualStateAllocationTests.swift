@@ -34,7 +34,7 @@
         }
         nonisolated(unsafe) static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 32)
         nonisolated(unsafe) static var frameCount: Int32 = 0
-        nonisolated(unsafe) static var escaped: UnsafeMutableRawPointer?
+        nonisolated(unsafe) static var sink: [Int] = []
 
         static var firstAllocationStack: String {
             (0..<Int(frameCount)).compactMap { index -> String? in
@@ -62,8 +62,8 @@
         /// Proves the counter can fail in this build.
         @Test func theHookSeesAnAllocation() throws {
             let count = try Self.countAllocations {
-                let array = [Int](repeating: 7, count: 1_000)
-                Self.escaped = UnsafeMutableRawPointer(bitPattern: array.count)
+                // Stored in a static, so the array really reaches the heap and cannot be optimized away.
+                Self.sink = [Int](repeating: 7, count: 1_000)
             }
             #expect(count >= 1)
         }
