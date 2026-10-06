@@ -1711,6 +1711,13 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '  devServer: {',
         '    port: localPort,',
         '  },',
+        // Off, because the dependency audit fails a fresh app on simple-git
+        // (narduk-libs#1531): @nuxt/devtools 3.x default-imports simple-git,
+        // and every release with that import carries a high or critical
+        // advisory. The root `pnpm.overrides` floor moves simple-git to 4.x,
+        // which has no default export, so devtools has to stay off. Delete
+        // this line, and the overrides, once devtools imports it by name.
+        '  devtools: { enabled: false },',
         ...(capabilities.includes('seo')
           ? [
               '  nardukSeo: {',

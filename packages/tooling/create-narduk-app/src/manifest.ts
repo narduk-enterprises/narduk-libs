@@ -529,6 +529,20 @@ export function createRootPackageManifest(
         // suites time out on the CI pool (narduk-libs#740). A floor rather
         // than a pin, so a lockfile refresh can still move it forward.
         'miniflare>undici': '^7.29.1',
+        // Advisory floors, from the dependency audit a fresh app's CI runs
+        // (narduk-libs#1531). Each names a patched version that exists, so the
+        // fix is a bump, not an accepted advisory. A floor rather than a pin,
+        // so a lockfile refresh can still move it forward; drop an entry once
+        // the package that drags the old copy in has moved past it.
+        //
+        // simple-git comes in through nuxt's @nuxt/devtools, whose 3.x
+        // default-imports it, and 4.x has no default export. So the bump only
+        // works with devtools off, which `apps/web/nuxt.config.ts` sets;
+        // @simple-git/argv-parser is simple-git 4's own dependency. sharp
+        // comes in through miniflare, from narduk-testkit.
+        'simple-git': '^4.0.2',
+        '@simple-git/argv-parser': '^2.0.1',
+        sharp: '^0.35.5',
       },
       ...(capabilities.includes('auth')
         ? {
