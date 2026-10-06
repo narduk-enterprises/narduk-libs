@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 2.23.5
+
+### Patch Changes
+
+- dca9770: Name `Checkbox` and `Form` among the Nuxt UI components
+  narduk-analytics renders, so component detection keeps their theme in apps
+  that install the admin Analytics page.
+
 ## 2.23.4
 
 ### Patch Changes
