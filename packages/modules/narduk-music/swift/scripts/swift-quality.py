@@ -146,7 +146,8 @@ def main() -> None:
     if sys.argv[1:]:
         raise SystemExit("usage: swift-quality.py [--consumer-only]")
     lint()
-    run("swift", "test", *BUILD_FLAGS, "--filter", "NardukMusic")
+    # One regex over every product of the package (Music, SoundAnalysis, Sonify, SoundVisuals).
+    run("swift", "test", *BUILD_FLAGS, "--filter", "NardukMusic|NardukSound|NardukSonify")
     if DARWIN:
         # The allocation check means something only in an optimized build.
         run("swift", "test", "-c", "release", "--filter", "RenderThreadAllocationTests")
