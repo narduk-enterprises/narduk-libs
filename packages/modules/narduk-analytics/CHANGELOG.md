@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.28.1
+
+### Patch Changes
+
+- 474164f: PostHog now records `NardukAutomation/` browser traffic: the module
+  sets `opt_out_useragent_filter` only when the user agent carries that marker,
+  so posthog-js's built-in bot blocklist no longer drops our tagged Lighthouse
+  and headless events before `traffic_class=automation` ships. Every other bot
+  keeps PostHog's default filtering.
+
 ## 1.28.0
 
 ### Minor Changes
