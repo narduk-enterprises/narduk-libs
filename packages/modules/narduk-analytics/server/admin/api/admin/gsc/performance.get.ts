@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
 import { resolveGscSiteUrl } from '#narduk-analytics-server/utils/siteConfig'
 
-const DIMENSIONS = ['query', 'page', 'device', 'country', 'searchAppearance'] as const
+const DIMENSIONS = ['query', 'page', 'device', 'country', 'searchAppearance', 'date'] as const
 
 const querySchema = z.object({
   startDate: z.string().optional(),
@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
               startDate,
               endDate,
               dimensions: [query.dimension],
-              rowLimit: 50,
+              rowLimit: query.dimension === 'date' ? 400 : 50,
             }),
           },
           event,

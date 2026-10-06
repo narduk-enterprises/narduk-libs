@@ -1,21 +1,20 @@
 import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
 import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
-import { z } from 'zod'
 
 import {
   buildPosthogCurrentUrlClause,
-  POSTHOG_DEFAULT_PERIOD,
-  posthogQueryFetch,
-  type PosthogQueryResults,
-  resolvePosthogPeriod,
   resolvePosthogProjectConfig,
 } from '#narduk-analytics-server/utils/posthog'
+import {
+  analyticsCacheTtl,
+  buildPosthogTrafficClause,
+  buildPosthogWindowClause,
+  posthogNumber,
+  posthogRows,
+  posthogUpstreamError,
+  readAnalyticsQuery,
+} from '#narduk-analytics-server/utils/posthogQuery'
 import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeConfig'
-
-const querySchema = z.object({
-  period: z.string().optional().default(POSTHOG_DEFAULT_PERIOD),
-  noCache: z.coerce.boolean().optional(),
-})
 
 interface PosthogPagesPayload {
   rows: Array<{
@@ -29,6 +28,8 @@ interface PosthogPagesResponse extends PosthogPagesPayload {
   cached: boolean
   fetchedAt: string
   period: string
+  traffic: string
+  window: { from: string; label: string; to: string; tz: string }
 }
 
 export default defineEventHandler(async (event): Promise<PosthogPagesResponse> => {
@@ -37,56 +38,53 @@ export default defineEventHandler(async (event): Promise<PosthogPagesResponse> =
 
   const config = analyticsRuntimeConfig(event)
   const project = resolvePosthogProjectConfig(config, event)
-  const query = await getValidatedQuery(event, querySchema.parse)
-  const period = resolvePosthogPeriod(query.period)
-  const domainClause = buildPosthogCurrentUrlClause(project.domain)
-  const cacheKey = `posthog:pages:${project.projectId}:${project.domain}:${period.dateFrom}`
+  const { window, traffic, noCache } = await readAnalyticsQuery(event)
+  const cacheKey = `posthog:pages:${project.projectId}:${project.domain}:${window.key}:${traffic.key}`
 
   try {
     const { data, cached, fetchedAt } = await cachedAnalyticsFetch<PosthogPagesPayload>(
       cacheKey,
       async (): Promise<PosthogPagesPayload> => {
-        const response = await posthogQueryFetch<PosthogQueryResults>(project, {
-          kind: 'HogQLQuery',
-          query: `
+        const rows = await posthogRows(
+          project,
+          `
             SELECT
               replaceRegexpAll(properties.$pathname, '\\\\?.*', '') AS page,
               count() AS pageviews,
               count(DISTINCT person_id) AS unique_visitors
             FROM events
             WHERE event = '$pageview'
-              AND timestamp >= now() - ${period.intervalExpression}
-              ${domainClause}
+              AND ${buildPosthogWindowClause(window)}
+              ${buildPosthogCurrentUrlClause(project.domain)}
+              ${buildPosthogTrafficClause(traffic)}
             GROUP BY page
             ORDER BY pageviews DESC
             LIMIT 20
           `,
-        })
+        )
 
         return {
-          rows: (response.results ?? []).map((row) => ({
+          rows: rows.map((row) => ({
             page: String(row[0] ?? '/'),
-            pageviews: Number(row[1] ?? 0),
-            uniqueVisitors: Number(row[2] ?? 0),
+            pageviews: posthogNumber(row[1]),
+            uniqueVisitors: posthogNumber(row[2]),
           })),
         }
       },
-      query.noCache ? 0 : undefined,
+      analyticsCacheTtl(window, noCache),
     )
 
-    log.debug('PostHog pages fetched', { cached, period: period.dateFrom })
+    log.debug('PostHog pages fetched', { cached, window: window.label })
 
     return {
       ...data,
       cached,
       fetchedAt,
-      period: period.dateFrom,
+      period: window.label,
+      traffic: traffic.key,
+      window: { from: window.fromIso, to: window.toIso, tz: window.tz, label: window.label },
     }
   } catch (error: unknown) {
-    const err = error as { message?: string; status?: number; statusCode?: number }
-    throw createError({
-      statusCode: err.status ?? err.statusCode ?? 500,
-      statusMessage: `PostHog Error: ${err.message}`,
-    })
+    throw posthogUpstreamError(error)
   }
 })

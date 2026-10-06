@@ -61,6 +61,7 @@ export default defineNuxtConfig({
   nardukAnalytics: {
     app: true, // register composables/components/plugins (default: true)
     server: true, // register server routes/middleware (default: true)
+    adminPage: true, // register /admin/analytics when admin routes are on (default: true)
   },
 })
 ```
@@ -209,12 +210,39 @@ the module adds only when admin is on.
 | `/api/admin/indexing/batch`     | `POST`       | Google Indexing API — batch-publish up to 100 URL notifications.                                                                            |
 | `/api/admin/indexing/publish`   | `POST`       | Google Indexing API — publish a single URL notification.                                                                                    |
 | `/api/admin/indexing/status`    | `GET`        | Google Indexing API — last notification status for a URL.                                                                                   |
+| `/api/admin/posthog/overview`   | `GET`        | Pageviews, sessions and people for a window, bucketed, with the previous window and the traffic split (admin Analytics page).               |
+| `/api/admin/posthog/health`     | `GET`        | Last event, daily volume against baseline and the share of events that carry a `traffic_class`.                                             |
+| `/api/admin/posthog/origins`    | `GET`        | Sessions by channel, referrer, campaign, landing page or country (`dimension`).                                                             |
 | `/api/admin/posthog/pages`      | `GET`        | Top pages by pageviews for a period.                                                                                                        |
 | `/api/admin/posthog/referrers`  | `GET`        | Top referrers for a period.                                                                                                                 |
 | `/api/admin/posthog/devices`    | `GET`        | Device/browser breakdown for a period.                                                                                                      |
 | `/api/admin/posthog/entry-exit` | `GET`        | Top entry/exit pages for a period.                                                                                                          |
 | `/api/admin/posthog/insights`   | `GET`        | Arbitrary HogQL-backed insight results for a period.                                                                                        |
 | `/api/admin/posthog/recordings` | `GET`        | Recent session recordings (up to `limit`).                                                                                                  |
+
+## Admin Analytics page
+
+With admin routes on, the module adds `/admin/analytics` (set
+`nardukAnalytics.adminPage: false` to opt out and mount `AdminAnalyticsPage`
+yourself). It shows one app's own data from PostHog, GA4 and Search Console.
+There is no fleet view.
+
+Query contract shared by the `posthog/*` reads: `period` (`1h`, `3h`, `12h`,
+`24h`, `7d`, `28d`, `30d`) or `start`/`end` (a custom range, end excluded), `tz`
+(an IANA zone; day buckets follow it) and `traffic` (`external` by default,
+`all`, or a comma list of traffic classes). The traffic filter reads
+`properties.traffic_class`; a missing value counts as external (unmarked).
+
+Honest states, by design:
+
+- A source that cannot answer says "Not measured", never zero. Google (GA4 and
+  Search Console) is daily only, so it is disabled on sub-day ranges, and Search
+  Console lags two to three days, so those days are left out, not zero.
+- A blank referrer is "No referrer (unknown)", not direct.
+- People are distinct for the whole range and are never summed across days.
+- Stale data is stamped with its age; a failed refresh keeps the last good
+  figures under a stale banner.
+- Deploy markers are not drawn: there is no release source in this module.
 
 ## IndexNow
 
