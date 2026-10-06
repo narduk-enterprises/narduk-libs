@@ -21,6 +21,38 @@ export function normalizeIndexingHost(value: unknown): string {
 }
 
 /**
+ * True for a host that can never be a deployed site's canonical host: loopback
+ * addresses, `localhost`, `*.localhost` and `*.test`. Input goes through
+ * {@link normalizeIndexingHost}, so a value that does not normalize is not
+ * "local" here; callers treat that case separately.
+ */
+export function isLocalIndexingHost(value: unknown): boolean {
+  const host = normalizeIndexingHost(value)
+  if (!host) return false
+
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.test') ||
+    host === '0.0.0.0' ||
+    host === '[::1]' ||
+    host === '[::]' ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
+  )
+}
+
+/**
+ * The canonical host to compare requests against, or '' when the configured
+ * site URL cannot be one: it does not normalize, or it is a local origin such
+ * as the `http://localhost:3000` an app falls back to when `SITE_URL` was not
+ * set at build time (narduk-libs#1480). '' means "no usable canonical host",
+ * and every caller fails open on it.
+ */
+function resolveCanonicalIndexingHost(value: unknown): string {
+  return isLocalIndexingHost(value) ? '' : normalizeIndexingHost(value)
+}
+
+/**
  * True only when both hosts resolve and the request host differs from the
  * canonical site host — the case where a build-once immutable deployment is
  * being served from a non-canonical alias (for example a route-free
@@ -30,7 +62,7 @@ export function isNonCanonicalIndexingHost(
   requestHost: unknown,
   canonicalSiteUrl: unknown,
 ): boolean {
-  const canonicalHost = normalizeIndexingHost(canonicalSiteUrl)
+  const canonicalHost = resolveCanonicalIndexingHost(canonicalSiteUrl)
   const host = normalizeIndexingHost(requestHost)
   if (!canonicalHost || !host) return false
 
@@ -75,9 +107,11 @@ export interface CanonicalRobotsPolicyOptions {
  * Both hosts go through {@link normalizeIndexingHost}, so scheme, path, port
  * and case are ignored. `www.` and trailing dots are not stripped: list such
  * aliases in `additionalCanonicalHostnames`. A request host that does not
- * normalize is non-canonical. A canonical hostname that does not normalize
- * fails open, as in {@link isNonCanonicalIndexingHost}, so a misconfigured
- * canonical host cannot noindex production.
+ * normalize is non-canonical. A canonical hostname that does not normalize, or
+ * is a local origin such as the `http://localhost:3000` an app falls back to
+ * when `SITE_URL` was unset at build time, fails open, as in
+ * {@link isNonCanonicalIndexingHost}, so a misconfigured canonical host cannot
+ * noindex production (narduk-libs#1480).
  *
  * ```ts
  * canonicalRobotsPolicy('example.com', 'example.com') // 'index, follow, max-image-preview:large'
@@ -94,7 +128,7 @@ export function canonicalRobotsPolicy(
   const nonCanonicalRobots = options.nonCanonicalRobots ?? hostAwareNoindexRule
   if (options.indexable === false) return nonCanonicalRobots
 
-  const canonicalHost = normalizeIndexingHost(canonicalHostname)
+  const canonicalHost = resolveCanonicalIndexingHost(canonicalHostname)
   if (!canonicalHost) return canonicalRobots
 
   const host = normalizeIndexingHost(hostname)

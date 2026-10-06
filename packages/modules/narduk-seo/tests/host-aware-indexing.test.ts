@@ -4,6 +4,7 @@ import {
   canonicalRobotsPolicy,
   hostAwareIndexRule,
   hostAwareNoindexRule,
+  isLocalIndexingHost,
   isNonCanonicalIndexingHost,
   normalizeIndexingHost,
 } from '../shared/hostAwareIndexing'
@@ -48,6 +49,45 @@ describe('isNonCanonicalIndexingHost', () => {
     expect(isNonCanonicalIndexingHost('localhost:3000', '')).toBe(false)
     expect(isNonCanonicalIndexingHost('', canonicalSiteUrl)).toBe(false)
     expect(isNonCanonicalIndexingHost()).toBe(false)
+  })
+})
+
+// narduk-libs#1480: `siteUrl` falls back to http://localhost:3000 when SITE_URL
+// is not exported to the build. That parses, so it used to be a "real"
+// canonical host and every other host, production included, got noindex.
+describe('a local canonical host fails open (narduk-libs#1480)', () => {
+  const localCanonicals = [
+    'http://localhost:3000',
+    'localhost',
+    'https://app.localhost',
+    'http://127.0.0.1:8787',
+    'http://[::1]:3000',
+    'http://0.0.0.0:3000',
+    'https://preview.test',
+  ]
+
+  it('recognizes loopback, localhost, .localhost and .test hosts only', () => {
+    for (const value of localCanonicals) expect(isLocalIndexingHost(value)).toBe(true)
+    for (const value of [canonicalSiteUrl, previewAliasHost, 'http://127.example.com', '', 42]) {
+      expect(isLocalIndexingHost(value)).toBe(false)
+    }
+  })
+
+  it('does not flag the production host as non-canonical', () => {
+    for (const value of localCanonicals) {
+      expect(isNonCanonicalIndexingHost(canonicalHost, value)).toBe(false)
+      expect(isNonCanonicalIndexingHost(previewAliasHost, value)).toBe(false)
+    }
+  })
+
+  it('keeps the production host indexable through canonicalRobotsPolicy', () => {
+    for (const value of localCanonicals) {
+      expect(canonicalRobotsPolicy(canonicalHost, value)).toBe(hostAwareIndexRule)
+    }
+  })
+
+  it('still noindexes a request on a local host against a real canonical host', () => {
+    expect(isNonCanonicalIndexingHost('localhost:3000', canonicalSiteUrl)).toBe(true)
   })
 })
 

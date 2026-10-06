@@ -26,6 +26,7 @@ import {
   DEPLOYMENT_TARGET_ENV_KEYS,
   resolveBuildDeploymentTarget,
 } from '../shared/deploymentTarget'
+import { isLocalIndexingHost } from '../shared/hostAwareIndexing'
 import {
   canResolveNuxtOgImage,
   isNuxtOgImageModuleRequested,
@@ -628,6 +629,17 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     }
     if (hostAwareIndexing) {
       addPlugin(resolver.resolve('../app/plugins/hostAwareIndexing'))
+      // narduk-libs#1480: a `siteUrl` that fell back to localhost (a Workers
+      // Builds `main` build does not export SITE_URL) is no canonical host.
+      // The runtime guard fails open on it, so production stays indexable, but
+      // the guard then cannot tell a preview alias from the real host either.
+      const configuredSiteUrl = publicRuntimeConfig.siteUrl
+      if (isLocalIndexingHost(configuredSiteUrl)) {
+        useLogger(PACKAGE_NAME).warn(
+          `nardukSeo.hostAwareIndexing is on for a production build but runtimeConfig.public.siteUrl is "${String(configuredSiteUrl)}". ` +
+            'Set it to the canonical https origin (for example from SITE_URL); until then every host is treated as canonical and non-canonical aliases such as workers.dev are not marked noindex.',
+        )
+      }
     }
 
     if (options.seoModule) {
