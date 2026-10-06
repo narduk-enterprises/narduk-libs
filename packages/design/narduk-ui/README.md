@@ -247,6 +247,7 @@ import { NsReadoutTile } from "@narduk-enterprises/narduk-ui/instruments";
 | `label`         | `string`         | _required_ | Uppercase mono eyebrow                                                           |
 | `value`         | `number \| null` | —          | Current observation. `null` / non-finite renders the missing variant             |
 | `decimals`      | `number`         | `1`        | Digits in the value readout                                                      |
+| `grouping`      | `boolean`        | `true`     | Group thousands (`1,055,144`, fixed `en-US` so SSR hydrates); `false` for a year |
 | `unit`          | `string`         | —          | Rendered in a sibling span after the value (margin, not a literal space)         |
 | `delta`         | `number \| null` | —          | Change over the stated window. Direction colours are signal tokens, not good/bad |
 | `deltaUnit`     | `string`         | —          | Unit on the formatted delta                                                      |

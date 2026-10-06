@@ -192,6 +192,18 @@ describe("NsReadoutTile", () => {
     expect(w.find(".ns-tile__delta").classes()).toContain("ns-tile__delta--down");
   });
 
+  it("groups a 7-digit value and leaves grouping off on request (#1497)", () => {
+    const grouped = mount(NsReadoutTile, {
+      props: { label: "Storage", value: 1055144, decimals: 0 },
+    });
+    expect(grouped.find(".ns-tile__value").text()).toBe("1,055,144");
+
+    const plain = mount(NsReadoutTile, {
+      props: { label: "Year", value: 2026, decimals: 0, grouping: false },
+    });
+    expect(plain.find(".ns-tile__value").text()).toBe("2026");
+  });
+
   it("keeps the delta line when the value is missing so the tile does not collapse", () => {
     const w = mount(NsReadoutTile, {
       props: { label: "Stage", value: null, missingReason: "Gauge offline" },

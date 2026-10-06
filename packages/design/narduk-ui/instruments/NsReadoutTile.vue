@@ -18,6 +18,8 @@ const props = withDefaults(
     delta?: number | null;
     deltaUnit?: string;
     deltaWindow?: string;
+    /** Group thousands ("1,055,144"). Set false for a year-like value. */
+    grouping?: boolean;
     label: string;
     /** Why the value is missing. Shown in place of the delta line. */
     missingReason?: string;
@@ -25,19 +27,21 @@ const props = withDefaults(
     unit?: string;
     value: number | null | undefined;
   }>(),
-  { decimals: 1, size: "md" },
+  { decimals: 1, grouping: true, size: "md" },
 );
 
 const present = computed(() => props.value != null && Number.isFinite(props.value));
 const readout = computed(() =>
-  present.value ? formatValue(props.value, { decimals: props.decimals }) : MISSING,
+  present.value
+    ? formatValue(props.value, { decimals: props.decimals, grouping: props.grouping })
+    : MISSING,
 );
 const direction = computed(() => deltaDirection(props.delta));
 const deltaText = computed(() => {
   if (!present.value) return props.missingReason || "Not published";
   if (props.delta == null) return "";
   const arrow = direction.value === "up" ? "▲" : direction.value === "down" ? "▼" : "";
-  const magnitude = formatDelta(props.delta, { unit: props.deltaUnit });
+  const magnitude = formatDelta(props.delta, { grouping: props.grouping, unit: props.deltaUnit });
   return [arrow, magnitude, props.deltaWindow ? `/ ${props.deltaWindow}` : ""]
     .filter(Boolean)
     .join(" ");
