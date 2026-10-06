@@ -1,5 +1,22 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.40
+
+### Patch Changes
+
+- 29b149e: Add `defineServerResource()` and `useSharedNow()`. A server resource
+  is one keyed server read shared by every screen that shows it: SSR hydration
+  without a second read, a freshness stamp and TTL, optional polling paused
+  while hidden, keepAlive, write actions that refresh the keys they declare
+  (with the CSRF header), and a `loading | ready | absent | error` state that
+  keeps the last good value beside an error. `useSharedNow()` is the app's one
+  clock: the SSR instant hydrated, ticking at the fastest mounted cadence,
+  paused while hidden.
+- e311f5d: Require sharp ^0.35.5 (GHSA-wq5f-xc86-pv6w, librsvg) and pin
+  launch-editor's shell-quote to ^1.11.0 (GHSA-pqg4-j6r4-53mv), clearing the two
+  advisories that turned `pnpm audit --audit-level high` red for every pull
+  request.
+
 ## 0.21.39
 
 ### Patch Changes

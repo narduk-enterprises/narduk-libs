@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.11.1
+
+### Patch Changes
+
+- e311f5d: Require sharp ^0.35.5 (GHSA-wq5f-xc86-pv6w, librsvg) and pin
+  launch-editor's shell-quote to ^1.11.0 (GHSA-pqg4-j6r4-53mv), clearing the two
+  advisories that turned `pnpm audit --audit-level high` red for every pull
+  request.
+
 ## 1.11.0
 
 ### Minor Changes
