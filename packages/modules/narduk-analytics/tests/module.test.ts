@@ -58,6 +58,22 @@ describe('narduk-analytics module', () => {
     expect(plugins.some((path) => path.endsWith('/analytics-events.client'))).toBe(events)
   })
 
+  it.each([true, false])(
+    'registers the owner-session plugin before PostHog only when authenticatedOwner=%s',
+    async (authenticatedOwner) => {
+      const { addPlugin } = mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      await mod.setup({ app: true, server: false, authenticatedOwner }, makeNuxt())
+      const plugins = addPlugin.mock.calls.map(([path]) => path as string)
+      const session = plugins.findIndex((path) => path.endsWith('/analytics-owner-session.client'))
+      const posthog = plugins.findIndex((path) => path.endsWith('/posthog.client'))
+      expect(session >= 0).toBe(authenticatedOwner)
+      if (authenticatedOwner) expect(session).toBeLessThan(posthog)
+    },
+  )
+
   it('rejects non-registry app IDs before registering a runtime surface', async () => {
     mockNuxtKit(() => true)
     const mod = (await import('../src/module')).default as unknown as {

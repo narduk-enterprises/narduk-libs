@@ -198,6 +198,7 @@ the module adds only when admin is on.
 | ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/api/owner-tag`                | `POST`       | Set/clear `narduk_owner` (client-readable flag) and the httpOnly HMAC proof cookie. Requires `OWNER_TAG_SECRET`.                            |
 | `/api/owner/posthog-bootstrap`  | `GET`        | Returns `POSTHOG_OWNER_DISTINCT_ID` for cross-device identity after the HMAC proof cookie verifies. Rate-limited with the owner-tag policy. |
+| `/api/owner/enroll`             | `GET`        | Owner-browser enrollment hop from the operator portal (`?t=<token>`); no token answers `{ "enrollment": 1 }` as a capability probe.         |
 | `/api/indexnow/submit`          | `POST`       | Submits URLs (default: homepage + sitemap) via the IndexNow protocol.                                                                       |
 | `/{key}.txt` (middleware)       | `GET`/`HEAD` | Serves the configured IndexNow key at its verification path.                                                                                |
 | `/api/admin/ga/overview`        | `GET`        | GA4 totals + daily rows for a date range (`startDate`, `endDate`, `noCache`).                                                               |
@@ -264,6 +265,54 @@ filter yourself and non-production traffic out of dashboards (Project Settings �
   when it is `staging`/`preview`, `preview` for a `.pages.dev`/`.workers.dev`
   hostname with no explicit deployment target, or `production` otherwise.
 - `app_version` — from `runtimeConfig.public.appVersion` when set.
+
+## Traffic classification
+
+Every event carries `traffic_class` and `classification_version` (1), so readers
+can tell Logan's browsers and our automation from real visitors. Nothing is
+dropped: events are tagged, and readers filter. Events sent before this version
+carry no `traffic_class`; readers treat that as `unmarked`.
+
+| `traffic_class` | `traffic_evidence`      | When                                                                                                                                                                                                |
+| --------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `automation`    | `ua_marker`             | The user agent contains `NardukAutomation/<tool>`; `automation_tool=<tool>` is added.                                                                                                               |
+| `owner`         | `signed_enrollment`     | The browser holds a verified `__Host-narduk_traffic` class claim for this origin.                                                                                                                   |
+| `owner`         | `authenticated_session` | A signed-in narduk-auth session on an app that sets `nardukAnalytics.authenticatedOwner: true` (every account is the owner, e.g. the operator portal). Never set it on an app with public accounts. |
+| `owner`         | `unsigned_claim`        | Only the legacy, client-settable `narduk_owner=true` cookie. Lower evidence (inferred).                                                                                                             |
+| `unmarked`      | `none`                  | Everybody else.                                                                                                                                                                                     |
+
+Precedence is the table order. Hosts ending in `.test` count as preview
+(`is_internal_user`), never production. PostHog gets them as super properties
+registered before the first capture (the class is resolved before
+`posthog.init`, and `before_send` stamps it last). GA4 gets the same values
+through `gtag('set')` before the config command, so every event carries them as
+event parameters. **GA4 reports on them only after each (`traffic_class`,
+`traffic_evidence`, `automation_tool`, `classification_version`) is registered
+as an event-scoped custom dimension** in each property (Admin → Custom
+definitions); until then they are collected but not queryable in GA4 reports.
+
+**Automation** appends the marker to its user agent and changes nothing else
+(Lighthouse keeps its device emulation). `narduk-app-tools` live probes send
+`NardukAutomation/narduk-app-tools`.
+
+**Owner enrollment.** Signing into the operator portal starts a top-level
+redirect chain through each production estate origin's `/api/owner/enroll`. Each
+hop carries an ES256 token the portal signed: about two minutes, single use,
+bound to that origin, wrapping a 30-day class claim and the portal return URL.
+The endpoint verifies it with the public keys in
+`server/utils/traffic/trafficClaim.ts` and sets the first-party claim cookie
+(`Secure`, `SameSite=Lax`, client-readable so the plugin verifies it in the
+browser without a request). The claim holds only `cls: owner`, the origin and
+the lifetime: no identity. No app needs a secret; the private key exists only in
+the operator portal. Sign-out runs a clearing chain; expiry needs nothing;
+revocation is a key-version bump (drop the `kid` from
+`TRAFFIC_CLAIM_PUBLIC_KEYS` and release). Private browsing or blocked cookies
+simply stay unmarked. Single use is exact per isolate and per Cloudflare colo
+(Cache API) and best effort across colos; a replay can only win the `owner`
+label for the replaying browser.
+
+Server-side captures can classify the same way with
+`resolveServerTrafficProperties(event)` (auto-imported in Nitro).
 
 ## Analytics load strategy
 

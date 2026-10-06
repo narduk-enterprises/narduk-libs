@@ -102,6 +102,17 @@ export function transportErrorCode(error: unknown): string | undefined {
 export const DEFAULT_LIVE_TIMEOUT_MS = 15_000
 export const DEFAULT_MAX_BODY_BYTES = 1_048_576
 export const DEFAULT_LIVE_USER_AGENT = 'narduk-app-tools/live-probe'
+/**
+ * Appended to every probe's user agent so estate analytics classify these
+ * requests as our automation (`traffic_class=automation`, narduk-analytics
+ * classification_version 1) instead of counting them as visitors.
+ */
+export const AUTOMATION_UA_MARKER = 'NardukAutomation/narduk-app-tools'
+
+/** `userAgent` with the automation marker, unless it already carries one. */
+export function withAutomationMarker(userAgent: string): string {
+  return /NardukAutomation\//u.test(userAgent) ? userAgent : `${userAgent} ${AUTOMATION_UA_MARKER}`
+}
 
 /**
  * Build a probe bound to these defaults; per-call options still win. `transport`
@@ -117,7 +128,9 @@ export function createLiveProbe(
     const timeoutMs = options.timeoutMs ?? defaults.timeoutMs ?? DEFAULT_LIVE_TIMEOUT_MS
     const maxBodyBytes = options.maxBodyBytes ?? defaults.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
     const readBody = options.readBody ?? defaults.readBody ?? false
-    const userAgent = options.userAgent ?? defaults.userAgent ?? DEFAULT_LIVE_USER_AGENT
+    const userAgent = withAutomationMarker(
+      options.userAgent ?? defaults.userAgent ?? DEFAULT_LIVE_USER_AGENT,
+    )
     const noCache = options.noCache ?? defaults.noCache ?? true
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)

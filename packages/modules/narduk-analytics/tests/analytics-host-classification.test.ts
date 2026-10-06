@@ -35,6 +35,12 @@ describe('isPreviewAnalyticsHost', () => {
     expect(isPreviewAnalyticsHost('bfe918b0-my-app.narduk-enterprises.workers.dev')).toBe(true)
   })
 
+  it('flags reserved .test lab hosts, so they are never tagged production', () => {
+    expect(isPreviewAnalyticsHost('cbs-lab.test')).toBe(true)
+    expect(isPreviewAnalyticsHost('app.CBS-LAB.TEST')).toBe(true)
+    expect(isPreviewAnalyticsHost('contest.example.com')).toBe(false)
+  })
+
   it('does not flag the canonical production host', () => {
     expect(isPreviewAnalyticsHost(PRODUCTION_HOST)).toBe(false)
   })

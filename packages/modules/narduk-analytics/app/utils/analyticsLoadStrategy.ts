@@ -81,7 +81,8 @@ export type AnalyticsDeploymentTarget = 'preview' | 'production' | 'staging' | u
  */
 export function isPreviewAnalyticsHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
-  return h.endsWith('.pages.dev') || h.endsWith('.workers.dev')
+  // `.test` is reserved for local and lab hosts (RFC 2606); never production.
+  return h.endsWith('.pages.dev') || h.endsWith('.workers.dev') || h.endsWith('.test')
 }
 
 /**

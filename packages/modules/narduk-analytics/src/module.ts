@@ -49,6 +49,13 @@ export interface NardukAnalyticsModuleOptions {
    */
   /** Stable registry ID, separate from the existing app display label. */
   appId?: string
+  /**
+   * Every account on this app is the owner (an app wholly behind narduk-auth,
+   * like the operator portal): a signed-in session tags events
+   * `traffic_class=owner`, `traffic_evidence=authenticated_session`. Needs
+   * `useUserSession` (narduk-auth). Never set it on an app with public accounts.
+   */
+  authenticatedOwner?: boolean
   /** Foreground active-time deltas and once-per-visit scroll milestones. */
   engagement?: boolean
   /** Register v-track for explicitly declared click interactions. */
@@ -257,6 +264,8 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         addPlugin(resolver.resolve('../app/plugins/analytics-events.client'))
       }
       if (options.identity) addPlugin(resolver.resolve('../app/plugins/analytics-identity.client'))
+      if (options.authenticatedOwner)
+        addPlugin(resolver.resolve('../app/plugins/analytics-owner-session.client'))
       addPlugin(resolver.resolve('../app/plugins/00-analytics-head.client'))
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog.client'))
