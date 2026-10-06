@@ -336,6 +336,38 @@ describe('NeCommandPalette', () => {
       wrapper.unmount()
     })
 
+    it('shows a partial answer: its rows, and a note for each thing it could not read', async () => {
+      const wrapper = mountPalette([
+        STATES,
+        rivers(async () => ({
+          items: [{ id: 'mo-river', label: 'Missouri River', to: '/r/mo' }],
+          notes: ['Gauges could not be read: 503'],
+        })),
+      ])
+      await openPalette()
+      await type(wrapper, 'missouri')
+      await vi.advanceTimersByTimeAsync(150)
+      await flushPromises()
+      const section = wrapper.get('[data-ne-command-group="rivers"]')
+      expect(section.get('[data-ne-command-note]').text()).toBe('Gauges could not be read: 503')
+      expect(section.get('[data-ne-command-item="mo-river"]').text()).toContain('Missouri River')
+      wrapper.unmount()
+    })
+
+    it('never says "no results" when a provider said what it could not read', async () => {
+      const wrapper = mountPalette([
+        STATES,
+        rivers(async () => ({ items: [], notes: ['The river index is unread'] })),
+      ])
+      await openPalette()
+      await type(wrapper, 'zz')
+      await vi.advanceTimersByTimeAsync(150)
+      await flushPromises()
+      expect(wrapper.get('[data-ne-command-note]').text()).toBe('The river index is unread')
+      expect(wrapper.find('[data-ne-command-empty]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
     it('still shows the static groups while the async group is out', async () => {
       const wrapper = mountPalette([STATES, rivers(() => new Promise(() => {}))])
       await openPalette()
@@ -357,6 +389,15 @@ describe('NeCommandPalette', () => {
     await openPalette()
     expect((wrapper.get('[data-ne-command-input]').element as HTMLInputElement).value).toBe('')
     expect(labels(wrapper)).toEqual(['Map', 'Rivers'])
+    wrapper.unmount()
+  })
+
+  it('renders a footnote under the results, outside the aria-hidden key hints', async () => {
+    const wrapper = mountPalette([STATES], { footnote: '3 states · read just now' })
+    await openPalette()
+    const note = wrapper.get('[data-ne-command-footnote]')
+    expect(note.text()).toBe('3 states · read just now')
+    expect(note.element.closest('[aria-hidden="true"]')).toBeNull()
     wrapper.unmount()
   })
 

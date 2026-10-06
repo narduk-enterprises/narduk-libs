@@ -47,6 +47,18 @@ export interface NeCommandItem {
   actions?: readonly NeCommandAction[]
 }
 
+/**
+ * A provider's answer with notes: the rows it found, and one line per thing it
+ * could not answer ("Hosts could not be read: 503"). For a provider that reads
+ * several sources and gets some of them, the rows are real and so is the gap;
+ * a bare array could only say one of those. A note never counts as a result,
+ * and a section with notes is drawn even when it has no rows.
+ */
+export interface NeCommandAnswer {
+  items: readonly NeCommandItem[]
+  notes?: readonly string[]
+}
+
 export interface NeCommandSearchContext {
   /** Aborted when the query changes or the palette closes. Pass it to `fetch`. */
   signal: AbortSignal
@@ -66,9 +78,14 @@ export interface NeCommandGroup {
    * An async provider. Called after `debounceMs` of quiet and at least
    * `minQuery` characters, with a signal that aborts when the query moves on.
    * A rejected call (that is not an abort) shows the group as unavailable; it
-   * never shows an empty group as if nothing matched.
+   * never shows an empty group as if nothing matched. Resolve with an
+   * `NeCommandAnswer` to return rows together with notes about what could not
+   * be answered.
    */
-  search?: (query: string, context: NeCommandSearchContext) => Promise<readonly NeCommandItem[]>
+  search?: (
+    query: string,
+    context: NeCommandSearchContext,
+  ) => Promise<readonly NeCommandItem[] | NeCommandAnswer>
   /** The shortest query a provider is called with. Default 2. */
   minQuery?: number
   /** Quiet time before a provider is called, in ms. Default 150. */
@@ -122,6 +139,12 @@ export interface NeCommandPaletteProps {
    * `location.assign` for an absolute URL.
    */
   navigate?: (to: string) => void | Promise<void>
+  /**
+   * One line of context under the results, read by assistive tech too: what
+   * the palette searched and how fresh it is ("21 pages · index read 2 min
+   * ago"). Omit it for none.
+   */
+  footnote?: string
 }
 
 export interface NeCommandPaletteTriggerProps {
@@ -162,6 +185,8 @@ export interface NeCommandSection {
   /** `loading` while a provider is out, `error` when it failed, else `ready`. */
   status: 'ready' | 'loading' | 'error'
   rows: NeCommandRow[]
+  /** The provider's notes about what it could not answer (`NeCommandAnswer`). */
+  notes: readonly string[]
   /** True for the recent-items section. */
   recent?: boolean
 }
@@ -170,4 +195,5 @@ export interface NeCommandSection {
 export interface NeCommandGroupState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   items: readonly NeCommandItem[]
+  notes?: readonly string[]
 }

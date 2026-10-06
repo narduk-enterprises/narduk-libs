@@ -8,6 +8,7 @@
  * `NeCommandPalette` stays a thin view over them.
  */
 import type {
+  NeCommandAnswer,
   NeCommandGroup,
   NeCommandGroupState,
   NeCommandItem,
@@ -189,11 +190,12 @@ export function buildSections(input: NeBuildSectionsInput): NeCommandSection[] {
   const add = (
     section: Pick<NeCommandSection, 'id' | 'label' | 'status' | 'recent'>,
     entries: ReadonlyArray<{ groupId: string; item: NeCommandItem }>,
+    notes: readonly string[] = [],
   ) => {
     const rows = groupRows(section.id, entries, next)
-    if (rows.length === 0 && section.status === 'ready') return
+    if (rows.length === 0 && notes.length === 0 && section.status === 'ready') return
     next += rows.length
-    sections.push({ ...section, rows })
+    sections.push({ ...section, notes, rows })
   }
 
   if (!query) {
@@ -222,6 +224,7 @@ export function buildSections(input: NeBuildSectionsInput): NeCommandSection[] {
       { limit, rank: group.rank ?? 'match' },
     )
     let status: NeCommandSection['status'] = 'ready'
+    let notes: readonly string[] = []
     if (group.search) {
       const state = input.providers[group.id]
       const answered = state?.items ?? []
@@ -232,10 +235,12 @@ export function buildSections(input: NeBuildSectionsInput): NeCommandSection[] {
       items = dedupe([...items, ...provided]).slice(0, limit)
       if (state?.status === 'loading') status = 'loading'
       else if (state?.status === 'error') status = 'error'
+      if (state?.status !== 'error') notes = state?.notes ?? []
     }
     add(
       { id: group.id, label: group.label, status },
       items.map((item) => ({ groupId: group.id, item })),
+      notes,
     )
   }
   return sections
@@ -265,11 +270,13 @@ export function flattenRows(sections: readonly NeCommandSection[]): NeCommandRow
 export function resultSummary(sections: readonly NeCommandSection[], query: string): string {
   const total = sections.reduce((sum, section) => sum + section.rows.length, 0)
   if (!normalizeQuery(query)) return ''
-  if (total === 0) return 'No results'
+  const notes = sections.reduce((sum, section) => sum + section.notes.length, 0)
+  const unread = notes === 0 ? '' : `; ${notes} ${notes === 1 ? 'source' : 'sources'} not read`
+  if (total === 0) return notes === 0 ? 'No results' : `No results from what was read${unread}`
   const parts = sections
     .filter((section) => section.rows.length > 0)
     .map((section) => `${section.rows.length} ${section.label.toLowerCase()}`)
-  return `${total} ${total === 1 ? 'result' : 'results'}: ${parts.join(', ')}`
+  return `${total} ${total === 1 ? 'result' : 'results'}: ${parts.join(', ')}${unread}`
 }
 
 // -------------------------------------------------------------- keyboard walk
@@ -448,6 +455,16 @@ export interface NeSearchRunnerOptions {
   cacheSize?: number
 }
 
+/** A provider's answer, either shape, as rows plus notes. */
+export function readAnswer(answer: readonly NeCommandItem[] | NeCommandAnswer): {
+  items: readonly NeCommandItem[]
+  notes: readonly string[]
+} {
+  if (Array.isArray(answer)) return { items: answer, notes: [] }
+  const shaped = answer as NeCommandAnswer
+  return { items: shaped.items, notes: shaped.notes ?? [] }
+}
+
 function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
@@ -463,8 +480,9 @@ export function createSearchRunner(options: NeSearchRunnerOptions): NeSearchRunn
     string,
     { controller?: AbortController; timer?: ReturnType<typeof setTimeout> }
   >()
-  const cache = new Map<string, readonly NeCommandItem[]>()
-  const last = new Map<string, readonly NeCommandItem[]>()
+  type Answer = { items: readonly NeCommandItem[]; notes: readonly string[] }
+  const cache = new Map<string, Answer>()
+  const last = new Map<string, Answer>()
   const cacheSize = options.cacheSize ?? 24
   let current = ''
 
@@ -476,9 +494,11 @@ export function createSearchRunner(options: NeSearchRunnerOptions): NeSearchRunn
     running.delete(groupId)
   }
 
-  function remember(key: string, items: readonly NeCommandItem[]) {
+  function remember(key: string, answer: Answer) {
+    // A partial answer is not cached: asking again may well answer in full.
+    if (answer.notes.length > 0) return
     cache.delete(key)
-    cache.set(key, items)
+    cache.set(key, answer)
     if (cache.size > cacheSize) cache.delete(cache.keys().next().value as string)
   }
 
@@ -499,11 +519,16 @@ export function createSearchRunner(options: NeSearchRunnerOptions): NeSearchRunn
         const cached = cache.get(key)
         if (cached) {
           last.set(group.id, cached)
-          options.onState(group.id, { items: cached, status: 'ready' })
+          options.onState(group.id, { ...cached, status: 'ready' })
           continue
         }
         // The last answer stays up while the next is out, so typing does not blink the list.
-        options.onState(group.id, { items: last.get(group.id) ?? [], status: 'loading' })
+        const previous = last.get(group.id)
+        options.onState(group.id, {
+          items: previous?.items ?? [],
+          notes: previous?.notes ?? [],
+          status: 'loading',
+        })
         const slot: { controller?: AbortController; timer?: ReturnType<typeof setTimeout> } = {}
         running.set(group.id, slot)
         slot.timer = setTimeout(() => {
@@ -514,13 +539,14 @@ export function createSearchRunner(options: NeSearchRunnerOptions): NeSearchRunn
           if (!search) return
           // `query` as typed, trimmed: a provider may want the user's own casing.
           search(query.trim(), { signal: controller.signal })
-            .then((items) => {
-              if (controller.signal.aborted || current !== normalized) return items
+            .then((raw) => {
+              const answer = readAnswer(raw)
+              if (controller.signal.aborted || current !== normalized) return answer
               running.delete(group.id)
-              remember(key, items)
-              last.set(group.id, items)
-              options.onState(group.id, { items, status: 'ready' })
-              return items
+              remember(key, answer)
+              last.set(group.id, answer)
+              options.onState(group.id, { ...answer, status: 'ready' })
+              return answer
             })
             .catch((error: unknown) => {
               if (controller.signal.aborted || current !== normalized || isAbort(error)) return

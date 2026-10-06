@@ -3561,6 +3561,14 @@ const groups: NeCommandGroup[] = [
 - **A failure is not an empty answer.** A provider that rejects (other than an
   abort) shows its heading with "could not be loaded just now", never an empty
   group, so a gap is not read as "nothing matched".
+- **A partial answer says what it missed.** A provider that reads several
+  sources and gets only some may resolve `{ items, notes }` (`NeCommandAnswer`)
+  instead of an array: the rows render, each note renders under the heading, the
+  section is drawn even with no rows, the empty state is never shown for it, and
+  a partial answer is not cached so asking again may answer in full.
+- **Stable hooks.** Each section carries `data-ne-command-group="<group id>"`
+  and each row `data-ne-command-item="<item id>"`, so a consumer's spec can find
+  a row without depending on its label or position.
 - **One request, several groups.** `createSharedSearch(fetcher)` (auto-imported)
   lets sibling groups share an in-flight request; it aborts only when every
   caller has given up.
@@ -3581,19 +3589,20 @@ hint on touch screens.
 
 #### NeCommandPalette props
 
-| Prop               | Type                                    | Default                           | What it does                                                          |
-| ------------------ | --------------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
-| `groups`           | `NeCommandGroup[]`                      | required                          | The sections searched.                                                |
-| `title`            | `string`                                | `'Search'`                        | The dialog's accessible name.                                         |
-| `placeholder`      | `string`                                | `'Search'`                        | The input's placeholder.                                              |
-| `inputLabel`       | `string`                                | `title`                           | The input's accessible name.                                          |
-| `recentsKey`       | `string`                                | `'ne-command-palette:recents'`    | `localStorage` key for recent items. Give each app its own.           |
-| `maxRecents`       | `number`                                | `6`                               | Recent items kept. `0` turns them off.                                |
-| `recentLabel`      | `string`                                | `'Recent'`                        | The recent section's heading.                                         |
-| `emptyTitle`       | `string`                                | `'No results'`                    | Shown, with the query, when nothing matches.                          |
-| `emptyDescription` | `string`                                | `'Check the spelling or try...'`  | The line under it. Replace both with the `empty` slot.                |
-| `idleHint`         | `string`                                | `'Start typing to search.'`       | Shown before a query when no group has idle rows.                     |
-| `navigate`         | `(to: string) => void \| Promise<void>` | `router.push` / `location.assign` | Goes to a row's `to`. Absolute URLs use `location.assign` by default. |
+| Prop               | Type                                    | Default                           | What it does                                                                       |
+| ------------------ | --------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------- |
+| `groups`           | `NeCommandGroup[]`                      | required                          | The sections searched.                                                             |
+| `title`            | `string`                                | `'Search'`                        | The dialog's accessible name.                                                      |
+| `placeholder`      | `string`                                | `'Search'`                        | The input's placeholder.                                                           |
+| `inputLabel`       | `string`                                | `title`                           | The input's accessible name.                                                       |
+| `recentsKey`       | `string`                                | `'ne-command-palette:recents'`    | `localStorage` key for recent items. Give each app its own.                        |
+| `maxRecents`       | `number`                                | `6`                               | Recent items kept. `0` turns them off.                                             |
+| `recentLabel`      | `string`                                | `'Recent'`                        | The recent section's heading.                                                      |
+| `emptyTitle`       | `string`                                | `'No results'`                    | Shown, with the query, when nothing matches.                                       |
+| `emptyDescription` | `string`                                | `'Check the spelling or try...'`  | The line under it. Replace both with the `empty` slot.                             |
+| `idleHint`         | `string`                                | `'Start typing to search.'`       | Shown before a query when no group has idle rows.                                  |
+| `navigate`         | `(to: string) => void \| Promise<void>` | `router.push` / `location.assign` | Goes to a row's `to`. Absolute URLs use `location.assign` by default.              |
+| `footnote`         | `string`                                | —                                 | One line under the results (what was searched, how fresh), read by assistive tech. |
 
 #### NeCommandPaletteTrigger props
 

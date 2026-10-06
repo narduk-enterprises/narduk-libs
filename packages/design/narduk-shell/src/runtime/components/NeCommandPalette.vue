@@ -128,14 +128,22 @@ const activeIndex = computed(() => {
 const activeRow = computed<NeCommandRow | undefined>(() => rows.value[activeIndex.value])
 const firstAction = computed(() => activeRow.value?.item.actions?.[0])
 
-/** Sections worth drawing: a provider that is only loading, with nothing yet, draws nothing. */
+/** Sections worth drawing: a provider that is only loading, with nothing yet and no notes, draws nothing. */
 const visibleSections = computed(() =>
-  sections.value.filter((section) => section.rows.length > 0 || section.status === 'error'),
+  sections.value.filter(
+    (section) => section.rows.length > 0 || section.notes.length > 0 || section.status === 'error',
+  ),
 )
 const loading = computed(() => sections.value.some((section) => section.status === 'loading'))
 const failed = computed(() => sections.value.some((section) => section.status === 'error'))
 const showEmpty = computed(
-  () => hasQuery.value && rows.value.length === 0 && !loading.value && !failed.value,
+  () =>
+    hasQuery.value &&
+    rows.value.length === 0 &&
+    !loading.value &&
+    !failed.value &&
+    // A provider that said what it could not read has not said "no results".
+    !sections.value.some((section) => section.notes.length > 0),
 )
 const showIdle = computed(() => !hasQuery.value && rows.value.length === 0)
 
@@ -380,12 +388,21 @@ const actionHint = computed(() =>
           v-for="section in visibleSections"
           :key="section.id"
           class="ne-cmd__section"
+          :data-ne-command-group="section.id"
           role="group"
           :aria-labelledby="headingId(section.id)"
         >
           <div :id="headingId(section.id)" class="ne-cmd__heading">{{ section.label }}</div>
           <p v-if="section.status === 'error'" class="ne-cmd__note" data-ne-command-error>
             {{ section.label }} could not be loaded just now. This is not the same as no matches.
+          </p>
+          <p
+            v-for="(note, at) in section.notes"
+            :key="`note-${at}`"
+            class="ne-cmd__note"
+            data-ne-command-note
+          >
+            {{ note }}
           </p>
           <div
             v-for="row in section.rows"
@@ -396,6 +413,7 @@ const actionHint = computed(() =>
             role="option"
             :aria-selected="row.index === activeIndex"
             data-ne-command-row
+            :data-ne-command-item="row.item.id"
             :data-row-index="row.index"
             @mousemove="activeKey !== row.key && (activeKey = row.key)"
             @click="choose(row)"
@@ -460,6 +478,7 @@ const actionHint = computed(() =>
         <p v-else-if="showIdle" class="ne-cmd__idle">{{ idleHint }}</p>
       </div>
 
+      <p v-if="footnote" class="ne-cmd__footnote" data-ne-command-footnote>{{ footnote }}</p>
       <div class="ne-cmd__foot" aria-hidden="true">
         <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
         <span><kbd>↵</kbd> open</span>
@@ -787,6 +806,14 @@ const actionHint = computed(() =>
 
 .ne-cmd__empty-text {
   margin: 0.25rem 0 0;
+  font-size: var(--ne-text-small);
+}
+
+.ne-cmd__footnote {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--ne-divider);
+  color: var(--ne-ink-muted);
   font-size: var(--ne-text-small);
 }
 
