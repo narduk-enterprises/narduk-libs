@@ -64,6 +64,43 @@ package.targets += [
     ),
 ]
 
+// NardukSound (narduk-libs#1567): three more products of the same package, empty until their phases land.
+// NardukSoundAnalysis turns any audio into a SoundFrame, NardukSonify turns a sample stream into MusicSignals and
+// NardukSoundVisuals draws a SoundFrame. The contract is packages/modules/narduk-music/swift/docs/sound-contract.md.
+// All three compile on the Linux gate; platform-only code goes behind #if canImport inside the target.
+package.products += [
+    .library(name: "NardukSoundAnalysis", targets: ["NardukSoundAnalysis"]),
+    .library(name: "NardukSonify", targets: ["NardukSonify"]),
+    .library(name: "NardukSoundVisuals", targets: ["NardukSoundVisuals"]),
+]
+package.targets += [
+    .target(
+        name: "NardukSoundAnalysis",
+        path: "packages/modules/narduk-music/swift/Sources/NardukSoundAnalysis"
+    ),
+    .target(
+        name: "NardukSonify", dependencies: ["NardukMusicCore"],
+        path: "packages/modules/narduk-music/swift/Sources/NardukSonify"
+    ),
+    .target(
+        name: "NardukSoundVisuals", dependencies: ["NardukSoundAnalysis", "NardukMusicCore"],
+        path: "packages/modules/narduk-music/swift/Sources/NardukSoundVisuals"
+    ),
+    .testTarget(
+        name: "NardukSoundAnalysisTests", dependencies: ["NardukSoundAnalysis"],
+        path: "packages/modules/narduk-music/swift/Tests/NardukSoundAnalysisTests"
+    ),
+    .testTarget(
+        name: "NardukSonifyTests", dependencies: ["NardukSonify", "NardukMusicCore"],
+        path: "packages/modules/narduk-music/swift/Tests/NardukSonifyTests"
+    ),
+    .testTarget(
+        name: "NardukSoundVisualsTests",
+        dependencies: ["NardukSoundVisuals", "NardukSoundAnalysis", "NardukMusicCore"],
+        path: "packages/modules/narduk-music/swift/Tests/NardukSoundVisualsTests"
+    ),
+]
+
 // NardukAuthKit is the Apple client half of narduk-auth's native PKCE flow
 // (docs/architecture/narduk-logging.md). It needs Security and CryptoKit, so
 // it exists only where the manifest is evaluated on an Apple host; the Linux
