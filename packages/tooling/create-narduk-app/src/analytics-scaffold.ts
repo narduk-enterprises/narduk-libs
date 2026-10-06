@@ -6,10 +6,12 @@ export function analyticsScaffoldFiles(): GeneratedFile[] {
     {
       path: 'apps/web/app/analytics/events.ts',
       contents: [
-        "import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/utils/analyticsEvents'",
+        "import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/lib/analyticsCatalog'",
         '',
         '// Add product-specific events with strict Zod schemas here.',
         '// Shared search, form, share and engagement events are already available.',
+        '// Keep this module out of the entry chunk: useProductAnalytics() loads it with',
+        '// import() on the first capture, so import `z` here and nowhere on the critical path.',
         'export const productAnalyticsEvents = defineAnalyticsEvents({})',
         '',
       ].join('\n'),
@@ -19,10 +21,12 @@ export function analyticsScaffoldFiles(): GeneratedFile[] {
       contents: [
         "import { useAnalytics } from '@narduk-enterprises/narduk-analytics/app/composables/useAnalytics'",
         '',
-        "import { productAnalyticsEvents } from '../analytics/events'",
+        '// Loaded on the first capture so Zod stays off the critical path (narduk-libs#1527).',
+        'const loadProductAnalyticsEvents = () =>',
+        "  import('../analytics/events').then((module) => module.productAnalyticsEvents)",
         '',
         'export function useProductAnalytics() {',
-        '  return useAnalytics(productAnalyticsEvents)',
+        '  return useAnalytics(loadProductAnalyticsEvents)',
         '}',
         '',
       ].join('\n'),

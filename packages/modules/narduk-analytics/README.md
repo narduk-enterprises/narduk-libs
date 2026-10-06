@@ -647,7 +647,7 @@ For a declarative click (never an operation success):
 
 ```ts
 import { z } from 'zod'
-import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/utils/analyticsEvents'
+import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/lib/analyticsCatalog'
 
 const productEvents = defineAnalyticsEvents({
   primary_action_completed: z
@@ -674,6 +674,59 @@ const productEvents = defineAnalyticsEvents(() => ({
     .strict(),
 }))
 ```
+
+### Keeping Zod off the critical path
+
+Zod is about 90 KB gzipped, and an analytics event does nothing until the first
+`capture()`, so the shared schemas load with `import()` then (narduk-libs#1527).
+`useAnalytics` and `v-track` queue a capture while they load, validate it with
+the same schemas as before and send the queued events in call order. An invalid
+event is still dropped and never reaches PostHog.
+
+Two things follow for the return value of `capture()`:
+
+- With the schemas in memory it is the same answer as always: `false` for an
+  unknown event, invalid properties, or analytics that are disabled or failed.
+- While they are still loading it is `true`, meaning _accepted for validation_,
+  the same promise `capture()` makes while the SDK is pending. An invalid event
+  captured that early is dropped once the schemas arrive. A disabled transport
+  returns `false` at once and never loads Zod.
+
+The shared schemas are no longer part of the entry chunk, but an app's own
+catalog is whatever the app imports. A catalog that statically imports `zod`
+puts Zod back in the entry chunk through `useProductAnalytics`. Import
+`defineAnalyticsEvents` from `analyticsCatalog` (it is the same function, with
+no Zod import) and pass `useAnalytics` a loader instead of the catalog;
+generated apps already do:
+
+```ts
+// app/composables/useProductAnalytics.ts
+const loadProductAnalyticsEvents = () =>
+  import('../analytics/events').then((module) => module.productAnalyticsEvents)
+
+export function useProductAnalytics() {
+  return useAnalytics(loadProductAnalyticsEvents)
+}
+```
+
+```ts
+// app/analytics/events.ts: this module and zod load together, on the first capture
+import { z } from 'zod'
+import { defineAnalyticsEvents } from '@narduk-enterprises/narduk-analytics/app/lib/analyticsCatalog'
+
+export const productAnalyticsEvents = defineAnalyticsEvents(() => ({
+  primary_action_completed: z
+    .object({ source: z.enum(['map', 'list']) })
+    .strict(),
+}))
+```
+
+`analyticsEvents` still exports everything it did, including
+`standardAnalyticsEvents`, so existing imports keep working; it just is not
+free: importing it statically brings Zod with it. Keep it off the entry path
+(tests, server code and lazy chunks are fine). Passing a built catalog to
+`useAnalytics` keeps working and validates that catalog's events synchronously.
+The jitless handling from narduk-libs#1310 applies on both paths.
 
 App events cannot redefine shared names or PostHog `$` events. Use strict
 schemas and enums/declared IDs; strict mode cannot recognize arbitrary private
