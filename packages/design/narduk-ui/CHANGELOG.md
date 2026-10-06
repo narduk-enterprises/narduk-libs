@@ -1,5 +1,11 @@
 # @narduk-enterprises/narduk-ui
 
+## 0.3.2
+
+### Patch Changes
+
+- 7792e70: Separate shadow and bezel colour from text ink with `--ns-shadow-rgb`, defaulting to the existing ink channel. Dark app palettes can keep depth dark while using light ink for text, hatches and measurement marks.
+
 ## 0.3.1
 
 ### Patch Changes
