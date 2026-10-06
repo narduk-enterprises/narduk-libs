@@ -238,8 +238,15 @@
             case .wobble, .laser: 0.5
             case .sub, .keys: 0.67
             case .glitch, .tapeStop, .impact: 0.84
-            default: Float(instrument.index % 6) / 6  // instruments added after the port spread over the palette
+            case .acousticGuitar, .strum: 0.25
+            case .electricGuitar, .electricStrum: 0.75
+            case .bassGuitar: 0.58
             }
+        }
+
+        /// A pad label's font size: 12 pt, shrunk until the longest name fits its cell (monospaced glyphs are ~0.6 em).
+        static func labelSize(_ characters: Int, cellWidth: CGFloat) -> CGFloat {
+            min(12, max(6, (cellWidth - 8) / (0.6 * CGFloat(max(characters, 1)))))
         }
 
         /// One pad per instrument; each flashes when the instrument fires.
@@ -277,7 +284,11 @@
                 ctx.stroke(shape, with: .color(color.opacity(0.25 + 0.75 * level)), lineWidth: 1.2)
                 ctx.draw(
                     Text(instrument.rawValue.uppercased())
-                        .font(.system(size: min(12, max(8, cellW / 7)), weight: .bold, design: .monospaced))
+                        .font(
+                            .system(
+                                size: labelSize(instrument.rawValue.count, cellWidth: cellW), weight: .bold,
+                                design: .monospaced)
+                        )
                         .foregroundStyle(level > 0.5 ? Color.white : color.opacity(0.85)),
                     at: CGPoint(x: rect.midX, y: rect.midY), anchor: .center)
             }
