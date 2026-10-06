@@ -90,7 +90,11 @@
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: Self.pixelFormat, width: width, height: height, mipmapped: false)
             descriptor.usage = [.renderTarget]
-            descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+            #if os(macOS)
+                descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+            #else
+                descriptor.storageMode = .shared
+            #endif
             guard let texture = device.makeTexture(descriptor: descriptor), let buffer = queue.makeCommandBuffer()
             else { return nil }
             let pass = MTLRenderPassDescriptor()

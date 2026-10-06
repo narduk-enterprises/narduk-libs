@@ -1,4 +1,4 @@
-import CoreGraphics
+import Foundation
 
 /// Decides the tunnel's drawable size. The tunnel is all soft glow, so it renders below native resolution (1.5 pixels
 /// per point on a Retina panel looks the same and roughly halves the fill cost), capped at `maxPixels`. The first size
