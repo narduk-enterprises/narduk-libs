@@ -1,5 +1,16 @@
 # @narduk-enterprises/narduk-core
 
+## 2.24.4
+
+### Patch Changes
+
+- 5c47588: The `[build]` console banner reads an optional
+  `runtimeConfig.public.appDisplayName` and falls back to `appName`, so an app
+  whose product name differs from its analytics key (Lake Status keeps
+  `appName: 'LakeStat'` for the PostHog `app` join) can name itself for readers
+  without moving that key. `window.__NARDUK_BUILD__.appName` is unchanged
+  (#1498).
+
 ## 2.24.3
 
 ### Patch Changes
