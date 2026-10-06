@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -74,9 +81,12 @@ function directoriesForPattern(root, pattern) {
 }
 
 export function loadWorkspace(root = scriptRoot) {
+  // As pnpm does, a directory a pattern matches is a package only when it has
+  // a package.json: packages/modules/narduk-music is a Swift-only tree (#1520).
   const directories = readWorkspacePatterns(root)
     .flatMap((pattern) => directoriesForPattern(root, pattern))
     .filter((directory) => statSync(directory).isDirectory())
+    .filter((directory) => existsSync(join(directory, 'package.json')))
 
   const packages = directories
     .map((directory) => {

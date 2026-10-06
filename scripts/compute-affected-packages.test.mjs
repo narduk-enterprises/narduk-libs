@@ -383,6 +383,29 @@ test('resolves packages across the four-family layout and attributes nested path
   }
 })
 
+test('a matched directory without package.json is not a package, as in pnpm', () => {
+  const root = createWorkspace([{ directory: 'core' }])
+  try {
+    mkdirSync(join(root, 'packages', 'swift-only', 'swift'), { recursive: true })
+    writeFileSync(join(root, 'packages', 'swift-only', 'swift', 'Lib.swift'), '')
+    const workspace = loadWorkspace(root)
+    assert.deepEqual(
+      workspace.packages.map(({ relativeDirectory }) => relativeDirectory),
+      ['packages/core'],
+    )
+    // Owned by no package, so it stays an unclassified path: a full run, as
+    // the root Package.swift already is.
+    const result = computeAffectedSet({
+      root,
+      changedFiles: ['packages/swift-only/swift/Lib.swift'],
+    })
+    assert.equal(result.fullRun, true)
+    assert.deepEqual(names(result), ['core'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('the live workspace discovers narduk-shell from pnpm-workspace.yaml', () => {
   const workspace = loadWorkspace(repoRoot)
   const shell = workspace.byName.get(`${scope}narduk-shell`)

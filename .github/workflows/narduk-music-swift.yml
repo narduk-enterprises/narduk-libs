@@ -1,0 +1,73 @@
+name: NardukMusic Swift
+
+# NardukMusicCore, NardukMusicDSP, NardukMusicRender and the narduk-music CLI
+# build on Linux; NardukMusicEngine needs AVFoundation, so the macOS job builds
+# everything. Both run the golden render against their own platform's
+# fingerprint, the CLI and a version-tag consumer.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  swift-linux:
+    name: NardukMusic Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Provision and verify Swift
+        run: python scripts/install-swift-linux.py
+      - name: Check NardukMusic, its CLI and a version-tag consumer
+        run: python packages/modules/narduk-music/swift/scripts/swift-quality.py
+      - name: Remove the job-local Swift fallback
+        if: always()
+        run: |
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "narduk-logging-swift"
+          if root.exists():
+              shutil.rmtree(root)
+          PY
+
+  swift-macos:
+    name: NardukMusic macOS
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      # Xcode 26.6 / Swift 6.3.3 is the repository's declared Apple toolchain.
+      # The last step repeats the consumer on the fleet Apple runner's Xcode 26.0.1.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SWIFTLINT_VERSION: 0.63.3
+      SWIFTLINT_SHA256: fb045e85e7cb3374f42a4840b6b85a0106302afa69035c0c6f29af4a44c810b6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned SwiftLint release
+        run: |
+          set -euo pipefail
+          directory="${RUNNER_TEMP}/swiftlint"
+          mkdir -p "${directory}"
+          curl --fail --silent --show-error --location --output "${directory}/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip"
+          echo "${SWIFTLINT_SHA256}  ${directory}/swiftlint.zip" | shasum -a 256 -c -
+          unzip -q "${directory}/swiftlint.zip" -d "${directory}"
+          "${directory}/swiftlint" version
+          echo "${directory}" >> "${GITHUB_PATH}"
+      - name: Check NardukMusic, its CLI and a version-tag consumer
+        env:
+          CI: "true"
+        run: python3 packages/modules/narduk-music/swift/scripts/swift-quality.py
+      - name: Resolve and build the consumer with the fleet Apple runner's Xcode 26.0.1 (Swift 6.2)
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+        run: python3 packages/modules/narduk-music/swift/scripts/swift-quality.py --consumer-only

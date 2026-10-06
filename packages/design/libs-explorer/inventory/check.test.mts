@@ -196,9 +196,17 @@ test('workspace discovery is the repository contract: supported patterns read, o
     }
   }
 
-  const noManifest = fixtureWorkspace('packages:\n  - packages/a/*\n', { 'packages/a/empty': null })
+  // As in pnpm, a matched directory without package.json is not a package
+  // (packages/modules/narduk-music is a Swift-only tree, narduk-libs#1520).
+  const noManifest = fixtureWorkspace('packages:\n  - packages/a/*\n', {
+    'packages/a/one': { name: '@x/one' },
+    'packages/a/empty': null,
+  })
   try {
-    assert.throws(() => readWorkspacePackages(noManifest), /ENOENT/)
+    assert.deepEqual(
+      readWorkspacePackages(noManifest).map(({ name }) => name),
+      ['@x/one'],
+    )
   } finally {
     rmSync(noManifest, { recursive: true, force: true })
   }

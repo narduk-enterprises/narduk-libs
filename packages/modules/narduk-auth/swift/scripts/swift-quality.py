@@ -72,6 +72,8 @@ def consumer() -> None:
             LOGGING / "examples/swift",
             SWIFT / "Sources",
             SWIFT / "Tests",
+            ROOT / "packages/modules/narduk-music/swift/Sources",
+            ROOT / "packages/modules/narduk-music/swift/Tests",
         ):
             shutil.copytree(tree, source / tree.relative_to(ROOT))
         run("git", "init", "--quiet", cwd=source)
