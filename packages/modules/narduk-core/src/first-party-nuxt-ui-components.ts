@@ -26,6 +26,8 @@ export const FIRST_PARTY_NUXT_UI_COMPONENTS: Readonly<Record<string, readonly st
   '@narduk-enterprises/narduk-analytics': [
     'Button',
     'Card',
+    'Checkbox',
+    'Form',
     'FormField',
     'Input',
     'SelectMenu',
