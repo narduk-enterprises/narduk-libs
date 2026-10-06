@@ -377,7 +377,8 @@ enum GenreArrangement {
         }
         if kind == .kickDrop { kicks = [] }
         if kicks.contains(pos) {
-            let velocity = pos == 0 ? (soft ? 0.7 : 1.0) : (soft ? 0.4 : driving ? 0.95 : genre == .synthwave ? 0.9 : 0.75)
+            let velocity =
+                pos == 0 ? (soft ? 0.7 : 1.0) : (soft ? 0.4 : driving ? 0.95 : genre == .synthwave ? 0.9 : 0.75)
             add(.kick, velocity, NoteParams())
         }
 

@@ -383,7 +383,9 @@ import Testing
         let flood = Array(repeating: TrafficEventKind.tcpRst, count: 12) + Array(repeating: .icmpUnreachable, count: 12)
         var c = Self.conductor(.dubstep)
         var notes: [ScheduledNote] = []
-        let genres: [Genre] = [.trap, .house, .drumAndBass, .riddim, .chill, .dubstep, .techno, .ukGarage, .synthwave, .lofi]
+        let genres: [Genre] = [
+            .trap, .house, .drumAndBass, .riddim, .chill, .dubstep, .techno, .ukGarage, .synthwave, .lofi,
+        ]
         for step in 0..<(256 + 12 * Self.bar) {
             if step >= 256, (step - 256) % (Self.bar * 2) == 5 {
                 c.setGenre(genres[((step - 256) / (Self.bar * 2)) % genres.count])
