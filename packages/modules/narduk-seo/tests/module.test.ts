@@ -412,7 +412,7 @@ describe('narduk-seo module', () => {
 
     expect(nuxt.options.site).not.toHaveProperty('indexable')
     expect(nuxt.options.sitemap).toMatchObject({
-      urls: ['/narduk-network'],
+      urls: [],
       exclude: expect.arrayContaining(['/__preview/**', '/admin/**']),
     })
     expect(nuxt.options.robots).toMatchObject({
@@ -421,10 +421,35 @@ describe('narduk-seo module', () => {
     expect(
       installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/sitemap')?.sitemap,
     ).toMatchObject({
-      urls: ['/narduk-network'],
+      urls: [],
       exclude: expect.arrayContaining(['/__preview/**', '/admin/**']),
     })
     expect(extendRouteRules).not.toHaveBeenCalledWith('/**', expect.anything(), expect.anything())
+  })
+
+  // narduk-libs#1442: the module used to default `site.description` to a
+  // placeholder that every page without its own description shipped.
+  it('ships no placeholder site description when the app configures none', async () => {
+    const { nuxt } = await setupModule()
+
+    expect(nuxt.options.site).not.toHaveProperty('description')
+    expect(JSON.stringify(nuxt.options.site)).not.toContain('Cloudflare Workers')
+  })
+
+  it('keeps a site description the app configures', async () => {
+    const { nuxt } = await setupModule({
+      nuxtOptions: { site: { description: 'Live lake levels for Texas.' } },
+    })
+
+    expect(nuxt.options.site).toMatchObject({ description: 'Live lake levels for Texas.' })
+  })
+
+  it('lists /narduk-network in the sitemap only when a directory is configured', async () => {
+    const { nuxt } = await setupModule({
+      moduleOptions: { networkDirectoryUrl: 'https://directory.example.com/sites.json' },
+    })
+
+    expect(nuxt.options.sitemap).toMatchObject({ urls: ['/narduk-network'] })
   })
 
   it('forces noindex robots and sitemap suppression for staging deployments', async () => {
