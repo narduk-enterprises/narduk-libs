@@ -53,12 +53,10 @@ function build(name: string, env: Record<string, string>): Promise<string> {
 
 /** The inline script `@nuxtjs/color-mode` puts in the head: the one that reads its storage key. */
 function colorModeScript(html: string): string {
-  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map(
-    (match) => match[1]!,
-  )
-  const script = scripts.find((body) => body.includes('nuxt-color-mode'))
-  if (!script) throw new Error('the built page has no color-mode script')
-  return script
+  // Slice around the storage key rather than parse the HTML with a pattern.
+  const key = html.indexOf('"nuxt-color-mode"')
+  if (key === -1) throw new Error('the built page has no color-mode script')
+  return html.slice(html.lastIndexOf('<script', key), html.indexOf('</script', key))
 }
 
 let defaults: string
