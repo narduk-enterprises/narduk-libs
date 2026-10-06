@@ -296,7 +296,7 @@ describe('posthog.client — strict privacy', () => {
     }
     const plugin = (await import('../app/plugins/posthog.client')).default
     plugin.setup?.({ provide: vi.fn() })
-    await flush()
+    await vi.waitFor(() => expect(posthogCapture).toHaveBeenCalled())
 
     const config = posthogInit.mock.calls[0]?.[1] as Record<string, unknown>
     expect(config).toMatchObject({
@@ -326,13 +326,14 @@ describe('posthog.client — strict privacy', () => {
       expect.objectContaining({ timestamp: expect.any(Date) }),
     )
     afterEach?.({ path: '/farms/frm_1/2024/fields/fld_9' }, { path: '/' })
-    await flush()
-    expect(posthogCapture).toHaveBeenLastCalledWith(
-      '$pageview',
-      expect.objectContaining({
-        $current_url: `${ORIGIN}/farms/:farmId/:year/fields/:fieldId`,
-      }),
-      expect.objectContaining({ timestamp: expect.any(Date) }),
+    await vi.waitFor(() =>
+      expect(posthogCapture).toHaveBeenLastCalledWith(
+        '$pageview',
+        expect.objectContaining({
+          $current_url: `${ORIGIN}/farms/:farmId/:year/fields/:fieldId`,
+        }),
+        expect.objectContaining({ timestamp: expect.any(Date) }),
+      ),
     )
   })
 
@@ -347,7 +348,7 @@ describe('posthog.client — strict privacy', () => {
     }
     const plugin = (await import('../app/plugins/posthog.client')).default
     plugin.setup?.({ provide: vi.fn() })
-    await flush()
+    await vi.waitFor(() => expect(posthogCapture).toHaveBeenCalled())
 
     const config = posthogInit.mock.calls[0]?.[1] as Record<string, unknown>
     expect(config).not.toHaveProperty('autocapture')
