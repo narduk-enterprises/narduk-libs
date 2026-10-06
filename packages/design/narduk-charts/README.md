@@ -351,6 +351,27 @@ const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
 | `showGrid`                | `boolean`               | `true`           | Draw the value gridlines                                                                      |
 | `showLegend`              | `boolean`               | `true`           | Render the legend                                                                             |
 | `padding`                 | `Partial<ChartPadding>` | —                | Override chart padding, e.g. `{ top: 0, right: 0, bottom: 0, left: 0 }` for a thin inline bar |
+| `missingValues`           | `'zero' \| 'gap'`       | `'zero'`         | What a `null` / `undefined` / `NaN` datum draws as; see "Missing values" below                |
+| `missingLabel`            | `string`                | `'no value'`     | With `gap`: the words for a missing slot in the tooltip, bar name, data table and chart name  |
+
+#### Missing values
+
+By default a `null` datum draws as a zero-height bar, the same as a real `0`.
+For a series where "no row stored" and "stored zero" must never be read as each
+other (a daily strip, say), set `missingValues="gap"`:
+
+- a missing slot draws as a short **hatched stub** (`narduk-bar-rect--missing`,
+  `data-nc-state="missing"`), and a real `0` draws a **1px floor** bar;
+- the tooltip and each bar's accessible name say `missingLabel` (default
+  `no value`; pass e.g. `no row`) instead of a number, the default chart name
+  ends with how many slots have no value ("Bar chart: Users, 3 slots have no
+  row"; a `chartTitle` you pass wins), and `showDataTable` prints `missingLabel`
+  rather than a blank;
+- a missing slot never emits `barClick`;
+- stacked: a missing segment has no extent, and a category with no value in any
+  visible series draws one stub.
+
+The default (`zero`) is unchanged.
 
 #### Events
 

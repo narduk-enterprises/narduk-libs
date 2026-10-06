@@ -9,11 +9,22 @@ export function defaultLineChartLabel(series: ChartSeries[], categoryCount: numb
   return `Line chart: ${names.join(', ')}`
 }
 
-export function defaultBarChartLabel(series: ChartSeries[], categoryCount: number): string {
+/**
+ * `gaps` is only passed under `missingValues="gap"`; a positive `missing`
+ * count then ends the name with how many slots have no value.
+ */
+export function defaultBarChartLabel(
+  series: ChartSeries[],
+  categoryCount: number,
+  gaps?: { missing: number; missingLabel: string },
+): string {
   if (categoryCount <= 0) return 'Empty bar chart'
   const names = series.map(s => s.name).filter(Boolean)
-  if (names.length === 0) return `Bar chart, ${categoryCount} categories`
-  return `Bar chart: ${names.join(', ')}`
+  const base =
+    names.length === 0 ? `Bar chart, ${categoryCount} categories` : `Bar chart: ${names.join(', ')}`
+  if (!gaps || gaps.missing <= 0) return base
+  const verb = gaps.missing === 1 ? 'slot has' : 'slots have'
+  return `${base}, ${gaps.missing} ${verb} ${gaps.missingLabel}`
 }
 
 export function defaultPieChartLabel(labels: string[]): string {

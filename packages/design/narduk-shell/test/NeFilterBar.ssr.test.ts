@@ -112,3 +112,17 @@ describe('NeFilterBar server-rendered without a DOM', () => {
     expect(typeof window).toBe('undefined')
   })
 })
+
+describe('NeFilterBar multiple, server-rendered (narduk-libs#1545)', () => {
+  it('carries every pressed key as aria-pressed in the first paint', async () => {
+    const html = await render({
+      items: [...ITEMS, { key: 'done', label: 'Done' }],
+      label: 'Kind',
+      modelValue: ['all', 'done'],
+      multiple: true,
+    })
+
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(2)
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(1)
+  })
+})

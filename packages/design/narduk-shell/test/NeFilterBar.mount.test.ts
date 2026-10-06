@@ -393,3 +393,79 @@ describe('NeFilterBar: accessible name and consumer classes', () => {
     wrapper.unmount()
   })
 })
+
+describe('NeFilterBar: more than one pressed (narduk-libs#1545)', () => {
+  const pressed = (wrapper: ReturnType<typeof render>) =>
+    controls(wrapper).map((control) => control.attributes('aria-pressed'))
+
+  it('presses every key in the array, with aria-pressed and ui.selected on each', () => {
+    const wrapper = render({
+      multiple: true,
+      modelValue: ['all', 'done'],
+      ui: { selected: 'app-on' },
+    })
+    expect(pressed(wrapper)).toEqual(['true', 'false', 'true'])
+    expect(controls(wrapper).map((control) => control.classes().includes('app-on'))).toEqual([
+      true,
+      false,
+      true,
+    ])
+    wrapper.unmount()
+  })
+
+  it('emits the clicked key and leaves the array to the caller', async () => {
+    const wrapper = render({ multiple: true, modelValue: ['all', 'open'] })
+    await controls(wrapper)[2]!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['done']])
+    // Nothing moved on its own.
+    expect(pressed(wrapper)).toEqual(['true', 'true', 'false'])
+    wrapper.unmount()
+  })
+
+  it('an empty array or null presses nothing', () => {
+    expect(pressed(render({ multiple: true, modelValue: [] }))).toEqual(['false', 'false', 'false'])
+    expect(pressed(render({ multiple: true, modelValue: null }))).toEqual([
+      'false',
+      'false',
+      'false',
+    ])
+  })
+
+  it('keeps the disabled-but-selected rule: a disabled key in the array stays pressed', () => {
+    const wrapper = render({
+      multiple: true,
+      modelValue: ['soon', 'all'],
+      items: [
+        { key: 'all', label: 'All' },
+        { key: 'soon', label: 'By owner', disabled: true },
+        { key: 'later', label: 'Later', disabled: true },
+      ],
+    })
+    expect(pressed(wrapper)).toEqual(['true', 'true', undefined])
+    wrapper.unmount()
+  })
+
+  it('without `multiple` the default is unchanged: one key, and an array presses nothing', () => {
+    expect(pressed(render({ modelValue: 'open' }))).toEqual(['false', 'true', 'false'])
+    expect(pressed(render({ modelValue: ['open'] }))).toEqual(['false', 'false', 'false'])
+  })
+
+  it('kind="tabs" refuses it: a single selected tab, never aria-pressed', () => {
+    const wrapper = render({ kind: 'tabs', multiple: true, modelValue: 'open' })
+    expect(controls(wrapper).map((c) => c.attributes('aria-selected'))).toEqual([
+      'false',
+      'true',
+      'false',
+    ])
+    expect(pressed(wrapper)).toEqual([undefined, undefined, undefined])
+    wrapper.unmount()
+
+    const array = render({ kind: 'tabs', multiple: true, modelValue: ['all', 'open'] })
+    expect(controls(array).map((c) => c.attributes('aria-selected'))).toEqual([
+      'false',
+      'false',
+      'false',
+    ])
+    array.unmount()
+  })
+})

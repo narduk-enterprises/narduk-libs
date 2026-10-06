@@ -33,6 +33,20 @@ const views: NeFilterBarItem[] = [
   { key: 'timeline', label: 'Timeline' },
 ]
 
+const kindItems: NeFilterBarItem[] = [
+  { key: 'app', label: 'Apps', count: 9 },
+  { key: 'lib', label: 'Libraries', count: 5 },
+  { key: 'tool', label: 'Tooling', count: 3 },
+]
+
+const kinds = ref<string[]>(['app', 'tool'])
+
+function toggleKind(key: string): void {
+  kinds.value = kinds.value.includes(key)
+    ? kinds.value.filter((entry) => entry !== key)
+    : [...kinds.value, key]
+}
+
 const state = ref<string | null>('open')
 const scope = ref<string | null>('team')
 const view = ref<string | null>('board')
@@ -72,6 +86,20 @@ const view = ref<string | null>('board')
         facets · “By owner” has no producer yet: it stays in the row, aria-disabled, with the note
         saying when it lands. Dropping it would make the product look finished and be narrower than
         it claims.
+      </p>
+    </div>
+
+    <div class="preview-row">
+      <NeFilterBar
+        label="Kind"
+        multiple
+        :model-value="kinds"
+        :items="kindItems"
+        @update:model-value="toggleKind"
+      />
+      <p class="mono">
+        chips · multiple · every pressed chip is aria-pressed; a click emits its key and the page
+        toggles it
       </p>
     </div>
 

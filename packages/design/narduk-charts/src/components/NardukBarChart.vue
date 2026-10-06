@@ -31,6 +31,8 @@ interface BarRect {
   height: number
   label: string
   labelIndex: number
+  /** `missingValues="gap"` only: this slot has no value. Its `value` is `NaN`. */
+  missing: boolean
   seriesName: string
   value: number
   width: number
@@ -64,6 +66,26 @@ const props = withDefaults(
     height?: number
     labels: string[]
     legendGroupLabel?: string
+    /**
+     * Words for a slot that has no value, in the tooltip, the bar's accessible
+     * name, the data table and the default chart name. Only used when
+     * `missingValues` is `gap`. Default `no value`.
+     */
+    missingLabel?: string
+    /**
+     * What a missing datum (`null`, `undefined` or `NaN`) draws as.
+     *
+     * - `zero` (default): as a zero-height bar, indistinguishable from a real 0.
+     * - `gap`: as a short hatched stub (`narduk-bar-rect--missing`,
+     *   `data-nc-state="missing"`), and a real `0` draws a 1px floor bar, so
+     *   the two can never be read as each other. The tooltip and accessible
+     *   names say `missingLabel` instead of a number, the default chart name
+     *   counts the gaps, and the data table prints `missingLabel` for them.
+     *   A missing slot does not emit `barClick`. In a stacked chart a missing
+     *   segment has no extent; a category where every visible series is
+     *   missing draws one stub.
+     */
+    missingValues?: 'zero' | 'gap'
     /**
      * `vertical` (default): categories on the X axis, values on the Y axis.
      * `horizontal`: categories on the Y axis, values on the X axis (bars grow +X from the left gutter).
@@ -116,6 +138,8 @@ const props = withDefaults(
     showYAxis: true,
     showLegend: true,
     showGrid: true,
+    missingValues: 'zero',
+    missingLabel: 'no value',
   },
 )
 
@@ -133,15 +157,23 @@ const barA11yRaw = useId()
 const idSafe = (s: string) => s.replace(/[^\w-]/g, '')
 const barCaptionId = `nc-bcap-${idSafe(barA11yRaw)}`
 const svgTitleId = `nc-bt-${idSafe(barA11yRaw)}`
+const hatchId = `nc-bh-${idSafe(barA11yRaw)}`
 const svgDescId = `nc-bd-${idSafe(barA11yRaw)}`
 
 const containerRef = ref<HTMLElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
 const focusedBarIndex = ref(0)
 
-const effectiveChartTitle = computed(
-  () => props.chartTitle ?? defaultBarChartLabel(props.series, props.labels.length),
-)
+const gapMode = computed(() => props.missingValues === 'gap')
+
+function isMissing(v: number | null | undefined): boolean {
+  return v == null || Number.isNaN(v)
+}
+
+/** What a bar reads as in a tooltip or accessible name. */
+function valueText(b: BarRect): string {
+  return b.missing ? props.missingLabel : formatValue(b.value)
+}
 
 function formatXAt(i: number): string {
   const raw = props.labels[i] ?? ''
@@ -179,7 +211,7 @@ function barTooltipItems(b: BarRect): TooltipItem[] {
     {
       color: b.color,
       label: b.seriesName,
-      value: formatValue(b.value),
+      value: valueText(b),
     },
   ]
 }
@@ -252,6 +284,7 @@ async function onBarKeydown(e: KeyboardEvent, bi: number): Promise<void> {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
     const b = bars.value[bi]
+    if (b.missing) return
     emit('barClick', {
       index: b.labelIndex,
       label: b.label,
@@ -296,6 +329,24 @@ function toggleSeries(name: string) {
 }
 
 const visibleSeries = computed(() => props.series.filter(s => !hiddenSeries.value.has(s.name)))
+
+/** Slots (visible series x categories) with no value; always 0 unless `gap`. */
+const missingCount = computed(() => {
+  if (!gapMode.value) return 0
+  let n = 0
+  for (const s of visibleSeries.value)
+    for (let li = 0; li < props.labels.length; li++) if (isMissing(s.data[li])) n++
+  return n
+})
+
+const effectiveChartTitle = computed(
+  () =>
+    props.chartTitle ??
+    defaultBarChartLabel(props.series, props.labels.length, {
+      missing: missingCount.value,
+      missingLabel: props.missingLabel,
+    }),
+)
 
 const isEmpty = computed(() => {
   if (props.series.length === 0 || props.labels.length === 0) return true
@@ -498,6 +549,24 @@ const refLabelTopY = 10
 const groupGap = 0.2
 const barGap = 2
 
+/** Length (px along the value axis) of the hatched stub a missing slot draws. */
+const MISSING_STUB_PX = 6
+const stubSpan = computed(() => Math.min(MISSING_STUB_PX, Math.max(1, valueAxisSpan.value / 2)))
+
+/**
+ * `gap` mode only: a real value whose bar would be under 1px still draws 1px,
+ * so a stored zero is visible and cannot be read as a gap. Default `zero` mode
+ * is unchanged.
+ */
+function floored(extent: number): number {
+  return gapMode.value ? Math.max(1, extent) : extent
+}
+
+/** Stacked + `gap`: every visible series has no value in this category. */
+function wholeCategoryMissing(li: number): boolean {
+  return visibleSeries.value.every(s => isMissing(s.data[li]))
+}
+
 const bars = computed<BarRect[]>(() => {
   const n = props.labels.length
   const numVisible = visibleSeries.value.length
@@ -514,17 +583,20 @@ const bars = computed<BarRect[]>(() => {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
         const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
         const stack = createStackCursor()
-        for (const s of visibleSeries.value) {
+        const whole = wholeCategoryMissing(li)
+        for (const [si, s] of visibleSeries.value.entries()) {
           const raw = barValue(s.data[li])
+          const miss = gapMode.value && isMissing(s.data[li])
           const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
           const { lo, hi } = stack(val)
           result.push({
             x: padding.value.left + lo,
             y: rowTop,
-            width: hi - lo,
+            width: miss ? (whole && si === 0 ? stubSpan.value : 0) : hi - lo,
             height: barH,
             color: resolveColor(s),
-            value: val,
+            value: miss ? Number.NaN : val,
+            missing: miss,
             seriesName: s.name,
             label: props.labels[li]!,
             labelIndex: li,
@@ -536,15 +608,17 @@ const bars = computed<BarRect[]>(() => {
       for (let li = 0; li < n; li++) {
         const rowTop = padding.value.top + li * groupHeight + (groupHeight - innerH) / 2
         for (const [si, s] of visibleSeries.value.entries()) {
+          const miss = gapMode.value && isMissing(s.data[li])
           const val = barValue(s.data[li])
           const { lo, hi } = barSpan(val)
           result.push({
             x: padding.value.left + lo,
             y: rowTop + si * (barH + barGap),
-            width: hi - lo,
+            width: miss ? stubSpan.value : floored(hi - lo),
             height: barH,
             color: resolveColor(s),
-            value: val,
+            value: miss ? Number.NaN : val,
+            missing: miss,
             seriesName: s.name,
             label: props.labels[li]!,
             labelIndex: li,
@@ -566,17 +640,21 @@ const bars = computed<BarRect[]>(() => {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
       const sum = visibleSeries.value.reduce((acc, s) => acc + barValue(s.data[li]), 0)
       const stack = createStackCursor()
-      for (const s of visibleSeries.value) {
+      const whole = wholeCategoryMissing(li)
+      for (const [si, s] of visibleSeries.value.entries()) {
         const raw = barValue(s.data[li])
+        const miss = gapMode.value && isMissing(s.data[li])
         const val = props.stackedPercent && sum > 0 ? (raw / sum) * 100 : raw
         const { lo, hi } = stack(val)
+        const stubbed = miss && whole && si === 0
         result.push({
           x: groupX,
-          y: bottomY - hi,
+          y: bottomY - (stubbed ? stubSpan.value : hi),
           width: barW,
-          height: hi - lo,
+          height: miss ? (stubbed ? stubSpan.value : 0) : hi - lo,
           color: resolveColor(s),
-          value: val,
+          value: miss ? Number.NaN : val,
+          missing: miss,
           seriesName: s.name,
           label: props.labels[li]!,
           labelIndex: li,
@@ -588,15 +666,19 @@ const bars = computed<BarRect[]>(() => {
     for (let li = 0; li < n; li++) {
       const groupX = padding.value.left + li * groupWidth + (groupWidth - innerWidth) / 2
       for (const [si, s] of visibleSeries.value.entries()) {
+        const miss = gapMode.value && isMissing(s.data[li])
         const val = barValue(s.data[li])
         const { lo, hi } = barSpan(val)
+        const height = miss ? stubSpan.value : floored(hi - lo)
         result.push({
           x: groupX + si * (barW + barGap),
-          y: bottomY - hi,
+          // A floored zero grows up from the axis, never below it.
+          y: bottomY - hi - (height - (hi - lo)),
           width: barW,
-          height: hi - lo,
+          height,
           color: resolveColor(s),
-          value: val,
+          value: miss ? Number.NaN : val,
+          missing: miss,
           seriesName: s.name,
           label: props.labels[li]!,
           labelIndex: li,
@@ -614,6 +696,11 @@ watch(
     if (focusedBarIndex.value >= n) focusedBarIndex.value = Math.max(0, n - 1)
   },
 )
+
+/** One hatch pattern per colour a missing stub is drawn in (`gap` mode). */
+const hatchColors = computed(() => [
+  ...new Set(bars.value.filter(b => b.missing).map(b => b.color)),
+])
 
 // ── Hover ────────────────────────────────────────────────────
 
@@ -638,7 +725,7 @@ function onMouseMove(event: MouseEvent) {
       {
         color: hit.color,
         label: hit.seriesName,
-        value: formatValue(hit.value),
+        value: valueText(hit),
       },
     ])
   } else {
@@ -654,6 +741,7 @@ function onMouseLeave() {
 
 function onBarPointerDown(bar: BarRect, e: MouseEvent) {
   e.stopPropagation()
+  if (bar.missing) return
   emit('barClick', {
     index: bar.labelIndex,
     label: bar.label,
@@ -782,7 +870,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
             <tr v-for="(lab, ri) in labels" :key="ri">
               <th scope="row">{{ formatXAt(ri) }}</th>
               <td v-for="s in series" :key="s.name">
-                {{ s.data[ri] ?? '' }}
+                {{ gapMode && isMissing(s.data[ri]) ? missingLabel : (s.data[ri] ?? '') }}
               </td>
             </tr>
           </tbody>
@@ -806,6 +894,19 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         <desc v-if="chartDescription?.trim()" :id="svgDescId">
           {{ chartDescription }}
         </desc>
+        <defs v-if="hatchColors.length">
+          <pattern
+            v-for="(c, ci) in hatchColors"
+            :id="`${hatchId}-${ci}`"
+            :key="'hatch-' + ci"
+            patternUnits="userSpaceOnUse"
+            width="4"
+            height="4"
+            patternTransform="rotate(45)"
+          >
+            <line x1="0" y1="0" x2="0" y2="4" :stroke="c" stroke-width="1.5" />
+          </pattern>
+        </defs>
         <g v-if="yBands?.length" class="narduk-y-bands">
           <rect
             v-for="(b, bi) in yBands"
@@ -1010,13 +1111,32 @@ function horizontalBarRoundedPath(bar: BarRect): string {
 
         <!-- Bars -->
         <template v-for="(bar, bi) in bars" :key="'b-' + bi">
+          <!-- A slot with no value (`missingValues="gap"`): a hatched stub, never a zero bar. -->
           <rect
-            v-if="!isHorizontal"
+            v-if="bar.missing"
+            class="narduk-bar-rect narduk-bar-rect--missing"
+            data-nc-state="missing"
+            role="button"
+            :tabindex="focusedBarIndex === bi ? 0 : -1"
+            :data-nc-bar="bi"
+            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${valueText(bar)}`"
+            :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
+            :x="bar.x"
+            :y="!isHorizontal && !animated ? padding.top + plotHeight : bar.y"
+            :width="isHorizontal && !animated ? 0 : bar.width"
+            :height="!isHorizontal && !animated ? 0 : bar.height"
+            :fill="`url(#${hatchId}-${hatchColors.indexOf(bar.color)})`"
+            @focus="focusedBarIndex = bi"
+            @keydown="onBarKeydown($event, bi)"
+            @click="onBarPointerDown(bar, $event)"
+          />
+          <rect
+            v-else-if="!isHorizontal"
             class="narduk-bar-rect"
             role="button"
             :tabindex="focusedBarIndex === bi ? 0 : -1"
             :data-nc-bar="bi"
-            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${valueText(bar)}`"
             :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
             :x="bar.x"
             :y="animated ? bar.y : padding.top + plotHeight"
@@ -1034,7 +1154,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
               role="button"
               :tabindex="focusedBarIndex === bi ? 0 : -1"
               :data-nc-bar="bi"
-              :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+              :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${valueText(bar)}`"
               :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
               :d="
                 horizontalBarRoundedPath({
@@ -1057,7 +1177,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
             role="button"
             :tabindex="focusedBarIndex === bi ? 0 : -1"
             :data-nc-bar="bi"
-            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${formatValue(bar.value)}`"
+            :aria-label="`${bar.seriesName}, ${formatXAt(bar.labelIndex)}, ${valueText(bar)}`"
             :class="{ 'narduk-bar-rect--hover': hoverBar === bar }"
             :x="bar.x"
             :y="bar.y"
