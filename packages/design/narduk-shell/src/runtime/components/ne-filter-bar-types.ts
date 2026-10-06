@@ -69,8 +69,19 @@ export interface NeFilterBarProps {
   kind?: NeFilterBarKind
   /** The row's accessible name (`aria-label` on the group or tablist). Required: a filter row with no name is unusable by anything that lists landmarks. */
   label: string
-  /** The selected key. `null` is "nothing selected", which a toggling consumer sets on a second click. */
-  modelValue?: string | null
+  /**
+   * The selected key, or with `multiple` the array of pressed keys. `null` is
+   * "nothing selected", which a toggling consumer sets on a second click.
+   */
+  modelValue?: string | string[] | null
+  /**
+   * More than one control may be pressed (narduk-libs#1545): `modelValue` is
+   * the array of pressed keys and each of them carries `aria-pressed="true"`
+   * and `ui.selected`. A click still emits just the clicked key; the caller
+   * toggles it in its array, as it toggles the single key today. Default
+   * `false`. Ignored for `kind: 'tabs'` (a tablist has one selected tab).
+   */
+  multiple?: boolean
   /** A caption for the row — when the disabled controls land, typically. */
   note?: string
   /** Extra classes per part; see `NeFilterBarUi`. */

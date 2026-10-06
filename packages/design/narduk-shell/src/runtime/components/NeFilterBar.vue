@@ -62,6 +62,7 @@ const props = withDefaults(defineProps<NeFilterBarProps>(), {
   idPrefix: 'filter',
   kind: 'chips',
   modelValue: null,
+  multiple: false,
   note: undefined,
   ui: undefined,
 })
@@ -72,8 +73,23 @@ defineSlots<{ after?: () => unknown }>()
 
 const isTabs = computed(() => props.kind === 'tabs')
 
+/**
+ * More than one control may be pressed (narduk-libs#1545). A tablist has one
+ * selected tab, so `kind: 'tabs'` refuses `multiple`: it stays a single
+ * selection and an array model selects nothing there.
+ */
+const isMultiple = computed(() => props.multiple && !isTabs.value)
+
+if (import.meta.dev && props.multiple && props.kind === 'tabs') {
+  console.warn(
+    '[NeFilterBar] `multiple` is ignored for kind="tabs": a tablist has exactly one selected tab.',
+  )
+}
+
 function selected(item: NeFilterBarItem): boolean {
-  return props.modelValue === item.key
+  const model = props.modelValue
+  if (Array.isArray(model)) return isMultiple.value && model.includes(item.key)
+  return model === item.key
 }
 
 function attrsOf(item: NeFilterBarItem): Record<string, string> {

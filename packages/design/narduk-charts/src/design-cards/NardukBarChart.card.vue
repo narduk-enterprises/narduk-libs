@@ -28,5 +28,21 @@ import NardukBarChart from '../components/NardukBarChart.vue'
         :animate="false"
       />
     </div>
+    <p>
+      <code>missingValues="gap"</code>: Tuesday has no value (hatched stub); Wednesday is a stored
+      zero (1px floor).
+    </p>
+    <div class="preview-row">
+      <NardukBarChart
+        :series="[{ name: 'Users', data: [3, null, 0, 5] }]"
+        :labels="['Mon', 'Tue', 'Wed', 'Thu']"
+        missing-values="gap"
+        missing-label="no row"
+        :width="420"
+        :height="160"
+        :animate="false"
+        :show-legend="false"
+      />
+    </div>
   </section>
 </template>

@@ -274,3 +274,143 @@ describe('NardukBarChart keyboard focus (narduk-libs#1237)', () => {
     }
   })
 })
+
+describe('NardukBarChart missing values (narduk-libs#1544)', () => {
+  const base = {
+    series: [{ name: 'Users', data: [3, null, 0, 5] as Array<number | null> }],
+    labels: ['Mon', 'Tue', 'Wed', 'Thu'],
+    width: 400,
+    height: 160,
+    animate: false,
+    barRadius: 0,
+  }
+  const geometry = (el: Element) => ({
+    height: Number(el.getAttribute('height')),
+    width: Number(el.getAttribute('width')),
+    x: Number(el.getAttribute('x')),
+    y: Number(el.getAttribute('y')),
+  })
+
+  it('draws a null as zero by default: no stub, no change to the default name or table', () => {
+    const w = mount(NardukBarChart, { props: { ...base, showDataTable: true } })
+    expect(w.findAll('.narduk-bar-rect--missing')).toHaveLength(0)
+    expect(w.find('[data-nc-state="missing"]').exists()).toBe(false)
+    const rects = w.findAll('rect.narduk-bar-rect')
+    // null and a real 0 are the same empty slot: the ambiguity this opt-in ends.
+    expect(geometry(rects[1]!.element).height).toBe(0)
+    expect(geometry(rects[2]!.element).height).toBe(0)
+    expect(w.find('svg title').text()).toBe('Bar chart: Users')
+    expect(w.findAll('tbody td').map(t => t.text())).toEqual(['3', '', '0', '5'])
+  })
+
+  it('gap mode: null is a hatched stub, a real 0 is a 1px floor bar, and they differ', () => {
+    const w = mount(NardukBarChart, { props: { ...base, missingValues: 'gap' } })
+    const rects = w.findAll('rect.narduk-bar-rect')
+    expect(rects).toHaveLength(4)
+
+    const stub = rects[1]!
+    const zero = rects[2]!
+    expect(stub.classes()).toContain('narduk-bar-rect--missing')
+    expect(stub.attributes('data-nc-state')).toBe('missing')
+    expect(stub.attributes('fill')).toMatch(/^url\(#nc-bh-.+-0\)$/)
+    expect(zero.classes()).not.toContain('narduk-bar-rect--missing')
+    expect(zero.attributes('data-nc-state')).toBeUndefined()
+    expect(zero.attributes('fill')).not.toMatch(/^url\(/)
+
+    const stubBox = geometry(stub.element)
+    const zeroBox = geometry(zero.element)
+    expect(zeroBox.height).toBe(1)
+    expect(stubBox.height).toBeGreaterThan(zeroBox.height)
+    // Both sit on the axis: the floor grows up from it, never below it.
+    expect(stubBox.y + stubBox.height).toBeCloseTo(zeroBox.y + zeroBox.height, 5)
+
+    // The hatch pattern the stub paints with is defined.
+    const pattern = w.find('pattern')
+    expect(pattern.attributes('id')).toBe(stub.attributes('fill')!.slice(5, -1))
+  })
+
+  it('gap mode: names the gap in the bar, the default chart name and the data table', () => {
+    const w = mount(NardukBarChart, {
+      props: { ...base, missingValues: 'gap', missingLabel: 'no row', showDataTable: true },
+    })
+    const rects = w.findAll('rect.narduk-bar-rect')
+    expect(rects[1]!.attributes('aria-label')).toBe('Users, Tue, no row')
+    expect(rects[2]!.attributes('aria-label')).toBe('Users, Wed, 0')
+    expect(w.find('svg title').text()).toBe('Bar chart: Users, 1 slot has no row')
+    expect(w.findAll('tbody td').map(t => t.text())).toEqual(['3', 'no row', '0', '5'])
+  })
+
+  it('gap mode: a caller chartTitle still wins, and no gaps leaves the name alone', () => {
+    const titled = mount(NardukBarChart, {
+      props: { ...base, missingValues: 'gap', chartTitle: 'Daily users, 1 day has no row' },
+    })
+    expect(titled.find('svg title').text()).toBe('Daily users, 1 day has no row')
+    const full = mount(NardukBarChart, {
+      props: { ...base, series: [{ name: 'Users', data: [3, 1, 0, 5] }], missingValues: 'gap' },
+    })
+    expect(full.find('svg title').text()).toBe('Bar chart: Users')
+    expect(full.findAll('.narduk-bar-rect--missing')).toHaveLength(0)
+  })
+
+  it('gap mode: the tooltip says the missing label, and a missing slot emits no barClick', async () => {
+    const w = mount(NardukBarChart, {
+      props: { ...base, missingValues: 'gap', missingLabel: 'no row' },
+      attachTo: document.body,
+    })
+    await nextTick()
+    const rects = w.findAll('rect.narduk-bar-rect')
+    await rects[1]!.trigger('keydown', { key: 'Enter' })
+    await rects[1]!.trigger('click')
+    expect(w.emitted('barClick')).toBeUndefined()
+    await rects[0]!.trigger('click')
+    expect(w.emitted('barClick')).toHaveLength(1)
+    await rects[0]!.trigger('keydown', { key: 'ArrowRight' })
+    await vi.waitFor(() => expect(w.text()).toContain('no row'))
+    w.unmount()
+  })
+
+  it('gap mode: horizontal stub starts at the axis and a real zero is a 1px floor', () => {
+    const w = mount(NardukBarChart, {
+      props: {
+        ...base,
+        orientation: 'horizontal',
+        missingValues: 'gap',
+        categoryLabelMaxWidth: 60,
+      },
+    })
+    const rects = w.findAll('rect.narduk-bar-rect')
+    const stub = geometry(rects[1]!.element)
+    const zero = geometry(rects[2]!.element)
+    expect(rects[1]!.classes()).toContain('narduk-bar-rect--missing')
+    expect(zero.width).toBe(1)
+    expect(stub.width).toBeGreaterThan(zero.width)
+    expect(stub.x).toBe(zero.x)
+  })
+
+  it('gap mode, stacked: one stub for a category with no value in any series, none for a partial one', () => {
+    const w = mount(NardukBarChart, {
+      props: {
+        series: [
+          { name: 'A', data: [4, null, null] },
+          { name: 'B', data: [6, 2, null] },
+        ],
+        labels: ['x', 'y', 'z'],
+        stacked: true,
+        missingValues: 'gap',
+        width: 400,
+        height: 160,
+        animate: false,
+        barRadius: 0,
+      },
+    })
+    const rects = w.findAll('rect.narduk-bar-rect')
+    expect(rects).toHaveLength(6)
+    const missing = rects.filter(r => r.classes().includes('narduk-bar-rect--missing'))
+    expect(missing).toHaveLength(3)
+    // y/A is a missing segment of a stack that has a row: no extent.
+    expect(geometry(rects[2]!.element).height).toBe(0)
+    // z has no value in either series: A carries the one stub, B nothing.
+    expect(geometry(rects[4]!.element).height).toBeGreaterThan(0)
+    expect(geometry(rects[5]!.element).height).toBe(0)
+  })
+})

@@ -87,8 +87,10 @@ changes along X, such as a day-of-year 25th to 75th percentile "normal range";
 
 **`NardukBarChart`:** `yMin` / `yMax` (value-axis pins, used exactly),
 `showXAxis`, `showYAxis`, `showGrid`, `showLegend` (all default `true`) and
-`padding`. With `orientation="horizontal"`, a `referenceLines` entry is a
-vertical tick across the bar and a `yBands` entry spanning the domain is its
+`padding`; `missingValues="gap"` (with `missingLabel`) draws a `null` datum as a
+hatched stub instead of a zero bar, and a real `0` as a 1px floor (default
+`zero`, unchanged). With `orientation="horizontal"`, a `referenceLines` entry is
+a vertical tick across the bar and a `yBands` entry spanning the domain is its
 track — together a thin "% of normal" bar.
 
 **Colours as CSS custom properties.** Any `color` may be `var(--your-token)`.

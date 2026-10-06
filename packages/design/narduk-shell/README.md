@@ -1473,7 +1473,8 @@ count element at all when you leave it out.
 | `items`      | `NeFilterBarItem[]`             | —          | Rendered in the order given.                                                                                                    |
 | `label`      | `string`                        | —          | Required. The row's accessible name.                                                                                            |
 | `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                                                                                 |
-| `modelValue` | `string \| null`                | `null`     | The selected key. `null` is "nothing selected".                                                                                 |
+| `modelValue` | `string \| string[] \| null`    | `null`     | The selected key, or with `multiple` the array of pressed keys. `null` is "nothing selected".                                   |
+| `multiple`   | `boolean`                       | `false`    | More than one control may be pressed; see "More than one pressed" below. Ignored for `kind: 'tabs'`.                            |
 | `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.                                                                         |
 | `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row.                                                                 |
 | `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.                                                                         |
@@ -1482,6 +1483,28 @@ count element at all when you leave it out.
 `NeFilterBarItem`: `key`, `label`, and optional `count`, `disabled`, `title`,
 `testid`, `attrs`. An `undefined` value in `attrs` is dropped rather than
 rendered as the string `"undefined"`.
+
+#### More than one pressed
+
+A chip row that is a multi-select (each chip toggles its own group) sets
+`multiple` and passes the pressed keys as an array. Every pressed control gets
+`aria-pressed="true"` and `ui.selected`; the disabled-but-selected rule is
+unchanged. The component still never moves the selection: a click emits only the
+clicked key and the caller toggles it in its array.
+
+```vue
+<NeFilterBar
+  label="Kind"
+  multiple
+  :model-value="pressed"
+  :items="items"
+  @update:model-value="(key) => toggle(key)"
+/>
+```
+
+`kind: 'tabs'` refuses `multiple` — a tablist has exactly one selected tab — so
+there it stays a single selection (an array model selects nothing, and a
+development build warns).
 
 #### Events and slots
 
