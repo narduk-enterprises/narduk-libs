@@ -69,9 +69,16 @@
  */
 
 import { spawnSync } from 'node:child_process'
+import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
 import { fetchCloudflareEnvelope } from './cloudflare.js'
-import { resolveContainment, type Containment } from './commit-containment.js'
+import {
+  resolveAncestry,
+  resolveContainment,
+  type Ancestry,
+  type Containment,
+} from './commit-containment.js'
 import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
 import {
   currentDeployment,
@@ -803,19 +810,57 @@ export function checkVersionAgainstSha(
 }
 
 /**
+ * Which `workflow_dispatch` inputs the consumer's `promote.yml` declares.
+ * `null` is "no promote.yml could be read", which is not "it has none".
+ */
+export interface PromoteDispatchInputs {
+  verifiedSha: boolean
+  versionId: boolean
+}
+
+/**
+ * Reads `.github/workflows/promote.yml`, walking up from the app directory to
+ * the checkout root (a monorepo's app sits below the workflows), and reports
+ * whether it declares the `verified-sha` and `version-id` dispatch inputs
+ * (narduk-libs#1543). The recovery command GitHub accepts depends on this file,
+ * not on the tool: `-f` an input the workflow does not declare is HTTP 422.
+ */
+export function readPromoteDispatchInputs(appDir: string): PromoteDispatchInputs | null {
+  for (let dir = resolve(appDir); ; dir = dirname(dir)) {
+    const file = join(dir, '.github', 'workflows', 'promote.yml')
+    if (existsSync(file)) {
+      let text: string
+      try {
+        text = readFileSync(file, 'utf8')
+      } catch {
+        return null
+      }
+      const declares = (input: string): boolean =>
+        new RegExp(`^[ \\t]+${input}:[ \\t]*(?:#.*)?$`, 'mu').test(text)
+      return { verifiedSha: declares('verified-sha'), versionId: declares('version-id') }
+    }
+    if (existsSync(join(dir, '.git')) || dirname(dir) === dir) return null
+  }
+}
+
+/**
  * The `ambiguous-version` detail, recovery included (narduk-libs#1233).
  *
  * Workers Builds sometimes dispatches one trigger twice for one push, so two
  * versions carry the same commit. Nothing in a version's metadata tells a
  * double dispatch from a second uploader, so the promote still refuses to
- * guess -- but it names the one-click recovery: dispatch Promote with the
- * version to deploy. Candidates are listed newest first.
+ * guess -- but it names the recovery. When the consumer's `promote.yml` declares
+ * both dispatch inputs that is one click: dispatch Promote with the version to
+ * deploy, candidates newest first. When it does not (or the file cannot be
+ * read) the dispatch would answer 422, so only the by-hand command is offered
+ * (narduk-libs#1543).
  */
 export function describeAmbiguousVersions(
   sha: string,
   candidates: readonly WorkerVersion[],
   env: DeployEnv = {},
   productionBranch: string | null = null,
+  dispatchInputs: PromoteDispatchInputs | null = null,
 ): string {
   const ordered = [...candidates].sort((a, b) => -(compareVersionRecency(a, b) ?? 0))
   const repo = env.GITHUB_REPOSITORY?.trim()
@@ -823,14 +868,27 @@ export function describeAmbiguousVersions(
   const dispatch = (id: string): string =>
     `gh workflow run promote.yml${repo ? ` --repo ${repo}` : ''} --ref ${ref} ` +
     `-f verified-sha=${sha} -f version-id=${id}`
-  return (
+  const byHand =
+    `By hand: NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote --sha ${sha} ` +
+    '--version-id <id>.'
+  const head =
     `${String(candidates.length)} versions carry ${VERSION_TAG_ANNOTATION} ${sha} ` +
     `(${ordered.map((version) => version.id).join(', ')}, newest first); refusing to guess. ` +
-    'A Workers Builds double dispatch uploads one commit twice (narduk-libs#1233). To recover, ' +
-    'dispatch Promote with the version to deploy; the gate still requires this commit to be ' +
-    `the head of ${ref} with a passing check: ` +
+    'A Workers Builds double dispatch uploads one commit twice (narduk-libs#1233). '
+  if (!dispatchInputs?.verifiedSha || !dispatchInputs.versionId) {
+    return (
+      head +
+      "This repository's promote.yml does not declare both the verified-sha and version-id " +
+      'workflow_dispatch inputs (or could not be read), so a dispatch would be rejected with HTTP ' +
+      `422: promote one of those versions by hand, or add the inputs. ${byHand}`
+    )
+  }
+  return (
+    head +
+    'To recover, dispatch Promote with the version to deploy; the gate still requires this commit ' +
+    `to be the head of ${ref} with a passing check: ` +
     ordered.map((version) => dispatch(version.id)).join('  OR  ') +
-    `. By hand: narduk-app deploy versions-promote --sha ${sha} --version-id <id>.`
+    `. ${byHand}`
   )
 }
 
@@ -998,6 +1056,12 @@ export interface PromoteFlags {
   anyBranch: boolean
   /** Promote a version older than the live one -- a deliberate revert. */
   force: boolean
+  /**
+   * `--allow-rollback`: promote a commit that production's commit already
+   * contains. Without it that promote is skipped (exit 0, `superseded`), because
+   * the usual cause is two CI runs finishing out of order (narduk-libs#1375).
+   */
+  allowRollback: boolean
   /** The bound on the `--sha` lookup. See `DEFAULT_VERSION_SEARCH_LIMIT`. */
   maxVersions: number
   /**
@@ -1064,6 +1128,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
     productionBranch: null,
     anyBranch: false,
     force: false,
+    allowRollback: false,
     maxVersions: DEFAULT_VERSION_SEARCH_LIMIT,
     waitForVersionSeconds: 0,
     waitIntervalSeconds: 30,
@@ -1107,6 +1172,7 @@ export function parseVersionsPromoteArgs(args: string[]): PromoteFlags {
       )
     else if (arg === '--any-branch') flags.anyBranch = true
     else if (arg === '--force') flags.force = true
+    else if (arg === '--allow-rollback') flags.allowRollback = true
     else if (arg === '--json') flags.json = true
     else if (arg === '--dry-run') flags.dryRun = true
     else throw new Error(`Unknown deploy versions-promote option: ${arg}`)
@@ -1167,6 +1233,11 @@ export type PromoteOutcome =
   | 'guard-refused'
   | 'rolled-back'
   | 'rollback-refused'
+  /**
+   * The commit to promote is a strict ancestor of the commit production already
+   * serves, so the live version contains it. Exit 0, nothing deployed.
+   */
+  | 'superseded'
   /** The target version is older than, or not orderable against, the live one. */
   | 'stale-promote'
   /** The target version was not built from the production branch. */
@@ -1203,6 +1274,8 @@ export interface PromoteResult {
   trafficMayHaveChanged?: boolean
   /** Set when `--force` overrode the ordering guard, so the log carries it. */
   forced?: boolean
+  /** Set when `--allow-rollback` promoted a commit the live commit already contains. */
+  rollbackAllowed?: boolean
   /**
    * `versions-promote` only: the gate attestation the workflow passed with
    * `--gate-verified`, or `null` when it passed none (narduk-libs#400). Absent
@@ -1252,6 +1325,12 @@ export function formatPromoteResult(result: PromoteResult): string {
           : '  gate       NOT ATTESTED -- no --gate-verified was passed',
     )
   }
+  if (result.rollbackAllowed) {
+    lines.push(
+      '  !! ROLLBACK  --allow-rollback promoted a commit that the live commit already ' +
+        'contains: production moved backwards on purpose.',
+    )
+  }
   if (result.forced) {
     lines.push(
       '  !! FORCED   --force overrode the ordering guard: a version older than the one ' +
@@ -1285,6 +1364,13 @@ export interface PromoteContext {
   log?: (line: string) => void
   /** Injected in tests; `resolveContainment` (local git, then GitHub) otherwise. */
   containment?: (candidate: string, served: string) => Containment
+  /**
+   * Injected in tests; `resolveAncestry` (local git, then GitHub) otherwise.
+   * How `candidate` stands against the commit production serves (narduk-libs#1375).
+   */
+  ancestry?: (candidate: string, live: string) => Ancestry
+  /** Injected in tests; `readPromoteDispatchInputs` (the checkout's promote.yml) otherwise. */
+  dispatchInputs?: (appDir: string) => PromoteDispatchInputs | null
 }
 
 function resolveWorker(
@@ -1563,7 +1649,13 @@ async function promoteVersion(
         searchedVersions,
         versionSearch,
         candidates: match.versions.map((version) => version.id),
-        detail: describeAmbiguousVersions(sha, match.versions, env, productionBranch),
+        detail: describeAmbiguousVersions(
+          sha,
+          match.versions,
+          env,
+          productionBranch,
+          (context.dispatchInputs ?? readPromoteDispatchInputs)(appDir),
+        ),
         exitCode: PROMOTE_EXIT.ambiguousVersion,
       }
     }
@@ -1667,12 +1759,69 @@ async function promoteVersion(
     }
   }
 
+  // narduk-libs#1375: order by COMMIT, not by upload. Two main merges whose CI
+  // finish out of order run Promote twice, and the run for the older commit
+  // can finish last. Cloudflare numbers versions in upload order, which is not
+  // commit order (Workers Builds uploaded gonogo's two out of order on
+  // 2026-10-03), so the version-recency guard below refuses a real fix and let a
+  // real rollback through. Git history decides when it can: a candidate that
+  // production's commit already contains is skipped, exit 0, moving no
+  // traffic; a descendant is a plain forward promote whatever the upload
+  // order. Only when history cannot say (a live version this listing cannot
+  // see, an untagged one, no git object and no GitHub answer) does the
+  // recency guard decide.
+  let ancestry: Ancestry = 'unknown'
+  const liveSha = liveVersion?.annotations?.[VERSION_TAG_ANNOTATION]
+  const candidateSha = sha ?? target?.annotations?.[VERSION_TAG_ANNOTATION]
+  if (liveVersion && target && liveVersion.id !== target.id && liveSha && candidateSha) {
+    ancestry = (
+      context.ancestry ??
+      ((head: string, live: string) => resolveAncestry(appDir, head, live, { env }))
+    )(candidateSha, liveSha)
+  }
+  let rollbackAllowed: true | undefined
+  if (ancestry === 'ancestor') {
+    if (!flags.allowRollback) {
+      log(`[promote] skipped: live ${liveSha ?? ''} already contains ${candidateSha ?? ''}`)
+      return {
+        action: 'versions-promote',
+        outcome: 'superseded',
+        worker: workerName,
+        sha,
+        versionId,
+        previousVersionId,
+        percentage: null,
+        searchedVersions,
+        versionSearch,
+        detail:
+          `skipped: live ${liveSha ?? ''} already contains ${candidateSha ?? ''}. Production ` +
+          `already serves version ${String(previousVersionId)}, a descendant of this commit, so ` +
+          `version ${versionId} was not deployed and no traffic moved. A deliberate rollback is ` +
+          '`--allow-rollback` (or `narduk-app deploy rollback`).',
+        exitCode: PROMOTE_EXIT.ok,
+      }
+    }
+    rollbackAllowed = true
+    console.warn(
+      `[promote] !! ROLLBACK ALLOWED -- live ${liveSha ?? ''} already contains ` +
+        `${candidateSha ?? ''}; promoting it moves production backwards (--allow-rollback).`,
+    )
+  }
+
   // B1: the ordering guard. Two promotes racing (PRs merged seconds apart, a
   // re-run of an older job, a manual recovery promote) would otherwise let the
   // older commit win simply by finishing last, with outcome `promoted` and exit
   // 0 -- and the live proof passes, because the older version really does serve
   // the SHA that job expects.
-  if (liveVersion && target && liveVersion.id !== target.id) {
+  // Skipped when git history already decided it: forward (a descendant, whatever
+  // order the versions were uploaded in) or a deliberate `--allow-rollback`.
+  if (
+    liveVersion &&
+    target &&
+    liveVersion.id !== target.id &&
+    ancestry !== 'descendant' &&
+    !rollbackAllowed
+  ) {
     const order = compareVersionRecency(target, liveVersion)
     if (order === null || order < 0) {
       const detail =
@@ -1684,7 +1833,7 @@ async function promoteVersion(
           : `Version ${versionId} is OLDER than the version already serving production ` +
             `(${previousVersionId}). Promoting it would roll production backwards -- this is ` +
             'what a superseded or re-run promote job looks like. Pass --force for a deliberate ' +
-            'revert-by-promote.'
+            'revert-by-promote (git history could not say whether this commit is older).'
       if (!flags.force) return refuse('stale-promote', PROMOTE_EXIT.stalePromote, detail)
       forced = true
       console.warn(`[promote] !! FORCED PAST THE ORDERING GUARD -- ${detail}`)
@@ -1747,8 +1896,36 @@ async function promoteVersion(
     searchedVersions,
     versionSearch,
     forced,
+    rollbackAllowed,
     detail: `Deployed version ${versionId} at ${String(flags.percentage)}%.`,
     exitCode: PROMOTE_EXIT.ok,
+  }
+}
+
+/**
+ * Exposes the outcome as step outputs when running as a GitHub Actions step, so
+ * a workflow can skip its live proof after a `superseded` skip without parsing
+ * `--json`. The proof asserts that production serves the promoted commit, which
+ * is exactly what a skip leaves false (narduk-libs#1375). Best effort: a
+ * missing or unwritable file never changes the result.
+ */
+export function writePromoteStepOutputs(
+  result: PromoteResult,
+  env: DeployEnv = process.env,
+): boolean {
+  const file = env.GITHUB_OUTPUT?.trim()
+  if (!file) return false
+  const lines = [
+    `outcome=${result.outcome}`,
+    `superseded=${result.outcome === 'superseded' ? 'true' : 'false'}`,
+    `version_id=${result.versionId ?? ''}`,
+    `previous_version_id=${result.previousVersionId ?? ''}`,
+  ]
+  try {
+    appendFileSync(file, `${lines.join('\n')}\n`)
+    return true
+  } catch {
+    return false
   }
 }
 

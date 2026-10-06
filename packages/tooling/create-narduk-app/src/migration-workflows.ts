@@ -56,6 +56,11 @@ export function createMigrationWorkflowFiles(visibility: AppVisibility): Generat
 # schema, so a drop or rename that is not a reviewed contract migration must stop
 # here, before D1 changes (foundation sub-check 12.9, narduk-libs#399). Only 12.9
 # is judged: another sub-check's UNKNOWN is not a reason to refuse a migration.
+# The dry run is also where a superseded commit is recognised (narduk-libs#1375):
+# when production already serves a commit that contains VERIFIED_SHA, versions-promote
+# skips with exit 0 and writes superseded=true to this step's outputs. That commit
+# moves nothing, so its migrations must not run either: the guard below keeps the
+# D1 steps and every later step that assumes this commit was promoted off it.
 steps:
   - name: Check migrations are expand-only (foundation 12.9)
     run: pnpm exec narduk-app foundation:check:deployment --checkout ../.. --json "$RUNNER_TEMP/foundation-deployment.json" || true
@@ -72,6 +77,7 @@ steps:
         console.log("12.9 pass: " + check.detail)
       ' "$RUNNER_TEMP/foundation-deployment.json"
   - name: Require an eligible uploaded version before changing D1
+    id: eligible
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
       # The ship guard runs before the dry-run exit and asks GitHub whether a
@@ -82,6 +88,7 @@ steps:
     run: pnpm exec narduk-app deploy versions-promote --sha "$VERIFIED_SHA" \${VERSION_ID:+--version-id "$VERSION_ID"} --gate-verified "ci / Required@$VERIFIED_SHA" --production-branch main --dry-run --json
     working-directory: apps/web
   - name: Apply compatible D1 migrations and require no drift
+    if: steps.eligible.outputs.superseded != 'true'
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.D1_MIGRATE_API_TOKEN }}
       VERIFIED_SHA: \${{ needs.gate.outputs.sha }}
@@ -100,7 +107,9 @@ steps:
       retention-days: 14
       if-no-files-found: ignore
 # Keep the app's existing versions-promote and live proof steps next. All
-# require preceding success. deployment.rollback.mode is manual: nothing rolls
+# require preceding success, and each of them also carries
+# if: steps.eligible.outputs.superseded != 'true' (the live proof asserts that
+# production serves VERIFIED_SHA, which a skip leaves false). deployment.rollback.mode is manual: nothing rolls
 # back on its own. A completed promotion whose live proof fails leaves the run
 # red and prints the previous version and the rollback command for a person to
 # run; a migration failure blocks the promotion and triggers nothing. Worker

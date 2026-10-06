@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { buildWranglerCommandArgs, resolveVersionTagArgs } from '../src/deploy.js'
@@ -27,6 +31,7 @@ import {
   parseRollbackArgs,
   parseVersionsPromoteArgs,
   parseWranglerVersionsJson,
+  readPromoteDispatchInputs,
   PROMOTE_EXIT,
   resolvePreviousVersion,
   resolveVersionForSha,
@@ -35,6 +40,7 @@ import {
   runRollback,
   runVersionsPromote,
   shaMatchesTag,
+  writePromoteStepOutputs,
   soleDeployedVersionId,
   versionBranch,
   type PromoteContext,
@@ -133,6 +139,12 @@ function context(
       env,
       resolveWorkerName: () => 'buoys',
       appDir: '/tmp/app',
+      // Never ask git or GitHub in a unit test: "cannot tell" is the answer that
+      // leaves the version-recency guard in charge, which is what these tests
+      // were written against. Ancestry tests inject their own.
+      ancestry: () => 'unknown',
+      // A promote.yml that declares both dispatch inputs (narduk-libs#1543).
+      dispatchInputs: () => ({ verifiedSha: true, versionId: true }),
       // Keep the gate-attestation warning (#400) out of the test output.
       log: () => {},
     },
@@ -1785,7 +1797,10 @@ describe('--version-id recovers a duplicate upload of one commit (narduk-libs#12
   it('orders candidates by created_on when they carry no version number', () => {
     const early = version('v-early', SHA, { metadata: { created_on: '2026-09-28T07:16:00.000Z' } })
     const late = version('v-late', SHA, { metadata: { created_on: '2026-09-28T07:16:01.400Z' } })
-    const detail = describeAmbiguousVersions(SHA, [early, late], {}, null)
+    const detail = describeAmbiguousVersions(SHA, [early, late], {}, null, {
+      verifiedSha: true,
+      versionId: true,
+    })
     expect(detail).toContain('(v-late, v-early, newest first)')
     // No GITHUB_REPOSITORY outside Actions: the command omits --repo and
     // falls back to main.
@@ -1975,5 +1990,273 @@ describe('ship guard', () => {
     )
     expect(result.outcome).toBe('promoted')
     expect(result.forced).toBe(true)
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/* narduk-libs#1375 -- order by commit, not by upload                         */
+/* -------------------------------------------------------------------------- */
+
+describe('the ancestor guard: a commit production already contains is skipped (narduk-libs#1375)', () => {
+  // gonogo 2026-10-03: #251 (6a6d638) then #252 (8a721bd, its child). Their CI
+  // runs finished out of order, so the run for the OLDER commit promoted last
+  // and withdrew #252's fixes. Version numbers follow upload order, not commit
+  // order, which is why they cannot be the guard.
+  const PARENT = '6a6d638a1b2c3d4e5f60718293a4b5c6d7e8f901'
+  const CHILD = '8a721bda1b2c3d4e5f60718293a4b5c6d7e8f901'
+
+  // The child is live. The parent was uploaded LATER, so by version number it
+  // looks newer than what serves production -- the recency guard alone lets it
+  // through, which is the bug.
+  const parentUploadedLater = [numbered('v-parent', PARENT, 12), numbered('v-child', CHILD, 11)]
+  const childLive = [deployment('d1', 'v-child', '2026-10-03T13:14:00Z')]
+
+  it('skips a strict ancestor of the live commit: exit 0, the explicit line, no traffic moved', async () => {
+    const { context: ctx, calls } = context(parentUploadedLater, childLive)
+    const asked: string[][] = []
+    ctx.ancestry = (candidate, live) => {
+      asked.push([candidate, live])
+      return 'ancestor'
+    }
+    const lines: string[] = []
+    ctx.log = (line) => lines.push(line)
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', PARENT]), ctx)
+    expect(result.outcome).toBe('superseded')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.ok)
+    expect(result.detail).toContain(`skipped: live ${CHILD} already contains ${PARENT}`)
+    expect(lines).toContain(`[promote] skipped: live ${CHILD} already contains ${PARENT}`)
+    expect(result.percentage).toBeNull()
+    expect(result.previousVersionId).toBe('v-child')
+    expect(asked).toEqual([[PARENT, CHILD]])
+    expect(calls.deployed).toEqual([])
+    expect(calls.rolledBack).toEqual([])
+  })
+
+  it('skips on a dry run too, rather than reporting a deploy it would never make', async () => {
+    const { context: ctx, calls } = context(parentUploadedLater, childLive)
+    ctx.ancestry = () => 'ancestor'
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', PARENT, '--dry-run']),
+      ctx,
+    )
+    expect(result.outcome).toBe('superseded')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('promotes a descendant of the live commit even when it was uploaded EARLIER', async () => {
+    // The mirror of the bug, and the 13:26Z refusal in the issue: a real fix
+    // whose version number is lower than the live one's.
+    const versions = [numbered('v-parent', PARENT, 12), numbered('v-child', CHILD, 11)]
+    const { context: ctx, calls } = context(versions, [
+      deployment('d1', 'v-parent', '2026-10-03T13:19:00Z'),
+    ])
+    ctx.ancestry = () => 'descendant'
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', CHILD]), ctx)
+    expect(result.outcome).toBe('promoted')
+    expect(result.forced).toBeUndefined()
+    expect(calls.deployed[0].versionId).toBe('v-child')
+  })
+
+  it('leaves the version-recency guard in charge when history cannot say', async () => {
+    const { context: ctx, calls } = context(parentUploadedLater, [
+      deployment('d1', 'v-parent', '2026-10-03T13:19:00Z'),
+    ])
+    ctx.ancestry = () => 'unknown'
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', CHILD]), ctx)
+    expect(result.outcome).toBe('stale-promote')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('treats an equal commit (a second version of the live commit) by upload order', async () => {
+    // Two uploads of one commit: the ancestor guard has nothing to say, so the
+    // recency guard still stops the older of the two replacing the newer.
+    const versions = [numbered('v-b', CHILD, 12), numbered('v-a', CHILD, 11)]
+    const { context: ctx, calls } = context(versions, [
+      deployment('d1', 'v-b', '2026-10-03T13:19:00Z'),
+    ])
+    ctx.ancestry = () => 'equal'
+    const refused = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', CHILD, '--version-id', 'v-a']),
+      ctx,
+    )
+    expect(refused.outcome).toBe('stale-promote')
+    expect(calls.deployed).toEqual([])
+
+    const forward = context(versions, [deployment('d1', 'v-a', '2026-10-03T13:10:00Z')])
+    forward.context.ancestry = () => 'equal'
+    const promoted = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', CHILD, '--version-id', 'v-b']),
+      forward.context,
+    )
+    expect(promoted.outcome).toBe('promoted')
+  })
+
+  it('does not consult history when the version to promote already serves 100%', async () => {
+    const { context: ctx } = context(parentUploadedLater, childLive)
+    ctx.ancestry = () => {
+      throw new Error('must not be consulted')
+    }
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', CHILD]), ctx)
+    expect(result.outcome).toBe('already-live')
+    expect(result.exitCode).toBe(PROMOTE_EXIT.ok)
+  })
+
+  it('does not consult history when the live version carries no commit tag', async () => {
+    const untagged = { id: 'v-child', number: 11, metadata: { created_on: '2026-10-03T13:00:00Z' } }
+    const { context: ctx } = context([numbered('v-parent', PARENT, 12), untagged], childLive)
+    ctx.ancestry = () => {
+      throw new Error('must not be consulted')
+    }
+    const result = await runVersionsPromote(parseVersionsPromoteArgs(['--sha', PARENT]), ctx)
+    // No live SHA to compare with, so the recency guard decides (and v-parent is newer).
+    expect(result.outcome).toBe('promoted')
+  })
+
+  it('--allow-rollback is the one way to promote an ancestor, and says so loudly', async () => {
+    const { context: ctx, calls } = context(parentUploadedLater, childLive)
+    ctx.ancestry = () => 'ancestor'
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', PARENT, '--allow-rollback']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(result.rollbackAllowed).toBe(true)
+    expect(result.forced).toBeUndefined()
+    expect(calls.deployed[0].versionId).toBe('v-parent')
+    expect(formatPromoteResult(result)).toContain('ROLLBACK')
+  })
+
+  it('--allow-rollback also clears the recency guard for a rollback to an older upload', async () => {
+    const versions = [numbered('v-child', CHILD, 12), numbered('v-parent', PARENT, 11)]
+    const { context: ctx, calls } = context(versions, [
+      deployment('d1', 'v-child', '2026-10-03T13:19:00Z'),
+    ])
+    ctx.ancestry = () => 'ancestor'
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', PARENT, '--allow-rollback']),
+      ctx,
+    )
+    expect(result.outcome).toBe('promoted')
+    expect(calls.deployed[0].versionId).toBe('v-parent')
+  })
+
+  it('--force alone does not make a skipped ancestor deploy', async () => {
+    const { context: ctx, calls } = context(parentUploadedLater, childLive)
+    ctx.ancestry = () => 'ancestor'
+    const result = await runVersionsPromote(
+      parseVersionsPromoteArgs(['--sha', PARENT, '--force']),
+      ctx,
+    )
+    expect(result.outcome).toBe('superseded')
+    expect(calls.deployed).toEqual([])
+  })
+
+  it('a rollback by `deploy rollback` never goes through the guard', async () => {
+    const { context: ctx, calls } = context(
+      [numbered('v-child', CHILD, 12), numbered('v-parent', PARENT, 11)],
+      [
+        deployment('d1', 'v-child', '2026-10-03T13:19:00Z'),
+        deployment('d0', 'v-parent', '2026-10-03T13:10:00Z'),
+      ],
+    )
+    ctx.ancestry = () => {
+      throw new Error('must not be consulted')
+    }
+    const result = await runRollback(parseRollbackArgs([]), ctx)
+    expect(result.outcome).toBe('rolled-back')
+    expect(calls.rolledBack[0].versionId).toBe('v-parent')
+  })
+
+  it('parses --allow-rollback, off by default', () => {
+    expect(parseVersionsPromoteArgs([]).allowRollback).toBe(false)
+    expect(parseVersionsPromoteArgs(['--allow-rollback']).allowRollback).toBe(true)
+  })
+})
+
+describe('writePromoteStepOutputs -- a skip must not look like a promotion to the live proof', () => {
+  const result = {
+    action: 'versions-promote' as const,
+    outcome: 'superseded' as const,
+    worker: 'buoys',
+    sha: SHA,
+    versionId: 'v-parent',
+    previousVersionId: 'v-child',
+    percentage: null,
+    detail: 'skipped',
+    exitCode: 0,
+  }
+
+  it('appends outcome and superseded to $GITHUB_OUTPUT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'promote-out-'))
+    const file = join(dir, 'output')
+    writeFileSync(file, 'existing=1\n')
+    expect(writePromoteStepOutputs(result, { GITHUB_OUTPUT: file })).toBe(true)
+    expect(readFileSync(file, 'utf8')).toBe(
+      'existing=1\noutcome=superseded\nsuperseded=true\nversion_id=v-parent\nprevious_version_id=v-child\n',
+    )
+    writePromoteStepOutputs({ ...result, outcome: 'promoted' }, { GITHUB_OUTPUT: file })
+    expect(readFileSync(file, 'utf8')).toContain('outcome=promoted\nsuperseded=false\n')
+  })
+
+  it('does nothing outside a step, and never throws on an unwritable file', () => {
+    expect(writePromoteStepOutputs(result, {})).toBe(false)
+    expect(writePromoteStepOutputs(result, { GITHUB_OUTPUT: '/nonexistent-dir/output' })).toBe(
+      false,
+    )
+  })
+})
+
+describe('the double-dispatch recovery names only what the consumer workflow accepts (narduk-libs#1543)', () => {
+  const first = numbered('v-first', SHA, 21)
+  const second = numbered('v-second', SHA, 22)
+  const env = { GITHUB_REPOSITORY: 'narduk-enterprises/operator-portal' }
+
+  it('offers the dispatch when promote.yml declares both inputs', () => {
+    const detail = describeAmbiguousVersions(SHA, [first, second], env, 'main', {
+      verifiedSha: true,
+      versionId: true,
+    })
+    expect(detail).toContain(
+      `gh workflow run promote.yml --repo narduk-enterprises/operator-portal --ref main -f verified-sha=${SHA} -f version-id=v-second`,
+    )
+    expect(detail).toContain(
+      `NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote --sha ${SHA}`,
+    )
+  })
+
+  it.each([
+    ['declares neither input (HTTP 422 today)', { verifiedSha: false, versionId: false }],
+    ['declares only verified-sha', { verifiedSha: true, versionId: false }],
+    ['cannot be read', null],
+  ])('offers only the by-hand command when promote.yml %s', (_label, inputs) => {
+    const detail = describeAmbiguousVersions(SHA, [first, second], env, 'main', inputs)
+    expect(detail).not.toContain('gh workflow run')
+    expect(detail).toContain('HTTP 422')
+    expect(detail).toContain(`narduk-app deploy versions-promote --sha ${SHA} --version-id <id>`)
+    expect(detail).toContain('(v-second, v-first, newest first)')
+  })
+
+  it('reads the inputs from the checkout, walking up from an app below the workflows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'promote-yml-'))
+    mkdirSync(join(root, '.git'))
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true })
+    mkdirSync(join(root, 'apps', 'web'), { recursive: true })
+    const appDir = join(root, 'apps', 'web')
+    const workflow = join(root, '.github', 'workflows', 'promote.yml')
+    // No promote.yml yet: unknown, never "has the inputs".
+    expect(readPromoteDispatchInputs(appDir)).toBeNull()
+    writeFileSync(
+      workflow,
+      'on:\n  workflow_dispatch:\n    inputs:\n      verified-sha:\n        type: string\n',
+    )
+    expect(readPromoteDispatchInputs(appDir)).toEqual({ verifiedSha: true, versionId: false })
+    writeFileSync(
+      workflow,
+      'on:\n  workflow_dispatch:\n    inputs:\n      verified-sha: # the head\n        type: string\n      version-id:\n        type: string\n',
+    )
+    expect(readPromoteDispatchInputs(appDir)).toEqual({ verifiedSha: true, versionId: true })
+    // A workflow_dispatch with no inputs is the operator-portal state that 422'd.
+    writeFileSync(workflow, 'on:\n  workflow_dispatch:\n')
+    expect(readPromoteDispatchInputs(appDir)).toEqual({ verifiedSha: false, versionId: false })
   })
 })

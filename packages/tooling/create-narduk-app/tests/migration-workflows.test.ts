@@ -24,6 +24,10 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(steps[1].run).toContain('"12.9"')
       expect(steps[1].env).toBeUndefined()
       expect(steps[2].run).toContain('--dry-run')
+      // narduk-libs#1375: a superseded commit skips with exit 0, so the D1
+      // migration for it must not run. The dry run's id is what the guard reads.
+      expect(steps[2].id).toBe('eligible')
+      expect(steps[3].if).toBe("steps.eligible.outputs.superseded != 'true'")
       // The dry run carries the same gate attestation as the real promote
       // (narduk-libs#400), bound to the SHA the gate job verified -- never
       // workflow_run.head_sha, which is empty on a dispatch and can be older

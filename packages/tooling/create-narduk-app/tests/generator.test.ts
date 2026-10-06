@@ -860,6 +860,12 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).toContain(
         'gh workflow run promote.yml --ref main -f verified-sha=<sha> -f version-id=<id>',
       )
+      // narduk-libs#1375: a promote that skipped an older commit moved nothing,
+      // so the live proof, which asserts production serves it, must not run.
+      expect(runbook, label).toContain(
+        "      - id: live-proof\n        if: steps.promote.outputs.superseded != 'true'",
+      )
+      expect(runbook, label).toContain('skipped: live <sha> already contains <sha>')
       expect(runbook, label).not.toContain("github.event.workflow_run.event != 'pull_request'")
       expect(runbook, label).toContain(
         `contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event)`,

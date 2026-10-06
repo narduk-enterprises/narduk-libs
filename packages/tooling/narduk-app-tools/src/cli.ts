@@ -24,6 +24,7 @@ import {
   readWranglerAccountId,
   runRollback,
   runVersionsPromote,
+  writePromoteStepOutputs,
 } from './promote.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
 import {
@@ -126,7 +127,7 @@ function usage(): string {
     '                                       deletes.',
     '  deploy <deploy|versions-upload|triggers-deploy> ... Deploy the built app with Wrangler safeguards',
     '  deploy versions-promote [--sha <commit>] [--version-id <id>] [--name <worker>]',
-    '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force]',
+    '      [--account-id <id>] [--production-branch <name>] [--any-branch] [--force] [--allow-rollback]',
     '      [--percentage <1-100>] [--message <text>] [--max-versions <n>]',
     '      [--wait-for-version <seconds> [--wait-interval <seconds>]]',
     '      [--gate-verified "<check>@<40-hex sha>" | --no-gate-attestation "<reason>"]',
@@ -152,6 +153,10 @@ function usage(): string {
     '                                       workflow that promotes without waiting for the gate: the',
     '                                       reason is logged in place of the warning (non-empty',
     '                                       required; exclusive with --gate-verified).',
+    '                                       A commit the live commit already contains is skipped',
+    '                                       (`skipped: live <sha> already contains <sha>`, exit 0, no',
+    '                                       traffic moved; outputs superseded=true to $GITHUB_OUTPUT);',
+    '                                       --allow-rollback promotes it anyway, on purpose.',
     '                                       Exit 1 guard refused (nothing attempted),',
     '                                       2 usage, 3 version not found, 4 ambiguous, 5 wrangler',
     '                                       failed (traffic state may be unknown), 7 the target is',
@@ -426,6 +431,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         }
         const json = actionArgs.includes('--json')
         console.log(json ? JSON.stringify(result, null, 2) : formatPromoteResult(result))
+        if (action === 'versions-promote') writePromoteStepOutputs(result)
         return result.exitCode
       }
       return runDeploy(rest)

@@ -474,7 +474,7 @@ hold, and `narduk-app deploy versions-upload` now sets it automatically from
 ```sh
 narduk-app deploy versions-promote [--sha <commit>] [--version-id <id>] \
   [--name <worker>] [--account-id <id>] [--production-branch <name>] \
-  [--any-branch] [--force] [--percentage <1-100>] [--message <text>] \
+  [--any-branch] [--force] [--allow-rollback] [--percentage <1-100>] [--message <text>] \
   [--max-versions <n>] [--wait-for-version <seconds>] \
   [--wait-interval <seconds>] \
   [--gate-verified "<check>@<sha>" | --no-gate-attestation "<reason>"] \
@@ -507,15 +507,21 @@ Wire the step so that exit is a **red** job, never a skip.
 sometimes dispatches one trigger twice for one push, so two versions carry the
 same commit (narduk-libs#1233). Nothing in a version's metadata tells that apart
 from a second uploader, so the promote still refuses with `ambiguous-version`.
-The detail lists the candidates newest first and prints the one-click recovery
-for each:
+The detail lists the candidates newest first and, **only when the checkout's
+`.github/workflows/promote.yml` declares both the `verified-sha` and
+`version-id` `workflow_dispatch` inputs**, prints the one-click recovery for
+each:
 `gh workflow run promote.yml --ref main -f verified-sha=<sha> -f version-id=<id>`.
-A generated `promote.yml` takes that `version-id` input (see the app's
-`docs/workers-builds.md`) and passes it through as `--version-id` beside
-`--sha`. Given both, the command promotes the named version only if it is in the
-searched listing and its `workers/tag` is that commit; otherwise it exits 3 and
-deploys nothing. `--gate-verified`, the production-branch check and the ordering
-guard apply unchanged: only the choice between the duplicates is manual.
+A workflow without those inputs (or one the tool cannot read) would answer that
+command with HTTP 422, so the detail then offers only the by-hand
+`NARDUK_ALLOW_MANUAL_PROMOTE=1 narduk-app deploy versions-promote --sha <sha> --version-id <id>`
+(narduk-libs#1543). A generated `promote.yml` takes the `version-id` input (see
+the app's `docs/workers-builds.md`) and passes it through as `--version-id`
+beside `--sha`. Given both, the command promotes the named version only if it is
+in the searched listing and its `workers/tag` is that commit; otherwise it exits
+3 and deploys nothing. `--gate-verified`, the production-branch check and the
+ordering guard apply unchanged: only the choice between the duplicates is
+manual.
 
 **The build and the promote are not ordered.** Under narduk-v1 the Workers Build
 uploads the version, while `workflow_run` on the gate starts the promote, and
@@ -602,7 +608,34 @@ recovery work.
 
 #### Three refusals that exist because the happy path is not the dangerous one
 
-**An older commit may not roll production backwards.** Two PRs merge forty
+**A commit production already contains is skipped, not promoted**
+(narduk-libs#1375). Two `main` merges whose CI runs finish out of order run
+Promote twice, and the run for the _older_ commit can finish last. Cloudflare
+numbers versions in upload order, not commit order, so the older commit can
+carry the higher version number and the recency guard below lets it through:
+gonogo 2026-10-03 served the parent commit for about twelve minutes while `main`
+was at its child, with both runs green. So before the recency guard the promote
+reads the commit the live version carries (`workers/tag`) and asks git, then
+GitHub's compare endpoint (a shallow CI checkout lacks the objects; the step's
+`GITHUB_TOKEN` with `contents: read` answers it), how the candidate stands
+against it. A candidate that is a **strict ancestor** of the live commit is
+skipped: outcome `superseded`, exit 0, no traffic moved, with the explicit line
+`skipped: live <sha> already contains <sha>`. A descendant is a plain forward
+promote whatever the upload order, which also clears the opposite refusal (a
+real fix refused because its version was uploaded earlier). An equal commit (a
+second version of the live commit) and a diverged one fall through to the
+recency guard, and so does an answer git and GitHub cannot give. The skip is
+**exit 0 on purpose**: nothing is wrong, a newer run already did the work. But
+the live proof after it (`--expect-sha "$VERIFIED_SHA"`) asserts production
+serves the skipped commit, which is exactly false, so under `GITHUB_OUTPUT` the
+step also writes `outcome`, `superseded` (`true` here), `version_id` and
+`previous_version_id`; give the proof and any report step
+`if: steps.promote.outputs.superseded != 'true'`. `--allow-rollback` is the one
+way to promote an ancestor on purpose (it also clears the recency guard for that
+rollback and is logged as `rollbackAllowed: true`); `--force` is not enough.
+`narduk-app deploy rollback` does not go through this guard.
+
+**An older version may not roll production backwards.** Two PRs merge forty
 seconds apart; B's promote deploys its version at 100%, and A's promote — still
 running — resolves its own SHA to the older version and deploys _that_ at 100%.
 Without a guard the result is `promoted`, exit 0, and A's own live proof passes,
@@ -610,9 +643,9 @@ because the older version really does serve the SHA A expects. So the promote
 compares the target against the version already serving production (Cloudflare's
 own sequential `number`, or `metadata.created_on` when a payload carries no
 number) and refuses with `stale-promote` (exit 7). When neither field can order
-the pair it refuses too: "we cannot tell" is not "it is fine". `--force` is the
-deliberate revert-by-promote, and it is logged loudly in both the summary and
-the JSON (`forced: true`).
+the pair it refuses too: "we cannot tell" is not "it is fine". This is now the
+fallback for when commit ancestry cannot be read. `--force` overrides it, and it
+is logged loudly in both the summary and the JSON (`forced: true`).
 
 **A non-production branch build may not be promoted.** A feature branch's
 Workers Build of a commit carries the same `workers/tag` as main's build of that
@@ -631,7 +664,7 @@ from a `pull_request` run.
 
 | Exit | Outcome                                                         |
 | ---- | --------------------------------------------------------------- |
-| 0    | `promoted`, `already-live` (idempotent no-op) or `dry-run`      |
+| 0    | `promoted`, `already-live`, `superseded` (skip) or `dry-run`    |
 | 1    | `guard-refused` — context, ref or event. **Nothing attempted.** |
 | 2    | usage error. **Nothing attempted.**                             |
 | 3    | `version-not-found` inside the searched window                  |
