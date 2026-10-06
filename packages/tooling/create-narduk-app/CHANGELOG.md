@@ -1,5 +1,42 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.45
+
+### Patch Changes
+
+- 76d4b2f: `narduk-app deploy versions-promote` orders by commit, not by upload
+  (#1375). A commit that production's commit already contains is skipped
+  (`outcome: superseded`, exit 0, `skipped: live <sha> already contains <sha>`,
+  no traffic moved) instead of rolling production back when two merges' CI
+  finish out of order; a descendant promotes whatever order the versions were
+  uploaded in, and upload order is only the fallback when git and GitHub cannot
+  say. `--allow-rollback` is the explicit way to promote an ancestor. Under
+  `GITHUB_OUTPUT` the step writes `outcome`, `superseded`, `version_id` and
+  `previous_version_id`, so a workflow can skip its live proof after a skip
+  (`if: steps.promote.outputs.superseded != 'true'`). The double-dispatch
+  recovery hint prints the `gh workflow run` command only when the checkout's
+  `promote.yml` declares both the `verified-sha` and `version-id` inputs, and
+  otherwise only the by-hand command (#1543). The generated runbook documents
+  both.
+- b5903e1: `hostAwareIndexing` no longer noindexes the production host when
+  `runtimeConfig.public.siteUrl` fell back to a local origin such as
+  `http://localhost:3000` (a Workers Builds `main` build does not export
+  `SITE_URL`). A loopback, `localhost`, `*.localhost` or `*.test` canonical host
+  is now treated like one that does not normalize: the runtime guard and
+  `canonicalRobotsPolicy` fail open, and the build logs a warning naming
+  `runtimeConfig.public.siteUrl` (#1480). New export: `isLocalIndexingHost` from
+  `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`.
+- 52b67b3: narduk-seo no longer defaults `site.description` to "A Nuxt 4
+  application deployed on Cloudflare Workers." — that placeholder shipped as the
+  meta description of every page that set none of its own. With no description
+  configured, no description tag is emitted (#1442). `/narduk-network` is now
+  left out of the sitemap and renders `noindex, follow` until a
+  `networkDirectoryUrl` is configured.
+- 51d28ff: NeCollectionTable's phone sort-direction button is now 44px wide as
+  well as 44px tall (`min-w-11` beside the existing `min-h-11`), so the arrow is
+  no longer a 26px-wide target beside the sort select (#1547). The button
+  carries `data-ne-collection-sort-direction`.
+
 ## 0.21.44
 
 ### Patch Changes

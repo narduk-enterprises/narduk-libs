@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.10.1
+
+### Patch Changes
+
+- b5903e1: `hostAwareIndexing` no longer noindexes the production host when
+  `runtimeConfig.public.siteUrl` fell back to a local origin such as
+  `http://localhost:3000` (a Workers Builds `main` build does not export
+  `SITE_URL`). A loopback, `localhost`, `*.localhost` or `*.test` canonical host
+  is now treated like one that does not normalize: the runtime guard and
+  `canonicalRobotsPolicy` fail open, and the build logs a warning naming
+  `runtimeConfig.public.siteUrl` (#1480). New export: `isLocalIndexingHost` from
+  `@narduk-enterprises/narduk-seo/shared/hostAwareIndexing`.
+- 52b67b3: narduk-seo no longer defaults `site.description` to "A Nuxt 4
+  application deployed on Cloudflare Workers." — that placeholder shipped as the
+  meta description of every page that set none of its own. With no description
+  configured, no description tag is emitted (#1442). `/narduk-network` is now
+  left out of the sitemap and renders `noindex, follow` until a
+  `networkDirectoryUrl` is configured.
+
 ## 2.10.0
 
 ### Minor Changes
