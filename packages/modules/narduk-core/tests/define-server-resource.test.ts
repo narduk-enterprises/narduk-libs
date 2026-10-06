@@ -275,16 +275,22 @@ describe('defineServerResource', () => {
     await nextTick()
     expect(vi.getTimerCount() - before).toBe(1) // two readers, one timer
 
-    vi.advanceTimersByTime(1_000)
+    await vi.advanceTimersByTimeAsync(1_000) // the tick's read settles
     expect(requestFetch).toHaveBeenCalledTimes(1)
 
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
     vi.advanceTimersByTime(3_000)
     expect(requestFetch).toHaveBeenCalledTimes(1)
+
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange')) // overdue: catches up at once
+    expect(requestFetch).toHaveBeenCalledTimes(2)
     visibility.mockRestore()
+    await Promise.resolve()
 
     root.unmount()
     vi.advanceTimersByTime(3_000)
-    expect(requestFetch).toHaveBeenCalledTimes(1)
+    expect(requestFetch).toHaveBeenCalledTimes(2)
   })
 })

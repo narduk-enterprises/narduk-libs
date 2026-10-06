@@ -2381,6 +2381,14 @@ await editor.rename('alpha', 'Alpha Prime') // refreshes every view
 `useAsyncData` does. An answer read during this server render, or hydrated from
 it, is always reused, so there is never a double fetch on hydration.
 
+**Polling: `poll` or `useLiveProduct`?** Both build on `useIntervalRefresh`. Use
+a resource's `poll` when the read is a `defineServerResource`. It runs ONE timer
+per key however many components show it, pauses while the page is hidden, and
+catches up on return. Use `useLiveProduct` to poll any other refresh callback,
+or when you want its "updated 3 minutes ago" label. Do not wrap a resource's
+`refresh` in `useLiveProduct` as well, because that adds one timer per
+component.
+
 **Writes elsewhere.** A mutation that is not one of the resource's `writes` can
 still make it stale: `await invalidateServerResources(['product-catalog'])`
 marks the keys stale and refreshes the mounted ones.

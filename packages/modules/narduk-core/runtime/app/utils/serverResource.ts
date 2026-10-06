@@ -2,7 +2,17 @@
 // file outside the owning Nuxt source tree, and isolated Vitest has no `#imports`.
 // The Nuxt data API is injected (`ServerResourceNuxt`); `defineServerResource`
 // passes the real one.
-import { computed, getCurrentInstance, onBeforeUnmount, onMounted, onServerPrefetch } from 'vue'
+import {
+  computed,
+  effectScope,
+  getCurrentInstance,
+  onBeforeUnmount,
+  onMounted,
+  onServerPrefetch,
+  shallowRef,
+} from 'vue'
+
+import { useIntervalRefresh } from '../composables/useIntervalRefresh'
 
 import { MUTATION_METHODS } from './mutationMethods'
 
@@ -147,9 +157,8 @@ export type ServerResource<T, W extends ServerResourceWriteArgs> = ServerResourc
 
 interface ResourceEntry {
   force: boolean
-  onVisibility: (() => void) | undefined
   pollers: number
-  timer: ReturnType<typeof setInterval> | undefined
+  stopPolling: (() => void) | undefined
 }
 
 interface AppWithResources {
@@ -167,7 +176,7 @@ function entryOf(nuxtApp: AppWithResources, key: string): ResourceEntry {
   nuxtApp._nardukServerResources ??= new Map()
   let entry = nuxtApp._nardukServerResources.get(key)
   if (!entry) {
-    entry = { force: false, pollers: 0, timer: undefined, onVisibility: undefined }
+    entry = { force: false, pollers: 0, stopPolling: undefined }
     nuxtApp._nardukServerResources.set(key, entry)
   }
   return entry
@@ -356,25 +365,43 @@ export function createServerResource<T, W extends ServerResourceWriteArgs = Reco
       onMounted(() => {
         subscribed = true
         if (entry.pollers++ > 0) return
-        entry.timer = setInterval(() => {
-          if (document.visibilityState !== 'hidden') void request.refresh({ dedupe: 'defer' })
-        }, poll.everyMs)
-        entry.onVisibility = () => {
-          if (document.visibilityState !== 'visible') return
+        /*
+         * One poller per key, on narduk-core's existing interval primitive
+         * (`useIntervalRefresh`, which `useLiveProduct` also builds on), held
+         * in a detached scope so it outlives whichever consumer mounted first.
+         */
+        const visible = shallowRef(document.visibilityState !== 'hidden')
+        const scope = effectScope(true)
+        scope.run(() =>
+          useIntervalRefresh(
+            () => {
+              if (visible.value) void request.refresh({ dedupe: 'defer' })
+            },
+            poll.everyMs,
+            {
+              enabled: visible,
+            },
+          ),
+        )
+        const onVisibility = () => {
+          visible.value = document.visibilityState !== 'hidden'
+          if (!visible.value) return
           if (readAt.value === null || Date.now() - readAt.value >= poll.everyMs) {
             void request.refresh({ dedupe: 'defer' })
           }
         }
-        document.addEventListener('visibilitychange', entry.onVisibility)
+        document.addEventListener('visibilitychange', onVisibility)
+        entry.stopPolling = () => {
+          scope.stop()
+          document.removeEventListener('visibilitychange', onVisibility)
+        }
       })
       onBeforeUnmount(() => {
         if (!subscribed) return
         subscribed = false
         if (--entry.pollers > 0) return
-        if (entry.timer !== undefined) clearInterval(entry.timer)
-        if (entry.onVisibility) document.removeEventListener('visibilitychange', entry.onVisibility)
-        entry.timer = undefined
-        entry.onVisibility = undefined
+        entry.stopPolling?.()
+        entry.stopPolling = undefined
       })
     }
 
