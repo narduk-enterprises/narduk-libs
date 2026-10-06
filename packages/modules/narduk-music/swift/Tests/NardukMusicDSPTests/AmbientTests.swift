@@ -331,12 +331,12 @@ import Testing
 
     @Test func hallGolden() {
         let response = Self.hallResponse(decay: 8, seconds: 6)
-        expectGolden(response.0, response.1, darwin: 0x167e_570f_3e71_ba66, linux: 0)
+        expectGolden(response.0, response.1, darwin: 0x167e_570f_3e71_ba66, linux: 0x167e_570f_3e71_ba66)
     }
 
     @Test func delayGolden() {
         let response = Self.echoes(pingPong: true, feedback: 0.6)
-        expectGolden(response.0, response.1, darwin: 0x9b87_5220_23eb_1465, linux: 0)
+        expectGolden(response.0, response.1, darwin: 0x9b87_5220_23eb_1465, linux: 0x9b87_5220_23eb_1465)
     }
 
     @Test func padGolden() {
@@ -353,12 +353,12 @@ import Testing
             left.append(a.0 + b.0)
             right.append(a.1 + b.1)
         }
-        expectGolden(left, right, darwin: 0x3b49_2913_50c0_6d78, linux: 0)
+        expectGolden(left, right, darwin: 0x3b49_2913_50c0_6d78, linux: 0xa642_f773_ad3c_34e3)
     }
 
     @Test func ambientSceneGolden() throws {
         let scene = Self.renderScene()
-        expectGolden(scene.0, scene.1, darwin: 0xc2de_6ee9_6520_e255, linux: 0)
+        expectGolden(scene.0, scene.1, darwin: 0xc2de_6ee9_6520_e255, linux: 0x9b45_0980_5f0f_0dd8)
         if let directory = ProcessInfo.processInfo.environment["NARDUK_AMBIENT_DEMO_DIR"] {
             try Self.writeWAV(
                 scene.0, scene.1, to: URL(fileURLWithPath: directory).appendingPathComponent("ambient-demo.wav"))
