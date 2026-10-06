@@ -5,6 +5,7 @@ import NardukLineChart from './NardukLineChart.vue'
 import {
   hydrationMismatchLines,
   hydrationWarnings,
+  knownTextMismatchWarnings,
   unexpectedDevelopmentWarnings,
 } from './hydration-warnings'
 
@@ -29,14 +30,14 @@ describe('NardukLineChart hydration', () => {
     // `withDirectives can only be used inside render functions.` is the other
     // half of riverstatus#204 and is not a hydration warning, so it needs its
     // own assertion rather than a /hydrat/i filter. The helper spies
-    // `console.warn` and `console.error`. Vue 3.5 hydrateElement force-patches
-    // SVG geometry as DOM props; those are getter-only, so a live warn spy
-    // sees `Failed setting prop`. An error-only spy would miss both that and
-    // withDirectives, and this test would be vacuous again.
+    // `console.warn` and `console.error`; an error-only spy would miss
+    // withDirectives and this test would be vacuous. The known text-mismatch
+    // control proves the same capture sees a `[Vue warn]` on `console.warn`.
+    // (Vue 3.5.39 also warned `Failed setting prop` on SVG geometry, which
+    // used to serve as that proof; 3.5.42 no longer raises it.)
+    const control = await knownTextMismatchWarnings()
+    expect(control.some(line => line.includes('[Vue warn]'))).toBe(true)
     const { warnings } = await hydrationWarnings(NardukLineChart, GAUGE_CHART)
-    expect(
-      warnings.some(line => line.includes('[Vue warn]') && line.includes('Failed setting prop')),
-    ).toBe(true)
     expect(warnings.some(line => line.includes('withDirectives'))).toBe(false)
     expect(unexpectedDevelopmentWarnings(warnings)).toEqual([])
   })
