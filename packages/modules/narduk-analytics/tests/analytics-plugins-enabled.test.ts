@@ -151,6 +151,41 @@ describe('posthog.client — enabled path', () => {
     }
   })
 
+  it('opts out of the posthog-js bot filter only for the NardukAutomation marker', async () => {
+    const realUserAgent = navigator.userAgent
+    const initOptionsFor = async (userAgent: string) => {
+      vi.resetModules()
+      posthogInit.mockClear()
+      runtimeConfigValue = {
+        public: {
+          analyticsLoadStrategy: 'immediate',
+          posthogPublicKey: 'phc_fixture',
+          posthogHost: '',
+          appName: 'fixture',
+        },
+      }
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent })
+      const plugin = (await import('../app/plugins/posthog.client')).default
+      plugin.setup?.({ provide: vi.fn() })
+      await vi.waitFor(() => expect(posthogInit).toHaveBeenCalled())
+      return posthogInit.mock.calls[0]![1] as Record<string, unknown>
+    }
+    try {
+      const marked = await initOptionsFor(`${realUserAgent} NardukAutomation/lighthouse`)
+      expect(marked.opt_out_useragent_filter).toBe(true)
+
+      // Other bots, including a bare Lighthouse or headless browser, keep the default.
+      const lighthouse = await initOptionsFor(`${realUserAgent} Chrome-Lighthouse`)
+      expect(lighthouse).not.toHaveProperty('opt_out_useragent_filter')
+      const headless = await initOptionsFor(`${realUserAgent} HeadlessChrome/141.0`)
+      expect(headless).not.toHaveProperty('opt_out_useragent_filter')
+      const ordinary = await initOptionsFor(realUserAgent)
+      expect(ordinary).not.toHaveProperty('opt_out_useragent_filter')
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: realUserAgent })
+    }
+  })
+
   it('does not initialize PostHog when disabled (key missing / preview-safe / off)', async () => {
     const plugin = (await import('../app/plugins/posthog.client')).default
 

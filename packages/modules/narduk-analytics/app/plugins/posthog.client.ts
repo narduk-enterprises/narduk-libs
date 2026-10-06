@@ -222,6 +222,13 @@ export default defineNuxtPlugin({
         advanced_disable_feature_flags:
           strict || runtimeConfig.public.posthogFeatureFlagsEnabled !== true,
 
+        // posthog-js drops every event from a headless or Lighthouse browser in
+        // the page (its built-in bot user-agent blocklist), before the traffic
+        // tags above could ship. Our own marked automation is the one class we
+        // tag and read back, so only it opts out of that filter; every other
+        // bot keeps the default. PostHog also stamps `$browser_type: bot`.
+        ...(traffic?.traffic_evidence === 'ua_marker' ? { opt_out_useragent_filter: true } : {}),
+
         // Use XHR instead of sendBeacon on page unload (avoids 64KB cap entirely)
         transport: 'XHR',
 
