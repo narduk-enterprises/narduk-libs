@@ -45,7 +45,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-app-tools': '0.34.1',
   '@narduk-enterprises/eslint-config': '3.0.3',
   '@narduk-enterprises/narduk-ai': '0.4.21',
-  '@narduk-enterprises/narduk-analytics': '1.28.1',
+  '@narduk-enterprises/narduk-analytics': '1.29.0',
   '@narduk-enterprises/narduk-auth': '1.34.2',
   '@narduk-enterprises/narduk-charts': '2.9.2',
   '@narduk-enterprises/narduk-core': '2.24.0',
@@ -71,7 +71,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.18.0',
+  '@narduk-enterprises/narduk-shell': '0.19.0',
   '@narduk-enterprises/narduk-testkit': '1.11.1',
   '@narduk-enterprises/narduk-uploads': '1.21.5',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
