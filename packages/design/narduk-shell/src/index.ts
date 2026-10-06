@@ -101,6 +101,7 @@ export type {
   NeFilterBarItem,
   NeFilterBarKind,
   NeFilterBarProps,
+  NeFilterBarUi,
 } from './runtime/components/ne-filter-bar-types'
 
 /**
