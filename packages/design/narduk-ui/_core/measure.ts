@@ -11,32 +11,58 @@
 export const MISSING = "—";
 
 /**
+ * A number as text with thousands grouped. Fixed to en-US rather than the
+ * reader's locale: the server and the first client render must print the same
+ * string or the tile hydrates with a mismatch, and a mono tabular readout reads
+ * the same everywhere. `grouping: false` is the plain fixed-decimals text.
+ */
+const numberFormats = new Map<string, Intl.NumberFormat>();
+
+function formatNumber(value: number, decimals: number, grouping: boolean): string {
+  const key = `${decimals}:${grouping}`;
+  let format = numberFormats.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: grouping,
+    });
+    numberFormats.set(key, format);
+  }
+  return format.format(value);
+}
+
+/**
  * Format a measured number for a mono tabular readout.
+ *
+ * Thousands are grouped ("1,055,144"); pass `grouping: false` for a value where
+ * grouping adds noise, such as a four-digit year-like number.
  *
  * Returns MISSING for null/undefined/NaN — deliberately, rather than zero.
  * Zero-filling a gap is the specific failure this design system exists to stop.
  */
 export function formatValue(
   value: number | null | undefined,
-  options: { decimals?: number; unit?: string } = {},
+  options: { decimals?: number; grouping?: boolean; unit?: string } = {},
 ): string {
   if (value == null || !Number.isFinite(value)) return MISSING;
-  const { decimals = 1, unit } = options;
-  const text = value.toFixed(decimals);
+  const { decimals = 1, grouping = true, unit } = options;
+  const text = formatNumber(value, decimals, grouping);
   return unit ? `${text} ${unit}` : text;
 }
 
 /**
  * Format a signed change for a delta line: "+0.42", "−1.10".
  * Uses U+2212 MINUS SIGN, not a hyphen, so digits align in a tabular column.
+ * Large magnitudes are grouped like `formatValue`.
  */
 export function formatDelta(
   value: number | null | undefined,
-  options: { decimals?: number; unit?: string } = {},
+  options: { decimals?: number; grouping?: boolean; unit?: string } = {},
 ): string {
   if (value == null || !Number.isFinite(value)) return MISSING;
-  const { decimals = 2, unit } = options;
-  const magnitude = Math.abs(value).toFixed(decimals);
+  const { decimals = 2, grouping = true, unit } = options;
+  const magnitude = formatNumber(Math.abs(value), decimals, grouping);
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return unit ? `${sign}${magnitude} ${unit}` : `${sign}${magnitude}`;
 }

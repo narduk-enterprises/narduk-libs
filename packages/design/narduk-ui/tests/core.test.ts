@@ -21,6 +21,21 @@ describe("measurement contracts", () => {
     expect(deltaDirection(1)).toBe("up");
   });
 
+  it("groups thousands in en-US so a 7-digit measure can be read (#1497)", () => {
+    expect(formatValue(1055144, { decimals: 0 })).toBe("1,055,144");
+    expect(formatValue(1953900, { decimals: 0, unit: "acre-ft" })).toBe("1,953,900 acre-ft");
+    expect(formatValue(1234.5, { decimals: 2 })).toBe("1,234.50");
+    expect(formatValue(-1234567.891, { decimals: 1 })).toBe("-1,234,567.9");
+    expect(formatValue(999.5, { decimals: 1 })).toBe("999.5");
+    expect(formatValue(2026, { decimals: 0, grouping: false })).toBe("2026");
+    expect(formatValue(1055144, { decimals: 0, grouping: false })).toBe("1055144");
+    expect(formatValue(null, { decimals: 0 })).toBe(MISSING);
+    expect(formatDelta(12345.6, { decimals: 1, unit: "ft" })).toBe("+12,345.6 ft");
+    expect(formatDelta(-12345.6, { decimals: 1 })).toBe("−12,345.6");
+    expect(formatDelta(12345.6, { decimals: 1, grouping: false })).toBe("+12345.6");
+    expect(formatDelta(0)).toBe("0.00");
+  });
+
   it("clamps values and reference bands to their domain", () => {
     expect(positionPercent(-5, 0, 10)).toBe(0);
     expect(positionPercent(15, 0, 10)).toBe(100);
