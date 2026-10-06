@@ -37,6 +37,29 @@ export interface NeFilterBarItem {
   title?: string
 }
 
+/**
+ * Classes a consumer adds to the bar's parts, for an app that draws filters
+ * in its own design system (`theme: false`). Each is appended after the
+ * suite's own classes; `selected` is added to the selected control only.
+ * Behaviour and ARIA do not change with them.
+ */
+export interface NeFilterBarUi {
+  /** The outer wrapper (controls row, note and `after` slot). */
+  root?: string
+  /** The row that carries `role="group"` / `role="tablist"`. */
+  controls?: string
+  /** Every control. */
+  control?: string
+  /** The selected control, in addition to `control`. */
+  selected?: string
+  /** A control's count. */
+  count?: string
+  /** The row note. */
+  note?: string
+  /** Extra classes per part; see `NeFilterBarUi`. */
+  ui?: NeFilterBarUi
+}
+
 export interface NeFilterBarProps {
   /** Drop the row's top margin when it sits in a container that already spaces it. */
   flush?: boolean
@@ -50,4 +73,6 @@ export interface NeFilterBarProps {
   modelValue?: string | null
   /** A caption for the row — when the disabled controls land, typically. */
   note?: string
+  /** Extra classes per part; see `NeFilterBarUi`. */
+  ui?: NeFilterBarUi
 }

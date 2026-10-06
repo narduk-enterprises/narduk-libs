@@ -63,6 +63,7 @@ const props = withDefaults(defineProps<NeFilterBarProps>(), {
   kind: 'chips',
   modelValue: null,
   note: undefined,
+  ui: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [key: string] }>()
@@ -211,7 +212,7 @@ function onTabKey(event: KeyboardEvent, index: number): void {
     data-ne-filter-bar
     :data-ne-filter-kind="kind"
     class="flex flex-wrap items-center gap-2"
-    :class="flush ? undefined : 'mt-2'"
+    :class="[flush ? undefined : 'mt-2', ui?.root]"
   >
     <!--
       THE ROLE SITS ON THE CONTROL ROW, NOT ON THE OUTER WRAPPER. A tablist's
@@ -224,6 +225,7 @@ function onTabKey(event: KeyboardEvent, index: number): void {
     <div
       data-ne-filter-controls
       class="flex flex-wrap items-center gap-2"
+      :class="ui?.controls"
       :role="isTabs ? 'tablist' : 'group'"
       :aria-label="label"
     >
@@ -236,7 +238,11 @@ function onTabKey(event: KeyboardEvent, index: number): void {
         size="xs"
         :color="colorOf(item)"
         :variant="variantOf(item)"
-        :class="item.disabled ? 'opacity-50' : undefined"
+        :class="[
+          item.disabled ? 'opacity-50' : undefined,
+          ui?.control,
+          selected(item) ? ui?.selected : undefined,
+        ]"
         data-ne-filter-control
         :data-ne-filter-key="item.key"
         :role="isTabs ? 'tab' : undefined"
@@ -253,15 +259,28 @@ function onTabKey(event: KeyboardEvent, index: number): void {
         @keydown="onTabKey($event, index)"
       >
         <span>{{ item.label }}</span>
-        <span
-          v-if="item.count !== undefined"
-          data-ne-filter-count
-          class="text-xs font-medium opacity-70"
-          >{{ item.count }}</span
+        <!--
+          The space is text, not layout: the label and the count are sibling
+          inline elements, and an accessible name joins those with nothing
+          between them, so without it the control is announced "Open3". A
+          whitespace-only flex item is not rendered, so it costs no width.
+        -->
+        <template v-if="item.count !== undefined"
+          >{{ ' '
+          }}<span data-ne-filter-count class="text-xs font-medium opacity-70" :class="ui?.count">{{
+            item.count
+          }}</span></template
         >
       </UButton>
     </div>
-    <span v-if="note" :id="noteId" data-ne-filter-note class="text-xs text-muted">{{ note }}</span>
+    <span
+      v-if="note"
+      :id="noteId"
+      data-ne-filter-note
+      class="text-xs text-muted"
+      :class="ui?.note"
+      >{{ note }}</span
+    >
     <slot name="after" />
   </div>
 </template>

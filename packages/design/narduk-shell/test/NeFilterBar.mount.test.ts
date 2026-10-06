@@ -353,3 +353,43 @@ describe('NeFilterBar: what the tablist owns, and what it must not', () => {
     wrapper.unmount()
   })
 })
+
+describe('NeFilterBar: accessible name and consumer classes', () => {
+  it('separates the label from the count with a space, so the name is "Open 3" not "Open3"', () => {
+    const wrapper = render()
+    // textContent is what accessible-name computation concatenates for inline children.
+    const names = controls(wrapper).map((control) => control.element.textContent?.trim())
+    expect(names).toEqual(['All 12', 'Open 3', 'Done'])
+    wrapper.unmount()
+  })
+
+  it('appends ui classes to each part, and `selected` to the selected control only', () => {
+    const wrapper = render({
+      modelValue: 'open',
+      note: 'More soon',
+      ui: {
+        root: 'app-row',
+        controls: 'app-controls',
+        control: 'app-chip',
+        selected: 'app-on',
+        count: 'app-count',
+        note: 'app-note',
+      },
+    })
+    expect(wrapper.get('[data-ne-filter-bar]').classes()).toContain('app-row')
+    expect(wrapper.get('[data-ne-filter-controls]').classes()).toContain('app-controls')
+    expect(controls(wrapper).map((control) => control.classes().includes('app-chip'))).toEqual([
+      true,
+      true,
+      true,
+    ])
+    expect(controls(wrapper).map((control) => control.classes().includes('app-on'))).toEqual([
+      false,
+      true,
+      false,
+    ])
+    expect(wrapper.get('[data-ne-filter-count]').classes()).toContain('app-count')
+    expect(wrapper.get('[data-ne-filter-note]').classes()).toContain('app-note')
+    wrapper.unmount()
+  })
+})

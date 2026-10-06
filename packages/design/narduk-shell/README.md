@@ -1468,15 +1468,16 @@ count element at all when you leave it out.
 
 #### Props
 
-| Prop         | Type                            | Default    | Notes                                                           |
-| ------------ | ------------------------------- | ---------- | --------------------------------------------------------------- |
-| `items`      | `NeFilterBarItem[]`             | —          | Rendered in the order given.                                    |
-| `label`      | `string`                        | —          | Required. The row's accessible name.                            |
-| `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                 |
-| `modelValue` | `string \| null`                | `null`     | The selected key. `null` is "nothing selected".                 |
-| `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.         |
-| `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row. |
-| `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.         |
+| Prop         | Type                            | Default    | Notes                                                                                                                           |
+| ------------ | ------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `items`      | `NeFilterBarItem[]`             | —          | Rendered in the order given.                                                                                                    |
+| `label`      | `string`                        | —          | Required. The row's accessible name.                                                                                            |
+| `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                                                                                 |
+| `modelValue` | `string \| null`                | `null`     | The selected key. `null` is "nothing selected".                                                                                 |
+| `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.                                                                         |
+| `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row.                                                                 |
+| `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.                                                                         |
+| `ui`         | `NeFilterBarUi`                 | —          | Extra classes for `root`, `controls`, `control`, `selected`, `count`, `note` (an app drawing filters in its own design system). |
 
 `NeFilterBarItem`: `key`, `label`, and optional `count`, `disabled`, `title`,
 `testid`, `attrs`. An `undefined` value in `attrs` is dropped rather than
