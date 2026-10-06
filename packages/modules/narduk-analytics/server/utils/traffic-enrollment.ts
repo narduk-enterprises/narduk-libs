@@ -165,8 +165,6 @@ export async function verifyEnrollmentToken(
   return { ok: true, grant: { action, claim, claimMaxAge, returnTo } }
 }
 
-export { TRAFFIC_ENROLLMENT_STEP_PATH }
-
 /**
  * Best-effort return for a failed hop, read from an UNVERIFIED token: only
  * ever the portal's own chain step, so a forged token can neither leave the

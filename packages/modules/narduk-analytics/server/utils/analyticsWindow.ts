@@ -19,15 +19,6 @@ import {
   parseAnalyticsDateKey,
 } from './analyticsZone'
 
-export {
-  AnalyticsWindowError,
-  analyticsAddDays,
-  analyticsLocalDateKey,
-  analyticsLocalMidnightMs,
-  analyticsZoneParts,
-  assertAnalyticsTimeZone,
-} from './analyticsZone'
-
 export const ANALYTICS_MAX_DAYS = 180
 export const ANALYTICS_MAX_HOURS = 72
 

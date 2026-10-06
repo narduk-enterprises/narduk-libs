@@ -5,11 +5,8 @@
  */
 import { createError, getValidatedQuery } from 'h3'
 
-import {
-  AnalyticsWindowError,
-  analyticsWindowQuerySchema,
-  resolveAnalyticsQuery,
-} from './analyticsWindow'
+import { analyticsWindowQuerySchema, resolveAnalyticsQuery } from './analyticsWindow'
+import { AnalyticsWindowError } from './analyticsZone'
 import { posthogQueryFetch } from './posthog'
 
 import type { AnalyticsTraffic, AnalyticsWindow, AnalyticsWindowQuery } from './analyticsWindow'
