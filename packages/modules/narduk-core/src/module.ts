@@ -605,7 +605,6 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         localIconDefaults(nuxt.options.rootDir),
       )
 
-      nuxtOptions.ui = defu((nuxtOptions.ui ?? {}) as Record<string, unknown>, { colorMode: true })
       // Set before `@nuxtjs/color-mode` installs below (narduk-libs#1464): a
       // module reads `nuxt.options.colorMode` once, in its own setup, so a
       // default written after `installModule` never reaches the built page.
@@ -841,6 +840,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxtOptions.future = defu((nuxtOptions.future ?? {}) as Record<string, unknown>, {
         compatibilityVersion: 4,
       })
+      nuxtOptions.ui = defu((nuxtOptions.ui ?? {}) as Record<string, unknown>, { colorMode: true })
       nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
         customLogger: createCoreViteBuildLogger(),
         logLevel: 'warn' as const,
