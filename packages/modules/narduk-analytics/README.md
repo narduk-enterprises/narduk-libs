@@ -339,6 +339,14 @@ simply stay unmarked. Single use is exact per isolate and per Cloudflare colo
 (Cache API) and best effort across colos; a replay can only win the `owner`
 label for the replaying browser.
 
+The issuer half lives beside the verifier in
+`server/utils/traffic/trafficIssuer.ts` (`importTrafficSigner`,
+`mintEnrollmentToken`, `probeTrafficEnrollment`), so the format is defined in
+one place. Only the operator portal imports it, and only it holds the key; a
+golden test pins tokens the portal minted before the move. The window's zone
+arithmetic (`server/utils/analyticsZone.ts`) and the referrer grouping
+(`server/utils/analyticsOrigins.ts`) are likewise the portal's source.
+
 Server-side captures can classify the same way with
 `resolveServerTrafficProperties(event)` (auto-imported in Nitro).
 
