@@ -91,7 +91,7 @@ async function enrollToken(overrides: Record<string, unknown> = {}, signOptions 
       iat: NOW,
       exp: NOW + 120,
       jti: crypto.randomUUID(),
-      ret: `${PORTAL}/api/traffic-enrollment/step?i=1`,
+      ret: `${PORTAL}/traffic/enroll?act=enroll&q=1`,
       claim: await claim(),
       ...overrides,
     },
@@ -218,7 +218,7 @@ describe('enrollment token', () => {
     if (!result.ok) return
     expect(result.grant.action).toBe('enroll')
     expect(result.grant.claimMaxAge).toBe(30 * 86_400)
-    expect(result.grant.returnTo).toBe(`${PORTAL}/api/traffic-enrollment/step?i=1`)
+    expect(result.grant.returnTo).toBe(`${PORTAL}/traffic/enroll?act=enroll&q=1`)
   })
 
   it('refuses an expired token', async () => {
@@ -281,9 +281,20 @@ describe('enrollment token', () => {
 
   it('only ever falls back to the portal return, and appends the outcome', async () => {
     expect(unverifiedPortalReturn(await enrollToken({}, { key: otherPrivateKey }))).toBe(
-      `${PORTAL}/api/traffic-enrollment/step?i=1`,
+      `${PORTAL}/traffic/enroll?act=enroll&q=1`,
     )
     expect(unverifiedPortalReturn(await enrollToken({ ret: 'https://evil.example/' }))).toBeNull()
+    // A forged token may not pick another portal page either.
+    expect(
+      unverifiedPortalReturn(
+        await enrollToken({ ret: `${PORTAL}/logout` }, { key: otherPrivateKey }),
+      ),
+    ).toBeNull()
+    expect(
+      unverifiedPortalReturn(
+        await enrollToken({ ret: `${PORTAL}/..//evil.example` }, { key: otherPrivateKey }),
+      ),
+    ).toBeNull()
     expect(unverifiedPortalReturn('garbage')).toBeNull()
     expect(enrollmentReturnUrl(`${PORTAL}/a?i=2`, 'replayed')).toBe(
       `${PORTAL}/a?i=2&outcome=replayed`,

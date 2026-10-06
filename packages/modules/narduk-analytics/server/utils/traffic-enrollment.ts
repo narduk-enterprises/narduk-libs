@@ -164,12 +164,18 @@ export async function verifyEnrollmentToken(
   return { ok: true, grant: { action, claim, claimMaxAge, returnTo } }
 }
 
+/** The issuer's chain step: the only path an unverified fallback may name. */
+export const TRAFFIC_ENROLLMENT_STEP_PATH = '/traffic/enroll'
+
 /**
  * Best-effort return for a failed hop, read from an UNVERIFIED token: only
- * ever the portal's own origin, so it can never become an open redirect.
+ * ever the portal's own chain step, so a forged token can neither leave the
+ * portal nor pick which portal page the browser lands on.
  */
 export function unverifiedPortalReturn(token: string): string | null {
-  return trustedReturn(parseJws(token)?.payload.ret)
+  const returnTo = trustedReturn(parseJws(token)?.payload.ret)
+  if (!returnTo) return null
+  return new URL(returnTo).pathname === TRAFFIC_ENROLLMENT_STEP_PATH ? returnTo : null
 }
 
 /** This request's own origin, as the browser addressed it. */

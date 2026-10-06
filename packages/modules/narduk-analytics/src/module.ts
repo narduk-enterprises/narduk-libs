@@ -264,12 +264,15 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
         addPlugin(resolver.resolve('../app/plugins/analytics-events.client'))
       }
       if (options.identity) addPlugin(resolver.resolve('../app/plugins/analytics-identity.client'))
-      if (options.authenticatedOwner)
-        addPlugin(resolver.resolve('../app/plugins/analytics-owner-session.client'))
       addPlugin(resolver.resolve('../app/plugins/00-analytics-head.client'))
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog-exceptions.client'))
+      // addPlugin PREPENDS (nuxt.options.plugins.unshift), so the plugin added
+      // last runs first: the owner-session signal must be in place before the
+      // GA4 and PostHog plugins resolve the page's class.
+      if (options.authenticatedOwner)
+        addPlugin(resolver.resolve('../app/plugins/analytics-owner-session.client'))
     }
 
     if (options.server) {

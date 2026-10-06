@@ -59,18 +59,23 @@ describe('narduk-analytics module', () => {
   })
 
   it.each([true, false])(
-    'registers the owner-session plugin before PostHog only when authenticatedOwner=%s',
+    'runs the owner-session plugin before PostHog and GA4 only when authenticatedOwner=%s',
     async (authenticatedOwner) => {
       const { addPlugin } = mockNuxtKit(() => true)
       const mod = (await import('../src/module')).default as unknown as {
         setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
       }
       await mod.setup({ app: true, server: false, authenticatedOwner }, makeNuxt())
-      const plugins = addPlugin.mock.calls.map(([path]) => path as string)
-      const session = plugins.findIndex((path) => path.endsWith('/analytics-owner-session.client'))
-      const posthog = plugins.findIndex((path) => path.endsWith('/posthog.client'))
+      // addPlugin prepends, so the runtime order is the reverse of the call order.
+      const runtime = addPlugin.mock.calls.map(([path]) => path as string).reverse()
+      const session = runtime.findIndex((path) => path.endsWith('/analytics-owner-session.client'))
+      const posthog = runtime.findIndex((path) => path.endsWith('/posthog.client'))
+      const gtag = runtime.findIndex((path) => path.endsWith('/gtag.client'))
       expect(session >= 0).toBe(authenticatedOwner)
-      if (authenticatedOwner) expect(session).toBeLessThan(posthog)
+      if (authenticatedOwner) {
+        expect(session).toBeLessThan(posthog)
+        expect(session).toBeLessThan(gtag)
+      }
     },
   )
 

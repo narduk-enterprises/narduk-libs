@@ -14,8 +14,9 @@ const SESSION_WAIT_MS = 3000
  * users stay unmarked: they are real users. Never set it on a client site,
  * whose admins are the client. No identity goes onto the event.
  *
- * Registered before the PostHog and GA4 plugins, so the signal is in place
- * before either resolves the page's class.
+ * Runs before the PostHog and GA4 plugins (the module adds it last; addPlugin
+ * prepends), so the signal is in place before either resolves the page's
+ * class.
  */
 export default defineNuxtPlugin({
   name: 'analytics-owner-session',
