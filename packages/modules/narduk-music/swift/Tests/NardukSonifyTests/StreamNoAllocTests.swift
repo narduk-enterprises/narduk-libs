@@ -11,8 +11,13 @@
     /// armed, and feeds a running stream through `StreamSonifier.ingest`.
     ///
     /// Only an optimized build means anything here (a debug build calls unspecialized generics that box their
-    /// values), so the stream test runs under `swift test -c release` (as CI does) and is skipped in debug.
-    @Suite(.serialized) struct StreamAllocationTests {
+    /// values), so these tests run under `swift test -c release` and are skipped in debug.
+    ///
+    /// The `malloc_logger` slot is one process-wide pointer that NardukMusicDSPTests' `RenderThreadAllocationTests`
+    /// also installs, and Swift Testing runs suites in parallel, so the two must never run in the same invocation:
+    /// run this one alone, `swift test -c release --filter StreamNoAllocTests`. The name deliberately does not match
+    /// the gate's `AllocationTests` filter, which runs the DSP suite.
+    @Suite(.serialized) struct StreamNoAllocTests {
         #if DEBUG
             static let optimized = false
         #else
@@ -27,10 +32,10 @@
         static let allocations = Atomic<Int>(0)
 
         static let logger: MallocLogger = { _, _, _, _, _, _ in
-            let armed = StreamAllocationTests.armedThread.load(ordering: .sequentiallyConsistent)
+            let armed = StreamNoAllocTests.armedThread.load(ordering: .sequentiallyConsistent)
             guard armed != 0, armed == UInt(bitPattern: pthread_self()) else { return }
-            let count = StreamAllocationTests.allocations.add(1, ordering: .sequentiallyConsistent).newValue
-            if count == 1 { StreamAllocationTests.frameCount = backtrace(&StreamAllocationTests.frames, 32) }
+            let count = StreamNoAllocTests.allocations.add(1, ordering: .sequentiallyConsistent).newValue
+            if count == 1 { StreamNoAllocTests.frameCount = backtrace(&StreamNoAllocTests.frames, 32) }
         }
         /// The call stack of the first counted allocation, to name the culprit in a failure.
         nonisolated(unsafe) static var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 32)
@@ -63,7 +68,8 @@
 
         /// Proves the counter can fail in this build: an escaping array is a real heap allocation even when
         /// optimized (a bare malloc/free pair is not; the optimizer deletes it).
-        @Test func theHookSeesAnAllocation() throws {
+        @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
+        func theHookSeesAnAllocation() throws {
             let count = try Self.countAllocations {
                 let array = [Int](repeating: 7, count: 1_000)
                 Self.escaped = UnsafeMutableRawPointer(bitPattern: array.count)
