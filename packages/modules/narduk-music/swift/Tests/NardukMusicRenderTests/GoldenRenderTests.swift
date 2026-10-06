@@ -12,7 +12,7 @@ import Testing
 @Suite struct GoldenRenderTests {
     static let goldens: [String: UInt64] = [
         "darwin-arm64": 0x79b6_c9b5_a14c_909c,
-        "linux-x86_64": 0,
+        "linux-x86_64": 0x330d_8643_585f_3360,
     ]
 
     static var platform: String {
