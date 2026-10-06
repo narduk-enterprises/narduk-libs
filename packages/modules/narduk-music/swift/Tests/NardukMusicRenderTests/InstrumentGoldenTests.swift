@@ -20,19 +20,19 @@ import Testing
     static let cases: [Case] = [
         Case(
             name: "acoustic-guitar", instrument: .acousticGuitar,
-            goldens: ["darwin-arm64": 0xde7a_9c8a_4cb1_3e6a, "linux-x86_64": 0]),
+            goldens: ["darwin-arm64": 0xde7a_9c8a_4cb1_3e6a, "linux-x86_64": 0xde7a_9c8a_4cb1_3e6a]),
         Case(
             name: "electric-guitar", instrument: .electricGuitar,
-            goldens: ["darwin-arm64": 0xbf3f_250a_7b02_d5d7, "linux-x86_64": 0]),
+            goldens: ["darwin-arm64": 0xbf3f_250a_7b02_d5d7, "linux-x86_64": 0xbf3f_250a_7b02_d5d7]),
         Case(
             name: "bass-guitar", instrument: .bassGuitar,
-            goldens: ["darwin-arm64": 0xf0f6_4f2d_f1fa_6b65, "linux-x86_64": 0]),
+            goldens: ["darwin-arm64": 0xf0f6_4f2d_f1fa_6b65, "linux-x86_64": 0xf0f6_4f2d_f1fa_6b65]),
         Case(
             name: "acoustic-strum", instrument: .strum,
-            goldens: ["darwin-arm64": 0x1ec6_d424_f18a_8e26, "linux-x86_64": 0]),
+            goldens: ["darwin-arm64": 0x1ec6_d424_f18a_8e26, "linux-x86_64": 0x3349_73e0_e737_2578]),
         Case(
             name: "electric-strum", instrument: .electricStrum,
-            goldens: ["darwin-arm64": 0x888e_213a_1a5a_958b, "linux-x86_64": 0]),
+            goldens: ["darwin-arm64": 0x888e_213a_1a5a_958b, "linux-x86_64": 0x888e_213a_1a5a_958b]),
     ]
 
     static func scenario(_ name: String, folder: String = "instruments/") throws -> MusicScenario {
