@@ -491,9 +491,12 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       '#narduk-seo-server': resolver.resolve('../server'),
     }
 
+    // narduk-libs#1442: no default `description`. A placeholder here shipped as
+    // the meta description of every page that set none of its own; with none
+    // configured, no description tag is emitted and search engines write the
+    // snippet from the page.
     nuxtOptions.site = defu((nuxtOptions.site ?? {}) as Record<string, unknown>, {
       name: process.env.APP_NAME || 'Nuxt 4 App',
-      description: 'A Nuxt 4 application deployed on Cloudflare Workers.',
     })
     const hostAwareIndexing = shouldEnableHostAwareIndexing(options)
     const securityTxtBody = resolveSecurityTxtBody(options.securityTxt)
@@ -591,7 +594,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       })
     }
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
-      urls: ['/narduk-network'],
+      // narduk-libs#1442: with no directory configured the page is an empty
+      // shell, so it stays out of the sitemap until one is.
+      urls: nardukNetworkDirectoryUrl ? ['/narduk-network'] : [],
       exclude: nonPublicSitemapRoutes,
     })
     nuxtOptions.robots = defu((nuxtOptions.robots ?? {}) as Record<string, unknown>, {

@@ -69,4 +69,10 @@ describe('narduk-seo package exports', () => {
       "import { resolveSiteOriginForSchemaInput } from '../utils/resolveSiteOriginForSchema'",
     )
   })
+
+  it('keeps the packaged network page out of the index until a directory is configured', () => {
+    const page = readFileSync(join(packageRoot, 'app/pages/narduk-network.vue'), 'utf-8')
+
+    expect(page).toContain("...(!directoryConfigured && { robots: 'noindex, follow' })")
+  })
 })

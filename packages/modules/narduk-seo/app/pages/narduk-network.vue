@@ -16,6 +16,11 @@ const siteOrigin = resolveSiteOriginForSchemaInput({
 const pageUrl = siteOrigin ? `${siteOrigin}/narduk-network` : undefined
 
 const { data, pending } = await useNardukNetworkDirectory()
+// narduk-libs#1442: an unconfigured directory renders an empty page; keep it
+// out of the index until `nardukNetworkDirectoryUrl` is set.
+const directoryConfigured = Boolean(
+  String(runtimeConfig.public.nardukNetworkDirectoryUrl ?? '').trim(),
+)
 
 const networkSites = computed(() => data.value.sites)
 const resolvedCatalogUrl = computed(() => data.value.catalogUrl || '')
@@ -25,6 +30,7 @@ useSeo({
   title: pageTitle,
   description: pageDescription,
   ...(pageUrl && { canonicalUrl: pageUrl }),
+  ...(!directoryConfigured && { robots: 'noindex, follow' }),
   ogImage: {
     title: pageTitle,
     description: pageDescription,
