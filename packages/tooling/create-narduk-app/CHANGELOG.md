@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.47
+
+### Patch Changes
+
+- 26cd310: New apps pin the narduk-core release whose `[build]` banner reads an
+  optional `runtimeConfig.public.appDisplayName` (#1498). The generator-owned
+  pin moves with that release, and the release plan requires this package to
+  release with it.
+
 ## 0.21.46
 
 ### Patch Changes
