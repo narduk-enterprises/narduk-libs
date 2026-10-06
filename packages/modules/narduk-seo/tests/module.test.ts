@@ -556,6 +556,30 @@ describe('narduk-seo module', () => {
     )
   })
 
+  it('warns when host-aware indexing is on but siteUrl fell back to localhost (narduk-libs#1480)', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+
+    const { loggerWarn } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+      nuxtOptions: { runtimeConfig: { public: { siteUrl: 'http://localhost:3000' } } },
+    })
+
+    expect(loggerWarn).toHaveBeenCalledWith(expect.stringContaining('runtimeConfig.public.siteUrl'))
+  })
+
+  it('stays quiet when host-aware indexing has a real canonical siteUrl', async () => {
+    vi.stubEnv('NARDUK_DEPLOY_TARGET', 'production')
+
+    const { loggerWarn } = await setupModule({
+      moduleOptions: { hostAwareIndexing: true },
+      nuxtOptions: { runtimeConfig: { public: { siteUrl: 'https://lakestat.us' } } },
+    })
+
+    expect(loggerWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining('runtimeConfig.public.siteUrl'),
+    )
+  })
+
   it('keeps host-aware indexing off for non-production targets even when opted in', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'preview')
 
