@@ -24,6 +24,14 @@ Then add `.product(name: "NardukMusicEngine", package: "narduk-libs")` (or
 `NardukMusicCore`, etc.) to the target. The repository is public, so resolving
 it needs no credential.
 
+## The gallery app
+
+`Apps/SoundGallery` is a SwiftUI app for macOS, iPad and iPhone that plays the
+demo song, the microphone or an audio file through `NardukSoundAnalysis` into
+four Canvas visualizers side by side (`xcodegen generate`, then build the
+`SoundGallery` scheme; `-autoplay demo|microphone` starts a source at launch).
+It is unsigned and local only; CI builds it for macOS and the iOS simulator.
+
 ## Make your own source
 
 An adapter turns your app's events into `MusicSignal`s. This one plays a build.
@@ -109,6 +117,23 @@ swift run -c release narduk-music render --scenario packages/modules/narduk-musi
 
 Exit codes: 0 rendered, 64 bad usage, 65 bad scenario, 74 write failed. `.m4a`
 output needs AVFoundation, so macOS only.
+
+### Guitars
+
+Five more `Instrument`s are plucked-string voices (Karplus-Strong with a tuned
+loop filter and a per-kind body, cabinet or bass stage): `acousticGuitar`,
+`electricGuitar`, `bassGuitar` and the six-string `strum` and `electricStrum`.
+The bass guitar plays on the bass bus (ducked by the kick); the rest play on the
+FX bus. A strum expands into six staggered string events (12 ms down, 8 ms up);
+its `voice % 6` picks the chord (major, minor, dominant 7, minor 7, power, sus2)
+and `formant >= 0.5` strums up.
+
+A scenario names them with a `notes` array: `time` (seconds), `pitch` (MIDI),
+optional `length`, `velocity`, `pan`, `drive`, `chord`, `direction` and an
+`instrument` name. Times quantize to the nearest half step. `"conductor": false`
+silences the generated song so the notes play alone. See
+[scenarios/instruments](scenarios/instruments) and the mixed
+[scenarios/guitar-demo.json](scenarios/guitar-demo.json).
 
 ## Guarantees and their tests
 

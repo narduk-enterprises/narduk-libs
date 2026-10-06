@@ -19,6 +19,12 @@ public enum Instrument: String, Sendable, Hashable, Codable, CaseIterable {
     case kick, snare, hat, openHat, wobble, sub, glitch, scratch, laser, vox, riser, tapeStop, impact
     /// Pitched keys for hooks and harmony: `voice` picks the timbre (0 bell pluck, 1 house stab, 2 electric piano, 3 pad).
     case keys
+    /// Karplus-Strong plucked strings (narduk-libs#1574). `pitch` is the note; `drive` (electric guitar) is 0 ... 1.
+    case acousticGuitar, electricGuitar, bassGuitar
+    /// Six strings struck in a staggered sweep on a chord from a fixed set. `pitch` is the chord root (folded into the
+    /// guitar's low range), `voice` picks the chord (`voice % 6`: major, minor, dominant 7, minor 7, power, sus2), and
+    /// `formant` of 0.5 or more strums up instead of down. `strum` is acoustic; `electricStrum` takes `drive`.
+    case strum, electricStrum
 }
 
 /// Musical LFO rate for the wobble, as a note division.
@@ -102,10 +108,21 @@ public struct SongSettings: Sendable, Hashable, Codable {
     public var barsPerPhrase: Int = 8
     /// Seeds every track of the song. Fixed for tests; the app draws a fresh one per play (`sessionSeed`).
     public var seed: UInt64 = 0x5EED
+    /// The kind of music the song is (`electronic` today for every genre). A family may set song-shape defaults
+    /// (`GenreFamily.shape`) that the fields below override.
+    public var family: GenreFamily = .electronic
+    /// Pins every track to this mode (a major key, say); nil lets each track pick from the genre and the input, as
+    /// before. Takes effect from the next track.
+    public var mode: HarmonyMode?
+    /// How chords are voiced; nil leaves it to the family, then to the genre's own arrangement.
+    public var voicing: ChordVoicing?
+    /// A chord layer (strum, stabs, arpeggio, held chords) over the arrangement; nil leaves it to the family.
+    public var comping: CompingPattern?
 
     public init(
         bpm: Double = 140, genre: Genre = .dubstep, keyRoot: Int = 65, stepsPerBar: Int = 16, barsPerPhrase: Int = 8,
-        seed: UInt64 = 0x5EED
+        seed: UInt64 = 0x5EED, family: GenreFamily = .electronic, mode: HarmonyMode? = nil,
+        voicing: ChordVoicing? = nil, comping: CompingPattern? = nil
     ) {
         self.bpm = bpm
         self.genre = genre
@@ -113,6 +130,26 @@ public struct SongSettings: Sendable, Hashable, Codable {
         self.stepsPerBar = stepsPerBar
         self.barsPerPhrase = barsPerPhrase
         self.seed = seed
+        self.family = family
+        self.mode = mode
+        self.voicing = voicing
+        self.comping = comping
+    }
+
+    /// Settings saved before the harmony fields existed decode with those fields unset.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            bpm: try container.decode(Double.self, forKey: .bpm),
+            genre: try container.decode(Genre.self, forKey: .genre),
+            keyRoot: try container.decode(Int.self, forKey: .keyRoot),
+            stepsPerBar: try container.decode(Int.self, forKey: .stepsPerBar),
+            barsPerPhrase: try container.decode(Int.self, forKey: .barsPerPhrase),
+            seed: try container.decode(UInt64.self, forKey: .seed),
+            family: try container.decodeIfPresent(GenreFamily.self, forKey: .family) ?? .electronic,
+            mode: try container.decodeIfPresent(HarmonyMode.self, forKey: .mode),
+            voicing: try container.decodeIfPresent(ChordVoicing.self, forKey: .voicing),
+            comping: try container.decodeIfPresent(CompingPattern.self, forKey: .comping))
     }
 
     /// A seed for a new play session, from the wall clock, so two sessions write different songs.
@@ -121,6 +158,11 @@ public struct SongSettings: Sendable, Hashable, Codable {
         mix = (mix ^ (mix >> 33)) &* 0xFF51_AFD7_ED55_8CCD
         return mix ^ (mix >> 29)
     }
+
+    /// The voicing in effect: the setting, else the family's.
+    public var effectiveVoicing: ChordVoicing? { voicing ?? family.shape.voicing }
+    /// The comping pattern in effect: the setting, else the family's.
+    public var effectiveComping: CompingPattern? { comping ?? family.shape.comping }
 
     public var secondsPerStep: Double { 60.0 / bpm / 4.0 }
     public var stepsPerPhrase: Int { stepsPerBar * barsPerPhrase }
