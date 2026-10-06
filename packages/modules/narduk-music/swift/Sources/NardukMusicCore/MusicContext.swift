@@ -29,9 +29,9 @@ extension Instrument {
 /// two hits inside one poll count as two. Counters wrap, and the difference uses wrapping subtraction. A fixed-size
 /// value: building, copying and diffing one never allocates.
 public struct HitCounters: Sendable, Hashable {
-    public static let laneCount = 16
+    public static let laneCount = 32
 
-    public var lanes = SIMD16<UInt32>(repeating: 0)
+    public var lanes = SIMD32<UInt32>(repeating: 0)
 
     public init() {}
 

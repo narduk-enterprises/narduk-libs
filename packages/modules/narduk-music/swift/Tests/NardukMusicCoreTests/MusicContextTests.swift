@@ -7,6 +7,8 @@ import Testing
         let lanes = Instrument.allCases.map(\.index)
         #expect(Set(lanes).count == lanes.count)
         #expect(lanes.allSatisfy { $0 >= 0 && $0 < HitCounters.laneCount })
+        // Dense: lanes are exactly 0 ..< count, so nothing is skipped or renumbered.
+        #expect(Set(lanes) == Set(0..<lanes.count))
     }
 
     @Test func deltaCountsEveryHitEvenWhenFramesAreSkipped() {
