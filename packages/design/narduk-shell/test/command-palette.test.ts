@@ -350,6 +350,19 @@ describe('resultSummary', () => {
     })
     expect(resultSummary(sections, 'al')).toBe('2 results: 2 states')
   })
+
+  it('names the sources a provider could not read, so "no results" is never claimed for them', () => {
+    const answered = buildSections({
+      groups: [{ id: 'r', label: 'Rivers', search: async () => [] }],
+      providers: { r: { items: [], notes: ['gauges unread'], status: 'ready' } },
+      query: 'zz',
+      recentLabel: 'Recent',
+      recents: [],
+    })
+    expect(answered).toHaveLength(1)
+    expect(answered[0]?.notes).toEqual(['gauges unread'])
+    expect(resultSummary(answered, 'zz')).toBe('No results from what was read; 1 source not read')
+  })
 })
 
 describe('createSharedSearch', () => {
@@ -447,7 +460,7 @@ describe('createSearchRunner', () => {
       'miss',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(last()).toEqual({ items: [{ id: 'miss', label: 'miss' }], status: 'ready' })
+    expect(last()).toEqual({ items: [{ id: 'miss', label: 'miss' }], notes: [], status: 'ready' })
   })
 
   it('aborts the call in flight when the query moves on', async () => {
@@ -492,7 +505,7 @@ describe('createSearchRunner', () => {
     runner.run('mis')
     await vi.advanceTimersByTimeAsync(150)
     runner.run('miss')
-    expect(last()).toEqual({ items: [{ id: 'mis', label: 'mis' }], status: 'loading' })
+    expect(last()).toEqual({ items: [{ id: 'mis', label: 'mis' }], notes: [], status: 'loading' })
   })
 
   it('reports a failure as an error, never as an empty answer', async () => {
@@ -502,6 +515,28 @@ describe('createSearchRunner', () => {
     runner.run('miss')
     await vi.advanceTimersByTimeAsync(150)
     expect(last()).toEqual({ items: [], status: 'error' })
+  })
+
+  it("carries a partial answer's notes, and does not cache it", async () => {
+    const search = vi.fn(async (query: string) => ({
+      items: [{ id: query, label: query }],
+      notes: ['one source unread'],
+    }))
+    const { last, runner } = setup(search)
+    runner.run('miss')
+    await vi.advanceTimersByTimeAsync(150)
+    expect(last()).toEqual({
+      items: [{ id: 'miss', label: 'miss' }],
+      notes: ['one source unread'],
+      status: 'ready',
+    })
+    runner.run('missi')
+    await vi.advanceTimersByTimeAsync(150)
+    runner.run('miss')
+    // Asked again rather than answered from the cache: the gap may have closed.
+    expect(last()?.status).toBe('loading')
+    await vi.advanceTimersByTimeAsync(150)
+    expect(search).toHaveBeenCalledTimes(3)
   })
 
   it('answers a query it has already asked from its cache', async () => {

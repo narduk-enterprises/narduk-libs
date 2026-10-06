@@ -220,6 +220,7 @@ export {
 } from './runtime/utils/command-palette'
 export type {
   NeCommandAction,
+  NeCommandAnswer,
   NeCommandBadge,
   NeCommandGroup,
   NeCommandGroupState,
