@@ -58,6 +58,27 @@ describe('narduk-analytics module', () => {
     expect(plugins.some((path) => path.endsWith('/analytics-events.client'))).toBe(events)
   })
 
+  it.each([true, false])(
+    'runs the owner-session plugin before PostHog and GA4 only when authenticatedOwner=%s',
+    async (authenticatedOwner) => {
+      const { addPlugin } = mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      await mod.setup({ app: true, server: false, authenticatedOwner }, makeNuxt())
+      // addPlugin prepends, so the runtime order is the reverse of the call order.
+      const runtime = addPlugin.mock.calls.map(([path]) => path as string).reverse()
+      const session = runtime.findIndex((path) => path.endsWith('/analytics-owner-session.client'))
+      const posthog = runtime.findIndex((path) => path.endsWith('/posthog.client'))
+      const gtag = runtime.findIndex((path) => path.endsWith('/gtag.client'))
+      expect(session >= 0).toBe(authenticatedOwner)
+      if (authenticatedOwner) {
+        expect(session).toBeLessThan(posthog)
+        expect(session).toBeLessThan(gtag)
+      }
+    },
+  )
+
   it('rejects non-registry app IDs before registering a runtime surface', async () => {
     mockNuxtKit(() => true)
     const mod = (await import('../src/module')).default as unknown as {

@@ -11,6 +11,7 @@
 
 import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
 
+import { pageTrafficProperties } from '../traffic/trafficClassBrowser'
 import {
   isLocalAnalyticsHost,
   normalizeAnalyticsLoadStrategy,
@@ -46,6 +47,14 @@ export default defineNuxtPlugin({
     }
 
     runWithAnalyticsLoadStrategy(strategy, () => {
+      // The traffic class goes out as event parameters on every event, set
+      // before the config command so the first page_view carries it. GA4
+      // reports on them only once each is registered as an event-scoped
+      // custom dimension (see the README, "Traffic classification").
+      void pageTrafficProperties().then(startGtag)
+    })
+
+    function startGtag(traffic: Record<string, unknown>) {
       // Queue must exist before any sync `gtag()` calls — the external gtag.js script loads async and replays it later.
       // (`??=` / `?? []` matches Google’s `window.dataLayer = window.dataLayer || []` for undefined; keeps ESLint happy.)
       window.dataLayer ??= []
@@ -65,6 +74,7 @@ export default defineNuxtPlugin({
       // the tag without emitting a page view; this plugin owns the complete
       // initial + successful SPA navigation page-view lifecycle below.
       gtag('js', new Date())
+      gtag('set', traffic)
       if (strict) {
         // Strict privacy: Google gets the route pattern as the page, never the
         // raw path, query, fragment or title, and no signals or ad
@@ -119,7 +129,7 @@ export default defineNuxtPlugin({
       void router
         .isReady()
         .then(() => nextTick(() => trackPageview(router.currentRoute.value.path)))
-    })
+    }
   },
 })
 

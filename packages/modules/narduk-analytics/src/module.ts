@@ -49,6 +49,13 @@ export interface NardukAnalyticsModuleOptions {
    */
   /** Stable registry ID, separate from the existing app display label. */
   appId?: string
+  /**
+   * This app's narduk-auth admins are the estate owner: a signed-in admin
+   * session tags events `traffic_class=owner`,
+   * `traffic_evidence=authenticated_session`; other users stay unmarked. Needs
+   * `useUserSession` (narduk-auth). Never set it on a client site.
+   */
+  authenticatedOwner?: boolean
   /** Foreground active-time deltas and once-per-visit scroll milestones. */
   engagement?: boolean
   /** Register v-track for explicitly declared click interactions. */
@@ -261,6 +268,11 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       addPlugin(resolver.resolve('../app/plugins/gtag.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog.client'))
       addPlugin(resolver.resolve('../app/plugins/posthog-exceptions.client'))
+      // addPlugin PREPENDS (nuxt.options.plugins.unshift), so the plugin added
+      // last runs first: the owner-session signal must be in place before the
+      // GA4 and PostHog plugins resolve the page's class.
+      if (options.authenticatedOwner)
+        addPlugin(resolver.resolve('../app/plugins/analytics-owner-session.client'))
     }
 
     if (options.server) {

@@ -394,7 +394,8 @@ describe('gtag.client — strict privacy', () => {
       page_location: `${ORIGIN}/farms/:farmId/:year`,
       page_title: '/farms/:farmId/:year',
     }
-    expect(commands[1]).toEqual([
+    expect(commands[1]).toEqual(['set', expect.objectContaining({ traffic_class: 'unmarked' })])
+    expect(commands[2]).toEqual([
       'config',
       'G-TESTID',
       {

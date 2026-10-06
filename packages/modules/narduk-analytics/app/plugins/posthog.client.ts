@@ -1,5 +1,6 @@
 import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#imports'
 
+import { pageTrafficProperties } from '../traffic/trafficClassBrowser'
 import { analyticsLandingAttribution } from '../utils/analyticsAttribution'
 import { createAnalyticsContext } from '../utils/analyticsContext'
 import { installAnalyticsEngagement } from '../utils/analyticsEngagementBrowser'
@@ -20,6 +21,7 @@ import { createAnalyticsTransport } from '../utils/analyticsTransport'
 import { ANALYTICS_SCHEMA_VERSION } from '../utils/analyticsVersion'
 import { createWebVitalsBeforeSend, installPostHogWebVitalsCallbacks } from '../utils/webVitals'
 
+import type { TrafficProperties } from '../../server/utils/traffic/trafficClass'
 import type {
   AnalyticsDeploymentTarget,
   AnalyticsLoadStrategy,
@@ -71,6 +73,7 @@ export default defineNuxtPlugin({
       surface: runtimeConfig.public.analyticsSurface,
       appVersion: runtimeConfig.public.appVersion,
       buildVersion: runtimeConfig.public.buildVersion,
+      host: window.location.host,
       hostname: window.location.hostname,
       deploymentTarget: runtimeConfig.public.deploymentTarget as AnalyticsDeploymentTarget,
       owner: () =>
@@ -80,7 +83,11 @@ export default defineNuxtPlugin({
     const landing = enabled
       ? analyticsLandingAttribution(window.location.href, document.referrer, strict)
       : {}
-    const context = () => ({ ...baseContext(), ...landing })
+    // Resolved once, before `posthog.init`, so the very first capture —
+    // including the queued initial pageview — carries the class. See
+    // `../traffic/trafficClass.ts`.
+    let traffic: TrafficProperties | undefined
+    const context = () => ({ ...baseContext(), ...landing, ...traffic })
     const identityEnabled = runtimeConfig.public.analyticsIdentityEnabled === true
     const transport = createAnalyticsTransport({ enabled, context, resetOnAttach: identityEnabled })
     nuxtApp.provide('analytics', transport)
@@ -123,6 +130,8 @@ export default defineNuxtPlugin({
 
     async function initializePosthog() {
       if (transport.status !== 'pending') return
+      traffic = await pageTrafficProperties()
+      if (transport.status !== 'pending') return
       const { posthog } = await import('posthog-js')
       if (transport.status !== 'pending') return
 
@@ -159,6 +168,9 @@ export default defineNuxtPlugin({
                   properties: {
                     ...context(),
                     ...result.properties,
+                    // Last, so a capture snapshotted before init cannot carry
+                    // a stale class past it.
+                    ...traffic,
                     analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
                   },
                 }

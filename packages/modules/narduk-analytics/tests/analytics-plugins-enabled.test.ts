@@ -103,6 +103,54 @@ describe('posthog.client — enabled path', () => {
     transport.disable()
     expect(beforeSend({ event: 'native', properties: {} })).toBeNull()
   })
+  it('classifies traffic before the first capture, so the first pageview carries the class', async () => {
+    runtimeConfigValue = {
+      public: {
+        analyticsLoadStrategy: 'immediate',
+        posthogPublicKey: 'phc_fixture',
+        posthogHost: '',
+        appName: 'fixture',
+      },
+    }
+    const realUserAgent = navigator.userAgent
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: `${realUserAgent} NardukAutomation/lighthouse`,
+    })
+    try {
+      const plugin = (await import('../app/plugins/posthog.client')).default
+      plugin.setup?.({ provide: vi.fn() })
+      await vi.waitFor(() => expect(posthogCapture).toHaveBeenCalled())
+
+      // The initial pageview was queued before init; register ran with the
+      // class before that queued capture was replayed.
+      const registered = posthogRegister.mock.calls[0]![0]
+      expect(registered).toMatchObject({
+        traffic_class: 'automation',
+        traffic_evidence: 'ua_marker',
+        automation_tool: 'lighthouse',
+        classification_version: 1,
+      })
+      expect(posthogRegister.mock.invocationCallOrder[0]).toBeLessThan(
+        posthogCapture.mock.invocationCallOrder[0]!,
+      )
+      expect(posthogCapture.mock.calls[0]![0]).toBe('$pageview')
+
+      // before_send stamps the class last: a stale snapshot cannot override it.
+      const beforeSend = posthogInit.mock.calls[0]![1].before_send
+      const sent = beforeSend({
+        event: '$pageview',
+        properties: { traffic_class: 'unmarked', classification_version: 0 },
+      })
+      expect(sent.properties).toMatchObject({
+        traffic_class: 'automation',
+        classification_version: 1,
+      })
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: realUserAgent })
+    }
+  })
+
   it('does not initialize PostHog when disabled (key missing / preview-safe / off)', async () => {
     const plugin = (await import('../app/plugins/posthog.client')).default
 
@@ -250,6 +298,8 @@ describe('gtag.client — enabled path', () => {
 
     const plugin = (await import('../app/plugins/gtag.client')).default
     plugin.setup?.()
+    // The traffic class is resolved (asynchronously) before Google is configured.
+    await vi.waitFor(() => expect(afterEach).toBeDefined())
 
     // Nuxt can report the hydrated route through afterEach before isReady();
     // both paths must still produce the one initial pageview.
@@ -269,6 +319,7 @@ describe('gtag.client — enabled path', () => {
     const commands = window.dataLayer?.map((command) => Array.from(command))
     expect(commands).toEqual([
       ['js', expect.any(Date)],
+      ['set', { classification_version: 1, traffic_class: 'unmarked', traffic_evidence: 'none' }],
       ['config', 'G-TESTID', { send_page_view: false }],
       [
         'event',

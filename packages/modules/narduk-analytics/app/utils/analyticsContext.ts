@@ -10,6 +10,8 @@ interface ContextOptions {
   appVersion?: string
   buildVersion?: string
   deploymentTarget?: AnalyticsDeploymentTarget
+  /** `location.host` (with any port); preview detection reads it. */
+  host?: string
   hostname: string
   owner: () => boolean
   route: () => string
@@ -24,8 +26,16 @@ export function createAnalyticsContext(options: ContextOptions): () => Analytics
     surface: options.surface || 'web',
     route: options.route(),
     analytics_schema_version: ANALYTICS_SCHEMA_VERSION,
-    environment: resolveAnalyticsEnvironment(options.hostname, options.deploymentTarget),
-    is_internal_user: isInternalAnalyticsTraffic(options.hostname, options.deploymentTarget),
+    environment: resolveAnalyticsEnvironment(
+      options.hostname,
+      options.deploymentTarget,
+      options.host,
+    ),
+    is_internal_user: isInternalAnalyticsTraffic(
+      options.hostname,
+      options.deploymentTarget,
+      options.host,
+    ),
     is_owner: options.owner(),
     ...(options.appVersion ? { app_version: options.appVersion } : {}),
     ...(options.buildVersion ? { build_version: options.buildVersion } : {}),
