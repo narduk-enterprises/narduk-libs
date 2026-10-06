@@ -131,6 +131,9 @@
         "GHSA-86w9-cpqp-85rv",
         "GHSA-vfj7-8cjw-p6xm"
       ]
+    },
+    "patchedDependencies": {
+      "@nuxt/devtools@3.4.2": "patches/@nuxt__devtools@3.4.2.patch"
     }
   },
   "volta": {
