@@ -2302,6 +2302,103 @@ update on mount.
 control that reproduces the mismatch when the client reads its own clock. The
 `narduk/no-render-clock` lint rule points at this composable.
 
+## One app clock: `useSharedNow`
+
+`useSsrNow(key)` gives one clock per key. When a screen shows several relative
+ages from different components, give them one clock for the whole app instead,
+so two labels side by side never disagree:
+
+```ts
+// Auto-imported in apps that enable narduk-core's app features.
+const now = useSharedNow(30_000) // tick at least every 30 s while mounted
+const label = useSharedNow() // read the same clock, ask for no tick
+```
+
+- **Server and hydration:** read once into `useState('narduk:shared-now')`, so
+  the server and the hydrating client render the same instant.
+- **After mount:** takes the browser clock, then ticks at the **fastest**
+  cadence any mounted reader asked for. One timer serves every reader; with no
+  cadence asked, the clock holds still. The tick skips while the page is hidden,
+  and the clock is re-read when the page becomes visible.
+- **Per app:** the reader registry lives on the Nuxt app, never at module level,
+  so it is safe under SSR.
+
+It returns a readonly `Ref<number>`. Call it from component `setup()`.
+`tests/use-shared-now.test.ts` proves the cadence, hidden-page and cleanup
+rules.
+
+## Shared server reads: `defineServerResource`
+
+One server read, shared by every screen that shows it. It returns a composable;
+every call shares ONE `useAsyncData` key, so:
+
+- the SSR payload hydrates without a second read;
+- concurrent callers share one request (`dedupe: 'defer'`);
+- a write's refresh reaches every mounted view, with no hand wiring.
+
+Reads go through `useRequestFetch()`, so SSR forwards the session cookie.
+
+```ts
+// app/composables/useProductCatalog.ts — auto-imported defineServerResource
+export const useProductCatalog = defineServerResource({
+  key: 'product-catalog',
+  fetch: ({ fetch }) =>
+    fetch<Catalog>('/api/products', { query: { source: 'estate' } }),
+  ttlMs: 60_000, // a route entry inside this window reuses the answer
+  keepAlive: true, // the answer outlives its last consumer
+  poll: { everyMs: 30_000 }, // optional; one timer per key, paused while hidden
+  absent: (catalog) => !catalog.available, // the source says "not configured"
+  writes: {
+    rename: {
+      invalidates: ['product-summary'], // other keys this write makes stale
+      run: ({ fetch }, id: string, name: string) =>
+        fetch(`/api/products/${id}`, { method: 'POST', body: { name } }),
+    },
+  },
+})
+
+// In a page or component:
+const { data, state } = await useProductCatalog() // reads during SSR
+const editor = useProductCatalog({ lazy: true }) // browser only, after mount
+const palette = useProductCatalog({ immediate: false }) // reads on ensure()
+await palette.ensure() // the answer, or a rejection with the reason
+await editor.rename('alpha', 'Alpha Prime') // refreshes every view
+```
+
+| Field        | Meaning                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `data`       | The last good answer, shared by every caller. An error never blanks it.                    |
+| `state`      | `loading`, `ready`, `absent` (per `options.absent`) or `error`.                            |
+| `error`      | `{ at, message, statusCode? }` for the last failed read, `null` after a good one.          |
+| `readAt`     | Epoch ms of the last good read; hydrates with the page.                                    |
+| `pending`    | A read is in flight.                                                                       |
+| `load()`     | Read unless a fresh answer is held. Never rejects.                                         |
+| `ensure()`   | `load()`, then the answer, or a rejection with the reason there is none.                   |
+| `refresh()`  | Read now. `refresh({ force: true })` reaches `fetch` as `context.force`, for a cache skip. |
+| each `write` | Runs with the request fetch plus `X-Requested-With`, then refreshes its keys.              |
+
+**Freshness.** `ttlMs` defaults to 0: every route entry reads again, as plain
+`useAsyncData` does. An answer read during this server render, or hydrated from
+it, is always reused, so there is never a double fetch on hydration.
+
+**Polling: `poll` or `useLiveProduct`?** Both build on `useIntervalRefresh`. Use
+a resource's `poll` when the read is a `defineServerResource`. It runs ONE timer
+per key however many components show it, pauses while the page is hidden, and
+catches up on return. Use `useLiveProduct` to poll any other refresh callback,
+or when you want its "updated 3 minutes ago" label. Do not wrap a resource's
+`refresh` in `useLiveProduct` as well, because that adds one timer per
+component.
+
+**Writes elsewhere.** A mutation that is not one of the resource's `writes` can
+still make it stale: `await invalidateServerResources(['product-catalog'])`
+marks the keys stale and refreshes the mounted ones.
+
+`server: false` reads only in the browser (after mount when hydrating). The
+composable is awaitable; `await` resolves once the first read settles.
+`tests/define-server-resource.test.ts` proves sharing, freshness, hydration,
+error retention, forced reads, writes with invalidation, keepAlive and
+single-timer polling.
+
 ## Live data: `useLiveProduct`
 
 The recommended replacement for a bare `useIntervalRefresh` whenever what it
