@@ -605,6 +605,18 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         localIconDefaults(nuxt.options.rootDir),
       )
 
+      // Set before `@nuxtjs/color-mode` installs below (narduk-libs#1464): a
+      // module reads `nuxt.options.colorMode` once, in its own setup, so a
+      // default written after `installModule` never reaches the built page.
+      nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
+        preference: colorModePreference,
+        fallback: 'dark',
+        // Tailwind v4 / Nuxt UI 4 key dark styles on `.dark`. The color-mode
+        // default suffix is `-mode`, which writes `class="dark-mode"` and
+        // leaves every dark token inert. An app can still override this.
+        classSuffix: '',
+      })
+
       // First-paint defaults (narduk-libs#1369), set before @nuxt/ui installs
       // and reads component detection during its own setup.
       registerPerformanceDefaults(
@@ -829,14 +841,6 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         compatibilityVersion: 4,
       })
       nuxtOptions.ui = defu((nuxtOptions.ui ?? {}) as Record<string, unknown>, { colorMode: true })
-      nuxtOptions.colorMode = defu((nuxtOptions.colorMode ?? {}) as Record<string, unknown>, {
-        preference: colorModePreference,
-        fallback: 'dark',
-        // Tailwind v4 / Nuxt UI 4 key dark styles on `.dark`. The color-mode
-        // default suffix is `-mode`, which writes `class="dark-mode"` and
-        // leaves every dark token inert. An app can still override this.
-        classSuffix: '',
-      })
       nuxtOptions.vite = defu((nuxtOptions.vite ?? {}) as Record<string, unknown>, {
         customLogger: createCoreViteBuildLogger(),
         logLevel: 'warn' as const,
