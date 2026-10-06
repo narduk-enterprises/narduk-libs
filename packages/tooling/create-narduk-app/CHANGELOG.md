@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.38
+
+### Patch Changes
+
+- 94fa4a9: Pin `@narduk-enterprises/narduk-analytics` to the release that adds
+  the in-app admin Analytics page at `/admin/analytics`.
+
 ## 0.21.37
 
 ### Patch Changes
