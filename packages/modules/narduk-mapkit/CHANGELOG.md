@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.22.1
+
+### Patch Changes
+
+- f4a0fd0: Expose the existing colour-mode and CSP nonce injection keys through
+  the runtime-safe `./injection-keys` subpath, so apps can provide them without
+  importing the Nuxt module.
+
 ## 2.22.0
 
 ### Minor Changes

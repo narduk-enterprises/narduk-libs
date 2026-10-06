@@ -1,5 +1,40 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.37
+
+### Patch Changes
+
+- 7792e70: Separate shadow and bezel colour from text ink with
+  `--ns-shadow-rgb`, defaulting to the existing ink channel. Dark app palettes
+  can keep depth dark while using light ink for text, hatches and measurement
+  marks.
+- fc12552: Preserve actionlint runner labels used by app-owned workflows during
+  one-shot upgrade, remove unused custom labels, and leave uncertain routes
+  untouched.
+- 2309742: Report unresolved when an existing root migration wrapper targets a
+  missing web script. Preserve app-owned migration commands and avoid guessing
+  whether a generic migration alias is local or remote.
+- 4027d28: Judge each shared workflow caller pin independently during one-shot
+  upgrade: unknown pins remain unresolved, older callers move forward, and newer
+  caller pins and comments stay intact.
+- fb205cc: Bundle chart declarations into the public types entry so studies
+  retain their types for strict bundler and NodeNext consumers, including
+  CommonJS, and verify line-chart props from a packed artifact.
+- 6cdba3b: Allow command-palette result names to wrap to two lines below 520px,
+  preserving one-line descriptions and the compact wider layout.
+- f4a0fd0: Expose the existing colour-mode and CSP nonce injection keys through
+  the runtime-safe `./injection-keys` subpath, so apps can provide them without
+  importing the Nuxt module.
+- a9a1301: Traffic classification v1: every analytics event carries
+  `traffic_class` (`automation` / `owner` / `unmarked`), `traffic_evidence` and
+  `classification_version`, resolved before the first PostHog capture and set on
+  GA4 before its config command. Automation is recognised by a
+  `NardukAutomation/<tool>` user-agent marker; owner browsers by a signed,
+  origin-bound class claim that the operator portal's enrollment chain sets
+  through the new `GET /api/owner/enroll`. Nothing is dropped. Server captures
+  can use `resolveServerTrafficProperties(event)`. narduk-app-tools live probes
+  now append `NardukAutomation/narduk-app-tools` to their user agent.
+
 ## 0.21.36
 
 ### Patch Changes

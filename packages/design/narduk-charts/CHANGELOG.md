@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.1
+
+### Patch Changes
+
+- fb205cc: Bundle chart declarations into the public types entry so studies
+  retain their types for strict bundler and NodeNext consumers, including
+  CommonJS, and verify line-chart props from a packed artifact.
+
 ## 2.9.0
 
 ### Minor Changes

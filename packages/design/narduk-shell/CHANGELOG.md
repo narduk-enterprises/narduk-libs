@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.17.1
+
+### Patch Changes
+
+- 6cdba3b: Allow command-palette result names to wrap to two lines below 520px,
+  preserving one-line descriptions and the compact wider layout.
+
 ## 0.17.0
 
 ### Minor Changes
