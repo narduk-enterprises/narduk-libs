@@ -30,7 +30,8 @@ def main() -> None:
     )
     if shutil.which("swiftlint"):
         run("swiftlint", "lint", "--strict", "--quiet")
-    run("swift", "test", *BUILD_FLAGS)
+    # NardukMusic's tests run in its own job (narduk-music-swift.yml).
+    run("swift", "test", *BUILD_FLAGS, "--skip", "NardukMusic")
     run("swift", "run", *BUILD_FLAGS, "NardukLoggingExample")
     with tempfile.TemporaryDirectory(prefix="narduk-logging-swift-") as name:
         temporary = Path(name)
@@ -40,10 +41,12 @@ def main() -> None:
         shutil.copy(ROOT / "Package.swift", source)
         for directory in ("swift", "schema", "examples/swift"):
             shutil.copytree(PACKAGE / directory, destination / directory)
-        # On an Apple host the manifest also declares NardukAuthKit's targets.
-        auth = ROOT / "packages/modules/narduk-auth/swift"
-        for directory in ("Sources", "Tests"):
-            shutil.copytree(auth / directory, source / auth.relative_to(ROOT) / directory)
+        # The manifest also declares NardukMusic's targets and, on an Apple
+        # host, NardukAuthKit's.
+        for swift in ("narduk-auth/swift", "narduk-music/swift"):
+            tree = ROOT / "packages/modules" / swift
+            for directory in ("Sources", "Tests"):
+                shutil.copytree(tree / directory, source / tree.relative_to(ROOT) / directory)
         run("git", "init", "--quiet", cwd=source)
         run("git", "add", ".", cwd=source)
         run(

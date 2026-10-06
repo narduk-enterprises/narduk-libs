@@ -49,3 +49,28 @@ The manifest declares Swift tools 6.2, not 6.3, because narduk-nvr builds on the
 fleet Apple runner's Xcode 26.0.1 (Swift 6.2), and SwiftPM refuses a newer tools
 version than the toolchain it runs. The macOS job repeats the version-tag
 consumer on that Xcode. NardukLogging's own gates still use Swift 6.3.3.
+
+## Third Swift exception: NardukMusic
+
+Status: handed over 2026-10-06 (narduk-libs#1520). Logan's answers that day:
+public source under the existing licence ("Public is fine"), and Wirewatcher's
+#57 song rework is the baseline ("Merge it").
+
+Wirewatcher's generative music engine moved here from
+narduk-enterprises/wirewatcher at `84bbb7e`, so Wirewatcher and Buildbeat share
+one copy instead of each keeping its own. It lives under
+`packages/modules/narduk-music/swift`, a Swift-only tree with no npm package.
+Traffic types stayed in Wirewatcher. The conductor now takes a generic
+`MusicSignal`: a level, flow and cues. Each app maps its own events onto it.
+
+`v0.3.0` is the first tag with the music products:
+
+- `NardukMusicCore`, `NardukMusicDSP` and `NardukMusicRender`, plus the
+  `narduk-music` CLI. These build on Linux too.
+- `NardukMusicEngine` (AVFoundation), declared only on an Apple host, as
+  NardukAuthKit is.
+
+Its own workflow (`.github/workflows/narduk-music-swift.yml`) runs the golden
+render, the CLI and a version-tag consumer on Linux and on macOS. The macOS job
+repeats the consumer on Xcode 26.0.1. The Linux logging job skips the music
+tests.

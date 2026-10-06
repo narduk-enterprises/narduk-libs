@@ -297,9 +297,11 @@ published and owes no release (#673). Test-only paths such as `tests/` and
 only while the package's `files` list leaves them out of the tarball. The
 `swift/` trees in narduk-logging and narduk-auth ship as the SwiftPM products
 `NardukLogging` and `NardukAuthKit` on the repository `vX.Y.Z` tags, not on npm,
-so a Swift-only change merges without a Changeset. A change that also touches
-the npm source still needs one, and narduk-logging's `examples/swift/` is
-published, so it still needs one too.
+so a Swift-only change merges without a Changeset.
+`packages/modules/narduk-music` has no npm package at all; its `swift/` tree
+ships the `NardukMusic*` products on the same tags (from `v0.3.0`). A change
+that also touches the npm source still needs one, and narduk-logging's
+`examples/swift/` is published, so it still needs one too.
 
 The check is skipped on `changeset-release/*` branches, whose version commits
 legitimately rewrite every manifest with the Changesets already consumed.
