@@ -11,12 +11,13 @@ primitives, so the operator portal stops keeping its own copies:
   verbatim from the portal's issuer. The wire format is unchanged, and a golden
   test pins tokens the portal minted before the move. Verification is unchanged,
   so product sites need no bump and enrolled browsers keep their claims.
-  `TRAFFIC_ENROLLMENT_STEP_PATH` now lives in `trafficClaim.ts` and is still
-  re-exported from `traffic-enrollment.ts`.
+  `TRAFFIC_ENROLLMENT_STEP_PATH` now lives in `trafficClaim.ts` (still
+  auto-imported in Nitro under the same name).
 - `server/utils/analyticsZone.ts`: the window's zone and calendar arithmetic,
   now with one cached `Intl.DateTimeFormat` per zone. `analyticsZoneParts` is
-  exported for the first time. `analyticsWindow.ts` re-exports everything it
-  exported before.
+  exported for the first time. The moved names stay auto-imported in Nitro
+  under the same names; a deep import from `analyticsWindow.ts` must now name
+  `analyticsZone.ts` (no estate consumer does).
 - Referrer grouping: `normalizeReferrerDomain` strips scheme and path and reads
   PostHog's `$direct` (and `(direct)`, `null`, `undefined`) as no referrer.
   Before, `$direct` landed in "Other" or "Referral".
