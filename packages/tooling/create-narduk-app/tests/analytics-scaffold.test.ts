@@ -15,9 +15,12 @@ describe('analytics capability scaffold', () => {
     expect(read('apps/web/nuxt.config.ts')).toContain('engagement: true')
     expect(read('apps/web/nuxt.config.ts')).toContain('identity: true')
     expect(read('apps/web/app/analytics/events.ts')).toContain('defineAnalyticsEvents({})')
-    expect(read('apps/web/app/composables/useProductAnalytics.ts')).toContain(
-      'useAnalytics(productAnalyticsEvents)',
-    )
+    expect(read('apps/web/app/analytics/events.ts')).toContain('app/lib/analyticsCatalog')
+    // Lazy: Zod must not reach the entry chunk through a static import of the catalog.
+    const composable = read('apps/web/app/composables/useProductAnalytics.ts')
+    expect(composable).toContain("import('../analytics/events')")
+    expect(composable).toContain('useAnalytics(loadProductAnalyticsEvents)')
+    expect(composable).not.toMatch(/^import .* from '\.\.\/analytics\/events'/mu)
     expect(read('docs/analytics.md')).toContain('assertAnalyticsJourney')
   })
 

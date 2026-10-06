@@ -1,26 +1,21 @@
 import { z } from 'zod'
 
+import { withJitlessSchemas } from '../lib/analyticsCatalog'
+
 /**
- * Zod 4 probes `new Function('')` the first time it builds an object schema, and
- * reads `globalConfig.jitless` while it does. Under an enforced no-eval CSP the
- * probe throws and is caught, yet the browser still reports a `script-src`
- * violation (narduk-libs#1310). `jitless` is read when a schema is constructed
- * and the probe is skipped entirely when it is set, so building schemas inside
- * this scope never touches `Function`.
- *
- * The flag is restored in `finally`: apps keep their own Zod configuration, and
- * the JIT probe result stays uncached for schemas an app builds outside the
- * scope. Validation results are identical; only the optional JIT fast path is off.
+ * The shared schemas, and with them all of Zod. Nothing on the client's critical
+ * path imports this module statically: `useAnalytics` and the `v-track`
+ * directive load it with `import()` on the first `capture()` (narduk-libs#1527).
+ * The registry helpers that do not need Zod live in `analyticsCatalog.ts` and are
+ * re-exported here so existing deep imports keep working.
  */
-export function withJitlessSchemas<T>(build: () => T): T {
-  const previous = z.config().jitless
-  z.config({ jitless: true })
-  try {
-    return build()
-  } finally {
-    z.config({ jitless: previous })
-  }
-}
+export {
+  defineAnalyticsEvents,
+  searchQueryLengthBucket,
+  STANDARD_ANALYTICS_EVENT_NAMES,
+  withJitlessSchemas,
+} from '../lib/analyticsCatalog'
+export type { AnalyticsCatalog, AnalyticsEventProperties } from '../lib/analyticsCatalog'
 
 /** Explicit properties prevent DOM text, form values and URLs entering the shared suite. */
 export const standardAnalyticsEvents = withJitlessSchemas(() => {
@@ -74,38 +69,4 @@ export const standardAnalyticsEvents = withJitlessSchemas(() => {
   } as const
 })
 
-export type AnalyticsCatalog = Record<string, z.ZodType<Record<string, unknown>>>
 export type StandardAnalyticsEvent = keyof typeof standardAnalyticsEvents
-export type AnalyticsEventProperties<T extends AnalyticsCatalog, K extends keyof T> = z.input<T[K]>
-
-/**
- * Apps own domain events; reserved shared and PostHog event names cannot be redefined.
- *
- * Pass a factory (`defineAnalyticsEvents(() => ({ ... }))`) to build the app's
- * schemas inside {@link withJitlessSchemas}. An app that builds `z.object(...)`
- * schemas itself, at module top level, otherwise triggers the Zod `Function`
- * probe that an enforced no-eval CSP reports (narduk-libs#1310). The factory form
- * needs the app and this package to share one `zod` instance, the normal
- * deduplicated install.
- */
-export function defineAnalyticsEvents<const T extends AnalyticsCatalog>(catalog: T | (() => T)): T {
-  const events = typeof catalog === 'function' ? withJitlessSchemas(catalog) : catalog
-  return validateCatalogNames(events)
-}
-
-function validateCatalogNames<const T extends AnalyticsCatalog>(catalog: T): T {
-  for (const name of Object.keys(catalog)) {
-    if (!/^[a-z][a-z0-9_]{0,79}$/u.test(name) || name in standardAnalyticsEvents) {
-      throw new Error('Invalid or reserved analytics event name: ' + name)
-    }
-  }
-  return catalog
-}
-
-export function searchQueryLengthBucket(length: number) {
-  if (length <= 0) return 'empty'
-  if (length <= 3) return '1-3'
-  if (length <= 10) return '4-10'
-  if (length <= 30) return '11-30'
-  return '31+'
-}

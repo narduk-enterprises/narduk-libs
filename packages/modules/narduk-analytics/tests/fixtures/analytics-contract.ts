@@ -30,3 +30,12 @@ product.capture('form_succeeded', { form_id: 'signup' })
 product.capture('primary_action_completed', { source: 'private' })
 // @ts-expect-error Adding a product catalog must not allow undeclared event names.
 product.capture('undeclared', {})
+
+// A loader keeps the app's schemas out of the entry chunk and types identically.
+const lazy = useAnalytics(() => Promise.resolve(catalog))
+lazy.capture('primary_action_completed', { source: 'map' })
+lazy.capture('form_succeeded', { form_id: 'signup' })
+// @ts-expect-error Loader-form catalogs keep specific property enums.
+lazy.capture('primary_action_completed', { source: 'private' })
+// @ts-expect-error Loader-form catalogs reject undeclared event names.
+lazy.capture('undeclared', {})

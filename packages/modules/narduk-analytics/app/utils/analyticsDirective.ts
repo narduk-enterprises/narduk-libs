@@ -1,6 +1,7 @@
-import { standardAnalyticsEvents } from './analyticsEvents'
+import { captureValidated } from '../lib/analyticsValidation'
 
-import type { AnalyticsEventProperties, StandardAnalyticsEvent } from './analyticsEvents'
+import type { AnalyticsEventProperties } from '../lib/analyticsCatalog'
+import type { StandardAnalyticsEvent, standardAnalyticsEvents } from './analyticsEvents'
 import type { AnalyticsTransport } from './analyticsTransport'
 import type { App, ObjectDirective } from 'vue'
 
@@ -20,8 +21,7 @@ export function installAnalyticsDirective(app: App, transport: AnalyticsTranspor
       const handler = () => {
         const value = binding.value
         if (!value || !['share_clicked', 'outbound_link_clicked'].includes(value.event)) return
-        const parsed = standardAnalyticsEvents[value.event].safeParse(value.properties)
-        if (parsed.success) transport.capture(value.event, parsed.data)
+        captureValidated(transport, value.event, value.properties)
       }
       listeners.set(element, handler)
       element.addEventListener('click', handler)
