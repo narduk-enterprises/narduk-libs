@@ -391,6 +391,9 @@ describe('create-narduk-app generation contract', () => {
         esbuild: PACKAGE_VERSIONS.esbuild,
         glob: PACKAGE_VERSIONS.glob,
         'miniflare>undici': '^7.29.1',
+        'simple-git': '^4.0.2',
+        '@simple-git/argv-parser': '^2.0.1',
+        sharp: '^0.35.5',
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on
@@ -1052,6 +1055,38 @@ describe('create-narduk-app generation contract', () => {
     expect(readme).toContain('pnpm exec narduk-app doctor --audit')
     expect(readme).toContain('{ "id": "GHSA-xxxx-xxxx-xxxx", "reason":')
   })
+
+  // narduk-libs#1531: a fresh app's CI dependency audit stopped on simple-git
+  // (via @nuxt/devtools) and sharp (via miniflare). The fix is a floor in the
+  // root `pnpm.overrides` for each, and the simple-git floor only installs with
+  // devtools off, because devtools 3.x default-imports simple-git and 4.x has
+  // no default export. The two travel together, in every capability shape.
+  it.each([
+    { capabilities: [], databaseBackend: 'none' as const },
+    { capabilities: ['auth', 'seo', 'analytics', 'uploads', 'ai'], databaseBackend: 'd1' as const },
+  ])(
+    'floors the audited advisories and turns devtools off together (%j)',
+    ({ capabilities, databaseBackend }) => {
+      const files = asFileMap(
+        buildGeneratedFiles({
+          appName: 'advisory-floor',
+          capabilities,
+          databaseBackend,
+          noGit: true,
+          targetDir: '/tmp/advisory-floor',
+        }),
+      )
+      const root = JSON.parse(files.get('package.json') ?? '') as {
+        pnpm: { overrides: Record<string, string> }
+      }
+      expect(root.pnpm.overrides).toMatchObject({
+        'simple-git': '^4.0.2',
+        '@simple-git/argv-parser': '^2.0.1',
+        sharp: '^0.35.5',
+      })
+      expect(files.get('apps/web/nuxt.config.ts')).toContain('devtools: { enabled: false },')
+    },
+  )
 
   // narduk-libs#378: a D1 app starts with a seed fixture for the table its
   // first migration creates, and a one-command credential-free `dev:seed`.
