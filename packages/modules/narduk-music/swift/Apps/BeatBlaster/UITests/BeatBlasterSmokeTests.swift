@@ -124,10 +124,12 @@ import XCTest
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         let prefilled = (field.value as? String)?.count ?? 40
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: prefilled + 5))
-        field.typeText("Smoke Test")
-        XCTAssertEqual(field.value as? String, "Smoke Test", "rename field was not cleared before typing")
+        // A fresh name each run: a name an earlier run left behind would clash and get a number.
+        let newName = "Smoke Test \(Int.random(in: 1000...9999))"
+        field.typeText(newName)
+        XCTAssertEqual(field.value as? String, newName, "rename field was not cleared before typing")
         app.alerts.buttons["Save"].tap()
-        let renamed = app.staticTexts["Smoke Test"].waitForExistence(timeout: 6)
+        let renamed = app.staticTexts[newName].waitForExistence(timeout: 6)
         if !renamed { print("RENAME FAILED, tree:\n\(app.debugDescription)") }
         XCTAssertTrue(renamed, "the row did not take its new name")
         XCTAssertTrue(row.exists)

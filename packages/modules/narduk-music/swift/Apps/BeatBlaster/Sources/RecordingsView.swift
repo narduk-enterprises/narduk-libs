@@ -129,21 +129,21 @@ struct RecordingsView: View {
                     .background(Neon.green.opacity(0.55), in: Circle())
             }
             .buttonStyle(Squish())
-            .accessibilityLabel(isPlaying ? "Stop" : "Play \(recording.name)")
+            .accessibilityLabel(isPlaying ? "Stop" : "Play \(recording.title)")
             .accessibilityIdentifier("mysongs.play")
             VStack(alignment: .leading, spacing: 2) {
-                Text(recording.name)
+                Text(recording.title)
                     .blasterFont(size: compact ? 16 : 20, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
-                Text(clockText(recording.seconds))
-                    .blasterFont(size: 14, weight: .bold, design: .monospaced)
+                Text(recording.detail)
+                    .blasterFont(size: 14, weight: .bold)
                     .foregroundStyle(.white.opacity(0.7))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             iconButton("✏️", label: "Rename") {
-                newName = recording.name
+                newName = recording.title
                 renaming = recording
             }
             ShareLink(item: recording.url) {
@@ -151,7 +151,7 @@ struct RecordingsView: View {
                     .frame(width: 48, height: 48)
                     .background(Neon.cyan.opacity(0.5), in: Circle())
             }
-            .accessibilityLabel("Share \(recording.name)")
+            .accessibilityLabel("Share \(recording.title)")
             .accessibilityIdentifier("mysongs.share")
             iconButton("🗑", label: "Delete") { deleting = recording }
         }

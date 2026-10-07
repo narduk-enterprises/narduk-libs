@@ -8,6 +8,25 @@ struct Recording: Identifiable, Equatable {
     let seconds: Double
     var id: URL { url }
     var name: String { url.deletingPathExtension().lastPathComponent }
+
+    /// The name a child reads: the time stamp a new take carries is dropped (the row shows the date on its own line).
+    var title: String {
+        let stamp = #/ \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}( \d+)?$/#
+        let trimmed = name.replacing(stamp, with: "")
+        return trimmed.isEmpty ? name : trimmed
+    }
+
+    /// "Today 4:02 PM", "Yesterday 9:15 AM" or "Oct 3, 9:15 AM", plus the length.
+    var detail: String {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        let day =
+            calendar.isDateInToday(date)
+            ? "Today \(time)"
+            : calendar.isDateInYesterday(date)
+                ? "Yesterday \(time)" : date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        return "\(day) · \(clockText(seconds))"
+    }
 }
 
 /// Where takes are kept, newest first. The directory is injectable so the tests use a temporary one.

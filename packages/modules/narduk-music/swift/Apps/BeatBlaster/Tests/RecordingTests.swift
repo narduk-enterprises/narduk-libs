@@ -26,6 +26,19 @@ import XCTest
         XCTAssertEqual(clockText(3661), "1:01:01")
     }
 
+    func testRowTitleDropsTheTakeStampAndDetailShowsDayAndLength() {
+        func take(_ file: String, _ date: Date = Date()) -> Recording {
+            Recording(url: URL(fileURLWithPath: "/x/\(file).m4a"), date: date, seconds: 75)
+        }
+        XCTAssertEqual(take("Laser Monkey Boogie 2026-10-07 04.12.33").title, "Laser Monkey Boogie")
+        XCTAssertEqual(take("Laser Monkey Boogie 2026-10-07 04.12.33 2").title, "Laser Monkey Boogie")
+        XCTAssertEqual(take("Smoke Test 2").title, "Smoke Test 2")
+        XCTAssertEqual(take("2026-10-07 04.12.33").title, "2026-10-07 04.12.33")
+        XCTAssertTrue(take("a").detail.hasPrefix("Today "))
+        XCTAssertTrue(take("a").detail.hasSuffix(" · 01:15"))
+        XCTAssertTrue(take("a", Date().addingTimeInterval(-86_400)).detail.hasPrefix("Yesterday "))
+    }
+
     func testStoreListRenameDelete() throws {
         let store = RecordingStore(directory: directory)
         let url = store.newTakeURL(title: "Dino Disco")
