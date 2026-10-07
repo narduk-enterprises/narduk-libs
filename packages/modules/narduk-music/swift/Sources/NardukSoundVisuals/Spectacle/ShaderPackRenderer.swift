@@ -7,16 +7,20 @@
         case plasma, warpGrid, starfield, feedback
         /// Glossy liquid metaballs in a dark studio.
         case bassBlobs
+        /// Folding aurora curtains over a dark horizon.
         case aurora
         /// "Aurora waves": silky multi-strand ribbons with an embedded equaliser over a reflecting sea.
         case auroraWaves
         /// A glowing wireframe draped over two swells and a trough.
         case meshWave
-        case plasma, warpGrid, starfield, feedback, solarFlare
-        case plasma, warpGrid, starfield, feedback, oceanWaves
+        /// A solar limb erupting flares and prominences on the beat.
+        case solarFlare
+        /// The side-view sea: rolling swells that break on the beat.
+        case oceanWaves
         /// Shells over a night sky: the kick launches them, the bass sets their size, a drop fires a finale.
         case fireworks
 
+        /// The name the gallery shows.
         public var title: String {
             switch self {
             case .plasma: "Plasma"
@@ -27,6 +31,8 @@
             case .aurora: "Aurora curtains"
             case .auroraWaves: "Aurora waves"
             case .meshWave: "Mesh wave"
+            case .solarFlare: "Solar flare"
+            case .oceanWaves: "Ocean waves"
             case .fireworks: "Fireworks"
             }
         }
@@ -42,31 +48,8 @@
             case .auroraWaves: "auroraWavesFragment"
             case .meshWave: "meshWaveFragment"
             case .solarFlare: "solarFlareFragment"
-            }
-        }
-
-        /// The name the gallery shows.
-        public var title: String {
-        var title: String {
             case .oceanWaves: "oceanWavesFragment"
-            }
-        }
-
-        /// Gallery title. The pack never flashes; this look is the side-view sea.
             case .fireworks: "fireworksFragment"
-            }
-        }
-
-        public var title: String {
-            switch self {
-            case .plasma: "Plasma"
-            case .warpGrid: "Warp grid"
-            case .starfield: "Starfield"
-            case .feedback: "Feedback"
-            case .meshWave: "Mesh wave"
-            case .solarFlare: "Solar flare"
-            case .oceanWaves: "Ocean waves"
-            case .fireworks: "Fireworks"
             }
         }
     }
