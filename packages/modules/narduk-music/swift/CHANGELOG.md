@@ -6,6 +6,13 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- Wordless female-range vocals (narduk-libs#1641): `Instrument.vocal` (a choir pad of three detuned voices, a solo lead
+  or a solo pad) and `Instrument.vocalChop` (a short one-shot that opens from an "oo"), formant-synthesised: a band-limited
+  saw through three formant filters (alto and soprano tables), breath noise, a vibrato that starts late and a scoop up
+  to the pitch, with a small room of their own. `NoteParams.voice` packs the vowel (`VocalVowel`: ah, oh, oo, eh, ee,
+  mm) and style (`VocalStyle`) via `NoteParams.vocalVoice(_:style:)`; `formant` is the register (0 alto ... 1 soprano)
+  and `drive` the breathiness. Scenario notes take `vowel`, `style` and `register`. Nothing is added to an arrangement
+  and a song without vocals renders bit for bit as before.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery shows both as tiles.

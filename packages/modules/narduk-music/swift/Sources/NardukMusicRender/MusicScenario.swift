@@ -98,10 +98,17 @@ public struct MusicScenario: Sendable, Hashable, Codable {
         public var chord: StrumChord?
         /// A strum's direction (default `down`).
         public var direction: StrumStroke?
+        /// A vocal's vowel (default `ah`).
+        public var vowel: VocalVowel?
+        /// A vocal's style (default `choir`; a chop is always a solo).
+        public var style: VocalStyle?
+        /// A vocal's register, 0 (alto) ... 1 (soprano); default 0.5. A vocal's `drive` is its breathiness.
+        public var register: Double?
 
         public init(
             time: Double, instrument: Instrument, pitch: Int, length: Double? = nil, velocity: Double? = nil,
-            pan: Double? = nil, drive: Double? = nil, chord: StrumChord? = nil, direction: StrumStroke? = nil
+            pan: Double? = nil, drive: Double? = nil, chord: StrumChord? = nil, direction: StrumStroke? = nil,
+            vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil
         ) {
             self.time = time
             self.instrument = instrument
@@ -112,6 +119,9 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             self.drive = drive
             self.chord = chord
             self.direction = direction
+            self.vowel = vowel
+            self.style = style
+            self.register = register
         }
     }
 
@@ -195,6 +205,10 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             if isStrum {
                 params.voice = note.chord?.voice ?? 0
                 params.formant = note.direction == .up ? 1 : 0
+            }
+            if note.instrument == .vocal || note.instrument == .vocalChop {
+                params.voice = NoteParams.vocalVoice(note.vowel ?? .ah, style: note.style ?? .choir)
+                params.formant = note.register
             }
             return ScheduledNote(
                 step: halves / 2, instrument: note.instrument, velocity: note.velocity ?? 0.8, params: params)

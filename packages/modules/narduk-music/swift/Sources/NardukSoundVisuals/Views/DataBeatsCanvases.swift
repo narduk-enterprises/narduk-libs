@@ -241,6 +241,7 @@
             case .acousticGuitar, .strum: 0.25
             case .electricGuitar, .electricStrum: 0.75
             case .bassGuitar: 0.58
+            case .vocal, .vocalChop: 0.92
             }
         }
 
@@ -298,7 +299,8 @@
             _ ctx: inout GraphicsContext, _ size: CGSize, _ s: SoundVisualState,
             _ style: SoundVisualizerStyle
         ) {
-            let all = Instrument.allCases
+            // The vocals (#1641) have no pad yet: adding two would reflow every app's grid and its golden image.
+            let all = Instrument.allCases.filter { $0 != .vocal && $0 != .vocalChop }
             guard size.width > 60, size.height > 40 else { return }
             let layout = PadLayout.fit(count: all.count, in: size)
             let columns = layout.columns
