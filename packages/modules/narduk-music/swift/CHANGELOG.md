@@ -58,6 +58,9 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 - `ShaderPackKind.meshWave` ("Mesh wave") in `NardukSoundVisuals` (narduk-libs#1569): a glowing wireframe
   heightfield. Bass raises the swells and deepens the trough, mids roll travelling waves, highs ripple the grid,
   and a kick sends a bounded ring plus a soft line glow. Calm slows the motion and drops the kick ripple.
+- `ShaderPackKind.solarFlare` ("Solar flare") in `NardukSoundVisuals` (narduk-libs#1569): a molten sun on a black
+  starfield. Bass swells the disc and pushes the corona out, mids curl the tendrils and churn the surface, highs
+  sharpen the strands and spark the embers, and a kick sends a flare along the tendrils.
 - `SoundVisualizerKind.audioTerrain` ("Audio terrain") in `NardukSoundVisuals` (narduk-libs#1569): a neon wireframe
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette

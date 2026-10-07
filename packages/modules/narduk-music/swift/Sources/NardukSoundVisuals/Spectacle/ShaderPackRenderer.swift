@@ -12,6 +12,7 @@
         case auroraWaves
         /// A glowing wireframe draped over two swells and a trough.
         case meshWave
+        case plasma, warpGrid, starfield, feedback, solarFlare
 
         public var title: String {
             switch self {
@@ -36,17 +37,20 @@
             case .aurora: "auroraFragment"
             case .auroraWaves: "auroraWavesFragment"
             case .meshWave: "meshWaveFragment"
+            case .solarFlare: "solarFlareFragment"
             }
         }
 
         /// The name the gallery shows.
         public var title: String {
+        var title: String {
             switch self {
             case .plasma: "Plasma"
             case .warpGrid: "Warp grid"
             case .starfield: "Starfield"
             case .feedback: "Feedback"
             case .meshWave: "Mesh wave"
+            case .solarFlare: "Solar flare"
             }
         }
     }

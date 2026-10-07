@@ -107,5 +107,11 @@ extension GalleryTile {
                     kind: .meshWave, title: "Mesh wave", model: context.model,
                     framesPerSecond: context.framesPerSecond))
         },
+        GalleryTile(id: "Solar flare") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .solarFlare, title: "Solar flare", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }

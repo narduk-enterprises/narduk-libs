@@ -189,6 +189,6 @@
                 constexpr sampler s(address::clamp_to_edge, filter::linear);
                 return float4(source.sample(s, in.uv).rgb, 1.0);
             }
-            """# + AuroraCurtainsShader.source + AuroraWavesShader.source
+            """# + AuroraCurtainsShader.source + AuroraWavesShader.source + SolarFlareShader.source
     }
 #endif
