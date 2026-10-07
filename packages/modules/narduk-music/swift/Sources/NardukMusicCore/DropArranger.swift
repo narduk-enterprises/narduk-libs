@@ -339,6 +339,26 @@ public enum DropArranger {
 
     private static func isHook(_ note: ScheduledNote) -> Bool { DropGroove.hookInstruments.contains(note.instrument) }
 
+    // MARK: Filter
+
+    /// Where the master high-pass sits `heldSteps` after the press: it rises from open to a ceiling as the charge fills
+    /// (slowly at first, faster at the end) and holds there until the release, when the caller sets
+    /// `MasterFilter.idle` to snap it open. Gentle genres sweep to a lower ceiling and the band genres stay clear of
+    /// the vocal range. Apply it each UI frame with `DropEngine.setMasterFilter`; it is a pure function of the hold.
+    public static func filterSweep(heldSteps: Int, secondsPerStep: Double, genre: Genre) -> MasterFilter {
+        guard heldSteps > 0 else { return .idle }
+        let charge = charge(heldSteps: heldSteps, secondsPerStep: secondsPerStep)
+        let ceiling: Float =
+            switch style(of: genre) {
+            case .gentle: 700
+            case .band: 1_800
+            default: 2_800
+            }
+        let position = Float(pow(charge, 1.4))
+        let hz = MasterFilter.highPassOpen * powf(ceiling / MasterFilter.highPassOpen, position)
+        return MasterFilter(highPassHz: hz, resonance: 0.15 + 0.3 * Float(charge))
+    }
+
     // MARK: Drop
 
     /// The notes of the drop at `step`, `position` steps after it landed (0 is the downbeat). `power` is 0.8 ... 1 (it
@@ -437,6 +457,18 @@ public enum DropArranger {
             add(.keys, 0.5, NoteParams(pitch: fold(tone, 60...84), lengthSteps: 2, voice: 1))
         }
         return out
+    }
+
+    // MARK: Style
+
+    enum Style { case gentle, band, other }
+
+    static func style(of genre: Genre) -> Style {
+        switch genre {
+        case .chill, .lofi: .gentle
+        case .rock, .folk, .funk: .band
+        default: .other
+        }
     }
 
     // MARK: Key
