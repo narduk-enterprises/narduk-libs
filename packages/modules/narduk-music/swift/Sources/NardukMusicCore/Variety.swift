@@ -31,6 +31,9 @@ enum Variety {
             }
             track.progression = made
         }
+        if uses("drums", track, variety: variety) { applyDrums(to: &track) }
+        if variety > 0 { applyTimbre(to: &track, variety: variety) }
+        if uses("arrangement", track, variety: variety) { applyArrangement(to: &track, variety: variety) }
         if uses("motif", track, variety: variety) {
             var rng = stream(track, "motif")
             let rhythm = motifRhythm(genre: track.genre, rng: &rng)
@@ -38,6 +41,108 @@ enum Variety {
             track.answer = TrackGenerator.answer(to: track.hook, genre: track.genre)
             track.ending = TrackGenerator.ending(of: track.hook, genre: track.genre)
         }
+    }
+
+    // MARK: Drums, timbre, arrangement
+
+    /// Writes the song's own kits: the genre keeps its snares (its backbeat is what makes it the genre) and the
+    /// kicks, ghosts and open hats come from the genre's weights, so no two songs share a groove.
+    static func applyDrums(to track: inout Track) {
+        var rng = stream(track, "drums")
+        let genre = track.genre
+        let backbeat = Banks.drums(genre)[0].snares
+        let kit = { drumKit(genre: genre, snares: backbeat, rng: &rng) }
+        let first = kit()
+        var second = kit()
+        var attempts = 0
+        while second.kicksA == first.kicksA, second.kicksB == first.kicksB, attempts < 4 {
+            second = kit()
+            attempts += 1
+        }
+        track.kits = [first, second]
+    }
+
+    private struct GrooveProfile {
+        /// Weights per step for a kick beyond the downbeat.
+        var kick: (Int) -> Double
+        var kicks: ClosedRange<Int>
+        var ghost: (Int) -> Double
+        var ghosts: ClosedRange<Int>
+        var openHats: Int
+        var floor = false
+    }
+
+    private static func groove(_ genre: Genre) -> GrooveProfile {
+        func sync(_ pos: Int) -> Double { pos % 4 == 0 ? 0.5 : pos % 2 == 0 ? 1 : 0.7 }
+        func offbeat(_ pos: Int) -> Double { pos % 4 == 2 ? 1 : pos % 2 == 1 ? 0.5 : 0.1 }
+        func late(_ pos: Int) -> Double { pos >= 8 ? sync(pos) : sync(pos) * 0.3 }
+        switch genre {
+        case .dubstep, .trap: return GrooveProfile(kick: sync, kicks: 1...3, ghost: offbeat, ghosts: 1...3, openHats: 1)
+        case .riddim: return GrooveProfile(kick: late, kicks: 0...2, ghost: late, ghosts: 1...2, openHats: 0)
+        case .drumAndBass, .ukGarage:
+            return GrooveProfile(kick: sync, kicks: 1...3, ghost: offbeat, ghosts: 2...4, openHats: 1)
+        case .house:
+            return GrooveProfile(kick: offbeat, kicks: 0...1, ghost: offbeat, ghosts: 1...2, openHats: 2, floor: true)
+        case .techno:
+            return GrooveProfile(kick: offbeat, kicks: 0...1, ghost: offbeat, ghosts: 1...2, openHats: 2, floor: true)
+        case .chill, .lofi: return GrooveProfile(kick: late, kicks: 1...2, ghost: late, ghosts: 2...3, openHats: 0)
+        case .synthwave, .rock:
+            return GrooveProfile(kick: sync, kicks: 1...2, ghost: offbeat, ghosts: 0...1, openHats: 1)
+        case .folk: return GrooveProfile(kick: sync, kicks: 0...1, ghost: late, ghosts: 1...1, openHats: 0)
+        case .funk: return GrooveProfile(kick: sync, kicks: 2...3, ghost: sync, ghosts: 3...4, openHats: 1)
+        }
+    }
+
+    private static func drumKit(genre: Genre, snares: [Int], rng: inout MusicRNG) -> DrumVariant {
+        let profile = groove(genre)
+        func draw(_ range: ClosedRange<Int>, from candidates: [Int], weight: (Int) -> Double) -> [Int] {
+            var pool = candidates
+            var chosen: [Int] = []
+            let count = range.lowerBound + Int(rng.next() % UInt64(range.count))
+            while chosen.count < count, !pool.isEmpty {
+                let pos = pick(pool, weights: pool.map(weight), rng: &rng)
+                chosen.append(pos)
+                pool.removeAll { $0 == pos }
+            }
+            return chosen.sorted()
+        }
+        let free = Array(1..<16).filter { !snares.contains($0) }
+        func kicks() -> [Int] {
+            let base = profile.floor ? [0, 4, 8, 12] : [0]
+            let extra = draw(profile.kicks, from: free.filter { !base.contains($0) }, weight: profile.kick)
+            return (base + extra).sorted()
+        }
+        let kicksA = kicks()
+        let kicksB = kicks()
+        let ghosts = draw(profile.ghosts, from: free.filter { !kicksA.contains($0) }, weight: profile.ghost)
+        let opens = draw(0...profile.openHats, from: free.filter { $0 % 2 == 0 && !kicksA.contains($0) }) {
+            $0 % 4 == 2 ? 1 : 0.4
+        }
+        return DrumVariant(kicksA, kicksB, snares: snares, ghosts: ghosts, openHats: opens)
+    }
+
+    /// Tunes the song's own drums and bends its patch parameters further than the character alone would.
+    static func applyTimbre(to track: inout Track, variety: Double) {
+        var rng = stream(track, "timbre")
+        func spread(_ width: Double) -> Double { (rng.unit() - 0.5) * width * variety }
+        track.kickTune = min(0.95, max(0.05, 0.5 + spread(0.9)))
+        track.snareTune = min(0.95, max(0.05, 0.5 + spread(0.9)))
+        track.hatTune = min(0.95, max(0.05, 0.5 + spread(0.9)))
+        track.formant = min(1, max(0, track.formant + spread(0.5)))
+        track.drive = min(1, max(0, track.drive + spread(0.4)))
+        track.vowel = Int(rng.next() % 4)
+        // A genre's keys timbre follows its sound, but not every song in it plays the same keys.
+        if rng.unit() < 0.6 * variety { track.keysVoice = Int(rng.next() % 3) }
+    }
+
+    /// How long a song's drops run and how many phrases it spends before handing over.
+    static func applyArrangement(to track: inout Track, variety: Double) {
+        var rng = stream(track, "arrangement")
+        track.drop2Length = 1 + Int(rng.next() % 3)
+        track.dropBudget = 2 + track.drop2Length + Int(rng.next() % 3)
+        track.maxPhrases = 8 + Int(rng.next() % 5)
+        let mid = rng.unit()
+        track.midFill = mid < 0.3 ? .kickDrop : mid < 0.6 ? .snareRoll : nil
     }
 
     // MARK: Progressions
@@ -73,9 +178,12 @@ enum Variety {
         case .dubstep, .trap, .drumAndBass:
             return Palette(weights: [1, 0.15, 0.5, 0.7, 0.5, 1, 0.9], shapes: hookOnBass, home: 0.85)
         case .riddim:
-            return Palette(weights: [1, 0.3, 0.2, 0.4, 0.5, 0.8, 0.8], shapes: [vamp, vampTurn, fourBar, twoBarReturn, twoBarThree], home: 0.95)
+            return Palette(
+                weights: [1, 0.3, 0.2, 0.4, 0.5, 0.8, 0.8],
+                shapes: [vamp, vampTurn, fourBar, twoBarReturn, twoBarThree], home: 0.95)
         case .techno:
-            return Palette(weights: [1, 0.2, 0.2, 0.3, 0.3, 0.6, 0.7], shapes: [vamp, vampTurn, fourBar, twoBar], home: 0.95)
+            return Palette(
+                weights: [1, 0.2, 0.2, 0.3, 0.3, 0.6, 0.7], shapes: [vamp, vampTurn, fourBar, twoBar], home: 0.95)
         case .house, .chill, .ukGarage, .lofi:
             return Palette(weights: [1, 0.7, 0.5, 0.8, 0.8, 0.9, 0.3], shapes: all, home: 0.7)
         case .synthwave:
@@ -83,9 +191,12 @@ enum Variety {
         case .rock:
             return Palette(weights: [1, 0.2, 0.3, 0.9, 0.8, 0.5, 0.9], shapes: all, home: 0.85)
         case .folk:
-            return Palette(weights: [1, 0.5, 0.15, 0.9, 1, 0.7, 0.05], shapes: [twoBar, twoBarReturn, oneBar, fourBar], home: 0.9)
+            return Palette(
+                weights: [1, 0.5, 0.15, 0.9, 1, 0.7, 0.05], shapes: [twoBar, twoBarReturn, oneBar, fourBar], home: 0.9)
         case .funk:
-            return Palette(weights: [1, 0.7, 0.2, 0.9, 0.6, 0.3, 0.4], shapes: [vamp, vampTurn, fourBar, twoBarReturn, oneBarPair], home: 0.95)
+            return Palette(
+                weights: [1, 0.7, 0.2, 0.9, 0.6, 0.3, 0.4],
+                shapes: [vamp, vampTurn, fourBar, twoBarReturn, oneBarPair], home: 0.95)
         }
     }
 
@@ -175,7 +286,9 @@ enum Variety {
             let room = next - pos
             // A note rings to the next one, up to the genre's longest, but may stop short for air.
             var length = min(room, profile.longest)
-            if length > profile.shortest, rng.unit() < 0.35 { length = max(profile.shortest, length - 1 - Int(rng.next() % 3)) }
+            if length > profile.shortest, rng.unit() < 0.35 {
+                length = max(profile.shortest, length - 1 - Int(rng.next() % 3))
+            }
             flat += [pos, max(1, length)]
         }
         return flat
