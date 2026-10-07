@@ -106,6 +106,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case liquidSplash
     /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
     case sun
+    /// The Metal port of the Canvas pads: one lit glass pad per instrument, with a hot core, a spill into its neighbours and a shock ring.
+    case padsMetal
     /// The Metal port of the Canvas wobble meter: a glossy dial with the cutoff arc and the LFO needle, beside LED peak and RMS meters.
     case wobbleMeterMetal
     /// The Metal port of the Canvas scope: the waveform as a phosphor beam on curved CRT glass, with receding history traces.
@@ -125,6 +127,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .synthwaveFlyover: "Synthwave flyover"
         case .liquidSplash: "Liquid splash"
         case .sun: "Sun"
+        case .padsMetal: "Pads (Metal)"
         case .wobbleMeterMetal: "Wobble meter (Metal)"
         case .scopeMetal: "Scope (Metal)"
         case .haloMetal: "Halo (Metal)"

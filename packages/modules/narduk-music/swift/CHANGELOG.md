@@ -6,6 +6,10 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.padsMetal` ("Pads (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
+  pads: one lit glass pad per instrument (a 7 x 3 grid, role hues from the palette) with a bevel, a hot core, a spill
+  into the gaps and neighbours and a shock ring on each hit, a spectrum backlight (bass left, highs right), a beat
+  sweep each bar and empty sockets. A kick lights the panel.
 - `IntenseKind.wobbleMeterMetal` ("Wobble meter (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of
   the Canvas wobble meter: a glossy dial with a chrome bezel, a neon cutoff arc and a needle with a fading tail that
   turns once per wobble cycle, beside segmented LED peak and RMS meters over a dim spectrum. Bass swells the dial's

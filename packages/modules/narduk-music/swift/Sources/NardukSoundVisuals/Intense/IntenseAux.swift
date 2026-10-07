@@ -218,6 +218,7 @@
             case .haloMetal: [.scalars]
             case .scopeMetal: [.scalars, .history]
             case .wobbleMeterMetal: [.scalars]
+            case .padsMetal: [.scalars]
             default: []
             }
         }
