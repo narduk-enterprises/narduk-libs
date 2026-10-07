@@ -10,7 +10,7 @@ import Testing
 @Suite struct SongRecipeGoldenTests {
     static let goldens: [String: UInt64] = [
         "darwin-arm64": 0x1246_3953_70ea_d8fb,
-        "linux-x86_64": 0,
+        "linux-x86_64": 0x8591_2368_aa6d_9483,
     ]
 
     static let recipe = SongRecipe(
