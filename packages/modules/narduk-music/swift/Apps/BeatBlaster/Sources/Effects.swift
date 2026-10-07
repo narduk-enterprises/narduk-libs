@@ -136,53 +136,51 @@ struct EffectsPanel: View {
     var onPad: (SoundPad) -> Void = { _ in }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: compact ? 8 : 12) {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: compact ? 4 : 7), spacing: 8
-                ) {
-                    ForEach(SoundPad.allCases) { pad in
-                        Button {
-                            Haptics.success()
-                            onPad(pad)
-                        } label: {
-                            VStack(spacing: 2) {
-                                Text(pad.emoji).font(.system(size: compact ? 28 : 36))
-                                Text(pad.word)
-                                    .font(.system(size: compact ? 12 : 15, weight: .black, design: .rounded))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.6)
-                            }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, minHeight: 64)
-                            .background(
-                                pad.color.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
-                                    .white.opacity(0.7), lineWidth: 2))
+        VStack(spacing: compact ? 8 : 12) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: compact ? 4 : 7), spacing: 8
+            ) {
+                ForEach(SoundPad.allCases) { pad in
+                    Button {
+                        Haptics.success()
+                        onPad(pad)
+                    } label: {
+                        VStack(spacing: 2) {
+                            Glyph(pad.emoji, size: compact ? 28 : 36)
+                            Text(pad.word)
+                                .font(.system(size: compact ? 12 : 15, weight: .black, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                         }
-                        .buttonStyle(Squish())
-                        .accessibilityLabel(pad.word)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 64)
+                        .background(
+                            pad.color.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
+                                .white.opacity(0.7), lineWidth: 2))
                     }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel(pad.word)
+                    .accessibilityIdentifier("fx.pad.\(pad.word)")
                 }
-                EffectSlider(
-                    icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
-                    value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
-                EffectSlider(
-                    icon: "🔁", title: "Echo", low: "Dry", high: "Echoey", color: Neon.purple,
-                    value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 }))
-                EffectSlider(
-                    icon: "🔊", title: "Bass boost", low: "Normal", high: "BOOM", color: Neon.orange,
-                    value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 }))
-                EffectSlider(
-                    icon: "🐢", title: "Speed", low: "Slow", high: "Fast", color: Neon.green,
-                    value: Binding(
-                        get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
-                        set: { audio.effects.speed = $0 }))
             }
+            EffectSlider(
+                icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
+                value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
+            EffectSlider(
+                icon: "🔁", title: "Echo", low: "Dry", high: "Echoey", color: Neon.purple,
+                value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 }))
+            EffectSlider(
+                icon: "🔊", title: "Bass boost", low: "Normal", high: "BOOM", color: Neon.orange,
+                value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 }))
+            EffectSlider(
+                icon: "🐢", title: "Speed", low: "Slow", high: "Fast", color: Neon.green,
+                value: Binding(
+                    get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
+                    set: { audio.effects.speed = $0 }))
         }
-        .frame(maxHeight: short ? 220 : 360)
     }
 }
 
@@ -197,9 +195,12 @@ struct EffectSlider: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(icon) \(title)")
-                .font(.system(size: 15, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+            HStack(spacing: 6) {
+                Glyph(icon, size: 18)
+                Text(title)
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
             HStack(spacing: 8) {
                 Text(low).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(.white.opacity(0.8))
                     .fixedSize()

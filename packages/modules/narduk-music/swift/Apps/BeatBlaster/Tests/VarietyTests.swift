@@ -24,3 +24,13 @@ final class VarietyTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(SongRecipe.self, from: old).settings.variety, 0.75)
     }
 }
+
+@MainActor final class HintTests: XCTestCase {
+    func testAHintRetiresAfterItIsShownAFewTimes() {
+        let id = "test-\(UUID().uuidString)"
+        for _ in 0..<(Hints.limit - 1) { Hints.noteShown(id) }
+        XCTAssertFalse(Hints.seen(id))
+        Hints.noteShown(id)
+        XCTAssertTrue(Hints.seen(id), "it never comes back, even if nobody used the control")
+    }
+}

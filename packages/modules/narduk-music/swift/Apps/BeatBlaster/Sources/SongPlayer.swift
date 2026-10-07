@@ -30,6 +30,9 @@ import NardukMusicEngine
     /// Engine step = song step + offset; a drop moves it so the song's bar 1 lands on the hit.
     private var offset = 0
     private var bassRoot = 41
+    /// While paused the engine's steps keep passing but the song does not: `offset` absorbs them, so a resume carries on
+    /// from the same beat.
+    var paused = false
     private weak var engine: DropEngine?
 
     /// Seconds between the energy signals the conductor hears.
@@ -48,6 +51,12 @@ import NardukMusicEngine
     var nextStep: Int { cursor + 1 }
 
     // MARK: DROP
+
+    /// Seconds until the song's next bar line (0 when it is on one): where a swap of sound or vibe should land.
+    var secondsToNextBar: Double {
+        let songStep = max(0, nextStep - offset)
+        return Double((songStep + 15) / 16 * 16 - songStep) * secondsPerStep
+    }
 
     func pressDrop() { machine.press(at: nextStep) }
 
@@ -106,6 +115,12 @@ import NardukMusicEngine
             resetConductor()
         }
         guard throughStep > cursor else { return [] }
+        if paused {
+            offset += throughStep - cursor
+            cursor = throughStep
+            queuedPads.removeAll()
+            return []
+        }
         let range = (cursor + 1)...throughStep
         defer {
             cursor = throughStep
