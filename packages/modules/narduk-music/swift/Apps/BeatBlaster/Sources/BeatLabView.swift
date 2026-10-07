@@ -177,6 +177,17 @@ struct BeatLabView: View {
                 Pill(icon: "🧽", word: "Clear", color: .white.opacity(0.15), size: size)
             }
             .buttonStyle(Squish())
+            if lab.undoGrid != nil {
+                Button {
+                    Haptics.tap()
+                    lab.undo()
+                } label: {
+                    Pill(icon: "icon-back", word: "Undo", color: Neon.cyan.opacity(0.45), size: size)
+                }
+                .buttonStyle(Squish())
+                .accessibilityLabel("Undo: bring back my beat")
+                .probe("lab.undo")
+            }
         }
     }
 }

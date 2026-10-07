@@ -117,8 +117,19 @@ enum LabRow: Int, CaseIterable, Identifiable {
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]
 
+    /// The last grid the child built by hand, kept through any run of Clear and Random beat so one tap of Undo brings
+    /// it back. A square tapped since then makes the new grid the child's, and Undo goes away.
+    private(set) var undoGrid: [[Int]]?
+
     func tap(_ row: LabRow, _ step: Int) {
         grid[row.rawValue][step] = (grid[row.rawValue][step] + 1) % (row.noteCount + 1)
+        undoGrid = nil
+    }
+
+    func undo() {
+        guard let undoGrid else { return }
+        grid = undoGrid
+        self.undoGrid = nil
     }
 
     func nextSound(_ row: LabRow) {
@@ -128,7 +139,10 @@ enum LabRow: Int, CaseIterable, Identifiable {
 
     func soundName(_ row: LabRow) -> String { row.sounds[sounds[row.rawValue] % row.sounds.count] }
 
-    func clear() { grid = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count) }
+    func clear() {
+        undoGrid = undoGrid ?? grid
+        grid = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count)
+    }
 
     func randomize() {
         var g = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count)
@@ -140,6 +154,7 @@ enum LabRow: Int, CaseIterable, Identifiable {
             if Double.random(in: 0...1) < 0.3 { g[4][step] = Int.random(in: 1...4) }
             if step % 4 == 2, Double.random(in: 0...1) < 0.4 { g[5][step] = Int.random(in: 1...4) }
         }
+        undoGrid = undoGrid ?? grid
         grid = g
     }
 

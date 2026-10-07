@@ -54,4 +54,21 @@ import XCTest
         XCTAssertEqual(lab.sounds[LabRow.keys.rawValue], LabRow.keys.sounds.count - 1)
         XCTAssertEqual(lab.key, 11)
     }
+
+    func testUndoBringsBackTheBeatBeforeClearOrRandom() {
+        let lab = BeatLab(store: nil)
+        lab.tap(.keys, 7)
+        let mine = lab.grid
+        XCTAssertNil(lab.undoGrid)
+        lab.randomize()
+        lab.randomize()
+        lab.clear()
+        lab.undo()
+        XCTAssertEqual(lab.grid, mine, "Undo goes back to the beat built by hand")
+        XCTAssertNil(lab.undoGrid)
+
+        lab.clear()
+        lab.tap(.kick, 0)
+        XCTAssertNil(lab.undoGrid, "a tap after Clear makes the new grid the child's")
+    }
 }
