@@ -94,6 +94,17 @@ jobs:
               CODE_SIGNING_ALLOWED=NO build
             echo "::endgroup::"
           done
+      - name: Build and test the Beat Blaster app on the iOS simulator
+        # Beat Blaster (narduk-libs#1600) is an XcodeGen project over this package. Unsigned: the TestFlight
+        # signing (team FVSY7CFC3S) is applied on the laptop at archive time, never here.
+        working-directory: packages/modules/narduk-music/swift/Apps/BeatBlaster
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          derived="$(mktemp -d "${RUNNER_TEMP}/beatblaster-XXXXXX")"
+          xcodebuild -quiet -project BeatBlaster.xcodeproj -scheme BeatBlaster \
+            -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath "${derived}" \
+            CODE_SIGNING_ALLOWED=NO test
       - name: Resolve and build the consumer with the fleet Apple runner's Xcode 26.0.1 (Swift 6.2)
         env:
           DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
