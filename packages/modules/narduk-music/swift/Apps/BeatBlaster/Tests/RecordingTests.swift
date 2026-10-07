@@ -91,6 +91,22 @@ import XCTest
         XCTAssertEqual(audio.savedCount, saved.count)
     }
 
+    /// Record my beat: a Beat Lab take lands in My Songs as "My beat", and Stop saves it.
+    func testABeatLabTakeIsSavedAsMyBeat() async throws {
+        let audio = BlasterAudio()
+        audio.store = RecordingStore(directory: directory, shortest: 0)
+        audio.minTakeSeconds = 0
+        audio.startBeatLab(BeatLab(store: nil))
+        XCTAssertFalse(audio.isRecording, "Beat Lab never records by itself")
+        audio.beginRecording()
+        XCTAssertTrue(audio.isRecording)
+        try await Task.sleep(for: .seconds(1))
+        audio.endRecording()
+        audio.stop()
+        await audio.settleRecording()
+        XCTAssertEqual(audio.store.list().map(\.title), ["My beat"])
+    }
+
     /// A peek at the player (under minTakeSeconds) leaves nothing in My Songs.
     func testATakeTooShortToKeepIsThrownAway() async throws {
         let audio = BlasterAudio()

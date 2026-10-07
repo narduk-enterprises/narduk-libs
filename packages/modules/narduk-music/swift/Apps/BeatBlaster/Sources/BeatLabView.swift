@@ -52,7 +52,10 @@ struct BeatLabView: View {
             }
         }
         .onAppear { audio.startBeatLab(lab) }
-        .onDisappear { lab.save() }
+        .onDisappear {
+            audio.endRecording()
+            lab.save()
+        }
     }
 
     /// The controls wrap onto as many rows as the width needs (they used to be wider than a phone and stretched the
@@ -61,6 +64,7 @@ struct BeatLabView: View {
         let size: CGFloat = compact ? 16 : 22
         return ChipLayout(spacing: 10) {
             transport(size)
+            record(size)
             speed(size)
             keyPicker(size)
             edit(size)
@@ -97,7 +101,12 @@ struct BeatLabView: View {
     private func transport(_ size: CGFloat) -> some View {
         Button {
             Haptics.tap()
-            if audio.isRunning, audio.input == .beatLab { audio.stop() } else { audio.startBeatLab(lab) }
+            if audio.isRunning, audio.input == .beatLab {
+                audio.endRecording()
+                audio.stop()
+            } else {
+                audio.startBeatLab(lab)
+            }
         } label: {
             let playing = audio.isRunning && audio.input == .beatLab
             Pill(
@@ -105,6 +114,33 @@ struct BeatLabView: View {
                 color: playing ? Neon.pink.opacity(0.75) : Neon.green.opacity(0.8), size: size)
         }
         .buttonStyle(Squish())
+    }
+
+    /// Record my beat: plays the beat if it is stopped and records it into My Songs (as "My beat") until tapped again,
+    /// Stop is pressed or the child leaves Beat Lab. The clock is read in a TimelineView, never observed.
+    private func record(_ size: CGFloat) -> some View {
+        Button {
+            Haptics.tap()
+            if audio.isRecording {
+                audio.endRecording()
+            } else {
+                if !(audio.isRunning && audio.input == .beatLab) { audio.startBeatLab(lab) }
+                audio.beginRecording()
+            }
+        } label: {
+            if audio.isRecording {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Pill(
+                        icon: "icon-stop", word: "Save · \(clockText(audio.recordingElapsed(at: context.date)))",
+                        color: Neon.pink.opacity(0.85), size: size)
+                }
+            } else {
+                Pill(icon: "icon-record", word: "Record my beat", color: .white.opacity(0.15), size: size)
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(audio.isRecording ? "Stop recording and save to My Songs" : "Record my beat")
+        .probe("lab.record")
     }
 
     private func speed(_ size: CGFloat) -> some View {
