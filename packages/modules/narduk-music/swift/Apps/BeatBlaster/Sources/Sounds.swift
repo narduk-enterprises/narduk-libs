@@ -307,6 +307,26 @@ enum MusicKey {
 }
 
 /// The sounds of one song, applied to every note on its way to the engine.
+/// The real female voice (VocalSet, CC BY 4.0) as a song layer: one held vowel per bar on the song's key. Off by default.
+enum SingerSound: String, CaseIterable, Identifiable, Codable {
+    case off, ah, oh, oo, eh, ee
+
+    var id: String { rawValue }
+    var word: String { self == .off ? "None" : rawValue.capitalized }
+    var emoji: String { self == .off ? "🎼" : "🎤" }
+
+    var vowel: VocalVowel? {
+        switch self {
+        case .off: nil
+        case .ah: .ah
+        case .oh: .oh
+        case .oo: .oo
+        case .eh: .eh
+        case .ee: .ee
+        }
+    }
+}
+
 struct SoundProfile: Codable, Hashable {
     var bass: BassSound = .wobble
     /// The wobble patch (`NoteParams.voice`); the engine has 6 base patches times character variants.
@@ -320,10 +340,12 @@ struct SoundProfile: Codable, Hashable {
     var swing = 0.0
     var guitar: GuitarSound = .auto
     var pads: PadSound = .auto
+    var singer: SingerSound = .off
 
     init(
         bass: BassSound = .wobble, bassPatch: Int = 0, keys: KeysSound = .piano, keysOctave: Int = 0,
-        drums: DrumKit = .boom, swing: Double = 0, guitar: GuitarSound = .auto, pads: PadSound = .auto
+        drums: DrumKit = .boom, swing: Double = 0, guitar: GuitarSound = .auto, pads: PadSound = .auto,
+        singer: SingerSound = .off
     ) {
         self.bass = bass
         self.bassPatch = bassPatch
@@ -333,6 +355,7 @@ struct SoundProfile: Codable, Hashable {
         self.swing = swing
         self.guitar = guitar
         self.pads = pads
+        self.singer = singer
     }
 
     /// Songs saved before the guitar and pad rows existed have no such keys: they decode as Auto.
@@ -346,7 +369,8 @@ struct SoundProfile: Codable, Hashable {
             drums: try c.decodeIfPresent(DrumKit.self, forKey: .drums) ?? .boom,
             swing: try c.decodeIfPresent(Double.self, forKey: .swing) ?? 0,
             guitar: try c.decodeIfPresent(GuitarSound.self, forKey: .guitar) ?? .auto,
-            pads: try c.decodeIfPresent(PadSound.self, forKey: .pads) ?? .auto)
+            pads: try c.decodeIfPresent(PadSound.self, forKey: .pads) ?? .auto,
+            singer: try c.decodeIfPresent(SingerSound.self, forKey: .singer) ?? .off)
     }
 
     static func random() -> SoundProfile {
@@ -355,7 +379,8 @@ struct SoundProfile: Codable, Hashable {
             bassPatch: Int.random(in: 0..<48),
             keys: KeysSound.allCases.randomElement()!, keysOctave: Int.random(in: -1...1),
             drums: DrumKit.allCases.randomElement()!, swing: [0, 0, 0.15, 0.3].randomElement()!,
-            guitar: GuitarSound.allCases.randomElement()!, pads: PadSound.allCases.randomElement()!)
+            guitar: GuitarSound.allCases.randomElement()!, pads: PadSound.allCases.randomElement()!,
+            singer: [SingerSound.off, .off, .ah, .oh, .oo].randomElement()!)
     }
 
     func apply(_ notes: [ScheduledNote], keyRoot: Int) -> [ScheduledNote] {

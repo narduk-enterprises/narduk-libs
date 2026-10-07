@@ -67,6 +67,9 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var fadeTask: Task<Void, Never>?
     @ObservationIgnored private var swapTask: Task<Void, Never>?
+    @ObservationIgnored private var stutterTask: Task<Void, Never>?
+    /// Cuts sent for the STUTTER pad (a hold sends one per four sixteenths).
+    @ObservationIgnored private(set) var stutterCuts = 0
     @ObservationIgnored private let clockOrigin = Date.timeIntervalSinceReferenceDate
     @ObservationIgnored private var resumeInput: BlasterInput?
     @ObservationIgnored private weak var lab: BeatLab?
@@ -258,6 +261,7 @@ enum BlasterInput: Equatable {
         glideTask?.cancel()
         fadeTask?.cancel()
         swapTask?.cancel()
+        setStutter(false)
         isPaused = false
         finishTake()
         endSurge(land: false)
@@ -320,6 +324,25 @@ enum BlasterInput: Equatable {
         guard isRunning, input == .song, let player else { return }
         player.trigger(pad)
         padPresses += 1
+    }
+
+    /// The STUTTER pad: while held, the live mix repeats on the sixteenth, four steps at a time and again for as long as
+    /// the finger stays down; letting go lets the last four steps finish and the song comes back.
+    func setStutter(_ held: Bool) {
+        guard held else {
+            stutterTask?.cancel()
+            stutterTask = nil
+            return
+        }
+        guard stutterTask == nil, isRunning, input == .song else { return }
+        stutterTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled, let self, self.isRunning {
+                self.drop.cut(.stutter, division: .sixteenth, steps: 4)
+                self.stutterCuts += 1
+                let seconds = 4 * (self.player?.secondsPerStep ?? 0.12)
+                try? await Task.sleep(for: .seconds(seconds))
+            }
+        }
     }
 
     private func effectsChanged(from old: EffectSettings) {
