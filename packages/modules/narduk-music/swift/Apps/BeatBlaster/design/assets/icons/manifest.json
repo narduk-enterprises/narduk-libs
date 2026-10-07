@@ -1,0 +1,716 @@
+{
+  "name": "Beat Blaster icons",
+  "categories": [
+    "nav",
+    "action",
+    "transport",
+    "music",
+    "mood",
+    "band",
+    "fx",
+    "sound",
+    "kit"
+  ],
+  "required": [
+    "home",
+    "surprise",
+    "new-song",
+    "drop",
+    "music",
+    "lights",
+    "hide",
+    "show",
+    "record",
+    "stop",
+    "play",
+    "share",
+    "trash",
+    "rename",
+    "mic",
+    "energy",
+    "chill",
+    "hype",
+    "drums",
+    "bass",
+    "guitar",
+    "keys",
+    "pads",
+    "dream",
+    "back",
+    "next",
+    "key-up",
+    "speed",
+    "wobble",
+    "scratch",
+    "boom",
+    "siren",
+    "shout",
+    "bell",
+    "synth",
+    "piano",
+    "pluck",
+    "growl",
+    "deep",
+    "wobble-wave",
+    "kit-classic",
+    "kit-zappy",
+    "kit-dj",
+    "beat-lab",
+    "check",
+    "key-down",
+    "echo",
+    "bass-boost",
+    "air-horn",
+    "laser",
+    "clap",
+    "kit-boom"
+  ],
+  "icons": [
+    {
+      "name": "home",
+      "category": "nav",
+      "label": "Home",
+      "keywords": [
+        "home"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a house made of a simple pitched roof (one chevron) over a square body, with one small door gap. No chimney, no windows.",
+      "round": 1
+    },
+    {
+      "name": "surprise",
+      "category": "action",
+      "label": "Surprise",
+      "keywords": [
+        "surprise"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one rounded square dice face, straight on, with exactly five solid round dots: one in each corner and one in the centre.",
+      "round": 1
+    },
+    {
+      "name": "new-song",
+      "category": "action",
+      "label": "New song",
+      "keywords": [
+        "new-song"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one bold plus sign made of two crossing bars, inside one hollow circle.",
+      "round": 1
+    },
+    {
+      "name": "drop",
+      "category": "action",
+      "label": "Drop",
+      "keywords": [
+        "drop"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a round bomb: one hollow circle with a short curved fuse rising from the top right, and three short spark dashes at the fuse tip.",
+      "round": 1
+    },
+    {
+      "name": "lights",
+      "category": "action",
+      "label": "Lights",
+      "keywords": [
+        "lights"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a light bulb: a hollow circle bulb with a short two-bar base below it, and three short straight rays above it, fanning out.",
+      "round": 1
+    },
+    {
+      "name": "hide",
+      "category": "action",
+      "label": "Hide",
+      "keywords": [
+        "hide"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: an eye with a slash: one almond-shaped eye outline with one round pupil, crossed by one diagonal bar from the upper left to the lower right.",
+      "round": 1
+    },
+    {
+      "name": "show",
+      "category": "action",
+      "label": "Show",
+      "keywords": [
+        "show"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: an eye: one almond-shaped eye outline with one round hollow circle pupil with a solid dot in it. No lashes, no slash.",
+      "round": 1
+    },
+    {
+      "name": "record",
+      "category": "transport",
+      "label": "Record",
+      "keywords": [
+        "record"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one large solid round dot inside one hollow ring, with a clear white gap between the dot and the ring.",
+      "round": 1
+    },
+    {
+      "name": "stop",
+      "category": "transport",
+      "label": "Stop",
+      "keywords": [
+        "stop"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one hollow rounded square outline, thick bar, large in the frame.",
+      "round": 1
+    },
+    {
+      "name": "play",
+      "category": "transport",
+      "label": "Play",
+      "keywords": [
+        "play"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one hollow triangle outline pointing right, with rounded corners, thick bar.",
+      "round": 1
+    },
+    {
+      "name": "share",
+      "category": "action",
+      "label": "Share",
+      "keywords": [
+        "share"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: three hollow circles joined by two straight bars: one circle on the left in the middle, one circle at top right, one circle at bottom right, each right circle joined to the left circle.",
+      "round": 1
+    },
+    {
+      "name": "trash",
+      "category": "action",
+      "label": "Trash",
+      "keywords": [
+        "trash"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a bin: a tapered can outline wider at the top, one flat lid bar above it with a small handle bump on the lid, and two short vertical bars inside the can.",
+      "round": 1
+    },
+    {
+      "name": "rename",
+      "category": "action",
+      "label": "Rename",
+      "keywords": [
+        "rename"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one pencil lying diagonally, pointing to the lower left: a hollow body outline, a pointed tip, and one short flat line under the tip.",
+      "round": 1
+    },
+    {
+      "name": "mic",
+      "category": "music",
+      "label": "Mic",
+      "keywords": [
+        "mic"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a microphone: a vertical rounded capsule outline, a U-shaped cradle arc around its lower half, a short vertical stem below, and a short flat base bar.",
+      "round": 1
+    },
+    {
+      "name": "energy",
+      "category": "mood",
+      "label": "Energy",
+      "keywords": [
+        "energy"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one lightning bolt: a single hollow zig-zag bolt outline with three sharp points, large in the frame.",
+      "round": 1
+    },
+    {
+      "name": "chill",
+      "category": "mood",
+      "label": "Chill",
+      "keywords": [
+        "chill"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a snowflake: three straight bars crossing at one centre point making six arms, with a small V-shaped tip on the end of each arm. Large and symmetric.",
+      "round": 1
+    },
+    {
+      "name": "hype",
+      "category": "mood",
+      "label": "Hype",
+      "keywords": [
+        "hype"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a flame: one tall teardrop flame outline with a wavy pointed top, and one smaller hollow flame shape inside it near the bottom.",
+      "round": 1
+    },
+    {
+      "name": "drums",
+      "category": "band",
+      "label": "Drums",
+      "keywords": [
+        "drums"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a drum: an ellipse on top, short straight sides and a curved bottom, and two drumsticks crossing above the drum like an X, each stick ending in a small solid dot.",
+      "round": 1
+    },
+    {
+      "name": "bass",
+      "category": "band",
+      "label": "Bass",
+      "keywords": [
+        "bass"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a loudspeaker box: one tall rounded rectangle outline with one large hollow circle in its lower part and one small hollow circle in its upper part.",
+      "round": 1
+    },
+    {
+      "name": "guitar",
+      "category": "band",
+      "label": "Guitar",
+      "keywords": [
+        "guitar"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: an electric guitar tilted diagonally, headstock at the upper right: a figure-eight shaped body outline, a small round pickup circle on the body, one long narrow neck bar and a short headstock.",
+      "round": 1
+    },
+    {
+      "name": "keys",
+      "category": "band",
+      "label": "Keys",
+      "keywords": [
+        "keys"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a piano keyboard: one wide rounded rectangle outline, three vertical lines splitting it into four equal keys, and two short solid black key bars hanging from the top edge, one between the first and second key and one between the second and third key.",
+      "round": 1
+    },
+    {
+      "name": "pads",
+      "category": "band",
+      "label": "Pads",
+      "keywords": [
+        "pads"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: three nested arches, like a rainbow: three half circles of increasing size, one inside the other, all open at the bottom, evenly spaced.",
+      "round": 1
+    },
+    {
+      "name": "dream",
+      "category": "action",
+      "label": "Dream",
+      "keywords": [
+        "dream"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a puffy cloud outline with a flat bottom and three round bumps on top, and beside its upper right one four-pointed sparkle star made of a vertical bar and a horizontal bar crossing, not touching the cloud.",
+      "round": 1
+    },
+    {
+      "name": "back",
+      "category": "nav",
+      "label": "Back",
+      "keywords": [
+        "back"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one arrow pointing left: a single long horizontal bar with a chevron arrowhead at the left end.",
+      "round": 1
+    },
+    {
+      "name": "next",
+      "category": "nav",
+      "label": "Next",
+      "keywords": [
+        "next"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one arrow pointing right: a single long horizontal bar with a chevron arrowhead at the right end.",
+      "round": 1
+    },
+    {
+      "name": "speed",
+      "category": "music",
+      "label": "Speed",
+      "keywords": [
+        "speed"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a speedometer: one half circle arc gauge opening at the bottom, with one needle pointing up and to the right from a small solid hub at the centre, and three short tick dashes along the arc.",
+      "round": 1
+    },
+    {
+      "name": "wobble",
+      "category": "music",
+      "label": "Wobble",
+      "keywords": [
+        "wobble"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one smooth horizontal sine wave of two and a half periods drawn as one thick continuous bar, with one solid dot sitting on the top of the middle crest.",
+      "round": 1
+    },
+    {
+      "name": "scratch",
+      "category": "fx",
+      "label": "Scratch",
+      "keywords": [
+        "scratch"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a vinyl record seen from above: one large hollow circle, one smaller hollow ring inside it, one small solid dot at the centre, and two short curved motion arcs outside the upper right edge.",
+      "round": 1
+    },
+    {
+      "name": "boom",
+      "category": "fx",
+      "label": "Boom",
+      "keywords": [
+        "boom"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: an explosion: one jagged starburst outline with eight sharp spikes, hollow inside, large in the frame.",
+      "round": 1
+    },
+    {
+      "name": "siren",
+      "category": "fx",
+      "label": "Siren",
+      "keywords": [
+        "siren"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a siren light: a half circle dome sitting on a flat wide base bar, and three short straight rays above the dome fanning out.",
+      "round": 1
+    },
+    {
+      "name": "shout",
+      "category": "fx",
+      "label": "Shout",
+      "keywords": [
+        "shout"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a speech bubble: a rounded rectangle outline with a pointed tail at the bottom left, and inside it one tall vertical bar above one solid round dot.",
+      "round": 1
+    },
+    {
+      "name": "bell",
+      "category": "sound",
+      "label": "Bell",
+      "keywords": [
+        "bell"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a bell: a dome outline with a flared flat rim, one small solid circle clapper under the rim, and one small loop on top.",
+      "round": 1
+    },
+    {
+      "name": "synth",
+      "category": "sound",
+      "label": "Synth",
+      "keywords": [
+        "synth"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a synthesizer: one wide rounded rectangle outline; in its upper half two small solid circles for knobs on the left; in its lower half three short vertical bars for keys.",
+      "round": 1
+    },
+    {
+      "name": "piano",
+      "category": "sound",
+      "label": "Piano",
+      "keywords": [
+        "piano"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a grand piano from the side: one curved wing-shaped body outline, one propped open lid line rising at an angle, and two straight legs below.",
+      "round": 1
+    },
+    {
+      "name": "pluck",
+      "category": "sound",
+      "label": "Pluck",
+      "keywords": [
+        "pluck"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a guitar pick: one hollow rounded triangle pointing down, thick bar, and one small curved arc on its right side.",
+      "round": 1
+    },
+    {
+      "name": "growl",
+      "category": "sound",
+      "label": "Growl",
+      "keywords": [
+        "growl"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a monster mouth: one wide hollow oval, with a zig-zag row of sharp triangle teeth along its top edge and another along its bottom edge.",
+      "round": 1
+    },
+    {
+      "name": "deep",
+      "category": "sound",
+      "label": "Deep",
+      "keywords": [
+        "deep"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a whale in profile facing left: one smooth bean-shaped body outline with a forked tail raised at the right, and one small water spout of two arcs on top.",
+      "round": 1
+    },
+    {
+      "name": "wobble-wave",
+      "category": "sound",
+      "label": "Wobble wave",
+      "keywords": [
+        "wobble-wave"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a curling ocean wave: one big wave crest that rises on the left and curls over to the right in a round hook, with one smaller curl beneath it.",
+      "round": 1
+    },
+    {
+      "name": "kit-dj",
+      "category": "kit",
+      "label": "DJ kit",
+      "keywords": [
+        "kit-dj"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: headphones: two solid rounded rectangle ear cups at the left and right, joined by one wide arc headband over the top.",
+      "round": 1
+    },
+    {
+      "name": "check",
+      "category": "nav",
+      "label": "Check",
+      "keywords": [
+        "check"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one bold check mark drawn as ONE single solid black stroke of even thickness with round ends: a short stroke going down-right on the left, then a long stroke going up-right. A single bar, not an outline, not hollow, no white line inside it.",
+      "round": 1
+    },
+    {
+      "name": "echo",
+      "category": "music",
+      "label": "Echo",
+      "keywords": [
+        "echo"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: exactly two concentric hollow rings and one small solid dot at the centre, with a wide white gap between each ring, like a ripple. Only two rings.",
+      "round": 1
+    },
+    {
+      "name": "bass-boost",
+      "category": "music",
+      "label": "Bass boost",
+      "keywords": [
+        "bass-boost"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a loudspeaker box: one tall rounded rectangle outline with one large hollow circle in its lower part and one small hollow circle in its upper part, and to its right one bold solid black arrow pointing up: a thick vertical bar with a chevron arrowhead. The arrow is separate and about the same height as the box.",
+      "round": 1
+    },
+    {
+      "name": "air-horn",
+      "category": "fx",
+      "label": "Air horn",
+      "keywords": [
+        "air-horn"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: an air horn: one cone shape drawn as a single outline widening to the right, a small cylinder canister at its narrow left end, and three short thick dashes radiating from the wide mouth on the right. Thick single-line outlines only.",
+      "round": 1
+    },
+    {
+      "name": "laser",
+      "category": "fx",
+      "label": "Laser",
+      "keywords": [
+        "laser"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a laser fan: one small solid dot at the left, and three thick solid black bars radiating to the right from near it: one horizontal, one angled up, one angled down, each a single solid bar with round ends, not hollow, with wide white gaps between them.",
+      "round": 1
+    },
+    {
+      "name": "kit-boom",
+      "category": "kit",
+      "label": "Boom kit",
+      "keywords": [
+        "kit-boom"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a kick drum: one wide short cylinder drawn as an outline with an ellipse top, two curved shock-wave arcs on its left and two on its right, thick single-line outlines, nothing else.",
+      "round": 1
+    },
+    {
+      "name": "beat-lab",
+      "category": "action",
+      "label": "Beat Lab",
+      "keywords": [
+        "beat-lab"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: a three-by-three grid of nine hollow rounded square outlines of equal size, each outline one thin even bar, with wide white gaps between the squares. Nothing filled in.",
+      "round": 1
+    },
+    {
+      "name": "music",
+      "category": "action",
+      "label": "Music",
+      "keywords": [
+        "music"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one eighth note drawn with thin even bars only: a hollow oval ring as the notehead (not filled), one straight stem rising from its right side, and one curved flag at the top of the stem.",
+      "round": 1
+    },
+    {
+      "name": "clap",
+      "category": "fx",
+      "label": "Clap",
+      "keywords": [
+        "clap"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: two hands clapping drawn as thin outlines only: each hand is a single rounded mitten outline with a thumb bump, nothing filled in, the two hands tilted toward each other so their fingertips meet at the top centre, with three short dashes above the meeting point. All lines one even thin bar.",
+      "round": 1
+    },
+    {
+      "name": "key-up",
+      "category": "music",
+      "label": "Key up",
+      "keywords": [
+        "key-up"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: on the left a musical note drawn with thin even bars only: a hollow oval ring as the notehead (not filled), one straight stem, and one curved flag. On the right one arrow pointing up drawn with the same thin even bar: a vertical shaft and a chevron arrowhead. Nothing filled in solid, the note and arrow are separate and the same height.",
+      "round": 1
+    },
+    {
+      "name": "key-down",
+      "category": "music",
+      "label": "Key down",
+      "keywords": [
+        "key-down"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: on the left a musical note drawn with thin even bars only: a hollow oval ring as the notehead (not filled), one straight stem, and one curved flag. On the right one arrow pointing down drawn with the same thin even bar: a vertical shaft and a chevron arrowhead. Nothing filled in solid, the note and arrow are separate and the same height.",
+      "round": 1
+    },
+    {
+      "name": "kit-zappy",
+      "category": "kit",
+      "label": "Zappy kit",
+      "keywords": [
+        "kit-zappy"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: one hollow circle drum head drawn as one thin ring, with one big lightning bolt inside it drawn as a hollow zig-zag outline with three points, with a wide white gap between the bolt and the ring.",
+      "round": 1
+    },
+    {
+      "name": "kit-classic",
+      "category": "kit",
+      "label": "Classic kit",
+      "keywords": [
+        "kit-classic"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Minimal monoline icon, solid black ink on a pure white square. Each mark is one filled bar of even thickness with rounded caps, and the white gap between separate bars is at least as wide as a bar. Bold arcade-game interface symbol, friendly and confident, crisp, centered, large in the frame, generous white margin. No text, no shading, no gray, no frame, no 3D, no extra objects. Subject: two drumsticks crossed like an X, each ending in a solid round dot at the top, large in the frame.",
+      "round": 1
+    }
+  ],
+  "preview": {
+    "themes": [
+      {
+        "key": "night",
+        "label": "Night",
+        "bg": "#0B0614",
+        "ink": "#29E0FF"
+      },
+      {
+        "key": "pink",
+        "label": "Pink on night",
+        "bg": "#1A0B33",
+        "ink": "#FF3DAB"
+      },
+      {
+        "key": "light",
+        "label": "Light",
+        "bg": "#FFFFFF",
+        "ink": "#0B0614"
+      }
+    ]
+  }
+}
