@@ -14,6 +14,7 @@ struct PlayerView: View {
     @State private var boomID = 0
     @State private var show = ShowMode()
     @State private var tray = TrayState()
+    @State private var keyDropping = false
 
     enum Panel { case music, lights }
 
@@ -57,7 +58,27 @@ struct PlayerView: View {
                 if let panel { picker(panel, compact: compact) }
             }
         }
+        .accessibilityElement(children: .contain)  // the root id must not replace every control's own (#1664)
         .accessibilityIdentifier("player.root")
+        .focusable()
+        .focusEffectDisabled()
+        // A keyboard (a Mac, or an iPad with one): space pauses, hold D to DROP and let go to land it.
+        .onKeyPress(.space) {
+            audio.togglePause()
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "dD"), phases: [.down, .up]) { press in
+            if press.phase == .down, !keyDropping, !audio.isPaused {
+                keyDropping = true
+                Hints.use("drop")
+                audio.beginSurge()
+            } else if press.phase == .up, keyDropping {
+                keyDropping = false
+                audio.endSurge()
+                boomID += 1
+            }
+            return .handled
+        }
         .animation(.easeInOut(duration: 0.35), value: show.hidden)
         .onAppear {
             audio.playIfIdle()

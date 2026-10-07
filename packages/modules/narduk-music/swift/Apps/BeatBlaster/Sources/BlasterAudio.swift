@@ -67,6 +67,8 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var fadeTask: Task<Void, Never>?
     @ObservationIgnored private var swapTask: Task<Void, Never>?
+    /// The rising high-pass last sent to the engine while DROP is held (`.idle` otherwise); read by the tests.
+    @ObservationIgnored private(set) var masterFilter = MasterFilter.idle
     @ObservationIgnored private let clockOrigin = Date.timeIntervalSinceReferenceDate
     @ObservationIgnored private var resumeInput: BlasterInput?
     @ObservationIgnored private weak var lab: BeatLab?
@@ -122,6 +124,7 @@ enum BlasterInput: Equatable {
         stop()
         self.recipe = recipe
         lightsID = recipe.lightsID
+        visualState.look = Self.look(for: recipe)
         input = .song
         do {
             drop.settings = recipe.settings
@@ -168,6 +171,13 @@ enum BlasterInput: Equatable {
             guard !Task.isCancelled, let self, self.recipe.id == recipe.id else { return }
             self.stop()
         }
+    }
+
+    /// Every vibe and every Surprise me gets its own colour turn; `SoundVisualState` eases to it over about 0.6 s
+    /// (the library's `look`), so the colours never snap. A neutral look (hue 0) leaves the style's own colours.
+    static func look(for recipe: SongRecipe) -> SoundPaletteLook {
+        let hash = StableHash.fnv1a("\(recipe.styleID)#\(recipe.seed)")
+        return SoundPaletteLook(hueShift: Float(Int(hash % 13) - 6) * 30)
     }
 
     /// Keeps the current song going, or starts it if nothing plays.
@@ -474,7 +484,14 @@ enum BlasterInput: Equatable {
                 self.drop.setGain(1 + 0.5 * t, for: .fx)
                 self.drop.setGain(Self.restingDrums - 0.55 * t, for: .drums)
                 self.drop.masterVolume = 0.75 + 0.25 * t
-                try? await Task.sleep(for: .milliseconds(40))
+                if let player = self.player {
+                    let held = Int(Date().timeIntervalSince(start) / player.secondsPerStep)
+                    self.setFilter(
+                        DropArranger.filterSweep(
+                            heldSteps: held, secondsPerStep: player.secondsPerStep,
+                            genre: player.dropContext?.genre ?? .rock))
+                }
+                try? await Task.sleep(for: .milliseconds(16))
             }
         }
     }
@@ -488,6 +505,7 @@ enum BlasterInput: Equatable {
         surgeTask?.cancel()
         surgeTask = nil
         surgeStart = nil
+        setFilter(.idle)  // true bypass; it opens in about 60 ms
         guard land, let player, let hit = player.releaseDrop() else {
             player?.cancelDrop()
             resetMix()
@@ -511,6 +529,12 @@ enum BlasterInput: Equatable {
 
     private static let restingBass: Float = 1.2
     private static let restingDrums: Float = 1.15
+
+    private func setFilter(_ filter: MasterFilter) {
+        guard filter != masterFilter else { return }
+        masterFilter = filter
+        drop.setMasterFilter(filter)
+    }
 
     private func resetMix() {
         drop.setMuted(false, for: .bass)

@@ -138,6 +138,59 @@
             #expect(core.takeHits().isSuperset(of: Set(guitars)))
         }
 
+        /// The DROP written for every genre (build, hold and drop, each with its variants) plays without the render
+        /// thread allocating.
+        @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
+        func playingEveryGenresDropNeverAllocates() throws {
+            let core = DropSynthCore(sampleRate: 48_000, bpm: 140)
+            let frames = 512
+            let left = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+            let right = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+            defer {
+                left.deallocate()
+                right.deallocate()
+            }
+            var step = 0
+            for genre in Genre.allCases {
+                var conductor = DropConductor(settings: SongSettings(genre: genre, seed: 5, variety: 1))
+                _ = conductor.advance(throughStep: 63)
+                let material = DropMaterial.capture(from: conductor)
+                for number in 0..<3 {
+                    let context = DropContext(
+                        genre: genre, keyRoot: 65, minor: true, chordRoot: 70, nextChordRoot: 72,
+                        secondsPerStep: 60 / 140 / 4,
+                        seed: 5, variety: 1, dropNumber: number, material: material)
+                    for held in 0..<64 {
+                        for note in DropArranger.build(step: step, heldSteps: held, context: context) {
+                            core.schedule(note)
+                        }
+                        step += 1
+                    }
+                    for position in 0..<64 {
+                        for note in DropArranger.drop(
+                            position: position, step: step, power: 1, charge: 1, context: context)
+                        {
+                            core.schedule(note)
+                        }
+                        step += 1
+                    }
+                }
+            }
+            core.render(frames: frames, left: left, right: right)  // first-touch work happens before arming
+            let count = try Self.countAllocations {
+                for index in 0..<2_000 {
+                    // The master filter sweeps up and snaps open while rendering: setting it and running it allocate nothing.
+                    let phase = index % 400
+                    core.setMasterFilter(
+                        phase < 300
+                            ? MasterFilter(highPassHz: 20 + Float(phase) * 9, lowPassHz: 20_000 - Float(phase) * 30)
+                            : .idle)
+                    core.render(frames: frames, left: left, right: right)
+                }
+            }
+            #expect(count == 0, "the render thread allocated \(count) times, first at:\n\(Self.firstAllocationStack)")
+        }
+
         @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
         func renderingAmbientPadsAndTheirTailNeverAllocates() throws {
             let core = DropSynthCore(sampleRate: 48_000, bpm: 70)
