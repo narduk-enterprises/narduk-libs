@@ -135,7 +135,7 @@ export function buildLocalEmailMessage(params: {
   return {
     subject: `${appName}: ${params.purpose === 'setup' ? 'set up' : 'reset'} your password`,
     text: `Use this link to ${action} for ${appName}:\n\n${params.actionUrl}\n\nThis single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.`,
-    html: `<p>Use the button below to ${escapeEmailHtml(action)} for ${escapedAppName}.</p><p><a href="${escapedActionUrl}">${params.purpose === 'setup' ? 'Set up password' : 'Reset password'}</a></p><p>This single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.</p>`,
+    html: `<p>Use the link below to ${escapeEmailHtml(action)} for ${escapedAppName}.</p><p><a href="${escapedActionUrl}">${params.purpose === 'setup' ? 'Set up password' : 'Reset password'}</a></p><p>This single-use link expires in ${params.ttlMinutes} minutes. If you did not request it, you can ignore this email.</p>`,
   }
 }
 
