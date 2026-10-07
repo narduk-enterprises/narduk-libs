@@ -20,6 +20,9 @@ import NardukMusicEngine
         didSet { applyComping() }
     }
 
+    var effects = EffectSettings()
+    /// Sound-effect pad notes waiting for their step (pads play on the next free 16th).
+    private var queuedPads: [ScheduledNote] = []
     private(set) var machine = DropMachine()
     private var conductor: DropConductor?
     private var nextSignal = 0
@@ -47,6 +50,13 @@ import NardukMusicEngine
     // MARK: DROP
 
     func pressDrop() { machine.press(at: nextStep) }
+
+    /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
+    @discardableResult func trigger(_ pad: SoundPad) -> Int {
+        let step = nextStep
+        queuedPads += pad.notes(at: step)
+        return step
+    }
 
     /// Lands the drop; returns its first and end step, or nil when nothing was building.
     func releaseDrop() -> (start: Int, end: Int)? {
@@ -91,6 +101,7 @@ import NardukMusicEngine
             cursor = -1
             nextSignal = 0
             offset = 0
+            queuedPads.removeAll()
             machine.cancel()
             resetConductor()
         }
@@ -142,7 +153,11 @@ import NardukMusicEngine
             }
         }
         let played = out.filter { note in BandPart.of(note).map(band.contains) ?? true }
-        return recipe.sounds.apply(played, keyRoot: recipe.keyRoot)
+        let styled = effects.apply(to: recipe.sounds.apply(played, keyRoot: recipe.keyRoot))
+        // Pads always sound: they skip the band filter and the DROP layers.
+        let due = queuedPads.filter { range.contains($0.step) }
+        queuedPads.removeAll { $0.step <= throughStep }
+        return styled + due
     }
 
     /// The song's own notes up to `songStep` on its own grid.

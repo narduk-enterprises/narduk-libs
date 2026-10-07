@@ -13,6 +13,9 @@ struct PlayerView: View {
     @State private var panel: Panel?
     @State private var boomID = 0
     @State private var show = ShowMode()
+    @State private var page: Page = .play
+
+    enum Page { case play, effects }
 
     enum Panel { case music, lights }
 
@@ -26,7 +29,15 @@ struct PlayerView: View {
                 VStack(spacing: short ? 6 : (compact ? 8 : 14)) {
                     topBar(compact: compact, short: short)
                     Spacer(minLength: 0)
-                    SteeringPanel(audio: audio, compact: compact, short: short, newSong: newSong) { boomID += 1 }
+                    pageSwitch(short: short)
+                    if page == .play {
+                        SteeringPanel(audio: audio, compact: compact, short: short, newSong: newSong) { boomID += 1 }
+                    } else {
+                        EffectsPanel(audio: audio, compact: compact, short: short) { audio.fire($0) }
+                            .padding(short ? 8 : 12)
+                            .background(
+                                .black.opacity(0.35), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    }
                     MusicLightsBar(
                         audio: audio, short: short,
                         changeMusic: { open(.music) },
@@ -84,6 +95,24 @@ struct PlayerView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Hide the controls")
+        }
+    }
+
+    /// Play (Energy, band, DROP) and Effects (sliders and sound pads).
+    private func pageSwitch(short: Bool) -> some View {
+        HStack(spacing: 8) {
+            ForEach([Page.play, .effects], id: \.self) { which in
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) { page = which }
+                } label: {
+                    Pill(
+                        icon: which == .play ? "🎮" : "🎛", word: which == .play ? "Play" : "Effects",
+                        color: (which == .play ? Neon.pink : Neon.cyan).opacity(page == which ? 0.9 : 0.35),
+                        size: short ? 14 : 16, selected: page == which)
+                }
+                .buttonStyle(Squish())
+            }
         }
     }
 

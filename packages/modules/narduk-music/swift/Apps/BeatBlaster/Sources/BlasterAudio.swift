@@ -28,6 +28,12 @@ enum BlasterInput: Equatable {
         didSet { player?.energy = energy }
     }
     private(set) var isSurging = false
+    /// The Effects page's sliders (Wobble, Echo, Bass boost, Speed); the song's notes are reshaped as they are scheduled.
+    var effects = EffectSettings() {
+        didSet { effectsChanged(from: oldValue) }
+    }
+    /// Bumped on every pad press so the view can flash.
+    private(set) var padPresses = 0
     /// The light the player and Light Show draw.
     var lightsID = "tunnel"
 
@@ -42,6 +48,7 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var tap: AudioTapSource?
     @ObservationIgnored private var player: SongPlayer?
     @ObservationIgnored private var surgeTask: Task<Void, Never>?
+    @ObservationIgnored private var glideTask: Task<Void, Never>?
     @ObservationIgnored private var landTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private let clockOrigin = Date.timeIntervalSinceReferenceDate
@@ -101,6 +108,8 @@ enum BlasterInput: Equatable {
             drop.settings = recipe.settings
             let player = SongPlayer(recipe: recipe, engine: drop)
             player.energy = energy
+            effects.speed = nil
+            player.effects = effects
             self.player = player
             drop.noteProvider = { [player] throughStep in player.notes(through: throughStep) }
             try drop.start()
@@ -200,6 +209,7 @@ enum BlasterInput: Equatable {
     }
 
     func stop() {
+        glideTask?.cancel()
         finishTake()
         endSurge(land: false)
         landTask?.cancel()
@@ -212,6 +222,49 @@ enum BlasterInput: Equatable {
         player = nil
         isRunning = false
         resetMix()
+    }
+
+    // MARK: Effects
+
+    /// A sound-effect pad: sounds on the next free 16th and is recorded with everything else.
+    func fire(_ pad: SoundPad) {
+        guard isRunning, input == .song, let player else { return }
+        player.trigger(pad)
+        padPresses += 1
+    }
+
+    private func effectsChanged(from old: EffectSettings) {
+        player?.effects = effects
+        if effects.bass != old.bass, !isSurging { applyBassGain() }
+        if effects.speed != old.speed, let position = effects.speed { glide(toSliderPosition: position) }
+    }
+
+    private func applyBassGain() {
+        drop.setGain(Self.restingBass * Float(1 + 0.6 * effects.bass), for: .bass)
+    }
+
+    /// The Speed slider moves the tempo through the style's own slow-to-fast range, a few bpm at a time so it glides.
+    private func glide(toSliderPosition position: Double) {
+        guard input == .song else { return }
+        let base = recipe.style.baseBPM
+        let target =
+            base * (Speed.slow.scale + (Speed.fast.scale - Speed.slow.scale) * min(1, max(0, position)))
+            * recipe.tempoNudge
+        glideTask?.cancel()
+        glideTask = Task { [weak self] in
+            while !Task.isCancelled, let self {
+                var settings = self.drop.settings
+                let delta = target - settings.bpm
+                if abs(delta) < 0.25 {
+                    settings.bpm = target
+                    self.drop.settings = settings
+                    return
+                }
+                settings.bpm += max(-2, min(2, delta))
+                self.drop.settings = settings
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
     }
 
     // MARK: Recording
@@ -381,7 +434,7 @@ enum BlasterInput: Equatable {
     private func resetMix() {
         drop.setMuted(false, for: .bass)
         // The resting mix keeps the kick and bass up front (the drop lands louder still: 1.4 and 1.3).
-        drop.setGain(Self.restingBass, for: .bass)
+        drop.setGain(Self.restingBass * Float(1 + 0.6 * effects.bass), for: .bass)
         drop.setGain(Self.restingDrums, for: .drums)
         drop.setGain(1, for: .fx)
         drop.masterVolume = 0.85
