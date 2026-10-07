@@ -9,7 +9,9 @@
     "band",
     "fx",
     "sound",
-    "kit"
+    "kit",
+    "drums",
+    "speed"
   ],
   "required": [
     "home",
@@ -688,6 +690,66 @@
       "backend": "grok",
       "tool": "image_gen",
       "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in hot pink, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: headphones: two solid rounded rectangle ear cups at the left and right, joined by one wide arc headband over the top.",
+      "round": 1
+    },
+    {
+      "name": "kick",
+      "category": "drums",
+      "label": "Kick",
+      "keywords": [
+        "kick"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in hot pink, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: a kick drum seen straight from the front: one big circle drum face with a smaller circle ring inside it, two short legs at the bottom, a foot pedal beater touching the drum face from the lower left, and two curved shock arcs beside it on the right.",
+      "round": 1
+    },
+    {
+      "name": "hat",
+      "category": "drums",
+      "label": "Hi-hat",
+      "keywords": [
+        "hat"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in electric cyan, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: a pair of hi-hat cymbals: two wide shallow cymbals drawn as flat domed ellipses stacked one just above the other, on one straight vertical stand pole with a small tripod foot of three short legs at the bottom.",
+      "round": 1
+    },
+    {
+      "name": "medium",
+      "category": "speed",
+      "label": "Medium",
+      "keywords": [
+        "medium"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in yellow, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: a chunky running sneaker seen from the side pointing right: a thick rounded sole, three lace bars across the top, and two short motion lines trailing behind the heel.",
+      "round": 1
+    },
+    {
+      "name": "slow",
+      "category": "speed",
+      "label": "Slow",
+      "keywords": [
+        "slow"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in lime green, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: a turtle seen from the side walking to the right: a big rounded dome shell with three hexagon segments drawn as thick tubes, a round head poking out on the right, two short stubby legs and a tiny tail.",
+      "round": 1
+    },
+    {
+      "name": "fast",
+      "category": "speed",
+      "label": "Fast",
+      "keywords": [
+        "fast"
+      ],
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "Glossy neon arcade game UI icon. One bold chunky symbol drawn as solid thick rounded shapes in sunset orange, with a lighter highlight along its upper edge, a deeper shade along its lower edge and a thin bright rim light, thick friendly proportions, hollow parts drawn as thick tubes with a clear gap between parts. The symbol sits alone on a perfectly flat solid near-black violet ground (#0B0614) that fills the whole square edge to edge: no glow haze around it, no gradient or texture in the ground, no shadow on the ground, no frame, no text, no letters, no extra objects. Centered and large with a clear margin, readable at a small size. Premium kids' game UI crossed with a neon arcade cabinet and a modern music app; cool to a ten-year-old, not babyish, not emoji, not clip-art, not a thin line icon. Subject: a rocket flying up and to the right: a rounded rocket body with one round porthole window, two small fins at its base, and a short flame with three tongues trailing behind it.",
       "round": 1
     }
   ],

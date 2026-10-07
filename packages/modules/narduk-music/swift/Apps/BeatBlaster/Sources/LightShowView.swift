@@ -19,7 +19,7 @@ struct LightStepper: View {
             HStack(spacing: 6) {
                 KindBadge(kind: .lights, size: 12)
                 Text("\(tile.emoji) \(tile.name)")
-                    .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 18 : 26, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -148,7 +148,7 @@ struct LightShowView: View {
             HStack(spacing: 12) {
                 HomeButton(action: home)
                 Text("💡 Light Show")
-                    .font(.system(size: compact ? 22 : 36, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 22 : 36, weight: .black)
                     .foregroundStyle(.white)
                 Spacer(minLength: 0)
                 Button {
@@ -205,7 +205,7 @@ struct MicView: View {
                         HStack {
                             HomeButton(action: home)
                             Text("🎤 Mic Mode")
-                                .font(.system(size: compact ? 22 : 36, weight: .black, design: .rounded))
+                                .blasterFont(size: compact ? 22 : 36, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer()
                         }
@@ -228,9 +228,9 @@ struct MicView: View {
                 Spacer()
             }
             Spacer()
-            Text("🙉").font(.system(size: 120))
+            Glyph("icon-mic", size: 110)
             Text(problem == "denied" ? "The microphone is off" : "No microphone found")
-                .font(.system(size: 40, weight: .black, design: .rounded))
+                .blasterFont(size: 40, weight: .black)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
             Text(
@@ -238,7 +238,7 @@ struct MicView: View {
                     ? "Ask a grown-up to turn on the microphone for Beat Blaster in Settings."
                     : "Try the Light Show instead!"
             )
-            .font(.system(size: 22, weight: .bold, design: .rounded))
+            .blasterFont(size: 22, weight: .bold)
             .foregroundStyle(.white.opacity(0.8))
             .multilineTextAlignment(.center)
             Spacer()
@@ -257,7 +257,7 @@ struct MicPrompt: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let level = audio.level
             Text(level > 0.55 ? "WHOA! LOUD! 🔥" : "🎤 Clap, sing, yell!")
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .blasterFont(size: 34, weight: .black)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 14)

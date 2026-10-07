@@ -23,14 +23,14 @@ struct BeatLabView: View {
                         HStack(spacing: 12) {
                             HomeButton(action: home)
                             Text("🥁 Beat Lab")
-                                .font(.system(size: compact ? 26 : 44, weight: .black, design: .rounded))
+                                .blasterFont(size: compact ? 26 : 44, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer(minLength: 0)
                         }
                         Text(
                             "Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap."
                         )
-                        .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
+                        .blasterFont(size: compact ? 14 : 20, weight: .bold)
                         .foregroundStyle(.white.opacity(0.85))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         BeatGrid(audio: audio, lab: lab, compact: compact)
@@ -78,7 +78,7 @@ struct BeatLabView: View {
             .buttonStyle(Squish())
             .accessibilityLabel("Key down")
             Text("🎼 Key: \(MusicKey.names[lab.key])")
-                .font(.system(size: size * 0.85, weight: .black, design: .rounded))
+                .blasterFont(size: size * 0.85, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize()
@@ -163,10 +163,10 @@ struct BeatGrid: View {
                             Glyph(row.emoji, size: compact ? 14 : 24)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(row.word)
-                                    .font(.system(size: compact ? 12 : 20, weight: .black, design: .rounded))
+                                    .blasterFont(size: compact ? 12 : 20, weight: .black)
                                     .foregroundStyle(.white)
                                 Text("🔄 \(lab.soundName(row))")
-                                    .font(.system(size: compact ? 9 : 14, weight: .heavy, design: .rounded))
+                                    .blasterFont(size: compact ? 9 : 14, weight: .heavy)
                                     .foregroundStyle(Neon.cyan)
                             }
                             .lineLimit(1)
@@ -211,7 +211,7 @@ struct BeatGrid: View {
                 .overlay(
                     Group {
                         if value > 0, row.noteCount > 1 {
-                            Text("\(value)").font(.system(size: 14, weight: .black, design: .rounded)).foregroundStyle(
+                            Text("\(value)").blasterFont(size: 14, weight: .black).foregroundStyle(
                                 .black)
                         }
                     }

@@ -10,7 +10,8 @@ enum Art {
         "🎤": "icon-mic", "✨": "icon-dream", "✏️": "icon-rename", "📤": "icon-share", "🗑": "icon-trash",
         "⚡️": "icon-energy", "😌": "icon-chill", "🔥": "icon-hype", "🥁": "icon-drums", "🔊": "icon-bass",
         "🎸": "icon-guitar", "🎹": "icon-keys", "🌌": "icon-pads", "🎛": "icon-pads", "🎛️": "icon-pads",
-        "✅": "icon-check", "🌊": "icon-wobble", "🔁": "icon-echo", "🐢": "icon-speed", "📯": "icon-air-horn",
+        "✅": "icon-check", "🌊": "icon-wobble", "🔁": "icon-echo", "🐢": "icon-slow", "🚶": "icon-medium", "🐇": "icon-fast",
+        "🦶": "icon-kick", "🎩": "icon-hat", "📯": "icon-air-horn",
         "🔫": "icon-laser", "💿": "icon-scratch", "💥": "icon-boom", "🚨": "icon-siren", "👏": "icon-clap",
         "🗣": "icon-shout", "🔔": "icon-bell",
     ]

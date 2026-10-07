@@ -32,13 +32,13 @@ struct SongMakerView: View {
                 if !short {
                     VStack(spacing: 4) {
                         Text("Step \(step): \(titles[step - 1])")
-                            .font(.system(size: compact ? 32 : 52, weight: .black, design: .rounded))
+                            .blasterFont(size: compact ? 32 : 52, weight: .black)
                             .foregroundStyle(stepGradient)
                             .lineLimit(1)
                             .minimumScaleFactor(0.5)
                             .probe("maker.title")
                         Text(helps[step - 1])
-                            .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
+                            .blasterFont(size: compact ? 16 : 22, weight: .bold)
                             .foregroundStyle(.white.opacity(0.85))
                             .multilineTextAlignment(.center)
                     }
@@ -93,7 +93,7 @@ struct SongMakerView: View {
             HStack(spacing: 10) {
                 HomeButton(action: home).probe("maker.home")
                 Text("Step \(step): \(titles[step - 1])")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .blasterFont(size: 22, weight: .black)
                     .foregroundStyle(stepGradient)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -109,7 +109,7 @@ struct SongMakerView: View {
                     StepDots(step: step, titles: titles, compact: true)
                 }
                 Text("🎵 Make a Song")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .blasterFont(size: 22, weight: .black)
                     .foregroundStyle(.white)
             }
         } else {
@@ -117,7 +117,7 @@ struct SongMakerView: View {
                 HomeButton(action: home).probe("maker.home")
                 Spacer()
                 Text("🎵 Make a Song")
-                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .blasterFont(size: 30, weight: .black)
                     .foregroundStyle(.white)
                 Spacer()
                 StepDots(step: step, titles: titles, compact: false)
@@ -146,7 +146,7 @@ struct SongMakerView: View {
             }
             .frame(maxWidth: 700)
             Text("…or pick a vibe:")
-                .font(.system(size: compact ? 16 : 22, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 16 : 22, weight: .black)
                 .foregroundStyle(.white.opacity(0.85))
             vibeGrid(compact: compact)
         }
@@ -173,9 +173,9 @@ struct SongMakerView: View {
                     audio.preview(recipe)
                 } label: {
                     VStack(spacing: 8) {
-                        Text(speed.emoji).font(.system(size: compact ? 54 : 96))
+                        Glyph(speed.emoji, size: compact ? 54 : 96)
                         Text(speed.word)
-                            .font(.system(size: compact ? 22 : 36, weight: .black, design: .rounded))
+                            .blasterFont(size: compact ? 22 : 36, weight: .black)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -190,7 +190,7 @@ struct SongMakerView: View {
                     )
                     .shadow(color: selected ? Neon.yellow : .clear, radius: 18)
                     .overlay(alignment: .topTrailing) {
-                        if selected { Text("✅").font(.system(size: 34)).offset(x: 8, y: -12) }
+                        if selected { Glyph("✅", size: 34).offset(x: 8, y: -12) }
                     }
                 }
                 .buttonStyle(Squish())
@@ -268,10 +268,10 @@ struct SongMakerView: View {
         VStack(spacing: 18) {
             HStack(spacing: 10) {
                 Text("✏️ Song name:")
-                    .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(.white)
                 TextField("Name your song", text: $recipe.name)
-                    .font(.system(size: compact ? 20 : 26, weight: .bold, design: .rounded))
+                    .blasterFont(size: compact ? 20 : 26, weight: .bold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .frame(height: 58)
@@ -311,7 +311,7 @@ struct SongMakerView: View {
             Spacer()
             if step == 1, !pickedVibe {
                 Text("👆 Pick a vibe first!")
-                    .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(Neon.yellow)
             } else if step < titles.count {
                 Button {
@@ -347,7 +347,7 @@ struct StepDots: View {
         HStack(spacing: compact ? 6 : 10) {
             ForEach(1...titles.count, id: \.self) { n in
                 Text(n < step ? "✓" : "\(n)")
-                    .font(.system(size: compact ? 16 : 22, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 16 : 22, weight: .black)
                     .foregroundStyle(n == step ? .black : .white)
                     .frame(width: compact ? 32 : 44, height: compact ? 32 : 44)
                     .background(
@@ -380,9 +380,9 @@ struct BandToggles: View {
                         Glyph(part.emoji, size: compact ? 34 : 50)
                             .grayscale(on ? 0 : 1)
                         Text(part.word)
-                            .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
+                            .blasterFont(size: compact ? 18 : 24, weight: .black)
                         Text(on ? "ON" : "off")
-                            .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .rounded))
+                            .blasterFont(size: compact ? 13 : 16, weight: .heavy)
                             .padding(.horizontal, 10)
                             .background(on ? Neon.green : .white.opacity(0.2), in: Capsule())
                             .foregroundStyle(on ? .black : .white)
@@ -430,7 +430,7 @@ struct SoundRow<Option: SoundChoice>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 18 : 24, weight: .black)
                 .foregroundStyle(.white)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: compact ? 6 : 12) {
@@ -443,7 +443,7 @@ struct SoundRow<Option: SoundChoice>: View {
                             VStack(spacing: 2) {
                                 Glyph(option.emoji, size: compact ? 24 : 36)
                                 Text(option.word)
-                                    .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
+                                    .blasterFont(size: compact ? 13 : 20, weight: .black)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.6)
                             }

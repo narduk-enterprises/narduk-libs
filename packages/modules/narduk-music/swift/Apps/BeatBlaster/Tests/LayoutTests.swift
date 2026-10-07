@@ -291,6 +291,16 @@ import XCTest
         }
     }
 
+    func testTextFollowsDynamicTypeButDisplayTextGrowsLess() {
+        XCTAssertEqual(BlasterFont.scale(.large, size: 18), 1, "the design sizes are the Large sizes")
+        XCTAssertLessThan(BlasterFont.scale(.xSmall, size: 18), 1, "smaller settings shrink the text")
+        let label = BlasterFont.scale(.accessibility5, size: 14)
+        let display = BlasterFont.scale(.accessibility5, size: 44)
+        XCTAssertGreaterThan(label, 1.5, "small labels grow a lot at the largest size")
+        XCTAssertGreaterThan(display, 1, "display text still grows")
+        XCTAssertLessThan(display, label, "but less, so the screens fit")
+    }
+
     func testEachSongGetsItsOwnColourTurnThatTheStateEases() {
         let audio = BlasterAudio()
         defer { audio.stop() }

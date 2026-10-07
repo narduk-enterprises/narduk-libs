@@ -58,6 +58,8 @@ struct PlayerView: View {
                 if let panel { picker(panel, compact: compact) }
             }
         }
+        // A container keeps its children's own ids; without `.contain` the root id overrides every control's (#1664).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("player.root")
         .focusable()
         .focusEffectDisabled()
@@ -100,13 +102,16 @@ struct PlayerView: View {
         HStack(spacing: 12) {
             HomeButton(action: home).probe("player.home")
             if !compact {
-                Text("\(audio.recipe.style.emoji) \(audio.recipe.name)")
-                    .font(.system(size: short ? 20 : 28, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .shadow(color: audio.recipe.style.color, radius: 10)
-                    .layoutPriority(1)
+                HStack(spacing: 10) {
+                    VibeArt(style: audio.recipe.style, size: short ? 30 : 40)
+                    Text(audio.recipe.name)
+                        .blasterFont(size: short ? 20 : 28, weight: .black)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: audio.recipe.style.color, radius: 10)
+                }
+                .layoutPriority(1)
             }
             Spacer(minLength: 0)
             Button {
@@ -123,7 +128,7 @@ struct PlayerView: View {
             .buttonStyle(Squish())
             .accessibilityLabel(audio.isPaused ? "Resume" : "Pause")
             .probe("player.pause")
-            RecBadge(audio: audio, compact: compact).probe("player.rec")
+            RecBadge(audio: audio, compact: compact).layoutPriority(1).probe("player.rec")
         }
     }
 
@@ -183,7 +188,7 @@ struct PlayerView: View {
                     HStack(spacing: 5) {
                         Circle().fill(.red).frame(width: 8, height: 8)
                         Text(clockText(audio.recordingElapsed(at: context.date)))
-                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .blasterFont(size: 13, weight: .heavy, design: .monospaced)
                     }
                     .foregroundStyle(.white)
                     .padding(8)
@@ -300,7 +305,7 @@ struct PlayControls: View {
                     VStack(spacing: 0) {
                         Glyph(part.emoji, size: compact ? 18 : 24).grayscale(on ? 0 : 1)
                         Text(part.word)
-                            .font(.system(size: compact ? 10 : 13, weight: .black, design: .rounded))
+                            .blasterFont(size: compact ? 10 : 13, weight: .black)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
@@ -322,7 +327,7 @@ struct PlayControls: View {
             HStack(spacing: 6) {
                 Glyph(icon, size: 22)
                 Text(word)
-                    .font(.system(size: compact ? 14 : 17, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 14 : 17, weight: .black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
@@ -353,13 +358,13 @@ struct EnergySlider: View {
         VStack(alignment: .leading, spacing: 4) {
             // The hint lives in the label (it used to float over the page tabs) and goes away for good on first use.
             Text("⚡️ Energy: \(label)" + (showHint ? "  👈 slide me!" : ""))
-                .font(.system(size: compact ? 15 : 20, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 15 : 20, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             HStack(spacing: 8) {
                 Text("😌 Chill")
-                    .font(.system(size: compact ? 13 : 17, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 13 : 17, weight: .black)
                     .foregroundStyle(.white)
                     .fixedSize()
                 GeometryReader { geometry in
@@ -401,7 +406,7 @@ struct EnergySlider: View {
                 }
                 .frame(height: compact ? 44 : 52)
                 Text("HYPE 🔥")
-                    .font(.system(size: compact ? 13 : 17, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 13 : 17, weight: .black)
                     .foregroundStyle(.white)
                     .fixedSize()
             }
@@ -453,10 +458,10 @@ struct DropButton: View {
                 VStack(spacing: 0) {
                     Glyph("💣", size: size * 0.22)
                     Text("DROP!")
-                        .font(.system(size: size * 0.22, weight: .black, design: .rounded))
+                        .blasterFont(size: size * 0.22, weight: .black)
                     if pressing {
                         Text("\(Int(charge * 100))%")
-                            .font(.system(size: size * 0.1, weight: .heavy, design: .rounded))
+                            .blasterFont(size: size * 0.1, weight: .heavy)
                     }
                 }
                 .foregroundStyle(.white)
@@ -509,7 +514,7 @@ struct BoomText: View {
             if since >= 0, since < 1.2 {
                 let p = since / 1.2
                 Text("BOOM!")
-                    .font(.system(size: 160, weight: .black, design: .rounded))
+                    .blasterFont(size: 160, weight: .black)
                     .italic()
                     .foregroundStyle(
                         LinearGradient(colors: [Neon.yellow, Neon.pink], startPoint: .top, endPoint: .bottom)
@@ -549,19 +554,18 @@ struct RecBadge: View {
             if audio.isRecording { audio.endRecording() } else { audio.beginRecording() }
         } label: {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                HStack(spacing: 6) {
-                    Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
-                    Text(
-                        audio.isPaused
-                            ? "⏸ Paused"
-                            : audio.isRecording
-                                ? "REC \(clockText(audio.recordingElapsed(at: context.date)))"
-                                : "Saved ✓ · tap to record"
-                    )
-                    .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                // The longest wording that fits: big Dynamic Type sizes fall back to shorter words, never to a clipped badge.
+                ViewThatFits(in: .horizontal) {
+                    ForEach(wordings(at: context.date), id: \.self) { wording in
+                        HStack(spacing: 6) {
+                            Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
+                            Text(wording)
+                                .blasterFont(size: compact ? 13 : 16, weight: .heavy, design: .monospaced)
+                                .foregroundStyle(.white.opacity(0.9))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
                 }
                 .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
@@ -569,5 +573,12 @@ struct RecBadge: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(audio.isRecording ? "Recording. Tap to stop and save" : "Start recording")
+    }
+
+    /// The badge's words, longest first.
+    private func wordings(at date: Date) -> [String] {
+        if audio.isPaused { return ["⏸ Paused", "⏸"] }
+        if audio.isRecording { return ["REC \(clockText(audio.recordingElapsed(at: date)))", "REC"] }
+        return ["Saved ✓ · tap to record", "Tap to record", "REC"]
     }
 }

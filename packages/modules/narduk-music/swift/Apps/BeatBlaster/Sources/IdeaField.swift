@@ -13,7 +13,7 @@ struct IdeaField: View {
     var body: some View {
         VStack(spacing: 10) {
             TextField("Tell me your song idea…", text: $text)
-                .font(.system(size: compact ? 20 : 28, weight: .bold, design: .rounded))
+                .blasterFont(size: compact ? 20 : 28, weight: .bold)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
                 .frame(minHeight: compact ? 56 : 76)

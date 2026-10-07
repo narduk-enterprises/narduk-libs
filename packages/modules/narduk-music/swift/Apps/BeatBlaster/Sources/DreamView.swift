@@ -125,7 +125,7 @@ struct DreamView: View {
                 ScrollView {
                     VStack(spacing: compact ? 18 : 28) {
                         Text("✨ Dream a Song ✨")
-                            .font(.system(size: compact ? 36 : 64, weight: .black, design: .rounded))
+                            .blasterFont(size: compact ? 36 : 64, weight: .black)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [Neon.cyan, Neon.purple, Neon.pink], startPoint: .leading,
@@ -183,11 +183,11 @@ struct DreamView: View {
         VStack(spacing: 14) {
             VibeArt(style: song.style, size: compact ? 120 : 180)
             Text(song.title)
-                .font(.system(size: compact ? 28 : 44, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 28 : 44, weight: .black)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
             Text(song.style.funName + " • " + song.style.genreName)
-                .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
+                .blasterFont(size: compact ? 16 : 22, weight: .bold)
                 .foregroundStyle(.white.opacity(0.8))
             Button {
                 play(SongRecipe(from: song.recipe, style: song.style))
@@ -216,7 +216,7 @@ struct FlowChips: View {
                     tap(idea)
                 } label: {
                     Text(idea)
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .blasterFont(size: 20, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
                         .frame(height: 54)

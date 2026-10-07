@@ -100,6 +100,7 @@ struct ControlsTray<Content: View>: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.25), lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityElement(children: .contain)
         .probe("player.tray")
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: state.isOpen)
         .task(id: state) {
@@ -118,7 +119,7 @@ struct ControlsTray<Content: View>: View {
                 Capsule().fill(.white.opacity(0.7)).frame(width: 36, height: 5)
                 Glyph("icon-pads", size: 22)
                 Text("Controls")
-                    .font(.system(size: short ? 15 : 18, weight: .black, design: .rounded))
+                    .blasterFont(size: short ? 15 : 18, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Image(systemName: state.isOpen ? "chevron.down" : "chevron.up")
@@ -153,7 +154,7 @@ struct ControlsTray<Content: View>: View {
                     HStack(spacing: 4) {
                         Glyph(which.icon, size: 18)
                         Text(which.word)
-                            .font(.system(size: short ? 12 : 14, weight: .black, design: .rounded))
+                            .blasterFont(size: short ? 12 : 14, weight: .black)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                     }

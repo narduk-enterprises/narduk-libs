@@ -12,11 +12,11 @@ struct MusicCard: View {
             KindBadge(kind: .music, size: compact ? 10 : 12)
             VibeArt(style: style, size: compact ? 64 : 92)
             Text(style.funName)
-                .font(.system(size: compact ? 15 : 20, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 15 : 20, weight: .black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(style.genreName)
-                .font(.system(size: compact ? 11 : 14, weight: .bold, design: .rounded))
+                .blasterFont(size: compact ? 11 : 14, weight: .bold)
                 .opacity(0.8)
         }
         .foregroundStyle(.white)
@@ -31,7 +31,7 @@ struct MusicCard: View {
         )
         .overlay(alignment: .topTrailing) {
             if selected {
-                Text("✅").font(.system(size: 30)).offset(x: 10, y: -12)
+                Glyph("✅", size: 30).offset(x: 10, y: -12)
             }
         }
         .shadow(color: style.color.opacity(selected ? 1 : 0.35), radius: selected ? 20 : 6)
@@ -57,9 +57,9 @@ struct LightCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .allowsHitTesting(false)
             HStack(spacing: 6) {
-                Text("💡").font(.system(size: compact ? 14 : 18))
+                Glyph("💡", size: compact ? 14 : 18)
                 Text(tile.name)
-                    .font(.system(size: compact ? 14 : 18, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 14 : 18, weight: .black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
@@ -74,7 +74,7 @@ struct LightCard: View {
                 .stroke(selected ? Neon.cyan : .white.opacity(0.3), lineWidth: selected ? 5 : 2)
         )
         .overlay(alignment: .topTrailing) {
-            if selected { Text("✅").font(.system(size: 28)).offset(x: 8, y: -10) }
+            if selected { Glyph("✅", size: 28).offset(x: 8, y: -10) }
         }
         .shadow(color: selected ? Neon.cyan : .clear, radius: 16)
     }
@@ -135,7 +135,7 @@ struct PickerPanel<Content: View>: View {
             HStack {
                 KindBadge(kind: badge, size: 16)
                 Text(title)
-                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .blasterFont(size: 30, weight: .black)
                     .foregroundStyle(.white)
                 Spacer()
                 Button(action: close) {
@@ -180,8 +180,10 @@ struct MusicLightsBar: View {
 
     private func music(compact: Bool) -> some View {
         section(
-            badge: .music, emoji: musicEmoji ?? audio.recipe.style.emoji, title: musicTitle ?? audio.recipe.name,
-            color: Neon.yellow, compact: compact, showChange: showMusicChange, change: changeMusic)
+            badge: .music, emoji: musicEmoji ?? audio.recipe.style.emoji,
+            style: musicEmoji == nil ? audio.recipe.style : nil,
+            title: musicTitle ?? audio.recipe.name, color: Neon.yellow, compact: compact, showChange: showMusicChange,
+            change: changeMusic)
     }
 
     private func lights(_ tile: VisualTile, compact: Bool) -> some View {
@@ -191,14 +193,18 @@ struct MusicLightsBar: View {
     }
 
     private func section(
-        badge: KindBadge.Kind, emoji: String, title: String, color: Color, compact: Bool, showChange: Bool,
-        change: @escaping () -> Void
+        badge: KindBadge.Kind, emoji: String, style: BlasterStyle? = nil, title: String, color: Color, compact: Bool,
+        showChange: Bool, change: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 10) {
             KindBadge(kind: badge, size: 13)
-            Text(emoji).font(.system(size: compact ? 22 : 26))
+            if let style, Art.vibe(for: style) != nil {
+                VibeArt(style: style, size: compact ? 30 : 36)
+            } else {
+                Glyph(emoji, size: compact ? 22 : 26)
+            }
             Text(title)
-                .font(.system(size: compact ? 17 : 20, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 17 : 20, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
