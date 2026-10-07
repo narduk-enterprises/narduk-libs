@@ -80,8 +80,14 @@ import NardukMusicEngine
         return DropContext(
             genre: genre, keyRoot: keyRoot, minor: minor, chordRoot: bassRoot, secondsPerStep: secondsPerStep,
             seed: recipe.seed, variety: recipe.variety ?? SongRecipe.defaultVariety, dropNumber: dropCount,
-            material: conductor.map { DropMaterial.capture(from: $0) })
+            material: conductor.map { DropMaterial.capture(from: $0) }, intensity: dropIntensity)
     }
+
+    /// 0 ... 1: how big the DROP plays for this song. The Energy slider sets it, so a chill song gets a gentle lift and a
+    /// hype one the full build and slam.
+    var dropIntensity: Double { Self.dropIntensity(energy: energy) }
+
+    static func dropIntensity(energy: Double) -> Double { min(1, max(0, 0.15 + energy)) }
 
     /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
     @discardableResult func trigger(_ pad: SoundPad) -> Int {

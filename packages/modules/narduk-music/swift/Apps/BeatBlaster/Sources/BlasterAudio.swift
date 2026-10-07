@@ -129,6 +129,7 @@ enum BlasterInput: Equatable {
         stop()
         self.recipe = recipe
         lightsID = recipe.lightsID
+        colorStep = 0
         visualState.look = Self.look(for: recipe)
         input = .song
         do {
@@ -155,17 +156,35 @@ enum BlasterInput: Equatable {
 
     /// Swaps to `next` without a jump: the sound dips over about half a second, the new song comes in on the old
     /// song's next bar and rises over about 0.7 s. (A bar that is more than 2.5 s away is not waited for.)
-    func swap(to next: SongRecipe) {
-        guard isRunning, input == .song, !isPaused else { return play(next, fadeIn: 0.7) }
+    /// `transition` stretches it: Mash it up dips over a whole bar's worth of time and rises slowly.
+    func swap(to next: SongRecipe, transition: SwapTransition = .quick) {
+        guard isRunning, input == .song, !isPaused else { return play(next, fadeIn: transition.rise) }
         swapTask?.cancel()
-        let wait = min(2.5, player?.secondsToNextBar ?? 0)
-        let dip = min(0.5, max(0.15, wait))
+        var wait = player?.secondsToNextBar ?? 0
+        // A long dip still lands on a bar line: when the next bar is too close, wait for the one after it.
+        if transition.fullDip, wait < transition.dip, let player { wait += player.secondsPerStep * 16 }
+        wait = min(transition.longestWait, wait)
+        let dip = min(transition.dip, max(0.15, wait))
         fade(to: 0, over: dip)
         swapTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(max(wait, dip)))
             guard !Task.isCancelled, let self else { return }
-            self.play(next, fadeIn: 0.7)
+            self.play(next, fadeIn: transition.rise)
         }
+    }
+
+    /// How a song change sounds: how long the old song takes to dip out, the longest wait for a bar line, and how long
+    /// the new song takes to rise.
+    struct SwapTransition: Equatable {
+        var dip: Double
+        var longestWait: Double
+        var rise: Double
+        /// Waits a bar more rather than cut the dip short.
+        var fullDip = false
+        /// Picking a new vibe or lights: out in half a second, in on the next bar.
+        static let quick = SwapTransition(dip: 0.5, longestWait: 2.5, rise: 0.7)
+        /// Mash it up: a slower dip that lands on a bar, then the new mix swells in.
+        static let mashUp = SwapTransition(dip: 1.4, longestWait: 4, rise: 1.8, fullDip: true)
     }
 
     /// Plays `recipe` for a few seconds (the song maker's previews).
@@ -185,6 +204,26 @@ enum BlasterInput: Equatable {
         return SoundPaletteLook(hueShift: Float(Int(hash % 13) - 6) * 30)
     }
 
+    /// Which colors the lights wear: 0 is the song's own look, then each of `colorPresets`. A tap on the lights steps it;
+    /// a new song starts on its own look again.
+    private(set) var colorStep = 0
+    static let colorPresets: [SoundPalettePreset] = [.sunset, .ocean, .toxic, .candy, .ice, .ember]
+
+    /// Steps the lights to the next colors (the look eases in over `lookEaseDuration`).
+    func shiftColors() {
+        colorStep = (colorStep + 1) % (Self.colorPresets.count + 1)
+        visualState.look =
+            colorStep == 0 ? Self.look(for: recipe) : SoundPaletteLook(preset: Self.colorPresets[colorStep - 1])
+    }
+
+    /// Swaps to the light `offset` places along `VisualTile.all` (wrapping), keeping the colors the lights wear now.
+    func stepLights(by offset: Int) {
+        let ids = VisualTile.all.map(\.id)
+        let index = ids.firstIndex(of: lightsID) ?? 0
+        let next = ids[((index + offset) % ids.count + ids.count) % ids.count]
+        update { $0.lightsID = next }
+    }
+
     /// Keeps the current song going, or starts it if nothing plays.
     func playIfIdle() {
         if !isRunning || input != .song { play(recipe) }
@@ -199,7 +238,7 @@ enum BlasterInput: Equatable {
 
     /// "Mash it up": the beat of one vibe with the sounds of another, a random light and speed.
     func mashUp() {
-        swap(to: SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id), after: recipe))
+        swap(to: SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id), after: recipe), transition: .mashUp)
     }
 
     func setSpeed(_ speed: Speed) {
@@ -509,20 +548,22 @@ enum BlasterInput: Equatable {
         player.pressDrop()
         drop.setMuted(true, for: .bass)
         surgeTask?.cancel()
+        let intensity = Float(player.dropContext?.intensity ?? 1)
         surgeTask = Task { [weak self] in
             let start = Date()
             while !Task.isCancelled {
                 guard let self else { return }
                 let t = Float(min(1, Date().timeIntervalSince(start) / DropMachine.fullChargeSeconds))
-                self.drop.setGain(1 + 0.5 * t, for: .fx)
-                self.drop.setGain(Self.restingDrums - 0.55 * t, for: .drums)
+                // A calm song swells less and keeps more of its drums.
+                self.drop.setGain(1 + 0.5 * t * intensity, for: .fx)
+                self.drop.setGain(Self.restingDrums - 0.55 * t * (0.4 + 0.6 * intensity), for: .drums)
                 self.drop.masterVolume = 0.75 + 0.25 * t
                 if let player = self.player {
                     let held = Int(Date().timeIntervalSince(start) / player.secondsPerStep)
                     self.setFilter(
                         DropArranger.filterSweep(
                             heldSteps: held, secondsPerStep: player.secondsPerStep,
-                            genre: player.dropContext?.genre ?? .rock))
+                            genre: player.dropContext?.genre ?? .rock, intensity: Double(intensity)))
                 }
                 try? await Task.sleep(for: .milliseconds(16))
             }
@@ -548,8 +589,10 @@ enum BlasterInput: Equatable {
         let untilHit = max(0, Double(hit.start - drop.currentStep) * sps)
         lastDrop = Date().addingTimeInterval(untilHit)
         drop.setMuted(false, for: .bass)
-        drop.setGain(1.4, for: .bass)
-        drop.setGain(1.3, for: .drums)
+        // The landing is as loud as the song is big: a chill song's bass and drums come back near their resting level.
+        let intensity = Float(player.dropContext?.intensity ?? 1)
+        drop.setGain(Self.restingBass + 0.2 * intensity, for: .bass)
+        drop.setGain(Self.restingDrums + 0.15 * intensity, for: .drums)
         drop.setGain(1, for: .fx)
         drop.masterVolume = 1
         let length = untilHit + Double(hit.end - hit.start) * sps

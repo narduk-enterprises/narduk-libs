@@ -27,6 +27,19 @@ struct PlayerView: View {
             let pageHeight = max(110, geometry.size.height * (landscape ? 0.62 : 0.5) - (short ? 100 : 110))
             ZStack {
                 DropStage(audio: audio, drawing: scenePhase == .active).ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .gesture(lightsSwipe)
+                    .onTapGesture {
+                        Haptics.tap()
+                        audio.shiftColors()
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("Lights")
+                    .accessibilityHint("Tap for new colors, swipe for the next light")
+                    .accessibilityIdentifier("player.lights")
+                    .accessibilityAction(named: "New colors") { audio.shiftColors() }
+                    .accessibilityAction(named: "Next light") { audio.stepLights(by: 1) }
+                    .accessibilityAction(named: "Previous light") { audio.stepLights(by: -1) }
                 Vignette()
                 VStack(spacing: short ? 6 : 10) {
                     topBar(compact: compact, short: short)
@@ -34,8 +47,10 @@ struct PlayerView: View {
                     if landscape {
                         HStack(alignment: .bottom, spacing: 12) {
                             // Logan's canvas decision: a full-width bottom tray with DROP pinned bottom right.
-                            controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                                .frame(maxWidth: .infinity)
+                            controlsTray(
+                                compact: compact, short: short, wide: geometry.size.width >= 700, pageHeight: pageHeight
+                            )
+                            .frame(maxWidth: .infinity)
                             dropColumn(size: dropSize)
                         }
                     } else {
@@ -43,8 +58,10 @@ struct PlayerView: View {
                             Spacer(minLength: 0)
                             dropColumn(size: dropSize)
                         }
-                        controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                            .frame(maxWidth: .infinity)
+                        controlsTray(
+                            compact: compact, short: short, wide: geometry.size.width >= 700, pageHeight: pageHeight
+                        )
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, short ? 12 : (compact ? 14 : 24))
@@ -141,14 +158,14 @@ struct PlayerView: View {
         .padding(12)  // room for the charge ring, which is drawn outside the button
     }
 
-    private func controlsTray(compact: Bool, short: Bool, pageHeight: CGFloat) -> some View {
+    private func controlsTray(compact: Bool, short: Bool, wide: Bool, pageHeight: CGFloat) -> some View {
         ControlsTray(state: $tray, maxPageHeight: pageHeight, short: short) { page in
             switch page {
             case .play:
                 PlayControls(audio: audio, compact: compact, short: short, newSong: newSong)
             case .effects:
                 EffectsPanel(
-                    audio: audio, compact: compact, short: short, onPad: { audio.fire($0) },
+                    audio: audio, compact: compact, short: short, wide: wide, onPad: { audio.fire($0) },
                     onStutter: { audio.setStutter($0) })
             case .more:
                 // Show mode leads the Lights page: the one big thing a kid comes here for.
@@ -171,6 +188,16 @@ struct PlayerView: View {
         }
     }
 
+    /// A sideways swipe on the lights moves to the next light (left) or the previous one (right).
+    private var lightsSwipe: some Gesture {
+        DragGesture(minimumDistance: 40).onEnded { drag in
+            let dx = drag.translation.width
+            guard abs(dx) > 60, abs(dx) > 1.5 * abs(drag.translation.height) else { return }
+            Haptics.tap()
+            audio.stepLights(by: dx < 0 ? 1 : -1)
+        }
+    }
+
     /// Show mode: every control faded out, the lights edge to edge, a faint REC dot and clock in one corner. A tap
     /// anywhere brings everything back; a double tap fires a short DROP.
     private func showModeLayer(compact: Bool) -> some View {
@@ -186,6 +213,7 @@ struct PlayerView: View {
                     }
                 }
                 .onTapGesture { show.reveal() }
+                .simultaneousGesture(lightsSwipe)
             if audio.isRecording {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     HStack(spacing: 5) {
