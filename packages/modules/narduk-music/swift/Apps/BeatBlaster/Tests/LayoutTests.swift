@@ -290,4 +290,18 @@ import XCTest
             XCTAssertGreaterThanOrEqual(frames["maker.title"]?.width ?? 0, 40, label)
         }
     }
+
+    func testEachSongGetsItsOwnColourTurnThatTheStateEases() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        let a = SongRecipe(style: .genre(.house), seed: 1)
+        let b = SongRecipe(style: .genre(.dubstep), seed: 2)
+        XCTAssertEqual(BlasterAudio.look(for: a), BlasterAudio.look(for: a), "the same song always looks the same")
+        XCTAssertNotEqual(BlasterAudio.look(for: a), BlasterAudio.look(for: b))
+        audio.play(a)
+        XCTAssertEqual(audio.visualState.look, BlasterAudio.look(for: a))
+        audio.play(b)
+        XCTAssertEqual(audio.visualState.look, BlasterAudio.look(for: b))
+        XCTAssertTrue(audio.visualState.isEasingLook, "a new look eases in instead of snapping")
+    }
 }
