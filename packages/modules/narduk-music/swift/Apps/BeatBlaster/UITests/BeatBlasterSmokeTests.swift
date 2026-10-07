@@ -74,12 +74,8 @@ import XCTest
         require("player.root")
     }
 
-    /// Player controls are found by label, not identifier: the player root sets `.accessibilityIdentifier("player.root")`
-    /// on a container, which SwiftUI applies to every control inside it, so `player.home`, `player.drop`, `player.rec`
-    /// and `player.tray*` never reach the accessibility tree (narduk-libs issue filed by A13). Switch these back to
-    /// `require("player.<name>")` when the root identifier moves off the container.
     private func goHomeFromPlayer() {
-        requireButton("Home").tap()
+        require("player.home").tap()
         require("home.makeSong")
     }
 
@@ -90,12 +86,14 @@ import XCTest
         require("home.makeSong")
         makeASong()
 
-        requireButton("Open the controls").tap()
-        requireButton("Effects")  // a tray tab: the tray is open
+        require("player.tray").tap()
+        let tab = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "player.tray.tab.")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "the controls tray did not open (no player.tray.tab.*)")
 
-        let drop = requireButton("Drop")
+        let drop = require("player.drop")
         drop.press(forDuration: 0.6)
-        XCTAssertTrue(button("Drop").exists, "DROP is gone after it was released")
+        XCTAssertTrue(element("player.drop").exists, "DROP is gone after it was released")
         XCTAssertTrue(element("player.root").exists, "the player vanished after DROP")
 
         goHomeFromPlayer()
@@ -106,10 +104,11 @@ import XCTest
         makeASong()
 
         // The player starts a take by itself: let it run a moment, then stop and save it from the REC badge.
-        let rec = requireButton("Recording. Tap to stop and save")
+        let rec = require("player.rec")
+        XCTAssertTrue(rec.label.contains("Recording"), "REC badge label: \(rec.label)")
         Thread.sleep(forTimeInterval: 3)
         rec.tap()
-        requireButton("Start recording")
+        XCTAssertTrue(require("player.rec").label.contains("Start recording"), "REC badge did not go idle")
         goHomeFromPlayer()
 
         let mySongs = require("home.mySongs", timeout: 15)
