@@ -140,62 +140,92 @@ enum SoundPad: String, CaseIterable, Identifiable {
     }
 }
 
-/// The player's second page: five sliders (Energy lives on the Play page) and the sound-effect pads.
+/// The player's second page: the sound-effect pads, STUTTER and four sliders (Energy lives on the Mix page). A wide
+/// screen sets them side by side (pads and STUTTER left, the sliders two by two right) so the tray stays short and the
+/// lights keep the screen; a phone stacks them.
 struct EffectsPanel: View {
     let audio: BlasterAudio
     let compact: Bool
     let short: Bool
+    var wide = false
     var onPad: (SoundPad) -> Void = { _ in }
     /// STUTTER: true while the pad is held, false on release.
     var onStutter: (Bool) -> Void = { _ in }
 
     var body: some View {
-        VStack(spacing: compact ? 8 : 12) {
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: compact ? 4 : 7), spacing: 8
-            ) {
-                ForEach(SoundPad.allCases) { pad in
-                    Button {
-                        Haptics.success()
-                        onPad(pad)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Glyph(pad.emoji, size: compact ? 28 : 36)
-                            Text(pad.word)
-                                .blasterFont(size: compact ? 12 : 15, weight: .black)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 64)
-                        .background(
-                            pad.color.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
-                                .white.opacity(0.7), lineWidth: 2))
-                    }
-                    .buttonStyle(Squish())
-                    .accessibilityLabel(pad.word)
-                    .accessibilityIdentifier("fx.pad.\(pad.word)")
+        if wide {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(spacing: 8) {
+                    pads(columns: 4)
+                    StutterPad(compact: compact, onHold: onStutter)
                 }
+                .frame(maxWidth: .infinity)
+                Grid(horizontalSpacing: 14, verticalSpacing: 6) {
+                    GridRow {
+                        sliders[0]
+                        sliders[1]
+                    }
+                    GridRow {
+                        sliders[2]
+                        sliders[3]
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            StutterPad(compact: compact, onHold: onStutter)
+        } else {
+            VStack(spacing: compact ? 8 : 12) {
+                pads(columns: compact ? 4 : 8)
+                StutterPad(compact: compact, onHold: onStutter)
+                ForEach(sliders.indices, id: \.self) { sliders[$0] }
+            }
+        }
+    }
+
+    private func pads(columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 8) {
+            ForEach(SoundPad.allCases) { pad in
+                Button {
+                    Haptics.success()
+                    onPad(pad)
+                } label: {
+                    VStack(spacing: 2) {
+                        Glyph(pad.emoji, size: compact ? 28 : 36)
+                        Text(pad.word)
+                            .blasterFont(size: compact ? 12 : 15, weight: .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                    .background(pad.color.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 2)
+                    )
+                }
+                .buttonStyle(Squish())
+                .accessibilityLabel(pad.word)
+                .accessibilityIdentifier("fx.pad.\(pad.word)")
+            }
+        }
+    }
+
+    private var sliders: [EffectSlider] {
+        [
             EffectSlider(
                 icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
-                value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
+                value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 })),
             EffectSlider(
                 icon: "🔁", title: "Echo", low: "Dry", high: "Echoey", color: Neon.purple,
-                value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 }))
+                value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 })),
             EffectSlider(
                 icon: "🔊", title: "Bass boost", low: "Normal", high: "BOOM", color: Neon.orange,
-                value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 }))
+                value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 })),
             EffectSlider(
                 icon: "🐢", title: "Speed", low: "Slow", high: "Fast", color: Neon.green,
                 value: Binding(
                     get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
-                    set: { audio.effects.speed = $0 }))
-        }
+                    set: { audio.effects.speed = $0 })),
+        ]
     }
 }
 

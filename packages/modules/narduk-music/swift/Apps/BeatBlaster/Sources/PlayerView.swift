@@ -34,8 +34,10 @@ struct PlayerView: View {
                     if landscape {
                         HStack(alignment: .bottom, spacing: 12) {
                             // Logan's canvas decision: a full-width bottom tray with DROP pinned bottom right.
-                            controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                                .frame(maxWidth: .infinity)
+                            controlsTray(
+                                compact: compact, short: short, wide: geometry.size.width >= 700, pageHeight: pageHeight
+                            )
+                            .frame(maxWidth: .infinity)
                             dropColumn(size: dropSize)
                         }
                     } else {
@@ -43,8 +45,10 @@ struct PlayerView: View {
                             Spacer(minLength: 0)
                             dropColumn(size: dropSize)
                         }
-                        controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                            .frame(maxWidth: .infinity)
+                        controlsTray(
+                            compact: compact, short: short, wide: geometry.size.width >= 700, pageHeight: pageHeight
+                        )
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, short ? 12 : (compact ? 14 : 24))
@@ -141,14 +145,14 @@ struct PlayerView: View {
         .padding(12)  // room for the charge ring, which is drawn outside the button
     }
 
-    private func controlsTray(compact: Bool, short: Bool, pageHeight: CGFloat) -> some View {
+    private func controlsTray(compact: Bool, short: Bool, wide: Bool, pageHeight: CGFloat) -> some View {
         ControlsTray(state: $tray, maxPageHeight: pageHeight, short: short) { page in
             switch page {
             case .play:
                 PlayControls(audio: audio, compact: compact, short: short, newSong: newSong)
             case .effects:
                 EffectsPanel(
-                    audio: audio, compact: compact, short: short, onPad: { audio.fire($0) },
+                    audio: audio, compact: compact, short: short, wide: wide, onPad: { audio.fire($0) },
                     onStutter: { audio.setStutter($0) })
             case .more:
                 // Show mode leads the Lights page: the one big thing a kid comes here for.

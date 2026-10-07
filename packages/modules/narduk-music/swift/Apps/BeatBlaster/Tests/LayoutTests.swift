@@ -172,17 +172,19 @@ import XCTest
         }
     }
 
-    func testTheOpenTrayHugsTheMixPageInsteadOfFillingTheScreen() {
+    func testTheOpenTrayHugsItsPageInsteadOfFillingTheScreen() {
         let audio = BlasterAudio()
         defer { audio.stop() }
-        withDefaults(["tray": true]) {
-            for (label, size, insets) in layouts {
-                // A short phone held sideways has no room to spare: there the Mix page scrolls inside the cap.
-                guard min(size.width, size.height) >= 500 else { continue }
-                let (frames, _) = host(player(audio), size: size, insets: insets)
-                guard let tray = frames["player.tray"] else { return XCTFail("tray missing — \(label)") }
-                XCTAssertLessThanOrEqual(
-                    tray.height, size.height * 0.5, "the Mix tray leaves the lights showing — \(label)")
+        for (page, state) in [("Mix", ["tray": true]), ("FX", ["page": "effects"])] as [(String, [String: Any])] {
+            withDefaults(state) {
+                for (label, size, insets) in layouts {
+                    // A short phone held sideways has no room to spare: there a page scrolls inside the cap.
+                    guard min(size.width, size.height) >= 500 else { continue }
+                    let (frames, _) = host(player(audio), size: size, insets: insets)
+                    guard let tray = frames["player.tray"] else { return XCTFail("tray missing — \(label)") }
+                    XCTAssertLessThanOrEqual(
+                        tray.height, size.height * 0.5, "the \(page) tray leaves the lights showing — \(label)")
+                }
             }
         }
     }
