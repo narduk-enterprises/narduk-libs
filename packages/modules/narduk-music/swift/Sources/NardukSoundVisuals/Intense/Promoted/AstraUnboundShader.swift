@@ -11,7 +11,7 @@
 
             struct AuDrive {
                 float t, beat, travel, kick, snare, hat, bass, mid, high, energy, drop, intensity;
-                float growl, split;
+                float growl, split, kickHit, snareHit, bodyScale;
             };
 
             static float2 auRotate(float2 p, float angle) {
@@ -31,7 +31,7 @@
                 p.xz=auRotate(p.xz,d.travel*.36+d.t*.13);
                 p.yz=auRotate(p.yz,.38+d.travel*.17+d.snare*.62*sin(d.beat*.785398));
                 p.xy=auRotate(p.xy,.18*sin(d.travel*.24)+.12*d.growl);
-                return p;
+                return p/d.bodyScale;
             }
 
             static float2 auMap(float3 world, thread const AuDrive &d) {
@@ -59,7 +59,7 @@
                     if(rail<hit.x)hit=float2(rail,3.0+float(axis)*.1);
                 }
                 // Angular folding is distance preserving; mild core warp/stretch are bounded.
-                hit.x*=.70;
+                hit.x*=.70*d.bodyScale;
                 return hit;
             }
 
@@ -109,8 +109,10 @@
                 AuDrive d;
                 d.intensity=saturate(u.extra.z);d.t=u.resTime.z*(.3+.7*d.intensity);
                 d.beat=u.resTime.w;d.travel=u.misc.z;
-                d.kick=sqrt(saturate(u.env.x))*d.intensity;
-                d.snare=sqrt(saturate(u.env.y))*d.intensity;
+                d.kick=saturate(u.env.x)*d.intensity;
+                d.kickHit=pow(saturate(u.env.x),1.65)*d.intensity;
+                d.snare=pow(saturate(u.env.y),.8)*d.intensity;
+                d.snareHit=pow(saturate(u.env.y),1.8)*d.intensity;
                 d.hat=sqrt(saturate(u.env.z))*d.intensity;
                 d.bass=sqrt(saturate((bandAt(spectrum,.025)+bandAt(spectrum,.07)+bandAt(spectrum,.13))/3.0))*d.intensity;
                 d.mid=sqrt(saturate((bandAt(spectrum,.25)+bandAt(spectrum,.44))*.5))*d.intensity;
@@ -118,20 +120,25 @@
                 d.energy=sqrt(saturate(u.wobble.z))*d.intensity;d.drop=saturate(u.misc.y)*d.intensity;
                 // A half-time growl stretches the solid heart. No multiplying elapsed time by level.
                 d.growl=sin(d.beat*3.14159265)*d.bass*(.45+.55*d.mid);
-                d.split=.012+.075*d.bass+.16*d.kick+.25*d.drop+.09*d.snare;
+                // Sharp attack, then a visible recoil trough: sustained bass cannot hold it open.
+                float rawKick=saturate(u.env.x);
+                float recoil=4.0*rawKick*(1.0-rawKick)*d.intensity;
+                d.bodyScale=.82+.40*d.kickHit-.10*recoil+.09*d.bass+.055*d.growl;
+                d.split=.008+.035*d.bass+.52*d.kickHit+.16*d.drop+.24*d.snareHit;
                 float px=2.0/max(u.resTime.y,1.0);
                 float2 screen=(in.uv-.5)*float2(u.resTime.x/u.resTime.y,-1.0)*2.0;
                 float2 p=screen;
                 // A punch, a recoil, and a torsional snap, all bounded; no random whole-frame jitter.
-                p*=1.0-.12*d.kick-.06*d.drop;
+                p*=1.0-.025*d.kickHit;
                 p=auRotate(p,.07*sin(d.travel*.3)+.12*d.snare*sin(d.beat*1.570796));
                 p+=float2(.012*sin(d.t*17.0),.017*cos(d.t*13.0))*d.kick;
                 float r=length(p);
                 float3 col=auColor(.16,u)*(.008+.038*exp(-r*r*1.4));
                 col+=auColor(.48,u)*.025*fxFbm3(float3(p*1.7,d.travel*.025),3);
                 col+=auThoughts(p,px,d,u,spectrum);
-                float3 ro=float3(.12*sin(d.travel*.19),.06*cos(d.travel*.2),3.6);
-                float3 rd=normalize(float3(p,-2.5));
+                float3 ro=float3(.12*sin(d.travel*.19),.06*cos(d.travel*.2),5.2);
+                const float focal=2.25;
+                float3 rd=normalize(float3(p,-focal));
                 float distance=0.0,glow=0.0;float2 hit=float2(1,0);bool found=false;
                 for(int i=0;i<60;i++){
                     float3 point=ro+rd*distance;
@@ -140,7 +147,7 @@
                     glow+=exp(-nearCore*8.0)*.008;
                     if(hit.x<max(.0014,distance*px*.22)){found=true;break;}
                     distance+=max(hit.x,.0025);
-                    if(distance>7.0)break;
+                    if(distance>9.0)break;
                 }
                 col+=auColor(.02,u)*glow*(.8+d.bass);
                 if(found){
@@ -163,50 +170,74 @@
                         float circuit=abs(sin((q.x-q.y+q.z*.5)*15.0));
                         float trace=1.0-smoothstep(.07,.16+fwidth(circuit),circuit);
                         float packet=pow(.5+.5*sin(q.y*12.0-d.beat*6.2831853),8.0);
-                        surface+=auColor(.71+sign(local.y)*.1,u)*(edge*(.65+.75*d.kick)+trace*(.12+.38*packet+.25*d.hat));
+                        surface+=auColor(.71+sign(local.y)*.1,u)*(edge*(.65+2.6*d.kickHit+1.3*d.snareHit)+trace*(.12+.75*packet+.65*d.hat));
                     }else if(hit.y<2.5){
                         float veins=fxRidge(fxFbm3(local*7.0+float3(0,d.travel*.6,0),3),.65);
                         float face=.5+.5*sin(local.x*12.0+local.y*9.0-d.travel*2.0);
-                        surface=auColor(.02+face*.45,u)*(.6+1.25*veins+.9*diffuse)+auColor(.75,u)*spec;
+                        surface=auColor(.02+face*.45,u)*(.45+1.25*veins+.9*diffuse+2.2*d.kickHit+1.0*d.snareHit)+auColor(.75,u)*spec;
                     }else{
-                        surface=auColor((hit.y-3.0)*2.3+d.travel*.015,u)*(.75+.65*diffuse)+auColor(.8,u)*spec;
+                        surface=auColor((hit.y-3.0)*2.3+d.travel*.015,u)*(.75+.65*diffuse+1.6*d.kickHit)+auColor(.8,u)*spec;
                     }
                     float ao=.55+.45*saturate(auMap(point+n*.12,d).x/.08);
                     col=surface*ao+auColor(.05,u)*glow*.6;
                 }
-                // Thirty-two solid fragments fly through a 3-D volume. A perspective depth test
+                // Fifty-six fragments: twenty-four orbiting pieces plus thirty-two impact ejecta. A perspective depth test
                 // lets nearer pieces cross the machine while rear pieces stay behind it.
-                for(int j=0;j<32;j++){
+                for(int j=0;j<56;j++){
                     float f=float(j),seed=hash11(f*7.13+4.0);
-                    float cycle=fract(d.travel*(.075+seed*.035)+seed);
+                    bool ejecta=j>=24;
+                    float impact=max(d.kick,d.snare);
+                    float age=1.0-impact;
+                    float cycle=ejecta?age:fract(d.travel*(.075+seed*.035)+seed);
                     float a=f*2.399963+d.travel*(.12+seed*.12);
-                    float radius=.65+cycle*cycle*(1.5+1.5*d.drop)+.42*(1.0-d.snare)*d.snare;
-                    float z=sin(f*4.1+d.travel*.17)*1.15;
+                    float radius=ejecta?
+                        .55+age*(3.5+seed*2.0+d.drop*2.0):
+                        .8+cycle*cycle*(2.5+2.0*d.drop);
+                    radius+=.30*d.kickHit;
+                    float z=sin(f*4.1+d.travel*.17)*(ejecta?1.8:1.15);
                     float3 center=float3(cos(a)*radius,sin(a)*radius*.8,z);
                     center.xy+=float2(sin(f+d.travel),cos(f*2.0-d.travel))*.08*d.mid;
                     float forward=ro.z-center.z;
-                    float2 projection=(center.xy-ro.xy)*2.5/forward;
+                    float2 projection=(center.xy-ro.xy)*focal/forward;
                     float2 relative=auRotate(p-projection,d.travel*.8+f);
-                    float size=max(px*1.4,(.012+.019*seed+.011*d.hat)*2.5/forward);
+                    float size=max(px*1.4,(.018+.036*seed+.018*d.hat+(ejecta?.026*impact:0.0))*focal/forward);
                     float diamond=(abs(relative.x)*.7+abs(relative.y))/size;
                     float coverage=1.0-smoothstep(.75,1.0+px/size,diamond);
                     float depth=(center.z-ro.z)/rd.z;
                     if(coverage>0.0&&(!found||depth<distance)){
-                        float fade=smoothstep(.0,.12,cycle)*(1.0-smoothstep(.78,1.0,cycle));
+                        float fade=ejecta?impact:smoothstep(.0,.12,cycle)*(1.0-smoothstep(.78,1.0,cycle));
                         float facet=relative.x>0.0?.38:1.0;
-                        float3 shard=auColor(seed,u)*(facet+.55*d.hat+.30*d.snare);
+                        float3 shard=auColor(seed,u)*(facet+.95*d.hat+.80*d.snareHit+(ejecta?1.5*impact:0.0));
                         col=mix(col,shard,coverage*fade);
+                    }
+                    if(ejecta&&impact>.025&&(!found||depth<distance)){
+                        float2 radial=normalize(projection+float2(.0001,0));
+                        float2 delta=p-projection;
+                        float along=dot(delta,radial),across=dot(delta,float2(-radial.y,radial.x));
+                        float tail=exp(-pow(across/max(px*1.3,size*.32),2.0));
+                        tail*=exp(-abs(along)/(.025+.15*age))*(1.0-smoothstep(-px,px,along));
+                        col+=auColor(seed+.12,u)*tail*impact*(.6+1.1*d.drop);
                     }
                 }
                 // Local snare ruptures propagate outward as staggered broken arcs, not a flash.
                 if(d.snare>.01){
-                    float a=atan2(p.y,p.x),front=.38+(1.0-d.snare)*1.8;
+                    float a=atan2(p.y,p.x),front=.25+(1.0-d.snare)*2.7;
                     float ragged=.035*sin(a*9.0+d.travel)+.025*sin(a*17.0);
                     float wavefront=auLine(r-front-ragged,.013+.015*d.snare,px);
                     float breaks=pow(.5+.5*sin(a*7.0+d.travel*.3),3.0);
-                    col+=auColor(.73,u)*wavefront*breaks*d.snare*.8;
+                    col+=auColor(.73,u)*wavefront*breaks*d.snare*2.8;
                 }
-                col=fxTonemap(fxFlash(col,u,.14),1.25);
+                // A separate kick compression wave gives the downbeat a strong spatial hit.
+                float kickFront=.20+(1.0-d.kick)*2.5;
+                float kickArc=auLine(r-kickFront,.018+.024*d.kickHit,px);
+                float lobes=.3+.7*pow(.5+.5*sin(atan2(p.y,p.x)*5.0+d.travel),2.0);
+                col+=auColor(.025,u)*kickArc*lobes*d.kick*2.5;
+                // Short, localized discharge at the center; never a full-frame oscillator.
+                float discharge=exp(-r*r/.032)*(d.kickHit+d.snareHit*.8);
+                col+=auColor(.77,u)*discharge*1.8;
+                col=fxTonemap(col,1.25);
+                // Use the complete permitted flash allowance after tonemapping so it remains visible.
+                col=fxFlash(col,u,.35);
                 return float4(saturate(fxVignette(col,screen,.055)),1.0);
             }
             """#
