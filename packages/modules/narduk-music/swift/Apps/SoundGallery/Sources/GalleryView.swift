@@ -49,6 +49,15 @@ struct GalleryView: View {
             {
                 model.song.style = style
             }
+            // `-palette random|<preset id>` and `-hue <degrees>` set the palette at launch, for screenshots.
+            if let name = defaults.string(forKey: "palette") {
+                if name == "random" {
+                    model.rollRandom(seed: UInt64(defaults.integer(forKey: "paletteSeed")))
+                } else if let preset = SoundPalettePreset(rawValue: name) {
+                    model.choose(preset)
+                }
+            }
+            if defaults.object(forKey: "hue") != nil { model.look.hueShift = Float(defaults.double(forKey: "hue")) }
             if let tileID = defaults.string(forKey: "fullscreen") { open(tileID) }
             if let path = defaults.string(forKey: "autofile") {
                 model.input = .file
@@ -233,6 +242,7 @@ struct GalleryView: View {
             .labelsHidden()
             .disabled(model.isRunning)
             if model.input == .demo { songControls }
+            PaletteControls(model: model)
             if model.input == .demo { PromptView(model: model) }
             HStack {
                 Button(model.isRunning ? "Stop" : (model.input == .file ? "Choose file…" : "Play")) {

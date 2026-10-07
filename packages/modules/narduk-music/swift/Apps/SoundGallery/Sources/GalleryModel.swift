@@ -47,6 +47,30 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     /// display frame, and each card polling for itself would smooth the analyzer's output once per card.
     @ObservationIgnored let visualState = SoundVisualState()
 
+    /// The palette preset behind `look` (the knobs layer on top of it); nil after a random roll.
+    var preset: SoundPalettePreset? = .neon
+
+    /// Colors and knobs for every card; mirrored onto the shared state, which every visualizer draws from.
+    var look = SoundPaletteLook.neutral {
+        didSet { visualState.look = look }
+    }
+
+    func choose(_ preset: SoundPalettePreset) {
+        self.preset = preset
+        look.colors = preset.colors
+    }
+
+    /// 🎲 A new harmonious palette; the knobs keep their positions.
+    func rollRandom(seed: UInt64 = UInt64.random(in: 0...UInt64.max)) {
+        preset = nil
+        look.colors = SoundPaletteLook.random(seed: seed).colors
+    }
+
+    func resetLook() {
+        preset = .neon
+        look = .neutral
+    }
+
     /// The latest frame at `date`; silence while nothing plays. Also advances `visualState` (with the demo song's
     /// `MusicContext`; other sources drive the visualizers from their frames alone, as the contract allows).
     func poll(at date: Date) -> SoundFrame {

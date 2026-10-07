@@ -2,7 +2,7 @@ import NardukMusicCore
 
 /// Three blendable neon colors that drive every visualizer (docs/sound-contract.md section 6). Visualizers take a
 /// palette and never name a color; apps supply theirs. Components are 0 ... 1.
-public struct SoundPalette: Equatable, Sendable {
+public struct SoundPalette: Equatable, Sendable, Codable {
     public var c0: SIMD3<Float>
     public var c1: SIMD3<Float>
     public var c2: SIMD3<Float>

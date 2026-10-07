@@ -154,8 +154,10 @@ public final class SoundVisualState {
     /// How wild the stage is: the drive blended with the music's energy, toned down in calm mode.
     public private(set) var wild: Float = 0
     public private(set) var calm = false
-    /// The palette after the drive-driven saturation.
+    /// The palette after the drive-driven saturation and the `look`'s knobs.
     public private(set) var palette: SoundPalette
+    /// Colors and knobs applied on top of the section-driven palette, for every visualizer at once. Default: none.
+    public var look = SoundPaletteLook.neutral
     private var basePalette: SoundPalette
     private var paletteFrom: SoundPalette
     private var paletteTo: SoundPalette
@@ -504,7 +506,10 @@ public final class SoundVisualState {
             let s = paletteT * paletteT * (3 - 2 * paletteT)
             basePalette = paletteFrom.mixed(with: paletteTo, s)
         }
-        palette = basePalette.saturated(0.45 + 0.62 * wild)
+        palette =
+            look.isNeutral
+            ? basePalette.saturated(0.45 + 0.62 * wild)
+            : look.applied(to: basePalette, time: time).saturated(0.45 + 0.62 * wild)
 
         // Tunnel travel: one ring per beat at speed 1, a kick pushes forward.
         let speed: Float
