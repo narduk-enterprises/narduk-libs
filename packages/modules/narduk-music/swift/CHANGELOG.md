@@ -6,6 +6,10 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.mirrorMetal` ("Mirror (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
+  mirror: 64 cylinder-lit neon slabs, bass at the center and highs at both edges (bass widens in a drop), with peak
+  caps and rising embers, over a far skyline and a perspective neon floor that rolls once per beat, lit from below and
+  reflecting the slabs, and a waveform horizon beam. A kick brightens the grid and glow; a snare streaks the horizon.
 - `IntenseKind.padsMetal` ("Pads (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
   pads: one lit glass pad per instrument (a 7 x 3 grid, role hues from the palette) with a bevel, a hot core, a spill
   into the gaps and neighbours and a shock ring on each hit, a spectrum backlight (bass left, highs right), a beat

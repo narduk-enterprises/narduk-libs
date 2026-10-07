@@ -219,6 +219,7 @@
             case .scopeMetal: [.scalars, .history]
             case .wobbleMeterMetal: [.scalars]
             case .padsMetal: [.scalars]
+            case .mirrorMetal: [.scalars]
             default: []
             }
         }
