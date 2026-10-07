@@ -55,6 +55,7 @@ import XCTest
         let audio = BlasterAudio()
         audio.store = RecordingStore(directory: directory)
         audio.maxTakeSeconds = 1.2
+        audio.minTakeSeconds = 0
         audio.play(SongRecipe(style: .genre(.house)))
         audio.beginRecording()
         XCTAssertTrue(audio.isRecording)
@@ -67,6 +68,23 @@ import XCTest
         XCTAssertGreaterThanOrEqual(saved.count, 2, "a take longer than the cap rolls into a new file")
         XCTAssertGreaterThan(saved.reduce(0) { $0 + $1.seconds }, 1.0)
         XCTAssertEqual(audio.savedCount, saved.count)
+    }
+
+    /// A peek at the player (under minTakeSeconds) leaves nothing in My Songs.
+    func testATakeTooShortToKeepIsThrownAway() async throws {
+        let audio = BlasterAudio()
+        audio.store = RecordingStore(directory: directory)
+        audio.play(SongRecipe(style: .genre(.house)))
+        audio.beginRecording()
+        try await Task.sleep(for: .seconds(0.5))
+        audio.endRecording()
+        await audio.settleRecording()
+        audio.stop()
+        XCTAssertEqual(audio.store.list().count, 0)
+        XCTAssertEqual(audio.savedCount, 0)
+        let leftovers =
+            (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        XCTAssertTrue(leftovers.isEmpty, "the short take's file is deleted: \(leftovers)")
     }
 
     func testShowModeHidesAndReveals() {
