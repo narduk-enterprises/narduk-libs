@@ -120,8 +120,10 @@ import XCTest
         // A system alert: SwiftUI does not expose the TextField identifier inside it, so query the alert itself.
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no rename alert text field")
-        field.tap()
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40))
+        // Tap at the far right so the caret lands after the prefilled name, then delete exactly that many characters.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        let prefilled = (field.value as? String)?.count ?? 40
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: prefilled + 5))
         field.typeText("Smoke Test")
         XCTAssertEqual(field.value as? String, "Smoke Test", "rename field was not cleared before typing")
         app.alerts.buttons["Save"].tap()
