@@ -82,7 +82,7 @@ function directoriesForPattern(root, pattern) {
 
 export function loadWorkspace(root = scriptRoot) {
   // As pnpm does, a directory a pattern matches is a package only when it has
-  // a package.json: packages/modules/narduk-music is a Swift-only tree (#1520).
+  // a package.json.
   const directories = readWorkspacePatterns(root)
     .flatMap((pattern) => directoriesForPattern(root, pattern))
     .filter((directory) => statSync(directory).isDirectory())
@@ -193,17 +193,14 @@ function isInertPath(path) {
   return false
 }
 
-// Swift-only trees whose gate is planned outside this script: narduk-music is
-// Swift-only (no package.json, so no npm package owns it) and has its own jobs
-// in narduk-music-swift.yml, selected by scripts/narduk-music-ci-plan.mjs. The
-// root SwiftPM manifest, its lockfile and the swift-format config feed only the
-// Swift gates (auth-kit-ci-plan.mjs and narduk-music-ci-plan.mjs both select on
-// them). A diff of only these paths selects no npm package and forces no full
-// run, and the Swift planners still run their own gates (#1538). Keep this list
-// to paths a planner already owns; a path no planner selects must stay
-// unclassified so it fails closed to the full run.
+// Paths whose gate is planned outside this script: the root SwiftPM manifest,
+// its lockfile and the swift-format config feed only the Swift gates
+// (auth-kit-ci-plan.mjs and logging-ci-plan.mjs select on them). A diff of only
+// these paths selects no npm package and forces no full run, and the Swift
+// planners still run their own gates (#1538). Keep this list to paths a planner
+// already owns; a path no planner selects must stay unclassified so it fails
+// closed to the full run.
 function isNonNpmGatedPath(path) {
-  if (path.startsWith('packages/modules/narduk-music/swift/')) return true
   return /^(?:Package\.(?:swift|resolved)|\.swift-format)$/u.test(path)
 }
 

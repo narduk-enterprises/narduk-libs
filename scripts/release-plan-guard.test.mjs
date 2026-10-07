@@ -700,7 +700,6 @@ test('every package-root swift/ tree is a target the root Package.swift builds (
   assert.deepEqual(swiftTrees, [
     'packages/modules/narduk-auth/swift',
     'packages/modules/narduk-logging/swift',
-    'packages/modules/narduk-music/swift',
   ])
   for (const tree of swiftTrees) {
     assert.ok(
