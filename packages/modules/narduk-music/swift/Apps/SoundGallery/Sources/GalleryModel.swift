@@ -55,6 +55,16 @@ enum GalleryInput: String, CaseIterable, Identifiable {
         didSet { visualState.look = look }
     }
 
+    /// Copies the gallery's look onto a tile's own state. Metal and spectacle tiles advance a private state on their own
+    /// clocks, so the shared one's look never reaches them unless each tile syncs.
+    func sync(_ state: SoundVisualState) {
+        if state.look != look { state.look = look }
+    }
+
+    /// The colors the gallery's own Canvas cards (Spectrum, Scope, Levels, Radial) draw with: their classic accents until
+    /// the look changes, then the state's palette.
+    var cardPalette: SoundPalette { look.isNeutral ? GalleryPalette.classic : visualState.palette }
+
     func choose(_ preset: SoundPalettePreset) {
         self.preset = preset
         look.colors = preset.colors

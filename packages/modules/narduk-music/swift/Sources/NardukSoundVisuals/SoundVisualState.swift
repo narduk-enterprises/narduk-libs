@@ -157,7 +157,11 @@ public final class SoundVisualState {
     /// The palette after the drive-driven saturation and the `look`'s knobs.
     public private(set) var palette: SoundPalette
     /// Colors and knobs applied on top of the section-driven palette, for every visualizer at once. Default: none.
-    public var look = SoundPaletteLook.neutral
+    public var look = SoundPaletteLook.neutral {
+        didSet {
+            if look != oldValue { palette = shaped(basePalette) }
+        }
+    }
     private var basePalette: SoundPalette
     private var paletteFrom: SoundPalette
     private var paletteTo: SoundPalette
@@ -491,6 +495,13 @@ public final class SoundVisualState {
             }
             section = next
         }
+    }
+
+    /// The base palette with the look's knobs and the drive-driven saturation.
+    private func shaped(_ base: SoundPalette) -> SoundPalette {
+        look.isNeutral
+            ? base.saturated(0.45 + 0.62 * wild)
+            : look.applied(to: base, time: time).saturated(0.45 + 0.62 * wild)
     }
 
     private func updateMotion(dt: Float, deltaBeats: Float, music: MusicContext?) {
