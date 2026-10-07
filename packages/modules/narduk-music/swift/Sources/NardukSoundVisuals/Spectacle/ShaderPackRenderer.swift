@@ -14,6 +14,8 @@
         case meshWave
         case plasma, warpGrid, starfield, feedback, solarFlare
         case plasma, warpGrid, starfield, feedback, oceanWaves
+        /// Shells over a night sky: the kick launches them, the bass sets their size, a drop fires a finale.
+        case fireworks
 
         public var title: String {
             switch self {
@@ -25,6 +27,7 @@
             case .aurora: "Aurora curtains"
             case .auroraWaves: "Aurora waves"
             case .meshWave: "Mesh wave"
+            case .fireworks: "Fireworks"
             }
         }
 
@@ -50,6 +53,10 @@
         }
 
         /// Gallery title. The pack never flashes; this look is the side-view sea.
+            case .fireworks: "fireworksFragment"
+            }
+        }
+
         public var title: String {
             switch self {
             case .plasma: "Plasma"
@@ -59,6 +66,7 @@
             case .meshWave: "Mesh wave"
             case .solarFlare: "Solar flare"
             case .oceanWaves: "Ocean waves"
+            case .fireworks: "Fireworks"
             }
         }
     }

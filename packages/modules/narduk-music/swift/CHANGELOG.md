@@ -64,6 +64,9 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 - `ShaderPackKind.oceanWaves` ("Ocean waves") in `NardukSoundVisuals` (narduk-libs#1569): layered Gerstner swells
   seen low from the side. Bass lifts the crests until they break, mids set the speed and how many layers roll, highs
   add glints and ripples, a kick pushes one swell through every layer, and a drop makes the sea steeper and foamier.
+- `ShaderPackKind.fireworks` ("Fireworks") in `NardukSoundVisuals` (narduk-libs#1569): a night-sky fireworks show.
+  Kicks launch shells whose size follows the bass; snare and hat crackle, highs twinkle, and mids pick the shell and
+  the colour. A drop fires a bounded finale volley. Calm keeps a few slow shells and no volley.
 - `SoundVisualizerKind.audioTerrain` ("Audio terrain") in `NardukSoundVisuals` (narduk-libs#1569): a neon wireframe
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
