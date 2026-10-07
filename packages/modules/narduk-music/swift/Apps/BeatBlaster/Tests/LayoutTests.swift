@@ -31,8 +31,18 @@ import XCTest
 
     private final class Frames { var all: [String: CGRect] = [:] }
 
-    /// Every device in both orientations: (label, size, insets).
+    /// Mac Catalyst windows are resizable: the default and the smallest sizes worth supporting (title bar above).
+    static let macWindows = [CGSize(width: 1280, height: 800), CGSize(width: 800, height: 600)]
+
+    /// Every device in both orientations, then the Mac windows: (label, size, insets).
     private var layouts: [(String, CGSize, UIEdgeInsets)] {
+        Self.macWindows.map {
+            ("Mac \(Int($0.width))x\(Int($0.height))", $0, UIEdgeInsets(top: 28, left: 0, bottom: 0, right: 0))
+        }
+            + deviceLayouts
+    }
+
+    private var deviceLayouts: [(String, CGSize, UIEdgeInsets)] {
         Self.devices.flatMap { device -> [(String, CGSize, UIEdgeInsets)] in
             let landscape = CGSize(width: device.portrait.height, height: device.portrait.width)
             return [
@@ -279,5 +289,19 @@ import XCTest
             assertInside(["maker.home"], frames, safe, "\(label), largest text, maker")
             XCTAssertGreaterThanOrEqual(frames["maker.title"]?.width ?? 0, 40, label)
         }
+    }
+
+    func testEachSongGetsItsOwnColourTurnThatTheStateEases() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        let a = SongRecipe(style: .genre(.house), seed: 1)
+        let b = SongRecipe(style: .genre(.dubstep), seed: 2)
+        XCTAssertEqual(BlasterAudio.look(for: a), BlasterAudio.look(for: a), "the same song always looks the same")
+        XCTAssertNotEqual(BlasterAudio.look(for: a), BlasterAudio.look(for: b))
+        audio.play(a)
+        XCTAssertEqual(audio.visualState.look, BlasterAudio.look(for: a))
+        audio.play(b)
+        XCTAssertEqual(audio.visualState.look, BlasterAudio.look(for: b))
+        XCTAssertTrue(audio.visualState.isEasingLook, "a new look eases in instead of snapping")
     }
 }
