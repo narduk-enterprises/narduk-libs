@@ -140,6 +140,49 @@
             #expect(core.takeHits().isSuperset(of: Set(guitars)))
         }
 
+        /// The processed voice: every kind of note with vibrato, scoops, morphs, grains (formant shift, snap, stretch,
+        /// freeze), filters, echoes and swells, more of them than the pool holds, and a tempo change under the echo.
+        @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
+        func processingTheSampledVoiceNeverAllocates() throws {
+            let core = DropSynthCore(sampleRate: 48_000, bpm: 120)
+            let frames = 512
+            let left = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+            let right = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+            defer {
+                left.deallocate()
+                right.deallocate()
+            }
+            let treatments: [VocalExpression] = [
+                .torch, .power, .robot, .telephone, .morphing, .frozen,
+                VocalExpression(vibratoDepth: 1, scoop: -8, bend: 7, bendSpan: 1, detune: 28, filter: .radio),
+                VocalExpression(echo: .quarter, echoSend: 1, filter: .muffled, reverse: true, swell: 1),
+                VocalExpression(morph: .eh, formantShift: 5, breath: 1, grit: 1, stretch: 1),
+            ]
+            for step in 0..<128 {
+                for index in 0..<3 where (step + index) % 2 == 0 {
+                    let kind = SampleKind.allCases[(step + index) % 3]
+                    core.schedule(
+                        ScheduledNote(
+                            step: step, instrument: .vocalSample, velocity: 0.5 + 0.4 * Double(step % 3) / 2,
+                            params: NoteParams(
+                                pitch: 62 + (step * 5 + index * 7) % 20, lengthSteps: 2 + step % 14,
+                                formant: Double(step % 10) / 10, drive: 0.8,
+                                voice: NoteParams.sampleVoice(
+                                    VocalVowel.allCases[(step + index) % 5],
+                                    technique: SampleTechnique.allCases[(step / 3) % 3], kind: kind),
+                                pan: Double(index) - 1, delay: 0.1
+                            ).expressed(treatments[(step + index * 4) % treatments.count])))
+                }
+            }
+            core.render(frames: frames, left: left, right: right)  // first-touch work happens before arming
+            core.setTempo(100)
+            let count = try Self.countAllocations {
+                for _ in 0..<1_500 { core.render(frames: frames, left: left, right: right) }
+            }
+            #expect(count == 0, "the render thread allocated \(count) times, first at:\n\(Self.firstAllocationStack)")
+            #expect(core.takeHits().contains(.vocalSample))
+        }
+
         @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
         func renderingAmbientPadsAndTheirTailNeverAllocates() throws {
             let core = DropSynthCore(sampleRate: 48_000, bpm: 70)

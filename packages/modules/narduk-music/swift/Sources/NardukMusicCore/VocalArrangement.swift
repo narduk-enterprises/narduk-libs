@@ -20,8 +20,25 @@ struct VocalPlan: Sendable, Hashable {
     /// Where on the bar's 16-step grid the chop hook lands (answer bars shift it by two).
     var chopSteps: [Int] = [3, 6, 10, 14]
     var cutMode = CutMode.stutter
+    /// The recorded voice sings a line written from the song's chords and hook (`VocalLine`), with the stack, throws,
+    /// swells and syllable answers that go with it.
+    var line = false
+    var lineVowel = VocalVowel.ah
+    var morphVowel: VocalVowel? = .oo
+    var lineTechnique = SampleTechnique.vibrato
+    var character = VocalCharacter.natural
+    /// 0 none, 1 third and fifth, 2 octave and third, 3 third and octave below.
+    var harmony = 0
+    /// The breakdown's line goes through a radio.
+    var radio = false
+    /// 0 ... 1, steadies per-track choices (vibrato rate).
+    var lineDraw = 0.5
+    /// Sampled syllable answers in the drops: a few chops, on the beat, the same slice on the same beat each bar.
+    var chops = false
+    var chopGrid: [Int] = [0, 8]
+    var chopSlices: [Double] = [0.1, 0.6]
 
-    var isEmpty: Bool { !pad && !chop && !cuts }
+    var isEmpty: Bool { !pad && !chop && !cuts && !line }
 
     static func padGenre(_ genre: Genre) -> Bool { genre == .chill || genre == .house || genre == .synthwave }
     static func chopGenre(_ genre: Genre) -> Bool {
@@ -51,6 +68,23 @@ extension Variety {
             plan.chop = VocalPlan.chopGenre(track.genre)
         }
         if uses("cuts", track, variety: variety), track.genre.family != .band { plan.cuts = true }
+        // The sung line draws from a stream of its own, so the parts above keep the draws they always had.
+        var lineRng = stream(track, "vocalLine")
+        let vowelPool: [VocalVowel] = [.ah, .oh, .ah, .eh]
+        plan.lineVowel = vowelPool[Int(lineRng.next() % UInt64(vowelPool.count))]
+        plan.morphVowel = [VocalVowel.oo, .oh, nil][Int(lineRng.next() % 3)]
+        plan.lineTechnique = [SampleTechnique.vibrato, .vibrato, .straight][Int(lineRng.next() % 3)]
+        plan.character = VocalCharacter.allCases[Int(lineRng.next() % UInt64(VocalCharacter.allCases.count))]
+        plan.harmony = Int(lineRng.next() % 4)
+        plan.radio = lineRng.unit() < 0.5
+        plan.lineDraw = lineRng.unit()
+        let grids: [[Int]] = [[0, 8], [4, 12], [0, 6, 8], [2, 8, 12], [0, 4, 10]]
+        plan.chopGrid = grids[Int(lineRng.next() % UInt64(grids.count))]
+        plan.chopSlices = [lineRng.unit() * 0.45, 0.5 + lineRng.unit() * 0.45]
+        if uses("vocalLine", track, variety: variety), track.genre.family == .electronic {
+            plan.line = true
+            plan.chops = VocalPlan.chopGenre(track.genre)
+        }
         return plan.isEmpty ? nil : plan
     }
 }
@@ -59,7 +93,7 @@ enum VocalArrangement {
     /// The vocal and cut notes for this step of an electronic song.
     static func notes(_ c: StepContext) -> [ScheduledNote] {
         guard let plan = c.track.vocals, let pos = c.pos else { return [] }
-        var out: [ScheduledNote] = []
+        var out: [ScheduledNote] = VocalLine.notes(c, plan: plan)
         let level = min(1, max(0, c.level))
         func add(_ instrument: Instrument, _ velocity: Double, _ params: NoteParams) {
             out.append(
