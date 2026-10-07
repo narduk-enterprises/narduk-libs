@@ -79,6 +79,10 @@ public enum DropEngineError: LocalizedError {
     }
     /// Called on the main actor every ~17 ms; returns the notes for all steps up to `throughStep`.
     @ObservationIgnored public var noteProvider: (@MainActor (_ throughStep: Int) -> [ScheduledNote])?
+    /// Sweeps the master filter over the whole mix (`MasterFilter.idle` bypasses it, bit for bit). A DROP's build drives it
+    /// from `DropArranger.filterSweep` each frame and sets `.idle` on the release, which snaps it open in about 60 ms.
+    public func setMasterFilter(_ filter: MasterFilter) { core?.setMasterFilter(filter) }
+
     /// 0 ... 1
     public var masterVolume: Float = 0.8 {
         didSet { core?.setMasterVolume(min(max(masterVolume, 0), 1)) }
