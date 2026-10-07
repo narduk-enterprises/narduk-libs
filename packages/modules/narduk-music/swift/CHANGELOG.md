@@ -9,6 +9,10 @@ and the Beat Blaster kids app. Everything is additive; the two enum cases below 
 
 ### Added
 
+- `SoundVisualizerKind.vortex` ("Vortex") in `NardukSoundVisuals` (narduk-libs#1569): a spiral galaxy whose three arms
+  are the spectrum, bass beads at the core and highs at the rim, over a differentially rotating starfield. The
+  waveform wraps the core as an accretion ring, a snare throws a shock ring, a kick swells the core, a drop winds the
+  arms tighter, and a glitch splits them into the optical fringes.
 - `SongSettings.variety` (0 ... 1, default 0.75; settings saved without it decode as 0, the original songs) and
   `SongSettings.varied(genre:seed:)`: a new seed now writes new chord progressions, hook motifs, drum kits (the genre
   keeps its backbeat), per-song drum tuning (the kick, snare and hat voices take a tune from the note's `formant`),
