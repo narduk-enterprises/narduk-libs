@@ -7,9 +7,11 @@ import Testing
 /// The ambient family end to end: a scenario's signal level in, swells and settles out. Set
 /// `NARDUK_AMBIENT_DEMO_DIR` to also write the render as `ambient-family-demo.wav`.
 @Suite struct AmbientFamilyTests {
-    static let goldens: [String: UInt64] = [
-        "darwin-arm64": 0x1fd9_a80d_a1c2_716d,
-        "linux-x86_64": 0,
+    /// Fingerprints per platform. A 150 s render runs the hall's feedback loops long enough for a last-bit libm
+    /// difference to show, so darwin accepts the value both a developer Mac (macOS 27) and the CI runner produce.
+    static let goldens: [String: Set<UInt64>] = [
+        "darwin-arm64": [0x1fd9_a80d_a1c2_716d, 0x6dad_7bc9_c2a3_30da],
+        "linux-x86_64": [0x010e_8b77_6615_be55],
     ]
 
     static func scenario() throws -> MusicScenario {
@@ -112,7 +114,7 @@ import Testing
         let run = Self.song
         let actual = String(format: "0x%016llx", run.audio.fingerprint)
         let golden = try #require(Self.goldens[GoldenRenderTests.platform])
-        #expect(run.audio.fingerprint == golden, "\(GoldenRenderTests.platform) fingerprint \(actual)")
+        #expect(golden.contains(run.audio.fingerprint), "\(GoldenRenderTests.platform) fingerprint \(actual)")
         if let directory = ProcessInfo.processInfo.environment["NARDUK_AMBIENT_DEMO_DIR"] {
             let url = URL(fileURLWithPath: directory).appendingPathComponent("ambient-family-demo.wav")
             try AudioFileWriter.wavData(run.audio).write(to: url)
