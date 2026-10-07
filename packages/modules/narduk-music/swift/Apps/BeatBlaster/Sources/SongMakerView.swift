@@ -222,6 +222,11 @@ struct SongMakerView: View {
                 if !recipe.band.contains(.pads) { recipe.band.insert(.pads) }
                 audio.preview(recipe)
             }
+            SoundRow(title: "Singer", options: SingerSound.allCases, selected: recipe.sounds.singer, compact: compact) {
+                singer in
+                recipe.sounds.singer = singer
+                audio.preview(recipe)
+            }
             Button {
                 Haptics.success()
                 recipe.sounds = SoundProfile.random()
@@ -392,6 +397,7 @@ extension KeysSound: SoundChoice {}
 extension DrumKit: SoundChoice {}
 extension GuitarSound: SoundChoice {}
 extension PadSound: SoundChoice {}
+extension SingerSound: SoundChoice {}
 
 struct SoundRow<Option: SoundChoice>: View {
     let title: String

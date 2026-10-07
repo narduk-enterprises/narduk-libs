@@ -24,6 +24,9 @@ import NardukMusicEngine
     /// Sound-effect pad notes waiting for their step (pads play on the next free 16th).
     private var queuedPads: [ScheduledNote] = []
     private(set) var machine = DropMachine()
+    /// What the DROP in flight knows about the song (set on the press, refreshed on the release); nil when none is.
+    private(set) var dropContext: DropContext?
+    private var dropCount = 0
     private var conductor: DropConductor?
     private var nextSignal = 0
     private var cursor = -1
@@ -58,7 +61,27 @@ import NardukMusicEngine
         return Double((songStep + 15) / 16 * 16 - songStep) * secondsPerStep
     }
 
-    func pressDrop() { machine.press(at: nextStep) }
+    func pressDrop() {
+        if machine.press(at: nextStep) { dropContext = makeDropContext() }
+    }
+
+    /// The song as the arranger needs it: the genre playing, its key and mode (as the conductor named them for this
+    /// track, else the recipe's), the bass line's current root, the tempo grid, this song's seed and variety, and its own
+    /// hook, bass and drums (`DropMaterial.capture`: a copy of the conductor is read, the live one is untouched).
+    func makeDropContext() -> DropContext {
+        var genre = Genre.rock
+        if case .genre(let g) = recipe.style { genre = g }
+        var keyRoot = recipe.keyRoot
+        var minor = recipe.mood.map { !$0.mode.isMajorQuality } ?? true
+        if let key = conductor?.snapshot.track?.key, let parsed = DropArranger.parseKey(key) {
+            keyRoot = 60 + parsed.pitchClass
+            minor = parsed.minor
+        }
+        return DropContext(
+            genre: genre, keyRoot: keyRoot, minor: minor, chordRoot: bassRoot, secondsPerStep: secondsPerStep,
+            seed: recipe.seed, variety: recipe.variety ?? SongRecipe.defaultVariety, dropNumber: dropCount,
+            material: conductor.map { DropMaterial.capture(from: $0) })
+    }
 
     /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
     @discardableResult func trigger(_ pad: SoundPad) -> Int {
@@ -70,6 +93,8 @@ import NardukMusicEngine
     /// Lands the drop; returns its first and end step, or nil when nothing was building.
     func releaseDrop() -> (start: Int, end: Int)? {
         guard let drop = machine.release(at: nextStep, secondsPerStep: secondsPerStep) else { return nil }
+        dropContext?.chordRoot = bassRoot
+        dropCount += 1
         // The song's next bar starts on the hit: skip it forward to its next bar line.
         let songStep = drop.start - offset
         let nextBar = (songStep + 15) / 16 * 16
@@ -77,7 +102,10 @@ import NardukMusicEngine
         return drop
     }
 
-    func cancelDrop() { machine.cancel() }
+    func cancelDrop() {
+        machine.cancel()
+        dropContext = nil
+    }
 
     private var level: Double {
         switch machine.phase {
@@ -111,7 +139,8 @@ import NardukMusicEngine
             nextSignal = 0
             offset = 0
             queuedPads.removeAll()
-            machine.cancel()
+            cancelDrop()
+            dropCount = 0
             resetConductor()
         }
         guard throughStep > cursor else { return [] }
@@ -127,8 +156,11 @@ import NardukMusicEngine
             machine.advance(to: throughStep + 1)
         }
 
-        // The song, on its own (possibly shifted) step grid.
+        // The song, on its own (possibly shifted) step grid. The Singer row owns the voice here: the vocals the
+        // library adds at a nonzero variety (a pad, a chop hook) are dropped, so "Off" is silent and a chosen vowel
+        // is the only voice. The library's master cut stays.
         var song = songNotes(through: throughStep - offset).compactMap { note -> ScheduledNote? in
+            guard ![.vocal, .vocalChop, .vocalSample].contains(note.instrument) else { return nil }
             var note = note
             note.step += offset
             return range.contains(note.step) ? note : nil
@@ -137,6 +169,7 @@ import NardukMusicEngine
             bassRoot = note.params.pitch ?? bassRoot
         }
         if case .genre = recipe.style, band.contains(.guitar) { song += guitarLayer(range) }
+        song += vocalLayer(range)
 
         // The DROP layers replace parts of the song step by step.
         let sps = secondsPerStep
@@ -152,19 +185,16 @@ import NardukMusicEngine
         for step in range {
             switch machine.layer(at: step, secondsPerStep: sps) {
             case .song: break
-            case .build(let every, let intensity, let first):
-                if first {
-                    out.append(
-                        ScheduledNote(
-                            step: step, instrument: .riser, velocity: 0.9,
-                            params: NoteParams(pitch: 48, lengthSteps: DropMachine.riserSteps(secondsPerStep: sps))))
-                }
-                if step % every == 0 {
-                    out.append(ScheduledNote(step: step, instrument: .snare, velocity: 0.3 + 0.65 * intensity))
-                }
+            case .build:
+                guard case .building(let start) = machine.phase else { break }
+                out += DropArranger.build(
+                    step: step, heldSteps: step - start, context: dropContext ?? makeDropContext())
             case .drop(let position, let power):
-                out += DropPattern.notes(
-                    step: step, position: position, power: power, style: recipe.style, root: bassRoot)
+                // `DropMachine` scales the power 0.8 ... 1 with the hold; the arranger wants the charge itself.
+                let charge = min(1, max(0, (power - 0.8) / 0.2))
+                out += DropArranger.drop(
+                    position: position, step: step, power: power, charge: charge,
+                    context: dropContext ?? makeDropContext())
             }
         }
         let played = out.filter { note in BandPart.of(note).map(band.contains) ?? true }
@@ -205,6 +235,21 @@ import NardukMusicEngine
         }
     }
 
+    /// The sampled female voice (the Singer row): one held vowel per bar, on the bass line's root folded into a
+    /// woman's range, so it sings the song's chord. It rests while the DROP builds and plays.
+    func vocalLayer(_ range: ClosedRange<Int>) -> [ScheduledNote] {
+        guard let vowel = recipe.sounds.singer.vowel else { return [] }
+        let sps = secondsPerStep
+        return range.filter { ($0 - offset) % 16 == 0 && machine.layer(at: $0, secondsPerStep: sps) == .song }.map {
+            step in
+            ScheduledNote(
+                step: step, instrument: .vocalSample, velocity: 0.55,
+                params: NoteParams(
+                    pitch: DropPattern.fold(bassRoot + 12, into: 60...71), lengthSteps: 15, drive: 0.7,
+                    voice: NoteParams.sampleVoice(vowel, technique: .vibrato, kind: .sustain)))
+        }
+    }
+
     /// Power-chord strums on the bass line's latest root: one per half bar, one per beat when the energy is high.
     private func guitarLayer(_ range: ClosedRange<Int>) -> [ScheduledNote] {
         let every = level > 0.7 ? 4 : 8
@@ -218,54 +263,8 @@ import NardukMusicEngine
     }
 }
 
-/// The app's drop: an impact and a full groove from bar 1, half-time for the bass-music genres and four-on-the-floor
-/// for the rest, with the bass on the song's current root.
+/// Pitch folding shared by the sound profile and the Beat Lab (the drop itself is `DropArranger`'s).
 enum DropPattern {
-    static func notes(step: Int, position: Int, power: Double, style: BlasterStyle, root: Int) -> [ScheduledNote] {
-        let pos = position % 16
-        let bar = position / 16
-        var out: [ScheduledNote] = []
-        func add(_ instrument: Instrument, _ velocity: Double, _ params: NoteParams = NoteParams()) {
-            out.append(
-                ScheduledNote(step: step, instrument: instrument, velocity: min(1, velocity * power), params: params))
-        }
-        let halfTime: Bool
-        switch style {
-        case .genre(let genre): halfTime = [.dubstep, .riddim, .trap, .drumAndBass].contains(genre)
-        case .guitars: halfTime = false
-        }
-        let low = fold(root, into: 36...47)
-        if position == 0 { add(.impact, 1) }
-        if halfTime {
-            if pos == 0 || pos == 10 || (bar % 2 == 1 && pos == 3) { add(.kick, 1) }
-            if pos == 8 { add(.snare, 1) }
-            if pos % 2 == 0, pos != 14 { add(.hat, 0.5, NoteParams(pan: 0.2)) }
-            if pos == 14 { add(.openHat, 0.6, NoteParams(pan: -0.2)) }
-            if pos == 0 || pos == 8 {
-                add(
-                    .wobble, 1,
-                    NoteParams(pitch: low, lengthSteps: 8, wobbleRate: pos == 0 ? .eighth : .sixteenth, drive: 0.8))
-            }
-            if pos == 0 { add(.sub, 0.7, NoteParams(pitch: low - 12, lengthSteps: 16)) }
-        } else {
-            if pos % 4 == 0 { add(.kick, 1) }
-            if pos == 4 || pos == 12 { add(.snare, 0.9) }
-            if pos % 4 == 2 { add(.openHat, 0.45, NoteParams(pan: 0.2)) } else if pos % 2 == 0 { add(.hat, 0.4) }
-            if style == .guitars {
-                if pos == 0 || pos == 6 || pos == 8 { add(.bassGuitar, 1, NoteParams(pitch: low - 12, lengthSteps: 4)) }
-                if pos % 4 == 0 {
-                    add(.electricStrum, 0.9, NoteParams(pitch: low, lengthSteps: 4, drive: 0.8, voice: 4))
-                }
-            } else {
-                if pos == 0 { add(.sub, 0.8, NoteParams(pitch: low - 12, lengthSteps: 16)) }
-                if pos % 4 == 2 {
-                    add(.wobble, 0.85, NoteParams(pitch: low, lengthSteps: 2, wobbleRate: .sixteenth, drive: 0.6))
-                }
-            }
-        }
-        return out
-    }
-
     static func fold(_ pitch: Int, into range: ClosedRange<Int>) -> Int {
         var p = pitch
         while p < range.lowerBound { p += 12 }

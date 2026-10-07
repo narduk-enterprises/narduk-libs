@@ -79,3 +79,23 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nardukenterprises.beatblaster.tests
         GENERATE_INFOPLIST_FILE: YES
+  BeatBlasterUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    # Drives the installed app by accessibility identifier (see UITests/TEST-PLAN.md). Run through its own scheme so the
+    # unit-test scheme stays fast.
+    sources: [UITests]
+    dependencies:
+      - target: BeatBlaster
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nardukenterprises.beatblaster.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  BeatBlasterUITests:
+    build:
+      targets:
+        BeatBlaster: all
+        BeatBlasterUITests: [test]
+    test:
+      targets: [BeatBlasterUITests]

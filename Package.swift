@@ -39,7 +39,10 @@ package.targets += [
     ),
     .target(
         name: "NardukMusicDSP", dependencies: ["NardukMusicCore", "NardukSoundAnalysis"],
-        path: "packages/modules/narduk-music/swift/Sources/NardukMusicDSP"
+        path: "packages/modules/narduk-music/swift/Sources/NardukMusicDSP",
+        // Copied entry by entry, not as one `Resources` folder: an iOS bundle is flat, and a `Resources` directory inside
+        // one makes codesign reject it ("bundle format unrecognized"), so no iOS app could link NardukMusicDSP.
+        resources: [.copy("Resources/vocalsamples.bin"), .copy("Resources/LICENSES")]
     ),
     .target(
         name: "NardukMusicRender", dependencies: ["NardukMusicCore", "NardukMusicDSP"],
