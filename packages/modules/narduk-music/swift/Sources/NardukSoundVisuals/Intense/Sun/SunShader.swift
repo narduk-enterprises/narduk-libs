@@ -96,7 +96,10 @@
                 p += u.fx.zw * 0.03 * intensity;
                 float r = length(p);
                 float a = atan2(p.y, p.x);
-                float R = 0.56 + 0.08 * bass + 0.04 * kick * intensity;
+                // The orb starts small and the music grows it: bass and energy swell it, the drop and the beat push it
+                // further, the kick jumps it (at rest about 0.3 of the height, at a peak about 0.85).
+                float growth = 0.22 * bass + 0.14 * energy + 0.12 * drop + 0.05 * beatPulse * intensity + 0.07 * kick * intensity;
+                float R = 0.30 + growth;
                 float3 light = fxKeyLight();
                 float3 col = float3(0.0);
 
