@@ -10,16 +10,26 @@
     /// the shared `IntenseEffects` library.
     enum SunShader {
         static let source = #"""
-            // Temperature ramp: cool umbra red, orange, yellow, white-hot.
-            static float3 sunRamp(float t) {
+            // Temperature ramp: cool umbra red, orange, yellow, white-hot. When a palette look is active
+            // (`extra.y`, the gallery's color knobs) the ramp is built from the look's three colors instead, dark to hot,
+            // so the knobs recolor the whole star.
+            static float3 sunRamp(constant IntenseUniforms &u, float t) {
                 t = clamp(t, 0.0, 1.0);
                 float3 umbra = float3(0.22, 0.02, 0.0);
                 float3 orange = float3(0.96, 0.32, 0.03);
                 float3 yellow = float3(1.0, 0.80, 0.22);
                 float3 white = float3(1.0, 0.98, 0.86);
-                if (t < 0.33) return mix(umbra, orange, t / 0.33);
-                if (t < 0.66) return mix(orange, yellow, (t - 0.33) / 0.33);
-                return mix(yellow, white, (t - 0.66) / 0.34);
+                float3 classic;
+                if (t < 0.33) classic = mix(umbra, orange, t / 0.33);
+                else if (t < 0.66) classic = mix(orange, yellow, (t - 0.33) / 0.33);
+                else classic = mix(yellow, white, (t - 0.66) / 0.34);
+                float3 lookDark = u.c0.rgb * 0.22;
+                float3 lookHot = mix(u.c2.rgb, float3(1.0), 0.55);
+                float3 look;
+                if (t < 0.33) look = mix(lookDark, u.c0.rgb, t / 0.33);
+                else if (t < 0.66) look = mix(u.c0.rgb, u.c1.rgb, (t - 0.33) / 0.33);
+                else look = mix(u.c1.rgb, lookHot, (t - 0.66) / 0.34);
+                return mix(classic, look, u.extra.y);
             }
 
             // A point on the photosphere for the pixel: the sphere normal rotated about the vertical axis by `spin`
@@ -41,6 +51,24 @@
                 return arc * lift;
             }
 
+            // A plasma arc: a blob launches off the limb at `anchor`, flies out along a loop of `height` spanning
+            // `span` radians and lands back on the surface at the far end; `phase` 0...1 is where it is on the way.
+            // The loop itself glows faintly, the head is hot and drags a trail. Returns brightness at (r, a).
+            static float sunArc(float r, float a, float R, float anchor, float span, float height, float phase) {
+                float da = atan2(sin(a - anchor), cos(a - anchor));
+                float t = da / span;
+                if (t < 0.0 || t > 1.0) return 0.0;
+                float rho = R + height * sin(t * 3.14159265);
+                float dist = abs(r - rho);
+                float thick = 0.006 + 0.01 * sin(t * 3.14159265);
+                float on = exp(-pow(dist / thick, 2.0));
+                float ds = (t - phase) * span * (R + height * 0.6);
+                float head = exp(-pow(ds * 22.0, 2.0)) * 3.0;
+                float trail = (ds < 0.0 ? exp(ds * 9.0) : 0.0) * 1.2;
+                float path = 0.12 * smoothstep(0.0, 1.0, phase * 3.0) * smoothstep(1.0, 0.7, phase);
+                return on * (head + trail + path);
+            }
+
             fragment float4 sunFragment(
                 IntenseVertexOut in [[stage_in]], constant IntenseUniforms &u [[buffer(0)]],
                 constant float *spectrum [[buffer(1)]], constant float *wave [[buffer(2)]]) {
@@ -57,7 +85,7 @@
                 float bass = bandAt(spectrum, 0.05);
                 float mids = bandAt(spectrum, 0.4);
                 float highs = bandAt(spectrum, 0.8);
-                float beatPulse = pow(1.0 - fract(beats), 2.0);
+                float beatPulse = pow(1.0 - fract(beats), 1.6);
 
                 float2 p = (in.uv - 0.5) * float2(aspect, 1.0) * 2.0;
                 p += u.fx.zw * 0.03 * intensity;
@@ -108,7 +136,7 @@
                     heat += 0.18 * faculae;
                     heat = mix(heat, 0.2 * spotLit, penumbra * 0.85);
                     heat = mix(heat, 0.02, umbra);
-                    float3 surface = sunRamp(heat);
+                    float3 surface = sunRamp(u, heat);
                     surface *= 0.55 + 0.55 * shade.x;
                     surface += float3(1.0, 0.9, 0.7) * shade.y * 0.22 * cell;
                     float limb = 1.0 - 0.78 * pow(1.0 - z, 1.25);
@@ -124,43 +152,67 @@
                     float3 sq = fxCylinder(p, 34.0, travel, 0.18);
                     float spic = fxRidge(fxFbm3(sq, 2), 0.66);
                     float fringe = exp(-d * (34.0 - 10.0 * highs)) * (0.35 + 0.65 * highs + 0.3 * hat);
-                    col += sunRamp(0.42) * spic * fringe * 1.6 + sunRamp(0.6) * exp(-d * 60.0) * 0.5;
+                    col += sunRamp(u, 0.42) * spic * fringe * 1.6 + sunRamp(u, 0.6) * exp(-d * 60.0) * 0.5;
 
-                    // Corona: two layers of ridged streamers blowing outward, lit in relief, pulsing on the beat.
-                    float stream = 0.22 + 0.5 * drop;
-                    float reach = 0.09 + 0.16 * bass + 0.14 * drop + 0.03 * energy;
-                    float fall = exp(-d / reach) * smoothstep(0.0, 0.03, d) * smoothstep(0.6, 0.2, d);
-                    float pulse = 0.72 + 0.28 * beatPulse * intensity;
-                    float3 tintBase = mix(sunRamp(0.6), paletteAt(u, a / 6.28318 + 0.5 + travel * 0.01), 0.18);
-                    for (int layer = 0; layer < 2; layer++) {
-                        float scale = layer == 0 ? 4.2 : 9.5;
-                        float thin = layer == 0 ? 0.82 - 0.05 * drop : 0.88;
+                    // Corona: three layers of turbulent ridged streamers blasting outward, lit in relief, flashing
+                    // with the beat (the pulse is a per-beat swell, under the 3 Hz line, scaled off in calm).
+                    float stream = 0.3 + 0.5 * drop + 0.15 * energy;
+                    float reach = 0.26 + 0.34 * bass + 0.25 * drop + 0.08 * energy;
+                    float fall = exp(-d / reach) * smoothstep(0.0, 0.03, d) * smoothstep(1.6, 0.6, d);
+                    float pulse = 0.45 + 1.0 * beatPulse * intensity + 0.5 * kick * intensity;
+                    float3 tintBase = mix(sunRamp(u, 0.62), paletteAt(u, a / 6.28318 + 0.5 + travel * 0.01), 0.2);
+                    float2 turb = float2(fbm(p * 2.2 + float2(time * 0.35, -time * 0.2)), fbm(p * 2.2 + float2(5.3 - time * 0.3, 1.7 + time * 0.25)));
+                    float2 pt = p + (turb - 0.5) * (0.08 + 0.14 * drop + 0.06 * energy);
+                    for (int layer = 0; layer < 3; layer++) {
+                        float scale = layer == 0 ? 3.2 : (layer == 1 ? 6.5 : 13.0);
+                        float thin = layer == 0 ? 0.78 - 0.05 * drop : (layer == 1 ? 0.83 : 0.88);
                         float ec = 0.012;
-                        float f0 = fxFbm3(fxCylinder(p, scale, travel, stream), 3);
+                        float f0 = fxFbm3(fxCylinder(pt, scale, travel, stream), 3);
                         float strand = fxRidge(f0, thin);
-                        float weight = layer == 0 ? 1.0 : 0.55;
-                        float3 tint = mix(tintBase, sunRamp(0.8), float(layer) * 0.4);
+                        float weight = layer == 0 ? 1.0 : (layer == 1 ? 0.6 : 0.35);
+                        float3 tint = mix(tintBase, sunRamp(u, 0.85), float(layer) * 0.3);
                         if (layer == 0) {
-                            float fx = fxFbm3(fxCylinder(p + float2(ec, 0.0), scale, travel, stream), 3);
-                            float fy = fxFbm3(fxCylinder(p + float2(0.0, ec), scale, travel, stream), 3);
+                            float fx = fxFbm3(fxCylinder(pt + float2(ec, 0.0), scale, travel, stream), 3);
+                            float fy = fxFbm3(fxCylinder(pt + float2(0.0, ec), scale, travel, stream), 3);
                             float3 n = fxNormal(f0, fx, fy, ec, 6.0);
                             float2 shade = fxLight(n, light, 20.0);
-                            col += (tint * shade.x + float3(1.0) * shade.y * 0.5) * strand * fall * pulse * weight * 1.9;
+                            col += (tint * shade.x + float3(1.0) * shade.y * 0.6) * strand * fall * pulse * weight * 2.6;
                         } else {
-                            col += tint * strand * fall * pulse * weight * 1.5;
+                            col += tint * strand * fall * pulse * weight * 2.1;
                         }
                     }
-                    // The corona's soft body and the outer glow.
-                    col += sunRamp(0.5) * exp(-d * 22.0) * 0.2 * (0.6 + 0.4 * bass) * pulse;
+                    // The corona's body: a broad glow that swells with the bass and flashes on the beat.
+                    col += sunRamp(u, 0.6) * exp(-d * 6.0) * 0.35 * (0.5 + 0.5 * bass) * pulse;
+                    col += sunRamp(u, 0.5) * exp(-d * 22.0) * 0.3 * pulse;
 
                     // Prominence loops erupt from the limb on the snare and lift away as it fades.
                     float bar = floor(beats / 4.0);
                     float a0 = hash11(bar + 3.0) * 6.28318;
                     float a1 = a0 + 2.4 + hash11(bar + 11.0);
                     float rise = 1.0 - snare;
-                    float loop = sunLoop(p, float2(cos(a0), sin(a0)) * R, 0.09 + 0.22 * rise, R)
-                        + sunLoop(p, float2(cos(a1), sin(a1)) * R, 0.06 + 0.16 * rise, R) * 0.7;
-                    col += mix(sunRamp(0.45), float3(1.0, 0.75, 0.8), 0.4) * loop * snare * 2.6 * intensity;
+                    float loop = sunLoop(p, float2(cos(a0), sin(a0)) * R, 0.12 + 0.3 * rise, R)
+                        + sunLoop(p, float2(cos(a1), sin(a1)) * R, 0.08 + 0.22 * rise, R) * 0.7;
+                    col += mix(sunRamp(u, 0.45), float3(1.0, 0.75, 0.8), 0.4) * loop * snare * 2.6 * intensity;
+
+                    // Plasma arcs: five blobs launch off the limb, fly out along loops and land back on the star,
+                    // each on its own two-beat cycle with a fresh anchor every cycle; louder music throws them higher.
+                    if (r > R - 0.01) {
+                        float arcs = 0.0;
+                        for (int k = 0; k < 5; k++) {
+                            float period = 2.0 + float(k % 2);
+                            float cyc = (beats + float(k) * 0.4 * period) / period;
+                            float idx = floor(cyc);
+                            float phase = fract(cyc);
+                            float h1 = hash11(idx * 1.7 + float(k) * 13.1);
+                            float h2 = hash11(idx * 2.3 + float(k) * 7.7 + 0.5);
+                            float anchor = h1 * 6.28318;
+                            float span = (0.45 + 0.6 * h2) * (h1 > 0.5 ? 1.0 : -1.0);
+                            float height = (0.12 + 0.22 * h2) * (0.6 + 0.6 * energy + 0.5 * drop);
+                            arcs += sunArc(r, a, R, anchor, span, height, phase) * (0.5 + 0.5 * h1);
+                        }
+                        float3 arcTint = mix(sunRamp(u, 0.55), sunRamp(u, 0.95), 0.5);
+                        col += arcTint * arcs * (0.7 + 0.5 * energy + 0.4 * kick) * 1.6;
+                    }
 
                     // Eruption: on the kick a plume of plasma blasts out of an active region on the limb and
                     // dissipates; the ridged corona field gives it structure.
@@ -168,11 +220,11 @@
                     float da = atan2(sin(a - aK), cos(a - aK));
                     float cone = exp(-da * da * (10.0 - 4.0 * kick));
                     float blast = fxRidge(fxFbm3(fxCylinder(p, 7.0, travel, 0.9), 3), 0.6);
-                    float plume = cone * exp(-d / (0.05 + 0.3 * kick)) * (0.4 + 0.6 * blast) * kick * intensity;
-                    col += mix(sunRamp(0.7), float3(1.0, 0.95, 0.8), 0.5) * plume * 2.4;
+                    float plume = cone * exp(-d / (0.08 + 0.5 * kick)) * (0.4 + 0.6 * blast) * kick * intensity;
+                    col += mix(sunRamp(u, 0.7), float3(1.0, 0.95, 0.8), 0.5) * plume * 3.2;
 
                     // Solar wind: sparks that fly out of the star and grow as they near the viewer.
-                    float density = 0.04 + 0.12 * highs + 0.08 * hat + 0.08 * drop;
+                    float density = 0.06 + 0.16 * highs + 0.1 * hat + 0.1 * drop;
                     for (int k = 0; k < 2; k++) {
                         float offset = float(k) * 0.5;
                         FxZoomLayer zl = fxZoomLayer(p, fract(travel * (0.11 + 0.08 * drop) + offset));
@@ -186,8 +238,8 @@
                             float across = abs(dot(rel, float2(-dir.y, dir.x)));
                             float streak = exp(-across * across * 6000.0) * exp(-along * along * 2500.0) * smoothstep(-0.01, 0.0, along);
                             float spark = exp(-dot(rel, rel) * 6000.0) + streak * 0.5;
-                            float reachS = smoothstep(R * 1.05, R * 1.3, screenDistance) * smoothstep(1.3, 0.95, screenDistance);
-                            col += sunRamp(0.75 + 0.25 * h) * spark * zl.fade * reachS * (0.6 + 0.6 * h) * 1.4;
+                            float reachS = smoothstep(R * 1.05, R * 1.3, screenDistance) * smoothstep(1.7, 1.2, screenDistance);
+                            col += sunRamp(u, 0.75 + 0.25 * h) * spark * zl.fade * reachS * (0.6 + 0.6 * h) * 1.4;
                         }
                     }
                 }
