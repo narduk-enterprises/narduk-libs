@@ -289,7 +289,7 @@ struct SongMakerView: View {
                     Haptics.tap()
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { step -= 1 }
                 } label: {
-                    Pill(icon: "◀︎", word: "Back", color: .white.opacity(0.18), size: compact ? 20 : 26)
+                    Pill(icon: "icon-back", word: "Back", color: .white.opacity(0.18), size: compact ? 18 : 26)
                 }
                 .buttonStyle(Squish())
             }
@@ -305,7 +305,7 @@ struct SongMakerView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { step += 1 }
                 } label: {
                     Pill(
-                        icon: "▶︎", word: "Next",
+                        icon: "icon-next", word: "Next",
                         color: (step == 1 ? Color.white : Neon.pink).opacity(step == 1 ? 0.18 : 0.85),
                         size: compact ? 22 : 30)
                 }
@@ -315,7 +315,9 @@ struct SongMakerView: View {
                     Button {
                         finish()
                     } label: {
-                        Pill(icon: "▶︎", word: "Play it now!", color: Neon.green.opacity(0.85), size: compact ? 22 : 30)
+                        Pill(
+                            icon: "icon-play", word: "Play it now!", color: Neon.green.opacity(0.85),
+                            size: compact ? 22 : 30)
                     }
                     .buttonStyle(Squish())
                     .probe("maker.playNow")
@@ -324,7 +326,9 @@ struct SongMakerView: View {
                 Button {
                     finish()
                 } label: {
-                    Pill(icon: "▶︎", word: "Play my song!", color: Neon.green.opacity(0.85), size: compact ? 24 : 34)
+                    Pill(
+                        icon: "icon-play", word: "Play my song!", color: Neon.green.opacity(0.85),
+                        size: compact ? 21 : 34)
                 }
                 .buttonStyle(Squish())
             }

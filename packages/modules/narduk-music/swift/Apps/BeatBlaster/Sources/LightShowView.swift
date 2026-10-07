@@ -13,12 +13,12 @@ struct LightStepper: View {
                 Haptics.tap()
                 withAnimation(.easeInOut(duration: 0.35)) { index -= 1 }
             } label: {
-                Pill(icon: "◀︎", word: "Prev", color: .black.opacity(0.5), size: compact ? 16 : 22)
+                Pill(icon: "icon-back", word: "Prev", color: .black.opacity(0.5), size: compact ? 16 : 22)
             }
             .buttonStyle(Squish())
             HStack(spacing: 6) {
                 KindBadge(kind: .lights, size: 12)
-                Text("\(tile.emoji) \(tile.name)")
+                Text(tile.name)
                     .blasterFont(size: compact ? 18 : 26, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -31,7 +31,7 @@ struct LightStepper: View {
                 Haptics.tap()
                 withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
             } label: {
-                Pill(icon: "▶︎", word: "Next", color: .black.opacity(0.5), size: compact ? 16 : 22)
+                Pill(icon: "icon-next", word: "Next", color: .black.opacity(0.5), size: compact ? 16 : 22)
             }
             .buttonStyle(Squish())
         }

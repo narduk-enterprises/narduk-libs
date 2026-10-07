@@ -14,6 +14,7 @@ enum Art {
         "🦶": "icon-kick", "🎩": "icon-hat", "📯": "icon-air-horn",
         "🔫": "icon-laser", "💿": "icon-scratch", "💥": "icon-boom", "🚨": "icon-siren", "👏": "icon-clap",
         "🗣": "icon-shout", "🔔": "icon-bell",
+        "🔄": "icon-change", "🧽": "icon-clear", "⏹": "icon-stop", "🎼": "icon-auto",
     ]
 
     static func icon(for emoji: String) -> String? {
