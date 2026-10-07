@@ -55,6 +55,12 @@ struct RecordingStore {
         return unusedURL(stem: "\(Self.cleanName(title)) \(formatter.string(from: date))")
     }
 
+    /// `list()` off the main actor: it opens every take to read its length, and a child can have hundreds.
+    func load() async -> [Recording] {
+        let store = self
+        return await Task.detached(priority: .userInitiated) { store.list() }.value
+    }
+
     func list() -> [Recording] {
         let keys: [URLResourceKey] = [.contentModificationDateKey]
         let files =

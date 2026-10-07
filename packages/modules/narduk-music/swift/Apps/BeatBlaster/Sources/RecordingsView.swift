@@ -45,6 +45,9 @@ struct RecordingsView: View {
     @State private var renaming: Recording?
     @State private var newName = ""
     @State private var deleting: Recording?
+    /// Bumped by every reload so a slow, older listing never lands over a newer one.
+    @State private var loads = 0
+    @State private var loaded = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -60,7 +63,9 @@ struct RecordingsView: View {
                         .probe("mysongs.title")
                     Spacer(minLength: 0)
                 }
-                if recordings.isEmpty {
+                if !loaded {
+                    Spacer()
+                } else if recordings.isEmpty {
                     Spacer()
                     Text("Nothing recorded yet.\nEvery song you play gets recorded!")
                         .blasterFont(size: compact ? 20 : 28, weight: .heavy)
@@ -189,5 +194,12 @@ struct RecordingsView: View {
         reload()
     }
 
-    private func reload() { recordings = audio.store.list() }
+    private func reload() {
+        loads += 1
+        let load = loads
+        Task {
+            let listed = await audio.store.load()
+            if load == loads { (recordings, loaded) = (listed, true) }
+        }
+    }
 }
