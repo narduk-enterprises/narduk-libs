@@ -5,6 +5,8 @@
     /// The pack's shaders. `feedback` carries state between frames; the others are pure functions of the uniforms.
     public enum ShaderPackKind: String, Sendable, CaseIterable, Hashable {
         case plasma, warpGrid, starfield, feedback
+        /// "Aurora waves": silky multi-strand ribbons with an embedded equaliser over a reflecting sea.
+        case auroraWaves
 
         var fragmentName: String {
             switch self {
@@ -12,6 +14,7 @@
             case .warpGrid: "warpGridFragment"
             case .starfield: "starfieldFragment"
             case .feedback: "feedbackFragment"
+            case .auroraWaves: "auroraWavesFragment"
             }
         }
     }

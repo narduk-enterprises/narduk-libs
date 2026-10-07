@@ -10,6 +10,8 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
   and speeds the scroll.
+- Shader-pack look `ShaderPackKind.auroraWaves` ("Aurora waves", narduk-libs#1569): silky multi-strand ribbons with an
+  embedded equaliser over a night sky and a reflecting sea.
 
 ## 0.4.1
 
