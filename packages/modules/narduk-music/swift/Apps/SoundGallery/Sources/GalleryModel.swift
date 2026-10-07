@@ -22,6 +22,11 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     /// What the demo source plays (the picker sets it; `newSong()` rerolls the seed).
     var song = GallerySong()
     private(set) var isRunning = false
+    /// Paused: the source holds its place and the cards keep their last frame, but still repaint on a color change.
+    private(set) var isPaused = false
+    /// True for a moment after the look changes, so a stopped or paused gallery keeps drawing until the ease ends.
+    private(set) var repaintHold = false
+    @ObservationIgnored private var repaintTask: Task<Void, Never>?
     private(set) var status = "Pick a source and press Play."
 
     @ObservationIgnored private var source: (any SoundFrameSource)?
@@ -52,7 +57,38 @@ enum GalleryInput: String, CaseIterable, Identifiable {
 
     /// Colors and knobs for every card; mirrored onto the shared state, which every visualizer draws from.
     var look = SoundPaletteLook.neutral {
-        didSet { visualState.look = look }
+        didSet {
+            visualState.look = look
+            holdRepaint()
+        }
+    }
+
+    private func holdRepaint() {
+        repaintHold = true
+        repaintTask?.cancel()
+        repaintTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            if !Task.isCancelled { self?.repaintHold = false }
+        }
+    }
+
+    /// Play/Pause as one toggle: a song or a file keeps its playhead; the microphone just freezes the picture.
+    func togglePause() {
+        guard isRunning else { return }
+        if isPaused {
+            do {
+                try drop.resume()
+            } catch {
+                status = "Could not resume: \(error.localizedDescription)"
+                return
+            }
+            player?.play()
+            isPaused = false
+        } else {
+            drop.pause()
+            player?.pause()
+            isPaused = true
+        }
     }
 
     /// Copies the gallery's look onto a tile's own state. Metal and spectacle tiles advance a private state on their own
@@ -85,7 +121,9 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     /// `MusicContext`; other sources drive the visualizers from their frames alone, as the contract allows).
     func poll(at date: Date) -> SoundFrame {
         let now = date.timeIntervalSinceReferenceDate
-        if let source {
+        if isPaused {
+            // Hold the last frame; the state still advances below so a color change eases in.
+        } else if let source {
             latest = source.poll(time: now - clockOrigin)
         } else {
             latest = SoundFrame()
@@ -115,6 +153,7 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     }
 
     func stop() {
+        isPaused = false
         drop.stop()
         player?.stop()
         tap?.stop()

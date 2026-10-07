@@ -1,5 +1,6 @@
 #if canImport(SwiftUI) && canImport(AppKit)
     import Foundation
+    import simd
     import NardukMusicCore
     import NardukSoundAnalysis
     import Testing
@@ -70,6 +71,57 @@
                 colors: SoundPalettePreset.candy.colors, hueShift: 30, saturation: 1.2, brightness: 0.9, cycle: 12)
             let data = try JSONEncoder().encode(look)
             #expect(try JSONDecoder().decode(SoundPaletteLook.self, from: data) == look)
+        }
+
+        /// A state fed 60 Hz frames, `seconds` of them from `start`, returning the next frame time.
+        static func run(_ state: SoundVisualState, from start: Double, seconds: Double) -> Double {
+            var now = start
+            let frames = Int(seconds * 60)
+            for i in 0..<frames {
+                state.update(SoundVisualInput(frame: Script.frame(UInt64(i + 1), level: 0.5)), now: now)
+                now += 1.0 / 60
+            }
+            return now
+        }
+
+        @Test func aChangedLookEasesInThroughALightnessPreservingMidpoint() {
+            let state = SoundVisualState(seed: 3)
+            var now = Self.run(state, from: 10, seconds: 1)
+            let old = state.palette
+            #expect(!state.isEasingLook)
+
+            state.look = SoundPaletteLook(preset: .ocean)
+            #expect(state.isEasingLook)
+            now = Self.run(state, from: now, seconds: 0.3)  // about halfway through the 0.6 s ease
+            let mid = state.palette
+            #expect(state.isEasingLook)
+            #expect(mid != old)
+
+            now = Self.run(state, from: now, seconds: 1)
+            #expect(!state.isEasingLook)
+            let end = state.palette
+            #expect(end != mid && end != old)
+
+            // The midpoint sits between the old and the new color: closer to neither end, in lightness and distance.
+            for (a, m, b) in [(old.c0, mid.c0, end.c0), (old.c1, mid.c1, end.c1), (old.c2, mid.c2, end.c2)] {
+                let la = SoundPalette.oklab(a)
+                let lm = SoundPalette.oklab(m)
+                let lb = SoundPalette.oklab(b)
+                #expect(lm.x >= min(la.x, lb.x) - 0.02 && lm.x <= max(la.x, lb.x) + 0.02)
+                #expect(simd_length(lm - la) > 0.01, "the midpoint is still the old color")
+            }
+        }
+
+        @Test func aPerceptualMixKeepsTheEndsAndTheMidpointStaysBright() {
+            let red = SoundPalette(c0: SIMD3(1, 0, 0), c1: SIMD3(0, 1, 0), c2: SIMD3(0, 0, 1))
+            let blue = SoundPalette(c0: SIMD3(0, 0, 1), c1: SIMD3(1, 0, 0), c2: SIMD3(0, 1, 0))
+            let start = red.mixedPerceptually(with: blue, 0)
+            #expect(simd_length(start.c0 - red.c0) < 0.01)
+            let end = red.mixedPerceptually(with: blue, 1)
+            #expect(simd_length(end.c0 - blue.c0) < 0.01)
+            // A straight RGB mix of red and blue is a dark purple (0.5, 0, 0.5); the OKLab midpoint is lighter.
+            let mid = red.mixedPerceptually(with: blue, 0.5).c0
+            #expect(mid.x + mid.y + mid.z > 1.0)
         }
 
         @Test(arguments: SoundVisualizerKind.allCases)
