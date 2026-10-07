@@ -45,7 +45,19 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var source: (any SoundFrameSource)?
     @ObservationIgnored private var latest = SoundFrame()
     @ObservationIgnored private var lastPoll = 0.0
-    @ObservationIgnored private let drop = DropEngine()
+    /// `-silent YES`, a unit-test run and a test-hosted launch mute the speakers only; meters, visuals and recording
+    /// still see the full signal. No test lane ever plays through the Mac's speakers.
+    @ObservationIgnored private let drop: DropEngine = {
+        let engine = DropEngine()
+        engine.mutesHardwareOutput = BlasterAudio.shouldMuteSpeakers
+        return engine
+    }()
+
+    static var shouldMuteSpeakers: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return UserDefaults.standard.bool(forKey: "silent") || environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil || NSClassFromString("XCTestCase") != nil
+    }
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var tap: AudioTapSource?
     @ObservationIgnored private var player: SongPlayer?
@@ -75,6 +87,9 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var interruptionObserver: (any NSObjectProtocol)?
 
     var latestFrame: SoundFrame { latest }
+
+    /// Whether the speaker path is muted (`-silent YES`).
+    var isSilent: Bool { drop.mutesHardwareOutput }
 
     /// What every visualizer draws from: the frame plus, for the engine, its music context (kicks, section).
     var visualInput: SoundVisualInput {

@@ -1,3 +1,4 @@
+import NardukMusicCore
 import NardukMusicEngine
 import SwiftUI
 import XCTest
@@ -239,12 +240,17 @@ import XCTest
         let recipe = SongRecipe(style: .genre(.house))
         let a = SongPlayer(recipe: recipe, engine: DropEngine())
         let b = SongPlayer(recipe: recipe, engine: DropEngine())
-        let straight = a.notes(through: 31).filter { $0.step >= 16 }.map { "\($0.step)-\($0.instrument)" }
+        // Open and closed hats follow the conductor's energy, which is not the position; compare the rest.
+        func key(_ note: ScheduledNote, _ shift: Int) -> String {
+            let name = [.hat, .openHat].contains(note.instrument) ? "hat" : "\(note.instrument)"
+            return "\(note.step - shift)-\(name)"
+        }
+        let straight = a.notes(through: 31).filter { $0.step >= 16 }.map { key($0, 0) }
         _ = b.notes(through: 15)
         b.paused = true
         XCTAssertTrue(b.notes(through: 100).isEmpty, "nothing plays while paused")
         b.paused = false
-        let resumed = b.notes(through: 116).map { "\($0.step - 85)-\($0.instrument)" }
+        let resumed = b.notes(through: 116).map { key($0, 85) }
         XCTAssertFalse(straight.isEmpty)
         XCTAssertEqual(Set(resumed), Set(straight))
     }
