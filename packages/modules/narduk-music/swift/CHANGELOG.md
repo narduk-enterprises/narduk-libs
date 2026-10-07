@@ -2,6 +2,12 @@
 
 NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on npm.
 
+## Unreleased
+
+### Added
+
+- Shader-pack look `aurora` ("Aurora curtains"): domain-warped light sheets and a starfield over a night sky (narduk-libs#1569).
+
 ## 0.4.1
 
 Seeds that write new songs, musical visualizers, two more intense visualizers, a silent engine for apps that draw only,
