@@ -33,9 +33,9 @@ struct PlayerView: View {
                     Spacer(minLength: 0)
                     if landscape {
                         HStack(alignment: .bottom, spacing: 12) {
+                            // Logan's canvas decision: a full-width bottom tray with DROP pinned bottom right.
                             controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                                .frame(maxWidth: 640)
-                            Spacer(minLength: 0)
+                                .frame(maxWidth: .infinity)
                             dropColumn(size: dropSize)
                         }
                     } else {
@@ -44,7 +44,7 @@ struct PlayerView: View {
                             dropColumn(size: dropSize)
                         }
                         controlsTray(compact: compact, short: short, pageHeight: pageHeight)
-                            .frame(maxWidth: 700)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, short ? 12 : (compact ? 14 : 24))
