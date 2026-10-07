@@ -101,5 +101,11 @@ extension GalleryTile {
                     kind: .auroraWaves, title: "Aurora waves", model: context.model,
                     framesPerSecond: context.framesPerSecond))
         },
+        GalleryTile(id: "Mesh wave") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .meshWave, title: "Mesh wave", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }

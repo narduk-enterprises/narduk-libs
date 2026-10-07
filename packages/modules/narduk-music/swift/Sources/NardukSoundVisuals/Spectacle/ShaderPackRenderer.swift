@@ -10,6 +10,8 @@
         case aurora
         /// "Aurora waves": silky multi-strand ribbons with an embedded equaliser over a reflecting sea.
         case auroraWaves
+        /// A glowing wireframe draped over two swells and a trough.
+        case meshWave
 
         public var title: String {
             switch self {
@@ -20,6 +22,7 @@
             case .bassBlobs: "Bass blobs"
             case .aurora: "Aurora curtains"
             case .auroraWaves: "Aurora waves"
+            case .meshWave: "Mesh wave"
             }
         }
 
@@ -32,6 +35,18 @@
             case .bassBlobs: "bassBlobsFragment"
             case .aurora: "auroraFragment"
             case .auroraWaves: "auroraWavesFragment"
+            case .meshWave: "meshWaveFragment"
+            }
+        }
+
+        /// The name the gallery shows.
+        public var title: String {
+            switch self {
+            case .plasma: "Plasma"
+            case .warpGrid: "Warp grid"
+            case .starfield: "Starfield"
+            case .feedback: "Feedback"
+            case .meshWave: "Mesh wave"
             }
         }
     }
