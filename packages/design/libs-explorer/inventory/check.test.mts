@@ -196,7 +196,8 @@ test('workspace discovery is the repository contract: supported patterns read, o
     }
   }
 
-  // As in pnpm, a matched directory without package.json is not a package.
+  // As in pnpm, a matched directory without package.json is not a package
+  // (packages/modules/narduk-music is a Swift-only tree, narduk-libs#1520).
   const noManifest = fixtureWorkspace('packages:\n  - packages/a/*\n', {
     'packages/a/one': { name: '@x/one' },
     'packages/a/empty': null,
