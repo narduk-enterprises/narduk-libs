@@ -9,6 +9,9 @@ and the Beat Blaster kids app. Everything is additive; the two enum cases below 
 
 ### Added
 
+- `IntenseKind.sun` ("Sun") in `NardukSoundVisuals` (narduk-libs#1569): a Metal close-up star with a rotating,
+  relief-lit granulated photosphere, sunspots, spicules, ridged corona streamers, snare-driven prominence loops and
+  solar-wind sparks; bass swells the disc, mids churn the surface, highs fringe the limb, the kick flares it.
 - `IntenseEffects` in `NardukSoundVisuals` (narduk-libs#1656): the shared MSL effects library every Intense shader
   compiles with (`fx*`: 3-D noise and `fxCylinder`, `fxRidge`, `fxNormal`/`fxLight`/`fxBall` lighting, `fxZoomLayer`/
   `fxCell` flying particles, `fxFlash`/`fxTonemap`/`fxVignette`). Liquid splash is its first consumer, pixel for pixel.
