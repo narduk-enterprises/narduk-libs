@@ -358,7 +358,102 @@ test('the planned narduk-music Swift gate stays on for the paths the npm planner
         [join(repoRoot, 'scripts/narduk-music-ci-plan.mjs'), '--base', base, '--head', head],
         { cwd: repo, env: { ...process.env, GITHUB_OUTPUT: output } },
       )
-      assert.equal(readFileSync(output, 'utf8').trim(), `narduk-music-swift=${expected}`, file)
+      assert.equal(
+        readFileSync(output, 'utf8').split('\n')[0],
+        `narduk-music-swift=${expected}`,
+        file,
+      )
+      git('reset', '-q', '--hard', base)
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(`${repo}.github-output`, { force: true })
+  }
+})
+
+test('a pull request pays only for the NardukMusic Apple steps its diff can change; main pays for all', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'narduk-libs-music-scope-'))
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const music = 'packages/modules/narduk-music/swift/'
+  const plan = (base, head, ...extra) => {
+    const output = `${repo}.github-output`
+    writeFileSync(output, '')
+    execFileSync(
+      process.execPath,
+      [
+        join(repoRoot, 'scripts/narduk-music-ci-plan.mjs'),
+        '--base',
+        base,
+        '--head',
+        head,
+        ...extra,
+      ],
+      { cwd: repo, env: { ...process.env, GITHUB_OUTPUT: output } },
+    )
+    return Object.fromEntries(
+      readFileSync(output, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => line.replace('narduk-music-', '').split('=')),
+    )
+  }
+  try {
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.invalid')
+    git('config', 'user.name', 'test')
+    writeFileSync(join(repo, 'README.md'), 'base\n')
+    git('add', '.')
+    git('commit', '-q', '-m', 'base')
+    const base = git('rev-parse', 'HEAD').trim()
+    const all = {
+      swift: 'true',
+      macos: 'true',
+      'ios-device': 'true',
+      gallery: 'true',
+      blaster: 'true',
+    }
+    const none = {
+      swift: 'false',
+      macos: 'false',
+      'ios-device': 'false',
+      gallery: 'false',
+      blaster: 'false',
+    }
+    const cases = [
+      // file, scoped expectation
+      [`${music}CHANGELOG.md`, { ...none, swift: 'true' }],
+      [`${music}docs/sound-contract.md`, { ...none, swift: 'true' }],
+      [`${music}Sources/NardukMusicCore/A.swift`, { ...none, swift: 'true', macos: 'true' }],
+      [`${music}Sources/NardukMusicRender/A.swift`, { ...none, swift: 'true', macos: 'true' }],
+      [`${music}Sources/narduk-music/main.swift`, { ...none, swift: 'true', macos: 'true' }],
+      [`${music}Sources/NardukSoundVisuals/A.swift`, { ...all }],
+      [`${music}Sources/NardukMusicEngine/A.swift`, { ...all }],
+      [
+        `${music}Sources/NardukSonify/A.swift`,
+        { ...none, swift: 'true', macos: 'true', 'ios-device': 'true' },
+      ],
+      [
+        `${music}Apps/SoundGallery/Sources/A.swift`,
+        { ...none, swift: 'true', macos: 'true', gallery: 'true' },
+      ],
+      [
+        `${music}Apps/BeatBlaster/Sources/A.swift`,
+        { ...none, swift: 'true', macos: 'true', blaster: 'true' },
+      ],
+      ['Package.swift', all],
+      ['.github/workflows/narduk-music-swift.yml', all],
+      ['docs/notes.md', none],
+    ]
+    for (const [file, expected] of cases) {
+      mkdirSync(dirname(join(repo, file)), { recursive: true })
+      writeFileSync(join(repo, file), 'x\n')
+      git('add', '.')
+      git('commit', '-q', '-m', file)
+      const head = git('rev-parse', 'HEAD').trim()
+      assert.deepEqual(plan(base, head, '--scope-apps'), expected, `scoped: ${file}`)
+      // main, a release and --all run every step the gate has.
+      const unscoped = plan(base, head)
+      assert.deepEqual(unscoped, expected.swift === 'true' ? all : none, `unscoped: ${file}`)
       git('reset', '-q', '--hard', base)
     }
   } finally {

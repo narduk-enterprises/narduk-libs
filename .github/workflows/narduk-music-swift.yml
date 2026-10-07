@@ -5,8 +5,29 @@ name: NardukMusic Swift
 # everything. Both run the golden render against their own platform's
 # fingerprint, the CLI and a version-tag consumer.
 
+# A pull request runs the Apple steps its diff can change (scripts/narduk-music-ci-plan.mjs);
+# main, releases and anything the planner cannot place run all of them. A skipped macOS
+# job still reports success through this workflow, so `verify` is unchanged.
+
 on:
   workflow_call:
+    inputs:
+      macos:
+        description: The macOS job (false for a documentation-only change)
+        type: boolean
+        default: true
+      ios-device:
+        description: The iOS device build loop
+        type: boolean
+        default: true
+      gallery:
+        description: Build SoundGallery for macOS and the iOS simulator
+        type: boolean
+        default: true
+      blaster:
+        description: Build and test Beat Blaster on the iOS simulator
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -40,6 +61,7 @@ jobs:
 
   swift-macos:
     name: NardukMusic macOS
+    if: inputs.macos
     runs-on: macos-26
     timeout-minutes: 30
     env:
@@ -68,6 +90,7 @@ jobs:
           CI: "true"
         run: python3 packages/modules/narduk-music/swift/scripts/swift-quality.py
       - name: Build every shipped product that runs on iOS for a device
+        if: inputs.ios-device
         # The package floor is iOS 18 (as for NardukAuthKit): prove each product compiles for a device.
         run: |
           set -euo pipefail
@@ -79,6 +102,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Build the SoundGallery app for macOS and the iOS simulator
+        if: inputs.gallery
         # The gallery (narduk-libs#1570) is an XcodeGen project over this package: one multiplatform SwiftUI app.
         # Unsigned builds only; no identity, profile or entitlement is involved.
         working-directory: packages/modules/narduk-music/swift/Apps/SoundGallery
@@ -95,6 +119,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Build and test the Beat Blaster app on the iOS simulator
+        if: inputs.blaster
         # Beat Blaster (narduk-libs#1600) is an XcodeGen project over this package. Unsigned: the TestFlight
         # signing (team FVSY7CFC3S) is applied on the laptop at archive time, never here.
         working-directory: packages/modules/narduk-music/swift/Apps/BeatBlaster

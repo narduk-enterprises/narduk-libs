@@ -51,6 +51,10 @@ jobs:
       logging-languages: ${{ steps.plan.outputs.logging-languages }}
       auth-kit-swift: ${{ steps.plan.outputs.auth-kit-swift }}
       narduk-music-swift: ${{ steps.plan.outputs.narduk-music-swift }}
+      narduk-music-macos: ${{ steps.plan.outputs.narduk-music-macos }}
+      narduk-music-ios-device: ${{ steps.plan.outputs.narduk-music-ios-device }}
+      narduk-music-gallery: ${{ steps.plan.outputs.narduk-music-gallery }}
+      narduk-music-blaster: ${{ steps.plan.outputs.narduk-music-blaster }}
     steps:
       - name: Check out source and comparison history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,7 +110,13 @@ jobs:
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
           node scripts/auth-kit-ci-plan.mjs "${args[@]}"
-          node scripts/narduk-music-ci-plan.mjs "${args[@]}"
+          # A pull request pays only for the Apple steps its diff can change;
+          # main, releases and --all run every step (see the planner).
+          music_args=("${args[@]}")
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            music_args+=(--scope-apps)
+          fi
+          node scripts/narduk-music-ci-plan.mjs "${music_args[@]}"
 
       # The packed-consumer smoke failed a pull request once in the last 150
       # runs (via a changeset), so a PR pays for it only when the diff can change what it packs:
@@ -153,6 +163,11 @@ jobs:
     needs: [affected]
     if: needs.affected.outputs.narduk-music-swift == 'true'
     uses: ./.github/workflows/narduk-music-swift.yml
+    with:
+      macos: ${{ needs.affected.outputs.narduk-music-macos == 'true' }}
+      ios-device: ${{ needs.affected.outputs.narduk-music-ios-device == 'true' }}
+      gallery: ${{ needs.affected.outputs.narduk-music-gallery == 'true' }}
+      blaster: ${{ needs.affected.outputs.narduk-music-blaster == 'true' }}
 
   ci:
     needs: [affected]
