@@ -146,7 +146,7 @@ struct EffectsPanel: View {
                         onPad(pad)
                     } label: {
                         VStack(spacing: 2) {
-                            Text(pad.emoji).font(.system(size: compact ? 28 : 36))
+                            Glyph(pad.emoji, size: compact ? 28 : 36)
                             Text(pad.word)
                                 .font(.system(size: compact ? 12 : 15, weight: .black, design: .rounded))
                                 .lineLimit(1)
@@ -195,9 +195,12 @@ struct EffectSlider: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(icon) \(title)")
-                .font(.system(size: 15, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+            HStack(spacing: 6) {
+                Glyph(icon, size: 18)
+                Text(title)
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
             HStack(spacing: 8) {
                 Text(low).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(.white.opacity(0.8))
                     .fixedSize()

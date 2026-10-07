@@ -28,9 +28,9 @@ struct TrayState: Equatable {
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .play: "🎮"
-            case .effects: "🎛"
-            case .more: "🎵"
+            case .play: "icon-energy"
+            case .effects: "icon-pads"
+            case .more: "icon-music"
             }
         }
         var word: String {
@@ -116,7 +116,8 @@ struct ControlsTray<Content: View>: View {
         } label: {
             HStack(spacing: 8) {
                 Capsule().fill(.white.opacity(0.7)).frame(width: 36, height: 5)
-                Text("🎛 Controls")
+                Glyph("icon-pads", size: 22)
+                Text("Controls")
                     .font(.system(size: short ? 15 : 18, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -150,7 +151,7 @@ struct ControlsTray<Content: View>: View {
                     state.touch()
                 } label: {
                     HStack(spacing: 4) {
-                        Text(which.icon).font(.system(size: 16))
+                        Glyph(which.icon, size: 18)
                         Text(which.word)
                             .font(.system(size: short ? 12 : 14, weight: .black, design: .rounded))
                             .lineLimit(1)

@@ -138,8 +138,7 @@ struct RecordingsView: View {
                 renaming = recording
             }
             ShareLink(item: recording.url) {
-                Text("📤")
-                    .font(.system(size: 24))
+                Glyph("📤", size: 24)
                     .frame(width: 48, height: 48)
                     .background(Neon.cyan.opacity(0.5), in: Circle())
             }
@@ -156,8 +155,7 @@ struct RecordingsView: View {
             Haptics.tap()
             action()
         } label: {
-            Text(icon)
-                .font(.system(size: 24))
+            Glyph(icon, size: 24)
                 .frame(width: 48, height: 48)
                 .background(.white.opacity(0.18), in: Circle())
         }

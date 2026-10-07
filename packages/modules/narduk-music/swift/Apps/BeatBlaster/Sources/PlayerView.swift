@@ -93,8 +93,9 @@ struct PlayerView: View {
                 Haptics.tap()
                 audio.togglePause()
             } label: {
-                Text(audio.isPaused ? "▶️" : "⏸")
-                    .font(.system(size: 24))
+                Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
                     .background(.black.opacity(0.55), in: Circle())
                     .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 2))
@@ -277,7 +278,7 @@ struct PlayControls: View {
                     }
                 } label: {
                     VStack(spacing: 0) {
-                        Text(part.emoji).font(.system(size: compact ? 18 : 24)).grayscale(on ? 0 : 1)
+                        Glyph(part.emoji, size: compact ? 18 : 24).grayscale(on ? 0 : 1)
                         Text(part.word)
                             .font(.system(size: compact ? 10 : 13, weight: .black, design: .rounded))
                             .lineLimit(1)
@@ -299,7 +300,7 @@ struct PlayControls: View {
     private func action(icon: String, word: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Text(icon).font(.system(size: 22))
+                Glyph(icon, size: 22)
                 Text(word)
                     .font(.system(size: compact ? 14 : 17, weight: .black, design: .rounded))
                     .lineLimit(1)
@@ -430,7 +431,7 @@ struct DropButton: View {
                     .rotationEffect(.degrees(-90))
                     .padding(-12)
                 VStack(spacing: 0) {
-                    Text("💣").font(.system(size: size * 0.22))
+                    Glyph("💣", size: size * 0.22)
                     Text("DROP!")
                         .font(.system(size: size * 0.22, weight: .black, design: .rounded))
                     if pressing {

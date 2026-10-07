@@ -20,7 +20,9 @@ struct HomeView: View {
     }
 
     private let modes = [
-        Mode(screen: .lab, emoji: "🥁", title: "Beat Lab", subtitle: "Build a beat yourself", color: Neon.orange),
+        Mode(
+            screen: .lab, emoji: "icon-beat-lab", title: "Beat Lab", subtitle: "Build a beat yourself",
+            color: Neon.orange),
         Mode(screen: .lights, emoji: "💡", title: "Light Show", subtitle: "Watch the lights dance", color: Neon.cyan),
         Mode(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
         Mode(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Type an idea", color: Neon.purple),
@@ -95,7 +97,7 @@ struct HomeView: View {
 
     private func modeCard(_ mode: Mode, compact: Bool) -> some View {
         VStack(spacing: compact ? 4 : 8) {
-            Text(mode.emoji).font(.system(size: compact ? 36 : 54))
+            Glyph(mode.emoji, size: compact ? 36 : 54)
             Text(mode.title)
                 .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
                 .lineLimit(1)
@@ -174,7 +176,7 @@ struct StartButtonFace: View {
 
     var body: some View {
         HStack(spacing: compact ? 12 : 20) {
-            Text("🎵").font(.system(size: compact ? 44 : 76))
+            Glyph("🎵", size: compact ? 44 : 76)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Make a Song")
                     .font(.system(size: compact ? 34 : 60, weight: .black, design: .rounded))

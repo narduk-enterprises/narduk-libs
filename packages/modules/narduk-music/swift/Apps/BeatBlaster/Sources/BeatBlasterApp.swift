@@ -131,7 +131,7 @@ struct Pill: View {
 
     var body: some View {
         HStack(spacing: size * 0.35) {
-            Text(icon).font(.system(size: size * 1.15))
+            Glyph(icon, size: size * 1.15)
             Text(word)
                 .font(.system(size: size, weight: .black, design: .rounded))
                 .lineLimit(1)

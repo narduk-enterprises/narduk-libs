@@ -14,10 +14,10 @@ enum BassSound: String, CaseIterable, Identifiable, Codable {
     var word: String { rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .wobble: "🌊"
-        case .growl: "🐻"
-        case .deep: "🐋"
-        case .pluck: "🎸"
+        case .wobble: "icon-wobble-wave"
+        case .growl: "icon-growl"
+        case .deep: "icon-deep"
+        case .pluck: "icon-pluck"
         }
     }
 
@@ -62,9 +62,9 @@ enum KeysSound: String, CaseIterable, Identifiable, Codable {
     var word: String { rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .bell: "🔔"
-        case .synth: "🎛️"
-        case .piano: "🎹"
+        case .bell: "icon-bell"
+        case .synth: "icon-synth"
+        case .piano: "icon-piano"
         }
     }
     var voice: Int {
@@ -91,10 +91,10 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
     }
     var emoji: String {
         switch self {
-        case .classic: "🥁"
-        case .boom: "💣"
-        case .zappy: "⚡️"
-        case .dj: "💿"
+        case .classic: "icon-kit-classic"
+        case .boom: "icon-kit-boom"
+        case .zappy: "icon-kit-zappy"
+        case .dj: "icon-kit-dj"
         }
     }
 

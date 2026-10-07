@@ -365,7 +365,7 @@ struct BandToggles: View {
                     toggle(part)
                 } label: {
                     VStack(spacing: 4) {
-                        Text(part.emoji).font(.system(size: compact ? 34 : 50))
+                        Glyph(part.emoji, size: compact ? 34 : 50)
                             .grayscale(on ? 0 : 1)
                         Text(part.word)
                             .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
@@ -426,7 +426,7 @@ struct SoundRow<Option: SoundChoice>: View {
                         pick(option)
                     } label: {
                         VStack(spacing: 2) {
-                            Text(option.emoji).font(.system(size: compact ? 24 : 36))
+                            Glyph(option.emoji, size: compact ? 24 : 36)
                             Text(option.word)
                                 .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
                                 .lineLimit(1)

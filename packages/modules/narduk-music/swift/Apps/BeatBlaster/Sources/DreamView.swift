@@ -181,7 +181,7 @@ struct DreamView: View {
 
     private func resultCard(_ song: DreamedSong, compact: Bool) -> some View {
         VStack(spacing: 14) {
-            Text(song.style.emoji).font(.system(size: compact ? 70 : 100))
+            VibeArt(style: song.style, size: compact ? 120 : 180)
             Text(song.title)
                 .font(.system(size: compact ? 28 : 44, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
