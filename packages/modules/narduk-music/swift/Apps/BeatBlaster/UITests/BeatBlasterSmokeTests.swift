@@ -100,6 +100,14 @@ import XCTest
     }
 
     /// Record a few seconds in the player, then find the song in My Songs, rename it and see the share sheet.
+    /// Beat Lab's Make a song: the player opens on a song built around the beat, with no vibe to pick.
+    func testMakeASongFromMyBeat() {
+        require("home.mode.lab").tap()
+        require("lab.makeSong").tap()
+        require("player.root", timeout: 15)
+        goHomeFromPlayer()
+    }
+
     func testRecordSaveRenameAndShareFromMySongs() {
         makeASong()
 

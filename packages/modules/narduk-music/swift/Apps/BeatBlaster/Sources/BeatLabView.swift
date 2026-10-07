@@ -9,7 +9,6 @@ struct BeatLabView: View {
     var makeSong: (SongRecipe) -> Void = { _ in }
     @Environment(\.scenePhase) private var scenePhase
     @State private var panel = false
-    @State private var vibePanel = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,22 +52,6 @@ struct BeatLabView: View {
                     }
                     .transition(.move(edge: .bottom))
                 }
-                if vibePanel {
-                    PickerPanel(
-                        title: "Build a song on my beat", badge: .music, close: { withAnimation { vibePanel = false } }
-                    ) {
-                        MusicGrid(selectedID: nil, compact: compact) { style in
-                            let beat = lab.keep()
-                            var recipe = SongRecipe.around(beat.beat, style: style, name: beat.name)
-                            recipe.lightsID = audio.lightsID
-                            audio.endRecording()
-                            lab.save()
-                            vibePanel = false
-                            makeSong(recipe)
-                        }
-                    }
-                    .transition(.move(edge: .bottom))
-                }
             }
         }
         .onAppear { audio.startBeatLab(lab) }
@@ -80,19 +63,22 @@ struct BeatLabView: View {
 
     /// The controls wrap onto as many rows as the width needs (they used to be wider than a phone and stretched the
     /// whole screen past its edge).
+    /// Grouped and labelled so the row reads left to right: Play, Speed, Key, Change it, Save.
     private func controls(compact: Bool) -> some View {
         let size: CGFloat = compact ? 16 : 22
-        return ChipLayout(spacing: 10) {
-            transport(size)
-            record(size)
-            speed(size)
-            keyPicker(size)
-            edit(size)
-            keepAndSong(size)
+        return ChipLayout(spacing: compact ? 8 : 12) {
+            ControlGroup(title: "Play", compact: compact) {
+                transport(size)
+                record(size)
+            }
+            ControlGroup(title: "Speed", compact: compact) { speed(size) }
+            ControlGroup(title: "Key", compact: compact) { keyPicker(size) }
+            ControlGroup(title: "Change it", compact: compact) { edit(size) }
+            ControlGroup(title: "Save", compact: compact) { keepAndSong(size) }
         }
     }
 
-    /// Keep this beat in My beats, or build a whole song on it.
+    /// Keep this beat in My beats, or build a whole song on it (straight to the player: the beat picks the genre).
     private func keepAndSong(_ size: CGFloat) -> some View {
         HStack(spacing: 10) {
             Button {
@@ -108,8 +94,13 @@ struct BeatLabView: View {
             .accessibilityLabel("Keep this beat in My beats")
             .probe("lab.keep")
             Button {
-                Haptics.tap()
-                withAnimation { vibePanel = true }
+                Haptics.success()
+                let beat = lab.keep()
+                var recipe = SongRecipe.around(beat.beat, name: beat.name)
+                recipe.lightsID = audio.lightsID
+                audio.endRecording()
+                lab.save()
+                makeSong(recipe)
             } label: {
                 Pill(icon: "icon-new-song", word: "Make a song", color: Neon.pink.opacity(0.75), size: size)
             }
@@ -166,11 +157,12 @@ struct BeatLabView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Key down")
-            Text("Key: \(MusicKey.names[lab.key])")
+            Text(MusicKey.names[lab.key])
                 .blasterFont(size: size * 0.85, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize()
+                .accessibilityLabel("Key \(MusicKey.names[lab.key])")
             Button {
                 Haptics.tap()
                 lab.key = (lab.key + 1) % 12
@@ -219,7 +211,7 @@ struct BeatLabView: View {
                         color: Neon.pink.opacity(0.85), size: size)
                 }
             } else {
-                Pill(icon: "icon-record", word: "Record my beat", color: .white.opacity(0.15), size: size)
+                Pill(icon: "icon-record", word: "Record", color: .white.opacity(0.15), size: size)
             }
         }
         .buttonStyle(Squish())
@@ -251,9 +243,10 @@ struct BeatLabView: View {
                 Haptics.success()
                 lab.randomize()
             } label: {
-                Pill(icon: "🎲", word: "Random beat", color: Neon.orange.opacity(0.75), size: size)
+                Pill(icon: "🎲", word: "Random", color: Neon.orange.opacity(0.75), size: size)
             }
             .buttonStyle(Squish())
+            .accessibilityLabel("Random beat")
             Button {
                 Haptics.tap()
                 lab.clear()
@@ -273,6 +266,26 @@ struct BeatLabView: View {
                 .probe("lab.undo")
             }
         }
+    }
+}
+
+/// A labelled group of Beat Lab controls: a small caption over its buttons, on a faint card.
+struct ControlGroup<Content: View>: View {
+    let title: String
+    var compact = false
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+            Text(title.uppercased())
+                .blasterFont(size: compact ? 10 : 12, weight: .black)
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.leading, 6)
+                .accessibilityHidden(true)
+            HStack(spacing: 8) { content }
+        }
+        .padding(compact ? 6 : 8)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: compact ? 18 : 24, style: .continuous))
     }
 }
 

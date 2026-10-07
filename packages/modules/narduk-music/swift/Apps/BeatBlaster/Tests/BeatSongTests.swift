@@ -74,7 +74,7 @@ import XCTest
         saved.sounds[LabRow.bass.rawValue] = 3
         saved.sounds[LabRow.keys.rawValue] = 2
         saved.bassPatch = 17
-        let recipe = SongRecipe.around(saved, style: .genre(.house), name: "Turbo Pickle")
+        let recipe = SongRecipe.around(saved, name: "Turbo Pickle")
         XCTAssertEqual(recipe.beat, saved)
         XCTAssertEqual(recipe.name, "Turbo Pickle")
         XCTAssertEqual(recipe.speed, .fast)
@@ -83,7 +83,8 @@ import XCTest
         XCTAssertEqual(recipe.sounds.bassPatch, 17)
         XCTAssertEqual(recipe.sounds.keys, .piano)
         XCTAssertEqual(recipe.sounds.drums, .classic, "the plain kit leaves the beat's drums as built")
-        XCTAssertEqual(recipe.style, .genre(.house))
+        XCTAssertEqual(recipe.style, BlasterStyle.fitting(saved))
+        XCTAssertEqual(recipe.settings.bpm, BeatLab.bpm(.fast), accuracy: 1e-9, "the song plays at the beat's tempo")
     }
 
     func testAnOlderSavedSongWithoutABeatStillLoads() throws {
@@ -96,7 +97,8 @@ import XCTest
 
     func testTheSongPlaysTheBeatsDrumsInPlaceOfItsOwn() {
         // The guitar band has no sections, so the whole beat plays from the first bar.
-        let recipe = SongRecipe.around(beat(), style: .guitars, name: "Beat")
+        var recipe = SongRecipe.around(beat(), name: "Beat")
+        recipe.styleID = BlasterStyle.guitars.id
         let player = SongPlayer(recipe: recipe, engine: DropEngine())
         let notes = player.notes(through: 63)
         let kicks = Set(notes.filter { $0.instrument == .kick }.map { $0.step % 16 })
@@ -106,7 +108,7 @@ import XCTest
     }
 
     func testTheSectionsShapeTheBeat() {
-        XCTAssertFalse(SongPlayer.beatRows(in: .intro).contains(.kick))
+        XCTAssertTrue(SongPlayer.beatRows(in: .intro).contains(.kick), "the intro is the child's beat from bar one")
         XCTAssertFalse(SongPlayer.beatRows(in: .intro).contains(.bass))
         XCTAssertTrue(SongPlayer.beatRows(in: .breakdown).contains(.snare))
         XCTAssertFalse(SongPlayer.beatRows(in: .breakdown).contains(.kick))
@@ -128,7 +130,7 @@ import XCTest
     func testTheDropIsBuiltFromTheBeat() throws {
         let saved = beat()
         let player = SongPlayer(
-            recipe: SongRecipe.around(saved, style: .genre(.dubstep), name: "Beat"), engine: DropEngine())
+            recipe: SongRecipe.around(saved, name: "Beat"), engine: DropEngine())
         _ = player.notes(through: 31)
         player.pressDrop()
         let material = try XCTUnwrap(player.dropContext?.material)
@@ -136,5 +138,24 @@ import XCTest
         XCTAssertEqual(material.drop.drums, groove.drums)
         XCTAssertEqual(material.drop.bass, groove.bass)
         XCTAssertEqual(Set(material.drop.drums.filter { $0.instrument == .kick }.map(\.step)), [0, 6, 10])
+    }
+
+    func testTheBeatPicksItsOwnGenre() {
+        func beat(_ speed: Speed, kicks: [Int], snares: [Int], wobble: Bool = false) -> BeatLab.Saved {
+            let lab = BeatLab(store: nil)
+            lab.clear()
+            for step in kicks { lab.tap(.kick, step) }
+            for step in snares { lab.tap(.snare, step) }
+            if wobble { lab.tap(.bass, 0) }
+            lab.speed = speed
+            return lab.saved
+        }
+        XCTAssertEqual(BlasterStyle.fitting(beat(.medium, kicks: [0, 4, 8, 12], snares: [4, 12])), .genre(.house))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.fast, kicks: [0, 4, 8, 12], snares: [4, 12])), .genre(.techno))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.slow, kicks: [0, 10], snares: [8])), .genre(.lofi))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.medium, kicks: [0, 10], snares: [8])), .genre(.dubstep))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.medium, kicks: [0, 7], snares: [4, 12])), .genre(.trap))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.fast, kicks: [0, 10], snares: [4, 12], wobble: true)), .genre(.riddim))
+        XCTAssertEqual(BlasterStyle.fitting(beat(.slow, kicks: [0, 7], snares: [4, 12])), .genre(.funk))
     }
 }

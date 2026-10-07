@@ -108,11 +108,12 @@ import NardukMusicEngine
 
     // MARK: A song built around a Beat Lab beat
 
-    /// The Lab rows a section plays: the intro is hats, zaps and keys; a breakdown adds the snare; the build and the
-    /// drops play the whole beat. A song without sections (the guitar band) plays it all.
+    /// The Lab rows a section plays: the intro is the beat without its bass line (so it is the child's beat from the
+    /// first bar); a breakdown drops the kick too; the build and the drops play the whole beat. A song without sections
+    /// (the guitar band) plays it all.
     static func beatRows(in section: SongSection?) -> Set<LabRow> {
         switch section {
-        case .intro: [.hat, .zap, .keys]
+        case .intro: [.kick, .snare, .hat, .zap, .keys]
         case .breakdown: [.hat, .zap, .keys, .snare]
         default: Set(LabRow.allCases)
         }

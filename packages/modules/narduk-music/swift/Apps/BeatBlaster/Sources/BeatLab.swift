@@ -54,7 +54,7 @@ enum LabRow: Int, CaseIterable, Identifiable {
 /// ahead of the render position, exactly as it does the conductor's, so every hit is sample-accurate; an edit is heard
 /// from the next step not yet scheduled (~0.25 s ahead).
 @MainActor @Observable final class BeatLab {
-    static let steps = 16
+    nonisolated static let steps = 16
     var grid: [[Int]] = BeatLab.starter
     var speed: Speed = .medium
     /// The sound picked for each row (an index into `LabRow.sounds`).
@@ -146,7 +146,8 @@ enum LabRow: Int, CaseIterable, Identifiable {
         bassPatch = max(saved.bassPatch, 0)
     }
 
-    var bpm: Double { 112 * speed.scale }
+    var bpm: Double { Self.bpm(speed) }
+    nonisolated static func bpm(_ speed: Speed) -> Double { 112 * speed.scale }
 
     /// A simple four-on-the-floor starter so it is never silent.
     static let starter: [[Int]] = [
