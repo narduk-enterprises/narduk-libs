@@ -6,6 +6,11 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.spectrumMetal` ("Spectrum (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): the Metal port of the
+  Canvas spectrum: 64 glass tubes of liquid light (a cylinder-lit body, specular streak, meniscus) with hue by band,
+  floating peak beads, a mirror floor, a drifting echo row and dust. Bass and the kick swell the low tubes, highs
+  stand tall, the snare throws a band of light up the tubes, the beat pulses the floor line, the drop widens them.
+  Reads peaks through the new `IntenseAux` buffers.
 - `SoundVisualizerKind.audioTerrain` ("Audio terrain") in `NardukSoundVisuals` (narduk-libs#1569): a neon wireframe
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette

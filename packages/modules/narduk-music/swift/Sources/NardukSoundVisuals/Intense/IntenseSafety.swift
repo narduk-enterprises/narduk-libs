@@ -106,6 +106,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case liquidSplash
     /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
     case sun
+    /// The 64 bands as glass tubes of liquid light on a mirror floor, peak beads floating above: bass swells the low tubes, highs stand tall and shower dust.
+    case spectrumMetal
 
     public var title: String {
         switch self {
@@ -115,6 +117,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .synthwaveFlyover: "Synthwave flyover"
         case .liquidSplash: "Liquid splash"
         case .sun: "Sun"
+        case .spectrumMetal: "Spectrum (Metal)"
         }
     }
 }

@@ -37,8 +37,11 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let spectrumMetal: any MTLRenderPipelineState
         private let screenPass = MTLRenderPassDescriptor()
         private let fluidPass = MTLRenderPassDescriptor()
+        /// What the Canvas ports read beyond the spectrum and waveform; filled in place each frame.
+        private var aux = IntenseAux()
 
         init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice()) {
             let options = MTLCompileOptions()
@@ -46,6 +49,7 @@
             let source = [
                 IntenseShaderCommon.source, IntenseEffects.source, HyperspaceShader.source, FluidGlitchShader.source,
                 FractalDiveShader.source, SynthwaveShader.source, LiquidSplashShader.source, SunShader.source,
+                SpectrumMetalShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -62,7 +66,8 @@
             guard let hyperspace = pipeline("hyperspaceFragment"), let fluid = pipeline("fluidFragment"),
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
-                let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment")
+                let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let spectrumMetal = pipeline("spectrumMetalFragment")
             else { return nil }
             self.device = device
             self.queue = queue
@@ -73,6 +78,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.spectrumMetal = spectrumMetal
         }
 
         /// Draws one frame of `kind` into `target` through `buffer`. `surface` is required for `.fluidGlitch`: the
@@ -83,6 +89,8 @@
             motion: IntenseMotion = IntenseMotion()
         ) {
             uniforms.fill(size: CGSize(width: target.width, height: target.height), state: state, drive: drive)
+            let needs = kind.auxNeeds
+            if !needs.isEmpty { aux.fill(from: state, needs: needs) }
             switch kind {
             case .hyperspaceLasers:
                 draw(hyperspace, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
@@ -96,6 +104,10 @@
                 draw(liquid, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
             case .sun:
                 draw(sun, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
+            case .spectrumMetal:
+                draw(
+                    spectrumMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
+                    needs: [.scalars])
             case .fluidGlitch:
                 guard let surface else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black
@@ -115,7 +127,7 @@
         private func draw(
             _ pipeline: any MTLRenderPipelineState, to target: any MTLTexture, buffer: any MTLCommandBuffer,
             state: SoundVisualState, uniforms: inout IntenseUniforms, input: (any MTLTexture)?,
-            motion: IntenseMotion? = nil
+            motion: IntenseMotion? = nil, needs: IntenseAux.Needs = []
         ) {
             let pass = screenPass
             pass.colorAttachments[0].texture = target
@@ -138,6 +150,7 @@
                     if let base = bytes.baseAddress { encoder.setFragmentBytes(base, length: bytes.count, index: 3) }
                 }
             }
+            if !needs.isEmpty { aux.bind(needs, to: encoder) }
             if let input { encoder.setFragmentTexture(input, index: 0) }
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
