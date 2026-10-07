@@ -14,7 +14,10 @@ import XCTest
     }
 
     func testTheNewLightsAreThere() {
-        for id in ["liquidSplash", "fractalDive", "synthwaveFlyover", "shader-fireworks", "shader-aurora"] {
+        for id in [
+            "liquidSplash", "fractalDive", "synthwaveFlyover", "shader-fireworks", "shader-aurora", "jellyfish",
+            "flower", "flameSun", "bioluminescentSea", "blackHole", "geometricChaos", "astraUnbound",
+        ] {
             XCTAssertTrue(VisualTile.all.contains { $0.id == id }, id)
         }
     }

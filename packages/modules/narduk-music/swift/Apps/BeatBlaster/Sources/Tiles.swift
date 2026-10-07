@@ -52,6 +52,19 @@ struct VisualTile: Identifiable {
         shader(.oceanWaves, "Big Waves", "🌊"),
         shader(.bassBlobs, "Goo Blobs", "🟢"),
         shader(.solarFlare, "Solar Flare", "🌞"),
+        intense(.jellyfish, "Jellyfish", "🪼"),
+        intense(.flower, "Glass Flowers", "🌺"),
+        intense(.flameSun, "Fire Sun", "🔥"),
+        intense(.bioluminescentSea, "Glow Sea", "🦑"),
+        intense(.blackHole, "Black Hole", "🕳️"),
+        intense(.geometricChaos, "Shape Storm", "🔷"),
+        intense(.amberHelix, "Gold Spiral", "🧬"),
+        intense(.astraUnbound, "Robot Brain", "🤖"),
+        intense(.mercuryLoom, "Liquid Metal", "🪩"),
+        intense(.pocketAutomaton, "Pixel Life", "👾"),
+        intense(.synapticGate, "Brain Zap", "🧠"),
+        intense(.tidalObservatory, "Moon Tide", "🌙"),
+        intense(.vaultedEngine, "Engine Room", "⚙️"),
     ]
 
     @MainActor static func with(id: String) -> VisualTile { all.first { $0.id == id } ?? all[0] }
