@@ -30,7 +30,7 @@ enum Screen: String {
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
 /// `-screen home|maker|player|lab|lights|mic|dream`, `-makerStep 1...5`, `-song <style id>`, `-lights <light id>`,
-/// `-firstRun YES` (clears the one-time hints).
+/// `-orientation landscape|portrait`, `-firstRun YES` (clears the one-time hints).
 struct RootView: View {
     let audio: BlasterAudio
     let mySongs: MySongs
@@ -65,6 +65,7 @@ struct RootView: View {
                 audio.play(recipe)
             }
             if let raw = defaults.string(forKey: "screen"), let target = Screen(rawValue: raw) { screen = target }
+            if let raw = defaults.string(forKey: "orientation") { Self.rotate(to: raw) }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -72,6 +73,15 @@ struct RootView: View {
             case .active: audio.resumeFromBackground()
             default: break
             }
+        }
+    }
+
+    /// `-orientation landscape|portrait` turns the window at launch (the screenshot runs have no way to rotate a
+    /// simulator that is not on screen).
+    private static func rotate(to name: String) {
+        let mask: UIInterfaceOrientationMask = name == "landscape" ? .landscapeRight : .portrait
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
         }
     }
 

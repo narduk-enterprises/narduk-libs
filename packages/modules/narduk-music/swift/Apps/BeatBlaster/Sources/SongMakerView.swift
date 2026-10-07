@@ -22,28 +22,21 @@ struct SongMakerView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 500
-            VStack(spacing: compact ? 10 : 16) {
-                HStack(spacing: 14) {
-                    HomeButton(action: home)
-                    Spacer()
-                    Text("🎵 Make a Song")
-                        .font(.system(size: compact ? 22 : 30, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                    Spacer()
-                    StepDots(step: step, titles: titles, compact: compact)
-                }
-                VStack(spacing: 4) {
-                    Text("Step \(step): \(titles[step - 1])")
-                        .font(.system(size: compact ? 32 : 52, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(colors: [Neon.yellow, Neon.pink], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                    Text(helps[step - 1])
-                        .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
+            let short = geometry.size.height < 500
+            VStack(spacing: short ? 6 : (compact ? 10 : 16)) {
+                header(compact: compact, short: short)
+                if !short {
+                    VStack(spacing: 4) {
+                        Text("Step \(step): \(titles[step - 1])")
+                            .font(.system(size: compact ? 32 : 52, weight: .black, design: .rounded))
+                            .foregroundStyle(stepGradient)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                        Text(helps[step - 1])
+                            .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 ScrollView {
                     Group {
@@ -62,7 +55,7 @@ struct SongMakerView: View {
                 .scrollDismissesKeyboard(.immediately)
                 navigation(compact: compact)
             }
-            .padding(compact ? 14 : 28)
+            .padding(short ? 10 : (compact ? 14 : 28))
             .background(
                 LinearGradient(
                     colors: [Neon.night, Color(red: 0.16, green: 0.04, blue: 0.3)], startPoint: .top,
@@ -78,6 +71,48 @@ struct SongMakerView: View {
                 pickedVibe = true
                 step = n
                 if n == 5 { audio.play(recipe) }
+            }
+        }
+    }
+
+    private var stepGradient: LinearGradient {
+        LinearGradient(colors: [Neon.yellow, Neon.pink], startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// Home and the step dots; the title goes on its own line on a phone held upright (it used to be squeezed into a
+    /// one-letter column between them), and the step's name takes its place in a short landscape window.
+    @ViewBuilder private func header(compact: Bool, short: Bool) -> some View {
+        if short {
+            HStack(spacing: 10) {
+                HomeButton(action: home)
+                Text("Step \(step): \(titles[step - 1])")
+                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .foregroundStyle(stepGradient)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer(minLength: 0)
+                StepDots(step: step, titles: titles, compact: true)
+            }
+        } else if compact {
+            VStack(spacing: 6) {
+                HStack {
+                    HomeButton(action: home)
+                    Spacer(minLength: 8)
+                    StepDots(step: step, titles: titles, compact: true)
+                }
+                Text("🎵 Make a Song")
+                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+        } else {
+            HStack(spacing: 14) {
+                HomeButton(action: home)
+                Spacer()
+                Text("🎵 Make a Song")
+                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Spacer()
+                StepDots(step: step, titles: titles, compact: false)
             }
         }
     }

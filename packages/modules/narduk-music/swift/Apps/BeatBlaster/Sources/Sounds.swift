@@ -182,13 +182,14 @@ struct SoundProfile: Codable, Hashable {
     var keys: KeysSound = .piano
     /// Keys octave: -1, 0 or 1.
     var keysOctave = 0
-    var drums: DrumKit = .classic
+    /// Boom: the kick carries a sub under it, so the default kick is felt as well as heard.
+    var drums: DrumKit = .boom
     /// 0 ... 0.35 of a step the off-16ths sound late.
     var swing = 0.0
 
     static func random() -> SoundProfile {
         SoundProfile(
-            bass: BassSound.allCases.randomElement()!, bassPatch: Int.random(in: 0..<48),
+            bass: [BassSound.wobble, .growl, .deep].randomElement()!, bassPatch: Int.random(in: 0..<48),
             keys: KeysSound.allCases.randomElement()!, keysOctave: Int.random(in: -1...1),
             drums: DrumKit.allCases.randomElement()!, swing: [0, 0, 0.15, 0.3].randomElement()!)
     }

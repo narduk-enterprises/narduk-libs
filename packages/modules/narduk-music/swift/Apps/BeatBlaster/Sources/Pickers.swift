@@ -159,6 +159,8 @@ struct MusicLightsBar: View {
     var musicTitle: String?
     var musicEmoji: String?
     var showMusicChange = true
+    /// A short (landscape phone) window puts the two sections side by side in a slimmer bar.
+    var short = false
     let changeMusic: () -> Void
     let changeLights: () -> Void
 
@@ -166,8 +168,8 @@ struct MusicLightsBar: View {
         let tile = VisualTile.with(id: audio.lightsID)
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
-                music(compact: false)
-                lights(tile, compact: false)
+                music(compact: short)
+                lights(tile, compact: short)
             }
             VStack(spacing: 8) {
                 music(compact: true)
@@ -194,22 +196,22 @@ struct MusicLightsBar: View {
     ) -> some View {
         HStack(spacing: 10) {
             KindBadge(kind: badge, size: 13)
-            Text(emoji).font(.system(size: 26))
+            Text(emoji).font(.system(size: compact ? 22 : 26))
             Text(title)
-                .font(.system(size: 20, weight: .black, design: .rounded))
+                .font(.system(size: compact ? 17 : 20, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Spacer(minLength: 4)
             if showChange {
                 Button(action: change) {
-                    Pill(icon: "🔄", word: "Change", color: color.opacity(0.6), size: 18)
+                    Pill(icon: "🔄", word: "Change", color: color.opacity(0.6), size: compact ? 15 : 18)
                 }
                 .buttonStyle(Squish())
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, compact ? 10 : 14)
+        .padding(.vertical, compact ? 5 : 8)
         .frame(minWidth: compact ? nil : 340)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(color.opacity(0.8), lineWidth: 2))
