@@ -231,6 +231,30 @@ import XCTest
         }
     }
 
+    /// Home is three doors: Play is on screen without scrolling, every door is a big target and none overlap.
+    func testHomeShowsThreeBigDoorsWithPlayOnScreen() {
+        let audio = BlasterAudio()
+        let doors = ["home.makeSong", "home.mySongs", "home.mode.lab"]
+        let extras = ["home.mode.mashUp", "home.mode.lights", "home.mode.mic"]
+        for (label, size, insets) in layouts {
+            let (frames, safe) = host(
+                HomeView(audio: audio, mySongs: MySongs(), go: { _ in }, play: { _ in }), size: size, insets: insets)
+            assertInside(["home.title", "home.makeSong"], frames, safe, label)
+            assertNoOverlap(doors + extras + ["home.title", "home.nowPlaying"], frames, label)
+            for id in doors + extras + ["home.nowPlaying"] {
+                guard let frame = frames[id] else {
+                    XCTFail("\(id) missing — \(label)")
+                    continue
+                }
+                XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 64, "\(id) under 64 pt \(frame) — \(label)")
+                XCTAssertGreaterThanOrEqual(frame.minX, safe.minX - 1, "\(id) left of safe — \(label)")
+                XCTAssertLessThanOrEqual(frame.maxX, safe.maxX + 1, "\(id) right of safe — \(label)")
+            }
+            guard let play = frames["home.makeSong"], let lab = frames["home.mode.lab"] else { continue }
+            XCTAssertGreaterThan(play.height, lab.height, "Play is the biggest door — \(label)")
+        }
+    }
+
     func testMySongsHeaderStaysInsideAndReadable() {
         let audio = BlasterAudio()
         for (label, size, insets) in layouts {
