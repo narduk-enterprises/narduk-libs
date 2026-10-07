@@ -101,7 +101,6 @@ def shape_text(path: Path, text: str, weight: float, width: float):
     gs = ft.getGlyphSet()
     order = ft.getGlyphOrder()
     d, x = "", 0
-    xs, ys = [], []
     for info, pos in zip(b.glyph_infos, b.glyph_positions):
         name = order[info.codepoint]
         pen = SVGPathPen(gs, ntos=lambda v: f"{v:.2f}".rstrip("0").rstrip("."))
