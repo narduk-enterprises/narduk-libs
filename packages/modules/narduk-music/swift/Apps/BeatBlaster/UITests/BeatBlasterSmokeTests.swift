@@ -140,8 +140,9 @@ import XCTest
             "the share sheet did not appear")
         // Dismiss the sheet by tapping above it, then leave My Songs.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 8), "the share sheet did not dismiss")
 
         require("mysongs.home").tap()
-        require("home.makeSong")
+        require("home.makeSong", timeout: 15)
     }
 }
