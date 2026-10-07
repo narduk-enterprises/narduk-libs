@@ -83,5 +83,11 @@ extension GalleryTile {
                     kind: .starfield, title: "Starfield", model: context.model, framesPerSecond: context.framesPerSecond
                 ))
         },
+        GalleryTile(id: "Ocean waves") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .oceanWaves, title: "Ocean waves", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }
