@@ -104,6 +104,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case synthwaveFlyover
     /// Iridescent liquid filaments and droplets splashing out of a core: bass sets the reach, highs the spray.
     case liquidSplash
+    /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
+    case sun
 
     public var title: String {
         switch self {
@@ -112,6 +114,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .fractalDive: "Fractal dive"
         case .synthwaveFlyover: "Synthwave flyover"
         case .liquidSplash: "Liquid splash"
+        case .sun: "Sun"
         }
     }
 }
