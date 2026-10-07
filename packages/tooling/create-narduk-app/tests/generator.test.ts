@@ -394,6 +394,8 @@ describe('create-narduk-app generation contract', () => {
         'simple-git': '^4.0.2',
         '@simple-git/argv-parser': '^2.0.1',
         sharp: '^0.35.5',
+        'shell-quote': '^1.11.0',
+        'source-map-js': '^1.2.2',
       },
       peerDependencyRules: {
         // nuxt-auth-utils' optional passkey helpers still peer on
@@ -1089,6 +1091,8 @@ describe('create-narduk-app generation contract', () => {
         'simple-git': '^4.0.2',
         '@simple-git/argv-parser': '^2.0.1',
         sharp: '^0.35.5',
+        'shell-quote': '^1.11.0',
+        'source-map-js': '^1.2.2',
       })
       expect(files.get('apps/web/nuxt.config.ts')).toContain('devtools: { enabled: false },')
     },
