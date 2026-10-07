@@ -14,8 +14,11 @@
         static let size = (width: 128, height: 72)
         nonisolated static let hasMetal = MTLCreateSystemDefaultDevice() != nil
 
-        static func render(bass: Float, highs: Float, kicks: UInt32 = 0) throws -> [UInt8] {
+        static func render(bass: Float, highs: Float, kicks: UInt32 = 0, look: SoundPaletteLook = .neutral) throws
+            -> [UInt8]
+        {
             let state = SoundVisualState(seed: 9)
+            state.look = look
             var limiter = IntenseFlashLimiter()
             var now = 2.0
             var spectrum = [Float](repeating: 0.03, count: SoundFrame.spectrumCount)
@@ -50,6 +53,20 @@
             let brightPixels = try Self.render(bass: 0.03, highs: 0.95)
             let quietPixels = try Self.render(bass: 0.03, highs: 0.03)
             #expect(brightPixels != quietPixels)
+        }
+
+        @Test(.enabled(if: hasMetal, "no Metal device on this host"))
+        func aPaletteLookRecolorsTheStar() throws {
+            let classic = try Self.render(bass: 0.4, highs: 0.3)
+            var look = SoundPaletteLook.neutral
+            look.hueShift = 0.5
+            let shifted = try Self.render(bass: 0.4, highs: 0.3, look: look)
+            #expect(classic != shifted)
+            // The classic star is warm (red above blue at the center, BGRA bytes); a half-turn hue shift cools it.
+            let mid = (Self.size.height / 2) * Self.size.width + Self.size.width / 2
+            let warm = Int(classic[mid * 4 + 2]) - Int(classic[mid * 4])
+            let cool = Int(shifted[mid * 4 + 2]) - Int(shifted[mid * 4])
+            #expect(warm > cool)
         }
 
         @Test(.enabled(if: hasMetal, "no Metal device on this host"))
