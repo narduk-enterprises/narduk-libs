@@ -42,7 +42,7 @@
             let options = MTLCompileOptions()
             options.mathMode = .fast
             let source = [
-                IntenseShaderCommon.source, HyperspaceShader.source, FluidGlitchShader.source,
+                IntenseShaderCommon.source, IntenseEffects.source, HyperspaceShader.source, FluidGlitchShader.source,
                 FractalDiveShader.source, SynthwaveShader.source, LiquidSplashShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),

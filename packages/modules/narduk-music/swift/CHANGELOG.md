@@ -9,6 +9,9 @@ and the Beat Blaster kids app. Everything is additive; the two enum cases below 
 
 ### Added
 
+- `IntenseEffects` in `NardukSoundVisuals` (narduk-libs#1656): the shared MSL effects library every Intense shader
+  compiles with (`fx*`: 3-D noise and `fxCylinder`, `fxRidge`, `fxNormal`/`fxLight`/`fxBall` lighting, `fxZoomLayer`/
+  `fxCell` flying particles, `fxFlash`/`fxTonemap`/`fxVignette`). Liquid splash is its first consumer, pixel for pixel.
 - `IntenseKind.liquidSplash` ("Liquid splash") in `NardukSoundVisuals` (narduk-libs#1569): a Metal splash of
   iridescent liquid filaments and glossy droplets flying out of a core, lit from a finite-difference normal. Bass
   sets the reach and the core, mids the warp, highs the spray; the kick swells the core, the snare throws a ring,
