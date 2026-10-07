@@ -129,6 +129,8 @@ struct Pill: View {
     var color: Color = .white.opacity(0.15)
     var size: CGFloat = 22
     var selected = false
+    /// Dark words, for a bright fill (white on yellow was unreadable).
+    var dark = false
 
     var body: some View {
         HStack(spacing: size * 0.35) {
@@ -138,7 +140,7 @@ struct Pill: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(dark ? Neon.night : .white)
         .padding(.horizontal, size * 0.8)
         .frame(minHeight: max(52, size * 2.3))
         .background(color, in: Capsule())

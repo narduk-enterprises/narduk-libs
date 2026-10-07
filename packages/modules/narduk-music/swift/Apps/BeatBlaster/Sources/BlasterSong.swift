@@ -98,7 +98,8 @@ enum BlasterStyle: Hashable, Identifiable, Codable {
         let bassSound = LabRow.bass.rawValue < beat.sounds.count ? beat.sounds[LabRow.bass.rawValue] : 0
         let wobbly =
             row(.bass).contains { $0 > 0 }
-            && [BassSound.wobble, .growl, .squelch].contains(BassSound.allCases[max(0, bassSound) % BassSound.allCases.count])
+            && [BassSound.wobble, .growl, .squelch].contains(
+                BassSound.allCases[max(0, bassSound) % BassSound.allCases.count])
         switch beat.speed {
         case .slow: return .genre(halfTime ? .lofi : (fourOnFloor ? .chill : .funk))
         case .medium: return .genre(fourOnFloor ? .house : (wobbly || halfTime ? .dubstep : .trap))

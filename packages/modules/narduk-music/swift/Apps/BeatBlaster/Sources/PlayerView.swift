@@ -245,7 +245,7 @@ struct PlayerView: View {
         switch which {
         case .music:
             PickerPanel(title: "Pick the music", badge: .music, close: close) {
-                MusicGrid(selectedID: audio.recipe.styleID, compact: compact) { style in
+                MusicGrid(selectedID: audio.recipe.styleID) { style in
                     var next = audio.recipe
                     next.styleID = style.id
                     if style == .guitars { next.band.insert(.guitar) }
@@ -256,7 +256,7 @@ struct PlayerView: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
         case .lights:
             PickerPanel(title: "Pick the lights", badge: .lights, close: close) {
-                LightsGrid(audio: audio, selectedID: audio.lightsID, compact: compact) { id in
+                LightsGrid(audio: audio, selectedID: audio.lightsID) { id in
                     audio.update { $0.lightsID = id }
                     mySongs.save(audio.recipe)
                 }
