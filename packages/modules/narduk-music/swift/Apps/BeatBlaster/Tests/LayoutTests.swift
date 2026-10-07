@@ -43,12 +43,15 @@ import XCTest
     }
 
     /// Hosts `view` and returns its controls' frames and the safe rectangle (the larger of the declared and live insets).
-    private func host<V: View>(_ view: V, size: CGSize, insets: UIEdgeInsets) -> (
+    private func host<V: View>(
+        _ view: V, size: CGSize, insets: UIEdgeInsets, typeSize: DynamicTypeSize = .large
+    ) -> (
         frames: [String: CGRect], safe: CGRect
     ) {
         let box = Frames()
         let controller = UIHostingController(
-            rootView: view.onPreferenceChange(ProbeKey.self) { box.all = $0 }.preferredColorScheme(.dark))
+            rootView: view.onPreferenceChange(ProbeKey.self) { box.all = $0 }.preferredColorScheme(.dark)
+                .dynamicTypeSize(typeSize))
         controller.additionalSafeAreaInsets = insets
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
@@ -253,5 +256,28 @@ import XCTest
         let resumed = b.notes(through: 116).map { key($0, 85) }
         XCTAssertFalse(straight.isEmpty)
         XCTAssertEqual(Set(resumed), Set(straight))
+    }
+
+    /// Largest accessibility text: the controls must still fit, stay apart and keep their 44pt targets.
+    func testLargestTextKeepsThePlayerAndMakerUsable() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        for (label, size, insets) in layouts {
+            for state in [[:], ["tray": true]] as [[String: Any]] {
+                withDefaults(state) {
+                    let (frames, safe) = host(player(audio), size: size, insets: insets, typeSize: .accessibility5)
+                    let name = "\(label), largest text, tray \(state.isEmpty ? "collapsed" : "open")"
+                    let keys = ["player.home", "player.pause", "player.rec", "player.drop", "player.tray.handle"]
+                    assertInside(keys + ["player.tray"], frames, safe, name)
+                    assertNoOverlap(keys, frames, name)
+                    assertTapTargets(keys, frames, name)
+                }
+            }
+            let (frames, safe) = host(
+                SongMakerView(audio: audio, home: {}, done: { _ in }, startStep: 4), size: size, insets: insets,
+                typeSize: .accessibility5)
+            assertInside(["maker.home"], frames, safe, "\(label), largest text, maker")
+            XCTAssertGreaterThanOrEqual(frames["maker.title"]?.width ?? 0, 40, label)
+        }
     }
 }

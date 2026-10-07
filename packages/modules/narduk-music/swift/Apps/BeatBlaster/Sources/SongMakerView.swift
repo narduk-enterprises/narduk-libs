@@ -237,6 +237,18 @@ struct SongMakerView: View {
                 recipe.sounds.drums = kit
                 audio.preview(recipe)
             }
+            SoundRow(title: "Guitar", options: GuitarSound.allCases, selected: recipe.sounds.guitar, compact: compact) {
+                guitar in
+                recipe.sounds.guitar = guitar
+                if !recipe.band.contains(.guitar) { recipe.band.insert(.guitar) }
+                audio.preview(recipe)
+            }
+            SoundRow(title: "Pads", options: PadSound.allCases, selected: recipe.sounds.pads, compact: compact) {
+                pads in
+                recipe.sounds.pads = pads
+                if !recipe.band.contains(.pads) { recipe.band.insert(.pads) }
+                audio.preview(recipe)
+            }
             Button {
                 Haptics.success()
                 recipe.sounds = SoundProfile.random()
@@ -405,6 +417,8 @@ extension Mood: SoundChoice {}
 extension BassSound: SoundChoice {}
 extension KeysSound: SoundChoice {}
 extension DrumKit: SoundChoice {}
+extension GuitarSound: SoundChoice {}
+extension PadSound: SoundChoice {}
 
 struct SoundRow<Option: SoundChoice>: View {
     let title: String
@@ -418,36 +432,39 @@ struct SoundRow<Option: SoundChoice>: View {
             Text(title)
                 .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
-            HStack(spacing: compact ? 6 : 12) {
-                ForEach(options) { option in
-                    let on = option == selected
-                    Button {
-                        Haptics.tap()
-                        pick(option)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Glyph(option.emoji, size: compact ? 24 : 36)
-                            Text(option.word)
-                                .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: compact ? 6 : 12) {
+                    ForEach(options) { option in
+                        let on = option == selected
+                        Button {
+                            Haptics.tap()
+                            pick(option)
+                        } label: {
+                            VStack(spacing: 2) {
+                                Glyph(option.emoji, size: compact ? 24 : 36)
+                                Text(option.word)
+                                    .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(width: compact ? 84 : 118, height: compact ? 68 : 96)
+                            .background(
+                                Neon.cyan.opacity(on ? 0.6 : 0.12),
+                                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
+                            )
+                            .shadow(color: on ? Neon.cyan : .clear, radius: 12)
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: compact ? 68 : 96)
-                        .background(
-                            Neon.cyan.opacity(on ? 0.6 : 0.12),
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
-                        )
-                        .shadow(color: on ? Neon.cyan : .clear, radius: 12)
+                        .buttonStyle(Squish())
+                        .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
                     }
-                    .buttonStyle(Squish())
-                    .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
                 }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 2)
             }
         }
     }
