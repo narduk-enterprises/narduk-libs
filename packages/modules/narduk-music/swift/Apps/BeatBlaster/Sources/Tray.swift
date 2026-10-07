@@ -10,13 +10,19 @@ struct ProbeKey: PreferenceKey {
 }
 
 extension View {
-    func probe(_ id: String) -> some View {
-        background(
+    /// Reports this view's frame under `id` and names it for accessibility. Pass `container: true` for a view that
+    /// wraps controls: its id then labels the group and the controls inside keep their own (#1664).
+    @ViewBuilder func probe(_ id: String, container: Bool = false) -> some View {
+        let framed = background(
             GeometryReader { proxy in
                 Color.clear.preference(key: ProbeKey.self, value: [id: proxy.frame(in: .global)])
             }
         )
-        .accessibilityIdentifier(id)
+        if container {
+            framed.accessibilityElement(children: .contain).accessibilityIdentifier(id)
+        } else {
+            framed.accessibilityIdentifier(id)
+        }
     }
 }
 
@@ -100,8 +106,7 @@ struct ControlsTray<Content: View>: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.25), lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .probe("player.tray")
+        .probe("player.tray", container: true)
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: state.isOpen)
         .task(id: state) {
             guard state.isOpen else { return }

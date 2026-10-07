@@ -50,7 +50,7 @@ struct EffectSettings: Equatable {
 
 /// Big one-shot sound-effect buttons, built from the engine's own voices. A press plays on the next free 16th.
 enum SoundPad: String, CaseIterable, Identifiable {
-    case airHorn, laser, scratch, boom, siren, clap, yeah
+    case airHorn, laser, scratch, boom, siren, clap, yeah, vocalChop
 
     var id: String { rawValue }
 
@@ -63,6 +63,7 @@ enum SoundPad: String, CaseIterable, Identifiable {
         case .siren: "🚨"
         case .clap: "👏"
         case .yeah: "🗣"
+        case .vocalChop: "🎤"
         }
     }
 
@@ -75,6 +76,7 @@ enum SoundPad: String, CaseIterable, Identifiable {
         case .siren: "Siren"
         case .clap: "Clap"
         case .yeah: "Yeah!"
+        case .vocalChop: "Vocal"
         }
     }
 
@@ -87,6 +89,7 @@ enum SoundPad: String, CaseIterable, Identifiable {
         case .siren: Neon.pink
         case .clap: Neon.green
         case .yeah: Neon.pink
+        case .vocalChop: Neon.purple
         }
     }
 
@@ -124,6 +127,15 @@ enum SoundPad: String, CaseIterable, Identifiable {
             return [note(0, .snare, 1), note(1, .snare, 0.7), note(0, .openHat, 0.5)]
         case .yeah:
             return [note(0, .vox, 1, NoteParams(pitch: 60, lengthSteps: 4))]
+        case .vocalChop:
+            // A real sung syllable (VocalSet), then a second slice a beat later.
+            return [0, 4].map { offset in
+                note(
+                    offset, .vocalSample, 1,
+                    NoteParams(
+                        pitch: 64, lengthSteps: 4, formant: Double((step + offset) % 5) / 5,
+                        voice: NoteParams.sampleVoice(.ah, technique: .straight, kind: .chop)))
+            }
         }
     }
 }
@@ -134,6 +146,8 @@ struct EffectsPanel: View {
     let compact: Bool
     let short: Bool
     var onPad: (SoundPad) -> Void = { _ in }
+    /// STUTTER: true while the pad is held, false on release.
+    var onStutter: (Bool) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: compact ? 8 : 12) {
@@ -166,6 +180,7 @@ struct EffectsPanel: View {
                     .accessibilityIdentifier("fx.pad.\(pad.word)")
                 }
             }
+            StutterPad(compact: compact, onHold: onStutter)
             EffectSlider(
                 icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
                 value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
@@ -181,6 +196,52 @@ struct EffectsPanel: View {
                     get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
                     set: { audio.effects.speed = $0 }))
         }
+    }
+}
+
+/// STUTTER: hold it and the live mix repeats on the beat; let go and the song comes back.
+struct StutterPad: View {
+    let compact: Bool
+    var onHold: (Bool) -> Void
+    @State private var held = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Glyph("🔁", size: compact ? 28 : 36)
+            Text(held ? "Stuttering…" : "Hold to STUTTER")
+                .font(.system(size: compact ? 15 : 18, weight: .black, design: .rounded))
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(Neon.cyan.opacity(held ? 0.9 : 0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 2))
+        .scaleEffect(held ? 0.97 : 1)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !held else { return }
+                    held = true
+                    Haptics.success()
+                    onHold(true)
+                }
+                .onEnded { _ in
+                    held = false
+                    onHold(false)
+                }
+        )
+        .onDisappear {
+            if held {
+                held = false
+                onHold(false)
+            }
+        }
+        .probe("fx.stutter")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Stutter")
+        .accessibilityHint("Hold to repeat the music on the beat")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("fx.stutter")
     }
 }
 

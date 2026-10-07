@@ -10,6 +10,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var arrived = false
     @State private var recordingCount = 0
+    @State private var showCredits = false
 
     private struct Extra: Identifiable {
         /// nil is Mash it up, which plays a song instead of opening a screen.
@@ -55,6 +56,7 @@ struct HomeView: View {
                         extrasRow(compact: compact)
                         if !mySongs.songs.isEmpty { playAgainRow(compact: compact) }
                         nowPlaying(compact: compact)
+                        creditsButton
                     }
                     .frame(maxWidth: 900)
                     .frame(maxWidth: .infinity)
@@ -254,6 +256,19 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var creditsButton: some View {
+        Button {
+            showCredits = true
+        } label: {
+            Text("Credits")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(minWidth: 88, minHeight: 44)
+        }
+        .accessibilityIdentifier("home.credits")
+        .sheet(isPresented: $showCredits) { CreditsView() }
     }
 
     /// What is playing now, with Open to jump back into the Player.
