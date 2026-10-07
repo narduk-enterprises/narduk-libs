@@ -5,7 +5,7 @@ prompt is in `kit.json` (assets) and `icons/manifest.json` (icons).
 
 ## Preambles
 
-Icons (black on white, then traced to `currentColor`): see `icons/README.md`.
+Icons (full-colour neon renders on a flat dark ground, knocked out to transparent PNG image sets): see `icons/README.md`.
 
 Vibe cards (one STYLE LOCK pasted ahead of each scene): a premium kids' game card art square, neon arcade cabinet crossed
 with a music-production app, deep purple to near-black ground that bleeds to all four edges (no card, no frame, no
@@ -30,6 +30,5 @@ An `image_edit` squared the corners and flattened the shading; a second `image_e
 
 ## Tries
 
-Typical icon: two renders, one pick, about one in five redone. Redone: beat-lab, check, key-up, key-down, echo, bass-boost,
-air-horn, laser, clap, kit-boom, kit-zappy, kit-classic, music. Vibe cards: two rounds of two to three renders each, a third
-for five cards.
+Icons: two renders each, one pick; stop, bass-boost and pluck were redrawn once (the first prompts drew a hollow basket, a
+male symbol and a triangle). Vibe cards: two rounds of two to three renders each, a third for five cards.
