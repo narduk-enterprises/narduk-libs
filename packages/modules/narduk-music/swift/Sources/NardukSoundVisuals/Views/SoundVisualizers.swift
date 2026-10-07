@@ -23,6 +23,8 @@
         case pitchWheel
         /// A neon wireframe landscape: spectrum and waveform history raise the ridges, and travel scrolls the grid.
         case audioTerrain
+        /// Glowing ribbons tracing Lissajous figures, one color each.
+        case lissajousRibbons
 
         public var id: String { rawValue }
 
@@ -38,13 +40,14 @@
             case .pianoRoll: "Piano roll"
             case .pitchWheel: "Pitch wheel"
             case .audioTerrain: "Audio terrain"
+            case .lissajousRibbons: "Lissajous ribbons"
             }
         }
 
         /// True when the visualizer fills its own backdrop; the others draw over whatever the host supplies.
         public var paintsBackdrop: Bool {
             switch self {
-            case .mirror, .halo, .phosphor, .pianoRoll, .pitchWheel, .audioTerrain: true
+            case .mirror, .halo, .phosphor, .pianoRoll, .pitchWheel, .audioTerrain, .lissajousRibbons: true
             default: false
             }
         }
@@ -69,6 +72,7 @@
             case .pianoRoll: pianoRoll(&context, size, state, style)
             case .pitchWheel: pitchWheel(&context, size, state, style)
             case .audioTerrain: audioTerrain(&context, size, state, style)
+            case .lissajousRibbons: lissajousRibbons(&context, size, state, style)
             }
         }
     }

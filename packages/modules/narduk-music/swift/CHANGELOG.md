@@ -10,6 +10,8 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
   and speeds the scroll.
+- `SoundVisualizerKind.lissajousRibbons` ("Lissajous ribbons"): glowing parametric ribbons driven by bass, mids, highs
+  and the beat (narduk-libs#1569).
 
 ## 0.4.1
 
