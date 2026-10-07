@@ -155,17 +155,35 @@ enum BlasterInput: Equatable {
 
     /// Swaps to `next` without a jump: the sound dips over about half a second, the new song comes in on the old
     /// song's next bar and rises over about 0.7 s. (A bar that is more than 2.5 s away is not waited for.)
-    func swap(to next: SongRecipe) {
-        guard isRunning, input == .song, !isPaused else { return play(next, fadeIn: 0.7) }
+    /// `transition` stretches it: Mash it up dips over a whole bar's worth of time and rises slowly.
+    func swap(to next: SongRecipe, transition: SwapTransition = .quick) {
+        guard isRunning, input == .song, !isPaused else { return play(next, fadeIn: transition.rise) }
         swapTask?.cancel()
-        let wait = min(2.5, player?.secondsToNextBar ?? 0)
-        let dip = min(0.5, max(0.15, wait))
+        var wait = player?.secondsToNextBar ?? 0
+        // A long dip still lands on a bar line: when the next bar is too close, wait for the one after it.
+        if transition.fullDip, wait < transition.dip, let player { wait += player.secondsPerStep * 16 }
+        wait = min(transition.longestWait, wait)
+        let dip = min(transition.dip, max(0.15, wait))
         fade(to: 0, over: dip)
         swapTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(max(wait, dip)))
             guard !Task.isCancelled, let self else { return }
-            self.play(next, fadeIn: 0.7)
+            self.play(next, fadeIn: transition.rise)
         }
+    }
+
+    /// How a song change sounds: how long the old song takes to dip out, the longest wait for a bar line, and how long
+    /// the new song takes to rise.
+    struct SwapTransition: Equatable {
+        var dip: Double
+        var longestWait: Double
+        var rise: Double
+        /// Waits a bar more rather than cut the dip short.
+        var fullDip = false
+        /// Picking a new vibe or lights: out in half a second, in on the next bar.
+        static let quick = SwapTransition(dip: 0.5, longestWait: 2.5, rise: 0.7)
+        /// Mash it up: a slower dip that lands on a bar, then the new mix swells in.
+        static let mashUp = SwapTransition(dip: 1.4, longestWait: 4, rise: 1.8, fullDip: true)
     }
 
     /// Plays `recipe` for a few seconds (the song maker's previews).
@@ -199,7 +217,7 @@ enum BlasterInput: Equatable {
 
     /// "Mash it up": the beat of one vibe with the sounds of another, a random light and speed.
     func mashUp() {
-        swap(to: SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id), after: recipe))
+        swap(to: SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id), after: recipe), transition: .mashUp)
     }
 
     func setSpeed(_ speed: Speed) {

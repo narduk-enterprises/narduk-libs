@@ -50,4 +50,14 @@ final class MashUpTests: XCTestCase {
             XCTAssertTrue(song.band.isSuperset(of: [.drums, .bass]))
         }
     }
+
+    /// Mash it up changes the whole song, so it takes its time: a slower dip that lands on a bar and a slow swell.
+    func testMashItUpTransitionIsLongerThanAQuickSwap() {
+        let quick = BlasterAudio.SwapTransition.quick
+        let mash = BlasterAudio.SwapTransition.mashUp
+        XCTAssertGreaterThanOrEqual(mash.dip, quick.dip * 2)
+        XCTAssertGreaterThanOrEqual(mash.rise, quick.rise * 2)
+        XCTAssertTrue(mash.fullDip)
+        XCTAssertFalse(quick.fullDip, "picking a vibe stays quick")
+    }
 }
