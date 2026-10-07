@@ -158,6 +158,12 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     var voicing: ChordVoicing?
     /// A small tempo nudge on top of the speed choice (Surprise me: 0.94 ... 1.06).
     var tempoNudge = 1.0
+    /// How much the library writes fresh material for this seed (progressions, drums, timbre, motifs); nil is the
+    /// everyday default and Surprise me asks for the most. Optional so songs saved before it existed still load.
+    var variety: Double?
+
+    static let defaultVariety = 0.75
+    static let surpriseVariety = 1.0
 
     var style: BlasterStyle { BlasterStyle.with(id: styleID) ?? .genre(.dubstep) }
 
@@ -198,6 +204,7 @@ struct SongRecipe: Codable, Hashable, Identifiable {
         settings.keyRoot = keyRoot
         settings.mode = mood?.mode
         settings.voicing = voicing
+        settings.variety = variety ?? Self.defaultVariety
         return settings
     }
 
@@ -209,6 +216,7 @@ struct SongRecipe: Codable, Hashable, Identifiable {
         let styles = BlasterStyle.all.filter { $0 != style }
         var next = SongRecipe(style: styles.randomElement() ?? .guitars)
         next.lightsID = lightsID
+        next.variety = Self.surpriseVariety
         next.speed = Speed.allCases.randomElement()!
         next.tempoNudge = Double.random(in: 0.94...1.06)
         next.keyRoot = Int.random(in: 60...71)
