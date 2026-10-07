@@ -83,5 +83,11 @@ extension GalleryTile {
                     kind: .starfield, title: "Starfield", model: context.model, framesPerSecond: context.framesPerSecond
                 ))
         },
+        GalleryTile(id: "Fireworks") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .fireworks, title: "Fireworks", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }
