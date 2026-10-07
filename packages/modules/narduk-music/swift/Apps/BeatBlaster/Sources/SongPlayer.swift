@@ -33,6 +33,9 @@ import NardukMusicEngine
     /// Engine step = song step + offset; a drop moves it so the song's bar 1 lands on the hit.
     private var offset = 0
     private var bassRoot = 41
+    /// While paused the engine's steps keep passing but the song does not: `offset` absorbs them, so a resume carries on
+    /// from the same beat.
+    var paused = false
     private weak var engine: DropEngine?
 
     /// Seconds between the energy signals the conductor hears.
@@ -52,12 +55,19 @@ import NardukMusicEngine
 
     // MARK: DROP
 
+    /// Seconds until the song's next bar line (0 when it is on one): where a swap of sound or vibe should land.
+    var secondsToNextBar: Double {
+        let songStep = max(0, nextStep - offset)
+        return Double((songStep + 15) / 16 * 16 - songStep) * secondsPerStep
+    }
+
     func pressDrop() {
         if machine.press(at: nextStep) { dropContext = makeDropContext() }
     }
 
     /// The song as the arranger needs it: the genre playing, its key and mode (as the conductor named them for this
-    /// track, else the recipe's), the bass line's current root, the tempo grid and this song's seed and variety.
+    /// track, else the recipe's), the bass line's current root, the tempo grid, this song's seed and variety, and its own
+    /// hook, bass and drums (`DropMaterial.capture`: a copy of the conductor is read, the live one is untouched).
     func makeDropContext() -> DropContext {
         var genre = Genre.rock
         if case .genre(let g) = recipe.style { genre = g }
@@ -69,7 +79,8 @@ import NardukMusicEngine
         }
         return DropContext(
             genre: genre, keyRoot: keyRoot, minor: minor, chordRoot: bassRoot, secondsPerStep: secondsPerStep,
-            seed: recipe.seed, variety: recipe.variety ?? SongRecipe.defaultVariety, dropNumber: dropCount)
+            seed: recipe.seed, variety: recipe.variety ?? SongRecipe.defaultVariety, dropNumber: dropCount,
+            material: conductor.map { DropMaterial.capture(from: $0) })
     }
 
     /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
@@ -133,6 +144,12 @@ import NardukMusicEngine
             resetConductor()
         }
         guard throughStep > cursor else { return [] }
+        if paused {
+            offset += throughStep - cursor
+            cursor = throughStep
+            queuedPads.removeAll()
+            return []
+        }
         let range = (cursor + 1)...throughStep
         defer {
             cursor = throughStep

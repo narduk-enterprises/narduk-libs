@@ -8,8 +8,9 @@ final class DreamRecipeTests: XCTestCase {
     func testADreamBecomesAValidLibraryRecipe() {
         let song = Dreamer.keywordDream("space dragons")
         let recipe = song.recipe
-        XCTAssertEqual(song.style, .genre(.synthwave))
-        XCTAssertEqual(recipe.genre, .synthwave)
+        XCTAssertEqual(song.style, IdeaParser.parse("space dragons").style)
+        guard case .genre(let genre) = song.style else { return XCTFail("a dream picks a genre style") }
+        XCTAssertEqual(recipe.genre, genre)
         XCTAssertEqual(recipe.title, song.title)
         XCTAssertEqual(recipe.seed, song.seed)
         XCTAssertEqual(recipe, recipe.validated())

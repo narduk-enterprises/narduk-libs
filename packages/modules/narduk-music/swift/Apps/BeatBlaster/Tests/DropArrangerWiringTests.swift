@@ -26,6 +26,8 @@ import XCTest
             XCTAssertEqual(context.secondsPerStep, player.secondsPerStep, accuracy: 1e-9)
             XCTAssertEqual(context.seed, 99)
             XCTAssertEqual(context.dropNumber, 0)
+            let material = try XCTUnwrap(context.material, "\(genre): the song's own notes are captured at the press")
+            XCTAssertFalse(material.current.isEmpty, "\(genre): the groove it is playing")
         }
     }
 
@@ -57,6 +59,8 @@ import XCTest
         let player = SongPlayer(recipe: SongRecipe(style: .guitars, seed: 3), engine: DropEngine())
         player.pressDrop()
         XCTAssertEqual(player.dropContext?.genre, .rock)
+        XCTAssertNil(
+            player.dropContext?.material, "a guitar song has no conductor to read, so it gets the plain groove")
     }
 
     func testCancellingForgetsTheDrop() {

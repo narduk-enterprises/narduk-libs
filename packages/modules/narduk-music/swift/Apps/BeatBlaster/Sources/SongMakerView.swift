@@ -5,9 +5,13 @@ struct SongMakerView: View {
     let audio: BlasterAudio
     let home: () -> Void
     let done: (SongRecipe) -> Void
+    /// The layout tests host a later step directly; the app always starts at 1.
+    var startStep = 1
     @State private var step = 1
     @State private var recipe = SongRecipe(style: .genre(.house))
     @State private var pickedVibe = false
+    @State private var ideaText = ""
+    @State private var dreamingIdea = false
     @FocusState private var naming: Bool
 
     private let titles = ["Pick a vibe", "How fast?", "Pick your band", "Pick your sounds", "Pick your lights"]
@@ -32,6 +36,7 @@ struct SongMakerView: View {
                             .foregroundStyle(stepGradient)
                             .lineLimit(1)
                             .minimumScaleFactor(0.5)
+                            .probe("maker.title")
                         Text(helps[step - 1])
                             .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
                             .foregroundStyle(.white.opacity(0.85))
@@ -65,6 +70,8 @@ struct SongMakerView: View {
             )
         }
         .onAppear {
+            step = startStep
+            pickedVibe = startStep > 1
             recipe = SongRecipe(style: BlasterStyle.all.randomElement() ?? .genre(.house))
             audio.stop()
             if let raw = UserDefaults.standard.string(forKey: "makerStep"), let n = Int(raw), (1...5).contains(n) {
@@ -84,19 +91,20 @@ struct SongMakerView: View {
     @ViewBuilder private func header(compact: Bool, short: Bool) -> some View {
         if short {
             HStack(spacing: 10) {
-                HomeButton(action: home)
+                HomeButton(action: home).probe("maker.home")
                 Text("Step \(step): \(titles[step - 1])")
                     .font(.system(size: 22, weight: .black, design: .rounded))
                     .foregroundStyle(stepGradient)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
+                    .probe("maker.title")
                 Spacer(minLength: 0)
                 StepDots(step: step, titles: titles, compact: true)
             }
         } else if compact {
             VStack(spacing: 6) {
                 HStack {
-                    HomeButton(action: home)
+                    HomeButton(action: home).probe("maker.home")
                     Spacer(minLength: 8)
                     StepDots(step: step, titles: titles, compact: true)
                 }
@@ -106,7 +114,7 @@ struct SongMakerView: View {
             }
         } else {
             HStack(spacing: 14) {
-                HomeButton(action: home)
+                HomeButton(action: home).probe("maker.home")
                 Spacer()
                 Text("🎵 Make a Song")
                     .font(.system(size: 30, weight: .black, design: .rounded))
@@ -120,6 +128,31 @@ struct SongMakerView: View {
     // MARK: Steps
 
     private func vibeStep(compact: Bool) -> some View {
+        VStack(spacing: compact ? 12 : 20) {
+            IdeaField(text: $ideaText, compact: compact, isBusy: dreamingIdea) { words, isPremise in
+                dreamingIdea = true
+                Task {
+                    var song = await Dreamer.dream(words)
+                    if isPremise { song.title = String(words.prefix(48)) }
+                    var next = SongRecipe(from: song.recipe, style: song.style)
+                    next.lightsID = recipe.lightsID
+                    recipe = next
+                    pickedVibe = true
+                    dreamingIdea = false
+                    audio.preview(recipe)
+                    Haptics.success()
+                    withAnimation { step = 2 }
+                }
+            }
+            .frame(maxWidth: 700)
+            Text("…or pick a vibe:")
+                .font(.system(size: compact ? 16 : 22, weight: .black, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+            vibeGrid(compact: compact)
+        }
+    }
+
+    private func vibeGrid(compact: Bool) -> some View {
         MusicGrid(selectedID: pickedVibe ? recipe.styleID : nil, compact: compact) { style in
             let wasGuitars = recipe.style == .guitars
             recipe.styleID = style.id
@@ -202,6 +235,18 @@ struct SongMakerView: View {
             SoundRow(title: "Drums", options: DrumKit.allCases, selected: recipe.sounds.drums, compact: compact) {
                 kit in
                 recipe.sounds.drums = kit
+                audio.preview(recipe)
+            }
+            SoundRow(title: "Guitar", options: GuitarSound.allCases, selected: recipe.sounds.guitar, compact: compact) {
+                guitar in
+                recipe.sounds.guitar = guitar
+                if !recipe.band.contains(.guitar) { recipe.band.insert(.guitar) }
+                audio.preview(recipe)
+            }
+            SoundRow(title: "Pads", options: PadSound.allCases, selected: recipe.sounds.pads, compact: compact) {
+                pads in
+                recipe.sounds.pads = pads
+                if !recipe.band.contains(.pads) { recipe.band.insert(.pads) }
                 audio.preview(recipe)
             }
             Button {
@@ -332,7 +377,7 @@ struct BandToggles: View {
                     toggle(part)
                 } label: {
                     VStack(spacing: 4) {
-                        Text(part.emoji).font(.system(size: compact ? 34 : 50))
+                        Glyph(part.emoji, size: compact ? 34 : 50)
                             .grayscale(on ? 0 : 1)
                         Text(part.word)
                             .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
@@ -372,6 +417,8 @@ extension Mood: SoundChoice {}
 extension BassSound: SoundChoice {}
 extension KeysSound: SoundChoice {}
 extension DrumKit: SoundChoice {}
+extension GuitarSound: SoundChoice {}
+extension PadSound: SoundChoice {}
 
 struct SoundRow<Option: SoundChoice>: View {
     let title: String
@@ -385,36 +432,39 @@ struct SoundRow<Option: SoundChoice>: View {
             Text(title)
                 .font(.system(size: compact ? 18 : 24, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
-            HStack(spacing: compact ? 6 : 12) {
-                ForEach(options) { option in
-                    let on = option == selected
-                    Button {
-                        Haptics.tap()
-                        pick(option)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text(option.emoji).font(.system(size: compact ? 24 : 36))
-                            Text(option.word)
-                                .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: compact ? 6 : 12) {
+                    ForEach(options) { option in
+                        let on = option == selected
+                        Button {
+                            Haptics.tap()
+                            pick(option)
+                        } label: {
+                            VStack(spacing: 2) {
+                                Glyph(option.emoji, size: compact ? 24 : 36)
+                                Text(option.word)
+                                    .font(.system(size: compact ? 13 : 20, weight: .black, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(width: compact ? 84 : 118, height: compact ? 68 : 96)
+                            .background(
+                                Neon.cyan.opacity(on ? 0.6 : 0.12),
+                                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
+                            )
+                            .shadow(color: on ? Neon.cyan : .clear, radius: 12)
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: compact ? 68 : 96)
-                        .background(
-                            Neon.cyan.opacity(on ? 0.6 : 0.12),
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
-                        )
-                        .shadow(color: on ? Neon.cyan : .clear, radius: 12)
+                        .buttonStyle(Squish())
+                        .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
                     }
-                    .buttonStyle(Squish())
-                    .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
                 }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 2)
             }
         }
     }

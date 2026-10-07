@@ -13,9 +13,8 @@ struct PlayerView: View {
     @State private var panel: Panel?
     @State private var boomID = 0
     @State private var show = ShowMode()
-    @State private var page: Page = .play
-
-    enum Page { case play, effects }
+    @State private var tray = TrayState()
+    @State private var keyDropping = false
 
     enum Panel { case music, lights }
 
@@ -23,27 +22,33 @@ struct PlayerView: View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 500
             let short = geometry.size.height < 500
+            let landscape = geometry.size.width > geometry.size.height
+            let dropSize: CGFloat = short ? 92 : (compact ? 112 : 150)
+            let pageHeight = max(110, geometry.size.height * (landscape ? 0.62 : 0.5) - (short ? 100 : 110))
             ZStack {
                 DropStage(audio: audio, drawing: scenePhase == .active).ignoresSafeArea()
                 Vignette()
-                VStack(spacing: short ? 6 : (compact ? 8 : 14)) {
+                VStack(spacing: short ? 6 : 10) {
                     topBar(compact: compact, short: short)
                     Spacer(minLength: 0)
-                    pageSwitch(short: short)
-                    if page == .play {
-                        SteeringPanel(audio: audio, compact: compact, short: short, newSong: newSong) { boomID += 1 }
+                    if landscape {
+                        HStack(alignment: .bottom, spacing: 12) {
+                            controlsTray(compact: compact, short: short, pageHeight: pageHeight)
+                                .frame(maxWidth: 640)
+                            Spacer(minLength: 0)
+                            dropColumn(size: dropSize)
+                        }
                     } else {
-                        EffectsPanel(audio: audio, compact: compact, short: short) { audio.fire($0) }
-                            .padding(short ? 8 : 12)
-                            .background(
-                                .black.opacity(0.35), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        HStack {
+                            Spacer(minLength: 0)
+                            dropColumn(size: dropSize)
+                        }
+                        controlsTray(compact: compact, short: short, pageHeight: pageHeight)
+                            .frame(maxWidth: 700)
                     }
-                    MusicLightsBar(
-                        audio: audio, short: short,
-                        changeMusic: { open(.music) },
-                        changeLights: { open(.lights) })
                 }
-                .padding(short ? 8 : (compact ? 12 : 24))
+                .padding(.horizontal, short ? 12 : (compact ? 14 : 24))
+                .padding(.vertical, short ? 8 : (compact ? 10 : 16))
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .opacity(show.hidden ? 0 : 1)
                 .allowsHitTesting(!show.hidden)
@@ -53,68 +58,107 @@ struct PlayerView: View {
                 if let panel { picker(panel, compact: compact) }
             }
         }
+        .accessibilityIdentifier("player.root")
+        .focusable()
+        .focusEffectDisabled()
+        // A keyboard (a Mac, or an iPad with one): space pauses, hold D to DROP and let go to land it.
+        .onKeyPress(.space) {
+            audio.togglePause()
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "dD"), phases: [.down, .up]) { press in
+            if press.phase == .down, !keyDropping, !audio.isPaused {
+                keyDropping = true
+                Hints.use("drop")
+                audio.beginSurge()
+            } else if press.phase == .up, keyDropping {
+                keyDropping = false
+                audio.endSurge()
+                boomID += 1
+            }
+            return .handled
+        }
         .animation(.easeInOut(duration: 0.35), value: show.hidden)
         .onAppear {
             audio.playIfIdle()
             audio.beginRecording()
-            // Launch arguments for the screenshot runs: `-page effects`, `-hide YES`.
-            if UserDefaults.standard.string(forKey: "page") == "effects" { page = .effects }
-            if UserDefaults.standard.bool(forKey: "hide") { show.hide() }
+            // Launch arguments for the UI tests and screenshot runs: `-page effects` (opens the tray there),
+            // `-tray YES` (opens it), `-hide YES`.
+            let defaults = UserDefaults.standard
+            if defaults.string(forKey: "page") == "effects" {
+                tray.page = .effects
+                tray.open()
+            }
+            if defaults.bool(forKey: "tray") { tray.open() }
+            if defaults.bool(forKey: "hide") { show.hide() }
         }
         .onDisappear { audio.endRecording() }
     }
 
-    /// Home and the song's name; New song joins them when there is room (a phone held upright puts it beside DROP).
+    /// Home and the REC clock, nothing else: the lights own the screen.
     private func topBar(compact: Bool, short: Bool) -> some View {
         HStack(spacing: 12) {
-            HomeButton(action: home)
-            VStack(alignment: .leading, spacing: 0) {
-                if !short {
-                    RecBadge(audio: audio, compact: compact)
-                }
+            HomeButton(action: home).probe("player.home")
+            if !compact {
                 Text("\(audio.recipe.style.emoji) \(audio.recipe.name)")
-                    .font(.system(size: compact ? 20 : (short ? 22 : 34), weight: .black, design: .rounded))
+                    .font(.system(size: short ? 20 : 28, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .shadow(color: audio.recipe.style.color, radius: 10)
+                    .layoutPriority(1)
             }
-            .layoutPriority(1)
             Spacer(minLength: 0)
-            if short { RecBadge(audio: audio, compact: true) }
-            if !compact || short {
-                Button(action: newSong) {
-                    Pill(
-                        icon: "➕", word: short ? "New" : "New song", color: Neon.pink.opacity(0.7),
-                        size: short ? 16 : 20)
-                }
-                .buttonStyle(Squish())
-            }
             Button {
                 Haptics.tap()
-                show.hide()
+                audio.togglePause()
             } label: {
-                Pill(icon: "👁", word: "Hide", color: Neon.purple.opacity(0.7), size: short ? 16 : (compact ? 17 : 20))
+                Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.black.opacity(0.55), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 2))
             }
             .buttonStyle(Squish())
-            .accessibilityLabel("Hide the controls")
+            .accessibilityLabel(audio.isPaused ? "Resume" : "Pause")
+            .probe("player.pause")
+            RecBadge(audio: audio, compact: compact).probe("player.rec")
         }
     }
 
-    /// Play (Energy, band, DROP) and Effects (sliders and sound pads).
-    private func pageSwitch(short: Bool) -> some View {
-        HStack(spacing: 8) {
-            ForEach([Page.play, .effects], id: \.self) { which in
-                Button {
-                    Haptics.tap()
-                    withAnimation(.easeInOut(duration: 0.2)) { page = which }
-                } label: {
-                    Pill(
-                        icon: which == .play ? "🎮" : "🎛", word: which == .play ? "Play" : "Effects",
-                        color: (which == .play ? Neon.pink : Neon.cyan).opacity(page == which ? 0.9 : 0.35),
-                        size: short ? 14 : 16, selected: page == which)
+    /// DROP floats in a thumb-reachable corner and rides above the tray, so it never moves when the tray opens.
+    private func dropColumn(size: CGFloat) -> some View {
+        VStack(spacing: 4) {
+            HintBubble(id: "drop", text: "Hold me!")
+            DropButton(audio: audio, size: size) { boomID += 1 }.probe("player.drop")
+        }
+        .padding(12)  // room for the charge ring, which is drawn outside the button
+    }
+
+    private func controlsTray(compact: Bool, short: Bool, pageHeight: CGFloat) -> some View {
+        ControlsTray(state: $tray, maxPageHeight: pageHeight, short: short) { page in
+            switch page {
+            case .play:
+                PlayControls(audio: audio, compact: compact, short: short, newSong: newSong)
+            case .effects:
+                EffectsPanel(audio: audio, compact: compact, short: short) { audio.fire($0) }
+            case .more:
+                VStack(spacing: 10) {
+                    MusicLightsBar(
+                        audio: audio, short: short,
+                        changeMusic: { open(.music) },
+                        changeLights: { open(.lights) })
+                    Button {
+                        Haptics.tap()
+                        tray.close()
+                        show.hide()
+                    } label: {
+                        Pill(icon: "👁", word: "Show only the lights", color: Neon.purple.opacity(0.7), size: 16)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Hide the controls")
                 }
-                .buttonStyle(Squish())
             }
         }
     }
@@ -169,7 +213,7 @@ struct PlayerView: View {
                     var next = audio.recipe
                     next.styleID = style.id
                     if style == .guitars { next.band.insert(.guitar) }
-                    audio.play(next)
+                    audio.swap(to: next)
                     mySongs.save(next)
                 }
             }
@@ -206,6 +250,7 @@ struct DropStage: View {
             ZStack {
                 tile.content(context)
                     .id(tile.id)
+                    .transition(.opacity)
                     .scaleEffect(1 + 0.08 * charge + 0.1 * flash)
                     .offset(x: sin(t * 61) * jitter, y: cos(t * 47) * jitter)
                     .hueRotation(.degrees(charge * 140))
@@ -215,91 +260,35 @@ struct DropStage: View {
                     endRadius: 900)
             }
             .background(Neon.night)
+            .animation(.easeInOut(duration: 0.8), value: tile.id)
         }
     }
 }
 
-/// The live steering controls. A phone held upright stacks them (Energy, the band, then DROP in a row of its own with
-/// Surprise me and New song either side); anything wider keeps Energy and the band beside DROP.
-struct SteeringPanel: View {
+/// The tray's Play page: Energy, the band's instrument toggles, Surprise me and New song. (DROP floats outside the tray.)
+struct PlayControls: View {
     let audio: BlasterAudio
     let compact: Bool
     var short = false
     var newSong: () -> Void = {}
-    let onDrop: () -> Void
 
     var body: some View {
-        Group {
-            if compact && !short { stacked } else { sideBySide }
-        }
-        .padding(short ? 8 : (compact ? 10 : 16))
-        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-    }
-
-    private var stacked: some View {
-        VStack(spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                EnergySlider(audio: audio, compact: true)
-                HintBubble(id: "energy", text: "Slide for more energy!").offset(x: 90, y: -56)
-            }
-            bandRow(compact: true, flexible: true)
-            HStack(alignment: .center, spacing: 8) {
-                sideButton(icon: "🎲", word: "Surprise me", color: Neon.orange) {
+        VStack(spacing: short ? 6 : 10) {
+            EnergySlider(audio: audio, compact: compact)
+            bandRow
+            HStack(spacing: 8) {
+                action(icon: "🎲", word: "Surprise me", color: Neon.orange) {
                     Haptics.success()
                     audio.surprise()
                 }
-                dropColumn(size: 120, caption: true)
-                sideButton(icon: "➕", word: "New song", color: Neon.pink, action: newSong)
+                action(icon: "➕", word: "New song", color: Neon.pink, action: newSong)
+                    .accessibilityIdentifier("player.newSong")
             }
         }
     }
 
-    private var sideBySide: some View {
-        HStack(alignment: .bottom, spacing: compact ? 10 : 20) {
-            VStack(alignment: .leading, spacing: short ? 6 : (compact ? 8 : 12)) {
-                ZStack(alignment: .topLeading) {
-                    EnergySlider(audio: audio, compact: compact)
-                    HintBubble(id: "energy", text: "Slide for more energy!").offset(x: 120, y: compact ? -64 : -72)
-                }
-                bandRow(compact: compact, flexible: false)
-                if !short {
-                    Button {
-                        Haptics.success()
-                        audio.surprise()
-                    } label: {
-                        Pill(icon: "🎲", word: "Surprise me", color: Neon.orange.opacity(0.75), size: compact ? 16 : 22)
-                    }
-                    .buttonStyle(Squish())
-                }
-            }
-            Spacer(minLength: 0)
-            if short {
-                Button {
-                    Haptics.success()
-                    audio.surprise()
-                } label: {
-                    VStack(spacing: 2) {
-                        Text("🎲").font(.system(size: 26))
-                        Text("Surprise").font(.system(size: 12, weight: .black, design: .rounded))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(width: 70, height: 56)
-                    .background(Neon.orange.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
-                }
-                .buttonStyle(Squish())
-                .accessibilityLabel("Surprise me")
-            }
-            dropColumn(size: short ? 96 : (compact ? 118 : 180), caption: !short)
-        }
-    }
-
-    private func bandRow(compact: Bool, flexible: Bool) -> some View {
-        HStack(spacing: flexible ? 4 : 6) {
-            if !flexible {
-                Text("Band:")
-                    .font(.system(size: compact ? 14 : 18, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+    private var bandRow: some View {
+        HStack(spacing: 4) {
             ForEach(BandPart.allCases) { part in
                 let on = audio.recipe.band.contains(part)
                 Button {
@@ -309,15 +298,14 @@ struct SteeringPanel: View {
                     }
                 } label: {
                     VStack(spacing: 0) {
-                        Text(part.emoji).font(.system(size: compact ? 18 : 24)).grayscale(on ? 0 : 1)
+                        Glyph(part.emoji, size: compact ? 18 : 24).grayscale(on ? 0 : 1)
                         Text(part.word)
                             .font(.system(size: compact ? 10 : 13, weight: .black, design: .rounded))
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(.white.opacity(on ? 1 : 0.55))
-                    .frame(maxWidth: flexible ? .infinity : nil)
-                    .frame(width: flexible ? nil : (compact ? 50 : 72), height: compact ? 50 : 64)
+                    .frame(maxWidth: .infinity, minHeight: 50)
                     .background(Neon.green.opacity(on ? 0.45 : 0.08), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14).stroke(
@@ -329,36 +317,18 @@ struct SteeringPanel: View {
         }
     }
 
-    private func dropColumn(size: CGFloat, caption: Bool) -> some View {
-        VStack(spacing: 4) {
-            HintBubble(id: "drop", text: "Hold me!")
-            DropButton(audio: audio, size: size, onDrop: onDrop)
-            if caption {
-                Text("Hold to build…\nlet go to DROP!")
-                    .font(.system(size: compact ? 12 : 16, weight: .black, design: .rounded))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-                    .shadow(color: .black, radius: 3)
-            }
-        }
-        .padding(12)  // room for the charge ring, which is drawn outside the button
-    }
-
-    /// A tall pill that sits beside DROP: an icon over a word.
-    private func sideButton(icon: String, word: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func action(icon: String, word: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Text(icon).font(.system(size: 30))
+            HStack(spacing: 6) {
+                Glyph(icon, size: 22)
                 Text(word)
-                    .font(.system(size: 14, weight: .black, design: .rounded))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.8)
+                    .font(.system(size: compact ? 14 : 17, weight: .black, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .padding(.vertical, 6)
-            .background(color.opacity(0.75), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(color.opacity(0.75), in: Capsule())
         }
         .buttonStyle(Squish())
         .accessibilityLabel(word)
@@ -369,12 +339,24 @@ struct SteeringPanel: View {
 struct EnergySlider: View {
     let audio: BlasterAudio
     let compact: Bool
+    @State private var showHint = !Hints.seen("energy")
 
     var body: some View {
+        content
+            .onAppear { if showHint { Hints.noteShown("energy") } }
+            .onReceive(NotificationCenter.default.publisher(for: Hints.used)) { note in
+                if note.object as? String == "energy" { showHint = false }
+            }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("⚡️ Energy: \(label)")
+            // The hint lives in the label (it used to float over the page tabs) and goes away for good on first use.
+            Text("⚡️ Energy: \(label)" + (showHint ? "  👈 slide me!" : ""))
                 .font(.system(size: compact ? 15 : 20, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             HStack(spacing: 8) {
                 Text("😌 Chill")
                     .font(.system(size: compact ? 13 : 17, weight: .black, design: .rounded))
@@ -382,7 +364,7 @@ struct EnergySlider: View {
                     .fixedSize()
                 GeometryReader { geometry in
                     let width = geometry.size.width
-                    let thumb: CGFloat = compact ? 40 : 52
+                    let thumb: CGFloat = compact ? 44 : 52
                     let x = (width - thumb) * audio.energy
                     ZStack(alignment: .leading) {
                         Capsule()
@@ -417,7 +399,7 @@ struct EnergySlider: View {
                         }
                     )
                 }
-                .frame(height: compact ? 40 : 52)
+                .frame(height: compact ? 44 : 52)
                 Text("HYPE 🔥")
                     .font(.system(size: compact ? 13 : 17, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
@@ -469,7 +451,7 @@ struct DropButton: View {
                     .rotationEffect(.degrees(-90))
                     .padding(-12)
                 VStack(spacing: 0) {
-                    Text("💣").font(.system(size: size * 0.22))
+                    Glyph("💣", size: size * 0.22)
                     Text("DROP!")
                         .font(.system(size: size * 0.22, weight: .black, design: .rounded))
                     if pressing {
@@ -563,14 +545,18 @@ struct RecBadge: View {
     var body: some View {
         Button {
             Haptics.tap()
+            guard !audio.isPaused else { return }
             if audio.isRecording { audio.endRecording() } else { audio.beginRecording() }
         } label: {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
                     Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
                     Text(
-                        audio.isRecording
-                            ? "REC \(clockText(audio.recordingElapsed(at: context.date)))" : "Saved ✓ · tap to record"
+                        audio.isPaused
+                            ? "⏸ Paused"
+                            : audio.isRecording
+                                ? "REC \(clockText(audio.recordingElapsed(at: context.date)))"
+                                : "Saved ✓ · tap to record"
                     )
                     .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
