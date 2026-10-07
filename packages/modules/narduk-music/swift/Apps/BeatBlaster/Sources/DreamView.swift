@@ -12,6 +12,10 @@ struct DreamedSong: Equatable {
     var seed: UInt64
     var tempoScale: Double
     var title: String
+    var mood: Mood? = nil
+    var keyPitchClass = 5
+    var comping: CompingPattern?
+    var voicing: ChordVoicing?
 
     /// The idea as the library's recipe: genre, tempo, key and seed, with the genre's own plan of sections. The
     /// guitar band has no genre of its own, so it takes `.chill`, the genre its settings already use.
@@ -22,8 +26,9 @@ struct DreamedSong: Equatable {
         case .guitars: genre = .chill
         }
         return NardukMusicCore.SongRecipe(
-            title: title, mood: "\(style.funName), \(style.genreName)", genre: genre,
-            bpm: style.baseBPM * tempoScale, seed: seed
+            title: title, mood: "\(style.funName), \(style.genreName)", genre: genre, mode: mood?.mode,
+            bpm: style.baseBPM * tempoScale, keyPitchClass: keyPitchClass, voicing: voicing, comping: comping,
+            seed: seed
         ).validated()
     }
 }
@@ -43,39 +48,21 @@ enum Dreamer {
                 let title = idea.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 return DreamedSong(
                     style: style, seed: fallback.seed, tempoScale: scale ?? 1,
-                    title: title.isEmpty ? fallback.title : String(title.prefix(40)))
+                    title: title.isEmpty ? fallback.title : String(title.prefix(40)), mood: fallback.mood,
+                    keyPitchClass: fallback.keyPitchClass, comping: fallback.comping, voicing: fallback.voicing)
             }
         #endif
         return fallback
     }
 
-    /// Keyword matching plus a hash-seeded pick; deterministic for a given prompt.
+    /// Keywords and synonyms (`IdeaParser`) plus a hash of the words for everything they leave open (key, mood,
+    /// seed); deterministic, so the same idea always writes the same song and two ideas never sound alike.
     static func keywordDream(_ prompt: String) -> DreamedSong {
-        let text = prompt.lowercased()
-        let hash = StableHash.fnv1a(text.isEmpty ? "beat blaster" : text)
-        let rules: [([String], BlasterStyle, Double)] = [
-            (["space", "star", "rocket", "alien", "planet", "galaxy", "moon"], .genre(.synthwave), 1),
-            (["dragon", "monster", "dinosaur", "dino", "giant", "zombie"], .genre(.dubstep), 1),
-            (["rain", "sleep", "night", "cozy", "cat", "study", "snow"], .genre(.lofi), 1),
-            (["cloud", "calm", "ocean", "beach", "float", "dream"], .genre(.chill), 1),
-            (["robot", "machine", "computer", "glitch"], .genre(.riddim), 1),
-            (["dance", "party", "disco", "birthday", "happy"], .genre(.house), 1),
-            (["race", "fast", "car", "speed", "run", "chase", "zoom"], .genre(.drumAndBass), 1.2),
-            (["guitar", "rock", "band", "cowboy", "camp"], .guitars, 1),
-            (["laser", "factory", "electric", "lightning", "neon"], .genre(.techno), 1),
-            (["skate", "cool", "street", "bike"], .genre(.ukGarage), 1),
-            (["boom", "battle", "ninja", "boss", "explosion", "superhero"], .genre(.trap), 1),
-        ]
-        let match = rules.first { rule in rule.0.contains { text.contains($0) } }
-        let styles = BlasterStyle.all
-        let style = match?.1 ?? styles[Int(hash % UInt64(styles.count))]
-        let endings = ["Anthem", "Groove", "Blast", "Jam", "Party", "Stomp", "Boogie", "Adventure"]
-        let words = prompt.split(separator: " ").prefix(4).map { $0.prefix(1).uppercased() + $0.dropFirst() }
-        let title =
-            words.isEmpty
-            ? "Mystery \(endings[Int((hash >> 8) % 8)])"
-            : "\(words.joined(separator: " ")) \(endings[Int((hash >> 8) % 8)])"
-        return DreamedSong(style: style, seed: hash, tempoScale: match?.2 ?? 1, title: title)
+        let idea = IdeaParser.parse(prompt)
+        return DreamedSong(
+            style: idea.style, seed: idea.seed, tempoScale: idea.speed.scale * idea.tempoNudge,
+            title: idea.title, mood: idea.mood, keyPitchClass: idea.keyPitchClass, comping: idea.comping,
+            voicing: idea.voicing)
     }
 
     #if canImport(FoundationModels)
@@ -146,31 +133,16 @@ struct DreamView: View {
                             )
                             .shadow(color: Neon.purple, radius: 16)
                             .padding(.top, compact ? 70 : 60)
-                        TextField("What should your song be about?", text: $prompt)
-                            .font(.system(size: compact ? 22 : 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 24)
-                            .frame(height: compact ? 64 : 84)
-                            .background(.white.opacity(0.1), in: Capsule())
-                            .overlay(Capsule().stroke(Neon.cyan, lineWidth: 3))
-                            .shadow(color: Neon.cyan.opacity(0.6), radius: 12)
-                            .focused($typing)
-                            .submitLabel(.go)
-                            .onSubmit(dream)
-                            .frame(maxWidth: 760)
+                        IdeaField(text: $prompt, compact: compact, isBusy: dreaming) { words, isPremise in
+                            dream(premise: isPremise ? words : nil)
+                        }
+                        .frame(maxWidth: 760)
                         FlowChips(ideas: ideas) { idea in
                             Haptics.tap()
                             prompt = String(idea.drop { $0 != " " }.dropFirst())
                             dream()
                         }
                         .frame(maxWidth: 860)
-                        Button(action: dream) {
-                            Pill(
-                                icon: dreaming ? "💭" : "🪄", word: dreaming ? "Dreaming…" : "Dream it!",
-                                color: Neon.pink.opacity(0.85), size: compact ? 24 : 32)
-                        }
-                        .buttonStyle(Squish())
-                        .disabled(dreaming)
                         if let result {
                             resultCard(result, compact: compact)
                                 .transition(.scale(scale: 0.5).combined(with: .opacity))
@@ -192,13 +164,15 @@ struct DreamView: View {
         }
     }
 
-    private func dream() {
+    private func dream(premise: String? = nil) {
         guard !dreaming else { return }
         typing = false
         dreaming = true
         let text = prompt
         Task {
-            let song = await Dreamer.dream(text)
+            var song = await Dreamer.dream(text)
+            // A premise from the 🎲 button names the song.
+            if let premise { song.title = String(premise.prefix(48)) }
             dreaming = false
             result = song
             Haptics.success()

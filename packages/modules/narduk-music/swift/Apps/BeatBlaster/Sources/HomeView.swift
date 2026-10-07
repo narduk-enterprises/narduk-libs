@@ -89,6 +89,7 @@ struct HomeView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Make a Song")
+            .accessibilityIdentifier("home.makeSong")
         }
     }
 
@@ -124,6 +125,7 @@ struct HomeView: View {
                     size: compact ? 20 : 26)
             }
             .buttonStyle(Squish())
+            .accessibilityIdentifier("home.mySongs")
         }
     }
 

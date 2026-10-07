@@ -214,6 +214,7 @@ struct HintBubble: View {
             }
         }
         .allowsHitTesting(false)
+        .onAppear { if visible { Hints.noteShown(id) } }
         .onReceive(NotificationCenter.default.publisher(for: Hints.used)) { note in
             if note.object as? String == id { withAnimation { visible = false } }
         }
