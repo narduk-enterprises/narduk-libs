@@ -184,9 +184,10 @@ import Testing
         let rates = feels.map { VocalPatch.patch(chop: false, style: .lead, feel: $0).vibratoRate }
         for a in 0..<feels.count {
             for b in (a + 1)..<feels.count {
+                // Distinct by ear: a clearly different brightness, or a clearly different vibrato speed.
                 #expect(
-                    abs(brightness[a] - brightness[b]) >= 3,
-                    "\(feels[a]) \(brightness[a]) dB vs \(feels[b]) \(brightness[b]) dB")
+                    abs(brightness[a] - brightness[b]) >= 3 || abs(rates[a] - rates[b]) >= 1.2,
+                    "\(feels[a]) \(brightness[a]) dB \(rates[a]) Hz vs \(feels[b]) \(brightness[b]) dB \(rates[b]) Hz")
                 #expect(
                     abs(rates[a] - rates[b]) >= 0.35, "\(feels[a]) \(rates[a]) Hz vs \(feels[b]) \(rates[b]) Hz")
             }

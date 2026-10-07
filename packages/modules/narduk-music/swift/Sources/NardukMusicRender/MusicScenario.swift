@@ -106,11 +106,14 @@ public struct MusicScenario: Sendable, Hashable, Codable {
         public var register: Double?
         /// A vocal's voice character (default `classic`).
         public var feel: VocalFeel?
+        /// A vocal's run: the held note holds, then sings this ornament (`VocalRun`) over the rest of its length.
+        public var run: VocalRun?
 
         public init(
             time: Double, instrument: Instrument, pitch: Int, length: Double? = nil, velocity: Double? = nil,
             pan: Double? = nil, drive: Double? = nil, chord: StrumChord? = nil, direction: StrumStroke? = nil,
-            vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil, feel: VocalFeel? = nil
+            vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil, feel: VocalFeel? = nil,
+            run: VocalRun? = nil
         ) {
             self.time = time
             self.instrument = instrument
@@ -125,6 +128,7 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             self.style = style
             self.register = register
             self.feel = feel
+            self.run = run
         }
     }
 
@@ -199,11 +203,13 @@ public struct MusicScenario: Sendable, Hashable, Codable {
     /// (the second half as a swing `delay`), the resolution a `ScheduledNote` has.
     public func scheduledNotes(settings: SongSettings) -> [ScheduledNote] {
         let secondsPerStep = settings.secondsPerStep
-        return (notes ?? []).filter { $0.time >= 0 && $0.time.isFinite }.sorted { $0.time < $1.time }.map { note in
+        return (notes ?? []).filter { $0.time >= 0 && $0.time.isFinite }.sorted { $0.time < $1.time }.flatMap {
+            note -> [ScheduledNote] in
             let halves = Int((note.time / secondsPerStep * 2).rounded())
             let isStrum = note.instrument == .strum || note.instrument == .electricStrum
+            let lengthSteps = max(1, Int(((note.length ?? 0.5) / secondsPerStep).rounded(.up)))
             var params = NoteParams(
-                pitch: note.pitch, lengthSteps: max(1, Int(((note.length ?? 0.5) / secondsPerStep).rounded(.up))),
+                pitch: note.pitch, lengthSteps: lengthSteps,
                 drive: note.drive, pan: note.pan ?? 0, delay: halves % 2 == 1 ? 0.5 : nil)
             if isStrum {
                 params.voice = note.chord?.voice ?? 0
@@ -211,11 +217,26 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             }
             if note.instrument == .vocal || note.instrument == .vocalChop {
                 params.voice = NoteParams.vocalVoice(
-                    note.vowel ?? .ah, style: note.style ?? .choir, feel: note.feel ?? .classic)
+                    note.vowel ?? .ah, style: note.style ?? (note.run == nil ? .choir : .lead),
+                    feel: note.feel ?? .classic)
                 params.formant = note.register
+                if let run = note.run, note.instrument == .vocal {
+                    return run.steps(root: note.pitch, lengthSteps: lengthSteps).map { step in
+                        var p = params
+                        let at = halves + step.half
+                        p.pitch = step.pitch
+                        p.lengthSteps = max(1, (step.halves + 1) / 2)
+                        p.delay = at % 2 == 1 ? 0.5 : nil
+                        return ScheduledNote(
+                            step: at / 2, instrument: note.instrument,
+                            velocity: min((note.velocity ?? 0.8) * step.accent, 1), params: p)
+                    }
+                }
             }
-            return ScheduledNote(
-                step: halves / 2, instrument: note.instrument, velocity: note.velocity ?? 0.8, params: params)
+            return [
+                ScheduledNote(
+                    step: halves / 2, instrument: note.instrument, velocity: note.velocity ?? 0.8, params: params)
+            ]
         }
     }
 

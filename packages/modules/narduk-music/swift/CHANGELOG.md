@@ -15,7 +15,9 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   and a song without vocals renders bit for bit as before.
   Seven voice feels (`VocalFeel`: classic, airy, pop, dark, soul, ethereal, toy; `NoteParams.vocalVoice(_:style:feel:)`,
   scenario note field `feel`) vary the formants, breath, vibrato, attack, voice count and room of the same synth; classic
-  is the default and renders exactly as before.
+  is the default and renders exactly as before. `power` is a chest-mix belt with a little grit; `runs` is tuned for
+  `VocalRun`, an ornament any held vocal note can take (scenario note field `run`): it holds, then sings a pentatonic,
+  minor or blues run up, down or in waves over an octave or more in sixteenths or thirty-seconds.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery shows both as tiles.

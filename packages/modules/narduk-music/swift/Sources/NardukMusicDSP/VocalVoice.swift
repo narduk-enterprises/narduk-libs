@@ -181,6 +181,41 @@ struct VocalPatch: Sendable, Hashable, BitwiseCopyable {
             p.breathDefault = 0.05
             p.onset = 0.03
             p.singers = 1
+        case .power:
+            p.attack = chop ? p.attack : 0.03
+            p.release = chop ? p.release : 0.2
+            p.vibratoDepth = 0.3
+            p.vibratoDelay = 0.25
+            p.vibratoRamp = 0.3
+            p.vibratoRate = 6.0
+            p.scoop = 0.8
+            p.scoopTime = 0.06
+            p.saturation = 0.9
+            p.f1Gain = 1.1
+            p.a2Gain = 1.6
+            p.a3Gain = 2.5
+            p.tilt = 4_200
+            p.registerBias = 0.2
+            p.breathDefault = 0.1
+            p.singers = 1
+            p.send = 0.9
+        case .runs:
+            p.attack = chop ? p.attack : 0.008
+            p.release = chop ? p.release : 0.05
+            p.vibratoDepth = 0.12
+            p.vibratoDelay = 0.3
+            p.vibratoRamp = 0.2
+            p.vibratoRate = 8.8
+            p.scoop = 0.4
+            p.scoopTime = 0.02
+            p.saturation = 0.3
+            p.f1Gain = 1.2
+            p.a2Gain = 1.5
+            p.a3Gain = 3
+            p.tilt = 3_500
+            p.registerBias = 0.3
+            p.breathDefault = 0.08
+            p.singers = 1
         }
         return p
     }

@@ -84,6 +84,10 @@ public enum VocalFeel: String, Sendable, Hashable, Codable, CaseIterable {
     case ethereal
     /// A playful "la la": higher formants, quick, bright and short.
     case toy
+    /// A powerful, slightly coarse chest-mix belt: a strong first formant, a forward singer's formant, a little grit.
+    case power
+    /// A riff voice for fast melismatic runs (`VocalRun`): clean, quick, a tight vibrato for the held end of a run.
+    case runs
 
     public var index: Int { VocalFeel.allCases.firstIndex(of: self) ?? 0 }
 
