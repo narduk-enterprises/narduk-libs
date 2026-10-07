@@ -25,9 +25,9 @@ public struct SongRecipePart: Sendable, Hashable, Codable {
 
 /// A song as a recipe: see the file comment.
 public struct SongRecipe: Sendable, Hashable, Codable {
-    public static let tempoRange: ClosedRange<Double> = 60 ... 200
-    public static let secondsRange: ClosedRange<Double> = 20 ... 300
-    public static let partSecondsRange: ClosedRange<Double> = 4 ... 90
+    public static let tempoRange: ClosedRange<Double> = 60...200
+    public static let secondsRange: ClosedRange<Double> = 20...300
+    public static let partSecondsRange: ClosedRange<Double> = 4...90
     public static let maxParts = 12
 
     /// A short name for the song ("Rainy Night Lo-fi").
@@ -74,7 +74,9 @@ public struct SongRecipe: Sendable, Hashable, Codable {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         recipe.title = String(name.prefix(48)).isEmpty ? genre.shortName : String(name.prefix(48))
         recipe.mood = String(mood.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
-        if let bpm { recipe.bpm = bpm.isFinite ? min(max(bpm, Self.tempoRange.lowerBound), Self.tempoRange.upperBound) : nil }
+        if let bpm {
+            recipe.bpm = bpm.isFinite ? min(max(bpm, Self.tempoRange.lowerBound), Self.tempoRange.upperBound) : nil
+        }
         recipe.keyPitchClass = ((keyPitchClass % 12) + 12) % 12
         recipe.parts = parts.prefix(Self.maxParts).map { part in
             SongRecipePart(
@@ -129,11 +131,11 @@ public struct SongRecipe: Sendable, Hashable, Codable {
     /// are 0.55 to build or drop and 0.4 to hold a drop), as `(low, high)`; intensity picks a point in between.
     public static func level(of section: SongSection) -> ClosedRange<Double> {
         switch section {
-        case .intro: 0.08 ... 0.3
-        case .build: 0.6 ... 0.8
-        case .drop: 0.8 ... 0.95
-        case .breakdown: 0.15 ... 0.35
-        case .drop2: 0.85 ... 1
+        case .intro: 0.08...0.3
+        case .build: 0.6...0.8
+        case .drop: 0.8...0.95
+        case .breakdown: 0.15...0.35
+        case .drop2: 0.85...1
         }
     }
 
@@ -197,7 +199,8 @@ public struct SongRecipe: Sendable, Hashable, Codable {
                 let time = start + Double(index) * step
                 signals.append(
                     MusicSignal(
-                        time: time, level: recipe.energy(at: time), levelLabel: "\(recipe.title) \(part.section.rawValue)",
+                        time: time, level: recipe.energy(at: time),
+                        levelLabel: "\(recipe.title) \(part.section.rawValue)",
                         character: Self.character(of: part.section)))
             }
             start += part.seconds

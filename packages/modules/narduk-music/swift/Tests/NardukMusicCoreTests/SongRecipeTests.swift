@@ -56,13 +56,13 @@ import Testing
         let wild = SongRecipe(
             title: "  \n ", mood: String(repeating: "m", count: 400), genre: .dubstep, bpm: .infinity,
             keyPitchClass: -3,
-            parts: (0..<40).map { SongRecipePartIndex($0) })
+            parts: (0..<40).map { wildPart($0) })
         let recipe = wild.validated()
         #expect(recipe.title == "Dubstep" && recipe.mood.count == 160)
         #expect(recipe.bpm == nil && recipe.keyPitchClass == 9)
         #expect(recipe.parts.count == SongRecipe.maxParts)
         #expect(recipe.parts.allSatisfy { SongRecipe.partSecondsRange.contains($0.seconds) })
-        #expect(recipe.parts.allSatisfy { (0 ... 1).contains($0.intensity) })
+        #expect(recipe.parts.allSatisfy { (0...1).contains($0.intensity) })
         #expect(recipe.validated() == recipe)
         var tooFast = Self.sample
         tooFast.bpm = 900
@@ -80,7 +80,7 @@ import Testing
         #expect(drop >= 0.8 && breakdown < 0.4)
         #expect(recipe.energy(at: 10_000) == SongRecipe.target(of: recipe.parts.last!))
         for time in stride(from: 0.0, to: recipe.duration, by: 0.5) {
-            #expect((0 ... 1).contains(recipe.energy(at: time)))
+            #expect((0...1).contains(recipe.energy(at: time)))
         }
     }
 
@@ -105,7 +105,7 @@ import Testing
     }
 }
 
-private func SongRecipePartIndex(_ index: Int) -> SongRecipePart {
+private func wildPart(_ index: Int) -> SongRecipePart {
     SongRecipePart(
         section: SongSection.allCases[index % SongSection.allCases.count],
         seconds: index.isMultiple(of: 2) ? .nan : 1_000, intensity: index.isMultiple(of: 3) ? 9 : -2)

@@ -25,7 +25,8 @@ import Testing
     static func scenario() -> (MusicScenario, SongSettings) {
         let script = recipe.script()
         let scenario = MusicScenario(
-            name: recipe.title, signals: script.signals, actions: script.dropTimes.map { MusicScenario.Action(time: $0, queueDrop: true) })
+            name: recipe.title, signals: script.signals,
+            actions: script.dropTimes.map { MusicScenario.Action(time: $0, queueDrop: true) })
         return (scenario, script.settings)
     }
 
