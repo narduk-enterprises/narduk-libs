@@ -138,7 +138,9 @@ struct RecordingsView: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                 Text(recording.detail)
-                    .blasterFont(size: 14, weight: .bold)
+                    .blasterFont(size: compact ? 13 : 14, weight: .bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .foregroundStyle(.white.opacity(0.7))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
