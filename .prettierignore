@@ -103,7 +103,3 @@ packages/modules/geogrid-web/tests/fixtures/**
 # narduk-libs#432: its body lands verbatim in CHANGELOG.md above, so
 # formatting it buys nothing and a rewrapped line cost a CI round per lane.
 .changeset/*.md
-
-# Beat Blaster asset kit (asset-pack): kit.json, manifests and PROMPTS.md record exact model prompts,
-# and reformatting would change them.
-packages/modules/narduk-music/swift/Apps/BeatBlaster/design/assets

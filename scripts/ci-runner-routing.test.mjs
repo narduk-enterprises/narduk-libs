@@ -7,11 +7,10 @@ const source = (name) =>
 const ci = source('ci.yml')
 const logging = source('logging-languages.yml')
 const authKit = source('auth-kit-swift.yml')
-const music = source('narduk-music-swift.yml')
 const release = source('release.yml')
 
 test('every public CI and language job uses a hosted runner without package credentials', () => {
-  for (const workflow of [ci, logging, authKit, music]) {
+  for (const workflow of [ci, logging, authKit]) {
     assert.doesNotMatch(workflow, /self-hosted|BLACKSMITH_|secrets\.|GH_PACKAGES_READ/u)
     assert.doesNotMatch(workflow, /packages: (?:read|write)/u)
   }
@@ -20,10 +19,6 @@ test('every public CI and language job uses a hosted runner without package cred
   // The Apple-only Swift client needs a GitHub-hosted macOS image, never a fleet Mac.
   assert.equal((authKit.match(/^    runs-on: macos-\d+$/gmu) || []).length, 1)
   assert.equal((authKit.match(/^    runs-on:/gmu) || []).length, 1)
-  // NardukMusic: one hosted Linux job and one hosted macOS job.
-  assert.equal((music.match(/^    runs-on: ubuntu-latest$/gmu) || []).length, 1)
-  assert.equal((music.match(/^    runs-on: macos-\d+$/gmu) || []).length, 1)
-  assert.equal((music.match(/^    runs-on:/gmu) || []).length, 2)
   assert.match(ci, /runner: '"ubuntu-latest"'/u)
   assert.match(ci, /required-runner: '"ubuntu-latest"'/u)
   assert.match(ci, /package-registry-auth: disabled/u)

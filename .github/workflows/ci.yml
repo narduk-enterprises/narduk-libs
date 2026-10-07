@@ -50,7 +50,6 @@ jobs:
       affected-count: ${{ steps.plan.outputs.affected-count }}
       logging-languages: ${{ steps.plan.outputs.logging-languages }}
       auth-kit-swift: ${{ steps.plan.outputs.auth-kit-swift }}
-      narduk-music-swift: ${{ steps.plan.outputs.narduk-music-swift }}
     steps:
       - name: Check out source and comparison history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,7 +105,6 @@ jobs:
             --summary "${GITHUB_STEP_SUMMARY}"
           node scripts/logging-ci-plan.mjs "${args[@]}"
           node scripts/auth-kit-ci-plan.mjs "${args[@]}"
-          node scripts/narduk-music-ci-plan.mjs "${args[@]}"
 
       # The packed-consumer smoke failed a pull request once in the last 150
       # runs (via a changeset), so a PR pays for it only when the diff can change what it packs:
@@ -148,11 +146,6 @@ jobs:
     needs: [affected]
     if: needs.affected.outputs.auth-kit-swift == 'true'
     uses: ./.github/workflows/auth-kit-swift.yml
-
-  narduk-music-swift:
-    needs: [affected]
-    if: needs.affected.outputs.narduk-music-swift == 'true'
-    uses: ./.github/workflows/narduk-music-swift.yml
 
   ci:
     needs: [affected]
@@ -562,8 +555,7 @@ jobs:
         packed-consumer-smoke,
         package-browser-tests,
         logging-languages,
-        auth-kit-swift,
-        narduk-music-swift
+        auth-kit-swift
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -585,8 +577,6 @@ jobs:
           LOGGING_RESULT: ${{ needs.logging-languages.result }}
           AUTH_KIT_EXPECTED: ${{ needs.affected.outputs.auth-kit-swift }}
           AUTH_KIT_RESULT: ${{ needs.auth-kit-swift.result }}
-          MUSIC_EXPECTED: ${{ needs.affected.outputs.narduk-music-swift }}
-          MUSIC_RESULT: ${{ needs.narduk-music-swift.result }}
         run: |
           set -euo pipefail
           status=0
@@ -604,14 +594,6 @@ jobs:
             test "${AUTH_KIT_RESULT}" = skipped || status=1
           else
             echo "::error::Planner did not report NardukAuthKit Swift applicability"
-            status=1
-          fi
-          if [ "${MUSIC_EXPECTED}" = "true" ]; then
-            test "${MUSIC_RESULT}" = success || status=1
-          elif [ "${MUSIC_EXPECTED}" = "false" ]; then
-            test "${MUSIC_RESULT}" = skipped || status=1
-          else
-            echo "::error::Planner did not report NardukMusic Swift applicability"
             status=1
           fi
           if ! [[ "${AFFECTED_COUNT}" =~ ^[0-9]+$ ]]; then
