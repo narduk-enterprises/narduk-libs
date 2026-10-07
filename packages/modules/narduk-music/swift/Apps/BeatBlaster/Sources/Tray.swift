@@ -36,14 +36,14 @@ struct TrayState: Equatable {
             switch self {
             case .play: "icon-energy"
             case .effects: "icon-pads"
-            case .more: "icon-music"
+            case .more: "icon-lights"
             }
         }
         var word: String {
             switch self {
-            case .play: "Play"
-            case .effects: "Effects"
-            case .more: "Music & Lights"
+            case .play: "Mix"
+            case .effects: "FX"
+            case .more: "Lights"
             }
         }
     }
