@@ -8,6 +8,7 @@ struct HomeView: View {
     let play: (SongRecipe) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
+    @State private var recordingCount = 0
 
     private struct Mode: Identifiable {
         let screen: Screen
@@ -19,7 +20,9 @@ struct HomeView: View {
     }
 
     private let modes = [
-        Mode(screen: .lab, emoji: "🥁", title: "Beat Lab", subtitle: "Build a beat yourself", color: Neon.orange),
+        Mode(
+            screen: .lab, emoji: "icon-beat-lab", title: "Beat Lab", subtitle: "Build a beat yourself",
+            color: Neon.orange),
         Mode(screen: .lights, emoji: "💡", title: "Light Show", subtitle: "Watch the lights dance", color: Neon.cyan),
         Mode(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
         Mode(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Type an idea", color: Neon.purple),
@@ -59,6 +62,7 @@ struct HomeView: View {
                                     value: appeared)
                             }
                         }
+                        recordingsButton(compact: compact)
                         if !mySongs.songs.isEmpty { mySongsRow(compact: compact) }
                     }
                     .frame(maxWidth: 1100)
@@ -71,7 +75,9 @@ struct HomeView: View {
         .onAppear {
             if !audio.isRunning { audio.playIfIdle() }
             appeared = true
+            recordingCount = audio.store.list().count
         }
+        .onChange(of: audio.savedCount) { recordingCount = audio.store.list().count }
     }
 
     private func startButton(compact: Bool) -> some View {
@@ -85,12 +91,13 @@ struct HomeView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Make a Song")
+            .accessibilityIdentifier("home.makeSong")
         }
     }
 
     private func modeCard(_ mode: Mode, compact: Bool) -> some View {
         VStack(spacing: compact ? 4 : 8) {
-            Text(mode.emoji).font(.system(size: compact ? 36 : 54))
+            Glyph(mode.emoji, size: compact ? 36 : 54)
             Text(mode.title)
                 .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
                 .lineLimit(1)
@@ -107,6 +114,21 @@ struct HomeView: View {
         .background(mode.color.opacity(0.45), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 2))
         .shadow(color: mode.color.opacity(0.6), radius: 12)
+    }
+
+    /// 🎙 My Songs: the recordings the player made (shown once there is at least one).
+    @ViewBuilder private func recordingsButton(compact: Bool) -> some View {
+        if recordingCount > 0 {
+            Button {
+                go(.recordings)
+            } label: {
+                Pill(
+                    icon: "🎙", word: "My Songs · \(recordingCount) recorded", color: Neon.green.opacity(0.7),
+                    size: compact ? 20 : 26)
+            }
+            .buttonStyle(Squish())
+            .accessibilityIdentifier("home.mySongs")
+        }
     }
 
     private func mySongsRow(compact: Bool) -> some View {
@@ -154,7 +176,7 @@ struct StartButtonFace: View {
 
     var body: some View {
         HStack(spacing: compact ? 12 : 20) {
-            Text("🎵").font(.system(size: compact ? 44 : 76))
+            Glyph("🎵", size: compact ? 44 : 76)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Make a Song")
                     .font(.system(size: compact ? 34 : 60, weight: .black, design: .rounded))
