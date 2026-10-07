@@ -10,7 +10,7 @@ struct MusicCard: View {
     var body: some View {
         VStack(spacing: 6) {
             KindBadge(kind: .music, size: compact ? 10 : 12)
-            Text(style.emoji).font(.system(size: compact ? 36 : 52))
+            VibeArt(style: style, size: compact ? 64 : 92)
             Text(style.funName)
                 .font(.system(size: compact ? 15 : 20, weight: .black, design: .rounded))
                 .lineLimit(1)

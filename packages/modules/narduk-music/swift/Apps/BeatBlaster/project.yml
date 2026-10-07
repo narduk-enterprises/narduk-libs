@@ -22,7 +22,7 @@ targets:
   BeatBlaster:
     type: application
     platform: iOS
-    sources: [Sources, Resources]
+    sources: [Sources, Resources, design/assets/ios/Images.xcassets]
     scheme:
       testTargets: [BeatBlasterTests]
     dependencies:

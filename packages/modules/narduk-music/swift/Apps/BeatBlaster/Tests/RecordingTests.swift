@@ -1,0 +1,95 @@
+import AVFoundation
+import XCTest
+
+@testable import BeatBlaster
+
+@MainActor final class RecordingTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUp() {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("bb-rec-\(UUID().uuidString)")
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    func testCleanNameStripsReservedCharactersAndNeverEmpty() {
+        XCTAssertEqual(RecordingStore.cleanName("a/b:c?"), "abc")
+        XCTAssertEqual(RecordingStore.cleanName("  "), "My song")
+        XCTAssertEqual(RecordingStore.cleanName(String(repeating: "x", count: 100)).count, 60)
+    }
+
+    func testClockText() {
+        XCTAssertEqual(clockText(0), "00:00")
+        XCTAssertEqual(clockText(75), "01:15")
+        XCTAssertEqual(clockText(3661), "1:01:01")
+    }
+
+    func testStoreListRenameDelete() throws {
+        let store = RecordingStore(directory: directory)
+        let url = store.newTakeURL(title: "Dino Disco")
+        try Self.writeSilence(to: url, seconds: 1)
+        var list = store.list()
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list[0].seconds, 1, accuracy: 0.1)
+        XCTAssertTrue(list[0].name.hasPrefix("Dino Disco"))
+        let renamed = try store.rename(list[0], to: "My best jam")
+        XCTAssertEqual(renamed.lastPathComponent, "My best jam.m4a")
+        list = store.list()
+        XCTAssertEqual(list.map(\.name), ["My best jam"])
+        store.delete(list[0])
+        XCTAssertTrue(store.list().isEmpty)
+    }
+
+    func testTwoTakesNeverShareAPath() throws {
+        let store = RecordingStore(directory: directory)
+        let date = Date()
+        let first = store.newTakeURL(title: "Same", date: date)
+        try Self.writeSilence(to: first, seconds: 0.5)
+        XCTAssertNotEqual(store.newTakeURL(title: "Same", date: date), first)
+    }
+
+    /// The real engine records its master mixer to an m4a, saves it on stop, and a long take rotates into the next.
+    func testRecorderStartStopSaveAndRotation() async throws {
+        let audio = BlasterAudio()
+        audio.store = RecordingStore(directory: directory)
+        audio.maxTakeSeconds = 1.2
+        audio.play(SongRecipe(style: .genre(.house)))
+        audio.beginRecording()
+        XCTAssertTrue(audio.isRecording)
+        try await Task.sleep(for: .seconds(2.2))
+        audio.endRecording()
+        XCTAssertFalse(audio.isRecording)
+        await audio.settleRecording()
+        audio.stop()
+        let saved = audio.store.list()
+        XCTAssertGreaterThanOrEqual(saved.count, 2, "a take longer than the cap rolls into a new file")
+        XCTAssertGreaterThan(saved.reduce(0) { $0 + $1.seconds }, 1.0)
+        XCTAssertEqual(audio.savedCount, saved.count)
+    }
+
+    func testShowModeHidesAndReveals() {
+        var show = ShowMode()
+        XCTAssertFalse(show.hidden)
+        show.hide()
+        XCTAssertTrue(show.hidden)
+        show.reveal()
+        XCTAssertFalse(show.hidden)
+    }
+
+    private static func writeSilence(to url: URL, seconds: Double) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100.0, AVNumberOfChannelsKey: 2,
+            ])
+        let frames = AVAudioFrameCount(seconds * 44_100)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        try file.write(from: buffer)
+    }
+}

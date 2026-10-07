@@ -104,7 +104,7 @@ struct LightShowView: View {
                         MusicGrid(selectedID: audio.recipe.styleID, compact: compact) { style in
                             var next = audio.recipe
                             next.styleID = style.id
-                            audio.play(next)
+                            audio.swap(to: next)
                             activity += 1
                         }
                     }
