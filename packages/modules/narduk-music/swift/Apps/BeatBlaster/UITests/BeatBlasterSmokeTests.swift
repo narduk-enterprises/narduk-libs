@@ -123,9 +123,11 @@ import XCTest
         field.tap()
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40))
         field.typeText("Smoke Test")
+        XCTAssertEqual(field.value as? String, "Smoke Test", "rename field was not cleared before typing")
         app.alerts.buttons["Save"].tap()
-        XCTAssertTrue(
-            app.staticTexts["Smoke Test"].waitForExistence(timeout: 6), "the row did not take its new name")
+        let renamed = app.staticTexts["Smoke Test"].waitForExistence(timeout: 6)
+        if !renamed { print("RENAME FAILED, tree:\n\(app.debugDescription)") }
+        XCTAssertTrue(renamed, "the row did not take its new name")
         XCTAssertTrue(row.exists)
 
         require("mysongs.share").tap()
