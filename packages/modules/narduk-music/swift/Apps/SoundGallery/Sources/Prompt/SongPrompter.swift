@@ -33,7 +33,8 @@ enum SongPrompter {
                 switch SystemLanguageModel.default.availability {
                 case .available: return .available
                 case .unavailable(.deviceNotEligible): return .unavailable("This device cannot run Apple Intelligence.")
-                case .unavailable(.appleIntelligenceNotEnabled): return .unavailable("Apple Intelligence is turned off.")
+                case .unavailable(.appleIntelligenceNotEnabled):
+                    return .unavailable("Apple Intelligence is turned off.")
                 case .unavailable(.modelNotReady): return .unavailable("The on-device model is still getting ready.")
                 case .unavailable: return .unavailable("The on-device model is unavailable.")
                 }
@@ -157,8 +158,8 @@ enum PromptError: LocalizedError {
                 let response = try await session.respond(
                     to: prompt, generating: GeneratedSongRecipe.self, options: GenerationOptions(temperature: 0.9))
                 return response.content.recipe(seed: SongSettings.sessionSeed())
-            } catch let error as LanguageModelSession.GenerationError {
-                throw PromptError.declined(error.errorDescription ?? "The model could not write that song.")
+            } catch {
+                throw PromptError.declined(error.localizedDescription)
             }
         }
     }
