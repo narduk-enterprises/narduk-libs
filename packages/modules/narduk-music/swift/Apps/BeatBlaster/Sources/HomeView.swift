@@ -49,6 +49,13 @@ struct HomeView: View {
                 }
             }
         }
+        .focusable()
+        .focusEffectDisabled()
+        // A keyboard: space pauses here too, the same as in the Player.
+        .onKeyPress(.space) {
+            audio.togglePause()
+            return .handled
+        }
         .onAppear {
             if !audio.isRunning { audio.playIfIdle() }
             arrived = true
@@ -282,6 +289,11 @@ struct HomeView: View {
                         }
                         .buttonStyle(Squish())
                         .accessibilityLabel("Play \(song.name)")
+                        .contextMenu {
+                            Button("Remove from Play again", systemImage: "minus.circle", role: .destructive) {
+                                mySongs.forget(song.id)
+                            }
+                        }
                     }
                 }
                 .padding(.vertical, 6)
@@ -303,24 +315,36 @@ struct HomeView: View {
         .sheet(isPresented: $showCredits) { CreditsView() }
     }
 
-    /// What is playing now, with Open to jump back into the Player.
+    /// What is playing now: pause it right here, or Open to jump back into the Player.
     private func nowPlaying(compact: Bool) -> some View {
-        Button {
-            go(.player)
-        } label: {
-            HStack(spacing: 14) {
-                VibeArt(style: audio.recipe.style, size: compact ? 56 : 68)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("NOW PLAYING")
-                        .blasterFont(size: 15, weight: .black)
-                        .foregroundStyle(Neon.cyan)
-                    Text(audio.recipe.name)
-                        .blasterFont(size: compact ? 20 : 24, weight: .black)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+        HStack(spacing: 12) {
+            Button {
+                go(.player)
+            } label: {
+                HStack(spacing: 14) {
+                    VibeArt(style: audio.recipe.style, size: compact ? 56 : 68)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(audio.isPaused ? "PAUSED" : "NOW PLAYING")
+                            .blasterFont(size: 15, weight: .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(audio.isPaused ? Neon.yellow : Neon.cyan)
+                        Text(audio.recipe.name)
+                            .blasterFont(size: compact ? 20 : 24, weight: .black)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Now playing \(audio.recipe.name). Open the player")
+            PauseButton(audio: audio, size: compact ? 48 : 54).probe("home.pause")
+            Button {
+                go(.player)
+            } label: {
                 Text("Open")
                     .blasterFont(size: 18, weight: .black)
                     .foregroundStyle(Neon.night)
@@ -328,14 +352,14 @@ struct HomeView: View {
                     .frame(height: 48)
                     .background(Neon.yellow, in: Capsule())
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 14)
-            .frame(minHeight: compact ? 80 : 92)
-            .background(.black.opacity(0.6), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 2))
+            .buttonStyle(Squish())
+            .accessibilityLabel("Open the player")
         }
-        .buttonStyle(Squish())
-        .accessibilityLabel("Now playing \(audio.recipe.name). Open the player")
+        .padding(.leading, 10)
+        .padding(.trailing, 14)
+        .frame(minHeight: compact ? 80 : 92)
+        .background(.black.opacity(0.6), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 2))
         .probe("home.nowPlaying")
     }
 }

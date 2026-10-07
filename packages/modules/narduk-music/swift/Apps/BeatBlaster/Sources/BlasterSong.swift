@@ -310,6 +310,16 @@ enum FunNames {
         songs.removeAll { $0.id == recipe.id }
         songs.insert(recipe, at: 0)
         songs = Array(songs.prefix(Self.limit))
+        persist()
+    }
+
+    /// Takes a song off the Play again row (its recordings stay in My Songs).
+    func forget(_ id: SongRecipe.ID) {
+        songs.removeAll { $0.id == id }
+        persist()
+    }
+
+    private func persist() {
         if let data = try? JSONEncoder().encode(songs) { UserDefaults.standard.set(data, forKey: Self.key) }
     }
 }
