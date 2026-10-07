@@ -6,7 +6,10 @@
     /// `fill` serves the whole pack. Nothing here strobes: motion is continuous, the only beat-locked change is a
     /// bounded glow, and the state's flash is never used; `fx.x` carries the calm flag instead.
     enum ShaderPackSource {
-        static let source = #"""
+        /// Shared uniforms and the earlier looks, plus `BassblobsShader`.
+        static let source = core + "\n" + BassblobsShader.source
+
+        private static let core = #"""
             #include <metal_stdlib>
             using namespace metal;
 

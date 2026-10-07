@@ -2,6 +2,12 @@
 
 NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on npm.
 
+## Unreleased
+
+### Added
+
+- `ShaderPackKind.bassBlobs` ("Bass blobs"): raymarched glossy liquid metaballs. Bass swells and merges them, mids set the orbit, highs ripple the surface, and the kick squashes the mass with a rim glow; calm slows the orbit to 0.4 and drops the squash.
+
 ## 0.4.1
 
 Seeds that write new songs, musical visualizers, two more intense visualizers, a silent engine for apps that draw only,
