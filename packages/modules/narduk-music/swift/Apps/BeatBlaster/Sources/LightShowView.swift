@@ -150,6 +150,8 @@ struct LightShowView: View {
                 Text("Light Show")
                     .blasterFont(size: compact ? 22 : 36, weight: .black)
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Spacer(minLength: 0)
                 Button {
                     withAnimation { controlsShown = false }
@@ -207,6 +209,8 @@ struct MicView: View {
                             Text("Mic Mode")
                                 .blasterFont(size: compact ? 22 : 36, weight: .black)
                                 .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                             Spacer()
                         }
                         Spacer()
