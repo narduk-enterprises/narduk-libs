@@ -25,6 +25,14 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   `DropEngine.cut(_:division:steps:amount:seed:)`, which starts on the next audio buffer. With `SongSettings.variety`
   above 0 a song may add wordless vocals (a pad, a chop hook) and a stutter into each drop; at 0 (the default) nothing is
   added and every render is bit for bit as before.
+- A sampled female voice (narduk-libs#1641): `Instrument.vocalSample` plays recorded ahs, oohs, ehs and ees (straight, vibrato
+  and belt), syllable chops and sung scale runs of one VocalSet singer (CC BY 4.0, credit in the README and
+  `Resources/LICENSES`), 2 MB of 16-bit PCM in the package resources, key-mapped from a root every three semitones,
+  looped with a baked crossfade, pitched within a few semitones of its root and played by a pooled sampler voice into
+  the vocal room. `NoteParams.sampleVoice(_:technique:kind:)` packs vowel, `SampleTechnique` and `SampleKind` (sustain,
+  chop, run); scenario notes take `technique` and `kind`, `run` (VocalRun) works on sampled notes too, and the master cut
+  stutters, gates and reverses it like everything else. `SampleBank.shared` loads at synth construction, never on the
+  audio thread.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery shows both as tiles.

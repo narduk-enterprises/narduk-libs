@@ -39,7 +39,8 @@ package.targets += [
     ),
     .target(
         name: "NardukMusicDSP", dependencies: ["NardukMusicCore", "NardukSoundAnalysis"],
-        path: "packages/modules/narduk-music/swift/Sources/NardukMusicDSP"
+        path: "packages/modules/narduk-music/swift/Sources/NardukMusicDSP",
+        resources: [.copy("Resources")]
     ),
     .target(
         name: "NardukMusicRender", dependencies: ["NardukMusicCore", "NardukMusicDSP"],

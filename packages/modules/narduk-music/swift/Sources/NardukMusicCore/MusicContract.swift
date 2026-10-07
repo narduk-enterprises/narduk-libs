@@ -42,6 +42,50 @@ public enum Instrument: String, Sendable, Hashable, Codable, CaseIterable {
     /// then comes back. `voice` packs the mode and a seed, `formant` the division and `drive` the amount; build one with
     /// `NoteParams.cut(_:division:steps:amount:seed:)` (see `CutMode`, `CutDivision`).
     case cut
+    /// A sampled female voice (narduk-libs#1641): real recorded ahs, oohs and runs (VocalSet, CC BY 4.0), key-mapped,
+    /// looped and pitched by the sampler. `pitch` is the note. `voice` packs the vowel (`voice & 7`, as `vocal`), the
+    /// technique (`(voice >> 3) & 3`: straight, vibrato, belt) and the kind (`(voice >> 5) & 3`: a held sustain, a
+    /// syllable chop whose slice is `formant` 0 ... 1, or a whole scale run fitted to `lengthSteps`); build one with
+    /// `NoteParams.sampleVoice(_:technique:kind:)`. `drive` is a gain trim, 0 ... 1 (absent: 0.8).
+    case vocalSample
+}
+
+/// How a `vocalSample` note is sung.
+public enum SampleTechnique: String, Sendable, Hashable, Codable, CaseIterable {
+    case straight, vibrato, belt
+
+    public var index: Int { SampleTechnique.allCases.firstIndex(of: self) ?? 0 }
+
+    public init(voice: Int) {
+        let i = (voice >> 3) & 3
+        self = i < SampleTechnique.allCases.count ? SampleTechnique.allCases[i] : .vibrato
+    }
+}
+
+/// What a `vocalSample` note plays.
+public enum SampleKind: String, Sendable, Hashable, Codable, CaseIterable {
+    /// A held vowel, looped for as long as the note lasts.
+    case sustain
+    /// A short syllable cut from a sung phrase, played once (`formant` picks the slice).
+    case chop
+    /// A fast sung scale, stretched or squeezed to fit the note's length.
+    case run
+
+    public var index: Int { SampleKind.allCases.firstIndex(of: self) ?? 0 }
+
+    public init(voice: Int) {
+        let i = (voice >> 5) & 3
+        self = i < SampleKind.allCases.count ? SampleKind.allCases[i] : .sustain
+    }
+}
+
+extension NoteParams {
+    /// The `voice` field of a `vocalSample` note.
+    public static func sampleVoice(
+        _ vowel: VocalVowel = .ah, technique: SampleTechnique = .vibrato, kind: SampleKind = .sustain
+    ) -> Int {
+        vowel.index | technique.index << 3 | kind.index << 5
+    }
 }
 
 /// What a `cut` does to the song while it lasts.

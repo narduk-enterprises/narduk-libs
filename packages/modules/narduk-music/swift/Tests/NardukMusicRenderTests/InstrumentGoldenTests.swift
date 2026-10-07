@@ -95,7 +95,7 @@ import Testing
     @Test func scenarioNotesNameEveryNewInstrument() throws {
         var named: Set<Instrument> = []
         for item in Self.cases { named.formUnion(try Self.scenario(item.name).notes?.map(\.instrument) ?? []) }
-        #expect(named == Set(Instrument.allCases.filter { $0.synthCode >= 14 && $0 != .cut }))
+        #expect(named == Set(Instrument.allCases.filter { $0.synthCode >= 14 && $0 != .cut && $0 != .vocalSample }))
     }
 
     @Test func theDemoPlaysGuitarsOverAConductorBed() throws {

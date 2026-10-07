@@ -114,13 +114,18 @@ public struct MusicScenario: Sendable, Hashable, Codable {
         public var division: CutDivision?
         /// A `cut` note's seed (chop order).
         public var cutSeed: Int?
+        /// A `vocalSample` note's technique (default `vibrato`) and kind (default `sustain`). For a chop, `register` is
+        /// the slice, 0 ... 1; for a run kind, `length` is how long the whole run takes.
+        public var technique: SampleTechnique?
+        public var kind: SampleKind?
 
         public init(
             time: Double, instrument: Instrument, pitch: Int, length: Double? = nil, velocity: Double? = nil,
             pan: Double? = nil, drive: Double? = nil, chord: StrumChord? = nil, direction: StrumStroke? = nil,
             vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil, feel: VocalFeel? = nil,
             run: VocalRun? = nil,
-            cut: CutMode? = nil, division: CutDivision? = nil, cutSeed: Int? = nil
+            cut: CutMode? = nil, division: CutDivision? = nil, cutSeed: Int? = nil, technique: SampleTechnique? = nil,
+            kind: SampleKind? = nil
         ) {
             self.time = time
             self.instrument = instrument
@@ -139,6 +144,8 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             self.cut = cut
             self.division = division
             self.cutSeed = cutSeed
+            self.technique = technique
+            self.kind = kind
         }
     }
 
@@ -225,12 +232,19 @@ public struct MusicScenario: Sendable, Hashable, Codable {
                 params.voice = note.chord?.voice ?? 0
                 params.formant = note.direction == .up ? 1 : 0
             }
-            if note.instrument == .vocal || note.instrument == .vocalChop {
-                params.voice = NoteParams.vocalVoice(
-                    note.vowel ?? .ah, style: note.style ?? (note.run == nil ? .choir : .lead),
-                    feel: note.feel ?? .classic)
+            if note.instrument == .vocalSample {
+                params.voice = NoteParams.sampleVoice(
+                    note.vowel ?? .ah, technique: note.technique ?? .vibrato, kind: note.kind ?? .sustain)
                 params.formant = note.register
-                if let run = note.run, note.instrument == .vocal {
+            }
+            if note.instrument == .vocal || note.instrument == .vocalChop || note.instrument == .vocalSample {
+                if note.instrument != .vocalSample {
+                    params.voice = NoteParams.vocalVoice(
+                        note.vowel ?? .ah, style: note.style ?? (note.run == nil ? .choir : .lead),
+                        feel: note.feel ?? .classic)
+                    params.formant = note.register
+                }
+                if let run = note.run, note.instrument != .vocalChop {
                     return run.steps(root: note.pitch, lengthSteps: lengthSteps).map { step in
                         var p = params
                         let at = halves + step.half

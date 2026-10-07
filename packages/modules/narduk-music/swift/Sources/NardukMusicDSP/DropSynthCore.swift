@@ -27,6 +27,7 @@ struct SynthState {
     static let stringCount = 24  // guitar strings; a strum takes six
     static let padCount = 8
     static let vocalCount = 16  // singers; a choir note takes up to five
+    static let sampleCount = 10  // sampled singers
     static let pendingCapacity = 2_048
     static let historySize = 1 << 18  // master history for stutter / tape stop (~5.4 s at 48 kHz)
     static let analysisSize = 1 << 13  // mono analysis ring
@@ -60,6 +61,11 @@ struct SynthState {
     var vocalsLive = 0
     var vocalTail = 0
     var vocalRoom: RoomReverb
+    // Sampled vocals (#1641): the same room, a pool of sample voices over the shared bank. Untouched until a
+    // `vocalSample` note arrives.
+    let sampleBank: SampleBank?
+    let samples: UnsafeMutablePointer<SampleVoice>
+    var samplesLive = 0
     var wobble = WobbleVoice()
     var sub = SubVoice()
     var reverb: RoomReverb
@@ -134,6 +140,9 @@ struct SynthState {
         for i in 0..<SynthState.vocalCount {
             (vocals + i).initialize(to: VocalVoice(seed: 0x7F4A_7C15 &+ UInt32(i) &* 2_654_435))
         }
+        sampleBank = SampleBank.shared
+        samples = .allocate(capacity: SynthState.sampleCount)
+        samples.initialize(repeating: SampleVoice(), count: SynthState.sampleCount)
         vocalRoom = RoomReverb(sampleRate: sampleRate, size: 0.8)
         vocalRoom.feedback = 0.84
         pads = .allocate(capacity: SynthState.padCount)
@@ -160,6 +169,7 @@ struct SynthState {
         for i in 0..<SynthState.stringCount { strings[i].deallocate() }
         strings.deallocate()
         vocals.deallocate()
+        samples.deallocate()
         vocalRoom.deallocate()
         pads.deallocate()
         hall.deallocate()
@@ -312,6 +322,7 @@ struct SynthState {
         case 14, 15, 16:  // acoustic, electric, bass guitar (a strum's strings arrive as the first two)
             startString(StringKind(rawValue: e.instrument - 14) ?? .acoustic, e)
         case 19, 20: startVocal(e)
+        case 22: startSample(e)
         case 21:  // cut: the master is stuttered, gated, reversed or re-sliced for lengthSteps
             let division = CutDivision(formant: e.formant < 0 ? CutDivision.sixteenth.formant : Double(e.formant))
             let packed = max(Int(e.voice), 0)
@@ -395,6 +406,50 @@ struct SynthState {
         vocalsLive += singers
         let tail = gate + Int(c.sampleRate * (feel == .ethereal ? 5 : 3))
         vocalTail = max(vocalTail, tail)
+    }
+
+    mutating func startSample(_ e: SynthEvent) {
+        guard let bank = sampleBank else { return }
+        let packed = e.voice < 0 ? 0 : Int(e.voice)
+        let kind = SampleKind(voice: packed)
+        let technique = SampleTechnique(voice: packed)
+        let pitch = e.pitch < 0 ? 69 : e.pitch
+        let clip = bank.lookup(
+            kind: kind, vowel: packed & 7, technique: technique, pitch: pitch, slice: e.formant < 0 ? 0 : e.formant)
+        guard clip >= 0 else { return }
+        let info = bank.clips[clip]
+        let gate = gateSamples(e)
+        let ratio = bank.sampleRate / Double(c.sampleRate)
+        var rate: Double
+        switch kind {
+        case .sustain, .chop:
+            // Shift to the note, within a few semitones of the root (the set has a root every three).
+            let semitones = min(max(Double(pitch - info.root), -7), 7)
+            rate = pow(2, semitones / 12) * ratio
+        case .run:
+            // Fit the run to the note: its whole length, squeezed or stretched within reason.
+            let natural = Double(info.count) / ratio
+            rate = min(max(natural / Double(max(gate, 1)), 0.5), 2.5) * ratio
+        }
+        var slot = -1
+        var oldest = 0
+        var oldestAge = -1
+        for i in 0..<SynthState.sampleCount {
+            if !samples[i].active {
+                slot = i
+                break
+            }
+            if samples[i].age > oldestAge {
+                oldestAge = samples[i].age
+                oldest = i
+            }
+        }
+        if slot < 0 { slot = oldest }
+        samples[slot].trigger(
+            bank: bank, clip: clip, rate: rate, gateSamples: kind == .run ? Int(Double(info.count) / rate) : gate,
+            velocity: e.velocity, gain: e.drive < 0 ? 0.8 : e.drive, pan: e.pan, engineRate: c.sampleRate)
+        samplesLive += 1
+        vocalTail = max(vocalTail, gate + Int(c.sampleRate * 2.5))
     }
 
     mutating func startPad(_ kind: AmbientKind, _ e: SynthEvent) {
@@ -532,7 +587,7 @@ struct SynthState {
                 fxR += guitarR
             }
             // Vocals feed the fx bus dry, and a room of their own until its tail has died away.
-            if vocalsLive > 0 || vocalTail > 0 {
+            if vocalsLive > 0 || samplesLive > 0 || vocalTail > 0 {
                 var vocalL: Float = 0
                 var vocalR: Float = 0
                 var live = 0
@@ -546,6 +601,16 @@ struct SynthState {
                         if vocals[i].active { live += 1 }
                     }
                     vocalsLive = live
+                }
+                if samplesLive > 0 {
+                    var sampled = 0
+                    for i in 0..<SynthState.sampleCount where samples[i].active {
+                        let v = samples[i].next()
+                        vocalL += v.0
+                        vocalR += v.1
+                        if samples[i].active { sampled += 1 }
+                    }
+                    samplesLive = sampled
                 }
                 if vocalTail > 0 { vocalTail -= 1 }
                 let wet = vocalRoom.process((vocalL + vocalR) * 0.5 + extraSend)
