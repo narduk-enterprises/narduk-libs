@@ -216,6 +216,7 @@
             case .spectrumMetal: [.scalars]
             case .vortexMetal: [.scalars]
             case .haloMetal: [.scalars]
+            case .scopeMetal: [.scalars, .history]
             default: []
             }
         }

@@ -6,6 +6,10 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.scopeMetal` ("Scope (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
+  scope: the waveform as a phosphor beam on curved CRT glass, triggered on a rising zero crossing, with five receding
+  history traces, a lit graticule and a snare sync bar. Bass swells the bloom, highs sparkle on the beam, a kick
+  flares it.
 - `IntenseKind.haloMetal` ("Halo (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
   halo: 64 lit spectrum rays around a plasma core, the bass swelling the core and the rays on the left of the ring,
   the highs the right, a waveform ring with a chroma split, beat rings, a snare ring, peak ticks, zoom dust and shed
