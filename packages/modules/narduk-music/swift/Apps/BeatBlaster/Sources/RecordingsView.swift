@@ -71,7 +71,10 @@ struct RecordingsView: View {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             ForEach(recordings) { recording in
-                                row(recording, compact: compact).accessibilityIdentifier("mysongs.row")
+                                // The row id must not replace the controls' own (#1664).
+                                row(recording, compact: compact)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("mysongs.row")
                             }
                         }
                         .frame(maxWidth: 800)
@@ -122,6 +125,7 @@ struct RecordingsView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel(isPlaying ? "Stop" : "Play \(recording.name)")
+            .accessibilityIdentifier("mysongs.play")
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.name)
                     .font(.system(size: compact ? 16 : 20, weight: .black, design: .rounded))
