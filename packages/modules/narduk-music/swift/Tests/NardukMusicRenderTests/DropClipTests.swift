@@ -39,12 +39,14 @@ import Testing
         let sps = 60 / bpm / 4
         let key = DropArranger.parseKey(track?.key ?? "") ?? (pitchClass: 5, minor: true)
         let tonic = 60 + key.pitchClass
-        let context = DropContext(
-            genre: genre, keyRoot: tonic, minor: key.minor, chordRoot: tonic, nextChordRoot: tonic + 5, stepsPerBar: 16,
-            secondsPerStep: sps, seed: seed, variety: variety, dropNumber: 0)
 
         // The press is the first step not yet scheduled, 4 s in; the release is a full charge later.
         run(until: 4)
+        // The drop is read off the song as it plays at the press.
+        let material = renderer.withConductor { DropMaterial.capture(from: $0) }
+        let context = DropContext(
+            genre: genre, keyRoot: tonic, minor: key.minor, chordRoot: tonic, nextChordRoot: tonic + 5, stepsPerBar: 16,
+            secondsPerStep: sps, seed: seed, variety: variety, dropNumber: 0, material: material)
         let press = renderer.currentStep + Int(0.25 / sps) + 2
         let hold = Int((DropArranger.fullChargeSeconds / sps).rounded())
         let release = press + hold
@@ -96,6 +98,21 @@ import Testing
             let url = URL(fileURLWithPath: dir, isDirectory: true)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             try AudioFileWriter.writeWAV(audio, to: url.appendingPathComponent("drop-\(genre.rawValue).wav"))
+        }
+    }
+
+    /// Two different songs in each of two genres, so the drop can be heard to follow the song (`NARDUK_DROP_CLIPS_DIR`).
+    @Test func twoSongsOfAGenreDropDifferently() throws {
+        for genre in [Genre.dubstep, .rock] {
+            let a = Self.render(genre, seed: 11).audio
+            let b = Self.render(genre, seed: 29).audio
+            #expect(a.fingerprint != b.fingerprint, "\(genre): two songs rendered the same clip")
+            if let dir = ProcessInfo.processInfo.environment["NARDUK_DROP_CLIPS_DIR"] {
+                let url = URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("v2", isDirectory: true)
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                try AudioFileWriter.writeWAV(a, to: url.appendingPathComponent("\(genre.rawValue)-song-A.wav"))
+                try AudioFileWriter.writeWAV(b, to: url.appendingPathComponent("\(genre.rawValue)-song-B.wav"))
+            }
         }
     }
 

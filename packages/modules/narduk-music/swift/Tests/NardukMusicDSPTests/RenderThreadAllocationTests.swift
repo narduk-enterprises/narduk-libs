@@ -152,11 +152,14 @@
             }
             var step = 0
             for genre in Genre.allCases {
+                var conductor = DropConductor(settings: SongSettings(genre: genre, seed: 5, variety: 1))
+                _ = conductor.advance(throughStep: 63)
+                let material = DropMaterial.capture(from: conductor)
                 for number in 0..<3 {
                     let context = DropContext(
                         genre: genre, keyRoot: 65, minor: true, chordRoot: 70, nextChordRoot: 72,
                         secondsPerStep: 60 / 140 / 4,
-                        seed: 5, variety: 1, dropNumber: number)
+                        seed: 5, variety: 1, dropNumber: number, material: material)
                     for held in 0..<64 {
                         for note in DropArranger.build(step: step, heldSteps: held, context: context) {
                             core.schedule(note)
