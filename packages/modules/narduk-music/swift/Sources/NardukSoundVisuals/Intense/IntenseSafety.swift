@@ -106,6 +106,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case liquidSplash
     /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
     case sun
+    /// A radial spectrum of lit needles around a glossy plasma core with a waveform ring, beat rings and shed sparks.
+    case haloMetal
     /// A spiral galaxy of lit gas and shaded beads wound from the spectrum: bass at the core, highs at the rim, a waveform accretion ring, snare shock rings.
     case vortexMetal
     /// The 64 bands as glass tubes of liquid light on a mirror floor, peak beads floating above: bass swells the low tubes, highs stand tall and shower dust.
@@ -119,6 +121,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .synthwaveFlyover: "Synthwave flyover"
         case .liquidSplash: "Liquid splash"
         case .sun: "Sun"
+        case .haloMetal: "Halo (Metal)"
         case .vortexMetal: "Vortex (Metal)"
         case .spectrumMetal: "Spectrum (Metal)"
         }

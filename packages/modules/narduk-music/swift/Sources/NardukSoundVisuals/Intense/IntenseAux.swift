@@ -215,6 +215,7 @@
             switch self {
             case .spectrumMetal: [.scalars]
             case .vortexMetal: [.scalars]
+            case .haloMetal: [.scalars]
             default: []
             }
         }
