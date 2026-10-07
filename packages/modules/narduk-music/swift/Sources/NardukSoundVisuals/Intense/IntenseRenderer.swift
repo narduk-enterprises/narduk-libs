@@ -37,6 +37,7 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let pianoRollMetal: any MTLRenderPipelineState
         private let phosphorMetal: any MTLRenderPipelineState
         private let mirrorMetal: any MTLRenderPipelineState
         private let padsMetal: any MTLRenderPipelineState
@@ -64,6 +65,7 @@
                 PadsMetalShader.source,
                 MirrorMetalShader.source,
                 PhosphorMetalShader.source,
+                PianoRollMetalShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -81,6 +83,7 @@
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
                 let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let pianoRollMetal = pipeline("pianoRollMetalFragment"),
                 let phosphorMetal = pipeline("phosphorMetalFragment"),
                 let mirrorMetal = pipeline("mirrorMetalFragment"),
                 let padsMetal = pipeline("padsMetalFragment"),
@@ -99,6 +102,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.pianoRollMetal = pianoRollMetal
             self.phosphorMetal = phosphorMetal
             self.mirrorMetal = mirrorMetal
             self.padsMetal = padsMetal
@@ -164,6 +168,10 @@
                 draw(
                     phosphorMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
                     needs: [.scalars, .history])
+            case .pianoRollMetal:
+                draw(
+                    pianoRollMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
+                    needs: [.scalars, .roll])
             case .fluidGlitch:
                 guard let surface else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black

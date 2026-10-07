@@ -221,6 +221,7 @@
             case .padsMetal: [.scalars]
             case .mirrorMetal: [.scalars]
             case .phosphorMetal: [.scalars, .history]
+            case .pianoRollMetal: [.scalars, .roll]
             default: []
             }
         }

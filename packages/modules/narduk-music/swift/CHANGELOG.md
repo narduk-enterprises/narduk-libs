@@ -6,6 +6,11 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.pianoRollMetal` ("Piano roll (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the
+  Canvas piano roll: the notes as cylinder-lit glass bars on their pitch rows, hot at the strike and cooling along the
+  tail, dimming with age as they flow into a lit piano keyboard where a sounding note flares and lights its key (the
+  12 chroma rows as cells when the source gives no notes). Bass swells the playhead glow, highs light the dust, a kick
+  flares the playhead.
 - `IntenseKind.phosphorMetal` ("Phosphor (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the
   Canvas phosphor: a stereo-goniometer Lissajous burning into a CRT (the newest trace from the live waveform with a
   hot core and a wide bloom, five fading, shrinking older traces from the history), over a graticule with axes, rings
