@@ -166,6 +166,31 @@
             #expect(worstJump < 0.1, "a frame-to-frame jump of \(worstJump) is a flash")
         }
 
+        /// The waves never sit still: with the same steady music, a quarter of a second later the ribbons have moved
+        /// visibly, and two seconds later they have changed shape, not just drifted a little further.
+        @Test(.enabled(if: hasMetal, "no Metal device on this host")) func theRibbonsKeepFlowing() throws {
+            let h = Self.size.height
+            let now = try Self.render(Self.state(bass: 0.4, mids: 0.3, highs: 0.2, frames: 90))
+            let soon = try Self.render(Self.state(bass: 0.4, mids: 0.3, highs: 0.2, frames: 105))
+            let later = try Self.render(Self.state(bass: 0.4, mids: 0.3, highs: 0.2, frames: 210))
+            let quarter = Self.drift(now, soon, y0: h * 2 / 10, y1: h * 7 / 10)
+            let twoSeconds = Self.drift(now, later, y0: h * 2 / 10, y1: h * 7 / 10)
+            #expect(quarter > 0.015, "the ribbons barely moved in a quarter second (\(quarter))")
+            #expect(twoSeconds > quarter, "two seconds on looks like a quarter second on (\(twoSeconds))")
+        }
+
+        /// Writes a filmstrip (frames a quarter second apart) when `NARDUK_AURORA_WAVES_DUMP` names a directory.
+        @Test(.enabled(if: hasMetal, "no Metal device on this host")) func writesAFilmstripWhenAskedTo() throws {
+            #if canImport(ImageIO) && canImport(CoreGraphics)
+                guard let directory = ProcessInfo.processInfo.environment["NARDUK_AURORA_WAVES_DUMP"] else { return }
+                for step in 0..<6 {
+                    let state = Self.state(bass: 0.6, mids: 0.4, highs: 0.3, frames: 90 + step * 15)
+                    let pixels = try Self.render(state, width: 640, height: 360)
+                    try Self.writePNG(pixels, width: 640, height: 360, to: "\(directory)/aurora-waves-film-\(step).png")
+                }
+            #endif
+        }
+
         /// Writes full-size quiet and loud stills when `NARDUK_AURORA_WAVES_DUMP` names a directory (for review).
         @Test(.enabled(if: hasMetal, "no Metal device on this host")) func writesStillsWhenAskedTo() throws {
             #if canImport(ImageIO) && canImport(CoreGraphics)

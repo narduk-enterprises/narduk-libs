@@ -28,6 +28,7 @@
                 float starCells;  // star grid cells per unit, fewer on a small drawable
                 float pixel;      // one pixel in uv-y units
                 float phase;      // the waves' shared phase
+                float flow;       // the flow clock: time plus musical travel, drives the morphing and the silk
                 float bass;
                 float mids;
                 float highs;
@@ -43,14 +44,19 @@
 
             // The centre line and half-width of ribbon `i` at x (aspect units), in uv-y units (up from the bottom).
             static float2 awRibbon(thread const AuroraWavesScene &s, int i, float x) {
+                // Two components travelling in opposite directions at different speeds, a slowly breathing wave
+                // number and a scrolling noise warp: the shape keeps changing instead of sliding as one rigid braid.
                 float fi = float(i);
-                float k = 3.0 + 0.45 * fi;
-                float ph = s.phase * (0.9 + 0.15 * fi) + fi * 2.2;
-                float base = 0.525 + 0.045 * sin(fi * 2.4 + 0.5);
-                float amp = (0.095 + 0.07 * s.bass) * (1.0 - 0.07 * fi);
-                float center = base + amp * (0.8 * sin(k * x - ph) + 0.3 * sin(0.47 * k * x + ph * 0.6 + fi * 2.3));
-                float swell = 0.66 + 0.34 * sin(x * (1.4 + 0.3 * fi) - ph * 0.45 + fi * 2.1);
-                float halfWidth = (0.05 + 0.045 * s.bass) * swell * (1.08 - 0.07 * fi);
+                float f = s.flow;
+                float k = 2.4 + 0.5 * fi + 0.45 * sin(f * 0.11 + fi * 1.7);
+                float base = 0.52 + 0.055 * sin(fi * 2.4 + 0.5) + 0.035 * sin(f * 0.21 + fi * 1.9);
+                float amp = (0.085 + 0.08 * s.bass) * (1.0 - 0.06 * fi) * (0.8 + 0.3 * sin(f * 0.17 + fi * 2.6));
+                float travelling = sin(k * x - s.phase * (1.0 + 0.2 * fi) + fi * 2.2);
+                float counter = sin(0.55 * k * x + f * (0.45 + 0.1 * fi) + fi * 4.1);
+                float warp = awNoise(float2(x * 1.25 - f * (0.3 + 0.06 * fi), fi * 7.3 + f * 0.09)) - 0.5;
+                float center = base + amp * (0.7 * travelling + 0.4 * counter) + 0.11 * warp;
+                float swell = 0.62 + 0.38 * sin(x * (1.5 + 0.3 * fi) - f * (0.8 + 0.15 * fi) + fi * 2.1);
+                float halfWidth = (0.068 + 0.06 * s.bass) * swell * (1.08 - 0.07 * fi);
                 return float2(center, halfWidth);
             }
 
@@ -77,7 +83,7 @@
                 color *= 1.0 - smoothstep(0.22, 0.5, cloud) * cloudBand * 0.3 * sc.sharp;
 
                 // Stars: fine points that twinkle with the highs, and a few soft pink motes.
-                float2 gv = float2(x, y) * sc.starCells;
+                float2 gv = (float2(x, y) + float2(sc.flow * 0.006, 0.0)) * sc.starCells;
                 float2 id = floor(gv);
                 float h = hash21(id);
                 float2 jitter = float2(hash21(id + 7.1), hash21(id + 3.3)) - 0.5;
@@ -87,7 +93,7 @@
                 tw = mix(0.75, tw, 0.35 + 0.65 * saturate(sc.highs * 2.0));
                 float starLight = (0.35 + 0.65 * h + 0.6 * sc.highs) * sc.sharp;
                 color += mix(float3(1.0), sc.lavender, 0.3) * star * tw * starLight * smoothstep(0.02, 0.12, above);
-                float2 mv = float2(x, y) * 13.0 + float2(sc.phase * 0.05, 0.0);
+                float2 mv = float2(x, y) * 13.0 + float2(sc.flow * 0.08, -sc.flow * 0.12);
                 float2 mid = floor(mv);
                 float mh = hash21(mid + 11.0);
                 float2 mj = float2(hash21(mid + 5.2), hash21(mid + 9.4)) - 0.5;
@@ -95,17 +101,17 @@
                 color += mix(sc.pink, float3(1.0), 0.4) * mote * (0.25 + 0.3 * sc.highs) * smoothstep(0.03, 0.15, above);
 
                 // Aurora haze: a broad green-cyan sweep above the ribbons, a soft lower hem fading upward in streaks.
-                float hem = 0.655 + 0.1 * sin(wx * 1.5 - sc.phase * 0.25 + 1.2) + 0.03 * sin(wx * 4.1 + sc.phase * 0.15);
-                float streaks = awNoise(float2(wx * 20.0 + y * 7.0 - sc.phase * 0.4, y * 3.0));
-                float folds = awNoise(float2(wx * 1.8 + sc.phase * 0.06, 1.7));
+                float hem = 0.655 + 0.1 * sin(wx * 1.5 - sc.flow * 0.4 + 1.2) + 0.035 * sin(wx * 4.1 + sc.flow * 0.55);
+                float streaks = awNoise(float2(wx * 9.0 + y * 5.0 - sc.flow * 0.9, y * 2.0 + sc.flow * 0.2));
+                float folds = awNoise(float2(wx * 1.8 - sc.flow * 0.22, 1.7 + sc.flow * 0.07));
                 float rise = y - hem;
                 float curtain = rise < 0.0 ? exp(-pow(rise / 0.06, 2.0)) : exp(-rise / (0.08 + 0.06 * folds));
                 curtain *= (0.5 + 0.5 * streaks) * (0.3 + 0.7 * smoothstep(0.15, 0.75, folds));
                 float3 hazeColor = mix(sc.mint, sc.cyan, smoothstep(0.3, 1.1, x / max(sc.aspect, 0.5) + 0.3 * folds));
-                color += hazeColor * curtain * 1.5 * sc.light;
+                color += hazeColor * curtain * 2.1 * sc.light;
 
                 // Ribbons: many fine parallel strands with a luminous core and a soft bloom.
-                float strandsPerHalf = clamp(0.06 / max(sc.pixel * 3.4, 1e-4), 2.5, 14.0);
+                float strandsPerHalf = clamp(0.06 / max(sc.pixel * 4.5, 1e-4), 2.5, 9.0);
                 float fold = 0.35 + 1.2 * sc.mids;
                 for (int i = 0; i < 4; i++) {
                     float2 r = awRibbon(sc, i, wx);
@@ -116,29 +122,32 @@
                     float fi = float(i);
                     float3 hue = i == 0 ? sc.pink : (i == 1 ? sc.lavender : (i == 2 ? sc.cyan : sc.mint));
                     float3 next = i == 0 ? sc.lavender : (i == 1 ? sc.cyan : (i == 2 ? sc.mint : sc.cyan));
-                    float folded = v + fold * 0.3 * sin(wx * 5.5 + v * 2.0 - sc.phase * 1.3 + fi * 1.7);
+                    float folded = v + fold * 0.35 * sin(wx * 4.5 + v * 1.5 - sc.flow * 1.6 + fi * 1.7);
                     float strandIndex = floor(folded * strandsPerHalf + 0.5);
-                    float strand = pow(0.5 + 0.5 * cos(folded * strandsPerHalf * 6.28318), 4.0);
-                    strand *= 0.35 + 0.65 * hash21(float2(strandIndex, fi * 3.1));
+                    float strand = pow(0.5 + 0.5 * cos(folded * strandsPerHalf * 6.28318), 2.0);
+                    // Silk: light streams along each strand, every strand at its own speed.
+                    float speed = 1.6 + 1.4 * hash21(float2(strandIndex, fi * 5.7));
+                    float silk = awNoise(float2(wx * 7.0 - sc.flow * speed, strandIndex * 1.73 + fi * 9.1));
+                    strand *= 0.25 + 0.75 * smoothstep(0.2, 0.85, silk);
                     strand = mix(0.45, strand, sc.sharp);
                     float body = smoothstep(1.1, 0.25, av);
-                    float along = 0.5 + 0.5 * sin(wx * (1.1 + 0.2 * fi) + fi * 2.7 - sc.phase * 0.3);
-                    float core = exp(-v * v * 7.0);
+                    float along = 0.5 + 0.5 * sin(wx * (1.6 + 0.3 * fi) + fi * 2.7 - sc.flow * (1.1 + 0.2 * fi));
+                    float core = exp(-v * v * 3.5);
                     float bloom = exp(-av * 0.7);
                     float3 tint = mix(hue, next, 0.3 * saturate(0.5 + 0.5 * v));
-                    float3 ribbon = tint * body * (0.14 + 0.8 * strand) * (0.4 + 0.6 * along);
+                    float3 ribbon = tint * body * (0.3 + 0.6 * strand) * (0.4 + 0.6 * along);
                     ribbon += mix(tint, float3(1.0), 0.4) * core * 0.3 * (0.3 + 0.7 * along) * sc.coreGlow;
-                    ribbon += hue * bloom * 0.15 * (0.5 + 0.5 * along);
+                    ribbon += hue * bloom * 0.2 * (0.5 + 0.5 * along);
                     color += ribbon * sc.light;
                 }
 
                 // Equaliser: thin vertical bars riding the central ribbon, one real spectrum band each.
-                float barSpacing = max(sc.pixel * 8.0, 0.009);
+                float barSpacing = max(sc.pixel * 13.0, 0.012);
                 float column = floor(x / barSpacing);
                 float local = (x / barSpacing - column - 0.5) * barSpacing;
                 float bandT = mix(0.12, 1.0, fract(column * 0.6180339 + 0.31));
-                float level = saturate(bandAt(spectrum, bandT) * (1.0 + 1.8 * bandT));
-                float barHeight = (0.01 + 0.11 * level) * (0.85 + 0.3 * saturate(sc.highs * 2.5));
+                float level = saturate(bandAt(spectrum, bandT) * (1.0 + 1.8 * bandT)) * (0.3 + 0.7 * hash21(float2(column, 4.7)));
+                float barHeight = (0.008 + 0.075 * level) * (0.85 + 0.3 * saturate(sc.highs * 2.5));
                 float2 spine = awRibbon(sc, 1, wx);
                 float riseBar = y - spine.x;
                 float extent = riseBar > 0.0 ? barHeight : barHeight * 0.3;
@@ -147,7 +156,7 @@
                 float bar = smoothstep(barWidth * 1.6, barWidth * 0.3, abs(local)) * (1.0 - alongBar * alongBar)
                     * step(abs(riseBar), extent) * sc.sharp;
                 float3 barHue = mix(sc.lavender, sc.mint, smoothstep(0.3, 0.9, x / max(sc.aspect, 0.5)));
-                color += mix(barHue, float3(1.0), 0.45) * bar * 0.7 * sc.light;
+                color += mix(barHue, float3(1.0), 0.45) * bar * 0.5 * sc.light;
                 return color;
             }
 
@@ -170,7 +179,8 @@
                 sc.bass = (bandAt(spectrum, 0.02) + bandAt(spectrum, 0.07) + bandAt(spectrum, 0.13)) / 3.0;
                 sc.mids = (bandAt(spectrum, 0.25) + bandAt(spectrum, 0.4) + bandAt(spectrum, 0.52)) / 3.0;
                 sc.highs = (bandAt(spectrum, 0.65) + bandAt(spectrum, 0.8) + bandAt(spectrum, 0.95)) / 3.0;
-                sc.phase = (t * 0.32 + u.misc.z * 0.06) * motion + sc.mids * 1.1;
+                sc.flow = (t * 0.5 + u.misc.z * 0.1) * motion + sc.mids * 0.6;
+                sc.phase = (t * 0.6 + u.misc.z * 0.12) * motion + sc.mids * 1.1;
                 sc.twinkle = t * 2.2 * motion;
                 float beatPulse = pow(1.0 - fract(u.resTime.w), 3.0);
                 sc.coreGlow = 1.0 + (1.0 - calm) * (0.9 * saturate(u.env.x) + 0.25 * beatPulse);
