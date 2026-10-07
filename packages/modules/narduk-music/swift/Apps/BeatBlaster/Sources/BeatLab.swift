@@ -65,6 +65,45 @@ enum LabRow: Int, CaseIterable, Identifiable {
     var bassPatch = 0
 
     @ObservationIgnored private var cursor = -1
+    /// Where the beat is kept between launches (nil: nowhere, for previews).
+    @ObservationIgnored private let store: UserDefaults?
+
+    /// What a child built, kept on this device only, so a beat survives closing the app.
+    struct Saved: Codable, Equatable {
+        var grid: [[Int]]
+        var speed: Speed
+        var sounds: [Int]
+        var key: Int
+        var bassPatch: Int
+    }
+    static let savedKey = "beatLab.saved"
+
+    init(store: UserDefaults? = .standard) {
+        self.store = store
+        guard let data = store?.data(forKey: Self.savedKey),
+            let saved = try? JSONDecoder().decode(Saved.self, from: data)
+        else { return }
+        restore(saved)
+    }
+
+    var saved: Saved { Saved(grid: grid, speed: speed, sounds: sounds, key: key, bassPatch: bassPatch) }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(saved) { store?.set(data, forKey: Self.savedKey) }
+    }
+
+    /// Takes a saved beat back, ignoring anything a different build's grid shape cannot hold.
+    private func restore(_ saved: Saved) {
+        let rows = LabRow.allCases
+        guard saved.grid.count == rows.count, saved.grid.allSatisfy({ $0.count == Self.steps }),
+            saved.sounds.count == rows.count
+        else { return }
+        grid = zip(rows, saved.grid).map { row, cells in cells.map { min(max($0, 0), row.noteCount) } }
+        sounds = zip(rows, saved.sounds).map { row, index in min(max(index, 0), row.sounds.count - 1) }
+        speed = saved.speed
+        key = min(max(saved.key, 0), 11)
+        bassPatch = max(saved.bassPatch, 0)
+    }
 
     var bpm: Double { 112 * speed.scale }
 

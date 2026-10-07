@@ -592,7 +592,7 @@ struct RecBadge: View {
 
     /// The badge's words, longest first.
     private func wordings(at date: Date) -> [String] {
-        if audio.isPaused { return ["⏸ Paused", "⏸"] }
+        if audio.isPaused { return ["Paused"] }
         if audio.isRecording { return ["REC \(clockText(audio.recordingElapsed(at: date)))", "REC"] }
         return ["Saved ✓ · tap to record", "Tap to record", "REC"]
     }

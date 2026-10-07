@@ -68,7 +68,9 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .background: audio.pauseForBackground()
+            case .background:
+                audio.pauseForBackground()
+                lab.save()
             case .active: audio.resumeFromBackground()
             default: break
             }

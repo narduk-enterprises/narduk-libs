@@ -52,6 +52,7 @@ struct BeatLabView: View {
             }
         }
         .onAppear { audio.startBeatLab(lab) }
+        .onDisappear { lab.save() }
     }
 
     /// The controls wrap onto as many rows as the width needs (they used to be wider than a phone and stretched the
