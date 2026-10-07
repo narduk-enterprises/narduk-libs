@@ -9,6 +9,10 @@ and the Beat Blaster kids app. Everything is additive; the two enum cases below 
 
 ### Added
 
+- `IntenseKind.liquidSplash` ("Liquid splash") in `NardukSoundVisuals` (narduk-libs#1569): a Metal splash of
+  iridescent liquid filaments and glossy droplets flying out of a core, lit from a finite-difference normal. Bass
+  sets the reach and the core, mids the warp, highs the spray; the kick swells the core, the snare throws a ring,
+  the drop winds the streams. Flashes stay on the shared limiter.
 - `SoundVisualizerKind.vortex` ("Vortex") in `NardukSoundVisuals` (narduk-libs#1569): a spiral galaxy whose three arms
   are the spectrum, bass beads at the core and highs at the rim, over a differentially rotating starfield. The
   waveform wraps the core as an accretion ring, a snare throws a shock ring, a kick swells the core, a drop winds the
