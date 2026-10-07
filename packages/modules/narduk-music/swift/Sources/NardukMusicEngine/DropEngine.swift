@@ -63,6 +63,10 @@ public enum DropEngineError: LocalizedError {
     /// Each `start()` builds a new synth whose counters begin at 0; the published counters add them to this base, so
     /// they stay monotonic across restarts and a consumer's wrapping `delta` never sees a jump back.
     @ObservationIgnored private var hitBase = HitCounters()
+    /// The pitched notes the note pump has handed the synth, tracked against the audible step position so
+    /// `latestMusic` can say which notes are sounding. Main actor only: the render thread is untouched.
+    @ObservationIgnored private var noteTracker = NoteTracker()
+    @ObservationIgnored private var audibleStepPosition: Double = 0
 
     /// The pre-0.4.0 frame, built from `latestSound` and `latestMusic`; its `hits` are the instruments that fired since
     /// the previous publish.
@@ -155,8 +159,15 @@ public enum DropEngineError: LocalizedError {
             sourceNode = nil
         }
 
-        let hardware = engine.outputNode.outputFormat(forBus: 0)
-        let sampleRate = hardware.sampleRate > 0 ? hardware.sampleRate : 48_000
+        let sampleRate: Double
+        if let offline = offlineFormat {
+            // Tests: the graph is pulled by `renderOffline(frames:)`, so no output device is needed or touched.
+            try engine.enableManualRenderingMode(.offline, format: offline, maximumFrameCount: Self.offlineSliceFrames)
+            sampleRate = offline.sampleRate
+        } else {
+            let hardware = engine.outputNode.outputFormat(forBus: 0)
+            sampleRate = hardware.sampleRate > 0 ? hardware.sampleRate : 48_000
+        }
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else {
             throw DropEngineError.noOutputFormat
         }
@@ -182,6 +193,9 @@ public enum DropEngineError: LocalizedError {
         scheduledThrough = -1
         currentStep = 0
         hitBase = latestMusic.hitCounts
+        // Fresh synth, fresh notes; the counters carry on so a consumer's diff never sees a jump back.
+        noteTracker.reset()
+        audibleStepPosition = 0
         pumpNotes()  // fill the first look-ahead window before the first render callback
 
         do {
@@ -203,6 +217,7 @@ public enum DropEngineError: LocalizedError {
         isRunning = false
         timer?.invalidate()
         timer = nil
+        noteTracker.reset()
         core?.beginFadeOut()
         stopTask?.cancel()
         stopTask = Task { @MainActor [weak self] in
@@ -221,6 +236,36 @@ public enum DropEngineError: LocalizedError {
 
     /// The main mixer's output volume, for tests.
     var hardwareVolume: Float { engine.mainMixerNode.outputVolume }
+
+    /// Set before `start()` to run the graph in manual offline rendering, pulled by `renderOffline(frames:)`
+    /// instead of an output device, so a test is the same on a laptop and a CI runner with no live audio.
+    @ObservationIgnored var offlineFormat: AVAudioFormat?
+    static let offlineSliceFrames: AVAudioFrameCount = 1_024
+
+    /// Renders `frames` through the whole graph (main mixer output, so `mutesHardwareOutput` applies), running the
+    /// note pump and analysis between slices as the timer would. Returns what the speaker would have received.
+    func renderOffline(frames: Int) throws -> AVAudioPCMBuffer {
+        guard offlineFormat != nil, isRunning else { throw DropEngineError.notRunning }
+        let format = engine.manualRenderingFormat
+        guard
+            let slice = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: Self.offlineSliceFrames),
+            let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
+        else { throw DropEngineError.noOutputFormat }
+        while Int(output.frameLength) < frames {
+            tick()
+            let count = min(Self.offlineSliceFrames, AVAudioFrameCount(frames) - output.frameLength)
+            let status = try engine.renderOffline(count, to: slice)
+            guard status == .success else { throw DropEngineError.noOutputFormat }
+            for channel in 0..<Int(format.channelCount) {
+                guard let from = slice.floatChannelData?[channel], let to = output.floatChannelData?[channel] else {
+                    continue
+                }
+                (to + Int(output.frameLength)).update(from: from, count: Int(slice.frameLength))
+            }
+            output.frameLength += slice.frameLength
+        }
+        return output
+    }
 
     // MARK: Recording
 
@@ -271,6 +316,7 @@ public enum DropEngineError: LocalizedError {
         let secondsPerStep = settings.secondsPerStep
         let latency = engine.outputNode.presentationLatency + Double(core.lastBufferFrames) / core.sampleRate
         let audible = max(core.renderedStepPosition - latency / secondsPerStep, 0)
+        audibleStepPosition = audible
         let step = Int(audible)
         if step != currentStep { currentStep = step }
         pumpNotes()
@@ -283,7 +329,10 @@ public enum DropEngineError: LocalizedError {
         let through = Int(core.renderedStepPosition + DropEngine.lookaheadSeconds / secondsPerStep)
         guard through > scheduledThrough else { return }
         // The core drops anything that arrives more than a step late.
-        for note in noteProvider(through) { core.schedule(note) }
+        for note in noteProvider(through) {
+            core.schedule(note)
+            noteTracker.schedule(note)
+        }
         scheduledThrough = through
     }
 
@@ -293,6 +342,7 @@ public enum DropEngineError: LocalizedError {
         analysisScratch.withUnsafeMutableBufferPointer { core.copyRecentSamples(into: $0) }
         latestSound = analysisScratch.withUnsafeBufferPointer { analyzer.analyze($0, time: time) }
         previousHits = latestMusic.hitCounts
+        noteTracker.advance(to: audibleStepPosition)
         var counts = core.hitCounters
         counts.lanes &+= hitBase.lanes
         latestMusic = musicContext(core: core, hitCounts: counts)
@@ -307,7 +357,7 @@ public enum DropEngineError: LocalizedError {
             secondsPerStep: settings.secondsPerStep, stepsPerBar: settings.stepsPerBar, stepsPerPhrase: stepsPerPhrase,
             phraseProgress: Float(currentStep % stepsPerPhrase) / Float(stepsPerPhrase),
             buildThreshold: Float(conductor.buildThreshold), dropThreshold: Float(conductor.dropThreshold),
-            dropQueued: conductor.dropQueued)
+            dropQueued: conductor.dropQueued, heldNotes: noteTracker.held, noteCounts: noteTracker.counters)
     }
 
     // MARK: Device changes
