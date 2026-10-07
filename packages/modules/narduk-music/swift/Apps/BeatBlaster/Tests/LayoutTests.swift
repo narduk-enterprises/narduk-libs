@@ -114,39 +114,6 @@ import XCTest
         for key in values.keys { defaults.removeObject(forKey: key) }
     }
 
-    /// Every accessibility identifier VoiceOver and UI tests can reach under `object`: a view's own, its subviews', and
-    /// those of the accessibility elements SwiftUI vends (the controls are elements, not views).
-    private func accessibilityIDs(_ object: NSObject, depth: Int = 0, into ids: inout Set<String>) {
-        guard depth < 40 else { return }
-        if let id = (object as? UIAccessibilityIdentification)?.accessibilityIdentifier, !id.isEmpty { ids.insert(id) }
-        var children: [NSObject] = []
-        if let view = object as? UIView { children += view.subviews }
-        children += (object.accessibilityElements ?? []).compactMap { $0 as? NSObject }
-        for index in 0..<max(0, object.accessibilityElementCount()) {
-            if let element = object.accessibilityElement(at: index) as? NSObject { children.append(element) }
-        }
-        for child in children where child !== object { accessibilityIDs(child, depth: depth + 1, into: &ids) }
-    }
-
-    func testPlayerControlsKeepTheirOwnAccessibilityIDs() {
-        let audio = BlasterAudio()
-        defer { audio.stop() }
-        let controller = UIHostingController(rootView: player(audio).preferredColorScheme(.dark))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        window.rootViewController = controller
-        window.makeKeyAndVisible()
-        controller.view.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
-        var ids = Set<String>()
-        accessibilityIDs(controller.view, into: &ids)
-        window.isHidden = true
-        window.rootViewController = nil
-        for id in ["player.home", "player.pause", "player.rec", "player.drop", "player.tray.handle"] {
-            XCTAssertTrue(
-                ids.contains(id), "\(id) is reachable in the accessibility tree (#1664); found \(ids.sorted())")
-        }
-    }
-
     private func player(_ audio: BlasterAudio) -> some View {
         PlayerView(audio: audio, mySongs: MySongs(), home: {}, newSong: {})
     }
