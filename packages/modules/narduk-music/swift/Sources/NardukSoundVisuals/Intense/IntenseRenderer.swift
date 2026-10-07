@@ -79,7 +79,7 @@
         private let screenPass = MTLRenderPassDescriptor()
         private let fluidPass = MTLRenderPassDescriptor()
         /// What the Canvas ports read beyond the spectrum and waveform; filled in place each frame.
-        private var aux = IntenseAux()
+        private var aux: IntenseAux
 
         init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice()) {
             let options = MTLCompileOptions()
@@ -104,6 +104,7 @@
                 SynapticGateShader.source,
                 TidalObservatoryShader.source,
                 VaultedEngineShader.source,
+                ParticleFieldMetalShader.source, KaleidoscopeMetalShader.source,
                 Self.dimSource,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
@@ -111,6 +112,7 @@
             else { return nil }
             self.device = device
             self.queue = queue
+            self.aux = IntenseAux(device: device)
             self.options = options
             self.prelude = shared
             guard let dim = try? Self.makePipeline(device: device, library: library, fragment: "intenseDimFragment")

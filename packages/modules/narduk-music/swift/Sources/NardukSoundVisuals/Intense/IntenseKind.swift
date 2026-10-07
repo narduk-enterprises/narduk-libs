@@ -90,6 +90,12 @@ public struct IntenseKind: Sendable, Hashable, Identifiable {
     /// A neon landscape of lit ridges rolling toward the viewer under a banded low sun.
     public static let audioTerrain = IntenseKind(
         id: "audioTerrain", title: "Audio terrain", fragment: "audioTerrainMetalFragment", auxMask: 3)
+    /// The kick-driven particle field: a core glow, a ring and sparks thrown on every kick, streaks on snares, blocks on hats.
+    public static let particleField = IntenseKind(
+        id: "particleField", title: "Particle field", fragment: "particleFieldMetalFragment", auxMask: 8)
+    /// A beat tunnel seen through a kaleidoscope: rings rush out on the beat and the spectrum folds into spinning petals.
+    public static let kaleidoscope = IntenseKind(
+        id: "kaleidoscope", title: "Beat kaleidoscope", fragment: "kaleidoscopeMetalFragment")
 
     /// The built-ins, in gallery order. Plugins are loaded at run time and are not listed here.
     /// A translucent 3-D moon jelly in the deep: the beat swims it, the spectrum lights its canals.
@@ -130,7 +136,8 @@ public struct IntenseKind: Sendable, Hashable, Identifiable {
     public static let allCases: [IntenseKind] = [
         .hyperspaceLasers, .fluidGlitch, .fractalDive, .synthwaveFlyover, .liquidSplash, .sun,
         .spectrum, .vortex, .halo, .scope, .wobbleMeter, .pads, .mirror, .phosphor, .pianoRoll, .pitchWheel,
-        .audioTerrain, .jellyfish, .flower, .flameSun, .bioluminescentSea, .blackHole, .geometricChaos, .amberHelix,
-        .astraUnbound, .mercuryLoom, .pocketAutomaton, .synapticGate, .tidalObservatory, .vaultedEngine,
+        .audioTerrain, .particleField, .kaleidoscope, .jellyfish, .flower, .flameSun, .bioluminescentSea, .blackHole,
+        .geometricChaos, .amberHelix, .astraUnbound, .mercuryLoom, .pocketAutomaton, .synapticGate,
+        .tidalObservatory, .vaultedEngine,
     ]
 }
