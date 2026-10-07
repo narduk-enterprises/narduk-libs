@@ -20,6 +20,9 @@ import NardukMusicEngine
         didSet { applyComping() }
     }
 
+    var effects = EffectSettings()
+    /// Sound-effect pad notes waiting for their step (pads play on the next free 16th).
+    private var queuedPads: [ScheduledNote] = []
     private(set) var machine = DropMachine()
     private var conductor: DropConductor?
     private var nextSignal = 0
@@ -47,6 +50,13 @@ import NardukMusicEngine
     // MARK: DROP
 
     func pressDrop() { machine.press(at: nextStep) }
+
+    /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
+    @discardableResult func trigger(_ pad: SoundPad) -> Int {
+        let step = nextStep
+        queuedPads += pad.notes(at: step)
+        return step
+    }
 
     /// Lands the drop; returns its first and end step, or nil when nothing was building.
     func releaseDrop() -> (start: Int, end: Int)? {
@@ -91,6 +101,7 @@ import NardukMusicEngine
             cursor = -1
             nextSignal = 0
             offset = 0
+            queuedPads.removeAll()
             machine.cancel()
             resetConductor()
         }
@@ -142,7 +153,11 @@ import NardukMusicEngine
             }
         }
         let played = out.filter { note in BandPart.of(note).map(band.contains) ?? true }
-        return recipe.sounds.apply(played, keyRoot: recipe.keyRoot)
+        let styled = effects.apply(to: recipe.sounds.apply(played, keyRoot: recipe.keyRoot))
+        // Pads always sound: they skip the band filter and the DROP layers.
+        let due = queuedPads.filter { range.contains($0.step) }
+        queuedPads.removeAll { $0.step <= throughStep }
+        return styled + due
     }
 
     /// The song's own notes up to `songStep` on its own grid.
@@ -244,28 +259,55 @@ enum DropPattern {
     }
 }
 
-/// A sixteen-bar part for the guitar instruments (from the SoundGallery): Am, F, C, G. `electric` picks driven strums
-/// and lead over the acoustic ones.
+/// A part for the guitar instruments (from the SoundGallery) that never ends: it plays in sixteen-bar chapters, and
+/// each chapter picks its own chord progression (the first is always Am, F, C, G), strum rhythm and lead licks from
+/// the song's seed, so the song keeps changing instead of looping. `electric` picks driven strums and lead over the
+/// acoustic ones.
 enum GuitarPart {
     static let barSteps = 16
     static let bars = 16
-    private static let progression: [(root: Int, minor: Bool)] = [(45, true), (41, false), (48, false), (43, false)]
+    static let chapterSteps = barSteps * bars
+    typealias Chord = (root: Int, minor: Bool)
+    static let progressions: [[Chord]] = [
+        [(45, true), (41, false), (48, false), (43, false)],  // Am F C G
+        [(45, true), (43, false), (41, false), (43, false)],  // Am G F G
+        [(45, true), (48, false), (43, false), (41, false)],  // Am C G F
+        [(41, false), (48, false), (43, false), (45, true)],  // F C G Am
+        [(45, true), (40, true), (41, false), (43, false)],  // Am Em F G
+        [(48, false), (43, false), (45, true), (41, false)],  // C G Am F
+    ]
+    static let strumVariants: [[Int]] = [[0, 8], [0, 6, 12], [0, 4, 8, 14]]
+
+    /// A stable mix of the seed and chapter number.
+    static func mix(_ seed: UInt64, _ chapter: Int) -> UInt64 {
+        var x = seed &+ UInt64(chapter) &* 0x9E37_79B9_7F4A_7C15
+        x = (x ^ (x >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        x = (x ^ (x >> 27)) &* 0x94D0_49BB_1331_11EB
+        return x ^ (x >> 31)
+    }
+
+    static func progression(chapter: Int, seed: UInt64) -> [Chord] {
+        chapter == 0 ? progressions[0] : progressions[Int(mix(seed, chapter) % UInt64(progressions.count))]
+    }
 
     static func notes(in steps: ClosedRange<Int>, seed: UInt64, electric: Bool) -> [ScheduledNote] {
         var out: [ScheduledNote] = []
         for step in steps {
-            let loopStep = step % (barSteps * bars)
+            let chapter = step / chapterSteps
+            let loopStep = step % chapterSteps
             let bar = loopStep / barSteps
             let inBar = loopStep % barSteps
-            let chord = progression[bar % progression.count]
+            let chords = progression(chapter: chapter, seed: seed)
+            let chord = chords[bar % chords.count]
             let voice = chord.minor ? 1 : 0
+            let strums = strumVariants[chapter == 0 ? 0 : Int(mix(seed, chapter &+ 7919) % UInt64(strumVariants.count))]
 
-            if inBar == 0 || inBar == 8 {
+            if strums.contains(inBar) {
                 out.append(
                     ScheduledNote(
                         step: step, instrument: electric ? .electricStrum : .strum, velocity: inBar == 0 ? 0.9 : 0.7,
                         params: NoteParams(
-                            pitch: chord.root, lengthSteps: 8, formant: inBar == 8 ? 1 : 0,
+                            pitch: chord.root, lengthSteps: 8, formant: inBar == 0 ? 0 : 1,
                             drive: electric ? 0.6 : nil, voice: voice)))
             }
             if inBar == 0 || inBar == 10 {
@@ -276,7 +318,7 @@ enum GuitarPart {
             }
             if inBar % 2 == 0, inBar >= 4 {
                 let tones = [0, 7, 12, 3 + (chord.minor ? 0 : 1), 7, 12, 15, 12]
-                let pick = Int((seed &+ UInt64(bar * 8 + inBar / 2)) % UInt64(tones.count))
+                let pick = Int((mix(seed, chapter) &+ UInt64(bar * 8 + inBar / 2)) % UInt64(tones.count))
                 out.append(
                     ScheduledNote(
                         step: step, instrument: electric ? .electricGuitar : .acousticGuitar, velocity: 0.6,
