@@ -122,6 +122,7 @@ enum BlasterInput: Equatable {
         stop()
         self.recipe = recipe
         lightsID = recipe.lightsID
+        visualState.look = Self.look(for: recipe)
         input = .song
         do {
             drop.settings = recipe.settings
@@ -168,6 +169,13 @@ enum BlasterInput: Equatable {
             guard !Task.isCancelled, let self, self.recipe.id == recipe.id else { return }
             self.stop()
         }
+    }
+
+    /// Every vibe and every Surprise me gets its own colour turn; `SoundVisualState` eases to it over about 0.6 s
+    /// (the library's `look`), so the colours never snap. A neutral look (hue 0) leaves the style's own colours.
+    static func look(for recipe: SongRecipe) -> SoundPaletteLook {
+        let hash = StableHash.fnv1a("\(recipe.styleID)#\(recipe.seed)")
+        return SoundPaletteLook(hueShift: Float(Int(hash % 13) - 6) * 30)
     }
 
     /// Keeps the current song going, or starts it if nothing plays.

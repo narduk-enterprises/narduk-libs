@@ -56,7 +56,9 @@ public struct IntensePluginHeader: Equatable, Sendable {
     }
 
     private static func firstFragmentName(in source: String) -> String? {
-        guard let range = source.range(of: #"fragment\s+float4\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("#, options: .regularExpression)
+        guard
+            let range = source.range(
+                of: #"fragment\s+float4\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("#, options: .regularExpression)
         else { return nil }
         let match = source[range]
         return match.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).dropFirst(2).first
@@ -89,7 +91,8 @@ public struct IntensePluginEntry: Identifiable, Sendable, Equatable {
         public static var defaultDirectory: URL {
             let manager = FileManager.default
             #if os(macOS)
-                let base = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                let base =
+                    manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                     ?? manager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
                 return base.appendingPathComponent("SoundGallery/Visualizers", isDirectory: true)
             #else
@@ -150,7 +153,8 @@ public struct IntensePluginEntry: Identifiable, Sendable, Equatable {
             do { source = try String(contentsOf: url, encoding: .utf8) } catch {
                 return IntensePluginEntry(
                     id: name, title: stem, kind: nil,
-                    error: IntensePluginError.describe(IntensePluginError.unreadable(error.localizedDescription), fragment: ""))
+                    error: IntensePluginError.describe(
+                        IntensePluginError.unreadable(error.localizedDescription), fragment: ""))
             }
             let header: IntensePluginHeader
             do { header = try IntensePluginHeader.parse(source: source, fileName: name) } catch {
@@ -217,7 +221,8 @@ public struct IntensePluginEntry: Identifiable, Sendable, Equatable {
                     at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
             return files.filter { $0.pathExtension.lowercased() == "metal" }.sorted { $0.path < $1.path }.map { url in
                 let values = try? url.resourceValues(forKeys: Set(keys))
-                return "\(url.lastPathComponent):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values?.fileSize ?? 0)"
+                return
+                    "\(url.lastPathComponent):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values?.fileSize ?? 0)"
             }.joined(separator: "|")
         }
     }

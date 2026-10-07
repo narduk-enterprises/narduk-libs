@@ -6,13 +6,15 @@ import Testing
 @Suite struct IntensePluginHeaderTests {
     @Test func readsTitleAndFragmentFromTheHeader() throws {
         let header = try IntensePluginHeader.parse(
-            source: "// title: Aurora Borealis\n// fragment: auroraFragment\nfragment float4 other(", fileName: "a.metal")
+            source: "// title: Aurora Borealis\n// fragment: auroraFragment\nfragment float4 other(",
+            fileName: "a.metal")
         #expect(header == IntensePluginHeader(title: "Aurora Borealis", fragment: "auroraFragment"))
     }
 
     @Test func defaultsTheTitleToTheFileAndTheFragmentToTheFirstOne() throws {
         let header = try IntensePluginHeader.parse(
-            source: "// a plain comment\nfragment float4 swirl(\n    IntenseVertexOut in [[stage_in]]) {", fileName: "my-swirl.metal")
+            source: "// a plain comment\nfragment float4 swirl(\n    IntenseVertexOut in [[stage_in]]) {",
+            fileName: "my-swirl.metal")
         #expect(header == IntensePluginHeader(title: "my-swirl", fragment: "swirl"))
     }
 
@@ -172,14 +174,16 @@ import Testing
                 to: folder.appendingPathComponent("a-good.metal"), atomically: true, encoding: .utf8)
             try "// title: Broken\n// fragment: brokenFragment\nfragment float4 brokenFragment( { nonsense }"
                 .write(to: folder.appendingPathComponent("b-broken.metal"), atomically: true, encoding: .utf8)
-            try "// title: Misnamed\n// fragment: nothingHere\nfragment float4 realOne(IntenseVertexOut in [[stage_in]]) { return float4(1); }"
+            try
+                "// title: Misnamed\n// fragment: nothingHere\nfragment float4 realOne(IntenseVertexOut in [[stage_in]]) { return float4(1); }"
                 .write(to: folder.appendingPathComponent("c-misnamed.metal"), atomically: true, encoding: .utf8)
             try "no header and no function".write(
                 to: folder.appendingPathComponent("d-empty.metal"), atomically: true, encoding: .utf8)
             try "ignored".write(to: folder.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
             let library = try Self.library(in: folder)
             library.reload()
-            #expect(library.entries.map(\.id) == ["a-good.metal", "b-broken.metal", "c-misnamed.metal", "d-empty.metal"])
+            #expect(
+                library.entries.map(\.id) == ["a-good.metal", "b-broken.metal", "c-misnamed.metal", "d-empty.metal"])
             #expect(library.entries[0].error == nil)
             #expect(library.entries[1].error?.isEmpty == false && library.entries[1].kind != nil)
             #expect(library.entries[2].error?.contains("nothingHere") == true)
