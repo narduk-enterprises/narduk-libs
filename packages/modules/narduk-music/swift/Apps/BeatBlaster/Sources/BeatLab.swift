@@ -65,6 +65,45 @@ enum LabRow: Int, CaseIterable, Identifiable {
     var bassPatch = 0
 
     @ObservationIgnored private var cursor = -1
+    /// Where the beat is kept between launches (nil: nowhere, for previews).
+    @ObservationIgnored private let store: UserDefaults?
+
+    /// What a child built, kept on this device only, so a beat survives closing the app.
+    struct Saved: Codable, Equatable {
+        var grid: [[Int]]
+        var speed: Speed
+        var sounds: [Int]
+        var key: Int
+        var bassPatch: Int
+    }
+    static let savedKey = "beatLab.saved"
+
+    init(store: UserDefaults? = .standard) {
+        self.store = store
+        guard let data = store?.data(forKey: Self.savedKey),
+            let saved = try? JSONDecoder().decode(Saved.self, from: data)
+        else { return }
+        restore(saved)
+    }
+
+    var saved: Saved { Saved(grid: grid, speed: speed, sounds: sounds, key: key, bassPatch: bassPatch) }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(saved) { store?.set(data, forKey: Self.savedKey) }
+    }
+
+    /// Takes a saved beat back, ignoring anything a different build's grid shape cannot hold.
+    private func restore(_ saved: Saved) {
+        let rows = LabRow.allCases
+        guard saved.grid.count == rows.count, saved.grid.allSatisfy({ $0.count == Self.steps }),
+            saved.sounds.count == rows.count
+        else { return }
+        grid = zip(rows, saved.grid).map { row, cells in cells.map { min(max($0, 0), row.noteCount) } }
+        sounds = zip(rows, saved.sounds).map { row, index in min(max(index, 0), row.sounds.count - 1) }
+        speed = saved.speed
+        key = min(max(saved.key, 0), 11)
+        bassPatch = max(saved.bassPatch, 0)
+    }
 
     var bpm: Double { 112 * speed.scale }
 
@@ -78,8 +117,19 @@ enum LabRow: Int, CaseIterable, Identifiable {
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]
 
+    /// The last grid the child built by hand, kept through any run of Clear and Random beat so one tap of Undo brings
+    /// it back. A square tapped since then makes the new grid the child's, and Undo goes away.
+    private(set) var undoGrid: [[Int]]?
+
     func tap(_ row: LabRow, _ step: Int) {
         grid[row.rawValue][step] = (grid[row.rawValue][step] + 1) % (row.noteCount + 1)
+        undoGrid = nil
+    }
+
+    func undo() {
+        guard let undoGrid else { return }
+        grid = undoGrid
+        self.undoGrid = nil
     }
 
     func nextSound(_ row: LabRow) {
@@ -89,7 +139,10 @@ enum LabRow: Int, CaseIterable, Identifiable {
 
     func soundName(_ row: LabRow) -> String { row.sounds[sounds[row.rawValue] % row.sounds.count] }
 
-    func clear() { grid = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count) }
+    func clear() {
+        undoGrid = undoGrid ?? grid
+        grid = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count)
+    }
 
     func randomize() {
         var g = Array(repeating: Array(repeating: 0, count: Self.steps), count: LabRow.allCases.count)
@@ -101,6 +154,7 @@ enum LabRow: Int, CaseIterable, Identifiable {
             if Double.random(in: 0...1) < 0.3 { g[4][step] = Int.random(in: 1...4) }
             if step % 4 == 2, Double.random(in: 0...1) < 0.4 { g[5][step] = Int.random(in: 1...4) }
         }
+        undoGrid = undoGrid ?? grid
         grid = g
     }
 

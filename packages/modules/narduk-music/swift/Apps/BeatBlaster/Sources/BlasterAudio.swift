@@ -225,6 +225,7 @@ enum BlasterInput: Equatable {
             resetMix()
             source = drop.makeSoundSource()
             isRunning = true
+            startTake()
         } catch {
             stop()
         }
@@ -412,8 +413,10 @@ enum BlasterInput: Equatable {
     /// Takes the master mixer (what the speakers play, no microphone) to an m4a. Starts and stops queue on one chain,
     /// so a stop followed at once by a start (a new song) never overlaps.
     private func startTake() {
-        guard wantsRecording, isRunning, input == .song, !isPaused, takeStart == nil else { return }
-        let url = store.newTakeURL(title: recipe.name)
+        guard wantsRecording, isRunning, input == .song || input == .beatLab, !isPaused, takeStart == nil else {
+            return
+        }
+        let url = store.newTakeURL(title: input == .beatLab ? "My beat" : recipe.name)
         takeURL = url
         takeStart = Date()
         recordingProblem = nil

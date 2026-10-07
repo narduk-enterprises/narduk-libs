@@ -146,15 +146,17 @@ struct HomeView: View {
     }
 
     private func labDoor(compact: Bool) -> some View {
-        Button {
+        // Beat Lab keeps a beat between launches; once there is one, the door says so.
+        let subtitle =
+            UserDefaults.standard.data(forKey: BeatLab.savedKey) == nil ? "Build your own" : "Your beat is waiting"
+        return Button {
             go(.lab)
         } label: {
             door(
-                icon: "icon-beat-lab", title: "Beat Lab", subtitle: "Build your own", color: Neon.orange,
-                compact: compact)
+                icon: "icon-beat-lab", title: "Beat Lab", subtitle: subtitle, color: Neon.orange, compact: compact)
         }
         .buttonStyle(Squish())
-        .accessibilityLabel("Beat Lab: build your own")
+        .accessibilityLabel("Beat Lab: \(subtitle.lowercased())")
         .probe("home.mode.lab")
     }
 

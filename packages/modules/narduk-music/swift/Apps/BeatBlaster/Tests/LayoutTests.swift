@@ -255,6 +255,19 @@ import XCTest
         }
     }
 
+    func testBeatLabRecordButtonIsBigAndOnScreenEverywhere() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        for (label, size, insets) in layouts {
+            let (frames, safe) = host(
+                BeatLabView(audio: audio, lab: BeatLab(store: nil), home: {}), size: size, insets: insets)
+            guard let record = frames["lab.record"] else { return XCTFail("no Record my beat — \(label)") }
+            assertTapTargets(["lab.record"], frames, label)
+            XCTAssertGreaterThanOrEqual(record.minX, safe.minX - 1, "Record inside on the left — \(label)")
+            XCTAssertLessThanOrEqual(record.maxX, safe.maxX + 1, "Record inside on the right — \(label)")
+        }
+    }
+
     func testMySongsHeaderStaysInsideAndReadable() {
         let audio = BlasterAudio()
         for (label, size, insets) in layouts {
