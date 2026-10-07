@@ -11,12 +11,13 @@ struct HomeView: View {
     @State private var recordingCount = 0
 
     private struct Mode: Identifiable {
-        let screen: Screen
+        /// nil is Mash it up, which plays a song instead of opening a screen.
+        let screen: Screen?
         let emoji: String
         let title: String
         let subtitle: String
         let color: Color
-        var id: Screen { screen }
+        var id: String { title }
     }
 
     private let modes = [
@@ -25,7 +26,7 @@ struct HomeView: View {
             color: Neon.orange),
         Mode(screen: .lights, emoji: "💡", title: "Light Show", subtitle: "Watch the lights dance", color: Neon.cyan),
         Mode(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
-        Mode(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Type an idea", color: Neon.purple),
+        Mode(screen: nil, emoji: "🎲", title: "Mash it up", subtitle: "Two vibes, one song", color: Neon.purple),
     ]
 
     var body: some View {
@@ -50,11 +51,17 @@ struct HomeView: View {
                         ) {
                             ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
                                 Button {
-                                    go(mode.screen)
+                                    if let screen = mode.screen {
+                                        go(screen)
+                                    } else {
+                                        Haptics.success()
+                                        play(SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id)))
+                                    }
                                 } label: {
                                     modeCard(mode, compact: compact)
                                 }
                                 .buttonStyle(Squish())
+                                .accessibilityIdentifier("home.mode.\(mode.screen?.rawValue ?? "mashUp")")
                                 .scaleEffect(appeared ? 1 : 0.3)
                                 .opacity(appeared ? 1 : 0)
                                 .animation(

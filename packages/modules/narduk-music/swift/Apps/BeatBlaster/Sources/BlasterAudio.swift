@@ -171,7 +171,7 @@ enum BlasterInput: Equatable {
         }
     }
 
-    /// Every vibe and every Surprise me gets its own colour turn; `SoundVisualState` eases to it over about 0.6 s
+    /// Every vibe and every Mash it up gets its own colour turn; `SoundVisualState` eases to it over about 0.6 s
     /// (the library's `look`), so the colours never snap. A neutral look (hue 0) leaves the style's own colours.
     static func look(for recipe: SongRecipe) -> SoundPaletteLook {
         let hash = StableHash.fnv1a("\(recipe.styleID)#\(recipe.seed)")
@@ -190,9 +190,9 @@ enum BlasterInput: Equatable {
         lightsID = recipe.lightsID
     }
 
-    /// "Surprise me": a whole new song (style, speed, key, mood, band and every sound), same lights.
-    func surprise() {
-        swap(to: recipe.surprise())
+    /// "Mash it up": the beat of one vibe with the sounds of another, a random light and speed.
+    func mashUp() {
+        swap(to: SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id), after: recipe))
     }
 
     func setSpeed(_ speed: Speed) {

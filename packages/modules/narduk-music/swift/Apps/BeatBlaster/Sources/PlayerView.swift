@@ -2,7 +2,7 @@ import NardukSoundAnalysis
 import NardukSoundVisuals
 import SwiftUI
 
-/// The player: the song's lights full screen, the steering controls (Energy, band, Surprise me, DROP) and the
+/// The player: the song's lights full screen, the steering controls (Energy, band, Mash it up, DROP) and the
 /// MUSIC / LIGHTS bar.
 struct PlayerView: View {
     let audio: BlasterAudio
@@ -270,7 +270,7 @@ struct DropStage: View {
     }
 }
 
-/// The tray's Play page: Energy, the band's instrument toggles, Surprise me and New song. (DROP floats outside the tray.)
+/// The tray's Play page: Energy, the band's instrument toggles, Mash it up and New song. (DROP floats outside the tray.)
 struct PlayControls: View {
     let audio: BlasterAudio
     let compact: Bool
@@ -282,10 +282,11 @@ struct PlayControls: View {
             EnergySlider(audio: audio, compact: compact)
             bandRow
             HStack(spacing: 8) {
-                action(icon: "🎲", word: "Surprise me", color: Neon.orange) {
+                action(icon: "🎲", word: "Mash it up", color: Neon.orange) {
                     Haptics.success()
-                    audio.surprise()
+                    audio.mashUp()
                 }
+                .accessibilityIdentifier("player.mashUp")
                 action(icon: "➕", word: "New song", color: Neon.pink, action: newSong)
                     .accessibilityIdentifier("player.newSong")
             }

@@ -10,8 +10,6 @@ struct SongMakerView: View {
     @State private var step = 1
     @State private var recipe = SongRecipe(style: .genre(.house))
     @State private var pickedVibe = false
-    @State private var ideaText = ""
-    @State private var dreamingIdea = false
     @FocusState private var naming: Bool
 
     private let titles = ["Pick a vibe", "How fast?", "Pick your band", "Pick your sounds", "Pick your lights"]
@@ -128,31 +126,6 @@ struct SongMakerView: View {
     // MARK: Steps
 
     private func vibeStep(compact: Bool) -> some View {
-        VStack(spacing: compact ? 12 : 20) {
-            IdeaField(text: $ideaText, compact: compact, isBusy: dreamingIdea) { words, isPremise in
-                dreamingIdea = true
-                Task {
-                    var song = await Dreamer.dream(words)
-                    if isPremise { song.title = String(words.prefix(48)) }
-                    var next = SongRecipe(from: song.recipe, style: song.style)
-                    next.lightsID = recipe.lightsID
-                    recipe = next
-                    pickedVibe = true
-                    dreamingIdea = false
-                    audio.preview(recipe)
-                    Haptics.success()
-                    withAnimation { step = 2 }
-                }
-            }
-            .frame(maxWidth: 700)
-            Text("…or pick a vibe:")
-                .blasterFont(size: compact ? 16 : 22, weight: .black)
-                .foregroundStyle(.white.opacity(0.85))
-            vibeGrid(compact: compact)
-        }
-    }
-
-    private func vibeGrid(compact: Bool) -> some View {
         MusicGrid(selectedID: pickedVibe ? recipe.styleID : nil, compact: compact) { style in
             let wasGuitars = recipe.style == .guitars
             recipe.styleID = style.id

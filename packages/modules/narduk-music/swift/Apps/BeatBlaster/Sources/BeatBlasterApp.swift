@@ -25,7 +25,7 @@ struct BeatBlasterApp: App {
 }
 
 enum Screen: String {
-    case home, maker, player, lab, lights, mic, dream, recordings
+    case home, maker, player, lab, lights, mic, recordings
 }
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
@@ -48,7 +48,6 @@ struct RootView: View {
                 case .lab: BeatLabView(audio: audio, lab: lab, home: goHome)
                 case .lights: LightShowView(audio: audio, home: goHome)
                 case .mic: MicView(audio: audio, home: goHome)
-                case .dream: DreamView(audio: audio, home: goHome, play: play)
                 case .recordings: RecordingsView(audio: audio, home: goHome)
                 }
             }
