@@ -25,12 +25,11 @@ struct BeatBlasterApp: App {
 }
 
 enum Screen: String {
-    case home, maker, player, lab, lights, mic, dream
+    case home, maker, player, lab, lights, mic, dream, recordings
 }
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
-/// `-screen home|maker|player|lab|lights|mic|dream`, `-makerStep 1...5`, `-song <style id>`, `-lights <light id>`,
-/// `-orientation landscape|portrait`, `-firstRun YES` (clears the one-time hints).
+/// `-orientation landscape|portrait`, `-silent YES` (speakers muted; meters, visuals and recording stay live), `-firstRun YES` (clears the one-time hints).
 struct RootView: View {
     let audio: BlasterAudio
     let mySongs: MySongs
@@ -50,6 +49,7 @@ struct RootView: View {
                 case .lights: LightShowView(audio: audio, home: goHome)
                 case .mic: MicView(audio: audio, home: goHome)
                 case .dream: DreamView(audio: audio, home: goHome, play: play)
+                case .recordings: RecordingsView(audio: audio, home: goHome)
                 }
             }
             .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
@@ -131,7 +131,7 @@ struct Pill: View {
 
     var body: some View {
         HStack(spacing: size * 0.35) {
-            Text(icon).font(.system(size: size * 1.15))
+            Glyph(icon, size: size * 1.15)
             Text(word)
                 .font(.system(size: size, weight: .black, design: .rounded))
                 .lineLimit(1)
@@ -213,6 +213,7 @@ struct HintBubble: View {
             }
         }
         .allowsHitTesting(false)
+        .onAppear { if visible { Hints.noteShown(id) } }
         .onReceive(NotificationCenter.default.publisher(for: Hints.used)) { note in
             if note.object as? String == id { withAnimation { visible = false } }
         }
