@@ -83,5 +83,11 @@ extension GalleryTile {
                     kind: .starfield, title: "Starfield", model: context.model, framesPerSecond: context.framesPerSecond
                 ))
         },
+        GalleryTile(id: "Solar flare") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .solarFlare, title: "Solar flare", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }
