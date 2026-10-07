@@ -37,6 +37,7 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let wobbleMeterMetal: any MTLRenderPipelineState
         private let scopeMetal: any MTLRenderPipelineState
         private let haloMetal: any MTLRenderPipelineState
         private let vortexMetal: any MTLRenderPipelineState
@@ -56,6 +57,7 @@
                 VortexMetalShader.source,
                 HaloMetalShader.source,
                 ScopeMetalShader.source,
+                WobbleMeterMetalShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -73,6 +75,7 @@
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
                 let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let wobbleMeterMetal = pipeline("wobbleMeterMetalFragment"),
                 let scopeMetal = pipeline("scopeMetalFragment"),
                 let haloMetal = pipeline("haloMetalFragment"),
                 let vortexMetal = pipeline("vortexMetalFragment"),
@@ -87,6 +90,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.wobbleMeterMetal = wobbleMeterMetal
             self.scopeMetal = scopeMetal
             self.haloMetal = haloMetal
             self.vortexMetal = vortexMetal
@@ -132,6 +136,10 @@
                 draw(
                     scopeMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
                     needs: [.scalars, .history])
+            case .wobbleMeterMetal:
+                draw(
+                    wobbleMeterMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
+                    needs: [.scalars])
             case .fluidGlitch:
                 guard let surface else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black

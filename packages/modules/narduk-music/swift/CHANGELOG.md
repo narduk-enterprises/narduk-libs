@@ -6,6 +6,10 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.wobbleMeterMetal` ("Wobble meter (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of
+  the Canvas wobble meter: a glossy dial with a chrome bezel, a neon cutoff arc and a needle with a fading tail that
+  turns once per wobble cycle, beside segmented LED peak and RMS meters over a dim spectrum. Bass swells the dial's
+  glow and hub, highs spark on the ticks, a kick flares the needle.
 - `IntenseKind.scopeMetal` ("Scope (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
   scope: the waveform as a phosphor beam on curved CRT glass, triggered on a rising zero crossing, with five receding
   history traces, a lit graticule and a snare sync bar. Bass swells the bloom, highs sparkle on the beam, a kick

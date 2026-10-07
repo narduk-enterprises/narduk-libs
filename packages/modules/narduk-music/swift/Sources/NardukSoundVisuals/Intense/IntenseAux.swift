@@ -217,6 +217,7 @@
             case .vortexMetal: [.scalars]
             case .haloMetal: [.scalars]
             case .scopeMetal: [.scalars, .history]
+            case .wobbleMeterMetal: [.scalars]
             default: []
             }
         }
