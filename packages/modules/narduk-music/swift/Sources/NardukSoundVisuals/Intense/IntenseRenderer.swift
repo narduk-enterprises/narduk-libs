@@ -78,6 +78,8 @@
         private let prelude: String
         private let screenPass = MTLRenderPassDescriptor()
         private let fluidPass = MTLRenderPassDescriptor()
+        /// What the Canvas ports read beyond the spectrum and waveform; filled in place each frame.
+        private var aux = IntenseAux()
 
         init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice()) {
             let options = MTLCompileOptions()
@@ -85,7 +87,12 @@
             let shared = [IntenseShaderCommon.source, IntenseEffects.source].joined(separator: "\n")
             let source = [
                 shared, HyperspaceShader.source, FluidGlitchShader.source, FractalDiveShader.source,
-                SynthwaveShader.source, LiquidSplashShader.source, SunShader.source, Self.dimSource,
+                SynthwaveShader.source, LiquidSplashShader.source, SunShader.source, SpectrumMetalShader.source,
+                VortexMetalShader.source, HaloMetalShader.source, ScopeMetalShader.source,
+                WobbleMeterMetalShader.source,
+                PadsMetalShader.source, MirrorMetalShader.source, PhosphorMetalShader.source,
+                PianoRollMetalShader.source, PitchWheelMetalShader.source, AudioTerrainMetalShader.source,
+                Self.dimSource,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options)
@@ -177,6 +184,8 @@
         ) {
             uniforms.fill(size: CGSize(width: target.width, height: target.height), state: state, drive: drive)
             guard let main = pipeline(for: kind) else { return }
+            let needs = kind.auxNeeds
+            if !needs.isEmpty { aux.fill(from: state, needs: needs) }
             if let feedback = kind.feedbackFragment {
                 guard let surface, let fluid = pipelines[feedback] else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black
@@ -191,7 +200,9 @@
                 draw(main, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: surface.write)
                 surface.swap()
             } else {
-                draw(main, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil, motion: motion)
+                draw(
+                    main, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil, motion: motion,
+                    needs: needs)
             }
         }
 
@@ -229,7 +240,7 @@
         private func draw(
             _ pipeline: any MTLRenderPipelineState, to target: any MTLTexture, buffer: any MTLCommandBuffer,
             state: SoundVisualState, uniforms: inout IntenseUniforms, input: (any MTLTexture)?,
-            motion: IntenseMotion? = nil
+            motion: IntenseMotion? = nil, needs: IntenseAux.Needs = []
         ) {
             let pass = screenPass
             pass.colorAttachments[0].texture = target
@@ -252,6 +263,7 @@
                     if let base = bytes.baseAddress { encoder.setFragmentBytes(base, length: bytes.count, index: 3) }
                 }
             }
+            if !needs.isEmpty { aux.bind(needs, to: encoder) }
             if let input { encoder.setFragmentTexture(input, index: 0) }
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()

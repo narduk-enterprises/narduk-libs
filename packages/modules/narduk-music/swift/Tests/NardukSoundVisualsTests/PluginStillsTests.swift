@@ -51,6 +51,22 @@
                     }
                     try ppm.write(to: URL(fileURLWithPath: "\(directory)/\(kind.id)-\(shot).ppm"))
                 }
+                // The same picture under two palette looks: every visualizer must follow the palette.
+                for preset in [SoundPalettePreset.toxic, .candy, .ice] {
+                    state.look = SoundPaletteLook(preset: preset)
+                    let pixels = try #require(
+                        renderer.renderOffscreen(
+                            kind, state: state, width: width, height: height, frames: 60, limiter: &limiter,
+                            advance: step))
+                    var ppm = Data("P6\n\(width) \(height)\n255\n".utf8)
+                    var index = 0
+                    while index < pixels.count {
+                        ppm.append(contentsOf: [pixels[index + 2], pixels[index + 1], pixels[index]])
+                        index += 4
+                    }
+                    try ppm.write(to: URL(fileURLWithPath: "\(directory)/\(kind.id)-\(preset.rawValue).ppm"))
+                }
+                state.look = .neutral
             }
         }
     }
