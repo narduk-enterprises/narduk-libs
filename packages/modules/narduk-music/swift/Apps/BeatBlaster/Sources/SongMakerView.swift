@@ -17,7 +17,7 @@ struct SongMakerView: View {
         "Tap a card to hear a taste, then press Play it now!",
         "Tap one to hear it.",
         "Tap to turn players on or off. Lit up = playing.",
-        "Tap a sound to hear it. 🎲 mixes them all up!",
+        "Tap a sound to hear it, or mix them all up!",
         "Pick the lights for your song, and give it a name.",
     ]
 
@@ -106,7 +106,7 @@ struct SongMakerView: View {
                     Spacer(minLength: 8)
                     StepDots(step: step, titles: titles, compact: true)
                 }
-                Text("🎵 Make a Song")
+                Text("Make a Song")
                     .blasterFont(size: 22, weight: .black)
                     .foregroundStyle(.white)
             }
@@ -114,7 +114,7 @@ struct SongMakerView: View {
             HStack(spacing: 14) {
                 HomeButton(action: home).probe("maker.home")
                 Spacer()
-                Text("🎵 Make a Song")
+                Text("Make a Song")
                     .blasterFont(size: 30, weight: .black)
                     .foregroundStyle(.white)
                 Spacer()
@@ -245,7 +245,7 @@ struct SongMakerView: View {
     private func lightsStep(compact: Bool) -> some View {
         VStack(spacing: 18) {
             HStack(spacing: 10) {
-                Text("✏️ Song name:")
+                Text("Song name:")
                     .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(.white)
                 TextField("Name your song", text: $recipe.name)
@@ -295,7 +295,7 @@ struct SongMakerView: View {
             }
             Spacer()
             if step == 1, !pickedVibe {
-                Text("👆 Pick a vibe first!")
+                Text("Pick a vibe first!")
                     .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(Neon.yellow)
             } else if step < titles.count {

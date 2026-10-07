@@ -147,7 +147,7 @@ struct LightShowView: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 HomeButton(action: home)
-                Text("💡 Light Show")
+                Text("Light Show")
                     .blasterFont(size: compact ? 22 : 36, weight: .black)
                     .foregroundStyle(.white)
                 Spacer(minLength: 0)
@@ -204,7 +204,7 @@ struct MicView: View {
                     VStack(spacing: 14) {
                         HStack {
                             HomeButton(action: home)
-                            Text("🎤 Mic Mode")
+                            Text("Mic Mode")
                                 .blasterFont(size: compact ? 22 : 36, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer()
@@ -256,7 +256,7 @@ struct MicPrompt: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let level = audio.level
-            Text(level > 0.55 ? "WHOA! LOUD! 🔥" : "🎤 Clap, sing, yell!")
+            Text(level > 0.55 ? "WHOA! LOUD!" : "Clap, sing, yell!")
                 .blasterFont(size: 34, weight: .black)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 28)

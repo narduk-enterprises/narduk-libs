@@ -22,7 +22,7 @@ struct BeatLabView: View {
                     VStack(spacing: compact ? 10 : 16) {
                         HStack(spacing: 12) {
                             HomeButton(action: home)
-                            Text("🥁 Beat Lab")
+                            Text("Beat Lab")
                                 .blasterFont(size: compact ? 26 : 44, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer(minLength: 0)
@@ -77,7 +77,7 @@ struct BeatLabView: View {
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Key down")
-            Text("🎼 Key: \(MusicKey.names[lab.key])")
+            Text("Key: \(MusicKey.names[lab.key])")
                 .blasterFont(size: size * 0.85, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -165,7 +165,7 @@ struct BeatGrid: View {
                                 Text(row.word)
                                     .blasterFont(size: compact ? 12 : 20, weight: .black)
                                     .foregroundStyle(.white)
-                                Text("🔄 \(lab.soundName(row))")
+                                Text(lab.soundName(row))
                                     .blasterFont(size: compact ? 9 : 14, weight: .heavy)
                                     .foregroundStyle(Neon.cyan)
                             }

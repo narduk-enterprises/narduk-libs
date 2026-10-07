@@ -361,16 +361,22 @@ struct EnergySlider: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 4) {
             // The hint lives in the label (it used to float over the page tabs) and goes away for good on first use.
-            Text("⚡️ Energy: \(label)" + (showHint ? "  👈 slide me!" : ""))
-                .blasterFont(size: compact ? 15 : 20, weight: .black)
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            HStack(spacing: 8) {
-                Text("😌 Chill")
-                    .blasterFont(size: compact ? 13 : 17, weight: .black)
+            HStack(spacing: 6) {
+                Glyph("icon-energy", size: compact ? 15 : 20)
+                Text("Energy: \(label)" + (showHint ? " · slide me!" : ""))
+                    .blasterFont(size: compact ? 15 : 20, weight: .black)
                     .foregroundStyle(.white)
-                    .fixedSize()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Glyph("icon-chill", size: compact ? 14 : 18)
+                    Text("Chill")
+                        .blasterFont(size: compact ? 13 : 17, weight: .black)
+                        .foregroundStyle(.white)
+                }
+                .fixedSize()
                 GeometryReader { geometry in
                     let width = geometry.size.width
                     let thumb: CGFloat = compact ? 44 : 52
@@ -394,8 +400,10 @@ struct EnergySlider: View {
                             .fill(.white)
                             .frame(width: thumb, height: thumb)
                             .overlay(
-                                Text(audio.energy > 0.66 ? "🔥" : (audio.energy > 0.33 ? "😎" : "😌")).font(
-                                    .system(size: thumb * 0.55))
+                                Glyph(
+                                    audio.energy > 0.66
+                                        ? "icon-hype" : (audio.energy > 0.33 ? "icon-energy" : "icon-chill"),
+                                    size: thumb * 0.5)
                             )
                             .shadow(color: Neon.pink, radius: 8)
                             .offset(x: x)
@@ -409,10 +417,13 @@ struct EnergySlider: View {
                     )
                 }
                 .frame(height: compact ? 44 : 52)
-                Text("HYPE 🔥")
-                    .blasterFont(size: compact ? 13 : 17, weight: .black)
-                    .foregroundStyle(.white)
-                    .fixedSize()
+                HStack(spacing: 4) {
+                    Text("HYPE")
+                        .blasterFont(size: compact ? 13 : 17, weight: .black)
+                        .foregroundStyle(.white)
+                    Glyph("icon-hype", size: compact ? 14 : 18)
+                }
+                .fixedSize()
             }
         }
         .frame(maxWidth: compact ? .infinity : 560)
