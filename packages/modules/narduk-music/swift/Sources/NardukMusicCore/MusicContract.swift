@@ -30,6 +30,79 @@ public enum Instrument: String, Sendable, Hashable, Codable, CaseIterable {
     /// guitar's low range), `voice` picks the chord (`voice % 6`: major, minor, dominant 7, minor 7, power, sus2), and
     /// `formant` of 0.5 or more strums up instead of down. `strum` is acoustic; `electricStrum` takes `drive`.
     case strum, electricStrum
+    /// A wordless female-range voice (narduk-libs#1641), formant-synthesised. `pitch` is the note and `formant` its
+    /// register (0 alto ... 1 soprano, 0.5 absent). `voice` packs the vowel and style (see `VocalVowel`, `VocalStyle`):
+    /// `voice & 7` is the vowel (ah, oh, oo, eh, ee, mm) and `(voice >> 3) & 3` the style (0 choir pad of three voices,
+    /// 1 solo lead, 2 solo pad). `drive` is breathiness, 0 ... 1.
+    case vocal
+    /// A short vocal one-shot, the "chop" of a vocal sample: a soft consonant onset into a vowel, gated by
+    /// `lengthSteps`. `pitch`, `voice` (vowel in `voice & 7`), `formant` and `drive` as for `vocal`.
+    case vocalChop
+}
+
+/// The vowels a `vocal` or `vocalChop` note sings (`NoteParams.voice & 7`; larger values fold back).
+public enum VocalVowel: String, Sendable, Hashable, Codable, CaseIterable {
+    case ah, oh, oo, eh, ee, mm
+
+    /// The value `NoteParams.voice & 7` carries.
+    public var index: Int { VocalVowel.allCases.firstIndex(of: self) ?? 0 }
+}
+
+/// How a `vocal` note is sung (`(NoteParams.voice >> 3) & 3`).
+public enum VocalStyle: String, Sendable, Hashable, Codable, CaseIterable {
+    /// Three detuned voices spread across the stereo field, slow attack and release: the "aah" pad.
+    case choir
+    /// One voice, a quicker attack and a scoop up to the pitch.
+    case lead
+    /// One voice with the pad's slow attack and release.
+    case solo
+
+    /// The value `(NoteParams.voice >> 3) & 3` carries.
+    public var index: Int { VocalStyle.allCases.firstIndex(of: self) ?? 0 }
+
+    /// The style a `voice` field asks for (an unknown value is a choir).
+    public init(voice: Int) {
+        let i = (voice >> 3) & 3
+        self = i < VocalStyle.allCases.count ? VocalStyle.allCases[i] : .choir
+    }
+}
+
+/// A voice character: presets of the same formant synthesiser that differ in formants, breath, vibrato, attack, voice
+/// count and room (`(NoteParams.voice >> 5) & 15`; 0, `classic`, is the original voice).
+public enum VocalFeel: String, Sendable, Hashable, Codable, CaseIterable {
+    /// The original voice: a warm, even choir.
+    case classic
+    /// A breathy whisper pad: high breath, almost no vibrato, a soft slow attack.
+    case airy
+    /// A bright pop lead: soprano, forward upper formants, a fast scoop and a tight quick vibrato.
+    case pop
+    /// A dark, low hum: rounded and low-passed.
+    case dark
+    /// A gospel or soul belt: a wide slow vibrato, grit, and big slides up to the note.
+    case soul
+    /// An ethereal choir: five detuned voices, a long room, the vowel drifting from one to the next.
+    case ethereal
+    /// A playful "la la": higher formants, quick, bright and short.
+    case toy
+    /// A powerful, slightly coarse chest-mix belt: a strong first formant, a forward singer's formant, a little grit.
+    case power
+    /// A riff voice for fast melismatic runs (`VocalRun`): clean, quick, a tight vibrato for the held end of a run.
+    case runs
+
+    public var index: Int { VocalFeel.allCases.firstIndex(of: self) ?? 0 }
+
+    /// The feel a `voice` field asks for (an unknown value is `classic`).
+    public init(voice: Int) {
+        let i = (voice >> 5) & 15
+        self = i < VocalFeel.allCases.count ? VocalFeel.allCases[i] : .classic
+    }
+}
+
+extension NoteParams {
+    /// The `voice` value that sings `vowel` in `style` and `feel`.
+    public static func vocalVoice(_ vowel: VocalVowel, style: VocalStyle = .choir, feel: VocalFeel = .classic) -> Int {
+        vowel.index | style.index << 3 | feel.index << 5
+    }
 }
 
 /// Musical LFO rate for the wobble, as a note division.

@@ -26,6 +26,7 @@ struct SynthState {
     static let fxCount = 16
     static let stringCount = 24  // guitar strings; a strum takes six
     static let padCount = 8
+    static let vocalCount = 16  // singers; a choir note takes up to five
     static let pendingCapacity = 2_048
     static let historySize = 1 << 18  // master history for stutter / tape stop (~5.4 s at 48 kHz)
     static let analysisSize = 1 << 13  // mono analysis ring
@@ -53,6 +54,12 @@ struct SynthState {
     let strings: UnsafeMutablePointer<StringVoice>
     var nextString = 0
     var stringsLive = 0
+    // Wordless vocals (#1641): pooled singers into a small room of their own. Untouched until a vocal note arrives, and
+    // `vocalTail` counts the samples the room keeps running afterwards, so a song without vocals renders bit for bit.
+    let vocals: UnsafeMutablePointer<VocalVoice>
+    var vocalsLive = 0
+    var vocalTail = 0
+    var vocalRoom: RoomReverb
     var wobble = WobbleVoice()
     var sub = SubVoice()
     var reverb: RoomReverb
@@ -122,6 +129,12 @@ struct SynthState {
         for i in 0..<SynthState.stringCount {
             (strings + i).initialize(to: StringVoice(seed: 0x9E37_79B9 &+ UInt32(i) &* 40_503))
         }
+        vocals = .allocate(capacity: SynthState.vocalCount)
+        for i in 0..<SynthState.vocalCount {
+            (vocals + i).initialize(to: VocalVoice(seed: 0x7F4A_7C15 &+ UInt32(i) &* 2_654_435))
+        }
+        vocalRoom = RoomReverb(sampleRate: sampleRate, size: 0.8)
+        vocalRoom.feedback = 0.84
         pads = .allocate(capacity: SynthState.padCount)
         pads.initialize(repeating: PadVoice(), count: SynthState.padCount)
         hall = HallReverb(sampleRate: sampleRate)
@@ -145,6 +158,8 @@ struct SynthState {
         reverb.deallocate()
         for i in 0..<SynthState.stringCount { strings[i].deallocate() }
         strings.deallocate()
+        vocals.deallocate()
+        vocalRoom.deallocate()
         pads.deallocate()
         hall.deallocate()
         echo.deallocate()
@@ -288,6 +303,7 @@ struct SynthState {
             if let kind = AmbientKind(voice: Int(e.voice)) { startPad(kind, e) } else { startFX(.keys, e) }
         case 14, 15, 16:  // acoustic, electric, bass guitar (a strum's strings arrive as the first two)
             startString(StringKind(rawValue: e.instrument - 14) ?? .acoustic, e)
+        case 19, 20: startVocal(e)
         default: return  // 17, 18 (strums) were expanded into strings when queued
         }
         if e.flags & SynthEvent.StrumFlags.string == 0 {
@@ -319,6 +335,50 @@ struct SynthState {
         strings[slot].trigger(
             kind, pitch: e.pitch, velocity: e.velocity, gateSamples: gateSamples(e), pan: e.pan, drive: e.drive, c)
         stringsLive += 1
+    }
+
+    mutating func startVocal(_ e: SynthEvent) {
+        let chop = e.instrument == Instrument.vocalChop.synthCode
+        let packed = e.voice < 0 ? 0 : Int(e.voice)
+        let vowel = packed & 7
+        let style: VocalStyle = chop ? .lead : VocalStyle(voice: packed)
+        let feel = VocalFeel(voice: packed)
+        let patch = VocalPatch.patch(chop: chop, style: style, feel: feel)
+        let register = e.formant < 0 ? 0.5 : e.formant
+        let breath = e.drive < 0 ? patch.breathDefault : e.drive
+        let gate = gateSamples(e)
+        let singers = !chop && style == .choir ? patch.singers : 1
+        if !chop && style == .lead {
+            // A lead is one voice: the last one gives way.
+            for i in 0..<SynthState.vocalCount where vocals[i].active && vocals[i].isLead { vocals[i].steal() }
+        }
+        for n in 0..<singers {
+            var slot = -1
+            var oldest = 0
+            var oldestAge = -1
+            for i in 0..<SynthState.vocalCount {
+                if !vocals[i].active {
+                    slot = i
+                    break
+                }
+                if vocals[i].age > oldestAge {
+                    oldestAge = vocals[i].age
+                    oldest = i
+                }
+            }
+            if slot < 0 { slot = oldest }
+            let spread = Float(n) - Float(singers - 1) / 2  // -1, 0, 1 for three; 0 for a solo
+            vocals[slot].trigger(
+                pitch: e.pitch < 0 ? 69 : e.pitch, velocity: e.velocity, gateSamples: gate, vowel: vowel,
+                register: register, breath: breath, style: style, feel: feel, chop: chop,
+                pan: singers == 1 ? e.pan : min(max(e.pan + spread * patch.spreadPan, -1), 1),
+                detuneCents: singers == 1 ? 0 : spread * patch.spreadCents,
+                phaseOffset: singers == 1 ? 0 : Float(n) / Float(singers),
+                level: singers == 1 ? 0.8 : 0.55 * (3 / Float(singers)).squareRoot(), c)
+        }
+        vocalsLive += singers
+        let tail = gate + Int(c.sampleRate * (feel == .ethereal ? 5 : 3))
+        vocalTail = max(vocalTail, tail)
     }
 
     mutating func startPad(_ kind: AmbientKind, _ e: SynthEvent) {
@@ -454,6 +514,27 @@ struct SynthState {
                 bassR += bassGuitarR * bassDuck
                 fxL += guitarL
                 fxR += guitarR
+            }
+            // Vocals feed the fx bus dry, and a room of their own until its tail has died away.
+            if vocalsLive > 0 || vocalTail > 0 {
+                var vocalL: Float = 0
+                var vocalR: Float = 0
+                var live = 0
+                var extraSend: Float = 0
+                if vocalsLive > 0 {
+                    for i in 0..<SynthState.vocalCount where vocals[i].active {
+                        let v = vocals[i].next(c)
+                        vocalL += v.0
+                        vocalR += v.1
+                        if vocals[i].send != 1 { extraSend += (v.0 + v.1) * 0.5 * (vocals[i].send - 1) }
+                        if vocals[i].active { live += 1 }
+                    }
+                    vocalsLive = live
+                }
+                if vocalTail > 0 { vocalTail -= 1 }
+                let wet = vocalRoom.process((vocalL + vocalR) * 0.5 + extraSend)
+                fxL += vocalL + wet.0 * 2.4
+                fxR += vocalR + wet.1 * 2.4
             }
             let fxDuck = 1 - 0.5 * sidechain
             fxL *= fxDuck

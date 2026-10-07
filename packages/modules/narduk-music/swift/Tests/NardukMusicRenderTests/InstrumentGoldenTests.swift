@@ -4,9 +4,9 @@ import NardukMusicDSP
 import NardukMusicRender
 import Testing
 
-/// Golden renders for the guitars (narduk-libs#1574): each scenario in `scenarios/instruments` names one instrument
+/// Golden renders for the guitars (narduk-libs#1574) and vocals (#1641): each scenario in `scenarios/instruments` names one instrument
 /// (the strums two chords' worth) and renders to exactly the same samples every time. As with `GoldenRenderTests`,
-/// libm may differ in the last bit between platforms, so each platform has its own fingerprint. When a guitar changes on
+/// libm may differ in the last bit between platforms, so each platform has its own fingerprint. When an instrument changes on
 /// purpose, listen to `narduk-music render --scenario scenarios/instruments/<name>.json --out /tmp/x.wav`, read the
 /// new fingerprint from the failure, and update it here.
 @Suite struct InstrumentGoldenTests {
@@ -33,6 +33,15 @@ import Testing
         Case(
             name: "electric-strum", instrument: .electricStrum,
             goldens: ["darwin-arm64": 0x888e_213a_1a5a_958b, "linux-x86_64": 0x888e_213a_1a5a_958b]),
+        Case(
+            name: "vocal-choir", instrument: .vocal,
+            goldens: ["darwin-arm64": 0x2c04_a79a_3663_38c5, "linux-x86_64": 0xc6ef_7c6c_cffc_5c34]),
+        Case(
+            name: "vocal-lead", instrument: .vocal,
+            goldens: ["darwin-arm64": 0x59f4_d20e_888c_af78, "linux-x86_64": 0x2d53_d64b_322f_210f]),
+        Case(
+            name: "vocal-chops", instrument: .vocalChop,
+            goldens: ["darwin-arm64": 0xade7_6014_f871_f2ff, "linux-x86_64": 0xceb6_fc94_8587_04e9]),
     ]
 
     static func scenario(_ name: String, folder: String = "instruments/") throws -> MusicScenario {

@@ -108,7 +108,7 @@
         /// The guitars: strings from a pooled voice, a strum expanded into six, voice stealing past 24 strings, and
         /// a tempo change, none of it allocating.
         @Test(.enabled(if: optimized, "allocation counts need an optimized build: swift test -c release"))
-        func playingTheGuitarsNeverAllocates() throws {
+        func playingTheGuitarsAndVocalsNeverAllocates() throws {
             let core = DropSynthCore(sampleRate: 48_000, bpm: 120)
             let frames = 512
             let left = UnsafeMutablePointer<Float>.allocate(capacity: frames)
@@ -117,7 +117,9 @@
                 left.deallocate()
                 right.deallocate()
             }
-            let guitars: [Instrument] = [.acousticGuitar, .electricGuitar, .bassGuitar, .strum, .electricStrum]
+            let guitars: [Instrument] = [
+                .acousticGuitar, .electricGuitar, .bassGuitar, .strum, .electricStrum, .vocal, .vocalChop,
+            ]
             for step in 0..<128 {
                 for (index, instrument) in guitars.enumerated() where (step + index) % 2 == 0 {
                     core.schedule(

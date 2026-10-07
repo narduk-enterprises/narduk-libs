@@ -59,6 +59,18 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
   and speeds the scroll.
+- Wordless female-range vocals (narduk-libs#1641): `Instrument.vocal` (a choir pad of three detuned voices, a solo lead
+  or a solo pad) and `Instrument.vocalChop` (a short one-shot that opens from an "oo"), formant-synthesised: a band-limited
+  saw through three formant filters (alto and soprano tables), breath noise, a vibrato that starts late and a scoop up
+  to the pitch, with a small room of their own. `NoteParams.voice` packs the vowel (`VocalVowel`: ah, oh, oo, eh, ee,
+  mm) and style (`VocalStyle`) via `NoteParams.vocalVoice(_:style:)`; `formant` is the register (0 alto ... 1 soprano)
+  and `drive` the breathiness. Scenario notes take `vowel`, `style` and `register`. Nothing is added to an arrangement
+  and a song without vocals renders bit for bit as before.
+  Seven voice feels (`VocalFeel`: classic, airy, pop, dark, soul, ethereal, toy; `NoteParams.vocalVoice(_:style:feel:)`,
+  scenario note field `feel`) vary the formants, breath, vibrato, attack, voice count and room of the same synth; classic
+  is the default and renders exactly as before. `power` is a chest-mix belt with a little grit; `runs` is tuned for
+  `VocalRun`, an ornament any held vocal note can take (scenario note field `run`): it holds, then sings a pentatonic,
+  minor or blues run up, down or in waves over an octave or more in sixteenths or thirty-seconds.
 
 ## 0.4.1
 
