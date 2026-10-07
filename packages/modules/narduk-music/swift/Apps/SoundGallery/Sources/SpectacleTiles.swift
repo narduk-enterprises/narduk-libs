@@ -41,7 +41,7 @@ struct ShaderPackTile: View {
     @State private var state = SoundVisualState()
 
     var body: some View {
-        model.sync(state)
+        let _ = model.sync(state)
         if ShaderPackView.isSupported {
             ShaderPackView(kind, state: state) { model.latestInput }
                 .environment(\.soundFramesPerSecond, framesPerSecond)

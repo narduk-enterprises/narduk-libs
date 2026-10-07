@@ -12,7 +12,7 @@ struct TunnelTile: View {
     @State private var state = SoundVisualState()
 
     var body: some View {
-        model.sync(state)
+        let _ = model.sync(state)
         if WobbleTunnelView.isSupported {
             WobbleTunnelView(state: state) { model.latestInput }
                 .environment(\.soundFramesPerSecond, framesPerSecond)
