@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import NardukMusicCore
 import NardukMusicEngine
 import NardukSoundAnalysis
 import NardukSoundVisuals
@@ -35,12 +36,19 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     /// The frame the last `poll` returned, for a view that draws on its own clock (the Metal tunnel).
     var latestFrame: SoundFrame { latest }
 
+    /// The engine's `MusicContext` while the demo song plays (hit counters, section, beat clock); nil for a
+    /// microphone or file, which have no conductor. The visualizers treat nil as "not music".
+    var latestMusic: MusicContext? { isRunning && input == .demo ? drop.latestMusic : nil }
+
+    /// The frame and, for the demo song, its music: what every visualizer polls.
+    var latestInput: SoundVisualInput { SoundVisualInput(frame: latest, music: latestMusic) }
+
     /// The state every `NardukSoundVisuals` card draws from. One state for the whole gallery: `update` is idempotent per
     /// display frame, and each card polling for itself would smooth the analyzer's output once per card.
     @ObservationIgnored let visualState = SoundVisualState()
 
-    /// The latest frame at `date`; silence while nothing plays. Also advances `visualState` (no `MusicContext`: the
-    /// gallery drives the visualizers from any source's frames alone, as the contract allows).
+    /// The latest frame at `date`; silence while nothing plays. Also advances `visualState` (with the demo song's
+    /// `MusicContext`; other sources drive the visualizers from their frames alone, as the contract allows).
     func poll(at date: Date) -> SoundFrame {
         let now = date.timeIntervalSinceReferenceDate
         if let source {
@@ -48,7 +56,7 @@ enum GalleryInput: String, CaseIterable, Identifiable {
         } else {
             latest = SoundFrame()
         }
-        visualState.update(SoundVisualInput(frame: latest), now: now)
+        visualState.update(latestInput, now: now)
         return latest
     }
 
@@ -91,11 +99,10 @@ enum GalleryInput: String, CaseIterable, Identifiable {
     // MARK: Sources
 
     private func startDemo() throws {
-        switch song.style {
-        case .demo, .ambient:
+        if song.style.playsClassicLoop {
             try drop.playDemo()
             status = "Playing the NardukMusic demo song."
-        case .genre, .guitars:
+        } else {
             drop.settings = song.settings
             let player = SongPlayer(song: song, engine: drop)
             drop.noteProvider = { [player] throughStep in player.notes(through: throughStep) }
@@ -103,6 +110,14 @@ enum GalleryInput: String, CaseIterable, Identifiable {
             status = "Playing \(song.style.title.lowercased()), seed \(song.seed % 10_000)."
         }
         source = drop.makeSoundSource()
+    }
+
+    /// Plays a song a prompt wrote, replacing whatever plays now.
+    func play(recipe: SongRecipe) {
+        stop()
+        input = .demo
+        song = GallerySong(style: .recipe(recipe))
+        Task { await start() }
     }
 
     /// A new seed for the current style; takes effect on the next play.
