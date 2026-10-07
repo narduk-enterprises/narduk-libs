@@ -16,13 +16,13 @@ and the Beat Blaster kids app. Everything is additive; the two enum cases below 
   tempo from the genre's range (`Genre.tempoRange`). `narduk-music render` takes `--variety` and `--varied`; scenarios
   take `variety` and `varied` (absent: 0, so existing scenarios render as before). Songs with `variety` 0 are bit for
   bit the ones before.
-  Not yet done (narduk-libs#1617 stays open): half and double-time and alternative snare placement, instrument-entrance
+  Not yet done (narduk-libs#1617): half and double-time and alternative snare placement, instrument-entrance
   and breakdown-style variation, and a harmonic-rhythm and hook alignment check.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery
   shows both as tiles.
-  Choosing them inside Data Beats is still open (narduk-libs#1573).
+  Choosing them inside Data Beats is still open.
 - `SoundFrame.chroma` (12 pitch classes, 0 ... 1), computed by `SpectrumAnalyzer` and `SoundAnalyzer` from the
   spectrum's peaks, placed by their true frequency. It gives raw audio (a file, a microphone) the pitch-class view.
 - `MusicContext.heldNotes`, `noteCounts`, `keyPitchClass` and `keyIsMinor`, with `NoteSet`, `NoteCounters` and
