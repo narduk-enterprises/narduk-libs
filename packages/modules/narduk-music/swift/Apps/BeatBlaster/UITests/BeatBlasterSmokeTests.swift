@@ -86,12 +86,10 @@ import XCTest
         require("home.makeSong")
         makeASong()
 
-        require("player.tray").tap()
-        // The tray container's `player.tray` id overrides the handle and tab ids, so "open" is read from its label.
-        let open = app.buttons.matching(
-            NSPredicate(format: "identifier == %@ AND label CONTAINS[c] %@", "player.tray", "Close")
-        ).firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "the controls tray did not open")
+        require("player.tray.handle").tap()
+        let tab = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "player.tray.tab.")).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "the controls tray did not open (no player.tray.tab.*)")
 
         let drop = require("player.drop")
         drop.press(forDuration: 0.6)
