@@ -37,7 +37,12 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var source: (any SoundFrameSource)?
     @ObservationIgnored private var latest = SoundFrame()
     @ObservationIgnored private var lastPoll = 0.0
-    @ObservationIgnored private let drop = DropEngine()
+    /// `-silent YES` mutes the speakers only; meters, visuals and recording still see the full signal (the UI tests).
+    @ObservationIgnored private let drop: DropEngine = {
+        let engine = DropEngine()
+        engine.mutesHardwareOutput = UserDefaults.standard.bool(forKey: "silent")
+        return engine
+    }()
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var tap: AudioTapSource?
     @ObservationIgnored private var player: SongPlayer?
@@ -49,6 +54,9 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private weak var lab: BeatLab?
 
     var latestFrame: SoundFrame { latest }
+
+    /// Whether the speaker path is muted (`-silent YES`).
+    var isSilent: Bool { drop.mutesHardwareOutput }
 
     /// What every visualizer draws from: the frame plus, for the engine, its music context (kicks, section).
     var visualInput: SoundVisualInput {

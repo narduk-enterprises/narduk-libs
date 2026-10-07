@@ -30,7 +30,7 @@ enum Screen: String {
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
 /// `-screen home|maker|player|lab|lights|mic|dream`, `-makerStep 1...5`, `-song <style id>`, `-lights <light id>`,
-/// `-orientation landscape|portrait`, `-firstRun YES` (clears the one-time hints).
+/// `-orientation landscape|portrait`, `-silent YES` (speakers muted; meters, visuals and recording stay live), `-firstRun YES` (clears the one-time hints).
 struct RootView: View {
     let audio: BlasterAudio
     let mySongs: MySongs
