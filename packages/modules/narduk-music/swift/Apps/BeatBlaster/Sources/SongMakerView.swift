@@ -14,7 +14,7 @@ struct SongMakerView: View {
 
     private let titles = ["Pick a vibe", "How fast?", "Pick your band", "Pick your sounds", "Pick your lights"]
     private let helps = [
-        "Tap a card to hear a taste. Pick the one you like!",
+        "Tap a card to hear a taste, then press Play it now!",
         "Tap one to hear it.",
         "Tap to turn players on or off. Lit up = playing.",
         "Tap a sound to hear it. 🎲 mixes them all up!",
@@ -275,6 +275,13 @@ struct SongMakerView: View {
 
     // MARK: Navigation
 
+    private func finish() {
+        Haptics.success()
+        naming = false
+        if recipe.name.trimmingCharacters(in: .whitespaces).isEmpty { recipe.name = FunNames.random() }
+        done(recipe)
+    }
+
     private func navigation(compact: Bool) -> some View {
         HStack(spacing: 14) {
             if step > 1 {
@@ -297,15 +304,25 @@ struct SongMakerView: View {
                     if step == titles.count - 1 { audio.play(recipe) }
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { step += 1 }
                 } label: {
-                    Pill(icon: "▶︎", word: "Next", color: Neon.pink.opacity(0.85), size: compact ? 22 : 30)
+                    Pill(
+                        icon: "▶︎", word: "Next",
+                        color: (step == 1 ? Color.white : Neon.pink).opacity(step == 1 ? 0.18 : 0.85),
+                        size: compact ? 22 : 30)
                 }
                 .buttonStyle(Squish())
+                // A vibe is enough for a song: the big GO plays it now, the other steps are there for later.
+                if step == 1 {
+                    Button {
+                        finish()
+                    } label: {
+                        Pill(icon: "▶︎", word: "Play it now!", color: Neon.green.opacity(0.85), size: compact ? 22 : 30)
+                    }
+                    .buttonStyle(Squish())
+                    .probe("maker.playNow")
+                }
             } else {
                 Button {
-                    Haptics.success()
-                    naming = false
-                    if recipe.name.trimmingCharacters(in: .whitespaces).isEmpty { recipe.name = FunNames.random() }
-                    done(recipe)
+                    finish()
                 } label: {
                     Pill(icon: "▶︎", word: "Play my song!", color: Neon.green.opacity(0.85), size: compact ? 24 : 34)
                 }
