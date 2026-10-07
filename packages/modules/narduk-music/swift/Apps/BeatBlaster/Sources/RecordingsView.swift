@@ -69,7 +69,13 @@ struct RecordingsView: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 10) {
+                        // Two columns once there is room for two full rows side by side (an iPad, a Mac window).
+                        LazyVGrid(
+                            columns: Array(
+                                repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
+                                count: geometry.size.width >= 900 ? 2 : 1),
+                            spacing: 10
+                        ) {
                             ForEach(recordings) { recording in
                                 // The row id must not replace the controls' own (#1664).
                                 row(recording, compact: compact)
@@ -77,7 +83,7 @@ struct RecordingsView: View {
                                     .accessibilityIdentifier("mysongs.row")
                             }
                         }
-                        .frame(maxWidth: 800)
+                        .frame(maxWidth: 1200)
                         .frame(maxWidth: .infinity)
                     }
                 }
