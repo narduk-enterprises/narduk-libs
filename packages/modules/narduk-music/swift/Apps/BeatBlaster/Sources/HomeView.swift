@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// The neon home screen: a title that pumps with the music over a dimmed visualizer, and four huge cards.
+/// Home: one giant "Make a Song" button, the other modes as labelled buttons under it, and My Songs.
 struct HomeView: View {
     let audio: BlasterAudio
+    let mySongs: MySongs
     let go: (Screen) -> Void
+    let play: (SongRecipe) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
 
-    private struct Card: Identifiable {
+    private struct Mode: Identifiable {
         let screen: Screen
         let emoji: String
         let title: String
@@ -16,11 +18,11 @@ struct HomeView: View {
         var id: Screen { screen }
     }
 
-    private let cards = [
-        Card(screen: .beat, emoji: "🥁", title: "Make a Beat", subtitle: "Pick a song. Hit DROP!", color: Neon.pink),
-        Card(screen: .lights, emoji: "🌈", title: "Light Show", subtitle: "Swipe the lights", color: Neon.cyan),
-        Card(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
-        Card(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Make up a song", color: Neon.purple),
+    private let modes = [
+        Mode(screen: .lab, emoji: "🥁", title: "Beat Lab", subtitle: "Build a beat yourself", color: Neon.orange),
+        Mode(screen: .lights, emoji: "💡", title: "Light Show", subtitle: "Watch the lights dance", color: Neon.cyan),
+        Mode(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
+        Mode(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Type an idea", color: Neon.purple),
     ]
 
     var body: some View {
@@ -28,77 +30,160 @@ struct HomeView: View {
             let wide = geometry.size.width > geometry.size.height
             let compact = geometry.size.width < 500
             ZStack {
-                LiveVisual(audio: audio, tile: VisualTile.all[1], drawing: scenePhase == .active)
-                    .opacity(0.45)
+                LiveVisual(audio: audio, tile: VisualTile.with(id: "halo"), drawing: scenePhase == .active)
+                    .opacity(0.4)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                 Vignette()
-                VStack(spacing: compact ? 20 : 36) {
-                    Spacer(minLength: 0)
-                    PulsingTitle(audio: audio, size: compact ? 50 : (wide ? 96 : 104))
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: compact ? 14 : 24), count: wide ? 4 : 2),
-                        spacing: compact ? 14 : 24
-                    ) {
-                        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-                            Button {
-                                go(card.screen)
-                            } label: {
-                                cardView(card, compact: compact)
+                ScrollView {
+                    VStack(spacing: compact ? 18 : 30) {
+                        PulsingTitle(audio: audio, size: compact ? 48 : 92)
+                            .padding(.top, compact ? 10 : 30)
+                        startButton(compact: compact)
+                        LazyVGrid(
+                            columns: Array(
+                                repeating: GridItem(.flexible(), spacing: compact ? 12 : 18), count: wide ? 4 : 2),
+                            spacing: compact ? 12 : 18
+                        ) {
+                            ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
+                                Button {
+                                    go(mode.screen)
+                                } label: {
+                                    modeCard(mode, compact: compact)
+                                }
+                                .buttonStyle(Squish())
+                                .scaleEffect(appeared ? 1 : 0.3)
+                                .opacity(appeared ? 1 : 0)
+                                .animation(
+                                    .spring(response: 0.55, dampingFraction: 0.65).delay(0.1 + 0.07 * Double(index)),
+                                    value: appeared)
                             }
-                            .buttonStyle(Squish())
-                            .scaleEffect(appeared ? 1 : 0.3)
-                            .opacity(appeared ? 1 : 0)
-                            .animation(
-                                .spring(response: 0.55, dampingFraction: 0.6).delay(0.08 * Double(index)),
-                                value: appeared)
                         }
+                        if !mySongs.songs.isEmpty { mySongsRow(compact: compact) }
                     }
-                    .frame(maxWidth: wide ? 1100 : 760)
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: 1100)
+                    .frame(maxWidth: .infinity)
+                    .padding(compact ? 16 : 36)
                 }
-                .padding(compact ? 16 : 40)
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .onAppear {
-            audio.playIfIdle()
+            if !audio.isRunning { audio.playIfIdle() }
             appeared = true
         }
     }
 
-    private func cardView(_ card: Card, compact: Bool) -> some View {
-        VStack(spacing: compact ? 6 : 12) {
-            Text(card.emoji).font(.system(size: compact ? 48 : 84))
-            Text(card.title)
-                .font(.system(size: compact ? 20 : 30, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .minimumScaleFactor(0.6)
+    private func startButton(compact: Bool) -> some View {
+        VStack(spacing: 4) {
+            HintBubble(id: "start", text: "👇 Tap here to start!")
+            Button {
+                Hints.use("start")
+                go(.maker)
+            } label: {
+                StartButtonFace(compact: compact)
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Make a Song")
+        }
+    }
+
+    private func modeCard(_ mode: Mode, compact: Bool) -> some View {
+        VStack(spacing: compact ? 4 : 8) {
+            Text(mode.emoji).font(.system(size: compact ? 36 : 54))
+            Text(mode.title)
+                .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
                 .lineLimit(1)
-            Text(card.subtitle)
-                .font(.system(size: compact ? 13 : 17, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
+                .minimumScaleFactor(0.6)
+            Text(mode.subtitle)
+                .font(.system(size: compact ? 12 : 16, weight: .bold, design: .rounded))
+                .opacity(0.85)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }
+        .foregroundStyle(.white)
         .frame(maxWidth: .infinity)
-        .frame(height: compact ? 150 : 240)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [card.color.opacity(0.85), card.color.opacity(0.35)], startPoint: .topLeading,
-                        endPoint: .bottomTrailing))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 3)
-        )
-        .shadow(color: card.color.opacity(0.9), radius: 24)
-        .contentShape(RoundedRectangle(cornerRadius: 32))
+        .frame(height: compact ? 120 : 170)
+        .background(mode.color.opacity(0.45), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 2))
+        .shadow(color: mode.color.opacity(0.6), radius: 12)
+    }
+
+    private func mySongsRow(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("⭐️ My Songs  ·  tap one to play it")
+                .font(.system(size: compact ? 20 : 26, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(mySongs.songs) { song in
+                        Button {
+                            play(song)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(song.style.emoji).font(.system(size: 34))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(song.name)
+                                        .font(.system(size: 18, weight: .black, design: .rounded))
+                                        .lineLimit(1)
+                                    Text("▶︎ Play  ·  \(song.style.funName)")
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .opacity(0.8)
+                                }
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .frame(height: 76)
+                            .background(song.style.color.opacity(0.45), in: RoundedRectangle(cornerRadius: 20))
+                            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.5), lineWidth: 2))
+                        }
+                        .buttonStyle(Squish())
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// "BEAT BLASTER" in a moving rainbow that swells with the music's loudness. It reads the latest frame on its own
-/// clock (the background visual polls), so it never polls the analyzer a second time.
+/// The giant primary button; it breathes so it reads as "press me".
+struct StartButtonFace: View {
+    let compact: Bool
+    @State private var breathe = false
+
+    var body: some View {
+        HStack(spacing: compact ? 12 : 20) {
+            Text("🎵").font(.system(size: compact ? 44 : 76))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Make a Song")
+                    .font(.system(size: compact ? 34 : 60, weight: .black, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text("Pick a vibe, a band and lights")
+                    .font(.system(size: compact ? 14 : 22, weight: .bold, design: .rounded))
+                    .opacity(0.9)
+            }
+            Text("▶︎").font(.system(size: compact ? 34 : 56, weight: .black))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, compact ? 20 : 44)
+        .padding(.vertical, compact ? 18 : 30)
+        .frame(maxWidth: 900)
+        .background(
+            LinearGradient(colors: [Neon.pink, Neon.purple], startPoint: .leading, endPoint: .trailing),
+            in: RoundedRectangle(cornerRadius: 40, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 4))
+        .shadow(color: Neon.pink, radius: breathe ? 34 : 14)
+        .scaleEffect(breathe ? 1.03 : 1)
+        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: breathe)
+        .onAppear { breathe = true }
+    }
+}
+
+/// "BEAT BLASTER" in a moving rainbow that swells with the music. It reads the latest frame on its own clock (the
+/// background light polls), so it never polls the analyzer a second time.
 struct PulsingTitle: View {
     let audio: BlasterAudio
     let size: CGFloat
@@ -106,18 +191,15 @@ struct PulsingTitle: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            let level = audio.level
-            let idle = 0.5 + 0.5 * sin(t * 2.4)
-            let pump = audio.isRunning ? level : idle * 0.3
+            let pump = audio.isRunning ? audio.level : (0.5 + 0.5 * sin(t * 2.4)) * 0.3
             let shift = t.truncatingRemainder(dividingBy: 6) / 6
             VStack(spacing: -size * 0.22) {
                 word("BEAT", shift: shift)
                 word("BLASTER", shift: shift + 0.3)
             }
-            .scaleEffect(1 + 0.12 * pump)
+            .scaleEffect(1 + 0.1 * pump)
             .rotationEffect(.degrees(sin(t * 1.3) * 2))
             .shadow(color: Neon.pink.opacity(0.4 + 0.6 * pump), radius: 10 + 30 * pump)
-            .shadow(color: Neon.cyan.opacity(0.5), radius: 4)
         }
         .accessibilityElement()
         .accessibilityLabel("Beat Blaster")
@@ -128,10 +210,7 @@ struct PulsingTitle: View {
         let colors = (0..<7).map { Neon.cycle[($0 + Int(shift * 6)) % Neon.cycle.count] }
         return Text(text)
             .font(.system(size: size, weight: .black, design: .rounded))
-            .italic()
-            .foregroundStyle(
-                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-            )
+            .foregroundStyle(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
             .lineLimit(1)
             .minimumScaleFactor(0.5)
     }

@@ -7,11 +7,10 @@ import SwiftUI
 struct TunnelTile: View {
     let audio: BlasterAudio
     let framesPerSecond: Int
-    @State private var state = SoundVisualState()
 
     var body: some View {
         if WobbleTunnelView.isSupported {
-            WobbleTunnelView(state: state) { SoundVisualInput(frame: audio.latestFrame) }
+            WobbleTunnelView(state: audio.visualState) { audio.visualInput }
                 .environment(\.soundFramesPerSecond, framesPerSecond)
                 .accessibilityLabel("Wormhole")
         } else {
