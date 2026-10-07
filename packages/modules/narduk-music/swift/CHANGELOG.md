@@ -6,6 +6,11 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.pitchWheelMetal` ("Pitch wheel (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of
+  the Canvas pitch wheel: twelve cylinder-lit glass petals (C at the top) that grow with each class, tip beads, an
+  outer ring of class dots (hollow for sharps), a chord polygon through the strong classes, the key outlined with a
+  spoke to a plasma ball in the tonic's color, rings on beat, kick and snare. Bass swells the ball and glow, highs
+  sparkle on the tips.
 - `IntenseKind.pianoRollMetal` ("Piano roll (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the
   Canvas piano roll: the notes as cylinder-lit glass bars on their pitch rows, hot at the strike and cooling along the
   tail, dimming with age as they flow into a lit piano keyboard where a sounding note flares and lights its key (the
