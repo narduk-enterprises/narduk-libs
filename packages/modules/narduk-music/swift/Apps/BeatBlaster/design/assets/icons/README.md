@@ -1,6 +1,6 @@
 # Beat Blaster icons
 
-52 full-colour glossy neon icons, one per render, drawn by Grok Imagine (`image_gen`). They ship as images, not vectors:
+79 full-colour glossy neon icons, one per render, drawn by Grok Imagine (`image_gen`). They ship as images, not vectors:
 nothing is traced or redrawn. `tools/ios_export.py` knocks out each flat dark ground, trims to a square and writes
 `ios/Images.xcassets/icon-<name>.imageset` at 96/192/288 px (1x/2x/3x). `raw/` keeps the 1024 px renders with their
 ground; `manifest.json` records each icon's exact prompt, backend and tool. There is no `svg/` or `preview.html` on

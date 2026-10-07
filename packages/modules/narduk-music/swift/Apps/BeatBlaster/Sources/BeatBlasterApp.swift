@@ -158,19 +158,22 @@ struct HomeButton: View {
     }
 }
 
-/// A small badge: 🎵 MUSIC or 💡 LIGHTS.
+/// A small badge: MUSIC or LIGHTS, with its kit icon.
 struct KindBadge: View {
     enum Kind { case music, lights }
     let kind: Kind
     var size: CGFloat = 14
 
     var body: some View {
-        Text(kind == .music ? "🎵 MUSIC" : "💡 LIGHTS")
-            .blasterFont(size: size, weight: .black)
-            .foregroundStyle(.black)
-            .padding(.horizontal, size * 0.6)
-            .padding(.vertical, size * 0.25)
-            .background(kind == .music ? Neon.yellow : Neon.cyan, in: Capsule())
+        HStack(spacing: size * 0.3) {
+            Glyph(kind == .music ? "icon-music" : "icon-lights", size: size)
+            Text(kind == .music ? "MUSIC" : "LIGHTS")
+                .blasterFont(size: size, weight: .black)
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, size * 0.6)
+        .padding(.vertical, size * 0.25)
+        .background(kind == .music ? Neon.yellow : Neon.cyan, in: Capsule())
     }
 }
 

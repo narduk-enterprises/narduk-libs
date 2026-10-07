@@ -22,7 +22,7 @@ struct BeatLabView: View {
                     VStack(spacing: compact ? 10 : 16) {
                         HStack(spacing: 12) {
                             HomeButton(action: home)
-                            Text("🥁 Beat Lab")
+                            Text("Beat Lab")
                                 .blasterFont(size: compact ? 26 : 44, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer(minLength: 0)
@@ -73,11 +73,11 @@ struct BeatLabView: View {
                 Haptics.tap()
                 lab.key = (lab.key + 11) % 12
             } label: {
-                Pill(icon: "◀︎", word: "", color: .white.opacity(0.12), size: size * 0.8)
+                Pill(icon: "icon-key-down", word: "", color: .white.opacity(0.12), size: size * 0.8)
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Key down")
-            Text("🎼 Key: \(MusicKey.names[lab.key])")
+            Text("Key: \(MusicKey.names[lab.key])")
                 .blasterFont(size: size * 0.85, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -86,7 +86,7 @@ struct BeatLabView: View {
                 Haptics.tap()
                 lab.key = (lab.key + 1) % 12
             } label: {
-                Pill(icon: "▶︎", word: "", color: .white.opacity(0.12), size: size * 0.8)
+                Pill(icon: "icon-key-up", word: "", color: .white.opacity(0.12), size: size * 0.8)
             }
             .buttonStyle(Squish())
             .accessibilityLabel("Key up")
@@ -100,7 +100,7 @@ struct BeatLabView: View {
         } label: {
             let playing = audio.isRunning && audio.input == .beatLab
             Pill(
-                icon: playing ? "⏹" : "▶︎", word: playing ? "Stop" : "Play",
+                icon: playing ? "icon-stop" : "icon-play", word: playing ? "Stop" : "Play",
                 color: playing ? Neon.pink.opacity(0.75) : Neon.green.opacity(0.8), size: size)
         }
         .buttonStyle(Squish())
@@ -165,7 +165,7 @@ struct BeatGrid: View {
                                 Text(row.word)
                                     .blasterFont(size: compact ? 12 : 20, weight: .black)
                                     .foregroundStyle(.white)
-                                Text("🔄 \(lab.soundName(row))")
+                                Text(lab.soundName(row))
                                     .blasterFont(size: compact ? 9 : 14, weight: .heavy)
                                     .foregroundStyle(Neon.cyan)
                             }

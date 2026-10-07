@@ -52,7 +52,7 @@ struct RecordingsView: View {
             VStack(spacing: compact ? 10 : 16) {
                 HStack(spacing: 12) {
                     HomeButton(action: home).probe("mysongs.home")
-                    Text("🎙 My Songs")
+                    Text("My Songs")
                         .blasterFont(size: compact ? 26 : 40, weight: .black)
                         .foregroundStyle(.white)
                         .lineLimit(1)

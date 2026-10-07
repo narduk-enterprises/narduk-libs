@@ -18,10 +18,10 @@ enum BassSound: String, CaseIterable, Identifiable, Codable {
         case .growl: "icon-growl"
         case .deep: "icon-deep"
         case .pluck: "icon-pluck"
-        case .squelch: "🐸"
-        case .buzz: "🐝"
-        case .bounce: "🏀"
-        case .robot: "🤖"
+        case .squelch: "icon-squelch"
+        case .buzz: "icon-buzz"
+        case .bounce: "icon-bounce"
+        case .robot: "icon-robot"
         }
     }
 
@@ -90,10 +90,10 @@ enum KeysSound: String, CaseIterable, Identifiable, Codable {
         case .bell: "icon-bell"
         case .synth: "icon-synth"
         case .piano: "icon-piano"
-        case .pad: "☁️"
-        case .glow: "🌅"
-        case .sparkle: "🌟"
-        case .mellow: "🎷"
+        case .pad: "icon-cloud"
+        case .glow: "icon-glow"
+        case .sparkle: "icon-sparkle"
+        case .mellow: "icon-sax"
         }
     }
     var voice: Int {
@@ -137,9 +137,9 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
         case .boom: "icon-kit-boom"
         case .zappy: "icon-kit-zappy"
         case .dj: "icon-kit-dj"
-        case .glitch: "👾"
-        case .stomp: "🦶"
-        case .shimmer: "✨"
+        case .glitch: "icon-glitch"
+        case .stomp: "icon-stomp"
+        case .shimmer: "icon-sparkle"
         }
     }
 
@@ -202,11 +202,11 @@ enum GuitarSound: String, CaseIterable, Identifiable, Codable {
     var word: String { self == .auto ? "Auto" : rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .auto: "🎼"
+        case .auto: "icon-auto"
         case .folk: "icon-guitar"
-        case .clean: "✨"
-        case .crunch: "🔥"
-        case .fuzz: "🤘"
+        case .clean: "icon-sparkle"
+        case .crunch: "icon-crunch"
+        case .fuzz: "icon-fuzz"
         }
     }
 
@@ -242,12 +242,12 @@ enum PadSound: String, CaseIterable, Identifiable, Codable {
     }
     var emoji: String {
         switch self {
-        case .auto: "🎼"
-        case .soft: "☁️"
-        case .glow: "🌅"
-        case .deepPad: "🌊"
-        case .shimmer: "🌟"
-        case .drone: "🛸"
+        case .auto: "icon-auto"
+        case .soft: "icon-cloud"
+        case .glow: "icon-glow"
+        case .deepPad: "icon-deep"
+        case .shimmer: "icon-sparkle"
+        case .drone: "icon-drone"
         }
     }
 
@@ -277,11 +277,11 @@ enum Mood: String, CaseIterable, Identifiable, Codable {
     var word: String { rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .happy: "😀"
-        case .cool: "😎"
-        case .dreamy: "🦄"
-        case .dark: "🌙"
-        case .spooky: "👻"
+        case .happy: "icon-happy"
+        case .cool: "icon-cool"
+        case .dreamy: "icon-dreamy"
+        case .dark: "icon-dark"
+        case .spooky: "icon-spooky"
         }
     }
     var mode: HarmonyMode {
@@ -313,7 +313,7 @@ enum SingerSound: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
     var word: String { self == .off ? "None" : rawValue.capitalized }
-    var emoji: String { self == .off ? "🎼" : "🎤" }
+    var emoji: String { self == .off ? "icon-mic-off" : "icon-mic" }
 
     var vowel: VocalVowel? {
         switch self {

@@ -188,19 +188,19 @@ struct MusicLightsBar: View {
 
     private func lights(_ tile: VisualTile, compact: Bool) -> some View {
         section(
-            badge: .lights, emoji: tile.emoji, title: tile.name, color: Neon.cyan, compact: compact, showChange: true,
+            badge: .lights, emoji: nil, title: tile.name, color: Neon.cyan, compact: compact, showChange: true,
             change: changeLights)
     }
 
     private func section(
-        badge: KindBadge.Kind, emoji: String, style: BlasterStyle? = nil, title: String, color: Color, compact: Bool,
+        badge: KindBadge.Kind, emoji: String?, style: BlasterStyle? = nil, title: String, color: Color, compact: Bool,
         showChange: Bool, change: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 10) {
             KindBadge(kind: badge, size: 13)
             if let style, Art.vibe(for: style) != nil {
                 VibeArt(style: style, size: compact ? 30 : 36)
-            } else {
+            } else if let emoji {
                 Glyph(emoji, size: compact ? 22 : 26)
             }
             Text(title)

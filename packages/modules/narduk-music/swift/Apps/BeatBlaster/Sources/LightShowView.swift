@@ -13,12 +13,12 @@ struct LightStepper: View {
                 Haptics.tap()
                 withAnimation(.easeInOut(duration: 0.35)) { index -= 1 }
             } label: {
-                Pill(icon: "◀︎", word: "Prev", color: .black.opacity(0.5), size: compact ? 16 : 22)
+                Pill(icon: "icon-back", word: "Prev", color: .black.opacity(0.5), size: compact ? 16 : 22)
             }
             .buttonStyle(Squish())
             HStack(spacing: 6) {
                 KindBadge(kind: .lights, size: 12)
-                Text("\(tile.emoji) \(tile.name)")
+                Text(tile.name)
                     .blasterFont(size: compact ? 18 : 26, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -31,7 +31,7 @@ struct LightStepper: View {
                 Haptics.tap()
                 withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
             } label: {
-                Pill(icon: "▶︎", word: "Next", color: .black.opacity(0.5), size: compact ? 16 : 22)
+                Pill(icon: "icon-next", word: "Next", color: .black.opacity(0.5), size: compact ? 16 : 22)
             }
             .buttonStyle(Squish())
         }
@@ -147,7 +147,7 @@ struct LightShowView: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 HomeButton(action: home)
-                Text("💡 Light Show")
+                Text("Light Show")
                     .blasterFont(size: compact ? 22 : 36, weight: .black)
                     .foregroundStyle(.white)
                 Spacer(minLength: 0)
@@ -204,7 +204,7 @@ struct MicView: View {
                     VStack(spacing: 14) {
                         HStack {
                             HomeButton(action: home)
-                            Text("🎤 Mic Mode")
+                            Text("Mic Mode")
                                 .blasterFont(size: compact ? 22 : 36, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer()
@@ -256,7 +256,7 @@ struct MicPrompt: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
             let level = audio.level
-            Text(level > 0.55 ? "WHOA! LOUD! 🔥" : "🎤 Clap, sing, yell!")
+            Text(level > 0.55 ? "WHOA! LOUD!" : "Clap, sing, yell!")
                 .blasterFont(size: 34, weight: .black)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 28)

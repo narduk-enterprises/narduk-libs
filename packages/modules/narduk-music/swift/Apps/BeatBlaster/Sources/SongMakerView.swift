@@ -17,7 +17,7 @@ struct SongMakerView: View {
         "Tap a card to hear a taste, then press Play it now!",
         "Tap one to hear it.",
         "Tap to turn players on or off. Lit up = playing.",
-        "Tap a sound to hear it. 🎲 mixes them all up!",
+        "Tap a sound to hear it, or mix them all up!",
         "Pick the lights for your song, and give it a name.",
     ]
 
@@ -106,7 +106,7 @@ struct SongMakerView: View {
                     Spacer(minLength: 8)
                     StepDots(step: step, titles: titles, compact: true)
                 }
-                Text("🎵 Make a Song")
+                Text("Make a Song")
                     .blasterFont(size: 22, weight: .black)
                     .foregroundStyle(.white)
             }
@@ -114,7 +114,7 @@ struct SongMakerView: View {
             HStack(spacing: 14) {
                 HomeButton(action: home).probe("maker.home")
                 Spacer()
-                Text("🎵 Make a Song")
+                Text("Make a Song")
                     .blasterFont(size: 30, weight: .black)
                     .foregroundStyle(.white)
                 Spacer()
@@ -245,7 +245,7 @@ struct SongMakerView: View {
     private func lightsStep(compact: Bool) -> some View {
         VStack(spacing: 18) {
             HStack(spacing: 10) {
-                Text("✏️ Song name:")
+                Text("Song name:")
                     .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(.white)
                 TextField("Name your song", text: $recipe.name)
@@ -289,13 +289,13 @@ struct SongMakerView: View {
                     Haptics.tap()
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { step -= 1 }
                 } label: {
-                    Pill(icon: "◀︎", word: "Back", color: .white.opacity(0.18), size: compact ? 20 : 26)
+                    Pill(icon: "icon-back", word: "Back", color: .white.opacity(0.18), size: compact ? 18 : 26)
                 }
                 .buttonStyle(Squish())
             }
             Spacer()
             if step == 1, !pickedVibe {
-                Text("👆 Pick a vibe first!")
+                Text("Pick a vibe first!")
                     .blasterFont(size: compact ? 18 : 24, weight: .black)
                     .foregroundStyle(Neon.yellow)
             } else if step < titles.count {
@@ -305,7 +305,7 @@ struct SongMakerView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { step += 1 }
                 } label: {
                     Pill(
-                        icon: "▶︎", word: "Next",
+                        icon: "icon-next", word: "Next",
                         color: (step == 1 ? Color.white : Neon.pink).opacity(step == 1 ? 0.18 : 0.85),
                         size: compact ? 22 : 30)
                 }
@@ -315,7 +315,9 @@ struct SongMakerView: View {
                     Button {
                         finish()
                     } label: {
-                        Pill(icon: "▶︎", word: "Play it now!", color: Neon.green.opacity(0.85), size: compact ? 22 : 30)
+                        Pill(
+                            icon: "icon-play", word: "Play it now!", color: Neon.green.opacity(0.85),
+                            size: compact ? 22 : 30)
                     }
                     .buttonStyle(Squish())
                     .probe("maker.playNow")
@@ -324,7 +326,9 @@ struct SongMakerView: View {
                 Button {
                     finish()
                 } label: {
-                    Pill(icon: "▶︎", word: "Play my song!", color: Neon.green.opacity(0.85), size: compact ? 24 : 34)
+                    Pill(
+                        icon: "icon-play", word: "Play my song!", color: Neon.green.opacity(0.85),
+                        size: compact ? 21 : 34)
                 }
                 .buttonStyle(Squish())
             }
