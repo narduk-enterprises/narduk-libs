@@ -54,18 +54,22 @@
             // A plasma arc: a blob launches off the limb at `anchor`, flies out along a loop of `height` spanning
             // `span` radians and lands back on the surface at the far end; `phase` 0...1 is where it is on the way.
             // The loop itself glows faintly, the head is hot and drags a trail. Returns brightness at (r, a).
-            static float sunArc(float r, float a, float R, float anchor, float span, float height, float phase) {
+            static float sunArc(float r, float a, float R, float anchor, float span, float height, float phase, float time) {
                 float da = atan2(sin(a - anchor), cos(a - anchor));
                 float t = da / span;
                 if (t < 0.0 || t > 1.0) return 0.0;
-                float rho = R + height * sin(t * 3.14159265);
+                // The loop breathes and ripples slowly so the plasma reads as fluid, not a drawn line.
+                float ripple = 0.5 * sin(t * 7.0 - time * 0.9 + anchor) + 0.5 * sin(t * 13.0 + time * 0.6);
+                float rho = R + height * sin(t * 3.14159265) * (1.0 + 0.06 * ripple);
                 float dist = abs(r - rho);
-                float thick = 0.006 + 0.01 * sin(t * 3.14159265);
-                float on = exp(-pow(dist / thick, 2.0));
-                float ds = (t - phase) * span * (R + height * 0.6);
-                float head = exp(-pow(ds * 22.0, 2.0)) * 3.0;
-                float trail = (ds < 0.0 ? exp(ds * 9.0) : 0.0) * 1.2;
-                float path = 0.12 * smoothstep(0.0, 1.0, phase * 3.0) * smoothstep(1.0, 0.7, phase);
+                float thick = 0.01 + 0.022 * sin(t * 3.14159265);
+                float on = exp(-pow(dist / thick, 2.0)) + 0.35 * exp(-pow(dist / (thick * 3.0), 2.0));
+                // Eased travel: the blob leaves and lands gently.
+                float eased = phase * phase * (3.0 - 2.0 * phase);
+                float ds = (t - eased) * span * (R + height * 0.6);
+                float head = exp(-pow(ds * 9.0, 2.0)) * 1.6;
+                float trail = (ds < 0.0 ? exp(ds * 3.5) : 0.0) * 0.9;
+                float path = 0.1 * smoothstep(0.0, 0.3, phase) * smoothstep(1.0, 0.75, phase);
                 return on * (head + trail + path);
             }
 
@@ -80,6 +84,7 @@
                 float kick = u.env.x;
                 float snare = u.env.y;
                 float hat = u.env.z;
+                float impact = u.env.w;
                 float energy = u.wobble.z;
                 float drop = u.misc.y;
                 float bass = bandAt(spectrum, 0.05);
@@ -131,17 +136,21 @@
                     float active = smoothstep(0.55, 0.75, fxNoise3(sp * 2.6 + float3(41.0, 9.0, 2.0)));
                     float flare = active * kick * intensity;
 
-                    float heat = 0.26 + 0.28 * cell + 0.12 * fine + 0.08 * bass + 0.05 * energy;
+                    float heat = 0.5 + 0.26 * cell + 0.1 * fine + 0.08 * bass + 0.05 * energy + 0.12 * beatPulse * intensity;
                     heat += 0.4 * flare;
                     heat += 0.18 * faculae;
-                    heat = mix(heat, 0.2 * spotLit, penumbra * 0.85);
+                    heat = mix(heat, 0.22 * spotLit, penumbra * 0.9);
                     heat = mix(heat, 0.02, umbra);
                     float3 surface = sunRamp(u, heat);
-                    surface *= 0.55 + 0.55 * shade.x;
+                    surface *= 0.7 + 0.4 * shade.x;
                     surface += float3(1.0, 0.9, 0.7) * shade.y * 0.22 * cell;
-                    float limb = 1.0 - 0.78 * pow(1.0 - z, 1.25);
-                    surface *= limb * volume;
-                    surface *= 0.95 + 0.2 * bass + 0.25 * flare;
+                    float limb = 1.0 - 0.55 * pow(1.0 - z, 1.25);
+                    surface *= limb * (0.8 + 0.2 * volume);
+                    // The glare: the whole disc blows out toward white on every beat and harder on the kick, the
+                    // spots staying dark through it.
+                    float glare = 1.25 + 0.55 * beatPulse * intensity + 0.7 * kick * intensity + 0.3 * flare;
+                    surface *= glare * (0.95 + 0.2 * bass);
+                    surface = mix(surface, float3(1.0, 0.97, 0.88) * glare * 0.8, (1.0 - umbra) * (1.0 - 0.6 * penumbra) * 0.2);
                     float edge = 1.0 - smoothstep(R - 0.006, R + 0.004, r);
                     col += surface * edge;
                 }
@@ -156,13 +165,14 @@
 
                     // Corona: three layers of turbulent ridged streamers blasting outward, lit in relief, flashing
                     // with the beat (the pulse is a per-beat swell, under the 3 Hz line, scaled off in calm).
-                    float stream = 0.3 + 0.5 * drop + 0.15 * energy;
-                    float reach = 0.26 + 0.34 * bass + 0.25 * drop + 0.08 * energy;
+                    float stream = 0.3 + 0.5 * drop + 0.15 * energy + 0.6 * impact;
+                    float bang = clamp(impact * 1.2 + kick * kick * 0.6, 0.0, 1.0) * intensity;
+                    float reach = 0.1 + 0.07 * bass + 0.08 * drop + 0.55 * bang;
                     float fall = exp(-d / reach) * smoothstep(0.0, 0.03, d) * smoothstep(1.6, 0.6, d);
-                    float pulse = 0.45 + 1.0 * beatPulse * intensity + 0.5 * kick * intensity;
+                    float pulse = 0.55 + 0.45 * beatPulse * intensity + 1.2 * bang;
                     float3 tintBase = mix(sunRamp(u, 0.62), paletteAt(u, a / 6.28318 + 0.5 + travel * 0.01), 0.2);
                     float2 turb = float2(fbm(p * 2.2 + float2(time * 0.35, -time * 0.2)), fbm(p * 2.2 + float2(5.3 - time * 0.3, 1.7 + time * 0.25)));
-                    float2 pt = p + (turb - 0.5) * (0.08 + 0.14 * drop + 0.06 * energy);
+                    float2 pt = p + (turb - 0.5) * (0.06 + 0.1 * drop + 0.25 * bang);
                     for (int layer = 0; layer < 3; layer++) {
                         float scale = layer == 0 ? 3.2 : (layer == 1 ? 6.5 : 13.0);
                         float thin = layer == 0 ? 0.78 - 0.05 * drop : (layer == 1 ? 0.83 : 0.88);
@@ -182,8 +192,10 @@
                         }
                     }
                     // The corona's body: a broad glow that swells with the bass and flashes on the beat.
-                    col += sunRamp(u, 0.6) * exp(-d * 6.0) * 0.35 * (0.5 + 0.5 * bass) * pulse;
+                    col += sunRamp(u, 0.6) * exp(-d * 6.0) * (0.12 + 0.5 * bang) * pulse;
                     col += sunRamp(u, 0.5) * exp(-d * 22.0) * 0.3 * pulse;
+                    // The disc's glare bleeds past the limb on the beat.
+                    col += float3(1.0, 0.95, 0.8) * exp(-d * 14.0) * (0.25 + 0.6 * beatPulse * intensity + 0.5 * kick * intensity);
 
                     // Prominence loops erupt from the limb on the snare and lift away as it fades.
                     float bar = floor(beats / 4.0);
@@ -199,7 +211,7 @@
                     if (r > R - 0.01) {
                         float arcs = 0.0;
                         for (int k = 0; k < 5; k++) {
-                            float period = 2.0 + float(k % 2);
+                            float period = 4.0 + 2.0 * float(k % 2);
                             float cyc = (beats + float(k) * 0.4 * period) / period;
                             float idx = floor(cyc);
                             float phase = fract(cyc);
@@ -208,7 +220,7 @@
                             float anchor = h1 * 6.28318;
                             float span = (0.45 + 0.6 * h2) * (h1 > 0.5 ? 1.0 : -1.0);
                             float height = (0.12 + 0.22 * h2) * (0.6 + 0.6 * energy + 0.5 * drop);
-                            arcs += sunArc(r, a, R, anchor, span, height, phase) * (0.5 + 0.5 * h1);
+                            arcs += sunArc(r, a, R, anchor, span, height, phase, time) * (0.5 + 0.5 * h1);
                         }
                         float3 arcTint = mix(sunRamp(u, 0.55), sunRamp(u, 0.95), 0.5);
                         col += arcTint * arcs * (0.7 + 0.5 * energy + 0.4 * kick) * 1.6;
