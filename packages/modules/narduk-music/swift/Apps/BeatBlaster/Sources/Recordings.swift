@@ -6,6 +6,7 @@ struct Recording: Identifiable, Equatable {
     let url: URL
     let date: Date
     let seconds: Double
+    var bytes = 0
     var id: URL { url }
     var name: String { url.deletingPathExtension().lastPathComponent }
 
@@ -59,21 +60,27 @@ struct RecordingStore {
     }
 
     /// `list()` off the main actor: it opens every take to read its length, and a child can have hundreds.
-    func load() async -> [Recording] {
+    func load(sweep: Bool = false) async -> [Recording] {
         let store = self
-        return await Task.detached(priority: .userInitiated) { store.list() }.value
+        return await Task.detached(priority: .userInitiated) { store.list(sweep: sweep) }.value
     }
 
-    func list() -> [Recording] {
-        let keys: [URLResourceKey] = [.contentModificationDateKey]
+    /// The takes worth showing. With `sweep`, the near-empty ones (older builds saved them) are deleted on the way, unless
+    /// written in the last minute: that one may be a take still being finished.
+    func list(sweep: Bool = false, now: Date = Date()) -> [Recording] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         let files =
             (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)) ?? []
         return files.filter { $0.pathExtension == "m4a" }
             .compactMap { url -> Recording? in
+                let values = try? url.resourceValues(forKeys: Set(keys))
+                let date = values?.contentModificationDate ?? now
                 let seconds = Self.duration(of: url)
-                guard seconds > 0, seconds >= shortest else { return nil }
-                let date = (try? url.resourceValues(forKeys: Set(keys)).contentModificationDate) ?? Date()
-                return Recording(url: url, date: date, seconds: seconds)
+                guard seconds > 0, seconds >= shortest else {
+                    if sweep, now.timeIntervalSince(date) > 60 { try? FileManager.default.removeItem(at: url) }
+                    return nil
+                }
+                return Recording(url: url, date: date, seconds: seconds, bytes: values?.fileSize ?? 0)
             }
             .sorted { $0.date > $1.date }
     }
@@ -91,6 +98,25 @@ struct RecordingStore {
         try? FileManager.default.removeItem(at: recording.url)
     }
 
+    /// Where share copies go: one folder per copy, so two takes of one song can be shared together.
+    static var shareFolder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Share", isDirectory: true)
+    }
+
+    /// A copy named for the song alone ("Rocket Party.m4a", not the stamped file name), to send to someone.
+    static func shareCopy(of recording: Recording) throws -> URL {
+        let folder = shareFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let copy = folder.appendingPathComponent(cleanName(recording.title)).appendingPathExtension("m4a")
+        try FileManager.default.copyItem(at: recording.url, to: copy)
+        return copy
+    }
+
+    /// Share copies are only needed while the share sheet sends them.
+    static func clearShareCopies() {
+        try? FileManager.default.removeItem(at: shareFolder)
+    }
+
     static func duration(of url: URL) -> Double {
         guard let file = try? AVAudioFile(forReading: url), file.processingFormat.sampleRate > 0 else { return 0 }
         return Double(file.length) / file.processingFormat.sampleRate
@@ -105,6 +131,35 @@ struct RecordingStore {
         }
         return candidate
     }
+}
+
+/// The order My Songs lists takes in.
+enum RecordingSort: String, CaseIterable, Identifiable {
+    case newest = "Newest"
+    case oldest = "Oldest"
+    case longest = "Longest"
+    case name = "A to Z"
+    var id: String { rawValue }
+
+    /// Sorted, and narrowed to titles containing `search` (any case) when there is one.
+    func apply(_ recordings: [Recording], search: String = "") -> [Recording] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        let found = query.isEmpty ? recordings : recordings.filter { $0.title.localizedStandardContains(query) }
+        switch self {
+        case .newest: return found.sorted { $0.date > $1.date }
+        case .oldest: return found.sorted { $0.date < $1.date }
+        case .longest: return found.sorted { $0.seconds > $1.seconds }
+        case .name: return found.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        }
+    }
+}
+
+/// "12 songs · 34 MB": how much My Songs holds.
+func libraryText(_ recordings: [Recording]) -> String {
+    let count = recordings.count == 1 ? "1 song" : "\(recordings.count) songs"
+    let size = ByteCountFormatter.string(
+        fromByteCount: Int64(recordings.reduce(0) { $0 + $1.bytes }), countStyle: .file)
+    return "\(count) · \(size)"
 }
 
 /// mm:ss, or h:mm:ss once a take passes an hour.

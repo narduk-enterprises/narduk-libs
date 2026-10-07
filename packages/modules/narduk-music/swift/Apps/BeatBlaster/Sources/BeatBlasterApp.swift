@@ -149,6 +149,31 @@ struct Pill: View {
     }
 }
 
+/// Pause and play the song, the same round button wherever music plays (Home, the Player, the Light Show).
+struct PauseButton: View {
+    let audio: BlasterAudio
+    var size: CGFloat = 48
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            if audio.isRunning, audio.input == .song { audio.togglePause() } else { audio.playIfIdle() }
+        } label: {
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.system(size: size * 0.46, weight: .black))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(.black.opacity(0.55), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 2))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(playing ? "Pause" : "Play")
+    }
+
+    private var playing: Bool { audio.isRunning && audio.input == .song && !audio.isPaused }
+}
+
 /// The "🏠 Home" button, top-left on every screen.
 struct HomeButton: View {
     let action: () -> Void

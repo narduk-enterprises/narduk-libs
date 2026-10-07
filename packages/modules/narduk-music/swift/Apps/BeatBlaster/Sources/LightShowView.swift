@@ -87,6 +87,7 @@ struct LightShowView: View {
                         HStack {
                             HomeButton(action: home)
                             Spacer()
+                            PauseButton(audio: audio, size: compact ? 44 : 48)
                             Button(action: wake) {
                                 Pill(
                                     icon: "🎛️", word: "Show controls", color: .black.opacity(0.55),
@@ -111,6 +112,14 @@ struct LightShowView: View {
                     .transition(.move(edge: .bottom))
                 }
             }
+        }
+        .focusable()
+        .focusEffectDisabled()
+        // A keyboard: space pauses, the same as in the Player.
+        .onKeyPress(.space) {
+            audio.togglePause()
+            activity += 1
+            return .handled
         }
         .onAppear {
             audio.playIfIdle()
@@ -153,6 +162,8 @@ struct LightShowView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Spacer(minLength: 0)
+                PauseButton(audio: audio, size: compact ? 44 : 48).simultaneousGesture(
+                    TapGesture().onEnded { activity += 1 })
                 Button {
                     withAnimation { controlsShown = false }
                 } label: {

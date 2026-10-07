@@ -24,7 +24,13 @@ struct PlayerView: View {
             let short = geometry.size.height < 500
             let landscape = geometry.size.width > geometry.size.height
             let dropSize: CGFloat = short ? 92 : (compact ? 112 : 150)
-            let pageHeight = max(110, geometry.size.height * (landscape ? 0.62 : 0.5) - (short ? 100 : 110))
+            // A window at least 500pt tall keeps its top half for the lights (the tray's handle and tabs take about
+            // 100pt); a phone held sideways has no half to spare, so there the tray takes what the top bar leaves.
+            let fullHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+            let pageHeight =
+                fullHeight >= 500
+                ? max(110, fullHeight * 0.5 - 100)
+                : max(110, min(geometry.size.height - 150, geometry.size.height * 0.6 - 50))
             ZStack {
                 DropStage(audio: audio, drawing: scenePhase == .active).ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -131,20 +137,8 @@ struct PlayerView: View {
                 .layoutPriority(1)
             }
             Spacer(minLength: 0)
-            Button {
-                Haptics.tap()
-                audio.togglePause()
-            } label: {
-                Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 22, weight: .black))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(.black.opacity(0.55), in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 2))
-            }
-            .buttonStyle(Squish())
-            .accessibilityLabel(audio.isPaused ? "Resume" : "Pause")
-            .probe("player.pause")
+            PauseButton(audio: audio)
+                .probe("player.pause")
             RecBadge(audio: audio, compact: compact).layoutPriority(1).probe("player.rec")
         }
     }
@@ -446,7 +440,7 @@ struct EnergySlider: View {
                 }
                 .frame(height: compact ? 44 : 52)
                 HStack(spacing: 4) {
-                    Text("HYPE")
+                    Text("Hype")
                         .blasterFont(size: compact ? 13 : 17, weight: .black)
                         .foregroundStyle(.white)
                     Glyph("icon-hype", size: compact ? 14 : 18)
@@ -454,7 +448,8 @@ struct EnergySlider: View {
                 .fixedSize()
             }
         }
-        .frame(maxWidth: compact ? .infinity : 560)
+        // As wide as the band row and buttons under it, so the page lines up.
+        .frame(maxWidth: .infinity)
         .accessibilityElement()
         .accessibilityLabel("Energy")
         .accessibilityValue(label)
@@ -603,15 +598,20 @@ struct RecBadge: View {
                         HStack(spacing: 6) {
                             Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
                             Text(wording)
-                                .blasterFont(size: compact ? 13 : 16, weight: .heavy, design: .monospaced)
+                                .blasterFont(size: compact ? 14 : 17, weight: .black)
+                                .monospacedDigit()
                                 .foregroundStyle(.white.opacity(0.9))
                                 .lineLimit(1)
                                 .fixedSize()
                         }
+                        // The same round-ended dark pill as Home and Pause beside it.
+                        .padding(.horizontal, 14)
+                        .frame(height: 48)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(audio.isRecording ? 0.8 : 0.5), lineWidth: 2))
                     }
                 }
-                .frame(minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+                .contentShape(Capsule())
             }
         }
         .buttonStyle(.plain)

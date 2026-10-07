@@ -47,6 +47,45 @@ import XCTest
         XCTAssertEqual(RecordingStore(directory: directory, shortest: 0).list().count, 2, "hidden, not deleted")
     }
 
+    func testSweepDeletesOldScrapsButNotATakeStillBeingWritten() throws {
+        let store = RecordingStore(directory: directory)
+        try Self.writeSilence(to: store.newTakeURL(title: "Peek"), seconds: 1)
+        try Self.writeSilence(to: store.newTakeURL(title: "Real song"), seconds: 2.5)
+        XCTAssertEqual(store.list(sweep: true).count, 1)
+        XCTAssertEqual(RecordingStore(directory: directory, shortest: 0).list().count, 2, "a fresh scrap is kept")
+        XCTAssertEqual(store.list(sweep: true, now: Date().addingTimeInterval(120)).map(\.title), ["Real song"])
+        XCTAssertEqual(RecordingStore(directory: directory, shortest: 0).list().count, 1, "an old scrap is gone")
+    }
+
+    func testSortSearchAndSummary() {
+        let day = Date(timeIntervalSince1970: 1_800_000_000)
+        let takes = [
+            Recording(url: URL(fileURLWithPath: "/x/b.m4a"), date: day, seconds: 30, bytes: 1_000_000),
+            Recording(url: URL(fileURLWithPath: "/x/Apple jam.m4a"), date: day + 60, seconds: 10, bytes: 500_000),
+            Recording(url: URL(fileURLWithPath: "/x/cool beat.m4a"), date: day - 60, seconds: 90, bytes: 500_000),
+        ]
+        XCTAssertEqual(RecordingSort.newest.apply(takes).map(\.title), ["Apple jam", "b", "cool beat"])
+        XCTAssertEqual(RecordingSort.oldest.apply(takes).map(\.title), ["cool beat", "b", "Apple jam"])
+        XCTAssertEqual(RecordingSort.longest.apply(takes).map(\.title), ["cool beat", "b", "Apple jam"])
+        XCTAssertEqual(RecordingSort.name.apply(takes).map(\.title), ["Apple jam", "b", "cool beat"])
+        XCTAssertEqual(RecordingSort.newest.apply(takes, search: " BEAT ").map(\.title), ["cool beat"])
+        XCTAssertTrue(libraryText(takes).hasPrefix("3 songs · 2"), libraryText(takes))
+        XCTAssertTrue(libraryText([takes[0]]).hasPrefix("1 song · "))
+    }
+
+    func testAShareCopyIsNamedForTheSongAlone() throws {
+        let store = RecordingStore(directory: directory, shortest: 0)
+        try Self.writeSilence(to: store.newTakeURL(title: "Rocket Party"), seconds: 1)
+        let take = try XCTUnwrap(store.list().first)
+        let first = try RecordingStore.shareCopy(of: take)
+        let second = try RecordingStore.shareCopy(of: take)
+        XCTAssertEqual(first.lastPathComponent, "Rocket Party.m4a")
+        XCTAssertNotEqual(first, second, "two copies of one song can go together")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.url.path), "the take itself stays")
+        RecordingStore.clearShareCopies()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+    }
+
     func testStoreListRenameDelete() throws {
         let store = RecordingStore(directory: directory, shortest: 0)
         let url = store.newTakeURL(title: "Dino Disco")

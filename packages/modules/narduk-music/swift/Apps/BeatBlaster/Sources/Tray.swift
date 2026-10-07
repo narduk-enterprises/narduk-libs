@@ -90,13 +90,10 @@ struct ControlsTray<Content: View>: View {
             handle
             if state.isOpen {
                 tabs
-                // The tray hugs the page it shows (Mix is short) and only scrolls a page taller than the cap; a bare
-                // ScrollView always grew to the cap and left a big empty drawer over the lights.
-                ScrollView(.vertical, showsIndicators: false) {
-                    page.onGeometryChange(for: CGFloat.self, of: \.size.height) { pageHeight = $0 }
-                }
-                .frame(maxHeight: min(pageHeight ?? maxPageHeight, maxPageHeight))
-                .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in state.touch() })
+                // The tray hugs the page it shows (Mix is short). A page taller than the cap shrinks to fit, down to a
+                // size a finger can still hit; only past that does it scroll.
+                fittedPage
+                    .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in state.touch() })
             }
         }
         .background {
@@ -114,6 +111,28 @@ struct ControlsTray<Content: View>: View {
             try? await Task.sleep(for: .seconds(TrayState.idleSeconds))
             if !Task.isCancelled, state.isIdle(at: Date()) { state.close() }
         }
+    }
+
+    /// The smallest the page may shrink before it scrolls instead: its smallest pad (Stutter, 56pt) stays a 44pt target.
+    static var minScale: CGFloat { 0.8 }
+
+    @ViewBuilder private var fittedPage: some View {
+        let natural = pageHeight ?? 0
+        let scale = natural > maxPageHeight ? maxPageHeight / natural : 1
+        if scale >= Self.minScale {
+            measuredPage
+                .scaleEffect(scale, anchor: .top)
+                .frame(height: natural > 0 ? natural * scale : nil, alignment: .top)
+        } else {
+            ScrollView(.vertical, showsIndicators: false) { measuredPage }
+                .frame(maxHeight: maxPageHeight)
+        }
+    }
+
+    private var measuredPage: some View {
+        // Its own height whatever the frame around it offers, so the scale cannot feed back into the measurement.
+        page.fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { pageHeight = $0 }
     }
 
     private var page: some View {
