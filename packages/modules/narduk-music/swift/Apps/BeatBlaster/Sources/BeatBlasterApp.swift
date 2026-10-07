@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import NardukSoundVisuals
 
 @main
 struct BeatBlasterApp: App {
@@ -29,7 +30,8 @@ enum Screen: String {
 }
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
-/// `-orientation landscape|portrait`, `-silent YES` (speakers muted; meters, visuals and recording stay live), `-firstRun YES` (clears the one-time hints).
+/// `-orientation landscape|portrait`, `-silent YES` (speakers muted; meters, visuals and recording stay live), `-firstRun YES` (clears the one-time hints),
+/// `-perfTour YES -perfLog YES` (steps through every light and prints frame timing).
 struct RootView: View {
     let audio: BlasterAudio
     let mySongs: MySongs
@@ -65,6 +67,7 @@ struct RootView: View {
             }
             if let raw = defaults.string(forKey: "screen"), let target = Screen(rawValue: raw) { screen = target }
             if let raw = defaults.string(forKey: "orientation") { Self.rotate(to: raw) }
+            if defaults.bool(forKey: "perfTour") { await perfTour() }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -84,6 +87,23 @@ struct RootView: View {
         for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
         }
+    }
+
+    /// `-perfTour YES` (with `-perfLog YES -silent YES`): plays a song in the player and steps through every light for
+    /// `perfSeconds` (default 7) each (or only the ids in `-perfOnly a,b`), so the frame meter's lines can be read per visual on a real device.
+    private func perfTour() async {
+        let asked = UserDefaults.standard.double(forKey: "perfSeconds")
+        let seconds = asked > 0 ? max(3, asked) : 7
+        UIApplication.shared.isIdleTimerDisabled = true
+        if !audio.isRunning { audio.play(SongRecipe(style: BlasterStyle.all[0])) }
+        screen = .player
+        let only = Set((UserDefaults.standard.string(forKey: "perfOnly") ?? "").split(separator: ",").map(String.init))
+        for tile in VisualTile.all where only.isEmpty || only.contains(tile.id) {
+            audio.update { $0.lightsID = tile.id }
+            print("TOUR \(tile.id)")
+            try? await Task.sleep(for: .seconds(seconds))
+        }
+        print("TOUR done meter=\(SoundFrameMeter.isEnabled)")
     }
 
     private func go(_ target: Screen) {
