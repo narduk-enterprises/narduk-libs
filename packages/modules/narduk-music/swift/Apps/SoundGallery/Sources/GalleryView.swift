@@ -19,7 +19,10 @@ struct GalleryView: View {
     @State private var overlayTick = 0
     @FocusState private var stageFocused: Bool
 
-    private let tiles = GalleryTile.all
+    private let builtInTiles = GalleryTile.all
+    /// The drop-in `.metal` visualizers (narduk-libs#1665): watched, so a save updates the running gallery.
+    @State private var plugins = IntensePluginLibrary()
+    private var tiles: [GalleryTile] { builtInTiles + plugins.entries.map(GalleryTile.plugin) }
 
     /// The render budget: 60 fps while the app is on screen and playing, nothing otherwise.
     private var isDrawing: Bool {
@@ -43,6 +46,7 @@ struct GalleryView: View {
             }
         }
         .task {
+            plugins.start()
             // `-autoplay demo|microphone` or `-autofile <path>` starts a source at launch, for smoke runs and screenshots;
             // `-song <style id>` (genre-techno, guitars, ...) picks the demo song and `-fullscreen <tile id>` opens a tile.
             let defaults = UserDefaults.standard
@@ -249,6 +253,7 @@ struct GalleryView: View {
             .disabled(model.isRunning)
             if model.input == .demo { songControls }
             PaletteControls(model: model)
+            pluginFolderRow
             if model.input == .demo { PromptView(model: model) }
             HStack {
                 Button(playTitle) {
@@ -268,6 +273,20 @@ struct GalleryView: View {
             }
         }
         .padding(12)
+    }
+
+    /// Where a `.metal` visualizer is dropped (narduk-libs#1665), with the count of what loaded.
+    private var pluginFolderRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "puzzlepiece.extension")
+            Text("Plugins: \(plugins.entries.count) in \(plugins.directory.path)").lineLimit(1).truncationMode(.middle)
+            #if os(macOS)
+                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([plugins.directory]) }
+            #endif
+            Spacer(minLength: 0)
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
 
     private var playTitle: String {

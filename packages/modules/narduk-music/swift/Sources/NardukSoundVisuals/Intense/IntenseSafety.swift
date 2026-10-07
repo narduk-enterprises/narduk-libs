@@ -94,27 +94,3 @@ extension IntenseDrive {
             tint: state.palette.c2, calm: state.calm, now: state.time, limiter: &limiter)
     }
 }
-
-/// The intense visualizers (narduk-libs#1615).
-public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
-    case hyperspaceLasers, fluidGlitch
-    /// A Mandelbrot dive: bass pushes the zoom, section changes turn the picture and shift the colour.
-    case fractalDive
-    /// A neon grid terrain under a striped sun: the spectrum raises the hills, the drop lifts off.
-    case synthwaveFlyover
-    /// Iridescent liquid filaments and droplets splashing out of a core: bass sets the reach, highs the spray.
-    case liquidSplash
-    /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
-    case sun
-
-    public var title: String {
-        switch self {
-        case .hyperspaceLasers: "Hyperspace + lasers"
-        case .fluidGlitch: "Fluid + glitch"
-        case .fractalDive: "Fractal dive"
-        case .synthwaveFlyover: "Synthwave flyover"
-        case .liquidSplash: "Liquid splash"
-        case .sun: "Sun"
-        }
-    }
-}
