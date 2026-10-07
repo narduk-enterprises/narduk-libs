@@ -82,6 +82,8 @@ public final class OfflineRenderer {
     /// Gives direct access to the conductor (for example to clear a character hint).
     /// Queues notes to play beside the conductor's (a scenario's `notes`). Each goes to the synth as its step comes
     /// within the look-ahead, as the conductor's notes do.
+    public func setMasterFilter(_ filter: MasterFilter) { core.setMasterFilter(filter) }
+
     public func schedule(_ notes: [ScheduledNote]) {
         directNotes = (directNotes + notes).enumerated()
             .sorted { ($0.element.step, $0.offset) < ($1.element.step, $1.offset) }.map(\.element)

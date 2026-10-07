@@ -15,6 +15,7 @@ struct RenderControls {
     var masterVolume: Float
     var fadingOut: Bool
     var bpmMilli: Int
+    var filter: MasterFilter
 }
 
 /// Everything the render thread mutates. Lives behind one raw pointer owned by
@@ -107,6 +108,8 @@ struct SynthState {
     var tapeReturn = 0
     var cut = MasterCut()
     var limiter: BrickwallLimiter
+    var masterFilter = MasterFilterState()
+    let filterGlide: Float
 
     // Analysis / telemetry
     let analysis: UnsafeMutablePointer<Float>
@@ -160,6 +163,7 @@ struct SynthState {
         historyRight = .allocate(capacity: SynthState.historySize)
         historyRight.initialize(repeating: 0, count: SynthState.historySize)
         limiter = BrickwallLimiter(sampleRate: sampleRate)
+        filterGlide = MasterFilterState.glide(sampleRate: Float(sampleRate))
         analysis = .allocate(capacity: SynthState.analysisSize)
         analysis.initialize(repeating: 0, count: SynthState.analysisSize)
     }
@@ -727,7 +731,9 @@ struct SynthState {
             }
             historyWrite += 1
 
-            // Soft saturation into the brickwall limiter.
+            // The master filter (bypassed unless a drop's build is sweeping it), then soft saturation into the limiter.
+            (mixL, mixR) = masterFilter.process(
+                mixL, mixR, target: controls.filter, sampleRate: Float(c.sampleRate), glide: filterGlide)
             let satL = DSP.softClip(mixL * 0.72) * 1.32
             let satR = DSP.softClip(mixR * 0.72) * 1.32
             let limited = limiter.process(satL, satR)
@@ -769,6 +775,7 @@ public final class DropSynthCore: @unchecked Sendable {
     private let bpmMilli: Atomic<Int>
     // The ambient chain's settings: the bit patterns of an `AmbientSpace`'s six floats.
     private let spaceAtomics = AmbientSpaceAtomics()
+    private let filterBits = MasterFilterAtomics()
 
     // Render → main telemetry.
     private let renderedSamples = Atomic<Int>(0)
@@ -859,6 +866,14 @@ public final class DropSynthCore: @unchecked Sendable {
         }
     }
 
+    /// Sets the master filter (`MasterFilter.idle` bypasses it). It glides there over about 20 ms from the next buffer,
+    /// so call it as often as the control changes (every UI frame is fine); it allocates nothing.
+    public func setMasterFilter(_ filter: MasterFilter) {
+        filterBits.highPass.store(filter.highPassHz.bitPattern, ordering: .relaxed)
+        filterBits.lowPass.store(filter.lowPassHz.bitPattern, ordering: .relaxed)
+        filterBits.resonance.store(filter.resonance.bitPattern, ordering: .relaxed)
+    }
+
     public func setMasterVolume(_ volume: Float) {
         masterVolumeBits.store(min(max(volume.isFinite ? volume : 0, 0), 1).bitPattern, ordering: .relaxed)
     }
@@ -931,7 +946,11 @@ public final class DropSynthCore: @unchecked Sendable {
             gains: (g0, g1, g2),
             masterVolume: Float(bitPattern: masterVolumeBits.load(ordering: .relaxed)),
             fadingOut: fadeOut.load(ordering: .relaxed),
-            bpmMilli: bpmMilli.load(ordering: .relaxed)
+            bpmMilli: bpmMilli.load(ordering: .relaxed),
+            filter: MasterFilter(
+                highPassHz: Float(bitPattern: filterBits.highPass.load(ordering: .relaxed)),
+                lowPassHz: Float(bitPattern: filterBits.lowPass.load(ordering: .relaxed)),
+                resonance: Float(bitPattern: filterBits.resonance.load(ordering: .relaxed)))
         )
         while let event = events.pop() { state.pointee.enqueue(event) }
         state.pointee.space = AmbientSpace(
@@ -961,6 +980,13 @@ public final class DropSynthCore: @unchecked Sendable {
         stepPositionBits.store(position.bitPattern, ordering: .releasing)
         renderedSamples.store(s.pointee.sampleClock, ordering: .releasing)
     }
+}
+
+/// The atomics behind `DropSynthCore.setMasterFilter(_:)`.
+private struct MasterFilterAtomics: ~Copyable {
+    let highPass = Atomic<UInt32>(MasterFilter.highPassOpen.bitPattern)
+    let lowPass = Atomic<UInt32>(MasterFilter.lowPassOpen.bitPattern)
+    let resonance = Atomic<UInt32>(MasterFilter.idle.resonance.bitPattern)
 }
 
 /// The atomics behind `DropSynthCore.setAmbientSpace(_:)` (a struct of named fields, since a tuple cannot hold them).

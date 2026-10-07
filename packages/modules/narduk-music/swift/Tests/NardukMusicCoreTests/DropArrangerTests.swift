@@ -201,3 +201,43 @@ import Testing
         #expect(DropArranger.parseKey("?") == nil)
     }
 }
+
+@Suite struct DropFilterSweepTests {
+    static let sps = 60 / 140.0 / 4
+
+    @Test(arguments: Genre.allCases) func theSweepStartsOpenRisesAndHoldsOnceFull(genre: Genre) {
+        let full = Int((DropArranger.fullChargeSeconds / Self.sps).rounded(.up))
+        #expect(DropArranger.filterSweep(heldSteps: 0, secondsPerStep: Self.sps, genre: genre).isIdle)
+        var last: Float = 0
+        for held in 1...(full + 30) {
+            let f = DropArranger.filterSweep(heldSteps: held, secondsPerStep: Self.sps, genre: genre)
+            #expect(f.highPassHz >= last, "\(genre): the high-pass fell at \(held)")
+            #expect(f.highPassHz.isFinite && f.highPassHz <= 3_000)
+            #expect(f.lowPassHz == MasterFilter.lowPassOpen)
+            last = f.highPassHz
+        }
+        // Full charge: it holds exactly where it is, however long the hold goes on.
+        let a = DropArranger.filterSweep(heldSteps: full, secondsPerStep: Self.sps, genre: genre)
+        #expect(a == DropArranger.filterSweep(heldSteps: full + 400, secondsPerStep: Self.sps, genre: genre))
+        #expect(a.highPassHz > 500, "\(genre): the build barely closes the low end")
+    }
+
+    @Test func theSweepAcceleratesAndGentleGenresStayLower() {
+        let full = Int((DropArranger.fullChargeSeconds / Self.sps).rounded(.up))
+        func hz(_ fraction: Double, _ genre: Genre) -> Float {
+            DropArranger.filterSweep(heldSteps: Int(Double(full) * fraction), secondsPerStep: Self.sps, genre: genre)
+                .highPassHz
+        }
+        // Exponential in the charge: the last quarter climbs further than the first three quarters' last quarter.
+        #expect(hz(1, .house) - hz(0.75, .house) > hz(0.5, .house) - hz(0.25, .house))
+        #expect(hz(1, .lofi) < hz(1, .house))
+        #expect(hz(1, .rock) < hz(1, .house))
+    }
+
+    @Test func theFilterSettingIsSanitised() {
+        let f = MasterFilter(highPassHz: .nan, lowPassHz: -5, resonance: 9)
+        #expect(f.highPassHz == MasterFilter.highPassOpen && f.lowPassHz == 60 && f.resonance == 0.9)
+        #expect(
+            MasterFilter.idle.isIdle && !MasterFilter(highPassHz: 400).isIdle && !MasterFilter(lowPassHz: 900).isIdle)
+    }
+}

@@ -26,8 +26,11 @@ import Testing
         let renderer = OfflineRenderer(settings: settings, sampleRate: sampleRate)
         var left: [Float] = []
         var right: [Float] = []
+        // While the DROP is held the master high-pass sweeps up (as the app drives it each frame); the release snaps it open.
+        var sweep: (@Sendable (Double) -> MasterFilter)?
         func run(until time: Double) {
             while renderer.time < time {
+                if let sweep { renderer.setMasterFilter(sweep(renderer.time)) }
                 let block = renderer.advance()
                 left += block.left
                 right += block.right
@@ -60,6 +63,11 @@ import Testing
                 position: step - release, step: step, power: 1, charge: 1, context: context)
         }
         renderer.schedule(notes)
+        sweep = { time in
+            let held = Int(time / sps) - press
+            return held > 0 && held < hold
+                ? DropArranger.filterSweep(heldSteps: held, secondsPerStep: sps, genre: genre) : .idle
+        }
         renderer.conductorNoteFilter = { note in
             if note.step >= release, note.step < dropEnd {
                 return !bassInstruments.contains(note.instrument) && !drumInstruments.contains(note.instrument)

@@ -223,7 +223,15 @@
             }
             core.render(frames: frames, left: left, right: right)  // first-touch work happens before arming
             let count = try Self.countAllocations {
-                for _ in 0..<2_000 { core.render(frames: frames, left: left, right: right) }
+                for index in 0..<2_000 {
+                    // The master filter sweeps up and snaps open while rendering: setting it and running it allocate nothing.
+                    let phase = index % 400
+                    core.setMasterFilter(
+                        phase < 300
+                            ? MasterFilter(highPassHz: 20 + Float(phase) * 9, lowPassHz: 20_000 - Float(phase) * 30)
+                            : .idle)
+                    core.render(frames: frames, left: left, right: right)
+                }
             }
             #expect(count == 0, "the render thread allocated \(count) times, first at:\n\(Self.firstAllocationStack)")
         }
