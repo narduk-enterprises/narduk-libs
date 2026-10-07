@@ -79,10 +79,23 @@ import Testing
         #expect(hits == [item.instrument], "\(item.name) reported \(hits)")
     }
 
+    @Test func cutNotesChangeTheRenderDeterministically() throws {
+        let scenario = try Self.scenario("cut-demo")
+        let cuts = scenario.notes?.filter { $0.instrument == .cut } ?? []
+        #expect(cuts.map(\.cut) == [.stutter, .gate, .reverse])
+        let first = OfflineRenderer.render(scenario)
+        #expect(first.left.allSatisfy(\.isFinite) && first.right.allSatisfy(\.isFinite))
+        #expect(first.peak > 0.1 && first.peak <= DSP.ceiling)
+        #expect(OfflineRenderer.render(scenario).fingerprint == first.fingerprint)
+        var dry = scenario
+        dry.notes = scenario.notes?.filter { $0.instrument != .cut }
+        #expect(OfflineRenderer.render(dry).fingerprint != first.fingerprint)
+    }
+
     @Test func scenarioNotesNameEveryNewInstrument() throws {
         var named: Set<Instrument> = []
         for item in Self.cases { named.formUnion(try Self.scenario(item.name).notes?.map(\.instrument) ?? []) }
-        #expect(named == Set(Instrument.allCases.filter { $0.synthCode >= 14 }))
+        #expect(named == Set(Instrument.allCases.filter { $0.synthCode >= 14 && $0 != .cut }))
     }
 
     @Test func theDemoPlaysGuitarsOverAConductorBed() throws {
