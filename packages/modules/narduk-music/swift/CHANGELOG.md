@@ -59,6 +59,7 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   landscape. Bass lifts the central ridges, mids the shoulders and highs the edge jitter; each older waveform-history
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
   and speeds the scroll.
+- `ShaderPackKind.bassBlobs` ("Bass blobs"): raymarched glossy liquid metaballs. Bass swells and merges them, mids set the orbit, highs ripple the surface, and the kick squashes the mass with a rim glow; calm slows the orbit to 0.4 and drops the squash.
 
 ## 0.4.1
 
