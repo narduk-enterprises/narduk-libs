@@ -138,20 +138,6 @@ struct EffectsPanel: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: compact ? 8 : 12) {
-                EffectSlider(
-                    icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
-                    value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
-                EffectSlider(
-                    icon: "🔁", title: "Echo", low: "Dry", high: "Echoey", color: Neon.purple,
-                    value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 }))
-                EffectSlider(
-                    icon: "🔊", title: "Bass boost", low: "Normal", high: "BOOM", color: Neon.orange,
-                    value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 }))
-                EffectSlider(
-                    icon: "🐢", title: "Speed", low: "Slow", high: "Fast", color: Neon.green,
-                    value: Binding(
-                        get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
-                        set: { audio.effects.speed = $0 }))
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: compact ? 4 : 7), spacing: 8
                 ) {
@@ -180,6 +166,20 @@ struct EffectsPanel: View {
                         .accessibilityLabel(pad.word)
                     }
                 }
+                EffectSlider(
+                    icon: "🌊", title: "Wobble", low: "Dark", high: "Bright", color: Neon.cyan,
+                    value: Binding(get: { audio.effects.filter ?? 0.5 }, set: { audio.effects.filter = $0 }))
+                EffectSlider(
+                    icon: "🔁", title: "Echo", low: "Dry", high: "Echoey", color: Neon.purple,
+                    value: Binding(get: { audio.effects.echo }, set: { audio.effects.echo = $0 }))
+                EffectSlider(
+                    icon: "🔊", title: "Bass boost", low: "Normal", high: "BOOM", color: Neon.orange,
+                    value: Binding(get: { audio.effects.bass }, set: { audio.effects.bass = $0 }))
+                EffectSlider(
+                    icon: "🐢", title: "Speed", low: "Slow", high: "Fast", color: Neon.green,
+                    value: Binding(
+                        get: { audio.effects.speed ?? audio.recipe.speed.sliderPosition },
+                        set: { audio.effects.speed = $0 }))
             }
         }
         .frame(maxHeight: short ? 220 : 360)

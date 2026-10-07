@@ -57,6 +57,9 @@ struct PlayerView: View {
         .onAppear {
             audio.playIfIdle()
             audio.beginRecording()
+            // Launch arguments for the screenshot runs: `-page effects`, `-hide YES`.
+            if UserDefaults.standard.string(forKey: "page") == "effects" { page = .effects }
+            if UserDefaults.standard.bool(forKey: "hide") { show.hide() }
         }
         .onDisappear { audio.endRecording() }
     }
