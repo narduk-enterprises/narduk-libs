@@ -171,6 +171,22 @@ struct SongRecipe: Codable, Hashable, Identifiable {
         }
     }
 
+    /// The app's song for a library recipe (what Dream a Song writes): the recipe's title, seed, key, chord feel, mode
+    /// and tempo carry over; the tempo is split into the nearest speed and a nudge so the speed buttons still work.
+    init(from library: NardukMusicCore.SongRecipe, style: BlasterStyle) {
+        let library = library.validated()
+        self.init(style: style, name: library.title, seed: library.seed)
+        keyRoot = 60 + library.keyPitchClass
+        voicing = library.voicing
+        if let comping = library.comping { self.comping = comping }
+        mood = library.mode.flatMap { mode in Mood.allCases.first { $0.mode == mode } }
+        if let bpm = library.bpm {
+            let base = style.baseBPM
+            speed = Speed.allCases.min { abs(base * $0.scale - bpm) < abs(base * $1.scale - bpm) } ?? .medium
+            tempoNudge = bpm / (base * speed.scale)
+        }
+    }
+
     var settings: SongSettings {
         var settings: SongSettings
         switch style {

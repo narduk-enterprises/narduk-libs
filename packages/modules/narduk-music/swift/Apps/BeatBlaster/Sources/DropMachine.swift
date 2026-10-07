@@ -48,6 +48,12 @@ struct DropMachine: Equatable {
         min(1, max(0, Double(heldSteps) * secondsPerStep / fullChargeSeconds))
     }
 
+    /// How long the riser lasts, in steps: it sweeps up exactly as the circle fills, so it tops out when the build
+    /// stops getting faster instead of climbing on past it.
+    static func riserSteps(secondsPerStep: Double) -> Int {
+        max(1, Int((fullChargeSeconds / secondsPerStep).rounded()))
+    }
+
     /// What plays at `step` in the current phase.
     enum Layer: Equatable {
         /// The song as written.
@@ -64,11 +70,11 @@ struct DropMachine: Equatable {
             return .song
         case .building(let start):
             guard step >= start else { return .song }
-            let held = Double(step - start) * secondsPerStep
-            let every = held < 1 ? 4 : (held < 2 ? 2 : 1)
-            return .build(
-                rollEvery: every, intensity: Self.charge(heldSteps: step - start, secondsPerStep: secondsPerStep),
-                isFirstStep: step == start)
+            // Everything rides the charge, and the charge stops at 1: once the circle is full the roll, its volume and
+            // the riser (`riserSteps`) hold where they are until the release, however long that is.
+            let charge = Self.charge(heldSteps: step - start, secondsPerStep: secondsPerStep)
+            let every = charge < 0.25 ? 4 : (charge < 0.5 ? 2 : 1)
+            return .build(rollEvery: every, intensity: charge, isFirstStep: step == start)
         case .dropping(let start, let end, let power):
             guard step >= start, step < end else { return .song }
             return .drop(position: step - start, power: power)

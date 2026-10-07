@@ -63,6 +63,10 @@ public enum DropEngineError: LocalizedError {
     /// Each `start()` builds a new synth whose counters begin at 0; the published counters add them to this base, so
     /// they stay monotonic across restarts and a consumer's wrapping `delta` never sees a jump back.
     @ObservationIgnored private var hitBase = HitCounters()
+    /// The pitched notes the note pump has handed the synth, tracked against the audible step position so
+    /// `latestMusic` can say which notes are sounding. Main actor only: the render thread is untouched.
+    @ObservationIgnored private var noteTracker = NoteTracker()
+    @ObservationIgnored private var audibleStepPosition: Double = 0
 
     /// The pre-0.4.0 frame, built from `latestSound` and `latestMusic`; its `hits` are the instruments that fired since
     /// the previous publish.
@@ -75,6 +79,14 @@ public enum DropEngineError: LocalizedError {
     /// 0 ... 1
     public var masterVolume: Float = 0.8 {
         didSet { core?.setMasterVolume(min(max(masterVolume, 0), 1)) }
+    }
+
+    /// Mutes what reaches the speaker and nothing else: the recording and the `SoundFrameSource` keep the full signal.
+    /// For a headless run that must verify recording and the meters without making a sound (Beat Blaster's
+    /// `-silent YES`). Unlike `masterVolume`, which scales the synth itself, this acts after the capture point. False
+    /// (the default) leaves the output as it was. Takes effect at once, also while playing.
+    public var mutesHardwareOutput = false {
+        didSet { applyHardwareVolume() }
     }
 
     /// The iOS audio-session setup `start()` applies. Set it before `start()`; ignored on macOS.
@@ -96,6 +108,9 @@ public enum DropEngineError: LocalizedError {
     public static let frameInterval = 1.0 / 60
 
     @ObservationIgnored private let engine = AVAudioEngine()
+    /// Where the synth lands before the output stage: the recording taps it, so `mutesHardwareOutput` can silence the
+    /// main mixer (the speaker path) without silencing the capture. Graph: source -> capture mixer -> main mixer -> out.
+    @ObservationIgnored private let captureMixer = AVAudioMixerNode()
     @ObservationIgnored private var sourceNode: AVAudioSourceNode?
     @ObservationIgnored private var core: DropSynthCore?
     @ObservationIgnored private var analyzer: SoundAnalyzer?
@@ -159,8 +174,10 @@ public enum DropEngineError: LocalizedError {
 
         let node = AVAudioSourceNode(format: format, renderBlock: DropEngine.makeRenderBlock(core))
         engine.attach(node)
-        engine.connect(node, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.outputVolume = 1
+        if captureMixer.engine == nil { engine.attach(captureMixer) }
+        engine.connect(node, to: captureMixer, format: format)
+        engine.connect(captureMixer, to: engine.mainMixerNode, format: format)
+        applyHardwareVolume()
         engine.prepare()
 
         self.core = core
@@ -169,6 +186,9 @@ public enum DropEngineError: LocalizedError {
         scheduledThrough = -1
         currentStep = 0
         hitBase = latestMusic.hitCounts
+        // Fresh synth, fresh notes; the counters carry on so a consumer's diff never sees a jump back.
+        noteTracker.reset()
+        audibleStepPosition = 0
         pumpNotes()  // fill the first look-ahead window before the first render callback
 
         do {
@@ -190,6 +210,7 @@ public enum DropEngineError: LocalizedError {
         isRunning = false
         timer?.invalidate()
         timer = nil
+        noteTracker.reset()
         core?.beginFadeOut()
         stopTask?.cancel()
         stopTask = Task { @MainActor [weak self] in
@@ -201,13 +222,22 @@ public enum DropEngineError: LocalizedError {
         }
     }
 
+    /// The speaker path's volume: 0 when muted, else 1 (the main mixer is not a user-facing volume).
+    private func applyHardwareVolume() {
+        engine.mainMixerNode.outputVolume = mutesHardwareOutput ? 0 : 1
+    }
+
+    /// The main mixer's output volume, for tests.
+    var hardwareVolume: Float { engine.mainMixerNode.outputVolume }
+
     // MARK: Recording
 
-    /// Records the master bus to an AAC `.m4a` at `url` until `stopRecording()`.
+    /// Records the synth's output to an AAC `.m4a` at `url` until `stopRecording()`, at full level also while
+    /// `mutesHardwareOutput` is on.
     public func startRecording(to url: URL) throws {
         guard isRunning else { throw DropEngineError.notRunning }
         guard recorder == nil else { throw DropEngineError.alreadyRecording }
-        let mixer = engine.mainMixerNode
+        let mixer = captureMixer
         let format = mixer.outputFormat(forBus: 0)
         let recorder = try DropRecorder(url: url, format: format)
         mixer.installTap(onBus: 0, bufferSize: 4_096, format: format, block: recorder.makeTapBlock())
@@ -218,7 +248,7 @@ public enum DropEngineError: LocalizedError {
     /// Finishes the file and returns its URL (nil if nothing was recording or the file failed).
     public func stopRecording() async -> URL? {
         guard let recorder else { return nil }
-        engine.mainMixerNode.removeTap(onBus: 0)
+        captureMixer.removeTap(onBus: 0)
         self.recorder = nil
         isRecording = false
         return await Task.detached { recorder.finish() }.value
@@ -249,6 +279,7 @@ public enum DropEngineError: LocalizedError {
         let secondsPerStep = settings.secondsPerStep
         let latency = engine.outputNode.presentationLatency + Double(core.lastBufferFrames) / core.sampleRate
         let audible = max(core.renderedStepPosition - latency / secondsPerStep, 0)
+        audibleStepPosition = audible
         let step = Int(audible)
         if step != currentStep { currentStep = step }
         pumpNotes()
@@ -261,7 +292,10 @@ public enum DropEngineError: LocalizedError {
         let through = Int(core.renderedStepPosition + DropEngine.lookaheadSeconds / secondsPerStep)
         guard through > scheduledThrough else { return }
         // The core drops anything that arrives more than a step late.
-        for note in noteProvider(through) { core.schedule(note) }
+        for note in noteProvider(through) {
+            core.schedule(note)
+            noteTracker.schedule(note)
+        }
         scheduledThrough = through
     }
 
@@ -271,6 +305,7 @@ public enum DropEngineError: LocalizedError {
         analysisScratch.withUnsafeMutableBufferPointer { core.copyRecentSamples(into: $0) }
         latestSound = analysisScratch.withUnsafeBufferPointer { analyzer.analyze($0, time: time) }
         previousHits = latestMusic.hitCounts
+        noteTracker.advance(to: audibleStepPosition)
         var counts = core.hitCounters
         counts.lanes &+= hitBase.lanes
         latestMusic = musicContext(core: core, hitCounts: counts)
@@ -285,7 +320,7 @@ public enum DropEngineError: LocalizedError {
             secondsPerStep: settings.secondsPerStep, stepsPerBar: settings.stepsPerBar, stepsPerPhrase: stepsPerPhrase,
             phraseProgress: Float(currentStep % stepsPerPhrase) / Float(stepsPerPhrase),
             buildThreshold: Float(conductor.buildThreshold), dropThreshold: Float(conductor.dropThreshold),
-            dropQueued: conductor.dropQueued)
+            dropQueued: conductor.dropQueued, heldNotes: noteTracker.held, noteCounts: noteTracker.counters)
     }
 
     // MARK: Device changes

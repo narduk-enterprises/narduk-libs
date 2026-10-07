@@ -17,28 +17,32 @@ struct BeatLabView: View {
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                 Vignette()
-                VStack(spacing: compact ? 10 : 16) {
-                    HStack(spacing: 12) {
-                        HomeButton(action: home)
-                        Text("🥁 Beat Lab")
-                            .font(.system(size: compact ? 26 : 44, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                        Spacer(minLength: 0)
+                // Scrolls, so a short landscape window can still reach the controls and the lights bar.
+                ScrollView {
+                    VStack(spacing: compact ? 10 : 16) {
+                        HStack(spacing: 12) {
+                            HomeButton(action: home)
+                            Text("🥁 Beat Lab")
+                                .font(.system(size: compact ? 26 : 44, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Spacer(minLength: 0)
+                        }
+                        Text(
+                            "Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap."
+                        )
+                        .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        BeatGrid(audio: audio, lab: lab, compact: compact)
+                        controls(compact: compact)
+                        MusicLightsBar(
+                            audio: audio, musicTitle: "My beat", musicEmoji: "🥁", showMusicChange: false,
+                            changeMusic: {}, changeLights: { withAnimation { panel = true } })
                     }
-                    Text(
-                        "Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap."
-                    )
-                    .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    BeatGrid(audio: audio, lab: lab, compact: compact)
-                    controls(compact: compact)
-                    Spacer(minLength: 0)
-                    MusicLightsBar(
-                        audio: audio, musicTitle: "My beat", musicEmoji: "🥁", showMusicChange: false,
-                        changeMusic: {}, changeLights: { withAnimation { panel = true } })
+                    .padding(compact ? 12 : 24)
+                    .frame(width: geometry.size.width)
                 }
-                .padding(compact ? 12 : 24)
+                .scrollBounceBehavior(.basedOnSize)
                 if panel {
                     PickerPanel(title: "Pick the lights", badge: .lights, close: { withAnimation { panel = false } }) {
                         LightsGrid(audio: audio, selectedID: audio.lightsID, compact: compact) { audio.lightsID = $0 }
@@ -50,26 +54,15 @@ struct BeatLabView: View {
         .onAppear { audio.startBeatLab(lab) }
     }
 
+    /// The controls wrap onto as many rows as the width needs (they used to be wider than a phone and stretched the
+    /// whole screen past its edge).
     private func controls(compact: Bool) -> some View {
         let size: CGFloat = compact ? 16 : 22
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                transport(size)
-                Spacer(minLength: 0)
-                speed(size)
-                keyPicker(size)
-                edit(size)
-            }
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    transport(size)
-                    speed(size)
-                }
-                HStack(spacing: 10) {
-                    keyPicker(size)
-                    edit(size)
-                }
-            }
+        return ChipLayout(spacing: 10) {
+            transport(size)
+            speed(size)
+            keyPicker(size)
+            edit(size)
         }
     }
 

@@ -1,5 +1,7 @@
 import XCTest
 
+@testable import BeatBlaster
+
 /// The DROP button's state machine: the build starts on the press step, the drop lands on the release step (never
 /// later), holds scale the build and the drop, and repeated presses never stack.
 final class DropMachineTests: XCTestCase {
@@ -71,5 +73,45 @@ final class DropMachineTests: XCTestCase {
         machine.release(at: 2, secondsPerStep: sps)
         XCTAssertTrue(machine.press(at: 10))
         XCTAssertEqual(machine.phase, .building(start: 10))
+    }
+
+    func testTheBuildStopsChangingOnceTheCircleIsFull() {
+        var machine = DropMachine()
+        machine.press(at: 0)
+        let full = Int((DropMachine.fullChargeSeconds / sps).rounded(.up))
+        guard case .build(let every, let intensity, _) = machine.layer(at: full, secondsPerStep: sps) else {
+            return XCTFail("not building at full charge")
+        }
+        XCTAssertEqual(every, 1)
+        XCTAssertEqual(intensity, 1, accuracy: 1e-9)
+        for held in [full + 1, full + 16, full * 2, full * 10, 100_000] {
+            guard
+                case .build(let laterEvery, let laterIntensity, let first) = machine.layer(
+                    at: held, secondsPerStep: sps)
+            else { return XCTFail("not building after \(held) steps") }
+            XCTAssertEqual(laterEvery, every, "roll density at \(held)")
+            XCTAssertEqual(laterIntensity, intensity, "roll volume at \(held)")
+            XCTAssertFalse(first)
+        }
+    }
+
+    func testTheRollOnlyGetsFasterBeforeTheCircleIsFull() {
+        var machine = DropMachine()
+        machine.press(at: 0)
+        var last = Int.max
+        for step in 0...Int((DropMachine.fullChargeSeconds / sps).rounded(.up)) {
+            guard case .build(let every, _, _) = machine.layer(at: step, secondsPerStep: sps) else { continue }
+            XCTAssertLessThanOrEqual(every, last)
+            last = every
+        }
+        XCTAssertEqual(last, 1)
+    }
+
+    func testTheRiserTopsOutWhenTheCircleFills() {
+        for bpm in [90.0, 120, 140, 174] {
+            let sps = 60 / bpm / 4
+            let steps = DropMachine.riserSteps(secondsPerStep: sps)
+            XCTAssertEqual(Double(steps) * sps, DropMachine.fullChargeSeconds, accuracy: sps)
+        }
     }
 }

@@ -233,7 +233,7 @@ enum BlasterInput: Equatable {
                 guard let self else { return }
                 let t = Float(min(1, Date().timeIntervalSince(start) / DropMachine.fullChargeSeconds))
                 self.drop.setGain(1 + 0.5 * t, for: .fx)
-                self.drop.setGain(1 - 0.4 * t, for: .drums)
+                self.drop.setGain(Self.restingDrums - 0.55 * t, for: .drums)
                 self.drop.masterVolume = 0.75 + 0.25 * t
                 try? await Task.sleep(for: .milliseconds(40))
             }
@@ -270,11 +270,15 @@ enum BlasterInput: Equatable {
         }
     }
 
+    private static let restingBass: Float = 1.2
+    private static let restingDrums: Float = 1.15
+
     private func resetMix() {
         drop.setMuted(false, for: .bass)
-        drop.setGain(1, for: .bass)
-        drop.setGain(1, for: .drums)
+        // The resting mix keeps the kick and bass up front (the drop lands louder still: 1.4 and 1.3).
+        drop.setGain(Self.restingBass, for: .bass)
+        drop.setGain(Self.restingDrums, for: .drums)
         drop.setGain(1, for: .fx)
-        drop.masterVolume = 0.8
+        drop.masterVolume = 0.85
     }
 }
