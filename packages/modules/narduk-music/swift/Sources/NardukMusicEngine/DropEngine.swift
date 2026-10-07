@@ -144,6 +144,19 @@ public enum DropEngineError: LocalizedError {
         core?.setMuted(muted, for: channel.bus)
     }
 
+    // MARK: Cuts
+
+    /// Chops the song now: a beat repeat (`.stutter`), trance `.gate`, `.reverse` slice or re-sliced `.chop` of
+    /// `division` slices for `steps` sixteenths, from the next audio buffer, then the song comes back. For a live
+    /// "STUTTER" button (narduk-libs#1641). Returns false when the engine is stopped or the event ring is full.
+    @discardableResult
+    public func cut(
+        _ mode: CutMode = .stutter, division: CutDivision = .sixteenth, steps: Int = 4, amount: Double = 0.5,
+        seed: Int = 0
+    ) -> Bool {
+        core?.cut(mode, division: division, steps: steps, amount: amount, seed: seed) ?? false
+    }
+
     // MARK: Transport
 
     /// Builds the graph at the output device's sample rate and starts playing from step 0.

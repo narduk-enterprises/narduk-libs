@@ -96,6 +96,7 @@ struct SynthState {
     var tapeLength = 0
     var tapeRead: Double = 0
     var tapeReturn = 0
+    var cut = MasterCut()
     var limiter: BrickwallLimiter
 
     // Analysis / telemetry
@@ -179,6 +180,13 @@ struct SynthState {
         guard pendingCount < SynthState.pendingCapacity else {
             droppedEvents += 1
             return
+        }
+        var event = event
+        if event.flags & SynthEvent.StrumFlags.immediate != 0 {
+            // Due at the sample the render is on: the step it falls in, and the samples into that step.
+            event.step = clock.step(atSample: sampleClock)
+            event.offset = Int32(max(sampleClock - clock.sample(forStep: event.step), 0))
+            event.delay = 0
         }
         pending[pendingCount] = event
         pendingCount += 1
@@ -304,6 +312,14 @@ struct SynthState {
         case 14, 15, 16:  // acoustic, electric, bass guitar (a strum's strings arrive as the first two)
             startString(StringKind(rawValue: e.instrument - 14) ?? .acoustic, e)
         case 19, 20: startVocal(e)
+        case 21:  // cut: the master is stuttered, gated, reversed or re-sliced for lengthSteps
+            let division = CutDivision(formant: e.formant < 0 ? CutDivision.sixteenth.formant : Double(e.formant))
+            let packed = max(Int(e.voice), 0)
+            let mode = CutMode.allCases[(packed & 15) % CutMode.allCases.count]
+            cut.begin(
+                mode: mode, slice: Int((clock.samplesPerStep * division.steps).rounded()), length: gateSamples(e),
+                amount: e.drive < 0 ? 0.5 : e.drive, seed: UInt32(truncatingIfNeeded: packed >> 4),
+                historyWrite: historyWrite)
         default: return  // 17, 18 (strums) were expanded into strings when queued
         }
         if e.flags & SynthEvent.StrumFlags.string == 0 {
@@ -597,6 +613,10 @@ struct SynthState {
                 stutterAge += 1
                 stutterRemaining -= 1
             }
+            if cut.isActive {
+                (mixL, mixR) = cut.process(
+                    mixL, mixR, historyLeft: historyLeft, historyRight: historyRight, mask: historyMask)
+            }
             historyWrite += 1
 
             // Soft saturation into the brickwall limiter.
@@ -678,6 +698,20 @@ public final class DropSynthCore: @unchecked Sendable {
     @discardableResult
     public func schedule(_ note: ScheduledNote) -> Bool {
         events.push(SynthEvent(note))
+    }
+
+    /// Cuts the master now: a beat repeat, gate, reverse or re-slice for `steps` sixteenths from the next sample the
+    /// render thread processes (the live "STUTTER" button). Returns false when the event ring is full.
+    @discardableResult
+    public func cut(
+        _ mode: CutMode, division: CutDivision = .sixteenth, steps: Int = 2, amount: Double = 0.5, seed: Int = 0
+    ) -> Bool {
+        var event = SynthEvent(
+            ScheduledNote(
+                step: 0, instrument: .cut, velocity: 1,
+                params: .cut(mode, division: division, steps: steps, amount: amount, seed: seed)))
+        event.flags |= SynthEvent.StrumFlags.immediate
+        return events.push(event)
     }
 
     /// Sets the tempo; the render thread applies it from the next bar boundary.
