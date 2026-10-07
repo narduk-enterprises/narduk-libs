@@ -276,4 +276,14 @@ enum FunNames {
 @MainActor enum Hints {
     static func seen(_ id: String) -> Bool { UserDefaults.standard.bool(forKey: "hint.\(id)") }
     static func markSeen(_ id: String) { UserDefaults.standard.set(true, forKey: "hint.\(id)") }
+
+    /// A hint that nobody acts on still retires: it shows at most `limit` times, then counts as seen.
+    static let limit = 3
+    static func noteShown(_ id: String) {
+        guard !seen(id) else { return }
+        let key = "hint.shown.\(id)"
+        let count = UserDefaults.standard.integer(forKey: key) + 1
+        UserDefaults.standard.set(count, forKey: key)
+        if count >= limit { markSeen(id) }
+    }
 }
