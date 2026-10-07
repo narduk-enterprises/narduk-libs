@@ -16,12 +16,13 @@ struct GalleryTile: Identifiable {
     let content: @MainActor (TileContext) -> AnyView
 
     static var all: [GalleryTile] {
-        Visualizer.all.map { visualizer in
-            GalleryTile(id: visualizer.id) { context in
-                AnyView(
-                    Canvas { canvas, size in visualizer.draw(&canvas, size, context.frame) }
-                        .accessibilityLabel(visualizer.id))
+        [tunnel]
+            + Visualizer.all.map { visualizer in
+                GalleryTile(id: visualizer.id) { context in
+                    AnyView(
+                        Canvas { canvas, size in visualizer.draw(&canvas, size, context.frame) }
+                            .accessibilityLabel(visualizer.id))
+                }
             }
-        }
     }
 }
