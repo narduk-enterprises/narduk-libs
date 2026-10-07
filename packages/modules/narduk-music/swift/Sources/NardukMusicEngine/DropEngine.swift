@@ -160,6 +160,30 @@ public enum DropEngineError: LocalizedError {
         core?.cut(mode, division: division, steps: steps, amount: amount, seed: seed) ?? false
     }
 
+    // MARK: Drop tie-in
+
+    /// Schedules the sampled-voice riser (`VocalFX.riser`) that climbs into `dropStep`, an absolute song step. For a
+    /// drop arranger: call it a bar or two ahead. Notes already in the past are dropped by the core. Returns the
+    /// number scheduled, 0 when the engine is stopped.
+    @discardableResult
+    public func scheduleVocalRiser(
+        intoDropAt dropStep: Int, steps: Int = 16, pitch: Int = 67, vowel: VocalVowel = .ah
+    ) -> Int {
+        schedule(VocalFX.riser(endStep: dropStep, steps: steps, pitch: pitch, vowel: vowel))
+    }
+
+    /// Schedules the stutter that tightens (eighth, sixteenth, thirty-second) into `dropStep`, an absolute song step.
+    @discardableResult
+    public func scheduleStutterIntoDrop(at dropStep: Int, beats: Int = 1, seed: Int = 0) -> Int {
+        schedule(VocalFX.stutterIntoDrop(dropStep: dropStep, beats: beats, seed: seed))
+    }
+
+    private func schedule(_ notes: [ScheduledNote]) -> Int {
+        guard let core else { return 0 }
+        for note in notes { core.schedule(note) }
+        return notes.count
+    }
+
     // MARK: Transport
 
     /// Builds the graph at the output device's sample rate and starts playing from step 0.

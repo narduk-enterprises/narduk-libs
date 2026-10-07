@@ -86,6 +86,14 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   chop, run); scenario notes take `technique` and `kind`, `run` (VocalRun) works on sampled notes too, and the master cut
   stutters, gates and reverses it like everything else. `SampleBank.shared` loads at synth construction, never on the
   audio thread.
+- A vocal processor and a song-driven vocal line (narduk-libs#1641): `NoteParams.expression` carries a
+  `VocalExpression` (vibrato depth and rate, scoops, falls and bends, a vowel morph between two banks, formant shift,
+  breath, grit, pitch snap, detune, and throws: tempo-synced echo, telephone/radio/muffled filter, reverse swell,
+  stretch or freeze; presets `torch`, `power`, `robot`, `telephone`, `morphing`, `frozen`; scenario notes take
+  `expression`). With `SongSettings.variety` above 0 the vocal follows the chords (chord tones on strong beats, in the
+  key, call and response with the hook, stacked harmonies, a few on-grid chops, a reverse swell into each drop).
+  `VocalFX.riser` / `VocalFX.stutterIntoDrop` and `DropEngine.scheduleVocalRiser` / `scheduleStutterIntoDrop` are for a
+  drop arranger. A note without an expression renders exactly as before.
 
 ## 0.4.1
 

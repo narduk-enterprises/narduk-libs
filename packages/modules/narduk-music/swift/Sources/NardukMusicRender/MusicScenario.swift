@@ -118,6 +118,9 @@ public struct MusicScenario: Sendable, Hashable, Codable {
         /// the slice, 0 ... 1; for a run kind, `length` is how long the whole run takes.
         public var technique: SampleTechnique?
         public var kind: SampleKind?
+        /// A `vocalSample` note's expression and character: vibrato, scoop, bend, morph, formant shift, echo, filter
+        /// and the rest (see `VocalExpression`; `preset` names a starting point).
+        public var expression: VocalExpression?
 
         public init(
             time: Double, instrument: Instrument, pitch: Int, length: Double? = nil, velocity: Double? = nil,
@@ -125,7 +128,7 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil, feel: VocalFeel? = nil,
             run: VocalRun? = nil,
             cut: CutMode? = nil, division: CutDivision? = nil, cutSeed: Int? = nil, technique: SampleTechnique? = nil,
-            kind: SampleKind? = nil
+            kind: SampleKind? = nil, expression: VocalExpression? = nil
         ) {
             self.time = time
             self.instrument = instrument
@@ -146,6 +149,7 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             self.cutSeed = cutSeed
             self.technique = technique
             self.kind = kind
+            self.expression = expression
         }
     }
 
@@ -236,6 +240,7 @@ public struct MusicScenario: Sendable, Hashable, Codable {
                 params.voice = NoteParams.sampleVoice(
                     note.vowel ?? .ah, technique: note.technique ?? .vibrato, kind: note.kind ?? .sustain)
                 params.formant = note.register
+                if let expression = note.expression { params = params.expressed(expression) }
             }
             if note.instrument == .vocal || note.instrument == .vocalChop || note.instrument == .vocalSample {
                 if note.instrument != .vocalSample {

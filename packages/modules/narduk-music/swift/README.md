@@ -122,6 +122,19 @@ what each sound means ("laser ← swiftc"), for your UI. The other knobs:
 
 Cues are quantized to the grid, so a burst becomes a pattern.
 
+## Processing the voice
+
+A sampled vocal is a base the engine reshapes, note by note. `NoteParams.expression` carries a `VocalExpression`
+(packed into one `Int`, so a plain note costs nothing): vibrato depth and rate, scoops, falls and bends, a vowel morph
+between two banks, a formant shift, breath, grit, an optional pitch snap, detune, and throws (tempo-synced echo,
+telephone/radio/muffled filter, reverse swell, stretch or freeze). Named presets: `torch`, `power`, `robot`,
+`telephone`, `morphing`, `frozen`. A scenario note takes `"expression": {"preset": "torch"}` or any field by name.
+
+With `SongSettings.variety` above 0 the conductor can sing the song: the line follows the chords (chord tones on strong
+beats, in the key, call and response against the hook, a few on-grid chops), with stacked harmonies and a swell into
+each drop. For a drop arranger: `VocalFX.riser(endStep:)`, `VocalFX.stutterIntoDrop(dropStep:)`, or
+`DropEngine.scheduleVocalRiser(intoDropAt:)` / `scheduleStutterIntoDrop(at:)`.
+
 ## Render offline and from the command line
 
 `OfflineRenderer` runs the conductor and the synth on a virtual 60 Hz clock,

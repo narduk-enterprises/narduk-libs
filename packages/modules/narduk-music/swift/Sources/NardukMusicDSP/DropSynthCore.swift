@@ -66,6 +66,9 @@ struct SynthState {
     let sampleBank: SampleBank?
     let samples: UnsafeMutablePointer<SampleVoice>
     var samplesLive = 0
+    // The vocal echo: tempo-synced throws from sampled notes that ask for one. It only runs while one is sounding.
+    var vocalEcho: StereoDelay
+    var vocalEchoTail = 0
     var wobble = WobbleVoice()
     var sub = SubVoice()
     var reverb: RoomReverb
@@ -145,6 +148,8 @@ struct SynthState {
         samples.initialize(repeating: SampleVoice(), count: SynthState.sampleCount)
         vocalRoom = RoomReverb(sampleRate: sampleRate, size: 0.8)
         vocalRoom.feedback = 0.84
+        vocalEcho = StereoDelay(sampleRate: sampleRate, seconds: 0.375, dampingHz: 3_000)
+        vocalEcho.feedback = 0.52
         pads = .allocate(capacity: SynthState.padCount)
         pads.initialize(repeating: PadVoice(), count: SynthState.padCount)
         hall = HallReverb(sampleRate: sampleRate)
@@ -169,6 +174,7 @@ struct SynthState {
         for i in 0..<SynthState.stringCount { strings[i].deallocate() }
         strings.deallocate()
         vocals.deallocate()
+        vocalEcho.deallocate()
         samples.deallocate()
         vocalRoom.deallocate()
         pads.deallocate()
@@ -412,8 +418,13 @@ struct SynthState {
         guard let bank = sampleBank else { return }
         let packed = e.voice < 0 ? 0 : Int(e.voice)
         let kind = SampleKind(voice: packed)
-        let technique = SampleTechnique(voice: packed)
+        var technique = SampleTechnique(voice: packed)
         let pitch = e.pitch < 0 ? 69 : e.pitch
+        // A snapped or formant-shifted note is re-sung grain by grain: it wants the steadiest recording there is.
+        if e.expression != 0, kind == .sustain {
+            let x = VocalExpression(packed: Int(e.expression))
+            if x.snap || x.formantShift != 0 { technique = .straight }
+        }
         let clip = bank.lookup(
             kind: kind, vowel: packed & 7, technique: technique, pitch: pitch, slice: e.formant < 0 ? 0 : e.formant)
         guard clip >= 0 else { return }
@@ -445,11 +456,33 @@ struct SynthState {
             }
         }
         if slot < 0 { slot = oldest }
+        var expression: VocalExpression?
+        var morphClip = -1
+        var morphRate = rate
+        if e.expression != 0 {
+            let x = VocalExpression(packed: Int(e.expression))
+            expression = x
+            if let vowel = x.morph, kind == .sustain {
+                morphClip = bank.lookup(
+                    kind: .sustain, vowel: vowel.index, technique: technique, pitch: pitch, slice: 0)
+                if morphClip >= 0 {
+                    let shift = min(max(Double(pitch - bank.clips[morphClip].root), -7), 7)
+                    morphRate = pow(2, shift / 12) * ratio
+                }
+            }
+        }
         samples[slot].trigger(
             bank: bank, clip: clip, rate: rate, gateSamples: kind == .run ? Int(Double(info.count) / rate) : gate,
-            velocity: e.velocity, gain: e.drive < 0 ? 0.8 : e.drive, pan: e.pan, engineRate: c.sampleRate)
+            velocity: e.velocity, gain: e.drive < 0 ? 0.8 : e.drive, pan: e.pan, engineRate: c.sampleRate,
+            expression: expression, morphClip: morphClip, morphRate: morphRate, notePitch: pitch,
+            seed: UInt32(truncatingIfNeeded: e.step &* 31 &+ Int(e.pitch * 8)))
         samplesLive += 1
         vocalTail = max(vocalTail, gate + Int(c.sampleRate * 2.5))
+        if let expression, expression.echo != .off {
+            vocalEcho.setTime(steps: expression.echo.steps, bpm: clock.bpm, sampleRate: Double(c.sampleRate))
+            vocalEchoTail = max(vocalEchoTail, gate + Int(c.sampleRate * 5))
+            vocalTail = max(vocalTail, vocalEchoTail)
+        }
     }
 
     mutating func startPad(_ kind: AmbientKind, _ e: SynthEvent) {
@@ -602,12 +635,16 @@ struct SynthState {
                     }
                     vocalsLive = live
                 }
+                var echoIn: Float = 0
                 if samplesLive > 0 {
                     var sampled = 0
                     for i in 0..<SynthState.sampleCount where samples[i].active {
                         let v = samples[i].next()
                         vocalL += v.0
                         vocalR += v.1
+                        let mono = (v.0 + v.1) * 0.5
+                        echoIn += mono * samples[i].echoSend
+                        extraSend += mono * samples[i].roomSend * 1.5
                         if samples[i].active { sampled += 1 }
                     }
                     samplesLive = sampled
@@ -616,6 +653,12 @@ struct SynthState {
                 let wet = vocalRoom.process((vocalL + vocalR) * 0.5 + extraSend)
                 fxL += vocalL + wet.0 * 2.4
                 fxR += vocalR + wet.1 * 2.4
+                if vocalEchoTail > 0 {
+                    vocalEchoTail -= 1
+                    let throwBack = vocalEcho.process(echoIn, echoIn)
+                    fxL += throwBack.0 * 1.2
+                    fxR += throwBack.1 * 1.2
+                }
             }
             let fxDuck = 1 - 0.5 * sidechain
             fxL *= fxDuck
