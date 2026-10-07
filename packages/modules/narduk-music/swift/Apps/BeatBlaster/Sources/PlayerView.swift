@@ -27,6 +27,19 @@ struct PlayerView: View {
             let pageHeight = max(110, geometry.size.height * (landscape ? 0.62 : 0.5) - (short ? 100 : 110))
             ZStack {
                 DropStage(audio: audio, drawing: scenePhase == .active).ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .gesture(lightsSwipe)
+                    .onTapGesture {
+                        Haptics.tap()
+                        audio.shiftColors()
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("Lights")
+                    .accessibilityHint("Tap for new colors, swipe for the next light")
+                    .accessibilityIdentifier("player.lights")
+                    .accessibilityAction(named: "New colors") { audio.shiftColors() }
+                    .accessibilityAction(named: "Next light") { audio.stepLights(by: 1) }
+                    .accessibilityAction(named: "Previous light") { audio.stepLights(by: -1) }
                 Vignette()
                 VStack(spacing: short ? 6 : 10) {
                     topBar(compact: compact, short: short)
@@ -175,6 +188,16 @@ struct PlayerView: View {
         }
     }
 
+    /// A sideways swipe on the lights moves to the next light (left) or the previous one (right).
+    private var lightsSwipe: some Gesture {
+        DragGesture(minimumDistance: 40).onEnded { drag in
+            let dx = drag.translation.width
+            guard abs(dx) > 60, abs(dx) > 1.5 * abs(drag.translation.height) else { return }
+            Haptics.tap()
+            audio.stepLights(by: dx < 0 ? 1 : -1)
+        }
+    }
+
     /// Show mode: every control faded out, the lights edge to edge, a faint REC dot and clock in one corner. A tap
     /// anywhere brings everything back; a double tap fires a short DROP.
     private func showModeLayer(compact: Bool) -> some View {
@@ -190,6 +213,7 @@ struct PlayerView: View {
                     }
                 }
                 .onTapGesture { show.reveal() }
+                .simultaneousGesture(lightsSwipe)
             if audio.isRecording {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     HStack(spacing: 5) {
