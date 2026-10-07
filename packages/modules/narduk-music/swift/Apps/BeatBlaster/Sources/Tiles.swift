@@ -21,8 +21,7 @@ struct TileContext {
     let framesPerSecond: Int
 }
 
-/// One light (visualizer) with a kid-facing name. Canvas lights draw from the frame the screen's timeline polled; the
-/// Metal and self-timed lights poll `audio.visualInput` on their own clocks at `framesPerSecond`.
+/// One light (visualizer) with a kid-facing name. Every light is Metal and polls `audio.visualInput` on their own clocks at `framesPerSecond`.
 struct VisualTile: Identifiable {
     let id: String
     let name: String
@@ -33,26 +32,18 @@ struct VisualTile: Identifiable {
         VisualTile(id: "tunnel", name: "Wormhole", emoji: "🌀") { context in
             AnyView(TunnelTile(audio: context.audio, framesPerSecond: context.framesPerSecond))
         },
-        VisualTile(id: "particles", name: "Star Burst", emoji: "🎆") { context in
-            AnyView(
-                ParticleFieldView(state: context.audio.visualState) { context.audio.visualInput }
-                    .environment(\.soundFramesPerSecond, context.framesPerSecond))
-        },
-        VisualTile(id: "kaleidoscope", name: "Kaleidoscope", emoji: "🔮") { context in
-            AnyView(
-                BeatKaleidoscopeView(state: context.audio.visualState) { context.audio.visualInput }
-                    .environment(\.soundFramesPerSecond, context.framesPerSecond))
-        },
+        intense(.particleField, id: "particles", "Star Burst", "🎆"),
+        intense(.kaleidoscope, id: "kaleidoscope", "Kaleidoscope", "🔮"),
         shader(.plasma, "Lava Lamp", "🫧"),
         shader(.starfield, "Hyperspace", "🚀"),
         shader(.warpGrid, "Warp Grid", "🕸️"),
         shader(.feedback, "Echo Trails", "💫"),
-        kind(.halo, "Sun Burst", "☀️"),
-        kind(.mirror, "Neon City", "🌃"),
-        kind(.phosphor, "Laser Loops", "➰"),
-        kind(.spectrum, "Rainbow Bars", "🌈"),
-        kind(.pads, "Light Pads", "🟪"),
-        canvas("Radial", "Star Flower", "🌸"),
+        intense(.halo, "Sun Burst", "☀️"),
+        intense(.mirror, "Neon City", "🌃"),
+        intense(.phosphor, "Laser Loops", "➰"),
+        intense(.spectrum, "Rainbow Bars", "🌈"),
+        intense(.pads, "Light Pads", "🟪"),
+        intense(.vortex, id: "Radial", "Star Flower", "🌸"),
     ]
 
     @MainActor static func with(id: String) -> VisualTile { all.first { $0.id == id } ?? all[0] }
@@ -71,25 +62,12 @@ struct VisualTile: Identifiable {
         }
     }
 
-    private static func kind(_ kind: SoundVisualizerKind, _ name: String, _ emoji: String) -> VisualTile {
-        VisualTile(id: kind.rawValue, name: name, emoji: emoji) { context in
+    private static func intense(
+        _ kind: IntenseKind, id: String? = nil, _ name: String, _ emoji: String
+    ) -> VisualTile {
+        VisualTile(id: id ?? kind.id, name: name, emoji: emoji) { context in
             AnyView(
-                Canvas { canvas, size in
-                    _ = context.frame  // redraw every tick; the state is a reference
-                    SoundVisualizers.draw(kind, &canvas, size, context.audio.visualState)
-                }
-                .background(Color.black)
-                .accessibilityLabel(name))
-        }
-    }
-
-    private static func canvas(_ id: String, _ name: String, _ emoji: String) -> VisualTile {
-        let visualizer = Visualizer.all.first { $0.id == id }!
-        return VisualTile(id: id, name: name, emoji: emoji) { context in
-            AnyView(
-                Canvas { canvas, size in visualizer.draw(&canvas, size, context.frame) }
-                    .background(Color.black)
-                    .accessibilityLabel(name))
+                BeatIntenseTile(kind: kind, name: name, audio: context.audio, framesPerSecond: context.framesPerSecond))
         }
     }
 }
