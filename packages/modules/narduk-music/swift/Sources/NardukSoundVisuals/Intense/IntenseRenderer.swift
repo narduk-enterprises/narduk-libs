@@ -37,6 +37,7 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let jellyfish: any MTLRenderPipelineState
         private let screenPass = MTLRenderPassDescriptor()
         private let fluidPass = MTLRenderPassDescriptor()
 
@@ -46,6 +47,7 @@
             let source = [
                 IntenseShaderCommon.source, IntenseEffects.source, HyperspaceShader.source, FluidGlitchShader.source,
                 FractalDiveShader.source, SynthwaveShader.source, LiquidSplashShader.source, SunShader.source,
+                JellyfishShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -62,7 +64,8 @@
             guard let hyperspace = pipeline("hyperspaceFragment"), let fluid = pipeline("fluidFragment"),
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
-                let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment")
+                let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let jellyfish = pipeline("jellyfishFragment")
             else { return nil }
             self.device = device
             self.queue = queue
@@ -73,6 +76,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.jellyfish = jellyfish
         }
 
         /// Draws one frame of `kind` into `target` through `buffer`. `surface` is required for `.fluidGlitch`: the
@@ -96,6 +100,8 @@
                 draw(liquid, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
             case .sun:
                 draw(sun, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
+            case .jellyfish:
+                draw(jellyfish, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil)
             case .fluidGlitch:
                 guard let surface else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black
