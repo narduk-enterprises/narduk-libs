@@ -2,10 +2,13 @@
     /// Aurora waves: broad silky ribbons that flow left to right as S-waves across a violet night sky, with a thin
     /// spectrum of light rising out of them, an aurora haze above and a calm sea below that reflects it all.
     ///
-    /// Bass swells the ribbons' amplitude and thickness; mids push the wave phase and fold the strands; the real
-    /// spectrum bands (weighted toward the highs) raise the embedded equaliser bars, and the highs make the stars
-    /// twinkle. The kick and the beat swell only the ribbons' glowing cores (bounded, never a full-frame flash);
-    /// `dropAmount` brightens and saturates. `fx.x` is the calm flag: motion drops to 0.4 and the beat glow goes away.
+    /// The ribbons are the music: each one rides a smoothed trace of the live waveform and a ridge of the live
+    /// spectrum over a slow S-curve, so they jump with every frame of sound. A kick punches them outward and thickens
+    /// them (fast attack, 0.16 s decay); a snare sends a shockwave out along them from the centre; hats make the silk
+    /// sparkle; the aurora rays above leap with the spectrum. Bass swells amplitude and thickness, mids fold the
+    /// strands, the spectrum raises the embedded equaliser bars, the highs twinkle the stars. Glow stays bounded,
+    /// never a full-frame flash; `dropAmount` brightens and saturates. `fx.x` is the calm flag: motion drops to 0.4,
+    /// the audio displacement softens and the drum reactions go away.
     /// Colors come from c0/c1/c2 and tints of them: c1 the pink ribbon and horizon, c1+c2 the lavender ribbon and the
     /// sky, c2 the cyan ribbon, c0+c2 the mint ribbon and the aurora haze.
     enum AuroraWavesShader {
@@ -33,6 +36,11 @@
                 float mids;
                 float highs;
                 float twinkle;    // star twinkle clock
+                float kick;       // drum envelopes, zero in calm
+                float snare;
+                float hat;
+                float live;       // how much the live audio displaces the ribbons (1, softer in calm)
+                float centre;     // where the snare shockwave starts, in wave units
                 float coreGlow;   // 1 + the bounded beat swell
                 float light;      // overall brightness (drop)
                 float sharp;      // 1 in the sky, 0 in the reflection (softer strands, no bars or stars)
@@ -42,29 +50,52 @@
                 float3 mint;
             };
 
-            // The centre line and half-width of ribbon `i` at x (aspect units), in uv-y units (up from the bottom).
-            static float2 awRibbon(thread const AuroraWavesScene &s, int i, float x) {
-                // Two components travelling in opposite directions at different speeds, a slowly breathing wave
-                // number and a scrolling noise warp: the shape keeps changing instead of sliding as one rigid braid.
+            // The centre line and half-width of ribbon `i` at wx (wave units) and xn (0 ... 1 across), in uv-y units
+            // (up from the bottom). A slow S-curve that keeps changing shape, plus the live sound: a smoothed
+            // waveform trace, a spectrum ridge, the kick's punch and the snare's travelling shockwave.
+            static float2 awRibbon(
+                thread const AuroraWavesScene &s, int i, float x, float xn, constant float *spectrum,
+                constant float *wave
+            ) {
                 float fi = float(i);
                 float f = s.flow;
                 float k = 2.4 + 0.5 * fi + 0.45 * sin(f * 0.11 + fi * 1.7);
-                float base = 0.52 + 0.055 * sin(fi * 2.4 + 0.5) + 0.035 * sin(f * 0.21 + fi * 1.9);
-                float amp = (0.085 + 0.08 * s.bass) * (1.0 - 0.06 * fi) * (0.8 + 0.3 * sin(f * 0.17 + fi * 2.6));
+                float base = 0.52 + 0.06 * sin(fi * 2.4 + 0.5) + 0.03 * sin(f * 0.21 + fi * 1.9);
+                float amp = (0.06 + 0.04 * s.bass) * (1.0 - 0.06 * fi);
                 float travelling = sin(k * x - s.phase * (1.0 + 0.2 * fi) + fi * 2.2);
                 float counter = sin(0.55 * k * x + f * (0.45 + 0.1 * fi) + fi * 4.1);
                 float warp = awNoise(float2(x * 1.25 - f * (0.3 + 0.06 * fi), fi * 7.3 + f * 0.09)) - 0.5;
-                float center = base + amp * (0.7 * travelling + 0.4 * counter) + 0.11 * warp;
+                float center = base + amp * (0.7 * travelling + 0.4 * counter) + 0.08 * warp;
+
+                float punch = 1.0 + 1.6 * s.kick;
+                // A window of the waveform that never wraps (the buffer's ends do not meet), smoothed and softly
+                // limited so a loud pure tone bends the ribbon instead of turning it into a sine wave.
+                float trace = 0.08 + clamp(xn, 0.0, 1.0) * 0.55 + fi * 0.07;
+                float osc = 0.0;
+                for (int j = -2; j <= 2; j++) { osc += waveAt(wave, trace + float(j) * 0.01); }
+                osc *= 0.2;
+                osc /= 1.0 + 1.5 * abs(osc);
+                center += osc * (0.07 + 0.05 * s.bass) * punch * s.live;
+                float bandT = 0.04 + 0.9 * abs(fract(xn * 0.8 + fi * 0.23) * 2.0 - 1.0);
+                float ridge = bandAt(spectrum, bandT);
+                center += (ridge - 0.2) * 0.07 * punch * s.live * (i % 2 == 0 ? 1.0 : -0.7);
+
+                float front = abs(x - s.centre) - (1.0 - s.snare) * 1.1;
+                center += s.snare * 0.07 * exp(-front * front / 0.012) * (i % 2 == 0 ? 1.0 : -1.0);
+
                 float swell = 0.62 + 0.38 * sin(x * (1.5 + 0.3 * fi) - f * (0.8 + 0.15 * fi) + fi * 2.1);
-                float halfWidth = (0.068 + 0.06 * s.bass) * swell * (1.08 - 0.07 * fi);
+                float halfWidth = (0.062 + 0.055 * s.bass + 0.015 * s.kick) * swell * (1.08 - 0.07 * fi);
                 return float2(center, halfWidth);
             }
 
             // Everything above the horizon at q = (x in aspect units, y up from the bottom, 0 ... 1). The sea calls
             // it too, at the mirrored point, so each pixel evaluates the sky once.
-            static float3 awSky(thread const AuroraWavesScene &sc, float2 q, constant float *spectrum) {
+            static float3 awSky(
+                thread const AuroraWavesScene &sc, float2 q, constant float *spectrum, constant float *wave
+            ) {
                 float x = q.x;
                 float wx = x * sc.waveScale;
+                float xn = x / max(sc.aspect, 0.1);
                 float y = q.y;
                 float horizon = 0.16;
                 float above = max(y - horizon, 0.0);
@@ -104,9 +135,11 @@
                 float hem = 0.655 + 0.1 * sin(wx * 1.5 - sc.flow * 0.4 + 1.2) + 0.035 * sin(wx * 4.1 + sc.flow * 0.55);
                 float streaks = awNoise(float2(wx * 9.0 + y * 5.0 - sc.flow * 0.9, y * 2.0 + sc.flow * 0.2));
                 float folds = awNoise(float2(wx * 1.8 - sc.flow * 0.22, 1.7 + sc.flow * 0.07));
+                float rays = bandAt(spectrum, 0.04 + 0.9 * abs(fract(xn * 0.7 + 0.1 + 0.05 * folds) * 2.0 - 1.0));
+                hem -= 0.05 * rays * sc.live;
                 float rise = y - hem;
-                float curtain = rise < 0.0 ? exp(-pow(rise / 0.06, 2.0)) : exp(-rise / (0.08 + 0.06 * folds));
-                curtain *= (0.5 + 0.5 * streaks) * (0.3 + 0.7 * smoothstep(0.15, 0.75, folds));
+                float curtain = rise < 0.0 ? exp(-pow(rise / 0.06, 2.0)) : exp(-rise / (0.08 + 0.06 * folds + 0.1 * rays * sc.live));
+                curtain *= (0.5 + 0.5 * streaks) * (0.3 + 0.7 * smoothstep(0.15, 0.75, folds)) * (0.75 + 0.9 * rays * sc.live);
                 float3 hazeColor = mix(sc.mint, sc.cyan, smoothstep(0.3, 1.1, x / max(sc.aspect, 0.5) + 0.3 * folds));
                 color += hazeColor * curtain * 2.1 * sc.light;
 
@@ -114,7 +147,7 @@
                 float strandsPerHalf = clamp(0.06 / max(sc.pixel * 4.5, 1e-4), 2.5, 9.0);
                 float fold = 0.35 + 1.2 * sc.mids;
                 for (int i = 0; i < 4; i++) {
-                    float2 r = awRibbon(sc, i, wx);
+                    float2 r = awRibbon(sc, i, wx, xn, spectrum, wave);
                     float d = y - r.x;
                     float v = d / max(r.y, 1e-4);
                     float av = abs(v);
@@ -128,7 +161,7 @@
                     // Silk: light streams along each strand, every strand at its own speed.
                     float speed = 1.6 + 1.4 * hash21(float2(strandIndex, fi * 5.7));
                     float silk = awNoise(float2(wx * 7.0 - sc.flow * speed, strandIndex * 1.73 + fi * 9.1));
-                    strand *= 0.25 + 0.75 * smoothstep(0.2, 0.85, silk);
+                    strand *= (0.25 + 0.75 * smoothstep(0.2, 0.85, silk)) * (1.0 + 0.9 * sc.hat * smoothstep(0.6, 0.9, silk));
                     strand = mix(0.45, strand, sc.sharp);
                     float body = smoothstep(1.1, 0.25, av);
                     float along = 0.5 + 0.5 * sin(wx * (1.6 + 0.3 * fi) + fi * 2.7 - sc.flow * (1.1 + 0.2 * fi));
@@ -148,7 +181,7 @@
                 float bandT = mix(0.12, 1.0, fract(column * 0.6180339 + 0.31));
                 float level = saturate(bandAt(spectrum, bandT) * (1.0 + 1.8 * bandT)) * (0.3 + 0.7 * hash21(float2(column, 4.7)));
                 float barHeight = (0.008 + 0.075 * level) * (0.85 + 0.3 * saturate(sc.highs * 2.5));
-                float2 spine = awRibbon(sc, 1, wx);
+                float2 spine = awRibbon(sc, 1, wx, xn, spectrum, wave);
                 float riseBar = y - spine.x;
                 float extent = riseBar > 0.0 ? barHeight : barHeight * 0.3;
                 float alongBar = saturate(abs(riseBar) / max(extent, 1e-4));
@@ -182,8 +215,14 @@
                 sc.flow = (t * 0.5 + u.misc.z * 0.1) * motion + sc.mids * 0.6;
                 sc.phase = (t * 0.6 + u.misc.z * 0.12) * motion + sc.mids * 1.1;
                 sc.twinkle = t * 2.2 * motion;
+                float drums = 1.0 - calm;
+                sc.kick = saturate(u.env.x) * drums;
+                sc.snare = saturate(u.env.y) * drums;
+                sc.hat = saturate(u.env.z) * drums;
+                sc.live = mix(1.0, 0.4, calm);
+                sc.centre = 0.5 * aspect * sc.waveScale;
                 float beatPulse = pow(1.0 - fract(u.resTime.w), 3.0);
-                sc.coreGlow = 1.0 + (1.0 - calm) * (0.9 * saturate(u.env.x) + 0.25 * beatPulse);
+                sc.coreGlow = 1.0 + (1.0 - calm) * (0.5 * saturate(u.env.x) + 0.25 * beatPulse);
                 sc.light = 0.85 + 0.3 * drop + 0.15 * u.wobble.z;
                 float3 white = float3(0.86, 0.82, 1.0);
                 sc.pink = mix(u.c1.rgb, white, 0.22);
@@ -196,7 +235,7 @@
                 float horizon = 0.16;
                 float3 color;
                 if (y >= horizon) {
-                    color = awSky(sc, float2(x, y), spectrum);
+                    color = awSky(sc, float2(x, y), spectrum, wave);
                 } else {
                     // Sea: the sky mirrored about the horizon (compressed, so the ribbons reach the water), broken
                     // by perspective ripples, darkened with depth, with pink shimmer near the horizon.
@@ -209,7 +248,7 @@
                         x + (ripple * 0.035 + fine * 0.012) * (0.4 + depth), horizon + (horizon - y) * 2.6
                             + (ripple * 0.06 + fine * 0.02) * (0.3 + depth));
                     sc.sharp = 0.0;
-                    float3 sky = awSky(sc, mirrored, spectrum);
+                    float3 sky = awSky(sc, mirrored, spectrum, wave);
                     float3 deep = sc.lavender * sc.lavender * 0.1 + float3(0.004, 0.004, 0.014);
                     color = deep + sky * (0.58 - 0.3 * depth);
                     float glint = pow(saturate(awNoise(float2(x * 34.0, rz * 26.0 + swellT * 2.0))), 7.0);

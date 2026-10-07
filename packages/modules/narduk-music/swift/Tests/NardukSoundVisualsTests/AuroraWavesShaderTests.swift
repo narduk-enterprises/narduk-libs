@@ -179,6 +179,18 @@
             #expect(twoSeconds > quarter, "two seconds on looks like a quarter second on (\(twoSeconds))")
         }
 
+        /// Jumpy, not just bright: a kick moves the ribbons themselves (their light lands somewhere else), far more
+        /// than its bounded glow changes the mean.
+        @Test(.enabled(if: hasMetal, "no Metal device on this host")) func aKickPunchesTheRibbons() throws {
+            let h = Self.size.height
+            let without = try Self.render(Self.state(bass: 0.6, mids: 0.4, highs: 0.2))
+            let with = try Self.render(Self.state(bass: 0.6, mids: 0.4, highs: 0.2, kickOnLast: true))
+            let moved = Self.drift(without, with, y0: h * 2 / 10, y1: h * 7 / 10)
+            let glow = abs(Self.mean(with, y0: 0, y1: h) - Self.mean(without, y0: 0, y1: h))
+            #expect(moved > 0.03, "the kick did not move the ribbons (\(moved))")
+            #expect(moved > glow * 2, "the kick only brightened (moved \(moved), glow \(glow))")
+        }
+
         /// Writes a filmstrip (frames a quarter second apart) when `NARDUK_AURORA_WAVES_DUMP` names a directory.
         @Test(.enabled(if: hasMetal, "no Metal device on this host")) func writesAFilmstripWhenAskedTo() throws {
             #if canImport(ImageIO) && canImport(CoreGraphics)
@@ -187,6 +199,22 @@
                     let state = Self.state(bass: 0.6, mids: 0.4, highs: 0.3, frames: 90 + step * 15)
                     let pixels = try Self.render(state, width: 640, height: 360)
                     try Self.writePNG(pixels, width: 640, height: 360, to: "\(directory)/aurora-waves-film-\(step).png")
+                }
+                // A real drop, a kick every quarter second: frames 0, 3, 6 and 12 after a kick.
+                let renderer = try Self.renderer()
+                let state = SoundVisualState(seed: 7)
+                var now = 1.0
+                for i in 0..<133 {
+                    let input = SoundVisualInput(
+                        frame: Script.frame(UInt64(i + 1), level: 0.8),
+                        music: Script.music(step: i / 4, kicks: i % 15 == 0 ? 1 : 0, snares: i % 30 == 15 ? 1 : 0))
+                    state.update(input, now: now)
+                    now += 1.0 / 60
+                    guard [120, 123, 126, 132].contains(i) else { continue }
+                    let pixels = try #require(
+                        renderer.renderOffscreen(.auroraWaves, state: state, width: 640, height: 360))
+                    try Self.writePNG(
+                        pixels, width: 640, height: 360, to: "\(directory)/aurora-waves-kick-\(i - 120).png")
                 }
             #endif
         }
