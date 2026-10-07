@@ -29,6 +29,10 @@ public final class OfflineRenderer {
     /// False stops the conductor's notes reaching the synth, so only `schedule`d notes sound.
     public let playsConductor: Bool
 
+    /// Decides, note by note, whether a conductor note reaches the synth (nil lets every one through). It lets a render
+    /// duck the song under a DROP the way the app does: the kick and bass in a build, the drums and bass in a drop.
+    public var conductorNoteFilter: (@Sendable (ScheduledNote) -> Bool)?
+
     private let core: DropSynthCore
     private var directNotes: [ScheduledNote] = []
     private var scheduledThrough = -1
@@ -128,7 +132,9 @@ public final class OfflineRenderer {
         pumpDirectNotes()
         guard through > scheduledThrough else { return }
         let written = conductor.advance(throughStep: through)
-        if playsConductor { for note in written { core.schedule(note) } }
+        if playsConductor {
+            for note in written where conductorNoteFilter?(note) ?? true { core.schedule(note) }
+        }
         scheduledThrough = through
     }
 
