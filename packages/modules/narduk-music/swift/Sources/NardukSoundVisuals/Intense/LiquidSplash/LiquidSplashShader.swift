@@ -1,6 +1,6 @@
 #if canImport(Metal)
     /// Liquid splash: iridescent fluid filaments streaming out of a bright core, lit like glossy liquid, with shaded
-    /// droplets and fine spray flying outward. One analytic pass. The filaments are ridged 3-D value noise sampled on a
+    /// droplets and fine spray flying outward and growing as they near the viewer. One analytic pass. The filaments are ridged 3-D value noise sampled on a
     /// cylinder (angle on the circle, radius along it), so they are seamless around the core and stream outward with
     /// `travel`; a finite-difference normal gives each strand a diffuse side and a white specular edge, and the hue
     /// drifts with the normal for the oil-film look. Bass (band 0.05) sets the reach of the splash and the core,
@@ -62,23 +62,26 @@
                 return pow(smoothstep(thin, 1.0, ridge), 2.2);
             }
 
-            // One layer of droplets: each grid cell owns one sphere that flies outward through the cell and fades at
-            // both ends of its flight. Shaded as a ball with a white specular and a palette rim.
+            // One layer of droplets. The layer's grid lives in a space that zooms out of the core (scale 1 -> 2 over
+            // `zoom`), so every droplet flies outward and grows as it nears the viewer, then fades as the layer wraps;
+            // two layers half a cycle apart make the flight continuous. Each droplet wobbles on its own sine and is
+            // shaded as a ball with a white specular and a palette rim.
             static float3 splashDroplets(
-                float2 p, float cs, float travel, float speed, float seed, float density, float highs,
+                float2 p, float cs, float zoom, float seed, float density, float highs, float kick, float time,
                 constant IntenseUniforms &u, float3 light) {
-                float2 id = floor(p / cs);
+                float scale = exp2(zoom);
+                float fade = sin(zoom * 3.14159);
+                float2 q = p / scale;
+                float2 id = floor(q / cs);
                 float h = hash21(id + seed);
                 if (h > density) return float3(0.0);
                 float h2 = hash21(id * 1.73 + seed + 5.1);
                 float h3 = hash21(id * 0.61 + seed + 9.7);
-                float2 c = (id + 0.5) * cs;
-                float cl = length(c);
-                float2 dir = cl > 1e-3 ? c / cl : float2(1.0, 0.0);
-                float phase = fract(h2 + travel * speed * (0.6 + 0.8 * h3));
-                float2 pos = c + dir * (phase - 0.5) * cs * 0.7;
-                float radius = cs * (0.09 + 0.16 * h3) * (0.75 + 0.5 * highs);
-                float2 rel = (p - pos) / radius;
+                float2 c = (id + 0.5 + (float2(h2, h3) - 0.5) * 0.5) * cs;
+                c += cs * 0.08 * float2(sin(time * 1.7 + h * 6.28), cos(time * 1.3 + h3 * 6.28));
+                float screenDistance = length(c) * scale;
+                float radius = cs * (0.09 + 0.16 * h3) * (0.75 + 0.5 * highs) * (1.0 + 0.25 * kick);
+                float2 rel = (q - c) / radius;
                 float d2 = dot(rel, rel);
                 if (d2 > 1.0) return float3(0.0);
                 float d = sqrt(d2);
@@ -88,11 +91,10 @@
                 float spec = pow(max(dot(reflect(-light, n), float3(0.0, 0.0, 1.0)), 0.0), 24.0);
                 float rim = smoothstep(0.55, 1.0, d);
                 float body = 1.0 - smoothstep(0.9, 1.0, d);
-                float life = sin(phase * 3.14159);
-                float reach = smoothstep(0.12, 0.32, length(pos)) * smoothstep(1.5, 0.9, length(pos));
-                float3 tint = paletteAt(u, atan2(pos.y, pos.x) / 6.28318 + 0.5 + 0.06 * h);
+                float reach = smoothstep(0.1, 0.3, screenDistance) * smoothstep(1.7, 1.1, screenDistance);
+                float3 tint = paletteAt(u, atan2(c.y, c.x) / 6.28318 + 0.5 + 0.06 * h);
                 float3 col = tint * (0.12 + 0.5 * diff) * (1.0 - 0.7 * rim) + tint * rim * 1.3 + float3(1.0) * spec * 1.3;
-                return col * body * life * reach;
+                return col * body * fade * reach;
             }
 
             fragment float4 liquidSplashFragment(
@@ -148,9 +150,12 @@
 
                 // Droplets: big slow spheres, then fine spray that thickens with the highs and the hats.
                 float density = 0.42 + 0.3 * highs + 0.2 * hat;
-                col += splashDroplets(p, 0.26, travel, 0.07, 1.0, 0.55, highs, u, light);
-                col += splashDroplets(p + float2(0.13, 0.07), 0.16, travel, 0.11, 7.0, 0.5 + 0.2 * energy, highs, u, light);
-                col += splashDroplets(p, 0.07, travel, 0.2, 13.0, density, highs, u, light) * 0.9;
+                for (int k = 0; k < 2; k++) {
+                    float offset = float(k) * 0.5;
+                    col += splashDroplets(p, 0.3, fract(travel * 0.09 + offset), 1.0 + offset, 0.5, highs, kick, time, u, light);
+                    col += splashDroplets(p, 0.17, fract(travel * 0.14 + 0.25 + offset), 7.0 + offset, 0.45 + 0.2 * energy, highs, kick, time, u, light);
+                    col += splashDroplets(p, 0.08, fract(travel * 0.22 + 0.1 + offset), 13.0 + offset, density, highs, kick, time, u, light) * 0.9;
+                }
 
                 // Snare: a ring of light runs outward through the splash.
                 float ringR = 0.12 + (1.0 - snare) * 1.2;
