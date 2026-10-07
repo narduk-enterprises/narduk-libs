@@ -1,3 +1,4 @@
+import NardukMusicEngine
 import SwiftUI
 import XCTest
 
@@ -114,11 +115,17 @@ import XCTest
                 withDefaults(defaults) {
                     let (frames, safe) = host(player(audio), size: size, insets: insets)
                     let name = "\(label), tray \(state)"
-                    let always = ["player.home", "player.rec", "player.drop", "player.tray.handle", "player.tray"]
+                    let always = [
+                        "player.home", "player.pause", "player.rec", "player.drop", "player.tray.handle", "player.tray",
+                    ]
                     assertInside(always, frames, safe, name)
-                    assertNoOverlap(["player.home", "player.rec", "player.drop", "player.tray.handle"], frames, name)
+                    assertNoOverlap(
+                        ["player.home", "player.pause", "player.rec", "player.drop", "player.tray.handle"], frames, name
+                    )
                     assertNoOverlap(["player.drop", "player.tray"], frames, name)
-                    assertTapTargets(["player.home", "player.rec", "player.drop", "player.tray.handle"], frames, name)
+                    assertTapTargets(
+                        ["player.home", "player.pause", "player.rec", "player.drop", "player.tray.handle"], frames, name
+                    )
                     if state == "collapsed", let tray = frames["player.tray"] {
                         XCTAssertLessThanOrEqual(tray.height, 60, "collapsed tray is just a handle — \(name)")
                     }
@@ -210,5 +217,35 @@ import XCTest
         audio.beginSurge()
         XCTAssertNotNil(audio.surgeStart, "DROP builds with the tray collapsed")
         audio.endSurge()
+    }
+
+    func testPauseFreezesTheSongAndResumesOnTheSameBeat() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        audio.play(SongRecipe(style: .genre(.house)))
+        XCTAssertFalse(audio.isPaused)
+        audio.pause()
+        XCTAssertTrue(audio.isPaused)
+        XCTAssertFalse(audio.isRecording, "the take is saved while paused")
+        audio.resume()
+        XCTAssertFalse(audio.isPaused)
+        audio.togglePause()
+        XCTAssertTrue(audio.isPaused)
+        audio.play(SongRecipe(style: .genre(.house)))
+        XCTAssertFalse(audio.isPaused, "a new song starts playing")
+    }
+
+    func testPausedPlayerKeepsItsPlaceInTheSong() {
+        let recipe = SongRecipe(style: .genre(.house))
+        let a = SongPlayer(recipe: recipe, engine: DropEngine())
+        let b = SongPlayer(recipe: recipe, engine: DropEngine())
+        let straight = a.notes(through: 31).filter { $0.step >= 16 }.map { "\($0.step)-\($0.instrument)" }
+        _ = b.notes(through: 15)
+        b.paused = true
+        XCTAssertTrue(b.notes(through: 100).isEmpty, "nothing plays while paused")
+        b.paused = false
+        let resumed = b.notes(through: 116).map { "\($0.step - 85)-\($0.instrument)" }
+        XCTAssertFalse(straight.isEmpty)
+        XCTAssertEqual(Set(resumed), Set(straight))
     }
 }

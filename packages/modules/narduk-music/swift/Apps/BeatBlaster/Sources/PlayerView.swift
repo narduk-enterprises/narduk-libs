@@ -89,6 +89,19 @@ struct PlayerView: View {
                     .layoutPriority(1)
             }
             Spacer(minLength: 0)
+            Button {
+                Haptics.tap()
+                audio.togglePause()
+            } label: {
+                Text(audio.isPaused ? "▶️" : "⏸")
+                    .font(.system(size: 24))
+                    .frame(width: 48, height: 48)
+                    .background(.black.opacity(0.55), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.5), lineWidth: 2))
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel(audio.isPaused ? "Resume" : "Pause")
+            .probe("player.pause")
             RecBadge(audio: audio, compact: compact).probe("player.rec")
         }
     }
@@ -179,7 +192,7 @@ struct PlayerView: View {
                     var next = audio.recipe
                     next.styleID = style.id
                     if style == .guitars { next.band.insert(.guitar) }
-                    audio.play(next)
+                    audio.swap(to: next)
                     mySongs.save(next)
                 }
             }
@@ -216,6 +229,7 @@ struct DropStage: View {
             ZStack {
                 tile.content(context)
                     .id(tile.id)
+                    .transition(.opacity)
                     .scaleEffect(1 + 0.08 * charge + 0.1 * flash)
                     .offset(x: sin(t * 61) * jitter, y: cos(t * 47) * jitter)
                     .hueRotation(.degrees(charge * 140))
@@ -225,6 +239,7 @@ struct DropStage: View {
                     endRadius: 900)
             }
             .background(Neon.night)
+            .animation(.easeInOut(duration: 0.8), value: tile.id)
         }
     }
 }
@@ -509,14 +524,18 @@ struct RecBadge: View {
     var body: some View {
         Button {
             Haptics.tap()
+            guard !audio.isPaused else { return }
             if audio.isRecording { audio.endRecording() } else { audio.beginRecording() }
         } label: {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
                     Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
                     Text(
-                        audio.isRecording
-                            ? "REC \(clockText(audio.recordingElapsed(at: context.date)))" : "Saved ✓ · tap to record"
+                        audio.isPaused
+                            ? "⏸ Paused"
+                            : audio.isRecording
+                                ? "REC \(clockText(audio.recordingElapsed(at: context.date)))"
+                                : "Saved ✓ · tap to record"
                     )
                     .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))

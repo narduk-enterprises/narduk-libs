@@ -28,6 +28,8 @@ enum BlasterInput: Equatable {
         didSet { player?.energy = energy }
     }
     private(set) var isSurging = false
+    /// Paused by the child: music, recording and clock stand still together (a resume starts a fresh take).
+    private(set) var isPaused = false
     /// The Effects page's sliders (Wobble, Echo, Bass boost, Speed); the song's notes are reshaped as they are scheduled.
     var effects = EffectSettings() {
         didSet { effectsChanged(from: oldValue) }
@@ -51,6 +53,8 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var glideTask: Task<Void, Never>?
     @ObservationIgnored private var landTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
+    @ObservationIgnored private var fadeTask: Task<Void, Never>?
+    @ObservationIgnored private var swapTask: Task<Void, Never>?
     @ObservationIgnored private let clockOrigin = Date.timeIntervalSinceReferenceDate
     @ObservationIgnored private var resumeInput: BlasterInput?
     @ObservationIgnored private weak var lab: BeatLab?
@@ -98,7 +102,7 @@ enum BlasterInput: Equatable {
     // MARK: Songs
 
     /// Plays `recipe` from the top with its band, speed and lights.
-    func play(_ recipe: SongRecipe) {
+    func play(_ recipe: SongRecipe, fadeIn: Double = 0) {
         watchInterruptions()
         stop()
         self.recipe = recipe
@@ -117,8 +121,27 @@ enum BlasterInput: Equatable {
             source = drop.makeSoundSource()
             isRunning = true
             startTake()
+            if fadeIn > 0 {
+                drop.masterVolume = 0
+                fade(to: Self.restingMaster, over: fadeIn)
+            }
         } catch {
             stop()
+        }
+    }
+
+    /// Swaps to `next` without a jump: the sound dips over about half a second, the new song comes in on the old
+    /// song's next bar and rises over about 0.7 s. (A bar that is more than 2.5 s away is not waited for.)
+    func swap(to next: SongRecipe) {
+        guard isRunning, input == .song, !isPaused else { return play(next, fadeIn: 0.7) }
+        swapTask?.cancel()
+        let wait = min(2.5, player?.secondsToNextBar ?? 0)
+        let dip = min(0.5, max(0.15, wait))
+        fade(to: 0, over: dip)
+        swapTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(wait, dip)))
+            guard !Task.isCancelled, let self else { return }
+            self.play(next, fadeIn: 0.7)
         }
     }
 
@@ -146,7 +169,7 @@ enum BlasterInput: Equatable {
 
     /// "Surprise me": a whole new song (style, speed, key, mood, band and every sound), same lights.
     func surprise() {
-        play(recipe.surprise())
+        swap(to: recipe.surprise())
     }
 
     func setSpeed(_ speed: Speed) {
@@ -210,6 +233,9 @@ enum BlasterInput: Equatable {
 
     func stop() {
         glideTask?.cancel()
+        fadeTask?.cancel()
+        swapTask?.cancel()
+        isPaused = false
         finishTake()
         endSurge(land: false)
         landTask?.cancel()
@@ -223,6 +249,46 @@ enum BlasterInput: Equatable {
         isRunning = false
         resetMix()
     }
+
+    // MARK: Pause
+
+    private static let restingMaster: Float = 0.85
+
+    /// Ramps the master volume to `target` over `seconds` (a dip, never a jump).
+    private func fade(to target: Float, over seconds: Double) {
+        fadeTask?.cancel()
+        let start = drop.masterVolume
+        let steps = max(1, Int(seconds / 0.02))
+        fadeTask = Task { [weak self] in
+            for i in 1...steps {
+                try? await Task.sleep(for: .milliseconds(20))
+                guard !Task.isCancelled, let self else { return }
+                self.drop.masterVolume = start + (target - start) * Float(i) / Float(steps)
+            }
+        }
+    }
+
+    /// Pause: the sound fades out in 0.15 s, the song stops advancing and the take is saved. Nothing is lost.
+    func pause() {
+        guard isRunning, input == .song, !isPaused else { return }
+        swapTask?.cancel()
+        endSurge(land: false)
+        isPaused = true
+        player?.paused = true
+        finishTake()
+        fade(to: 0, over: 0.15)
+    }
+
+    /// Resume from the same beat; the recording carries on in a new take.
+    func resume() {
+        guard isRunning, isPaused else { return }
+        isPaused = false
+        player?.paused = false
+        fade(to: Self.restingMaster, over: 0.2)
+        startTake()
+    }
+
+    func togglePause() { isPaused ? resume() : pause() }
 
     // MARK: Effects
 
@@ -296,7 +362,7 @@ enum BlasterInput: Equatable {
     /// Takes the master mixer (what the speakers play, no microphone) to an m4a. Starts and stops queue on one chain,
     /// so a stop followed at once by a start (a new song) never overlaps.
     private func startTake() {
-        guard wantsRecording, isRunning, input == .song, takeStart == nil else { return }
+        guard wantsRecording, isRunning, input == .song, !isPaused, takeStart == nil else { return }
         let url = store.newTakeURL(title: recipe.name)
         takeURL = url
         takeStart = Date()
@@ -437,6 +503,6 @@ enum BlasterInput: Equatable {
         drop.setGain(Self.restingBass * Float(1 + 0.6 * effects.bass), for: .bass)
         drop.setGain(Self.restingDrums, for: .drums)
         drop.setGain(1, for: .fx)
-        drop.masterVolume = 0.85
+        drop.masterVolume = Self.restingMaster
     }
 }
