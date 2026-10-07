@@ -151,20 +151,21 @@ struct PlayerView: View {
                     audio: audio, compact: compact, short: short, onPad: { audio.fire($0) },
                     onStutter: { audio.setStutter($0) })
             case .more:
+                // Show mode leads the Lights page: the one big thing a kid comes here for.
                 VStack(spacing: 10) {
-                    MusicLightsBar(
-                        audio: audio, short: short,
-                        changeMusic: { open(.music) },
-                        changeLights: { open(.lights) })
                     Button {
                         Haptics.tap()
                         tray.close()
                         show.hide()
                     } label: {
-                        Pill(icon: "👁", word: "Show only the lights", color: Neon.purple.opacity(0.7), size: 16)
+                        Pill(icon: "👁", word: "Show only the lights", color: Neon.purple.opacity(0.7), size: 18)
                     }
                     .buttonStyle(Squish())
                     .accessibilityLabel("Hide the controls")
+                    MusicLightsBar(
+                        audio: audio, short: short,
+                        changeMusic: { open(.music) },
+                        changeLights: { open(.lights) })
                 }
             }
         }

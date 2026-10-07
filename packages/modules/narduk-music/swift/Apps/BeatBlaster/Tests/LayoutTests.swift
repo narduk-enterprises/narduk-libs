@@ -216,6 +216,21 @@ import XCTest
         }
     }
 
+    /// Once a vibe is picked, step 1 offers Play it now! bottom right, inside the screen and clear of Next.
+    func testPickingAVibeOffersPlayItNow() {
+        let audio = BlasterAudio()
+        withDefaults(["makerStep": "1"]) {
+            for (label, size, insets) in layouts {
+                let (frames, safe) = host(
+                    SongMakerView(audio: audio, home: {}, done: { _ in }), size: size, insets: insets)
+                assertInside(["maker.playNow"], frames, safe, label)
+                assertTapTargets(["maker.playNow"], frames, label)
+                guard let play = frames["maker.playNow"] else { continue }
+                XCTAssertGreaterThan(play.midX, safe.midX, "Play it now! sits on the right — \(label)")
+            }
+        }
+    }
+
     /// Home is three doors: Play is on screen without scrolling, every door is a big target and none overlap.
     func testHomeShowsThreeBigDoorsWithPlayOnScreen() {
         let audio = BlasterAudio()
