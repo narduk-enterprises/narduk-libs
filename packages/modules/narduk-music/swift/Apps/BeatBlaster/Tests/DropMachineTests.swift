@@ -1,5 +1,7 @@
 import XCTest
 
+@testable import BeatBlaster
+
 /// The DROP button's state machine: the build starts on the press step, the drop lands on the release step (never
 /// later), holds scale the build and the drop, and repeated presses never stack.
 final class DropMachineTests: XCTestCase {

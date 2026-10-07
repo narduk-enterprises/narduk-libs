@@ -71,9 +71,10 @@ targets:
   BeatBlasterTests:
     type: bundle.unit-test
     platform: iOS
-    sources:
-      - Tests
-      - path: Sources/DropMachine.swift
+    # Hosted by the app, so the tests see all of its types (`@testable import BeatBlaster`).
+    sources: [Tests]
+    dependencies:
+      - target: BeatBlaster
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nardukenterprises.beatblaster.tests

@@ -12,6 +12,20 @@ struct DreamedSong: Equatable {
     var seed: UInt64
     var tempoScale: Double
     var title: String
+
+    /// The idea as the library's recipe: genre, tempo, key and seed, with the genre's own plan of sections. The
+    /// guitar band has no genre of its own, so it takes `.chill`, the genre its settings already use.
+    var recipe: NardukMusicCore.SongRecipe {
+        let genre: Genre
+        switch style {
+        case .genre(let value): genre = value
+        case .guitars: genre = .chill
+        }
+        return NardukMusicCore.SongRecipe(
+            title: title, mood: "\(style.funName), \(style.genreName)", genre: genre,
+            bpm: style.baseBPM * tempoScale, seed: seed
+        ).validated()
+    }
 }
 
 /// Turns "space dragons" into a song. Uses the on-device model (iOS 26 Apple Intelligence) when it is available and
@@ -202,9 +216,7 @@ struct DreamView: View {
                 .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.8))
             Button {
-                var recipe = SongRecipe(style: song.style, name: song.title, seed: song.seed)
-                recipe.speed = song.tempoScale < 0.95 ? .slow : (song.tempoScale > 1.05 ? .fast : .medium)
-                play(recipe)
+                play(SongRecipe(from: song.recipe, style: song.style))
             } label: {
                 Pill(icon: "▶︎", word: "Play it!", color: Neon.green.opacity(0.85), size: compact ? 24 : 32)
             }
