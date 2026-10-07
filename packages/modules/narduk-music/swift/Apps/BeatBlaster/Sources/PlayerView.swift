@@ -58,6 +58,7 @@ struct PlayerView: View {
                 if let panel { picker(panel, compact: compact) }
             }
         }
+        .accessibilityElement(children: .contain)  // the root id must not replace every control's own (#1664)
         .accessibilityIdentifier("player.root")
         .focusable()
         .focusEffectDisabled()

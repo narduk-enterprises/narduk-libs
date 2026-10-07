@@ -7,22 +7,25 @@ import XCTest
 /// The DROP button's sound comes from the library's `DropArranger`, written for the song playing: the player hands it
 /// the current genre, key, tempo grid, seed and variety, and plays what it returns for the build and the drop.
 @MainActor final class DropArrangerWiringTests: XCTestCase {
-    private func player(_ genre: Genre, keyRoot: Int = 62, seed: UInt64 = 99) -> SongPlayer {
+    private func makePlayer(_ genre: Genre, keyRoot: Int = 62, seed: UInt64 = 99) -> (SongPlayer, DropEngine) {
         var recipe = SongRecipe(style: .genre(genre), seed: seed)
         recipe.keyRoot = keyRoot
         recipe.mood = .dark
-        return SongPlayer(recipe: recipe, engine: DropEngine())
+        let engine = DropEngine()
+        return (SongPlayer(recipe: recipe, engine: engine), engine)
     }
 
     func testThePlayerCallsTheArrangerWithTheCurrentGenreAndKey() throws {
         for genre in [Genre.dubstep, .house, .trap] {
-            let player = player(genre)
+            let (player, engine) = makePlayer(genre)
             _ = player.notes(through: 31)
             player.pressDrop()
             let context = try XCTUnwrap(player.dropContext)
             XCTAssertEqual(context.genre, genre)
-            XCTAssertEqual(context.keyRoot % 12, 62 % 12, "\(genre): the drop is in the song's key")
-            XCTAssertTrue(context.minor, "\(genre): a dark mood is a minor key")
+            // The drop is in the key the conductor named for this track, which is what the song actually plays in.
+            let named = try XCTUnwrap(engine.conductor.track.flatMap { DropArranger.parseKey($0.key) })
+            XCTAssertEqual(context.keyRoot % 12, named.pitchClass, "\(genre): the drop is in the song's key")
+            XCTAssertEqual(context.minor, named.minor, "\(genre): and its mode")
             XCTAssertEqual(context.secondsPerStep, player.secondsPerStep, accuracy: 1e-9)
             XCTAssertEqual(context.seed, 99)
             XCTAssertEqual(context.dropNumber, 0)
@@ -32,7 +35,7 @@ import XCTest
     }
 
     func testTheBuildIsTheArrangersRiserOnThePressStep() throws {
-        let player = player(.dubstep)
+        let (player, _) = makePlayer(.dubstep)
         _ = player.notes(through: 31)
         let press = player.nextStep
         player.pressDrop()
@@ -44,7 +47,7 @@ import XCTest
     }
 
     func testTheDropLandsWithTheArrangersImpactAndTheNextDropIsNumberOne() throws {
-        let player = player(.dubstep)
+        let (player, _) = makePlayer(.dubstep)
         _ = player.notes(through: 31)
         player.pressDrop()
         _ = player.notes(through: 31 + 64)
@@ -64,9 +67,21 @@ import XCTest
     }
 
     func testCancellingForgetsTheDrop() {
-        let player = player(.house)
+        let (player, _) = makePlayer(.house)
         player.pressDrop()
         player.cancelDrop()
         XCTAssertNil(player.dropContext)
+    }
+
+    func testHoldingDropSweepsTheMasterFilterAndReleaseOpensItAgain() async throws {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        audio.play(SongRecipe(style: .genre(.dubstep), seed: 7))
+        XCTAssertEqual(audio.masterFilter, .idle)
+        audio.beginSurge()
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertNotEqual(audio.masterFilter, .idle, "the build sweeps the filter while DROP is held")
+        audio.endSurge()
+        XCTAssertEqual(audio.masterFilter, .idle, "release opens it again")
     }
 }
