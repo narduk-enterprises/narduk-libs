@@ -18,3 +18,23 @@ struct TunnelTile: View {
         }
     }
 }
+
+/// An intense Metal light (`NardukSoundVisuals`) for Beat Blaster. Polls on its own `MTKView` loop like the tunnel;
+/// Reduce Motion is the calm level (no flash, strobe or glitch).
+struct BeatIntenseTile: View {
+    let kind: IntenseKind
+    let name: String
+    let audio: BlasterAudio
+    let framesPerSecond: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if IntenseView.isSupported {
+            IntenseView(kind, state: audio.visualState, calm: reduceMotion) { audio.visualInput }
+                .environment(\.soundFramesPerSecond, framesPerSecond)
+                .accessibilityLabel(name)
+        } else {
+            Color.black
+        }
+    }
+}
