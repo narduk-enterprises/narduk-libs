@@ -113,5 +113,11 @@ extension GalleryTile {
                     kind: .solarFlare, title: "Solar flare", model: context.model,
                     framesPerSecond: context.framesPerSecond))
         },
+        GalleryTile(id: "Ocean waves") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .oceanWaves, title: "Ocean waves", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }

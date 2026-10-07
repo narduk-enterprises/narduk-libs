@@ -13,6 +13,7 @@
         /// A glowing wireframe draped over two swells and a trough.
         case meshWave
         case plasma, warpGrid, starfield, feedback, solarFlare
+        case plasma, warpGrid, starfield, feedback, oceanWaves
 
         public var title: String {
             switch self {
@@ -44,6 +45,12 @@
         /// The name the gallery shows.
         public var title: String {
         var title: String {
+            case .oceanWaves: "oceanWavesFragment"
+            }
+        }
+
+        /// Gallery title. The pack never flashes; this look is the side-view sea.
+        public var title: String {
             switch self {
             case .plasma: "Plasma"
             case .warpGrid: "Warp grid"
@@ -51,6 +58,7 @@
             case .feedback: "Feedback"
             case .meshWave: "Mesh wave"
             case .solarFlare: "Solar flare"
+            case .oceanWaves: "Ocean waves"
             }
         }
     }
