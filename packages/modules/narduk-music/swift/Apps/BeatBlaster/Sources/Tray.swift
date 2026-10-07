@@ -82,19 +82,20 @@ struct ControlsTray<Content: View>: View {
     let maxPageHeight: CGFloat
     let short: Bool
     @ViewBuilder let content: (TrayState.Page) -> Content
+    /// The open page's own height, measured, so the tray can hug it.
+    @State private var pageHeight: CGFloat?
 
     var body: some View {
         VStack(spacing: 0) {
             handle
             if state.isOpen {
                 tabs
+                // The tray hugs the page it shows (Mix is short) and only scrolls a page taller than the cap; a bare
+                // ScrollView always grew to the cap and left a big empty drawer over the lights.
                 ScrollView(.vertical, showsIndicators: false) {
-                    content(state.page)
-                        .padding(.horizontal, short ? 8 : 12)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity)
+                    page.onGeometryChange(for: CGFloat.self, of: \.size.height) { pageHeight = $0 }
                 }
-                .frame(maxHeight: maxPageHeight)
+                .frame(maxHeight: min(pageHeight ?? maxPageHeight, maxPageHeight))
                 .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in state.touch() })
             }
         }
@@ -113,6 +114,13 @@ struct ControlsTray<Content: View>: View {
             try? await Task.sleep(for: .seconds(TrayState.idleSeconds))
             if !Task.isCancelled, state.isIdle(at: Date()) { state.close() }
         }
+    }
+
+    private var page: some View {
+        content(state.page)
+            .padding(.horizontal, short ? 8 : 12)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity)
     }
 
     private var handle: some View {
