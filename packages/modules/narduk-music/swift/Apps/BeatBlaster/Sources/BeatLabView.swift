@@ -160,7 +160,7 @@ struct BeatGrid: View {
                         lab.nextSound(row)
                     } label: {
                         HStack(spacing: 4) {
-                            Text(row.emoji).font(.system(size: compact ? 14 : 24))
+                            Glyph(row.emoji, size: compact ? 14 : 24)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(row.word)
                                     .font(.system(size: compact ? 12 : 20, weight: .black, design: .rounded))

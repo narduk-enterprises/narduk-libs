@@ -51,12 +51,13 @@ struct RecordingsView: View {
             let compact = geometry.size.width < 500
             VStack(spacing: compact ? 10 : 16) {
                 HStack(spacing: 12) {
-                    HomeButton(action: home)
+                    HomeButton(action: home).probe("mysongs.home")
                     Text("🎙 My Songs")
                         .font(.system(size: compact ? 26 : 40, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
+                        .probe("mysongs.title")
                     Spacer(minLength: 0)
                 }
                 if recordings.isEmpty {
@@ -69,7 +70,9 @@ struct RecordingsView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 10) {
-                            ForEach(recordings) { recording in row(recording, compact: compact) }
+                            ForEach(recordings) { recording in
+                                row(recording, compact: compact).accessibilityIdentifier("mysongs.row")
+                            }
                         }
                         .frame(maxWidth: 800)
                         .frame(maxWidth: .infinity)
@@ -89,7 +92,7 @@ struct RecordingsView: View {
         }
         .onDisappear { player.stop() }
         .alert("Rename your song", isPresented: renamingBinding) {
-            TextField("Song name", text: $newName)
+            TextField("Song name", text: $newName).accessibilityIdentifier("mysongs.renameField")
             Button("Save") { commitRename() }
             Button("Cancel", role: .cancel) {}
         }
@@ -135,12 +138,12 @@ struct RecordingsView: View {
                 renaming = recording
             }
             ShareLink(item: recording.url) {
-                Text("📤")
-                    .font(.system(size: 24))
+                Glyph("📤", size: 24)
                     .frame(width: 48, height: 48)
                     .background(Neon.cyan.opacity(0.5), in: Circle())
             }
             .accessibilityLabel("Share \(recording.name)")
+            .accessibilityIdentifier("mysongs.share")
             iconButton("🗑", label: "Delete") { deleting = recording }
         }
         .padding(10)
@@ -152,13 +155,13 @@ struct RecordingsView: View {
             Haptics.tap()
             action()
         } label: {
-            Text(icon)
-                .font(.system(size: 24))
+            Glyph(icon, size: 24)
                 .frame(width: 48, height: 48)
                 .background(.white.opacity(0.18), in: Circle())
         }
         .buttonStyle(Squish())
         .accessibilityLabel(label)
+        .accessibilityIdentifier("mysongs.\(label.lowercased())")
     }
 
     private var renamingBinding: Binding<Bool> {

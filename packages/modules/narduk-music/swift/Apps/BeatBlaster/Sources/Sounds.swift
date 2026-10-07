@@ -8,16 +8,20 @@ import NardukMusicCore
 /// The bass: the engine's wobble patches (`voice` picks one of 36 ... 48), pushed harder for Growl, swapped to the sine
 /// sub for Deep or the plucked bass guitar for Pluck.
 enum BassSound: String, CaseIterable, Identifiable, Codable {
-    case wobble, growl, deep, pluck
+    case wobble, growl, deep, pluck, squelch, buzz, bounce, robot
 
     var id: String { rawValue }
     var word: String { rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .wobble: "🌊"
-        case .growl: "🐻"
-        case .deep: "🐋"
-        case .pluck: "🎸"
+        case .wobble: "icon-wobble-wave"
+        case .growl: "icon-growl"
+        case .deep: "icon-deep"
+        case .pluck: "icon-pluck"
+        case .squelch: "🐸"
+        case .buzz: "🐝"
+        case .bounce: "🏀"
+        case .robot: "🤖"
         }
     }
 
@@ -26,17 +30,38 @@ enum BassSound: String, CaseIterable, Identifiable, Codable {
         var n = note
         var p = n.params
         switch self {
-        case .wobble, .growl:
+        case .wobble, .growl, .squelch, .buzz, .robot:
             if n.instrument == .bassGuitar {
                 n.instrument = .wobble
                 p.pitch = p.pitch.map { DropPattern.fold($0, into: 36...47) }
                 p.wobbleRate = p.wobbleRate ?? .eighth
             }
             p.voice = patch
-            if self == .growl {
+            switch self {
+            case .growl:
                 p.drive = 0.95
                 p.formant = 1
+            case .squelch:
+                p.voice = (patch + 6) % 48
+                p.formant = 0.35
+                p.drive = 0.5
+            case .buzz:
+                p.voice = (patch + 12) % 48
+                p.formant = 0
+                p.drive = 1
+            case .robot:
+                p.voice = (patch + 24) % 48
+                p.formant = 0.8
+                p.drive = 0.3
+                p.wobbleRate = .sixteenth
+            default: break
             }
+        case .bounce:
+            n.instrument = .sub
+            p.pitch = p.pitch.map { DropPattern.fold($0, into: 28...40) }
+            p.lengthSteps = 1
+            p.voice = nil
+            p.drive = 0.4
         case .deep:
             n.instrument = .sub
             p.pitch = p.pitch.map { DropPattern.fold($0 - 12, into: 26...37) }
@@ -56,29 +81,43 @@ enum BassSound: String, CaseIterable, Identifiable, Codable {
 
 /// The keys timbres the engine has (`KeysVoice`): bell pluck, house stab, electric piano.
 enum KeysSound: String, CaseIterable, Identifiable, Codable {
-    case bell, synth, piano
+    case bell, synth, piano, pad, glow, sparkle, mellow
 
     var id: String { rawValue }
     var word: String { rawValue.capitalized }
     var emoji: String {
         switch self {
-        case .bell: "🔔"
-        case .synth: "🎛️"
-        case .piano: "🎹"
+        case .bell: "icon-bell"
+        case .synth: "icon-synth"
+        case .piano: "icon-piano"
+        case .pad: "☁️"
+        case .glow: "🌅"
+        case .sparkle: "🌟"
+        case .mellow: "🎷"
         }
     }
     var voice: Int {
         switch self {
-        case .bell: KeysVoice.bell
+        case .bell, .sparkle: KeysVoice.bell
         case .synth: KeysVoice.stab
-        case .piano: KeysVoice.electricPiano
+        case .piano, .mellow: KeysVoice.electricPiano
+        case .pad: KeysVoice.pad
+        case .glow: KeysVoice.ambientPad
+        }
+    }
+    /// Semitones the timbre sits above or below the song's keys.
+    var shift: Int {
+        switch self {
+        case .sparkle: 12
+        case .mellow: -12
+        default: 0
         }
     }
 }
 
 /// Drum kits. The engine's drums have no timbre setting, so a kit swaps or layers the engine's other instruments.
 enum DrumKit: String, CaseIterable, Identifiable, Codable {
-    case classic, boom, zappy, dj
+    case classic, boom, zappy, dj, glitch, stomp, shimmer
 
     var id: String { rawValue }
     var word: String {
@@ -87,14 +126,20 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
         case .boom: "Boom"
         case .zappy: "Zappy"
         case .dj: "DJ"
+        case .glitch: "Glitch"
+        case .stomp: "Stomp"
+        case .shimmer: "Shimmer"
         }
     }
     var emoji: String {
         switch self {
-        case .classic: "🥁"
-        case .boom: "💣"
-        case .zappy: "⚡️"
-        case .dj: "💿"
+        case .classic: "icon-kit-classic"
+        case .boom: "icon-kit-boom"
+        case .zappy: "icon-kit-zappy"
+        case .dj: "icon-kit-dj"
+        case .glitch: "👾"
+        case .stomp: "🦶"
+        case .shimmer: "✨"
         }
     }
 
@@ -124,6 +169,18 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
             return [n]
         case (.dj, .snare):
             return [retimbre(note, .scratch, velocity: 1)]
+        case (.glitch, .hat):
+            return note.step % 2 == 1 ? [retimbre(note, .glitch, velocity: 0.55)] : [note]
+        case (.stomp, .snare):
+            var low = note
+            low.instrument = .kick
+            low.velocity = min(1, note.velocity * 0.75)
+            return [note, low]
+        case (.shimmer, .hat):
+            var late = note
+            late.params.delay = 0.5
+            late.velocity = note.velocity * 0.5
+            return [note, late]
         default:
             return [note]
         }
@@ -133,6 +190,81 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
         var n = note
         n.instrument = instrument
         n.velocity = min(1, note.velocity * velocity)
+        return n
+    }
+}
+
+/// The guitar: how the song's strums and picked notes sound. Auto keeps what the style wrote.
+enum GuitarSound: String, CaseIterable, Identifiable, Codable {
+    case auto, folk, clean, crunch, fuzz
+
+    var id: String { rawValue }
+    var word: String { self == .auto ? "Auto" : rawValue.capitalized }
+    var emoji: String {
+        switch self {
+        case .auto: "🎼"
+        case .folk: "icon-guitar"
+        case .clean: "✨"
+        case .crunch: "🔥"
+        case .fuzz: "🤘"
+        }
+    }
+
+    func apply(_ note: ScheduledNote) -> ScheduledNote {
+        var n = note
+        switch self {
+        case .auto: break
+        case .folk:
+            if n.instrument == .electricGuitar { n.instrument = .acousticGuitar }
+            if n.instrument == .electricStrum { n.instrument = .strum }
+        case .clean, .crunch, .fuzz:
+            if n.instrument == .acousticGuitar { n.instrument = .electricGuitar }
+            if n.instrument == .strum { n.instrument = .electricStrum }
+            if n.instrument == .electricGuitar || n.instrument == .electricStrum {
+                n.params.drive = self == .clean ? 0.05 : (self == .crunch ? 0.55 : 1)
+            }
+        }
+        return n
+    }
+}
+
+/// The pad chords: Auto keeps the style's own, the rest swap the pad voice or move it an octave.
+enum PadSound: String, CaseIterable, Identifiable, Codable {
+    case auto, soft, glow, deepPad, shimmer, drone
+
+    var id: String { rawValue }
+    var word: String {
+        switch self {
+        case .auto: "Auto"
+        case .deepPad: "Deep"
+        default: rawValue.capitalized
+        }
+    }
+    var emoji: String {
+        switch self {
+        case .auto: "🎼"
+        case .soft: "☁️"
+        case .glow: "🌅"
+        case .deepPad: "🌊"
+        case .shimmer: "🌟"
+        case .drone: "🛸"
+        }
+    }
+
+    func apply(_ note: ScheduledNote) -> ScheduledNote {
+        var n = note
+        switch self {
+        case .auto: break
+        case .soft: n.params.voice = KeysVoice.pad
+        case .glow: n.params.voice = KeysVoice.ambientPad
+        case .deepPad:
+            n.params.voice = KeysVoice.ambientPad
+            n.params.pitch = n.params.pitch.map { $0 - 12 }
+        case .shimmer:
+            n.params.voice = KeysVoice.pad
+            n.params.pitch = n.params.pitch.map { $0 + 12 }
+        case .drone: n.params.voice = KeysVoice.drone
+        }
         return n
     }
 }
@@ -186,12 +318,44 @@ struct SoundProfile: Codable, Hashable {
     var drums: DrumKit = .boom
     /// 0 ... 0.35 of a step the off-16ths sound late.
     var swing = 0.0
+    var guitar: GuitarSound = .auto
+    var pads: PadSound = .auto
+
+    init(
+        bass: BassSound = .wobble, bassPatch: Int = 0, keys: KeysSound = .piano, keysOctave: Int = 0,
+        drums: DrumKit = .boom, swing: Double = 0, guitar: GuitarSound = .auto, pads: PadSound = .auto
+    ) {
+        self.bass = bass
+        self.bassPatch = bassPatch
+        self.keys = keys
+        self.keysOctave = keysOctave
+        self.drums = drums
+        self.swing = swing
+        self.guitar = guitar
+        self.pads = pads
+    }
+
+    /// Songs saved before the guitar and pad rows existed have no such keys: they decode as Auto.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            bass: try c.decodeIfPresent(BassSound.self, forKey: .bass) ?? .wobble,
+            bassPatch: try c.decodeIfPresent(Int.self, forKey: .bassPatch) ?? 0,
+            keys: try c.decodeIfPresent(KeysSound.self, forKey: .keys) ?? .piano,
+            keysOctave: try c.decodeIfPresent(Int.self, forKey: .keysOctave) ?? 0,
+            drums: try c.decodeIfPresent(DrumKit.self, forKey: .drums) ?? .boom,
+            swing: try c.decodeIfPresent(Double.self, forKey: .swing) ?? 0,
+            guitar: try c.decodeIfPresent(GuitarSound.self, forKey: .guitar) ?? .auto,
+            pads: try c.decodeIfPresent(PadSound.self, forKey: .pads) ?? .auto)
+    }
 
     static func random() -> SoundProfile {
         SoundProfile(
-            bass: [BassSound.wobble, .growl, .deep].randomElement()!, bassPatch: Int.random(in: 0..<48),
+            bass: [BassSound.wobble, .growl, .deep, .squelch, .buzz, .bounce, .robot].randomElement()!,
+            bassPatch: Int.random(in: 0..<48),
             keys: KeysSound.allCases.randomElement()!, keysOctave: Int.random(in: -1...1),
-            drums: DrumKit.allCases.randomElement()!, swing: [0, 0, 0.15, 0.3].randomElement()!)
+            drums: DrumKit.allCases.randomElement()!, swing: [0, 0, 0.15, 0.3].randomElement()!,
+            guitar: GuitarSound.allCases.randomElement()!, pads: PadSound.allCases.randomElement()!)
     }
 
     func apply(_ notes: [ScheduledNote], keyRoot: Int) -> [ScheduledNote] {
@@ -204,12 +368,14 @@ struct SoundProfile: Codable, Hashable {
                 out.append(bass.apply(note, patch: bassPatch))
             case .keys:
                 if let voice = note.params.voice, voice == KeysVoice.pad || voice >= KeysVoice.ambientPad {
-                    out.append(note)
+                    out.append(pads.apply(note))
                 } else {
                     note.params.voice = keys.voice
-                    note.params.pitch = note.params.pitch.map { $0 + 12 * keysOctave }
+                    note.params.pitch = note.params.pitch.map { $0 + 12 * keysOctave + keys.shift }
                     out.append(note)
                 }
+            case .acousticGuitar, .electricGuitar, .strum, .electricStrum:
+                out.append(guitar.apply(note))
             case .kick, .snare, .hat, .openHat:
                 out += drums.apply(note, keyRoot: keyRoot)
             default:
