@@ -118,7 +118,8 @@ struct SongMakerView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 30, style: .continuous)
-                            .stroke(.white.opacity(selected ? 1 : 0.4), lineWidth: selected ? 5 : 2))
+                            .stroke(.white.opacity(selected ? 1 : 0.4), lineWidth: selected ? 5 : 2)
+                    )
                     .shadow(color: selected ? Neon.yellow : .clear, radius: 18)
                     .overlay(alignment: .topTrailing) {
                         if selected { Text("✅").font(.system(size: 34)).offset(x: 8, y: -12) }
@@ -151,17 +152,20 @@ struct SongMakerView: View {
                 recipe.mood = mood
                 audio.preview(recipe)
             }
-            SoundRow(title: "Bass", options: BassSound.allCases, selected: recipe.sounds.bass, compact: compact) { bass in
+            SoundRow(title: "Bass", options: BassSound.allCases, selected: recipe.sounds.bass, compact: compact) {
+                bass in
                 recipe.sounds.bass = bass
                 recipe.sounds.bassPatch = Int.random(in: 0..<48)
                 audio.preview(recipe)
             }
-            SoundRow(title: "Keys", options: KeysSound.allCases, selected: recipe.sounds.keys, compact: compact) { keys in
+            SoundRow(title: "Keys", options: KeysSound.allCases, selected: recipe.sounds.keys, compact: compact) {
+                keys in
                 recipe.sounds.keys = keys
                 if !recipe.band.contains(.keys) { recipe.band.insert(.keys) }
                 audio.preview(recipe)
             }
-            SoundRow(title: "Drums", options: DrumKit.allCases, selected: recipe.sounds.drums, compact: compact) { kit in
+            SoundRow(title: "Drums", options: DrumKit.allCases, selected: recipe.sounds.drums, compact: compact) {
+                kit in
                 recipe.sounds.drums = kit
                 audio.preview(recipe)
             }
@@ -266,7 +270,10 @@ struct StepDots: View {
                     .font(.system(size: compact ? 16 : 22, weight: .black, design: .rounded))
                     .foregroundStyle(n == step ? .black : .white)
                     .frame(width: compact ? 32 : 44, height: compact ? 32 : 44)
-                    .background(n == step ? Neon.yellow : (n < step ? Neon.green.opacity(0.7) : .white.opacity(0.15)), in: Circle())
+                    .background(
+                        n == step ? Neon.yellow : (n < step ? Neon.green.opacity(0.7) : .white.opacity(0.15)),
+                        in: Circle()
+                    )
                     .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 2))
             }
         }
@@ -308,7 +315,8 @@ struct BandToggles: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(on ? Neon.green : .white.opacity(0.25), lineWidth: on ? 4 : 2))
+                            .stroke(on ? Neon.green : .white.opacity(0.25), lineWidth: on ? 4 : 2)
+                    )
                     .shadow(color: on ? Neon.green.opacity(0.7) : .clear, radius: 12)
                 }
                 .buttonStyle(Squish())
@@ -360,11 +368,13 @@ struct SoundRow<Option: SoundChoice>: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: compact ? 68 : 96)
                         .background(
-                            Neon.cyan.opacity(on ? 0.6 : 0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            Neon.cyan.opacity(on ? 0.6 : 0.12),
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2))
+                                .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
+                        )
                         .shadow(color: on ? Neon.cyan : .clear, radius: 12)
                     }
                     .buttonStyle(Squish())

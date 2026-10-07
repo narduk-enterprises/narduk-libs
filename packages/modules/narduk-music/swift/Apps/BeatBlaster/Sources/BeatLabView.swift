@@ -25,10 +25,12 @@ struct BeatLabView: View {
                             .foregroundStyle(.white)
                         Spacer(minLength: 0)
                     }
-                    Text("Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap.")
-                        .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(
+                        "Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap."
+                    )
+                    .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     BeatGrid(audio: audio, lab: lab, compact: compact)
                     controls(compact: compact)
                     Spacer(minLength: 0)
@@ -51,10 +53,22 @@ struct BeatLabView: View {
     private func controls(compact: Bool) -> some View {
         let size: CGFloat = compact ? 16 : 22
         return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { transport(size); Spacer(minLength: 0); speed(size); keyPicker(size); edit(size) }
+            HStack(spacing: 12) {
+                transport(size)
+                Spacer(minLength: 0)
+                speed(size)
+                keyPicker(size)
+                edit(size)
+            }
             VStack(spacing: 10) {
-                HStack(spacing: 10) { transport(size); speed(size) }
-                HStack(spacing: 10) { keyPicker(size); edit(size) }
+                HStack(spacing: 10) {
+                    transport(size)
+                    speed(size)
+                }
+                HStack(spacing: 10) {
+                    keyPicker(size)
+                    edit(size)
+                }
             }
         }
     }
@@ -197,15 +211,21 @@ struct BeatGrid: View {
             Haptics.tap()
         } label: {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(value > 0 ? color.opacity(0.55 + 0.15 * Double(value)) : .white.opacity(step / 4 % 2 == 0 ? 0.12 : 0.06))
+                .fill(
+                    value > 0
+                        ? color.opacity(0.55 + 0.15 * Double(value)) : .white.opacity(step / 4 % 2 == 0 ? 0.12 : 0.06)
+                )
                 .overlay(
                     Group {
                         if value > 0, row.noteCount > 1 {
-                            Text("\(value)").font(.system(size: 14, weight: .black, design: .rounded)).foregroundStyle(.black)
+                            Text("\(value)").font(.system(size: 14, weight: .black, design: .rounded)).foregroundStyle(
+                                .black)
                         }
                     }
                 )
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(value > 0 ? 0.8 : 0.15), lineWidth: 1.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(value > 0 ? 0.8 : 0.15), lineWidth: 1.5)
+                )
                 .shadow(color: value > 0 ? color : .clear, radius: 6)
                 .aspectRatio(1, contentMode: .fit)
         }
@@ -222,7 +242,8 @@ struct Playhead: View {
 
     var body: some View {
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !(audio.isRunning && audio.input == .beatLab))) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !(audio.isRunning && audio.input == .beatLab))) {
+                _ in
                 let column = (geometry.size.width - spacing * 15) / 16
                 let step = audio.isRunning && audio.input == .beatLab ? audio.currentStep % BeatLab.steps : -1
                 if step >= 0 {

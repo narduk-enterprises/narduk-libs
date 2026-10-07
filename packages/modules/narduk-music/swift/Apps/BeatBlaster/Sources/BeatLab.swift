@@ -126,7 +126,9 @@ enum LabRow: Int, CaseIterable, Identifiable {
                 case .kick:
                     switch sound {
                     case 0: add(.kick, 0.95)
-                    case 1: out += DrumKit.boom.apply(ScheduledNote(step: step, instrument: .kick, velocity: 0.95), keyRoot: keyRoot)
+                    case 1:
+                        out += DrumKit.boom.apply(
+                            ScheduledNote(step: step, instrument: .kick, velocity: 0.95), keyRoot: keyRoot)
                     default: add(.impact, 0.8)
                     }
                 case .snare:
@@ -160,7 +162,9 @@ enum LabRow: Int, CaseIterable, Identifiable {
                     let voice = [KeysVoice.bell, KeysVoice.stab, KeysVoice.electricPiano, KeysVoice.pad][sound]
                     add(
                         .keys, 0.6,
-                        NoteParams(pitch: LabRow.keyPitches[value - 1] + shift, lengthSteps: voice == KeysVoice.pad ? 4 : 2, voice: voice))
+                        NoteParams(
+                            pitch: LabRow.keyPitches[value - 1] + shift, lengthSteps: voice == KeysVoice.pad ? 4 : 2,
+                            voice: voice))
                 }
             }
         }

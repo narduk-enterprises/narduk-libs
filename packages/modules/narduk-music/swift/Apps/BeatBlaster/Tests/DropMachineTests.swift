@@ -13,7 +13,8 @@ final class DropMachineTests: XCTestCase {
         var machine = DropMachine()
         XCTAssertTrue(machine.press(at: 37))
         XCTAssertEqual(machine.layer(at: 36, secondsPerStep: sps), .song)
-        XCTAssertEqual(machine.layer(at: 37, secondsPerStep: sps), .build(rollEvery: 4, intensity: 0, isFirstStep: true))
+        XCTAssertEqual(
+            machine.layer(at: 37, secondsPerStep: sps), .build(rollEvery: 4, intensity: 0, isFirstStep: true))
     }
 
     func testRollSpeedsUpWithTheHold() {

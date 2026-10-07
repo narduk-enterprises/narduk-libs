@@ -106,7 +106,8 @@ enum DrumKit: String, CaseIterable, Identifiable, Codable {
                 note,
                 ScheduledNote(
                     step: note.step, instrument: .sub, velocity: note.velocity * 0.8,
-                    params: NoteParams(pitch: DropPattern.fold(keyRoot, into: 26...37), lengthSteps: 2, delay: note.params.delay)),
+                    params: NoteParams(
+                        pitch: DropPattern.fold(keyRoot, into: 26...37), lengthSteps: 2, delay: note.params.delay)),
             ]
         case (.boom, .hat):
             return note.step % 4 == 2 ? [retimbre(note, .openHat, velocity: 0.8)] : [note]

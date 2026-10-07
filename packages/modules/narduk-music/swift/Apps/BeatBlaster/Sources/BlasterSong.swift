@@ -35,6 +35,9 @@ enum BlasterStyle: Hashable, Identifiable, Codable {
             case .ukGarage: "Skate Park"
             case .synthwave: "Neon Drive"
             case .lofi: "Sleepy Cat"
+            case .rock: "Loud Guitars"
+            case .folk: "Campfire"
+            case .funk: "Funky Fresh"
             }
         }
     }
@@ -54,6 +57,9 @@ enum BlasterStyle: Hashable, Identifiable, Codable {
             case .ukGarage: "🛹"
             case .synthwave: "🌆"
             case .lofi: "🐱"
+            case .rock: "🤘"
+            case .folk: "🪕"
+            case .funk: "🕺"
             }
         }
     }

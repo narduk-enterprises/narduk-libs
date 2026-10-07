@@ -23,7 +23,9 @@ enum Dreamer {
             if #available(iOS 26, *), let idea = await modelDream(prompt) {
                 let style = BlasterStyle.all.first { $0.funName == idea.style } ?? fallback.style
                 let base = style.baseBPM
-                let scale = [0.8, 1.0, 1.2].min { abs($0 * base - Double(idea.bpm)) < abs($1 * base - Double(idea.bpm)) }
+                let scale = [0.8, 1.0, 1.2].min {
+                    abs($0 * base - Double(idea.bpm)) < abs($1 * base - Double(idea.bpm))
+                }
                 let title = idea.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 return DreamedSong(
                     style: style, seed: fallback.seed, tempoScale: scale ?? 1,
@@ -56,7 +58,9 @@ enum Dreamer {
         let endings = ["Anthem", "Groove", "Blast", "Jam", "Party", "Stomp", "Boogie", "Adventure"]
         let words = prompt.split(separator: " ").prefix(4).map { $0.prefix(1).uppercased() + $0.dropFirst() }
         let title =
-            words.isEmpty ? "Mystery \(endings[Int((hash >> 8) % 8)])" : "\(words.joined(separator: " ")) \(endings[Int((hash >> 8) % 8)])"
+            words.isEmpty
+            ? "Mystery \(endings[Int((hash >> 8) % 8)])"
+            : "\(words.joined(separator: " ")) \(endings[Int((hash >> 8) % 8)])"
         return DreamedSong(style: style, seed: hash, tempoScale: match?.2 ?? 1, title: title)
     }
 
@@ -122,7 +126,9 @@ struct DreamView: View {
                         Text("✨ Dream a Song ✨")
                             .font(.system(size: compact ? 36 : 64, weight: .black, design: .rounded))
                             .foregroundStyle(
-                                LinearGradient(colors: [Neon.cyan, Neon.purple, Neon.pink], startPoint: .leading, endPoint: .trailing)
+                                LinearGradient(
+                                    colors: [Neon.cyan, Neon.purple, Neon.pink], startPoint: .leading,
+                                    endPoint: .trailing)
                             )
                             .shadow(color: Neon.purple, radius: 16)
                             .padding(.top, compact ? 70 : 60)
@@ -145,7 +151,9 @@ struct DreamView: View {
                         }
                         .frame(maxWidth: 860)
                         Button(action: dream) {
-                            Pill(icon: dreaming ? "💭" : "🪄", word: dreaming ? "Dreaming…" : "Dream it!", color: Neon.pink.opacity(0.85), size: compact ? 24 : 32)
+                            Pill(
+                                icon: dreaming ? "💭" : "🪄", word: dreaming ? "Dreaming…" : "Dream it!",
+                                color: Neon.pink.opacity(0.85), size: compact ? 24 : 32)
                         }
                         .buttonStyle(Squish())
                         .disabled(dreaming)
@@ -269,7 +277,8 @@ struct ChipLayout: Layout {
         var rows: [Row] = [Row()]
         for index in subviews.indices {
             let size = subviews[index].sizeThatFits(.unspecified)
-            let added = rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            let added =
+                rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
             if added > width, !rows[rows.count - 1].items.isEmpty {
                 rows.append(Row())
             }

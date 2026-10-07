@@ -130,7 +130,8 @@ import NardukMusicEngine
                 if first {
                     out.append(
                         ScheduledNote(
-                            step: step, instrument: .riser, velocity: 0.9, params: NoteParams(pitch: 48, lengthSteps: 64)))
+                            step: step, instrument: .riser, velocity: 0.9,
+                            params: NoteParams(pitch: 48, lengthSteps: 64)))
                 }
                 if step % every == 0 {
                     out.append(ScheduledNote(step: step, instrument: .snare, velocity: 0.3 + 0.65 * intensity))
@@ -195,7 +196,8 @@ enum DropPattern {
         let bar = position / 16
         var out: [ScheduledNote] = []
         func add(_ instrument: Instrument, _ velocity: Double, _ params: NoteParams = NoteParams()) {
-            out.append(ScheduledNote(step: step, instrument: instrument, velocity: min(1, velocity * power), params: params))
+            out.append(
+                ScheduledNote(step: step, instrument: instrument, velocity: min(1, velocity * power), params: params))
         }
         let halfTime: Bool
         switch style {
@@ -210,7 +212,9 @@ enum DropPattern {
             if pos % 2 == 0, pos != 14 { add(.hat, 0.5, NoteParams(pan: 0.2)) }
             if pos == 14 { add(.openHat, 0.6, NoteParams(pan: -0.2)) }
             if pos == 0 || pos == 8 {
-                add(.wobble, 1, NoteParams(pitch: low, lengthSteps: 8, wobbleRate: pos == 0 ? .eighth : .sixteenth, drive: 0.8))
+                add(
+                    .wobble, 1,
+                    NoteParams(pitch: low, lengthSteps: 8, wobbleRate: pos == 0 ? .eighth : .sixteenth, drive: 0.8))
             }
             if pos == 0 { add(.sub, 0.7, NoteParams(pitch: low - 12, lengthSteps: 16)) }
         } else {
@@ -295,7 +299,9 @@ enum RockDrums {
             if pos == 0 || pos == 8 || (level > 0.55 && pos == 10) {
                 out.append(ScheduledNote(step: step, instrument: .kick, velocity: 0.85))
             }
-            if pos == 4 || pos == 12 { out.append(ScheduledNote(step: step, instrument: .snare, velocity: 0.7 + 0.2 * level)) }
+            if pos == 4 || pos == 12 {
+                out.append(ScheduledNote(step: step, instrument: .snare, velocity: 0.7 + 0.2 * level))
+            }
             if pos % (level > 0.75 ? 1 : 2) == 0 {
                 out.append(
                     ScheduledNote(

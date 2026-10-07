@@ -165,8 +165,14 @@ struct MusicLightsBar: View {
     var body: some View {
         let tile = VisualTile.with(id: audio.lightsID)
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { music(compact: false); lights(tile, compact: false) }
-            VStack(spacing: 8) { music(compact: true); lights(tile, compact: true) }
+            HStack(spacing: 12) {
+                music(compact: false)
+                lights(tile, compact: false)
+            }
+            VStack(spacing: 8) {
+                music(compact: true)
+                lights(tile, compact: true)
+            }
         }
     }
 

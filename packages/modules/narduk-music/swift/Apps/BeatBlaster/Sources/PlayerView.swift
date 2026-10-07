@@ -54,7 +54,9 @@ struct PlayerView: View {
             }
             Spacer(minLength: 0)
             Button(action: newSong) {
-                Pill(icon: "➕", word: compact ? "New" : "New song", color: Neon.pink.opacity(0.7), size: compact ? 16 : 20)
+                Pill(
+                    icon: "➕", word: compact ? "New" : "New song", color: Neon.pink.opacity(0.7),
+                    size: compact ? 16 : 20)
             }
             .buttonStyle(Squish())
         }
@@ -163,7 +165,8 @@ struct SteeringPanel: View {
                             .frame(width: compact ? 50 : 72, height: compact ? 50 : 64)
                             .background(Neon.green.opacity(on ? 0.45 : 0.08), in: RoundedRectangle(cornerRadius: 14))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 14).stroke(on ? Neon.green : .white.opacity(0.3), lineWidth: on ? 3 : 1.5))
+                                RoundedRectangle(cornerRadius: 14).stroke(
+                                    on ? Neon.green : .white.opacity(0.3), lineWidth: on ? 3 : 1.5))
                         }
                         .buttonStyle(Squish())
                         .accessibilityLabel("\(part.word) \(on ? "on" : "off")")
@@ -214,15 +217,26 @@ struct EnergySlider: View {
                     let x = (width - thumb) * audio.energy
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(LinearGradient(colors: [Neon.cyan, Neon.yellow, Neon.orange, Neon.pink], startPoint: .leading, endPoint: .trailing))
+                            .fill(
+                                LinearGradient(
+                                    colors: [Neon.cyan, Neon.yellow, Neon.orange, Neon.pink], startPoint: .leading,
+                                    endPoint: .trailing)
+                            )
                             .opacity(0.35)
                         Capsule()
-                            .fill(LinearGradient(colors: [Neon.cyan, Neon.yellow, Neon.orange, Neon.pink], startPoint: .leading, endPoint: .trailing))
+                            .fill(
+                                LinearGradient(
+                                    colors: [Neon.cyan, Neon.yellow, Neon.orange, Neon.pink], startPoint: .leading,
+                                    endPoint: .trailing)
+                            )
                             .frame(width: x + thumb)
                         Circle()
                             .fill(.white)
                             .frame(width: thumb, height: thumb)
-                            .overlay(Text(audio.energy > 0.66 ? "🔥" : (audio.energy > 0.33 ? "😎" : "😌")).font(.system(size: thumb * 0.55)))
+                            .overlay(
+                                Text(audio.energy > 0.66 ? "🔥" : (audio.energy > 0.33 ? "😎" : "😌")).font(
+                                    .system(size: thumb * 0.55))
+                            )
                             .shadow(color: Neon.pink, radius: 8)
                             .offset(x: x)
                     }
@@ -270,7 +284,9 @@ struct DropButton: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !pressing)) { timeline in
-            let charge = audio.surgeStart.map { min(1, timeline.date.timeIntervalSince($0) / DropMachine.fullChargeSeconds) } ?? 0
+            let charge =
+                audio.surgeStart.map { min(1, timeline.date.timeIntervalSince($0) / DropMachine.fullChargeSeconds) }
+                ?? 0
             ZStack {
                 Circle()
                     .fill(
@@ -344,7 +360,9 @@ struct BoomText: View {
                 Text("BOOM!")
                     .font(.system(size: 160, weight: .black, design: .rounded))
                     .italic()
-                    .foregroundStyle(LinearGradient(colors: [Neon.yellow, Neon.pink], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(
+                        LinearGradient(colors: [Neon.yellow, Neon.pink], startPoint: .top, endPoint: .bottom)
+                    )
                     .shadow(color: Neon.pink, radius: 30)
                     .scaleEffect(0.5 + 1.2 * p)
                     .opacity(1 - p * p)

@@ -88,7 +88,9 @@ struct LightShowView: View {
                             HomeButton(action: home)
                             Spacer()
                             Button(action: wake) {
-                                Pill(icon: "🎛️", word: "Show controls", color: .black.opacity(0.55), size: compact ? 16 : 20)
+                                Pill(
+                                    icon: "🎛️", word: "Show controls", color: .black.opacity(0.55),
+                                    size: compact ? 16 : 20)
                             }
                             .buttonStyle(Squish())
                         }
