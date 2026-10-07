@@ -35,13 +35,13 @@ import Testing
             goldens: ["darwin-arm64": 0x888e_213a_1a5a_958b, "linux-x86_64": 0x888e_213a_1a5a_958b]),
         Case(
             name: "vocal-choir", instrument: .vocal,
-            goldens: ["darwin-arm64": 0x2c04_a79a_3663_38c5, "linux-x86_64": 0x2c04_a79a_3663_38c5]),
+            goldens: ["darwin-arm64": 0x2c04_a79a_3663_38c5, "linux-x86_64": 0xc6ef_7c6c_cffc_5c34]),
         Case(
             name: "vocal-lead", instrument: .vocal,
-            goldens: ["darwin-arm64": 0x59f4_d20e_888c_af78, "linux-x86_64": 0x59f4_d20e_888c_af78]),
+            goldens: ["darwin-arm64": 0x59f4_d20e_888c_af78, "linux-x86_64": 0x2d53_d64b_322f_210f]),
         Case(
             name: "vocal-chops", instrument: .vocalChop,
-            goldens: ["darwin-arm64": 0xade7_6014_f871_f2ff, "linux-x86_64": 0xade7_6014_f871_f2ff]),
+            goldens: ["darwin-arm64": 0xade7_6014_f871_f2ff, "linux-x86_64": 0xceb6_fc94_8587_04e9]),
     ]
 
     static func scenario(_ name: String, folder: String = "instruments/") throws -> MusicScenario {

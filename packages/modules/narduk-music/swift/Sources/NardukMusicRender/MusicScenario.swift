@@ -104,11 +104,13 @@ public struct MusicScenario: Sendable, Hashable, Codable {
         public var style: VocalStyle?
         /// A vocal's register, 0 (alto) ... 1 (soprano); default 0.5. A vocal's `drive` is its breathiness.
         public var register: Double?
+        /// A vocal's voice character (default `classic`).
+        public var feel: VocalFeel?
 
         public init(
             time: Double, instrument: Instrument, pitch: Int, length: Double? = nil, velocity: Double? = nil,
             pan: Double? = nil, drive: Double? = nil, chord: StrumChord? = nil, direction: StrumStroke? = nil,
-            vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil
+            vowel: VocalVowel? = nil, style: VocalStyle? = nil, register: Double? = nil, feel: VocalFeel? = nil
         ) {
             self.time = time
             self.instrument = instrument
@@ -122,6 +124,7 @@ public struct MusicScenario: Sendable, Hashable, Codable {
             self.vowel = vowel
             self.style = style
             self.register = register
+            self.feel = feel
         }
     }
 
@@ -207,7 +210,8 @@ public struct MusicScenario: Sendable, Hashable, Codable {
                 params.formant = note.direction == .up ? 1 : 0
             }
             if note.instrument == .vocal || note.instrument == .vocalChop {
-                params.voice = NoteParams.vocalVoice(note.vowel ?? .ah, style: note.style ?? .choir)
+                params.voice = NoteParams.vocalVoice(
+                    note.vowel ?? .ah, style: note.style ?? .choir, feel: note.feel ?? .classic)
                 params.formant = note.register
             }
             return ScheduledNote(

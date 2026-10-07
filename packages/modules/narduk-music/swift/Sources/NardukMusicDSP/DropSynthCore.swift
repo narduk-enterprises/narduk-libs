@@ -26,7 +26,7 @@ struct SynthState {
     static let fxCount = 16
     static let stringCount = 24  // guitar strings; a strum takes six
     static let padCount = 8
-    static let vocalCount = 12  // singers; a choir note takes three
+    static let vocalCount = 16  // singers; a choir note takes up to five
     static let pendingCapacity = 2_048
     static let historySize = 1 << 18  // master history for stutter / tape stop (~5.4 s at 48 kHz)
     static let analysisSize = 1 << 13  // mono analysis ring
@@ -341,11 +341,13 @@ struct SynthState {
         let chop = e.instrument == Instrument.vocalChop.synthCode
         let packed = e.voice < 0 ? 0 : Int(e.voice)
         let vowel = packed & 7
-        let style = chop ? .lead : VocalStyle(voice: packed)
+        let style: VocalStyle = chop ? .lead : VocalStyle(voice: packed)
+        let feel = VocalFeel(voice: packed)
+        let patch = VocalPatch.patch(chop: chop, style: style, feel: feel)
         let register = e.formant < 0 ? 0.5 : e.formant
-        let breath = e.drive < 0 ? 0.25 : e.drive
+        let breath = e.drive < 0 ? patch.breathDefault : e.drive
         let gate = gateSamples(e)
-        let singers = !chop && style == .choir ? 3 : 1
+        let singers = !chop && style == .choir ? patch.singers : 1
         if !chop && style == .lead {
             // A lead is one voice: the last one gives way.
             for i in 0..<SynthState.vocalCount where vocals[i].active && vocals[i].isLead { vocals[i].steal() }
@@ -365,16 +367,17 @@ struct SynthState {
                 }
             }
             if slot < 0 { slot = oldest }
-            let spread = Float(n - 1)  // -1, 0, 1 for a choir; 0 for a solo
+            let spread = Float(n) - Float(singers - 1) / 2  // -1, 0, 1 for three; 0 for a solo
             vocals[slot].trigger(
                 pitch: e.pitch < 0 ? 69 : e.pitch, velocity: e.velocity, gateSamples: gate, vowel: vowel,
-                register: register, breath: breath, style: style, chop: chop,
-                pan: singers == 1 ? e.pan : min(max(e.pan + spread * 0.55, -1), 1),
-                detuneCents: singers == 1 ? 0 : spread * 9,
-                phaseOffset: singers == 1 ? 0 : Float(n) / 3, level: singers == 1 ? 0.8 : 0.55, c)
+                register: register, breath: breath, style: style, feel: feel, chop: chop,
+                pan: singers == 1 ? e.pan : min(max(e.pan + spread * patch.spreadPan, -1), 1),
+                detuneCents: singers == 1 ? 0 : spread * patch.spreadCents,
+                phaseOffset: singers == 1 ? 0 : Float(n) / Float(singers),
+                level: singers == 1 ? 0.8 : 0.55 * (3 / Float(singers)).squareRoot(), c)
         }
         vocalsLive += singers
-        let tail = gate + Int(c.sampleRate * 3)
+        let tail = gate + Int(c.sampleRate * (feel == .ethereal ? 5 : 3))
         vocalTail = max(vocalTail, tail)
     }
 
@@ -517,17 +520,19 @@ struct SynthState {
                 var vocalL: Float = 0
                 var vocalR: Float = 0
                 var live = 0
+                var extraSend: Float = 0
                 if vocalsLive > 0 {
                     for i in 0..<SynthState.vocalCount where vocals[i].active {
                         let v = vocals[i].next(c)
                         vocalL += v.0
                         vocalR += v.1
+                        if vocals[i].send != 1 { extraSend += (v.0 + v.1) * 0.5 * (vocals[i].send - 1) }
                         if vocals[i].active { live += 1 }
                     }
                     vocalsLive = live
                 }
                 if vocalTail > 0 { vocalTail -= 1 }
-                let wet = vocalRoom.process((vocalL + vocalR) * 0.5)
+                let wet = vocalRoom.process((vocalL + vocalR) * 0.5 + extraSend)
                 fxL += vocalL + wet.0 * 2.4
                 fxR += vocalR + wet.1 * 2.4
             }

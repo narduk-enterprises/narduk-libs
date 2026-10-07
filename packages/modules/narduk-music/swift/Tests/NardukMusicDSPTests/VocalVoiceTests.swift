@@ -138,6 +138,77 @@ import Testing
         #expect(energy(early, 0.8, 1.0) == 0, "a chop's release is over inside 0.65 s")
     }
 
+    // MARK: Feels
+
+    static func renderFeel(_ feel: VocalFeel, seconds: Float = 1.5) -> [Float] {
+        let c = SynthCoefficients(sampleRate: Double(sampleRate))
+        let patch = VocalPatch.patch(chop: false, style: .lead, feel: feel)
+        var voice = VocalVoice(seed: 3)
+        voice.trigger(
+            pitch: 57, velocity: 0.9, gateSamples: Int(3 * sampleRate), vowel: 0, register: 0.5,
+            breath: patch.breathDefault, style: .lead, feel: feel, chop: false, pan: 0, detuneCents: 0, phaseOffset: 0,
+            level: 0.8, c)
+        return (0..<Int(seconds * sampleRate)).map { _ in
+            let s = voice.next(c)
+            return (s.0 + s.1) * 0.5
+        }
+    }
+
+    /// How bright a voice is: the energy above 1.5 kHz against the energy below it, in dB, over 0.9 ... 1.3 s (a
+    /// Hann-windowed Goertzel scan on a 20 Hz grid to 8 kHz). The first two formants hold most of a voice's energy, so a
+    /// plain spectral centroid of one voice barely differs from another's; this ratio moves with the upper formants,
+    /// the breath and the slope.
+    static func brightness(_ x: [Float]) -> Float {
+        let from = Int(0.9 * sampleRate)
+        let n = Int(0.4 * sampleRate)
+        let window = (0..<n).map { 0.5 - 0.5 * cosf(2 * .pi * Float($0) / Float(n)) }
+        var low: Float = 0
+        var high: Float = 0
+        for hz in stride(from: Float(100), through: 8_000, by: 20) {
+            var re: Float = 0
+            var im: Float = 0
+            let w = 2 * Float.pi * hz / sampleRate
+            for i in 0..<n {
+                let v = x[from + i] * window[i]
+                re += v * cosf(w * Float(i))
+                im -= v * sinf(w * Float(i))
+            }
+            if hz < 1_500 { low += re * re + im * im } else { high += re * re + im * im }
+        }
+        return 10 * log10f(max(high, 1e-12) / max(low, 1e-12))
+    }
+
+    @Test func everyFeelSoundsDifferentInBrightnessAndVibratoRate() {
+        let feels = VocalFeel.allCases
+        let brightness = feels.map { Self.brightness(Self.renderFeel($0)) }
+        let rates = feels.map { VocalPatch.patch(chop: false, style: .lead, feel: $0).vibratoRate }
+        for a in 0..<feels.count {
+            for b in (a + 1)..<feels.count {
+                #expect(
+                    abs(brightness[a] - brightness[b]) >= 3,
+                    "\(feels[a]) \(brightness[a]) dB vs \(feels[b]) \(brightness[b]) dB")
+                #expect(
+                    abs(rates[a] - rates[b]) >= 0.35, "\(feels[a]) \(rates[a]) Hz vs \(feels[b]) \(rates[b]) Hz")
+            }
+        }
+    }
+
+    @Test func everyFeelStaysFiniteAndAudible() {
+        for feel in VocalFeel.allCases {
+            let out = Self.renderFeel(feel, seconds: 2)
+            #expect(out.allSatisfy { $0.isFinite && abs($0) <= 1.6 }, "\(feel)")
+            #expect((out.map(abs).max() ?? 0) > 0.03, "\(feel) is too quiet")
+        }
+    }
+
+    @Test func feelsRoundTripThroughTheVoiceField() {
+        for feel in VocalFeel.allCases {
+            let v = NoteParams.vocalVoice(.oh, style: .solo, feel: feel)
+            #expect(VocalFeel(voice: v) == feel && v & 7 == VocalVowel.oh.index && VocalStyle(voice: v) == .solo)
+        }
+        #expect(VocalFeel(voice: NoteParams.vocalVoice(.ah)) == .classic, "the default feel is the original voice")
+    }
+
     // MARK: In the synth
 
     @Test func aChoirIsThreeVoicesThatSettleAndFinish() {

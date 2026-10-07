@@ -67,10 +67,37 @@ public enum VocalStyle: String, Sendable, Hashable, Codable, CaseIterable {
     }
 }
 
+/// A voice character: presets of the same formant synthesiser that differ in formants, breath, vibrato, attack, voice
+/// count and room (`(NoteParams.voice >> 5) & 15`; 0, `classic`, is the original voice).
+public enum VocalFeel: String, Sendable, Hashable, Codable, CaseIterable {
+    /// The original voice: a warm, even choir.
+    case classic
+    /// A breathy whisper pad: high breath, almost no vibrato, a soft slow attack.
+    case airy
+    /// A bright pop lead: soprano, forward upper formants, a fast scoop and a tight quick vibrato.
+    case pop
+    /// A dark, low hum: rounded and low-passed.
+    case dark
+    /// A gospel or soul belt: a wide slow vibrato, grit, and big slides up to the note.
+    case soul
+    /// An ethereal choir: five detuned voices, a long room, the vowel drifting from one to the next.
+    case ethereal
+    /// A playful "la la": higher formants, quick, bright and short.
+    case toy
+
+    public var index: Int { VocalFeel.allCases.firstIndex(of: self) ?? 0 }
+
+    /// The feel a `voice` field asks for (an unknown value is `classic`).
+    public init(voice: Int) {
+        let i = (voice >> 5) & 15
+        self = i < VocalFeel.allCases.count ? VocalFeel.allCases[i] : .classic
+    }
+}
+
 extension NoteParams {
-    /// The `voice` value that sings `vowel` in `style`.
-    public static func vocalVoice(_ vowel: VocalVowel, style: VocalStyle = .choir) -> Int {
-        vowel.index | style.index << 3
+    /// The `voice` value that sings `vowel` in `style` and `feel`.
+    public static func vocalVoice(_ vowel: VocalVowel, style: VocalStyle = .choir, feel: VocalFeel = .classic) -> Int {
+        vowel.index | style.index << 3 | feel.index << 5
     }
 }
 

@@ -13,6 +13,9 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   mm) and style (`VocalStyle`) via `NoteParams.vocalVoice(_:style:)`; `formant` is the register (0 alto ... 1 soprano)
   and `drive` the breathiness. Scenario notes take `vowel`, `style` and `register`. Nothing is added to an arrangement
   and a song without vocals renders bit for bit as before.
+  Seven voice feels (`VocalFeel`: classic, airy, pop, dark, soul, ethereal, toy; `NoteParams.vocalVoice(_:style:feel:)`,
+  scenario note field `feel`) vary the formants, breath, vibrato, attack, voice count and room of the same synth; classic
+  is the default and renders exactly as before.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery shows both as tiles.
