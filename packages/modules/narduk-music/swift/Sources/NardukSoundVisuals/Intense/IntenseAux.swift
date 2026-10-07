@@ -214,6 +214,7 @@
         var auxNeeds: IntenseAux.Needs {
             switch self {
             case .spectrumMetal: [.scalars]
+            case .vortexMetal: [.scalars]
             default: []
             }
         }

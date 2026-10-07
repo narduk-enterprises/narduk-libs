@@ -6,6 +6,10 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.vortexMetal` ("Vortex (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): the Metal port of the
+  Canvas vortex: a spiral galaxy of lit gas and shaded beads wound from the spectrum, bass at the core and highs at
+  the rim, with a waveform accretion ring, a polar starfield turning at its own rate per ring, snare shock rings and a
+  beat ring. A kick swells the core, a drop winds the arms tighter and a glitch splits them into two fringes.
 - `IntenseKind.spectrumMetal` ("Spectrum (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): the Metal port of the
   Canvas spectrum: 64 glass tubes of liquid light (a cylinder-lit body, specular streak, meniscus) with hue by band,
   floating peak beads, a mirror floor, a drifting echo row and dust. Bass and the kick swell the low tubes, highs

@@ -37,6 +37,7 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let vortexMetal: any MTLRenderPipelineState
         private let spectrumMetal: any MTLRenderPipelineState
         private let screenPass = MTLRenderPassDescriptor()
         private let fluidPass = MTLRenderPassDescriptor()
@@ -50,6 +51,7 @@
                 IntenseShaderCommon.source, IntenseEffects.source, HyperspaceShader.source, FluidGlitchShader.source,
                 FractalDiveShader.source, SynthwaveShader.source, LiquidSplashShader.source, SunShader.source,
                 SpectrumMetalShader.source,
+                VortexMetalShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -67,6 +69,7 @@
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
                 let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let vortexMetal = pipeline("vortexMetalFragment"),
                 let spectrumMetal = pipeline("spectrumMetalFragment")
             else { return nil }
             self.device = device
@@ -78,6 +81,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.vortexMetal = vortexMetal
             self.spectrumMetal = spectrumMetal
         }
 
@@ -107,6 +111,10 @@
             case .spectrumMetal:
                 draw(
                     spectrumMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
+                    needs: [.scalars])
+            case .vortexMetal:
+                draw(
+                    vortexMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
                     needs: [.scalars])
             case .fluidGlitch:
                 guard let surface else { return }
