@@ -222,7 +222,7 @@ enum TrackGenerator {
     /// the session seed, the track number, the genre and the input character, steered away from `previous`.
     static func make(
         number: Int, genre: Genre, character: MusicCharacter, sessionSeed: UInt64, bpm: Double,
-        topApp: String?, previous: Track?, mode pinned: Mode? = nil
+        topApp: String?, previous: Track?, mode pinned: Mode? = nil, variety: Double = 0
     ) -> Track {
         let seed =
             sessionSeed ^ (UInt64(truncatingIfNeeded: number) &* 0x9E37_79B9_7F4A_7C15)
@@ -316,6 +316,8 @@ enum TrackGenerator {
             t.drop2Length = 1 + pick(3)
             t.dropBudget = 2 + t.drop2Length + pick(2)
         }
+        // Variety draws from streams of its own, after every banked draw, so variety 0 leaves the track untouched.
+        Variety.apply(to: &t, variety: variety, previous: previous)
         t.name = name(t, topApp: topApp, rng: &rng)
         return t
     }
