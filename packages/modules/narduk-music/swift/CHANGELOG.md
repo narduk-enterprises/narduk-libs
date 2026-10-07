@@ -60,6 +60,7 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   row sits further away, and `travel` scrolls the grid. The beat lifts the nearest ridge; a drop brightens the palette
   and speeds the scroll.
 - `ShaderPackKind.bassBlobs` ("Bass blobs"): raymarched glossy liquid metaballs. Bass swells and merges them, mids set the orbit, highs ripple the surface, and the kick squashes the mass with a rim glow; calm slows the orbit to 0.4 and drops the squash.
+- Shader-pack look `aurora` ("Aurora curtains"): domain-warped light sheets and a starfield over a night sky (narduk-libs#1569).
 
 ## 0.4.1
 

@@ -89,5 +89,11 @@ extension GalleryTile {
                     kind: .bassBlobs, title: "Bass blobs", model: context.model,
                     framesPerSecond: context.framesPerSecond))
         },
+        GalleryTile(id: "Aurora curtains") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .aurora, title: "Aurora curtains", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }

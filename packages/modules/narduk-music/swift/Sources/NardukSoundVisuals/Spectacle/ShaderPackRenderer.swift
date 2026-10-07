@@ -7,6 +7,7 @@
         case plasma, warpGrid, starfield, feedback
         /// Glossy liquid metaballs in a dark studio.
         case bassBlobs
+        case aurora
 
         public var title: String {
             switch self {
@@ -15,6 +16,7 @@
             case .starfield: "Starfield"
             case .feedback: "Feedback"
             case .bassBlobs: "Bass blobs"
+            case .aurora: "Aurora curtains"
             }
         }
 
@@ -25,6 +27,7 @@
             case .starfield: "starfieldFragment"
             case .feedback: "feedbackFragment"
             case .bassBlobs: "bassBlobsFragment"
+            case .aurora: "auroraFragment"
             }
         }
     }
