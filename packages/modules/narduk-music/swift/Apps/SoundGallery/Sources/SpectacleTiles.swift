@@ -95,5 +95,11 @@ extension GalleryTile {
                     kind: .aurora, title: "Aurora curtains", model: context.model,
                     framesPerSecond: context.framesPerSecond))
         },
+        GalleryTile(id: "Aurora waves") { context in
+            AnyView(
+                ShaderPackTile(
+                    kind: .auroraWaves, title: "Aurora waves", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
+        },
     ]
 }

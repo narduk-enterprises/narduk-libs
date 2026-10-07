@@ -8,6 +8,8 @@
         /// Glossy liquid metaballs in a dark studio.
         case bassBlobs
         case aurora
+        /// "Aurora waves": silky multi-strand ribbons with an embedded equaliser over a reflecting sea.
+        case auroraWaves
 
         public var title: String {
             switch self {
@@ -17,6 +19,7 @@
             case .feedback: "Feedback"
             case .bassBlobs: "Bass blobs"
             case .aurora: "Aurora curtains"
+            case .auroraWaves: "Aurora waves"
             }
         }
 
@@ -28,6 +31,7 @@
             case .feedback: "feedbackFragment"
             case .bassBlobs: "bassBlobsFragment"
             case .aurora: "auroraFragment"
+            case .auroraWaves: "auroraWavesFragment"
             }
         }
     }
