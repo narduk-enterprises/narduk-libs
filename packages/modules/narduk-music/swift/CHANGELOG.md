@@ -18,6 +18,13 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   is the default and renders exactly as before. `power` is a chest-mix belt with a little grit; `runs` is tuned for
   `VocalRun`, an ornament any held vocal note can take (scenario note field `run`): it holds, then sings a pentatonic,
   minor or blues run up, down or in waves over an octave or more in sixteenths or thirty-seconds.
+- A master cut (narduk-libs#1641): `Instrument.cut`, an effect on the finished mix that fires on an exact sample: `stutter`
+  (beat repeat, `amount` pitches it up and fades it), `gate` (a trance gate), `reverse` and `chop` (the last eight slices
+  re-sequenced from a seed, a few left silent), over a `CutDivision` slice (quarter ... thirty-second). Use it from a
+  note (`NoteParams.cut`, scenario fields `cut`, `division`, `cutSeed`, `drive`), from the arrangement, or live with
+  `DropEngine.cut(_:division:steps:amount:seed:)`, which starts on the next audio buffer. With `SongSettings.variety`
+  above 0 a song may add wordless vocals (a pad, a chop hook) and a stutter into each drop; at 0 (the default) nothing is
+  added and every render is bit for bit as before.
 - Two musical visualizers in `NardukSoundVisuals` (narduk-libs#1573): `SoundVisualizerKind.pianoRoll`, a note waterfall,
   and `.pitchWheel`, the 12 pitch classes around a wheel with the key marked. Both draw from `SoundVisualState.musical`
   (`SoundMusicalState`: smoothed pitch classes, a 96-column note roll, a key estimate). SoundGallery shows both as tiles.
