@@ -26,8 +26,29 @@ import XCTest
         XCTAssertEqual(clockText(3661), "1:01:01")
     }
 
-    func testStoreListRenameDelete() throws {
+    func testRowTitleDropsTheTakeStampAndDetailShowsDayAndLength() {
+        func take(_ file: String, _ date: Date = Date()) -> Recording {
+            Recording(url: URL(fileURLWithPath: "/x/\(file).m4a"), date: date, seconds: 75)
+        }
+        XCTAssertEqual(take("Laser Monkey Boogie 2026-10-07 04.12.33").title, "Laser Monkey Boogie")
+        XCTAssertEqual(take("Laser Monkey Boogie 2026-10-07 04.12.33 2").title, "Laser Monkey Boogie")
+        XCTAssertEqual(take("Smoke Test 2").title, "Smoke Test 2")
+        XCTAssertEqual(take("2026-10-07 04.12.33").title, "2026-10-07 04.12.33")
+        XCTAssertTrue(take("a").detail.hasPrefix("Today "))
+        XCTAssertTrue(take("a").detail.hasSuffix(" · 01:15"))
+        XCTAssertTrue(take("a", Date().addingTimeInterval(-86_400)).detail.hasPrefix("Yesterday "))
+    }
+
+    func testTakesShorterThanTheFloorStayOutOfTheList() throws {
         let store = RecordingStore(directory: directory)
+        try Self.writeSilence(to: store.newTakeURL(title: "Peek"), seconds: 1)
+        try Self.writeSilence(to: store.newTakeURL(title: "Real song"), seconds: 2.5)
+        XCTAssertEqual(store.list().map(\.title), ["Real song"])
+        XCTAssertEqual(RecordingStore(directory: directory, shortest: 0).list().count, 2, "hidden, not deleted")
+    }
+
+    func testStoreListRenameDelete() throws {
+        let store = RecordingStore(directory: directory, shortest: 0)
         let url = store.newTakeURL(title: "Dino Disco")
         try Self.writeSilence(to: url, seconds: 1)
         var list = store.list()
@@ -53,8 +74,9 @@ import XCTest
     /// The real engine records its master mixer to an m4a, saves it on stop, and a long take rotates into the next.
     func testRecorderStartStopSaveAndRotation() async throws {
         let audio = BlasterAudio()
-        audio.store = RecordingStore(directory: directory)
+        audio.store = RecordingStore(directory: directory, shortest: 0)
         audio.maxTakeSeconds = 1.2
+        audio.minTakeSeconds = 0
         audio.play(SongRecipe(style: .genre(.house)))
         audio.beginRecording()
         XCTAssertTrue(audio.isRecording)
@@ -67,6 +89,23 @@ import XCTest
         XCTAssertGreaterThanOrEqual(saved.count, 2, "a take longer than the cap rolls into a new file")
         XCTAssertGreaterThan(saved.reduce(0) { $0 + $1.seconds }, 1.0)
         XCTAssertEqual(audio.savedCount, saved.count)
+    }
+
+    /// A peek at the player (under minTakeSeconds) leaves nothing in My Songs.
+    func testATakeTooShortToKeepIsThrownAway() async throws {
+        let audio = BlasterAudio()
+        audio.store = RecordingStore(directory: directory)
+        audio.play(SongRecipe(style: .genre(.house)))
+        audio.beginRecording()
+        try await Task.sleep(for: .seconds(0.5))
+        audio.endRecording()
+        await audio.settleRecording()
+        audio.stop()
+        XCTAssertEqual(audio.store.list().count, 0)
+        XCTAssertEqual(audio.savedCount, 0)
+        let leftovers =
+            (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        XCTAssertTrue(leftovers.isEmpty, "the short take's file is deleted: \(leftovers)")
     }
 
     func testShowModeHidesAndReveals() {

@@ -67,10 +67,9 @@ struct HomeView: View {
         }
         .onAppear {
             if !audio.isRunning { audio.playIfIdle() }
-            recordingCount = audio.store.list().count
             arrived = true
         }
-        .onChange(of: audio.savedCount) { recordingCount = audio.store.list().count }
+        .task(id: audio.savedCount) { recordingCount = await audio.store.load().count }
     }
 
     private func header(compact: Bool) -> some View {

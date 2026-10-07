@@ -45,6 +45,9 @@ struct RecordingsView: View {
     @State private var renaming: Recording?
     @State private var newName = ""
     @State private var deleting: Recording?
+    /// Bumped by every reload so a slow, older listing never lands over a newer one.
+    @State private var loads = 0
+    @State private var loaded = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -60,7 +63,9 @@ struct RecordingsView: View {
                         .probe("mysongs.title")
                     Spacer(minLength: 0)
                 }
-                if recordings.isEmpty {
+                if !loaded {
+                    Spacer()
+                } else if recordings.isEmpty {
                     Spacer()
                     Text("Nothing recorded yet.\nEvery song you play gets recorded!")
                         .blasterFont(size: compact ? 20 : 28, weight: .heavy)
@@ -129,21 +134,23 @@ struct RecordingsView: View {
                     .background(Neon.green.opacity(0.55), in: Circle())
             }
             .buttonStyle(Squish())
-            .accessibilityLabel(isPlaying ? "Stop" : "Play \(recording.name)")
+            .accessibilityLabel(isPlaying ? "Stop" : "Play \(recording.title)")
             .accessibilityIdentifier("mysongs.play")
             VStack(alignment: .leading, spacing: 2) {
-                Text(recording.name)
+                Text(recording.title)
                     .blasterFont(size: compact ? 16 : 20, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
-                Text(clockText(recording.seconds))
-                    .blasterFont(size: 14, weight: .bold, design: .monospaced)
+                Text(recording.detail)
+                    .blasterFont(size: compact ? 13 : 14, weight: .bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .foregroundStyle(.white.opacity(0.7))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             iconButton("✏️", label: "Rename") {
-                newName = recording.name
+                newName = recording.title
                 renaming = recording
             }
             ShareLink(item: recording.url) {
@@ -151,7 +158,7 @@ struct RecordingsView: View {
                     .frame(width: 48, height: 48)
                     .background(Neon.cyan.opacity(0.5), in: Circle())
             }
-            .accessibilityLabel("Share \(recording.name)")
+            .accessibilityLabel("Share \(recording.title)")
             .accessibilityIdentifier("mysongs.share")
             iconButton("🗑", label: "Delete") { deleting = recording }
         }
@@ -187,5 +194,12 @@ struct RecordingsView: View {
         reload()
     }
 
-    private func reload() { recordings = audio.store.list() }
+    private func reload() {
+        loads += 1
+        let load = loads
+        Task {
+            let listed = await audio.store.load()
+            if load == loads { (recordings, loaded) = (listed, true) }
+        }
+    }
 }

@@ -85,6 +85,8 @@ enum BlasterInput: Equatable {
     var store = RecordingStore.standard
     /// A take stops at this length and the next one starts (60 minutes).
     var maxTakeSeconds = 3600.0
+    /// A take shorter than this (a peek at the player, a quick swap) is thrown away instead of filling My Songs.
+    var minTakeSeconds = 2.0
     @ObservationIgnored private var wantsRecording = false
     @ObservationIgnored private var recorderChain: Task<Void, Never>?
     @ObservationIgnored private var capTask: Task<Void, Never>?
@@ -440,14 +442,19 @@ enum BlasterInput: Equatable {
     private func finishTake() {
         capTask?.cancel()
         capTask = nil
-        guard takeStart != nil else { return }
+        guard let started = takeStart else { return }
+        let tooShort = Date().timeIntervalSince(started) < minTakeSeconds
         takeStart = nil
         takeURL = nil
         let previous = recorderChain
         recorderChain = Task { [weak self] in
             await previous?.value
-            guard let self else { return }
-            if await self.drop.stopRecording() != nil { self.savedCount += 1 }
+            guard let self, let url = await self.drop.stopRecording() else { return }
+            if tooShort {
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                self.savedCount += 1
+            }
         }
     }
 
