@@ -31,8 +31,6 @@ const green = {
   LOGGING_RESULT: 'success',
   AUTH_KIT_EXPECTED: 'true',
   AUTH_KIT_RESULT: 'success',
-  MUSIC_EXPECTED: 'true',
-  MUSIC_RESULT: 'success',
 }
 const run = (env) =>
   spawnSync('bash', ['-e', '-o', 'pipefail', '-c', shell], {
@@ -90,8 +88,6 @@ test('full and explicitly empty plans pass the actual final aggregate', () => {
       LOGGING_RESULT: 'skipped',
       AUTH_KIT_EXPECTED: 'false',
       AUTH_KIT_RESULT: 'skipped',
-      MUSIC_EXPECTED: 'false',
-      MUSIC_RESULT: 'skipped',
     }).status,
     0,
   )
@@ -106,7 +102,6 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
     'BROWSER_RESULT',
     'LOGGING_RESULT',
     'AUTH_KIT_RESULT',
-    'MUSIC_RESULT',
   ]) {
     for (const value of ['failure', 'cancelled', 'skipped', ''])
       assert.notEqual(run({ [field]: value }).status, 0, `${field}=${value}`)
@@ -123,8 +118,6 @@ test('failure, cancellation, missing output and unexpected skips cannot satisfy 
   assert.notEqual(run({ LOGGING_EXPECTED: '', LOGGING_RESULT: 'skipped' }).status, 0)
   assert.notEqual(run({ AUTH_KIT_EXPECTED: 'false' }).status, 0)
   assert.notEqual(run({ AUTH_KIT_EXPECTED: '', AUTH_KIT_RESULT: 'skipped' }).status, 0)
-  assert.notEqual(run({ MUSIC_EXPECTED: 'false' }).status, 0)
-  assert.notEqual(run({ MUSIC_EXPECTED: '', MUSIC_RESULT: 'skipped' }).status, 0)
 })
 
 test('artifact-only success is accepted but missing or contradictory app selection fails', () => {
