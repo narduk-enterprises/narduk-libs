@@ -24,9 +24,12 @@ struct BeatLabView: View {
                     .allowsHitTesting(false)
                 Vignette()
                 // Everything fits on one screen: the controls take the height they need and the grid takes the rest.
-                page(compact: compact, side: side, portrait: geometry.size.width < 500 && geometry.size.height > 600)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .frame(width: geometry.size.width)
+                page(
+                    compact: compact, side: side, portrait: geometry.size.width < 500 && geometry.size.height > 600,
+                    width: geometry.size.width
+                )
+                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(width: geometry.size.width)
                 if panel {
                     PickerPanel(title: "Pick the lights", badge: .lights, close: { withAnimation { panel = false } }) {
                         LightsGrid(audio: audio, selectedID: audio.lightsID) { audio.lightsID = $0 }
@@ -44,21 +47,24 @@ struct BeatLabView: View {
 
     /// The whole Lab: the title and the one-line help, the grid in the height that is left, then the controls (wrapped
     /// onto as many rows as the width needs) and My beats.
-    @ViewBuilder private func page(compact: Bool, side: Bool, portrait: Bool) -> some View {
+    /// Pills are at least 52pt tall, so this keeps every control at 44pt or more.
+    static let minTapScale: CGFloat = 0.85
+
+    @ViewBuilder private func page(compact: Bool, side: Bool, portrait: Bool, width: CGFloat) -> some View {
         if side {
             HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 8) {
                     header(compact: compact)
                     grid(compact: compact)
                 }
-                // The column shrinks to the window's height rather than scroll.
-                ScaleToFit {
+                // The column shrinks to the window's height, never below a size a finger can hit.
+                ScaleToFit(minScale: Self.minTapScale) {
                     VStack(spacing: 8) {
                         controls(compact: compact)
                         if !lab.kept.isEmpty { myBeats(compact: compact) }
                     }
                 }
-                .frame(width: 330)
+                .frame(width: min(440, width * 0.48))
             }
             .padding(12)
         } else {
@@ -68,7 +74,7 @@ struct BeatLabView: View {
                     // A phone held upright: the grid is as wide as it can be (its height follows the width) and the
                     // controls shrink into the rest.
                     grid(compact: compact).frame(maxHeight: 160)
-                    ScaleToFit {
+                    ScaleToFit(minScale: Self.minTapScale) {
                         VStack(spacing: 8) {
                             controls(compact: compact)
                             if !lab.kept.isEmpty { myBeats(compact: compact) }

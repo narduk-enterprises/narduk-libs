@@ -47,9 +47,9 @@ struct SongMakerView: View {
                 Group {
                     switch step {
                     case 1: vibeStep(compact: compact)
-                    case 2: ScaleToFit { speedStep(compact: compact) }
-                    case 3: ScaleToFit { bandStep(compact: compact) }
-                    case 4: ScaleToFit { soundsStep(compact: compact) }
+                    case 2: ScaleToFit(minScale: 0.55) { speedStep(compact: compact) }
+                    case 3: ScaleToFit(minScale: 0.55) { bandStep(compact: compact) }
+                    case 4: ScaleToFit(minScale: 0.55) { soundsStep(compact: compact) }
                     default: lightsStep(compact: compact)
                     }
                 }

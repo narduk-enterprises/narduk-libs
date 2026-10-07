@@ -57,8 +57,10 @@ struct FitGrid<Item: Identifiable, Cell: View>: View {
     }
 }
 
-/// Shows its content at its natural size, shrunk evenly when the space is smaller, so a step never scrolls.
+/// Shows its content at its natural size, shrunk evenly when the space is smaller, so a step never scrolls. Below
+/// `minScale` the buttons would be too small to tap, so it scrolls at full size instead.
 struct ScaleToFit<Content: View>: View {
+    var minScale: CGFloat = 0
     @ViewBuilder let content: Content
     @State private var natural: CGFloat = 0
 
@@ -67,12 +69,20 @@ struct ScaleToFit<Content: View>: View {
             // Laid out at the full width and its own height, then shrunk; the width never depends on the scale, so
             // the measurement cannot feed back into itself.
             let scale = natural > 0 ? min(1, geometry.size.height / natural) : 1
-            content
-                .frame(width: geometry.size.width)
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self, of: \.size.height) { natural = $0 }
-                .scaleEffect(scale)
-                .frame(width: geometry.size.width, height: geometry.size.height)
+            if scale < minScale {
+                ScrollView { measured(width: geometry.size.width) }
+            } else {
+                measured(width: geometry.size.width)
+                    .scaleEffect(scale)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+            }
         }
+    }
+
+    private func measured(width: CGFloat) -> some View {
+        content
+            .frame(width: width)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { natural = $0 }
     }
 }
