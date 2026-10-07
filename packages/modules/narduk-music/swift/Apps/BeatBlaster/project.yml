@@ -1,0 +1,68 @@
+# Beat Blaster: a neon music toy for kids on iPad and iPhone, built on the NardukSound libraries (NardukMusicEngine
+# plays the songs, NardukSoundAnalysis listens, NardukSoundVisuals draws). Generate the project with
+# `xcodegen generate` (the .xcodeproj is not committed). TestFlight-signed: automatic signing on team FVSY7CFC3S.
+# Set the build number on the command line: `xcodebuild ... CURRENT_PROJECT_VERSION=<n>` (default 1).
+name: BeatBlaster
+options:
+  bundleIdPrefix: com.nardukenterprises
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: FVSY7CFC3S
+packages:
+  NardukLibs:
+    path: ../../../../../..
+targets:
+  BeatBlaster:
+    type: application
+    platform: iOS
+    sources: [Sources, Resources]
+    dependencies:
+      - package: NardukLibs
+        product: NardukSoundAnalysis
+      - package: NardukLibs
+        product: NardukSoundVisuals
+      - package: NardukLibs
+        product: NardukMusicCore
+      - package: NardukLibs
+        product: NardukMusicEngine
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Beat Blaster
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSMicrophoneUsageDescription: Beat Blaster listens to the microphone so your claps, songs and yells can light up the screen. Nothing is recorded, saved or sent anywhere.
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.music
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nardukenterprises.beatblaster
+        PRODUCT_NAME: BeatBlaster
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
