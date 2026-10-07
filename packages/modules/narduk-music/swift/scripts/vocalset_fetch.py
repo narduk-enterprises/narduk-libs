@@ -33,7 +33,7 @@ class RangeFile(io.RawIOBase):
         return len(data)
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/narduk-sound/vocalset"))
     ap.add_argument("patterns", nargs="+")
@@ -46,6 +46,7 @@ def main():
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as out: out.write(z.read(info))
             print("fetched", info.filename, info.file_size)
+    return 0
 
 
 if __name__ == "__main__":
