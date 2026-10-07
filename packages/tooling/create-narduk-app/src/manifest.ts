@@ -543,6 +543,11 @@ export function createRootPackageManifest(
         'simple-git': '^4.0.2',
         '@simple-git/argv-parser': '^2.0.1',
         sharp: '^0.35.5',
+        // shell-quote: GHSA-pqg4-j6r4-53mv (critical, published 2026-10-07,
+        // fixed in 1.11.0) arrives through nuxt's launch-editor. source-map-js
+        // <1.2.2 is the fixable advisory the audit lists beside simple-git.
+        'shell-quote': '^1.11.0',
+        'source-map-js': '^1.2.2',
       },
       ...(capabilities.includes('auth')
         ? {
