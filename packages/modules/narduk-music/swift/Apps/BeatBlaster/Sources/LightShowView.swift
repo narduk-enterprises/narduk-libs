@@ -1,6 +1,44 @@
 import SwiftUI
 
-/// One visualizer edge to edge: swipe for the next one, tap to call `onTap`.
+/// Prev / Next buttons with words, and the light's name between them.
+struct LightStepper: View {
+    @Binding var index: Int
+    var compact = false
+
+    var body: some View {
+        let tiles = VisualTile.all
+        let tile = tiles[(index % tiles.count + tiles.count) % tiles.count]
+        HStack(spacing: 10) {
+            Button {
+                Haptics.tap()
+                withAnimation(.easeInOut(duration: 0.35)) { index -= 1 }
+            } label: {
+                Pill(icon: "◀︎", word: "Prev", color: .black.opacity(0.5), size: compact ? 16 : 22)
+            }
+            .buttonStyle(Squish())
+            HStack(spacing: 6) {
+                KindBadge(kind: .lights, size: 12)
+                Text("\(tile.emoji) \(tile.name)")
+                    .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.5), in: Capsule())
+            Button {
+                Haptics.tap()
+                withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
+            } label: {
+                Pill(icon: "▶︎", word: "Next", color: .black.opacity(0.5), size: compact ? 16 : 22)
+            }
+            .buttonStyle(Squish())
+        }
+    }
+}
+
+/// One light edge to edge; swiping left or right is a bonus way to change it.
 struct SwipeStage: View {
     let audio: BlasterAudio
     @Binding var index: Int
@@ -11,7 +49,6 @@ struct SwipeStage: View {
         let tiles = VisualTile.all
         let tile = tiles[(index % tiles.count + tiles.count) % tiles.count]
         LiveVisual(audio: audio, tile: tile, drawing: scenePhase == .active)
-            .id(tile.id)
             .transition(.opacity)
             .ignoresSafeArea()
             .background(Neon.night)
@@ -27,54 +64,59 @@ struct SwipeStage: View {
     }
 }
 
-/// The visual's name, flashed big for a moment after each change.
-struct TileNameBanner: View {
-    let index: Int
-    @State private var visible = false
-
-    var body: some View {
-        let tiles = VisualTile.all
-        let name = tiles[(index % tiles.count + tiles.count) % tiles.count].name
-        NeonPill(text: name, color: Neon.purple, size: 30)
-            .opacity(visible ? 1 : 0)
-            .scaleEffect(visible ? 1 : 0.6)
-            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: visible)
-            .allowsHitTesting(false)
-            .task(id: index) {
-                visible = true
-                try? await Task.sleep(for: .seconds(1.6))
-                if !Task.isCancelled { visible = false }
-            }
-    }
-}
-
-/// Light Show: the visualizers full screen. Swipe between them; tap for the song picker, auto-play and back.
+/// Light Show: the lights full screen. Controls show at first, tuck away after 8 s, and a "Show controls" button
+/// brings them back.
 struct LightShowView: View {
     let audio: BlasterAudio
-    let back: () -> Void
+    let home: () -> Void
     @State private var index = 0
-    @State private var overlay = true
+    @State private var controlsShown = true
     @State private var autoCycle = false
-    @State private var overlayTick = 0
+    @State private var activity = 0
+    @State private var musicPanel = false
 
     var body: some View {
-        ZStack {
-            SwipeStage(audio: audio, index: $index) {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { overlay.toggle() }
-                overlayTick += 1
-            }
-            TileNameBanner(index: index)
-            if overlay {
-                controls.transition(.opacity.combined(with: .scale(scale: 0.95)))
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 500
+            ZStack {
+                SwipeStage(audio: audio, index: $index) { wake() }
+                if controlsShown {
+                    controls(compact: compact).transition(.opacity)
+                } else {
+                    VStack {
+                        HStack {
+                            HomeButton(action: home)
+                            Spacer()
+                            Button(action: wake) {
+                                Pill(icon: "🎛️", word: "Show controls", color: .black.opacity(0.55), size: compact ? 16 : 20)
+                            }
+                            .buttonStyle(Squish())
+                        }
+                        Spacer()
+                    }
+                    .padding(compact ? 12 : 24)
+                    .transition(.opacity)
+                }
+                if musicPanel {
+                    PickerPanel(title: "Pick the music", badge: .music, close: closeMusic) {
+                        MusicGrid(selectedID: audio.recipe.styleID, compact: compact) { style in
+                            var next = audio.recipe
+                            next.styleID = style.id
+                            audio.play(next)
+                            activity += 1
+                        }
+                    }
+                    .transition(.move(edge: .bottom))
+                }
             }
         }
         .onAppear {
             audio.playIfIdle()
-            if let id = UserDefaults.standard.string(forKey: "tile"),
-                let found = VisualTile.all.firstIndex(where: { $0.id == id })
-            {
-                index = found
-            }
+            index = VisualTile.index(of: audio.lightsID)
+        }
+        .onChange(of: index) { _, new in
+            let tiles = VisualTile.all
+            audio.lightsID = tiles[(new % tiles.count + tiles.count) % tiles.count].id
         }
         .task(id: autoCycle) {
             while autoCycle, !Task.isCancelled {
@@ -83,114 +125,107 @@ struct LightShowView: View {
                 withAnimation(.easeInOut(duration: 0.6)) { index += 1 }
             }
         }
-        .task(id: overlayTick) {
-            // The controls tuck away after a while so the show fills the screen.
-            try? await Task.sleep(for: .seconds(6))
-            if !Task.isCancelled { withAnimation { overlay = false } }
+        .task(id: activity) {
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled, !musicPanel { withAnimation { controlsShown = false } }
         }
     }
 
-    private var controls: some View {
-        VStack {
-            HStack(spacing: 14) {
-                BackButton(action: back)
-                Spacer()
+    private func wake() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { controlsShown = true }
+        activity += 1
+    }
+
+    private func closeMusic() {
+        withAnimation { musicPanel = false }
+        activity += 1
+    }
+
+    private func controls(compact: Bool) -> some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                HomeButton(action: home)
+                Text("💡 Light Show")
+                    .font(.system(size: compact ? 22 : 36, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
                 Button {
-                    Haptics.tap()
-                    autoCycle.toggle()
-                    overlayTick += 1
+                    withAnimation { controlsShown = false }
                 } label: {
-                    NeonPill(text: autoCycle ? "🔁 Auto: ON" : "🔁 Auto: OFF", color: autoCycle ? Neon.green : .gray, size: 20)
+                    Pill(icon: "🙈", word: "Hide", color: .black.opacity(0.5), size: compact ? 16 : 20)
                 }
                 .buttonStyle(Squish())
-                Button {
-                    Haptics.success()
-                    audio.newSong()
-                    overlayTick += 1
-                } label: {
-                    NeonPill(text: "🎲", color: Neon.orange, size: 22)
-                }
-                .buttonStyle(Squish())
-                .accessibilityLabel("New song")
             }
             Spacer()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(BlasterStyle.all) { style in
-                        let selected = audio.song.style == style
-                        Button {
-                            Haptics.tap()
-                            var song = audio.song
-                            song.style = style
-                            song.title = nil
-                            song.reroll()
-                            audio.play(song)
-                            overlayTick += 1
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(style.emoji).font(.system(size: 30))
-                                Text(style.funName)
-                                    .font(.system(size: 18, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white)
-                            }
-                            .padding(.horizontal, 16)
-                            .frame(height: 64)
-                            .background(style.color.opacity(selected ? 0.9 : 0.4), in: Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(selected ? 1 : 0.3), lineWidth: selected ? 3 : 1.5))
-                            .shadow(color: selected ? style.color : .clear, radius: 12)
-                        }
-                        .buttonStyle(Squish())
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 10)
+            LightStepper(index: $index, compact: compact).simultaneousGesture(TapGesture().onEnded { activity += 1 })
+            Button {
+                Haptics.tap()
+                autoCycle.toggle()
+                activity += 1
+            } label: {
+                Pill(
+                    icon: "🔁", word: autoCycle ? "Auto change: ON" : "Auto change: OFF",
+                    color: autoCycle ? Neon.green.opacity(0.7) : .black.opacity(0.5), size: compact ? 16 : 20,
+                    selected: autoCycle)
             }
-            Text("👈 swipe for more lights 👉")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.8))
+            .buttonStyle(Squish())
+            MusicLightsBar(
+                audio: audio,
+                changeMusic: {
+                    withAnimation { musicPanel = true }
+                    activity += 1
+                },
+                changeLights: {
+                    withAnimation { index += 1 }
+                    activity += 1
+                })
         }
-        .padding(24)
+        .padding(compact ? 12 : 24)
         .background(Vignette())
     }
 }
 
-/// Mic Mode: the microphone drives the visualizers. Permission is asked only on entering this screen.
+/// Mic Mode: the microphone drives the lights. Permission is asked only on entering this screen.
 struct MicView: View {
     let audio: BlasterAudio
-    let back: () -> Void
-    @State private var index = 1
+    let home: () -> Void
+    @State private var index = 7
 
     var body: some View {
-        ZStack {
-            if let problem = audio.micProblem {
-                micOff(problem)
-            } else {
-                SwipeStage(audio: audio, index: $index) {
-                    Haptics.tap()
-                    withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
-                }
-                TileNameBanner(index: index)
-                VStack {
-                    HStack {
-                        BackButton(action: leave)
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 500
+            ZStack {
+                if let problem = audio.micProblem {
+                    micOff(problem)
+                } else {
+                    SwipeStage(audio: audio, index: $index) {}
+                    VStack(spacing: 14) {
+                        HStack {
+                            HomeButton(action: home)
+                            Text("🎤 Mic Mode")
+                                .font(.system(size: compact ? 22 : 36, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
                         Spacer()
+                        MicPrompt(audio: audio)
+                        LightStepper(index: $index, compact: compact)
                     }
-                    Spacer()
-                    MicPrompt(audio: audio)
+                    .padding(compact ? 12 : 24)
+                    .background(Vignette())
                 }
-                .padding(24)
             }
         }
         .task { await audio.startMicrophone() }
     }
 
-    private func leave() {
-        audio.stop()
-        back()
-    }
-
     private func micOff(_ problem: String) -> some View {
         VStack(spacing: 24) {
+            HStack {
+                HomeButton(action: home)
+                Spacer()
+            }
+            Spacer()
             Text("🙉").font(.system(size: 120))
             Text(problem == "denied" ? "The microphone is off" : "No microphone found")
                 .font(.system(size: 40, weight: .black, design: .rounded))
@@ -199,15 +234,12 @@ struct MicView: View {
             Text(
                 problem == "denied"
                     ? "Ask a grown-up to turn on the microphone for Beat Blaster in Settings."
-                    : "Try Light Show instead!"
+                    : "Try the Light Show instead!"
             )
             .font(.system(size: 22, weight: .bold, design: .rounded))
             .foregroundStyle(.white.opacity(0.8))
             .multilineTextAlignment(.center)
-            Button(action: leave) {
-                NeonPill(text: "Back home", color: Neon.pink, size: 28)
-            }
-            .buttonStyle(Squish())
+            Spacer()
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

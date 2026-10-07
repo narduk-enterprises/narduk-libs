@@ -22,7 +22,7 @@ enum Dreamer {
         #if canImport(FoundationModels)
             if #available(iOS 26, *), let idea = await modelDream(prompt) {
                 let style = BlasterStyle.all.first { $0.funName == idea.style } ?? fallback.style
-                let base = BlasterSong(style: style).settings.bpm
+                let base = style.baseBPM
                 let scale = [0.8, 1.0, 1.2].min { abs($0 * base - Double(idea.bpm)) < abs($1 * base - Double(idea.bpm)) }
                 let title = idea.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 return DreamedSong(
@@ -95,8 +95,8 @@ enum Dreamer {
 /// Dream a Song: type (or tap) an idea, get a song with a title, then play it.
 struct DreamView: View {
     let audio: BlasterAudio
-    let back: () -> Void
-    let play: () -> Void
+    let home: () -> Void
+    let play: (SongRecipe) -> Void
     @State private var prompt = ""
     @State private var dreaming = false
     @State private var result: DreamedSong?
@@ -125,7 +125,7 @@ struct DreamView: View {
                                 LinearGradient(colors: [Neon.cyan, Neon.purple, Neon.pink], startPoint: .leading, endPoint: .trailing)
                             )
                             .shadow(color: Neon.purple, radius: 16)
-                            .padding(.top, compact ? 70 : 20)
+                            .padding(.top, compact ? 70 : 60)
                         TextField("What should your song be about?", text: $prompt)
                             .font(.system(size: compact ? 22 : 30, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
@@ -145,7 +145,7 @@ struct DreamView: View {
                         }
                         .frame(maxWidth: 860)
                         Button(action: dream) {
-                            NeonPill(text: dreaming ? "Dreaming… 💭" : "🪄 DREAM IT!", color: Neon.pink, size: compact ? 26 : 36)
+                            Pill(icon: dreaming ? "💭" : "🪄", word: dreaming ? "Dreaming…" : "Dream it!", color: Neon.pink.opacity(0.85), size: compact ? 24 : 32)
                         }
                         .buttonStyle(Squish())
                         .disabled(dreaming)
@@ -157,7 +157,7 @@ struct DreamView: View {
                     .frame(maxWidth: .infinity)
                     .padding(compact ? 16 : 32)
                 }
-                BackButton(action: back).padding(compact ? 14 : 24)
+                HomeButton(action: home).padding(compact ? 14 : 24)
             }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.6), value: result)
@@ -194,11 +194,11 @@ struct DreamView: View {
                 .font(.system(size: compact ? 16 : 22, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.8))
             Button {
-                audio.setTempo(song.tempoScale)
-                audio.play(BlasterSong(style: song.style, seed: song.seed, title: song.title))
-                play()
+                var recipe = SongRecipe(style: song.style, name: song.title, seed: song.seed)
+                recipe.speed = song.tempoScale < 0.95 ? .slow : (song.tempoScale > 1.05 ? .fast : .medium)
+                play(recipe)
             } label: {
-                NeonPill(text: "▶️ PLAY IT!", color: Neon.green, size: compact ? 26 : 34)
+                Pill(icon: "▶︎", word: "Play it!", color: Neon.green.opacity(0.85), size: compact ? 24 : 32)
             }
             .buttonStyle(Squish())
         }

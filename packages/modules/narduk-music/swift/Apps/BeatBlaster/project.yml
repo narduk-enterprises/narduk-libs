@@ -1,7 +1,7 @@
 # Beat Blaster: a neon music toy for kids on iPad and iPhone, built on the NardukSound libraries (NardukMusicEngine
 # plays the songs, NardukSoundAnalysis listens, NardukSoundVisuals draws). Generate the project with
 # `xcodegen generate` (the .xcodeproj is not committed). TestFlight-signed: automatic signing on team FVSY7CFC3S.
-# Set the build number on the command line: `xcodebuild ... CURRENT_PROJECT_VERSION=<n>` (default 1).
+# Set the build number on the command line: `xcodebuild ... CURRENT_PROJECT_VERSION=<n>` (default 2).
 name: BeatBlaster
 options:
   bundleIdPrefix: com.nardukenterprises
@@ -11,8 +11,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: FVSY7CFC3S
 packages:
@@ -23,6 +23,8 @@ targets:
     type: application
     platform: iOS
     sources: [Sources, Resources]
+    scheme:
+      testTargets: [BeatBlasterTests]
     dependencies:
       - package: NardukLibs
         product: NardukSoundAnalysis
@@ -66,3 +68,13 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+  BeatBlasterTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+      - path: Sources/DropMachine.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nardukenterprises.beatblaster.tests
+        GENERATE_INFOPLIST_FILE: YES
