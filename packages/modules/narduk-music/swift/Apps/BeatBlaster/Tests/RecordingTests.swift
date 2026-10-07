@@ -39,8 +39,16 @@ import XCTest
         XCTAssertTrue(take("a", Date().addingTimeInterval(-86_400)).detail.hasPrefix("Yesterday "))
     }
 
-    func testStoreListRenameDelete() throws {
+    func testTakesShorterThanTheFloorStayOutOfTheList() throws {
         let store = RecordingStore(directory: directory)
+        try Self.writeSilence(to: store.newTakeURL(title: "Peek"), seconds: 1)
+        try Self.writeSilence(to: store.newTakeURL(title: "Real song"), seconds: 2.5)
+        XCTAssertEqual(store.list().map(\.title), ["Real song"])
+        XCTAssertEqual(RecordingStore(directory: directory, shortest: 0).list().count, 2, "hidden, not deleted")
+    }
+
+    func testStoreListRenameDelete() throws {
+        let store = RecordingStore(directory: directory, shortest: 0)
         let url = store.newTakeURL(title: "Dino Disco")
         try Self.writeSilence(to: url, seconds: 1)
         var list = store.list()
@@ -66,7 +74,7 @@ import XCTest
     /// The real engine records its master mixer to an m4a, saves it on stop, and a long take rotates into the next.
     func testRecorderStartStopSaveAndRotation() async throws {
         let audio = BlasterAudio()
-        audio.store = RecordingStore(directory: directory)
+        audio.store = RecordingStore(directory: directory, shortest: 0)
         audio.maxTakeSeconds = 1.2
         audio.minTakeSeconds = 0
         audio.play(SongRecipe(style: .genre(.house)))

@@ -32,6 +32,9 @@ struct Recording: Identifiable, Equatable {
 /// Where takes are kept, newest first. The directory is injectable so the tests use a temporary one.
 struct RecordingStore {
     let directory: URL
+    /// Takes shorter than this are left out of the list, so the near-empty takes older builds saved stay on disk but
+    /// out of the way. Below `BlasterAudio.minTakeSeconds` (2) because a take's file runs a little shorter than its clock.
+    var shortest: Double = 1.5
 
     static var standard: RecordingStore {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -68,7 +71,7 @@ struct RecordingStore {
         return files.filter { $0.pathExtension == "m4a" }
             .compactMap { url -> Recording? in
                 let seconds = Self.duration(of: url)
-                guard seconds > 0 else { return nil }
+                guard seconds > 0, seconds >= shortest else { return nil }
                 let date = (try? url.resourceValues(forKeys: Set(keys)).contentModificationDate) ?? Date()
                 return Recording(url: url, date: date, seconds: seconds)
             }
