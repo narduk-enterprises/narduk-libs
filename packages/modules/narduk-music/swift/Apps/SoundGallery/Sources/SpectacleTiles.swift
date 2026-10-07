@@ -83,7 +83,8 @@ extension GalleryTile {
         GalleryTile(id: "Bass blobs") { context in
             AnyView(
                 ShaderPackTile(
-                    kind: .bassBlobs, title: "Bass blobs", model: context.model, framesPerSecond: context.framesPerSecond))
+                    kind: .bassBlobs, title: "Bass blobs", model: context.model,
+                    framesPerSecond: context.framesPerSecond))
         },
     ]
 }
