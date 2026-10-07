@@ -270,7 +270,8 @@
                     let h = (size.height - gap * CGFloat(rows + 1)) / CGFloat(rows)
                     return (
                         PadLayout(
-                            columns: columns, rows: rows, gap: gap, cornerRadius: min(8, max(2, h / 3)),
+                            columns: columns, rows: rows, gap: gap,
+                            cornerRadius: min(8, max(2, h / 3)),
                             showsLabels: h >= minLabelHeight), w, h
                     )
                 }
@@ -284,7 +285,9 @@
                     guard candidate.1 > 0, candidate.2 > 0 else { continue }
                     let fits = candidate.0.showsLabels && candidate.1 >= 34
                     let bestFits = best.0.showsLabels && best.1 >= 34
-                    if (fits && !bestFits) || (fits == bestFits && candidate.2 > best.2) { best = candidate }
+                    if (fits && !bestFits) || (fits == bestFits && candidate.2 > best.2) {
+                        best = candidate
+                    }
                 }
                 return best.0
             }
@@ -292,7 +295,8 @@
 
         /// One pad per instrument; each flashes when the instrument fires.
         static func pads(
-            _ ctx: inout GraphicsContext, _ size: CGSize, _ s: SoundVisualState, _ style: SoundVisualizerStyle
+            _ ctx: inout GraphicsContext, _ size: CGSize, _ s: SoundVisualState,
+            _ style: SoundVisualizerStyle
         ) {
             let all = Instrument.allCases
             guard size.width > 60, size.height > 40 else { return }
@@ -307,7 +311,8 @@
                 let col = index % columns
                 let row = index / columns
                 let rect = CGRect(
-                    x: gap + CGFloat(col) * (cellW + gap), y: gap + CGFloat(row) * (cellH + gap), width: cellW,
+                    x: gap + CGFloat(col) * (cellW + gap), y: gap + CGFloat(row) * (cellH + gap),
+                    width: cellW,
                     height: cellH)
                 let shape = Path(roundedRect: rect, cornerRadius: layout.cornerRadius)
                 let level = Double(brightness[instrument.index])
@@ -330,7 +335,8 @@
                         .font(
                             .system(
                                 size: min(
-                                    labelSize(instrument.rawValue.count, cellWidth: cellW), max(6, cellH - 4)),
+                                    labelSize(instrument.rawValue.count, cellWidth: cellW),
+                                    max(6, cellH - 4)),
                                 weight: .bold, design: .monospaced)
                         )
                         .foregroundStyle(level > 0.5 ? Color.white : color.opacity(0.85)),
