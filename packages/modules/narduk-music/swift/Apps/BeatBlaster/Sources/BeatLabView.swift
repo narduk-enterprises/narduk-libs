@@ -5,8 +5,11 @@ struct BeatLabView: View {
     let audio: BlasterAudio
     let lab: BeatLab
     let home: () -> Void
+    /// Plays a song built around this beat (the root keeps it in My Songs and opens the player).
+    var makeSong: (SongRecipe) -> Void = { _ in }
     @Environment(\.scenePhase) private var scenePhase
     @State private var panel = false
+    @State private var vibePanel = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -35,6 +38,7 @@ struct BeatLabView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         BeatGrid(audio: audio, lab: lab, compact: compact)
                         controls(compact: compact)
+                        if !lab.kept.isEmpty { myBeats(compact: compact) }
                         MusicLightsBar(
                             audio: audio, musicTitle: "My beat", musicEmoji: "🥁", showMusicChange: false,
                             changeMusic: {}, changeLights: { withAnimation { panel = true } })
@@ -46,6 +50,22 @@ struct BeatLabView: View {
                 if panel {
                     PickerPanel(title: "Pick the lights", badge: .lights, close: { withAnimation { panel = false } }) {
                         LightsGrid(audio: audio, selectedID: audio.lightsID, compact: compact) { audio.lightsID = $0 }
+                    }
+                    .transition(.move(edge: .bottom))
+                }
+                if vibePanel {
+                    PickerPanel(
+                        title: "Build a song on my beat", badge: .music, close: { withAnimation { vibePanel = false } }
+                    ) {
+                        MusicGrid(selectedID: nil, compact: compact) { style in
+                            let beat = lab.keep()
+                            var recipe = SongRecipe.around(beat.beat, style: style, name: beat.name)
+                            recipe.lightsID = audio.lightsID
+                            audio.endRecording()
+                            lab.save()
+                            vibePanel = false
+                            makeSong(recipe)
+                        }
                     }
                     .transition(.move(edge: .bottom))
                 }
@@ -68,7 +88,71 @@ struct BeatLabView: View {
             speed(size)
             keyPicker(size)
             edit(size)
+            keepAndSong(size)
         }
+    }
+
+    /// Keep this beat in My beats, or build a whole song on it.
+    private func keepAndSong(_ size: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                Haptics.success()
+                lab.keep()
+            } label: {
+                let isKept = lab.kept.contains { $0.beat == lab.saved }
+                Pill(
+                    icon: "icon-check", word: isKept ? "Kept" : "Keep beat",
+                    color: isKept ? Neon.green.opacity(0.45) : .white.opacity(0.15), size: size)
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Keep this beat in My beats")
+            .probe("lab.keep")
+            Button {
+                Haptics.tap()
+                withAnimation { vibePanel = true }
+            } label: {
+                Pill(icon: "icon-new-song", word: "Make a song", color: Neon.pink.opacity(0.75), size: size)
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Make a song from my beat")
+            .probe("lab.makeSong")
+        }
+    }
+
+    /// The beats the child kept: tap one to put it back on the grid; hold it to let it go.
+    private func myBeats(compact: Bool) -> some View {
+        let size: CGFloat = compact ? 14 : 18
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("My beats")
+                .blasterFont(size: size * 1.2, weight: .black)
+                .foregroundStyle(.white)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(lab.kept) { beat in
+                        Button {
+                            Haptics.tap()
+                            lab.load(beat)
+                            audio.setLabTempo(lab.bpm)
+                        } label: {
+                            Pill(
+                                icon: "icon-beat-lab", word: beat.name,
+                                color: beat.beat == lab.saved ? Neon.cyan.opacity(0.55) : .white.opacity(0.12),
+                                size: size, selected: beat.beat == lab.saved)
+                        }
+                        .buttonStyle(Squish())
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                lab.forget(beat)
+                            } label: {
+                                Label("Let it go", systemImage: "trash")
+                            }
+                        }
+                        .accessibilityLabel("Load \(beat.name)")
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The key of the Bass and Keys rows: ◀︎ F ▶︎.

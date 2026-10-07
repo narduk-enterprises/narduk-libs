@@ -167,6 +167,9 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     /// How much the library writes fresh material for this seed (progressions, drums, timbre, motifs); nil is the
     /// everyday default and Mash it up asks for the most. Optional so songs saved before it existed still load.
     var variety: Double?
+    /// A Beat Lab beat the song is built around: it plays the drums (and the bass and keys, moved onto the song's
+    /// chords) in place of the vibe's own. Nil for every other song, and for songs saved before it existed.
+    var beat: BeatLab.Saved?
 
     static let defaultVariety = 0.75
     static let mashVariety = 1.0
@@ -199,6 +202,24 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     }
 
     mutating func reroll() { seed = SongSettings.sessionSeed() &+ seed &* 0x9E37_79B9_7F4A_7C15 }
+
+    /// A song built around a Beat Lab beat in the vibe `style`: the beat's speed and key, in a minor mode (the Lab's
+    /// notes are written in F minor), named after the beat.
+    static func around(_ beat: BeatLab.Saved, style: BlasterStyle, name: String) -> SongRecipe {
+        var recipe = SongRecipe(style: style, name: name)
+        recipe.beat = beat
+        recipe.speed = beat.speed
+        recipe.keyRoot = 60 + min(max(beat.key, 0), 11)
+        recipe.mood = .dark
+        // The beat's own sounds: its bass and keys sounds become the song's, and the plain kit leaves its drums as built.
+        func sound(_ row: LabRow) -> Int { row.rawValue < beat.sounds.count ? max(0, beat.sounds[row.rawValue]) : 0 }
+        recipe.sounds.drums = .classic
+        recipe.sounds.bass = BassSound.allCases[sound(.bass) % BassSound.allCases.count]
+        recipe.sounds.bassPatch = beat.bassPatch
+        recipe.sounds.keys = [KeysSound.bell, .synth, .piano, .pad][sound(.keys) % 4]
+        if recipe.sounds.keys == .pad { recipe.band.insert(.pads) }
+        return recipe
+    }
 
     /// "Mash it up": two different vibes in one song. The beat (genre, drums, chords and tempo) comes from one vibe
     /// and the sounds (bass, keys, drum kit, swing, guitar and pads) from the other, with a random light, speed and

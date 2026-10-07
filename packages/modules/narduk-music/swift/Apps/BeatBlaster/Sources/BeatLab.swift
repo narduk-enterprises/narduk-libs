@@ -69,7 +69,7 @@ enum LabRow: Int, CaseIterable, Identifiable {
     @ObservationIgnored private let store: UserDefaults?
 
     /// What a child built, kept on this device only, so a beat survives closing the app.
-    struct Saved: Codable, Equatable {
+    struct Saved: Codable, Hashable {
         var grid: [[Int]]
         var speed: Speed
         var sounds: [Int]
@@ -78,12 +78,55 @@ enum LabRow: Int, CaseIterable, Identifiable {
     }
     static let savedKey = "beatLab.saved"
 
+    /// A beat the child kept on purpose ("My beats"), to load again or build a song around.
+    struct Kept: Codable, Equatable, Identifiable {
+        var id = UUID()
+        var name: String
+        var beat: Saved
+    }
+    static let keptKey = "beatLab.kept"
+    /// Newest first.
+    private(set) var kept: [Kept] = []
+
     init(store: UserDefaults? = .standard) {
         self.store = store
+        if let data = store?.data(forKey: Self.keptKey), let kept = try? JSONDecoder().decode([Kept].self, from: data) {
+            self.kept = kept.filter { Self.isValid($0.beat) }
+        }
         guard let data = store?.data(forKey: Self.savedKey),
             let saved = try? JSONDecoder().decode(Saved.self, from: data)
         else { return }
         restore(saved)
+    }
+
+    /// Keeps the beat on the grid in My beats (once: keeping the same beat again returns the one already kept).
+    @discardableResult func keep() -> Kept {
+        let beat = saved
+        if let same = kept.first(where: { $0.beat == beat }) { return same }
+        let new = Kept(name: FunNames.random(), beat: beat)
+        kept.insert(new, at: 0)
+        storeKept()
+        return new
+    }
+
+    /// Puts a kept beat back on the grid; Undo brings back the one it replaced.
+    func load(_ beat: Kept) {
+        undoGrid = undoGrid ?? grid
+        restore(beat.beat)
+    }
+
+    func forget(_ beat: Kept) {
+        kept.removeAll { $0.id == beat.id }
+        storeKept()
+    }
+
+    private func storeKept() {
+        if let data = try? JSONEncoder().encode(kept) { store?.set(data, forKey: Self.keptKey) }
+    }
+
+    private static func isValid(_ saved: Saved) -> Bool {
+        saved.grid.count == LabRow.allCases.count && saved.grid.allSatisfy { $0.count == steps }
+            && saved.sounds.count == LabRow.allCases.count
     }
 
     var saved: Saved { Saved(grid: grid, speed: speed, sounds: sounds, key: key, bassPatch: bassPatch) }
@@ -95,9 +138,7 @@ enum LabRow: Int, CaseIterable, Identifiable {
     /// Takes a saved beat back, ignoring anything a different build's grid shape cannot hold.
     private func restore(_ saved: Saved) {
         let rows = LabRow.allCases
-        guard saved.grid.count == rows.count, saved.grid.allSatisfy({ $0.count == Self.steps }),
-            saved.sounds.count == rows.count
-        else { return }
+        guard Self.isValid(saved) else { return }
         grid = zip(rows, saved.grid).map { row, cells in cells.map { min(max($0, 0), row.noteCount) } }
         sounds = zip(rows, saved.sounds).map { row, index in min(max(index, 0), row.sounds.count - 1) }
         speed = saved.speed
@@ -164,62 +205,71 @@ enum LabRow: Int, CaseIterable, Identifiable {
         if throughStep < cursor { cursor = -1 }
         guard throughStep > cursor else { return [] }
         defer { cursor = throughStep }
+        let beat = saved
+        return ((cursor + 1)...throughStep).flatMap { Self.notes(of: beat, at: $0) }
+    }
+
+    /// The notes `beat` plays at `step` (its position in the bar is `step % 16`), in the beat's own key. Pure, so a song
+    /// built around a kept beat (`SongRecipe.beat`) plays what the Lab played: it asks for `rows` (the song's section
+    /// picks them) and `styledBass: false`, since the song's sound profile gives the bass its sound.
+    static func notes(
+        of beat: Saved, at step: Int, rows: Set<LabRow> = Set(LabRow.allCases), styledBass: Bool = true
+    ) -> [ScheduledNote] {
+        guard isValid(beat) else { return [] }
         var out: [ScheduledNote] = []
-        let shift = MusicKey.offset(from: 5, to: key)
+        let shift = MusicKey.offset(from: 5, to: beat.key)
         let keyRoot = 65 + shift
-        for step in (cursor + 1)...throughStep {
-            let pos = step % Self.steps
-            for row in LabRow.allCases {
-                let value = grid[row.rawValue][pos]
-                guard value > 0 else { continue }
-                let sound = sounds[row.rawValue] % row.sounds.count
-                func add(_ instrument: Instrument, _ velocity: Double, _ params: NoteParams = NoteParams()) {
-                    out.append(ScheduledNote(step: step, instrument: instrument, velocity: velocity, params: params))
+        let pos = ((step % steps) + steps) % steps
+        for row in LabRow.allCases where rows.contains(row) {
+            let value = min(beat.grid[row.rawValue][pos], row.noteCount)
+            guard value > 0 else { continue }
+            let sound = max(0, beat.sounds[row.rawValue]) % row.sounds.count
+            func add(_ instrument: Instrument, _ velocity: Double, _ params: NoteParams = NoteParams()) {
+                out.append(ScheduledNote(step: step, instrument: instrument, velocity: velocity, params: params))
+            }
+            switch row {
+            case .kick:
+                switch sound {
+                case 0: add(.kick, 0.95)
+                case 1:
+                    out += DrumKit.boom.apply(
+                        ScheduledNote(step: step, instrument: .kick, velocity: 0.95), keyRoot: keyRoot)
+                default: add(.impact, 0.8)
                 }
-                switch row {
-                case .kick:
-                    switch sound {
-                    case 0: add(.kick, 0.95)
-                    case 1:
-                        out += DrumKit.boom.apply(
-                            ScheduledNote(step: step, instrument: .kick, velocity: 0.95), keyRoot: keyRoot)
-                    default: add(.impact, 0.8)
-                    }
-                case .snare:
-                    switch sound {
-                    case 0: add(.snare, 0.85)
-                    case 1: add(.scratch, 0.85)
-                    case 2: add(.laser, 0.7, NoteParams(pitch: DropPattern.fold(keyRoot + 12, into: 72...83)))
-                    default: add(.vox, 0.8, NoteParams(pitch: keyRoot))
-                    }
-                case .hat:
-                    switch sound {
-                    case 0: add(.hat, pos % 4 == 0 ? 0.55 : 0.4, NoteParams(pan: 0.2))
-                    case 1: add(.openHat, 0.5, NoteParams(pan: 0.2))
-                    default: add(.hat, pos % 4 == 0 ? 0.55 : 0.4, NoteParams(pan: pos % 2 == 0 ? -0.7 : 0.7))
-                    }
-                case .zap:
-                    switch sound {
-                    case 0: add(.laser, 0.7, NoteParams(pitch: DropPattern.fold(keyRoot + 12, into: 72...83)))
-                    case 1: add(.vox, 0.8, NoteParams(pitch: keyRoot))
-                    case 2: add(.scratch, 0.8)
-                    default: add(.glitch, 0.7, NoteParams(lengthSteps: 2))
-                    }
-                case .bass:
-                    let wobble = ScheduledNote(
-                        step: step, instrument: .wobble, velocity: 0.85,
-                        params: NoteParams(
-                            pitch: LabRow.bassPitches[value - 1] + shift, lengthSteps: 2, wobbleRate: .sixteenth,
-                            drive: 0.6))
-                    out.append(BassSound.allCases[sound].apply(wobble, patch: bassPatch))
-                case .keys:
-                    let voice = [KeysVoice.bell, KeysVoice.stab, KeysVoice.electricPiano, KeysVoice.pad][sound]
-                    add(
-                        .keys, 0.6,
-                        NoteParams(
-                            pitch: LabRow.keyPitches[value - 1] + shift, lengthSteps: voice == KeysVoice.pad ? 4 : 2,
-                            voice: voice))
+            case .snare:
+                switch sound {
+                case 0: add(.snare, 0.85)
+                case 1: add(.scratch, 0.85)
+                case 2: add(.laser, 0.7, NoteParams(pitch: DropPattern.fold(keyRoot + 12, into: 72...83)))
+                default: add(.vox, 0.8, NoteParams(pitch: keyRoot))
                 }
+            case .hat:
+                switch sound {
+                case 0: add(.hat, pos % 4 == 0 ? 0.55 : 0.4, NoteParams(pan: 0.2))
+                case 1: add(.openHat, 0.5, NoteParams(pan: 0.2))
+                default: add(.hat, pos % 4 == 0 ? 0.55 : 0.4, NoteParams(pan: pos % 2 == 0 ? -0.7 : 0.7))
+                }
+            case .zap:
+                switch sound {
+                case 0: add(.laser, 0.7, NoteParams(pitch: DropPattern.fold(keyRoot + 12, into: 72...83)))
+                case 1: add(.vox, 0.8, NoteParams(pitch: keyRoot))
+                case 2: add(.scratch, 0.8)
+                default: add(.glitch, 0.7, NoteParams(lengthSteps: 2))
+                }
+            case .bass:
+                let wobble = ScheduledNote(
+                    step: step, instrument: .wobble, velocity: 0.85,
+                    params: NoteParams(
+                        pitch: LabRow.bassPitches[value - 1] + shift, lengthSteps: 2, wobbleRate: .sixteenth,
+                        drive: 0.6))
+                out.append(styledBass ? BassSound.allCases[sound].apply(wobble, patch: beat.bassPatch) : wobble)
+            case .keys:
+                let voice = [KeysVoice.bell, KeysVoice.stab, KeysVoice.electricPiano, KeysVoice.pad][sound]
+                add(
+                    .keys, 0.6,
+                    NoteParams(
+                        pitch: LabRow.keyPitches[value - 1] + shift, lengthSteps: voice == KeysVoice.pad ? 4 : 2,
+                        voice: voice))
             }
         }
         return out

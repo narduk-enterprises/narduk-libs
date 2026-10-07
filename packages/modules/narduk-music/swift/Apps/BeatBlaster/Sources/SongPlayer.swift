@@ -80,7 +80,24 @@ import NardukMusicEngine
         return DropContext(
             genre: genre, keyRoot: keyRoot, minor: minor, chordRoot: bassRoot, secondsPerStep: secondsPerStep,
             seed: recipe.seed, variety: recipe.variety ?? SongRecipe.defaultVariety, dropNumber: dropCount,
-            material: conductor.map { DropMaterial.capture(from: $0) }, intensity: dropIntensity)
+            material: dropMaterial, intensity: dropIntensity)
+    }
+
+    /// The song's own notes for the DROP; a song built around a beat drops with the beat's drums and bass line.
+    private var dropMaterial: DropMaterial? {
+        var material = conductor.map { DropMaterial.capture(from: $0) }
+        guard let beat = recipe.beat else { return material }
+        let groove = Self.beatGroove(beat)
+        var built = material ?? DropMaterial(current: groove)
+        guard built.stepsPerBar == BeatLab.steps else { return material }
+        built.current.drums = groove.drums
+        built.drop.drums = groove.drums
+        if !groove.bass.isEmpty {
+            built.current.bass = groove.bass
+            built.drop.bass = groove.bass
+        }
+        material = built
+        return material
     }
 
     /// 0 ... 1: how big the DROP plays for this song. The Energy slider sets it, so a chill song gets a gentle lift and a
@@ -88,6 +105,66 @@ import NardukMusicEngine
     var dropIntensity: Double { Self.dropIntensity(energy: energy) }
 
     static func dropIntensity(energy: Double) -> Double { min(1, max(0, 0.15 + energy)) }
+
+    // MARK: A song built around a Beat Lab beat
+
+    /// The Lab rows a section plays: the intro is hats, zaps and keys; a breakdown adds the snare; the build and the
+    /// drops play the whole beat. A song without sections (the guitar band) plays it all.
+    static func beatRows(in section: SongSection?) -> Set<LabRow> {
+        switch section {
+        case .intro: [.hat, .zap, .keys]
+        case .breakdown: [.hat, .zap, .keys, .snare]
+        default: Set(LabRow.allCases)
+        }
+    }
+
+    /// The beat in place of the vibe's drums (and of its bass, when the beat has a bass line). The beat's bass and keys
+    /// follow the song's chords: written against the beat's key, they move with the bass line's root and are kept in
+    /// the song's scale.
+    private func beatLayer(_ song: [ScheduledNote], beat: BeatLab.Saved, range: ClosedRange<Int>) -> [ScheduledNote] {
+        let hasBass = beat.grid[LabRow.bass.rawValue].contains { $0 > 0 }
+        var out = song.filter { note in
+            let part = BandPart.of(note)
+            return part != .drums && !(hasBass && part == .bass)
+        }
+        let rows = Self.beatRows(in: conductor?.snapshot.section)
+        let key = songKey
+        let move = MusicKey.offset(from: (60 + beat.key) % 12, to: bassRoot % 12)
+        for step in range {
+            for var note in BeatLab.notes(of: beat, at: step - offset, rows: rows, styledBass: false) {
+                note.step = step
+                if note.instrument == .wobble || note.instrument == .keys {
+                    note.params.pitch = note.params.pitch.map {
+                        Self.inScale($0 + move, keyRoot: key.root, minor: key.minor)
+                    }
+                }
+                out.append(note)
+            }
+        }
+        return out
+    }
+
+    /// The key the song is playing in: the one the conductor named for this track, else the recipe's.
+    private var songKey: (root: Int, minor: Bool) {
+        if let key = conductor?.snapshot.track?.key, let parsed = DropArranger.parseKey(key) {
+            return (60 + parsed.pitchClass, parsed.minor)
+        }
+        return (recipe.keyRoot, recipe.mood.map { !$0.mode.isMajorQuality } ?? true)
+    }
+
+    /// `pitch`, or the scale note a semitone under it when it falls outside the key (every gap in a major or a natural
+    /// minor scale has its lower neighbour in the scale).
+    static func inScale(_ pitch: Int, keyRoot: Int, minor: Bool) -> Int {
+        let scale: Set<Int> = minor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11]
+        return scale.contains(((pitch - keyRoot) % 12 + 12) % 12) ? pitch : pitch - 1
+    }
+
+    /// One bar of the beat as the DROP's material: its drums, and its bass when it has one, so the drop is the beat's.
+    static func beatGroove(_ beat: BeatLab.Saved) -> DropGroove {
+        DropGroove(
+            notes: (0..<BeatLab.steps).flatMap { BeatLab.notes(of: beat, at: $0, styledBass: false) }, barStart: 0,
+            stepsPerBar: BeatLab.steps)
+    }
 
     /// A sound-effect pad: plays on the next 16th not yet handed to the engine. Returns that step.
     @discardableResult func trigger(_ pad: SoundPad) -> Int {
@@ -174,6 +251,7 @@ import NardukMusicEngine
         for note in song.sorted(by: { $0.step < $1.step }) where BandPart.of(note) == .bass {
             bassRoot = note.params.pitch ?? bassRoot
         }
+        if let beat = recipe.beat { song = beatLayer(song, beat: beat, range: range) }
         if case .genre = recipe.style, band.contains(.guitar) { song += guitarLayer(range) }
         song += vocalLayer(range)
 
