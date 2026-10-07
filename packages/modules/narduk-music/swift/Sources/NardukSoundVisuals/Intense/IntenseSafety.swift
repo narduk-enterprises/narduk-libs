@@ -108,6 +108,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case sun
     /// A translucent 3-D moon jelly in the deep: the beat swims it, the spectrum lights its canals.
     case jellyfish
+    /// Luminous 3-D glass blossoms in a night garden: the beat opens them, the spectrum lights their veins.
+    case flower
 
     public var title: String {
         switch self {
@@ -118,6 +120,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .liquidSplash: "Liquid splash"
         case .sun: "Sun"
         case .jellyfish: "Jellyfish"
+        case .flower: "Flower"
         }
     }
 }
