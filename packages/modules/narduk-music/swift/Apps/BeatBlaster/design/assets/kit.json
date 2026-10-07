@@ -1,0 +1,229 @@
+{
+  "name": "Beat Blaster",
+  "required": [
+    "app-icon",
+    "mark",
+    "vibe-chill",
+    "vibe-drum-and-bass",
+    "vibe-dubstep",
+    "vibe-folk",
+    "vibe-funk",
+    "vibe-house",
+    "vibe-lofi",
+    "vibe-riddim",
+    "vibe-rock",
+    "vibe-rock-star",
+    "vibe-synthwave",
+    "vibe-techno",
+    "vibe-trap",
+    "vibe-uk-garage"
+  ],
+  "assets": [
+    {
+      "name": "app-icon",
+      "kind": "app-icon",
+      "backend": "grok",
+      "tool": "image_edit",
+      "prompt": "Keep this drawing exactly: the same round hot-pink bomb with the white ring and cyan centre dot, the same short curved white fuse with its small white spark, and the same three cyan sound-wave arcs at the upper right. Make it a sharp-cornered square: the very dark ink-purple ground fills the whole canvas to every edge and every corner, no rounded corners, no white corners, no border. Flatten the colours: the bomb is one single flat hot pink with no darker shade crescent and no highlight. Make the bomb about ten percent larger and centered, keeping clear dark margin around it. Flat solid colours only, no gradients, no glow.",
+      "round": 1,
+      "from": "option-beat-bomb"
+    },
+    {
+      "name": "mark",
+      "kind": "mark",
+      "backend": "grok",
+      "tool": "image_edit",
+      "prompt": "Brighten the background to pure white and make the whole symbol solid black. Keep the same bomb, the same ring and centre dot (as white gaps and a black dot), the same fuse with its spark, the same three sound-wave arcs at the upper right, the same size, and the same even padding on a sharp square. Pure black on pure white only, no grey, no colour, no shading.",
+      "round": 1,
+      "from": "app-icon"
+    },
+    {
+      "name": "vibe-dubstep",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: WUB MONSTER: one huge shaggy purple monster with big glowing lime eyes and a wide open mouth, a round loudspeaker cone glowing in its belly, and thick cyan and pink sound waves rippling out of its mouth. Friendly but mighty.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-riddim",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: ROBOT STOMP: one big chunky metal robot with a square head and glowing orange eyes, mid-stomp with one huge foot slamming the ground, cracks of electric cyan light and a shockwave ring spreading from the footprint.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-drum-and-bass",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture, never a card or a panel on a darker margin. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: SPEED RACER: one sleek low neon race car seen from a three-quarter front angle, racing down a glowing road toward a vanishing point, with long pink and cyan speed streaks and sparks behind it.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-trap",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: BIG BOOM: one giant round cartoon bomb with a lit sparking fuse, a thick orange and pink shockwave ring blasting out around it, and chunky bass-drum-style rings of light. Explosive and punchy.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-house",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: DANCE PARTY: one giant glittering mirror disco ball hanging at the top with sparkly cyan, pink and yellow light beams fanning down onto a glowing checkered dance floor, with two small dancing robots on the floor.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-chill",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: CLOUD FLOAT: one big fluffy smiling sleepy cloud with closed eyes floating in a violet night sky, a crescent moon and a few twinkling stars around it, soft pink and cyan neon glow. Calm and dreamy. No Z letters, no zzz, no music notes, only stars, a crescent moon and soft glow.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-techno",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: LASER FACTORY: one stylised factory machine made of big interlocking gears and pistons, with criss-crossing lime, pink and cyan laser beams shooting out in a grid pattern, steam puffs, sparks.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-uk-garage",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture, never a card or a panel on a darker margin. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: SKATE PARK: one cool cartoon kid in a helmet doing a big air trick on a glowing neon skateboard above a half-pipe ramp, with spray-paint style pink and cyan splashes behind and speed lines. The ramp is decorated only with abstract neon stripes, stars, arrows and squiggles; absolutely no graffiti lettering, no tags, no letters.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-synthwave",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture, never a card or a panel on a darker margin. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: NEON DRIVE: a giant striped sunset sun in orange, pink and yellow behind dark jagged mountains, a glowing cyan perspective grid road running to the horizon, a few palm tree silhouettes and one retro sports car driving away.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-lofi",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture, never a card or a panel on a darker margin. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: SLEEPY CAT: one big round cartoon cat curled up asleep wearing large over-ear headphones, on a cushion beside a window with a glowing moon and stars, a tiny plant and a steaming mug, cosy neon pink and cyan light.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-rock",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: LOUD GUITARS: one fiery electric guitar in hot pink and orange blasting upward in front of a tall stack of loudspeaker amps, lightning bolts and flames around it, shock rings of yellow light.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-folk",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: CAMPFIRE: one cheerful glowing campfire of orange and yellow flames on logs, an acoustic guitar leaning against a log, a small tent, and a night sky full of stars, drifting sparks and music notes made of light.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-funk",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: FUNKY FRESH: one funky cartoon boombox with arms and legs wearing big round cool sunglasses and bright sneakers, striking a groovy dance pose, with colourful music notes and stars bursting around it.",
+      "round": 1,
+      "snap": false
+    },
+    {
+      "name": "vibe-rock-star",
+      "kind": "illustration",
+      "backend": "grok",
+      "tool": "image_gen",
+      "prompt": "STYLE LOCK: premium kids' game card art, a square illustration in the style of a modern neon arcade cabinet crossed with a music-production app. FULL-BLEED WALLPAPER: the scene is a full-screen wallpaper that continues past all four edges of the canvas, never a picture inside a picture, never a card or a panel on a darker margin. The artwork bleeds to all four edges of the canvas: a deep purple to near-black glowing backdrop (#0B0614 to #2A0B4D) fills the entire square edge to edge, with no inner card, no rounded rectangle, no frame, no border, no drop shadow and no vignette frame around it. Bold chunky vector-illustration characters with clean thick shapes, crisp flat shading plus soft neon rim light and glow, high contrast, saturated neon colours: hot pink, electric cyan, lime green, sunset orange and yellow, with violet accents. One bold hero character or scene, centred, filling about seventy percent of the frame, with backdrop glow continuing to every edge. Cool and a little edgy for a ten-year-old, never babyish, not clip-art, not an emoji, not photographic, not 3D render. NEGATIVE: no text, no letters, no numbers, no logos, no watermark, no border, no frame, no UI. Scene: ROCK STAR: one cool cartoon lion rock star with a huge neon mane, sunglasses and a bright electric guitar, jumping on a stage with spotlights, a starburst behind him and confetti. Confident and awesome.",
+      "round": 1,
+      "snap": false
+    }
+  ],
+  "theme_color": "#0B0614",
+  "palette": {
+    "ink": "#0B0614",
+    "white": "#FFFFFF",
+    "pink": "#FF3DAB",
+    "cyan": "#29E0FF",
+    "lime": "#3DFF8C",
+    "orange": "#FF8029",
+    "yellow": "#FFE029",
+    "purple": "#9E61FF"
+  },
+  "snap_tol": {
+    "default": 30,
+    "logo": 62
+  },
+  "brand": {
+    "blurb": "a kids' (ages 8-12) iPhone and iPad music-plus-visualizer app: pick a vibe, drop the beat, build songs, watch neon light shows.",
+    "avoid": "No emoji look, no clip-art, no babyish blobs, no pastel nursery colours, no text or letters in any image.",
+    "palette_note": "Dark deep purple to black grounds with neon glow: hot pink, electric cyan, lime green, sunset orange, yellow, violet.",
+    "illustration_style": "premium kids' game card art crossed with a neon arcade cabinet and a music-production app",
+    "icon_style": "monoline arcade UI glyph, black on white, traced to currentColor",
+    "text_rule": "No text, letters or numerals in any image.",
+    "max_retries": 1
+  },
+  "logo": {
+    "field": "ink",
+    "mark_fraction": 0.6,
+    "view": 32,
+    "tile_radius": 7,
+    "small_mark": 0.78,
+    "layers": [
+      {
+        "color": "pink",
+        "tol": 90,
+        "mark_fill": "pink",
+        "favicon_fill": "pink",
+        "dark_fill": "pink"
+      },
+      {
+        "color": "white",
+        "tol": 90,
+        "open": 2,
+        "mark_fill": "white",
+        "favicon_fill": "white",
+        "dark_fill": "white"
+      },
+      {
+        "color": "cyan",
+        "tol": 90,
+        "mark_fill": "cyan",
+        "favicon_fill": "cyan",
+        "dark_fill": "cyan"
+      }
+    ],
+    "wordmark": {
+      "text": "Beat Blaster",
+      "font": "fonts/Fredoka.ttf",
+      "font_url": "https://github.com/google/fonts/raw/main/ofl/fredoka/Fredoka%5Bwdth%2Cwght%5D.ttf",
+      "weight": 700,
+      "width": 100
+    }
+  }
+}
