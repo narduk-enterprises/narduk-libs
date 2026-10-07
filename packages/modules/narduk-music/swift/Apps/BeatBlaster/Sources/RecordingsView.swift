@@ -51,7 +51,7 @@ struct RecordingsView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 500
+            let compact = geometry.size.width < 500 || geometry.size.height < 500
             VStack(spacing: compact ? 10 : 16) {
                 HStack(spacing: 12) {
                     HomeButton(action: home).probe("mysongs.home")

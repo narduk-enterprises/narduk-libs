@@ -77,7 +77,7 @@ struct LightShowView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 500
+            let compact = geometry.size.width < 500 || geometry.size.height < 500
             ZStack {
                 SwipeStage(audio: audio, index: $index) { wake() }
                 if controlsShown {
@@ -101,7 +101,7 @@ struct LightShowView: View {
                 }
                 if musicPanel {
                     PickerPanel(title: "Pick the music", badge: .music, close: closeMusic) {
-                        MusicGrid(selectedID: audio.recipe.styleID, compact: compact) { style in
+                        MusicGrid(selectedID: audio.recipe.styleID) { style in
                             var next = audio.recipe
                             next.styleID = style.id
                             audio.swap(to: next)
@@ -175,6 +175,7 @@ struct LightShowView: View {
             .buttonStyle(Squish())
             MusicLightsBar(
                 audio: audio,
+                short: compact,
                 changeMusic: {
                     withAnimation { musicPanel = true }
                     activity += 1
@@ -197,7 +198,7 @@ struct MicView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.width < 500
+            let compact = geometry.size.width < 500 || geometry.size.height < 500
             ZStack {
                 if let problem = audio.micProblem {
                     micOff(problem)

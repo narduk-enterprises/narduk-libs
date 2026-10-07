@@ -10,6 +10,8 @@ struct SongMakerView: View {
     @State private var step = 1
     @State private var recipe = SongRecipe(style: .genre(.house))
     @State private var pickedVibe = false
+    /// Which sound the sounds step is showing (Mood, Bass, ...): one kind at a time, big enough to read.
+    @State private var soundTab = 0
     @FocusState private var naming: Bool
 
     private let titles = ["Pick a vibe", "How fast?", "Pick your band", "Pick your sounds", "Pick your lights"]
@@ -41,22 +43,20 @@ struct SongMakerView: View {
                             .multilineTextAlignment(.center)
                     }
                 }
-                ScrollView {
-                    Group {
-                        switch step {
-                        case 1: vibeStep(compact: compact)
-                        case 2: speedStep(compact: compact)
-                        case 3: bandStep(compact: compact)
-                        case 4: soundsStep(compact: compact)
-                        default: lightsStep(compact: compact)
-                        }
+                // Every step fits the window: the card grids size their cards to the space and the rest shrinks.
+                Group {
+                    switch step {
+                    case 1: vibeStep(compact: compact)
+                    case 2: ScaleToFit(minScale: 0.55) { speedStep(compact: compact) }
+                    case 3: ScaleToFit(minScale: 0.55) { bandStep(compact: compact) }
+                    case 4: ScaleToFit(minScale: 0.55) { soundsStep(compact: compact) }
+                    default: lightsStep(compact: compact)
                     }
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 4)
-                    .frame(maxWidth: .infinity)
                 }
-                .scrollDismissesKeyboard(.immediately)
-                navigation(compact: compact)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                navigation(compact: compact || short)
             }
             .padding(short ? 10 : (compact ? 14 : 28))
             .background(
@@ -126,7 +126,7 @@ struct SongMakerView: View {
     // MARK: Steps
 
     private func vibeStep(compact: Bool) -> some View {
-        MusicGrid(selectedID: pickedVibe ? recipe.styleID : nil, compact: compact) { style in
+        MusicGrid(selectedID: pickedVibe ? recipe.styleID : nil) { style in
             let wasGuitars = recipe.style == .guitars
             recipe.styleID = style.id
             if style == .guitars { recipe.band = [.drums, .bass, .guitar] }
@@ -187,46 +187,100 @@ struct SongMakerView: View {
         }
     }
 
+    private static let soundTabs = ["Mood", "Bass", "Keys", "Drums", "Guitar", "Pads", "Singer"]
+
+    private func soundPick(_ tab: Int) -> String {
+        switch tab {
+        case 0: recipe.mood?.emoji ?? Mood.happy.emoji
+        case 1: recipe.sounds.bass.emoji
+        case 2: recipe.sounds.keys.emoji
+        case 3: recipe.sounds.drums.emoji
+        case 4: recipe.sounds.guitar.emoji
+        case 5: recipe.sounds.pads.emoji
+        default: recipe.sounds.singer.emoji
+        }
+    }
+
+    /// One tab per kind of sound, showing what is picked, then that kind's choices, big.
     private func soundsStep(compact: Bool) -> some View {
         VStack(spacing: compact ? 12 : 18) {
-            SoundRow(title: "Mood", options: Mood.allCases, selected: recipe.mood, compact: compact) { mood in
-                recipe.mood = mood
-                audio.preview(recipe)
+            ChipLayout(spacing: compact ? 6 : 10) {
+                ForEach(Self.soundTabs.indices, id: \.self) { tab in
+                    let on = tab == soundTab
+                    Button {
+                        Haptics.tap()
+                        soundTab = tab
+                    } label: {
+                        Pill(
+                            icon: soundPick(tab), word: Self.soundTabs[tab],
+                            color: on ? Neon.cyan : .white.opacity(0.12), size: compact ? 15 : 20, selected: on,
+                            dark: on)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("\(Self.soundTabs[tab]) sounds\(on ? ", showing" : "")")
+                }
             }
-            SoundRow(title: "Bass", options: BassSound.allCases, selected: recipe.sounds.bass, compact: compact) {
-                bass in
-                recipe.sounds.bass = bass
-                recipe.sounds.bassPatch = Int.random(in: 0..<48)
-                audio.preview(recipe)
+            Group {
+                switch soundTab {
+                case 0:
+                    SoundRow(title: "Mood", options: Mood.allCases, selected: recipe.mood, compact: compact) { mood in
+                        recipe.mood = mood
+                        audio.preview(recipe)
+                    }
+                case 1:
+                    SoundRow(title: "Bass", options: BassSound.allCases, selected: recipe.sounds.bass, compact: compact)
+                    {
+                        bass in
+                        recipe.sounds.bass = bass
+                        recipe.sounds.bassPatch = Int.random(in: 0..<48)
+                        audio.preview(recipe)
+                    }
+                case 2:
+                    SoundRow(title: "Keys", options: KeysSound.allCases, selected: recipe.sounds.keys, compact: compact)
+                    {
+                        keys in
+                        recipe.sounds.keys = keys
+                        if !recipe.band.contains(.keys) { recipe.band.insert(.keys) }
+                        audio.preview(recipe)
+                    }
+                case 3:
+                    SoundRow(title: "Drums", options: DrumKit.allCases, selected: recipe.sounds.drums, compact: compact)
+                    {
+                        kit in
+                        recipe.sounds.drums = kit
+                        audio.preview(recipe)
+                    }
+                case 4:
+                    SoundRow(
+                        title: "Guitar", options: GuitarSound.allCases, selected: recipe.sounds.guitar, compact: compact
+                    ) { guitar in
+                        recipe.sounds.guitar = guitar
+                        if !recipe.band.contains(.guitar) { recipe.band.insert(.guitar) }
+                        audio.preview(recipe)
+                    }
+                case 5:
+                    SoundRow(title: "Pads", options: PadSound.allCases, selected: recipe.sounds.pads, compact: compact)
+                    {
+                        pads in
+                        recipe.sounds.pads = pads
+                        if !recipe.band.contains(.pads) { recipe.band.insert(.pads) }
+                        audio.preview(recipe)
+                    }
+                default:
+                    SoundRow(
+                        title: "Singer", options: SingerSound.allCases, selected: recipe.sounds.singer, compact: compact
+                    ) { singer in
+                        recipe.sounds.singer = singer
+                        audio.preview(recipe)
+                    }
+                }
             }
-            SoundRow(title: "Keys", options: KeysSound.allCases, selected: recipe.sounds.keys, compact: compact) {
-                keys in
-                recipe.sounds.keys = keys
-                if !recipe.band.contains(.keys) { recipe.band.insert(.keys) }
-                audio.preview(recipe)
-            }
-            SoundRow(title: "Drums", options: DrumKit.allCases, selected: recipe.sounds.drums, compact: compact) {
-                kit in
-                recipe.sounds.drums = kit
-                audio.preview(recipe)
-            }
-            SoundRow(title: "Guitar", options: GuitarSound.allCases, selected: recipe.sounds.guitar, compact: compact) {
-                guitar in
-                recipe.sounds.guitar = guitar
-                if !recipe.band.contains(.guitar) { recipe.band.insert(.guitar) }
-                audio.preview(recipe)
-            }
-            SoundRow(title: "Pads", options: PadSound.allCases, selected: recipe.sounds.pads, compact: compact) {
-                pads in
-                recipe.sounds.pads = pads
-                if !recipe.band.contains(.pads) { recipe.band.insert(.pads) }
-                audio.preview(recipe)
-            }
-            SoundRow(title: "Singer", options: SingerSound.allCases, selected: recipe.sounds.singer, compact: compact) {
-                singer in
-                recipe.sounds.singer = singer
-                audio.preview(recipe)
-            }
+            .padding(compact ? 10 : 16)
+            .frame(maxWidth: .infinity)
+            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: compact ? 16 : 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: compact ? 16 : 22, style: .continuous).stroke(.white.opacity(0.14))
+            )
             Button {
                 Haptics.success()
                 recipe.sounds = SoundProfile.random()
@@ -239,7 +293,7 @@ struct SongMakerView: View {
             }
             .buttonStyle(Squish())
         }
-        .frame(maxWidth: 900)
+        .frame(maxWidth: 1000)
     }
 
     private func lightsStep(compact: Bool) -> some View {
@@ -266,7 +320,7 @@ struct SongMakerView: View {
                 .buttonStyle(Squish())
             }
             .frame(maxWidth: 900)
-            LightsGrid(audio: audio, selectedID: recipe.lightsID, compact: compact) { id in
+            LightsGrid(audio: audio, selectedID: recipe.lightsID) { id in
                 recipe.lightsID = id
             }
         }
@@ -428,44 +482,39 @@ struct SoundRow<Option: SoundChoice>: View {
     let pick: (Option) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .blasterFont(size: compact ? 18 : 24, weight: .black)
-                .foregroundStyle(.white)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: compact ? 6 : 12) {
-                    ForEach(options) { option in
-                        let on = option == selected
-                        Button {
-                            Haptics.tap()
-                            pick(option)
-                        } label: {
-                            VStack(spacing: 2) {
-                                Glyph(option.emoji, size: compact ? 24 : 36)
-                                Text(option.word)
-                                    .blasterFont(size: compact ? 13 : 20, weight: .black)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.6)
-                            }
-                            .foregroundStyle(.white)
-                            .frame(width: compact ? 84 : 118, height: compact ? 68 : 96)
-                            .background(
-                                Neon.cyan.opacity(on ? 0.6 : 0.12),
-                                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
-                            )
-                            .shadow(color: on ? Neon.cyan : .clear, radius: 12)
-                        }
-                        .buttonStyle(Squish())
-                        .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
-                    }
+        // The tab above names the kind, so this is just the choices, wrapping as the width needs: never a sideways
+        // scroll.
+        ChipLayout(spacing: compact ? 8 : 14) { chips }
+    }
+
+    @ViewBuilder private var chips: some View {
+        ForEach(options) { option in
+            let on = option == selected
+            Button {
+                Haptics.tap()
+                pick(option)
+            } label: {
+                VStack(spacing: 2) {
+                    Glyph(option.emoji, size: compact ? 30 : 44)
+                    Text(option.word)
+                        .blasterFont(size: compact ? 15 : 20, weight: .black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 2)
+                .foregroundStyle(.white)
+                .frame(width: compact ? 92 : 128, height: compact ? 80 : 108)
+                .background(
+                    Neon.cyan.opacity(on ? 0.6 : 0.12),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(on ? .white : .white.opacity(0.3), lineWidth: on ? 4 : 2)
+                )
+                .shadow(color: on ? Neon.cyan : .clear, radius: 12)
             }
+            .buttonStyle(Squish())
+            .accessibilityLabel("\(title) \(option.word)\(on ? ", picked" : "")")
         }
     }
 }

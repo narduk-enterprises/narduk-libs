@@ -84,20 +84,17 @@ struct LightCard: View {
 struct LightsGrid: View {
     let audio: BlasterAudio
     let selectedID: String
-    var compact = false
     let pick: (String) -> Void
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: compact ? 136 : 196), spacing: 14)], spacing: 14) {
-            ForEach(VisualTile.all) { tile in
-                Button {
-                    Haptics.tap()
-                    pick(tile.id)
-                } label: {
-                    LightCard(audio: audio, tile: tile, selected: tile.id == selectedID, compact: compact)
-                }
-                .buttonStyle(Squish())
+        FitGrid(items: VisualTile.all, cell: CGSize(width: 192, height: 150)) { tile in
+            Button {
+                Haptics.tap()
+                pick(tile.id)
+            } label: {
+                LightCard(audio: audio, tile: tile, selected: tile.id == selectedID)
             }
+            .buttonStyle(Squish())
         }
     }
 }
@@ -105,20 +102,17 @@ struct LightsGrid: View {
 /// A grid of music cards.
 struct MusicGrid: View {
     let selectedID: String?
-    var compact = false
     let pick: (BlasterStyle) -> Void
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: compact ? 124 : 176), spacing: 14)], spacing: 16) {
-            ForEach(BlasterStyle.all) { style in
-                Button {
-                    Haptics.tap()
-                    pick(style)
-                } label: {
-                    MusicCard(style: style, selected: style.id == selectedID, compact: compact)
-                }
-                .buttonStyle(Squish())
+        FitGrid(items: BlasterStyle.all, cell: CGSize(width: 168, height: 196)) { style in
+            Button {
+                Haptics.tap()
+                pick(style)
+            } label: {
+                MusicCard(style: style, selected: style.id == selectedID)
             }
+            .buttonStyle(Squish())
         }
     }
 }
@@ -143,7 +137,8 @@ struct PickerPanel<Content: View>: View {
                 }
                 .buttonStyle(Squish())
             }
-            ScrollView { content.padding(.vertical, 12).padding(.horizontal, 4) }
+            // The grids size their cards to the panel, so it never scrolls.
+            content.padding(.vertical, 8).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(20)
         .background(Neon.night.opacity(0.94), in: RoundedRectangle(cornerRadius: 32, style: .continuous))

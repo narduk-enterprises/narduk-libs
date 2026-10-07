@@ -30,39 +30,23 @@ struct HomeView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = min(geometry.size.width, geometry.size.height) < 500
-            // A phone held sideways: the title sits beside Play so Play is on screen without scrolling.
-            let short = geometry.size.height < 500 && geometry.size.width > geometry.size.height
+            // A wide window puts the doors in two columns so Home fits without scrolling.
+            let wide = geometry.size.width > geometry.size.height * 1.15
             ZStack {
                 LiveVisual(audio: audio, tile: VisualTile.with(id: "halo"), drawing: scenePhase == .active)
                     .opacity(0.4)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                 Vignette()
-                ScrollView {
-                    VStack(spacing: compact ? 16 : 26) {
-                        if short {
-                            HStack(alignment: .center, spacing: 20) {
-                                header(compact: compact)
-                                playDoor(compact: compact)
-                            }
-                        } else {
-                            header(compact: compact)
-                            playDoor(compact: compact)
-                        }
-                        HStack(spacing: compact ? 12 : 20) {
-                            mySongsDoor(compact: compact)
-                            labDoor(compact: compact)
-                        }
-                        extrasRow(compact: compact)
-                        if !mySongs.songs.isEmpty { playAgainRow(compact: compact) }
-                        nowPlaying(compact: compact)
-                        creditsButton
-                    }
-                    .frame(maxWidth: 900)
-                    .frame(maxWidth: .infinity)
-                    .padding(compact ? 16 : 36)
+                // Largest layout that fits first; the songs row goes, then everything tightens, and only a window
+                // too small for that scrolls.
+                ViewThatFits(in: .vertical) {
+                    page(compact: compact, wide: wide, tight: false, again: !mySongs.songs.isEmpty)
+                    page(compact: compact, wide: wide, tight: false, again: false)
+                    page(compact: compact, wide: wide, tight: true, again: false)
+                    ScrollView { page(compact: compact, wide: wide, tight: true, again: false) }
+                        .scrollBounceBehavior(.basedOnSize)
                 }
-                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .onAppear {
@@ -72,21 +56,64 @@ struct HomeView: View {
         .task(id: audio.savedCount) { recordingCount = await audio.store.load().count }
     }
 
-    private func header(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 2 : 6) {
-            HomeTitle(size: compact ? 44 : 72)
-            Text("The music's on. Pick a door.")
-                .blasterFont(size: compact ? 17 : 24, weight: .bold)
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+    private func page(compact: Bool, wide: Bool, tight: Bool, again: Bool) -> some View {
+        let spacing: CGFloat = tight ? 10 : compact ? 16 : 26
+        return Group {
+            if wide {
+                HStack(alignment: .top, spacing: spacing) {
+                    VStack(spacing: spacing) {
+                        header(compact: compact, tight: tight)
+                        playDoor(compact: compact, tight: tight)
+                        extrasRow(compact: compact, tight: tight)
+                    }
+                    VStack(spacing: spacing) {
+                        HStack(spacing: compact ? 12 : 20) {
+                            mySongsDoor(compact: compact, tight: tight)
+                            labDoor(compact: compact, tight: tight)
+                        }
+                        if again { playAgainRow(compact: compact) }
+                        nowPlaying(compact: compact)
+                    }
+                }
+                .frame(maxWidth: 1200)
+            } else {
+                VStack(spacing: spacing) {
+                    header(compact: compact, tight: tight)
+                    playDoor(compact: compact, tight: tight)
+                    HStack(spacing: compact ? 12 : 20) {
+                        mySongsDoor(compact: compact, tight: tight)
+                        labDoor(compact: compact, tight: tight)
+                    }
+                    extrasRow(compact: compact, tight: tight)
+                    if again { playAgainRow(compact: compact) }
+                    nowPlaying(compact: compact)
+                }
+                .frame(maxWidth: 900)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(compact ? 16 : 36)
+    }
+
+    private func header(compact: Bool, tight: Bool) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: compact ? 2 : 6) {
+                HomeTitle(size: tight ? 34 : compact ? 44 : 72)
+                Text("The music's on. Pick a door.")
+                    .blasterFont(size: tight ? 15 : compact ? 17 : 24, weight: .bold)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .probe("home.title")
+            Spacer(minLength: 0)
+            creditsButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .probe("home.title")
     }
 
     /// The one big GO: a still yellow door with dark words that pulses once on arrival, then rests.
-    private func playDoor(compact: Bool) -> some View {
+    private func playDoor(compact: Bool, tight: Bool) -> some View {
         VStack(spacing: 4) {
             HintBubble(id: "start", text: "Tap Play to start!")
             Button {
@@ -94,8 +121,8 @@ struct HomeView: View {
                 go(.maker)
             } label: {
                 HStack(spacing: compact ? 16 : 26) {
-                    Glyph("icon-play", size: compact ? 44 : 64)
-                        .frame(width: compact ? 88 : 124, height: compact ? 88 : 124)
+                    Glyph("icon-play", size: compact || tight ? 44 : 64)
+                        .frame(width: tight ? 76 : compact ? 88 : 124, height: tight ? 76 : compact ? 88 : 124)
                         .background(Neon.night, in: Circle())
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Play")
@@ -111,7 +138,7 @@ struct HomeView: View {
                 .foregroundStyle(Neon.night)
                 .padding(.horizontal, compact ? 20 : 34)
                 .frame(maxWidth: .infinity)
-                .frame(height: compact ? 156 : 210)
+                .frame(height: tight ? 120 : compact ? 156 : 210)
                 .background(Neon.yellow, in: RoundedRectangle(cornerRadius: 36, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(.white, lineWidth: 4))
                 .background(
@@ -127,7 +154,7 @@ struct HomeView: View {
         }
     }
 
-    private func mySongsDoor(compact: Bool) -> some View {
+    private func mySongsDoor(compact: Bool, tight: Bool) -> some View {
         let subtitle =
             switch recordingCount {
             case 0: "Nothing yet"
@@ -138,14 +165,15 @@ struct HomeView: View {
             go(.recordings)
         } label: {
             door(
-                icon: "icon-music", title: "My Songs", subtitle: subtitle, color: Neon.cyan, compact: compact)
+                icon: "icon-music", title: "My Songs", subtitle: subtitle, color: Neon.cyan, compact: compact,
+                tight: tight)
         }
         .buttonStyle(Squish())
         .accessibilityLabel("My Songs, \(subtitle)")
         .probe("home.mySongs")
     }
 
-    private func labDoor(compact: Bool) -> some View {
+    private func labDoor(compact: Bool, tight: Bool) -> some View {
         // Beat Lab keeps a beat between launches; once there is one, the door says so.
         let subtitle =
             UserDefaults.standard.data(forKey: BeatLab.savedKey) == nil ? "Build your own" : "Your beat is waiting"
@@ -153,7 +181,8 @@ struct HomeView: View {
             go(.lab)
         } label: {
             door(
-                icon: "icon-beat-lab", title: "Beat Lab", subtitle: subtitle, color: Neon.orange, compact: compact)
+                icon: "icon-beat-lab", title: "Beat Lab", subtitle: subtitle, color: Neon.orange, compact: compact,
+                tight: tight)
         }
         .buttonStyle(Squish())
         .accessibilityLabel("Beat Lab: \(subtitle.lowercased())")
@@ -161,9 +190,11 @@ struct HomeView: View {
     }
 
     /// A smaller door: a picture top left, the word and what it does underneath, white on a dark tint.
-    private func door(icon: String, title: String, subtitle: String, color: Color, compact: Bool) -> some View {
+    private func door(icon: String, title: String, subtitle: String, color: Color, compact: Bool, tight: Bool)
+        -> some View
+    {
         VStack(alignment: .leading, spacing: 2) {
-            Glyph(icon, size: compact ? 40 : 56)
+            Glyph(icon, size: tight ? 32 : compact ? 40 : 56)
             Spacer(minLength: 6)
             Text(title)
                 .blasterFont(size: compact ? 24 : 34, weight: .black)
@@ -178,7 +209,7 @@ struct HomeView: View {
         .foregroundStyle(.white)
         .padding(compact ? 16 : 22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: compact ? 150 : 190)
+        .frame(height: tight ? 112 : compact ? 150 : 190)
         .background(
             LinearGradient(
                 colors: [color.opacity(0.5), Neon.night.opacity(0.85)], startPoint: .top, endPoint: .bottom),
@@ -188,7 +219,7 @@ struct HomeView: View {
     }
 
     /// Mash it up, Light Show and Mic: one row of picture-and-word buttons, smaller than the doors.
-    private func extrasRow(compact: Bool) -> some View {
+    private func extrasRow(compact: Bool, tight: Bool) -> some View {
         HStack(spacing: compact ? 8 : 16) {
             ForEach(extras) { extra in
                 Button {
@@ -208,7 +239,7 @@ struct HomeView: View {
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: compact ? 76 : 96)
+                    .frame(height: tight ? 64 : compact ? 76 : 96)
                     .background(Neon.night.opacity(0.7), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(extra.color, lineWidth: 2))
