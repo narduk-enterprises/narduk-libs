@@ -148,6 +148,30 @@ import XCTest
         }
     }
 
+    /// Logan's canvas decision: the tray runs the full width along the bottom and DROP is pinned bottom right (its
+    /// column keeps about 12 pt for the glow, so "pinned" allows the screen padding plus that).
+    func testTheTrayRunsFullWidthWithDropBottomRight() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        withDefaults(["tray": true]) {
+            for (label, size, insets) in layouts {
+                let (frames, safe) = host(player(audio), size: size, insets: insets)
+                guard let tray = frames["player.tray"], let drop = frames["player.drop"] else {
+                    return XCTFail("tray or DROP missing — \(label)")
+                }
+                XCTAssertLessThanOrEqual(tray.minX - safe.minX, 30, "the tray starts at the left edge — \(label)")
+                XCTAssertGreaterThanOrEqual(drop.maxX, tray.maxX - 16, "DROP is on the right — \(label)")
+                XCTAssertGreaterThanOrEqual(safe.maxX - drop.maxX, 0, "DROP inside — \(label)")
+                XCTAssertLessThanOrEqual(safe.maxX - drop.maxX, 40, "DROP is pinned right — \(label)")
+                if size.width > size.height {
+                    XCTAssertLessThanOrEqual(drop.minX - tray.maxX, 24, "the tray fills up to DROP — \(label)")
+                } else {
+                    XCTAssertLessThanOrEqual(safe.maxX - tray.maxX, 30, "the tray spans the width — \(label)")
+                }
+            }
+        }
+    }
+
     func testDropStaysPutWhenTheTrayOpens() {
         let audio = BlasterAudio()
         defer { audio.stop() }
@@ -289,6 +313,16 @@ import XCTest
             assertInside(["maker.home"], frames, safe, "\(label), largest text, maker")
             XCTAssertGreaterThanOrEqual(frames["maker.title"]?.width ?? 0, 40, label)
         }
+    }
+
+    func testTextFollowsDynamicTypeButDisplayTextGrowsLess() {
+        XCTAssertEqual(BlasterFont.scale(.large, size: 18), 1, "the design sizes are the Large sizes")
+        XCTAssertLessThan(BlasterFont.scale(.xSmall, size: 18), 1, "smaller settings shrink the text")
+        let label = BlasterFont.scale(.accessibility5, size: 14)
+        let display = BlasterFont.scale(.accessibility5, size: 44)
+        XCTAssertGreaterThan(label, 1.5, "small labels grow a lot at the largest size")
+        XCTAssertGreaterThan(display, 1, "display text still grows")
+        XCTAssertLessThan(display, label, "but less, so the screens fit")
     }
 
     func testEachSongGetsItsOwnColourTurnThatTheStateEases() {

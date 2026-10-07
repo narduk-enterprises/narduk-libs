@@ -11,12 +11,13 @@ struct HomeView: View {
     @State private var recordingCount = 0
 
     private struct Mode: Identifiable {
-        let screen: Screen
+        /// nil is Mash it up, which plays a song instead of opening a screen.
+        let screen: Screen?
         let emoji: String
         let title: String
         let subtitle: String
         let color: Color
-        var id: Screen { screen }
+        var id: String { title }
     }
 
     private let modes = [
@@ -25,7 +26,7 @@ struct HomeView: View {
             color: Neon.orange),
         Mode(screen: .lights, emoji: "💡", title: "Light Show", subtitle: "Watch the lights dance", color: Neon.cyan),
         Mode(screen: .mic, emoji: "🎤", title: "Mic Mode", subtitle: "Clap, sing, yell!", color: Neon.green),
-        Mode(screen: .dream, emoji: "✨", title: "Dream a Song", subtitle: "Type an idea", color: Neon.purple),
+        Mode(screen: nil, emoji: "🎲", title: "Mash it up", subtitle: "Two vibes, one song", color: Neon.purple),
     ]
 
     var body: some View {
@@ -50,11 +51,17 @@ struct HomeView: View {
                         ) {
                             ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
                                 Button {
-                                    go(mode.screen)
+                                    if let screen = mode.screen {
+                                        go(screen)
+                                    } else {
+                                        Haptics.success()
+                                        play(SongRecipe.mashUp(lightIDs: VisualTile.all.map(\.id)))
+                                    }
                                 } label: {
                                     modeCard(mode, compact: compact)
                                 }
                                 .buttonStyle(Squish())
+                                .accessibilityIdentifier("home.mode.\(mode.screen?.rawValue ?? "mashUp")")
                                 .scaleEffect(appeared ? 1 : 0.3)
                                 .opacity(appeared ? 1 : 0)
                                 .animation(
@@ -99,11 +106,11 @@ struct HomeView: View {
         VStack(spacing: compact ? 4 : 8) {
             Glyph(mode.emoji, size: compact ? 36 : 54)
             Text(mode.title)
-                .font(.system(size: compact ? 18 : 26, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 18 : 26, weight: .black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(mode.subtitle)
-                .font(.system(size: compact ? 12 : 16, weight: .bold, design: .rounded))
+                .blasterFont(size: compact ? 12 : 16, weight: .bold)
                 .opacity(0.85)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -134,7 +141,7 @@ struct HomeView: View {
     private func mySongsRow(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("⭐️ My Songs  ·  tap one to play it")
-                .font(.system(size: compact ? 20 : 26, weight: .black, design: .rounded))
+                .blasterFont(size: compact ? 20 : 26, weight: .black)
                 .foregroundStyle(.white)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
@@ -143,13 +150,13 @@ struct HomeView: View {
                             play(song)
                         } label: {
                             HStack(spacing: 10) {
-                                Text(song.style.emoji).font(.system(size: 34))
+                                VibeArt(style: song.style, size: 44)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(song.name)
-                                        .font(.system(size: 18, weight: .black, design: .rounded))
+                                        .blasterFont(size: 18, weight: .black)
                                         .lineLimit(1)
                                     Text("▶︎ Play  ·  \(song.style.funName)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .blasterFont(size: 13, weight: .bold)
                                         .opacity(0.8)
                                 }
                             }
@@ -179,14 +186,14 @@ struct StartButtonFace: View {
             Glyph("🎵", size: compact ? 44 : 76)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Make a Song")
-                    .font(.system(size: compact ? 34 : 60, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 34 : 60, weight: .black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Text("Pick a vibe, a band and lights")
-                    .font(.system(size: compact ? 14 : 22, weight: .bold, design: .rounded))
+                    .blasterFont(size: compact ? 14 : 22, weight: .bold)
                     .opacity(0.9)
             }
-            Text("▶︎").font(.system(size: compact ? 34 : 56, weight: .black))
+            Glyph("icon-play", size: compact ? 34 : 56)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, compact ? 20 : 44)
@@ -231,7 +238,7 @@ struct PulsingTitle: View {
     private func word(_ text: String, shift: Double) -> some View {
         let colors = (0..<7).map { Neon.cycle[($0 + Int(shift * 6)) % Neon.cycle.count] }
         return Text(text)
-            .font(.system(size: size, weight: .black, design: .rounded))
+            .blasterFont(size: size, weight: .black)
             .foregroundStyle(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
             .lineLimit(1)
             .minimumScaleFactor(0.5)

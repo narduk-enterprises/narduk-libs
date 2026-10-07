@@ -8,10 +8,9 @@ final class VarietyTests: XCTestCase {
         XCTAssertEqual(recipe.settings.variety, 0.75)
     }
 
-    func testSurpriseMeAsksForTheMostVariety() {
-        let surprised = SongRecipe(style: .genre(.house)).surprise()
-        XCTAssertGreaterThan(surprised.settings.variety, 0)
-        XCTAssertEqual(surprised.settings.variety, 1.0)
+    func testMashItUpAsksForTheMostVariety() {
+        let mashed = SongRecipe.mashUp(lightIDs: ["tunnel"])
+        XCTAssertEqual(mashed.settings.variety, 1.0)
     }
 
     func testSongsSavedBeforeVarietyStillLoad() throws {

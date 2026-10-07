@@ -23,14 +23,14 @@ struct BeatLabView: View {
                         HStack(spacing: 12) {
                             HomeButton(action: home)
                             Text("🥁 Beat Lab")
-                                .font(.system(size: compact ? 26 : 44, weight: .black, design: .rounded))
+                                .blasterFont(size: compact ? 26 : 44, weight: .black)
                                 .foregroundStyle(.white)
                             Spacer(minLength: 0)
                         }
                         Text(
                             "Tap the squares to make a beat. Tap a row's name to change its sound. Bass and Keys squares change note each tap."
                         )
-                        .font(.system(size: compact ? 14 : 20, weight: .bold, design: .rounded))
+                        .blasterFont(size: compact ? 14 : 20, weight: .bold)
                         .foregroundStyle(.white.opacity(0.85))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         BeatGrid(audio: audio, lab: lab, compact: compact)
@@ -78,7 +78,7 @@ struct BeatLabView: View {
             .buttonStyle(Squish())
             .accessibilityLabel("Key down")
             Text("🎼 Key: \(MusicKey.names[lab.key])")
-                .font(.system(size: size * 0.85, weight: .black, design: .rounded))
+                .blasterFont(size: size * 0.85, weight: .black)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize()
@@ -163,10 +163,10 @@ struct BeatGrid: View {
                             Glyph(row.emoji, size: compact ? 14 : 24)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(row.word)
-                                    .font(.system(size: compact ? 12 : 20, weight: .black, design: .rounded))
+                                    .blasterFont(size: compact ? 12 : 20, weight: .black)
                                     .foregroundStyle(.white)
                                 Text("🔄 \(lab.soundName(row))")
-                                    .font(.system(size: compact ? 9 : 14, weight: .heavy, design: .rounded))
+                                    .blasterFont(size: compact ? 9 : 14, weight: .heavy)
                                     .foregroundStyle(Neon.cyan)
                             }
                             .lineLimit(1)
@@ -211,7 +211,7 @@ struct BeatGrid: View {
                 .overlay(
                     Group {
                         if value > 0, row.noteCount > 1 {
-                            Text("\(value)").font(.system(size: 14, weight: .black, design: .rounded)).foregroundStyle(
+                            Text("\(value)").blasterFont(size: 14, weight: .black).foregroundStyle(
                                 .black)
                         }
                     }
@@ -248,5 +248,54 @@ struct Playhead: View {
                 }
             }
         }
+    }
+}
+
+/// A simple centred wrapping layout.
+struct ChipLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX + (bounds.width - row.width) / 2
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var items: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let added =
+                rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if added > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows
     }
 }

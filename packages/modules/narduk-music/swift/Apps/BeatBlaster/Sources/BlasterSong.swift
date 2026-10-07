@@ -84,6 +84,12 @@ enum BlasterStyle: Hashable, Identifiable, Codable {
         case .guitars: 96
         }
     }
+
+    /// Vibes whose sound is a guitar: mashed in, they bring the guitar into the band.
+    var hasGuitar: Bool { [.guitars, .genre(.rock), .genre(.folk), .genre(.funk)].contains(self) }
+
+    /// Vibes whose sound is a held pad: mashed in, they bring the pads into the band.
+    var hasPads: Bool { [.genre(.chill), .genre(.synthwave), .genre(.lofi)].contains(self) }
 }
 
 /// How fast: a nudge on the style's own tempo.
@@ -156,14 +162,14 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     /// The keys' chord pattern when Keys plays (Pads always hold chords).
     var comping: CompingPattern = .arpeggio
     var voicing: ChordVoicing?
-    /// A small tempo nudge on top of the speed choice (Surprise me: 0.94 ... 1.06).
+    /// A small tempo nudge on top of the speed choice (Mash it up: 0.94 ... 1.06).
     var tempoNudge = 1.0
     /// How much the library writes fresh material for this seed (progressions, drums, timbre, motifs); nil is the
-    /// everyday default and Surprise me asks for the most. Optional so songs saved before it existed still load.
+    /// everyday default and Mash it up asks for the most. Optional so songs saved before it existed still load.
     var variety: Double?
 
     static let defaultVariety = 0.75
-    static let surpriseVariety = 1.0
+    static let mashVariety = 1.0
 
     var style: BlasterStyle { BlasterStyle.with(id: styleID) ?? .genre(.dubstep) }
 
@@ -174,22 +180,6 @@ struct SongRecipe: Codable, Hashable, Identifiable {
         if style == .guitars {
             band = [.drums, .bass, .guitar]
             sounds.bass = .pluck
-        }
-    }
-
-    /// The app's song for a library recipe (what Dream a Song writes): the recipe's title, seed, key, chord feel, mode
-    /// and tempo carry over; the tempo is split into the nearest speed and a nudge so the speed buttons still work.
-    init(from library: NardukMusicCore.SongRecipe, style: BlasterStyle) {
-        let library = library.validated()
-        self.init(style: style, name: library.title, seed: library.seed)
-        keyRoot = 60 + library.keyPitchClass
-        voicing = library.voicing
-        if let comping = library.comping { self.comping = comping }
-        mood = library.mode.flatMap { mode in Mood.allCases.first { $0.mode == mode } }
-        if let bpm = library.bpm {
-            let base = style.baseBPM
-            speed = Speed.allCases.min { abs(base * $0.scale - bpm) < abs(base * $1.scale - bpm) } ?? .medium
-            tempoNudge = bpm / (base * speed.scale)
         }
     }
 
@@ -210,26 +200,32 @@ struct SongRecipe: Codable, Hashable, Identifiable {
 
     mutating func reroll() { seed = SongSettings.sessionSeed() &+ seed &* 0x9E37_79B9_7F4A_7C15 }
 
-    /// A whole new song: another style (never the same one twice in a row), speed, key, mood, band, chord pattern and
-    /// voicing, every sound, and a new seed. The lights stay.
-    func surprise() -> SongRecipe {
-        let styles = BlasterStyle.all.filter { $0 != style }
-        var next = SongRecipe(style: styles.randomElement() ?? .guitars)
-        next.lightsID = lightsID
-        next.variety = Self.surpriseVariety
+    /// "Mash it up": two different vibes in one song. The beat (genre, drums, chords and tempo) comes from one vibe
+    /// and the sounds (bass, keys, drum kit, swing, guitar and pads) from the other, with a random light, speed and
+    /// key, named from both: the sound vibe's first word and the beat vibe's last ("Wub" + "Campfire"). The beat
+    /// vibe is never the one playing now, so a second tap always changes the song.
+    static func mashUp(lightIDs: [String], after current: SongRecipe? = nil) -> SongRecipe {
+        let beats = BlasterStyle.all.filter { $0 != current?.style }
+        let beat = beats.randomElement() ?? .guitars
+        let sound = BlasterStyle.all.filter { $0 != beat }.randomElement() ?? .genre(.dubstep)
+        var next = SongRecipe(style: beat, name: mashName(beat: beat, sound: sound))
+        next.lightsID = lightIDs.randomElement() ?? current?.lightsID ?? next.lightsID
+        next.variety = Self.mashVariety
         next.speed = Speed.allCases.randomElement()!
         next.tempoNudge = Double.random(in: 0.94...1.06)
         next.keyRoot = Int.random(in: 60...71)
-        next.mood = Mood.allCases.randomElement()
-        next.sounds = SoundProfile.random()
+        next.sounds = SoundProfile.signature(of: sound)
         next.comping = [.stabs, .arpeggio, .strum, .folk].randomElement()!
-        next.voicing = ChordVoicing.allCases.randomElement()
-        var band: Set<BandPart> = [.drums, .bass]
-        let extras: [BandPart] = [.guitar, .keys, .pads].shuffled()
-        for part in extras.prefix(Int.random(in: 1...2)) { band.insert(part) }
-        if next.style == .guitars { band.insert(.guitar) }
-        next.band = band
+        if sound.hasGuitar || beat.hasGuitar { next.band.insert(.guitar) }
+        if sound.hasPads { next.band.insert(.pads) }
         return next
+    }
+
+    /// "Wub Campfire": the sound vibe's first word, then the beat vibe's last.
+    static func mashName(beat: BlasterStyle, sound: BlasterStyle) -> String {
+        let first = sound.funName.split(separator: " ").first.map(String.init) ?? sound.funName
+        let last = beat.funName.split(separator: " ").last.map(String.init) ?? beat.funName
+        return first == last ? beat.funName : "\(first) \(last)"
     }
 }
 
