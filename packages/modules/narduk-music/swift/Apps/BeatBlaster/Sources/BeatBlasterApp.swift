@@ -25,7 +25,7 @@ struct BeatBlasterApp: App {
 }
 
 enum Screen: String {
-    case home, maker, player, lab, lights, mic, dream, recordings
+    case home, maker, player, lab, lights, mic, recordings
 }
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
@@ -48,7 +48,6 @@ struct RootView: View {
                 case .lab: BeatLabView(audio: audio, lab: lab, home: goHome)
                 case .lights: LightShowView(audio: audio, home: goHome)
                 case .mic: MicView(audio: audio, home: goHome)
-                case .dream: DreamView(audio: audio, home: goHome, play: play)
                 case .recordings: RecordingsView(audio: audio, home: goHome)
                 }
             }
@@ -133,7 +132,7 @@ struct Pill: View {
         HStack(spacing: size * 0.35) {
             Glyph(icon, size: size * 1.15)
             Text(word)
-                .font(.system(size: size, weight: .black, design: .rounded))
+                .blasterFont(size: size, weight: .black)
                 .lineLimit(1)
                 .fixedSize()
         }
@@ -167,7 +166,7 @@ struct KindBadge: View {
 
     var body: some View {
         Text(kind == .music ? "🎵 MUSIC" : "💡 LIGHTS")
-            .font(.system(size: size, weight: .black, design: .rounded))
+            .blasterFont(size: size, weight: .black)
             .foregroundStyle(.black)
             .padding(.horizontal, size * 0.6)
             .padding(.vertical, size * 0.25)
@@ -197,7 +196,7 @@ struct HintBubble: View {
                 VStack(spacing: 0) {
                     if !pointsDown { triangle.rotationEffect(.degrees(180)) }
                     Text(text)
-                        .font(.system(size: 20, weight: .black, design: .rounded))
+                        .blasterFont(size: 20, weight: .black)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)

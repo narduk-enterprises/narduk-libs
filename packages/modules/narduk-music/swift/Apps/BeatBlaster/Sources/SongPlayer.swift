@@ -156,8 +156,11 @@ import NardukMusicEngine
             machine.advance(to: throughStep + 1)
         }
 
-        // The song, on its own (possibly shifted) step grid.
+        // The song, on its own (possibly shifted) step grid. The Singer row owns the voice here: the vocals the
+        // library adds at a nonzero variety (a pad, a chop hook) are dropped, so "Off" is silent and a chosen vowel
+        // is the only voice. The library's master cut stays.
         var song = songNotes(through: throughStep - offset).compactMap { note -> ScheduledNote? in
+            guard ![.vocal, .vocalChop, .vocalSample].contains(note.instrument) else { return nil }
             var note = note
             note.step += offset
             return range.contains(note.step) ? note : nil

@@ -162,7 +162,7 @@ struct EffectsPanel: View {
                         VStack(spacing: 2) {
                             Glyph(pad.emoji, size: compact ? 28 : 36)
                             Text(pad.word)
-                                .font(.system(size: compact ? 12 : 15, weight: .black, design: .rounded))
+                                .blasterFont(size: compact ? 12 : 15, weight: .black)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                         }
@@ -259,17 +259,17 @@ struct EffectSlider: View {
             HStack(spacing: 6) {
                 Glyph(icon, size: 18)
                 Text(title)
-                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .blasterFont(size: 15, weight: .black)
                     .foregroundStyle(.white)
             }
             HStack(spacing: 8) {
-                Text(low).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(.white.opacity(0.8))
+                Text(low).blasterFont(size: 12, weight: .heavy).foregroundStyle(.white.opacity(0.8))
                     .fixedSize()
                 Slider(value: $value, in: 0...1)
                     .tint(color)
                     .frame(minHeight: 44)
                     .accessibilityLabel(title)
-                Text(high).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(
+                Text(high).blasterFont(size: 12, weight: .heavy).foregroundStyle(
                     .white.opacity(0.8)
                 )
                 .fixedSize()

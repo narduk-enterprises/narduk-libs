@@ -53,7 +53,7 @@ struct RecordingsView: View {
                 HStack(spacing: 12) {
                     HomeButton(action: home).probe("mysongs.home")
                     Text("🎙 My Songs")
-                        .font(.system(size: compact ? 26 : 40, weight: .black, design: .rounded))
+                        .blasterFont(size: compact ? 26 : 40, weight: .black)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
@@ -63,7 +63,7 @@ struct RecordingsView: View {
                 if recordings.isEmpty {
                     Spacer()
                     Text("Nothing recorded yet.\nEvery song you play gets recorded!")
-                        .font(.system(size: compact ? 20 : 28, weight: .heavy, design: .rounded))
+                        .blasterFont(size: compact ? 20 : 28, weight: .heavy)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white.opacity(0.85))
                     Spacer()
@@ -118,8 +118,7 @@ struct RecordingsView: View {
                 Haptics.tap()
                 player.toggle(recording)
             } label: {
-                Text(isPlaying ? "⏹" : "▶️")
-                    .font(.system(size: 28))
+                Glyph(isPlaying ? "icon-stop" : "icon-play", size: 26)
                     .frame(width: 52, height: 52)
                     .background(Neon.green.opacity(0.55), in: Circle())
             }
@@ -128,12 +127,12 @@ struct RecordingsView: View {
             .accessibilityIdentifier("mysongs.play")
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.name)
-                    .font(.system(size: compact ? 16 : 20, weight: .black, design: .rounded))
+                    .blasterFont(size: compact ? 16 : 20, weight: .black)
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                 Text(clockText(recording.seconds))
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .blasterFont(size: 14, weight: .bold, design: .monospaced)
                     .foregroundStyle(.white.opacity(0.7))
             }
             .frame(maxWidth: .infinity, alignment: .leading)

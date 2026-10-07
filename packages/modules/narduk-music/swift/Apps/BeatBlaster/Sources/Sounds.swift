@@ -373,6 +373,39 @@ struct SoundProfile: Codable, Hashable {
             singer: try c.decodeIfPresent(SingerSound.self, forKey: .singer) ?? .off)
     }
 
+    /// The sounds a vibe is known for (its bass, keys, drum kit, swing, guitar and pads), what "Mash it up" carries
+    /// from the sound vibe onto the other vibe's beat. The wobble patch is random so two mashes never sound the same.
+    static func signature(of style: BlasterStyle) -> SoundProfile {
+        let patch = Int.random(in: 0..<48)
+        switch style {
+        case .guitars: return SoundProfile(bass: .pluck, bassPatch: patch, drums: .stomp, guitar: .fuzz)
+        case .genre(let genre):
+            switch genre {
+            case .dubstep: return SoundProfile(bass: .wobble, bassPatch: patch, keys: .synth, drums: .boom)
+            case .riddim: return SoundProfile(bass: .robot, bassPatch: patch, keys: .synth, drums: .stomp)
+            case .drumAndBass: return SoundProfile(bass: .growl, bassPatch: patch, keys: .glow, drums: .zappy)
+            case .trap: return SoundProfile(bass: .deep, bassPatch: patch, keys: .bell, drums: .boom)
+            case .house: return SoundProfile(bass: .bounce, bassPatch: patch, keys: .piano, drums: .dj)
+            case .chill:
+                return SoundProfile(bass: .deep, bassPatch: patch, keys: .mellow, drums: .shimmer, pads: .soft)
+            case .techno: return SoundProfile(bass: .buzz, bassPatch: patch, keys: .synth, drums: .glitch)
+            case .ukGarage:
+                return SoundProfile(bass: .squelch, bassPatch: patch, keys: .glow, drums: .dj, swing: 0.3)
+            case .synthwave:
+                return SoundProfile(bass: .buzz, bassPatch: patch, keys: .synth, drums: .classic, pads: .glow)
+            case .lofi:
+                return SoundProfile(
+                    bass: .pluck, bassPatch: patch, keys: .mellow, drums: .classic, swing: 0.15, pads: .soft)
+            case .rock: return SoundProfile(bass: .pluck, bassPatch: patch, drums: .stomp, guitar: .crunch)
+            case .folk:
+                return SoundProfile(bass: .pluck, bassPatch: patch, keys: .piano, drums: .classic, guitar: .folk)
+            case .funk:
+                return SoundProfile(
+                    bass: .bounce, bassPatch: patch, keys: .piano, drums: .dj, swing: 0.15, guitar: .clean)
+            }
+        }
+    }
+
     static func random() -> SoundProfile {
         SoundProfile(
             bass: [BassSound.wobble, .growl, .deep, .squelch, .buzz, .bounce, .robot].randomElement()!,

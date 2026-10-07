@@ -23,4 +23,12 @@ final class ArtTests: XCTestCase {
             if let name { XCTAssertNotNil(UIImage(named: name), name) }
         }
     }
+
+    /// No emoji left on the kids' screens: every Beat Lab row, speed, sound pad and band part draws a kit icon.
+    func testEveryRowSpeedPadAndPartHasAnIcon() {
+        let emoji =
+            LabRow.allCases.map(\.emoji) + Speed.allCases.map(\.emoji) + SoundPad.allCases.map(\.emoji)
+            + BandPart.allCases.map(\.emoji)
+        for symbol in emoji { XCTAssertNotNil(Art.icon(for: symbol), "\(symbol) has no kit icon") }
+    }
 }
