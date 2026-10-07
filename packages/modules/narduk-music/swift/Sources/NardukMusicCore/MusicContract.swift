@@ -38,6 +38,107 @@ public enum Instrument: String, Sendable, Hashable, Codable, CaseIterable {
     /// A short vocal one-shot, the "chop" of a vocal sample: a soft consonant onset into a vowel, gated by
     /// `lengthSteps`. `pitch`, `voice` (vowel in `voice & 7`), `formant` and `drive` as for `vocal`.
     case vocalChop
+    /// A cut in the master (narduk-libs#1641): the song is chopped, stuttered, gated or reversed for `lengthSteps` and
+    /// then comes back. `voice` packs the mode and a seed, `formant` the division and `drive` the amount; build one with
+    /// `NoteParams.cut(_:division:steps:amount:seed:)` (see `CutMode`, `CutDivision`).
+    case cut
+    /// A sampled female voice (narduk-libs#1641): real recorded ahs, oohs and runs (VocalSet, CC BY 4.0), key-mapped,
+    /// looped and pitched by the sampler. `pitch` is the note. `voice` packs the vowel (`voice & 7`, as `vocal`), the
+    /// technique (`(voice >> 3) & 3`: straight, vibrato, belt) and the kind (`(voice >> 5) & 3`: a held sustain, a
+    /// syllable chop whose slice is `formant` 0 ... 1, or a whole scale run fitted to `lengthSteps`); build one with
+    /// `NoteParams.sampleVoice(_:technique:kind:)`. `drive` is a gain trim, 0 ... 1 (absent: 0.8).
+    case vocalSample
+}
+
+/// How a `vocalSample` note is sung.
+public enum SampleTechnique: String, Sendable, Hashable, Codable, CaseIterable {
+    case straight, vibrato, belt
+
+    public var index: Int { SampleTechnique.allCases.firstIndex(of: self) ?? 0 }
+
+    public init(voice: Int) {
+        let i = (voice >> 3) & 3
+        self = i < SampleTechnique.allCases.count ? SampleTechnique.allCases[i] : .vibrato
+    }
+}
+
+/// What a `vocalSample` note plays.
+public enum SampleKind: String, Sendable, Hashable, Codable, CaseIterable {
+    /// A held vowel, looped for as long as the note lasts.
+    case sustain
+    /// A short syllable cut from a sung phrase, played once (`formant` picks the slice).
+    case chop
+    /// A fast sung scale, stretched or squeezed to fit the note's length.
+    case run
+
+    public var index: Int { SampleKind.allCases.firstIndex(of: self) ?? 0 }
+
+    public init(voice: Int) {
+        let i = (voice >> 5) & 3
+        self = i < SampleKind.allCases.count ? SampleKind.allCases[i] : .sustain
+    }
+}
+
+extension NoteParams {
+    /// The `voice` field of a `vocalSample` note.
+    public static func sampleVoice(
+        _ vowel: VocalVowel = .ah, technique: SampleTechnique = .vibrato, kind: SampleKind = .sustain
+    ) -> Int {
+        vowel.index | technique.index << 3 | kind.index << 5
+    }
+}
+
+/// What a `cut` does to the song while it lasts.
+public enum CutMode: String, Sendable, Hashable, Codable, CaseIterable {
+    /// Beat repeat: the last slice of the song, over and over. `amount` pitches it up and fades it as it repeats.
+    case stutter
+    /// A trance gate: the song chopped on and off once a slice. `amount` is how short the open part is.
+    case gate
+    /// The last slice played backwards, over and over.
+    case reverse
+    /// The last eight slices re-sequenced in a seeded order, a few left silent: a vocal-chop re-cut. `amount` is how
+    /// many are silent.
+    case chop
+
+    public var index: Int { CutMode.allCases.firstIndex(of: self) ?? 0 }
+}
+
+/// How long one slice of a `cut` is (a repeat of this length lands on the beat grid).
+public enum CutDivision: String, Sendable, Hashable, Codable, CaseIterable {
+    case quarter, eighth, sixteenth, sixteenthTriplet, thirtySecond
+
+    /// The slice's length in sixteenth-note steps.
+    public var steps: Double {
+        switch self {
+        case .quarter: 4
+        case .eighth: 2
+        case .sixteenth: 1
+        case .sixteenthTriplet: 2.0 / 3.0
+        case .thirtySecond: 0.5
+        }
+    }
+
+    public var index: Int { CutDivision.allCases.firstIndex(of: self) ?? 0 }
+
+    /// The `NoteParams.formant` value that carries this division.
+    public var formant: Double { Double(index) / Double(CutDivision.allCases.count - 1) }
+
+    public init(formant: Double) {
+        let all = CutDivision.allCases
+        let i = Int((min(max(formant, 0), 1) * Double(all.count - 1)).rounded())
+        self = all[i]
+    }
+}
+
+extension NoteParams {
+    /// The parameters of a `cut` note of `steps` sixteenths.
+    public static func cut(
+        _ mode: CutMode, division: CutDivision = .sixteenth, steps: Int = 2, amount: Double = 0.5, seed: Int = 0
+    ) -> NoteParams {
+        NoteParams(
+            lengthSteps: max(steps, 1), formant: division.formant, drive: min(max(amount, 0), 1),
+            voice: mode.index | (seed & 0xFFFFF) << 4)
+    }
 }
 
 /// The vowels a `vocal` or `vocalChop` note sings (`NoteParams.voice & 7`; larger values fold back).

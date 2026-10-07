@@ -223,3 +223,7 @@ consumer build on Xcode 26.0.1.
 MIT (see [LICENSE](LICENSE)). The source is public with the rest of this
 repository: Logan approved public source under the existing licence on
 2026-10-06 (narduk-libs#1520).
+
+## Credits
+
+`Instrument.vocalSample` plays real female vocals from VocalSet by Wilkins, Seetharaman, Wahl and Pardo (CC BY 4.0, https://doi.org/10.5281/zenodo.1193957), trimmed, looped, downsampled and packed; see `Sources/NardukMusicDSP/Resources/LICENSES/`. Apps that ship this package should carry the credit.

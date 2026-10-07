@@ -71,6 +71,21 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
   is the default and renders exactly as before. `power` is a chest-mix belt with a little grit; `runs` is tuned for
   `VocalRun`, an ornament any held vocal note can take (scenario note field `run`): it holds, then sings a pentatonic,
   minor or blues run up, down or in waves over an octave or more in sixteenths or thirty-seconds.
+- A master cut (narduk-libs#1641): `Instrument.cut`, an effect on the finished mix that fires on an exact sample: `stutter`
+  (beat repeat, `amount` pitches it up and fades it), `gate` (a trance gate), `reverse` and `chop` (the last eight slices
+  re-sequenced from a seed, a few left silent), over a `CutDivision` slice (quarter ... thirty-second). Use it from a
+  note (`NoteParams.cut`, scenario fields `cut`, `division`, `cutSeed`, `drive`), from the arrangement, or live with
+  `DropEngine.cut(_:division:steps:amount:seed:)`, which starts on the next audio buffer. With `SongSettings.variety`
+  above 0 a song may add wordless vocals (a pad, a chop hook) and a stutter into each drop; at 0 (the default) nothing is
+  added and every render is bit for bit as before.
+- A sampled female voice (narduk-libs#1641): `Instrument.vocalSample` plays recorded ahs, oohs, ehs and ees (straight, vibrato
+  and belt), syllable chops and sung scale runs of one VocalSet singer (CC BY 4.0, credit in the README and
+  `Resources/LICENSES`), 2 MB of 16-bit PCM in the package resources, key-mapped from a root every three semitones,
+  looped with a baked crossfade, pitched within a few semitones of its root and played by a pooled sampler voice into
+  the vocal room. `NoteParams.sampleVoice(_:technique:kind:)` packs vowel, `SampleTechnique` and `SampleKind` (sustain,
+  chop, run); scenario notes take `technique` and `kind`, `run` (VocalRun) works on sampled notes too, and the master cut
+  stutters, gates and reverses it like everything else. `SampleBank.shared` loads at synth construction, never on the
+  audio thread.
 
 ## 0.4.1
 

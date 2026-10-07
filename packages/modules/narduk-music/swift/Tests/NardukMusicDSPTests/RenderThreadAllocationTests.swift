@@ -118,7 +118,7 @@
                 right.deallocate()
             }
             let guitars: [Instrument] = [
-                .acousticGuitar, .electricGuitar, .bassGuitar, .strum, .electricStrum, .vocal, .vocalChop,
+                .acousticGuitar, .electricGuitar, .bassGuitar, .strum, .electricStrum, .vocal, .vocalChop, .vocalSample,
             ]
             for step in 0..<128 {
                 for (index, instrument) in guitars.enumerated() where (step + index) % 2 == 0 {

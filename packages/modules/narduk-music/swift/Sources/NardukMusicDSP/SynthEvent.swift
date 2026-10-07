@@ -27,6 +27,8 @@ public struct SynthEvent: Sendable, Hashable, BitwiseCopyable {
         static let string: UInt8 = 2
         /// A string of an electric strum rather than an acoustic one.
         static let electric: UInt8 = 4
+        /// A live cut (`DropSynthCore.cut`): it fires at the next sample rather than on a step.
+        static let immediate: UInt8 = 8
     }
 
     public init(_ note: ScheduledNote) {
@@ -72,6 +74,8 @@ extension Instrument {
         case .electricStrum: 18
         case .vocal: 19
         case .vocalChop: 20
+        case .cut: 21
+        case .vocalSample: 22
         }
     }
 

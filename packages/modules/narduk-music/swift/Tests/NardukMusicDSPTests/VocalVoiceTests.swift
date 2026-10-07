@@ -243,7 +243,7 @@ import Testing
         let note = ScheduledNote(step: 0, instrument: .acousticGuitar, velocity: 0.9, params: NoteParams(pitch: 52))
         let out = StringVoiceTests.renderCore([note], seconds: 1)
         #expect(out.core.takeHits() == [.acousticGuitar])
-        var state = SynthState(sampleRate: 48_000, bpm: 120, stepsPerBar: 16)
+        let state = SynthState(sampleRate: 48_000, bpm: 120, stepsPerBar: 16)
         defer { state.deallocate() }
         #expect(state.vocalsLive == 0 && state.vocalTail == 0)
     }
