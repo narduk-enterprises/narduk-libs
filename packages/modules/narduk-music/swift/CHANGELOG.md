@@ -6,6 +6,11 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.phosphorMetal` ("Phosphor (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the
+  Canvas phosphor: a stereo-goniometer Lissajous burning into a CRT (the newest trace from the live waveform with a
+  hot core and a wide bloom, five fading, shrinking older traces from the history), over a graticule with axes, rings
+  and diagonals that lights under the beam, with a beat ring, a kick ring, a snare ring, dust and scanlines. Bass
+  swells the center glow, highs light the outer graticule, a kick flares the trace.
 - `IntenseKind.mirrorMetal` ("Mirror (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of the Canvas
   mirror: 64 cylinder-lit neon slabs, bass at the center and highs at both edges (bass widens in a drop), with peak
   caps and rising embers, over a far skyline and a perspective neon floor that rolls once per beat, lit from below and
