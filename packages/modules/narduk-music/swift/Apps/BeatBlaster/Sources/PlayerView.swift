@@ -18,19 +18,21 @@ struct PlayerView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 500
+            let short = geometry.size.height < 500
             ZStack {
                 DropStage(audio: audio, drawing: scenePhase == .active).ignoresSafeArea()
                 Vignette()
-                VStack(spacing: compact ? 8 : 14) {
-                    topBar(compact: compact)
+                VStack(spacing: short ? 6 : (compact ? 8 : 14)) {
+                    topBar(compact: compact, short: short)
                     Spacer(minLength: 0)
-                    SteeringPanel(audio: audio, compact: compact) { boomID += 1 }
+                    SteeringPanel(audio: audio, compact: compact, short: short, newSong: newSong) { boomID += 1 }
                     MusicLightsBar(
-                        audio: audio,
+                        audio: audio, short: short,
                         changeMusic: { open(.music) },
                         changeLights: { open(.lights) })
                 }
-                .padding(compact ? 12 : 24)
+                .padding(short ? 8 : (compact ? 12 : 24))
+                .frame(width: geometry.size.width, height: geometry.size.height)
                 BoomText(audio: audio, trigger: boomID).allowsHitTesting(false)
                 if let panel { picker(panel, compact: compact) }
             }
@@ -38,27 +40,33 @@ struct PlayerView: View {
         .onAppear { audio.playIfIdle() }
     }
 
-    private func topBar(compact: Bool) -> some View {
+    /// Home and the song's name; New song joins them when there is room (a phone held upright puts it beside DROP).
+    private func topBar(compact: Bool, short: Bool) -> some View {
         HStack(spacing: 12) {
             HomeButton(action: home)
             VStack(alignment: .leading, spacing: 0) {
-                Text("Now playing")
-                    .font(.system(size: compact ? 12 : 15, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.7))
+                if !short {
+                    Text("Now playing")
+                        .font(.system(size: compact ? 12 : 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
                 Text("\(audio.recipe.style.emoji) \(audio.recipe.name)")
-                    .font(.system(size: compact ? 20 : 34, weight: .black, design: .rounded))
+                    .font(.system(size: compact ? 20 : (short ? 22 : 34), weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .shadow(color: audio.recipe.style.color, radius: 10)
             }
+            .layoutPriority(1)
             Spacer(minLength: 0)
-            Button(action: newSong) {
-                Pill(
-                    icon: "➕", word: compact ? "New" : "New song", color: Neon.pink.opacity(0.7),
-                    size: compact ? 16 : 20)
+            if !compact || short {
+                Button(action: newSong) {
+                    Pill(
+                        icon: "➕", word: short ? "New" : "New song", color: Neon.pink.opacity(0.7),
+                        size: short ? 16 : 20)
+                }
+                .buttonStyle(Squish())
             }
-            .buttonStyle(Squish())
         }
     }
 
@@ -129,61 +137,121 @@ struct DropStage: View {
     }
 }
 
-/// The live steering controls.
+/// The live steering controls. A phone held upright stacks them (Energy, the band, then DROP in a row of its own with
+/// Surprise me and New song either side); anything wider keeps Energy and the band beside DROP.
 struct SteeringPanel: View {
     let audio: BlasterAudio
     let compact: Bool
+    var short = false
+    var newSong: () -> Void = {}
     let onDrop: () -> Void
 
     var body: some View {
+        Group {
+            if compact && !short { stacked } else { sideBySide }
+        }
+        .padding(short ? 8 : (compact ? 10 : 16))
+        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var stacked: some View {
+        VStack(spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                EnergySlider(audio: audio, compact: true)
+                HintBubble(id: "energy", text: "Slide for more energy!").offset(x: 90, y: -56)
+            }
+            bandRow(compact: true, flexible: true)
+            HStack(alignment: .center, spacing: 8) {
+                sideButton(icon: "🎲", word: "Surprise me", color: Neon.orange) {
+                    Haptics.success()
+                    audio.surprise()
+                }
+                dropColumn(size: 120, caption: true)
+                sideButton(icon: "➕", word: "New song", color: Neon.pink, action: newSong)
+            }
+        }
+    }
+
+    private var sideBySide: some View {
         HStack(alignment: .bottom, spacing: compact ? 10 : 20) {
-            VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+            VStack(alignment: .leading, spacing: short ? 6 : (compact ? 8 : 12)) {
                 ZStack(alignment: .topLeading) {
                     EnergySlider(audio: audio, compact: compact)
                     HintBubble(id: "energy", text: "Slide for more energy!").offset(x: 120, y: compact ? -64 : -72)
                 }
-                HStack(spacing: 6) {
-                    Text("Band:")
-                        .font(.system(size: compact ? 14 : 18, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                    ForEach(BandPart.allCases) { part in
-                        let on = audio.recipe.band.contains(part)
-                        Button {
-                            Haptics.tap()
-                            audio.update { recipe in
-                                if on { recipe.band.remove(part) } else { recipe.band.insert(part) }
-                            }
-                        } label: {
-                            VStack(spacing: 0) {
-                                Text(part.emoji).font(.system(size: compact ? 18 : 24)).grayscale(on ? 0 : 1)
-                                Text(part.word)
-                                    .font(.system(size: compact ? 10 : 13, weight: .black, design: .rounded))
-                                    .lineLimit(1)
-                                    .fixedSize()
-                            }
-                            .foregroundStyle(.white.opacity(on ? 1 : 0.55))
-                            .frame(width: compact ? 50 : 72, height: compact ? 50 : 64)
-                            .background(Neon.green.opacity(on ? 0.45 : 0.08), in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14).stroke(
-                                    on ? Neon.green : .white.opacity(0.3), lineWidth: on ? 3 : 1.5))
-                        }
-                        .buttonStyle(Squish())
-                        .accessibilityLabel("\(part.word) \(on ? "on" : "off")")
+                bandRow(compact: compact, flexible: false)
+                if !short {
+                    Button {
+                        Haptics.success()
+                        audio.surprise()
+                    } label: {
+                        Pill(icon: "🎲", word: "Surprise me", color: Neon.orange.opacity(0.75), size: compact ? 16 : 22)
                     }
+                    .buttonStyle(Squish())
                 }
+            }
+            Spacer(minLength: 0)
+            if short {
                 Button {
                     Haptics.success()
                     audio.surprise()
                 } label: {
-                    Pill(icon: "🎲", word: "Surprise me", color: Neon.orange.opacity(0.75), size: compact ? 16 : 22)
+                    VStack(spacing: 2) {
+                        Text("🎲").font(.system(size: 26))
+                        Text("Surprise").font(.system(size: 12, weight: .black, design: .rounded))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 70, height: 56)
+                    .background(Neon.orange.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(Squish())
+                .accessibilityLabel("Surprise me")
             }
-            Spacer(minLength: 0)
-            VStack(spacing: 4) {
-                HintBubble(id: "drop", text: "Hold me!")
-                DropButton(audio: audio, size: compact ? 118 : 180, onDrop: onDrop)
+            dropColumn(size: short ? 96 : (compact ? 118 : 180), caption: !short)
+        }
+    }
+
+    private func bandRow(compact: Bool, flexible: Bool) -> some View {
+        HStack(spacing: flexible ? 4 : 6) {
+            if !flexible {
+                Text("Band:")
+                    .font(.system(size: compact ? 14 : 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            ForEach(BandPart.allCases) { part in
+                let on = audio.recipe.band.contains(part)
+                Button {
+                    Haptics.tap()
+                    audio.update { recipe in
+                        if on { recipe.band.remove(part) } else { recipe.band.insert(part) }
+                    }
+                } label: {
+                    VStack(spacing: 0) {
+                        Text(part.emoji).font(.system(size: compact ? 18 : 24)).grayscale(on ? 0 : 1)
+                        Text(part.word)
+                            .font(.system(size: compact ? 10 : 13, weight: .black, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .foregroundStyle(.white.opacity(on ? 1 : 0.55))
+                    .frame(maxWidth: flexible ? .infinity : nil)
+                    .frame(width: flexible ? nil : (compact ? 50 : 72), height: compact ? 50 : 64)
+                    .background(Neon.green.opacity(on ? 0.45 : 0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14).stroke(
+                            on ? Neon.green : .white.opacity(0.3), lineWidth: on ? 3 : 1.5))
+                }
+                .buttonStyle(Squish())
+                .accessibilityLabel("\(part.word) \(on ? "on" : "off")")
+            }
+        }
+    }
+
+    private func dropColumn(size: CGFloat, caption: Bool) -> some View {
+        VStack(spacing: 4) {
+            HintBubble(id: "drop", text: "Hold me!")
+            DropButton(audio: audio, size: size, onDrop: onDrop)
+            if caption {
                 Text("Hold to build…\nlet go to DROP!")
                     .font(.system(size: compact ? 12 : 16, weight: .black, design: .rounded))
                     .multilineTextAlignment(.center)
@@ -191,8 +259,27 @@ struct SteeringPanel: View {
                     .shadow(color: .black, radius: 3)
             }
         }
-        .padding(compact ? 10 : 16)
-        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(12)  // room for the charge ring, which is drawn outside the button
+    }
+
+    /// A tall pill that sits beside DROP: an icon over a word.
+    private func sideButton(icon: String, word: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(icon).font(.system(size: 30))
+                Text(word)
+                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.75), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(word)
     }
 }
 

@@ -131,7 +131,7 @@ import NardukMusicEngine
                     out.append(
                         ScheduledNote(
                             step: step, instrument: .riser, velocity: 0.9,
-                            params: NoteParams(pitch: 48, lengthSteps: 64)))
+                            params: NoteParams(pitch: 48, lengthSteps: DropMachine.riserSteps(secondsPerStep: sps))))
                 }
                 if step % every == 0 {
                     out.append(ScheduledNote(step: step, instrument: .snare, velocity: 0.3 + 0.65 * intensity))
