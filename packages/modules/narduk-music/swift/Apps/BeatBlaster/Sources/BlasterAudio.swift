@@ -48,6 +48,21 @@ enum BlasterInput: Equatable {
     @ObservationIgnored private var resumeInput: BlasterInput?
     @ObservationIgnored private weak var lab: BeatLab?
 
+    // Recording: the player records every song it plays (see "Recording" below).
+    /// When the take being recorded began (nil when nothing records).
+    private(set) var takeStart: Date?
+    /// Bumped each time a take is saved, so the Home list refreshes.
+    private(set) var savedCount = 0
+    private(set) var recordingProblem: String?
+    var store = RecordingStore.standard
+    /// A take stops at this length and the next one starts (60 minutes).
+    var maxTakeSeconds = 3600.0
+    @ObservationIgnored private var wantsRecording = false
+    @ObservationIgnored private var recorderChain: Task<Void, Never>?
+    @ObservationIgnored private var capTask: Task<Void, Never>?
+    @ObservationIgnored private var takeURL: URL?
+    @ObservationIgnored private var interruptionObserver: (any NSObjectProtocol)?
+
     var latestFrame: SoundFrame { latest }
 
     /// What every visualizer draws from: the frame plus, for the engine, its music context (kicks, section).
@@ -77,6 +92,7 @@ enum BlasterInput: Equatable {
 
     /// Plays `recipe` from the top with its band, speed and lights.
     func play(_ recipe: SongRecipe) {
+        watchInterruptions()
         stop()
         self.recipe = recipe
         lightsID = recipe.lightsID
@@ -91,6 +107,7 @@ enum BlasterInput: Equatable {
             resetMix()
             source = drop.makeSoundSource()
             isRunning = true
+            startTake()
         } catch {
             stop()
         }
@@ -183,6 +200,7 @@ enum BlasterInput: Equatable {
     }
 
     func stop() {
+        finishTake()
         endSurge(land: false)
         landTask?.cancel()
         previewTask?.cancel()
@@ -194,6 +212,93 @@ enum BlasterInput: Equatable {
         player = nil
         isRunning = false
         resetMix()
+    }
+
+    // MARK: Recording
+
+    var isRecording: Bool { takeStart != nil }
+
+    /// Seconds into the current take (0 when nothing records).
+    func recordingElapsed(at date: Date = Date()) -> Double {
+        takeStart.map { max(0, date.timeIntervalSince($0)) } ?? 0
+    }
+
+    /// The player is on screen: record the song now and keep recording across new songs until `endRecording()`.
+    func beginRecording() {
+        wantsRecording = true
+        startTake()
+    }
+
+    /// Leaving the player (or tapping the REC pill): finish and save the take.
+    func endRecording() {
+        wantsRecording = false
+        finishTake()
+    }
+
+    /// Resolves once every queued start and stop has run (the tests, and anything that must read the saved file).
+    func settleRecording() async {
+        await recorderChain?.value
+    }
+
+    /// Takes the master mixer (what the speakers play, no microphone) to an m4a. Starts and stops queue on one chain,
+    /// so a stop followed at once by a start (a new song) never overlaps.
+    private func startTake() {
+        guard wantsRecording, isRunning, input == .song, takeStart == nil else { return }
+        let url = store.newTakeURL(title: recipe.name)
+        takeURL = url
+        takeStart = Date()
+        recordingProblem = nil
+        let previous = recorderChain
+        recorderChain = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            do {
+                try self.drop.startRecording(to: url)
+            } catch {
+                self.takeStart = nil
+                self.takeURL = nil
+                self.recordingProblem = "Could not start recording"
+            }
+        }
+        capTask?.cancel()
+        capTask = Task { [weak self] in
+            guard let seconds = self?.maxTakeSeconds else { return }
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self else { return }
+            self.finishTake()
+            self.startTake()
+        }
+    }
+
+    private func finishTake() {
+        capTask?.cancel()
+        capTask = nil
+        guard takeStart != nil else { return }
+        takeStart = nil
+        takeURL = nil
+        let previous = recorderChain
+        recorderChain = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            if await self.drop.stopRecording() != nil { self.savedCount += 1 }
+        }
+    }
+
+    /// A phone call or Siri stops the engine; save what was recorded and pick the song up again afterwards.
+    private func watchInterruptions() {
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            MainActor.assumeIsolated {
+                switch raw.flatMap(AVAudioSession.InterruptionType.init) {
+                case .began: self?.pauseForBackground()
+                case .ended: self?.resumeFromBackground()
+                default: break
+                }
+            }
+        }
     }
 
     // MARK: Background

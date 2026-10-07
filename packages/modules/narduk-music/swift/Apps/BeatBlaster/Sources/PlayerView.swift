@@ -12,6 +12,7 @@ struct PlayerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var panel: Panel?
     @State private var boomID = 0
+    @State private var show = ShowMode()
 
     enum Panel { case music, lights }
 
@@ -33,11 +34,20 @@ struct PlayerView: View {
                 }
                 .padding(short ? 8 : (compact ? 12 : 24))
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .opacity(show.hidden ? 0 : 1)
+                .allowsHitTesting(!show.hidden)
+                .accessibilityHidden(show.hidden)
+                if show.hidden { showModeLayer(compact: compact) }
                 BoomText(audio: audio, trigger: boomID).allowsHitTesting(false)
                 if let panel { picker(panel, compact: compact) }
             }
         }
-        .onAppear { audio.playIfIdle() }
+        .animation(.easeInOut(duration: 0.35), value: show.hidden)
+        .onAppear {
+            audio.playIfIdle()
+            audio.beginRecording()
+        }
+        .onDisappear { audio.endRecording() }
     }
 
     /// Home and the song's name; New song joins them when there is room (a phone held upright puts it beside DROP).
@@ -46,9 +56,7 @@ struct PlayerView: View {
             HomeButton(action: home)
             VStack(alignment: .leading, spacing: 0) {
                 if !short {
-                    Text("Now playing")
-                        .font(.system(size: compact ? 12 : 15, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.7))
+                    RecBadge(audio: audio, compact: compact)
                 }
                 Text("\(audio.recipe.style.emoji) \(audio.recipe.name)")
                     .font(.system(size: compact ? 20 : (short ? 22 : 34), weight: .black, design: .rounded))
@@ -59,6 +67,7 @@ struct PlayerView: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 0)
+            if short { RecBadge(audio: audio, compact: true) }
             if !compact || short {
                 Button(action: newSong) {
                     Pill(
@@ -67,7 +76,48 @@ struct PlayerView: View {
                 }
                 .buttonStyle(Squish())
             }
+            Button {
+                Haptics.tap()
+                show.hide()
+            } label: {
+                Pill(icon: "👁", word: "Hide", color: Neon.purple.opacity(0.7), size: short ? 16 : (compact ? 17 : 20))
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Hide the controls")
         }
+    }
+
+    /// Show mode: every control faded out, the lights edge to edge, a faint REC dot and clock in one corner. A tap
+    /// anywhere brings everything back; a double tap fires a short DROP.
+    private func showModeLayer(compact: Bool) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear.contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    Haptics.success()
+                    boomID += 1
+                    audio.beginSurge()
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.6))
+                        audio.endSurge()
+                    }
+                }
+                .onTapGesture { show.reveal() }
+            if audio.isRecording {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    HStack(spacing: 5) {
+                        Circle().fill(.red).frame(width: 8, height: 8)
+                        Text(clockText(audio.recordingElapsed(at: context.date)))
+                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(8)
+                    .opacity(0.45)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .accessibilityLabel("Tap to show the controls")
+        .accessibilityAddTraits(.isButton)
     }
 
     private func open(_ which: Panel) {
@@ -463,5 +513,43 @@ struct BoomText: View {
             try? await Task.sleep(for: .seconds(1.8))
             if !Task.isCancelled { live = false }
         }
+    }
+}
+
+/// Whether the player's controls are hidden so the lights fill the screen. Music and recording never depend on it.
+struct ShowMode: Equatable {
+    private(set) var hidden = false
+    mutating func hide() { hidden = true }
+    mutating func reveal() { hidden = false }
+}
+
+/// "● REC 01:23": the take's running clock. Tapping it stops and saves the take (or starts another).
+struct RecBadge: View {
+    let audio: BlasterAudio
+    let compact: Bool
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            if audio.isRecording { audio.endRecording() } else { audio.beginRecording() }
+        } label: {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 6) {
+                    Circle().fill(audio.isRecording ? Color.red : .gray).frame(width: 10, height: 10)
+                    Text(
+                        audio.isRecording
+                            ? "REC \(clockText(audio.recordingElapsed(at: context.date)))" : "Saved ✓ · tap to record"
+                    )
+                    .font(.system(size: compact ? 13 : 16, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(audio.isRecording ? "Recording. Tap to stop and save" : "Start recording")
     }
 }

@@ -8,6 +8,7 @@ struct HomeView: View {
     let play: (SongRecipe) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
+    @State private var recordingCount = 0
 
     private struct Mode: Identifiable {
         let screen: Screen
@@ -59,6 +60,7 @@ struct HomeView: View {
                                     value: appeared)
                             }
                         }
+                        recordingsButton(compact: compact)
                         if !mySongs.songs.isEmpty { mySongsRow(compact: compact) }
                     }
                     .frame(maxWidth: 1100)
@@ -71,7 +73,9 @@ struct HomeView: View {
         .onAppear {
             if !audio.isRunning { audio.playIfIdle() }
             appeared = true
+            recordingCount = audio.store.list().count
         }
+        .onChange(of: audio.savedCount) { recordingCount = audio.store.list().count }
     }
 
     private func startButton(compact: Bool) -> some View {
@@ -107,6 +111,20 @@ struct HomeView: View {
         .background(mode.color.opacity(0.45), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 2))
         .shadow(color: mode.color.opacity(0.6), radius: 12)
+    }
+
+    /// 🎙 My Songs: the recordings the player made (shown once there is at least one).
+    @ViewBuilder private func recordingsButton(compact: Bool) -> some View {
+        if recordingCount > 0 {
+            Button {
+                go(.recordings)
+            } label: {
+                Pill(
+                    icon: "🎙", word: "My Songs · \(recordingCount) recorded", color: Neon.green.opacity(0.7),
+                    size: compact ? 20 : 26)
+            }
+            .buttonStyle(Squish())
+        }
     }
 
     private func mySongsRow(compact: Bool) -> some View {

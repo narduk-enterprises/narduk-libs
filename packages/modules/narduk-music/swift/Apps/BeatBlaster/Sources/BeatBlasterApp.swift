@@ -25,11 +25,11 @@ struct BeatBlasterApp: App {
 }
 
 enum Screen: String {
-    case home, maker, player, lab, lights, mic, dream
+    case home, maker, player, lab, lights, mic, dream, recordings
 }
 
 /// One screen at a time, swapped with a springy zoom. Launch arguments for smoke runs and screenshots:
-/// `-screen home|maker|player|lab|lights|mic|dream`, `-makerStep 1...5`, `-song <style id>`, `-lights <light id>`,
+/// `-screen home|maker|player|lab|lights|mic|dream|recordings`, `-makerStep 1...5`, `-song <style id>`, `-lights <light id>`,
 /// `-orientation landscape|portrait`, `-firstRun YES` (clears the one-time hints).
 struct RootView: View {
     let audio: BlasterAudio
@@ -50,6 +50,7 @@ struct RootView: View {
                 case .lights: LightShowView(audio: audio, home: goHome)
                 case .mic: MicView(audio: audio, home: goHome)
                 case .dream: DreamView(audio: audio, home: goHome, play: play)
+                case .recordings: RecordingsView(audio: audio, home: goHome)
                 }
             }
             .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
