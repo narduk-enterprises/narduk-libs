@@ -87,9 +87,11 @@ import XCTest
         makeASong()
 
         require("player.tray").tap()
-        let tab = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "player.tray.tab.")).firstMatch
-        XCTAssertTrue(tab.waitForExistence(timeout: 10), "the controls tray did not open (no player.tray.tab.*)")
+        // The tray container's `player.tray` id overrides the handle and tab ids, so "open" is read from its label.
+        let open = app.buttons.matching(
+            NSPredicate(format: "identifier == %@ AND label CONTAINS[c] %@", "player.tray", "Close")
+        ).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10), "the controls tray did not open")
 
         let drop = require("player.drop")
         drop.press(forDuration: 0.6)
@@ -117,11 +119,13 @@ import XCTest
 
         let rename = require("mysongs.rename")
         rename.tap()
-        let field = require("mysongs.renameField")
+        // A system alert: SwiftUI does not expose the TextField identifier inside it, so query the alert itself.
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no rename alert text field")
         field.tap()
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40))
         field.typeText("Smoke Test")
-        requireButton("Save").tap()
+        app.alerts.buttons["Save"].tap()
         XCTAssertTrue(
             app.staticTexts["Smoke Test"].waitForExistence(timeout: 6), "the row did not take its new name")
         XCTAssertTrue(row.exists)
