@@ -45,7 +45,7 @@ struct RootView: View {
                 case .home: HomeView(audio: audio, mySongs: mySongs, go: go, play: play)
                 case .maker: SongMakerView(audio: audio, home: goHome, done: play)
                 case .player: PlayerView(audio: audio, mySongs: mySongs, home: goHome, newSong: { go(.maker) })
-                case .lab: BeatLabView(audio: audio, lab: lab, home: goHome)
+                case .lab: BeatLabView(audio: audio, lab: lab, home: goHome, makeSong: play)
                 case .lights: LightShowView(audio: audio, home: goHome)
                 case .mic: MicView(audio: audio, home: goHome)
                 case .recordings: RecordingsView(audio: audio, home: goHome)

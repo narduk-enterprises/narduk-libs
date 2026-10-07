@@ -85,6 +85,27 @@ enum BlasterStyle: Hashable, Identifiable, Codable {
         }
     }
 
+    /// The genre a Beat Lab beat sounds like, from its speed and its groove: a kick on every beat is house or techno, a
+    /// lone snare on beat 3 is half-time (lo-fi, dubstep, drum and bass), a wobbly bass line is dubstep or riddim.
+    static func fitting(_ beat: BeatLab.Saved) -> BlasterStyle {
+        func row(_ row: LabRow) -> [Int] {
+            row.rawValue < beat.grid.count ? beat.grid[row.rawValue] : Array(repeating: 0, count: BeatLab.steps)
+        }
+        let kick = row(.kick)
+        let snare = row(.snare)
+        let fourOnFloor = [0, 4, 8, 12].allSatisfy { kick[$0] > 0 }
+        let halfTime = snare[8] > 0 && snare[4] == 0 && snare[12] == 0
+        let bassSound = LabRow.bass.rawValue < beat.sounds.count ? beat.sounds[LabRow.bass.rawValue] : 0
+        let wobbly =
+            row(.bass).contains { $0 > 0 }
+            && [BassSound.wobble, .growl, .squelch].contains(BassSound.allCases[max(0, bassSound) % BassSound.allCases.count])
+        switch beat.speed {
+        case .slow: return .genre(halfTime ? .lofi : (fourOnFloor ? .chill : .funk))
+        case .medium: return .genre(fourOnFloor ? .house : (wobbly || halfTime ? .dubstep : .trap))
+        case .fast: return .genre(fourOnFloor ? .techno : (wobbly ? .riddim : (halfTime ? .drumAndBass : .ukGarage)))
+        }
+    }
+
     /// Vibes whose sound is a guitar: mashed in, they bring the guitar into the band.
     var hasGuitar: Bool { [.guitars, .genre(.rock), .genre(.folk), .genre(.funk)].contains(self) }
 
@@ -167,6 +188,9 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     /// How much the library writes fresh material for this seed (progressions, drums, timbre, motifs); nil is the
     /// everyday default and Mash it up asks for the most. Optional so songs saved before it existed still load.
     var variety: Double?
+    /// A Beat Lab beat the song is built around: it plays the drums (and the bass and keys, moved onto the song's
+    /// chords) in place of the vibe's own. Nil for every other song, and for songs saved before it existed.
+    var beat: BeatLab.Saved?
 
     static let defaultVariety = 0.75
     static let mashVariety = 1.0
@@ -199,6 +223,27 @@ struct SongRecipe: Codable, Hashable, Identifiable {
     }
 
     mutating func reroll() { seed = SongSettings.sessionSeed() &+ seed &* 0x9E37_79B9_7F4A_7C15 }
+
+    /// A song built around a Beat Lab beat: the beat is the vibe (Logan 2026-10-07), so the genre is the one that fits
+    /// it (`BlasterStyle.fitting`) and the song plays at the beat's own tempo, in its key, in a minor mode (the Lab's
+    /// notes are written in F minor), named after the beat.
+    static func around(_ beat: BeatLab.Saved, name: String) -> SongRecipe {
+        let style = BlasterStyle.fitting(beat)
+        var recipe = SongRecipe(style: style, name: name)
+        recipe.beat = beat
+        recipe.speed = beat.speed
+        recipe.tempoNudge = BeatLab.bpm(beat.speed) / (style.baseBPM * beat.speed.scale)
+        recipe.keyRoot = 60 + min(max(beat.key, 0), 11)
+        recipe.mood = .dark
+        // The beat's own sounds: its bass and keys sounds become the song's, and the plain kit leaves its drums as built.
+        func sound(_ row: LabRow) -> Int { row.rawValue < beat.sounds.count ? max(0, beat.sounds[row.rawValue]) : 0 }
+        recipe.sounds.drums = .classic
+        recipe.sounds.bass = BassSound.allCases[sound(.bass) % BassSound.allCases.count]
+        recipe.sounds.bassPatch = beat.bassPatch
+        recipe.sounds.keys = [KeysSound.bell, .synth, .piano, .pad][sound(.keys) % 4]
+        if recipe.sounds.keys == .pad { recipe.band.insert(.pads) }
+        return recipe
+    }
 
     /// "Mash it up": two different vibes in one song. The beat (genre, drums, chords and tempo) comes from one vibe
     /// and the sounds (bass, keys, drum kit, swing, guitar and pads) from the other, with a random light, speed and
