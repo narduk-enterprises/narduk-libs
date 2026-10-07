@@ -106,6 +106,8 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
     case liquidSplash
     /// A close-up star: granulated photosphere, sunspots, spicules, corona streamers, prominences and solar wind.
     case sun
+    /// The Metal port of the Canvas audio terrain: lit neon ridges rolling toward the viewer under a banded low sun.
+    case audioTerrainMetal
     /// The Metal port of the Canvas pitch wheel: twelve glass petals around a lit core, a chord polygon and the key marked.
     case pitchWheelMetal
     /// The Metal port of the Canvas piano roll: a note waterfall of lit glass bars flowing into a keyboard.
@@ -135,6 +137,7 @@ public enum IntenseKind: String, Sendable, CaseIterable, Hashable {
         case .synthwaveFlyover: "Synthwave flyover"
         case .liquidSplash: "Liquid splash"
         case .sun: "Sun"
+        case .audioTerrainMetal: "Audio terrain (Metal)"
         case .pitchWheelMetal: "Pitch wheel (Metal)"
         case .pianoRollMetal: "Piano roll (Metal)"
         case .phosphorMetal: "Phosphor (Metal)"

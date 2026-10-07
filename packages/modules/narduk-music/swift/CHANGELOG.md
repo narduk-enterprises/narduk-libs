@@ -6,6 +6,11 @@ NardukMusic ships on the narduk-libs repository `vX.Y.Z` tags (SwiftPM), not on 
 
 ### Added
 
+- `IntenseKind.audioTerrainMetal` ("Audio terrain (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port
+  of the Canvas audio terrain: fourteen neon-crested ridges in perspective, painted far to near (the nearest six the
+  live waveform history, the rest a ground-fixed noise landscape that scrolls with the travel), under a banded low
+  sun, over a ground grid that rolls on the beat. Bass raises the central peak and swells the sun, mids the shoulders,
+  highs a fine jitter at the edges; a kick and the beat lift the nearest ridge. No flash.
 - `IntenseKind.pitchWheelMetal` ("Pitch wheel (Metal)") in `NardukSoundVisuals` (narduk-libs#1569): a Metal port of
   the Canvas pitch wheel: twelve cylinder-lit glass petals (C at the top) that grow with each class, tip beads, an
   outer ring of class dots (hollow for sharps), a chord polygon through the strong classes, the key outlined with a

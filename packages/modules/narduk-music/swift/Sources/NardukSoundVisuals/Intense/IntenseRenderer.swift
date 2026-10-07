@@ -37,6 +37,7 @@
         private let synthwave: any MTLRenderPipelineState
         private let liquid: any MTLRenderPipelineState
         private let sun: any MTLRenderPipelineState
+        private let audioTerrainMetal: any MTLRenderPipelineState
         private let pitchWheelMetal: any MTLRenderPipelineState
         private let pianoRollMetal: any MTLRenderPipelineState
         private let phosphorMetal: any MTLRenderPipelineState
@@ -68,6 +69,7 @@
                 PhosphorMetalShader.source,
                 PianoRollMetalShader.source,
                 PitchWheelMetalShader.source,
+                AudioTerrainMetalShader.source,
             ].joined(separator: "\n")
             guard let device, let queue = device.makeCommandQueue(),
                 let library = try? device.makeLibrary(source: source, options: options),
@@ -85,6 +87,7 @@
                 let glitch = pipeline("glitchFragment"),
                 let fractal = pipeline("fractalDiveFragment"), let synthwave = pipeline("synthwaveFragment"),
                 let liquid = pipeline("liquidSplashFragment"), let sun = pipeline("sunFragment"),
+                let audioTerrainMetal = pipeline("audioTerrainMetalFragment"),
                 let pitchWheelMetal = pipeline("pitchWheelMetalFragment"),
                 let pianoRollMetal = pipeline("pianoRollMetalFragment"),
                 let phosphorMetal = pipeline("phosphorMetalFragment"),
@@ -105,6 +108,7 @@
             self.synthwave = synthwave
             self.liquid = liquid
             self.sun = sun
+            self.audioTerrainMetal = audioTerrainMetal
             self.pitchWheelMetal = pitchWheelMetal
             self.pianoRollMetal = pianoRollMetal
             self.phosphorMetal = phosphorMetal
@@ -180,6 +184,10 @@
                 draw(
                     pitchWheelMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
                     needs: [.scalars])
+            case .audioTerrainMetal:
+                draw(
+                    audioTerrainMetal, to: target, buffer: buffer, state: state, uniforms: &uniforms, input: nil,
+                    needs: [.scalars, .history])
             case .fluidGlitch:
                 guard let surface else { return }
                 if surface.isFresh {  // nothing to advect yet: start from black

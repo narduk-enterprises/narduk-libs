@@ -223,6 +223,7 @@
             case .phosphorMetal: [.scalars, .history]
             case .pianoRollMetal: [.scalars, .roll]
             case .pitchWheelMetal: [.scalars]
+            case .audioTerrainMetal: [.scalars, .history]
             default: []
             }
         }
