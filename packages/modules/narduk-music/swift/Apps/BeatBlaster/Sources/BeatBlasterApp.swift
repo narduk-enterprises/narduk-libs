@@ -174,6 +174,8 @@ struct KindBadge: View {
         .padding(.horizontal, size * 0.6)
         .padding(.vertical, size * 0.25)
         .background(kind == .music ? Neon.yellow : Neon.cyan, in: Capsule())
+        // A badge never wraps or squeezes: the name beside it shrinks instead.
+        .fixedSize()
     }
 }
 
