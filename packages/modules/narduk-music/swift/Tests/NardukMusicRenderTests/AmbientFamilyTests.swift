@@ -8,9 +8,9 @@ import Testing
 /// `NARDUK_AMBIENT_DEMO_DIR` to also write the render as `ambient-family-demo.wav`.
 @Suite struct AmbientFamilyTests {
     /// Fingerprints per platform. A 150 s render runs the hall's feedback loops long enough for a last-bit libm
-    /// difference to show, so darwin accepts the value both a developer Mac (macOS 27) and the CI runner produce.
+    /// difference to show, so darwin accepts the values a developer Mac (macOS 27) and the CI macOS runners produce (narduk-libs#1610 tracks making this one value).
     static let goldens: [String: Set<UInt64>] = [
-        "darwin-arm64": [0x1fd9_a80d_a1c2_716d, 0x6dad_7bc9_c2a3_30da],
+        "darwin-arm64": [0x1fd9_a80d_a1c2_716d, 0x6dad_7bc9_c2a3_30da, 0xf97b_32f8_07ed_614d],
         "linux-x86_64": [0x010e_8b77_6615_be55],
     ]
 
