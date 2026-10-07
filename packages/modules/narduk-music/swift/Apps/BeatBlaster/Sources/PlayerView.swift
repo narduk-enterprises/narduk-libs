@@ -122,7 +122,9 @@ struct PlayerView: View {
             case .play:
                 PlayControls(audio: audio, compact: compact, short: short, newSong: newSong)
             case .effects:
-                EffectsPanel(audio: audio, compact: compact, short: short) { audio.fire($0) }
+                EffectsPanel(
+                    audio: audio, compact: compact, short: short, onPad: { audio.fire($0) },
+                    onStutter: { audio.setStutter($0) })
             case .more:
                 VStack(spacing: 10) {
                     MusicLightsBar(

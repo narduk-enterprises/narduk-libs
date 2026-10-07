@@ -9,6 +9,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
     @State private var recordingCount = 0
+    @State private var showCredits = false
 
     private struct Mode: Identifiable {
         let screen: Screen
@@ -64,6 +65,7 @@ struct HomeView: View {
                         }
                         recordingsButton(compact: compact)
                         if !mySongs.songs.isEmpty { mySongsRow(compact: compact) }
+                        creditsButton
                     }
                     .frame(maxWidth: 1100)
                     .frame(maxWidth: .infinity)
@@ -129,6 +131,19 @@ struct HomeView: View {
             .buttonStyle(Squish())
             .accessibilityIdentifier("home.mySongs")
         }
+    }
+
+    private var creditsButton: some View {
+        Button {
+            showCredits = true
+        } label: {
+            Text("Credits")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(minWidth: 88, minHeight: 44)
+        }
+        .accessibilityIdentifier("home.credits")
+        .sheet(isPresented: $showCredits) { CreditsView() }
     }
 
     private func mySongsRow(compact: Bool) -> some View {

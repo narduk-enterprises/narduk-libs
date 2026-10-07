@@ -137,6 +137,7 @@ import NardukMusicEngine
             bassRoot = note.params.pitch ?? bassRoot
         }
         if case .genre = recipe.style, band.contains(.guitar) { song += guitarLayer(range) }
+        song += vocalLayer(range)
 
         // The DROP layers replace parts of the song step by step.
         let sps = secondsPerStep
@@ -202,6 +203,21 @@ import NardukMusicEngine
                 return note
             }
             return guitar + RockDrums.notes(in: from...songStep, level: level)
+        }
+    }
+
+    /// The sampled female voice (the Singer row): one held vowel per bar, on the bass line's root folded into a
+    /// woman's range, so it sings the song's chord. It rests while the DROP builds and plays.
+    func vocalLayer(_ range: ClosedRange<Int>) -> [ScheduledNote] {
+        guard let vowel = recipe.sounds.singer.vowel else { return [] }
+        let sps = secondsPerStep
+        return range.filter { ($0 - offset) % 16 == 0 && machine.layer(at: $0, secondsPerStep: sps) == .song }.map {
+            step in
+            ScheduledNote(
+                step: step, instrument: .vocalSample, velocity: 0.55,
+                params: NoteParams(
+                    pitch: DropPattern.fold(bassRoot + 12, into: 60...71), lengthSteps: 15, drive: 0.7,
+                    voice: NoteParams.sampleVoice(vowel, technique: .vibrato, kind: .sustain)))
         }
     }
 

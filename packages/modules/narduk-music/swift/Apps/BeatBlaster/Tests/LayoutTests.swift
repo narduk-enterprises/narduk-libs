@@ -280,4 +280,17 @@ import XCTest
             XCTAssertGreaterThanOrEqual(frames["maker.title"]?.width ?? 0, 40, label)
         }
     }
+
+    func testStutterAndVocalPadsAreBigEnoughOnEveryScreen() {
+        let audio = BlasterAudio()
+        defer { audio.stop() }
+        for (label, size, insets) in layouts {
+            withDefaults(["page": "effects"]) {
+                let (frames, _) = host(player(audio), size: size, insets: insets)
+                let name = "\(label), effects page"
+                XCTAssertNotNil(frames["fx.stutter"], "STUTTER is on the Effects page — \(name)")
+                assertTapTargets(["fx.stutter"], frames, name)
+            }
+        }
+    }
 }
