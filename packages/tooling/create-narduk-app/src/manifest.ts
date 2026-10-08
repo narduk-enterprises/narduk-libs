@@ -129,7 +129,7 @@ export const PACKAGE_VERSIONS = {
   typescript: '6.0.3',
   vitest: '4.1.11',
   'vue-tsc': '3.3.11',
-  wrangler: '4.138.0',
+  wrangler: '4.139.0',
   zod: '4.6.5',
 } as const
 
