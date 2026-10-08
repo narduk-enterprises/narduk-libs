@@ -126,86 +126,48 @@ defineSlots<NeCollectionTableSlots<T>>()
 const slots = useSlots()
 
 /**
- * Every class that differs below the stack breakpoint, written out per
- * breakpoint so Tailwind finds each one as a literal in this file.
+ * The chrome classes that differ below the stack breakpoint, written out per
+ * breakpoint so Tailwind finds each one as a literal in this file. The rows,
+ * header cells and cells carry a role class instead (`ne-row`, `ne-head`,
+ * `ne-cell` and their modifiers): their layout, including the phone card, is
+ * written once in this file's `<style>` block (narduk-libs#1704).
  */
 type StackClass =
-  | 'block'
-  | 'card'
-  | 'cell'
-  | 'controls'
-  | 'floor'
-  | 'free'
-  | 'head'
-  | 'hide'
-  | 'label'
-  | 'phoneOnly'
-  | 'primary'
-  | 'tap'
-  | 'tapSquare'
-  | 'thTap'
-  | 'tint'
+  'block' | 'controls' | 'floor' | 'head' | 'hide' | 'phoneOnly' | 'tap' | 'tapSquare'
 
 const STACK: Record<NeCollectionStackBreakpoint, Record<StackClass, string>> = {
   sm: {
     block: 'max-sm:block',
-    card: 'max-sm:flex max-sm:flex-col max-sm:gap-y-1 max-sm:min-w-0 max-sm:px-3 max-sm:py-2.5 max-sm:border-b max-sm:border-default',
-    cell: 'max-sm:flex max-sm:flex-wrap max-sm:items-baseline max-sm:gap-x-3 max-sm:gap-y-0.5 max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start max-sm:[&>*]:min-w-0 max-sm:[&>*]:max-w-full max-sm:[&>*]:flex-1 max-sm:before:shrink-0 max-sm:before:basis-[7.5rem] max-sm:empty:hidden max-sm:[&:has(>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-sm:[&_input]:min-h-11 max-sm:[&_button]:min-h-11 max-sm:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'sm:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-sm:line-clamp-2 max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start max-sm:before:me-3 max-sm:empty:hidden max-sm:[&:has(>[data-ne-empty]:only-child)]:hidden',
     head: 'max-sm:sr-only',
     hide: 'max-sm:hidden',
-    label:
-      "max-sm:before:text-xs max-sm:before:font-medium max-sm:before:text-muted max-sm:before:content-[attr(data-ne-label)_/_'']",
     phoneOnly: 'hidden max-sm:inline-flex',
-    primary:
-      'max-sm:block max-sm:min-w-0 max-sm:max-w-full max-sm:p-0 max-sm:border-0 max-sm:text-start',
     tap: 'max-sm:min-h-11',
     tapSquare: 'max-sm:min-h-11 max-sm:min-w-11',
-    thTap: 'max-sm:[&_button]:min-h-11',
-    tint: 'sm:bg-elevated/50',
   },
   md: {
     block: 'max-md:block',
-    card: 'max-md:flex max-md:flex-col max-md:gap-y-1 max-md:min-w-0 max-md:px-3 max-md:py-2.5 max-md:border-b max-md:border-default',
-    cell: 'max-md:flex max-md:flex-wrap max-md:items-baseline max-md:gap-x-3 max-md:gap-y-0.5 max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start max-md:[&>*]:min-w-0 max-md:[&>*]:max-w-full max-md:[&>*]:flex-1 max-md:before:shrink-0 max-md:before:basis-[7.5rem] max-md:empty:hidden max-md:[&:has(>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-md:[&_input]:min-h-11 max-md:[&_button]:min-h-11 max-md:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'md:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-md:line-clamp-2 max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start max-md:before:me-3 max-md:empty:hidden max-md:[&:has(>[data-ne-empty]:only-child)]:hidden',
     head: 'max-md:sr-only',
     hide: 'max-md:hidden',
-    label:
-      "max-md:before:text-xs max-md:before:font-medium max-md:before:text-muted max-md:before:content-[attr(data-ne-label)_/_'']",
     phoneOnly: 'hidden max-md:inline-flex',
-    primary:
-      'max-md:block max-md:min-w-0 max-md:max-w-full max-md:p-0 max-md:border-0 max-md:text-start',
     tap: 'max-md:min-h-11',
     tapSquare: 'max-md:min-h-11 max-md:min-w-11',
-    thTap: 'max-md:[&_button]:min-h-11',
-    tint: 'md:bg-elevated/50',
   },
   lg: {
     block: 'max-lg:block',
-    card: 'max-lg:flex max-lg:flex-col max-lg:gap-y-1 max-lg:min-w-0 max-lg:px-3 max-lg:py-2.5 max-lg:border-b max-lg:border-default',
-    cell: 'max-lg:flex max-lg:flex-wrap max-lg:items-baseline max-lg:gap-x-3 max-lg:gap-y-0.5 max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start max-lg:[&>*]:min-w-0 max-lg:[&>*]:max-w-full max-lg:[&>*]:flex-1 max-lg:before:shrink-0 max-lg:before:basis-[7.5rem] max-lg:empty:hidden max-lg:[&:has(>[data-ne-empty]:only-child)]:hidden',
     controls:
       'max-lg:[&_input]:min-h-11 max-lg:[&_button]:min-h-11 max-lg:[&_[data-ne-filter-control]]:min-h-11',
     floor: 'lg:min-w-[max(100%,var(--ne-collection-min,0px))]',
-    free: 'max-lg:line-clamp-2 max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start max-lg:before:me-3 max-lg:empty:hidden max-lg:[&:has(>[data-ne-empty]:only-child)]:hidden',
     head: 'max-lg:sr-only',
     hide: 'max-lg:hidden',
-    label:
-      "max-lg:before:text-xs max-lg:before:font-medium max-lg:before:text-muted max-lg:before:content-[attr(data-ne-label)_/_'']",
     phoneOnly: 'hidden max-lg:inline-flex',
-    primary:
-      'max-lg:block max-lg:min-w-0 max-lg:max-w-full max-lg:p-0 max-lg:border-0 max-lg:text-start',
     tap: 'max-lg:min-h-11',
     tapSquare: 'max-lg:min-h-11 max-lg:min-w-11',
-    thTap: 'max-lg:[&_button]:min-h-11',
-    tint: 'lg:bg-elevated/50',
   },
 }
 
@@ -411,30 +373,36 @@ function ariaSort(column: NeCollectionColumn<T>): 'ascending' | 'descending' | u
 
 function thClass(column: NeCollectionColumn<T>): string {
   return [
-    'px-3 py-2 text-xs font-medium text-muted whitespace-nowrap border-b border-default bg-elevated/50',
-    isEnd(column) ? 'text-end' : 'text-start',
-    column.phone === false ? stack.value.hide : '',
-    cards.value ? '' : stack.value.thTap,
-  ].join(' ')
+    'ne-head',
+    isEnd(column) ? 'ne-head--end' : '',
+    column.phone === false ? 'ne-head--drop' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
+/**
+ * A cell's role: its value, its alignment, and the few states the stylesheet
+ * keys on. `--num` is end-aligned tabular figures, `--end` end-aligned alone;
+ * the mono face stays the `font-mono` utility so it keeps Tailwind's stack.
+ */
 function tdClass(column: NeCollectionColumn<T>): string {
   const primary = column.key === primaryKey.value
-  const dropped = column.phone === false
-  const classes = [
-    'px-3 py-2 text-sm align-top border-b border-default [overflow-wrap:anywhere]',
-    isEnd(column) ? 'text-end' : 'text-start',
-    column.numeric ? 'font-mono tabular-nums' : '',
-    primary || column.emphasis ? 'font-medium text-highlighted' : 'text-default',
-    // A card has no column to tint: the sorted cell is one line of it, so the tint stays above the line.
-    sortState.value?.key === column.key ? (cards.value ? stack.value.tint : 'bg-elevated/50') : '',
+  return [
+    'ne-cell',
+    column.numeric ? 'ne-cell--num font-mono' : isEnd(column) ? 'ne-cell--end' : '',
+    primary || column.emphasis ? 'ne-cell--em' : '',
+    sortState.value?.key === column.key ? 'ne-cell--sorted' : '',
+    column.phone === false
+      ? 'ne-cell--drop'
+      : primary && cards.value
+        ? 'ne-cell--pri'
+        : column.freeText && cards.value
+          ? 'ne-cell--free'
+          : '',
   ]
-  if (dropped) classes.push(stack.value.hide)
-  else if (primary && cards.value) classes.push(stack.value.primary)
-  else if (cards.value) {
-    classes.push(column.freeText ? stack.value.free : stack.value.cell, stack.value.label)
-  }
-  return classes.join(' ')
+    .filter(Boolean)
+    .join(' ')
 }
 
 /**
@@ -450,14 +418,13 @@ function cellLabel(column: NeCollectionColumn<T>): string | undefined {
 }
 
 function rowClass(row: T): string {
-  const linked = hrefOf(row) !== null
   return [
-    selectable.value || linked ? 'cursor-pointer hover:bg-elevated/50' : '',
-    isSelected(row) ? 'bg-elevated' : '',
-    cards.value ? stack.value.card : '',
-    cards.value && (selectable.value || linked) ? stack.value.tap : '',
-    'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
-  ].join(' ')
+    'ne-row',
+    selectable.value || hrefOf(row) !== null ? 'ne-row--hit' : '',
+    isSelected(row) ? 'ne-row--on' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 function plainText(column: NeCollectionColumn<T>, row: T, value: unknown): string | null {
@@ -892,3 +859,382 @@ const filterModel = computed({
     />
   </div>
 </template>
+
+<style>
+/*
+ * Row, header-cell and cell layout (narduk-libs#1704). Each carries a role class and the rules live
+ * here once, instead of ~500 bytes of utilities on every cell. Token reads only (README § Styling
+ * contract): colour comes from `--ui-*`, the same variables the utilities read. Everything sits in
+ * `@layer components`, below Tailwind's utilities, so an app's own utility on a cell still wins.
+ * The phone card is keyed on the root's `data-ne-phone-layout` and `data-ne-stack-below`, with the
+ * breakpoints as Tailwind's own (sm 40rem, md 48rem, lg 64rem).
+ */
+@layer components {
+  .ne-head {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: var(--tw-leading, var(--text-xs--line-height, 1.3333));
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--ui-text-muted);
+    white-space: nowrap;
+    text-align: start;
+    border-bottom: 1px solid var(--ui-border);
+    background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+  }
+
+  .ne-head--end {
+    text-align: end;
+  }
+
+  .ne-cell {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-sm, 0.875rem);
+    line-height: var(--tw-leading, var(--text-sm--line-height, 1.4286));
+    color: var(--ui-text);
+    text-align: start;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--ui-border);
+  }
+
+  .ne-cell--end,
+  .ne-cell--num {
+    text-align: end;
+  }
+
+  .ne-cell--num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ne-cell--em {
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--ui-text-highlighted);
+  }
+
+  .ne-row:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: -2px;
+  }
+
+  .ne-row--hit {
+    cursor: pointer;
+  }
+
+  .ne-row--on {
+    background-color: var(--ui-bg-elevated);
+  }
+
+  @media (hover: hover) {
+    .ne-row--hit:hover {
+      background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+    }
+  }
+
+  [data-ne-phone-layout='columns'] .ne-cell--sorted {
+    background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+  }
+
+  /* ---- below sm (40rem) ---- */
+  @media (width >= 40rem) {
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell--sorted {
+      background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+    }
+  }
+
+  @media (width < 40rem) {
+    [data-ne-collection-table][data-ne-stack-below='sm'] .ne-head--drop,
+    [data-ne-collection-table][data-ne-stack-below='sm'] .ne-cell--drop {
+      display: none;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='columns']
+      .ne-head
+      button {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'] .ne-row {
+      display: flex;
+      flex-direction: column;
+      row-gap: 0.25rem;
+      min-width: 0;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--ui-border);
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-row--hit {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free) {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.75rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      min-width: 0;
+      max-width: 100%;
+      flex: 1 1 0%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)::before {
+      flex-shrink: 0;
+      flex-basis: 7.5rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell--free {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell--free::before {
+      margin-inline-end: 0.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell--pri {
+      display: block;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop) {
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+      text-align: start;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      font-size: var(--text-xs, 0.75rem);
+      line-height: var(--tw-leading, var(--text-xs--line-height, 1.3333));
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--ui-text-muted);
+      content: attr(data-ne-label) / '';
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):empty,
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
+      display: none;
+    }
+  }
+
+  /* ---- below md (48rem) ---- */
+  @media (width >= 48rem) {
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell--sorted {
+      background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+    }
+  }
+
+  @media (width < 48rem) {
+    [data-ne-collection-table][data-ne-stack-below='md'] .ne-head--drop,
+    [data-ne-collection-table][data-ne-stack-below='md'] .ne-cell--drop {
+      display: none;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='columns']
+      .ne-head
+      button {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'] .ne-row {
+      display: flex;
+      flex-direction: column;
+      row-gap: 0.25rem;
+      min-width: 0;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--ui-border);
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-row--hit {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free) {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.75rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      min-width: 0;
+      max-width: 100%;
+      flex: 1 1 0%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)::before {
+      flex-shrink: 0;
+      flex-basis: 7.5rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell--free {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell--free::before {
+      margin-inline-end: 0.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell--pri {
+      display: block;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop) {
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+      text-align: start;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      font-size: var(--text-xs, 0.75rem);
+      line-height: var(--tw-leading, var(--text-xs--line-height, 1.3333));
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--ui-text-muted);
+      content: attr(data-ne-label) / '';
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):empty,
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
+      display: none;
+    }
+  }
+
+  /* ---- below lg (64rem) ---- */
+  @media (width >= 64rem) {
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell--sorted {
+      background-color: color-mix(in oklab, var(--ui-bg-elevated) 50%, transparent);
+    }
+  }
+
+  @media (width < 64rem) {
+    [data-ne-collection-table][data-ne-stack-below='lg'] .ne-head--drop,
+    [data-ne-collection-table][data-ne-stack-below='lg'] .ne-cell--drop {
+      display: none;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='columns']
+      .ne-head
+      button {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'] .ne-row {
+      display: flex;
+      flex-direction: column;
+      row-gap: 0.25rem;
+      min-width: 0;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--ui-border);
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-row--hit {
+      min-height: 2.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free) {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.75rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      min-width: 0;
+      max-width: 100%;
+      flex: 1 1 0%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)::before {
+      flex-shrink: 0;
+      flex-basis: 7.5rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell--free {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell--free::before {
+      margin-inline-end: 0.75rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell--pri {
+      display: block;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop) {
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+      text-align: start;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      font-size: var(--text-xs, 0.75rem);
+      line-height: var(--tw-leading, var(--text-xs--line-height, 1.3333));
+      font-weight: var(--font-weight-medium, 500);
+      color: var(--ui-text-muted);
+      content: attr(data-ne-label) / '';
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):empty,
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
+      display: none;
+    }
+  }
+}
+</style>
