@@ -1,5 +1,11 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.7
+
+### Patch Changes
+
+- @narduk-enterprises/narduk-core@2.24.5
+
 ## 1.34.6
 
 ### Patch Changes

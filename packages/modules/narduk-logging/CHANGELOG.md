@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4
+
+### Patch Changes
+
+- 4db72d6: The Swift consumer check no longer copies the NardukMusic package,
+  which moved to narduk-enterprises/narduk-sound.
+
 ## 0.4.3
 
 ### Patch Changes

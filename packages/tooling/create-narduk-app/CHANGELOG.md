@@ -1,5 +1,25 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.48
+
+### Patch Changes
+
+- 323686a: `NeCollectionTable` cells, header cells and rows now carry a short
+  role class (`ne-cell`, `ne-cell--num`, `ne-cell--pri`, `ne-head`, `ne-row`, …)
+  and the layout, including the phone card, ships once as `@layer components`
+  rules in the component's stylesheet. A 300-cell table's class attributes drop
+  from about 522 to 25 bytes per cell (156,600 to 7,500 bytes) and its markup
+  from 206 KB to 46 KB. Same look, props, slots and behaviour; the cell's
+  utilities (`max-md:flex …`, `px-3 py-2 …`) are gone, so an app test that
+  asserted them should assert the role class instead.
+- db434f5: A freshly scaffolded app floors `shell-quote` at `^1.11.0`
+  (GHSA-pqg4-j6r4-53mv, critical, published 2026-10-07, reaches an app through
+  nuxt's `launch-editor`) and `source-map-js` at `^1.2.2` in the root
+  `pnpm.overrides`, beside the existing `simple-git`, `@simple-git/argv-parser`
+  and `sharp` floors, so a new app's dependency audit stays green. Apps already
+  scaffolded carry their own overrides; `create-narduk-app upgrade` does not
+  touch them.
+
 ## 0.21.47
 
 ### Patch Changes
