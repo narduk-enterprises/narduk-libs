@@ -1,3 +1,4 @@
+import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from '../src/workflow-pin.js'
 import { spawnSync } from 'node:child_process'
 import { access, chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -45,7 +46,7 @@ describe('generated CI boundaries', () => {
     expect(runner.group).toBe('linux-ci')
     expect(browser.group).toBe('playwright-isolated')
     expect(browser.labels).toContain('proxmox-playwright-x64')
-    expect(workflow).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
+    expect(workflow).toContain(`nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`)
     expect(workflow).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
     expect(workflow).not.toMatch(/^ {4}secrets:/mu)
     expect(workflow).toContain('require-scripts: true')

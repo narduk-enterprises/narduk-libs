@@ -1,0 +1,149 @@
+name: Refresh generator pins
+
+on:
+  schedule:
+    # Sunday, ahead of generated apps' Monday 06:00 America/Chicago window.
+    - cron: "17 11 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-generator-pins
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+    steps:
+      - name: Check for an outstanding refresh PR
+        id: outstanding
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json headRefName,isCrossRepository --jq 'map(select(.isCrossRepository == false and (.headRefName | startswith("automation/generator-pins-")))) | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" != 0 ]; then
+            echo '::notice::An open generator refresh PR needs review; leaving it untouched.'
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.outstanding.outputs.count == '0'
+        with:
+          persist-credentials: false
+
+      - name: Fetch complete shared-workflow ancestry
+        if: steps.outstanding.outputs.count == '0'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: narduk-enterprises/workflows
+          ref: main
+          path: .lane-evidence/workflows
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.outstanding.outputs.count == '0'
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.outstanding.outputs.count == '0'
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+
+      - name: Install, refresh and prove the generated app
+        if: steps.outstanding.outputs.count == '0'
+        id: patch
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          node scripts/refresh-generator-pins.mjs --workflows-checkout .lane-evidence/workflows > .lane-evidence/refresh-summary.txt
+          cat .lane-evidence/refresh-summary.txt
+          pnpm exec prettier --write --log-level warn packages/tooling/create-narduk-app/src/manifest.ts packages/tooling/create-narduk-app/src/workflow-pin.ts packages/tooling/create-narduk-app/src/workflow-history.ts
+          git add packages/tooling/create-narduk-app/src/manifest.ts packages/tooling/create-narduk-app/src/workflow-pin.ts packages/tooling/create-narduk-app/src/workflow-history.ts
+          if [ -f .changeset/generator-pin-refresh.md ]; then
+            git add .changeset/generator-pin-refresh.md
+          fi
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node --test scripts/refresh-generator-pins.test.mjs
+          pnpm --filter @narduk-enterprises/create-narduk-app run quality
+          pnpm --filter @narduk-enterprises/create-narduk-app run build
+          node scripts/generator-pin-smoke.mjs
+          git diff --exit-code -- packages/tooling/create-narduk-app/src/manifest.ts packages/tooling/create-narduk-app/src/workflow-pin.ts packages/tooling/create-narduk-app/src/workflow-history.ts .changeset/generator-pin-refresh.md
+          git diff --cached --binary > .lane-evidence/generator-pins.patch
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Upload only the validated pin diff
+        if: steps.patch.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generator-pin-refresh
+          path: |
+            .lane-evidence/generator-pins.patch
+            .lane-evidence/refresh-summary.txt
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  open-pr:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Dependency code executes only in the read-only job above.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: generator-pin-refresh
+          path: ${{ runner.temp }}/generator-pin-refresh
+      - name: Open a reviewable PR without modifying an existing branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/generator-pin-refresh"
+          git apply --index "$evidence/generator-pins.patch"
+          # A dependency script cannot smuggle a workflow or any other file
+          # into this write-capable job's commit.
+          while IFS= read -r path; do
+            case "$path" in
+              packages/tooling/create-narduk-app/src/manifest.ts|packages/tooling/create-narduk-app/src/workflow-pin.ts|packages/tooling/create-narduk-app/src/workflow-history.ts|.changeset/generator-pin-refresh.md) ;;
+              *) echo "Unexpected refresh path: $path" >&2; exit 1 ;;
+            esac
+          done < <(git diff --cached --name-only)
+          branch="automation/generator-pins-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git switch -c "$branch"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(generator): refresh mature dependency pins'
+          gh auth setup-git
+          git push origin "$branch"
+          {
+            echo 'Refresh stable same-major pins after the maintainer cooldown, preserving explicit toolchain ceilings and updating the workflow ancestry.'
+            echo
+            cat "$evidence/refresh-summary.txt"
+            echo
+            echo "Validation: refresh regression tests, generator quality, and generated-app install/toolchain/typecheck/build passed in https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            echo
+            echo 'Majors remain deliberate upgrades. Normal PR checks and review still apply; approve the PR CI run if GitHub holds this GITHUB_TOKEN-authored PR.'
+          } > "$evidence/pr-body.md"
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title 'chore(generator): refresh mature dependency pins' --body-file "$evidence/pr-body.md" --label dependencies)
+          gh pr view "$url" --json url,state,headRefOid

@@ -17,7 +17,10 @@ import {
   unifiedDiff,
   upgradeNardukApp,
 } from '../src/index.js'
-import { NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS } from '../src/workflow-pin.js'
+import {
+  NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS,
+  NUXT_CLOUDFLARE_WORKFLOW_SHA,
+} from '../src/workflow-pin.js'
 import { diffLineCounts } from '../src/diff.js'
 import { findTopLevelValue, scanJsonc, stripJsonc } from '../src/jsonc.js'
 import type { UpgradeReport } from '../src/index.js'
@@ -162,7 +165,7 @@ describe('upgrade ownership contract', () => {
 
     // Managed units are refreshed...
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
-      'nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0',
+      `nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`,
     )
     expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
       pristine.copilot,

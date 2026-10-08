@@ -413,8 +413,8 @@ to `.node-version` plus one `--fix`.
 Passing `node-version-file` requires the shared workflow pin to be
 `6f56678ad7562234e465284e48f27008e0f32db7` (workflows#97) or later — a reusable
 workflow rejects an input it does not declare, so this is not an optional bump.
-The generator pins `59825ef09ce484e8189c1932d0ac18f3892dd8d0` (workflows#158),
-the first commit that declares `quality-level`. It keeps #116's tokenless
+The generator pins the SHA in [`src/workflow-pin.ts`](src/workflow-pin.ts), the
+first commit that declares `quality-level`. It keeps #116's tokenless
 `https://npm.nard.uk` install and foundation-check mirror skips (#108 / #116)
 and #97's always-run required `caller-lint` job which actionlints the
 **calling** repository's own workflows and audits them for workflow-level
@@ -594,3 +594,11 @@ Generated `docs/workers-builds.md` records that contract: public analytics and
 geolocation keys live on the Worker, and narduk-core's request-time overlay
 fills `__NUXT__`. New apps must not add a `nuxt.config.ts` helper that reads
 wrangler at build time.
+
+### Maintaining fresh generator pins
+
+The weekly [generator pin refresh](../../../docs/generator-pin-refresh.md) opens
+a tested PR for mature same-major dependency updates and the shared workflow
+pin. Its 14-day selection policy is separate from the zero Dependabot cooldown
+workaround documented there. Majors and runtime version changes remain
+deliberate.

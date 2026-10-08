@@ -10,6 +10,7 @@ import {
   createPromoteGateScript,
   LINUX_CI_RUNNER_LABELS,
 } from './ci-workflow.js'
+import { DEPENDABOT_COOLDOWN_DAYS, DEPENDENCY_UPDATE_LIMITS } from './dependency-policy.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
 import { socialPreviewFiles } from './social-previews.js'
 import { analyticsScaffoldFiles } from './analytics-scaffold.js'
@@ -749,13 +750,10 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       // npm ecosystem parses the whole pnpm workspace graph from the root
       // manifest, so the array-of-directories form this template previously
       // emitted was redundant, not additive.
-      // Cooldown is disabled (default-days/semver-major-days: 0) and
-      // @narduk-enterprises/* is listed only in the (inert while disabled)
-      // `exclude` array -- company-hq#737, confirmed root cause: Dependabot's
-      // pnpm updater does not propagate `cooldown.exclude` into
-      // `minimumReleaseAgeExclude` for the wider recursive resolve, so any
-      // nonzero cooldown here makes every non-excluded dependency fail on
-      // every run given how often @narduk-enterprises/* publishes.
+      // Keep the resolver workaround until Dependabot can age update targets
+      // without rejecting required transitive pins. With 14 days, even the
+      // workspace's estate exclusion cannot resolve sharp's 11-day-old native
+      // dependency (#1707). The maintainer refresh uses a 14-day age window.
       contents: text(
         'version: 2',
         'registries:',
@@ -777,17 +775,15 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      - 'dependencies'",
         '    open-pull-requests-limit: 2',
         '    cooldown:',
-        '      default-days: 0',
-        '      semver-major-days: 0',
+        `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
+        `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
         '      exclude:',
         "        - '@narduk-enterprises/*'",
         '    ignore:',
-        "      - dependency-name: 'typescript'",
-        "        versions: ['>=6.1.0']",
-        "      - dependency-name: '@types/node'",
-        "        versions: ['>=25.0.0']",
-        "      - dependency-name: '@playwright/test'",
-        "        versions: ['>1.61.1']",
+        ...Object.entries(DEPENDENCY_UPDATE_LIMITS).flatMap(([name, limit]) => [
+          `      - dependency-name: '${name}'`,
+          `        versions: ['${limit.inclusive ? '>' : '>='}${limit.version}']`,
+        ]),
         '    groups:',
         '      safe:',
         '        patterns:',
