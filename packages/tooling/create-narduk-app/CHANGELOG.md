@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.50
+
+### Patch Changes
+
+- 6656747: Refresh stable same-major dependency pins after a 14-day cooldown and
+  advance the bundled workflow pin and ancestry.
+
+  - wrangler: 4.138.0 → 4.139.0
+
 ## 0.21.49
 
 ### Patch Changes
