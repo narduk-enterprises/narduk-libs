@@ -88,6 +88,7 @@ export const PACKAGE_VERSIONS = {
   '@tailwindcss/vite': '4.3.3',
   '@types/node': '22.20.4',
   '@typescript-eslint/utils': '8.70.1',
+  cac: '7.0.0',
   'drizzle-kit': '0.31.11',
   'drizzle-orm': '0.45.3',
   esbuild: '0.28.2',
@@ -231,6 +232,10 @@ function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record
     // too, since it is a build-time-only tool, never shipped at runtime.
     '@tailwindcss/vite',
     '@types/node',
+    // The ESLint inspector's devframe peer needs cac 7 at the app boundary.
+    // Nuxt CLI's older completion helper gets cac 6 through the scoped
+    // package extension below, so neither resolves the other's major.
+    'cac',
     ...(databaseBackend === 'none' ? [] : ['drizzle-kit']),
     'eslint',
     'happy-dom',
@@ -416,6 +421,12 @@ export function createRootPackageManifest(
       typescript: PACKAGE_VERSIONS.typescript,
     },
     pnpm: {
+      packageExtensions: {
+        // @nuxt/cli 3.37 uses citty, but @bomb.sh/tab 0.0.19 also exposes
+        // an optional cac 6 adapter. Satisfy that peer in CLI's own scope
+        // instead of letting it inherit the ESLint inspector's cac 7.
+        '@nuxt/cli@3.37.0': { dependencies: { cac: '6.7.14' } },
+      },
       overrides: {
         // WHY ESTATE PACKAGES ARE OVERRIDDEN (narduk-libs#282 review, task 5)
         //

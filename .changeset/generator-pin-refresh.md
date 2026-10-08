@@ -26,3 +26,5 @@ Refresh stable same-major dependency pins after a 14-day cooldown and advance th
 - nuxt-cloudflare workflow: 59825ef09ce484e8189c1932d0ac18f3892dd8d0 → 77cd64d734ea80b84ff9860a8c0492a759183736
 
 Declare h3 1 directly in generated workspaces so fresh resolution does not select incompatible h3 2 types for the application or testkit.
+
+Resolve the Nuxt completion helper against cac 6 in its own scope and the ESLint inspector against cac 7, so new installs satisfy both peer contracts.

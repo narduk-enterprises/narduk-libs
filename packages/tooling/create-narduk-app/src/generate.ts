@@ -557,6 +557,9 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     : []
   const knipIgnoreDependencies = [
     '@iconify-json/lucide',
+    // Satisfies the ESLint inspector's devframe peer; application source
+    // does not import the inspector's CLI parser directly.
+    'cac',
     // @nuxt/ui's own module dynamically imports this to register the Vite
     // plugin (see dependencyEntries'/devDependencyEntries' tailwindcss
     // comments in manifest.ts) -- nothing in the generated app's own source

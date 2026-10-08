@@ -379,6 +379,9 @@ describe('create-narduk-app generation contract', () => {
       visibility: 'private',
     })
     expect(rootManifest.pnpm).toEqual({
+      packageExtensions: {
+        '@nuxt/cli@3.37.0': { dependencies: { cac: '6.7.14' } },
+      },
       overrides: {
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@narduk-enterprises/narduk-logging':

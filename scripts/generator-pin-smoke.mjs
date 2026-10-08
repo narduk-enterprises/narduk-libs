@@ -47,7 +47,7 @@ try {
     configPath,
     config.replace('modules: [', "modules: ['./consumer-smoke-fonts.mjs',"),
   )
-  run('pnpm', ['install', '--no-frozen-lockfile'])
+  run('pnpm', ['install', '--no-frozen-lockfile', '--strict-peer-dependencies'])
   const manifest = JSON.parse(await readFile(join(app, 'package.json'), 'utf8'))
   // Reproduce Dependabot's recursive pnpm resolve with its cooldown override.
   // The workspace exclusion must keep fresh internal pins resolvable (#737).
@@ -57,11 +57,12 @@ try {
     '--lockfile-only',
     '--no-save',
     '-r',
+    '--config.strict-peer-dependencies=true',
     ...(DEPENDABOT_COOLDOWN_DAYS > 0
       ? [`--config.minimum-release-age=${DEPENDABOT_COOLDOWN_DAYS * 1440}`]
       : []),
   ])
-  run('pnpm', ['install', '--frozen-lockfile'])
+  run('pnpm', ['install', '--frozen-lockfile', '--strict-peer-dependencies'])
   run('pnpm', ['run', 'foundation:check:toolchain'])
   run('pnpm', ['run', 'typecheck'])
   run('pnpm', ['run', 'build:ci'])

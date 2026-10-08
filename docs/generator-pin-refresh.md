@@ -21,12 +21,12 @@ read the current pin rather than requiring a hand edit on each refresh.
 
 Before opening a PR, the job runs the refresh regression tests, generator
 quality and build, then generates an external consumer against published
-packages. The consumer must install, survive Dependabot-style recursive pnpm
-resolution, pass item 11 and typecheck, and build a Cloudflare Worker. Only the
-validated pin and Changeset diff crosses into the PR-writing job. That job
-installs and runs no dependency code. It opens a new branch without
-force-pushing or auto-merging. If a refresh PR is already open, the next run
-leaves it for review.
+packages. The consumer must install with strict peer checking, survive
+Dependabot-style recursive pnpm resolution, pass item 11 and typecheck, and
+build a Cloudflare Worker. Only the validated pin and Changeset diff crosses
+into the PR-writing job. That job installs and runs no dependency code. It opens
+a new branch without force-pushing or auto-merging. If a refresh PR is already
+open, the next run leaves it for review.
 
 The PR uses `GITHUB_TOKEN`, like the release PR. GitHub may hold its ordinary PR
 CI for approval; the refresh run's tests do not replace required PR checks.
