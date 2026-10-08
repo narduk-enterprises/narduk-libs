@@ -444,7 +444,7 @@ describe('NeCollectionTable: cells and missing values', () => {
       rows: [{ n: 12_345, w: 4 }],
     })
     expect(wrapper.find('td[data-ne-column="n"]').text()).toBe('12,345')
-    expect(wrapper.find('td[data-ne-column="n"]').classes()).toContain('tabular-nums')
+    expect(wrapper.find('td[data-ne-column="n"]').classes()).toContain('ne-cell--num')
     expect(wrapper.find('td[data-ne-column="w"]').text()).toBe('4 kt')
   })
 })
@@ -453,13 +453,14 @@ describe('NeCollectionTable: phone', () => {
   it('reflows rows into cards below `md` by default, dropping `phone: false` columns', () => {
     const wrapper = render({ caption: 'R', columns, rows: repos })
     expect(wrapper.find('thead').classes()).toContain('max-md:sr-only')
+    const root = wrapper.find('[data-ne-collection-table]')
+    expect(root.attributes('data-ne-phone-layout')).toBe('cards')
+    expect(root.attributes('data-ne-stack-below')).toBe('md')
     const row = wrapper.find('[data-ne-collection-row]')
-    expect(row.classes()).toEqual(
-      expect.arrayContaining(['max-md:flex', 'max-md:flex-col', 'max-md:border-b']),
-    )
-    expect(row.find('td[data-ne-column="name"]').classes()).toContain('max-md:block')
-    expect(row.find('td[data-ne-column="note"]').classes()).toContain('max-md:hidden')
-    expect(header(wrapper, 'note').classes()).toContain('max-md:hidden')
+    expect(row.classes()).toEqual(['ne-row'])
+    expect(row.find('td[data-ne-column="name"]').classes()).toContain('ne-cell--pri')
+    expect(row.find('td[data-ne-column="note"]').classes()).toContain('ne-cell--drop')
+    expect(header(wrapper, 'note').classes()).toContain('ne-head--drop')
   })
 
   it('clamps a free-text column to its own line', () => {
@@ -469,7 +470,7 @@ describe('NeCollectionTable: phone', () => {
       rows: repos,
     })
     const note = wrapper.find('td[data-ne-column="note"]')
-    expect(note.classes()).toContain('max-md:line-clamp-2')
+    expect(note.classes()).toContain('ne-cell--free')
     expect(note.attributes('data-ne-label')).toBe('Note')
   })
 
@@ -487,71 +488,24 @@ describe('NeCollectionTable: phone', () => {
     expect(row.find('td[data-ne-column="id"]').attributes('data-ne-label')).toBe('Wind kt')
     // The label is the cell's ::before, so the cell's text is the value alone.
     expect(owner.text()).toBe('Platform')
-    expect(owner.classes()).toContain("max-md:before:content-[attr(data-ne-label)_/_'']")
+    expect(owner.classes()).toEqual(['ne-cell'])
     // A dropped column is gone; it prints no label.
     expect(row.find('td[data-ne-column="note"]').attributes('data-ne-label')).toBeUndefined()
   })
 
-  it('lays a card cell out as label then value, never wider than the card', () => {
-    const wrapper = render({ caption: 'R', columns, rows: repos })
-    expect(wrapper.find('td[data-ne-column="owner"]').classes()).toEqual(
-      expect.arrayContaining([
-        'max-md:flex',
-        'max-md:min-w-0',
-        'max-md:max-w-full',
-        'max-md:[&>*]:min-w-0',
-        'max-md:[&>*]:max-w-full',
-        'max-md:before:basis-[7.5rem]',
-      ]),
-    )
-  })
-
-  it('draws one divider per card: the row’s, and none on its cells (#1704)', () => {
-    const wrapper = render({ caption: 'R', columns, rows: repos })
-    const row = wrapper.find('[data-ne-collection-row]')
-    expect(row.classes()).toEqual(
-      expect.arrayContaining(['max-md:border-b', 'max-md:border-default']),
-    )
-    for (const td of row
-      .findAll('td')
-      .filter((cell) => !cell.classes().includes('max-md:hidden'))) {
-      expect(td.classes()).toContain('max-md:border-0')
-    }
-  })
-
-  it('drops a card cell with nothing to say, and keeps a missing word (#1704)', () => {
-    const cellOf = (wrapper: Wrapper, row: number, key: string) =>
-      wrapper.findAll('[data-ne-collection-row]')[row]!.find(`td[data-ne-column="${key}"]`)
-    const wrapper = render(
-      { caption: 'R', columns, rows: repos },
-      { 'owner-cell': '<i v-if="false" />' },
-    )
-    // The default dash marks itself empty, and the cell hides on that mark.
-    const issues = cellOf(wrapper, 1, 'issues')
-    expect(issues.find('[data-ne-missing]').attributes('data-ne-empty')).toBe('')
-    expect(issues.classes()).toContain('max-md:[&:has(>[data-ne-empty]:only-child)]:hidden')
-    // A slot that renders nothing leaves the cell empty, and it hides on that.
-    const owner = cellOf(wrapper, 0, 'owner')
-    expect(owner.element.children).toHaveLength(0)
-    expect(owner.text()).toBe('')
-    expect(owner.classes()).toContain('max-md:empty:hidden')
-    const worded = render({ caption: 'R', columns, missingText: 'unreported', rows: repos })
-    expect(worded.find('[data-ne-empty]').exists()).toBe(false)
-  })
-
-  it('tints the sorted column above the line only, since a card has no column to tint', () => {
+  it('tints the sorted column, and marks the cell rather than carrying the tint', () => {
     const cards = render({ caption: 'R', columns, rows: repos, sort: 'issues:desc' })
-    const tinted = cards.find('td[data-ne-column="issues"]').classes()
-    expect(tinted).toContain('md:bg-elevated/50')
-    expect(tinted).not.toContain('bg-elevated/50')
-    const table = render({
-      caption: 'R',
-      columns,
-      phoneLayout: 'columns',
-      rows: repos,
-      sort: 'issues:desc',
-    })
-    expect(table.find('td[data-ne-column="issues"]').classes()).toContain('bg-elevated/50')
+    expect(cards.find('td[data-ne-column="issues"]').classes()).toContain('ne-cell--sorted')
+    expect(cards.find('td[data-ne-column="name"]').classes()).not.toContain('ne-cell--sorted')
+  })
+
+  it('carries a role class and no utilities on a cell, so a cell is its value plus a role (#1704)', () => {
+    const wrapper = render({ caption: 'R', columns, rows: repos })
+    for (const td of wrapper.findAll('td[data-ne-column]')) {
+      expect(
+        td.classes().filter((name) => /^(?:max-|md:|px-|py-|text-|border)/.test(name)),
+      ).toEqual([])
+    }
   })
 
   it('leaves the `columns` layout unlabelled: it keeps its header', () => {
@@ -568,9 +522,11 @@ describe('NeCollectionTable: phone', () => {
       stackBelow: 'lg',
     })
     expect(wrapper.find('thead').classes()).not.toContain('max-lg:sr-only')
-    expect(wrapper.find('[data-ne-collection-row]').classes()).not.toContain('max-lg:flex')
-    expect(wrapper.find('td[data-ne-column="note"]').classes()).toContain('max-lg:hidden')
-    expect(header(wrapper, 'name').classes()).toContain('max-lg:[&_button]:min-h-11')
+    const root = wrapper.find('[data-ne-collection-table]')
+    expect(root.attributes('data-ne-phone-layout')).toBe('columns')
+    expect(root.attributes('data-ne-stack-below')).toBe('lg')
+    expect(wrapper.find('td[data-ne-column="note"]').classes()).toContain('ne-cell--drop')
+    expect(wrapper.find('td[data-ne-column="name"]').classes()).not.toContain('ne-cell--pri')
     // A dropped column's <col> goes with its cells; otherwise the next cell takes its width.
     const cols = wrapper.findAll('col')
     const noteIndex = columns.findIndex((column) => column.key === 'note')

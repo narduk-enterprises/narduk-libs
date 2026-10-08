@@ -1999,6 +1999,15 @@ already the phone's:
   cell per `phone: false` column, so the first paint on a phone has no phantom
   columns and needs no viewport measured on mount.
 
+A row, header cell and cell carry only a role class (`ne-row`, `ne-head`,
+`ne-cell` and modifiers such as `ne-cell--num`, `--em`, `--sorted`, `--pri`,
+`--free`, `--drop`), and the layout, the phone card included, is
+`@layer components` CSS in the component's own `<style>` block, keyed on the
+root's `data-ne-phone-layout` and `data-ne-stack-below` (narduk-libs#1704). A
+cell's markup is its value plus a role, about 25 bytes of class instead of
+about 520. Style a cell from the app with a utility or a selector on those
+classes.
+
 Either way a `phone: false` column is dropped, and the search, chips, sort
 select, its sort-direction button (44px wide as well, `min-w-11`), "Show all",
 sortable headers and every linked or selectable row hold a 44px tap floor

@@ -102,8 +102,9 @@ describe('NeCollectionTable on the server', () => {
     const html = await render({ caption: 'Stations', columns, rows: stations })
     expect(html).toContain('data-ne-phone-layout="cards"')
     expect(html).toMatch(/<thead[^>]*class="[^"]*max-md:sr-only/)
-    expect(html).toMatch(/data-ne-collection-row[^>]*class="[^"]*max-md:flex/)
-    expect(html).toMatch(/class="[^"]*max-md:hidden[^"]*"[^>]*data-ne-column="region"/)
+    expect(html).toMatch(/data-ne-collection-row[^>]*class="ne-row"/)
+    expect(html).toMatch(/class="[^"]*ne-cell--drop[^"]*"[^>]*data-ne-column="region"/)
+    expect(html).toContain('data-ne-stack-below="md"')
     // The header keeps its sort buttons until a client measures the viewport.
     expect(html).toMatch(/data-ne-column="wind"[^>]*>[\s\S]*?data-ne-sort-header/)
   })
@@ -179,11 +180,12 @@ describe('NeCollectionTable groups on the server', () => {
 /**
  * The grid each table row makes at one width: the columns its `<col>`s leave,
  * and the columns each row's cells span. A cell or `<col>` carrying the
- * breakpoint's `max-md:hidden` is `display: none` below it, and a hidden cell
+ * breakpoint's `max-md:hidden` (or the role class `ne-cell--drop`) is `display: none` below it, and a hidden cell
  * takes no slot in the table grid, so the phone's grid is what is left.
  */
 function grid(html: string, phone: boolean): { cols: number; rows: number[] } {
-  const shown = (tag: string) => !(phone && /class="[^"]*\bmax-md:hidden\b/.test(tag))
+  const shown = (tag: string) =>
+    !(phone && /class="[^"]*\b(?:max-md:hidden|ne-cell--drop|ne-head--drop)\b/.test(tag))
   const cols = [...html.matchAll(/<col\b[^>]*>/g)].filter((m) => shown(m[0])).length
   const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((row) =>
     [...row[1]!.matchAll(/<t[hd]\b[^>]*>/g)]
