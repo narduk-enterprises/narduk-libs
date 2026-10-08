@@ -102,6 +102,28 @@ describe('item 11 -- the conformant baseline', () => {
     expect(artefact.sources.pnpm.value).toBe(PNPM)
   })
 
+  it('accepts safe-lane dependency bumps while still rejecting a mismatched runtime mirror', () => {
+    const root = baseline()
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >
+    manifest.dependencies = { nuxt: '4.5.2' }
+    manifest.devDependencies = { vitest: '4.1.6', '@types/node': '22.19.19' }
+    writeJson(root, 'package.json', manifest)
+    expect(run(root).result).toBe('PASS')
+
+    // Same-major minor/patch updates change dependencies, not the runtime sources.
+    manifest.dependencies = { nuxt: '4.6.0' }
+    manifest.devDependencies = { vitest: '4.1.11', '@types/node': '22.20.4' }
+    writeJson(root, 'package.json', manifest)
+    expect(run(root).result).toBe('PASS')
+
+    manifest.volta = { node: '24.20.0' }
+    writeJson(root, 'package.json', manifest)
+    expect(run(root).result).toBe('FAIL')
+  })
+
   it('emits a one-item artefact, never the ratified 7-item shape', () => {
     const artefact = run(baseline())
     expect(artefact.tool).toBe(TOOLCHAIN_TOOL_NAME)

@@ -16,8 +16,7 @@ import type * as WorkflowHistory from '../src/workflow-history.js'
 // The generator pin is the tip of the bundled workflows history, so no real
 // commit is newer. The mock below adds one child of the pin; everything else
 // reads the real history. Hoisted because vi.mock runs before the imports.
-const { GENERATOR_PIN, NEWER_APP_PIN } = vi.hoisted(() => ({
-  GENERATOR_PIN: '59825ef09ce484e8189c1932d0ac18f3892dd8d0',
+const { NEWER_APP_PIN } = vi.hoisted(() => ({
   NEWER_APP_PIN: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
 }))
 
@@ -26,10 +25,12 @@ vi.mock('../src/workflow-history.js', async (importOriginal) => {
   return {
     WORKFLOWS_MAIN_PARENTS: {
       ...actual.WORKFLOWS_MAIN_PARENTS,
-      [NEWER_APP_PIN]: [GENERATOR_PIN],
+      [NEWER_APP_PIN]: [Object.keys(actual.WORKFLOWS_MAIN_PARENTS).at(-1)!],
     },
   }
 })
+
+const GENERATOR_PIN = NUXT_CLOUDFLARE_WORKFLOW_SHA
 
 const OLDER_UNLISTED_PINS = [
   '9685e3d374a1e4b6136ea93f3c68715baa79800f',
@@ -92,7 +93,7 @@ describe('workflow pin direction', () => {
     ].join('\n')
     const rewritten = rewriteWorkflowPins(source, GENERATOR_PIN)
     expect(rewritten).toContain(`nuxt-cloudflare.yml@${GENERATOR_PIN}`)
-    expect(rewritten).toContain('workflows@59825ef0')
+    expect(rewritten).toContain(`workflows@${GENERATOR_PIN.slice(0, 8)}`)
     expect(rewritten).not.toContain('9070db72')
   })
 })

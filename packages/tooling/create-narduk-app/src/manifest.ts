@@ -38,8 +38,8 @@ export const PACKAGE_VERSIONS = {
   // narduk-testkit's `expectAccessible` runs axe through this optional
   // peer; the generated home e2e spec calls it, so the app installs it.
   '@axe-core/playwright': '4.13.0',
-  '@cloudflare/workers-types': '5.20260922.1',
-  '@iconify-json/lucide': '1.2.108',
+  '@cloudflare/workers-types': '5.20260924.1',
+  '@iconify-json/lucide': '1.2.136',
   '@narduk-enterprises/narduk-mapkit': '2.22.1',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.35.0',
@@ -80,17 +80,18 @@ export const PACKAGE_VERSIONS = {
   // virtual file before build; making it explicit here fixes that, matching
   // the reference app's own modules array and devDependency exactly.
   '@nuxt/icon': '2.5.1',
-  '@nuxt/test-utils': '4.0.3',
+  '@nuxt/test-utils': '4.3.2',
   '@nuxt/ui': '4.11.1',
   '@playwright/test': '1.61.1',
   // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
   // Vite 7, which makes a newly generated app install with a peer warning.
-  '@tailwindcss/vite': '4.3.2',
-  '@types/node': '22.19.19',
-  '@typescript-eslint/utils': '8.64.0',
-  'drizzle-kit': '0.31.10',
-  'drizzle-orm': '0.45.2',
-  esbuild: '0.28.1',
+  '@tailwindcss/vite': '4.3.3',
+  '@types/node': '22.20.4',
+  '@typescript-eslint/utils': '8.70.1',
+  cac: '7.0.0',
+  'drizzle-kit': '0.31.11',
+  'drizzle-orm': '0.45.3',
+  esbuild: '0.28.2',
   // Local Wrangler binding emulation under `nuxt dev` (gated behind
   // isCloudflareBuild in the generated nuxt.config.ts). The reference app
   // pins a caret range that resolves to this exact version; the generator's
@@ -104,12 +105,13 @@ export const PACKAGE_VERSIONS = {
   // freshly scaffolded app fails its first `pnpm install` on an unmet peer.
   // `versions:sync` does not cover this: it only re-pins the
   // `@narduk-enterprises/*` package versions above, not third-party pins like
-  // this one, so it has to be bumped by hand alongside eslint-config's own
-  // major bumps.
-  eslint: '10.8.0',
+  // this one. The scheduled refresh updates its minor/patch versions; major
+  // bumps still move deliberately alongside eslint-config's peer requirement.
+  eslint: '10.11.0',
   glob: '13.0.6',
-  'happy-dom': '20.9.0',
-  knip: '6.14.1',
+  h3: '1.15.11',
+  'happy-dom': '20.14.5',
+  knip: '6.38.0',
   // narduk-seo's current module set uses Unhead 3's tree-shake transform.
   // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
   nuxt: '4.5.2',
@@ -121,14 +123,14 @@ export const PACKAGE_VERSIONS = {
   // narduk-core's `security.headers` preset wraps nuxt-security, an optional
   // peer of narduk-core. The generated nuxt.config turns the preset on.
   'nuxt-security': '2.6.0',
-  '@nuxt/eslint': '1.15.2',
-  prettier: '3.8.3',
-  tailwindcss: '4.3.2',
+  '@nuxt/eslint': '1.17.0',
+  prettier: '3.9.9',
+  tailwindcss: '4.3.3',
   typescript: '6.0.3',
-  vitest: '4.1.6',
-  'vue-tsc': '3.2.5',
-  wrangler: '4.136.3',
-  zod: '4.4.3',
+  vitest: '4.1.11',
+  'vue-tsc': '3.3.11',
+  wrangler: '4.138.0',
+  zod: '4.6.5',
 } as const
 
 const capabilityPackages: Record<Capability, readonly string[]> = {
@@ -194,6 +196,9 @@ function dependencyEntries(
     // An app with no database imports no schema, so drizzle stays out of both
     // manifests rather than sitting unused (knip would flag it).
     ...(databaseBackend === 'none' ? [] : ['drizzle-orm']),
+    // Generated routes import h3; an explicit app pin also satisfies testkit's
+    // peer instead of letting another dependency select the incompatible h3 2.
+    'h3',
     'nuxt',
     // @nuxt/ui declares tailwindcss as a peer, not a dependency, and
     // eslint-plugin-better-tailwindcss (design-system pack) resolves
@@ -227,6 +232,10 @@ function devDependencyEntries(databaseBackend: GeneratedDatabaseBackend): Record
     // too, since it is a build-time-only tool, never shipped at runtime.
     '@tailwindcss/vite',
     '@types/node',
+    // The ESLint inspector's devframe peer needs cac 7 at the app boundary.
+    // Nuxt CLI's older completion helper gets cac 6 through the scoped
+    // package extension below, so neither resolves the other's major.
+    'cac',
     ...(databaseBackend === 'none' ? [] : ['drizzle-kit']),
     'eslint',
     'happy-dom',
@@ -407,10 +416,17 @@ export function createRootPackageManifest(
       '@types/node': PACKAGE_VERSIONS['@types/node'],
       eslint: PACKAGE_VERSIONS.eslint,
       knip: PACKAGE_VERSIONS.knip,
+      h3: PACKAGE_VERSIONS.h3,
       prettier: PACKAGE_VERSIONS.prettier,
       typescript: PACKAGE_VERSIONS.typescript,
     },
     pnpm: {
+      packageExtensions: {
+        // @nuxt/cli 3.37 uses citty, but @bomb.sh/tab 0.0.19 also exposes
+        // an optional cac 6 adapter. Satisfy that peer in CLI's own scope
+        // instead of letting it inherit the ESLint inspector's cac 7.
+        '@nuxt/cli@3.37.0': { dependencies: { cac: '6.7.14' } },
+      },
       overrides: {
         // WHY ESTATE PACKAGES ARE OVERRIDDEN (narduk-libs#282 review, task 5)
         //

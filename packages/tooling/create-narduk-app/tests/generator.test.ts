@@ -1,3 +1,4 @@
+import { NUXT_CLOUDFLARE_WORKFLOW_SHA } from '../src/workflow-pin.js'
 import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,6 +11,7 @@ import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as YAML from 'yaml'
 
+import { DEPENDABOT_COOLDOWN_DAYS, DEPENDENCY_UPDATE_LIMITS } from '../src/dependency-policy.js'
 import { BUILD_CI_MARKS_OUTPUT, BUILD_CI_REFUSES_DEPLOYED_BUILD } from '../src/ci-test-env.js'
 import { buildGeneratedFiles, createNardukApp, PACKAGE_VERSIONS, runCli } from '../src/index.js'
 
@@ -377,6 +379,9 @@ describe('create-narduk-app generation contract', () => {
       visibility: 'private',
     })
     expect(rootManifest.pnpm).toEqual({
+      packageExtensions: {
+        '@nuxt/cli@3.37.0': { dependencies: { cac: '6.7.14' } },
+      },
       overrides: {
         '@narduk-enterprises/narduk-core': PACKAGE_VERSIONS['@narduk-enterprises/narduk-core'],
         '@narduk-enterprises/narduk-logging':
@@ -667,7 +672,7 @@ describe('create-narduk-app generation contract', () => {
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).toContain(
-      'nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0',
+      `nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`,
     )
     expect(files.find((file) => file.path === '.github/workflows/ci.yml')?.contents).not.toContain(
       'NARDUK_PLATFORM_GH_PACKAGES_READ',
@@ -1553,7 +1558,7 @@ describe('create-narduk-app generation contract', () => {
       generatedNuxtConfig.indexOf("'@narduk-enterprises/narduk-shell'"),
     )
     const generatedCi = await readFile(join(targetDir, '.github/workflows/ci.yml'), 'utf8')
-    expect(generatedCi).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
+    expect(generatedCi).toContain(`nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`)
     expect(generatedCi).toContain('require-scripts: true')
     expect(generatedCi).toContain('run-tests: true')
     expect(generatedCi).toContain('run-e2e: true')
@@ -1791,7 +1796,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
       expect(npmrc, label).not.toContain('npm.pkg.github.com')
-      expect(ci, label).toContain('nuxt-cloudflare.yml@59825ef09ce484e8189c1932d0ac18f3892dd8d0')
+      expect(ci, label).toContain(`nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`)
       expect(ci, label).not.toContain('NARDUK_PLATFORM_GH_PACKAGES_READ')
       expect(ci, label).not.toContain('npm.pkg.github.com')
       expect(readme, label).not.toContain('narduk/tokens:GH_PACKAGES_READ')
@@ -1841,6 +1846,8 @@ describe('generated app typecheck and lint surfaces', () => {
           directory?: string
           registries?: string[]
           'open-pull-requests-limit'?: number
+          cooldown?: Record<string, unknown>
+          ignore?: Array<{ 'dependency-name': string; versions: string[] }>
           groups: Record<string, { patterns: string[]; 'update-types'?: string[] }>
         }>
       }
@@ -1855,6 +1862,22 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(parsed.updates, label).toHaveLength(2)
       const npmUpdate = parsed.updates.find((update) => update['package-ecosystem'] === 'npm')
       expect(npmUpdate?.directory, label).toBe('/')
+      expect(npmUpdate?.cooldown, label).toEqual({
+        'default-days': DEPENDABOT_COOLDOWN_DAYS,
+        'semver-major-days': DEPENDABOT_COOLDOWN_DAYS,
+        exclude: ['@narduk-enterprises/*'],
+      })
+      expect(npmUpdate?.ignore, label).toEqual(
+        Object.entries(DEPENDENCY_UPDATE_LIMITS).map(([name, limit]) => ({
+          'dependency-name': name,
+          versions: [`${limit.inclusive ? '>' : '>='}${limit.version}`],
+        })),
+      )
+      const workspace = YAML.parse(files.get('pnpm-workspace.yaml') ?? '') as Record<
+        string,
+        unknown
+      >
+      expect(workspace.minimumReleaseAgeExclude, label).toContain('@narduk-enterprises/*')
       expect(npmUpdate?.registries, label).toEqual(['npm-nard-uk'])
       expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
       expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])

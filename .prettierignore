@@ -103,3 +103,6 @@ packages/modules/geogrid-web/tests/fixtures/**
 # narduk-libs#432: its body lands verbatim in CHANGELOG.md above, so
 # formatting it buys nothing and a rewrapped line cost a CI round per lane.
 .changeset/*.md
+
+# Task-local validation evidence and generated smoke checkouts.
+.lane-evidence/
