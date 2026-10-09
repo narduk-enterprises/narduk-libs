@@ -109,6 +109,7 @@
     "runtime/server/utils/ssrfHostIpPolicy.ts",
     "runtime/server/utils/user-session.ts",
     "runtime/server/utils/worker-env.ts",
+    "runtime/server/utils/workerCache.ts",
     "runtime/server/utils/worker-identity.ts",
     "runtime/shared/**/*.ts",
     "src/**/*.ts",
