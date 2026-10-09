@@ -1539,6 +1539,100 @@ heuristic, not to reword the route.
 | 14.1      | every list route calls `parseListQuery(`           | `pass`                    |
 | 14.1      | a list route reads pagination without the contract | `fail`, naming each route |
 
+### Public D1 reads are cached (`foundation:check:data-cache`)
+
+`narduk-app foundation:check:data-cache [--checkout <dir>] [--json [path]]` --
+item 15
+([narduk-libs#1717](https://github.com/narduk-enterprises/narduk-libs/issues/1717),
+following #1716). It tells an app when a public GET route reads D1 and caches
+nothing, so the same query runs on every request. The fix is in narduk-core's
+[Worker data cache: withWorkerCache](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-core/README.md#worker-data-cache-withworkercache)
+section, which also says when to use `setCacheProfile` (edge, outside callers),
+`withWorkerCache` (inside the handler, including SSR) and `withKVCache` /
+`withD1Cache` (external API responses). The evaluator is
+`src/foundation/items/item-15-public-reads-cached.ts`. Its artefact is
+`tool: '@narduk-enterprises/narduk-app-tools/data-cache'`, one item, like
+item 8.
+
+**It is a warning today.** Both sub-checks are `pass` or `not-applicable`, the
+verdict is `PASS` and the exit code is `0`, so shipping it turns no app red.
+Each finding is a `[WARN]` line (and a `::warning` annotation under GitHub
+Actions), an entry in the artefact's `advisories` and `findings`, and nothing
+else. A route carrying the escape comment is listed as `[SKIP]` with its reason.
+Run it in an app with `pnpm exec narduk-app foundation:check:data-cache`; the
+generated CI does not run it yet.
+
+| Sub-check | Condition                                                                                                            | Verdict                                               |
+| --------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 15.1      | no `server/api` or `server/routes` GET handlers                                                                      | `not-applicable`                                      |
+| 15.1      | every GET route that reaches D1 is cached, exempt or suppressed                                                      | `pass`                                                |
+| 15.1      | a GET route reaches D1 with no public cache profile and no cache layer                                               | `pass`, with a `[WARN]` naming the route              |
+| 15.2      | no page, component or composable fetches an app route during SSR                                                     | `not-applicable`                                      |
+| 15.2      | an SSR-fetched route that reaches D1 uses `withWorkerCache` / `withKVCache` / `withD1Cache`, or is exempt            | `pass`                                                |
+| 15.2      | an SSR-fetched route reaches D1 with no cache layer (a `setCacheProfile` alone does not apply to an in-process call) | `pass`, with a `[WARN]` naming the page and the route |
+
+**What it flags (15.1).** A file under `server/api/` or `server/routes/` at any
+monorepo prefix that answers GET (a `.get.` file or no method suffix) when it
+
+1. reaches D1: `useDatabase(`, `useAppDatabase(`, `getD1CacheDB(`, `.prepare(`,
+   `env.DB`, `drizzle(`, a Drizzle `.select(` with `.from(`, or
+   `.query.<table>.findMany|findFirst(` in the file, or in **one helper hop**: a
+   function the route calls that a `server/utils` file exports (Nitro
+   auto-imports it) or that it imports from a relative, `~~/` or `~/` path, when
+   that helper file reads D1 directly and has no cache layer of its own. The hop
+   is one file deep and file-granular;
+2. has no cache layer (`withWorkerCache(`, `withKVCache(`, `withD1Cache(`); and
+3. sets no public cache profile: `setCacheProfile(` with anything but `'none'`,
+   `defineCacheProfile(`, `definePublishedDataHandler(` with a profile other
+   than `'none'`, or a `Cache-Control` header naming `public` or `s-maxage`.
+
+Comments are stripped first, so a commented-out call decides nothing.
+
+**What it exempts.** Session-bound and deliberately private routes are listed in
+the artefact's `exempt` and not warned: `setCacheProfile(event, 'none')` with no
+public profile, a `Cache-Control` of `no-store` or `private`, an auth guard in
+the file (`requireAuth`, `requireUser`, `requireAdmin`, `requireSession`,
+`requireRole`, `requireCronAuth`, `requireSharedSecret`, `requireAuthScopes`,
+`requireAdminRouteScopes`, `getUserSession`), or a path under an `admin/` or
+`auth/` directory. A guard that lives in `server/middleware` is not visible to a
+per-file scan; mark such a route with the escape comment.
+
+**Suppressing a warning.** Put this anywhere in the route file, with a reason:
+
+```ts
+// narduk-cache: intentionally-uncached single primary-key read; the lookup costs as much
+```
+
+A `/* ... */` comment works too. The reason is required: a bare marker is itself
+warned (`escape-without-reason`). Suppressed routes appear in the report and in
+the artefact's `suppressed` with their reasons, so a reviewer can argue with
+them. Expect false positives on routes that are cheap by construction (a single
+primary-key read); the comment is the answer, not a reworded route.
+
+**SSR fetches (15.2).** A page, component or composable under `app/` (or
+`pages/`, `components/`, `composables/`, `layouts/`) that calls
+`useFetch('/api/...')`, `useLazyFetch(...)`, or `$fetch('/api/...')` inside
+`useAsyncData(` / `useLazyAsyncData(`, with a literal path and without
+`server: false`, runs that handler in-process during SSR. The path is matched to
+a GET route file (`[id]` is one segment, `[...slug]` the rest, `${...}` one
+segment). The route is warned when it reaches D1 and has no `withWorkerCache(` /
+`withKVCache(` / `withD1Cache(`: an edge profile does not apply there, and the
+page HTML is `private, no-store` under the nonce CSP (narduk-libs#435). The same
+exemptions and escape comment apply.
+
+**What it cannot see.** A route built by a factory from another package, a fetch
+path held in a variable, a D1 read two helper hops away, a guard in middleware,
+and whether the data changes often enough to matter.
+
+**How it becomes blocking.** Not yet, and not by a flag: `evaluateItem15`
+reports each warning count as `pass`. Ratcheting is one change there: return the
+findings of a sub-check as `STATUS_FAIL` instead of `advisories`, so `result`
+becomes `FAIL` and the exit code `1`. Then add the command to the generator's
+repository gate (`extra-scripts` and the public-CI step, item 12's pattern) so
+the app's own CI runs it. Do it after the first estate sweep has shown which
+warnings are real, and say so in the release's Changeset (an app that had
+warnings goes red).
+
 ### Shared-capability coverage (`foundation:check:coverage`)
 
 `narduk-app foundation:check:coverage [--checkout <dir>] [--json [path]]` --
