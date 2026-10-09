@@ -1,7 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 
-import { createEvent } from 'h3'
+import { createError, createEvent } from 'h3'
 import { createHooks } from 'hookable'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -46,6 +46,8 @@ vi.mock('nitropack/runtime', () => ({
 function leakyError(overrides: Partial<SanitizableServerError> = {}): SanitizableServerError {
   return Object.assign(new Error(D1_LEAKY_MESSAGE), {
     statusCode: 500,
+    // h3 flags a thrown non-H3 error `unhandled`; that flag is what marks a crash.
+    unhandled: true,
     statusMessage: 'SQLITE_ERROR: no such table: users',
     data: { binding: 'DB', sql: D1_LEAKY_SQL },
     cause: new Error('inner D1'),
@@ -61,13 +63,68 @@ describe('production error sanitizer policy', () => {
     expect(readPreviewSafeModeFlag(undefined)).toBe(false)
   })
 
-  it('sanitizes 5xx and a missing status (SSR wrap defaults to 500), not 4xx', () => {
-    expect(shouldSanitizeProductionError({ statusCode: 500 }, false, false)).toBe(true)
-    expect(shouldSanitizeProductionError({ statusCode: 503 }, false, false)).toBe(true)
-    expect(shouldSanitizeProductionError({}, false, false)).toBe(true)
-    expect(shouldSanitizeProductionError({ statusCode: 404 }, false, false)).toBe(false)
+  it('sanitizes an unhandled 5xx and a missing status (SSR wrap defaults to 500), not 4xx', () => {
+    expect(shouldSanitizeProductionError({ statusCode: 500, unhandled: true }, false, false)).toBe(
+      true,
+    )
+    expect(shouldSanitizeProductionError({ statusCode: 503, unhandled: true }, false, false)).toBe(
+      true,
+    )
+    expect(shouldSanitizeProductionError({ unhandled: true }, false, false)).toBe(true)
+    expect(shouldSanitizeProductionError({ statusCode: 404, unhandled: true }, false, false)).toBe(
+      false,
+    )
     expect(shouldSanitizeProductionError({ statusCode: 400 }, false, false)).toBe(false)
-    expect(shouldSanitizeProductionError({ statusCode: 500 }, true, false)).toBe(false)
+    expect(shouldSanitizeProductionError({ statusCode: 500, unhandled: true }, true, false)).toBe(
+      false,
+    )
+  })
+
+  it('sanitizes a fatal 5xx the same as an unhandled one (Nitro isSensitive)', () => {
+    expect(shouldSanitizeProductionError({ statusCode: 500, fatal: true }, false, false)).toBe(true)
+    expect(shouldSanitizeProductionError({ statusCode: 503, fatal: true }, false, false)).toBe(true)
+  })
+
+  it('keeps an authored createError 5xx message (narduk-libs#1714)', () => {
+    const authored = createError({
+      statusCode: 503,
+      statusMessage: 'Upstream down',
+      message: 'The work-request queue is paused',
+      data: { reason: 'queue-paused' },
+    })
+    expect(authored.unhandled).toBe(false)
+    expect(shouldSanitizeProductionError(authored, false, false)).toBe(false)
+
+    config.current = { public: { previewSafeMode: false } }
+    applyProductionErrorSanitizer(authored, { context: {} }, false)
+    expect(authored.message).toBe('The work-request queue is paused')
+    expect(authored.statusMessage).toBe('Upstream down')
+    expect(authored.data).toEqual({ reason: 'queue-paused' })
+  })
+
+  it('still scrubs an unhandled throw once h3 has wrapped it', () => {
+    // h3's app handler does exactly this to a thrown non-H3 error.
+    const wrapped = createError(new Error('secret detail'))
+    wrapped.unhandled = true
+    wrapped.data = { sql: D1_LEAKY_SQL }
+    expect(shouldSanitizeProductionError(wrapped, false, false)).toBe(true)
+
+    config.current = { public: { previewSafeMode: false } }
+    applyProductionErrorSanitizer(wrapped, { context: {} }, false)
+    expect(wrapped.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(wrapped.data).toBeUndefined()
+  })
+
+  it('treats a 5xx with neither flag as authored, and a bare unhandled=false the same', () => {
+    expect(shouldSanitizeProductionError({ statusCode: 500 }, false, false)).toBe(false)
+    expect(shouldSanitizeProductionError({}, false, false)).toBe(false)
+    expect(
+      shouldSanitizeProductionError(
+        { statusCode: 500, unhandled: false, fatal: false },
+        false,
+        false,
+      ),
+    ).toBe(false)
   })
 
   it('does not sanitize 5xx while nuxt dev is running', () => {
@@ -75,8 +132,12 @@ describe('production error sanitizer policy', () => {
   })
 
   it('coerces a string 4xx statusCode instead of treating it as 500', () => {
-    expect(shouldSanitizeProductionError({ statusCode: '404' }, false, false)).toBe(false)
-    expect(shouldSanitizeProductionError({ statusCode: '503' }, false, false)).toBe(true)
+    expect(
+      shouldSanitizeProductionError({ statusCode: '404', unhandled: true }, false, false),
+    ).toBe(false)
+    expect(
+      shouldSanitizeProductionError({ statusCode: '503', unhandled: true }, false, false),
+    ).toBe(true)
   })
 
   it('fails closed on a string statusCode outside the HTTP range', () => {
@@ -84,7 +145,9 @@ describe('production error sanitizer policy', () => {
     // as sub-500 and skip the sanitizer on an error that carries no real
     // status. Anything that is not an integer 100-599 falls back to 500.
     for (const statusCode of ['-1', '0', '99', '600', '404.5', '1e3', '404abc', ' ']) {
-      expect(shouldSanitizeProductionError({ statusCode }, false, false)).toBe(true)
+      expect(shouldSanitizeProductionError({ statusCode, unhandled: true }, false, false)).toBe(
+        true,
+      )
     }
     expect(readErrorStatusCode({ statusCode: '-1' })).toBe(500)
     expect(readErrorStatusCode({ statusCode: ' 404 ' })).toBe(404)

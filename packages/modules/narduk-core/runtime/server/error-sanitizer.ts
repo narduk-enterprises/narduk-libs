@@ -27,12 +27,19 @@ export const GENERIC_SERVER_ERROR_MESSAGE = 'Server Error'
 export interface SanitizableServerError {
   cause?: unknown
   data?: unknown
+  /** Set by h3 on a crash that is not an h3 error; Nitro's `isSensitive` input. */
+  fatal?: boolean
   message?: string
   requestId?: unknown
   stack?: string
   statusCode?: number | string
   statusMessage?: string
   statusText?: string
+  /**
+   * Set by h3 when the thrown value was not an `H3Error` (a bare `throw new
+   * Error(...)`, a driver or runtime crash). Absent on `createError(...)`.
+   */
+  unhandled?: boolean
 }
 
 export interface ProductionErrorSanitizerEvent {
@@ -69,13 +76,23 @@ export function readErrorStatusCode(error: SanitizableServerError): number {
   return 500
 }
 
+/**
+ * Mirrors Nitro's own `isSensitive` rule (`error.unhandled || error.fatal`).
+ * A 5xx the app authored on purpose with `createError({ statusCode: 503,
+ * message })` keeps its sentence; an unhandled `throw new Error(...)`, which h3
+ * flags `unhandled: true`, is still scrubbed (narduk-libs#1714). An error that
+ * is neither flag has been written by the app, so what it says is the app's
+ * to say, exactly as Nitro's builtin handler treats it.
+ */
 export function shouldSanitizeProductionError(
   error: SanitizableServerError,
   previewSafeMode: boolean,
   isDev: boolean = Boolean(import.meta.dev),
 ): boolean {
   if (isDev) return false
-  return !previewSafeMode && readErrorStatusCode(error) >= 500
+  if (previewSafeMode) return false
+  if (error.unhandled !== true && error.fatal !== true) return false
+  return readErrorStatusCode(error) >= 500
 }
 
 /**
