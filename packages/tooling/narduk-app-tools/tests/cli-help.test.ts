@@ -46,6 +46,7 @@ const COMMANDS: string[][] = [
   ['foundation:check:shared-ui-pinned'],
   ['foundation:check:no-local-copy'],
   ['foundation:check:list-routes'],
+  ['foundation:check:data-cache'],
   ['foundation:check:toolchain'],
   ['foundation:check:deployment'],
   ['foundation:check:coverage'],

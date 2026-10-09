@@ -53,6 +53,7 @@ import {
   runListRoutesCheckCommand,
   runNoLocalCopyCheckCommand,
 } from './commands/component-suite-check.js'
+import { runDataCacheCheckCommand } from './commands/data-cache-check.js'
 import { runCapabilityCoverageCheckCommand } from './commands/capability-coverage-check.js'
 import {
   parseSecurityHeadersCheckArgs,
@@ -226,6 +227,8 @@ function usage(): string {
     '                                       Item 13: no app-local copy of a shared package component',
     '  foundation:check:list-routes [--checkout <dir>] [--json [path]]',
     '                                       Item 14: list routes parse their query with parseListQuery',
+    '  foundation:check:data-cache [--checkout <dir>] [--json [path]]',
+    '                                       Item 15 (warning): public GET routes that read D1 need a cache profile or withWorkerCache',
     '  foundation:check:coverage [--checkout <dir>] [--json [path]]',
     '                                       Item 9: estate package inventory and app-local reimplementations',
     '  foundation:check:security-headers --base-url <url> [--path <p>]... [--json [path]]',
@@ -508,6 +511,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check:list-routes') {
       return runListRoutesCheckCommand(
+        withAppCheckout(parseFoundationCheckArgs(rest, command), command),
+      ).exitCode
+    }
+    if (command === 'foundation:check:data-cache') {
+      return runDataCacheCheckCommand(
         withAppCheckout(parseFoundationCheckArgs(rest, command), command),
       ).exitCode
     }

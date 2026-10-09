@@ -517,6 +517,7 @@ NAC §3.0 run in the app's own CI. What runs where:
 | 10 `foundation:check:security-headers` | `quality-level: standard`, on the PR preview | probe of this commit's `build:ci` Worker, served by `narduk-app e2e-serve` locally |
 | 11 `foundation:check:toolchain`        | `extra-scripts`                              | "Repository gate" step                                                             |
 | 12 `foundation:check:deployment`       | `extra-scripts`                              | "Repository gate" step                                                             |
+| 15 `foundation:check:data-cache`       | not run yet (warning only, #1717)            | not run yet (warning only, #1717)                                                  |
 
 The public item-10 probe reads the candidate, never production (which would be
 the previous release), with the published checker. It cannot see a header a

@@ -148,3 +148,16 @@ Remove the `cache` block, or set `"enabled": false`, and deploy. The new version
 is not cached, and the old version's entries are unreachable because the version
 is part of the key. Nothing else in the app depends on the switch:
 `setCacheProfile` goes back to setting only the browser `Cache-Control`.
+
+## Reads that bypass the edge cache
+
+Workers Cache only stores a response for a caller that reaches it. A page Nuxt
+renders on the server calls the app's own API in-process, so a route with a
+`live` or `slow` profile still re-runs its D1 read once per page view. The
+in-handler cache for that path is `withWorkerCache`, documented in
+[narduk-core's README](https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-core/README.md#worker-data-cache-withworkercache).
+
+`narduk-app foundation:check:data-cache` (item 15, warning only) finds the
+public GET routes that read D1 with no profile and no cache layer, and the pages
+that SSR-fetch one without `withWorkerCache`. See "Public D1 reads are cached"
+in the [README](../README.md).
