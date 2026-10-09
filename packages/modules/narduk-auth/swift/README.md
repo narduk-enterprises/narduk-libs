@@ -86,6 +86,67 @@ Organization selection, membership checks, and resource permissions belong to
 the consumer and its server. A bearer token identifies a session; it does not
 grant an organization role.
 
+## Passkey sign-in
+
+`signInWithPasskey(anchor:)` signs in with the platform passkey (Touch ID or the
+system passkey sheet) and ends in the same native session as the password path,
+with no browser:
+
+```swift
+do {
+    try await client.signInWithPasskey(anchor: window)
+} catch let error as PasskeySignInError {
+    // .cancelled, .noCredential, .unavailable, .refused, .failed(code:):
+    // offer the email and password form instead.
+}
+```
+
+It is `@MainActor` and takes the `ASPresentationAnchor` (the `NSWindow` on
+macOS, the `UIWindow` on iOS) the system sheet attaches to. It runs
+`/api/auth/passkeys/authentication/options`, asks the platform authenticator to
+sign the challenge for the relying party ID the server returns, posts the
+assertion to `/api/auth/passkeys/authentication/verify`, then continues through
+`/api/auth/native/authorize` and `/api/auth/native/token` exactly as
+`signIn(email:password:)` does. The verify response's session cookie is attached
+to the single authorize request and discarded. The client refuses a relying
+party ID that is neither the server's host nor a parent domain of it.
+
+`signIn(using:)` is the same flow with an injected `PasskeyAssertionProvider`;
+the tests drive it with a fake authenticator, and an app can use it for a custom
+prompt.
+
+`PasskeySignInError` is separate from `AuthError`, so existing exhaustive
+switches keep compiling. `.cancelled` is a dismissed prompt. macOS reports a
+dismissal and "nothing to offer" alike as a cancel in some situations, so treat
+`.cancelled` and `.noCredential` both as a prompt to offer the password form.
+`.refused` is the server rejecting the assertion (a 400, 401 or 403 from
+verify), `.unavailable` is a server without passkeys enabled, and `.failed` is
+any other system error code, most often a missing Associated Domains setup.
+
+### Requirements
+
+The passkey must already be enrolled on the server (a signed-in web session
+registers it), and passkey sign-in only works against a server with the
+`passkey` provider on the local backend.
+
+1. **Associated Domains entitlement.** Add `webcredentials:<host>` for the
+   server's relying party ID to `com.apple.developer.associated-domains`, for
+   example `webcredentials:ops.nardukenterprises.com`. The entitlement needs a
+   provisioning profile that grants Associated Domains.
+2. **`apple-app-site-association`.** The host serves
+   `https://<host>/.well-known/apple-app-site-association` (no redirect, JSON)
+   with the app listed under `webcredentials.apps` as `<TeamID>.<bundle id>`.
+3. **Server origin.** A native assertion's client data names the origin
+   `https://<rp id>` and no cross-origin flag. `AUTH_WEBAUTHN_ORIGIN` must
+   therefore include `https://<AUTH_WEBAUTHN_RP_ID>`. When the RP ID is the
+   serving host this is already the case; when the RP ID is a parent domain and
+   only a subdomain origin is configured, the verifier refuses the assertion.
+   The server tests prove both outcomes against the real verifier
+   (`tests/webauthn-native-assertion.test.ts`). The claim that Apple's platform
+   authenticator emits exactly that origin is not yet proven on a device.
+
+The system passkey prompt requires user verification, matching the server.
+
 ## Changing it
 
 Generic native authentication lives here; organization and product behavior live
@@ -102,9 +163,10 @@ product for an iOS device, and proves a clean SwiftPM consumer resolves a
 version tag of an isolated repository fixture. Tests use only the public API
 with injected `CredentialStore`, `AuthTransport`, and clock implementations.
 They cover the three-leg credential sign-in and the headers and cookie it
-depends on, PKCE callback binding and replay, a rejected password, a broken leg
-mid-handshake, refresh contention, sign-out during rotation, credential
-rejection, transient failure, and secure configuration.
+depends on, the passkey sequence with a fake authenticator, PKCE callback
+binding and replay, a rejected password, a broken leg mid-handshake, refresh
+contention, sign-out during rotation, credential rejection, transient failure,
+and secure configuration.
 
 The package needs Security and CryptoKit, so the root `Package.swift` declares
 its targets only on an Apple host, and CI runs the script on GitHub-hosted macOS
