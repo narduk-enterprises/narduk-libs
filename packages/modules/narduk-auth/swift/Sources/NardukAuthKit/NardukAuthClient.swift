@@ -36,6 +36,27 @@ public actor NardukAuthClient {
   private struct AuthorizeResponse: Decodable {
     let redirectTo: String
   }
+  private struct PasskeyOptions: Decodable {
+    let challenge: String
+    let rpId: String
+  }
+  private struct PasskeyVerifyBody: Encodable {
+    struct Credential: Encodable {
+      struct Assertion: Encodable {
+        let authenticatorData: String
+        let clientDataJSON: String
+        let signature: String
+        let userHandle: String?
+      }
+      let id: String
+      let rawId: String
+      let type: String
+      let authenticatorAttachment: String
+      let clientExtensionResults: [String: String]
+      let response: Assertion
+    }
+    let response: Credential
+  }
   private struct ServerMessage: Decodable {
     let statusMessage: String?
   }
@@ -73,16 +94,31 @@ public actor NardukAuthClient {
     let login = try await post(
       "/api/auth/login", body: ["email": email, "password": password],
       headers: ["Origin": origin])
-    let authorize = try await post(
-      "/api/auth/native/authorize",
-      body: [
-        "clientId": configuration.clientID,
-        "redirectUri": configuration.redirectURI.absoluteString,
-        "codeChallenge": Self.base64URL(Data(SHA256.hash(data: Data(request.verifier.utf8)))),
-        "codeChallengeMethod": "S256",
-        "state": request.state,
-      ],
-      headers: ["Origin": origin, "Cookie": try Self.sessionCookie(from: login.response)])
+    let authorize = try await authorizeRequest(
+      request, headers: ["Origin": origin, "Cookie": try Self.sessionCookie(from: login.response)])
+    let redirect = try JSONDecoder().decode(AuthorizeResponse.self, from: authorize.data).redirectTo
+    guard let callback = URL(string: redirect) else { throw AuthError.invalidResponse }
+    try await finishSignIn(callbackURL: callback, request: request)
+  }
+
+  /// The passkey sign-in with an injected assertion provider, so the whole
+  /// options, assert, verify, authorize, token sequence is testable without
+  /// hardware. `signInWithPasskey(anchor:)` is this with the system provider, and
+  /// the same transport rule as `signIn(email:password:)` applies: the web session
+  /// cookie from `/api/auth/passkeys/authentication/verify` is attached to the
+  /// single `/api/auth/native/authorize` request and then discarded.
+  public func signIn(using provider: any PasskeyAssertionProvider) async throws {
+    let origin = try self.origin()
+    let options = try await passkeyOptions(origin: origin)
+    let assertion = try await provider.assertion(
+      relyingPartyID: options.relyingPartyID, challenge: options.challenge)
+    let verify = try await passkeyVerify(assertion, origin: origin)
+    // The 600 second window covers the authorize code, not the time spent at
+    // the authenticator prompt, so the PKCE request is created only now.
+    let request = PendingSignIn(
+      verifier: try Self.secret(), state: try Self.secret(), createdAt: clock())
+    let authorize = try await authorizeRequest(
+      request, headers: ["Origin": origin, "Cookie": try Self.sessionCookie(from: verify.response)])
     let redirect = try JSONDecoder().decode(AuthorizeResponse.self, from: authorize.data).redirectTo
     guard let callback = URL(string: redirect) else { throw AuthError.invalidResponse }
     try await finishSignIn(callbackURL: callback, request: request)
@@ -231,8 +267,65 @@ public actor NardukAuthClient {
     else { throw AuthError.invalidConfiguration }
     return parts.port.map { "\(scheme)://\(host):\($0)" } ?? "\(scheme)://\(host)"
   }
+  private func authorizeRequest(
+    _ request: PendingSignIn, headers: [String: String]
+  ) async throws -> (data: Data, response: HTTPURLResponse) {
+    try await post(
+      "/api/auth/native/authorize",
+      body: [
+        "clientId": configuration.clientID,
+        "redirectUri": configuration.redirectURI.absoluteString,
+        "codeChallenge": Self.base64URL(Data(SHA256.hash(data: Data(request.verifier.utf8)))),
+        "codeChallengeMethod": "S256",
+        "state": request.state,
+      ],
+      headers: headers)
+  }
+  private func passkeyOptions(origin: String) async throws -> (
+    relyingPartyID: String, challenge: Data
+  ) {
+    let reply: (data: Data, response: HTTPURLResponse)
+    do {
+      reply = try await post(
+        "/api/auth/passkeys/authentication/options", body: [String: String](),
+        headers: ["Origin": origin])
+    } catch let error as AuthError where error.statusCode == 501 || error.statusCode == 404 {
+      throw PasskeySignInError.unavailable
+    }
+    guard let decoded = try? JSONDecoder().decode(PasskeyOptions.self, from: reply.data),
+      let challenge = Self.dataFromBase64URL(decoded.challenge), !challenge.isEmpty,
+      let host = configuration.serverURL.host?.lowercased()
+    else { throw AuthError.invalidResponse }
+    // The authenticator asks for credentials scoped to this ID, so a service
+    // may only name its own host or a parent domain of it.
+    let rpID = decoded.rpId.lowercased()
+    guard !rpID.isEmpty, host == rpID || host.hasSuffix("." + rpID) else {
+      throw AuthError.invalidResponse
+    }
+    return (rpID, challenge)
+  }
+  private func passkeyVerify(
+    _ assertion: PasskeyAssertion, origin: String
+  ) async throws -> (data: Data, response: HTTPURLResponse) {
+    let id = Self.base64URL(assertion.credentialID)
+    let body = PasskeyVerifyBody(
+      response: .init(
+        id: id, rawId: id, type: "public-key", authenticatorAttachment: "platform",
+        clientExtensionResults: [:],
+        response: .init(
+          authenticatorData: Self.base64URL(assertion.authenticatorData),
+          clientDataJSON: Self.base64URL(assertion.clientDataJSON),
+          signature: Self.base64URL(assertion.signature),
+          userHandle: assertion.userHandle.isEmpty ? nil : Self.base64URL(assertion.userHandle))))
+    do {
+      return try await post(
+        "/api/auth/passkeys/authentication/verify", body: body, headers: ["Origin": origin])
+    } catch let error as AuthError where [400, 401, 403].contains(error.statusCode ?? 0) {
+      throw PasskeySignInError.refused
+    }
+  }
   private func post(
-    _ path: String, body: [String: String], headers: [String: String] = [:]
+    _ path: String, body: some Encodable, headers: [String: String] = [:]
   ) async throws -> (data: Data, response: HTTPURLResponse) {
     var request = URLRequest(url: endpoint(path))
     request.httpMethod = "POST"
@@ -304,6 +397,12 @@ public actor NardukAuthClient {
     let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
     guard status == errSecSuccess else { throw AuthError.keychain(status) }
     return base64URL(Data(bytes))
+  }
+  private static func dataFromBase64URL(_ value: String) -> Data? {
+    var base64 = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(
+      of: "_", with: "/")
+    base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+    return Data(base64Encoded: base64)
   }
   private static func base64URL(_ data: Data) -> String {
     data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(
