@@ -1997,6 +1997,144 @@ unchanged, so the browser TTL of every route is identical before and after. What
 changes is that the edge TTL moves to a header Cloudflare will honor and the
 stale windows stop being silently discarded.
 
+`setCacheProfile` only helps callers that reach Workers Cache. An SSR page's own
+in-process `useFetch('/api/...')` does not; cache that read with
+[`withWorkerCache`](#worker-data-cache-withworkercache), which also says when to
+use `withKVCache` / `withD1Cache` instead.
+
+## Worker data cache: withWorkerCache
+
+`withWorkerCache` keeps the **completed value** of a hot read inside the Worker,
+keyed by an app-supplied version, so SSR page renders stop re-reading D1 while a
+write still shows on the very next request (narduk-libs#1716, extending #1268).
+Import it from `@narduk-enterprises/narduk-core/server/utils/workerCache`, or
+rely on Nitro's auto-import.
+
+### Which cache to use
+
+| Need                                                                         | Use                              | Why                                                                                      |
+| ---------------------------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
+| A public GET that outside callers (browsers, CDN, bots) fetch                | `setCacheProfile`                | The response is cached at the edge by its headers, before the Worker runs.               |
+| The same data when **SSR pages call the API in-process**, or any hot D1 read | `withWorkerCache` + a version    | The in-process call never reaches the edge; this caches the value inside the handler.    |
+| A response from an **external API** (weather, analytics, search console)     | `withKVCache` or `withD1Cache`   | Time-based, survives isolate recycling and cold datacentres; a lookup costs a KV/D1 row. |
+| Per-user data                                                                | `setCacheProfile(event, 'none')` | Never shared. Add `withWorkerCache` with `scope: 'private'` if the read is hot.          |
+
+They compose: a route can set a cache profile for outside callers and call
+`withWorkerCache` inside its handler for the SSR path.
+
+### Why `setCacheProfile` is not enough for SSR
+
+A page Nuxt renders on the server calls `useFetch('/api/...')` **in-process**:
+Nitro runs the handler inside the same Worker invocation and never makes an HTTP
+request. The call does not pass Workers Cache, so `CDN-Cache-Control` is never
+read, and the page HTML is `private, no-store` under the nonce CSP
+(narduk-libs#435). An edge-cached route therefore still ran every D1 read once
+per page view. The only place left to cache is inside the handler.
+
+### Usage
+
+```ts
+// server/api/stations.get.ts
+export default defineEventHandler(async (event) => {
+  const db = getD1CacheDB(event)!
+  setCacheProfile(event, 'live') // outside callers, at the edge
+  return withWorkerCache(
+    event,
+    {
+      key: 'stations:list',
+      scope: 'public',
+      freshSeconds: 300, // served as is
+      maxStaleSeconds: 3600, // then served stale while one request refreshes it
+      version: () => readCacheVersion(db, 'stations'),
+    },
+    () => listStations(db),
+  )
+})
+
+// server/api/stations/[id].patch.ts: the write moves the version with it
+await db.batch([
+  db.prepare('UPDATE stations SET status = ? WHERE id = ?').bind(status, id),
+  prepareCacheVersionBump(db, 'stations'),
+])
+```
+
+The cache key is `key` plus `version`. A write bumps the version, the next
+request reads the new one, and every tier misses: there is no purge and no
+window in which the old value is served. `readCacheVersion` is one primary-key
+read, which is the whole per-request D1 cost of a hit. Omit `version` for a
+purely time-based cache.
+
+Options:
+
+- `key` (required): everything the value depends on that the version does not
+  (path parameters, filters; the user id for `private`).
+- `scope` (required): `'public'` values go to isolate memory and Workers Cache;
+  `'private'` values stay in isolate memory only and are never written to a
+  shared tier.
+- `freshSeconds` (required): served as is. `0` turns caching off for the call.
+- `maxStaleSeconds` (default `0`): after `freshSeconds`, still served while a
+  background refresh runs. Past `freshSeconds + maxStaleSeconds` the value is
+  expired and `build()` is awaited; an expired value is never a fallback.
+- `retryBackoffSeconds` (default `15`): a failed refresh is not retried sooner.
+- `version`: a value, or a function (usually `readCacheVersion`).
+- `cacheName`: use `caches.open(name)` instead of `caches.default`.
+- `returnMeta: true`: return `{ data, _meta }` with `source` (`memory`, `edge`,
+  `build`, `bypass`), `stale`, `cachedAt`, `key`, `version`.
+
+### Tiers and guarantees
+
+`isolate memory -> Workers Cache (public scope) -> build()`.
+
+- **Completed serializable values only.** Memory holds JSON text, so no request
+  sees an object another request can change. A value that is not plain JSON (a
+  function, a promise, a `Map`, a `Response`, a stream) is returned uncached and
+  logged.
+- **No shared in-flight work.** No promise, fetch, stream or pending I/O is
+  retained across requests. Two concurrent misses both run `build()`.
+- **Bounded.** Isolate memory holds at most 8 MiB and 256 entries, least
+  recently used out first; a value larger than the byte budget is not kept in
+  memory.
+- **Refresh belongs to the request.** The background refresh is handed to that
+  request's `waitUntil`. Only one request per isolate claims it (a 30 s lease
+  covers a cancelled request); with no `waitUntil` (dev, tests) the refresh runs
+  inline. A failed refresh leaves the stale value in place (`_meta.stale`) and
+  backs off.
+- **Newer wins, within an isolate.** A refresh that started earlier but finishes
+  later cannot overwrite a build that started later in that isolate's memory,
+  and it does not write its older value to Workers Cache. Across isolates
+  Workers Cache has no compare-and-set, so see "Consistency is best effort".
+- **Errors fall through.** A Cache API error is logged and the read goes to
+  `build()`. A `version` that cannot be read means the value cannot be proven
+  current, so `build()` runs uncached.
+
+### Consistency is best effort
+
+Workers Cache is per data centre, filled on demand and has no compare-and-set.
+There is no distributed lock: two isolates (or two data centres) can both build
+the same value, and a Workers Cache copy can lag. What the version gives you is
+that **a request that reads version N never serves a value stored under another
+version**, and the helper reads the version before it builds, so a value stored
+under N is at least as new as N. Bump the version in the same `db.batch` as the
+write (`prepareCacheVersionBump`), or after it commits (`bumpCacheVersion`),
+never before. A `public` key must not depend on who is asking, and Workers Cache
+is not populated on `*.workers.dev`, where only isolate memory applies.
+
+### Versions
+
+A version is a counter in one `kv_cache` row per name (`cache-version:<name>`),
+the table core already migrates in `0001_kv_cache.sql`, so there is no new
+migration. The row's `expires_at` is set so far ahead that `cleanExpiredCache`
+never sweeps it.
+
+- `readCacheVersion(db, name)`: the current version as a string, `'0'` before
+  the first bump.
+- `bumpCacheVersion(db, name)`: bump and return the new version.
+- `prepareCacheVersionBump(db, name)`: the bump as a prepared statement, for
+  `db.batch([...])` with the write it covers.
+
+`tests/worker-cache.test.ts` covers each guarantee above and
+`tests/worker-cache-version-d1.test.ts` the versions on Miniflare D1.
+
 ## Per-browser state: `useStoredState`
 
 `@narduk-enterprises/narduk-core/app/stored-state` keeps a per-browser
