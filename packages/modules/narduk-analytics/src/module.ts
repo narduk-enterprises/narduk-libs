@@ -37,6 +37,14 @@ interface TypePrepareOptions {
   }
 }
 
+// Nuxt 4.5 moved Nitro hook declarations into an optional augmentation. Its
+// runtime still emits this hook, including when a consumer's module type
+// program has only the base @nuxt/schema declarations loaded.
+type NitroPrepareTypesHook = (
+  name: 'nitro:prepare:types',
+  handler: (options: TypePrepareOptions) => void,
+) => () => void
+
 const ADMIN_ANALYTICS_ROUTE = '/admin/analytics'
 
 export interface NardukAnalyticsModuleOptions {
@@ -362,7 +370,8 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       if (options.app) registerTypeReference(prepareOptions, analyticsInjectionTypesPath)
     }
 
-    nuxt.hook('nitro:prepare:types', registerAnalyticsTypes)
+    const hook = nuxt.hook as typeof nuxt.hook & NitroPrepareTypesHook
+    hook('nitro:prepare:types', registerAnalyticsTypes)
     nuxt.hook('prepare:types', registerAnalyticsTypes)
   },
 })
