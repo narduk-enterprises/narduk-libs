@@ -97,7 +97,7 @@ export interface FakeMapKitLoadOptions {
     token?: string;
     version?: string;
 }
-export type FakeMapKitOperationName = 'Annotation' | 'ImageAnnotation' | 'Map' | 'Map.destroy' | 'MarkerAnnotation' | 'addAnnotation' | 'addAnnotations' | 'annotations=' | 'authorizationCallback' | 'bootstrap' | 'callout-remove' | 'callout-render' | 'camera-degenerate' | 'colorScheme=' | 'configuration-change' | 'deselect' | 'error' | 'init' | 'load' | 'mapType=' | 'region=' | 'removeAnnotation' | 'removeAnnotations' | 'select' | 'selectedAnnotation=' | 'setCenterAnimated' | 'setRegionAnimated' | 'setVisibleMapRectAnimated' | 'showItems' | 'visibleMapRect=';
+export type FakeMapKitOperationName = 'Annotation' | 'CircleOverlay' | 'ImageAnnotation' | 'Map' | 'Map.destroy' | 'MarkerAnnotation' | 'PolygonOverlay' | 'PolylineOverlay' | 'addAnnotation' | 'addAnnotations' | 'addOverlay' | 'addOverlays' | 'annotations=' | 'authorizationCallback' | 'bootstrap' | 'callout-remove' | 'callout-render' | 'camera-degenerate' | 'colorScheme=' | 'configuration-change' | 'deselect' | 'error' | 'init' | 'load' | 'mapType=' | 'overlays=' | 'region=' | 'removeAnnotation' | 'removeAnnotations' | 'removeOverlay' | 'removeOverlays' | 'select' | 'selectedAnnotation=' | 'setCenterAnimated' | 'setRegionAnimated' | 'setVisibleMapRectAnimated' | 'showItems' | 'single-tap' | 'visibleMapRect=';
 export interface FakeMapKitOperation {
     /** Annotation ids this operation touched; empty when it touched none. */
     readonly annotationIds: readonly string[];
@@ -179,6 +179,15 @@ export interface FakeMapKitInspector {
      * fires `deselect` then `select` on the map, and renders the callout.
      */
     selectAnnotation(map: FakeMapKitMap, annotation: FakeMapKitAnnotation): void;
+    /**
+     * Simulate a user tapping the map at `location`: fires `single-tap` on the map
+     * with the `pointOnPage` that projects to it, so `convertPointOnPageToCoordinate`
+     * answers `location` back. Logged as `single-tap`.
+     */
+    tapMap(map: FakeMapKitMap, location: {
+        latitude: number;
+        longitude: number;
+    }): void;
 }
 export interface FakeCoordinate {
     latitude: number;
@@ -363,6 +372,60 @@ export interface FakeMapKitMarkerAnnotation extends FakeMapKitAnnotation {
 export interface FakeMapKitImageAnnotation extends FakeMapKitAnnotation {
     url: Record<string, string>;
 }
+/** The `mapkit.Style` members this library writes; Apple has more. Unset ones are absent. */
+export interface FakeMapKitStyleOptions {
+    fillColor?: string;
+    fillOpacity?: number;
+    fillRule?: 'evenodd' | 'nonzero';
+    lineCap?: 'butt' | 'round' | 'square';
+    lineDash?: number[];
+    lineDashOffset?: number;
+    lineJoin?: 'bevel' | 'miter' | 'round';
+    lineWidth?: number;
+    strokeColor?: string;
+    strokeEnd?: number;
+    strokeOpacity?: number;
+    strokeStart?: number;
+}
+export type FakeMapKitStyle = FakeMapKitStyleOptions;
+/**
+ * Apple's `OverlayOptions`. `enabled` and `visible` default to `true` here, which
+ * is an assumption: Apple's `.d.ts` documents no default, so a test that depends
+ * on one should set it (`<AppMapKit>` always does).
+ */
+export interface FakeMapKitOverlayOptions {
+    data?: object;
+    enabled?: boolean;
+    selected?: boolean;
+    style?: FakeMapKitStyle;
+    visible?: boolean;
+}
+/**
+ * An overlay the map holds. The fake records that it was added and removed
+ * (`inspect.operations`, `map.overlays`) and draws nothing.
+ */
+export interface FakeMapKitOverlay extends EventTarget {
+    data: object;
+    enabled: boolean;
+    readonly map: FakeMapKitMap | null;
+    selected: boolean;
+    style: FakeMapKitStyle;
+    visible: boolean;
+}
+export interface FakeMapKitPolygonOverlay extends FakeMapKitOverlay {
+    /** Always rings, even when the constructor was handed a single flat ring. */
+    points: FakeCoordinate[][];
+}
+export interface FakeMapKitPolylineOverlay extends FakeMapKitOverlay {
+    points: FakeCoordinate[];
+}
+export interface FakeMapKitCircleOverlay extends FakeMapKitOverlay {
+    coordinate: {
+        latitude: number;
+        longitude: number;
+    };
+    radius: number;
+}
 export interface FakeMapKitShowItemsOptions {
     animate?: boolean;
     minimumSpan?: {
@@ -414,6 +477,7 @@ export interface FakeMapKitMap extends EventTarget {
     readonly element: HTMLElement | null;
     isRotationEnabled: boolean;
     mapType: string;
+    overlays: FakeMapKitOverlay[];
     get padding(): FakePadding;
     set padding(value: FakePaddingData);
     region: FakeCoordinateRegion;
@@ -425,9 +489,18 @@ export interface FakeMapKitMap extends EventTarget {
     set visibleMapRect(value: FakeMapRectData);
     addAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation | null;
     addAnnotations(annotations: FakeMapKitAnnotation[]): FakeMapKitAnnotation[];
+    addOverlay(overlay: FakeMapKitOverlay): FakeMapKitOverlay | null;
+    addOverlays(overlays: FakeMapKitOverlay[]): FakeMapKitOverlay[];
+    /**
+     * The inverse of the fake's own projection. `point` is in page coordinates (client
+     * coordinates plus scroll), as Apple documents.
+     */
+    convertPointOnPageToCoordinate(point: DOMPoint): FakeCoordinate;
     destroy(): void;
     removeAnnotation(annotation: FakeMapKitAnnotation): FakeMapKitAnnotation;
     removeAnnotations(annotations: FakeMapKitAnnotation[]): FakeMapKitAnnotation[];
+    removeOverlay(overlay: FakeMapKitOverlay): FakeMapKitOverlay;
+    removeOverlays(overlays: FakeMapKitOverlay[]): FakeMapKitOverlay[];
     setRegionAnimated(region: FakeCoordinateRegion, animated?: boolean): FakeMapKitMap;
     setVisibleMapRectAnimated(mapRect: FakeMapRectData, animated?: boolean): FakeMapKitMap;
     showItems(items: FakeMapKitAnnotation[], options?: FakeMapKitShowItemsOptions): FakeMapKitAnnotation[];
@@ -480,6 +553,10 @@ export interface FakeMapKitNamespace extends EventTarget {
         longitudeDelta: number;
     }) => FakeCoordinateRegion;
     readonly CoordinateSpan: new (latitudeDelta?: number, longitudeDelta?: number) => FakeCoordinateSpan;
+    readonly CircleOverlay: new (coordinate: {
+        latitude: number;
+        longitude: number;
+    }, radius: number, options?: FakeMapKitOverlayOptions) => FakeMapKitCircleOverlay;
     readonly ColorScheme: FakeMapKitColorSchemeEnum;
     readonly FeatureVisibility: FakeMapKitFeatureVisibilityEnum;
     readonly ImageAnnotation: new (location: {
@@ -496,6 +573,18 @@ export interface FakeMapKitNamespace extends EventTarget {
         longitude: number;
     }, options?: FakeMapKitMarkerAnnotationOptions) => FakeMapKitMarkerAnnotation;
     readonly Padding: new (padding?: FakePaddingData) => FakePadding;
+    readonly PolygonOverlay: new (points: Array<Array<{
+        latitude: number;
+        longitude: number;
+    }>> | Array<{
+        latitude: number;
+        longitude: number;
+    }>, options?: FakeMapKitOverlayOptions) => FakeMapKitPolygonOverlay;
+    readonly PolylineOverlay: new (points: Array<{
+        latitude: number;
+        longitude: number;
+    }>, options?: FakeMapKitOverlayOptions) => FakeMapKitPolylineOverlay;
+    readonly Style: new (options?: FakeMapKitStyleOptions) => FakeMapKitStyle;
     init(options: FakeMapKitInitializationOptions): void;
     load(libraryNames: string | string[]): Promise<FakeMapKitNamespace>;
 }

@@ -5,6 +5,7 @@ import type {
   FakeMapKitAnnotation,
   FakeMapKitAnnotationOptions,
   FakeMapKitCalloutDelegate,
+  FakeMapKitCircleOverlay,
   FakeMapKitConfigurationChangeStatus,
   FakeMapKitConfigurationErrorStatus,
   FakeMapKitDegenerateCameraInput,
@@ -22,8 +23,14 @@ import type {
   FakeMapKitOperation,
   FakeMapKitOperationName,
   FakeMapKitOptions,
+  FakeMapKitOverlay,
+  FakeMapKitOverlayOptions,
+  FakeMapKitPolygonOverlay,
+  FakeMapKitPolylineOverlay,
   FakeMapKitRuntime,
   FakeMapKitShowItemsOptions,
+  FakeMapKitStyle,
+  FakeMapKitStyleOptions,
   FakeMapPoint,
   FakeMapRect,
   FakeMapRectData,
@@ -664,11 +671,122 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
   const asAnnotation = (value: FakeMapKitAnnotation): Annotation => value as Annotation
 
+  // -------------------------------------------------------------- overlays --
+  // Modelled as state, not pixels: an overlay records that a map holds it and
+  // what it was built from, and draws nothing. That is what a component test
+  // needs (`inspect.operations`, `map.overlays`) and all a headless run can
+  // verify honestly.
+
+  const styleMembers = [
+    'fillColor',
+    'fillOpacity',
+    'fillRule',
+    'lineCap',
+    'lineDash',
+    'lineDashOffset',
+    'lineJoin',
+    'lineWidth',
+    'strokeColor',
+    'strokeEnd',
+    'strokeOpacity',
+    'strokeStart',
+  ] as const
+
+  /** Only what the caller set is present; Apple's per-member defaults are not invented. */
+  class Style {
+    constructor(options: FakeMapKitStyleOptions = {}) {
+      for (const member of styleMembers) {
+        const value = options[member]
+        if (value !== undefined) {
+          Object.defineProperty(this, member, {
+            configurable: true,
+            enumerable: true,
+            value,
+            writable: true,
+          })
+        }
+      }
+    }
+  }
+
+  class Overlay extends EventTarget implements FakeMapKitOverlay {
+    data: object
+    enabled: boolean
+    selected: boolean
+    style: FakeMapKitStyle
+    visible: boolean
+    /** Set by the map. Not part of Apple's writable surface here. */
+    ownerMap: FakeMapKitMap | null = null
+
+    constructor(options: FakeMapKitOverlayOptions = {}) {
+      super()
+      this.data = options.data ?? {}
+      this.enabled = options.enabled ?? true
+      this.selected = options.selected ?? false
+      this.style = options.style ?? new Style()
+      this.visible = options.visible ?? true
+    }
+
+    get map(): FakeMapKitMap | null {
+      return this.ownerMap
+    }
+  }
+
+  class PolygonOverlay extends Overlay implements FakeMapKitPolygonOverlay {
+    points: FakeCoordinate[][]
+    constructor(
+      points:
+        | Array<Array<{ latitude: number; longitude: number }>>
+        | Array<{ latitude: number; longitude: number }>,
+      options?: FakeMapKitOverlayOptions,
+    ) {
+      super(options)
+      // Apple takes one ring or many and always answers many.
+      const rings = (Array.isArray(points[0]) ? points : [points]) as Array<
+        Array<{ latitude: number; longitude: number }>
+      >
+      this.points = rings.map((ring) =>
+        ring.map((point) => new Coordinate(point.latitude, point.longitude)),
+      )
+    }
+  }
+
+  class PolylineOverlay extends Overlay implements FakeMapKitPolylineOverlay {
+    points: FakeCoordinate[]
+    constructor(
+      points: Array<{ latitude: number; longitude: number }>,
+      options?: FakeMapKitOverlayOptions,
+    ) {
+      super(options)
+      this.points = points.map((point) => new Coordinate(point.latitude, point.longitude))
+    }
+  }
+
+  class CircleOverlay extends Overlay implements FakeMapKitCircleOverlay {
+    coordinate: { latitude: number; longitude: number }
+    radius: number
+    constructor(
+      coordinate: { latitude: number; longitude: number },
+      radius: number,
+      options?: FakeMapKitOverlayOptions,
+    ) {
+      super(options)
+      this.coordinate = new Coordinate(coordinate.latitude, coordinate.longitude)
+      this.radius = radius
+    }
+  }
+
+  /** `PolygonOverlay`, `CircleOverlay`... for the operation log. */
+  const overlayKind = (overlay: FakeMapKitOverlay): string => {
+    if (overlay instanceof PolygonOverlay) return 'PolygonOverlay'
+    if (overlay instanceof PolylineOverlay) return 'PolylineOverlay'
+    if (overlay instanceof CircleOverlay) return 'CircleOverlay'
+    return 'Overlay'
+  }
+
   // ------------------------------------------------------------------- map --
 
   const unmodelledMapMembers = [
-    'addOverlay',
-    'addOverlays',
     'addTileOverlay',
     'annotationForCluster',
     'annotationsInMapRect',
@@ -676,10 +794,6 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     'cameraDistance',
     'cameraZoomRange',
     'convertCoordinateToPointOnPage',
-    'convertPointOnPageToCoordinate',
-    'overlays',
-    'removeOverlay',
-    'removeOverlays',
     'removeTileOverlay',
     'tileOverlays',
     'userLocationAnnotation',
@@ -698,6 +812,15 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     }
   }
 
+  /** Apple's `single-tap` carries more (`domEvents`); `pointOnPage` is the part this library reads. */
+  class MapTapEvent extends Event {
+    readonly pointOnPage: DOMPoint
+    constructor(type: string, pointOnPage: DOMPoint) {
+      super(type)
+      this.pointOnPage = pointOnPage
+    }
+  }
+
   class MapImpl extends EventTarget implements FakeMapKitMap {
     readonly element: HTMLElement | null
     /** The container the map was attached to; the projection measures it. */
@@ -709,6 +832,7 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     regionValue: FakeCoordinateRegion
     selectedValue: FakeMapKitAnnotation | null = null
     readonly ownedAnnotations: FakeMapKitAnnotation[] = []
+    readonly ownedOverlays: FakeMapKitOverlay[] = []
     destroyed = false
     /** Apple's constructor default is `true`; the documented `<AppMapKit>` default is `false`. */
     isRotationEnabled: boolean
@@ -807,6 +931,17 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       }
       this.removeAnnotations([...this.ownedAnnotations])
       this.addAnnotations(next)
+    }
+
+    get overlays(): FakeMapKitOverlay[] {
+      return [...this.ownedOverlays]
+    }
+
+    set overlays(next: FakeMapKitOverlay[]) {
+      log('overlays=', [], `${this.ownedOverlays.length} -> ${next.length}`)
+      for (const overlay of next) this.assertOwnNamespace(overlay, 'overlays')
+      for (const overlay of [...this.ownedOverlays]) this.detachOverlay(overlay)
+      for (const overlay of next) this.attachOverlay(overlay)
     }
 
     get region(): FakeCoordinateRegion {
@@ -1112,6 +1247,83 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       return annotations
     }
 
+    attachOverlay(overlay: FakeMapKitOverlay): boolean {
+      if (this.ownedOverlays.includes(overlay)) return false
+      ;(overlay as Overlay).ownerMap = this.view
+      this.ownedOverlays.push(overlay)
+      return true
+    }
+
+    detachOverlay(overlay: FakeMapKitOverlay): void {
+      const index = this.ownedOverlays.indexOf(overlay)
+      if (index < 0) return
+      this.ownedOverlays.splice(index, 1)
+      ;(overlay as Overlay).ownerMap = null
+    }
+
+    addOverlay(overlay: FakeMapKitOverlay): FakeMapKitOverlay | null {
+      log('addOverlay', [], overlayKind(overlay))
+      this.assertOwnNamespace(overlay, 'addOverlay')
+      return this.attachOverlay(overlay) ? overlay : null
+    }
+
+    addOverlays(overlays: FakeMapKitOverlay[]): FakeMapKitOverlay[] {
+      log('addOverlays', [], String(overlays.length))
+      for (const [index, overlay] of overlays.entries()) {
+        this.assertOwnNamespace(overlay, 'addOverlays', index)
+      }
+      for (const overlay of overlays) this.attachOverlay(overlay)
+      return overlays
+    }
+
+    removeOverlay(overlay: FakeMapKitOverlay): FakeMapKitOverlay {
+      log('removeOverlay', [], overlayKind(overlay))
+      this.detachOverlay(overlay)
+      return overlay
+    }
+
+    removeOverlays(overlays: FakeMapKitOverlay[]): FakeMapKitOverlay[] {
+      log('removeOverlays', [], String(overlays.length))
+      for (const overlay of overlays) this.detachOverlay(overlay)
+      return overlays
+    }
+
+    /**
+     * The inverse of `project`, for a point in PAGE coordinates (client
+     * coordinates plus scroll, as Apple documents). The answer is built from this
+     * map's own namespace so it can be handed straight back to the map.
+     */
+    convertPointOnPageToCoordinate(point: { x: number; y: number }): FakeCoordinate {
+      const box = (this.element ?? this.host).getBoundingClientRect()
+      const scroll = globalThis as { scrollX?: number; scrollY?: number }
+      const x = point.x - box.left - (scroll.scrollX ?? 0)
+      const y = point.y - box.top - (scroll.scrollY ?? 0)
+      const { height, width } = this.viewport()
+      const region = this.regionValue
+      const west = region.center.longitude - region.span.longitudeDelta / 2
+      const north = mercator(region.center.latitude + region.span.latitudeDelta / 2)
+      const south = mercator(region.center.latitude - region.span.latitudeDelta / 2)
+      const longitude = west + (x / width) * region.span.longitudeDelta
+      const projected = north - (y / height) * (north - south)
+      const latitude = ((2 * Math.atan(Math.exp(projected)) - Math.PI / 2) * 180) / Math.PI
+      return brandNamespace(new Coordinate(latitude, longitude), this.namespaceId)
+    }
+
+    /** Where `project` puts `location`, in page coordinates: the `pointOnPage` of a tap on it. */
+    pageTapPoint(location: { latitude: number; longitude: number }): DOMPoint {
+      const local = project(
+        new Coordinate(location.latitude, location.longitude),
+        this.regionValue,
+        this.viewport(),
+      )
+      const box = (this.element ?? this.host).getBoundingClientRect()
+      const scroll = globalThis as { scrollX?: number; scrollY?: number }
+      return makePoint(
+        local.x + box.left + (scroll.scrollX ?? 0),
+        local.y + box.top + (scroll.scrollY ?? 0),
+      )
+    }
+
     setRegionAnimated(region: FakeCoordinateRegion, _animated?: boolean): FakeMapKitMap {
       this.assertOwnNamespace(region, 'setRegionAnimated')
       log('setRegionAnimated')
@@ -1165,6 +1377,7 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
       this.destroyed = true
       this.applySelection(null)
       for (const annotation of [...this.ownedAnnotations]) this.detach(annotation)
+      for (const overlay of [...this.ownedOverlays]) this.detachOverlay(overlay)
       this.element?.remove()
       const index = liveMaps.indexOf(this)
       if (index >= 0) liveMaps.splice(index, 1)
@@ -1281,7 +1494,6 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
   const unmodelledNamespaceMembers = [
     'BoundingRegion',
     'CameraZoomRange',
-    'CircleOverlay',
     'Directions',
     'Geocoder',
     'Libraries',
@@ -1290,10 +1502,7 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     'PlaceAnnotation',
     'PlaceLookup',
     'PointsOfInterestSearch',
-    'PolygonOverlay',
-    'PolylineOverlay',
     'Search',
-    'Style',
     'TileOverlay',
     'importGeoJSON',
   ]
@@ -1356,6 +1565,10 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
     readonly #annotation: AnnotationConstructor
     readonly #markerAnnotation: MarkerAnnotationConstructor
     readonly #imageAnnotation: ImageAnnotationConstructor
+    readonly #style: FakeMapKitNamespace['Style']
+    readonly #polygonOverlay: FakeMapKitNamespace['PolygonOverlay']
+    readonly #polylineOverlay: FakeMapKitNamespace['PolylineOverlay']
+    readonly #circleOverlay: FakeMapKitNamespace['CircleOverlay']
 
     constructor(namespaceId: string) {
       super()
@@ -1448,6 +1661,43 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
           return new ImageAnnotation(location, options)
         },
       )
+      this.#style = scopedConstructor(
+        namespaceId,
+        (options?: FakeMapKitStyleOptions) => new Style(options),
+      )
+      this.#polygonOverlay = scopedConstructor(
+        namespaceId,
+        (
+          points:
+            | Array<Array<{ latitude: number; longitude: number }>>
+            | Array<{ latitude: number; longitude: number }>,
+          options?: FakeMapKitOverlayOptions,
+        ) => {
+          log('PolygonOverlay')
+          return new PolygonOverlay(points, options)
+        },
+      )
+      this.#polylineOverlay = scopedConstructor(
+        namespaceId,
+        (
+          points: Array<{ latitude: number; longitude: number }>,
+          options?: FakeMapKitOverlayOptions,
+        ) => {
+          log('PolylineOverlay')
+          return new PolylineOverlay(points, options)
+        },
+      )
+      this.#circleOverlay = scopedConstructor(
+        namespaceId,
+        (
+          coordinate: { latitude: number; longitude: number },
+          radius: number,
+          options?: FakeMapKitOverlayOptions,
+        ) => {
+          log('CircleOverlay')
+          return new CircleOverlay(coordinate, radius, options)
+        },
+      )
     }
 
     get language(): string {
@@ -1496,6 +1746,22 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
     get ImageAnnotation(): ImageAnnotationConstructor {
       return this.requireLibrary('annotations', 'ImageAnnotation', this.#imageAnnotation)
+    }
+
+    get Style(): FakeMapKitNamespace['Style'] {
+      return this.requireLibrary('overlays', 'Style', this.#style)
+    }
+
+    get PolygonOverlay(): FakeMapKitNamespace['PolygonOverlay'] {
+      return this.requireLibrary('overlays', 'PolygonOverlay', this.#polygonOverlay)
+    }
+
+    get PolylineOverlay(): FakeMapKitNamespace['PolylineOverlay'] {
+      return this.requireLibrary('overlays', 'PolylineOverlay', this.#polylineOverlay)
+    }
+
+    get CircleOverlay(): FakeMapKitNamespace['CircleOverlay'] {
+      return this.requireLibrary('overlays', 'CircleOverlay', this.#circleOverlay)
     }
 
     /**
@@ -1679,6 +1945,12 @@ export function createFakeMapKitRuntime(rawOptions: FakeMapKitOptions = {}): Fak
 
     selectAnnotation(map: FakeMapKitMap, annotation: FakeMapKitAnnotation): void {
       ;(map as unknown as MapImpl).applySelection(annotation)
+    },
+
+    tapMap(map: FakeMapKitMap, location: { latitude: number; longitude: number }): void {
+      const target = map as unknown as MapImpl
+      log('single-tap', [], `${location.latitude},${location.longitude}`)
+      target.dispatchEvent(new MapTapEvent('single-tap', target.pageTapPoint(location)))
     },
   }
 

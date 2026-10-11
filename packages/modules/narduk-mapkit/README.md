@@ -2381,6 +2381,7 @@ production code can reach for it by accident.
 | `annotationsAdded` / `Removed`     | Annotation instances passed to the add/remove methods, cumulative            |
 | `annotationCounts(idOrAnnotation)` | Per-annotation add/remove/mutation counts                                    |
 | `selectAnnotation(map, a)`         | Simulate a user selecting a pin: fires `deselect`, `select`, renders callout |
+| `tapMap(map, location)`            | Simulate a tap: fires `single-tap` with a `pointOnPage` that projects there  |
 | `calloutElement(a)`                | The rendered callout element, or `null`                                      |
 | `tokens` / `tokenCalls`            | Tokens passed to `done()`, and how often the callback ran                    |
 | `bootstrapAttempts`                | Every bootstrap attempt, with the token index it used                        |
@@ -2445,12 +2446,20 @@ rather than trusting the default.
 
 ### What the fake does not model
 
-Overlays (`TileOverlay`, `ImageOverlay`, `Polyline`, `PolygonOverlay`),
+Drawn overlays and tiles (`TileOverlay`, `ImageOverlay`, `LineGradient`), and
 `mapkit.Search` and `mapkit.Geocoder`, user location, directions, real map
 tiles, and real animation timing. Every one of them throws
-`FakeMapKitNotImplemented` on touch. The fake covers what this library's own
-registries and the Narduk map component need; the admission bar for adding to it
-is two live applications or a defect fix.
+`FakeMapKitNotImplemented` on touch.
+
+It does model `PolygonOverlay`, `PolylineOverlay`, `CircleOverlay` and `Style`
+(behind the `overlays` library), and `map.addOverlay` / `addOverlays` /
+`removeOverlay` / `removeOverlays` / `overlays`, as **state**: they land in
+`inspect.operations` and `map.overlays`, and nothing is drawn. A map also
+answers `convertPointOnPageToCoordinate` with the inverse of the fake's own
+projection, and `inspect.tapMap(map, location)` fires the `single-tap` that
+`<AppMapKit>` turns into `map-click` and `feature-select`. The fake covers what
+this library's own registries and the Narduk map component need; the admission
+bar for adding to it is two live applications or a defect fix.
 
 It also does not model per-namespace class identity. Foreign values are refused
 by a brand check, so a cross-namespace `instanceof` still passes in the fake
