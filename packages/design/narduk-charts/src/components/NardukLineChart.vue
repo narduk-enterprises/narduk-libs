@@ -1422,18 +1422,29 @@ function svgOffsetTop(): number {
   return svg.getBoundingClientRect().top - box.getBoundingClientRect().top
 }
 
-function showTooltipAtIndex(idx: number) {
+/**
+ * Tooltip rows at one index. Studio drops the rows with no value there (a projection
+ * before it starts, a band outside its span), keeping at least one row.
+ */
+function tooltipItemsAt(i: number): TooltipItem[] {
   const items: TooltipItem[] = [
     ...visibleSeries.value.map(s => {
-      const v = s.data[idx]
+      const v = s.data[i]
       return {
         color: resolveColor(s),
         label: s.name,
         value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
       }
     }),
-    ...bandTooltipItems(idx),
+    ...bandTooltipItems(i),
   ]
+  if (!isStudio.value) return items
+  const known = items.filter(item => item.value !== '—')
+  return known.length ? known : items.slice(0, 1)
+}
+
+function showTooltipAtIndex(idx: number) {
+  const items = tooltipItemsAt(idx)
   const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
   const py = padding.value.top + priceInnerHeight.value / 2 + svgOffsetTop()
   showTooltip(px, py, formatTooltipTitle(idx), items)
@@ -1544,17 +1555,7 @@ function onMouseMove(event: MouseEvent) {
 
   activeIndex.value = nearest
 
-  const items: TooltipItem[] = [
-    ...visibleSeries.value.map(s => {
-      const v = s.data[nearest]
-      return {
-        color: resolveColor(s),
-        label: s.name,
-        value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
-      }
-    }),
-    ...bandTooltipItems(nearest),
-  ]
+  const items = tooltipItemsAt(nearest)
 
   showTooltip(mouseX, mouseY + svgOffsetTop(), formatTooltipTitle(nearest), items)
 }

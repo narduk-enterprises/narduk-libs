@@ -333,3 +333,52 @@ describe('other charts accept look', () => {
     )
   })
 })
+
+describe('studio tooltip', () => {
+  async function hoverGap(look: 'studio' | 'classic') {
+    const w = mount(NardukLineChart, {
+      attachTo: document.body,
+      props: {
+        series: [
+          { name: 'Now', data: spiky },
+          { name: 'Before', data: [3, 3, null, null, 5, 6], emphasis: 'context' },
+        ],
+        labels,
+        width: 560,
+        height: 300,
+        animate: false,
+        dark: false,
+        look,
+      },
+    })
+    const svg = w.find('svg').element as SVGSVGElement
+    svg.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 560,
+        bottom: 300,
+        width: 560,
+        height: 300,
+        toJSON: () => ({}),
+      }) as DOMRect
+    await w.find('svg').trigger('mousemove', { clientX: 280, clientY: 150 })
+    const text = w.find('.narduk-tooltip').text()
+    w.unmount()
+    return text
+  }
+
+  it('drops rows with no value at the hovered index', async () => {
+    const text = await hoverGap('studio')
+    expect(text).toContain('Now')
+    expect(text).not.toContain('Before')
+  })
+
+  it('classic keeps the dash row', async () => {
+    const text = await hoverGap('classic')
+    expect(text).toContain('Before')
+    expect(text).toContain('—')
+  })
+})
