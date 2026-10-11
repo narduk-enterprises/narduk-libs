@@ -38,8 +38,8 @@ export const PACKAGE_VERSIONS = {
   // narduk-testkit's `expectAccessible` runs axe through this optional
   // peer; the generated home e2e spec calls it, so the app installs it.
   '@axe-core/playwright': '4.13.0',
-  '@cloudflare/workers-types': '5.20260924.1',
-  '@iconify-json/lucide': '1.2.136',
+  '@cloudflare/workers-types': '5.20260927.1',
+  '@iconify-json/lucide': '1.2.137',
   '@narduk-enterprises/narduk-mapkit': '2.22.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.36.0',
@@ -129,7 +129,7 @@ export const PACKAGE_VERSIONS = {
   typescript: '6.0.3',
   vitest: '4.1.11',
   'vue-tsc': '3.3.11',
-  wrangler: '4.139.0',
+  wrangler: '4.142.0',
   zod: '4.6.5',
 } as const
 
