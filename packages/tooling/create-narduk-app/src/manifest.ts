@@ -47,7 +47,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-ai': '0.4.27',
   '@narduk-enterprises/narduk-analytics': '1.30.0',
   '@narduk-enterprises/narduk-auth': '1.34.8',
-  '@narduk-enterprises/narduk-charts': '2.10.0',
+  '@narduk-enterprises/narduk-charts': '2.11.0',
   '@narduk-enterprises/narduk-core': '2.25.0',
   '@narduk-enterprises/narduk-logging': '0.4.4',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
