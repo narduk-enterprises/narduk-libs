@@ -64,23 +64,34 @@ export function rowsWereMoved(
 /** Height a level label needs, and so the shortest band that gets one. */
 export const STUDIO_BAND_LABEL_MIN_HEIGHT = 14
 
+/** Gap kept between a level label and a tag box, so the two never touch. */
+const STUDIO_LABEL_TAG_GAP = 3
+
 /**
- * Where a `yBands` label sits in the gutter: the band's centre, else near its
- * top, else near its bottom, whichever clears every occupied Y by at least
- * `clearance`. `null` (leave the label out) when the band is shorter than
- * {@link STUDIO_BAND_LABEL_MIN_HEIGHT} or no spot clears.
+ * Where a `yBands` label sits in the gutter. Every `occupied` Y is the centre
+ * of a now-tag box ({@link STUDIO_TAG_HEIGHT} tall); the label's own box must
+ * stay clear of each one by {@link STUDIO_LABEL_TAG_GAP}. Tries the band's
+ * centre, then its top and bottom edge, then a nudge to just above or below
+ * each tag, as long as the label still fits inside the band. `null` (leave the
+ * label out) when the band is shorter than {@link STUDIO_BAND_LABEL_MIN_HEIGHT}
+ * or no spot clears.
  */
 export function placeBandLabel(
   band: { top: number; bottom: number },
   occupied: readonly number[],
-  clearance = 15,
 ): number | null {
   const height = band.bottom - band.top
   if (height < STUDIO_BAND_LABEL_MIN_HEIGHT) return null
-  const inset = STUDIO_BAND_LABEL_MIN_HEIGHT / 2
-  const candidates = [(band.top + band.bottom) / 2, band.top + inset, band.bottom - inset]
+  const half = STUDIO_BAND_LABEL_MIN_HEIGHT / 2
+  const clearance = STUDIO_TAG_HEIGHT / 2 + half + STUDIO_LABEL_TAG_GAP
+  const lo = band.top + half
+  const hi = band.bottom - half
+  const nudges = occupied.flatMap(o => [o - clearance, o + clearance])
+  const candidates = [(band.top + band.bottom) / 2, lo, hi, ...nudges].filter(
+    y => y >= lo && y <= hi,
+  )
   for (const y of candidates) {
-    if (occupied.every(o => Math.abs(o - y) >= clearance)) return y
+    if (occupied.every(o => Math.abs(o - y) >= clearance - 0.01)) return y
   }
   return null
 }

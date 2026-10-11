@@ -51,7 +51,7 @@ const labelledBy = `narduk-legend-${useId().replace(/[^\w-]/g, '')}`
             :style="{
               backgroundColor: item.hidden ? 'transparent' : item.color,
               borderColor: item.context
-                ? `color-mix(in oklch, ${item.color} 40%, var(--color-chart-muted))`
+                ? `color-mix(in oklab, ${item.color} 45%, var(--nc-studio-surface))`
                 : item.color,
             }"
           />

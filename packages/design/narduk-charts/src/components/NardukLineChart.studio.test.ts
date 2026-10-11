@@ -92,9 +92,78 @@ describe('NardukLineChart look="studio"', () => {
     const w = studio()
     const paths = w.findAll('.narduk-line-path')
     expect(paths[0]!.classes()).toContain('narduk-line-path--context')
-    expect(paths[0]!.attributes('stroke')).toContain('color-mix(in oklch')
-    expect(paths[0]!.attributes('stroke')).toContain('40%')
+    expect(paths[0]!.attributes('stroke')).toContain('color-mix(in oklab')
+    expect(paths[0]!.attributes('stroke')).toContain('45%')
+    expect(paths[0]!.attributes('stroke')).toContain('var(--nc-studio-surface)')
     expect(paths[1]!.classes()).not.toContain('narduk-line-path--context')
+  })
+
+  it('lets each context series keep its own hue', () => {
+    const w = studio({
+      series: [
+        { name: 'Now', data: spiky },
+        { name: 'B', data: [3, 3, 4, 4, 5, 6], emphasis: 'context', color: '#c0392b' },
+        { name: 'C', data: [2, 2, 3, 3, 4, 5], emphasis: 'context', color: '#2e86c1' },
+      ],
+    })
+    const [b, c] = w.findAll('.narduk-line-path--context').map(p => p.attributes('stroke')!)
+    expect(b).toContain('#c0392b')
+    expect(c).toContain('#2e86c1')
+    expect(w.findAll('linearGradient')).toHaveLength(1)
+  })
+
+  it('fills the one lead series even with a dashed projection and no context series', () => {
+    const w = studio({
+      series: [
+        { name: 'Measured', data: [1, 2, 3, 4, null, null] },
+        { name: 'Projection', data: [null, null, null, 4, 5, 6], dashed: true },
+      ],
+    })
+    expect(w.findAll('linearGradient')).toHaveLength(1)
+    expect(
+      studio({
+        series: [
+          { name: 'A', data: spiky },
+          { name: 'B', data: spiky },
+        ],
+      })
+        .find('linearGradient')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('draws a hairline at each interior band boundary and a faint default wash', () => {
+    const w = studio({
+      yBands: [
+        { y0: 0, y1: 3, label: 'A', color: '#111111' },
+        { y0: 3, y1: 6, label: 'B', color: '#222222' },
+        { y0: 6, y1: 9.9, label: 'C', color: '#333333' },
+      ],
+    })
+    const edges = w.findAll('.narduk-y-edge')
+    expect(edges).toHaveLength(2)
+    expect(edges.map(e => e.attributes('stroke'))).toEqual(['#222222', '#333333'])
+    expect(w.find('.narduk-y-band').attributes('opacity')).toBeUndefined()
+    const custom = studio({ yBands: [{ y0: 0, y1: 5, color: '#111', opacity: 0.3 }] })
+    expect(custom.find('.narduk-y-band').attributes('opacity')).toBe('0.3')
+    expect(
+      studio({ look: 'classic', yBands: [{ y0: 0, y1: 5 }] })
+        .find('.narduk-y-edge')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('runs the now-tag leader from the last point to the plot right edge only', () => {
+    const w = studio({
+      series: [{ name: 'Now', data: [1, 2, 3, null, null, null] }],
+    })
+    const leader = w.find('.narduk-now__leader')
+    const dot = w.find('.narduk-now__dot')
+    expect(leader.exists()).toBe(true)
+    const x2 = Number(leader.attributes('x2'))
+    expect(x2).toBeGreaterThan(Number(dot.attributes('cx')))
+    const surface = w.find('.narduk-plot-surface--line')
+    expect(x2).toBeCloseTo(Number(surface.attributes('x')) + Number(surface.attributes('width')), 5)
   })
 
   it('ignores emphasis in the classic look', () => {

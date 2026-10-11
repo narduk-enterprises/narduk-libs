@@ -7,6 +7,8 @@ import {
   nowTagWidth,
   placeBandLabel,
   rowsWereMoved,
+  STUDIO_BAND_LABEL_MIN_HEIGHT,
+  STUDIO_TAG_HEIGHT,
 } from './studio'
 
 describe('studio gutter helpers', () => {
@@ -37,11 +39,37 @@ describe('studio gutter helpers', () => {
     expect(rowsWereMoved(rows, laid)).toBe(false)
   })
 
-  it('places a level label at the band centre, else near an edge, else nowhere', () => {
+  it('places a level label at the band centre when nothing is near', () => {
     const band = { top: 100, bottom: 160 }
     expect(placeBandLabel(band, [])).toBe(130)
-    expect(placeBandLabel(band, [130])).toBe(107)
-    expect(placeBandLabel(band, [130, 107, 153])).toBeNull()
+    expect(placeBandLabel(band, [300])).toBe(130)
+  })
+
+  it('never lets a level label box touch a now-tag box', () => {
+    const tag = 130
+    const half = (STUDIO_TAG_HEIGHT + STUDIO_BAND_LABEL_MIN_HEIGHT) / 2
+    for (const band of [
+      { top: 100, bottom: 160 },
+      { top: 110, bottom: 150 },
+      { top: 120, bottom: 140 },
+      { top: 100, bottom: 118 },
+    ]) {
+      const y = placeBandLabel(band, [tag])
+      if (y !== null) expect(Math.abs(y - tag)).toBeGreaterThanOrEqual(half)
+    }
+  })
+
+  it('nudges a label inside its band, off the tag that sits on its centre', () => {
+    const y = placeBandLabel({ top: 100, bottom: 160 }, [130])
+    expect(y).not.toBeNull()
+    expect(y!).toBeGreaterThanOrEqual(107)
+    expect(y!).toBeLessThanOrEqual(153)
+    expect(Math.abs(y! - 130)).toBeGreaterThanOrEqual(16)
+  })
+
+  it('hides a label when the tag leaves no room for it inside a short band', () => {
+    expect(placeBandLabel({ top: 120, bottom: 140 }, [130])).toBeNull()
+    expect(placeBandLabel({ top: 100, bottom: 160 }, [130, 107, 153])).toBeNull()
   })
 
   it('gives a band under 14px tall no label', () => {

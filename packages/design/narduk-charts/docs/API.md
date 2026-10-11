@@ -113,14 +113,19 @@ visible series.
 
 - `yUnit` - printed after the top Y tick.
 - `showNowTag` (default `true` in studio) - ringed last-value dot plus a value
-  chip in the right gutter; right padding is added automatically. Not drawn for
-  dashed series or with a secondary axis.
+  chip in the right gutter, with a 1px dotted guide at 35% of the series colour
+  from the last point to the plot's right edge; right padding is added
+  automatically. Not drawn for dashed series or with a secondary axis.
 - `endLabels` - series names in the right gutter for at most four series;
   omitted when they would collide, in which case the legend carries the names.
-- `yBands` - a faint wash plus a 4px right rail; a gutter label when the band is
-  at least 14px tall.
-- `ChartSeries.emphasis: 'primary' | 'context'` - `context` quiets a series
-  (thinner, lighter, no fade or tag).
+- `yBands` - a barely-there wash (3.5% light, 5% dark unless the band sets
+  `opacity`), a 1px hairline at each interior band boundary in the band colour,
+  and a 4px right rail; a gutter label when the band is at least 14px tall and
+  clear of every now tag.
+- `ChartSeries.emphasis: 'primary' | 'context'` - `context` keeps its own hue,
+  45% of it over the plot surface, drawn 1.25px and behind; no area or tag.
+  Other lines draw 2.25px. The fade area goes under the one lead series (the
+  only non-context, non-dashed line).
 - `ChartBand.series` - a projection band takes the paired series colour.
 
 **Other charts:** `NardukBarChart`, `NardukScatterChart`,

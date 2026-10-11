@@ -1044,14 +1044,12 @@ function isLeadSeries(s: ChartSeries): boolean {
   return !isContextSeries(s) && !s.dashed && s.mode !== 'points'
 }
 
-/** Studio area: `showArea`, or the one lead series standing against context series. */
+/** Studio area: `showArea`, or the one lead series (the only measured, non-context, non-dashed line). */
 function studioAreaFor(s: ChartSeries): boolean {
   if (!isLeadSeries(s)) return false
   if (props.showArea) return true
   const leads = visibleSeries.value.filter(isLeadSeries)
-  return (
-    visibleSeries.value.some(isContextSeries) && leads.length === 1 && leads[0]!.name === s.name
-  )
+  return leads.length === 1 && leads[0]!.name === s.name
 }
 
 /** Context series are painted first so the lead series sit on top of them. */
@@ -1061,10 +1059,10 @@ const drawOrder = computed(() => {
   return [...all.filter(x => isContextSeries(x.s)), ...all.filter(x => !isContextSeries(x.s))]
 })
 
-/** Stroke of a series line: a context series is 40% of its colour mixed into the muted ink. */
+/** Stroke of a series line: a context series keeps its own hue, 45% of it over the plot surface. */
 function lineStroke(s: ChartSeries): string {
   const c = resolveColor(s)
-  return isContextSeries(s) ? `color-mix(in oklch, ${c} 40%, var(--color-chart-muted, #667))` : c
+  return isContextSeries(s) ? `color-mix(in oklab, ${c} 45%, var(--nc-studio-surface))` : c
 }
 
 /** Last measured value inside the visible window. */
@@ -1713,10 +1711,24 @@ function bandRect(b: ChartYBand, axis: ChartYAxisId) {
     y: top,
     w: Math.max(0, chartWidth.value - padding.value.left - padding.value.right),
     h,
-    opacity: b.opacity ?? (isStudio.value ? 0.06 : 0.12),
+    opacity: b.opacity ?? (isStudio.value ? undefined : 0.12),
     fill: b.color || 'var(--color-chart-accent, #6366f1)',
   }
 }
+
+/** Studio: a hairline at each interior boundary between two `yBands`, in the colour of the band above it. */
+const bandEdges = computed(() => {
+  if (!isStudio.value || useDual.value) return []
+  const top = padding.value.top
+  const bottom = padding.value.top + priceInnerHeight.value
+  const sorted = [...primaryBands.value].sort((a, b) => a.y0 - b.y0)
+  return sorted.slice(1).flatMap((b, i) => {
+    const y = yAtDataValue(b.y0, 'primary')
+    return y > top + 0.5 && y < bottom - 0.5
+      ? [{ key: `edge-${i}`, y, color: b.color || 'var(--color-chart-accent, #6366f1)' }]
+      : []
+  })
+})
 
 /** Reference lines with vertically stacked right labels to avoid overlap. */
 const referenceLineLayouts = computed(() => {
@@ -1916,6 +1928,18 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               :height="bandRect(b, 'primary').h"
               :fill="bandRect(b, 'primary').fill"
               :opacity="bandRect(b, 'primary').opacity"
+            />
+          </g>
+          <g v-if="bandEdges.length" class="narduk-y-edges">
+            <line
+              v-for="e in bandEdges"
+              :key="e.key"
+              class="narduk-y-edge"
+              :x1="padding.left"
+              :x2="chartWidth - padding.right"
+              :y1="e.y"
+              :y2="e.y"
+              :stroke="e.color"
             />
           </g>
           <g v-if="isStudio && primaryBands.length" class="narduk-y-rails">
@@ -2170,11 +2194,11 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           <g v-for="row in gutterLayout.rows" :key="'now-' + row.key" class="narduk-now__row">
             <template v-if="row.text !== null">
               <line
-                v-if="gutterX - row.dotX > 22"
+                v-if="plotRight - row.dotX > 14"
                 class="narduk-now__leader"
                 :x1="row.dotX + 6"
                 :y1="row.dotY"
-                :x2="gutterX - 2"
+                :x2="plotRight"
                 :y2="row.dotY"
                 :stroke="row.color"
               />

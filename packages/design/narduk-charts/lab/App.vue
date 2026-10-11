@@ -91,6 +91,8 @@ const trend = computed(() => {
       { name: 'Measured', data: [...h.map(([, v]) => v), ...pad(f.length)] },
       {
         name: 'Projection',
+        // The same colour as Measured, so the dashes read as its continuation.
+        color: 'var(--color-chart-series-1)',
         dashed: true,
         data: [...pad(h.length - 1), h.at(-1)![1], ...f.map(p => p[1])],
       },
@@ -111,8 +113,11 @@ const monthStarts = (labels: string[]) =>
 const trendTicks = computed(() =>
   look.value === 'studio' ? monthStarts(trend.value.labels) : undefined,
 )
+// The 100-week chart labels every other month.
 const edTicks = computed(() =>
-  look.value === 'studio' ? monthStarts(edWindow.value.labels) : undefined,
+  look.value === 'studio'
+    ? monthStarts(edWindow.value.labels).filter((_, i) => i % 2 === 0)
+    : undefined,
 )
 const fmtMonth = (d: string) =>
   new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', {
@@ -189,6 +194,8 @@ body {
   font-family: system-ui, sans-serif;
 }
 .lab {
+  box-sizing: border-box;
+  min-height: 100vh;
   padding: 24px;
   max-width: 1280px;
   margin: 0 auto;
@@ -232,9 +239,13 @@ body {
 .lab__card--wide {
   grid-column: 1 / -1;
 }
-.lab__card figcaption {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 8px;
+.lab__card > figcaption {
+  /* The chart prints its own title; the caption stays for screen readers. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 </style>
