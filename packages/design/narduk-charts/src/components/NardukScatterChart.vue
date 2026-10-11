@@ -3,11 +3,11 @@ import { computed, onMounted, ref, useId } from 'vue'
 
 import { useChart } from '../composables/useChart'
 import { defaultScatterLabel } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
 import { arrayMax, arrayMin, formatValue, linearScale, niceScale } from '../utils/math'
 
-import type { ChartTheme, ScatterSeries } from '../types'
+import type { ChartLook, ChartTheme, ScatterSeries } from '../types'
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +18,8 @@ const props = withDefaults(
     dark?: boolean
     dir?: 'ltr' | 'rtl'
     height?: number
+    /** `'classic'` (default) or `'studio'`: frameless, with a left-aligned title and legend. */
+    look?: ChartLook
     pointRadius?: number
     respectReducedMotion?: boolean
     series: ScatterSeries[]
@@ -25,6 +27,7 @@ const props = withDefaults(
     width?: number
   }>(),
   {
+    look: 'classic',
     pointRadius: 4,
     animate: true,
     respectReducedMotion: true,
@@ -51,8 +54,11 @@ const rootChartClasses = computed(() => {
   if (isDark.value) c.push('narduk-chart--dark')
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
+  if (props.look === 'studio') c.push(STUDIO_LOOK_CLASS)
   return c
 })
+
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const allPoints = computed(() => props.series.flatMap(s => s.points))
 
@@ -116,7 +122,7 @@ function onPointClick(seriesName: string, pi: number, x: number, y: number) {
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="capId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>

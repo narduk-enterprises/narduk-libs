@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'v
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { defaultPieChartLabel } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
 import { describeArc, easeOutCubic, formatValue } from '../utils/math'
 
@@ -12,6 +12,7 @@ import ChartLegend from './ChartLegend.vue'
 import ChartTooltip from './ChartTooltip.vue'
 
 import type {
+  ChartLook,
   ChartTheme,
   LegendItem,
   PieDataItem,
@@ -42,6 +43,8 @@ const props = withDefaults(
     height?: number
     innerRadius?: number
     legendGroupLabel?: string
+    /** `'classic'` (default) or `'studio'`: frameless, with a left-aligned title and legend. */
+    look?: ChartLook
     respectReducedMotion?: boolean
     /** Render the donut center total/label (only when `donut` is also true). */
     showCenterLabel?: boolean
@@ -54,6 +57,7 @@ const props = withDefaults(
     width?: number
   }>(),
   {
+    look: 'classic',
     donut: false,
     innerRadius: 0.6,
     showLabels: true,
@@ -103,8 +107,11 @@ const rootChartClasses = computed(() => {
   if (isDark.value) c.push('narduk-chart--dark')
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
+  if (props.look === 'studio') c.push(STUDIO_LOOK_CLASS)
   return c
 })
+
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
@@ -377,7 +384,7 @@ function sliceTransform(index: number): string {
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="pieCaptionId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>

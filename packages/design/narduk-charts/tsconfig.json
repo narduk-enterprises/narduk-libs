@@ -18,6 +18,6 @@
     },
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "lab/**/*.ts", "lab/**/*.vue"],
   "exclude": ["node_modules", "dist", "histoire.config.ts"]
 }

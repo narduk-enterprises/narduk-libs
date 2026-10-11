@@ -49,18 +49,21 @@ The bundled `style.css` is compiled with **Tailwind CSS v4**. Semantic colors
 are **`--color-chart-*`** variables (declared on `:root` / `:host`, and
 overridden on `.narduk-chart--dark` and preset `theme` classes).
 
-| Token                              | Used for                            |
-| ---------------------------------- | ----------------------------------- |
-| `--color-chart-text`               | Primary text, pie labels            |
-| `--color-chart-muted`              | Axis labels, secondary text         |
-| `--color-chart-grid`               | Grid lines, crosshair, legend hover |
-| `--color-chart-axis`               | Axis lines                          |
-| `--color-chart-surface`            | Point/outline contrast (e.g. halos) |
-| `--color-chart-accent`             | Default band / zoom box accent      |
-| `--color-chart-tooltip-bg`         | Tooltip background                  |
-| `--color-chart-tooltip-foreground` | Tooltip text                        |
-| `--color-chart-tooltip-border`     | Tooltip border                      |
-| `--color-chart-series-1` … `-10`   | Categorical series palette          |
+| Token                              | Used for                              |
+| ---------------------------------- | ------------------------------------- |
+| `--color-chart-text`               | Primary text, pie labels              |
+| `--color-chart-muted`              | Axis labels, secondary text           |
+| `--color-chart-grid`               | Grid lines, crosshair, legend hover   |
+| `--color-chart-axis`               | Axis lines                            |
+| `--color-chart-surface`            | Point/outline contrast (e.g. halos)   |
+| `--color-chart-accent`             | Default band / zoom box accent        |
+| `--color-chart-tooltip-bg`         | Tooltip background                    |
+| `--color-chart-tooltip-foreground` | Tooltip text                          |
+| `--color-chart-tooltip-border`     | Tooltip border                        |
+| `--color-chart-series-1` … `-10`   | Categorical series palette            |
+| `--color-chart-studio-surface`     | Studio look: plot surface (optional)  |
+| `--color-chart-studio-grid`        | Studio look: hairline grid (optional) |
+| `--color-chart-studio-baseline`    | Studio look: baseline (optional)      |
 
 #### Series palette
 

@@ -1,0 +1,198 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`NardukLineChart classic output > dark and linear segments 1`] = `
+"<figure class="narduk-chart-figure m-0 min-w-0">
+  <div class="narduk-chart narduk-chart--dark" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
+    <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
+<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+      <title id="nc-svgt-v-0">Line chart: This season, Last season, Sparse</title>
+      <defs>
+        <clipPath id="nc-clip-v-0">
+          <rect x="0" y="24" width="560" height="228"></rect>
+        </clipPath>
+      </defs>
+      <rect class="narduk-plot-surface narduk-plot-surface--line" x="56" y="24" width="480" height="228" rx="12"></rect>
+      <g clip-path="url(#nc-clip-v-0)">
+        <g class="narduk-grid">
+          <line x1="56" y1="252" x2="536" y2="252"></line>
+          <line x1="56" y1="206.4" x2="536" y2="206.4"></line>
+          <line x1="56" y1="160.8" x2="536" y2="160.8"></line>
+          <line x1="56" y1="115.20000000000002" x2="536" y2="115.20000000000002"></line>
+          <line x1="56" y1="69.6" x2="536" y2="69.6"></line>
+          <line x1="56" y1="24" x2="536" y2="24"></line>
+        </g>        <g>
+          <path class="narduk-line-path" d="M56,160.8 L99.63636363636364,138 L143.27272727272728,92.4 L186.9090909090909,92.4 L230.54545454545456,92.4 L274.1818181818182,115.20000000000002 L317.8181818181818,160.8 L361.45454545454544,183.60000000000002 L405.0909090909091,206.4 L448.72727272727275,229.2 L492.3636363636364,229.2 L536,206.4" stroke="var(--color-chart-series-1, oklch(56% 0.17 268))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <circle class="narduk-line-point" cx="56" cy="160.8" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="99.63636363636364" cy="138" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="143.27272727272728" cy="92.4" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="186.9090909090909" cy="92.4" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="230.54545454545456" cy="92.4" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="274.1818181818182" cy="115.20000000000002" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="317.8181818181818" cy="160.8" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="361.45454545454544" cy="183.60000000000002" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="405.0909090909091" cy="206.4" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="448.72727272727275" cy="229.2" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="492.3636363636364" cy="229.2" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+          <circle class="narduk-line-point" cx="536" cy="206.4" r="3" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></circle>
+        </g>
+        <g>
+          <path class="narduk-line-path" d="M56,69.6 L99.63636363636364,69.6 L143.27272727272728,69.6 L186.9090909090909,92.4 L230.54545454545456,138 L274.1818181818182,160.8 L317.8181818181818,183.60000000000002 L361.45454545454544,206.4 L405.0909090909091,206.4 L448.72727272727275,183.60000000000002 L492.3636363636364,160.8 L536,115.20000000000002" stroke="var(--color-chart-series-2, oklch(62% 0.13 176))" stroke-dasharray="6 4"></path>
+          <circle class="narduk-line-point" cx="56" cy="69.6" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="99.63636363636364" cy="69.6" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="143.27272727272728" cy="69.6" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="186.9090909090909" cy="92.4" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="230.54545454545456" cy="138" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="274.1818181818182" cy="160.8" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="317.8181818181818" cy="183.60000000000002" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="361.45454545454544" cy="206.4" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="405.0909090909091" cy="206.4" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="448.72727272727275" cy="183.60000000000002" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="492.3636363636364" cy="160.8" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+          <circle class="narduk-line-point" cx="536" cy="115.20000000000002" r="3" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></circle>
+        </g>
+        <g>
+          <path class="narduk-line-path" d="M56,46.79999999999998 L99.63636363636364,69.6 L143.27272727272728,115.20000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M230.54545454545456,160.8 L274.1818181818182,183.60000000000002 L317.8181818181818,183.60000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M405.0909090909091,138 L448.72727272727275,92.4 L492.3636363636364,69.6" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <circle class="narduk-line-point" cx="56" cy="46.79999999999998" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="99.63636363636364" cy="69.6" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="143.27272727272728" cy="115.20000000000002" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="186.9090909090909" cy="252" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))" style="display: none;"></circle>
+          <circle class="narduk-line-point" cx="230.54545454545456" cy="160.8" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="274.1818181818182" cy="183.60000000000002" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="317.8181818181818" cy="183.60000000000002" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="361.45454545454544" cy="252" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))" style="display: none;"></circle>
+          <circle class="narduk-line-point" cx="405.0909090909091" cy="138" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="448.72727272727275" cy="92.4" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="492.3636363636364" cy="69.6" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></circle>
+          <circle class="narduk-line-point" cx="536" cy="252" r="3" fill="var(--color-chart-series-3, oklch(74% 0.13 82))" style="display: none;"></circle>
+        </g>      </g>      <g class="narduk-axis">
+        <line x1="56" y1="24" x2="56" y2="252"></line><text x="48" y="252" text-anchor="end" dominant-baseline="middle">0</text><text x="48" y="206.4" text-anchor="end" dominant-baseline="middle">2</text><text x="48" y="160.8" text-anchor="end" dominant-baseline="middle">4</text><text x="48" y="115.20000000000002" text-anchor="end" dominant-baseline="middle">6</text><text x="48" y="69.6" text-anchor="end" dominant-baseline="middle">8</text><text x="48" y="24" text-anchor="end" dominant-baseline="middle">10</text>
+      </g>
+      <g class="narduk-axis">
+        <line x1="56" y1="252" x2="536" y2="252"></line><text x="56" y="272" text-anchor="middle" dominant-baseline="hanging">W1</text><text x="143.27272727272728" y="272" text-anchor="middle" dominant-baseline="hanging">W3</text><text x="230.54545454545456" y="272" text-anchor="middle" dominant-baseline="hanging">W5</text><text x="317.8181818181818" y="272" text-anchor="middle" dominant-baseline="hanging">W7</text><text x="405.0909090909091" y="272" text-anchor="middle" dominant-baseline="hanging">W9</text><text x="492.3636363636364" y="272" text-anchor="middle" dominant-baseline="hanging">W11</text><text x="536" y="272" text-anchor="middle" dominant-baseline="hanging">W12</text>
+      </g>
+    </svg>
+    <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button>
+    </fieldset>
+    <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
+      <div>
+      </div>
+    </div>
+  </div>
+</figure>"
+`;
+
+exports[`NardukLineChart classic output > plain multi-series chart 1`] = `
+"<figure class="narduk-chart-figure m-0 min-w-0">
+  <figcaption id="nc-cap-v-0" class="narduk-chart__title">Plain</figcaption>
+  <div class="narduk-chart" style="width: 560px;" role="group" aria-labelledby="nc-cap-v-0">
+    <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
+<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+      <title id="nc-svgt-v-0">Plain</title>
+      <defs>
+        <clipPath id="nc-clip-v-0">
+          <rect x="0" y="24" width="560" height="228"></rect>
+        </clipPath>
+      </defs>
+      <rect class="narduk-plot-surface narduk-plot-surface--line" x="56" y="24" width="480" height="228" rx="12"></rect>
+      <g clip-path="url(#nc-clip-v-0)">
+        <g class="narduk-grid">
+          <line x1="56" y1="252" x2="536" y2="252"></line>
+          <line x1="56" y1="206.4" x2="536" y2="206.4"></line>
+          <line x1="56" y1="160.8" x2="536" y2="160.8"></line>
+          <line x1="56" y1="115.20000000000002" x2="536" y2="115.20000000000002"></line>
+          <line x1="56" y1="69.6" x2="536" y2="69.6"></line>
+          <line x1="56" y1="24" x2="536" y2="24"></line>
+        </g>        <g>
+          <path class="narduk-line-path" d="M56,160.8 C63.27272727272727,157 85.0909090909091,149.4 99.63636363636364,138 C114.18181818181819,126.6 128.72727272727275,100 143.27272727272728,92.4 C157.8181818181818,84.80000000000001 172.36363636363637,92.4 186.9090909090909,92.4 C201.45454545454544,92.4 216,88.60000000000001 230.54545454545456,92.4 C245.09090909090912,96.2 259.6363636363636,103.80000000000001 274.1818181818182,115.20000000000002 C288.72727272727275,126.60000000000002 303.27272727272725,149.4 317.8181818181818,160.8 C332.3636363636364,172.20000000000002 346.9090909090909,176.00000000000003 361.45454545454544,183.60000000000002 C376,191.20000000000002 390.54545454545456,198.8 405.0909090909091,206.4 C419.6363636363637,214 434.1818181818182,225.39999999999998 448.72727272727275,229.2 C463.2727272727273,233 477.8181818181818,233 492.3636363636364,229.2 C506.90909090909093,225.39999999999998 528.7272727272727,210.2 536,206.4" stroke="var(--color-chart-series-1, oklch(56% 0.17 268))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+        </g>
+        <g>
+          <path class="narduk-line-path" d="M56,69.6 C63.27272727272727,69.6 85.0909090909091,69.6 99.63636363636364,69.6 C114.18181818181819,69.6 128.72727272727275,65.8 143.27272727272728,69.6 C157.8181818181818,73.39999999999999 172.36363636363637,81 186.9090909090909,92.4 C201.45454545454544,103.80000000000001 216,126.6 230.54545454545456,138 C245.09090909090912,149.4 259.6363636363636,153.20000000000002 274.1818181818182,160.8 C288.72727272727275,168.4 303.27272727272725,176.00000000000003 317.8181818181818,183.60000000000002 C332.3636363636364,191.20000000000002 346.9090909090909,202.60000000000002 361.45454545454544,206.4 C376,210.2 390.54545454545456,210.2 405.0909090909091,206.4 C419.6363636363637,202.60000000000002 434.1818181818182,191.20000000000002 448.72727272727275,183.60000000000002 C463.2727272727273,176.00000000000003 477.8181818181818,172.20000000000002 492.3636363636364,160.8 C506.90909090909093,149.4 528.7272727272727,122.80000000000001 536,115.20000000000002" stroke="var(--color-chart-series-2, oklch(62% 0.13 176))" stroke-dasharray="6 4"></path>
+        </g>
+        <g>
+          <path class="narduk-line-path" d="M56,46.79999999999998 C63.27272727272727,50.59999999999999 85.0909090909091,58.19999999999999 99.63636363636364,69.6 C114.18181818181819,81 136,107.60000000000001 143.27272727272728,115.20000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M230.54545454545456,160.8 C237.81818181818184,164.60000000000002 259.6363636363636,179.8 274.1818181818182,183.60000000000002 C288.72727272727275,187.40000000000003 310.54545454545456,183.60000000000002 317.8181818181818,183.60000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M405.0909090909091,138 C412.3636363636364,130.4 434.1818181818182,103.80000000000001 448.72727272727275,92.4 C463.2727272727273,81 485.0909090909091,73.39999999999999 492.3636363636364,69.6" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+        </g>      </g>      <g class="narduk-axis">
+        <line x1="56" y1="24" x2="56" y2="252"></line><text x="48" y="252" text-anchor="end" dominant-baseline="middle">0</text><text x="48" y="206.4" text-anchor="end" dominant-baseline="middle">2</text><text x="48" y="160.8" text-anchor="end" dominant-baseline="middle">4</text><text x="48" y="115.20000000000002" text-anchor="end" dominant-baseline="middle">6</text><text x="48" y="69.6" text-anchor="end" dominant-baseline="middle">8</text><text x="48" y="24" text-anchor="end" dominant-baseline="middle">10</text>
+      </g>
+      <g class="narduk-axis">
+        <line x1="56" y1="252" x2="536" y2="252"></line><text x="56" y="272" text-anchor="middle" dominant-baseline="hanging">W1</text><text x="143.27272727272728" y="272" text-anchor="middle" dominant-baseline="hanging">W3</text><text x="230.54545454545456" y="272" text-anchor="middle" dominant-baseline="hanging">W5</text><text x="317.8181818181818" y="272" text-anchor="middle" dominant-baseline="hanging">W7</text><text x="405.0909090909091" y="272" text-anchor="middle" dominant-baseline="hanging">W9</text><text x="492.3636363636364" y="272" text-anchor="middle" dominant-baseline="hanging">W11</text><text x="536" y="272" text-anchor="middle" dominant-baseline="hanging">W12</text>
+      </g>
+    </svg>
+    <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button>
+    </fieldset>
+    <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
+      <div>
+      </div>
+    </div>
+  </div>
+</figure>"
+`;
+
+exports[`NardukLineChart classic output > with y bands, a band between series, area and reference line 1`] = `
+"<figure class="narduk-chart-figure m-0 min-w-0">
+  <div class="narduk-chart" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
+    <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
+<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+      <title id="nc-svgt-v-0">Line chart: This season, Last season, Sparse</title>
+      <defs>
+        <clipPath id="nc-clip-v-0">
+          <rect x="0" y="24" width="560" height="228"></rect>
+        </clipPath>
+      </defs>
+      <rect class="narduk-plot-surface narduk-plot-surface--line" x="56" y="24" width="470" height="228" rx="12"></rect>
+      <g clip-path="url(#nc-clip-v-0)">
+        <g class="narduk-y-bands">
+          <rect class="narduk-y-band" x="56" y="160.8" width="470" height="91.19999999999999" fill="#9fc5e3" opacity="0.12"></rect>
+          <rect class="narduk-y-band" x="56" y="46.79999999999998" width="470" height="114.00000000000003" fill="#e07b39" opacity="0.12"></rect>
+        </g>
+        <g class="narduk-bands">
+          <path class="narduk-band-path" d="M440.54545454545456,69.6 C447.6666666666667,69.6 469.030303030303,69.6 483.27272727272725,69.6 C497.5151515151515,69.6 518.8787878787879,69.6 526,69.6 L526,183.60000000000002 C518.8787878787879,183.60000000000002 497.5151515151515,183.60000000000002 483.27272727272725,183.60000000000002 C469.030303030303,183.60000000000002 447.6666666666667,183.60000000000002 440.54545454545456,183.60000000000002 Z" fill="var(--color-chart-accent, #6366f1)"></path>
+        </g>        <g class="narduk-grid">
+          <line x1="56" y1="252" x2="526" y2="252"></line>
+          <line x1="56" y1="206.4" x2="526" y2="206.4"></line>
+          <line x1="56" y1="160.8" x2="526" y2="160.8"></line>
+          <line x1="56" y1="115.20000000000002" x2="526" y2="115.20000000000002"></line>
+          <line x1="56" y1="69.6" x2="526" y2="69.6"></line>
+          <line x1="56" y1="24" x2="526" y2="24"></line>
+        </g>        <g class="narduk-ref-lines">
+          <g>
+            <line class="narduk-ref-line narduk-ref-line--dashed" stroke="var(--color-chart-muted)" x1="56" y1="115.20000000000002" x2="526" y2="115.20000000000002"></line>
+<text class="narduk-ref-label" x="530" y="115.20000000000002" dominant-baseline="middle">Target</text>
+          </g>
+        </g>        <g>
+          <path class="narduk-area-path" d="M56,160.8 C63.12121212121212,157 84.48484848484848,149.4 98.72727272727272,138 C112.96969696969695,126.6 127.2121212121212,100 141.45454545454544,92.4 C155.6969696969697,84.80000000000001 169.9393939393939,92.4 184.18181818181816,92.4 C198.4242424242424,92.4 212.66666666666666,88.60000000000001 226.9090909090909,92.4 C241.15151515151516,96.2 255.39393939393938,103.80000000000001 269.6363636363636,115.20000000000002 C283.8787878787879,126.60000000000002 298.12121212121207,149.4 312.3636363636363,160.8 C326.60606060606057,172.20000000000002 340.8484848484848,176.00000000000003 355.09090909090907,183.60000000000002 C369.3333333333333,191.20000000000002 383.57575757575756,198.8 397.8181818181818,206.4 C412.06060606060606,214 426.3030303030303,225.39999999999998 440.54545454545456,229.2 C454.7878787878788,233 469.030303030303,233 483.27272727272725,229.2 C497.5151515151515,225.39999999999998 518.8787878787879,210.2 526,206.4 L 526 252 L 56 252 Z" fill="var(--color-chart-series-1, oklch(56% 0.17 268))"></path>
+          <path class="narduk-line-path" d="M56,160.8 C63.12121212121212,157 84.48484848484848,149.4 98.72727272727272,138 C112.96969696969695,126.6 127.2121212121212,100 141.45454545454544,92.4 C155.6969696969697,84.80000000000001 169.9393939393939,92.4 184.18181818181816,92.4 C198.4242424242424,92.4 212.66666666666666,88.60000000000001 226.9090909090909,92.4 C241.15151515151516,96.2 255.39393939393938,103.80000000000001 269.6363636363636,115.20000000000002 C283.8787878787879,126.60000000000002 298.12121212121207,149.4 312.3636363636363,160.8 C326.60606060606057,172.20000000000002 340.8484848484848,176.00000000000003 355.09090909090907,183.60000000000002 C369.3333333333333,191.20000000000002 383.57575757575756,198.8 397.8181818181818,206.4 C412.06060606060606,214 426.3030303030303,225.39999999999998 440.54545454545456,229.2 C454.7878787878788,233 469.030303030303,233 483.27272727272725,229.2 C497.5151515151515,225.39999999999998 518.8787878787879,210.2 526,206.4" stroke="var(--color-chart-series-1, oklch(56% 0.17 268))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+        </g>
+        <g>
+          <path class="narduk-area-path" d="M56,69.6 C63.12121212121212,69.6 84.48484848484848,69.6 98.72727272727272,69.6 C112.96969696969695,69.6 127.2121212121212,65.8 141.45454545454544,69.6 C155.6969696969697,73.39999999999999 169.9393939393939,81 184.18181818181816,92.4 C198.4242424242424,103.80000000000001 212.66666666666666,126.6 226.9090909090909,138 C241.15151515151516,149.4 255.39393939393938,153.20000000000002 269.6363636363636,160.8 C283.8787878787879,168.4 298.12121212121207,176.00000000000003 312.3636363636363,183.60000000000002 C326.60606060606057,191.20000000000002 340.8484848484848,202.60000000000002 355.09090909090907,206.4 C369.3333333333333,210.2 383.57575757575756,210.2 397.8181818181818,206.4 C412.06060606060606,202.60000000000002 426.3030303030303,191.20000000000002 440.54545454545456,183.60000000000002 C454.7878787878788,176.00000000000003 469.030303030303,172.20000000000002 483.27272727272725,160.8 C497.5151515151515,149.4 518.8787878787879,122.80000000000001 526,115.20000000000002 L 526 252 L 56 252 Z" fill="var(--color-chart-series-2, oklch(62% 0.13 176))"></path>
+          <path class="narduk-line-path" d="M56,69.6 C63.12121212121212,69.6 84.48484848484848,69.6 98.72727272727272,69.6 C112.96969696969695,69.6 127.2121212121212,65.8 141.45454545454544,69.6 C155.6969696969697,73.39999999999999 169.9393939393939,81 184.18181818181816,92.4 C198.4242424242424,103.80000000000001 212.66666666666666,126.6 226.9090909090909,138 C241.15151515151516,149.4 255.39393939393938,153.20000000000002 269.6363636363636,160.8 C283.8787878787879,168.4 298.12121212121207,176.00000000000003 312.3636363636363,183.60000000000002 C326.60606060606057,191.20000000000002 340.8484848484848,202.60000000000002 355.09090909090907,206.4 C369.3333333333333,210.2 383.57575757575756,210.2 397.8181818181818,206.4 C412.06060606060606,202.60000000000002 426.3030303030303,191.20000000000002 440.54545454545456,183.60000000000002 C454.7878787878788,176.00000000000003 469.030303030303,172.20000000000002 483.27272727272725,160.8 C497.5151515151515,149.4 518.8787878787879,122.80000000000001 526,115.20000000000002" stroke="var(--color-chart-series-2, oklch(62% 0.13 176))" stroke-dasharray="6 4"></path>
+        </g>
+        <g>
+          <path class="narduk-area-path" d="M56,46.79999999999998 C63.12121212121212,50.59999999999999 84.48484848484848,58.19999999999999 98.72727272727272,69.6 C112.96969696969695,81 134.33333333333331,107.60000000000001 141.45454545454544,115.20000000000002 L 141.45454545454544 252 L 56 252 Z" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></path>
+          <path class="narduk-area-path" d="M226.9090909090909,160.8 C234.03030303030303,164.60000000000002 255.39393939393938,179.8 269.6363636363636,183.60000000000002 C283.8787878787879,187.40000000000003 305.2424242424242,183.60000000000002 312.3636363636363,183.60000000000002 L 312.3636363636363 252 L 226.9090909090909 252 Z" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></path>
+          <path class="narduk-area-path" d="M397.8181818181818,138 C404.93939393939394,130.4 426.3030303030303,103.80000000000001 440.54545454545456,92.4 C454.7878787878788,81 476.1515151515151,73.39999999999999 483.27272727272725,69.6 L 483.27272727272725 252 L 397.8181818181818 252 Z" fill="var(--color-chart-series-3, oklch(74% 0.13 82))"></path>
+          <path class="narduk-line-path" d="M56,46.79999999999998 C63.12121212121212,50.59999999999999 84.48484848484848,58.19999999999999 98.72727272727272,69.6 C112.96969696969695,81 134.33333333333331,107.60000000000001 141.45454545454544,115.20000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M226.9090909090909,160.8 C234.03030303030303,164.60000000000002 255.39393939393938,179.8 269.6363636363636,183.60000000000002 C283.8787878787879,187.40000000000003 305.2424242424242,183.60000000000002 312.3636363636363,183.60000000000002" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+          <path class="narduk-line-path" d="M397.8181818181818,138 C404.93939393939394,130.4 426.3030303030303,103.80000000000001 440.54545454545456,92.4 C454.7878787878788,81 476.1515151515151,73.39999999999999 483.27272727272725,69.6" stroke="var(--color-chart-series-3, oklch(74% 0.13 82))" pathLength="1" stroke-dasharray="1" stroke-dashoffset="0"></path>
+        </g>      </g>      <g class="narduk-axis">
+        <line x1="56" y1="24" x2="56" y2="252"></line><text x="48" y="252" text-anchor="end" dominant-baseline="middle">0</text><text x="48" y="206.4" text-anchor="end" dominant-baseline="middle">2</text><text x="48" y="160.8" text-anchor="end" dominant-baseline="middle">4</text><text x="48" y="115.20000000000002" text-anchor="end" dominant-baseline="middle">6</text><text x="48" y="69.6" text-anchor="end" dominant-baseline="middle">8</text><text x="48" y="24" text-anchor="end" dominant-baseline="middle">10</text>
+      </g>
+      <g class="narduk-axis">
+        <line x1="56" y1="252" x2="526" y2="252"></line><text x="56" y="272" text-anchor="middle" dominant-baseline="hanging">W1</text><text x="141.45454545454544" y="272" text-anchor="middle" dominant-baseline="hanging">W3</text><text x="226.9090909090909" y="272" text-anchor="middle" dominant-baseline="hanging">W5</text><text x="312.3636363636363" y="272" text-anchor="middle" dominant-baseline="hanging">W7</text><text x="397.8181818181818" y="272" text-anchor="middle" dominant-baseline="hanging">W9</text><text x="483.27272727272725" y="272" text-anchor="middle" dominant-baseline="hanging">W11</text><text x="526" y="272" text-anchor="middle" dominant-baseline="hanging">W12</text>
+      </g>
+    </svg>
+    <fieldset class="narduk-legend narduk-legend__fieldset" aria-labelledby="narduk-legend-v-1">
+      <legend id="narduk-legend-v-1" class="narduk-legend__legend narduk-sr-only">Data series</legend><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series This season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">This season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Last season"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Last season</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series Sparse"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">Sparse</span></button><button type="button" class="narduk-legend__item" aria-pressed="true" aria-label="Hide series 80% band"><span class="narduk-legend__dot" aria-hidden="true"></span><span class="narduk-legend__label">80% band</span></button>
+    </fieldset>
+    <div class="narduk-tooltip" style="left: 0px; top: 0px; transform: translate(12px, -50%); opacity: 0;" role="tooltip" aria-hidden="true">
+      <div>
+      </div>
+    </div>
+  </div>
+</figure>"
+`;

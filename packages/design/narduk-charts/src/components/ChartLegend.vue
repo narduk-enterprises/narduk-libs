@@ -35,7 +35,12 @@ const labelledBy = `narduk-legend-${useId().replace(/[^\w-]/g, '')}`
         <button
           type="button"
           class="narduk-legend__item"
-          :class="{ 'narduk-legend__item--hidden': item.hidden }"
+          :class="{
+            'narduk-legend__item--hidden': item.hidden,
+            'narduk-legend__item--context': item.context,
+            'narduk-legend__item--dashed': item.dashed,
+            'narduk-legend__item--band': item.band,
+          }"
           :aria-pressed="!item.hidden"
           :aria-label="`${item.hidden ? 'Show' : 'Hide'} series ${item.name}`"
           @click="emit('toggle', item.name)"
@@ -45,7 +50,9 @@ const labelledBy = `narduk-legend-${useId().replace(/[^\w-]/g, '')}`
             aria-hidden="true"
             :style="{
               backgroundColor: item.hidden ? 'transparent' : item.color,
-              borderColor: item.color,
+              borderColor: item.context
+                ? `color-mix(in oklch, ${item.color} 40%, var(--color-chart-muted))`
+                : item.color,
             }"
           />
           <span class="narduk-legend__label">{{ item.name }}</span>

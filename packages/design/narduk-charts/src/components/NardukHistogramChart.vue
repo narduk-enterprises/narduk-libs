@@ -3,11 +3,11 @@ import { computed, onMounted, ref, useId } from 'vue'
 
 import { useChart } from '../composables/useChart'
 import { defaultHistogramLabel } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import { computeHistogramBins } from '../utils/math'
 import { createYAxisMap } from '../utils/yScale'
 
-import type { ChartTheme, HistogramBin } from '../types'
+import type { ChartLook, ChartTheme, HistogramBin } from '../types'
 
 const props = withDefaults(
   defineProps<{
@@ -21,12 +21,15 @@ const props = withDefaults(
     dark?: boolean
     dir?: 'ltr' | 'rtl'
     height?: number
+    /** `'classic'` (default) or `'studio'`: frameless, with a left-aligned title and legend. */
+    look?: ChartLook
     respectReducedMotion?: boolean
     theme?: ChartTheme
     values: number[]
     width?: number
   }>(),
   {
+    look: 'classic',
     binCount: 8,
     animate: true,
     respectReducedMotion: true,
@@ -49,8 +52,11 @@ const rootChartClasses = computed(() => {
   if (isDark.value) c.push('narduk-chart--dark')
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
+  if (props.look === 'studio') c.push(STUDIO_LOOK_CLASS)
   return c
 })
+
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const binsResolved = computed(() => {
   if (props.bins && props.bins.length > 0) return props.bins
@@ -104,7 +110,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="capId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>

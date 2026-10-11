@@ -10,6 +10,8 @@ import {
   lineSegmentsToPaths,
   closeAreaUnderLine,
   straightPath,
+  monotoneCubicPath,
+  catmullRomPath,
   decimateCategoryData,
   largestTriangleThreeBuckets,
   aggregateCandles,
@@ -298,5 +300,90 @@ describe('arrayMin / arrayMax', () => {
     const bins = computeHistogramBins(samples, 10)
     expect(bins).toHaveLength(10)
     expect(bins.reduce((sum, bin) => sum + bin.count, 0)).toBe(150_000)
+  })
+})
+
+describe('monotoneCubicPath', () => {
+  /** Every control point's Y of each cubic segment, with that segment's endpoints. */
+  function segments(d: string) {
+    const nums = d.match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/g)!.map(Number)
+    const out: Array<{ y0: number; c1: number; c2: number; y1: number }> = []
+    let px = nums[0]!
+    let py = nums[1]!
+    for (let i = 2; i + 5 < nums.length + 0; i += 6) {
+      out.push({ y0: py, c1: nums[i + 1]!, c2: nums[i + 3]!, y1: nums[i + 5]! })
+      px = nums[i + 4]!
+      py = nums[i + 5]!
+    }
+    void px
+    return out
+  }
+
+  const spiky: Array<[number, number]> = [
+    [0, 100],
+    [10, 98],
+    [20, 20],
+    [30, 95],
+    [40, 96],
+    [50, 4],
+    [60, 4],
+    [70, 80],
+  ]
+
+  it('keeps every control point between the Y of its two neighbours', () => {
+    for (const seg of segments(monotoneCubicPath(spiky))) {
+      const lo = Math.min(seg.y0, seg.y1)
+      const hi = Math.max(seg.y0, seg.y1)
+      expect(seg.c1).toBeGreaterThanOrEqual(lo - 1e-9)
+      expect(seg.c1).toBeLessThanOrEqual(hi + 1e-9)
+      expect(seg.c2).toBeGreaterThanOrEqual(lo - 1e-9)
+      expect(seg.c2).toBeLessThanOrEqual(hi + 1e-9)
+    }
+  })
+
+  it('where Catmull-Rom overshoots the same points', () => {
+    const overshoots = segments(catmullRomPath(spiky)).some(seg => {
+      const lo = Math.min(seg.y0, seg.y1)
+      const hi = Math.max(seg.y0, seg.y1)
+      return seg.c1 < lo - 1e-9 || seg.c1 > hi + 1e-9 || seg.c2 < lo - 1e-9 || seg.c2 > hi + 1e-9
+    })
+    expect(overshoots).toBe(true)
+  })
+
+  it('holds for a reversed (right-to-left) run, as a band lower edge is drawn', () => {
+    const reversed = [...spiky].reverse()
+    for (const seg of segments(monotoneCubicPath(reversed))) {
+      const lo = Math.min(seg.y0, seg.y1)
+      const hi = Math.max(seg.y0, seg.y1)
+      expect(seg.c1).toBeGreaterThanOrEqual(lo - 1e-9)
+      expect(seg.c1).toBeLessThanOrEqual(hi + 1e-9)
+      expect(seg.c2).toBeGreaterThanOrEqual(lo - 1e-9)
+      expect(seg.c2).toBeLessThanOrEqual(hi + 1e-9)
+    }
+  })
+
+  it('handles short and degenerate input', () => {
+    expect(monotoneCubicPath([])).toBe('')
+    expect(monotoneCubicPath([[1, 2]])).toBe('')
+    expect(
+      monotoneCubicPath([
+        [0, 0],
+        [5, 5],
+      ]),
+    ).toBe('M0,0L5,5')
+    expect(
+      monotoneCubicPath([
+        [0, 3],
+        [0, 9],
+        [10, 9],
+      ]),
+    ).toMatch(/^M0,3 C/)
+  })
+
+  it('is selected by lineSegmentsToPaths only when asked', () => {
+    const seg: Array<Array<[number, number]>> = [spiky]
+    expect(lineSegmentsToPaths(seg, true)[0]).toBe(catmullRomPath(spiky))
+    expect(lineSegmentsToPaths(seg, true, 'monotone')[0]).toBe(monotoneCubicPath(spiky))
+    expect(lineSegmentsToPaths(seg, false, 'monotone')[0]).toBe(straightPath(spiky))
   })
 })

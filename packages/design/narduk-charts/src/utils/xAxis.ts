@@ -85,3 +85,56 @@ export function selectEvenAxisLabelIndices(options: AxisLabelIndexOptions): numb
   const merged = [...new Set(uniq)].sort((a, b) => a - b)
   return options.labelAt ? dedupeAdjacentAxisLabelIndices(merged, options.labelAt) : merged
 }
+
+/** Approximate advance of one X tick glyph (10px, weight 600, 0.03em tracking), in px. */
+export const X_TICK_GLYPH_PX = 6.2
+
+/** Smallest clear space between two neighbouring X tick labels, in px. */
+export const X_TICK_MIN_GAP_PX = 4
+
+export interface ThinTickOptions {
+  /** Pixel X of a tick's centre. */
+  xAt: (index: number) => number
+  /** Label text of a tick, used to estimate its width. */
+  labelAt: (index: number) => string
+  /** Estimated px per character. Default {@link X_TICK_GLYPH_PX}. */
+  glyphPx?: number
+  /** Clear space kept between two labels. Default {@link X_TICK_MIN_GAP_PX}. */
+  gapPx?: number
+}
+
+/**
+ * Drop X tick indices so no two labels overlap, whatever the font or label
+ * length. The last tick always wins, then the first; every other tick keeps its
+ * place only if it clears everything already kept. The input order is
+ * preserved. Pure and DOM-free (widths are estimated from character count), so
+ * the server and the browser keep the same ticks.
+ *
+ * This is the "Sep 26Oct 26" fix: the automatic spacing appended the final index
+ * after a stepped run, which could land a few pixels from the previous label.
+ */
+export function thinOverlappingTicks(indices: number[], options: ThinTickOptions): number[] {
+  if (indices.length <= 1) return indices
+  const glyph = options.glyphPx ?? X_TICK_GLYPH_PX
+  const gap = options.gapPx ?? X_TICK_MIN_GAP_PX
+  const box = (index: number) => {
+    const half = (options.labelAt(index).length * glyph) / 2
+    const x = options.xAt(index)
+    return { left: x - half, right: x + half }
+  }
+  const priority = [
+    indices.length - 1,
+    0,
+    ...Array.from({ length: Math.max(0, indices.length - 2) }, (_, k) => indices.length - 2 - k),
+  ]
+  const kept = new Set<number>()
+  const keptBoxes: Array<{ left: number; right: number }> = []
+  for (const pos of priority) {
+    if (kept.has(pos)) continue
+    const b = box(indices[pos]!)
+    if (keptBoxes.some(k => b.left < k.right + gap && b.right + gap > k.left)) continue
+    kept.add(pos)
+    keptBoxes.push(b)
+  }
+  return indices.filter((_, pos) => kept.has(pos))
+}
