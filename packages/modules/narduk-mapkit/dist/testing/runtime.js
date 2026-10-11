@@ -541,10 +541,98 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         }
     }
     const asAnnotation = (value) => value;
+    // -------------------------------------------------------------- overlays --
+    // Modelled as state, not pixels: an overlay records that a map holds it and
+    // what it was built from, and draws nothing. That is what a component test
+    // needs (`inspect.operations`, `map.overlays`) and all a headless run can
+    // verify honestly.
+    const styleMembers = [
+        'fillColor',
+        'fillOpacity',
+        'fillRule',
+        'lineCap',
+        'lineDash',
+        'lineDashOffset',
+        'lineJoin',
+        'lineWidth',
+        'strokeColor',
+        'strokeEnd',
+        'strokeOpacity',
+        'strokeStart',
+    ];
+    /** Only what the caller set is present; Apple's per-member defaults are not invented. */
+    class Style {
+        constructor(options = {}) {
+            for (const member of styleMembers) {
+                const value = options[member];
+                if (value !== undefined) {
+                    Object.defineProperty(this, member, {
+                        configurable: true,
+                        enumerable: true,
+                        value,
+                        writable: true,
+                    });
+                }
+            }
+        }
+    }
+    class Overlay extends EventTarget {
+        data;
+        enabled;
+        selected;
+        style;
+        visible;
+        /** Set by the map. Not part of Apple's writable surface here. */
+        ownerMap = null;
+        constructor(options = {}) {
+            super();
+            this.data = options.data ?? {};
+            this.enabled = options.enabled ?? true;
+            this.selected = options.selected ?? false;
+            this.style = options.style ?? new Style();
+            this.visible = options.visible ?? true;
+        }
+        get map() {
+            return this.ownerMap;
+        }
+    }
+    class PolygonOverlay extends Overlay {
+        points;
+        constructor(points, options) {
+            super(options);
+            // Apple takes one ring or many and always answers many.
+            const rings = (Array.isArray(points[0]) ? points : [points]);
+            this.points = rings.map((ring) => ring.map((point) => new Coordinate(point.latitude, point.longitude)));
+        }
+    }
+    class PolylineOverlay extends Overlay {
+        points;
+        constructor(points, options) {
+            super(options);
+            this.points = points.map((point) => new Coordinate(point.latitude, point.longitude));
+        }
+    }
+    class CircleOverlay extends Overlay {
+        coordinate;
+        radius;
+        constructor(coordinate, radius, options) {
+            super(options);
+            this.coordinate = new Coordinate(coordinate.latitude, coordinate.longitude);
+            this.radius = radius;
+        }
+    }
+    /** `PolygonOverlay`, `CircleOverlay`... for the operation log. */
+    const overlayKind = (overlay) => {
+        if (overlay instanceof PolygonOverlay)
+            return 'PolygonOverlay';
+        if (overlay instanceof PolylineOverlay)
+            return 'PolylineOverlay';
+        if (overlay instanceof CircleOverlay)
+            return 'CircleOverlay';
+        return 'Overlay';
+    };
     // ------------------------------------------------------------------- map --
     const unmodelledMapMembers = [
-        'addOverlay',
-        'addOverlays',
         'addTileOverlay',
         'annotationForCluster',
         'annotationsInMapRect',
@@ -552,10 +640,6 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         'cameraDistance',
         'cameraZoomRange',
         'convertCoordinateToPointOnPage',
-        'convertPointOnPageToCoordinate',
-        'overlays',
-        'removeOverlay',
-        'removeOverlays',
         'removeTileOverlay',
         'tileOverlays',
         'userLocationAnnotation',
@@ -571,6 +655,14 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             this.annotation = annotation;
         }
     }
+    /** Apple's `single-tap` carries more (`domEvents`); `pointOnPage` is the part this library reads. */
+    class MapTapEvent extends Event {
+        pointOnPage;
+        constructor(type, pointOnPage) {
+            super(type);
+            this.pointOnPage = pointOnPage;
+        }
+    }
     class MapImpl extends EventTarget {
         element;
         /** The container the map was attached to; the projection measures it. */
@@ -582,6 +674,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         regionValue;
         selectedValue = null;
         ownedAnnotations = [];
+        ownedOverlays = [];
         destroyed = false;
         /** Apple's constructor default is `true`; the documented `<AppMapKit>` default is `false`. */
         isRotationEnabled;
@@ -674,6 +767,18 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             }
             this.removeAnnotations([...this.ownedAnnotations]);
             this.addAnnotations(next);
+        }
+        get overlays() {
+            return [...this.ownedOverlays];
+        }
+        set overlays(next) {
+            log('overlays=', [], `${this.ownedOverlays.length} -> ${next.length}`);
+            for (const overlay of next)
+                this.assertOwnNamespace(overlay, 'overlays');
+            for (const overlay of [...this.ownedOverlays])
+                this.detachOverlay(overlay);
+            for (const overlay of next)
+                this.attachOverlay(overlay);
         }
         get region() {
             return this.regionValue.copy();
@@ -947,6 +1052,72 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 this.detach(annotation);
             return annotations;
         }
+        attachOverlay(overlay) {
+            if (this.ownedOverlays.includes(overlay))
+                return false;
+            overlay.ownerMap = this.view;
+            this.ownedOverlays.push(overlay);
+            return true;
+        }
+        detachOverlay(overlay) {
+            const index = this.ownedOverlays.indexOf(overlay);
+            if (index < 0)
+                return;
+            this.ownedOverlays.splice(index, 1);
+            overlay.ownerMap = null;
+        }
+        addOverlay(overlay) {
+            log('addOverlay', [], overlayKind(overlay));
+            this.assertOwnNamespace(overlay, 'addOverlay');
+            return this.attachOverlay(overlay) ? overlay : null;
+        }
+        addOverlays(overlays) {
+            log('addOverlays', [], String(overlays.length));
+            for (const [index, overlay] of overlays.entries()) {
+                this.assertOwnNamespace(overlay, 'addOverlays', index);
+            }
+            for (const overlay of overlays)
+                this.attachOverlay(overlay);
+            return overlays;
+        }
+        removeOverlay(overlay) {
+            log('removeOverlay', [], overlayKind(overlay));
+            this.detachOverlay(overlay);
+            return overlay;
+        }
+        removeOverlays(overlays) {
+            log('removeOverlays', [], String(overlays.length));
+            for (const overlay of overlays)
+                this.detachOverlay(overlay);
+            return overlays;
+        }
+        /**
+         * The inverse of `project`, for a point in PAGE coordinates (client
+         * coordinates plus scroll, as Apple documents). The answer is built from this
+         * map's own namespace so it can be handed straight back to the map.
+         */
+        convertPointOnPageToCoordinate(point) {
+            const box = (this.element ?? this.host).getBoundingClientRect();
+            const scroll = globalThis;
+            const x = point.x - box.left - (scroll.scrollX ?? 0);
+            const y = point.y - box.top - (scroll.scrollY ?? 0);
+            const { height, width } = this.viewport();
+            const region = this.regionValue;
+            const west = region.center.longitude - region.span.longitudeDelta / 2;
+            const north = mercator(region.center.latitude + region.span.latitudeDelta / 2);
+            const south = mercator(region.center.latitude - region.span.latitudeDelta / 2);
+            const longitude = west + (x / width) * region.span.longitudeDelta;
+            const projected = north - (y / height) * (north - south);
+            const latitude = ((2 * Math.atan(Math.exp(projected)) - Math.PI / 2) * 180) / Math.PI;
+            return brandNamespace(new Coordinate(latitude, longitude), this.namespaceId);
+        }
+        /** Where `project` puts `location`, in page coordinates: the `pointOnPage` of a tap on it. */
+        pageTapPoint(location) {
+            const local = project(new Coordinate(location.latitude, location.longitude), this.regionValue, this.viewport());
+            const box = (this.element ?? this.host).getBoundingClientRect();
+            const scroll = globalThis;
+            return makePoint(local.x + box.left + (scroll.scrollX ?? 0), local.y + box.top + (scroll.scrollY ?? 0));
+        }
         setRegionAnimated(region, _animated) {
             this.assertOwnNamespace(region, 'setRegionAnimated');
             log('setRegionAnimated');
@@ -988,6 +1159,8 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
             this.applySelection(null);
             for (const annotation of [...this.ownedAnnotations])
                 this.detach(annotation);
+            for (const overlay of [...this.ownedOverlays])
+                this.detachOverlay(overlay);
             this.element?.remove();
             const index = liveMaps.indexOf(this);
             if (index >= 0)
@@ -1092,7 +1265,6 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
     const unmodelledNamespaceMembers = [
         'BoundingRegion',
         'CameraZoomRange',
-        'CircleOverlay',
         'Directions',
         'Geocoder',
         'Libraries',
@@ -1101,10 +1273,7 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         'PlaceAnnotation',
         'PlaceLookup',
         'PointsOfInterestSearch',
-        'PolygonOverlay',
-        'PolylineOverlay',
         'Search',
-        'Style',
         'TileOverlay',
         'importGeoJSON',
     ];
@@ -1138,6 +1307,10 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         #annotation;
         #markerAnnotation;
         #imageAnnotation;
+        #style;
+        #polygonOverlay;
+        #polylineOverlay;
+        #circleOverlay;
         constructor(namespaceId) {
             super();
             this.namespaceId = namespaceId;
@@ -1177,6 +1350,19 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
                 log('ImageAnnotation');
                 return new ImageAnnotation(location, options);
             });
+            this.#style = scopedConstructor(namespaceId, (options) => new Style(options));
+            this.#polygonOverlay = scopedConstructor(namespaceId, (points, options) => {
+                log('PolygonOverlay');
+                return new PolygonOverlay(points, options);
+            });
+            this.#polylineOverlay = scopedConstructor(namespaceId, (points, options) => {
+                log('PolylineOverlay');
+                return new PolylineOverlay(points, options);
+            });
+            this.#circleOverlay = scopedConstructor(namespaceId, (coordinate, radius, options) => {
+                log('CircleOverlay');
+                return new CircleOverlay(coordinate, radius, options);
+            });
         }
         get language() {
             return language;
@@ -1214,6 +1400,18 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         }
         get ImageAnnotation() {
             return this.requireLibrary('annotations', 'ImageAnnotation', this.#imageAnnotation);
+        }
+        get Style() {
+            return this.requireLibrary('overlays', 'Style', this.#style);
+        }
+        get PolygonOverlay() {
+            return this.requireLibrary('overlays', 'PolygonOverlay', this.#polygonOverlay);
+        }
+        get PolylineOverlay() {
+            return this.requireLibrary('overlays', 'PolylineOverlay', this.#polylineOverlay);
+        }
+        get CircleOverlay() {
+            return this.requireLibrary('overlays', 'CircleOverlay', this.#circleOverlay);
         }
         /**
          * One token exchange, runtime-wide.
@@ -1387,6 +1585,11 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         selectAnnotation(map, annotation) {
             ;
             map.applySelection(annotation);
+        },
+        tapMap(map, location) {
+            const target = map;
+            log('single-tap', [], `${location.latitude},${location.longitude}`);
+            target.dispatchEvent(new MapTapEvent('single-tap', target.pageTapPoint(location)));
         },
     };
     return { inspect, load, mapkit: namespace };

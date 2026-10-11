@@ -8,9 +8,13 @@
  * consumer actually passed `geojson` or `circles`, so a pin-only map -- the case
  * every budget in §f measures -- never reaches for them.
  */
+import { geoJsonFeatureToPolygonDrawables, hitTestPolygonOverlays } from '../../geometry/index.js'
+
 import { mapKitGeometryPoints } from './region.js'
 
+import type { MapKitPolygonDrawable } from '../../types.js'
 import type { MapKitCoordinateLike, MapKitMapLike } from './mapkit-surface.js'
+import type { MapKitLatLng } from './region.js'
 import type {
   GeoJSONFeature,
   GeoJSONFeatureCollection,
@@ -102,6 +106,8 @@ function ringsFor(
 export class MapKitOverlayLayer {
   readonly #circles: OverlayLike[] = []
   readonly #features = new WeakMap<object, GeoJSONFeature>()
+  /** The polygons `hitTestFeature` searches. Rebuilt with the overlays, not per tap. */
+  #hitIndex: Array<MapKitPolygonDrawable<GeoJSONFeature>> = []
   readonly #options: MapKitOverlayLayerOptions
   readonly #overlays: OverlayLike[] = []
 
@@ -115,8 +121,29 @@ export class MapKitOverlayLayer {
     return this.#features.get(overlay)
   }
 
+  /**
+   * The GeoJSON feature whose filled area contains `point`, if any.
+   *
+   * A tap handler cannot rely on MapKit's own overlay selection: it needs each
+   * overlay `enabled` and a `select` listener, and a consumer that never opted
+   * into either would get no `feature-select` at all. Hit-testing the tapped
+   * coordinate against the `geojson` prop needs neither, and treats holes as
+   * empty by the same even-odd rule the overlays are drawn with (#931).
+   * Lines and circles are not hit-tested; a polygon is.
+   */
+  hitTestFeature(point: MapKitLatLng): GeoJSONFeature | undefined {
+    return hitTestPolygonOverlays(point, this.#hitIndex)?.data
+  }
+
   setGeoJSON(collection: GeoJSONFeatureCollection | null): void {
     this.#clear(this.#overlays)
+    // `data` is the feature object itself, so a hit hands back the consumer's own reference.
+    this.#hitIndex = (collection?.features ?? []).flatMap(
+      (feature, index) =>
+        geoJsonFeatureToPolygonDrawables(feature, index) as Array<
+          MapKitPolygonDrawable<GeoJSONFeature>
+        >,
+    )
     if (!collection?.features.length) return
     const { mapkit, overlayStyleFn } = this.#options
 
@@ -179,6 +206,7 @@ export class MapKitOverlayLayer {
   }
 
   destroy(): void {
+    this.#hitIndex = []
     this.#clear(this.#overlays)
     this.#clear(this.#circles)
   }

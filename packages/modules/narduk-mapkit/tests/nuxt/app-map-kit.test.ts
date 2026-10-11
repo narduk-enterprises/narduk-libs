@@ -12,7 +12,7 @@
 import { allowVueWarning } from '@narduk-enterprises/narduk-testkit/vue-warn-guard'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick, ref } from 'vue'
+import { defineComponent, h, nextTick, ref, toRaw } from 'vue'
 
 import { resetMapKitClientStateForTests } from '../../src/client/index.js'
 import AppMapKit from '../../src/nuxt/runtime/components/AppMapKit.js'
@@ -29,6 +29,7 @@ import { headEntries, resetNuxtImportsStub, setTestRuntimeConfig } from './nuxt-
 import type * as MapKitLoader from '@apple/mapkit-loader'
 import type { MapKitDiff, MapKitPinItem } from '../../src/nuxt/runtime/pin-layer.js'
 import type { FakeMapKitHandle, FakeMapKitOptions } from '../../src/testing/index.js'
+import type { GeoJSONFeature, GeoJSONFeatureCollection } from '../../src/nuxt/types.js'
 
 /**
  * The §c.6 expose. `mount()` cannot see through `expose()`, so the methods are
@@ -867,12 +868,177 @@ describe('a pin with no accessible name fails at mount (K-9)', () => {
     )
   })
 
-  it('says nothing about an empty items list', () => {
-    expect(() =>
-      mount(AppMapKit, {
+  it('says nothing about an empty items list', async () => {
+    let wrapper: ReturnType<typeof mount> | undefined
+    expect(() => {
+      wrapper = mount(AppMapKit, {
         attachTo: document.body,
         props: { createPinElement: pinElement, items: [] },
-      }),
-    ).not.toThrow()
+      })
+    }).not.toThrow()
+    // Settled before the test ends: a load still in flight would otherwise finish
+    // after `afterEach` reset the shared state and hand the next test this fake.
+    await vi.waitFor(() => {
+      expect(wrapper?.find('[data-mapkit-state="ready"]').exists()).toBe(true)
+    })
+    wrapper?.unmount()
+  })
+})
+
+describe('map-click and feature-select (narduk-libs#1729)', () => {
+  // County A is a 1 x 1 degree square with a hole; county B is a MultiPolygon
+  // with a second, detached part. All values are lng/lat, as GeoJSON has them.
+  const countyA: GeoJSONFeature = {
+    type: 'Feature',
+    properties: { name: 'A' },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-89, 30],
+          [-88, 30],
+          [-88, 31],
+          [-89, 31],
+          [-89, 30],
+        ],
+        [
+          [-88.6, 30.4],
+          [-88.4, 30.4],
+          [-88.4, 30.6],
+          [-88.6, 30.6],
+          [-88.6, 30.4],
+        ],
+      ],
+    },
+  }
+  const countyB: GeoJSONFeature = {
+    type: 'Feature',
+    properties: { name: 'B' },
+    geometry: {
+      type: 'MultiPolygon',
+      coordinates: [
+        [
+          [
+            [-87.9, 30],
+            [-87.5, 30],
+            [-87.5, 30.4],
+            [-87.9, 30.4],
+            [-87.9, 30],
+          ],
+        ],
+        [
+          [
+            [-87.4, 30.6],
+            [-87, 30.6],
+            [-87, 31],
+            [-87.4, 31],
+            [-87.4, 30.6],
+          ],
+        ],
+      ],
+    },
+  }
+  const COUNTIES: GeoJSONFeatureCollection = {
+    type: 'FeatureCollection',
+    features: [countyA, countyB],
+  }
+
+  const tap = (latitude: number, longitude: number) => {
+    fake.inspect.tapMap(fake.inspect.maps[0]!, { latitude, longitude })
+  }
+
+  it('emits map-click with the tapped { lat, lng }', async () => {
+    const wrapper = await mountMap()
+
+    tap(30.25, -88.75)
+
+    const payloads = wrapper.emitted('map-click') ?? []
+    expect(payloads).toHaveLength(1)
+    const coordinate = payloads[0]![0] as { lat: number; lng: number }
+    expect(coordinate.lat).toBeCloseTo(30.25, 6)
+    expect(coordinate.lng).toBeCloseTo(-88.75, 6)
+    expect(wrapper.emitted('feature-select')).toBeUndefined()
+  })
+
+  it('emits feature-select with the feature a tap lands inside', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    tap(30.2, -88.8)
+
+    const selected = wrapper.emitted('feature-select') ?? []
+    expect(selected).toHaveLength(1)
+    // The consumer's own object, not a copy (Vue hands it back wrapped in its reactive proxy).
+    expect(toRaw(selected[0]![0])).toBe(countyA)
+    expect(wrapper.emitted('map-click')).toHaveLength(1)
+  })
+
+  it('selects the right part of a MultiPolygon', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    tap(30.2, -87.7)
+    tap(30.8, -87.2)
+
+    expect(wrapper.emitted('feature-select')?.map(([feature]) => toRaw(feature))).toEqual([
+      countyB,
+      countyB,
+    ])
+  })
+
+  it('emits map-click but no feature-select for a tap outside every polygon', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    tap(30.5, -87.65)
+
+    expect(wrapper.emitted('map-click')).toHaveLength(1)
+    expect(wrapper.emitted('feature-select')).toBeUndefined()
+  })
+
+  it('treats a hole as empty (#931)', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    tap(30.5, -88.5)
+
+    expect(wrapper.emitted('map-click')).toHaveLength(1)
+    expect(wrapper.emitted('feature-select')).toBeUndefined()
+  })
+
+  it('works without MapKit overlay selection: no select listener, no feature-select from it', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    // The overlays are `enabled`, but a tap is resolved by hit-testing, not by
+    // a `select` event, so nothing here depends on MapKit selecting an overlay.
+    tap(30.2, -88.8)
+
+    expect(wrapper.emitted('feature-select')).toHaveLength(1)
+  })
+
+  it('follows the geojson prop: a new collection is what taps hit', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+    await wrapper.setProps({ geojson: { type: 'FeatureCollection', features: [countyB] } })
+
+    tap(30.2, -88.8)
+    tap(30.2, -87.7)
+
+    expect(wrapper.emitted('feature-select')?.map(([feature]) => toRaw(feature))).toEqual([countyB])
+    await wrapper.setProps({ geojson: null })
+    tap(30.2, -87.7)
+    expect(wrapper.emitted('feature-select')).toHaveLength(1)
+  })
+
+  it('draws a geojson map on the fake: PolygonOverlay, addOverlay, then removeOverlays', async () => {
+    const wrapper = await mountMap({ geojson: COUNTIES })
+
+    // Two polygons for county B's MultiPolygon plus one for A.
+    expect(fake.inspect.count('PolygonOverlay')).toBe(3)
+    expect(fake.inspect.count('addOverlay')).toBe(3)
+    expect(fake.inspect.maps[0]!.overlays).toHaveLength(3)
+
+    await wrapper.setProps({ geojson: { type: 'FeatureCollection', features: [countyA] } })
+
+    expect(fake.inspect.count('removeOverlays')).toBe(1)
+    expect(fake.inspect.maps[0]!.overlays).toHaveLength(1)
+
+    wrapper.unmount()
+    expect(fake.inspect.maps).toHaveLength(0)
   })
 })

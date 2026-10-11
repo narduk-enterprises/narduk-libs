@@ -533,7 +533,7 @@ describe('the fidelity rule', () => {
 
   it('throws for an unmodelled map member', () => {
     const { map } = readyMap()
-    expect(notImplementedMember(read(map, 'overlays'))).toBe('mapkit.Map.overlays')
+    expect(notImplementedMember(read(map, 'tileOverlays'))).toBe('mapkit.Map.tileOverlays')
     expect(notImplementedMember(read(map, 'cameraDistance'))).toBe('mapkit.Map.cameraDistance')
   })
 
@@ -862,5 +862,151 @@ describe('the projection viewport', () => {
 
     expect(pin.element.style.left).toBe('195px')
     expect(pin.element.style.top).toBe('422px')
+  })
+})
+
+describe('overlays and taps (narduk-libs#1729)', () => {
+  const RING = [
+    { latitude: 0, longitude: 0 },
+    { latitude: 0, longitude: 1 },
+    { latitude: 1, longitude: 1 },
+  ]
+
+  it('models PolygonOverlay, normalising one flat ring to rings as Apple does', () => {
+    const { fake } = readyMap()
+    const style = new fake.mapkit.Style({ fillColor: '#10b981', lineWidth: 2 })
+
+    const polygon = new fake.mapkit.PolygonOverlay(RING, { style, data: { id: 'a' } })
+
+    expect(polygon.points).toHaveLength(1)
+    expect(polygon.points[0]!.map((point) => [point.latitude, point.longitude])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 1],
+    ])
+    expect(polygon.style).toMatchObject({ fillColor: '#10b981', lineWidth: 2 })
+    expect(polygon.data).toEqual({ id: 'a' })
+    expect(polygon.map).toBeNull()
+    expect(fake.inspect.count('PolygonOverlay')).toBe(1)
+  })
+
+  it('keeps rings (outer + holes) as handed over', () => {
+    const { fake } = readyMap()
+    const hole = [
+      { latitude: 0.2, longitude: 0.5 },
+      { latitude: 0.2, longitude: 0.6 },
+      { latitude: 0.3, longitude: 0.6 },
+    ]
+    expect(new fake.mapkit.PolygonOverlay([RING, hole]).points.map((ring) => ring.length)).toEqual([
+      3, 3,
+    ])
+  })
+
+  it('models PolylineOverlay and CircleOverlay beside it', () => {
+    const { fake } = readyMap()
+    const line = new fake.mapkit.PolylineOverlay(RING)
+    const circle = new fake.mapkit.CircleOverlay({ latitude: 2, longitude: 3 }, 500)
+
+    expect(line.points).toHaveLength(3)
+    expect(circle.radius).toBe(500)
+    expect(circle.coordinate).toMatchObject({ latitude: 2, longitude: 3 })
+    expect(fake.inspect.count('PolylineOverlay')).toBe(1)
+    expect(fake.inspect.count('CircleOverlay')).toBe(1)
+  })
+
+  it('records addOverlay and removeOverlays in the operation log and holds the overlays', () => {
+    const { fake, map } = readyMap()
+    const first = new fake.mapkit.PolygonOverlay(RING)
+    const second = new fake.mapkit.PolygonOverlay(RING)
+    fake.inspect.reset()
+
+    expect(map.addOverlay(first)).toBe(first)
+    expect(map.addOverlay(first)).toBeNull()
+    map.addOverlays([second])
+
+    expect(map.overlays).toEqual([first, second])
+    expect(first.map).toBe(map)
+    expect(fake.inspect.operations.map((operation) => operation.name)).toEqual([
+      'addOverlay',
+      'addOverlay',
+      'addOverlays',
+    ])
+    expect(fake.inspect.operations[0]).toMatchObject({ detail: 'PolygonOverlay' })
+
+    map.removeOverlays([first, second])
+
+    expect(map.overlays).toEqual([])
+    expect(first.map).toBeNull()
+    expect(fake.inspect.count('removeOverlays')).toBe(1)
+
+    map.addOverlay(first)
+    map.removeOverlay(first)
+    expect(fake.inspect.count('removeOverlay')).toBe(1)
+    expect(map.overlays).toEqual([])
+  })
+
+  it('drops its overlays when the map is destroyed', () => {
+    const { fake, map } = readyMap()
+    const polygon = new fake.mapkit.PolygonOverlay(RING)
+    map.addOverlay(polygon)
+
+    map.destroy()
+
+    expect(polygon.map).toBeNull()
+  })
+
+  it('refuses an overlay another namespace built, in the K-10 shape', async () => {
+    const { fake, map } = readyMap()
+    const scoped = await fake.load({ libraries: ['map', 'overlays'] })
+    const foreign = new scoped.PolygonOverlay(RING)
+
+    expect(() => map.addOverlay(foreign)).toThrow(/namespace that created this map/)
+    expect(map.overlays).toEqual([])
+  })
+
+  it('has no overlay classes without the overlays library, as in real v6', () => {
+    const fake = createFakeMapKit({ libraries: ['map'] })
+    expect(() => fake.mapkit.PolygonOverlay).toThrow(
+      '[MapKit] mapkit.PolygonOverlay is available after loading the following library: overlays.',
+    )
+  })
+
+  it('answers a point on the page with the coordinate that projects to it', () => {
+    const { fake, map } = readyMap()
+    map.region = new fake.mapkit.CoordinateRegion(
+      new fake.mapkit.Coordinate(30.3, -88.1),
+      new fake.mapkit.CoordinateSpan(0.5, 0.8),
+    )
+    const pin = new fake.mapkit.MarkerAnnotation({ latitude: 30.4, longitude: -87.9 })
+    map.addAnnotation(pin)
+
+    // A pin's element is placed at its projected point; the page and the map
+    // share an origin under happy-dom, so that point is also its page point.
+    const coordinate = map.convertPointOnPageToCoordinate(
+      new DOMPoint(
+        Number.parseFloat(pin.element.style.left),
+        Number.parseFloat(pin.element.style.top),
+      ),
+    )
+
+    expect(coordinate.latitude).toBeCloseTo(30.4, 6)
+    expect(coordinate.longitude).toBeCloseTo(-87.9, 6)
+  })
+
+  it('fires single-tap with a pointOnPage that converts back to the tapped location', () => {
+    const { fake, map } = readyMap()
+    const seen: Array<{ pointOnPage: DOMPoint }> = []
+    map.addEventListener('single-tap', (event) => {
+      seen.push(event as unknown as { pointOnPage: DOMPoint })
+    })
+    fake.inspect.reset()
+
+    fake.inspect.tapMap(map, { latitude: 0.25, longitude: 0.4 })
+
+    expect(seen).toHaveLength(1)
+    expect(fake.inspect.count('single-tap')).toBe(1)
+    const coordinate = map.convertPointOnPageToCoordinate(seen[0]!.pointOnPage)
+    expect(coordinate.latitude).toBeCloseTo(0.25, 6)
+    expect(coordinate.longitude).toBeCloseTo(0.4, 6)
   })
 })

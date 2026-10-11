@@ -27,6 +27,7 @@ import type {
   FakeCoordinateSpan,
   FakeMapKitAnnotation,
   FakeMapKitCalloutDelegate,
+  FakeMapKitCircleOverlay,
   FakeMapKitConfigurationChangeStatus,
   FakeMapKitConfigurationErrorStatus,
   FakeMapKitImageAnnotation,
@@ -40,7 +41,13 @@ import type {
   FakeMapKitMapTypeEnum,
   FakeMapKitMarkerAnnotation,
   FakeMapKitNamespace,
+  FakeMapKitOverlay,
+  FakeMapKitOverlayOptions,
+  FakeMapKitPolygonOverlay,
+  FakeMapKitPolylineOverlay,
   FakeMapKitShowItemsOptions,
+  FakeMapKitStyle,
+  FakeMapKitStyleOptions,
   FakeMapPoint,
   FakeMapPointData,
   FakeMapRect,
@@ -69,11 +76,13 @@ type Fakeify<T> = T extends Apple.Annotation
   ? FakeMapKitAnnotation
   : T extends Apple.Map
     ? FakeMapKitMap
-    : T extends null
-      ? null
-      : T extends ReadonlyArray<infer Element>
-        ? Array<Fakeify<Element>>
-        : T
+    : T extends Apple.Overlay
+      ? FakeMapKitOverlay
+      : T extends null
+        ? null
+        : T extends ReadonlyArray<infer Element>
+          ? Array<Fakeify<Element>>
+          : T
 
 // ------------------------------------------------------------ status enums --
 // Apple keeps these as non-exported const objects, so they are read off the
@@ -309,13 +318,107 @@ type _mapDestroy = Expect<
 >
 type _mapIsEventTarget = Expect<Extends<Apple.Map, EventTarget>>
 // `showItems` is compared on its arguments only: Apple's return type includes
-// `Overlay`, which the fake does not model at all.
+// `Overlay`, and the fake's `showItems` only ever answers annotations.
 type _mapShowItemsOptions = Expect<Extends<FakeMapKitShowItemsOptions, Apple.MapShowItemsOptions>>
 type _mapShowItemsItems = Expect<
   Equal<
     Fakeify<Extract<Parameters<Apple.Map['showItems']>[0][number], Apple.Annotation>>,
     Parameters<FakeMapKitMap['showItems']>[0][number]
   >
+>
+
+// ---------------------------------------------------------------- overlays --
+// narduk-libs#1729. The fake holds overlays as state and draws nothing.
+
+type _mapOverlays = Expect<Equal<Fakeify<Apple.Map['overlays']>, FakeMapKitMap['overlays']>>
+type _mapAddOverlay = Expect<
+  Equal<Fakeify<ReturnType<Apple.Map['addOverlay']>>, ReturnType<FakeMapKitMap['addOverlay']>>
+>
+type _mapAddOverlays = Expect<
+  Equal<Fakeify<ReturnType<Apple.Map['addOverlays']>>, ReturnType<FakeMapKitMap['addOverlays']>>
+>
+type _mapRemoveOverlay = Expect<
+  Equal<Fakeify<ReturnType<Apple.Map['removeOverlay']>>, ReturnType<FakeMapKitMap['removeOverlay']>>
+>
+type _mapRemoveOverlays = Expect<
+  Equal<
+    Fakeify<ReturnType<Apple.Map['removeOverlays']>>,
+    ReturnType<FakeMapKitMap['removeOverlays']>
+  >
+>
+type _mapConvertPoint = Expect<
+  Extends<
+    Parameters<FakeMapKitMap['convertPointOnPageToCoordinate']>,
+    Parameters<Apple.Map['convertPointOnPageToCoordinate']>
+  >
+>
+type _mapConvertPointReturn = Expect<
+  Extends<
+    ReturnType<Apple.Map['convertPointOnPageToCoordinate']>,
+    ReturnType<FakeMapKitMap['convertPointOnPageToCoordinate']>
+  >
+>
+type _overlayEnabled = Expect<Extends<Apple.Overlay['enabled'], FakeMapKitOverlay['enabled']>>
+type _overlayVisible = Expect<Extends<Apple.Overlay['visible'], FakeMapKitOverlay['visible']>>
+type _overlaySelected = Expect<Extends<Apple.Overlay['selected'], FakeMapKitOverlay['selected']>>
+type _overlayData = Expect<Extends<Apple.Overlay['data'], FakeMapKitOverlay['data']>>
+type _overlayStyle = Expect<Extends<Apple.Overlay['style'], FakeMapKitOverlay['style']>>
+type _overlayMap = Expect<Equal<Fakeify<Apple.Overlay['map']>, FakeMapKitOverlay['map']>>
+type _overlayIsEventTarget = Expect<Extends<Apple.Overlay, EventTarget>>
+type _polygonPoints = Expect<
+  Extends<Apple.PolygonOverlay['points'], FakeMapKitPolygonOverlay['points']>
+>
+type _polylinePoints = Expect<
+  Extends<Apple.PolylineOverlay['points'], FakeMapKitPolylineOverlay['points']>
+>
+type _circleCoordinate = Expect<
+  Extends<Apple.CircleOverlay['coordinate'], FakeMapKitCircleOverlay['coordinate']>
+>
+type _circleRadius = Expect<
+  Extends<Apple.CircleOverlay['radius'], FakeMapKitCircleOverlay['radius']>
+>
+type _overlayOptionKeys = Expect<
+  Extends<keyof FakeMapKitOverlayOptions, keyof Apple.OverlayOptions>
+>
+type _styleOptionKeys = Expect<
+  Extends<keyof FakeMapKitStyleOptions, keyof Apple.StyleConstructorOptions>
+>
+type _styleIsFakeStyle = Expect<Extends<Apple.Style, FakeMapKitStyle>>
+type _polygonOverlayCtor = Expect<
+  Extends<
+    ConstructorParameters<typeof Apple.PolygonOverlay>,
+    ConstructorParameters<FakeMapKitNamespace['PolygonOverlay']>
+  >
+>
+type _polylineOverlayCtor = Expect<
+  Extends<
+    ConstructorParameters<typeof Apple.PolylineOverlay>,
+    ConstructorParameters<FakeMapKitNamespace['PolylineOverlay']>
+  >
+>
+type _circleOverlayCtor = Expect<
+  Extends<
+    ConstructorParameters<typeof Apple.CircleOverlay>,
+    ConstructorParameters<FakeMapKitNamespace['CircleOverlay']>
+  >
+>
+type _styleCtor = Expect<
+  Extends<
+    ConstructorParameters<typeof Apple.Style>,
+    ConstructorParameters<FakeMapKitNamespace['Style']>
+  >
+>
+type _overlayKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitOverlay, keyof EventTarget>, keyof Apple.Overlay>
+>
+type _polygonKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitPolygonOverlay, keyof EventTarget>, keyof Apple.PolygonOverlay>
+>
+type _polylineKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitPolylineOverlay, keyof EventTarget>, keyof Apple.PolylineOverlay>
+>
+type _circleKeys = Expect<
+  Extends<Exclude<keyof FakeMapKitCircleOverlay, keyof EventTarget>, keyof Apple.CircleOverlay>
 >
 
 // ------------------------------------------------- no invented member names --

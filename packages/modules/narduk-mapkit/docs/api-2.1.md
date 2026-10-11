@@ -244,8 +244,8 @@ out; the default is `'keyboard'`.
 | `leader-offscreen`               | `boolean`                                      | **NEW (narduk-libs#517).** True when the selected pin's screen point is outside the map frame.                                                                                                                               |
 | `map-ready`                      | `(map: mapkit.Map, mapkit: MapKitNamespace)`   | **(2.1.1, K-10)** second argument ADDED; the first is unchanged, so every existing handler keeps working. See §g.1 -- this namespace, never `window.mapkit`, is what an escape-hatch consumer must build MapKit values from. |
 | `region-change`                  | `{ centerLat; centerLng; latDelta; lngDelta }` | unchanged                                                                                                                                                                                                                    |
-| `map-click`                      | `{ lat; lng }`                                 | unchanged                                                                                                                                                                                                                    |
-| `feature-select`                 | `GeoJSONFeature`                               | unchanged                                                                                                                                                                                                                    |
+| `map-click`                      | `{ lat; lng }`                                 | **Emitted (narduk-libs#1729).** Declared since 2.1.0 but never fired before this fix: the tapped coordinate, from the map's `single-tap`.                                                                                    |
+| `feature-select`                 | `GeoJSONFeature`                               | **Emitted (narduk-libs#1729).** The `geojson` feature whose polygon contains a tap (even-odd, holes empty), found by hit-testing, so it needs no overlay selection. Lines and circles are not hit-tested.                    |
 | `callout-open` / `callout-close` | `{ id: string; item: T }`                      | retained, now driven by the slot                                                                                                                                                                                             |
 | `mapkit-error`                   | `MapKitFailure`                                | NEW                                                                                                                                                                                                                          |
 | `fullscreen-change`              | —                                              | **dropped** (zero consumers)                                                                                                                                                                                                 |
@@ -539,11 +539,11 @@ export interface FakeMapKitHandle {
 `annotationsRemoved`, `annotationCounts(id)`, `maps`, `tokens`, `tokenCalls`,
 `bootstrapAttempts`, `configurationChanges`, `errors`, `now`,
 `advanceClock(ms)`, `selectAnnotation` / `deselectAnnotation`,
-`calloutElement(a)`, `degenerateCameraInputs` and `reset()`. Scripted failure is
-`options.auth` (`mode: 'accept' | 'error' | 'wrong-origin'`, `status`,
-`bootstrapAttempts`, `accessKeyTtlSeconds`, `onAccessKeyExpiry`), not a method
-on the handle — a mode chosen at construction cannot be forgotten halfway
-through a test.
+`tapMap(map, location)`, `calloutElement(a)`, `degenerateCameraInputs` and
+`reset()`. Scripted failure is `options.auth`
+(`mode: 'accept' | 'error' | 'wrong-origin'`, `status`, `bootstrapAttempts`,
+`accessKeyTtlSeconds`, `onAccessKeyExpiry`), not a method on the handle — a mode
+chosen at construction cannot be forgotten halfway through a test.
 
 ### g.1 `window.mapkit` is NOT the namespace your map belongs to
 

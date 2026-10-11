@@ -52,10 +52,12 @@ export interface MapKitAnnotationOptionsLike {
 /**
  * The map members the runtime touches. Deliberately short:
  * `convertCoordinateToPointOnPage` and the overlay methods are NOT here,
- * because the fake does not model them -- the projection call is guarded by a
- * `try`/`catch` with a fallback, and the overlay members live on
+ * because the fake does not model the first -- the projection call is guarded
+ * by a `try`/`catch` with a fallback -- and the overlay members live on
  * `overlay-layer.ts`'s own narrower types, which are only touched when
- * `geojson` or `circles` is non-empty.
+ * `geojson` or `circles` is non-empty. `convertPointOnPageToCoordinate` is
+ * here: the `single-tap` handler behind `map-click` and `feature-select`
+ * needs it on every map.
  *
  * `colorScheme` and `mapType` joined the list in 2.1.1 (K-4): they were
  * constructor options the component never wrote again, so changing either prop
@@ -71,6 +73,10 @@ export interface MapKitMapLike {
     selectedAnnotation: MapKitAnnotationLike | null;
     addAnnotations(annotations: readonly MapKitAnnotationLike[]): unknown;
     addEventListener(type: string, listener: (event: never) => void): void;
+    convertPointOnPageToCoordinate(point: {
+        x: number;
+        y: number;
+    }): MapKitCoordinateLike;
     destroy(): void;
     removeAnnotations(annotations: readonly MapKitAnnotationLike[]): unknown;
     removeEventListener(type: string, listener: (event: never) => void): void;

@@ -503,6 +503,24 @@ const AppMapKitImpl = defineComponent({
       if (overviewRegion) map.setRegionAnimated(overviewRegion, true)
     }
 
+    /**
+     * A tap on the map surface (narduk-libs#1729).
+     *
+     * `map-click` carries the tapped coordinate. `feature-select` carries the
+     * `geojson` feature whose polygon contains it, found by hit-testing the
+     * coordinate rather than by MapKit's own overlay selection, which only
+     * fires for `enabled` overlays and needs a `select` listener: this works
+     * for every `geojson` map without either.
+     */
+    function onSingleTap(event: { pointOnPage?: { x: number; y: number } }): void {
+      if (!map || !event.pointOnPage) return
+      const coordinate = map.convertPointOnPageToCoordinate(event.pointOnPage)
+      const point: MapKitLatLng = { lat: coordinate.latitude, lng: coordinate.longitude }
+      emit('map-click', point)
+      const feature = overlayLayer?.hitTestFeature(point)
+      if (feature) emit('feature-select', feature)
+    }
+
     function initMap(): void {
       const namespace = mapkit.value as unknown as MapKitNamespaceLike | null
       const container = containerRef.value
@@ -564,6 +582,7 @@ const AppMapKitImpl = defineComponent({
         onSelect: select,
       })
 
+      map.addEventListener('single-tap', onSingleTap)
       map.addEventListener('region-change-end', () => {
         const region = map?.region
         if (!region) return

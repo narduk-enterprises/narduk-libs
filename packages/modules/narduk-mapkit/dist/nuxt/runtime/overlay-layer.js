@@ -8,6 +8,7 @@
  * consumer actually passed `geojson` or `circles`, so a pin-only map -- the case
  * every budget in §f measures -- never reaches for them.
  */
+import { geoJsonFeatureToPolygonDrawables, hitTestPolygonOverlays } from '../../geometry/index.js';
 import { mapKitGeometryPoints } from './region.js';
 /** MapKit Style takes raw hex; Tailwind utilities cannot be used in a JS object. */
 const DEFAULT_POLYGON_STYLE = {
@@ -51,6 +52,8 @@ function ringsFor(mapkit, geometry) {
 export class MapKitOverlayLayer {
     #circles = [];
     #features = new WeakMap();
+    /** The polygons `hitTestFeature` searches. Rebuilt with the overlays, not per tap. */
+    #hitIndex = [];
     #options;
     #overlays = [];
     constructor(options) {
@@ -62,8 +65,23 @@ export class MapKitOverlayLayer {
             return undefined;
         return this.#features.get(overlay);
     }
+    /**
+     * The GeoJSON feature whose filled area contains `point`, if any.
+     *
+     * A tap handler cannot rely on MapKit's own overlay selection: it needs each
+     * overlay `enabled` and a `select` listener, and a consumer that never opted
+     * into either would get no `feature-select` at all. Hit-testing the tapped
+     * coordinate against the `geojson` prop needs neither, and treats holes as
+     * empty by the same even-odd rule the overlays are drawn with (#931).
+     * Lines and circles are not hit-tested; a polygon is.
+     */
+    hitTestFeature(point) {
+        return hitTestPolygonOverlays(point, this.#hitIndex)?.data;
+    }
     setGeoJSON(collection) {
         this.#clear(this.#overlays);
+        // `data` is the feature object itself, so a hit hands back the consumer's own reference.
+        this.#hitIndex = (collection?.features ?? []).flatMap((feature, index) => geoJsonFeatureToPolygonDrawables(feature, index));
         if (!collection?.features.length)
             return;
         const { mapkit, overlayStyleFn } = this.#options;
@@ -115,6 +133,7 @@ export class MapKitOverlayLayer {
             circle.radius = radius;
     }
     destroy() {
+        this.#hitIndex = [];
         this.#clear(this.#overlays);
         this.#clear(this.#circles);
     }
