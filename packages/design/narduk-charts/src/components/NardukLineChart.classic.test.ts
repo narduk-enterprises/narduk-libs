@@ -29,7 +29,14 @@ function render(extra: Record<string, unknown> = {}) {
     },
   }).html()
   /* Comments (`<!--v-if-->` placeholders) are not output: the studio branches add some. */
-  return html.replace(/[ \t]*<!--[\s\S]*?-->\n?/g, '')
+  // Repeat until stable, so a comment split by another never survives one pass.
+  let out = html
+  let prev
+  do {
+    prev = out
+    out = out.replace(/[ \t]*<!--[\s\S]*?-->\n?/g, '')
+  } while (out !== prev)
+  return out
 }
 
 describe('NardukLineChart classic output', () => {
