@@ -114,6 +114,59 @@ export function catmullRomPath(points: Array<[number, number]>): string {
   return d
 }
 
+/**
+ * Monotone cubic through `points` (Fritsch–Carlson). Between two neighbouring
+ * points the curve never leaves the Y range of those two points, so a spiky
+ * weekly series cannot dip below zero or above its own peak the way a
+ * Catmull-Rom spline does. X may run in either direction (a band's reversed
+ * lower edge); a repeated X draws a straight step.
+ */
+export function monotoneCubicPath(points: Array<[number, number]>): string {
+  const n = points.length
+  if (n < 2) return ''
+  if (n === 2) return `M${points[0][0]},${points[0][1]}L${points[1][0]},${points[1][1]}`
+
+  const dx: number[] = []
+  const dy: number[] = []
+  const slope: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(points[i + 1][0] - points[i][0])
+    dy.push(points[i + 1][1] - points[i][1])
+    slope.push(dx[i] === 0 ? 0 : dy[i] / dx[i])
+  }
+
+  const tangent: number[] = new Array<number>(n).fill(0)
+  tangent[0] = slope[0]
+  tangent[n - 1] = slope[n - 2]
+  for (let i = 1; i < n - 1; i++) {
+    tangent[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) {
+      tangent[i] = 0
+      tangent[i + 1] = 0
+      continue
+    }
+    const a = tangent[i] / slope[i]
+    const b = tangent[i + 1] / slope[i]
+    const r = a * a + b * b
+    if (r > 9) {
+      const t = 3 / Math.sqrt(r)
+      tangent[i] = t * a * slope[i]
+      tangent[i + 1] = t * b * slope[i]
+    }
+  }
+
+  let d = `M${points[0][0]},${points[0][1]}`
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = points[i]
+    const [x1, y1] = points[i + 1]
+    const w = dx[i] / 3
+    d += ` C${x0 + w},${y0 + tangent[i] * w} ${x1 - w},${y1 - tangent[i + 1] * w} ${x1},${y1}`
+  }
+  return d
+}
+
 export function straightPath(points: Array<[number, number]>): string {
   if (points.length < 2) return ''
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ')
@@ -151,13 +204,16 @@ export function segmentLinePoints(
   return segments
 }
 
+/** How `smooth` curves are drawn: the classic Catmull-Rom spline, or a monotone cubic that never overshoots. */
+export type LineCurve = 'catmull-rom' | 'monotone'
+
 export function lineSegmentsToPaths(
   segments: Array<Array<[number, number]>>,
   smooth: boolean,
+  curve: LineCurve = 'catmull-rom',
 ): string[] {
-  return segments.map(seg =>
-    seg.length < 2 ? '' : smooth ? catmullRomPath(seg) : straightPath(seg),
-  )
+  const curved = curve === 'monotone' ? monotoneCubicPath : catmullRomPath
+  return segments.map(seg => (seg.length < 2 ? '' : smooth ? curved(seg) : straightPath(seg)))
 }
 
 /** Close a line path down to a horizontal baseline (for area fill). */

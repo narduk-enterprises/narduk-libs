@@ -4,7 +4,7 @@ import { computed, onMounted, ref, useId, watch } from 'vue'
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { candleBarSummary, defaultCandleChartLabel, zoomKeyboardHint } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import {
   aggregateCandlesDetailed,
   arrayMax,
@@ -30,6 +30,7 @@ import type {
   CandleReachedStartPayload,
   CandleTimeDomain,
   CandleZoomRange,
+  ChartLook,
   ChartTheme,
   ChartYScaleMode,
   TooltipItem,
@@ -65,6 +66,8 @@ const props = withDefaults(
     height?: number
     /** Emphasize the rightmost (forming) bucket in the visible window. */
     highlightFormingBar?: boolean
+    /** `'classic'` (default) or `'studio'`: frameless, with a left-aligned title and legend. */
+    look?: ChartLook
     /** Cap drawn buckets from the visible window (aggregation). */
     maxDrawBars?: number
     /** Rebases OHLC into % or indexed units (forces linear Y). */
@@ -111,6 +114,7 @@ const props = withDefaults(
     zoomWheelFree?: boolean
   }>(),
   {
+    look: 'classic',
     showGrid: true,
     animate: true,
     respectReducedMotion: true,
@@ -1533,9 +1537,12 @@ const rootChartClasses = computed(() => {
   if (isDark.value) c.push('narduk-chart--dark')
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
+  if (props.look === 'studio') c.push(STUDIO_LOOK_CLASS)
   if (props.zoomable) c.push('narduk-chart--zoomable')
   return c
 })
+
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const svgAriaLabelledby = computed(() => {
   const parts = [svgTitleElId]
@@ -1583,7 +1590,7 @@ defineExpose({
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="captionElId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>

@@ -8,6 +8,17 @@ export type ChartYAxisId = 'primary' | 'secondary'
 /** Linear, log10 (strictly positive values), or symmetric log (mixed signs). */
 export type ChartYScaleMode = 'linear' | 'log' | 'symlog'
 
+/**
+ * `classic` (default) is the framed card with a centred title. `studio` is the
+ * frameless editorial look: left-aligned title and an inline legend above the
+ * plot, hairline grid, monotone lines and, on `NardukLineChart`, now tags, end
+ * labels and level rails. See `docs/STUDIO-LOOK.md`.
+ */
+export type ChartLook = 'classic' | 'studio'
+
+/** **NardukLineChart, `look="studio"`.** `context` series recede behind the primary ones. */
+export type ChartSeriesEmphasis = 'primary' | 'context'
+
 export interface ChartSeries {
   name: string
   /** Use `null` to break the line (gap) at that index. */
@@ -33,6 +44,13 @@ export interface ChartSeries {
   mode?: ChartSeriesMode
   /** **NardukLineChart only.** Marker style for this series' points. */
   marker?: ChartSeriesMarker
+  /**
+   * **NardukLineChart, `look="studio"` only.** `'context'` draws the series
+   * 1.5px at 40% strength behind the others, with no now tag and no area, for
+   * a comparison such as last year's season. Default `'primary'`. Ignored by
+   * the classic look.
+   */
+  emphasis?: ChartSeriesEmphasis
   /** **NardukLineChart only.** 0–1 opacity for everything this series draws. Default `1`. */
   opacity?: number
   /**
@@ -102,7 +120,13 @@ export interface ChartBand {
   high: Array<number | null>
   /** Any CSS colour or token. Default `var(--color-chart-accent)`. */
   color?: string
-  /** 0-1. Default: a low theme-aware opacity (`0.18`, `0.26` in dark). */
+  /**
+   * Name of the series whose colour this band takes, so a projection's
+   * uncertainty reads as that projection's. Wins over `color`. Unknown names
+   * fall back to `color`, then the accent.
+   */
+  series?: string
+  /** 0-1. Default: a low theme-aware opacity (`0.18`, `0.26` in dark; `0.14` in the studio look). */
   opacity?: number
   /** Which scale to use when `dualYAxis` is true. Default `primary`. */
   yAxis?: ChartYAxisId
@@ -174,6 +198,21 @@ export interface BarClickPayload {
  */
 export interface NardukLineChartProps {
   series: ChartSeries[]
+  /** `'classic'` (default) or the frameless `'studio'` look. */
+  look?: ChartLook
+  /** Studio look: unit printed after the top Y tick label, e.g. `'WVAL'`. */
+  yUnit?: string
+  /**
+   * Studio look: ring the last value of every non-context, non-dashed series
+   * and pin its value in a tag in the right gutter. Default `true` (studio only).
+   */
+  showNowTag?: boolean
+  /**
+   * Studio look: print each series name beside its now tag. Used for at most
+   * four series; if the labels would collide or the gutter would take too much
+   * of the chart, they are left out and the legend names the series.
+   */
+  endLabels?: boolean
   /** Filled bands between two time-varying series (behind the lines). */
   bands?: ChartBand[]
   labels: string[]
@@ -289,6 +328,8 @@ export type NardukBarChartOrientation = 'vertical' | 'horizontal'
  */
 export interface NardukBarChartProps {
   series: ChartSeries[]
+  /** `'classic'` (default) or `'studio'` (frame only: frameless, left-aligned title and legend). */
+  look?: ChartLook
   labels: string[]
   width?: number
   height?: number
@@ -363,6 +404,12 @@ export interface LegendItem {
   name: string
   color: string
   hidden: boolean
+  /** Studio look: the key is drawn for a `context` series (thinner, 40% strength). */
+  context?: boolean
+  /** Studio look: the key is dashed, matching a dashed series. */
+  dashed?: boolean
+  /** Studio look: the key is a filled swatch, for a `bands` entry. */
+  band?: boolean
 }
 
 /** Version-stable alias for line chart `annotations` arrays (migration tags). */

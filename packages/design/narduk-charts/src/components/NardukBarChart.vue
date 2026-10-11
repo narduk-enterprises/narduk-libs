@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { defaultBarChartLabel } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
 import { formatValue } from '../utils/math'
 import { layoutReferenceLabelXs, layoutReferenceLabelYs } from '../utils/refLabelLayout'
@@ -16,6 +16,7 @@ import ChartTooltip from './ChartTooltip.vue'
 import type {
   BarClickPayload,
   ChartLineAnnotation,
+  ChartLook,
   ChartPadding,
   ChartReferenceLine,
   ChartSeries,
@@ -66,6 +67,8 @@ const props = withDefaults(
     height?: number
     labels: string[]
     legendGroupLabel?: string
+    /** `'classic'` (default) or `'studio'`: frameless, with a left-aligned title and legend. */
+    look?: ChartLook
     /**
      * Words for a slot that has no value, in the tooltip, the bar's accessible
      * name, the data table and the default chart name. Only used when
@@ -124,6 +127,7 @@ const props = withDefaults(
     yScale?: ChartYScaleMode
   }>(),
   {
+    look: 'classic',
     stacked: false,
     stackedPercent: false,
     animate: true,
@@ -312,8 +316,11 @@ const rootChartClasses = computed(() => {
   if (isDark.value) c.push('narduk-chart--dark')
   const t = chartThemeClass(props.theme)
   if (t) c.push(t)
+  if (props.look === 'studio') c.push(STUDIO_LOOK_CLASS)
   return c
 })
+
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
@@ -832,7 +839,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="barCaptionId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>

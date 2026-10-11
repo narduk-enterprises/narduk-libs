@@ -99,6 +99,46 @@ attribute (resolved by Chromium and WebKit); a hollow marker's or ring's colour
 goes on `style`, because the stylesheet sets `stroke` on markers and a
 stylesheet rule outranks an attribute.
 
+## Studio look (2.11.0)
+
+Opt-in. `look: 'classic' | 'studio'` (default `classic`) adds the class
+`narduk-chart--look-studio`; a chart that does not set it renders exactly as
+before. Design spec: [STUDIO-LOOK.md](./STUDIO-LOOK.md).
+
+**`NardukLineChart` with `look="studio"`:** frameless, left-aligned title, an
+inline line-key legend above the plot, 1px horizontal hairlines with a stronger
+baseline, no Y axis line, right-aligned tabular tick labels, monotone smoothing
+(classic keeps Catmull-Rom), and a crosshair hairline with a ringed dot per
+visible series.
+
+- `yUnit` - printed after the top Y tick.
+- `showNowTag` (default `true` in studio) - ringed last-value dot plus a value
+  chip in the right gutter, with a 1px dotted guide at 35% of the series colour
+  from the last point to the plot's right edge; right padding is added
+  automatically. Not drawn for dashed series or with a secondary axis.
+- `endLabels` - series names in the right gutter for at most four series;
+  omitted when they would collide, in which case the legend carries the names.
+- `yBands` - a barely-there wash (3.5% light, 5% dark unless the band sets
+  `opacity`), a 1px hairline at each interior band boundary in the band colour,
+  and a 4px right rail; a gutter label when the band is at least 14px tall and
+  clear of every now tag.
+- `ChartSeries.emphasis: 'primary' | 'context'` - `context` keeps its own hue,
+  45% of it over the plot surface, drawn 1.25px and behind; no area or tag.
+  Other lines draw 2.25px. The fade area goes under the one lead series (the
+  only non-context, non-dashed line).
+- `ChartBand.series` - a projection band takes the paired series colour.
+
+**Other charts:** `NardukBarChart`, `NardukScatterChart`,
+`NardukHistogramChart`, `NardukPieChart` and `NardukCandleChart` accept `look`
+for the frame CSS only (no frame, left-aligned title, hairlines). Their marks do
+not change.
+
+**Tokens (optional, all with fallbacks):** `--color-chart-studio-surface`,
+`--color-chart-studio-grid`, `--color-chart-studio-baseline`.
+
+**All looks:** when X tick labels would overlap, the last label is kept and its
+neighbour dropped.
+
 ## Events (high level)
 
 - Line: `pointClick`, `zoom`, `update:x-window` (when `v-model:x-window` used)

@@ -831,6 +831,261 @@
     box-sizing: border-box;
   }
 
+  /*
+   * ─── Studio look (`look="studio"`, docs/STUDIO-LOOK.md) ───────────────────
+   * Opt-in. Every rule is scoped under `.narduk-chart--look-studio` (the chart
+   * box, and the surrounding <figure> so the title picks up the tokens) or
+   * `.narduk-chart-figure--look-studio`, so the classic look is untouched.
+   *
+   * Optional tokens a host can set on the chart or an ancestor:
+   *   --color-chart-studio-surface  colour of the card the chart sits on; the
+   *                                 ring round a dot and the tag chip use it
+   *   --color-chart-studio-grid     horizontal hairlines
+   *   --color-chart-studio-baseline the X axis line and the crosshair
+   */
+  .narduk-chart--look-studio {
+    --nc-studio-grid: color-mix(in oklch, var(--color-chart-muted) 16%, transparent);
+    --nc-studio-baseline: color-mix(in oklch, var(--color-chart-muted) 44%, transparent);
+    --nc-studio-surface: var(--color-chart-studio-surface, var(--color-chart-plot-tint));
+  }
+
+  /* Dark is selected, not flipped: its own ink, grid and baseline steps. */
+  .narduk-chart--dark.narduk-chart--look-studio {
+    --color-chart-text: oklch(95% 0.006 240);
+    --color-chart-muted: oklch(73% 0.014 240);
+    --nc-studio-grid: oklch(100% 0 0 / 0.08);
+    --nc-studio-baseline: oklch(100% 0 0 / 0.26);
+  }
+
+  .narduk-chart.narduk-chart--look-studio {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Frameless: the chart sits in the host's card. */
+  .narduk-chart--look-studio .narduk-line-chart__svg,
+  .narduk-chart--look-studio .narduk-candle-chart__svg {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .narduk-chart--look-studio .narduk-plot-surface {
+    fill: none;
+    stroke: none;
+  }
+
+  /* The <figure> UA margin is reset by the `m-0` utility in a Tailwind host; restate it so the frame is flush without one. */
+  .narduk-chart-figure--look-studio {
+    margin: 0;
+  }
+
+  .narduk-chart-figure--look-studio .narduk-chart__title {
+    @apply mb-0.5 text-left text-sm font-semibold;
+    letter-spacing: -0.005em;
+  }
+
+  .narduk-chart-figure--look-studio .narduk-chart__description {
+    @apply mb-2 text-left text-xs;
+    letter-spacing: 0;
+  }
+
+  /* Legend: line keys, left-aligned, inline. */
+  .narduk-chart--look-studio .narduk-legend {
+    @apply justify-start gap-x-4 gap-y-0 pt-0 pb-2;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item {
+    @apply gap-1.5 rounded-none px-0 py-1 text-xs;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item:hover {
+    background: none;
+    border-color: transparent;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item:hover .narduk-legend__label {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--nc-studio-baseline);
+  }
+
+  .narduk-chart--look-studio .narduk-legend__dot {
+    @apply h-0 w-3.5 rounded-none border-0 border-b-2 border-solid;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item--context .narduk-legend__dot {
+    border-bottom-width: 1.25px;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item--dashed .narduk-legend__dot,
+  .narduk-chart--look-studio .narduk-legend__item--hidden .narduk-legend__dot {
+    border-bottom-style: dashed;
+  }
+
+  .narduk-chart--look-studio .narduk-legend__item--band .narduk-legend__dot {
+    @apply h-2 w-3.5 rounded-sm border-0;
+    opacity: 0.4;
+  }
+
+  /* Grid and axes: horizontal hairlines, a stronger baseline, no Y axis line. */
+  .narduk-chart--look-studio .narduk-grid line {
+    stroke: var(--color-chart-studio-grid, var(--nc-studio-grid));
+    stroke-width: 1;
+  }
+
+  .narduk-chart--look-studio .narduk-axis line {
+    stroke: var(--color-chart-studio-baseline, var(--nc-studio-baseline));
+    opacity: 1;
+  }
+
+  .narduk-chart--look-studio .narduk-axis text {
+    @apply text-[11px];
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .narduk-chart--look-studio .narduk-axis .narduk-axis-unit {
+    @apply text-[10px];
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    paint-order: stroke;
+    stroke: var(--nc-studio-surface);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
+
+  /* Lines: 2.25px, round caps, no shadow; a context series is thinner and quieter. */
+  .narduk-chart--look-studio .narduk-line-path {
+    stroke-width: 2.25;
+    filter: none;
+    transition: stroke-dashoffset 600ms ease-out;
+  }
+
+  .narduk-chart--look-studio .narduk-line-path--context {
+    stroke-width: 1.25;
+  }
+
+  /* Area: the 16% lives in the gradient stops, so the path itself is opaque. */
+  .narduk-chart--look-studio .narduk-area-path--fade {
+    opacity: 1;
+  }
+
+  .narduk-fade-stop--top {
+    stop-opacity: 0.16;
+  }
+
+  .narduk-fade-stop--bottom {
+    stop-opacity: 0;
+  }
+
+  .narduk-chart--dark .narduk-fade-stop--top {
+    stop-opacity: 0.22;
+  }
+
+  .narduk-chart--look-studio .narduk-band-path {
+    opacity: 0.14;
+  }
+
+  .narduk-chart--dark.narduk-chart--look-studio .narduk-band-path {
+    opacity: 0.2;
+  }
+
+  /* yBands: a barely-there wash, a hairline at each interior boundary, and the rail. */
+  .narduk-chart--look-studio .narduk-y-band:not([opacity]) {
+    opacity: 0.035;
+  }
+
+  .narduk-chart--dark.narduk-chart--look-studio .narduk-y-band:not([opacity]) {
+    opacity: 0.05;
+  }
+
+  .narduk-y-edge {
+    stroke-width: 1;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  /* Level rails: the band colour at full strength, a 4px strip on the plot's right edge. */
+  .narduk-y-rail {
+    pointer-events: none;
+  }
+
+  .narduk-level-label {
+    fill: var(--color-chart-muted);
+    font-family: inherit;
+    font-weight: 500;
+    @apply pointer-events-none text-[10px];
+  }
+
+  /* Crosshair: a solid hairline and a ringed dot per series. */
+  .narduk-chart--look-studio .narduk-crosshair {
+    stroke: var(--color-chart-studio-baseline, var(--nc-studio-baseline));
+    stroke-dasharray: none;
+    opacity: 1;
+  }
+
+  .narduk-chart--look-studio .narduk-line-point {
+    stroke: var(--nc-studio-surface);
+    stroke-width: 2;
+  }
+
+  /* Now tag: ringed last value, leader to the gutter, ink on a surface chip with a coloured key. */
+  .narduk-now {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .narduk-now--in {
+    opacity: 1;
+    transition: opacity 240ms ease-out 360ms;
+  }
+
+  .narduk-now__dot {
+    stroke: var(--nc-studio-surface);
+    stroke-width: 2;
+  }
+
+  /* From the last point to the plot's right edge: a 1px dotted line at 35% of the series colour. */
+  .narduk-now__leader {
+    stroke-width: 1;
+    stroke-dasharray: 1 3;
+    stroke-linecap: butt;
+    opacity: 0.35;
+  }
+
+  .narduk-now__chip {
+    fill: var(--nc-studio-surface);
+    stroke: var(--color-chart-studio-baseline, var(--nc-studio-baseline));
+    stroke-width: 1;
+  }
+
+  .narduk-now__value,
+  .narduk-now__name {
+    fill: var(--color-chart-text);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    @apply text-[11px];
+  }
+
+  .narduk-now__value {
+    font-weight: 600;
+  }
+
+  .narduk-now__name {
+    font-weight: 500;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .narduk-chart--look-studio .narduk-line-path,
+    .narduk-now--in {
+      transition: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .narduk-bar-rect {
       transition: none;

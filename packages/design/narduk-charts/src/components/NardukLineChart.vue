@@ -4,17 +4,33 @@ import { computed, onMounted, ref, useId, watch } from 'vue'
 import { useChart } from '../composables/useChart'
 import { useTooltip } from '../composables/useTooltip'
 import { defaultLineChartLabel, linePointSummary, zoomKeyboardHint } from '../utils/chartA11y'
-import { chartThemeClass } from '../utils/chartTheme'
+import { chartThemeClass, STUDIO_LOOK_CLASS, studioFigureClasses } from '../utils/chartTheme'
 import { getColor } from '../utils/colors'
 import {
   closeAreaUnderLine,
   decimateCategoryData,
   formatValue,
+  type LineCurve,
   lineSegmentsToPaths,
   segmentLinePoints,
 } from '../utils/math'
 import { layoutReferenceLabelYs } from '../utils/refLabelLayout'
-import { defaultTimeAxisLabel, selectEvenAxisLabelIndices } from '../utils/xAxis'
+import {
+  endLabelOnlyWidth,
+  estimateTextPx,
+  layoutGutterRows,
+  nowTagWidth,
+  placeBandLabel,
+  rowsWereMoved,
+  STUDIO_GUTTER_GAP,
+  STUDIO_KEY_WIDTH,
+  STUDIO_TAG_HEIGHT,
+} from '../utils/studio'
+import {
+  defaultTimeAxisLabel,
+  selectEvenAxisLabelIndices,
+  thinOverlappingTicks,
+} from '../utils/xAxis'
 import { createYAxisMap } from '../utils/yScale'
 
 import ChartLegend from './ChartLegend.vue'
@@ -23,6 +39,7 @@ import ChartTooltip from './ChartTooltip.vue'
 import type {
   ChartBand,
   ChartLineAnnotation,
+  ChartLook,
   ChartPadding,
   ChartReferenceLine,
   ChartSeries,
@@ -65,6 +82,12 @@ const props = withDefaults(
     /** Enable a second Y scale on the right; assign `series[].yAxis = 'secondary'`. */
     dualYAxis?: boolean
     /**
+     * Studio look: print each series name beside its now tag. At most four
+     * series; when the labels would collide, or the gutter would take too much
+     * width, they are left out and the legend names the series.
+     */
+    endLabels?: boolean
+    /**
      * Keyboard focusability and interaction on the SVG root. Set `false` for purely
      * decorative/sparkline charts—removes `tabindex` and marks the SVG `aria-hidden`.
      */
@@ -83,6 +106,12 @@ const props = withDefaults(
     linearFromZero?: boolean
     /** Add proportional headroom/footroom to linear Y domains. */
     linearPaddingRatio?: number
+    /**
+     * `'classic'` (default) keeps the framed card. `'studio'` is the frameless
+     * editorial look: left title, inline legend above the plot, hairline grid,
+     * monotone lines, now tags and level rails. See `docs/STUDIO-LOOK.md`.
+     */
+    look?: ChartLook
     /**
      * Cap plotted categories (subsampling). Prefer with `zoomable={false}` unless you
      * intentionally zoom on decimated indices.
@@ -120,6 +149,11 @@ const props = withDefaults(
      * duplicate focusable control per chart.
      */
     showLegend?: boolean
+    /**
+     * Studio look: ring each non-context, non-dashed series' last value and pin
+     * it in a tag in the right gutter. Default `true`; ignored by the classic look.
+     */
+    showNowTag?: boolean
     showPoints?: boolean
     /** Built-in hover/keyboard-focus cursor tooltip. Set `false` when a consumer renders its own. */
     showTooltip?: boolean
@@ -183,6 +217,8 @@ const props = withDefaults(
     yScaleSecondary?: ChartYScaleMode
     /** Y tick / gridline count. Default `6`; clamped to 2–12. */
     yTickCount?: number
+    /** Studio look: unit printed after the top Y tick label, e.g. `'WVAL'`. */
+    yUnit?: string
     /**
      * X-axis zoom: **drag** on the plot to draw a zoom box, **Ctrl/Cmd + wheel**,
      * **Shift + drag** to pan, **double-click** to reset. Emits `zoom` with fractional index range.
@@ -223,6 +259,9 @@ const props = withDefaults(
     chrome: true,
     showTooltip: true,
     focusable: true,
+    look: 'classic',
+    showNowTag: true,
+    endLabels: false,
   },
 )
 
@@ -313,9 +352,25 @@ const showRightAxis = computed(() => {
   )
 })
 
+const isStudio = computed(() => props.look === 'studio')
+
 const paddingOverrides = computed(() => {
   const base = showRightAxis.value ? 56 : 24
   const refLabelPad = (props.referenceLines ?? []).some(r => r.label) ? 10 : 0
+  if (isStudio.value) {
+    /*
+     * The studio gutters are sized from text lengths only (never from a Y
+     * position), so this cannot depend on the plot height it feeds.
+     */
+    return {
+      top: props.padding?.top ?? 16,
+      bottom: props.padding?.bottom ?? 34,
+      left: props.padding?.left ?? studioLeftPad.value,
+      right:
+        props.padding?.right ??
+        (showRightAxis.value ? base + refLabelPad : studioGutter.value.right + refLabelPad),
+    }
+  }
   return {
     ...props.padding,
     right: props.padding?.right ?? base + refLabelPad,
@@ -682,8 +737,15 @@ const rootChartClasses = computed(() => {
   if (t) c.push(t)
   if (props.zoomable) c.push('narduk-chart--zoomable')
   if (!props.chrome) c.push('narduk-chart--no-chrome')
+  if (isStudio.value) c.push(STUDIO_LOOK_CLASS)
   return c
 })
+
+/*
+ * The title and description are children of the <figure>, outside the chart box,
+ * so the studio look (and its dark tokens) must reach them through the figure.
+ */
+const figureClasses = computed(() => studioFigureClasses(rootChartClasses.value))
 
 const runAnimation = computed(() => effectiveAnimate(props.animate))
 
@@ -760,7 +822,8 @@ const secondaryPins = computed(() => ({
 
 const zoomYActive = computed(() => props.zoomable && props.zoomAutoY)
 
-const primaryMap = computed(() => {
+/** The primary Y map for a plot `height` px tall; tick VALUES do not depend on the height. */
+function makePrimaryMap(height: number) {
   const { i0, i1 } = visibleIndexBounds()
   const sliceY = zoomYActive.value
   const refs = (props.referenceLines ?? [])
@@ -785,14 +848,13 @@ const primaryMap = computed(() => {
   const domainSeries = [...primarySeriesList.value, ...bandEdgeSeries('primary')]
   const seriesVals = sliceY ? numericValuesSlice(domainSeries, i0, i1) : numericValues(domainSeries)
 
-  return createYAxisMap(
-    props.yScale,
-    seriesVals,
-    [...refs, ...bands, ...annY],
-    priceInnerHeight.value,
-    { ...yScaleOpts.value, ...primaryPins.value },
-  )
-})
+  return createYAxisMap(props.yScale, seriesVals, [...refs, ...bands, ...annY], height, {
+    ...yScaleOpts.value,
+    ...primaryPins.value,
+  })
+}
+
+const primaryMap = computed(() => makePrimaryMap(priceInnerHeight.value))
 
 const secondaryMap = computed(() => {
   if (!useDual.value) return primaryMap.value
@@ -874,6 +936,8 @@ function spanGapsToMaxGap(spanGaps: ChartSeries['spanGaps']): number | undefined
   return typeof spanGaps === 'number' ? spanGaps : undefined
 }
 
+const lineCurve = computed<LineCurve>(() => (isStudio.value ? 'monotone' : 'catmull-rom'))
+
 const seriesRender = computed(() =>
   visibleSeries.value.map(s => {
     /* A points-only series draws every value through the markers loop below. */
@@ -885,8 +949,8 @@ const seriesRender = computed(() =>
       (i, v) => [xPos(i), yPosForSeries(s, v)],
       spanGapsToMaxGap(s.spanGaps),
     )
-    const lineDs = lineSegmentsToPaths(segments, props.smooth)
-    const areaDs = props.showArea
+    const lineDs = lineSegmentsToPaths(segments, props.smooth, lineCurve.value)
+    const areaDs = (isStudio.value ? studioAreaFor(s) : props.showArea)
       ? lineDs.map((d, i) => closeAreaUnderLine(d, segments[i], yBaseline.value))
       : []
     /*
@@ -933,13 +997,13 @@ const bandRender = computed(() =>
       }
     }
     const toPoint = (i: number, v: number): [number, number] => [xPos(i), yAtDataValue(v, axis)]
-    const upper = lineSegmentsToPaths(segmentLinePoints(hi, toPoint), props.smooth)
+    const upper = lineSegmentsToPaths(segmentLinePoints(hi, toPoint), props.smooth, lineCurve.value)
     const lowerSegs = segmentLinePoints(lo, toPoint).map(seg => [...seg].reverse())
-    const lower = lineSegmentsToPaths(lowerSegs, props.smooth)
+    const lower = lineSegmentsToPaths(lowerSegs, props.smooth, lineCurve.value)
     const ds = upper.map((u, i) => (u && lower[i] ? `${u} L${lower[i]!.slice(1)} Z` : ''))
     return {
       ds,
-      fill: b.color || 'var(--color-chart-accent, #6366f1)',
+      fill: bandColor(b),
       opacity: b.opacity,
     }
   }),
@@ -957,8 +1021,235 @@ function resolveColor(s: ChartSeries): string {
   return s.color || getColor(props.colors, idx >= 0 ? idx : 0)
 }
 
+/** A band's paint: the colour of the series it is paired with, else its own `color`, else the accent. */
+function bandColor(b: ChartBand): string {
+  if (b.series) {
+    const paired = props.series.find(x => x.name === b.series)
+    if (paired) return resolveColor(paired)
+  }
+  return b.color || 'var(--color-chart-accent, #6366f1)'
+}
+
 /** Background a hollow marker or ringed annotation is filled with (white in the light theme). */
 const RING_FILL = 'var(--color-chart-plot-tint, #fff)'
+
+/* ───────────────────────── studio look ───────────────────────── */
+
+function isContextSeries(s: ChartSeries): boolean {
+  return isStudio.value && s.emphasis === 'context'
+}
+
+/** A series that is measured and emphasized: it earns a now tag and, alone, an area. */
+function isLeadSeries(s: ChartSeries): boolean {
+  return !isContextSeries(s) && !s.dashed && s.mode !== 'points'
+}
+
+/** Studio area: `showArea`, or the one lead series (the only measured, non-context, non-dashed line). */
+function studioAreaFor(s: ChartSeries): boolean {
+  if (!isLeadSeries(s)) return false
+  if (props.showArea) return true
+  const leads = visibleSeries.value.filter(isLeadSeries)
+  return leads.length === 1 && leads[0]!.name === s.name
+}
+
+/** Context series are painted first so the lead series sit on top of them. */
+const drawOrder = computed(() => {
+  const all = visibleSeries.value.map((s, si) => ({ s, si }))
+  if (!isStudio.value) return all
+  return [...all.filter(x => isContextSeries(x.s)), ...all.filter(x => !isContextSeries(x.s))]
+})
+
+/** Stroke of a series line: a context series keeps its own hue, 45% of it over the plot surface. */
+function lineStroke(s: ChartSeries): string {
+  const c = resolveColor(s)
+  return isContextSeries(s) ? `color-mix(in oklab, ${c} 45%, var(--nc-studio-surface))` : c
+}
+
+/** Last measured value inside the visible window. */
+function lastPointOf(s: ChartSeries): { index: number; value: number } | null {
+  const { i0, i1 } = visibleIndexBounds()
+  for (let i = Math.min(i1, s.data.length - 1); i >= i0; i--) {
+    const v = s.data[i]
+    if (v != null && !Number.isNaN(v)) return { index: i, value: v }
+  }
+  return null
+}
+
+function tagText(s: ChartSeries, value: number, index: number): string {
+  if (s.formatValue) return s.formatValue(value, index)
+  return props.formatTickValue ? props.formatTickValue(value) : formatValue(value)
+}
+
+/** The series that get a ringed last value and a tag; at most six. */
+const tagCandidates = computed(() => {
+  if (!isStudio.value || !props.showNowTag || useDual.value) return []
+  return visibleSeries.value
+    .filter(isLeadSeries)
+    .flatMap(s => {
+      const p = lastPointOf(s)
+      return p ? [{ s, index: p.index, value: p.value, text: tagText(s, p.value, p.index) }] : []
+    })
+    .slice(0, 6)
+})
+
+const endLabelsWanted = computed(
+  () =>
+    isStudio.value &&
+    props.endLabels &&
+    !useDual.value &&
+    visibleSeries.value.length > 0 &&
+    visibleSeries.value.length <= 4,
+)
+
+/** Series that show a name in the gutter with no tag of their own. */
+function untaggedEndSeries() {
+  const tagged = new Set(tagCandidates.value.map(c => c.s.name))
+  return visibleSeries.value.filter(s => !tagged.has(s.name) && lastPointOf(s) !== null)
+}
+
+function levelLabelWidth(): number {
+  let w = 0
+  for (const b of primaryBands.value) if (b.label) w = Math.max(w, estimateTextPx(b.label, 10))
+  return w
+}
+
+/**
+ * Right gutter, from text lengths only: the widest of the tags (with their
+ * series names when `endLabels` fits) and the level labels. End labels are
+ * dropped when the gutter would take more than a third of the chart.
+ */
+const studioGutter = computed(() => {
+  const levelW = levelLabelWidth()
+  const tagW = Math.max(0, ...tagCandidates.value.map(c => nowTagWidth(c.text)))
+  const plain = Math.max(levelW, tagW)
+  let named = plain
+  if (endLabelsWanted.value) {
+    named = Math.max(
+      levelW,
+      ...tagCandidates.value.map(c => nowTagWidth(c.text) + 6 + estimateTextPx(c.s.name, 11)),
+      ...untaggedEndSeries().map(s => endLabelOnlyWidth(s.name)),
+    )
+  }
+  const fits = endLabelsWanted.value && STUDIO_GUTTER_GAP + named + 4 <= chartWidth.value * 0.34
+  const inner = fits ? named : plain
+  return {
+    endLabels: fits,
+    right: inner > 0 ? Math.ceil(STUDIO_GUTTER_GAP + inner + 4) : 12,
+  }
+})
+
+function topTickIndex(ticks: ReadonlyArray<{ value: number }>): number {
+  let top = 0
+  for (const [i, t] of ticks.entries()) if (t.value > ticks[top]!.value) top = i
+  return top
+}
+
+/** Left gutter: right-aligned tick labels. */
+const studioLeftPad = computed(() => {
+  if (!props.showYAxis) return 12
+  const ticks = makePrimaryMap(1).ticks
+  let w = 0
+  for (const t of ticks) {
+    const label = props.formatTickValue ? props.formatTickValue(t.value) : t.label
+    w = Math.max(w, estimateTextPx(label, 11))
+  }
+  return Math.max(24, w + 12)
+})
+
+interface GutterRow {
+  color: string
+  /** Where the value really is, for the ring and the leader. */
+  dotX: number
+  dotY: number
+  key: string
+  name: string
+  showName: boolean
+  /** Tag text; `null` for an end label with no tag. */
+  text: string | null
+  /** Final Y of the row, after stacking. */
+  y: number
+}
+
+/** Tags and end labels for the right gutter, stacked so none overlap. */
+const gutterLayout = computed<{ names: boolean; rows: GutterRow[] }>(() => {
+  if (!isStudio.value || useDual.value) return { rows: [], names: false }
+  const bounds = {
+    top: padding.value.top - 8,
+    bottom: padding.value.top + priceInnerHeight.value + 8,
+  }
+  const build = (withNames: boolean) => {
+    const tagged = tagCandidates.value.map(c => ({
+      s: c.s,
+      p: { index: c.index, value: c.value },
+      text: c.text as string | null,
+    }))
+    const extra = withNames
+      ? untaggedEndSeries().map(s => ({ s, p: lastPointOf(s)!, text: null as string | null }))
+      : []
+    const items = [...tagged, ...extra].map((it, id) => ({
+      ...it,
+      id,
+      dotX: xPos(it.p.index),
+      dotY: yPosForSeries(it.s, it.p.value),
+    }))
+    const inputs = items.map(it => ({ id: it.id, y: it.dotY }))
+    const laid = layoutGutterRows(inputs, bounds)
+    return { items, inputs, laid }
+  }
+  let names = studioGutter.value.endLabels
+  let built = build(names)
+  if (names && rowsWereMoved(built.inputs, built.laid)) {
+    /* Names would have to be pushed off their lines: leave them to the legend. */
+    names = false
+    built = build(false)
+  }
+  const rows = built.items.map(it => ({
+    key: it.s.name,
+    color: resolveColor(it.s),
+    name: it.s.name,
+    y: built.laid.get(it.id) ?? it.dotY,
+    dotX: it.dotX,
+    dotY: it.dotY,
+    text: it.text,
+    showName: names,
+  }))
+  return { rows, names }
+})
+
+interface LevelLabel {
+  key: string
+  text: string
+  y: number
+}
+
+/** `yBands` labels in the gutter, only for bands tall enough and clear of every tag. */
+const levelLabels = computed<LevelLabel[]>(() => {
+  if (!isStudio.value || useDual.value) return []
+  const occupied = gutterLayout.value.rows.map(r => r.y)
+  const out: LevelLabel[] = []
+  for (const [bi, b] of primaryBands.value.entries()) {
+    if (!b.label) continue
+    const r = bandRect(b, 'primary')
+    const y = placeBandLabel(
+      {
+        top: Math.max(r.y, padding.value.top),
+        bottom: Math.min(r.y + r.h, padding.value.top + priceInnerHeight.value),
+      },
+      occupied,
+    )
+    if (y !== null) out.push({ key: `lv-${bi}`, text: b.label, y })
+  }
+  return out
+})
+
+/** The ring-and-fade gradient ids are derived from the chart's own id. */
+const fadeIdBase = `nc-fade-${idSafe(plotClipIdRaw)}`
+
+/** Series that fill a vertical fade under their line. */
+const fadeSeries = computed(() => drawOrder.value.filter(x => studioAreaFor(x.s)))
+
+const plotRight = computed(() => chartWidth.value - padding.value.right)
+const gutterX = computed(() => plotRight.value + STUDIO_GUTTER_GAP)
 
 function markerRadius(s: ChartSeries): number {
   return s.marker?.radius ?? props.pointRadius
@@ -1111,7 +1402,7 @@ function formatXAxisLabel(i: number): string {
 /** One tooltip row per visible band: its `low – high` range at that index. */
 function bandTooltipItems(i: number): TooltipItem[] {
   return visibleBands.value.map(b => ({
-    color: b.color || 'var(--color-chart-accent, #6366f1)',
+    color: bandColor(b),
     label: b.name,
     value: bandRangeText(b, i) ?? '—',
   }))
@@ -1122,20 +1413,40 @@ function formatTooltipTitle(i: number): string {
   return effLabels.value[i] ?? ''
 }
 
-function showTooltipAtIndex(idx: number) {
+/** The studio legend sits above the SVG, so tooltip Y (SVG-relative) is shifted by the SVG's own offset in the box. */
+function svgOffsetTop(): number {
+  if (!isStudio.value) return 0
+  const svg = svgRef.value
+  const box = containerRef.value
+  if (!svg || !box) return 0
+  return svg.getBoundingClientRect().top - box.getBoundingClientRect().top
+}
+
+/**
+ * Tooltip rows at one index. Studio drops the rows with no value there (a projection
+ * before it starts, a band outside its span), keeping at least one row.
+ */
+function tooltipItemsAt(i: number): TooltipItem[] {
   const items: TooltipItem[] = [
     ...visibleSeries.value.map(s => {
-      const v = s.data[idx]
+      const v = s.data[i]
       return {
         color: resolveColor(s),
         label: s.name,
         value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
       }
     }),
-    ...bandTooltipItems(idx),
+    ...bandTooltipItems(i),
   ]
+  if (!isStudio.value) return items
+  const known = items.filter(item => item.value !== '—')
+  return known.length ? known : items.slice(0, 1)
+}
+
+function showTooltipAtIndex(idx: number) {
+  const items = tooltipItemsAt(idx)
   const px = Math.min(chartWidth.value - 8, Math.max(8, xPos(idx)))
-  const py = padding.value.top + priceInnerHeight.value / 2
+  const py = padding.value.top + priceInnerHeight.value / 2 + svgOffsetTop()
   showTooltip(px, py, formatTooltipTitle(idx), items)
 }
 
@@ -1244,19 +1555,9 @@ function onMouseMove(event: MouseEvent) {
 
   activeIndex.value = nearest
 
-  const items: TooltipItem[] = [
-    ...visibleSeries.value.map(s => {
-      const v = s.data[nearest]
-      return {
-        color: resolveColor(s),
-        label: s.name,
-        value: v == null || Number.isNaN(v) ? '—' : formatValue(v),
-      }
-    }),
-    ...bandTooltipItems(nearest),
-  ]
+  const items = tooltipItemsAt(nearest)
 
-  showTooltip(mouseX, mouseY, formatTooltipTitle(nearest), items)
+  showTooltip(mouseX, mouseY + svgOffsetTop(), formatTooltipTitle(nearest), items)
 }
 
 function onMouseLeave() {
@@ -1307,16 +1608,20 @@ const legendItems = computed<LegendItem[]>(() => [
     name: s.name,
     color: s.color || getColor(props.colors, i),
     hidden: hiddenSeries.value.has(s.name),
+    ...(isStudio.value
+      ? { context: s.emphasis === 'context' || undefined, dashed: !!s.dashed || undefined }
+      : {}),
   })),
   ...(props.bands ?? []).map(b => ({
     name: b.name,
-    color: b.color || 'var(--color-chart-accent, #6366f1)',
+    color: bandColor(b),
     hidden: hiddenSeries.value.has(b.name),
+    ...(isStudio.value ? { band: true } : {}),
   })),
 ])
 
-/** Integer label indices along X for the visible window (readability). */
-const xAxisLabelIndices = computed(() => {
+/** Integer label indices along X for the visible window (readability), before overlap thinning. */
+const spacedXAxisLabelIndices = computed(() => {
   const n = effLabels.value.length
   if (n === 0) return []
   const i0 = Math.max(0, Math.floor(xViewMin.value))
@@ -1350,6 +1655,26 @@ const xAxisLabelIndices = computed(() => {
   if (out.length === 0 || out.at(-1) !== i1) out.push(i1)
   return out
 })
+
+/** The spaced ticks with any overlap removed: the last label always wins over its neighbour. */
+const xAxisLabelIndices = computed(() =>
+  thinOverlappingTicks(spacedXAxisLabelIndices.value, {
+    xAt: xPos,
+    labelAt: formatXAxisLabel,
+    glyphPx: isStudio.value ? 6.6 : undefined,
+    gapPx: isStudio.value ? 12 : undefined,
+  }),
+)
+
+/** Studio: a first or last label that would spill out of the SVG is aligned to its edge instead. */
+function xTickAnchor(i: number): 'start' | 'middle' | 'end' {
+  if (!isStudio.value) return 'middle'
+  const half = estimateTextPx(formatXAxisLabel(i), 10) / 2
+  const x = xPos(i)
+  if (x - half < 0) return 'start'
+  if (x + half > chartWidth.value) return 'end'
+  return 'middle'
+}
 
 const primaryBands = computed(() =>
   (props.yBands ?? []).filter(b => !useDual.value || (b.yAxis ?? 'primary') === 'primary'),
@@ -1387,10 +1712,24 @@ function bandRect(b: ChartYBand, axis: ChartYAxisId) {
     y: top,
     w: Math.max(0, chartWidth.value - padding.value.left - padding.value.right),
     h,
-    opacity: b.opacity ?? 0.12,
+    opacity: b.opacity ?? (isStudio.value ? undefined : 0.12),
     fill: b.color || 'var(--color-chart-accent, #6366f1)',
   }
 }
+
+/** Studio: a hairline at each interior boundary between two `yBands`, in the colour of the band above it. */
+const bandEdges = computed(() => {
+  if (!isStudio.value || useDual.value) return []
+  const top = padding.value.top
+  const bottom = padding.value.top + priceInnerHeight.value
+  const sorted = [...primaryBands.value].sort((a, b) => a.y0 - b.y0)
+  return sorted.slice(1).flatMap((b, i) => {
+    const y = yAtDataValue(b.y0, 'primary')
+    return y > top + 0.5 && y < bottom - 0.5
+      ? [{ key: `edge-${i}`, y, color: b.color || 'var(--color-chart-accent, #6366f1)' }]
+      : []
+  })
+})
 
 /** Reference lines with vertically stacked right labels to avoid overlap. */
 const referenceLineLayouts = computed(() => {
@@ -1431,7 +1770,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
 </script>
 
 <template>
-  <figure class="narduk-chart-figure m-0 min-w-0" :dir="dir">
+  <figure class="narduk-chart-figure m-0 min-w-0" :class="figureClasses" :dir="dir">
     <figcaption v-if="chartTitle" :id="captionElId" class="narduk-chart__title">
       {{ chartTitle }}
     </figcaption>
@@ -1493,6 +1832,16 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         </table>
       </div>
 
+      <ChartLegend
+        v-if="!isEmpty && showLegend && isStudio"
+        :items="legendItems"
+        :group-label="legendGroupLabel"
+        @toggle="toggleSeries"
+      >
+        <template v-if="$slots['legend-item']" #item="slotProps">
+          <slot name="legend-item" v-bind="slotProps" />
+        </template>
+      </ChartLegend>
       <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
@@ -1526,6 +1875,28 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           <clipPath :id="plotClipId">
             <rect x="0" :y="padding.top" :width="chartWidth" :height="plotHeight" />
           </clipPath>
+          <template v-if="isStudio">
+            <linearGradient
+              v-for="{ s, si } in fadeSeries"
+              :id="`${fadeIdBase}-${si}`"
+              :key="'fade-' + s.name"
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop
+                offset="0"
+                class="narduk-fade-stop narduk-fade-stop--top"
+                :style="{ stopColor: resolveColor(s) }"
+              />
+              <stop
+                offset="1"
+                class="narduk-fade-stop narduk-fade-stop--bottom"
+                :style="{ stopColor: resolveColor(s) }"
+              />
+            </linearGradient>
+          </template>
         </defs>
 
         <rect
@@ -1558,6 +1929,30 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               :height="bandRect(b, 'primary').h"
               :fill="bandRect(b, 'primary').fill"
               :opacity="bandRect(b, 'primary').opacity"
+            />
+          </g>
+          <g v-if="bandEdges.length" class="narduk-y-edges">
+            <line
+              v-for="e in bandEdges"
+              :key="e.key"
+              class="narduk-y-edge"
+              :x1="padding.left"
+              :x2="chartWidth - padding.right"
+              :y1="e.y"
+              :y2="e.y"
+              :stroke="e.color"
+            />
+          </g>
+          <g v-if="isStudio && primaryBands.length" class="narduk-y-rails">
+            <rect
+              v-for="(b, bi) in primaryBands"
+              :key="'rail-' + bi"
+              class="narduk-y-rail"
+              :x="chartWidth - padding.right - 4"
+              :y="bandRect(b, 'primary').y"
+              width="4"
+              :height="bandRect(b, 'primary').h"
+              :fill="bandRect(b, 'primary').fill"
             />
           </g>
           <g v-if="secondaryBands.length" class="narduk-y-bands">
@@ -1657,22 +2052,24 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           </g>
 
           <!-- Series -->
-          <g v-for="(s, si) in visibleSeries" :key="s.name" :opacity="s.opacity">
+          <g v-for="{ s, si } in drawOrder" :key="s.name" :opacity="s.opacity">
             <path
               v-for="(ad, ai) in seriesRender[si].areaDs"
               v-show="ad"
               :key="'a-' + ai"
               class="narduk-area-path"
+              :class="{ 'narduk-area-path--fade': isStudio }"
               :d="ad"
-              :fill="resolveColor(s)"
+              :fill="isStudio ? `url(#${fadeIdBase}-${si})` : resolveColor(s)"
             />
             <path
               v-for="(d, pi) in seriesRender[si].lineDs"
               v-show="d"
               :key="'l-' + pi"
               class="narduk-line-path"
+              :class="{ 'narduk-line-path--context': isContextSeries(s) }"
               :d="d"
-              :stroke="resolveColor(s)"
+              :stroke="lineStroke(s)"
               :pathLength="s.dashed ? undefined : 1"
               :stroke-dasharray="dashArray(s)"
               :stroke-dashoffset="s.dashed ? undefined : animated ? 0 : 1"
@@ -1783,10 +2180,102 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
               class="narduk-line-point"
               :cx="xPos(displayIndex)"
               :cy="yPosForSeries(s, s.data[displayIndex!] as number)"
-              r="5"
+              :r="isStudio ? 4 : 5"
               :fill="resolveColor(s)"
             />
           </g>
+        </g>
+
+        <!-- Studio: ringed last values, value tags and end labels in the right gutter -->
+        <g
+          v-if="isStudio && gutterLayout.rows.length"
+          class="narduk-now"
+          :class="{ 'narduk-now--in': animated }"
+        >
+          <g v-for="row in gutterLayout.rows" :key="'now-' + row.key" class="narduk-now__row">
+            <template v-if="row.text !== null">
+              <line
+                v-if="plotRight - row.dotX > 14"
+                class="narduk-now__leader"
+                :x1="row.dotX + 6"
+                :y1="row.dotY"
+                :x2="plotRight"
+                :y2="row.dotY"
+                :stroke="row.color"
+              />
+              <circle
+                class="narduk-now__dot"
+                :cx="row.dotX"
+                :cy="row.dotY"
+                r="4"
+                :fill="row.color"
+              />
+            </template>
+            <g :transform="`translate(${gutterX}, ${row.y})`">
+              <template v-if="row.text !== null">
+                <rect
+                  class="narduk-now__chip"
+                  x="0"
+                  :y="-STUDIO_TAG_HEIGHT / 2"
+                  :width="nowTagWidth(row.text)"
+                  :height="STUDIO_TAG_HEIGHT"
+                  rx="4"
+                />
+                <rect
+                  class="narduk-now__key"
+                  x="5"
+                  y="-5"
+                  :width="STUDIO_KEY_WIDTH"
+                  height="10"
+                  rx="1.5"
+                  :fill="row.color"
+                />
+                <text
+                  class="narduk-now__value"
+                  :x="5 + STUDIO_KEY_WIDTH + 4"
+                  dominant-baseline="middle"
+                >
+                  {{ row.text }}
+                </text>
+                <text
+                  v-if="row.showName"
+                  class="narduk-now__name"
+                  :x="nowTagWidth(row.text) + 6"
+                  dominant-baseline="middle"
+                >
+                  {{ row.name }}
+                </text>
+              </template>
+              <template v-else>
+                <rect
+                  class="narduk-now__key"
+                  x="0"
+                  y="-5"
+                  :width="STUDIO_KEY_WIDTH"
+                  height="10"
+                  rx="1.5"
+                  :fill="row.color"
+                />
+                <text class="narduk-now__name" :x="STUDIO_KEY_WIDTH + 5" dominant-baseline="middle">
+                  {{ row.name }}
+                </text>
+              </template>
+            </g>
+          </g>
+        </g>
+
+        <!-- Studio: level labels for tall-enough yBands, in the gutter beside the rail -->
+        <g v-if="isStudio && levelLabels.length" class="narduk-levels">
+          <text
+            v-for="lv in levelLabels"
+            :key="lv.key"
+            class="narduk-level-label"
+            :x="gutterX"
+            :y="lv.y"
+            dominant-baseline="middle"
+          >
+            {{ lv.text }}
+          </text>
         </g>
 
         <!-- Per-series value labels (unclipped so a label above the top value stays whole) -->
@@ -1816,6 +2305,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
 
         <g v-if="showYAxis" class="narduk-axis">
           <line
+            v-if="!isStudio"
             :x1="padding.left"
             :y1="padding.top"
             :x2="padding.left"
@@ -1830,6 +2320,21 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             dominant-baseline="middle"
           >
             {{ t.label }}
+          </text>
+          <text
+            v-if="isStudio && yUnit && primaryTicksForDisplay.length"
+            class="narduk-axis-unit"
+            :x="padding.left - 4"
+            :y="
+              yAtDataValue(
+                primaryTicksForDisplay[topTickIndex(primaryTicksForDisplay)]!.value,
+                'primary',
+              )
+            "
+            text-anchor="start"
+            dominant-baseline="middle"
+          >
+            {{ yUnit }}
           </text>
         </g>
 
@@ -1864,7 +2369,7 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             :key="'xl-' + i"
             :x="xPos(i)"
             :y="chartHeight - padding.bottom + 20"
-            text-anchor="middle"
+            :text-anchor="xTickAnchor(i)"
             dominant-baseline="hanging"
           >
             {{ formatXAxisLabel(i) }}
@@ -1882,7 +2387,12 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
       </svg>
 
       <template v-if="!isEmpty && showLegend">
-        <ChartLegend :items="legendItems" :group-label="legendGroupLabel" @toggle="toggleSeries">
+        <ChartLegend
+          v-if="!isStudio"
+          :items="legendItems"
+          :group-label="legendGroupLabel"
+          @toggle="toggleSeries"
+        >
           <template v-if="$slots['legend-item']" #item="slotProps">
             <slot name="legend-item" v-bind="slotProps" />
           </template>

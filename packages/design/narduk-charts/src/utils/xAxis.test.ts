@@ -4,6 +4,7 @@ import {
   dedupeAdjacentAxisLabelIndices,
   resolveTimeAxisTimeZone,
   selectEvenAxisLabelIndices,
+  thinOverlappingTicks,
 } from './xAxis'
 
 describe('xAxis helpers', () => {
@@ -53,5 +54,39 @@ describe('xAxis helpers', () => {
     expect(resolveTimeAxisTimeZone()).toBe('UTC')
     expect(resolveTimeAxisTimeZone(undefined)).toBe('UTC')
     expect(resolveTimeAxisTimeZone('America/Chicago')).toBe('America/Chicago')
+  })
+
+  describe('thinOverlappingTicks', () => {
+    const labelAt = (i: number) => ['Jun 26', 'Jul 26', 'Aug 26', 'Sep 26', 'Oct 26'][i] ?? `T${i}`
+
+    it('keeps the last label and drops its neighbour when they would overlap', () => {
+      /* 375px: Sep 26 sits 20px from Oct 26, which is closer than either label is wide. */
+      const xs = [0, 60, 120, 200, 220]
+      const kept = thinOverlappingTicks([0, 1, 2, 3, 4], { xAt: i => xs[i]!, labelAt })
+      expect(kept).toEqual([0, 1, 2, 4])
+    })
+
+    it('leaves a clear run untouched', () => {
+      const kept = thinOverlappingTicks([0, 1, 2, 3, 4], { xAt: i => i * 80, labelAt })
+      expect(kept).toEqual([0, 1, 2, 3, 4])
+    })
+
+    it('never returns two labels whose boxes touch', () => {
+      const xs = Array.from({ length: 30 }, (_, i) => i * 11)
+      const kept = thinOverlappingTicks(
+        xs.map((_, i) => i),
+        { xAt: i => xs[i]!, labelAt: () => 'Sep 26' },
+      )
+      expect(kept.at(-1)).toBe(29)
+      expect(kept[0]).toBe(0)
+      for (let k = 1; k < kept.length; k++) {
+        expect(xs[kept[k]!]! - xs[kept[k - 1]!]!).toBeGreaterThanOrEqual(6 * 6.2 + 4)
+      }
+    })
+
+    it('passes through empty and single-tick input', () => {
+      expect(thinOverlappingTicks([], { xAt: i => i, labelAt })).toEqual([])
+      expect(thinOverlappingTicks([2], { xAt: i => i, labelAt })).toEqual([2])
+    })
   })
 })

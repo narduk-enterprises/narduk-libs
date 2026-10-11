@@ -41,4 +41,26 @@ describe('NardukLineChart hydration', () => {
     expect(warnings.some(line => line.includes('withDirectives'))).toBe(false)
     expect(unexpectedDevelopmentWarnings(warnings)).toEqual([])
   })
+
+  it('hydrates the studio look (tags, rails, end labels, context series) without a warning', async () => {
+    const { warnings } = await hydrationWarnings(NardukLineChart, {
+      animate: false,
+      height: 280,
+      width: 640,
+      look: 'studio',
+      endLabels: true,
+      yUnit: 'WVAL',
+      labels: ['a', 'b', 'c', 'd', 'e'],
+      yBands: [
+        { y0: 0, y1: 2, label: 'Low', color: '#9fc5e3' },
+        { y0: 2, y1: 6, label: 'High', color: '#e07b39' },
+      ],
+      series: [
+        { name: 'This', data: [1, 2, 3, 2, 4] },
+        { name: 'Last', data: [2, 3, 1, 2, 5], emphasis: 'context' },
+      ],
+    })
+    expect(hydrationMismatchLines(warnings)).toEqual([])
+    expect(unexpectedDevelopmentWarnings(warnings)).toEqual([])
+  })
 })
