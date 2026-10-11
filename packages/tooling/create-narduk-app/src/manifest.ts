@@ -40,7 +40,7 @@ export const PACKAGE_VERSIONS = {
   '@axe-core/playwright': '4.13.0',
   '@cloudflare/workers-types': '5.20260924.1',
   '@iconify-json/lucide': '1.2.136',
-  '@narduk-enterprises/narduk-mapkit': '2.22.1',
+  '@narduk-enterprises/narduk-mapkit': '2.22.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.36.0',
   '@narduk-enterprises/eslint-config': '3.0.3',
