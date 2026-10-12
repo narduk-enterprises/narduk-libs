@@ -109,3 +109,6 @@ packages/modules/geogrid-web/tests/fixtures/**
 
 # Design direction handed in by the narduk-maps design round; kept byte-for-byte.
 packages/design/narduk-maps/docs/DESIGN.md
+
+# Design canvas sources and mirrors (generated boards, prototype bakers).
+design/

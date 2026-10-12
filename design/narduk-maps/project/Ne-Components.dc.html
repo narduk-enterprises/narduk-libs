@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NE Base · Components</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>body{margin:0} .canvas-root *{transition:none!important;animation:none!important} .sc-host .sc-host:not([style]){display:contents}.nb,.nb .light{--ne-ground:#f4f6f7;--ne-surface:#ffffff;--ne-surface-muted:#f4f6f7;--ne-surface-elevated:#eef1f3;--ne-surface-accented:#e3e8eb;--ne-surface-inverted:#0e1418;--ne-ink:#0e1418;--ne-ink-body:#18212a;--ne-ink-secondary:#3c4a54;--ne-ink-muted:#5a6570;--ne-ink-dimmed:#8b949d;--ne-ink-inverted:#ffffff;--ne-hairline:#dde3e7;--ne-divider:#eaeef1;--ne-line-strong:#c9d1d7;--ne-line-inverted:#0e1418;--ne-hatch:repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px);--ne-hatch-soft:repeating-linear-gradient( 135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px );--ne-accent:#2f6b8f;--ne-accent-soft:#e6eef3;--ne-accent-ink:#ffffff;--ne-structure:#18212a;--ne-structure-ink:#ffffff;--ne-radius-base:0.375rem;--ne-radius-control:calc(var(--ne-radius-base) * 1.5);--ne-radius-panel:calc(var(--ne-radius-base) * 2);--ne-radius-tag:9999px;--ne-shadow-1:0 1px 2px rgb(14 20 24 / 0.06), 0 0 0 1px rgb(14 20 24 / 0.04);--ne-shadow-2:0 2px 6px rgb(14 20 24 / 0.08), 0 18px 36px -20px rgb(14 20 24 / 0.28);--ne-shadow-control:inset 0 1px 2px rgb(14 20 24 / 0.08);--ne-font-sans:'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;--ne-font-mono:'IBM Plex Mono', ui-monospace, Menlo, monospace;--ne-text-display:38px;--ne-text-title:28px;--ne-text-heading:22px;--ne-text-body:15px;--ne-text-small:13px;--ne-text-label:11px;--ne-leading-tight:1.1;--ne-leading-body:1.55;--ne-tracking-tight:-0.03em;--ne-tracking-label:0.12em;--ne-container:1320px;--ne-header-height:4rem;--ns-ink-rgb:14 20 24;--ns-live:#1f7a53;--ns-live-bg:#e6f1ea;--ns-live-ring:rgb(31 122 83 / 0.18);--ns-aging:#8a6410;--ns-aging-bg:#f6eed9;--ns-aging-ring:rgb(138 100 16 / 0.2);--ns-stale:#9a3b26;--ns-stale-bg:#f6e4dd;--ns-stale-ring:rgb(154 59 38 / 0.18);--ns-void:#5e6870;--ns-void-bg:#eceff1;--ns-void-ring:rgb(var(--ns-ink-rgb) / 0.1);--ns-font-mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;--ns-r-xs:4px;--ui-color-success-500:oklch(72.3% 0.219 149.579);--ui-color-success-800:oklch(44.8% 0.119 151.328);--ui-color-warning-500:oklch(79.5% 0.184 86.047);--ui-color-warning-800:oklch(47.6% 0.114 61.907);--ui-color-error-500:oklch(63.7% 0.237 25.331);--ui-color-error-800:oklch(44.4% 0.177 26.899);--ui-color-info-500:oklch(62.3% 0.214 259.815);--ui-color-info-800:oklch(42.4% 0.199 265.638)}.nb .dark{--ne-ground:#0c1216;--ne-surface:#141c22;--ne-surface-muted:#0f171c;--ne-surface-elevated:#1c252d;--ne-surface-accented:#26313a;--ne-surface-inverted:#f3f7f9;--ne-ink:#f3f7f9;--ne-ink-body:#dde5ea;--ne-ink-secondary:#b1bec8;--ne-ink-muted:#9aa8b3;--ne-ink-dimmed:#6d7b85;--ne-ink-inverted:#0c1216;--ne-hairline:#243039;--ne-divider:#1b242b;--ne-line-strong:#33424d;--ne-line-inverted:#f3f7f9;--ne-hatch:repeating-linear-gradient(135deg, var(--ne-ink-dimmed) 0 1px, transparent 1px 6px);--ne-hatch-soft:repeating-linear-gradient( 135deg, var(--ne-line-strong) 0 1px, transparent 1px 6px );--ne-accent:#63a6cd;--ne-accent-soft:#17303f;--ne-accent-ink:#0c1216;--ne-structure:#0c1216;--ne-structure-ink:#f3f7f9;--ne-radius-base:0.375rem;--ne-radius-control:calc(var(--ne-radius-base) * 1.5);--ne-radius-panel:calc(var(--ne-radius-base) * 2);--ne-radius-tag:9999px;--ne-shadow-1:0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);--ne-shadow-2:0 2px 8px rgb(0 0 0 / 0.55), 0 20px 40px -22px rgb(0 0 0 / 0.75);--ne-shadow-control:inset 0 1px 2px rgb(0 0 0 / 0.45);--ne-font-sans:'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;--ne-font-mono:'IBM Plex Mono', ui-monospace, Menlo, monospace;--ne-text-display:38px;--ne-text-title:28px;--ne-text-heading:22px;--ne-text-body:15px;--ne-text-small:13px;--ne-text-label:11px;--ne-leading-tight:1.1;--ne-leading-body:1.55;--ne-tracking-tight:-0.03em;--ne-tracking-label:0.12em;--ne-container:1320px;--ne-header-height:4rem}
+.nb{position:absolute;inset:0;overflow:hidden;background:var(--ne-ground);color:var(--ne-ink-body);
+ font-family:var(--ne-font-sans);font-size:var(--ne-text-body);line-height:var(--ne-leading-body);
+ -webkit-font-smoothing:antialiased}
+.nb *{box-sizing:border-box}
+.nb-wrap{padding:56px 64px}
+.nb-top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:28px;border-bottom:1px solid var(--ne-hairline)}
+.nb-eyebrow{font:600 var(--ne-text-label)/1 var(--ne-font-mono);letter-spacing:var(--ne-tracking-label);text-transform:uppercase;color:var(--ne-ink-muted)}
+.nb-title{margin:12px 0 0;font-size:var(--ne-text-display);line-height:var(--ne-leading-tight);letter-spacing:var(--ne-tracking-tight);font-weight:600;color:var(--ne-ink)}
+.nb-lede{margin:10px 0 0;max-width:680px;color:var(--ne-ink-secondary)}
+.nb-src{font:500 12px/1.5 var(--ne-font-mono);color:var(--ne-ink-muted);text-align:right}
+.nb-sec{margin-top:40px}
+.nb-sec-h{display:flex;align-items:baseline;gap:14px;margin-bottom:16px}
+.nb-sec-h h2{margin:0;font-size:var(--ne-text-heading);letter-spacing:-.02em;font-weight:600;color:var(--ne-ink)}
+.nb-sec-h p{margin:0;font-size:var(--ne-text-small);color:var(--ne-ink-muted)}
+.nb-n{font:600 var(--ne-text-label)/1 var(--ne-font-mono);color:var(--ne-ink-dimmed);letter-spacing:.08em}
+.nb-card{background:var(--ne-surface);border:1px solid var(--ne-hairline);border-radius:var(--ne-radius-panel);box-shadow:var(--ne-shadow-1)}
+.nb-mono{font-family:var(--ne-font-mono);font-size:12px}
+.nb code{font:500 .9em var(--ne-font-mono);white-space:nowrap;color:var(--ne-ink)}
+.nb-stat{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.nb-stat .nb-card{padding:22px}
+.nb-stat h3{margin:0 0 4px;font-size:15px;font-weight:600;color:var(--ne-ink)}
+.nb-stat p{margin:0 0 16px;font-size:13px;color:var(--ne-ink-muted)}
+.nb-sws.four{grid-template-columns:repeat(4,1fr)}
+.nb-muted{color:var(--ne-ink-muted)}
+/* foundations */
+.nb-schemes{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.nb-scheme{padding:22px;border-radius:var(--ne-radius-panel);background:var(--ne-ground);border:1px solid var(--ne-hairline);color:var(--ne-ink-body)}
+.nb-scheme-h{display:flex;justify-content:space-between;margin-bottom:14px}
+.nb-sw-group{margin-top:14px}
+.nb-sw-group:first-of-type{margin-top:0}
+.nb-sw-label{margin-bottom:8px}
+.nb-sws{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.nb-sw{border-radius:var(--ne-radius-control);overflow:hidden;border:1px solid var(--ne-hairline);background:var(--ne-surface)}
+.nb-sw i{display:block;height:52px}
+.nb-sw b{display:block;padding:7px 8px 0;font:600 11px/1.3 var(--ne-font-mono);color:var(--ne-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-sw span{display:block;padding:2px 8px 8px;font:500 11px/1.3 var(--ne-font-mono);color:var(--ne-ink-muted)}
+.nb-type{display:grid;grid-template-columns:1fr;}
+.nb-type-row{display:grid;grid-template-columns:200px 1fr 220px;align-items:baseline;gap:24px;padding:18px 24px;border-top:1px solid var(--ne-divider)}
+.nb-type-row:first-child{border-top:0}
+.nb-type-row .nb-spec{color:var(--ne-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.nb-tile{padding:22px}
+.nb-tile h3{margin:0 0 14px;font-size:15px;font-weight:600;color:var(--ne-ink)}
+.nb-radii{display:flex;gap:18px;align-items:flex-end}
+.nb-radii div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.nb-radii i{display:block;width:72px;height:56px;background:var(--ne-accent-soft);border:1.5px solid var(--ne-accent)}
+.nb-elev{display:flex;gap:18px}
+.nb-elev div{flex:1;display:flex;flex-direction:column;gap:8px}
+.nb-elev i{display:block;height:64px;border-radius:var(--ne-radius-panel);background:var(--ne-surface)}
+.nb-hatch{display:flex;gap:14px;align-items:center}
+.nb-hatch i{display:block;width:120px;height:56px;border-radius:var(--ne-radius-control);border:1px solid var(--ne-hairline);background-color:var(--ne-surface)}
+/* components */
+.nb-cgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.nb-spec-card{padding:22px 24px 24px}
+.nb-spec-card.wide{grid-column:1/-1}
+.nb-spec-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
+.nb-spec-h h3{margin:0;font-size:15px;font-weight:600;color:var(--ne-ink)}
+.nb-matrix{display:grid;gap:14px 12px;align-items:center}
+.nb-col,.nb-matrix .nb-col{font:600 10px/1 var(--ne-font-mono);letter-spacing:var(--ne-tracking-label);text-transform:uppercase;color:var(--ne-ink-dimmed)}
+.nb-matrix .nb-rowh{font:500 12px/1.2 var(--ne-font-mono);color:var(--ne-ink-muted)}
+.nb-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.nb-states{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 14px}
+.nb-state{display:flex;flex-direction:column;gap:8px}
+/* specimens: Nuxt UI primitives on NE tokens */
+.u-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--ne-radius-control);
+ font:600 13px/1 var(--ne-font-sans);border:1px solid transparent;white-space:nowrap;cursor:default}
+.u-btn.solid{background:var(--ne-accent);color:var(--ne-accent-ink)}
+.u-btn.solid.is-hover{background:color-mix(in srgb,var(--ne-accent) 86%,var(--ne-ink))}
+.u-btn.outline{background:var(--ne-surface);color:var(--ne-ink-body);border-color:var(--ne-line-strong)}
+.u-btn.outline.is-hover{background:var(--ne-surface-elevated)}
+.u-btn.soft{background:var(--ne-accent-soft);color:var(--ne-accent)}
+.u-btn.soft.is-hover{background:color-mix(in srgb,var(--ne-accent-soft) 80%,var(--ne-accent))}
+.u-btn.ghost{background:transparent;color:var(--ne-ink-body)}
+.u-btn.ghost.is-hover{background:var(--ne-surface-elevated)}
+.u-btn.link{background:transparent;color:var(--ne-accent);padding:0 2px;height:auto}
+.u-btn.link.is-hover{text-decoration:underline;text-underline-offset:3px}
+.u-btn.is-focus{outline:2px solid var(--ne-accent);outline-offset:2px}
+.u-btn.is-disabled{opacity:.45}
+.u-spin{width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent}
+.u-input{display:flex;align-items:center;gap:8px;height:34px;width:100%;padding:0 10px;border-radius:var(--ne-radius-control);border:1px solid var(--ne-line-strong);
+ background:var(--ne-surface);box-shadow:var(--ne-shadow-control);font-size:14px;color:var(--ne-ink)}
+.u-input .placeholder{color:var(--ne-ink-dimmed)}
+.u-input svg{width:14px;height:14px;color:var(--ne-ink-muted);flex:none}
+.u-input.is-hover{border-color:var(--ne-ink-dimmed)}
+.u-input.is-focus{border-color:var(--ne-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--ne-accent) 22%,transparent)}
+.u-input.is-disabled{background:var(--ne-surface-muted);color:var(--ne-ink-dimmed);box-shadow:none}
+.u-input.is-invalid{border-color:var(--ns-stale);box-shadow:0 0 0 3px var(--ns-stale-ring)}
+.u-input .clear{margin-left:auto;color:var(--ne-ink-muted);font-size:15px;line-height:1}
+.u-help{font-size:12px;color:var(--ne-ink-muted)}
+.u-help.err{color:var(--ns-stale)}
+.u-label{font-size:13px;font-weight:600;color:var(--ne-ink)}
+.u-chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:var(--ne-radius-tag);border:1px solid var(--ne-line-strong);
+ background:var(--ne-surface);font-size:13px;font-weight:600;color:var(--ne-ink-secondary)}
+.u-chip b{font:600 12px var(--ne-font-mono);color:var(--ne-ink-muted)}
+.u-chip.is-on{background:var(--ne-structure);border-color:var(--ne-structure);color:var(--ne-structure-ink)}
+.u-chip.is-on b{color:color-mix(in srgb,var(--ne-structure-ink) 70%,transparent)}
+.u-chip.off{border-style:dashed;color:var(--ne-ink-dimmed)}
+.u-chip.is-hover{background:var(--ne-surface-elevated)}
+.u-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:var(--ne-radius-control);font:600 12px/1 var(--ne-font-sans);
+ color:var(--ink);background:color-mix(in oklab,var(--hue) 10%,var(--ne-surface));box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--hue) 25%,transparent)}
+.nb .dark .u-badge{--ink:var(--hue)}
+.u-badge.success{--hue:var(--ui-color-success-500);--ink:var(--ui-color-success-800)}
+.u-badge.warn{--hue:var(--ui-color-warning-500);--ink:var(--ui-color-warning-800)}
+.u-badge.error{--hue:var(--ui-color-error-500);--ink:var(--ui-color-error-800)}
+.u-badge.info{--hue:var(--ui-color-info-500);--ink:var(--ui-color-info-800)}
+.u-badge.neutral,.u-badge.pending{--hue:var(--ne-ink-muted);--ink:var(--ne-ink-body)}
+.u-badge.pending{background:var(--ne-surface-elevated);box-shadow:none;color:var(--ne-ink-secondary)}
+.u-badge.unrep{color:var(--ne-ink-secondary);background-color:var(--ne-surface);background-image:var(--ne-hatch-soft);box-shadow:inset 0 0 0 1px var(--ne-hairline)}
+.u-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.u-badge.unrep .dot{background:transparent;box-shadow:inset 0 0 0 1.5px currentColor}
+.u-badge .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent}
+.ns-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:var(--ns-r-xs);font:500 10px/1.2 var(--ne-font-mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.ns-chip i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.ns-chip .age{opacity:.8}
+.ns-chip.live{color:var(--ns-live);background:var(--ns-live-bg);box-shadow:inset 0 0 0 1px var(--ns-live-ring)}
+.ns-chip.aging{color:var(--ns-aging);background:var(--ns-aging-bg);box-shadow:inset 0 0 0 1px var(--ns-aging-ring)}
+.ns-chip.stale{color:var(--ns-stale);background:var(--ns-stale-bg);box-shadow:inset 0 0 0 1px var(--ns-stale-ring)}
+.ns-chip.void{color:var(--ns-void);background:var(--ns-void-bg);box-shadow:inset 0 0 0 1px var(--ns-void-ring)}
+.nb-pr{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:var(--ne-radius-tag);font:600 10px/16px var(--ne-font-mono);letter-spacing:.06em;color:var(--ne-accent);background:var(--ne-accent-soft)}
+.u-tabs{display:flex;gap:4px;border-bottom:1px solid var(--ne-hairline)}
+.u-tab{padding:9px 12px 10px;font-size:14px;font-weight:500;color:var(--ne-ink-muted);border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;gap:8px;align-items:center}
+.u-tab.is-on{color:var(--ne-ink);font-weight:600;border-bottom-color:var(--ne-accent)}
+.u-tab.is-hover{color:var(--ne-ink-body)}
+.u-tab .count{font:600 11px/18px var(--ne-font-mono);padding:0 6px;border-radius:var(--ne-radius-tag);background:var(--ne-surface-elevated);color:var(--ne-ink-secondary)}
+.u-tbl{border:1px solid var(--ne-hairline);border-radius:var(--ne-radius-panel);overflow:hidden;background:var(--ne-surface)}
+.u-tr{display:grid;grid-template-columns:1.6fr 1fr .8fr 1fr;align-items:center;gap:16px;min-height:46px;padding:0 18px;border-top:1px solid var(--ne-divider);font-size:14px}
+.u-tr.head{min-height:36px;border-top:0;background:var(--ne-surface-muted);font:600 var(--ne-text-label)/1 var(--ne-font-mono);letter-spacing:var(--ne-tracking-label);text-transform:uppercase;color:var(--ne-ink-muted)}
+.u-tr .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ne-ink)}
+.u-tr .emphasis{font-weight:600;color:var(--ne-ink)}
+.u-tr .tag{font:500 11px var(--ne-font-mono);color:var(--ne-ink-dimmed)}
+.u-tr.is-hover{background:var(--ne-surface-muted)}
+.u-tr.is-selected{background:var(--ne-accent-soft);box-shadow:inset 3px 0 0 var(--ne-accent)}
+.u-miss{display:inline-block;padding:1px 7px;border-radius:4px;font:500 12px var(--ne-font-mono);color:var(--ne-ink-secondary);background-color:var(--ne-surface);background-image:var(--ne-hatch-soft);box-shadow:inset 0 0 0 1px var(--ne-hairline)}
+.u-panel{display:flex;gap:14px;padding:18px;border-radius:var(--ne-radius-panel);border:1px dashed var(--ne-line-strong);background:var(--ne-surface-muted)}
+.u-panel.blocked{border-style:solid;border-color:color-mix(in srgb,var(--ns-stale) 30%,var(--ne-hairline));background:var(--ns-stale-bg)}
+.u-panel .eyebrow{font:600 var(--ne-text-label)/1 var(--ne-font-mono);letter-spacing:var(--ne-tracking-label);text-transform:uppercase;color:var(--ne-ink-muted)}
+.u-panel.blocked .eyebrow{color:var(--ns-stale)}
+.u-panel h4{margin:6px 0 4px;font-size:15px;font-weight:600;color:var(--ne-ink)}
+.u-panel p{margin:0;font-size:13px;color:var(--ne-ink-secondary)}
+.u-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.u-kpi{padding:16px 18px;border-radius:var(--ne-radius-panel);background:var(--ne-surface);border:1px solid var(--ne-hairline)}
+.u-kpi .eyebrow{font:600 var(--ne-text-label)/1 var(--ne-font-mono);letter-spacing:var(--ne-tracking-label);text-transform:uppercase;color:var(--ne-ink-muted)}
+.u-kpi strong{display:block;margin-top:10px;font-size:28px;line-height:1;letter-spacing:-.03em;font-weight:600;color:var(--ne-ink);font-variant-numeric:tabular-nums}
+.u-kpi small{display:block;margin-top:8px;font-size:12px;color:var(--ne-ink-muted)}
+.u-kpi.unrep strong{color:var(--ne-ink-dimmed)}
+.u-kpi.unrep{background-image:var(--ne-hatch-soft)}
+</style>
+</helmet>
+<div class="nb"><div class="nb-wrap"><div class="nb-top"><div><div class="nb-eyebrow">NE Base · Components</div><h1 class="nb-title">Components</h1><p class="nb-lede">Every control the kit draws, in every state a reviewer needs to see. Each names the narduk-libs or Nuxt UI component it mirrors; none adds a colour the tokens do not have.</p></div><div class="nb-src">narduk-libs@ee9e4c26<br>packages/design/narduk-shell/theme.css<br>packages/design/narduk-ui/tokens.css</div></div><div class="nb-cgrid" style="margin-top:32px"><div class="nb-card nb-spec-card wide"><div class="nb-spec-h"><h3>Button</h3><span class="nb-mono nb-muted">UButton · 5 variants × 5 states</span></div><div class="nb-matrix" style="grid-template-columns:90px repeat(5,1fr)"><span></span><span class="nb-col">default</span><span class="nb-col">hover</span><span class="nb-col">focus</span><span class="nb-col">disabled</span><span class="nb-col">loading</span><span class="nb-rowh">solid</span><span><span class="u-btn solid">Deploy</span></span><span><span class="u-btn solid is-hover">Deploy</span></span><span><span class="u-btn solid is-focus">Deploy</span></span><span><span class="u-btn solid is-disabled">Deploy</span></span><span><span class="u-btn solid"><span class="u-spin"></span>Deploy</span></span><span class="nb-rowh">outline</span><span><span class="u-btn outline">Cancel</span></span><span><span class="u-btn outline is-hover">Cancel</span></span><span><span class="u-btn outline is-focus">Cancel</span></span><span><span class="u-btn outline is-disabled">Cancel</span></span><span><span class="u-btn outline"><span class="u-spin"></span>Cancel</span></span><span class="nb-rowh">soft</span><span><span class="u-btn soft">Filter</span></span><span><span class="u-btn soft is-hover">Filter</span></span><span><span class="u-btn soft is-focus">Filter</span></span><span><span class="u-btn soft is-disabled">Filter</span></span><span><span class="u-btn soft"><span class="u-spin"></span>Filter</span></span><span class="nb-rowh">ghost</span><span><span class="u-btn ghost">More</span></span><span><span class="u-btn ghost is-hover">More</span></span><span><span class="u-btn ghost is-focus">More</span></span><span><span class="u-btn ghost is-disabled">More</span></span><span><span class="u-btn ghost"><span class="u-spin"></span>More</span></span><span class="nb-rowh">link</span><span><span class="u-btn link">View all</span></span><span><span class="u-btn link is-hover">View all</span></span><span><span class="u-btn link is-focus">View all</span></span><span><span class="u-btn link is-disabled">View all</span></span><span><span class="u-btn link">View all</span></span></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Input</h3><span class="nb-mono nb-muted">UInput</span></div><div class="nb-states"><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">default</span><div class="u-input"><span class="placeholder">runner name</span></div></div><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">hover</span><div class="u-input is-hover"><span class="placeholder">runner name</span></div></div><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">focus</span><div class="u-input is-focus">mac-bu<span style="border-left:1.5px solid var(--ne-ink);height:16px"></span></div></div><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">filled</span><div class="u-input">mac-builder-1</div></div><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">disabled</span><div class="u-input is-disabled">linux-pool-3</div><span class="u-help">Managed by the fleet</span></div><div class="nb-state"><span class="nb-col" style="font:600 10px var(--ne-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ne-ink-dimmed)">invalid</span><div class="u-input is-invalid">mac builder</div><span class="u-help err">Use lowercase and dashes</span></div></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Search and filter</h3><span class="nb-mono nb-muted">NeSearchInput · NeFilterBar</span></div><div class="nb-states" style="grid-template-columns:1fr 1fr"><div class="nb-state"><span class="nb-col">empty</span><div class="u-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span class="placeholder">Search 130 products</span></div></div><div class="nb-state"><span class="nb-col">query</span><div class="u-input is-focus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>warp<span class="clear">×</span></div></div></div><div style="height:18px"></div><div class="nb-row"><span class="u-chip is-on">All <b>130</b></span><span class="u-chip">Affected <b>3</b></span><span class="u-chip is-hover">Maintenance <b>26</b></span><span class="u-chip off">Draining <b>0</b></span></div><div class="nb-row" style="margin-top:12px"><span class="nb-mono nb-muted">pressed · default · hover · disabled (a zero count never hides the chip)</span></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Status badge</h3><span class="nb-mono nb-muted">NeStatusBadge · tone → Nuxt UI colour, ink at shade 800</span></div><div class="nb-states" style="grid-template-columns:repeat(4,1fr)"><div class="nb-state"><span class="nb-col">success</span><span><span class="u-badge success"><span class="dot"></span>Operational</span></span></div><div class="nb-state"><span class="nb-col">warn</span><span><span class="u-badge warn"><span class="dot"></span>Degraded</span></span></div><div class="nb-state"><span class="nb-col">error</span><span><span class="u-badge error"><span class="dot"></span>Outage</span></span></div><div class="nb-state"><span class="nb-col">info</span><span><span class="u-badge info"><span class="dot"></span>Maintenance</span></span></div><div class="nb-state"><span class="nb-col">neutral</span><span><span class="u-badge neutral"><span class="dot"></span>Scheduled</span></span></div><div class="nb-state"><span class="nb-col">pending</span><span><span class="u-badge pending"><span class="spin"></span>Checking</span></span></div><div class="nb-state"><span class="nb-col">unreported<span class="nb-pr">NEW</span></span><span><span class="u-badge unrep"><span class="dot"></span>Not reported</span></span></div></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Freshness chip</h3><span class="nb-mono nb-muted">NsFreshnessChip · narduk-ui</span></div><div class="nb-row"><span class="ns-chip live"><i></i>Live<span class="age"></span></span><span class="ns-chip aging"><i></i>Aging<span class="age">· 14 min</span></span><span class="ns-chip stale"><i></i>Stale<span class="age">· 3 d</span></span><span class="ns-chip void"><i></i>Void<span class="age"></span></span></div><div class="nb-row" style="margin-top:12px"><span class="nb-mono nb-muted">classified from observedAt against the source's own interval; stale always shows its age</span></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Tabs</h3><span class="nb-mono nb-muted">UTabs · with counts</span></div><div class="u-tabs"><span class="u-tab is-on">Live <span class="count">1</span></span><span class="u-tab is-hover">Kit <span class="count">2</span></span><span class="u-tab">Public</span><span class="u-tab">Round 1</span><span class="u-tab">System</span></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>Unreported, everywhere</h3><span class="nb-mono nb-muted">NE_UNREPORTED_TEXT · --ne-hatch-soft</span></div><div class="nb-row" style="gap:10px"><span class="u-badge unrep"><span class="dot"></span>Not reported</span><span class="u-miss">—</span><span class="u-kpi unrep" style="padding:8px 14px"><strong style="margin:0;font-size:20px">—</strong></span></div><div class="nb-row" style="margin-top:12px"><span class="nb-mono nb-muted">badge · table cell · KPI value — one material, never a zero</span></div></div><div class="nb-card nb-spec-card wide"><div class="nb-spec-h"><h3>Data table</h3><span class="nb-mono nb-muted">NeDataTable · default, hover, selected, missing</span></div><div class="u-tbl"><div class="u-tr head"><span>Product</span><span>Status ↓</span><span style="text-align:right">Incidents</span><span>Last change</span></div><div class="u-tr"><span class="emphasis">Cloudflare One Client <span class="tag">default</span></span><span><span class="u-badge warn"><span class="dot"></span>Degraded</span></span><span class="num">42</span><span class="nb-mono nb-muted">Sep 22, 19:26</span></div><div class="u-tr is-hover"><span class="emphasis">Network <span class="tag">hover</span></span><span><span class="u-badge error"><span class="dot"></span>Outage</span></span><span class="num">17</span><span class="nb-mono nb-muted">Sep 23, 18:42</span></div><div class="u-tr is-selected"><span class="emphasis">WARP <span class="tag">selected</span></span><span><span class="u-badge success"><span class="dot"></span>Operational</span></span><span class="num">88</span><span class="nb-mono nb-muted">Sep 22, 19:25</span></div><div class="u-tr"><span class="emphasis">Workers KV <span class="tag">missing</span></span><span><span class="u-badge unrep"><span class="dot"></span>Not reported</span></span><span class="num"><span class="u-miss">—</span></span><span class="nb-mono nb-muted"><span class="u-miss">unreported</span></span></div></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>State panel</h3><span class="nb-mono nb-muted">NeStatePanel · absent, blocked</span></div><div style="display:flex;flex-direction:column;gap:12px"><div class="u-panel"><div><div class="eyebrow">Unconfigured</div><h4>No design source is configured</h4><p>Unblocks on NUXT_DESIGN_SOURCES naming an app and where its boards are served.</p></div></div><div class="u-panel blocked"><div><div class="eyebrow">Unreachable</div><h4>The status feed could not be read</h4><p>cloudflarestatus.com answered 503 at 17:01 UTC. The last good read is shown, marked stale.</p></div></div></div></div><div class="nb-card nb-spec-card"><div class="nb-spec-h"><h3>KPI tiles</h3><span class="nb-mono nb-muted">NeKpiTile · value, ratio, unreported</span></div><div class="u-kpis"><div class="u-kpi"><div class="eyebrow">Open incidents</div><strong>3</strong><small>Newest 3 days ago</small></div><div class="u-kpi"><div class="eyebrow">Affected products</div><strong>3<span style="font-size:15px;color:var(--ne-ink-muted);letter-spacing:0"> / 130</span></strong><small>Cloudflare One, Network, WARP</small></div><div class="u-kpi unrep"><div class="eyebrow">Uptime, 90 days</div><strong>—</strong><small>Not in the feed; never drawn</small></div></div></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview": {"width": 1440, "height": 1940}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

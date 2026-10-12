@@ -1,0 +1,74 @@
+{
+ "title": "narduk-maps",
+ "surfaces": [
+  "desktop",
+  "phone"
+ ],
+ "createdAt": "2026-10-12T19:56:36Z",
+ "screens": [
+  {
+   "id": "aquidneck-map",
+   "title": "Island map (GL)"
+  },
+  {
+   "id": "aquidneck-overview",
+   "title": "Island overview (SVG)"
+  },
+  {
+   "id": "marc-counties",
+   "title": "KC counties (SVG)"
+  },
+  {
+   "id": "looks",
+   "title": "Looks"
+  },
+  {
+   "id": "pieces",
+   "title": "Pieces"
+  }
+ ],
+ "states": [
+  "live",
+  "loading",
+  "empty",
+  "error",
+  "stale",
+  "dark"
+ ],
+ "system": true,
+ "phoneChrome": "burger",
+ "direction": {
+  "domain": [
+   "shoreline",
+   "jurisdiction",
+   "status of a place",
+   "level (choropleth)",
+   "provenance"
+  ],
+  "signature": "One picture, two engines: a baked cutout SVG (0 requests) is the GL map's poster; same Web Mercator projection, measured 0.000 px drift, so the live map fades in without moving.",
+  "banned": [
+   "stock OSM label soup",
+   "grey loading box",
+   "default MapLibre chrome",
+   "SVG <title> tooltips",
+   "black hairline boundaries",
+   "pins over labels",
+   "labels clipped at the frame"
+  ],
+  "compositions": {
+   "map-first": "map 960 wide with a 320 status rail (picked)",
+   "legend-overlay": "full-bleed map with a floating legend card (rejected: covers the coast on phones)",
+   "list-first": "ledger list with a small locator map (rejected: hides the shoreline signature)"
+  },
+  "pick": "map-first",
+  "looks": {
+   "cutout": "baked SVG from OpenFreeMap/OSM tiles + Census TIGER counties",
+   "harbor": "GL, muted land, water halo (default)",
+   "ink": "GL, near-monochrome (print)"
+  },
+  "decisions": [
+   "MARC county outlines move to Census TIGER (public domain); the app's simplified counties.geojson clashes with the baked river",
+   "GL pins become a symbol layer so labels collide with them"
+  ]
+ }
+}

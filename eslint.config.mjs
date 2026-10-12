@@ -27,6 +27,7 @@ export default [
       // risk pulling Playwright/Histoire-only types into the build's own
       // typecheck. Ignoring them here is lint-only and does not touch the
       // build.
+      'design/**',
       'packages/design/narduk-charts/e2e/**',
       'packages/design/narduk-charts/histoire.setup.ts',
       // narduk-mapkit publishes examples/ in its tarball as documentation
