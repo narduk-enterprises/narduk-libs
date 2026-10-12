@@ -46,7 +46,7 @@
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "peerDependencies": {
-    "maplibre-gl": "^5.0.0",
+    "maplibre-gl": "^6.4.1",
     "vue": "^3.5.0"
   },
   "peerDependenciesMeta": {
@@ -61,7 +61,7 @@
     "@vue/server-renderer": "^3.5.0",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^20.9.0",
-    "maplibre-gl": "^5.24.0",
+    "maplibre-gl": "6.11.2",
     "typescript": "~6.0.3",
     "vite": "^6.0.0",
     "vite-plugin-dts": "^4.5.0",

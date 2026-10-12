@@ -13,7 +13,7 @@ npm). The look is specified in [docs/DESIGN.md](./docs/DESIGN.md).
 ```bash
 npm install @narduk-enterprises/narduk-maps
 # only if you use the `./gl` entry:
-npm install maplibre-gl@^5
+npm install maplibre-gl@^6
 ```
 
 `maplibre-gl` is an optional peer dependency. It is external to every build

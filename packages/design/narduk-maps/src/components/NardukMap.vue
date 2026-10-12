@@ -215,7 +215,7 @@ function buildStyle(): BasemapStyle {
 
 function setData(id: string, data: unknown) {
   const source = map.value?.getSource(id) as GeoJSONSource | undefined
-  source?.setData(data as Parameters<GeoJSONSource['setData']>[0])
+  void source?.setData(data as Parameters<GeoJSONSource['setData']>[0])
 }
 
 function install() {
@@ -489,9 +489,10 @@ async function start() {
     })
     gl.on('zoom', updateZoomState)
     gl.on('error', e => {
-      if ((e as { error?: Error }).error?.message?.includes('WebGL')) {
+      const err = e.error
+      if (err?.message?.includes('WebGL')) {
         failed.value = true
-        emit('error', (e as { error?: Error }).error)
+        emit('error', err instanceof Error ? err : new Error(err.message))
       }
     })
   } catch (error) {
