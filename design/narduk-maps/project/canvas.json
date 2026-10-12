@@ -1,0 +1,94 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-12T19:56:36Z"
+ },
+ "title": "narduk-maps",
+ "launch": {
+  "view": "canvas",
+  "page": "desktop"
+ },
+ "pages": [
+  {
+   "id": "desktop",
+   "name": "Desktop"
+  },
+  {
+   "id": "phone",
+   "name": "Phone"
+  },
+  {
+   "id": "pieces",
+   "name": "Pieces"
+  },
+  {
+   "id": "system",
+   "name": "System"
+  }
+ ],
+ "boards": {
+  "Desktop-App.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "page": "desktop",
+   "title": "Desktop app",
+   "is_interactive": true
+  },
+  "Phone-App.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "page": "phone",
+   "title": "Phone app",
+   "is_interactive": true
+  },
+  "Kit-Header.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 64,
+   "page": "pieces",
+   "title": "Kit-Header",
+   "is_interactive": true
+  },
+  "Kit-MenuBar.dc.html": {
+   "x": 0,
+   "y": 304,
+   "w": 390,
+   "h": 844,
+   "page": "pieces",
+   "title": "Kit-MenuBar",
+   "is_interactive": true
+  },
+  "Ne-Foundations.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 2100,
+   "page": "system",
+   "title": "Foundations"
+  },
+  "Ne-Components.dc.html": {
+   "x": 0,
+   "y": 2340,
+   "w": 1440,
+   "h": 1940,
+   "page": "system",
+   "title": "Components"
+  }
+ },
+ "order": [
+  "Desktop-App.dc.html",
+  "Phone-App.dc.html",
+  "Kit-Header.dc.html",
+  "Kit-MenuBar.dc.html",
+  "Ne-Foundations.dc.html",
+  "Ne-Components.dc.html"
+ ],
+ "notes": {},
+ "designSystems": []
+}

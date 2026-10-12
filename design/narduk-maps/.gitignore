@@ -1,0 +1,3 @@
+# Regenerable from gen/*.mjs; the published canvas holds them in its asset store.
+gen/renders/
+gen/cutouts/*.svg
