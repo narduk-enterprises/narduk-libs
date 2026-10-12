@@ -1297,6 +1297,96 @@ function applyMigrationAndRecord(action: MigrationAction, db: MigrationDatabase)
 }
 
 /**
+ * A chunk of a local run stops growing at this many bytes of SQL. Wrangler reads
+ * the whole file and hands it to miniflare as one `db.batch`; the cap keeps one
+ * pathological history from becoming one unbounded request.
+ */
+export const LOCAL_BATCH_MAX_BYTES = 4 * 1024 * 1024
+
+/**
+ * The SQL of one local chunk: each pending action in plan order, an `apply`
+ * as its migration followed by its ledger INSERT (exactly what
+ * `applyMigrationAndRecord` writes), an `adopt` as its ledger INSERT alone.
+ */
+function localChunkSql(action: MigrationAction): string {
+  return action.kind === 'apply'
+    ? buildMigrationBatchSql(action, readFileSync(action.path, 'utf8'))
+    : `${recordMigrationSql(action)}\n`
+}
+
+function writeLocalChunks(
+  actions: readonly MigrationAction[],
+  directory: string,
+): Array<{ actions: MigrationAction[]; path: string }> {
+  const chunks: Array<{ actions: MigrationAction[]; sql: string }> = []
+  for (const action of actions) {
+    if (action.kind === 'skip') continue
+    const sql = localChunkSql(action)
+    const last = chunks.at(-1)
+    if (last && Buffer.byteLength(last.sql) + Buffer.byteLength(sql) <= LOCAL_BATCH_MAX_BYTES) {
+      last.actions.push(action)
+      last.sql += sql
+    } else chunks.push({ actions: [action], sql })
+  }
+  return chunks.map((chunk, index) => {
+    const path = join(directory, `chunk-${String(index).padStart(5, '0')}.sql`)
+    // The ledger table rides in the first chunk: `CREATE TABLE IF NOT EXISTS`
+    // is the statement `migrateOnce` ran on its own before the first migration.
+    writeFileSync(
+      path,
+      `${index === 0 ? `${migrationLedgerCreateSql()}\n` : ''}${chunk.sql}`,
+      'utf8',
+    )
+    return { actions: chunk.actions, path }
+  })
+}
+
+function applyActionsOneByOne(plan: MigrationPlan, db: MigrationDatabase): void {
+  db.execute(migrationLedgerCreateSql())
+  for (const action of plan.actions) {
+    if (action.kind === 'apply') applyMigrationAndRecord(action, db)
+    else if (action.kind === 'adopt') db.execute(recordMigrationSql(action))
+  }
+}
+
+/**
+ * Local D1 only: the pending migrations, each followed by its ledger row, go to
+ * wrangler as a few `--file` runs instead of one wrangler + miniflare start per
+ * migration (about 3 s each on a cold CI runner). Wrangler
+ * runs a local file as one `db.batch`, which miniflare commits or rolls back
+ * whole, so a chunk either records all of its migrations or none of them.
+ *
+ * A chunk that fails is never trusted to say which migration broke or what it
+ * left behind. The ledger is re-read -- chunks before it are committed and
+ * recorded, the failed one is rolled back -- and the rest runs one migration
+ * per call, the unchanged path, which stops at the first failure with every
+ * earlier migration recorded and the failing one not. A failing run therefore
+ * ends in the state, and with the error, it always did.
+ *
+ * Never used for `--remote`: a remote file is an import with its own lock,
+ * recovery snapshot and "response lost, but did it commit?" semantics.
+ */
+function applyActionsLocal(
+  plan: MigrationPlan,
+  db: MigrationDatabase,
+  options: MigrationRunOptions,
+): void {
+  const directory = mkdtempSync(join(tmpdir(), 'narduk-app-migration-'))
+  try {
+    for (const chunk of writeLocalChunks(plan.actions, directory)) {
+      try {
+        db.file(chunk.path)
+      } catch {
+        applyActionsOneByOne(inspectDatabase(options, db).plan, db)
+        return
+      }
+    }
+  } finally {
+    rmSync(directory, { force: true, recursive: true })
+  }
+}
+
+/**
  * A singleton row lives in the database itself, so different repos, runners,
  * hosts, binding aliases and preview jobs contend on the same lock. No TTL:
  * a timed-out client does not prove that Cloudflare stopped its remote import.
@@ -1361,11 +1451,8 @@ function migrateOnce(
             options.target,
           )
         : undefined
-    if (plan.apply + plan.adopt > 0) db.execute(migrationLedgerCreateSql())
-    for (const action of plan.actions) {
-      if (action.kind === 'apply') applyMigrationAndRecord(action, db)
-      else if (action.kind === 'adopt') db.execute(recordMigrationSql(action))
-    }
+    if (options.location === '--local') applyActionsLocal(plan, db, options)
+    else applyActionsOneByOne(plan, db)
     const { plan: after } = inspectDatabase(options, db)
     if (after.apply + after.adopt !== 0)
       throw new Error('D1 migrations remain pending after application')
