@@ -127,8 +127,16 @@ describe('NardukGeoMap markup', () => {
 })
 
 describe('SSR identity', () => {
-  const strip = (html: string) =>
-    html.replaceAll(/<!--[\s\S]*?-->/g, '').replaceAll(/\sdata-v-[\da-f]+=""/g, '')
+  const strip = (html: string) => {
+    // Repeat until stable so a removal cannot leave a new `<!--` behind.
+    let out = html
+    let prev
+    do {
+      prev = out
+      out = out.replaceAll(/<!--[\s\S]*?-->/g, '')
+    } while (out !== prev)
+    return out.replaceAll(/\sdata-v-[\da-f]+=""/g, '')
+  }
 
   for (const [name, props] of [
     ['Aquidneck', aquidneck],
