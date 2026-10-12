@@ -1,5 +1,12 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.9
+
+### Patch Changes
+
+- c012b64: List `@narduk-enterprises/narduk-maps` in the libs explorer inventory
+  and in the generated capability catalog.
+
 ## 0.0.8
 
 ### Patch Changes
