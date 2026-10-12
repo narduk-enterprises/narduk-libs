@@ -135,6 +135,13 @@ export const SHARED_CAPABILITY_CATALOG: readonly SharedCapability[] = [
       'Nuxt component, composables, and token route for @narduk-enterprises/narduk-mapkit.',
   },
   {
+    id: 'maps',
+    package: '@narduk-enterprises/narduk-maps',
+    family: 'design',
+    description:
+      'NardukMaps — one picture, two engines: an SSR-safe SVG map and a MapLibre map that share a projection, tokens and marks. Package: @narduk-enterprises/narduk-maps.',
+  },
+  {
     id: 'platform',
     package: '@narduk-enterprises/narduk-platform',
     family: 'contracts',

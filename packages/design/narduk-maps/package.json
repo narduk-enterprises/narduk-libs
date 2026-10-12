@@ -1,0 +1,98 @@
+{
+  "name": "@narduk-enterprises/narduk-maps",
+  "version": "0.1.0",
+  "description": "NardukMaps — one picture, two engines: an SSR-safe SVG map and a MapLibre map that share a projection, tokens and marks. Package: @narduk-enterprises/narduk-maps.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./svg": {
+      "types": "./dist/svg.d.ts",
+      "import": "./dist/svg.js"
+    },
+    "./style": {
+      "types": "./dist/style.d.ts",
+      "import": "./dist/style.js"
+    },
+    "./gl": {
+      "types": "./dist/gl.d.ts",
+      "import": "./dist/gl.js"
+    },
+    "./style.css": "./dist/narduk-maps.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NARDUK_BUILD_MAX_OLD_SPACE_SIZE:-4096}\"; vue-tsc --noEmit && vite build",
+    "build:only": "vite build",
+    "check:package": "publint --strict && pnpm pack --dry-run",
+    "format:check": "prettier --check --log-level warn \"**/*.{ts,vue,json,css,md}\" --ignore-path ../../../.gitignore --ignore-path ../../../.prettierignore",
+    "lab": "vite --config vite.lab.config.ts",
+    "lint": "narduk-lint",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build",
+    "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
+  },
+  "peerDependencies": {
+    "maplibre-gl": "^5.0.0",
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "^22.19.19",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/server-renderer": "^3.5.0",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.9.0",
+    "maplibre-gl": "^5.24.0",
+    "typescript": "~6.0.3",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^4.1.11",
+    "vue": "^3.5.0",
+    "vue-tsc": "^2.2.0"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "map",
+    "maps",
+    "maplibre",
+    "choropleth",
+    "svg",
+    "web-mercator",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "narduk",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/narduk-enterprises/narduk-libs.git",
+    "directory": "packages/design/narduk-maps"
+  },
+  "homepage": "https://github.com/narduk-enterprises/narduk-libs/tree/main/packages/design/narduk-maps",
+  "bugs": {
+    "url": "https://github.com/narduk-enterprises/narduk-libs/issues"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  }
+}

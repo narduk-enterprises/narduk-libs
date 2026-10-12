@@ -397,7 +397,7 @@ function moduleList(capabilities: readonly Capability[]): string {
       // just a plain Vue component library the app imports from directly
       // (see capabilityPackages in manifest.ts). Listing it here would make
       // Nuxt try to load it as a module and fail.
-      .filter((capability) => capability !== 'charts')
+      .filter((capability) => capability !== 'charts' && capability !== 'maps')
       .map((capability) =>
         capability === 'mapkit'
           ? '@narduk-enterprises/narduk-mapkit-nuxt'
@@ -572,6 +572,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // scaffold references it yet and knip would otherwise flag it unused,
     // the same reasoning as the mapkit peer package above.
     ...(capabilities.includes('charts') ? ['@narduk-enterprises/narduk-charts'] : []),
+    // narduk-maps is likewise a plain library with no default import in the scaffold.
+    ...(capabilities.includes('maps') ? ['@narduk-enterprises/narduk-maps'] : []),
     // narduk-seo installModule('nuxt-og-image') when the peer is present.
     // The generated app never imports the package by name, so knip would
     // otherwise flag the #170/#316 pin as unused.

@@ -1,0 +1,550 @@
+/**
+ * narduk-maps tokens and component CSS. Plain CSS, no build-time dependency.
+ *
+ * Colours are --color-map-* custom properties; src/tokens.ts holds the same values resolved
+ * to hex for MapLibre style JSON, and tokens.test.ts keeps the two in step. Numbers (stroke
+ * widths, mark sizes, label type) are emitted by the components as --size-map-* inline custom
+ * properties from DEFAULT_METRICS, so editing a token here or in tokens.ts is the whole job.
+ * Dark is selected, not inverted: `.narduk-map--dark`, `.dark` or `[data-theme='dark']`.
+ */
+:root {
+  --color-map-water: #dfe8ee;
+  --color-map-land: #f7f6f2;
+  --color-map-shore: color-mix(in srgb, var(--color-map-water) 40%, #9fb6c6);
+  --color-map-shore-halo: color-mix(in srgb, var(--color-map-water) 70%, #9fb6c6);
+  --color-map-boundary: #8a97a3;
+  --color-map-boundary-opacity: 0.7;
+  --color-map-boundary-focus: var(--color-map-ink);
+  --color-map-ink: #1f2a33;
+  --color-map-muted: #6c8494;
+  --color-map-place-ink: color-mix(in srgb, var(--color-map-land) 38%, var(--color-map-ink));
+  --color-map-label-halo: var(--color-map-land);
+  --color-map-road: color-mix(in srgb, var(--color-map-land) 88%, var(--color-map-ink));
+  --color-map-road-major: color-mix(in srgb, var(--color-map-land) 80.8%, var(--color-map-ink));
+  --color-map-mark-ring: #ffffff;
+  --color-map-mark-core: #ffffff;
+  --color-map-hatch: color-mix(in srgb, var(--color-map-land) 65%, var(--color-map-ink));
+  --color-map-green: #5b8a6a;
+  --color-map-focus: #24689f;
+  --color-map-tooltip-bg: oklch(24% 0.035 264 / 0.92);
+  --color-map-tooltip-foreground: oklch(98% 0.005 264);
+  --color-map-tooltip-border: oklch(100% 0 0 / 0.14);
+  --radius-map-tooltip: 0.625rem;
+  --size-map-tooltip-max: 20rem;
+  --shadow-map-tooltip: 0 8px 24px oklch(20% 0.03 264 / 0.28);
+  --color-map-control-bg: color-mix(in srgb, var(--color-map-land) 92%, transparent);
+  --color-map-control-border: color-mix(in srgb, var(--color-map-ink) 18%, transparent);
+  --font-map: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.narduk-map--dark,
+.dark,
+[data-theme='dark'] {
+  --color-map-water: #101b24;
+  --color-map-land: #1b252e;
+  --color-map-shore: color-mix(in srgb, var(--color-map-water) 40%, #5d7587);
+  --color-map-shore-halo: color-mix(in srgb, var(--color-map-water) 70%, #5d7587);
+  --color-map-boundary: #7b8996;
+  --color-map-ink: #e3eaef;
+  --color-map-muted: #8fa9ba;
+  --color-map-place-ink: color-mix(in srgb, var(--color-map-land) 38%, var(--color-map-ink));
+  --color-map-road: color-mix(in srgb, var(--color-map-land) 84%, var(--color-map-ink));
+  --color-map-road-major: color-mix(in srgb, var(--color-map-land) 74.4%, var(--color-map-ink));
+  --color-map-mark-ring: #11181e;
+  --color-map-mark-core: #e8eef2;
+  --color-map-hatch: color-mix(in srgb, var(--color-map-land) 65%, var(--color-map-ink));
+  --color-map-green: #6fa081;
+  --color-map-focus: #7db4e6;
+  /* Derived tokens are re-declared here: a var() in :root resolves at :root, not in this scope. */
+  --color-map-boundary-focus: var(--color-map-ink);
+  --color-map-label-halo: var(--color-map-land);
+  --color-map-control-bg: color-mix(in srgb, var(--color-map-land) 92%, transparent);
+  --color-map-control-border: color-mix(in srgb, var(--color-map-ink) 18%, transparent);
+}
+
+.narduk-geomap {
+  position: relative;
+  display: block;
+  width: 100%;
+  font-family: var(--font-map);
+  color: var(--color-map-ink);
+}
+
+.narduk-geomap__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: hidden;
+}
+
+.narduk-geomap__sea {
+  fill: var(--color-map-water);
+}
+
+.narduk-geomap__halo {
+  fill: none;
+  stroke: var(--color-map-shore);
+  stroke-opacity: var(--size-map-halo-opacity, 0.35);
+  stroke-width: calc(var(--size-map-halo, 6px) * 2);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.narduk-geomap__shore {
+  fill: none;
+  stroke: var(--color-map-shore);
+  stroke-width: calc(var(--size-map-shore, 1.5px) * 2);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.narduk-geomap__shape {
+  stroke: none;
+  outline: none;
+}
+
+.narduk-geomap__shape--interactive {
+  cursor: pointer;
+}
+
+.narduk-geomap__bm {
+  fill: none;
+  stroke: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.narduk-geomap__bm--land {
+  fill: var(--color-map-land);
+}
+
+.narduk-geomap__bm--green {
+  fill: var(--color-map-green);
+  fill-opacity: 0.8;
+}
+
+.narduk-geomap__bm--water {
+  fill: var(--color-map-water);
+  /* A hairline of the same colour hides the seam where tile polygons meet. */
+  stroke: var(--color-map-water);
+  stroke-width: var(--size-map-bm-seam, 0.8px);
+}
+
+.narduk-geomap__bm--shore-halo {
+  stroke: var(--color-map-shore-halo);
+  stroke-width: var(--size-map-bm-halo, 7px);
+  stroke-opacity: 0.9;
+}
+
+.narduk-geomap__bm--shore {
+  stroke: var(--color-map-shore);
+  stroke-width: var(--size-map-bm-shore, 1.1px);
+}
+
+.narduk-geomap__bm--roadMinor {
+  stroke: var(--color-map-road);
+  stroke-width: var(--size-map-bm-road-minor, 0.8px);
+}
+
+.narduk-geomap__bm--roadMajor {
+  stroke: var(--color-map-road-major);
+  stroke-width: var(--size-map-bm-road-major, 1.6px);
+}
+
+.narduk-geomap__bm--state {
+  stroke: var(--color-map-boundary);
+  stroke-width: var(--size-map-bm-state, 1px);
+  stroke-dasharray: var(--size-map-bm-state-dash, 4 3);
+  stroke-linecap: butt;
+}
+
+.narduk-geomap__attribution {
+  fill: var(--color-map-muted);
+  font-size: var(--size-map-bm-attribution, 9px);
+  stroke: var(--color-map-label-halo);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+}
+
+.narduk-geomap__nodata {
+  stroke: none;
+  pointer-events: none;
+}
+
+.narduk-geomap__boundary {
+  fill: none;
+  stroke: var(--color-map-boundary);
+  stroke-opacity: var(--color-map-boundary-opacity);
+  stroke-width: var(--size-map-boundary, 1px);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.narduk-geomap__focus {
+  fill: none;
+  stroke: var(--color-map-boundary-focus);
+  stroke-width: var(--size-map-boundary-focus, 2px);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.narduk-geomap__hatch-line {
+  stroke: var(--color-map-hatch);
+  stroke-width: var(--size-map-hatch-width, 1.5px);
+}
+
+.narduk-geomap__label {
+  fill: var(--color-map-ink);
+  font-family: var(--font-map);
+  font-size: var(--size-map-label, 11px);
+  font-weight: var(--weight-map-label, 600);
+  font-variant-caps: all-small-caps;
+  letter-spacing: var(--spacing-map-label, 0.06em);
+  stroke: var(--color-map-label-halo);
+  stroke-width: var(--size-map-label-halo, 3px);
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+  user-select: none;
+}
+
+.narduk-geomap__label--place {
+  fill: var(--color-map-place-ink);
+  font-size: var(--size-map-bm-label, 10px);
+  font-weight: 500;
+  font-variant-caps: normal;
+  letter-spacing: 0.02em;
+}
+
+.narduk-geomap__label--water {
+  fill: var(--color-map-muted);
+  font-size: var(--size-map-bm-label, 10px);
+  font-style: italic;
+  font-weight: 500;
+  font-variant-caps: normal;
+  letter-spacing: 0.04em;
+  stroke: var(--color-map-water);
+}
+
+.narduk-geomap__label--sub {
+  font-weight: 500;
+  font-variant-caps: normal;
+  letter-spacing: 0;
+}
+
+.narduk-geomap__point {
+  outline: none;
+  cursor: default;
+}
+
+a.narduk-geomap__point {
+  cursor: pointer;
+}
+
+.narduk-geomap__hit {
+  stroke: none;
+}
+
+.narduk-geomap__disc {
+  paint-order: stroke;
+}
+
+.narduk-geomap__point:focus-visible .narduk-geomap__focus-halo,
+.narduk-geomap__point:hover .narduk-geomap__focus-halo {
+  opacity: 1;
+}
+
+.narduk-geomap__focus-halo {
+  fill: none;
+  stroke: var(--color-map-focus);
+  stroke-width: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.narduk-geomap__shape:focus-visible {
+  outline: 2px solid var(--color-map-focus);
+  outline-offset: 1px;
+}
+
+.narduk-geomap__tooltip {
+  position: absolute;
+  z-index: 10;
+  width: max-content;
+  max-width: min(var(--size-map-tooltip-max), 75%);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  border-radius: var(--radius-map-tooltip);
+  border: 1px solid var(--color-map-tooltip-border);
+  background: var(--color-map-tooltip-bg);
+  color: var(--color-map-tooltip-foreground);
+  box-shadow: var(--shadow-map-tooltip);
+  backdrop-filter: blur(12px) saturate(1.25);
+  -webkit-backdrop-filter: blur(12px) saturate(1.25);
+  pointer-events: none;
+  user-select: text;
+  transform: translate(-50%, calc(-100% - 0.75rem));
+}
+
+.narduk-geomap__tooltip--start {
+  transform: translate(-0.75rem, calc(-100% - 0.75rem));
+}
+
+.narduk-geomap__tooltip--end {
+  transform: translate(calc(-100% + 0.75rem), calc(-100% - 0.75rem));
+}
+
+.narduk-geomap__tooltip--below {
+  transform: translate(-50%, 0.75rem);
+}
+
+.narduk-geomap__tooltip--below.narduk-geomap__tooltip--start {
+  transform: translate(-0.75rem, 0.75rem);
+}
+
+.narduk-geomap__tooltip--below.narduk-geomap__tooltip--end {
+  transform: translate(calc(-100% + 0.75rem), 0.75rem);
+}
+
+.narduk-geomap__tooltip-title {
+  margin-bottom: 0.125rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.narduk-geomap__tooltip-body {
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.narduk-map-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* GL map */
+.narduk-map {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--color-map-water);
+  font-family: var(--font-map);
+}
+
+.narduk-map__poster {
+  transition: visibility 0s linear 0.4s;
+}
+
+.narduk-map.is-ready .narduk-map__poster {
+  visibility: hidden;
+}
+
+.narduk-map__canvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.narduk-map.is-ready .narduk-map__canvas {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The few rules the GL engine's stock stylesheet would supply, so consumers import one CSS file. */
+.narduk-map__canvas.maplibregl-map {
+  overflow: hidden;
+  position: absolute;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.narduk-map__canvas .maplibregl-canvas-container {
+  position: absolute;
+  inset: 0;
+}
+
+.narduk-map__canvas .maplibregl-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.narduk-map__canvas.maplibregl-interactive .maplibregl-canvas {
+  cursor: grab;
+}
+
+.narduk-map__canvas.maplibregl-interactive.is-pointer .maplibregl-canvas {
+  cursor: pointer;
+}
+
+.narduk-map__canvas .maplibregl-canvas-container.maplibregl-touch-zoom-rotate,
+.narduk-map__canvas .maplibregl-canvas-container.maplibregl-touch-drag-pan {
+  touch-action: pan-x pan-y;
+}
+
+.narduk-map__canvas
+  .maplibregl-canvas-container.maplibregl-touch-drag-pan.maplibregl-touch-zoom-rotate {
+  touch-action: pinch-zoom;
+}
+
+.narduk-map__canvas .maplibregl-cooperative-gesture-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--color-map-tooltip-bg);
+  color: var(--color-map-tooltip-foreground);
+  font-size: 0.875rem;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.narduk-map__canvas .maplibregl-cooperative-gesture-screen.maplibregl-show {
+  opacity: 1;
+}
+
+.narduk-map__canvas .maplibregl-desktop-message {
+  display: block;
+}
+
+.narduk-map__canvas .maplibregl-mobile-message {
+  display: none;
+}
+
+@media (hover: none) {
+  .narduk-map__canvas .maplibregl-desktop-message {
+    display: none;
+  }
+
+  .narduk-map__canvas .maplibregl-mobile-message {
+    display: block;
+  }
+}
+
+.narduk-map__controls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-map-control-border);
+  background: var(--color-map-control-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.narduk-map__control {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-map-ink);
+  font: inherit;
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.narduk-map__control + .narduk-map__control {
+  border-top: 1px solid var(--color-map-control-border);
+}
+
+.narduk-map__control:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-map-ink) 8%, transparent);
+}
+
+.narduk-map__control:focus-visible {
+  outline: 2px solid var(--color-map-focus);
+  outline-offset: -2px;
+}
+
+.narduk-map__control:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.narduk-map__attribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5em;
+  margin: 0;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  max-width: 100%;
+  padding: 0.125rem 0.5rem;
+  border-top-left-radius: 0.375rem;
+  background: var(--color-map-control-bg);
+  color: var(--color-map-muted);
+  font-size: 0.625rem;
+  line-height: 1.4;
+}
+
+.narduk-map__attribution a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.narduk-map__popup {
+  position: absolute;
+  z-index: 8;
+  pointer-events: auto;
+  transform: translate(-50%, calc(-100% - 1rem));
+}
+
+.narduk-map__popup .narduk-geomap__tooltip {
+  position: relative;
+  transform: none;
+  pointer-events: auto;
+}
+
+.narduk-map__popup-close {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .narduk-map__canvas,
+  .narduk-map__poster {
+    transition: none;
+  }
+}

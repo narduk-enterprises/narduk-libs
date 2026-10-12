@@ -50,6 +50,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-charts': '2.11.2',
   '@narduk-enterprises/narduk-core': '2.25.0',
   '@narduk-enterprises/narduk-logging': '0.4.4',
+  '@narduk-enterprises/narduk-maps': '0.1.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
@@ -143,6 +144,10 @@ const capabilityPackages: Record<Capability, readonly string[]> = {
   // moduleList() in generate.ts excludes 'charts' from the Nuxt `modules:
   // [...]` array for exactly this reason.
   charts: ['@narduk-enterprises/narduk-charts'],
+  // Like charts, narduk-maps is a plain Vue library the app imports from
+  // directly, not a Nuxt module. maplibre-gl is an optional peer an app adds
+  // only when it uses the `./gl` entry.
+  maps: ['@narduk-enterprises/narduk-maps'],
   mapkit: ['@narduk-enterprises/narduk-mapkit', '@narduk-enterprises/narduk-mapkit-nuxt'],
   seo: ['@narduk-enterprises/narduk-seo', 'nuxt-og-image'],
   uploads: ['@narduk-enterprises/narduk-uploads'],

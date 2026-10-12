@@ -52,6 +52,9 @@
     "@narduk-enterprises/narduk-mapkit-nuxt": {
       "compatibility": "n-and-n-minus-1"
     },
+    "@narduk-enterprises/narduk-maps": {
+      "compatibility": "n-and-n-minus-1"
+    },
     "@narduk-enterprises/narduk-platform": {
       "compatibility": "n-and-n-minus-1"
     },
