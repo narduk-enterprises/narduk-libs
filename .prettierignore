@@ -106,3 +106,6 @@ packages/modules/geogrid-web/tests/fixtures/**
 
 # Task-local validation evidence and generated smoke checkouts.
 .lane-evidence/
+
+# Design direction handed in by the narduk-maps design round; kept byte-for-byte.
+packages/design/narduk-maps/docs/DESIGN.md

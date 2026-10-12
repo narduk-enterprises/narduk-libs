@@ -2175,6 +2175,36 @@ describe('generated app typecheck and lint surfaces', () => {
     expect(webManifestWithout.dependencies['@narduk-enterprises/narduk-charts']).toBeUndefined()
     expect(knipConfigWithout.ignoreDependencies).not.toContain('@narduk-enterprises/narduk-charts')
   })
+
+  // narduk-maps follows narduk-charts: a plain Vue library, never a Nuxt module.
+  it('pins narduk-maps for the maps capability without registering it as a Nuxt module', () => {
+    const withMaps = generate(['maps'])
+    const webManifest = JSON.parse(withMaps.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    const nuxtConfig = withMaps.get('apps/web/nuxt.config.ts') ?? ''
+    const knipConfig = JSON.parse(withMaps.get('knip.json') ?? '{}') as {
+      ignoreDependencies: string[]
+    }
+
+    expect(webManifest.dependencies['@narduk-enterprises/narduk-maps']).toBe(
+      PACKAGE_VERSIONS['@narduk-enterprises/narduk-maps'],
+    )
+    expect(nuxtConfig).not.toContain("'@narduk-enterprises/narduk-maps'")
+    // narduk-shell still ships regardless of the maps capability.
+    expect(nuxtConfig).toContain("'@narduk-enterprises/narduk-shell'")
+    expect(knipConfig.ignoreDependencies).toContain('@narduk-enterprises/narduk-maps')
+
+    const withoutMaps = generate([])
+    const webManifestWithout = JSON.parse(withoutMaps.get('apps/web/package.json') ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    const knipConfigWithout = JSON.parse(withoutMaps.get('knip.json') ?? '{}') as {
+      ignoreDependencies: string[]
+    }
+    expect(webManifestWithout.dependencies['@narduk-enterprises/narduk-maps']).toBeUndefined()
+    expect(knipConfigWithout.ignoreDependencies).not.toContain('@narduk-enterprises/narduk-maps')
+  })
 })
 
 describe('database-free scaffold', () => {

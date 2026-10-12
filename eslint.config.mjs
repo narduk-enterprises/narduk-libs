@@ -87,6 +87,9 @@ export default [
       'packages/design/narduk-charts/vite.entries.config.ts',
       'packages/design/narduk-charts/vite.e2e.config.ts',
       'packages/design/narduk-charts/vitest.config.ts',
+      'packages/design/narduk-maps/vite.config.ts',
+      'packages/design/narduk-maps/vite.lab.config.ts',
+      'packages/design/narduk-maps/vitest.config.ts',
       'packages/design/narduk-shell/vitest.config.ts',
       'packages/design/narduk-ui/vitest.config.ts',
     ],
@@ -118,6 +121,21 @@ export default [
       // autofix for this rule is applied. Off for the whole package rather
       // than 8 individual inline suppressions.
       'unicorn/prefer-string-replace-all': 'off',
+    },
+  },
+  {
+    // narduk-maps is a plain-Vite package like narduk-charts. Its `.vue` files get the same
+    // relief the repo already gives every package's `.ts`/`.mjs` files: the perfectionist sort
+    // rules and the two sonarjs refactor suggestions are not defects. The SVG and GL map
+    // components carry long, flat prop and layer lists where source order is the reading order.
+    files: ['packages/design/narduk-maps/**/*.{ts,vue}'],
+    rules: {
+      'perfectionist/sort-imports': 'off',
+      'perfectionist/sort-interfaces': 'off',
+      'perfectionist/sort-named-imports': 'off',
+      'perfectionist/sort-object-types': 'off',
+      'sonarjs/cognitive-complexity': 'off',
+      'sonarjs/no-duplicate-string': 'off',
     },
   },
   {

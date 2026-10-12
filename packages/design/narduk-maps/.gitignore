@@ -1,0 +1,9 @@
+node_modules
+.npmrc.auth
+dist
+*.local
+.DS_Store
+*.tsbuildinfo
+test-results
+playwright-report
+blob-report

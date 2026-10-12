@@ -1,0 +1,42 @@
+{
+  "as_of": "2026-10-11",
+  "source": "marc-wastewater-dashboard apps/web/public/data/summary.json, pathogens.sars-cov-2.counties",
+  "counties": {
+    "29095": {
+      "level": "Low",
+      "sites": 4
+    },
+    "29047": {
+      "level": "Low",
+      "sites": 5
+    },
+    "29165": {
+      "level": "Very Low",
+      "sites": 3
+    },
+    "29037": {
+      "level": "Low",
+      "sites": 2
+    },
+    "29177": {
+      "level": null,
+      "sites": 0
+    },
+    "20091": {
+      "level": "Very Low",
+      "sites": 5
+    },
+    "20209": {
+      "level": "Low",
+      "sites": 4
+    },
+    "20103": {
+      "level": "Very Low",
+      "sites": 1
+    },
+    "20121": {
+      "level": null,
+      "sites": 0
+    }
+  }
+}

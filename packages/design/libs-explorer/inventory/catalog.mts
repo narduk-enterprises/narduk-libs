@@ -160,6 +160,10 @@ export const CATALOG: Record<string, CatalogEntry> = {
     prerequisites: ['Apple MapKit JS signing key held server-side.'],
     setup: { nuxtModule: '@narduk-enterprises/narduk-mapkit-nuxt' },
   },
+  '@narduk-enterprises/narduk-maps': {
+    kind: 'visual',
+    capabilities: ['SVG map', 'GL map', 'basemap style', 'choropleth', 'marks', 'OpenFreeMap'],
+  },
   '@narduk-enterprises/narduk-platform': {
     kind: 'contract',
     capabilities: ['env catalog', 'list query', 'package registry', 'provider contracts'],
