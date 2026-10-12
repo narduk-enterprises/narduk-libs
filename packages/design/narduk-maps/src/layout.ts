@@ -122,7 +122,7 @@ export function layoutLabels(input: LabelLayoutInput): PlacedLabel[] {
       y: l.y,
       kind: l.kind,
       fontSize: metrics.bmLabelSize,
-      charWidth: metrics.bmLabelCharWidth,
+      charWidth: l.kind === 'place' ? metrics.bmPlaceCharWidth : metrics.bmLabelCharWidth,
       optional: true,
     }))
   return placeLabels(

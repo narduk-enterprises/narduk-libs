@@ -95,6 +95,43 @@ describe('tokens', () => {
     expect(DARK_TOKENS.ink).not.toBe(LIGHT_TOKENS.land)
   })
 
+  it('matches the approved harbor look, light and dark', () => {
+    const harbor = {
+      light: {
+        land: '#f6f5f1',
+        water: '#d3e2eb',
+        shore: '#8fb0c4',
+        shoreHalo: '#b9d0de',
+        green: '#e9eee2',
+        road: '#e4e1d8',
+        roadMajor: '#dcd7cb',
+        boundary: '#b7bec5',
+        placeInk: '#2b3742',
+        labelHalo: '#f6f5f1',
+        muted: '#5d7f95',
+      },
+      dark: {
+        land: '#1a2128',
+        water: '#0f1a22',
+        shore: '#3f5f73',
+        shoreHalo: '#1d3240',
+        green: '#1c2620',
+        road: '#262e36',
+        roadMajor: '#2e3740',
+        boundary: '#4b5864',
+        placeInk: '#d2dae1',
+        labelHalo: '#1a2128',
+        muted: '#7d9bb0',
+      },
+    }
+    for (const [key, value] of Object.entries(harbor.light)) {
+      expect(LIGHT_TOKENS[key as keyof typeof LIGHT_TOKENS], `light ${key}`).toBe(value)
+    }
+    for (const [key, value] of Object.entries(harbor.dark)) {
+      expect(DARK_TOKENS[key as keyof typeof DARK_TOKENS], `dark ${key}`).toBe(value)
+    }
+  })
+
   it('overrides win over the scheme', () => {
     expect(tokensFor('light', { water: '#000000' }).water).toBe('#000000')
     expect(tokensFor('dark').water).toBe(DARK_TOKENS.water)

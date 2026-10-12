@@ -8,23 +8,23 @@
  * Dark is selected, not inverted: `.narduk-map--dark`, `.dark` or `[data-theme='dark']`.
  */
 :root {
-  --color-map-water: #dfe8ee;
-  --color-map-land: #f7f6f2;
-  --color-map-shore: color-mix(in srgb, var(--color-map-water) 40%, #9fb6c6);
-  --color-map-shore-halo: color-mix(in srgb, var(--color-map-water) 70%, #9fb6c6);
-  --color-map-boundary: #8a97a3;
-  --color-map-boundary-opacity: 0.7;
+  --color-map-water: #d3e2eb;
+  --color-map-land: #f6f5f1;
+  --color-map-shore: #8fb0c4;
+  --color-map-shore-halo: #b9d0de;
+  --color-map-boundary: #b7bec5;
+  --color-map-boundary-opacity: 1;
   --color-map-boundary-focus: var(--color-map-ink);
   --color-map-ink: #1f2a33;
-  --color-map-muted: #6c8494;
-  --color-map-place-ink: color-mix(in srgb, var(--color-map-land) 38%, var(--color-map-ink));
-  --color-map-label-halo: var(--color-map-land);
-  --color-map-road: color-mix(in srgb, var(--color-map-land) 88%, var(--color-map-ink));
-  --color-map-road-major: color-mix(in srgb, var(--color-map-land) 80.8%, var(--color-map-ink));
+  --color-map-muted: #5d7f95;
+  --color-map-place-ink: #2b3742;
+  --color-map-label-halo: #f6f5f1;
+  --color-map-road: #e4e1d8;
+  --color-map-road-major: #dcd7cb;
   --color-map-mark-ring: #ffffff;
   --color-map-mark-core: #ffffff;
   --color-map-hatch: color-mix(in srgb, var(--color-map-land) 65%, var(--color-map-ink));
-  --color-map-green: #5b8a6a;
+  --color-map-green: #e9eee2;
   --color-map-focus: #24689f;
   --color-map-tooltip-bg: oklch(24% 0.035 264 / 0.92);
   --color-map-tooltip-foreground: oklch(98% 0.005 264);
@@ -40,24 +40,24 @@
 .narduk-map--dark,
 .dark,
 [data-theme='dark'] {
-  --color-map-water: #101b24;
-  --color-map-land: #1b252e;
-  --color-map-shore: color-mix(in srgb, var(--color-map-water) 40%, #5d7587);
-  --color-map-shore-halo: color-mix(in srgb, var(--color-map-water) 70%, #5d7587);
-  --color-map-boundary: #7b8996;
+  --color-map-water: #0f1a22;
+  --color-map-land: #1a2128;
+  --color-map-shore: #3f5f73;
+  --color-map-shore-halo: #1d3240;
+  --color-map-boundary: #4b5864;
   --color-map-ink: #e3eaef;
-  --color-map-muted: #8fa9ba;
-  --color-map-place-ink: color-mix(in srgb, var(--color-map-land) 38%, var(--color-map-ink));
-  --color-map-road: color-mix(in srgb, var(--color-map-land) 84%, var(--color-map-ink));
-  --color-map-road-major: color-mix(in srgb, var(--color-map-land) 74.4%, var(--color-map-ink));
+  --color-map-muted: #7d9bb0;
+  --color-map-place-ink: #d2dae1;
+  --color-map-road: #262e36;
+  --color-map-road-major: #2e3740;
   --color-map-mark-ring: #11181e;
   --color-map-mark-core: #e8eef2;
   --color-map-hatch: color-mix(in srgb, var(--color-map-land) 65%, var(--color-map-ink));
-  --color-map-green: #6fa081;
+  --color-map-green: #1c2620;
   --color-map-focus: #7db4e6;
   /* Derived tokens are re-declared here: a var() in :root resolves at :root, not in this scope. */
   --color-map-boundary-focus: var(--color-map-ink);
-  --color-map-label-halo: var(--color-map-land);
+  --color-map-label-halo: #1a2128;
   --color-map-control-bg: color-mix(in srgb, var(--color-map-land) 92%, transparent);
   --color-map-control-border: color-mix(in srgb, var(--color-map-ink) 18%, transparent);
 }
@@ -152,6 +152,19 @@
   stroke-width: var(--size-map-bm-road-major, 1.6px);
 }
 
+/* Dark roads are darker than the level fills they cross, so they are drawn lighter and thinner. */
+.narduk-map--dark .narduk-geomap__bm--roadMinor,
+.dark .narduk-geomap__bm--roadMinor,
+[data-theme='dark'] .narduk-geomap__bm--roadMinor {
+  stroke-opacity: 0.3;
+}
+
+.narduk-map--dark .narduk-geomap__bm--roadMajor,
+.dark .narduk-geomap__bm--roadMajor,
+[data-theme='dark'] .narduk-geomap__bm--roadMajor {
+  stroke-opacity: 0.45;
+}
+
 .narduk-geomap__bm--state {
   stroke: var(--color-map-boundary);
   stroke-width: var(--size-map-bm-state, 1px);
@@ -216,10 +229,12 @@
 
 .narduk-geomap__label--place {
   fill: var(--color-map-place-ink);
+  fill-opacity: 0.72;
   font-size: var(--size-map-bm-label, 10px);
-  font-weight: 500;
+  font-weight: 700;
   font-variant-caps: normal;
-  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .narduk-geomap__label--water {
@@ -228,7 +243,7 @@
   font-style: italic;
   font-weight: 500;
   font-variant-caps: normal;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   stroke: var(--color-map-water);
 }
 

@@ -1,4 +1,8 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { renderToString } from '@vue/server-renderer'
 import { mount } from '@vue/test-utils'
 import { createSSRApp, h } from 'vue'
@@ -350,6 +354,40 @@ describe('baked basemap frame', () => {
     expect(text.text()).toBe('Test data, public domain')
     expect(Number(text.attributes('x'))).toBeGreaterThan(150)
     expect(Number(text.attributes('y'))).toBeGreaterThan(150)
+  })
+
+  it('basemapLabels picks the baked names: places, cities (rank 0 only) or none', () => {
+    const drawn = (basemapLabels?: 'places' | 'cities' | 'none') =>
+      mount(NardukGeoMap, {
+        props: { basemap: marcCutout, ...(basemapLabels ? { basemapLabels } : {}) },
+      }).findAll('.narduk-geomap__label--place, .narduk-geomap__label--water')
+    const cityNames = new Set(marcCutout.labels.filter(l => l.rank === 0).map(l => l.text))
+    expect(cityNames.size).toBeGreaterThan(0)
+    const all = drawn()
+    expect(all.length).toBeGreaterThan(cityNames.size)
+    expect(drawn('places')).toHaveLength(all.length)
+    const cities = drawn('cities')
+    expect(cities.length).toBeGreaterThan(0)
+    expect(cities.length).toBeLessThan(all.length)
+    for (const c of cities) expect(cityNames.has(c.text())).toBe(true)
+    expect(drawn('none')).toHaveLength(0)
+  })
+
+  it('draws place names as tracked bold capitals and water names in italic', () => {
+    const wrapper = mount(NardukGeoMap, { props: { basemap: marcCutout } })
+    expect(wrapper.find('.narduk-geomap__label--place').exists()).toBe(true)
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'styles/map.css'),
+      'utf8',
+    )
+    const place = /\.narduk-geomap__label--place \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(place).toContain('text-transform: uppercase')
+    expect(place).toContain('letter-spacing: 0.08em')
+    expect(place).toContain('font-weight: 700')
+    expect(place).toContain('fill-opacity: 0.72')
+    const water = /\.narduk-geomap__label--water \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(water).toContain('font-style: italic')
+    expect(water).toContain('var(--color-map-muted)')
   })
 
   it('drops a baked label that leaves the frame instead of clipping it', () => {

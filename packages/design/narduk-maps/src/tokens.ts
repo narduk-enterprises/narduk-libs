@@ -36,57 +36,69 @@ export function mix(a: string, b: string, t: number): string {
   return toHex([0, 1, 2].map(i => (ra[i] as number) * (1 - t) + (rb[i] as number) * t) as Rgb)
 }
 
+/**
+ * The approved basemap look ("harbor", design/narduk-maps/gen/style.mjs). Basemap colours are
+ * literal; ink, focus, the marks and the tooltip are data and state tokens and stay put.
+ */
 const LIGHT_BASE = {
-  water: '#dfe8ee',
-  land: '#f7f6f2',
+  land: '#f6f5f1',
+  water: '#d3e2eb',
+  shore: '#8fb0c4',
+  shoreHalo: '#b9d0de',
+  green: '#e9eee2',
+  road: '#e4e1d8',
+  roadMajor: '#dcd7cb',
+  boundary: '#b7bec5',
+  label: '#2b3742',
+  labelHalo: '#f6f5f1',
+  waterLabel: '#5d7f95',
   ink: '#1f2a33',
-  boundary: '#8a97a3',
   markRing: '#ffffff',
   markCore: '#ffffff',
-  green: '#5b8a6a',
-  shoreTarget: '#9fb6c6',
 }
 
-const DARK_BASE = {
-  water: '#101b24',
-  land: '#1b252e',
+const DARK_BASE: typeof LIGHT_BASE = {
+  land: '#1a2128',
+  water: '#0f1a22',
+  shore: '#3f5f73',
+  shoreHalo: '#1d3240',
+  green: '#1c2620',
+  road: '#262e36',
+  roadMajor: '#2e3740',
+  boundary: '#4b5864',
+  label: '#d2dae1',
+  labelHalo: '#1a2128',
+  waterLabel: '#7d9bb0',
   ink: '#e3eaef',
-  boundary: '#7b8996',
   markRing: '#11181e',
   markCore: '#e8eef2',
-  green: '#6fa081',
-  shoreTarget: '#5d7587',
 }
 
-function build(base: typeof LIGHT_BASE, roadShare: number, muted: string): MapTokens {
+function build(base: typeof LIGHT_BASE): MapTokens {
   return {
     water: base.water,
     land: base.land,
-    shore: mix(base.water, base.shoreTarget, 0.6),
+    shore: base.shore,
     boundary: base.boundary,
-    boundaryOpacity: 0.7,
+    boundaryOpacity: 1,
     boundaryFocus: base.ink,
     ink: base.ink,
-    muted,
-    placeInk: mix(base.land, base.ink, 0.62),
-    labelHalo: base.land,
-    road: mix(base.land, base.ink, roadShare),
+    muted: base.waterLabel,
+    placeInk: base.label,
+    labelHalo: base.labelHalo,
+    road: base.road,
     markRing: base.markRing,
     markCore: base.markCore,
     hatch: mix(base.land, base.ink, 0.35),
     green: base.green,
-    shoreHalo: mix(base.water, base.shoreTarget, 0.3),
-    roadMajor: mix(base.land, base.ink, roadShare * 1.6),
+    shoreHalo: base.shoreHalo,
+    roadMajor: base.roadMajor,
   }
 }
 
-export const LIGHT_TOKENS: MapTokens = build(
-  LIGHT_BASE,
-  0.12,
-  mix(LIGHT_BASE.water, '#4f6b7d', 0.8),
-)
+export const LIGHT_TOKENS: MapTokens = build(LIGHT_BASE)
 /** Selected, not inverted: a deep slate sea, land one step lighter, softer ink. */
-export const DARK_TOKENS: MapTokens = build(DARK_BASE, 0.16, '#8fa9ba')
+export const DARK_TOKENS: MapTokens = build(DARK_BASE)
 
 export const DEFAULT_METRICS: MapMetrics = {
   markRadius: 7,
@@ -102,8 +114,8 @@ export const DEFAULT_METRICS: MapMetrics = {
   boundaryWidth: 1,
   boundaryFocusWidth: 2,
   shoreWidth: 1.5,
-  haloWidth: 6,
-  haloOpacity: 0.35,
+  haloWidth: 10,
+  haloOpacity: 0.9,
   labelSize: 11,
   labelWeight: 600,
   labelSpacing: 0.06,
@@ -111,6 +123,7 @@ export const DEFAULT_METRICS: MapMetrics = {
   labelCharWidth: 0.74,
   bmLabelSize: 10,
   bmLabelCharWidth: 0.62,
+  bmPlaceCharWidth: 0.8,
   hatchSize: 6,
   hatchWidth: 1.5,
   hatchAngle: 45,

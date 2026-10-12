@@ -53,25 +53,26 @@ import '@narduk-enterprises/narduk-maps/style.css'
 </template>
 ```
 
-| Prop          | Meaning                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------- |
-| `shapes`      | GeoJSON FeatureCollection of Polygon or MultiPolygon features                                         |
-| `idKey`       | feature property holding the id (default `id`); `nameKey` the name (default `name`)                   |
-| `fills`       | `Record<id, css colour>` or a function of the feature; default `--color-map-land`                     |
-| `hatch`       | `Record<id, boolean>`: an SVG hatch pattern meaning "no data"                                         |
-| `water`       | paint the sea and the shoreline halo (default true)                                                   |
-| `points`      | `{ id, lon, lat, color, shape, href?, label }`, shape one of `dot`, `ring`, `core`, `small`, `hollow` |
-| `highlight`   | a point id, drawn larger and on top                                                                   |
-| `selected`    | a shape id, outlined                                                                                  |
-| `interactive` | shapes become keyboard-focusable buttons that emit `select(id)`                                       |
-| `plain`       | print mode: no tab stops, `levelText[id]` drawn under each name                                       |
-| `labels`      | `'shapes'` (default), `'none'`, or `{ text, lon, lat }[]`                                             |
-| `width`       | viewBox width (default 520); the height follows the bounds                                            |
-| `padding`     | frame padding (number or per side), same meaning as MapLibre's `fitBounds` padding                    |
-| `bounds`      | `[w, s, e, n]` overriding the fit                                                                     |
-| `basemap`     | a baked [cutout](#baked-cutout-basemap): it replaces the fit and draws land, water, roads and names   |
-| `table`       | render a visually hidden table of shapes and points                                                   |
-| `ariaLabel`   | the accessible name of the group                                                                      |
+| Prop            | Meaning                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `shapes`        | GeoJSON FeatureCollection of Polygon or MultiPolygon features                                                          |
+| `idKey`         | feature property holding the id (default `id`); `nameKey` the name (default `name`)                                    |
+| `fills`         | `Record<id, css colour>` or a function of the feature; default `--color-map-land`                                      |
+| `hatch`         | `Record<id, boolean>`: an SVG hatch pattern meaning "no data"                                                          |
+| `water`         | paint the sea and the shoreline halo (default true)                                                                    |
+| `points`        | `{ id, lon, lat, color, shape, href?, label }`, shape one of `dot`, `ring`, `core`, `small`, `hollow`                  |
+| `highlight`     | a point id, drawn larger and on top                                                                                    |
+| `selected`      | a shape id, outlined                                                                                                   |
+| `interactive`   | shapes become keyboard-focusable buttons that emit `select(id)`                                                        |
+| `plain`         | print mode: no tab stops, `levelText[id]` drawn under each name                                                        |
+| `labels`        | `'shapes'` (default), `'none'`, or `{ text, lon, lat }[]`                                                              |
+| `width`         | viewBox width (default 520); the height follows the bounds                                                             |
+| `padding`       | frame padding (number or per side), same meaning as MapLibre's `fitBounds` padding                                     |
+| `bounds`        | `[w, s, e, n]` overriding the fit                                                                                      |
+| `basemap`       | a baked [cutout](#baked-cutout-basemap): it replaces the fit and draws land, water, roads and names                    |
+| `basemapLabels` | which baked names to draw: `'places'` (default, all), `'cities'` (rank 0 only) or `'none'`; shape names are unaffected |
+| `table`         | render a visually hidden table of shapes and points                                                                    |
+| `ariaLabel`     | the accessible name of the group                                                                                       |
 
 Emits `select(id)` and `point-hover(id | null)`. A `#tooltip` slot replaces the
 default card; its scope is `{ kind, id, title, text, point, feature }`.
@@ -187,8 +188,17 @@ water, shore (a clipped halo and a line), roads, state lines, then shape
 boundaries, labels and points. The attribution is drawn bottom right. The baking
 CLI is not part of this package.
 
+Baked names are bold capitals with tracking at 72% opacity (water names are
+italic in the water-label colour), the same as the GL `place` layer. Set
+`basemapLabels="cities"` to keep only rank 0, or `"none"` when your own shape
+names carry the map (the MARC choropleth does), so villages never collide with
+county labels.
+
 ## Tokens
 
+The basemap tokens are the approved harbor look
+(`design/narduk-maps/gen/style.mjs`, `LOOKS.harbor`), light and dark; ink,
+focus, tooltip and mark tokens are data and state tokens and are separate.
 Colours are `--color-map-*` custom properties in `style.css` (light on `:root`,
 dark on `.narduk-map--dark`, `.dark` and `[data-theme='dark']`), mirrored as hex
 in `src/tokens.ts` for GL style JSON; `tokens.test.ts` keeps the two in step.

@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<GeoMapProps & { metrics?: Partial<MapMetr
   table: false,
   scheme: null,
   basemap: null,
+  basemapLabels: 'places',
   metrics: undefined,
 })
 
@@ -142,6 +143,13 @@ const pointViews = computed<DrawnPoint[]>(() =>
   drawPoints(props.points, props.highlight, view.value, metrics.value),
 )
 
+// 'cities' keeps rank 0 (the cities); water names rank below every place, so they go too.
+const bakedLabels = computed(() => {
+  const labels = props.basemap?.labels ?? []
+  if (props.basemapLabels === 'none') return []
+  return props.basemapLabels === 'cities' ? labels.filter(l => l.rank === 0) : labels
+})
+
 const placed = computed(() =>
   layoutLabels({
     drawn: drawn.value,
@@ -151,7 +159,7 @@ const placed = computed(() =>
     levelText: props.levelText,
     view: view.value,
     metrics: metrics.value,
-    ...(props.basemap ? { basemapLabels: props.basemap.labels } : {}),
+    ...(props.basemap ? { basemapLabels: bakedLabels.value } : {}),
   }),
 )
 

@@ -125,6 +125,8 @@ export interface CutoutLabel {
   rank: number
 }
 
+export type BasemapLabels = 'places' | 'cities' | 'none'
+
 /**
  * A baked basemap (a build-time cutout of open data). `NardukGeoMap` draws it under and over
  * the data and uses its bbox and viewBox as the projection frame, so shapes and points land in
@@ -174,6 +176,11 @@ export interface GeoMapProps {
   scheme?: MapScheme | null
   /** A baked basemap drawn under the data; its viewBox and bbox become the projection frame. */
   basemap?: CutoutBasemap | null
+  /**
+   * Which baked basemap names to draw: `places` (all), `cities` (rank 0 only) or `none`.
+   * Shape names and the caller's own labels are not affected.
+   */
+  basemapLabels?: BasemapLabels
 }
 
 /**
@@ -211,6 +218,8 @@ export interface MapMetrics {
   /** Baked place and water names: smaller than the caller's own labels, mixed case. */
   bmLabelSize: number
   bmLabelCharWidth: number
+  /** Place names are bold capitals with tracking, so they run wider than water names. */
+  bmPlaceCharWidth: number
   hatchSize: number
   hatchWidth: number
   hatchAngle: number

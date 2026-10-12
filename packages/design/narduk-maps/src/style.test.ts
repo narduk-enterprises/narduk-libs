@@ -47,6 +47,42 @@ describe('createBasemapStyle', () => {
       expect((l.layout as Record<string, unknown>)['icon-image']).toBeUndefined()
   })
 
+  it('follows the approved harbor look, light and dark', () => {
+    const paintOf = (scheme: 'light' | 'dark', id: string) => {
+      const layer = createBasemapStyle({}, { scheme }).layers.find(l => l.id === id)
+      return (layer?.paint ?? {}) as Record<string, unknown>
+    }
+    expect(paintOf('light', 'background')['background-color']).toBe('#f6f5f1')
+    expect(paintOf('light', 'water')['fill-color']).toBe('#d3e2eb')
+    expect(paintOf('light', 'shore')['line-color']).toBe('#8fb0c4')
+    expect(paintOf('light', 'shore-halo')['line-color']).toBe('#b9d0de')
+    expect(paintOf('light', 'landcover')).toMatchObject({ 'fill-color': '#e9eee2' })
+    expect(paintOf('light', 'road-minor')['line-color']).toBe('#e4e1d8')
+    expect(paintOf('light', 'road-major')['line-color']).toBe('#dcd7cb')
+    expect(paintOf('light', 'boundary-region')['line-color']).toBe('#b7bec5')
+    expect(paintOf('light', 'water-name')['text-color']).toBe('#5d7f95')
+    expect(paintOf('light', 'place-town')).toMatchObject({
+      'text-color': '#2b3742',
+      'text-halo-color': '#f6f5f1',
+      'text-opacity': 0.72,
+    })
+    expect(paintOf('dark', 'background')['background-color']).toBe('#1a2128')
+    expect(paintOf('dark', 'water')['fill-color']).toBe('#0f1a22')
+    expect(paintOf('dark', 'landcover')['fill-color']).toBe('#1c2620')
+    expect(paintOf('dark', 'place-town')['text-color']).toBe('#d2dae1')
+    expect(paintOf('dark', 'water-name')['text-color']).toBe('#7d9bb0')
+  })
+
+  it('sets place names in bold tracked capitals and water names in italic', () => {
+    const byId = Object.fromEntries(style.layers.map(l => [l.id, l]))
+    expect(byId['place-town']?.layout).toMatchObject({
+      'text-transform': 'uppercase',
+      'text-letter-spacing': 0.08,
+      'text-font': ['Noto Sans Bold'],
+    })
+    expect(byId['water-name']?.layout).toMatchObject({ 'text-font': ['Noto Sans Italic'] })
+  })
+
   it('paints land as the background and water from the tokens', () => {
     const byId = Object.fromEntries(style.layers.map(l => [l.id, l]))
     expect((byId.background?.paint as Record<string, string>)['background-color']).toBe(

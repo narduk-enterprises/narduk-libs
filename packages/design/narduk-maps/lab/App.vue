@@ -268,6 +268,7 @@ const marcLabel = `Wastewater SARS-CoV-2 level by county, ${marcLevels.as_of}`
           :shapes="marcShapes"
           id-key="fips"
           :basemap="marcDesk"
+          basemap-labels="none"
           :fills="marcFills"
           :hatch="marcHatch"
           :level-text="marcText"
@@ -284,6 +285,7 @@ const marcLabel = `Wastewater SARS-CoV-2 level by county, ${marcLevels.as_of}`
           :shapes="marcShapes"
           id-key="fips"
           :basemap="marcPhone"
+          basemap-labels="none"
           :fills="marcFills"
           :hatch="marcHatch"
           :level-text="marcText"
@@ -357,6 +359,7 @@ body {
   background: #0d1419;
   color: #e3eaef;
   min-height: 100vh;
+  align-content: start;
 }
 .lab h1,
 .lab h2 {

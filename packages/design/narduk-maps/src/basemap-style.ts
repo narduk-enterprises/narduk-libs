@@ -17,7 +17,6 @@ export const BASEMAP_ATTRIBUTION =
   '<a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> ' +
   'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
 
-const FONT_REGULAR = 'Noto Sans Regular'
 const FONT_BOLD = 'Noto Sans Bold'
 const FONT_ITALIC = 'Noto Sans Italic'
 
@@ -83,7 +82,11 @@ export function createBasemapStyle(
   const nameFilter: Expr[] =
     hidden.length > 0 ? [['!', ['in', ['get', 'name'], ['literal', hidden]]]] : []
   const name: Expr = ['coalesce', ['get', 'name:latin'], ['get', 'name']]
-  const halo = { 'text-halo-color': t.labelHalo, 'text-halo-width': m.labelHaloWidth }
+  const halo = {
+    'text-opacity': 0.72,
+    'text-halo-color': t.labelHalo,
+    'text-halo-width': 1.6,
+  }
 
   const layers: StyleLayer[] = [
     { id: 'background', type: 'background', paint: { 'background-color': t.land } },
@@ -92,15 +95,15 @@ export function createBasemapStyle(
       type: 'fill',
       source: BASEMAP_SOURCE,
       'source-layer': 'landcover',
-      filter: inList(['wood', 'grass']),
-      paint: { 'fill-color': mix(t.land, t.green, 0.04) },
+      filter: inList(['wood', 'grass', 'farmland']),
+      paint: { 'fill-color': t.green, 'fill-opacity': 0.7 },
     },
     {
       id: 'park',
       type: 'fill',
       source: BASEMAP_SOURCE,
       'source-layer': 'park',
-      paint: { 'fill-color': mix(t.land, t.green, 0.05) },
+      paint: { 'fill-color': t.green, 'fill-opacity': 0.8 },
     },
     {
       id: 'water',
@@ -123,22 +126,27 @@ export function createBasemapStyle(
         ]),
       },
     },
-    // The shoreline is the water polygons' outline, offset to the water side (exterior rings
-    // run clockwise, so a positive offset points into the water). The wide, faint line is the
-    // halo; the narrow one is the coastline.
+    // The shoreline is the water polygons' outline. The halo is a soft band on the water side
+    // (a positive offset points into the water); the narrow line is the coastline.
     {
       id: 'shore-halo',
       type: 'line',
       source: BASEMAP_SOURCE,
       'source-layer': 'water',
       minzoom: 3,
-      filter: ['==', ['get', 'class'], 'ocean'],
       layout: { 'line-join': 'round' },
       paint: {
-        'line-color': t.shore,
+        'line-color': t.shoreHalo,
         'line-opacity': m.haloOpacity,
-        'line-width': m.haloWidth,
-        'line-offset': m.haloWidth / 2,
+        'line-blur': 2,
+        'line-width': zoomWidth([
+          [8, 3],
+          [14, 10],
+        ]),
+        'line-offset': zoomWidth([
+          [8, 1.5],
+          [14, 5],
+        ]),
       },
     },
     {
@@ -150,8 +158,10 @@ export function createBasemapStyle(
       layout: { 'line-join': 'round' },
       paint: {
         'line-color': t.shore,
-        'line-width': m.shoreWidth,
-        'line-offset': m.shoreWidth / 2,
+        'line-width': zoomWidth([
+          [8, 0.6],
+          [14, 1.4],
+        ]),
       },
     },
     {
@@ -172,10 +182,9 @@ export function createBasemapStyle(
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': t.road,
-        'line-opacity': 0.7,
         'line-width': zoomWidth([
-          [12, 0.4],
-          [16, 2.5],
+          [12, 0.5],
+          [16, 3],
         ]),
       },
     },
@@ -188,11 +197,11 @@ export function createBasemapStyle(
       filter: inList(['motorway', 'trunk', 'primary', 'secondary']),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': t.road,
+        'line-color': t.roadMajor,
         'line-width': zoomWidth([
           [5, 0.4],
-          [12, 1.2],
-          [16, 4],
+          [12, 1.6],
+          [16, 5],
         ]),
       },
     },
@@ -238,14 +247,14 @@ export function createBasemapStyle(
           'text-field': name,
           'text-font': [FONT_ITALIC],
           'text-size': m.labelSize,
-          'text-letter-spacing': 0.1,
-          'text-max-width': 8,
+          'text-letter-spacing': 0.05,
+          'text-max-width': 6,
           ...MOVE_OFF_PINS,
         },
         paint: {
           'text-color': t.muted,
           'text-halo-color': t.water,
-          'text-halo-width': m.labelHaloWidth,
+          'text-halo-width': 1.2,
         },
       },
       {
@@ -255,7 +264,7 @@ export function createBasemapStyle(
         'source-layer': 'place',
         minzoom: 4,
         filter: ['all', ['==', ['get', 'class'], 'city'], ...nameFilter],
-        layout: placeLayout(name, 13, m, FONT_BOLD),
+        layout: placeLayout(name, 13, FONT_BOLD),
         paint: { 'text-color': t.placeInk, ...halo },
       },
       {
@@ -265,7 +274,7 @@ export function createBasemapStyle(
         'source-layer': 'place',
         minzoom: 7,
         filter: ['all', ['==', ['get', 'class'], 'town'], ...nameFilter],
-        layout: placeLayout(name, m.labelSize, m, FONT_BOLD),
+        layout: placeLayout(name, m.labelSize, FONT_BOLD),
         paint: { 'text-color': t.placeInk, ...halo },
       },
       {
@@ -275,7 +284,7 @@ export function createBasemapStyle(
         'source-layer': 'place',
         minzoom: 11,
         filter: ['all', ['==', ['get', 'class'], 'village'], ...nameFilter],
-        layout: placeLayout(name, m.labelSize - 1, m, FONT_REGULAR),
+        layout: placeLayout(name, m.labelSize - 1, FONT_BOLD),
         paint: { 'text-color': t.placeInk, ...halo },
       },
     )
@@ -296,14 +305,14 @@ export function createBasemapStyle(
   }
 }
 
-function placeLayout(name: Expr, size: number, m: MapMetrics, font: string) {
+function placeLayout(name: Expr, size: number, font: string) {
   return {
     'text-field': name,
     'text-font': [font],
     'text-size': size,
     // The GL engine has no small caps; upper case with tracking is the closest.
     'text-transform': 'uppercase',
-    'text-letter-spacing': m.labelSpacing,
+    'text-letter-spacing': 0.08,
     'text-max-width': 8,
     ...MOVE_OFF_PINS,
   }
