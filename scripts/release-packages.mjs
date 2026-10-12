@@ -1657,6 +1657,16 @@ try {
 
   assertPackedInternalDependencyGraph(packages, tarballs)
 
+  // narduk-testkit's `vue-strict` and `vue-strict-setup` subpaths import the
+  // optional peer `@vue/test-utils` at module load, and tier 2 below evaluates
+  // every testkit subpath. A consumer that opts into those subpaths installs
+  // the peer, so this one does too, at the version testkit itself tests against
+  // (narduk-libs#1749). The evaluation check stays whole; only the declared
+  // optional peer is supplied.
+  const testkitVueTestUtils = packages.find(
+    ({ manifest }) => manifest.name === '@narduk-enterprises/narduk-testkit',
+  )?.manifest.devDependencies?.['@vue/test-utils']
+
   const dependencies = Object.fromEntries(
     packages.map(({ manifest }) => [
       manifest.name,
@@ -1678,6 +1688,7 @@ try {
           eslint: WORKSPACE_ESLINT_VERSION_RANGE,
           typescript: '~6.0.3',
           vitest: '4.1.6',
+          ...(testkitVueTestUtils ? { '@vue/test-utils': testkitVueTestUtils } : {}),
         },
         pnpm: {
           overrides: {
@@ -1764,9 +1775,17 @@ try {
   if (!testkitManifest && !scopedRelease) {
     throw new Error('The release set is missing narduk-testkit.')
   }
-  const testkitExportSpecifiers = Object.keys(testkitManifest?.exports || {}).map((subpath) =>
-    subpath === '.' ? testkitManifest.name : `${testkitManifest.name}${subpath.slice(1)}`,
-  )
+  // Declared exception: `vue-strict-setup` is a Vitest `setupFiles` shim whose
+  // import registers `beforeEach`/`afterEach` hooks, which Vitest refuses
+  // outside a test run, so a bare `import()` here can only fail. It stays in
+  // tier 1 (it must resolve to a shipped file) and its whole module graph is
+  // evaluated through `vue-strict`, which it only calls (narduk-libs#1749).
+  const TESTKIT_SETUP_ONLY_SUBPATHS = new Set(['./vue-strict-setup'])
+  const testkitExportSpecifiers = Object.keys(testkitManifest?.exports || {})
+    .filter((subpath) => !TESTKIT_SETUP_ONLY_SUBPATHS.has(subpath))
+    .map((subpath) =>
+      subpath === '.' ? testkitManifest.name : `${testkitManifest.name}${subpath.slice(1)}`,
+    )
   const testkitExportGroups = [
     {
       label: 'Playwright and analyzer',

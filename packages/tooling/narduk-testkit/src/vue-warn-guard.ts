@@ -30,7 +30,9 @@
  * `afterEach` cannot be swallowed.
  *
  * A warning that must stay is allowed with a `reason`, either for a whole
- * suite (`allow` here) or for one test ({@link allowVueWarning}). The reason is
+ * suite (`allow` here), for one test ({@link allowVueWarning}), or -- when the
+ * test exists to provoke it -- asserted with {@link expectVueWarn}, which also
+ * fails if the warning never fires. The reason is
  * required and reviewed like any other suppression; an allowance that matches
  * nothing in a run is reported by {@link VueWarnGuard.unusedAllowances} so a
  * ratchet can only shrink.
@@ -173,4 +175,59 @@ export function allowVueWarning(match: RegExp, reason: string): void {
   const allowance = { match, reason }
   assertReasons([allowance])
   state.testAllowances.push(allowance)
+}
+
+/**
+ * Run `run` and require that Vue warns with a message matching `match` while it
+ * does. The warning is consumed (not printed, not a failure); if none fires,
+ * `expectVueWarn` throws, so a test that provokes a warning on purpose cannot
+ * go stale when the component is fixed.
+ *
+ * Only warnings emitted before `run` settles count. A warning Vue emits from a
+ * later render or watcher flush is outside it: `await nextTick()` (or
+ * `flushPromises()`) inside `run` when the warning is raised by a re-render.
+ * Returns what `run` returns, synchronously for a sync `run` and as a promise
+ * for an async one.
+ */
+export function expectVueWarn<T>(match: RegExp, run: () => Promise<T>): Promise<T>
+export function expectVueWarn<T>(match: RegExp, run: () => T): T
+export function expectVueWarn<T>(match: RegExp, run: () => T | Promise<T>): T | Promise<T> {
+  const state = stateOf()
+  if (!state) {
+    throw new Error('expectVueWarn() needs installVueWarnGuard() in a Vitest setup file')
+  }
+  const allowance: VueWarnAllowance = { match, reason: 'expected by expectVueWarn()' }
+  state.testAllowances.push(allowance)
+  const settle = () => {
+    state.testAllowances = state.testAllowances.filter((candidate) => candidate !== allowance)
+    if (!state.used.has(allowance)) {
+      throw new Error(
+        `Expected Vue to warn with a message matching ${String(match)}, but it did not`,
+      )
+    }
+  }
+  const drop = () => {
+    state.testAllowances = state.testAllowances.filter((candidate) => candidate !== allowance)
+  }
+  let result: T | Promise<T>
+  try {
+    result = run()
+  } catch (error) {
+    drop()
+    throw error
+  }
+  if (result instanceof Promise) {
+    return result.then(
+      (value) => {
+        settle()
+        return value
+      },
+      (error: unknown) => {
+        drop()
+        throw error
+      },
+    )
+  }
+  settle()
+  return result
 }

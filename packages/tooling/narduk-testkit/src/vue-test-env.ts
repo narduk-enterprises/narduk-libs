@@ -35,16 +35,28 @@
  * double, keeps it. `createSSRApp` has no global config, so SSR tests call
  * `.use(createVueTestEnv())`.
  *
- * A Nuxt UI component that is not importable outside Nuxt (it reads
- * `#build/ui/*`) is not covered here; register a double with
- * {@link registerGlobalStubs}, or use `@nuxt/ui/vite` as `narduk-shell` does.
- * Needs `vue` and `vue-router`, both optional peers.
+ * `ClientOnly` and `NuxtImg` are registered too (the slot, and a plain `<img>`).
+ *
+ * Nuxt UI components (`UButton`, ...) and an app's own auto-imported components
+ * (`KitTile`, ...) do not resolve either. Name them with `stubNames`, or match
+ * them with `stubPatterns` (e.g. {@link NUXT_UI_PATTERN}); each becomes a
+ * {@link createStub} that renders its default slot, so a template that nests
+ * them still mounts. A stub is a double: a test whose assertions depend on a
+ * child's real output must mount the real child (import it, or register it
+ * under `components`), not rely on a stub. A component the app registers
+ * itself, or one `components` names, always wins over a pattern.
+ *
+ * A Nuxt UI component that is importable (`@nuxt/ui/vite`, as `narduk-shell`
+ * does) needs none of this. Needs `vue` and `vue-router`, both optional peers.
  */
 import { defineComponent, h } from 'vue'
 import { RouterLink, createMemoryHistory, createRouter } from 'vue-router'
 
 import type { App, Component, Plugin, PropType } from 'vue'
 import type { RouteLocationRaw, Router, RouteRecordRaw } from 'vue-router'
+
+/** Matches Nuxt UI's component names: `UButton`, `UCard`, `UDropdownMenu`, ... */
+export const NUXT_UI_PATTERN = /^U[A-Z]/
 
 const EXTERNAL = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i
 
@@ -96,13 +108,60 @@ export const NuxtLinkStub = defineComponent({
   },
 })
 
+/**
+ * A double for a component a unit mount cannot resolve: a `<div data-stub="Name">`
+ * holding the default slot. Attributes and listeners fall through to the div, so
+ * `class`, `data-*` and `onClick` still reach the DOM; props are not interpreted.
+ * Named slots are dropped.
+ */
+export function createStub(name: string): Component {
+  return defineComponent({
+    name,
+    setup(_props, { slots }) {
+      return () => h('div', { 'data-stub': name }, slots.default?.())
+    },
+  })
+}
+
+/** `<ClientOnly>`: unit tests render on one side, so render the slot. */
+export const ClientOnlyStub = defineComponent({
+  name: 'ClientOnly',
+  setup(_props, { slots }) {
+    return () => slots.default?.()
+  },
+})
+
+/** `<NuxtImg>`: a plain `<img>`; Nuxt Image's own props (`quality`, `format`, ...) are dropped. */
+export const NuxtImgStub = defineComponent({
+  name: 'NuxtImg',
+  inheritAttrs: false,
+  props: [
+    'densities',
+    'fit',
+    'format',
+    'modifiers',
+    'placeholder',
+    'preload',
+    'preset',
+    'provider',
+    'quality',
+  ],
+  setup(_props, { attrs }) {
+    return () => h('img', attrs)
+  },
+})
+
 export interface VueTestEnvOptions {
   /** Routes for the memory router. Defaults to one catch-all, so any `to` resolves. */
   routes?: RouteRecordRaw[]
   /** Where the router starts. Defaults to `/`. */
   initialPath?: string
-  /** Extra global components, registered by name. */
+  /** Extra global components, registered by name. They win over `stubNames` and `stubPatterns`. */
   components?: Record<string, Component>
+  /** Component names to stub with {@link createStub}: an app's own `KitTile`, `AppHeader`, ... */
+  stubNames?: readonly string[]
+  /** Stub every component name a pattern matches, e.g. {@link NUXT_UI_PATTERN}. */
+  stubPatterns?: readonly RegExp[]
   /**
    * Install the router and components when the app mounts, and only those the
    * test did not already provide. For `config.global.plugins` defaults.
@@ -120,23 +179,71 @@ export function createVueTestEnv(options: VueTestEnvOptions = {}): VueTestEnv {
     routes: options.routes ?? [{ path: '/:pathMatch(.*)*', component: EMPTY }],
   })
   if (options.initialPath) void router.push(options.initialPath)
-  const components = { NuxtLink: NuxtLinkStub, ...options.components }
+  const components = {
+    NuxtLink: NuxtLinkStub,
+    ClientOnly: ClientOnlyStub,
+    NuxtImg: NuxtImgStub,
+    ...options.components,
+  }
+  const names = options.stubNames ?? []
+  const patterns = options.stubPatterns ?? []
+  const applyStubs = (app: App) => {
+    registerGlobalStubs(app, components)
+    if (names.length > 0 || patterns.length > 0) stubUnresolved(app, names, patterns)
+  }
   return {
     router,
     install(app: App) {
       if (!options.fallback) {
         app.use(router)
-        registerGlobalStubs(app, components)
+        applyStubs(app)
         return
       }
       const mount = app.mount.bind(app) as App['mount']
       app.mount = (...args: Parameters<App['mount']>) => {
         if (!app.config.globalProperties.$router) app.use(router)
-        registerGlobalStubs(app, components)
+        applyStubs(app)
         return mount(...args)
       }
     },
   }
+}
+
+const STUBBED = new WeakSet<App>()
+
+/**
+ * Resolve a name that nothing registered to a {@link createStub}, when it is
+ * listed in `names` or matched by `patterns`. Vue looks a global component up
+ * by plain property reads on the app's registry, so a `get` trap on it is what
+ * catches a name that was never registered; `app.component()` calls bypass the
+ * trap so registering the real thing later neither warns nor loses.
+ */
+function stubUnresolved(app: App, names: readonly string[], patterns: readonly RegExp[]): void {
+  if (STUBBED.has(app)) return
+  STUBBED.add(app)
+  const context = app._context
+  const wanted = new Set(names)
+  const made = new Map<string, Component>()
+  let registering = false
+  const component = app.component.bind(app) as (...args: unknown[]) => unknown
+  app.component = ((...args: unknown[]) => {
+    registering = true
+    try {
+      return component(...args)
+    } finally {
+      registering = false
+    }
+  }) as App['component']
+  context.components = new Proxy(context.components, {
+    get(target, key, receiver) {
+      const found = Reflect.get(target, key, receiver) as Component | undefined
+      if (found !== undefined || registering || typeof key !== 'string') return found
+      if (!wanted.has(key) && !patterns.some((pattern) => pattern.test(key))) return found
+      let stub = made.get(key)
+      if (!stub) made.set(key, (stub = createStub(key)))
+      return stub
+    },
+  })
 }
 
 /** Register components on `app` under the names a Nuxt app auto-registers them as. */

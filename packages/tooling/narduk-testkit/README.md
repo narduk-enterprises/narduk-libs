@@ -135,6 +135,70 @@ Nuxt UI components that read `#build/ui/*` are not importable outside Nuxt; use
 `@nuxt/ui/vite` in the Vitest config (as `narduk-shell` does) to import the real
 ones, or register a double with `components`.
 
+### One setup entry, and the stubs a unit mount needs
+
+`vue-strict-setup` is the two pieces above as one `setupFiles` entry, for
+`@vue/test-utils` suites (an optional peer; `vitest`, `vue` and `vue-router` are
+needed too):
+
+```ts
+// vitest.config.ts
+export default defineConfig({
+  test: {
+    environment: 'happy-dom',
+    setupFiles: ['@narduk-enterprises/narduk-testkit/vue-strict-setup'],
+  },
+})
+```
+
+It installs `installVueWarnGuard()` and, for every `mount()`, a default global
+plugin from `createVueTestEnv` with a memory router, `NuxtLink` (an `<a href>`
+with its slot), `ClientOnly` (its slot), `NuxtImg` (a plain `<img>`; Nuxt
+Image's own props are dropped) and a stub for every Nuxt UI `U*` component. A
+test that brings its own router or registers its own component keeps it. An app
+that needs an `allow` list, or names its own components, writes its setup file:
+
+```ts
+// test/support/setup.ts
+import { installVueStrict } from '@narduk-enterprises/narduk-testkit/vue-strict'
+
+installVueStrict({
+  allow: [{ match: /Hydration/, reason: 'tracked in #123; remove when fixed' }],
+  stubNames: ['KitTile', 'AppHeader'], // PascalCase, as the template resolves them
+  stubPatterns: [/^Kit[A-Z]/], // or a pattern for a whole family
+  // ui: false, // the app imports the real Nuxt UI (`@nuxt/ui/vite`)
+})
+```
+
+A stub (`createStub(name)`) renders `<div data-stub="Name">` around its default
+slot; attributes and listeners fall through to that div, props are not
+interpreted and named slots are dropped. **A stub is a double: a test whose
+assertions depend on a child's real output (its text, its `href`, an event it
+emits) must mount the real child**, by importing it or passing it as
+`global.components`. A registered component always wins over a name or pattern.
+`createVueTestEnv` takes the same `stubNames` / `stubPatterns` for SSR tests
+(`createSSRApp(Page).use(createVueTestEnv({ stubPatterns: [NUXT_UI_PATTERN] }))`).
+
+`expectVueWarn(pattern, fn)` is for a test that exists to provoke a warning: it
+consumes the matching warning and fails if none fires, so the test cannot go
+stale when the component is fixed (`allowVueWarning` permits a warning but does
+not require it). It returns what `fn` returns, a promise for an async `fn`; a
+warning raised by a later re-render needs `await nextTick()` inside `fn`.
+
+```ts
+import { expectVueWarn } from '@narduk-enterprises/narduk-testkit/vue-strict'
+
+it('warns about a missing title', () => {
+  expectVueWarn(/Missing required prop: "title"/, () => mount(Heading))
+})
+```
+
+The failure is raised from `afterEach`, not by throwing out of Vue's
+`app.config.warnHandler`: Vue runs the handler inside a render or watcher, where
+its own error handling catches the throw, and `config.global.config` only
+reaches `mount()`, never `createSSRApp`. Recording the warning and failing the
+test afterwards covers both.
+
 Under an agent harness (`AI_AGENT` set) Vitest hides a passing test's console
 output. Run with `--reporter=default` to see Vue's warnings while measuring.
 
