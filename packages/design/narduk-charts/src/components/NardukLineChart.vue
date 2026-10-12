@@ -1842,6 +1842,10 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
           <slot name="legend-item" v-bind="slotProps" />
         </template>
       </ChartLegend>
+      <!-- Hidden label targets, not SVG <title>/<desc>: browsers show an SVG
+           title as a native hover tooltip over the whole plot. -->
+      <span :id="svgTitleElId" hidden>{{ effectiveChartTitle }}</span>
+      <span v-if="chartDescription?.trim()" :id="svgDescElId" hidden>{{ chartDescription }}</span>
       <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
@@ -1867,10 +1871,6 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
         @pointercancel="onPlotPointerEnd"
         @dblclick="onPlotDblClick"
       >
-        <title :id="svgTitleElId">{{ effectiveChartTitle }}</title>
-        <desc v-if="chartDescription?.trim()" :id="svgDescElId">
-          {{ chartDescription }}
-        </desc>
         <defs>
           <clipPath :id="plotClipId">
             <rect x="0" :y="padding.top" :width="chartWidth" :height="plotHeight" />

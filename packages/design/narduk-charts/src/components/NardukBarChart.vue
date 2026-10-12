@@ -884,6 +884,10 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         </table>
       </div>
 
+      <!-- Hidden label targets, not SVG <title>/<desc>: browsers show an SVG
+           title as a native hover tooltip over the whole plot. -->
+      <span :id="svgTitleId" hidden>{{ effectiveChartTitle }}</span>
+      <span v-if="chartDescription?.trim()" :id="svgDescId" hidden>{{ chartDescription }}</span>
       <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
@@ -897,10 +901,6 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         @mousemove="onMouseMove"
         @mouseleave="onMouseLeave"
       >
-        <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
-        <desc v-if="chartDescription?.trim()" :id="svgDescId">
-          {{ chartDescription }}
-        </desc>
         <defs v-if="hatchColors.length">
           <pattern
             v-for="(c, ci) in hatchColors"

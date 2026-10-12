@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NardukScatterChart from './NardukScatterChart.vue'
 
+/** The element the plot SVG's `aria-labelledby` names first (its accessible name). */
+function svgLabel(w: ReturnType<typeof mount>) {
+  const id = String(w.find('svg').attributes('aria-labelledby')).split(' ')[0]
+  return w.find(`[id="${id}"]`)
+}
+
 function baseProps() {
   return {
     series: [
@@ -79,7 +85,7 @@ describe('NardukScatterChart', () => {
 
   it('falls back to a generated accessible name built from series names when chartTitle is unset', () => {
     const w = mount(NardukScatterChart, { props: baseProps() })
-    expect(w.find('svg title').text()).toBe('Scatter chart: Series A')
+    expect(svgLabel(w).text()).toBe('Scatter chart: Series A')
     expect(w.find('[role="group"]').attributes('aria-label')).toBe('Scatter chart: Series A')
   })
 
@@ -88,7 +94,7 @@ describe('NardukScatterChart', () => {
       props: { ...baseProps(), chartTitle: 'Custom title' },
     })
     expect(w.find('.narduk-chart__title').text()).toBe('Custom title')
-    expect(w.find('svg title').text()).toBe('Custom title')
+    expect(svgLabel(w).text()).toBe('Custom title')
     expect(w.find('[role="group"]').attributes('aria-labelledby')).toBeDefined()
     expect(w.find('[role="group"]').attributes('aria-label')).toBeUndefined()
   })
