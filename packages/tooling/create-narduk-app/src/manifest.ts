@@ -42,8 +42,8 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.136',
   '@narduk-enterprises/narduk-mapkit': '2.22.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.36.1',
-  '@narduk-enterprises/eslint-config': '3.0.3',
+  '@narduk-enterprises/narduk-app-tools': '0.37.0',
+  '@narduk-enterprises/eslint-config': '3.1.0',
   '@narduk-enterprises/narduk-ai': '0.4.27',
   '@narduk-enterprises/narduk-analytics': '1.30.0',
   '@narduk-enterprises/narduk-auth': '1.34.8',
@@ -73,7 +73,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.20.2',
-  '@narduk-enterprises/narduk-testkit': '1.11.1',
+  '@narduk-enterprises/narduk-testkit': '1.12.0',
   '@narduk-enterprises/narduk-uploads': '1.21.5',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
