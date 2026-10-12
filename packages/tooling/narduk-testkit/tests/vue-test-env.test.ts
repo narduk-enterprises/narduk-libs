@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, h } from 'vue'
+import { createSSRApp, defineComponent, h, resolveComponent } from 'vue'
 
 import type { App } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { RouterLink } from 'vue-router'
 
-import { NuxtLinkStub, createVueTestEnv } from '../src/vue-test-env'
+import { NUXT_UI_PATTERN, NuxtLinkStub, createStub, createVueTestEnv } from '../src/vue-test-env'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -90,14 +90,91 @@ describe('createVueTestEnv', () => {
       createVueTestEnv({ fallback: true }).install!(app)
       expect(calls).toEqual([])
       app.mount('#root')
-      expect(calls).toEqual(['use', 'component:NuxtLink', 'mount'])
+      expect(calls).toEqual([
+        'use',
+        'component:NuxtLink',
+        'component:ClientOnly',
+        'component:NuxtImg',
+        'mount',
+      ])
     })
 
     it('keeps a router and a NuxtLink the test brought', () => {
-      const { app, calls } = fakeApp({ $router: {} }, ['NuxtLink'])
+      const { app, calls } = fakeApp({ $router: {} }, ['NuxtLink', 'ClientOnly', 'NuxtImg'])
       createVueTestEnv({ fallback: true }).install!(app)
       app.mount('#root')
       expect(calls).toEqual(['mount'])
     })
+  })
+})
+
+describe('Nuxt globals and stubs', () => {
+  const render = async (App: ReturnType<typeof defineComponent>, env = createVueTestEnv()) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const html = await renderToString(createSSRApp(App).use(env))
+    return { html, warn }
+  }
+  const via = (name: string, props: Record<string, unknown> = {}) =>
+    defineComponent({
+      render: () => h(resolveComponent(name) as never, props, () => 'inside'),
+    })
+
+  it('renders ClientOnly as its slot and NuxtImg as a plain img', async () => {
+    const App = defineComponent({
+      render: () =>
+        h(resolveComponent('ClientOnly') as never, null, () => [
+          h(resolveComponent('NuxtImg') as never, { src: '/a.png', alt: 'A', quality: 80 }),
+        ]),
+    })
+    const { html, warn } = await render(App)
+    expect(html).toContain('<img src="/a.png" alt="A">')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('stubs every name a pattern matches with its default slot', async () => {
+    const env = createVueTestEnv({ stubPatterns: [NUXT_UI_PATTERN] })
+    const { html, warn } = await render(via('UButton', { class: 'cta' }), env)
+    expect(html).toBe('<div data-stub="UButton" class="cta">inside</div>')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('resolves the kebab-case form of a stubbed name', async () => {
+    const App = defineComponent({ template: '<u-card>in</u-card>' })
+    const env = createVueTestEnv({ stubPatterns: [NUXT_UI_PATTERN] })
+    const { html } = await render(App, env)
+    expect(html).toBe('<div data-stub="UCard">in</div>')
+  })
+
+  it('stubs an app component only when its name is listed', async () => {
+    const env = createVueTestEnv({ stubNames: ['KitTile'] })
+    expect((await render(via('KitTile'), env)).html).toBe('<div data-stub="KitTile">inside</div>')
+    const { warn } = await render(via('KitPanel'), env)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to resolve component: KitPanel'),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it('leaves a name unresolved when no pattern matches it', async () => {
+    const env = createVueTestEnv({ stubPatterns: [NUXT_UI_PATTERN] })
+    const { warn } = await render(via('Utility'), env)
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('lets a registered component win over a pattern, without a duplicate-registration warning', async () => {
+    const Real = defineComponent({ render: () => h('button', 'real') })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const app = createSSRApp(via('UButton'))
+    app.use(createVueTestEnv({ stubPatterns: [NUXT_UI_PATTERN] }))
+    app.component('UButton', Real)
+    expect(await renderToString(app)).toBe('<button>real</button>')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('createStub renders a div carrying its name', async () => {
+    const Stub = createStub('Thing')
+    const html = await renderToString(createSSRApp(Stub))
+    expect(html).toBe('<div data-stub="Thing"></div>')
   })
 })
