@@ -202,6 +202,29 @@ describe('NardukLineChart consumer ergonomics', () => {
     w.unmount()
   })
 
+  it('renders the cursor tooltip when the legend is hidden', async () => {
+    const w = mount(NardukLineChart, {
+      attachTo: document.body,
+      props: { ...baseProps(), showLegend: false },
+    })
+    const svg = w.find('svg').element as SVGSVGElement
+    svg.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 240,
+      bottom: 120,
+      width: 240,
+      height: 120,
+      toJSON: () => ({}),
+    })
+    await w.find('svg').trigger('mousemove', { clientX: 120, clientY: 60 })
+    expect(w.find('.narduk-legend').exists()).toBe(false)
+    expect(w.find('.narduk-tooltip').exists()).toBe(true)
+    w.unmount()
+  })
+
   it('showTooltip=false disables the built-in cursor tooltip', async () => {
     const w = mount(NardukLineChart, {
       attachTo: document.body,
