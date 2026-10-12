@@ -174,6 +174,34 @@ narduk-app-tools' `foundation:check:no-local-copy` and
   the rule off in its own `eslint.config.mjs`, as narduk-analytics does
   (narduk-libs#744).
 
+### Auto-import collisions (`core`, error)
+
+`narduk/no-auto-import-reexport` errors on `export { x } from './sibling'`
+(type-only included) in a file Nuxt/Nitro auto-imports, when the source is
+itself auto-imported. Every export of those files is already an auto-import, so
+the re-export is a second export of `x`: unimport keeps one, only warns
+"Duplicated imports", and `nuxt prepare` exits 0. When the two files are
+different functions that share a name, a caller silently binds to whichever was
+kept. Delete the re-export and rely on the auto-import, or import from the
+original file. `narduk-app check-auto-imports` (narduk-app-tools) catches any
+remaining collision, from any cause, by reading `nuxt prepare`.
+
+The scope was measured on Nuxt 4.5.2 (unimport 6.5.0), so the rule reports only
+what collides:
+
+- Scanned files: `server/utils` at any depth; `shared/utils`, `app/utils` and
+  `app/composables` at the top level only (a nested file or nested `index.*` is
+  not auto-imported). An app that widens `imports.dirs` is not covered for the
+  extra dirs.
+- Two scan contexts, the app (`app/utils`, `app/composables`, `shared/utils`)
+  and Nitro (`server/utils`, `shared/utils`). Re-exporting across them collides
+  with nothing.
+- Not reported: `export * from` (unimport resolves it to the origin file and
+  dedupes silently), `export { a as b } from` and `export * as ns from` (new
+  names), a source outside the scanned set (`../lib/x`, a package, `#alias`),
+  and a `./dir` source whose index is not scanned. A `./dir` source is only
+  skipped when the directory exists on disk.
+
 ### Prettier vs Perfectionist
 
 `eslint-config-prettier` is applied last and disables the rules that fight

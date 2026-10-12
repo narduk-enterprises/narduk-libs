@@ -66,6 +66,8 @@ const coreConfigs = [
       'narduk/no-fetch-in-watch': 'error',
       'narduk/no-blocking-top-level-io-in-nuxt-plugin': 'error',
       'narduk/no-barrel-auto-imports': 'error',
+      // Error from day one (2026-10-12): see the rule's header for what is measured.
+      'narduk/no-auto-import-reexport': 'error',
       // Replaces bespoke prefer-import-meta-client / prefer-import-meta-dev.
       'nuxt/prefer-import-meta': 'warn',
     },
