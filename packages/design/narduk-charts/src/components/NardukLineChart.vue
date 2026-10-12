@@ -2397,12 +2397,12 @@ const zoomAriaHint = computed(() => zoomKeyboardHint(props.zoomable))
             <slot name="legend-item" v-bind="slotProps" />
           </template>
         </ChartLegend>
-        <ChartTooltip v-if="props.showTooltip" v-bind="tooltip" :chart-width="chartWidth">
-          <template v-if="$slots.tooltip" #content="slotProps">
-            <slot name="tooltip" v-bind="slotProps" />
-          </template>
-        </ChartTooltip>
       </template>
+      <ChartTooltip v-if="!isEmpty && props.showTooltip" v-bind="tooltip" :chart-width="chartWidth">
+        <template v-if="$slots.tooltip" #content="slotProps">
+          <slot name="tooltip" v-bind="slotProps" />
+        </template>
+      </ChartTooltip>
     </div>
   </figure>
 </template>
