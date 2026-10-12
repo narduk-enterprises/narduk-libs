@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.36.1
+
+### Patch Changes
+
+- c012b64: List `@narduk-enterprises/narduk-maps` in the libs explorer inventory
+  and in the generated capability catalog.
+
 ## 0.36.0
 
 ### Minor Changes

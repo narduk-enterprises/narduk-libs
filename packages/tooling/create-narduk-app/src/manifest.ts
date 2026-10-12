@@ -42,7 +42,7 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.136',
   '@narduk-enterprises/narduk-mapkit': '2.22.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.36.0',
+  '@narduk-enterprises/narduk-app-tools': '0.36.1',
   '@narduk-enterprises/eslint-config': '3.0.3',
   '@narduk-enterprises/narduk-ai': '0.4.27',
   '@narduk-enterprises/narduk-analytics': '1.30.0',
@@ -50,7 +50,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-charts': '2.11.2',
   '@narduk-enterprises/narduk-core': '2.25.0',
   '@narduk-enterprises/narduk-logging': '0.4.4',
-  '@narduk-enterprises/narduk-maps': '0.1.0',
+  '@narduk-enterprises/narduk-maps': '0.2.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
