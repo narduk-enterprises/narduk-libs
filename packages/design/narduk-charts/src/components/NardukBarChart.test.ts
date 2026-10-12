@@ -4,6 +4,12 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import NardukBarChart from './NardukBarChart.vue'
 
+/** The element the plot SVG's `aria-labelledby` names first (its accessible name). */
+function svgLabel(w: ReturnType<typeof mount>) {
+  const id = String(w.find('svg').attributes('aria-labelledby')).split(' ')[0]
+  return w.find(`[id="${id}"]`)
+}
+
 describe('NardukBarChart', () => {
   it('horizontal mode: category text on the left, bars extend +X from shared origin', () => {
     const series = [{ name: 'Revenue', data: [5, 25] }]
@@ -98,7 +104,7 @@ describe('NardukBarChart thin "% of normal" bar (narduk-charts#37)', () => {
 
   it('keeps its accessible name', () => {
     const w = mount(NardukBarChart, { props })
-    expect(w.find('svg title').text()).toBe('Rainfall, 87% of normal')
+    expect(svgLabel(w).text()).toBe('Rainfall, 87% of normal')
   })
 })
 
@@ -299,7 +305,7 @@ describe('NardukBarChart missing values (narduk-libs#1544)', () => {
     // null and a real 0 are the same empty slot: the ambiguity this opt-in ends.
     expect(geometry(rects[1]!.element).height).toBe(0)
     expect(geometry(rects[2]!.element).height).toBe(0)
-    expect(w.find('svg title').text()).toBe('Bar chart: Users')
+    expect(svgLabel(w).text()).toBe('Bar chart: Users')
     expect(w.findAll('tbody td').map(t => t.text())).toEqual(['3', '', '0', '5'])
   })
 
@@ -336,7 +342,7 @@ describe('NardukBarChart missing values (narduk-libs#1544)', () => {
     const rects = w.findAll('rect.narduk-bar-rect')
     expect(rects[1]!.attributes('aria-label')).toBe('Users, Tue, no row')
     expect(rects[2]!.attributes('aria-label')).toBe('Users, Wed, 0')
-    expect(w.find('svg title').text()).toBe('Bar chart: Users, 1 slot has no row')
+    expect(svgLabel(w).text()).toBe('Bar chart: Users, 1 slot has no row')
     expect(w.findAll('tbody td').map(t => t.text())).toEqual(['3', 'no row', '0', '5'])
   })
 
@@ -344,11 +350,11 @@ describe('NardukBarChart missing values (narduk-libs#1544)', () => {
     const titled = mount(NardukBarChart, {
       props: { ...base, missingValues: 'gap', chartTitle: 'Daily users, 1 day has no row' },
     })
-    expect(titled.find('svg title').text()).toBe('Daily users, 1 day has no row')
+    expect(svgLabel(titled).text()).toBe('Daily users, 1 day has no row')
     const full = mount(NardukBarChart, {
       props: { ...base, series: [{ name: 'Users', data: [3, 1, 0, 5] }], missingValues: 'gap' },
     })
-    expect(full.find('svg title').text()).toBe('Bar chart: Users')
+    expect(svgLabel(full).text()).toBe('Bar chart: Users')
     expect(full.findAll('.narduk-bar-rect--missing')).toHaveLength(0)
   })
 

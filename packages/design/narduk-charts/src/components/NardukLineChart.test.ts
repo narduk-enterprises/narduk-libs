@@ -202,6 +202,16 @@ describe('NardukLineChart consumer ergonomics', () => {
     w.unmount()
   })
 
+  it('names the plot without an SVG <title>, which browsers show as a hover tooltip', () => {
+    const w = mount(NardukLineChart, { props: { ...baseProps(), chartDescription: 'Weekly WVAL' } })
+    const svg = w.find('svg')
+    expect(svg.find('title').exists()).toBe(false)
+    expect(svg.find('desc').exists()).toBe(false)
+    const [titleId, descId] = String(svg.attributes('aria-labelledby')).split(' ')
+    expect(w.find(`[id="${titleId}"]`).attributes('hidden')).toBeDefined()
+    expect(w.find(`[id="${descId}"]`).text()).toBe('Weekly WVAL')
+  })
+
   it('renders the cursor tooltip when the legend is hidden', async () => {
     const w = mount(NardukLineChart, {
       attachTo: document.body,

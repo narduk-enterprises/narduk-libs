@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NardukHistogramChart from './NardukHistogramChart.vue'
 
+/** The element the plot SVG's `aria-labelledby` names first (its accessible name). */
+function svgLabel(w: ReturnType<typeof mount>) {
+  const id = String(w.find('svg').attributes('aria-labelledby')).split(' ')[0]
+  return w.find(`[id="${id}"]`)
+}
+
 describe('NardukHistogramChart', () => {
   it('renders one bar per explicit bin, labeled with its range and count', () => {
     const w = mount(NardukHistogramChart, {
@@ -95,7 +101,7 @@ describe('NardukHistogramChart', () => {
         animate: false,
       },
     })
-    expect(w.find('svg title').text()).toBe('Histogram, 3 bins')
+    expect(svgLabel(w).text()).toBe('Histogram, 3 bins')
     expect(w.find('[role="group"]').attributes('aria-label')).toBe('Histogram, 3 bins')
   })
 
@@ -110,6 +116,6 @@ describe('NardukHistogramChart', () => {
       },
     })
     expect(w.find('.narduk-chart__title').text()).toBe('Response times')
-    expect(w.find('svg title').text()).toBe('Response times')
+    expect(svgLabel(w).text()).toBe('Response times')
   })
 })

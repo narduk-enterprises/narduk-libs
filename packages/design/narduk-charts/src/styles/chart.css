@@ -29,6 +29,7 @@
   --color-chart-tooltip-border: oklch(100% 0 0 / 0.14);
   --radius-chart-tooltip: 0.625rem;
   --shadow-chart-tooltip: oklch(20% 0.04 264 / 0.12) 0 12px 40px -8px;
+  --size-chart-tooltip-max: 20rem;
 
   /**
    * Categorical series palette. Series 1 and 2 are deliberately *not* blue and
@@ -633,7 +634,11 @@
   }
 
   .narduk-tooltip {
-    @apply pointer-events-none absolute z-10 px-3 py-2.5 text-xs leading-normal whitespace-nowrap;
+    @apply pointer-events-none absolute z-10 px-3 py-2.5 text-xs leading-normal;
+    /* Size to content up to a cap; long series names wrap instead of
+       stretching the panel across the plot. */
+    width: max-content;
+    max-width: min(var(--size-chart-tooltip-max), 75%);
     border-radius: var(--radius-chart-tooltip);
     -webkit-user-select: text;
     user-select: text;
@@ -652,20 +657,25 @@
     @apply mb-1 font-semibold;
   }
 
+  /* A row that outgrows the capped panel wraps its value onto a second
+     line, right-aligned, instead of squeezing the label to a column. */
   .narduk-tooltip__item {
-    @apply flex items-center gap-1.5 py-px;
+    @apply flex flex-wrap items-baseline gap-x-1.5 py-px;
   }
 
   .narduk-tooltip__dot {
-    @apply h-2 w-2 shrink-0 rounded-full;
+    @apply h-2 w-2 shrink-0 self-center rounded-full;
   }
 
   .narduk-tooltip__label {
-    @apply flex-1 opacity-80;
+    @apply min-w-0 opacity-80;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
   }
 
   .narduk-tooltip__value {
-    @apply ml-3 font-semibold tabular-nums;
+    @apply ml-auto min-w-0 pl-3 font-semibold tabular-nums;
+    text-align: end;
   }
 
   .narduk-legend {

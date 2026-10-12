@@ -400,6 +400,10 @@ function sliceTransform(index: number): string {
       :aria-label="chartTitle ? undefined : effectiveChartTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
+      <!-- Hidden label targets, not SVG <title>/<desc>: browsers show an SVG
+           title as a native hover tooltip over the whole plot. -->
+      <span :id="svgTitleId" hidden>{{ effectiveChartTitle }}</span>
+      <span v-if="chartDescription?.trim()" :id="svgDescId" hidden>{{ chartDescription }}</span>
       <div v-if="isEmpty" class="narduk-chart__empty">
         <slot name="empty">No data</slot>
       </div>
@@ -413,10 +417,6 @@ function sliceTransform(index: number): string {
         @mousemove="onMouseMove"
         @mouseleave="onMouseLeave"
       >
-        <title :id="svgTitleId">{{ effectiveChartTitle }}</title>
-        <desc v-if="chartDescription?.trim()" :id="svgDescId">
-          {{ chartDescription }}
-        </desc>
         <g v-for="(slice, i) in slices" :key="slice.item.label">
           <path
             v-if="slice.path"

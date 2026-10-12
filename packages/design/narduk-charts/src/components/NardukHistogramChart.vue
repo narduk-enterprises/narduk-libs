@@ -126,6 +126,10 @@ onMounted(() => {
       :aria-label="chartTitle ? undefined : effectiveTitle"
       :aria-describedby="chartDescription?.trim() ? svgDescId : undefined"
     >
+      <!-- Hidden label targets, not SVG <title>/<desc>: browsers show an SVG
+           title as a native hover tooltip over the whole plot. -->
+      <span :id="svgTitleId" hidden>{{ effectiveTitle }}</span>
+      <span v-if="chartDescription?.trim()" :id="svgDescId" hidden>{{ chartDescription }}</span>
       <div v-if="isEmpty" class="narduk-chart__empty">No data</div>
       <svg
         v-else-if="chartWidth > 0"
@@ -134,10 +138,6 @@ onMounted(() => {
         role="img"
         :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
       >
-        <title :id="svgTitleId">{{ effectiveTitle }}</title>
-        <desc v-if="chartDescription?.trim()" :id="svgDescId">
-          {{ chartDescription }}
-        </desc>
         <g class="narduk-grid">
           <line
             v-for="(t, ti) in yMap.ticks"
