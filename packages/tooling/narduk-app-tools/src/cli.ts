@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs'
 
+import { parseAutoImportsArgs, runAutoImportsCheck } from './auto-imports.js'
 import { parseGhPackagesRunArgs, runGhPackagesCommand } from './gh-packages-run.js'
 import { configureRegistryAuth } from './registry-auth.js'
 import { generateFavicons, parseFaviconArgs } from './assets.js'
@@ -101,6 +102,10 @@ function usage(): string {
     '  check-starter-identity [--cwd <dir>]',
     '                                       Fail when generator placeholders such as',
     '                                       __APP_NAME__ remain on identity surfaces',
+    '  check-auto-imports [--cwd <app dir>] [--log <file>] [--json [path]]',
+    '                                       Run `nuxt prepare` (or scan --log) and fail when two files',
+    '                                       export one auto-imported name (unimport "Duplicated',
+    '                                       imports"). Exit 1 duplicates, 2 prepare failed.',
     '  dev:seed [--cwd <app dir>] [--config <wrangler config>] [--fixtures <dir>]',
     '      [--persist-to <dir>] [--reset] [--dry-run] [--json]',
     '                                       Seed local D1/KV/R2 (Wrangler --local) from',
@@ -326,6 +331,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     if (command === 'ensure-generated') return runEnsureGenerated(parseEnsureGeneratedArgs(rest))
     if (command === 'check-starter-identity') {
       return runStarterIdentityCheck(parseStarterIdentityArgs(rest))
+    }
+    if (command === 'check-auto-imports') {
+      return runAutoImportsCheck(parseAutoImportsArgs(rest)).exitCode
     }
     if (command === 'dev:seed') {
       const flags = parseDevSeedArgs(rest)
