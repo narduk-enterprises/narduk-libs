@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  checksumMigrationSql,
   inspectMigrations,
   runMigrations,
+  LOCAL_BATCH_MAX_BYTES,
   MIGRATION_LOCK_STALE_AFTER_SECONDS,
   MIGRATION_LOCK_TABLE,
   parseWranglerBatchJson,
@@ -278,6 +280,175 @@ describe('wrangler process count (narduk-libs#704)', () => {
       [{ filename: '0001.sql' }, { filename: '0002.sql' }, { filename: '0003.sql' }],
     )
     expect(f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+  })
+})
+
+// A cold local migrate used to start wrangler and miniflare once per migration
+// (3 s each on a CI runner). `--local` now sends the pending migrations, each
+// followed by its ledger INSERT, as one file; every guarantee below is the one
+// the one-file-per-migration path gave.
+describe('batched --local apply', () => {
+  function history(count: number, extra?: Record<number, string>) {
+    const f = fixture()
+    for (let i = 1; i <= count; i += 1) {
+      const name = String(i).padStart(4, '0')
+      writeFileSync(
+        join(f.root, 'sql', `${name}.sql`),
+        extra?.[i] ??
+          `CREATE TABLE t${name} (id INTEGER PRIMARY KEY); INSERT INTO t${name} VALUES (${i});`,
+      )
+    }
+    return { ...f, local: { ...f.options, location: '--local' } as MigrationRunOptions }
+  }
+  const files = (calls: string[][]) => calls.filter((a) => a.some((x) => x.startsWith('--file=')))
+  const ledger = (db: DatabaseSync) =>
+    db
+      .prepare(
+        'SELECT source, filename, checksum, source_version FROM _narduk_migrations ORDER BY rowid',
+      )
+      .all()
+  const schema = (db: DatabaseSync) =>
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_narduk\\_%' ESCAPE '\\' ORDER BY name",
+      )
+      .all()
+
+  it('records the same ledger rows, in the same order, in one wrangler file', () => {
+    const batched = history(25)
+    const sequential = history(25)
+    expect(runMigrations(batched.local, batched.executor)).toMatchObject({ apply: 25, skip: 0 })
+    expect(runMigrations(sequential.options, sequential.executor)).toMatchObject({ apply: 25 })
+    expect(ledger(batched.db)).toHaveLength(25)
+    expect(ledger(batched.db)).toEqual(ledger(sequential.db))
+    expect(schema(batched.db)).toEqual(schema(sequential.db))
+    expect(batched.db.prepare('SELECT count(*) AS n FROM t0025').get()?.n).toBe(1)
+    expect(files(sequential.calls)).toHaveLength(25)
+    expect(files(batched.calls)).toHaveLength(1)
+    // inspect + lock create + lock insert + inspect + one file + inspect + unlock.
+    expect(batched.calls.length).toBeLessThan(10)
+    expect(batched.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+    expect(runMigrations(batched.local, batched.executor)).toMatchObject({ apply: 0, skip: 25 })
+  })
+
+  it('the process count does not grow with the number of migrations', () => {
+    const counts = [1, 10, 60].map((count) => {
+      const f = history(count)
+      runMigrations(f.local, f.executor)
+      return f.calls.length
+    })
+    expect(new Set(counts).size).toBe(1)
+  })
+
+  it('a failure in migration k leaves 1..k-1 recorded and k not, as one file per migration did', () => {
+    const run = (location: '--local' | '--remote') => {
+      const f = history(6, {
+        4: 'CREATE TABLE half (id TEXT); INSERT INTO absent_table VALUES (1);',
+      })
+      const error = (() => {
+        try {
+          runMigrations({ ...f.options, location }, f.executor)
+        } catch (e) {
+          return e as Error
+        }
+        throw new Error('expected the run to fail')
+      })()
+      return { f, error }
+    }
+    const local = run('--local')
+    const remote = run('--remote')
+    expect(
+      local.f.db.prepare('SELECT filename FROM _narduk_migrations ORDER BY rowid').all(),
+    ).toEqual(['0001', '0002', '0003'].map((n) => ({ filename: `${n}.sql` })))
+    expect(ledger(local.f.db)).toEqual(ledger(remote.f.db))
+    expect(schema(local.f.db)).toEqual(schema(remote.f.db))
+    expect(schema(local.f.db).map((r) => r.name)).not.toContain('half')
+    expect(local.error.message).toContain('absent_table')
+    expect(local.error.message).toContain('local run stopped')
+    expect(local.f.db.prepare(`SELECT * FROM ${MIGRATION_LOCK_TABLE}`).all()).toEqual([])
+    // The failed batch, then 0001..0004 one by one: the unchanged path decides.
+    expect(files(local.f.calls)).toHaveLength(1 + 4)
+    // A fixed 0004 resumes from the ledger and lands 0004..0006.
+    writeFileSync(join(local.f.root, 'sql', '0004.sql'), 'CREATE TABLE fixed (id TEXT);')
+    expect(runMigrations(local.f.local, local.f.executor)).toMatchObject({ apply: 3, skip: 3 })
+    expect(ledger(local.f.db)).toHaveLength(6)
+  })
+
+  it('does not trust a batch to be atomic: a partial commit is re-read, not replayed', () => {
+    const f = history(5, { 3: 'CREATE TABLE half (id TEXT); INSERT INTO absent_table VALUES (1);' })
+    const firstBatch = { done: false }
+    const execute: MigrationExecutor = (args, cwd, json) => {
+      const file = args.find((a) => a.startsWith('--file='))
+      if (file && !firstBatch.done) {
+        firstBatch.done = true
+        // Each migration commits on its own, nothing rolls back the whole
+        // file: 1 and 2 stay recorded, then 3 dies.
+        const text = readFileSync(file.slice(7), 'utf8')
+        for (const part of text.split(/(?<=INSERT INTO _narduk_migrations[^\n]*\n)/u)) {
+          f.db.exec('BEGIN;')
+          try {
+            f.db.exec(`${part}\nCOMMIT;`)
+          } catch (error) {
+            f.db.exec('ROLLBACK;')
+            throw error
+          }
+        }
+      }
+      return f.executor(args, cwd, json)
+    }
+    expect(() => runMigrations(f.local, execute)).toThrow('absent_table')
+    expect(ledger(f.db).map((r) => r.filename)).toEqual(['0001.sql', '0002.sql'])
+  })
+
+  it('adopts and applies in plan order in the same file', () => {
+    const f = history(4)
+    f.db.exec('CREATE TABLE _applied_migrations (filename TEXT); CREATE TABLE example (id TEXT);')
+    f.db.exec("INSERT INTO _applied_migrations VALUES ('0001.sql');")
+    writeFileSync(
+      join(f.root, 'sources.json'),
+      JSON.stringify({
+        sources: [{ source: 'app', path: 'sql', sourceVersion: '1' }],
+        adoptions: [
+          {
+            source: 'app',
+            filename: '0001.sql',
+            sourceVersion: '1',
+            checksum: checksumMigrationSql(readFileSync(join(f.root, 'sql', '0001.sql'), 'utf8')),
+            legacy: { filename: '0001.sql' },
+            evidence: { tables: ['example'] },
+          },
+        ],
+      }),
+    )
+    expect(runMigrations(f.local, f.executor)).toMatchObject({ adopt: 1, apply: 3, skip: 0 })
+    expect(ledger(f.db).map((r) => r.filename)).toEqual([
+      '0001.sql',
+      '0002.sql',
+      '0003.sql',
+      '0004.sql',
+    ])
+    expect(files(f.calls)).toHaveLength(1)
+    // Adopted, not applied: its own SQL never ran.
+    expect(schema(f.db).map((r) => r.name)).not.toContain('t0001')
+  })
+
+  it('splits a very large history into bounded files, in order', () => {
+    const pad = `-- ${'x'.repeat(1024 * 1024)}\n`
+    expect(LOCAL_BATCH_MAX_BYTES).toBeGreaterThan(2 * 1024 * 1024)
+    const body = (n: number) =>
+      `${pad.repeat(Math.ceil((LOCAL_BATCH_MAX_BYTES * 0.6) / pad.length))}CREATE TABLE big${n} (id TEXT);`
+    const f = history(3, { 1: body(1), 2: body(2), 3: body(3) })
+    runMigrations(f.local, f.executor)
+    expect(files(f.calls)).toHaveLength(3)
+    expect(ledger(f.db).map((r) => r.filename)).toEqual(['0001.sql', '0002.sql', '0003.sql'])
+  })
+
+  it('leaves --remote exactly as it was: one file and one ledger row per migration', () => {
+    const f = history(5)
+    runMigrations(f.options, f.executor)
+    expect(files(f.calls)).toHaveLength(5)
+    for (const call of files(f.calls)) expect(call).toContain('--remote')
+    expect(f.calls.some((args) => args.includes('time-travel'))).toBe(true)
   })
 })
 

@@ -333,6 +333,13 @@ adoption entry names the exact target checksum and proves the expected schema
 tables, columns, and indexes. A migration and its ledger row are submitted in
 the same D1 batch so a failed statement rolls back the batch.
 
+`--local` submits all pending migrations (each with its ledger row, an adoption
+as its ledger row alone) as one `wrangler d1 execute --file`, so a cold local
+migrate costs a fixed handful of wrangler starts instead of one per migration; a
+failed batch is rolled back whole and the runner re-applies the remainder one
+migration per call, so the ledger a failure leaves is the same as before.
+`--remote` still sends one migration and its ledger row at a time.
+
 Before any remote mutation, the command fails closed unless it can capture a D1
 Time Travel bookmark, current migration ledgers, and `sqlite_master` metadata.
 The mode-`0600` recovery artifact is written under `.narduk/recovery/d1/` and
