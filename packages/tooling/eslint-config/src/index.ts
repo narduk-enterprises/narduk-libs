@@ -36,6 +36,7 @@
  */
 
 // ── general — the DESIGN.md "Ported (KEEP)" rules ───────────────────────────
+import noAutoImportReexport from './rules/general/no-auto-import-reexport'
 import noBarrelAutoImports from './rules/general/no-barrel-auto-imports'
 import noBlockingTopLevelIoInNuxtPlugin from './rules/general/no-blocking-top-level-io-in-nuxt-plugin'
 import noLegacyFetchHook from './rules/general/no-legacy-fetch-hook'
@@ -117,6 +118,7 @@ const plugin = {
 
   rules: {
     // general
+    'no-auto-import-reexport': noAutoImportReexport,
     'no-barrel-auto-imports': noBarrelAutoImports,
     'no-blocking-top-level-io-in-nuxt-plugin': noBlockingTopLevelIoInNuxtPlugin,
     'no-legacy-fetch-hook': noLegacyFetchHook,
