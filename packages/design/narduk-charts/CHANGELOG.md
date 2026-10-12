@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.11.1
+
+### Patch Changes
+
+- 9c5e653: `NardukLineChart` draws its cursor tooltip when `showLegend` is
+  `false`. The tooltip was nested inside the legend block, so hiding the legend
+  also hid the tooltip.
+
 ## 2.11.0
 
 ### Minor Changes
