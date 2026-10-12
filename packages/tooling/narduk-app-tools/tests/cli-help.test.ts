@@ -11,6 +11,7 @@ const COMMANDS: string[][] = [
   ['dev'],
   ['ensure-generated'],
   ['check-starter-identity'],
+  ['check-auto-imports'],
   ['dev:seed'],
   ['e2e-serve'],
   ['og:check'],

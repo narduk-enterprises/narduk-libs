@@ -93,6 +93,35 @@ narduk-app check-starter-identity [--cwd <dir>]
   pages and layouts. `node_modules`, build output and `pnpm-lock.yaml` are
   skipped.
 
+## Auto-import collisions (`check-auto-imports`)
+
+Nitro and Nuxt auto-import every export of `server/utils/**`, `shared/utils/**`,
+`app/utils/**` and `app/composables/**`. Two files exporting one name collide;
+unimport keeps one, logs "Duplicated imports" and `nuxt prepare` still exits 0.
+Most come from `export { x } from './sibling'` re-exports, and two different
+functions sharing a name (`eventBody`, `utcDay` in operator-portal) can bind a
+caller to the wrong one with no error.
+
+```sh
+narduk-app check-auto-imports [--cwd <app dir>] [--log <file>] [--json [path]]
+```
+
+- Runs `nuxt prepare` in `--cwd` (default: the current directory; use `apps/web`
+  in a monorepo app) and fails, listing each name with the file unimport used
+  and the file it ignored, when the output holds any "Duplicated imports"
+  warning. `--log <file>` scans a saved `nuxt prepare` output instead of running
+  it.
+- Exit `0` no duplicates, `1` duplicates (or a "Duplicated imports" line this
+  parser cannot read, so a reworded warning cannot pass silently), `2`
+  inconclusive (`nuxt prepare` failed, or `--log` is unreadable). `--json`
+  prints the report on stdout; `--json <path>` also writes it.
+- It scrapes the log on purpose: `.nuxt/types/imports.d.ts` and
+  `nitro-imports.d.ts` are written after unimport drops the duplicate, so they
+  no longer name it. The warning line is the only place both files appear.
+- Wire it into an app as `"check:auto-imports": "narduk-app check-auto-imports"`
+  and add it to the app's `quality` chain. It is not yet part of the six-check
+  status or the generator's `quality:static`.
+
 ## Seeded local development (`narduk-app dev:seed`)
 
 One command from a clean checkout to local D1/KV/R2 holding representative data,
