@@ -284,6 +284,14 @@ reads either one goes through one resolver (`src/app-config/resolve.ts`):
   environment only, is never an argument and never printed, and is scrubbed from
   every error. The repository is `GITHUB_REPOSITORY`, else the `origin` remote,
   else `package.json` `repository`.
+- **GitHub Actions needs no secret.** With no `OPERATOR_PORTAL_APP_CONFIG_TOKEN`
+  and a job that has `permissions: id-token: write`
+  (`ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` set), the
+  resolver asks GitHub for an OIDC token whose audience is the portal origin and
+  sends that as the Bearer. The portal admits it only for the token's own
+  `repository` claim. Precedence is the explicit key, then OIDC. A job without
+  the permission fails with a message that names `permissions: id-token: write`
+  and `NARDUK_APP_CONFIG_SOURCE=file`. Neither token is ever printed.
 - **It fails loudly.** No token, a 401, a 503, a timeout or a malformed answer
   stops the command with one `AppConfigError`; it never falls back to a missing
   file or to a stale cache. Only a 404 ("this repository has no such document")

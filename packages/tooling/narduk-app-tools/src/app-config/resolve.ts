@@ -30,9 +30,15 @@
  * unprimed portal read throws; it never guesses. The primed value is this
  * process's own fresh fetch, never a file on disk.
  *
- * THE CREDENTIAL. `OPERATOR_PORTAL_APP_CONFIG_TOKEN` (the single-purpose
- * `producer:app-config-read` key) is read from the environment only: never an
- * argument, never logged, and scrubbed from every error this module raises.
+ * THE CREDENTIAL, in this order. (1) `OPERATOR_PORTAL_APP_CONFIG_TOKEN` (the
+ * single-purpose `producer:app-config-read` key). (2) In GitHub Actions, the
+ * job's OIDC token: with `ACTIONS_ID_TOKEN_REQUEST_URL` and
+ * `ACTIONS_ID_TOKEN_REQUEST_TOKEN` set (a job that has `permissions: id-token:
+ * write`) the resolver asks GitHub for a token whose audience is the portal
+ * origin and sends that as the Bearer, so no secret has to be delivered to the
+ * repository; the portal admits it only for the token's own `repository` claim.
+ * Every credential is read from the environment only: never an argument, never
+ * logged, and scrubbed from every error this module raises.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -49,6 +55,8 @@ export const APP_CONFIG_PATHS: Readonly<Record<AppConfigFile, string>> = {
 }
 
 export const APP_CONFIG_TOKEN_ENV = 'OPERATOR_PORTAL_APP_CONFIG_TOKEN'
+export const OIDC_REQUEST_URL_ENV = 'ACTIONS_ID_TOKEN_REQUEST_URL'
+export const OIDC_REQUEST_TOKEN_ENV = 'ACTIONS_ID_TOKEN_REQUEST_TOKEN'
 export const APP_CONFIG_SOURCE_ENV = 'NARDUK_APP_CONFIG_SOURCE'
 export const APP_CONFIG_ORIGIN_ENV = 'OPERATOR_PORTAL_URL'
 export const APP_CONFIG_DEFAULT_ORIGIN = 'https://ops.nardukenterprises.com'
@@ -68,6 +76,7 @@ export type AppConfigErrorCode =
   | 'invalid-source'
   | 'invalid-origin'
   | 'no-token'
+  | 'oidc'
   | 'no-repo'
   | 'no-root'
   | 'unauthorized'
@@ -142,9 +151,16 @@ export function readSourceMode(env: NodeJS.ProcessEnv = process.env): AppConfigS
 /** Remove the token, and anything shaped like a portal key, from text. */
 export function scrubAppConfigSecrets(text: string, env: NodeJS.ProcessEnv = process.env): string {
   let out = text
-  const token = env[APP_CONFIG_TOKEN_ENV]?.trim()
-  if (token) out = out.split(token).join('[redacted]')
-  return out.replaceAll(/\bnk_[\w-]{6,}/gu, '[redacted]')
+  for (const name of [APP_CONFIG_TOKEN_ENV, OIDC_REQUEST_TOKEN_ENV]) {
+    const secret = env[name]?.trim()
+    if (secret) out = out.split(secret).join('[redacted]')
+  }
+  return (
+    out
+      .replaceAll(/\bnk_[\w-]{6,}/gu, '[redacted]')
+      // A GitHub OIDC token is a JWT.
+      .replaceAll(/\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]*/gu, '[redacted]')
+  )
 }
 
 function localPath(root: string, file: AppConfigFile): string {
@@ -284,6 +300,89 @@ function portalOrigin(env: NodeJS.ProcessEnv): string {
   return url.origin
 }
 
+function oidcAvailable(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env[OIDC_REQUEST_URL_ENV]?.trim() && env[OIDC_REQUEST_TOKEN_ENV]?.trim())
+}
+
+function noCredentialError(
+  file: AppConfigFile,
+  slug: string,
+  env: NodeJS.ProcessEnv,
+): AppConfigError {
+  const inActions = env.GITHUB_ACTIONS === 'true'
+  const partial = Boolean(env[OIDC_REQUEST_URL_ENV]?.trim() || env[OIDC_REQUEST_TOKEN_ENV]?.trim())
+  const oidc =
+    inActions || partial
+      ? ` In GitHub Actions the job can authenticate with its OIDC token instead, but that needs \`permissions: id-token: write\` on the job (${OIDC_REQUEST_URL_ENV} and ${OIDC_REQUEST_TOKEN_ENV} are not both set here).`
+      : ''
+  return new AppConfigError(
+    'no-token',
+    `${file} for ${slug} must come from the portal, and ${APP_CONFIG_TOKEN_ENV} is not set. ` +
+      `Provide the producer:app-config-read key in that environment variable.${oidc} ${fileModeHint}`,
+  )
+}
+
+/**
+ * The Bearer for the portal request: the explicit key, else a GitHub OIDC token
+ * whose audience is the portal origin (exactly as the request uses it).
+ */
+async function portalBearer(
+  file: AppConfigFile,
+  slug: string,
+  origin: string,
+  env: NodeJS.ProcessEnv,
+  doFetch: AppConfigFetch,
+  signal: AbortSignal,
+): Promise<{ bearer: string; via: 'token' | 'oidc' }> {
+  const explicit = env[APP_CONFIG_TOKEN_ENV]?.trim()
+  if (explicit) return { bearer: explicit, via: 'token' }
+  if (!oidcAvailable(env)) throw noCredentialError(file, slug, env)
+  const requestUrl = new URL(env[OIDC_REQUEST_URL_ENV]!.trim())
+  // The request URL normally carries `?api-version=...`; `searchParams` appends
+  // with `&` then, and starts the query with `?` when there is none.
+  requestUrl.searchParams.set('audience', origin)
+  const failure = (reason: string): AppConfigError =>
+    new AppConfigError(
+      'oidc',
+      scrubAppConfigSecrets(
+        `Could not get a GitHub OIDC token for the portal (${reason}) to read ${file} of ${slug}. ` +
+          `The job needs \`permissions: id-token: write\`. ${fileModeHint}`,
+        env,
+      ),
+    )
+  let response: AppConfigFetchResponse
+  let body: string
+  try {
+    response = await doFetch(requestUrl.toString(), {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${env[OIDC_REQUEST_TOKEN_ENV]!.trim()}`,
+      },
+      redirect: 'manual',
+      signal,
+    })
+    body = response.status === 200 ? await response.text() : ''
+  } catch (error) {
+    if (signal.aborted) {
+      throw new AppConfigError(
+        'timeout',
+        `GitHub did not answer the OIDC token request for ${file} of ${slug} in time.`,
+      )
+    }
+    throw failure(error instanceof Error ? error.message : String(error))
+  }
+  if (response.status !== 200) throw failure(`HTTP ${response.status}`)
+  let value: unknown
+  try {
+    value = (JSON.parse(body) as { value?: unknown }).value
+  } catch {
+    throw failure('the answer is not JSON')
+  }
+  if (typeof value !== 'string' || value.trim() === '') throw failure('the answer has no token')
+  return { bearer: value.trim(), via: 'oidc' }
+}
+
 /** One portal fetch. `null` is a definitive 404; everything else wrong throws. */
 export async function fetchPortalAppConfig(
   slug: string,
@@ -291,15 +390,11 @@ export async function fetchPortalAppConfig(
   options: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs'> = {},
 ): Promise<ResolvedAppConfig | null> {
   const env = options.env ?? process.env
-  const token = env[APP_CONFIG_TOKEN_ENV]?.trim()
-  if (!token) {
-    throw new AppConfigError(
-      'no-token',
-      `${file} for ${slug} must come from the portal, and ${APP_CONFIG_TOKEN_ENV} is not set. ` +
-        `Provide the producer:app-config-read key in that environment variable. ${fileModeHint}`,
-    )
+  if (!env[APP_CONFIG_TOKEN_ENV]?.trim() && !oidcAvailable(env)) {
+    throw noCredentialError(file, slug, env)
   }
-  const url = new URL(APP_CONFIG_ROUTE, portalOrigin(env))
+  const origin = portalOrigin(env)
+  const url = new URL(APP_CONFIG_ROUTE, origin)
   url.searchParams.set('repo', slug)
   url.searchParams.set('file', file)
   const doFetch: AppConfigFetch = options.fetch ?? ((u, init) => fetch(u, init))
@@ -307,12 +402,14 @@ export async function fetchPortalAppConfig(
   const timeoutMs = options.timeoutMs ?? APP_CONFIG_DEFAULT_TIMEOUT_MS
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
+    const { bearer, via } = await portalBearer(file, slug, origin, env, doFetch, controller.signal)
+    const credential = via === 'oidc' ? 'the GitHub OIDC token' : APP_CONFIG_TOKEN_ENV
     let response: AppConfigFetchResponse
     let body: string
     try {
       response = await doFetch(url.toString(), {
         method: 'GET',
-        headers: { accept: 'application/json', authorization: `Bearer ${token}` },
+        headers: { accept: 'application/json', authorization: `Bearer ${bearer}` },
         redirect: 'manual',
         signal: controller.signal,
       })
@@ -332,15 +429,19 @@ export async function fetchPortalAppConfig(
             error instanceof Error ? error.message : String(error)
           }`,
           env,
-        ),
+        )
+          .split(bearer)
+          .join('[redacted]'),
       )
     }
     const status = response.status
     if (status === 401 || status === 403) {
       throw new AppConfigError(
         'unauthorized',
-        `The portal refused ${APP_CONFIG_TOKEN_ENV} for ${file} of ${slug} (HTTP ${status}). ` +
-          'It must be the single-purpose producer:app-config-read key.',
+        `The portal refused ${credential} for ${file} of ${slug} (HTTP ${status}). ` +
+          (via === 'oidc'
+            ? 'The portal admits an OIDC token only for the repository in its own claim, and only for the app it is linked to.'
+            : 'It must be the single-purpose producer:app-config-read key.'),
         status,
       )
     }
