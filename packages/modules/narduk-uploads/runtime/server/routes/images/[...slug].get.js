@@ -87,7 +87,8 @@ export default defineEventHandler(async (event) => {
     object = isHead ? await r2.head(slug) : await r2.get(slug)
   } catch (error) {
     log.error('Image storage read failed', { slug, error })
-    throw error
+    // The cause is logged above; the response names no storage detail.
+    throw createError({ statusCode: 500, message: 'Error retrieving image' })
   }
 
   if (!object) {
