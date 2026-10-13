@@ -43,6 +43,11 @@
       "types": "./dist/e2e/specs/users-api.d.ts",
       "import": "./dist/e2e/specs/users-api.js"
     },
+    "./e2e/admin-credential": {
+      "types": "./dist/e2e/admin-credential.d.ts",
+      "import": "./dist/e2e/admin-credential.js",
+      "require": "./dist/e2e/admin-credential.js"
+    },
     "./e2e/fixture-server": {
       "types": "./dist/e2e/fixture-server.d.ts",
       "import": "./dist/e2e/fixture-server.js"

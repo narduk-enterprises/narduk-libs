@@ -55,6 +55,9 @@ export const E2E_USAGE = [
   '                         [--] [<playwright test args>]',
   '                                        check, then playwright test; adds --project=web only',
   '                                        when the caller chose no project',
+  '  narduk-testkit e2e seed-admin --database <name> --local [--config <path>]',
+  '                                        store a hash of $E2E_ADMIN_PASSWORD on the',
+  '                                        seeded admin row in LOCAL D1 (see --help)',
 ].join('\n')
 
 /**

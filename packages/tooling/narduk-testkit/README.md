@@ -93,8 +93,51 @@ registerUsersApiSpec({ apiPath: '/api/users' })
 `loginAsAdmin(page, { email?, password? })` signs in as the app's seeded admin
 user. No seed file ships a usable password, so it reads `E2E_ADMIN_PASSWORD`
 (and `E2E_ADMIN_EMAIL`, default `admin@example.com`) when no credentials are
-passed, and throws when there is no password. The app's own seed step must store
-a hash of that password, for example with the layer's `hashUserPassword()`.
+passed, and throws when there is no password.
+
+### E2E admin credential (`e2e seed-admin`)
+
+The shared admin specs (`e2e/specs/users-api` and the admin test in
+`e2e/contracts/user-profile`) call a bare `loginAsAdmin(page)`. Wire a per-run
+password in two places in the app's harness:
+
+1. At the top of `playwright.config.ts`, before `webServer.env` copies
+   `process.env`, make sure `E2E_ADMIN_PASSWORD` is set. Playwright workers
+   inherit the runner's environment, so `loginAsAdmin` reads the same value:
+
+   ```ts
+   import { ensureE2eAdminPassword } from '@narduk-enterprises/narduk-testkit/e2e/admin-credential'
+
+   ensureE2eAdminPassword() // keeps a value the environment set, else a random one
+   ```
+
+   When the config cannot resolve this package (testkit installed only in
+   `apps/web`), the same thing is one line:
+   `process.env.E2E_ADMIN_PASSWORD ||= randomBytes(24).toString('base64url')`
+   with `randomBytes` from `node:crypto`.
+
+2. In the `webServer` command, after the seed step (narduk-core's seed resets
+   the admin hash to NULL on every run) and before the server starts, run from
+   the app directory:
+
+   ```sh
+   pnpm --filter web exec narduk-testkit e2e seed-admin --database <d1-name> --local
+   ```
+
+   It hashes `E2E_ADMIN_PASSWORD` with the same PBKDF2 scheme as narduk-core's
+   `hashUserPassword()`, stores it on the seeded admin row (`E2E_ADMIN_EMAIL`,
+   default `admin@example.com`, `is_admin = 1`) with
+   `wrangler d1 execute --local`, then checks exactly one admin row took it.
+   Pass `--config <wrangler config>` or `--persist-to <dir>` when the server
+   reads a different local state directory than the default `wrangler.jsonc`
+   one.
+
+It only writes local state: `--local` is required, `--remote`, `--preview` and
+unknown flags are refused, and the password never appears on a command line or
+in its output (the hash reaches wrangler through a temporary file it removes).
+No credential is committed anywhere. With `PLAYWRIGHT_REUSE_SERVER` the
+`webServer` command does not run, so export `E2E_ADMIN_PASSWORD` yourself and
+run `seed-admin` against that server's state once.
 
 ## Vue warnings fail unit tests
 
