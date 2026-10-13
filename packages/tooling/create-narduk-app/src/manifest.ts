@@ -44,12 +44,12 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.37.0',
   '@narduk-enterprises/eslint-config': '3.1.0',
-  '@narduk-enterprises/narduk-ai': '0.4.27',
-  '@narduk-enterprises/narduk-analytics': '1.30.0',
-  '@narduk-enterprises/narduk-auth': '1.34.8',
+  '@narduk-enterprises/narduk-ai': '0.4.28',
+  '@narduk-enterprises/narduk-analytics': '1.30.1',
+  '@narduk-enterprises/narduk-auth': '1.34.9',
   '@narduk-enterprises/narduk-charts': '2.11.2',
-  '@narduk-enterprises/narduk-core': '2.25.0',
-  '@narduk-enterprises/narduk-logging': '0.4.4',
+  '@narduk-enterprises/narduk-core': '2.25.1',
+  '@narduk-enterprises/narduk-logging': '0.4.5',
   '@narduk-enterprises/narduk-maps': '0.2.0',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and

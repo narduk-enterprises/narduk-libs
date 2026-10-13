@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.9
+
+### Patch Changes
+
+- 6ee8616: Describe the default password setup and reset email action as a link,
+  matching the rendered anchor.
+  - @narduk-enterprises/narduk-core@2.25.1
+
 ## 1.34.8
 
 ### Patch Changes
