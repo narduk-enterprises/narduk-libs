@@ -10,7 +10,7 @@ import { loadInventory } from './index.mts'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
-import { classifyTokens, parseTokens } from './tokens.mts'
+import { classifyTokens, parseTokens, readDeclarations } from './tokens.mts'
 import { readmeSections, readWorkspacePackages } from './workspace.mts'
 
 const explorerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -332,4 +332,13 @@ test('tokens: every existing NE and NS family classifies by meaning, not by a va
     ...parseTokens(':root { --x-r-alias: var(--ns-r-sm); --ns-r-sm: 6px; }', 't.css'),
   ])
   assert.equal(`${aliased?.group}/${aliased?.preview}`, 'Radius/radius')
+})
+
+test('tokens inside a zero-specificity :where() selector are read per scheme (#1785)', () => {
+  const css =
+    ':where(:root, .light) { --a: 1; }\n:where(.dark) { --a: 2; }\n:where(.other) { --b: 3; }'
+  assert.deepEqual(readDeclarations(css), [
+    { name: '--a', value: '1', scheme: 'light' },
+    { name: '--a', value: '2', scheme: 'dark' },
+  ])
 })

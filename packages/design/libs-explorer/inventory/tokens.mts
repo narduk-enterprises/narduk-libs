@@ -56,9 +56,34 @@ type Scheme = 'light' | 'dark'
 const LIGHT_SELECTORS = new Set([':root', '.light', ':root.light'])
 const DARK_SELECTORS = new Set(['.dark', ':root.dark'])
 
+/**
+ * A selector with its zero-specificity wrapper removed: narduk-shell writes
+ * `:where(:root, .light)` so an app's plain `:root` rule overrides a token
+ * (narduk-libs#1785). `:where()` changes specificity, not which element the
+ * rule matches, so the members classify exactly as when written bare.
+ */
+function unwrapWhere(selector: string): string[] {
+  const match = /^:where\((.*)\)$/s.exec(selector)
+  if (!match) return [selector]
+  const members: string[] = []
+  let depth = 0
+  let start = 0
+  const inner = match[1]!
+  for (let index = 0; index <= inner.length; index += 1) {
+    const char = inner[index]
+    if (char === '(') depth += 1
+    else if (char === ')') depth -= 1
+    else if ((char === ',' && depth === 0) || index === inner.length) {
+      members.push(inner.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  return members
+}
+
 function schemesFor(rule: Rule): Scheme[] {
   const schemes = new Set<Scheme>()
-  for (const selector of rule.selectors.map((part) => part.trim())) {
+  for (const selector of rule.selectors.flatMap((part) => unwrapWhere(part.trim()))) {
     if (LIGHT_SELECTORS.has(selector)) schemes.add('light')
     if (DARK_SELECTORS.has(selector)) schemes.add('dark')
   }
