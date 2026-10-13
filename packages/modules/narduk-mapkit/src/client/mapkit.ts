@@ -292,6 +292,23 @@ export async function initializeMapKit(options: MapKitClientOptions): Promise<Ma
 
   initPromiseKey = cacheKey
   initPromise ??= (async () => {
+    // Refused or unconfigured token routes must not download Apple's SDK. Keep
+    // this first token for the initial callback; later callbacks fetch a fresh one.
+    let initialToken: string | null
+    try {
+      initialToken = await fetchMapKitToken(options.tokenEndpoint, options.fetchImpl)
+    } catch (error) {
+      const failure =
+        error instanceof MapKitAuthError
+          ? error.failure
+          : {
+              message: error instanceof Error ? error.message : String(error),
+              source: 'token' as const,
+              status: 'Unknown' as const,
+            }
+      options.onFailure?.(failure)
+      throw error instanceof MapKitAuthError ? error : new MapKitAuthError(failure)
+    }
     const load = await resolveLoad(options)
     const loadOptions: Parameters<MapKitLoadFunction>[0] = {
       libraries: [...options.libraries],
@@ -332,7 +349,9 @@ export async function initializeMapKit(options: MapKitClientOptions): Promise<Ma
         authorizationCallback: (done) => {
           void (async () => {
             try {
-              done(await fetchMapKitToken(options.tokenEndpoint, options.fetchImpl))
+              const token = initialToken
+              initialToken = null
+              done(token ?? (await fetchMapKitToken(options.tokenEndpoint, options.fetchImpl)))
             } catch (error) {
               // Never `done('')`: an empty token is a second bootstrap attempt
               // that fails with a less useful status than the real cause.

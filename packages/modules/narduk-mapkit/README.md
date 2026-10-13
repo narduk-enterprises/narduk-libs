@@ -495,6 +495,10 @@ without them. The load goes through Apple's own `@apple/mapkit-loader`, so the
 script URL and version handling belong to Apple — there is no `scriptUrl`
 option, and no separate `loadMapKitLibraries()` step.
 
+The loader checks the token route before downloading the SDK. An unconfigured or
+refused map makes no SDK request through this client loader. The first token is
+reused for initialization; renewal still fetches a fresh token.
+
 `initializeMapKit()` is a singleton: the four call sites share one load and one
 token exchange. The token is delivered **only** through
 `mapkit.init({ authorizationCallback })`, never as a `token` on the load call —
