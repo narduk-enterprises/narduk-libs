@@ -103,6 +103,53 @@ describe('validateCloudflareManifest', () => {
     expect(finding.message).toContain('not in the manifest: FILES')
   })
 
+  it('accepts every known R2 bucket role and a missing one (narduk-libs#1285)', () => {
+    for (const role of [undefined, 'uploads', 'read-only-assets', 'archive', 'app-data']) {
+      const root = checkout({
+        'Config/cloudflare-app.json': manifest({
+          bindings: {
+            d1: [{ binding: 'DB' }],
+            kv: [],
+            r2: [{ binding: 'UPLOADS', bucketName: 'u', ...(role ? { role } : {}) }],
+            queues: [
+              { binding: 'JOBS', role: 'producer' },
+              { queue: 'jobs', role: 'consumer' },
+            ],
+            cron: ['0 * * * *', '*/15 * * * *'],
+          },
+        }),
+        'apps/web/wrangler.jsonc': WRANGLER_JSONC,
+      })
+      expect(validateCloudflareManifest(root).findings).toEqual([])
+    }
+  })
+
+  it('rejects an unknown R2 bucket role, naming the binding and the vocabulary', () => {
+    const root = checkout({
+      'Config/cloudflare-app.json': manifest({
+        bindings: {
+          d1: [{ binding: 'DB' }],
+          kv: [],
+          r2: [{ binding: 'UPLOADS', bucketName: 'u', role: 'timelines' }],
+          queues: [
+            { binding: 'JOBS', role: 'producer' },
+            { queue: 'jobs', role: 'consumer' },
+          ],
+          cron: ['0 * * * *', '*/15 * * * *'],
+        },
+      }),
+      'apps/web/wrangler.jsonc': WRANGLER_JSONC,
+    })
+    const [finding, ...rest] = validateCloudflareManifest(root).findings
+    expect(rest).toEqual([])
+    expect(finding).toMatchObject({
+      file: 'Config/cloudflare-app.json',
+      field: 'bindings.r2[0].role',
+    })
+    expect(finding.message).toContain('"timelines" (UPLOADS)')
+    expect(finding.message).toContain('uploads, read-only-assets, archive, app-data')
+  })
+
   it('requires the manifest account in wrangler, and says when it is absent', () => {
     const root = checkout({
       'Config/cloudflare-app.json': manifest(),

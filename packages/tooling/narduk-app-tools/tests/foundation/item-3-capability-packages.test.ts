@@ -116,6 +116,118 @@ describe('item 3 -- capability packages', () => {
     expect(subCheckStatus(await run(root), '3.3')).toBe('pass')
   })
 
+  describe('3.3 R2 bucket roles (narduk-libs#1285)', () => {
+    function appWithR2(r2: unknown[]): string {
+      const root = makeTempRepo()
+      tempDirs.push(root)
+      writeConformantBaseline(root)
+      writeJson(root, 'Config/cloudflare-app.json', {
+        product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+        worker: { nitroPreset: 'cloudflare_module' },
+        access: { exposureClass: 'public' },
+        bindings: { r2 },
+      })
+      return root
+    }
+    function sub33(artefact: Awaited<ReturnType<typeof run>>) {
+      for (const item of artefact.items) {
+        const sub = item.checks.find((c) => c.id === '3.3')
+        if (sub) return sub
+      }
+      throw new Error('no 3.3')
+    }
+
+    it('is not-applicable when every bucket is app-data or read-only-assets', async () => {
+      const root = appWithR2([
+        { binding: 'TIMELINES', bucketName: 'music-timelines', role: 'app-data' },
+        { binding: 'IMAGES', bucketName: 'images', role: 'read-only-assets' },
+      ])
+      const sub = sub33(await run(root))
+      expect(sub.status).toBe('not-applicable')
+      expect(sub.detail).toContain('TIMELINES: app-data')
+      expect(sub.detail).toContain('IMAGES: read-only-assets')
+    })
+
+    it('fails a bucket with no role and no narduk-uploads (the default is uploads)', async () => {
+      const root = appWithR2([{ binding: 'ASSETS', bucketName: 'assets' }])
+      const sub = sub33(await run(root))
+      expect(sub.status).toBe('fail')
+      expect(sub.detail).toContain('ASSETS')
+    })
+
+    it('fails an explicit uploads bucket without narduk-uploads', async () => {
+      const root = appWithR2([{ binding: 'BUCKET', bucketName: 'b', role: 'uploads' }])
+      expect(subCheckStatus(await run(root), '3.3')).toBe('fail')
+    })
+
+    it('fails mixed roles when one is uploads and the package is missing', async () => {
+      const root = appWithR2([
+        { binding: 'TIMELINES', bucketName: 't', role: 'app-data' },
+        { binding: 'BUCKET', bucketName: 'b', role: 'uploads' },
+      ])
+      const sub = sub33(await run(root))
+      expect(sub.status).toBe('fail')
+      expect(sub.detail).toContain('BUCKET')
+      expect(sub.detail).not.toContain('TIMELINES')
+    })
+
+    it('treats an unrecognised role as uploads so a typo cannot turn 3.3 off', async () => {
+      const root = appWithR2([{ binding: 'TIMELINES', bucketName: 't', role: 'timelines' }])
+      expect(subCheckStatus(await run(root), '3.3')).toBe('fail')
+    })
+
+    it('passes mixed roles once narduk-uploads is a dependency', async () => {
+      const root = appWithR2([
+        { binding: 'TIMELINES', bucketName: 't', role: 'app-data' },
+        { binding: 'BUCKET', bucketName: 'b' },
+      ])
+      writeJson(root, 'package.json', {
+        name: 'x',
+        scripts: { 'manifests:validate': 'true' },
+        dependencies: {
+          '@narduk-enterprises/narduk-core': '3.4.1',
+          '@narduk-enterprises/narduk-testkit': '2.0.0',
+          '@narduk-enterprises/narduk-app-tools': '0.1.3',
+          '@narduk-enterprises/eslint-config': '2.0.0',
+          '@narduk-enterprises/narduk-seo': '1.0.0',
+          '@narduk-enterprises/narduk-analytics': '1.0.0',
+          '@narduk-enterprises/narduk-uploads': '1.0.0',
+        },
+      })
+      expect(subCheckStatus(await run(root), '3.3')).toBe('pass')
+    })
+
+    it('fails a read-only-assets bucket that server code writes or deletes', async () => {
+      for (const call of ['IMAGES.put(key, body)', 'env.IMAGES?.delete(key)']) {
+        const root = appWithR2([
+          { binding: 'IMAGES', bucketName: 'images', role: 'read-only-assets' },
+        ])
+        writeFile(root, 'server/routes/images/[...slug].get.ts', `await ${call}\n`)
+        const sub = sub33(await run(root))
+        expect(sub.status).toBe('fail')
+        expect(sub.detail).toContain('server/routes/images/[...slug].get.ts')
+      }
+    })
+
+    it('leaves a read-only-assets bucket that server code only reads not-applicable', async () => {
+      const root = appWithR2([
+        { binding: 'IMAGES', bucketName: 'images', role: 'read-only-assets' },
+      ])
+      writeFile(root, 'server/routes/images/[...slug].get.ts', 'await IMAGES.get(slug)\n')
+      expect(subCheckStatus(await run(root), '3.3')).toBe('not-applicable')
+    })
+
+    it('keeps the wrangler fallback (no manifest r2 entries) failing as uploads', async () => {
+      const root = appWithR2([])
+      writeFile(
+        root,
+        'wrangler.json',
+        '{"name":"x","r2_buckets":[{"binding":"BUCKET","bucket_name":"b"}]}',
+      )
+      expect(subCheckStatus(await run(root), '3.3')).toBe('fail')
+    })
+  })
+
   it.each([
     ['Fixture App', { name: 'fixture-app' }],
     ['Riverstatus', { name: 'riverstatus' }],

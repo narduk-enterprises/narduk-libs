@@ -50,3 +50,10 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
 The package currently expects the Narduk core layer to provide mutation,
 rate-limit, logger, and Worker environment helpers. The contract for app/control
 tooling lives in `capability-contract.json`.
+
+This package is for user-uploaded images only. An app whose R2 bucket is
+something else (read-only assets, an archive, server-written app data) does not
+install it: it declares `"role"` on that `bindings.r2[]` entry in
+`Config/cloudflare-app.json` instead, and `foundation:check` 3.3 applies only to
+`uploads` buckets (vocabulary in the narduk-app-tools README, "R2 bucket
+roles").
