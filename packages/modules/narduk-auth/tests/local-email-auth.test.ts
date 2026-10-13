@@ -110,18 +110,29 @@ describe('local email authentication primitives', () => {
     expect(actionUrl.searchParams.get('next')).toBe('/invite?farm=one')
   })
 
-  it('escapes app and link content in email HTML', () => {
-    expect(escapeEmailHtml(`<Kids & "Family">`)).toBe('&lt;Kids &amp; &quot;Family&quot;&gt;')
-    const message = buildLocalEmailMessage({
-      actionUrl: 'https://app.example/reset?token=a&next=<bad>',
-      appName: '<Kids & Family>',
-      purpose: 'setup',
-      ttlMinutes: 15,
-    })
-    expect(message.html).toContain('&lt;Kids &amp; Family&gt;')
-    expect(message.html).toContain('token=a&amp;next=&lt;bad&gt;')
-    expect(message.text).toContain('single-use link expires in 15 minutes')
-  })
+  it.each(['setup', 'reset'] as const)(
+    'builds an escaped %s email with a matching action link',
+    (purpose) => {
+      expect(escapeEmailHtml(`<Kids & "Family">`)).toBe('&lt;Kids &amp; &quot;Family&quot;&gt;')
+      const action = purpose === 'setup' ? 'set up' : 'reset'
+      const actionLabel = purpose === 'setup' ? 'Set up password' : 'Reset password'
+      const message = buildLocalEmailMessage({
+        actionUrl: 'https://app.example/reset?token=a&next=<bad>',
+        appName: '<Kids & Family>',
+        purpose,
+        ttlMinutes: 15,
+      })
+      expect(message.subject).toBe(`<Kids & Family>: ${action} your password`)
+      expect(message.text).toContain(`Use this link to ${action} your password`)
+      expect(message.html).toContain(`Use the link below to ${action} your password`)
+      expect(message.html).toContain('&lt;Kids &amp; Family&gt;')
+      expect(message.html).toContain(
+        `<a href="https://app.example/reset?token=a&amp;next=&lt;bad&gt;">${actionLabel}</a>`,
+      )
+      expect(message.text).toContain('single-use link expires in 15 minutes')
+      expect(message.html).toContain('single-use link expires in 15 minutes')
+    },
+  )
 
   it('applies bounded exponential lockout after five failures', () => {
     expect(localEmailLockSeconds(4)).toBe(0)
