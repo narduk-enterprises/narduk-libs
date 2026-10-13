@@ -148,11 +148,19 @@ export function specFilters(args: readonly string[]): string[] {
   )
 }
 
+/** Characters that make a filter a pattern rather than a path fragment. */
+const PATTERN_CHARACTERS = /[\\^$*+?()[\]{}|]/
+
 /**
- * The spec files (names) a filter list selects, as Playwright does: each
- * filter is a regular expression tested against the file's absolute path, with
- * an optional `:line[:column]` suffix; one that is not a valid expression is a
- * plain substring.
+ * The spec files (names) a filter list selects. Playwright treats each filter
+ * as a regular expression over the file's absolute path, with an optional
+ * `:line[:column]` suffix. A regular expression is never built from the
+ * command line here (that is a regex-injection sink, and a pattern could hang
+ * the config load); a filter is read as the path fragment it nearly always is:
+ * a substring of the absolute path, `\.` read as `.`, a trailing `$` as "ends
+ * with". A filter that is still a pattern after that (`.*`, `a|b`, `[ab]`, an
+ * unclosed group) cannot be judged exactly, so it fails closed: it selects every
+ * spec, and a run that names one is refused. Name the files instead.
  */
 export function selectedSpecs(
   filters: readonly string[],
@@ -161,13 +169,12 @@ export function selectedSpecs(
 ): string[] {
   const root = resolve(specDir)
   const tests = filters.map((filter): ((file: string) => boolean) => {
-    const bare = filter.replace(/:\d+(?::\d+)?$/, '')
-    try {
-      const pattern = new RegExp(bare)
-      return (file) => pattern.test(file)
-    } catch {
-      return (file) => file.includes(bare)
-    }
+    let fragment = filter.replace(/:\d+(?::\d+)?$/, '')
+    const endsWith = fragment.endsWith('$') && !fragment.endsWith('\\$')
+    if (endsWith) fragment = fragment.slice(0, -1)
+    fragment = fragment.replaceAll('\\.', '.')
+    if (PATTERN_CHARACTERS.test(fragment)) return () => true
+    return endsWith ? (file) => file.endsWith(fragment) : (file) => file.includes(fragment)
   })
   return specs.filter((name) => {
     const file = join(root, name).replaceAll('\\', '/')

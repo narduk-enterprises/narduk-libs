@@ -2,4 +2,21 @@
 '@narduk-enterprises/narduk-testkit': minor
 ---
 
-Add the local E2E budget to `playwright/config`, upstreamed from operator-portal#2392. `assertLocalE2eScope()` at the top of a `playwright.config.ts` makes a local `playwright test` exit 1, before any build or server, when it names no spec file (a bare `--grep` included), selects more than `maxSpecs` spec files (default 3), or selects a spec tagged `// @sweep` in its first 10 lines; CI, `E2E_ALLOW_BROAD=1`, `--last-failed`, `--list`, `--only-changed`, a Playwright worker, another subcommand and a run under another `--config` pass. `specDir`, `maxSpecs`, `sweepTag`, `allowBroadEnv`, `configFile` and `guidance` are options with the portal's values as defaults. `e2eBudgetDefaults()` states `timeout`, `expect.timeout`, `use.actionTimeout`, `use.navigationTimeout` and, for a local run only, `maxFailures: 5` and a 15 minute `globalTimeout`; merge its `use` over the preset's. Pure functions (`localScopeVerdict`, `selectedSpecs`, `specFilters`, `hasSweepTag`, `listSpecFiles`, `listSweepSpecs`) are exported for unit tests. The module imports neither `@playwright/test` nor `e2e/fixtures`, so a config can load it. See the README section "Local E2E budget".
+Add the local E2E budget to `playwright/config`, upstreamed from
+operator-portal#2392. `assertLocalE2eScope()` at the top of a
+`playwright.config.ts` makes a local `playwright test` exit 1, before any build
+or server, when it names no spec file (a bare `--grep` included), selects more
+than `maxSpecs` spec files (default 3; a filter is read as a path fragment, and
+one that is still a regular expression selects every spec rather than being
+compiled from the command line), or selects a spec tagged `// @sweep` in its
+first 10 lines; CI, `E2E_ALLOW_BROAD=1`, `--last-failed`, `--list`,
+`--only-changed`, a Playwright worker, another subcommand and a run under
+another `--config` pass. `specDir`, `maxSpecs`, `sweepTag`, `allowBroadEnv`,
+`configFile` and `guidance` are options with the portal's values as defaults.
+`e2eBudgetDefaults()` states `timeout`, `expect.timeout`, `use.actionTimeout`,
+`use.navigationTimeout` and, for a local run only, `maxFailures: 5` and a 15
+minute `globalTimeout`; merge its `use` over the preset's. Pure functions
+(`localScopeVerdict`, `selectedSpecs`, `specFilters`, `hasSweepTag`,
+`listSpecFiles`, `listSweepSpecs`) are exported for unit tests. The module
+imports neither `@playwright/test` nor `e2e/fixtures`, so a config can load it.
+See the README section "Local E2E budget".

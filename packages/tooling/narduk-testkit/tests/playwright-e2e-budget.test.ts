@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -119,15 +119,42 @@ describe('localScopeVerdict', () => {
 })
 
 describe('selectedSpecs', () => {
-  it('selects as Playwright does: a regular expression over the absolute path, else a substring', () => {
+  it('reads a filter as a path fragment: a substring of the absolute path, `\\.` as `.`, a trailing `$` as ends-with', () => {
     expect(selectedSpecs(['agents-screen'], specs, SPEC_DIR)).toEqual(['agents-screen.spec.ts'])
     expect(selectedSpecs(['tests/e2e/agents-screen\\.spec\\.ts$'], specs, SPEC_DIR)).toEqual([
       'agents-screen.spec.ts',
     ])
-    expect(selectedSpecs(['agents-screen.spec.ts(unclosed'], specs, SPEC_DIR)).toEqual([])
+    expect(selectedSpecs(['agents-screen.spec.ts$'], specs, SPEC_DIR)).toEqual([
+      'agents-screen.spec.ts',
+    ])
+    // `$` anchors the end: a fragment that is only a prefix of the name selects nothing.
+    expect(selectedSpecs(['agents-screen$'], specs, SPEC_DIR)).toEqual([])
     expect(selectedSpecs(['nested/deep.spec.ts:7:3'], specs, SPEC_DIR)).toEqual([
       'nested/deep.spec.ts',
     ])
+    expect(selectedSpecs(['no-such-spec'], specs, SPEC_DIR)).toEqual([])
+  })
+
+  it('fails closed on a filter that is still a pattern: it selects every spec', () => {
+    for (const pattern of [
+      '.*',
+      'agents|hosts',
+      '[ah]',
+      'agents-screen.spec.ts(unclosed',
+      '^tests',
+      'a+',
+      'a?',
+    ]) {
+      expect(selectedSpecs([pattern], specs, SPEC_DIR), pattern).toEqual(specs)
+    }
+    expect(localScopeVerdict(['tests/e2e/(agents|hosts)-screen'], local).ok).toBe(false)
+  })
+
+  it('never builds a regular expression from the command line', () => {
+    const source = readFileSync(new URL('../src/playwright/e2e-budget.ts', import.meta.url), 'utf8')
+    // The sweep tag is the only RegExp, and it is escaped.
+    expect(source.match(/new RegExp\(/g)).toHaveLength(1)
+    expect(source).toMatch(/const escaped = tag\.replace/)
   })
 })
 

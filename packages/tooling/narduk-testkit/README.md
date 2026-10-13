@@ -743,8 +743,10 @@ exit 1 and a message before any build or server when it:
 
 - names no spec file (a bare `--grep` included: it still loads every file);
 - selects more than `maxSpecs` spec files (default 3), by name or by one broad
-  filter, judged as Playwright does (a regular expression over the absolute
-  path, else a substring);
+  filter. A filter is read as a path fragment (a substring of the absolute path,
+  `\.` as `.`, a trailing `$` as "ends with"); a filter that is still a pattern
+  (`.*`, `a|b`, `[ab]`) selects every spec and is refused, because no regular
+  expression is built from the command line. Name the files;
 - selects a spec carrying `// @sweep` in its first 10 lines (a route sweep: the
   scheduled run's job, not a lane's).
 
