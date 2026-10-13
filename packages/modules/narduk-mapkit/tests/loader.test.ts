@@ -135,6 +135,36 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
     expect(calls[0]?.init?.cache).toBe('no-store')
   })
 
+  it('coalesces the token preflight and fetches a fresh token on renewal', async () => {
+    const { fake, loadImpl } = harness({ auth: { onAccessKeyExpiry: 'refresh' } })
+    const fetchImpl = vi.fn(tokenResponse())
+    const options = { fetchImpl, libraries: LIBRARIES, loadImpl }
+
+    await Promise.all([initializeMapKit(options), initializeMapKit(options)])
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fake.inspect.tokenCalls).toBe(1)
+
+    fake.inspect.advanceClock(1_800_000)
+    await vi.waitFor(() => expect(fake.inspect.configurationChanges).toHaveLength(2))
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fake.inspect.tokenCalls).toBe(2)
+  })
+
+  it('retries a refused preflight without downloading the SDK on the failed attempt', async () => {
+    const { loadCalls, loadImpl } = harness()
+    const fetchImpl = vi.fn(tokenResponse())
+    fetchImpl.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'unconfigured' }), { status: 503 }),
+    )
+    const options = { fetchImpl, libraries: LIBRARIES, loadImpl }
+
+    await expect(initializeMapKit(options)).rejects.toMatchObject({ httpStatus: 503 })
+    expect(loadCalls).toHaveLength(0)
+    await expect(initializeMapKit(options)).resolves.toBeDefined()
+    expect(loadCalls).toHaveLength(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
   it('clears the singleton in the error handler so a caller can retry', async () => {
     // Apple's measured shape: the SAME token is re-sent three times, the
     // callback runs exactly once, then MapKit gives up for good (§d.4).
@@ -219,8 +249,9 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
     expect(fake.inspect.tokenCalls).toBe(2)
   })
 
-  it('never calls done("") when the token route refuses', async () => {
-    const { fake, loadImpl } = harness()
+  it('refuses before loading the SDK and never calls done("")', async () => {
+    const { fake, loadCalls, loadImpl } = harness()
+    const onFailure = vi.fn()
     const fetchImpl = (async () =>
       new Response(JSON.stringify({ error: 'not-same-origin' }), {
         status: 403,
@@ -230,6 +261,7 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
       fetchImpl,
       libraries: LIBRARIES,
       loadImpl,
+      onFailure,
     }).catch((reason: unknown) => reason)
 
     expect(error).toBeInstanceOf(MapKitAuthError)
@@ -238,6 +270,10 @@ describe('initializeMapKit (narduk-libs#421 §d)', () => {
     expect((error as MapKitAuthError).httpStatus).toBe(403)
     // No exchange happened at all: an empty token would have produced a less
     // useful status than the real cause.
+    expect(loadCalls).toHaveLength(0)
+    expect(onFailure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ httpStatus: 403, source: 'token', status: 'Unauthorized' }),
+    )
     expect(fake.inspect.tokens).toStrictEqual([])
     expect(fake.inspect.bootstrapAttempts).toStrictEqual([])
   })
