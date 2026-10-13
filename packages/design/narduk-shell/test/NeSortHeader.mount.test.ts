@@ -85,6 +85,67 @@ describe('NeSortHeader: server mode', () => {
   })
 })
 
+describe('NeSortHeader: sort glyph', () => {
+  // The icon renders as an Iconify <svg> with no name in the DOM, so a stub button reports the
+  // `trailingIcon` it was given; that is the glyph the header chose.
+  const ButtonStub = defineComponent({
+    inheritAttrs: false,
+    props: { trailingIcon: { type: String, default: undefined } },
+    setup:
+      (props, { attrs, slots }) =>
+      () =>
+        h('button', { ...attrs, 'data-trailing-icon': props.trailingIcon }, slots.default?.()),
+  })
+  const glyph = (props: NeSortHeaderProps) => {
+    const wrapper = mount(NeSortHeader, { global: { stubs: { UButton: ButtonStub } }, props })
+    const button = wrapper.get('button')
+    return {
+      icon: button.attributes('data-trailing-icon'),
+      state: button.attributes('data-ne-sort'),
+    }
+  }
+
+  it('draws the idle up-down glyph on an unsorted header, without aria-sort', () => {
+    expect(glyph({ label: 'Wind', sortKey: 'wind' })).toEqual({
+      icon: 'i-lucide-arrow-up-down',
+      state: 'idle',
+    })
+    expect(glyph({ label: 'Wind', sort: 'name:asc', sortKey: 'wind' }).icon).toBe(
+      'i-lucide-arrow-up-down',
+    )
+    const { wrapper } = inHeaderCell({ label: 'Wind', sortKey: 'wind' })
+    expect(wrapper.get('th').attributes('aria-sort')).toBeUndefined()
+    expect(wrapper.findAll('button svg[data-slot="trailingIcon"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('draws exactly one arrow on a sorted header', () => {
+    expect(glyph({ label: 'Wind', sort: 'wind:desc', sortKey: 'wind' })).toEqual({
+      icon: 'i-lucide-arrow-down',
+      state: 'active',
+    })
+    expect(glyph({ label: 'Wind', sort: 'wind:asc', sortKey: 'wind' })).toEqual({
+      icon: 'i-lucide-arrow-up',
+      state: 'active',
+    })
+    const { wrapper } = inHeaderCell({ label: 'Wind', sort: 'wind:desc', sortKey: 'wind' })
+    expect(wrapper.findAll('button svg[data-slot="trailingIcon"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('follows the sort when it moves to and from another column', async () => {
+    const { sort, wrapper } = inHeaderCell({ label: 'Wind', sortKey: 'wind' })
+    const button = () => wrapper.get('button')
+    sort.value = 'wind:asc'
+    await wrapper.vm.$nextTick()
+    expect(button().attributes('data-ne-sort')).toBe('active')
+    sort.value = 'name:asc'
+    await wrapper.vm.$nextTick()
+    expect(button().attributes('data-ne-sort')).toBe('idle')
+    wrapper.unmount()
+  })
+})
+
 describe('NeSortHeader: client mode (stonx call shape)', () => {
   it('drives a TanStack column through toggleSorting', async () => {
     let sorted: false | 'asc' | 'desc' = false

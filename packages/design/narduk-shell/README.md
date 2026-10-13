@@ -1856,6 +1856,13 @@ Two call shapes:
 - **Client mode.** A TanStack `column` from a plain `UTable` `#<id>-header`
   slot, exactly the stonx call shape, so those sites move over unchanged.
 
+An unsorted column draws a muted `i-lucide-arrow-up-down` glyph so a reader can
+tell the header sorts; a sorted one draws the single `i-lucide-arrow-up` or
+`i-lucide-arrow-down`. The button carries `data-ne-sort="idle"` at rest and
+`"active"` while sorted; the idle glyph is `opacity: .45` in the component's own
+`@layer components` rule, which an app's utility or CSS can override. A
+`NeCollectionTable` phone card (no header buttons) draws no glyph.
+
 `aria-sort` belongs on the `<th>`, not on the button inside it. `UTable` gives a
 header slot no way to set attributes on its cell, so the header writes
 `aria-sort` onto its closest `<th>` after mount and removes it when the column
