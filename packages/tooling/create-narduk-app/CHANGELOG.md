@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.65
+
+### Patch Changes
+
+- a92c88c: Pairs with the `@narduk-enterprises/narduk-core` seed change (seed
+  files no longer ship a usable password hash). A new test fails if any
+  generated file carries a `salt:hash` string or binds `password_hash` to a
+  value other than NULL.
+
 ## 0.21.64
 
 ### Patch Changes
