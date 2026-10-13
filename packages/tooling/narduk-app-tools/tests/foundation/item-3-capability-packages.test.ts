@@ -178,4 +178,26 @@ describe('item 3 -- capability packages', () => {
     writeFile(root, 'app/components/Map.vue', "<script setup>\nimport 'maplibre-gl'\n</script>")
     expect(subCheckStatus(await run(root), '3.5')).toBe('fail')
   })
+
+  it('3.5 passes a maplibre-gl import when narduk-maps owns the map', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'package.json', {
+      name: 'x',
+      scripts: { 'manifests:validate': 'true' },
+      dependencies: {
+        '@narduk-enterprises/narduk-core': '3.4.1',
+        '@narduk-enterprises/narduk-testkit': '2.0.0',
+        '@narduk-enterprises/narduk-app-tools': '0.1.3',
+        '@narduk-enterprises/eslint-config': '2.0.0',
+        '@narduk-enterprises/narduk-seo': '1.0.0',
+        '@narduk-enterprises/narduk-analytics': '1.0.0',
+        '@narduk-enterprises/narduk-maps': '0.2.1',
+        'maplibre-gl': '6.0.0',
+      },
+    })
+    writeFile(root, 'app/components/Map.vue', "<script setup>\nimport 'maplibre-gl'\n</script>")
+    expect(subCheckStatus(await run(root), '3.5')).toBe('pass')
+  })
 })

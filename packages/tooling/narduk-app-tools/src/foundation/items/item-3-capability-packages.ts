@@ -38,6 +38,11 @@ import {
   type FoundationSubCheck,
 } from '../types.js'
 
+const ESTATE_CHART_MAP_PACKAGES = [
+  '@narduk-enterprises/narduk-charts',
+  '@narduk-enterprises/narduk-mapkit',
+  '@narduk-enterprises/narduk-maps',
+]
 const CHART_MAP_IMPORT_RE =
   /\b(?:leaflet|mapbox-gl|maplibre-gl|chart\.js|echarts|d3-[a-z]+|@narduk-geo\/(?:narduk-charts|narduk-mapkit))\b/
 
@@ -190,14 +195,15 @@ function evaluate35(repo: AppRepo, merged: Record<string, string>): FoundationSu
       `depends on ${JSON.stringify(geoScoped)} -- charts/mapkit must be under @narduk-enterprises, never @narduk-geo`,
     )
   }
-  const hasEstateChartsOrMaps =
-    '@narduk-enterprises/narduk-charts' in merged || '@narduk-enterprises/narduk-mapkit' in merged
-  if (hasEstateChartsOrMaps) {
+  // narduk-maps owns MapLibre: maplibre-gl is its optional peer, so an app on narduk-maps/gl
+  // imports maplibre-gl itself (for setWorkerUrl) and that import is the package's own engine.
+  const estatePackages = ESTATE_CHART_MAP_PACKAGES.filter((name) => name in merged)
+  if (estatePackages.length > 0) {
     return check(
       '3.5',
       'charts/maps: narduk-charts / narduk-mapkit under @narduk-enterprises',
       STATUS_PASS,
-      'depends on an @narduk-enterprises charts/mapkit package',
+      `depends on ${estatePackages.join(', ')}`,
     )
   }
   const evidence = scanSourceForPattern(repo, CHART_MAP_IMPORT_RE)
@@ -213,7 +219,7 @@ function evaluate35(repo: AppRepo, merged: Record<string, string>): FoundationSu
     '3.5',
     'charts/maps: narduk-charts / narduk-mapkit under @narduk-enterprises',
     STATUS_FAIL,
-    `${evidence} imports a chart/map library directly, with no @narduk-enterprises/narduk-charts or narduk-mapkit dependency`,
+    `${evidence} imports a chart/map library directly, with no @narduk-enterprises/narduk-charts, narduk-mapkit or narduk-maps dependency`,
     evidence,
   )
 }
