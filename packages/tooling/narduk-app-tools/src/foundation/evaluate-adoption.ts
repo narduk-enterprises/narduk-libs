@@ -36,6 +36,7 @@
  * declaration can never be read as proving more than was actually checked.
  */
 
+import { primeAppCheckoutConfig, type AppConfigOptions } from '../app-config/resolve.js'
 import { resolveAppInfo, runFoundationCheck } from './evaluate.js'
 import { runSharedUiPinnedCheck, type SharedUiPinnedArtefact } from './evaluate-shared-ui-pinned.js'
 import {
@@ -351,18 +352,21 @@ export interface RunAdoptionCheckOptions {
    * probes: a test that reached GitHub would be evidence about GitHub. The
    * default answers `unknown` when the run's token cannot read alerts. */
   dependabotReality?: DependabotReality
+  /** Portal resolution of the two app-config documents (env, fetch, timeout). */
+  appConfig?: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs' | 'repo'>
 }
 
 export async function runAdoptionCheck(
   options: RunAdoptionCheckOptions,
 ): Promise<AdoptionArtefact> {
   const { root, toolVersion } = options
+  await primeAppCheckoutConfig(root, options.appConfig)
   const reality = options.reality ?? new FilesystemRegistryReality(root)
   const generated = options.generated ?? new Date().toISOString()
   const app = resolveAppInfo(root, options.appOverrides)
   const shared = { appOverrides: options.appOverrides, generated, root, toolVersion }
 
-  const foundation = await runFoundationCheck({ ...shared, reality })
+  const foundation = await runFoundationCheck({ ...shared, reality, appConfig: options.appConfig })
   const sharedUi = await runSharedUiPinnedCheck({ ...shared, reality })
   const coverage = runCapabilityCoverageCheck(shared)
   const toolchain = runToolchainCheck(shared)

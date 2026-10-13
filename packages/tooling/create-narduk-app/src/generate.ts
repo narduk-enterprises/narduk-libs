@@ -46,8 +46,8 @@ import type {
 } from './types.js'
 
 /**
- * The `deployment` block a generated app is told to paste into
- * `Config/cloudflare-app.json`, serialized rather than hand-typed.
+ * The `deployment` block a generated app is told to record on
+ * the app's portal app row (D-PORTAL-APP-CONFIG-1), serialized rather than hand-typed.
  *
  * This is the same object `defaultDeploymentBlock()` in
  * `@narduk-enterprises/narduk-app-tools` returns, and the generator test pins it
@@ -963,7 +963,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           ? [
               '> **Create the database before the first push.** `apps/web/wrangler.jsonc` binds `DB` to the placeholder `database_id` `00000000-0000-0000-0000-000000000000`, because the generator does not call Cloudflare. Every build, dry-run and test accepts it, but no request that touches the database can succeed, so `foundation:check` fails sub-check 1.5 -- and with it CI -- until the database exists. From the repository root, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set for the account this app deploys to, run `pnpm exec narduk-app db create`. It creates `' +
                 appName +
-                '-db` (the name comes from `Config/cloudflare-app.json`), writes the returned id into `apps/web/wrangler.jsonc` with its comments intact, and prints the id and account. Commit that change: the id is configuration, not a secret. It refuses to run once the id is real and never deletes anything. `--dry-run` shows what it would do.',
+                "-db` (the name comes from the app's declaration on its portal app row, resolved with `OPERATOR_PORTAL_APP_CONFIG_TOKEN`), writes the returned id into `apps/web/wrangler.jsonc` with its comments intact, and prints the id and account. Commit that change: the id is configuration, not a secret. It refuses to run once the id is real and never deletes anything. `--dry-run` shows what it would do.",
               '',
             ]
           : []),
@@ -1160,7 +1160,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         '## The deployment standard',
         '',
-        'This app declares its half of the standard in `Config/cloudflare-app.json`. The generator writes the part a checkout can know -- product identity, the Worker shape, the exposure class, and the bindings mirror. Onboarding adds the live facts it deliberately left out: `product.repository`, the Cloudflare account id, `domains`, and the `deployment` block below. Add that block to the existing file verbatim, then run `pnpm run foundation:deployment`:',
+        "This app's half of the standard -- product identity, the Worker shape, the exposure class, the bindings mirror, `product.repository`, the Cloudflare account id, `domains` and the `deployment` block below -- is owned by its Operator Portal app row, not by a file in this repository (portal decision D-PORTAL-APP-CONFIG-1). The generator writes no `Config/cloudflare-app.json` or `Config/project-lifecycle.json`; registering the app records them on the row. `narduk-app` resolves them from the portal with the `producer:app-config-read` key in `OPERATOR_PORTAL_APP_CONFIG_TOKEN` (never an argument; `OPERATOR_PORTAL_URL` overrides the origin). `NARDUK_APP_CONFIG_SOURCE` is `auto` (a local file if one exists, else the portal; the default), `file` or `portal`. A document that cannot be resolved fails the command; nothing falls back silently. Record this `deployment` block on the app row when registering it, then run `pnpm run foundation:deployment`:",
         '',
         '```jsonc',
         ...deploymentBlockLines(appName),
@@ -1183,7 +1183,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '  pnpm exec narduk-app db create',
               '```',
               '',
-              '`db create` takes the database name from `Config/cloudflare-app.json` (`' +
+              "`db create` takes the database name from the app's portal declaration (`" +
                 appName +
                 '-db`), never from an argument, runs `wrangler d1 create`, writes the returned id into `apps/web/wrangler.jsonc` without touching its comments, and prints the id and the account. It refuses when the id is already real, so it cannot create a second database for an app that has one, and it never deletes. Without it, the equivalent is `wrangler d1 create ' +
                 appName +
@@ -1301,7 +1301,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         "The `gate` job is what makes the promotion safe to trigger two ways. Whatever started the run, it promotes the current head of `main`, and only once `ci / Required` passed in one of **this repository's own `ci.yml` runs on `main`** for that exact commit -- a push, or a dispatch such as `dependabot-merge.yml`'s. A dispatch input or a `workflow_run` head is only a claim: it is recorded but not trusted. A pull request's or a fork's `ci / Required` on the same commit never counts, because the check runs are filtered to the check suites of main's own CI runs. The newest attempt wins by check-run id, so a re-run that is still queued or in progress cannot hide behind an older success. A commit whose CI finished after a newer merge never replaces that newer commit. The rule also covers GitHub keeping only one _pending_ run per concurrency group: a queued Promote replaced by a later one loses nothing, because the survivor promotes the same head. When the head's check has not passed yet, the gate skips with a notice, and that run's own completion promotes it. Promoting a head that is already live repeats an idempotent deploy. The checkout in front of `versions-promote` checks out `$VERIFIED_SHA` as well.",
         '',
-        '**Nothing rolls back automatically.** `Config/cloudflare-app.json` declares `deployment.rollback.mode: manual`, and the workflow does exactly that: a promotion the live proof cannot confirm leaves the run red and prints the version production left and the rollback command, for a person to run (see Recovery below). No credential in the workflow moves production backwards on its own.',
+        "**Nothing rolls back automatically.** The app's declaration (its portal app row) holds `deployment.rollback.mode: manual`, and the workflow does exactly that: a promotion the live proof cannot confirm leaves the run red and prints the version production left and the rollback command, for a person to run (see Recovery below). No credential in the workflow moves production backwards on its own.",
         '',
         "**Dependabot merges promote by dispatch.** `dependabot-merge.yml` merges the `safe` lane with `GITHUB_TOKEN` and starts main CI by `workflow_dispatch`. GitHub fires no `workflow_run` for a run started that way, so without the `workflow_dispatch` trigger above a Dependabot bump reaches `main` but not production until the next human merge (narduk-libs#787). The generated `ci.yml` closes that gap with its `promote-dispatch` job. It runs only for a bot-dispatched run on `main`, after every CI job has passed, and dispatches this workflow with `verified-sha` set to the run's commit if that commit is still main's head. It waits on nothing, so it holds no runner. An app whose `promote.yml` does not exist (a 404) or has no `verified-sha` input gets a notice instead of a failure. Any other API error fails the job, so a promotion is never skipped quietly. To adopt this in an existing app, add the `promote-dispatch` job to `ci.yml` (upgrade does not add jobs to `ci.yml`; copy it from a newly generated app) and give `promote.yml` the `workflow_dispatch` input and the `gate` job shown above.",
         '',
@@ -2003,76 +2003,16 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       ),
     },
     {
-      // The app's own half of the deployment standard, in the shape every
-      // onboarded estate app already uses. Only facts a checkout can know
-      // are written: the product identity, the Worker shape this generator
-      // just emitted into wrangler.jsonc, the exposure class chosen at
-      // generation time, and the bindings mirror.
-      //
-      // Onboarding still owns everything live -- `product.repository`, the
-      // Cloudflare account id, `domains`, and the `deployment` block -- and
-      // those are deliberately ABSENT rather than fabricated, which is the
-      // same rule wrangler.jsonc's missing `account_id` follows.
-      //
-      // Why the generator writes this file at all (narduk-libs#617): CI runs
-      // the shared workflow with `foundation-check: true`, which fails the
-      // build on a FAIL or UNKNOWN result. Without this file item 1.2 is a
-      // decided FAIL ("wrangler.jsonc exists but Config/cloudflare-app.json
-      // does not") and 1.4/3.1/3.2 are UNKNOWN, so the FIRST CI run of every
-      // new app was red by construction and nothing inside the app could fix
-      // it. Recording the app's own half here is what makes a fresh scaffold
-      // reachable-green; it also turns `manifests:validate` into a real
-      // cross-check from the first commit instead of a no-op.
-      path: 'Config/cloudflare-app.json',
-      contents: text(
-        '{',
-        '  "schemaVersion": 1,',
-        '  "product": {',
-        '    "name": ' + JSON.stringify(displayName) + ',',
-        '    "target": "workers",',
-        '    "framework": "nuxt",',
-        '    "visibility": ' + JSON.stringify(visibility),
-        '  },',
-        '  "worker": {',
-        '    "name": ' + JSON.stringify(appName) + ',',
-        '    "wranglerConfig": "apps/web/wrangler.jsonc",',
-        '    "compatibilityDate": ' + JSON.stringify(DEFAULT_COMPATIBILITY_DATE) + ',',
-        '    "compatibilityFlags": ["nodejs_compat"],',
-        // The spelling nuxt.config declares. foundation:check normalizes `-`
-        // and `_` (narduk-libs#350), so a build writing "cloudflare-module"
-        // into .output/nitro.json agrees with this line.
-        '    "nitroPreset": "cloudflare_module",',
-        '    "workersDev": ' + (exposure === 'public') + ',',
-        '    "previewUrls": ' + (exposure === 'public'),
-        '  },',
-        '  "access": {',
-        '    "exposureClass": ' +
-          JSON.stringify(exposure === 'public' ? 'public' : 'authenticated-public'),
-        '  },',
-        // Mirrors apps/web/wrangler.jsonc exactly -- the same pairing
-        // apps/web/scripts/validate-manifests.mjs enforces on every build,
-        // and the mirror foundation:check item 1.2 reads.
-        '  "bindings": {',
-        '    "d1": ' + (hasDatabase ? '[{ "binding": "DB" }]' : '[]') + ',',
-        '    "kv": [],',
-        '    "r2": ' +
-          (capabilities.includes('uploads') ? '[{ "binding": "UPLOADS" }]' : '[]') +
-          ',',
-        '    "queues": [],',
-        '    "cron": []',
-        '  }',
-        '}',
-      ),
-    },
-    {
       path: 'apps/web/scripts/validate-manifests.mjs',
-      // The generator now writes ../../Config/cloudflare-app.json with a
-      // bindings mirror that matches the wrangler.jsonc beside it, so this
-      // cross-check does real work from the first commit. The ENOENT branch
-      // stays for an app generated before that change, and for one whose
-      // file has been removed: this script is a build gate, not the place to
-      // discover a missing declaration -- foundation:check item 1.2 reports
-      // that, with the remediation attached.
+      // The app's cloudflare-app declaration is owned by its Operator Portal
+      // app row (D-PORTAL-APP-CONFIG-1), so a new app has no
+      // ../../Config/cloudflare-app.json and this in-build cross-check has
+      // nothing to compare against. It says so and exits 0 -- a Workers Build
+      // carries no portal credential, and this script is a build gate, not the
+      // place to discover a missing declaration. The real cross-check is
+      // `narduk-app manifests validate --checkout ../..`, which resolves the
+      // declaration from the portal. An app that still carries the file (every
+      // app generated before this change) gets the full comparison below.
       contents: text(
         "import { readFile } from 'node:fs/promises'",
         '',
@@ -2084,7 +2024,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '} catch (error) {',
         "  if (error.code === 'ENOENT') {",
         '    console.log(',
-        '      `manifests: ${cloudflareAppPath} does not exist yet (populated by onboarding) -- skipping the live binding cross-check`,',
+        '      `manifests: ${cloudflareAppPath} is not in this repository (the portal app row owns it) -- skipping the in-build binding cross-check; narduk-app manifests validate resolves it from the portal`,',
         '    )',
         '    process.exit(0)',
         '  }',

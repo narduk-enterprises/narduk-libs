@@ -185,7 +185,11 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
-  return consumerSmokeTestEnv({ ...environment, ...overrides })
+  // The fixtures are not registered apps and the smoke holds no portal
+  // credential (the CI repository is narduk-libs itself, which has no app row),
+  // so narduk-app reads the declaration this smoke materialised rather than
+  // asking the portal. An explicit setting still wins.
+  return consumerSmokeTestEnv({ NARDUK_APP_CONFIG_SOURCE: 'file', ...environment, ...overrides })
 }
 
 async function runChecked(command, commandArgs, options) {
@@ -1238,6 +1242,53 @@ async function proveRepositoryGateRoundTrip(consumerDirectory, appDirectory, vis
   return summary
 }
 
+// The generator no longer writes Config/cloudflare-app.json: the Operator Portal
+// app row owns an app's declaration (D-PORTAL-APP-CONFIG-1) and narduk-app
+// resolves it from there. This fixture is not a registered app and the smoke
+// holds no portal credential, so it stands in for the row by materialising the
+// document the portal would serve, from the wrangler config the generator just
+// wrote. Everything downstream (foundation:check, db migrate, deploy) then reads
+// it exactly as it read the generator's own file before.
+function registerFixtureDeclaration(appDirectory, visibility) {
+  const wrangler = readFileSync(join(appDirectory, 'apps', 'web', 'wrangler.jsonc'), 'utf8')
+  const field = (name) => wrangler.match(new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`, 'u'))?.[1]
+  const name = field('name')
+  if (!name) throw new Error(`Could not read the Worker name from ${appDirectory}.`)
+  const isPublic = visibility === 'public'
+  const declaration = {
+    schemaVersion: 1,
+    contractOwnership: 'portal-owned',
+    product: {
+      name,
+      target: 'workers',
+      framework: 'nuxt',
+      visibility: isPublic ? 'public' : 'private',
+    },
+    worker: {
+      name,
+      wranglerConfig: 'apps/web/wrangler.jsonc',
+      compatibilityDate: field('compatibility_date'),
+      compatibilityFlags: ['nodejs_compat'],
+      nitroPreset: 'cloudflare_module',
+      workersDev: isPublic,
+      previewUrls: isPublic,
+    },
+    access: { exposureClass: isPublic ? 'public' : 'authenticated-public' },
+    bindings: {
+      d1: wrangler.includes('"d1_databases"') ? [{ binding: 'DB' }] : [],
+      kv: [],
+      r2: wrangler.includes('"r2_buckets"') ? [{ binding: 'UPLOADS' }] : [],
+      queues: [],
+      cron: [],
+    },
+  }
+  mkdirSync(join(appDirectory, 'Config'), { recursive: true })
+  writeFileSync(
+    join(appDirectory, 'Config', 'cloudflare-app.json'),
+    `${JSON.stringify(declaration, null, 2)}\n`,
+  )
+}
+
 async function proveGeneratedConsumer({
   consumerDirectory,
   packages,
@@ -1254,6 +1305,8 @@ async function proveGeneratedConsumer({
     cwd: consumerDirectory,
     label: 'run the packed one-shot app generator for a public app',
   })
+  registerFixtureDeclaration(generatedDirectory, 'private')
+  registerFixtureDeclaration(publicDirectory, 'public')
   await proveUpgradedRepositoryGate(consumerDirectory, generatedDirectory, 'private')
   await proveUpgradedRepositoryGate(consumerDirectory, publicDirectory, 'public')
 

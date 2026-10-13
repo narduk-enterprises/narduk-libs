@@ -44,6 +44,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { applyEdits, modify, parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
 
+import { readAppConfigSync } from './app-config/resolve.js'
 import { CLOUDFLARE_APP_MANIFEST } from './database-ownership.js'
 import { spawnWranglerSync } from './package-manager.js'
 
@@ -163,10 +164,17 @@ function nonEmpty(value: unknown): string | null {
 export function planD1Create(options: D1CreateOptions): D1CreatePlan {
   const checkoutDir = resolve(options.checkoutDir)
   const env = options.env ?? process.env
-  const manifestPath = join(checkoutDir, CLOUDFLARE_APP_MANIFEST)
+  // The database name comes from the app's declaration: the local file when
+  // the checkout has one, else the portal's copy (resolved before this call).
+  const declared = readAppConfigSync({
+    root: checkoutDir,
+    file: 'cloudflare-app.json',
+    env,
+    required: true,
+  })!
   const manifest = parseJsoncText(
-    readText(manifestPath, `${CLOUDFLARE_APP_MANIFEST} (the database name comes from it)`),
-    manifestPath,
+    declared.text,
+    declared.path ?? `${CLOUDFLARE_APP_MANIFEST} (from the portal)`,
   )
   if (!isRecord(manifest) || !isRecord(manifest.worker)) {
     throw new Error(`db create: ${CLOUDFLARE_APP_MANIFEST} has no "worker" block`)

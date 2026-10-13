@@ -4,6 +4,13 @@ import { dirname, join, resolve } from 'node:path'
 
 import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser'
 
+import {
+  primeAppConfig,
+  readAppConfigSync,
+  requireAppConfigRoot,
+  type AppConfigOptions,
+  type LocateOptions,
+} from './app-config/resolve.js'
 import { readDeploymentBlock } from './deployment-config.js'
 import { mergeArtifactScriptTriggers } from './script-triggers.js'
 import {
@@ -147,8 +154,12 @@ export function markedBuildCiOutputBlocksPublish(
 }
 
 export function readJsonc<T>(path: string): T {
+  return parseJsoncDocument<T>(readFileSync(path, 'utf8'), path)
+}
+
+function parseJsoncDocument<T>(text: string, label: string): T {
   const errors: ParseError[] = []
-  const value = parse(readFileSync(path, 'utf8'), errors, {
+  const value = parse(text, errors, {
     allowEmptyContent: false,
     allowTrailingComma: true,
     disallowComments: false,
@@ -157,7 +168,7 @@ export function readJsonc<T>(path: string): T {
     const details = errors
       .map((error) => `${printParseErrorCode(error.error)} at offset ${error.offset}`)
       .join(', ')
-    throw new Error(`Could not parse Wrangler config ${path}: ${details}`)
+    throw new Error(`Could not parse Wrangler config ${label}: ${details}`)
   }
   return value
 }
@@ -252,6 +263,63 @@ export function findCloudflareAppConfig(appDir: string): string | null {
   return null
 }
 
+/** The same walk as {@link findCloudflareAppConfig}, for the shared resolver. */
+export const DEPLOY_APP_CONFIG_LOCATE: LocateOptions = { maxDepth: 6, stopAtGit: true }
+
+/**
+ * `Config/cloudflare-app.json` text for the app at `appDir`, as the shared
+ * resolver sees it: the local file found by {@link findCloudflareAppConfig}'s
+ * walk, else (unless `NARDUK_APP_CONFIG_SOURCE=file`) the portal copy
+ * {@link primeDeployAppConfig} fetched. Throws `AppConfigError` when neither
+ * source resolves; deploy and ship never carry on with a guess.
+ */
+export function resolveCloudflareAppConfigText(
+  appDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { text: string; label: string } {
+  const root = requireAppConfigRoot(appDir, 'cloudflare-app.json', {
+    ...DEPLOY_APP_CONFIG_LOCATE,
+    env,
+  })
+  const resolved = readAppConfigSync({ root, file: 'cloudflare-app.json', env, required: true })!
+  return {
+    text: resolved.text,
+    label: resolved.path ?? 'Config/cloudflare-app.json (from the portal)',
+  }
+}
+
+/** {@link resolveCloudflareAppConfigText}, parsed as JSONC. */
+export function readCloudflareAppConfigDocument(
+  appDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): unknown {
+  const { text, label } = resolveCloudflareAppConfigText(appDir, env)
+  return parseJsoncDocument<unknown>(text, label)
+}
+
+/**
+ * Resolve, before the synchronous deploy path reads it, the app declaration a
+ * `versions-upload` on a Workers Build branch needs. Nothing is fetched when the
+ * checkout carries the file, or when the action does not read it.
+ */
+export async function primeDeployAppConfig(
+  args: readonly string[],
+  appDir: string,
+  env: DeployEnv = process.env,
+  options: Pick<AppConfigOptions, 'fetch' | 'timeoutMs' | 'repo'> = {},
+): Promise<void> {
+  const { action } = parseDeployArgs([...args])
+  if (action !== 'versions-upload' || !env.WORKERS_CI_BRANCH?.trim()) return
+  await primeAppConfig({
+    ...options,
+    ...DEPLOY_APP_CONFIG_LOCATE,
+    env,
+    dir: appDir,
+    files: ['cloudflare-app.json'],
+    required: true,
+  })
+}
+
 /**
  * Which config `versions-upload` hands Wrangler (narduk-libs#473, design §3.3
  * option A).
@@ -285,14 +353,17 @@ export function selectDeployConfig(options: {
   if (options.action !== 'versions-upload') return production
   const branch = env.WORKERS_CI_BRANCH?.trim()
   if (!branch) return production
-  const appFile = findCloudflareAppConfig(options.appDir)
-  if (!appFile) return production
+  // No declaration anywhere is an error, not a reason to upload this branch
+  // with the production bindings: that silent fallback is what the portal
+  // contract removes. A declaration that is present but unparseable keeps the
+  // warning below.
+  const appFile = resolveCloudflareAppConfigText(options.appDir, env)
   let outcome: ReturnType<typeof readDeploymentBlock>
   try {
-    outcome = readDeploymentBlock(readJsonc<unknown>(appFile))
+    outcome = readDeploymentBlock(parseJsoncDocument<unknown>(appFile.text, appFile.label))
   } catch (error) {
     log(
-      `narduk-app deploy: WARNING -- could not read ${appFile} ` +
+      `narduk-app deploy: WARNING -- could not read ${appFile.label} ` +
         `(${error instanceof Error ? error.message : String(error)}), so branch ${branch} ` +
         'uploads with the production config.',
     )

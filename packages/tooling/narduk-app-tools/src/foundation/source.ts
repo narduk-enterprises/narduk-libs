@@ -12,6 +12,18 @@ import { join, relative } from 'node:path'
 
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser'
 
+import {
+  APP_CONFIG_FILES,
+  APP_CONFIG_PATHS,
+  readAppConfigSync,
+  type AppConfigFile,
+} from '../app-config/resolve.js'
+
+/** The app-config document `rel` names, when it is one of the two. */
+function appConfigFileOf(rel: string): AppConfigFile | null {
+  return APP_CONFIG_FILES.find((file) => APP_CONFIG_PATHS[file] === rel) ?? null
+}
+
 export const PACKAGE_JSON_CANDIDATES = [
   'package.json',
   'apps/web/package.json',
@@ -97,6 +109,11 @@ export class AppRepo {
 
   /** Read a repo-relative text file, or null if it does not exist / is not text. */
   read(rel: string): string | null {
+    // The two app-config documents resolve through the shared resolver: the
+    // local file when there is one (unchanged), else the portal copy primed by
+    // the entry point. Every other path is a plain checkout read.
+    const config = appConfigFileOf(rel)
+    if (config) return readAppConfigSync({ root: this.root, file: config })?.text ?? null
     const path = join(this.root, rel)
     if (!existsSync(path) || !statSync(path).isFile()) return null
     try {
@@ -107,6 +124,8 @@ export class AppRepo {
   }
 
   exists(rel: string): boolean {
+    const config = appConfigFileOf(rel)
+    if (config) return readAppConfigSync({ root: this.root, file: config }) !== null
     const path = join(this.root, rel)
     return existsSync(path)
   }

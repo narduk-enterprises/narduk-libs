@@ -32,21 +32,75 @@
  * `generator.test.ts` uses to read this package's fixture by relative path.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createNardukApp, PACKAGE_VERSIONS } from '../../../create-narduk-app/src/index.js'
+import { clearPrimedAppConfig, primeAppCheckoutConfig } from '../../src/app-config/resolve.js'
+import { fakePortal, TOKEN } from '../app-config/fake-portal.js'
 import { PLACEHOLDER_D1_DATABASE_ID, runD1Create } from '../../src/d1-create.js'
 import { runFoundationCheck } from '../../src/foundation/evaluate.js'
 import type { RegistryReality } from '../../src/foundation/npm-registry.js'
 import { fakeReality, subCheckStatus } from './helpers.js'
 
 const tempDirs: string[] = []
+const REPO = 'narduk-enterprises/conformance-app'
+
+/**
+ * The declaration an app's portal row holds after registration (D-PORTAL-APP-
+ * CONFIG-1). The generator writes no `Config/cloudflare-app.json` any more, so
+ * this is what registration records for the scaffold under test: the half of
+ * the standard a checkout can know. It is served through an injected fetch, not
+ * written into the checkout, so the claim below is about the portal path.
+ */
+function registeredDeclaration(options: {
+  database: 'd1' | 'none'
+  authenticated: boolean
+}): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    contractOwnership: 'portal-owned',
+    product: {
+      name: 'conformance-app',
+      target: 'workers',
+      framework: 'nuxt',
+      visibility: options.authenticated ? 'private' : 'public',
+    },
+    worker: {
+      name: 'conformance-app',
+      wranglerConfig: 'apps/web/wrangler.jsonc',
+      compatibilityDate: '2026-01-01',
+      compatibilityFlags: ['nodejs_compat'],
+      nitroPreset: 'cloudflare_module',
+      workersDev: !options.authenticated,
+      previewUrls: !options.authenticated,
+    },
+    access: { exposureClass: options.authenticated ? 'authenticated-public' : 'public' },
+    bindings: {
+      d1: options.database === 'd1' ? [{ binding: 'DB' }] : [],
+      kv: [],
+      r2: options.database === 'd1' ? [{ binding: 'UPLOADS' }] : [],
+      queues: [],
+      cron: [],
+    },
+  }
+}
+
+const portalFor = new Map<string, ReturnType<typeof fakePortal>>()
+
+beforeEach(() => {
+  clearPrimedAppConfig()
+  vi.stubEnv('NARDUK_APP_CONFIG_SOURCE', 'portal')
+  vi.stubEnv('OPERATOR_PORTAL_APP_CONFIG_TOKEN', TOKEN)
+  vi.stubEnv('GITHUB_REPOSITORY', REPO)
+})
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { force: true, recursive: true })
+  portalFor.clear()
+  clearPrimedAppConfig()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
@@ -81,9 +135,13 @@ const PROVISIONED_ID = '3f2a9c1e-7b4d-4e8f-9a6b-1c2d3e4f5a6b'
 
 /** `narduk-app db create` over the generated checkout, Wrangler replaced by
  * what `wrangler d1 create` prints -- the step onboarding runs before CI. */
-function provision(dir: string): void {
+async function provision(dir: string): Promise<void> {
+  await primeAppCheckoutConfig(dir, { fetch: portalFor.get(dir)!.fetch })
   runD1Create(
-    { checkoutDir: dir, env: { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32) } },
+    {
+      checkoutDir: dir,
+      env: { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), NARDUK_APP_CONFIG_SOURCE: 'portal' },
+    },
     (args) =>
       `✅ Successfully created DB '${args[2]}'\n` +
       JSON.stringify({ d1_databases: [{ database_name: args[2], database_id: PROVISIONED_ID }] }),
@@ -126,7 +184,17 @@ async function scaffold(options: {
       JSON.stringify({ preset: 'cloudflare-module' }),
     )
   }
-  if (options.provisioned) provision(dir)
+  expect(readdirSync(dir)).not.toContain('Config')
+  portalFor.set(
+    dir,
+    fakePortal({
+      [`${REPO}/cloudflare-app.json`]: registeredDeclaration({
+        database: options.database ?? 'd1',
+        authenticated: options.database !== 'none',
+      }),
+    }),
+  )
+  if (options.provisioned) await provision(dir)
   return dir
 }
 
@@ -135,7 +203,8 @@ function check(root: string, reality: RegistryReality | undefined) {
     root,
     toolVersion: '0.0.0-test',
     reality,
-    appOverrides: { repo: 'narduk-enterprises/conformance-app', commit: 'a'.repeat(40) },
+    appOverrides: { repo: REPO, commit: 'a'.repeat(40) },
+    appConfig: { fetch: portalFor.get(root)!.fetch },
   })
 }
 

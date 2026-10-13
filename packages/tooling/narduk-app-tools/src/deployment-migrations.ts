@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
+import { readAppConfigText } from './app-config/resolve.js'
 import {
   contractEvidenceIssuesOnDisk,
   contractOwnedEntries,
@@ -90,7 +91,7 @@ export function planDeploymentMigrations(
   target: MigrationTarget,
 ): DeploymentMigrationPlan {
   const manifest = manifestSchema.parse(
-    JSON.parse(readFileSync(join(root, 'Config', 'cloudflare-app.json'), 'utf8')),
+    JSON.parse(readAppConfigText({ root, file: 'cloudflare-app.json', required: true })!),
   )
   const outcome = readDeploymentBlock({ deployment: manifest.deployment })
   if (outcome.kind !== 'valid')

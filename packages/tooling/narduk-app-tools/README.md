@@ -263,11 +263,61 @@ narduk-app auth agent-key create --database <d1-name> --remote \
   step, for example against `--local`.
 - At least one scope is required, and `--expires-days` runs from 1 to 3650.
 
+## Where the app declaration comes from (`Config/cloudflare-app.json`, `Config/project-lifecycle.json`)
+
+The Operator Portal's app row owns an app's `cloudflare-app.json` and
+`project-lifecycle.json` (portal decision D-PORTAL-APP-CONFIG-1). The per-repo
+files are duplicates that get deleted, repo by repo. Every command here that
+reads either one goes through one resolver (`src/app-config/resolve.ts`):
+
+| `NARDUK_APP_CONFIG_SOURCE` | Behaviour                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `auto` (default)           | The local file if the checkout has it (exactly as before, no network), else the portal copy. |
+| `file`                     | The local file only. A command that needs it fails when it is absent.                        |
+| `portal`                   | Ignore any local file and fetch from the portal: how a repo proves it can lose its files.    |
+
+- **Route and credential.**
+  `GET /api/estate/app-config?repo=<owner>/<repo>&file=<file>` on
+  `OPERATOR_PORTAL_URL` (default `https://ops.nardukenterprises.com`), with
+  `Authorization: Bearer` set from `OPERATOR_PORTAL_APP_CONFIG_TOKEN`, the
+  single-purpose `producer:app-config-read` key. The token comes from the
+  environment only, is never an argument and never printed, and is scrubbed from
+  every error. The repository is `GITHUB_REPOSITORY`, else the `origin` remote,
+  else `package.json` `repository`.
+- **GitHub Actions needs no secret.** With no `OPERATOR_PORTAL_APP_CONFIG_TOKEN`
+  and a job that has `permissions: id-token: write`
+  (`ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` set), the
+  resolver asks GitHub for an OIDC token whose audience is the portal origin and
+  sends that as the Bearer. The portal admits it only for the token's own
+  `repository` claim. Precedence is the explicit key, then OIDC. A job without
+  the permission fails with a message that names `permissions: id-token: write`
+  and `NARDUK_APP_CONFIG_SOURCE=file`. Neither token is ever printed.
+- **It fails loudly.** No token, a 401, a 503, a timeout or a malformed answer
+  stops the command with one `AppConfigError`; it never falls back to a missing
+  file or to a stale cache. Only a 404 ("this repository has no such document")
+  reads as absent, and a command that cannot proceed without the declaration
+  (`deploy` on a branch build, `ship`, `db create`, `db migrate-deployment`,
+  `db bundle`) turns that into an error too. The database-ownership guard behind
+  `db migrate` / `db status` and the waivers in `doctor --adoption` stop rather
+  than switch themselves off.
+- **Ownership value.** A portal document carries
+  `"contractOwnership": "portal-owned"`. `"app-owned"` stays accepted while
+  repos still carry files.
+- **Running outside an app** (a scratch directory with no `.git` and no file)
+  needs `NARDUK_APP_CONFIG_SOURCE=file`.
+- **Programmatic use.** Most readers are synchronous, so the entry point
+  resolves first (`primeAppConfig`, `primeAppCheckoutConfig`,
+  `primeDeployAppConfig`) and the readers use `readAppConfigSync`.
+  `runFoundationCheck` and `runAdoptionCheck` prime for you; call the helper
+  before `runDeploymentCheck`, `validateCloudflareManifest`, `planD1Create`,
+  `planDeploymentMigrations` or `readProductionTarget` in portal mode. An
+  unprimed portal read throws.
+
 ## Wrangler ↔ manifest parity (`narduk-app manifests validate`)
 
-Compares the Worker's wrangler config with `Config/cloudflare-app.json`
-(narduk-libs#996), replacing the per-app `scripts/validate-manifests.mjs`
-copies:
+Compares the Worker's wrangler config with `Config/cloudflare-app.json` (or its
+portal copy, see above) (narduk-libs#996), replacing the per-app
+`scripts/validate-manifests.mjs` copies:
 
 ```json
 { "manifests:validate": "narduk-app manifests validate --checkout ../.." }
