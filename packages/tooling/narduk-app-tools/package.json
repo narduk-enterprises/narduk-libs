@@ -2,6 +2,9 @@
   "name": "@narduk-enterprises/narduk-app-tools",
   "version": "0.40.0",
   "private": false,
+  "nardukWorkspaceInputs": [
+    "src/rules/utils/shared-components.ts"
+  ],
   "type": "module",
   "description": "Focused app-local development, migration, deployment, and asset tools.",
   "repository": {

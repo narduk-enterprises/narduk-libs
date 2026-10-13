@@ -160,5 +160,9 @@
   },
   "volta": {
     "node": "24.21.0"
-  }
+  },
+  "nardukWorkspaceInputs": [
+    "src/registry.ts",
+    "instruments/index.ts"
+  ]
 }
