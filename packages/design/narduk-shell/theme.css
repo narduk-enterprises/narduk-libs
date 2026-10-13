@@ -38,8 +38,7 @@
  * schemes side by side in a document that has no colour mode at all.
  */
 
-:root,
-.light {
+:where(:root, .light) {
   /* ---- ground and surfaces --------------------------------------------
    * `--ne-ground` is the page behind the panels and has no `--ui-*` twin:
    * Nuxt UI has one base background, so an app paints the ground itself
@@ -67,6 +66,7 @@
   --ne-ink-muted: #5a6570;
   --ne-ink-dimmed: #8b949d;
   --ne-ink-inverted: #ffffff;
+  --ne-ink-dimmed-text: #5d6873;
 
   /* ---- hairline and divider -------------------------------------------- */
   --ne-hairline: #dde3e7;
@@ -152,14 +152,19 @@
    * test/theme.test.ts proves that against the installed package rather than
    * against a list copied into the test.
    *
-   * The colour aliases (`--ui-primary`, `--ui-secondary`, `--ui-success`,
-   * `--ui-info`, `--ui-warning`, `--ui-error`) are deliberately NOT bridged.
-   * Nuxt UI generates each of them from an eleven-shade scale that its
-   * `solid`, `soft`, `subtle`, `outline` and `ghost` variants all read, so
-   * repointing the 500 shade alone would leave a button's fill and its hover
-   * tint from different palettes. Brand colour stays app.config's business
-   * (src/app-config.ts supplies the suite's defaults) and the structural half
-   * — surfaces, ink, borders, radius, container — is what this sheet owns.
+   * The colour aliases (`--ui-primary` … `--ui-error`) are repointed from
+   * Nuxt UI's 500 shade (light) to the 700 shade, and in dark mode to 400, so
+   * white (light) or `--ne-surface` (dark) text on a solid button or badge
+   * clears AA (narduk-libs#1785). They still read the app's own
+   * `--ui-color-<alias>-<shade>` scale, so brand colour stays app.config's
+   * business (src/app-config.ts); the hex fallback only covers a page without
+   * Nuxt UI's colour plugin. `--ui-text-dimmed` reads `--ne-ink-dimmed-text`,
+   * an AA ink; `--ne-ink-dimmed` stays the 3:1 non-text ink for placeholders
+   * and the hatch.
+   *
+   * Every selector in this file is wrapped in `:where()`, so it has zero
+   * specificity: an app overrides any token with a plain `:root { … }` rule
+   * and never needs `:root:root`.
    */
   --ui-bg: var(--ne-surface);
   --ui-bg-muted: var(--ne-surface-muted);
@@ -170,7 +175,7 @@
   --ui-text: var(--ne-ink-body);
   --ui-text-toned: var(--ne-ink-secondary);
   --ui-text-muted: var(--ne-ink-muted);
-  --ui-text-dimmed: var(--ne-ink-dimmed);
+  --ui-text-dimmed: var(--ne-ink-dimmed-text);
   --ui-text-inverted: var(--ne-ink-inverted);
   --ui-border: var(--ne-hairline);
   --ui-border-muted: var(--ne-divider);
@@ -179,9 +184,16 @@
   --ui-radius: var(--ne-radius-base);
   --ui-container: var(--ne-container);
   --ui-header-height: var(--ne-header-height);
+
+  --ui-primary: var(--ui-color-primary-700, #0369a1);
+  --ui-secondary: var(--ui-color-secondary-700, #1d4ed8);
+  --ui-success: var(--ui-color-success-700, #15803d);
+  --ui-info: var(--ui-color-info-700, #1d4ed8);
+  --ui-warning: var(--ui-color-warning-700, #a16207);
+  --ui-error: var(--ui-color-error-700, #b91c1c);
 }
 
-.dark {
+:where(.dark) {
   --ne-ground: #0c1216;
   --ne-surface: #141c22;
   --ne-surface-muted: #0f171c;
@@ -195,6 +207,7 @@
   --ne-ink-muted: #9aa8b3;
   --ne-ink-dimmed: #6d7b85;
   --ne-ink-inverted: #0c1216;
+  --ne-ink-dimmed-text: #92a0aa;
 
   --ne-hairline: #243039;
   --ne-divider: #1b242b;
@@ -248,7 +261,7 @@
   --ui-text: var(--ne-ink-body);
   --ui-text-toned: var(--ne-ink-secondary);
   --ui-text-muted: var(--ne-ink-muted);
-  --ui-text-dimmed: var(--ne-ink-dimmed);
+  --ui-text-dimmed: var(--ne-ink-dimmed-text);
   --ui-text-inverted: var(--ne-ink-inverted);
   --ui-border: var(--ne-hairline);
   --ui-border-muted: var(--ne-divider);
@@ -257,6 +270,13 @@
   --ui-radius: var(--ne-radius-base);
   --ui-container: var(--ne-container);
   --ui-header-height: var(--ne-header-height);
+
+  --ui-primary: var(--ui-color-primary-400, #38bdf8);
+  --ui-secondary: var(--ui-color-secondary-400, #60a5fa);
+  --ui-success: var(--ui-color-success-400, #4ade80);
+  --ui-info: var(--ui-color-info-400, #60a5fa);
+  --ui-warning: var(--ui-color-warning-400, #facc15);
+  --ui-error: var(--ui-color-error-400, #f87171);
 }
 
 /*
@@ -273,7 +293,7 @@
  * go missing from the other.
  */
 @media (prefers-color-scheme: dark) {
-  :root[data-ne-scheme='auto'] {
+  :where(:root)[data-ne-scheme='auto'] {
     --ne-ground: #0c1216;
     --ne-surface: #141c22;
     --ne-surface-muted: #0f171c;
@@ -287,6 +307,7 @@
     --ne-ink-muted: #9aa8b3;
     --ne-ink-dimmed: #6d7b85;
     --ne-ink-inverted: #0c1216;
+    --ne-ink-dimmed-text: #92a0aa;
 
     --ne-hairline: #243039;
     --ne-divider: #1b242b;
@@ -340,7 +361,7 @@
     --ui-text: var(--ne-ink-body);
     --ui-text-toned: var(--ne-ink-secondary);
     --ui-text-muted: var(--ne-ink-muted);
-    --ui-text-dimmed: var(--ne-ink-dimmed);
+    --ui-text-dimmed: var(--ne-ink-dimmed-text);
     --ui-text-inverted: var(--ne-ink-inverted);
     --ui-border: var(--ne-hairline);
     --ui-border-muted: var(--ne-divider);
@@ -349,5 +370,12 @@
     --ui-radius: var(--ne-radius-base);
     --ui-container: var(--ne-container);
     --ui-header-height: var(--ne-header-height);
+
+    --ui-primary: var(--ui-color-primary-400, #38bdf8);
+    --ui-secondary: var(--ui-color-secondary-400, #60a5fa);
+    --ui-success: var(--ui-color-success-400, #4ade80);
+    --ui-info: var(--ui-color-info-400, #60a5fa);
+    --ui-warning: var(--ui-color-warning-400, #facc15);
+    --ui-error: var(--ui-color-error-400, #f87171);
   }
 }

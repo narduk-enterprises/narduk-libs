@@ -50,8 +50,8 @@ function ruleBody(css: string, selector: string): string {
   throw new Error(`unterminated block for selector: ${selector}`)
 }
 
-const lightBlock = ruleBody(themeCss, ':root,\n.light {')
-const darkBlock = ruleBody(themeCss, '\n.dark {')
+const lightBlock = ruleBody(themeCss, ':where(:root, .light) {')
+const darkBlock = ruleBody(themeCss, '\n:where(.dark) {')
 // Selector text only: Prettier normalises the attribute selector's quotes.
 const autoBlock = ruleBody(themeCss, '[data-ne-scheme=')
 
@@ -208,7 +208,7 @@ describe('theme.css token sheet', () => {
     // So the sheet's own automatic block must be opt-in rather than a bare
     // `:root` media query that would fight `@nuxtjs/color-mode`.
     expect(themeCss).toMatch(
-      /@media \(prefers-color-scheme: dark\) \{\s*:root\[data-ne-scheme=["']auto["']\]/,
+      /@media \(prefers-color-scheme: dark\) \{\s*:where\(:root\)\[data-ne-scheme=["']auto["']\]/,
     )
     expect(themeCss).not.toMatch(/@media \(prefers-color-scheme: dark\) \{\s*:root\s*\{/)
   })
@@ -261,7 +261,11 @@ describe('the unreported material (--ne-hatch)', () => {
 })
 
 describe('--ui-* bridge', () => {
-  const bridged = [...light.keys()].filter((name) => name.startsWith('--ui-'))
+  const COLOR_ALIASES = ['primary', 'secondary', 'success', 'info', 'warning', 'error']
+  const aliasNames = COLOR_ALIASES.map((alias) => `--ui-${alias}`)
+  const bridged = [...light.keys()].filter(
+    (name) => name.startsWith('--ui-') && !aliasNames.includes(name),
+  )
 
   it('reads the installed Nuxt UI rather than a copied list', () => {
     // Sanity: if the parse found nothing, every assertion below is vacuous.
@@ -290,14 +294,21 @@ describe('--ui-* bridge', () => {
   })
 
   it('bridges the same targets in both schemes', () => {
-    const darkBridged = [...dark.keys()].filter((name) => name.startsWith('--ui-'))
+    const darkBridged = [...dark.keys()].filter(
+      (name) => name.startsWith('--ui-') && !aliasNames.includes(name),
+    )
     expect(darkBridged.sort()).toEqual([...bridged].sort())
     for (const target of bridged) expect(dark.get(target)).toBe(light.get(target))
   })
 
-  it('leaves the colour aliases to app.config, where the shade scale lives', () => {
-    for (const alias of ['primary', 'secondary', 'success', 'info', 'warning', 'error']) {
-      expect(light.has(`--ui-${alias}`), `--ui-${alias} must not be bridged`).toBe(false)
+  it('repoints the colour aliases at an AA shade of the app.config scale (#1785)', () => {
+    for (const alias of COLOR_ALIASES) {
+      expect(light.get(`--ui-${alias}`)).toMatch(
+        new RegExp(`^var\\(--ui-color-${alias}-700, #[0-9a-f]{6}\\)$`),
+      )
+      expect(dark.get(`--ui-${alias}`)).toMatch(
+        new RegExp(`^var\\(--ui-color-${alias}-400, #[0-9a-f]{6}\\)$`),
+      )
     }
     expect(NARDUK_SHELL_APP_CONFIG).toEqual({
       ui: { colors: { primary: 'sky', neutral: 'slate' } },
@@ -320,7 +331,7 @@ describe('--ui-* bridge', () => {
     '--ui-text': '--ne-ink-body',
     '--ui-text-toned': '--ne-ink-secondary',
     '--ui-text-muted': '--ne-ink-muted',
-    '--ui-text-dimmed': '--ne-ink-dimmed',
+    '--ui-text-dimmed': '--ne-ink-dimmed-text',
     '--ui-text-inverted': '--ne-ink-inverted',
     '--ui-border': '--ne-hairline',
     '--ui-border-muted': '--ne-divider',
@@ -465,5 +476,51 @@ describe('styling contract', () => {
     expect(readme).toMatch(/--ne-accent/)
     expect(readme).toMatch(/--ne-structure/)
     expect(readme).toMatch(/deliberately not themed/i)
+  })
+})
+
+describe('default colour contrast (narduk-libs#1785)', () => {
+  /** The hex fallback of `var(--ui-color-<alias>-<shade>, #hex)`. */
+  const fallback = (scheme: Map<string, string>, alias: string) =>
+    /#[0-9a-f]{6}/i.exec(scheme.get(`--ui-${alias}`)!)![0]
+  const aliases = ['primary', 'secondary', 'success', 'info', 'warning', 'error']
+
+  it.each(aliases)('solid %s carries white text at AA in light mode', (alias) => {
+    // Nuxt UI paints a solid button/badge with `--ui-text-inverted` on `--ui-<alias>`.
+    expect(
+      contrastRatio(resolved(light, '--ne-ink-inverted')!, fallback(light, alias)),
+    ).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it.each(aliases)('solid %s carries the dark surface text at AA in dark mode', (alias) => {
+    expect(
+      contrastRatio(resolved(dark, '--ne-ink-inverted')!, fallback(dark, alias)),
+    ).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it.each([
+    ['light', light],
+    ['dark', dark],
+  ] as const)('--ui-text-dimmed is AA on every %s surface', (_name, values) => {
+    const ink = resolved(values, '--ne-ink-dimmed-text')!
+    for (const surface of [
+      '--ne-ground',
+      '--ne-surface',
+      '--ne-surface-muted',
+      '--ne-surface-elevated',
+      '--ne-surface-accented',
+    ]) {
+      expect(contrastRatio(ink, resolved(values, surface)!), surface).toBeGreaterThanOrEqual(
+        AA_TEXT,
+      )
+    }
+  })
+
+  it('has zero selector specificity so a plain :root rule overrides any token', () => {
+    const selectors = [...themeCss.replaceAll(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@;]+)\{/g)]
+      .map((m) => m[1]!.trim())
+      .filter((sel) => sel.length > 0 && !sel.startsWith('media'))
+    expect(selectors.length).toBeGreaterThan(0)
+    for (const selector of selectors) expect(selector).toMatch(/^:where\(/)
   })
 })

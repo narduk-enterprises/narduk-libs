@@ -280,10 +280,14 @@ function onTabKey(event: KeyboardEvent, index: number): void {
           inline elements, and an accessible name joins those with nothing
           between them, so without it the control is announced "Open3". A
           whitespace-only flex item is not rendered, so it costs no width.
+
+          The count inherits the control's own text colour and carries no
+          opacity: a fade drops the selected (solid) chip below AA 4.5:1
+          (narduk-libs#1447). Emphasis comes from the smaller size alone.
         -->
         <template v-if="item.count !== undefined"
           >{{ ' '
-          }}<span data-ne-filter-count class="text-xs font-medium opacity-70" :class="ui?.count">{{
+          }}<span data-ne-filter-count class="text-xs font-medium" :class="ui?.count">{{
             item.count
           }}</span></template
         >
