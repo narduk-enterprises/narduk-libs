@@ -65,19 +65,20 @@ const DARK_SELECTORS = new Set(['.dark', ':root.dark'])
 function unwrapWhere(selector: string): string[] {
   const match = /^:where\((.*)\)$/s.exec(selector)
   if (!match) return [selector]
+  const inner = match[1]!
   const members: string[] = []
   let depth = 0
   let start = 0
-  const inner = match[1]!
-  for (let index = 0; index <= inner.length; index += 1) {
+  for (let index = 0; index < inner.length; index += 1) {
     const char = inner[index]
     if (char === '(') depth += 1
     else if (char === ')') depth -= 1
-    else if ((char === ',' && depth === 0) || index === inner.length) {
+    else if (char === ',' && depth === 0) {
       members.push(inner.slice(start, index).trim())
       start = index + 1
     }
   }
+  members.push(inner.slice(start).trim())
   return members
 }
 
