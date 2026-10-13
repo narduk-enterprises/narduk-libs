@@ -367,6 +367,8 @@ export function createRootPackageManifest(
       // like foundation:shared-ui-pinned (see foundation:check item 1.3).
       'manifests:validate': 'pnpm --filter web run manifests:validate',
       'performance-budget': 'pnpm --filter web run performance-budget',
+      'assets:generate': 'pnpm --filter web run assets:generate',
+      'assets:check': 'pnpm --filter web run assets:check',
       'og:generate': 'pnpm --filter web run og:generate',
       'og:check': 'pnpm --filter web run og:check',
       'og:check:live': 'pnpm --filter web run og:check:live',
@@ -618,7 +620,8 @@ export function createWebPackageManifest(
     ...(metadata.description ? { description: metadata.description } : {}),
     ...(metadata.siteUrl ? { homepage: metadata.siteUrl } : {}),
     scripts: {
-      build: 'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build',
+      build:
+        'narduk-app assets generate --if-missing && narduk-app og:check && narduk-app assets check && nuxt build',
       // Starts Nuxt directly: a new app has no registered development
       // credentials, and the old `narduk-app dev --project … --config …`
       // wrapper meant an implicit `doppler run` against the retired app-secret
@@ -642,7 +645,7 @@ export function createWebPackageManifest(
       'test:e2e': 'playwright test',
       'test:unit': 'vitest run --config vitest.config.ts',
       'cf:build':
-        'narduk-app og:generate --if-missing && narduk-app og:check && nuxt build --preset=cloudflare_module',
+        'narduk-app assets generate --if-missing && narduk-app og:check && narduk-app assets check && nuxt build --preset=cloudflare_module',
       'cf:deploy':
         databaseBackend === 'none'
           ? 'narduk-app deploy deploy'
@@ -673,7 +676,7 @@ export function createWebPackageManifest(
       // Nuxt DevTools explicitly skips TEST processes. The browser fixture
       // exercises the app, without the interactive development toolbar and
       // its Vite 8-incompatible config-retriever hook.
-      'dev:test': 'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
+      'dev:test': 'narduk-app assets generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
       doctor: 'narduk-app doctor',
       // pnpm runs these with the cwd at apps/web, and both items read the
       // checkout from the repository root: its manifests, Config/
@@ -684,6 +687,9 @@ export function createWebPackageManifest(
       'foundation:shared-ui-pinned':
         'narduk-app foundation:check:shared-ui-pinned --checkout ../..',
       'performance-budget': 'narduk-app performance-budget ' + PERFORMANCE_BUDGET_ARGS,
+      'assets:generate': 'narduk-app assets generate',
+      'assets:check': 'narduk-app assets check',
+      'assets:check:live': 'narduk-app assets check --live',
       'og:generate': 'narduk-app og:generate',
       'og:check': 'narduk-app og:check',
       'og:check:live': 'narduk-app og:check --live',

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -229,6 +229,55 @@ describe('narduk-seo module', () => {
     expect(nuxt.options.runtimeConfig).toMatchObject({
       public: { nardukSeoOgImageColors: { primaryColor: '', secondaryColor: '' } },
     })
+  })
+
+  it('reads Config/brand.json: card colours, icon links and theme-color', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'narduk-seo-brand-app-'))
+    compiledOutputRoots.push(join(rootDir, 'x'))
+    mkdirSync(join(rootDir, 'Config'))
+    mkdirSync(join(rootDir, 'public'))
+    writeFileSync(
+      join(rootDir, 'Config/brand.json'),
+      JSON.stringify({
+        name: 'Newton County Broadband',
+        colors: { primary: '#1f6f5c', accent: '#f2b33d', ink: '#0f1f1b', paper: '#f4efe4' },
+      }),
+    )
+    for (const file of ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'site.webmanifest'])
+      writeFileSync(join(rootDir, 'public', file), 'x')
+    const head = {
+      link: [{ rel: 'icon', href: '/favicon.ico' }],
+      meta: [{ name: 'theme-color', content: '#000000' }],
+    }
+    const { nuxt } = await setupModule({ nuxtOptions: { rootDir, app: { head } } })
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: {
+        nardukSeoBrand: { name: 'Newton County Broadband', monogram: 'NC', layout: 'poster' },
+        nardukSeoOgImageColors: { primaryColor: '#1f6f5c', secondaryColor: '#f2b33d' },
+      },
+    })
+    // The app's own favicon link and theme-color stay; the rest are added once.
+    expect(head.link.map((link) => link.href)).toEqual([
+      '/favicon.ico',
+      '/favicon.svg',
+      '/apple-touch-icon.png',
+      '/site.webmanifest',
+    ])
+    expect(head.meta).toEqual([{ name: 'theme-color', content: '#000000' }])
+  })
+
+  it('adds no icon links when icons: false, and ignores the brand when brand: false', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'narduk-seo-brand-app-'))
+    compiledOutputRoots.push(join(rootDir, 'x'))
+    mkdirSync(join(rootDir, 'public'))
+    writeFileSync(join(rootDir, 'public/favicon.ico'), 'x')
+    const app: { head?: { link?: unknown[] } } = {}
+    const { nuxt } = await setupModule({
+      moduleOptions: { brand: false, icons: false },
+      nuxtOptions: { rootDir, app },
+    })
+    expect(app.head?.link).toBeUndefined()
+    expect(nuxt.options.runtimeConfig).toMatchObject({ public: { nardukSeoBrand: null } })
   })
 
   it('fails the build on an OG card colour that is not a hex colour', async () => {

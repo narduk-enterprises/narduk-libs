@@ -41,6 +41,8 @@ const COMMANDS: string[][] = [
   ['performance-budget'],
   ['assets'],
   ['assets', 'favicons'],
+  ['assets', 'generate'],
+  ['assets', 'check'],
   ['favicons'],
   ['foundation:check'],
   ['foundation:check:security-headers'],

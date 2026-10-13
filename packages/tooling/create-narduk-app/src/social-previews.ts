@@ -1,45 +1,11 @@
 import type { GeneratedFile } from './types.js'
 
-function xml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;')
-}
-
-function lines(value: string, width: number, count: number): string[] {
-  const words = value
-    .trim()
-    .split(/\s+/u)
-    .flatMap((word) => word.match(new RegExp(`.{1,${width}}`, 'gu')) ?? [])
-  const result: string[] = []
-  let line = ''
-  for (const word of words) {
-    if (line && line.length + word.length + 1 > width) {
-      result.push(line)
-      line = ''
-    }
-    line += (line ? ' ' : '') + word
-  }
-  if (line) result.push(line)
-  if (result.length > count) result[count - 1] = (result[count - 1] ?? '').slice(0, width - 1) + '…'
-  return result.slice(0, count)
-}
-
 export function socialPreviewFiles(
   displayName: string,
   description: string,
   siteUrl: string,
   seo: boolean,
 ): GeneratedFile[] {
-  const title = lines(displayName, 27, 2)
-    .map((line, index) => `<tspan x="88" dy="${index ? 78 : 0}">${xml(line)}</tspan>`)
-    .join('')
-  const summary = lines(description, 60, 3)
-    .map((line, index) => `<tspan x="88" dy="${index ? 36 : 0}">${xml(line)}</tspan>`)
-    .join('')
   return [
     {
       path: 'apps/web/Config/social-previews.json',
@@ -51,7 +17,6 @@ export function socialPreviewFiles(
             defaultImage: {
               path: '/og.png',
               alt: `${displayName} — ${description}`.slice(0, 420),
-              source: 'public/og-source.svg',
             },
             pagesDir: 'app/pages',
             routes: [
@@ -91,19 +56,6 @@ export function socialPreviewFiles(
         ]
       : []),
     {
-      path: 'apps/web/public/og-source.svg',
-      contents: `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101b30"/><stop offset="1" stop-color="#192f4b"/></linearGradient></defs>
-  <rect width="1200" height="630" fill="url(#bg)"/>
-  <path d="M920 0H1200V630H1080Z" fill="#223d57"/>
-  <rect x="88" y="96" width="72" height="8" rx="4" fill="#f4b26b"/>
-  <text y="242" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="66" font-weight="700">${title}</text>
-  <text y="404" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="28">${summary}</text>
-  <text x="88" y="558" fill="#f4b26b" font-family="Arial, Helvetica, sans-serif" font-size="24">${xml(new URL(siteUrl).host)}</text>
-</svg>
-`,
-    },
-    {
       path: 'apps/web/tests/e2e/social-previews.spec.ts',
       contents: `import { fileURLToPath } from 'node:url'
 
@@ -128,10 +80,16 @@ test('share previews are present in HTML and resolve to real images', async ({ b
 Every shareable URL has a default image. Articles, products, places, public profiles,
 and other individually shared content need route-specific images built from public data.
 
-The app owns apps/web/Config/social-previews.json and public/og-source.svg. After
-the first install, run pnpm run og:generate and commit the resulting public/og.png.
-Edit the source to match the product; run pnpm run og:generate --force to replace
-the PNG deliberately. Builds generate it only when missing and validate existing images.
+The app owns apps/web/Config/social-previews.json and apps/web/Config/brand.json.
+The brand file (name, tagline, four colours, card layout and texture) is the one
+input for the favicon set, site.webmanifest and the default share card. The
+generator starts it from a palette picked for this app; replace the colours with
+the product's own art direction, or point icon at a kept app-icon render from
+the asset-pack skill. After editing it, run pnpm run assets:generate --force and
+commit apps/web/public. Builds generate missing files and then run
+narduk-app assets check, which fails on a missing, placeholder or generic icon,
+manifest or share card. To ship a hand-made card instead, set defaultImage.source
+to an SVG or PNG in this inventory; og:generate rasterises it.
 
 Add every new app/pages file to the inventory. Use kind=default for generic app
 pages; use kind=dynamic with at least two different real paths for content pages;
@@ -147,6 +105,8 @@ explicitly request ogImage even with noindex. Keep private pages on the safe def
 
 Commands:
 
+- pnpm run assets:check — favicon set, manifest and share card are real (not placeholders).
+- pnpm run assets:check:live — the same, plus head links and theme-color, against the deployed site.
 - pnpm run og:check — local route coverage and decoded default image.
 - pnpm run test:e2e — includes crawler metadata and image checks against the test server.
 - pnpm run og:check:live — the same checks against the configured HTTPS siteUrl after deployment.

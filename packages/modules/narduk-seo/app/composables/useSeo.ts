@@ -81,6 +81,7 @@ export function useSeo(options: SeoOptions) {
   const dynamicOgImage = shouldDefineDynamicOgImage
     ? resolveSeoOgImageDefinition({
         appColors: runtimeConfig.public.nardukSeoOgImageColors,
+        brand: runtimeConfig.public.nardukSeoBrand,
         title: resolveTitle(),
         description: resolveDescription(),
         type,

@@ -7,6 +7,8 @@ interface SeoPrivateRuntimeConfig {
 }
 
 interface SeoPublicRuntimeConfig {
+  /** Baked from the app's `Config/brand.json` at build; null when the app has none. */
+  nardukSeoBrand: import('../brand').NardukSeoBrand | null
   /** App-owned public fallback; null until the app supplies a real asset. */
   nardukSeoDefaultImage: { url: string; alt: string } | null
   /**

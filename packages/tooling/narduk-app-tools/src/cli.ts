@@ -69,6 +69,7 @@ import {
 import { parseToolchainCheckArgs, runToolchainCheckCommand } from './commands/toolchain-check.js'
 import { parseDeploymentCheckArgs, runDeploymentCheckCommand } from './commands/deployment-check.js'
 import { runBaselineCommand } from './commands/baseline.js'
+import { runAssetsCommand } from './commands/assets.js'
 import { runOgCommand } from './commands/og.js'
 import { parseE2eServeArgs, runE2eServe } from './e2e-serve/e2e-serve.js'
 import {
@@ -224,7 +225,12 @@ function usage(): string {
     '                                      prerequisites, --adoption and --audit legs',
     '  performance-budget [--json [path]] [options]',
     '                                       Check built asset budgets',
-    '  assets favicons [options]            Generate ordinary favicon assets',
+    '  assets generate [--force] [--no-og]  Favicon set, site.webmanifest and the default',
+    '                                       share card from Config/brand.json',
+    '  assets check [--live <url>] [--json [path]]',
+    '                                       Fail on a missing, placeholder or legacy-template',
+    '                                       favicon, apple-touch icon, manifest or og:image',
+    '  assets favicons [options]            Resize an existing favicon.svg (no manifest)',
     '  og:generate [--if-missing|--force]    Render the app-owned default share image',
     '  og:check [--live] [--base-url URL] [--json [path]]',
     '                                       Verify route coverage and crawler images.',
@@ -501,13 +507,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       emitPerformanceBudgetReport(options, report)
       return report.violations.length > 0 && !options.reportOnly ? 1 : 0
     }
-    if (command === 'assets') {
-      const [assetCommand, ...assetArgs] = rest
-      if (assetCommand !== 'favicons') throw new Error('Usage: narduk-app assets favicons ...')
-      const outputs = await generateFavicons(parseFaviconArgs(assetArgs))
-      console.log(`[assets] wrote ${outputs.length} favicon assets`)
-      return 0
-    }
+    if (command === 'assets') return await runAssetsCommand(rest)
     if (command === 'favicons') {
       const outputs = await generateFavicons(parseFaviconArgs(rest))
       console.log(`[assets] wrote ${outputs.length} favicon assets`)

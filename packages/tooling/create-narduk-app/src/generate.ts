@@ -12,6 +12,7 @@ import {
 } from './ci-workflow.js'
 import { DEPENDABOT_COOLDOWN_DAYS, DEPENDENCY_UPDATE_LIMITS } from './dependency-policy.js'
 import { NODE_SOURCE_FILE, REGION_MARKERS } from './ownership.js'
+import { brandFiles } from './brand.js'
 import { socialPreviewFiles } from './social-previews.js'
 import { analyticsScaffoldFiles } from './analytics-scaffold.js'
 import { createMigrationWorkflowFiles, LINUX_DEPLOY_RUNNER_LABELS } from './migration-workflows.js'
@@ -615,6 +616,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     // upgrade codemod deliberately does not manage this file.
     { path: NODE_SOURCE_FILE, contents: `${NODE_VERSION}\n` },
     ...socialPreviewFiles(displayName, description, siteUrl, capabilities.includes('seo')),
+    ...brandFiles(appName, displayName, description),
     ...(capabilities.includes('analytics') ? analyticsScaffoldFiles() : []),
     {
       path: '.gitignore',
@@ -937,7 +939,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '- pnpm run dev',
         '- pnpm run quality',
         '- pnpm run test',
-        '- pnpm run og:generate (first setup; commit apps/web/public/og.png)',
+        '- pnpm run assets:generate (first setup, and after editing apps/web/Config/brand.json with --force; commit apps/web/public)',
         '- pnpm run og:check:live (after deployment)',
         '',
         '### Which gate is which',
@@ -1765,6 +1767,16 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               "        { property: 'og:image:alt', content: appName + ' — ' + appDescription },",
               "        { property: 'og:image:width', content: '1200' },",
               "        { property: 'og:image:height', content: '630' },",
+              '      ],',
+              // narduk-seo emits these from public/ when the seo capability is
+              // on; without it the app lists the files `narduk-app assets
+              // generate` writes itself.
+              '      link: [',
+              "        { rel: 'icon', href: '/favicon.ico', sizes: '48x48' },",
+              "        { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },",
+              "        { rel: 'icon', href: '/favicon-32x32.png', type: 'image/png', sizes: '32x32' },",
+              "        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png', sizes: '180x180' },",
+              "        { rel: 'manifest', href: '/site.webmanifest' },",
               '      ],',
               '    },',
               '  },',

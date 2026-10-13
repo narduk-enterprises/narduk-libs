@@ -120,6 +120,31 @@ can be overridden at runtime with
 `NUXT_PUBLIC_NARDUK_SEO_OG_IMAGE_COLORS_PRIMARY_COLOR` and
 `NUXT_PUBLIC_NARDUK_SEO_OG_IMAGE_COLORS_SECONDARY_COLOR`.
 
+### Brand, icons and the runtime card
+
+At build the module reads `Config/brand.json` under the app root, the file
+`narduk-app assets generate` draws the favicon set and default card from
+([brand assets](../../tooling/narduk-app-tools/docs/brand-assets.md)). With it:
+
+- the runtime card (`OgImageDefault`, `OgImageArticle`) uses the brand's
+  palette, `og.layout`, `og.pattern`, monogram and `public/icon-512.png`, with
+  the page title as the largest thing on the card; a page passing its own
+  `image` gets the `split` layout with the image in the panel;
+- `nardukSeo.ogImage` colours default to the brand's `primary` and `accent`;
+- `theme-color` is emitted for light (`themeColor`, default `primary`) and dark
+  (`ink`) schemes, unless the app sets its own.
+
+Independently of the brand file, `<link>` tags are added for each of
+`favicon.ico`, `favicon.svg`, `favicon-32x32.png`, `apple-touch-icon.png` and
+`site.webmanifest` that exists in `public/`; a link the app already declares is
+not duplicated. `nardukSeo.brand: 'path/to/brand.json'` reads another file,
+`nardukSeo.brand: false` ignores it, and `nardukSeo.icons: false` adds none of
+these links or `theme-color`.
+`useSeo({ ogImage: { layout: 'ledger', pattern: 'dots' } })` overrides the
+layout or pattern for one page.
+
+![Runtime cards, four layouts](../../../docs/images/brand-assets/after-runtime-cards.png)
+
 Typical app setup:
 
 ```ts
