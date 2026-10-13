@@ -1,5 +1,13 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.10
+
+### Patch Changes
+
+- 2647899: Token inventory reads custom properties declared inside
+  zero-specificity `:where(:root, .light)` / `:where(.dark)` selectors, as
+  narduk-shell's theme now writes them (#1785).
+
 ## 0.0.9
 
 ### Patch Changes

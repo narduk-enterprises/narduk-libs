@@ -1,5 +1,13 @@
 # @narduk-enterprises/eslint-config
 
+## 3.1.1
+
+### Patch Changes
+
+- 2647899: Run core `no-unused-vars` on `.js`/`.mjs`/`.cjs` and keep
+  `@typescript-eslint/no-unused-vars` on TS and Vue only, so espree-parsed
+  scripts no longer report every binding as "only used as a type" (#1727).
+
 ## 3.1.0
 
 ### Minor Changes

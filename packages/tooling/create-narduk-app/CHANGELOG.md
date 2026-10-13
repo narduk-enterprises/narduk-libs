@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.63
+
+### Patch Changes
+
+- 2647899: Pick up `@narduk-enterprises/eslint-config` 3.1.1 (core
+  `no-unused-vars` on plain JS, #1727) and `@narduk-enterprises/narduk-shell`
+  0.21.2 (AA default colours, #1785) in generated apps.
+
 ## 0.21.62
 
 ### Patch Changes
