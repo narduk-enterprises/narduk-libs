@@ -58,7 +58,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
           package-manager-cache: false
@@ -149,7 +149,7 @@ jobs:
 
   ci:
     needs: [affected]
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@802d9f0a1586b96adbafcc9888a0af12de3a9eae # v2
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@90f4421b46a6eb600c7e0bf9d7d1e60b301eac16 # v2
     permissions:
       contents: read
     with:
@@ -202,7 +202,7 @@ jobs:
           dest: ${{ runner.temp }}/setup-pnpm
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
 
@@ -371,7 +371,7 @@ jobs:
           dest: ${{ runner.temp }}/setup-pnpm
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
 
@@ -446,7 +446,7 @@ jobs:
 
       - name: Retain the exact installed consumer proof
         if: needs.affected.outputs.generated-consumer == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packed-consumer-proof-${{ github.run_attempt }}
           path: .ci-evidence/packed-consumer-proof/proof.json
@@ -497,7 +497,7 @@ jobs:
           dest: ${{ runner.temp }}/setup-pnpm
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
 
