@@ -4622,3 +4622,24 @@ Source is TypeScript, Vue and CSS with no build step — the same shape
 `narduk-core`, `narduk-analytics` and `narduk-ui` publish. The module adds
 `@narduk-enterprises/narduk-shell` to the consuming app's `build.transpile`, so
 the app's own Vite build compiles what it imports.
+
+### NeCursorPager / useCursorCollection()
+
+`useCursorCollection({ fetch, filters, limit, sortable, syncQuery: true })` consumes
+the narduk-platform cursor list response. It replaces one bounded page at a time,
+aborts and discards superseded reads, debounces search, resets navigation on scope
+changes, and mirrors cursor/search/sort in the URL. Await `refresh()` for SSR.
+Bind `q` to the search input, call `setSort` / `setLimit`, and bind `state` to
+`NeCursorPager`; forward `next`, `previous` and `newest` to the composable.
+Totals remain unknown when omitted. A shared cursor URL has no visited-page stack;
+Newer then returns to the newest page. No page numbers or total are invented.
+
+#### Server-controlled NeCollectionTable
+
+`remote` renders the server's bounded rows in their received order, disables the
+local Show all fold and filter chips, and emits `update:query` / `update:sort`
+instead of filtering or sorting the current page. Bind `query`, `sort` and `total`
+from the shared collection; keep domain filter controls outside the table and
+provide the matching pager. Existing client mode is unchanged.
+
+`useCollection({ syncQuery: true, queryPrefix: "grants_" })` gives a second list independent `grants_page`, `grants_q` and `grants_sort` URL state while leaving the first list and other query parameters unchanged.

@@ -70,6 +70,8 @@ export type {
   NeCollectionState,
 } from './runtime/composables/use-collection'
 
+export type { NeCursorCollectionOptions, NeCursorCollectionQuery, NeCursorCollectionState } from './runtime/composables/use-cursor-collection'
+
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
 /**

@@ -150,6 +150,8 @@ export interface NeCollectionOptions<TItem, TRaw = OffsetListResponse<TItem>> {
   sortable?: readonly string[]
   /** Mirror `page`/`q`/`sort` in the route query, without a navigation loop. */
   syncQuery?: boolean
+  /** Independent URL state for a second list, e.g. grants_page / grants_q / grants_sort. */
+  queryPrefix?: string
 }
 
 export interface NeCollection<TItem> {
@@ -510,6 +512,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   if (options.immediate !== false) schedule()
 
   function bindRouteQuery(): void {
+    const keyOf = (key: string) => `${options.queryPrefix ?? ""}${key}`
     const route: RouteLocationNormalizedLoaded | undefined = useRoute()
     const router = useRouter()
     if (!route || !router) {
@@ -524,9 +527,9 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
       // Clamped the same way setPage() clamps a caller-given page (#288): a
       // stale or hand-edited URL can carry a page the client already knows
       // is out of range, and it should never send an offset for it.
-      const page = clampToKnownPageCount(readPage(query.page) ?? 1)
-      const search = firstQueryValue(query.q)?.trim().slice(0, maxQueryLength) ?? ''
-      const sort = readSort(firstQueryValue(query.sort), options.sortable)
+      const page = clampToKnownPageCount(readPage(query[keyOf('page')]) ?? 1)
+      const search = firstQueryValue(query[keyOf('q')])?.trim().slice(0, maxQueryLength) ?? ''
+      const sort = readSort(firstQueryValue(query[keyOf('sort')]), options.sortable)
 
       // Applied as ONE change, not through the mutators. `q` and `sort` reset
       // the page, so calling them in sequence would drop the URL's own page
@@ -548,7 +551,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
       () =>
         // Joined on a byte no URL can contain, so `?q=a&sort=b` and `?q=a%1Fb`
         // are not the same string to this watcher.
-        NE_COLLECTION_SYNCED_KEYS.map((key) => firstQueryValue(route.query[key]) ?? '').join(
+        NE_COLLECTION_SYNCED_KEYS.map((key) => firstQueryValue(route.query[keyOf(key)]) ?? '').join(
           '\u001F',
         ),
       () => readRouteQuery(route.query, true),
@@ -565,7 +568,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
         sort: sortRef.value ?? undefined,
       }
       const unchanged = NE_COLLECTION_SYNCED_KEYS.every(
-        (key) => (firstQueryValue(route.query[key]) ?? undefined) === desired[key],
+        (key) => (firstQueryValue(route.query[keyOf(key)]) ?? undefined) === desired[key],
       )
       // The loop breaker. Both halves compare before they write, so the write
       // this watcher makes wakes the reader above, which finds nothing to
@@ -574,8 +577,8 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
 
       const next: LocationQueryRaw = { ...route.query }
       for (const key of NE_COLLECTION_SYNCED_KEYS) {
-        if (desired[key] === undefined) delete next[key]
-        else next[key] = desired[key]
+        if (desired[key] === undefined) delete next[keyOf(key)]
+        else next[keyOf(key)] = desired[key]
       }
       void router.replace({ query: next })
     })

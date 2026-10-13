@@ -265,6 +265,11 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useConfirm',
       from: resolver.resolve('./runtime/composables/use-confirm'),
     })
+
+    addImports({
+      name: 'useCursorCollection',
+      from: resolver.resolve('./runtime/composables/use-cursor-collection'),
+    })
     // Plain shared state (useState), no component involved: an app can seed
     // or mutate the rail's sections even with `components: false` and its own
     // import of NeAppShell.

@@ -83,6 +83,12 @@ export type NeCollectionStackBreakpoint = 'sm' | 'md' | 'lg'
 export interface NeCollectionTableProps<TRow = Record<string, unknown>> {
   /** Required. The table's accessible name: a visually hidden caption, and the scroll region's label. */
   caption: string
+  /** Rows already filtered, sorted and bounded by the server. No local fold or narrowing. */
+  remote?: boolean
+  /** Controlled search in remote mode; emitted as update:query. */
+  query?: string
+  /** The complete authorized scope's count; null means unknown. */
+  total?: number | null
   columns: ReadonlyArray<NeCollectionColumn<TRow>>
   /** Flat rows. Ignored when `groups` is given. */
   rows?: readonly TRow[]
