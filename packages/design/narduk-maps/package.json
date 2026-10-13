@@ -1,6 +1,6 @@
 {
   "name": "@narduk-enterprises/narduk-maps",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "NardukMaps — one picture, two engines: an SSR-safe SVG map and a MapLibre map that share a projection, tokens and marks. Package: @narduk-enterprises/narduk-maps.",
   "type": "module",
   "main": "./dist/index.js",

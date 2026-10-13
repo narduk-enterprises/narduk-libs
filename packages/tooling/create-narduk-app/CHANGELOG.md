@@ -1,5 +1,15 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.64
+
+### Patch Changes
+
+- e8a2ad4: Pick up `@narduk-enterprises/narduk-shell` 0.23.0 (`NeSortHeader`
+  idle sort glyph, operator-portal#2227) in generated apps.
+- c98751d: Repin the generated app to the mobile web QA release of
+  `eslint-config`, `narduk-core`, `narduk-shell`, `narduk-auth` and
+  `narduk-charts`.
+
 ## 0.21.63
 
 ### Patch Changes
