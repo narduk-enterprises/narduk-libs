@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.67
+
+### Patch Changes
+
+- 52be5aa: Pins the `@narduk-enterprises/narduk-testkit` release that adds
+  `narduk-testkit e2e seed-admin` and `ensureE2eAdminPassword()`.
+
 ## 0.21.66
 
 ### Patch Changes
