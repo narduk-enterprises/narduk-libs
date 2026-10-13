@@ -6,7 +6,10 @@
  * one unreported host last. The second groups its rows, marks a selected row,
  * stops at a limit with "Show all", and closes on the bounded-read footer.
  * Missing cells read the app's own word (`missingText="unreported"`), not a
- * dash. Cards are prerendered, so nothing here depends on a click.
+ * dash. Between them sits the first table's columns again with
+ * `cardDensity="compact"`, which only a phone-width render tells apart
+ * (narduk-libs#1777). Cards are prerendered, so nothing here depends
+ * on a click.
  */
 import NeCollectionTable from '../runtime/components/NeCollectionTable.vue'
 
@@ -96,6 +99,18 @@ const runGroups: Array<NeCollectionGroup<Run>> = [
         noun="apps"
         sort="hosts:desc"
         toolbar="always"
+        missing-text="unreported"
+      />
+    </div>
+    <div class="preview-row">
+      <NeCollectionTable
+        caption="Apps, compact cards"
+        :columns="columns"
+        :rows="apps"
+        :row-key="(app) => app.name"
+        card-density="compact"
+        noun="apps"
+        :toolbar="false"
         missing-text="unreported"
       />
     </div>

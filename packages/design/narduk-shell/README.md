@@ -1994,6 +1994,15 @@ already the phone's:
   column's tint stays above the line. After mount the hidden header's sort
   buttons become plain labels (a button clipped to one pixel would still take
   focus) and a sort select appears in the toolbar instead.
+- `cardDensity: 'compact'` (default `'comfortable'`, the card above) is the same
+  card in fewer lines, and still keeps every column (narduk-libs#1777). The
+  primary cell heads the card across its full width; every other cell runs on
+  beneath it as a **wrapped inline label-value pair** (`flex: 0 1 auto`, the
+  label `flex-basis: auto` instead of 7.5rem), with no divider between cells.
+  It is CSS keyed on the root's `data-ne-card-density='compact'`, so the markup
+  and the server render are unchanged, and it applies to `phoneLayout: 'cards'`
+  only. Empty cells are still dropped. A table with six non-primary columns is
+  then two or three lines a row instead of seven.
 - `phoneLayout: 'columns'` keeps the table, and fixed widths become hints. A
   full-width cell (a group heading, the empty row, the footer) spans the kept
   columns from the server render on, padded above the line by one hidden filler
@@ -2004,7 +2013,7 @@ A row, header cell and cell carry only a role class (`ne-row`, `ne-head`,
 `ne-cell` and modifiers such as `ne-cell--num`, `--em`, `--sorted`, `--pri`,
 `--free`, `--drop`), and the layout, the phone card included, is
 `@layer components` CSS in the component's own `<style>` block, keyed on the
-root's `data-ne-phone-layout` and `data-ne-stack-below` (narduk-libs#1704). A
+root's `data-ne-phone-layout`, `data-ne-card-density` and `data-ne-stack-below` (narduk-libs#1704). A
 cell's markup is its value plus a role, about 25 bytes of class instead of
 about 520. Style a cell from the app with a utility or a selector on those
 classes.
@@ -2092,6 +2101,7 @@ const filters: Array<NeCollectionFilter<Repo>> = [
 | `noMatchText`       | `string`                               | see source  | When search and filter leave nothing.                                           |
 | `stackBelow`        | `'sm' \| 'md' \| 'lg'`                 | `'md'`      | Where the phone layout starts.                                                  |
 | `phoneLayout`       | `'cards' \| 'columns'`                 | `'cards'`   | Rows reflow into cards, or the table keeps its columns.                         |
+| `cardDensity`       | `'comfortable' \| 'compact'`           | `'comfortable'` | `'compact'` runs a card's cells on as wrapped label-value pairs under the primary cell. |
 
 #### Column contract (`NeCollectionColumn`)
 
