@@ -110,7 +110,8 @@ export function useCursorCollection<T>(options: NeCursorCollectionOptions<T>) {
   function refresh(): Promise<void> {
     if (disposed || !enabled.value) return Promise.resolve()
     if (running) { queued = true; controller?.abort(); return running }
-    running = drain()
+    pending.value = true
+    running = Promise.resolve().then(drain)
     return running
   }
   function reset() {

@@ -6,6 +6,21 @@ import type { CursorListResponse } from '@narduk-enterprises/narduk-platform/lis
 const page = (id: number, nextCursor: string | null): CursorListResponse<{ id: number }> => ({ items: [{ id }], limit: 1, nextCursor, q: null, sort: null, total: null })
 
 describe('cursor collection', () => {
+  it('can retry after a fetch callback throws synchronously', async () => {
+    const failure = new Error('unavailable')
+    const fetch = vi.fn(() => { if (fetch.mock.calls.length === 1) throw failure; return Promise.resolve(page(1, null)) })
+    const scope = effectScope()
+    const c = scope.run(() => useCursorCollection({ fetch, immediate: false }))!
+    await c.refresh()
+    expect(c.error).toBe(failure)
+    expect(c.pending).toBe(false)
+    await c.refresh()
+    expect(c.items).toEqual([{ id: 1 }])
+    expect(c.error).toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    scope.stop()
+  })
+
   it('traverses bounded pages, preserves exhaustion and revisits without a fabricated total', async () => {
     const fetch = vi.fn(async (query) => query.cursor ? page(1, null) : page(2, 'older'))
     const scope = effectScope()
