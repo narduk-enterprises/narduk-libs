@@ -60,6 +60,7 @@ const flagsSchema = z
     message: z.string().trim().min(1).max(500).optional(),
     accessClientIdEnv: envName,
     accessClientSecretEnv: envName,
+    tokenEnv: envName,
   })
   .refine((flags) => Boolean(flags.accessClientIdEnv) === Boolean(flags.accessClientSecretEnv), {
     message: 'Both Access environment variable names are required together',
@@ -69,10 +70,11 @@ export type ShipFlags = z.infer<typeof flagsSchema>
 
 export const SHIP_USAGE = [
   '  ship [-m <commit message>] [--base-url <https origin>] [--no-pr] [--adopt] [--dry-run]',
-  '      [--access-client-id-env <name> --access-client-secret-env <name>]',
+  '      [--access-client-id-env <name> --access-client-secret-env <name>] [--token-env <name>]',
   '                                       Check, build, publish and prove this branch in',
   '                                       production, roll back on a failed proof, then open',
-  '                                       an auto-merge PR. Needs CLOUDFLARE_API_TOKEN.',
+  '                                       an auto-merge PR. Needs CLOUDFLARE_API_TOKEN, or the',
+  '                                       variable --token-env names (a standard persona key).',
 ]
 
 export function parseShipArgs(args: string[]): ShipFlags {
@@ -83,6 +85,7 @@ export function parseShipArgs(args: string[]): ShipFlags {
     '--base-url': 'baseUrl',
     '--access-client-id-env': 'accessClientIdEnv',
     '--access-client-secret-env': 'accessClientSecretEnv',
+    '--token-env': 'tokenEnv',
   }
   const booleans: Record<string, [string, boolean]> = {
     '--dry-run': ['dryRun', true],
@@ -416,8 +419,11 @@ async function ship(
   }
   const sha = git(['rev-parse', 'HEAD'])
   log(`[ship] ${target.workerName} ${branch}@${sha.slice(0, 12)} -> ${baseUrl}`)
-  if (!env.CLOUDFLARE_API_TOKEN?.trim())
-    refuse('Inject the app deploy credential as CLOUDFLARE_API_TOKEN (nvault run -- pnpm ship)')
+  // A standard worker-deploy persona stores its token as <APP>_WORKER_DEPLOY_CF_TOKEN
+  // (agent-infrastructure mint-standard-persona); --token-env names it.
+  const tokenEnv = flags.tokenEnv ?? 'CLOUDFLARE_API_TOKEN'
+  const token = env[tokenEnv]?.trim()
+  if (!token) refuse(`Inject the app deploy credential as ${tokenEnv} (nvault run -- pnpm ship)`)
 
   const verifyFlags = parseVerifyArgs([
     '--live',
@@ -448,7 +454,7 @@ async function ship(
     PATH: env.PATH,
     HOME: env.HOME,
     CLOUDFLARE_ACCOUNT_ID: target.accountId,
-    CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN,
+    CLOUDFLARE_API_TOKEN: token,
     NARDUK_ALLOW_LOCAL_WRANGLER_DEPLOY: '1',
     WRANGLER_SEND_METRICS: 'false',
     CI: 'true',

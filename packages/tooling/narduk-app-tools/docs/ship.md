@@ -4,8 +4,13 @@ The one fast path from a committed feature branch to production. No mode to
 enter, no custody record, nothing to restore afterwards.
 
 ```bash
-nvault run -p cloudflare -e prd -c narduk-enterprises-<app>-deploy -- pnpm exec narduk-app ship -m "what changed"
+nvault run -p cloudflare -e prd -c narduk-enterprises-<app>-worker-deploy -- pnpm exec narduk-app ship --token-env <APP>_WORKER_DEPLOY_CF_TOKEN -m "what changed"
 ```
+
+The credential is the app's standard worker-deploy persona (agent-infrastructure
+`scripts/mint-standard-persona`). An older app whose
+`narduk-enterprises-<app>-deploy` config holds `CLOUDFLARE_API_TOKEN` omits
+`--token-env`.
 
 1. **Branch.** Refuses on the production branch or a detached HEAD. A dirty tree
    ships only with `-m`, which commits everything (untracked files included)

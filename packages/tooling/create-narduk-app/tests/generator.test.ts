@@ -1494,7 +1494,7 @@ describe('create-narduk-app generation contract', () => {
     ])
       expect(rootPackage.scripts[removed], removed).toBeUndefined()
     expect(rootPackage.scripts.ship).toMatch(
-      /-c narduk-enterprises-[a-z\d-]+-deploy -- pnpm --filter web exec narduk-app ship$/u,
+      /-c narduk-enterprises-([a-z\d-]+)-worker-deploy -- pnpm --filter web exec narduk-app ship --token-env [A-Z\d_]+_WORKER_DEPLOY_CF_TOKEN$/u,
     )
     expect(rootPackage.scripts['ship:check']).toContain('pnpm run test:unit')
     expect(rootPackage.scripts['ship:check']).not.toContain('build:ci')

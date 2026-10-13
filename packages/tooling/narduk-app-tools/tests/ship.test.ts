@@ -336,6 +336,23 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     expect(h.pushedBeforeUpload()).toBe(true)
   })
 
+  it('takes the deploy token from the variable --token-env names', async () => {
+    // A standard worker-deploy persona stores <APP>_WORKER_DEPLOY_CF_TOKEN, not
+    // CLOUDFLARE_API_TOKEN; the upload still sees it as CLOUDFLARE_API_TOKEN.
+    const h = harness()
+    const { CLOUDFLARE_API_TOKEN: token, ...rest } = h.context.env!
+    h.context.env = { ...rest, APP_WORKER_DEPLOY_CF_TOKEN: token }
+    await expect(
+      runShip(parseShipArgs(['--no-pr', '--token-env', 'APP_WORKER_DEPLOY_CF_TOKEN']), h.context),
+    ).resolves.toBe(SHIP_EXIT.ok)
+    expect(h.calls).toContain('upload')
+    h.context.env = rest
+    await expect(
+      runShip(parseShipArgs(['--token-env', 'APP_WORKER_DEPLOY_CF_TOKEN']), h.context),
+    ).resolves.toBe(SHIP_EXIT.refused)
+    expect(h.logs.at(-1)).toMatch(/as APP_WORKER_DEPLOY_CF_TOKEN/u)
+  })
+
   it('rolls back to the previous version when the live proof fails', async () => {
     const h = harness()
     h.proof.result = 'FAIL'
