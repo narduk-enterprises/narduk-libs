@@ -147,6 +147,12 @@ const parserConfigs = [
 // without dropping Nuxt ignores or the typescript/console housekeeping
 // (narduk-libs#167, review on #813).
 
+const unusedVarsOptions = {
+  argsIgnorePattern: '^_',
+  varsIgnorePattern: '^_',
+  caughtErrorsIgnorePattern: '^_',
+}
+
 const sharedBaselineTailConfigs = [
   {
     name: 'narduk/ignores',
@@ -216,15 +222,28 @@ const sharedBaselineTailConfigs = [
       'no-unused-vars': 'off',
       'no-debugger': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
       '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+
+  {
+    // The type-aware rule needs typescript-eslint's scope manager. Under
+    // espree (`.js`/`.mjs`/`.cjs`) that is absent, so it reports every
+    // top-level binding as "only used as a type" (narduk-libs#1727). Plain
+    // JS gets the core rule with the same options.
+    name: 'narduk/typescript-unused-vars',
+    files: ['**/*.{ts,mts,cts,tsx,vue}'],
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['warn', unusedVarsOptions],
+    },
+  },
+
+  {
+    name: 'narduk/javascript-unused-vars',
+    files: ['**/*.{js,mjs,cjs,jsx}'],
+    rules: {
+      'no-unused-vars': ['warn', unusedVarsOptions],
     },
   },
 

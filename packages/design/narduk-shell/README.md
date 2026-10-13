@@ -514,6 +514,7 @@ blocks, so nothing resolves by accident.
 | `--ne-ink-secondary`    | Strong secondary text.                                                           | `#3c4a54`                                                                             | `#b1bec8`                                                                             |
 | `--ne-ink-muted`        | Labels and metadata. The lightest ink allowed on text.                           | `#5a6570`                                                                             | `#9aa8b3`                                                                             |
 | `--ne-ink-dimmed`       | Placeholders and disabled chrome. Never body text.                               | `#8b949d`                                                                             | `#6d7b85`                                                                             |
+| `--ne-ink-dimmed-text`  | Dimmed text (`--ui-text-dimmed`): AA on every surface (narduk-libs#1785).        | `#5d6873`                                                                             | `#92a0aa`                                                                             |
 | `--ne-ink-inverted`     | Ink on an inverted surface.                                                      | `#ffffff`                                                                             | `#0c1216`                                                                             |
 | `--ne-hairline`         | Card and panel hairline.                                                         | `#dde3e7`                                                                             | `#243039`                                                                             |
 | `--ne-divider`          | Row rules and soft dividers.                                                     | `#eaeef1`                                                                             | `#1b242b`                                                                             |
@@ -3155,9 +3156,9 @@ code and tables `--ne-text-small` and `--ne-font-mono`, links `--ne-accent`.
 
 The page header owns the page's h1, so **NeProse never renders an h1**: a `#`
 heading is demoted to h2 (its text is kept, not dropped), and `####`–`######`
-clamp to h3, or to h4 with `:max-heading-level="4"`. Every heading carries a slug
-`id` — lowercase, punctuation dropped, spaces to `-`, repeats suffixed `-1`,
-`-2` — so a table of contents can link to `#install`. `parseProse()` and
+clamp to h3, or to h4 with `:max-heading-level="4"`. Every heading carries a
+slug `id` — lowercase, punctuation dropped, spaces to `-`, repeats suffixed
+`-1`, `-2` — so a table of contents can link to `#install`. `parseProse()` and
 `proseOutline()` are exported from the package root, so a page parses once and
 builds its TOC from the same AST it renders.
 

@@ -56,6 +56,18 @@ describe('NeFilterBar: chips', () => {
     wrapper.unmount()
   })
 
+  it("renders the count at full opacity so it keeps the control's AA contrast (#1447)", () => {
+    const wrapper = render()
+    for (const control of controls(wrapper)) {
+      const count = control.find('[data-ne-filter-count]')
+      if (!count.exists()) continue
+      // The chip colour is already AA (theme.test.ts); any opacity, or a
+      // dimmed/muted ink, would blend it toward the fill and drop below 4.5:1.
+      expect(count.classes().filter((c) => /^(?:opacity-|text-(?:dimmed|muted))/.test(c))).toEqual([])
+    }
+    wrapper.unmount()
+  })
+
   it('renders the caller count and omits it entirely when there is none', () => {
     const wrapper = render()
     const counts = controls(wrapper).map((control) =>
