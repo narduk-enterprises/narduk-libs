@@ -9,7 +9,7 @@ definePageMeta({ middleware: ['guest'] })
 </script>
 
 <template>
-  <div class="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-12">
+  <div class="flex min-h-[calc(100dvh-8rem)] items-center justify-center px-4 py-12">
     <AuthLoginCard />
   </div>
 </template>

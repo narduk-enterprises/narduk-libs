@@ -358,7 +358,7 @@ body {
 .lab--dark {
   background: #0d1419;
   color: #e3eaef;
-  min-height: 100vh;
+  min-height: 100dvh;
   align-content: start;
 }
 .lab h1,

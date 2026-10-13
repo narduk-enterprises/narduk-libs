@@ -44,6 +44,7 @@ import {
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
 import { seedDesignSystemFonts } from './design-system-fonts'
+import { applyHeadDefaults, type HeadOptionsLike } from './head-defaults'
 import { addIconCssScanPlugin } from './icon-css-scan'
 import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
@@ -148,6 +149,12 @@ export interface NardukCoreModuleOptions {
    * falls back to `NUXT_DATABASE_BACKEND`, then to an undeclared D1 default.
    */
   databaseBackend?: DatabaseBackend
+  /**
+   * Mobile head defaults (viewport-fit=cover, color-scheme, theme-color,
+   * format-detection, apple-mobile-web-app-*). On with `app`; `false` leaves the
+   * app's head as it set it. See `./head-defaults.ts`.
+   */
+  head?: boolean
   image?: boolean
   /**
    * First-paint defaults (narduk-libs#1369): Nuxt UI component detection, no
@@ -684,6 +691,8 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           { src: resolver.resolve('../runtime/app/layouts/landing.vue') },
           'landing',
         )
+
+        applyHeadDefaults(nuxtOptions.app as { head?: HeadOptionsLike }, options.head)
 
         pushUnique(
           nuxtOptions.css,

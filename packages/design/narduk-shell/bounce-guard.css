@@ -51,12 +51,11 @@
     overscroll-behavior: contain;
   }
 
-  /* Why: Nuxt UI modals, slideovers, popovers, dropdown menus, selects and the command palette
-     render through Reka UI into a portal; their scrolling body would otherwise chain into the
-     (locked, but still bounceable) page behind the overlay. Matched by ARIA role and Nuxt UI slot
-     so it holds across Nuxt UI minor versions without naming generated classes. */
-  [role='dialog'],
-  [role='alertdialog'],
+  /* Why: Nuxt UI slideovers, popovers, dropdown menus, selects and the command palette render
+     through Reka UI into a portal; their scrolling body would otherwise chain into the (locked,
+     but still bounceable) page behind the overlay. Matched by ARIA role and Nuxt UI slot so it
+     holds across Nuxt UI minor versions without naming generated classes. `[role='dialog']` and
+     `[role='alertdialog']` moved to narduk-core's base CSS, which applies by default. */
   [role='listbox'],
   [role='menu'],
   [data-reka-popper-content-wrapper],

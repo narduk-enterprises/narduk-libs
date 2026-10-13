@@ -131,7 +131,7 @@ function handleToggleAdmin(user: { id: string; isAdmin: boolean }) {
           </div>
         </div>
 
-        <div class="max-h-[60vh] overflow-y-auto">
+        <div class="max-h-[60dvh] overflow-y-auto">
           <div class="space-y-3 p-4">
             <div
               v-for="adminUser in paginatedUsers"

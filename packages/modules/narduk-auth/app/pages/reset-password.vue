@@ -134,7 +134,7 @@ async function onUpdatePassword() {
 
 <template>
   <div
-    class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-xl items-center justify-center px-4 py-12"
+    class="mx-auto flex min-h-[calc(100dvh-8rem)] max-w-xl items-center justify-center px-4 py-12"
   >
     <UCard class="w-full">
       <template #header>

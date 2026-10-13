@@ -178,7 +178,9 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // useConfirm still renders NeConfirmDialog with that option off.
     registerNuxtUiSources(
       nuxt as unknown as NuxtUiSourcesHost,
-      [resolver.resolve('./runtime')],
+      // app-config.ts carries utilities too (the 44px tap target, 16px fields), and
+      // Tailwind never scans node_modules.
+      [resolver.resolve('./runtime'), resolver.resolve('./app-config.ts')],
       SHELL_NUXT_UI_COMPONENTS,
     )
 

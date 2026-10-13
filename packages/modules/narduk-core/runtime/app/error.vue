@@ -98,7 +98,7 @@ useHead({
   <!-- Inside the app's layout only when `layout` names one. -->
   <component :is="wrapper" v-bind="wrapperProps">
     <div
-      :class="['flex items-center justify-center px-4', ui.root ?? 'min-h-screen bg-default']"
+      :class="['flex items-center justify-center px-4', ui.root ?? 'min-h-dvh bg-default']"
       data-testid="error-page"
     >
       <div class="text-center max-w-md">

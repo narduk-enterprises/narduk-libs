@@ -109,8 +109,10 @@ function onClick(event: MouseEvent) {
   text-align: left;
 }
 
-.ne-cmd-trigger:hover {
-  border-color: var(--ne-line-strong);
+@media (hover: hover) {
+  .ne-cmd-trigger:hover {
+    border-color: var(--ne-line-strong);
+  }
 }
 
 .ne-cmd-trigger:focus-visible {

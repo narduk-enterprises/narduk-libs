@@ -7,7 +7,7 @@
 </script>
 
 <template>
-  <div class="landing-layout min-h-screen">
+  <div class="landing-layout min-h-dvh">
     <slot />
   </div>
 </template>

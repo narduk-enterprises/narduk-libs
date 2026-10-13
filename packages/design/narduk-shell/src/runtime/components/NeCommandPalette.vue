@@ -502,7 +502,7 @@ const actionHint = computed(() =>
   width: min(40rem, calc(100vw - 2rem));
   max-width: none;
   max-height: none;
-  margin: 12vh auto auto;
+  margin: 12dvh auto auto;
   padding: 0;
   border: 1px solid var(--ne-hairline);
   --ne-cmd-radius: var(--ne-radius-panel);
@@ -541,7 +541,7 @@ const actionHint = computed(() =>
 
 .ne-cmd__panel {
   display: flex;
-  max-height: min(34rem, 76vh);
+  max-height: min(34rem, 76dvh);
   flex-direction: column;
 }
 
@@ -781,9 +781,11 @@ const actionHint = computed(() =>
   font-size: var(--ne-text-small);
 }
 
-.ne-cmd__action:hover {
-  border-color: var(--ne-accent);
-  color: var(--ne-accent);
+@media (hover: hover) {
+  .ne-cmd__action:hover {
+    border-color: var(--ne-accent);
+    color: var(--ne-accent);
+  }
 }
 
 .ne-cmd__empty,

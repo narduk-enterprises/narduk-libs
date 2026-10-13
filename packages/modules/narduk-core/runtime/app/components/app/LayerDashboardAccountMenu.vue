@@ -57,7 +57,7 @@ async function signOut() {
         size="sm"
         aria-label="User menu"
         data-testid="dashboard-account-menu"
-        class="flex items-center gap-2 rounded-full pl-1 pr-2.5"
+        class="flex min-h-11 min-w-11 items-center gap-2 rounded-full pl-1 pr-2.5"
       >
         <span
           class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"

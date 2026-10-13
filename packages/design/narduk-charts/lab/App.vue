@@ -195,7 +195,7 @@ body {
 }
 .lab {
   box-sizing: border-box;
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px;
   max-width: 1280px;
   margin: 0 auto;
