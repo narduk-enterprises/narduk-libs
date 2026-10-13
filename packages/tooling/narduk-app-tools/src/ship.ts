@@ -6,8 +6,9 @@ import { join, relative, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 
+import { primeAppConfig, type AppConfigOptions } from './app-config/resolve.js'
 import { resolveContainment, type Containment } from './commit-containment.js'
-import { resolveAppDir, runDeploy } from './deploy.js'
+import { DEPLOY_APP_CONFIG_LOCATE, resolveAppDir, runDeploy } from './deploy.js'
 import { healthArgs } from './deployment-config.js'
 import { isAppSource, loadMigrationConfig } from './migrations.js'
 import {
@@ -124,6 +125,8 @@ export interface ShipContext {
   verify?: (flags: VerifyFlags, env: NodeJS.ProcessEnv) => Promise<VerifyReport>
   containment?: (repoRoot: string, candidate: string, served: string) => Containment
   now?: () => number
+  /** Portal resolution of `Config/cloudflare-app.json` when the checkout has no file. */
+  appConfig?: Pick<AppConfigOptions, 'fetch' | 'timeoutMs' | 'repo'>
 }
 
 // GitHub expressions ignore case, so `github.TOKEN` counts too.
@@ -378,6 +381,14 @@ async function ship(
       'Declare repository-root ship:check and ship:build scripts (or hotfix:check/hotfix:build)',
     )
 
+  await primeAppConfig({
+    ...context.appConfig,
+    ...DEPLOY_APP_CONFIG_LOCATE,
+    env,
+    dir: appDir,
+    files: ['cloudflare-app.json'],
+    required: true,
+  })
   const target = readProductionTarget(appDir, env)
   const promoteGap = promoteWorkflowGap(repoRoot)
   if (promoteGap) refuse(promoteGap)

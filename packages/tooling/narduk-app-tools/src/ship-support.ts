@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { z } from 'zod'
 
-import { findCloudflareAppConfig, readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import { readCloudflareAppConfigDocument, readJsonc, resolveWranglerConfigPath } from './deploy.js'
 import {
   ACCOUNT_ID_PATTERN,
   readDeploymentBlock,
@@ -123,9 +123,9 @@ export function readProductionTarget(appDir: string, env: NodeJS.ProcessEnv): Pr
     throw new Error(
       'Move Wrangler build.command into the build script; upload must not rebuild with deployment credentials',
     )
-  const manifestPath = findCloudflareAppConfig(appDir)
-  if (!manifestPath) throw new Error('Missing Config/cloudflare-app.json')
-  const manifest = readJsonc<unknown>(manifestPath)
+  // The shared resolver: the local file (found by the same walk as before) or
+  // the portal copy `runShip` primed. Unresolvable is an error naming why.
+  const manifest = readCloudflareAppConfigDocument(appDir, env)
   const outcome = readDeploymentBlock(manifest)
   if (outcome.kind !== 'valid')
     throw new Error('Hotfix requires a valid narduk-v1 deployment block')

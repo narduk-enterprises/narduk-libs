@@ -16,7 +16,12 @@ import {
 import { parseAuditArgs, runAuditCommand } from './commands/audit.js'
 import { parseDoctorAllArgs, runDoctorAllCommand } from './commands/doctor-all.js'
 import { parseBareDoctorArgs, runBareDoctorCommand } from './commands/doctor-bare.js'
-import { isWorkersBuildDeployAllowed, readWranglerScriptName, runDeploy } from './deploy.js'
+import {
+  isWorkersBuildDeployAllowed,
+  primeDeployAppConfig,
+  readWranglerScriptName,
+  runDeploy,
+} from './deploy.js'
 import {
   formatPromoteResult,
   parseRollbackArgs,
@@ -47,7 +52,8 @@ import {
   parsePerformanceBudgetArgs,
   runPerformanceBudgetCheck,
 } from './performance.js'
-import { withAppCheckout } from './commands/checkout-root.js'
+import { primeAppConfig } from './app-config/resolve.js'
+import { withAppCheckout, withPrimedAppCheckout } from './commands/checkout-root.js'
 import { parseFoundationCheckArgs, runFoundationCheckCommand } from './commands/foundation-check.js'
 import { runSharedUiPinnedCheckCommand } from './commands/shared-ui-pinned-check.js'
 import {
@@ -241,7 +247,9 @@ function usage(): string {
     '  foundation:check:toolchain [--checkout <dir>] [--fix] [--json [path]]',
     '                                       Item 11: one declared Node/pnpm source, every other site reads or matches it',
     '  manifests validate [--checkout <dir>] [--wrangler <path>]... [--json [path]]',
-    '                                       Compare the wrangler config(s) with Config/cloudflare-app.json:',
+    '                                       Compare the wrangler config(s) with Config/cloudflare-app.json',
+    '                                       (or the portal copy; NARDUK_APP_CONFIG_SOURCE=auto|file|portal,',
+    '                                       OPERATOR_PORTAL_APP_CONFIG_TOKEN):',
     '                                       bindings and crons as sorted sets, deployment.accountId, and',
     '                                       worker.workersDev/previewUrls. Exit 1 on any disagreement.',
     '  foundation:check:deployment [--checkout <dir>] [--strict] [--json [path]]',
@@ -355,6 +363,14 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'db') {
       const [subcommand, ...migrateArgs] = rest
+      if (
+        ['baseline', 'bundle', 'migrate-deployment', 'migrate', 'status'].includes(subcommand ?? '')
+      ) {
+        // Every one of these reaches D1 through the ownership guard (and
+        // bundle / migrate-deployment read the declaration directly), which
+        // read the app declaration synchronously. Resolve it first.
+        await primeAppConfig({ dir: process.cwd(), files: ['cloudflare-app.json'] })
+      }
       if (subcommand === 'baseline') {
         console.log(JSON.stringify(runBaselineCommand(migrateArgs), null, 2))
         return 0
@@ -371,7 +387,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         return 0
       }
       if (subcommand === 'create') {
-        const flags = withAppCheckout(parseD1CreateArgs(migrateArgs), 'db create')
+        const flags = await withPrimedAppCheckout(parseD1CreateArgs(migrateArgs), 'db create')
         const result = runD1Create(flags)
         console.log(flags.json ? JSON.stringify(result, null, 2) : formatD1CreateResult(result))
         return 0
@@ -445,6 +461,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         if (action === 'versions-promote') writePromoteStepOutputs(result)
         return result.exitCode
       }
+      await primeDeployAppConfig(rest, process.cwd())
       return runDeploy(rest)
     }
     if (command === 'verify') {
@@ -535,7 +552,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (command === 'foundation:check:deployment') {
       const { exitCode } = runDeploymentCheckCommand(
-        withAppCheckout(parseDeploymentCheckArgs(rest), command),
+        await withPrimedAppCheckout(parseDeploymentCheckArgs(rest), command),
       )
       return exitCode
     }
@@ -550,7 +567,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         throw new Error('Usage: narduk-app manifests validate [--checkout <dir>] ...')
       }
       return runManifestsValidateCommand(
-        withAppCheckout(parseManifestsValidateArgs(manifestArgs), 'manifests validate'),
+        await withPrimedAppCheckout(parseManifestsValidateArgs(manifestArgs), 'manifests validate'),
       ).exitCode
     }
     if (command === 'foundation:check:coverage') {

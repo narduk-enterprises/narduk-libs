@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { primeAppCheckoutConfig, type AppConfigOptions } from '../app-config/resolve.js'
 import { evaluateItem1 } from './items/item-1-scaffold-parity.js'
 import { evaluateItem2 } from './items/item-2-mandatory-packages.js'
 import { evaluateItem3 } from './items/item-3-capability-packages.js'
@@ -50,6 +51,9 @@ export function resolveAppInfo(
       }
     })(),
   )
+  // Deliberately the plain file, not the shared resolver: the portal fetch is
+  // keyed by the repository this lookup is helping to name, and every other
+  // source below (GITHUB_REPOSITORY, package.json, origin) names it without one.
   const cfApp = parseJson(
     (() => {
       try {
@@ -95,11 +99,14 @@ export interface RunFoundationCheckOptions {
   reality?: RegistryReality
   appOverrides?: Partial<FoundationAppInfo>
   generated?: string
+  /** Portal resolution of the two app-config documents (env, fetch, timeout). */
+  appConfig?: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs' | 'repo'>
 }
 
 export async function runFoundationCheck(
   options: RunFoundationCheckOptions,
 ): Promise<FoundationCheckArtefact> {
+  await primeAppCheckoutConfig(options.root, options.appConfig)
   const repo = new AppRepo(options.root)
   const reality = options.reality ?? new FilesystemRegistryReality(options.root)
 

@@ -1,3 +1,4 @@
+export * from './app-config/resolve.js'
 export * from './assets.js'
 export * from './cloudflare.js'
 export * from './worker-identity.js'

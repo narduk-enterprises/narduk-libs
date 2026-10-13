@@ -42,10 +42,17 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import { parse as parseJsonc } from 'jsonc-parser'
 import { z } from 'zod'
+
+import {
+  AppConfigError,
+  locateAppConfigRoot,
+  readAppConfigText,
+  readSourceMode,
+} from './app-config/resolve.js'
 
 /** The manifest that marks the root of an app checkout. */
 export const CLOUDFLARE_APP_MANIFEST = 'Config/cloudflare-app.json'
@@ -230,15 +237,13 @@ export function contractEvidenceIssuesOnDisk(
 }
 
 /** Walk up from `cwd` to the checkout that owns `Config/cloudflare-app.json`,
- * or null when there is none -- a plain `db migrate` outside a narduk app. */
+ * or null when there is none -- a plain `db migrate` outside a narduk app.
+ *
+ * When the checkout carries no file (or `NARDUK_APP_CONFIG_SOURCE=portal`), the
+ * owner is the repository root, whose declaration lives on the portal's app row;
+ * `NARDUK_APP_CONFIG_SOURCE=file` keeps the file-only walk. */
 export function findAppManifestRoot(cwd: string): string | null {
-  let root = resolve(cwd)
-  for (;;) {
-    if (existsSync(join(root, CLOUDFLARE_APP_MANIFEST))) return root
-    const parent = dirname(root)
-    if (parent === root) return null
-    root = parent
-  }
+  return locateAppConfigRoot(cwd, 'cloudflare-app.json')
 }
 
 export type DeclaredOwnership =
@@ -260,10 +265,25 @@ export type DeclaredOwnership =
  */
 export function readDeclaredDatabaseOwnership(cwd: string): DeclaredOwnership {
   const root = findAppManifestRoot(cwd)
-  if (root === null) return { kind: 'none' }
+  if (root === null) {
+    // File-only mode says "not a narduk app" exactly as before. Otherwise there
+    // is no checkout to ask the portal about, and a guard that switched itself
+    // off because it could not find out would be the silent failure this
+    // refuses.
+    if (readSourceMode() === 'file') return { kind: 'none' }
+    throw new AppConfigError(
+      'no-root',
+      `Refusing to run migrations: ${cwd} is not inside a git checkout and holds no ${CLOUDFLARE_APP_MANIFEST}, ` +
+        'so database ownership cannot be resolved from the portal. Set NARDUK_APP_CONFIG_SOURCE=file to run outside an app.',
+    )
+  }
+  // Resolved outside the parse guard: an unresolvable document (no token, a
+  // portal outage) must stop the runner, not read as "unparseable" or "none".
+  const manifestText = readAppConfigText({ root, file: 'cloudflare-app.json' })
+  if (manifestText === null) return { kind: 'none' }
   let manifest: unknown
   try {
-    manifest = JSON.parse(readFileSync(join(root, CLOUDFLARE_APP_MANIFEST), 'utf8'))
+    manifest = JSON.parse(manifestText)
   } catch (error) {
     return {
       kind: 'unreadable',
@@ -309,8 +329,10 @@ function contractOwnedDatabases(root: string, bindings: Set<string>): ContractOw
   const found = { ids, names }
   if (bindings.size === 0) return found
   let wranglerConfig: string | undefined
+  const manifestText = readAppConfigText({ root, file: 'cloudflare-app.json' })
+  if (manifestText === null) return found
   try {
-    const manifest = JSON.parse(readFileSync(join(root, CLOUDFLARE_APP_MANIFEST), 'utf8')) as {
+    const manifest = JSON.parse(manifestText) as {
       worker?: { wranglerConfig?: unknown }
     }
     const declared = manifest.worker?.wranglerConfig

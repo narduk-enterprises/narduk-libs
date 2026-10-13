@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { primeAppCheckoutConfig, type AppConfigOptions } from '../app-config/resolve.js'
+
 /**
  * Refuse a `--checkout` that cannot be an app checkout.
  *
@@ -27,5 +29,20 @@ export function withAppCheckout<Flags extends { checkoutDir: string }>(
   commandName: string,
 ): Flags {
   assertAppCheckout(flags.checkoutDir, commandName)
+  return flags
+}
+
+/**
+ * {@link withAppCheckout}, then resolve the app-config documents the check will
+ * read synchronously (local files stay local; a missing one is fetched from the
+ * portal and a failure there stops the command rather than reading as absent).
+ */
+export async function withPrimedAppCheckout<Flags extends { checkoutDir: string }>(
+  flags: Flags,
+  commandName: string,
+  options: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs'> = {},
+): Promise<Flags> {
+  withAppCheckout(flags, commandName)
+  await primeAppCheckoutConfig(flags.checkoutDir, options)
   return flags
 }

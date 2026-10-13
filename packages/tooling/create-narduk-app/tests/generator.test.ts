@@ -897,37 +897,16 @@ describe('create-narduk-app generation contract', () => {
       expect(runbook, label).not.toContain('CANDIDATE')
       expect(runbook, label).not.toContain('--sha "$GITHUB_SHA"')
       expect(runbook, label).not.toContain('--expect-sha "$GITHUB_SHA"')
-      // The generator writes the app's own half of Config/cloudflare-app.json
-      // and still emits the `deployment` block for onboarding to paste in.
-      // Without the file, foundation:check item 1.2 is a decided FAIL on
-      // every brand-new app and CI's `foundation-check: true` input fails the
-      // build, so the first CI run was red by construction (narduk-libs#617).
-      const cloudflareApp = byPath.get('Config/cloudflare-app.json')
-      expect(cloudflareApp, label).toBeDefined()
-      const declared = JSON.parse(cloudflareApp ?? '{}') as Record<string, never>
-      expect(declared, label).toMatchObject({
-        schemaVersion: 1,
-        worker: {
-          nitroPreset: 'cloudflare_module',
-          wranglerConfig: 'apps/web/wrangler.jsonc',
-          // The same pair wrangler.jsonc sets: closed for an authenticated
-          // app, open for a public one. Item 1.4 reads the wrangler flags and
-          // this class together, so they must not disagree.
-          workersDev: !hasAuth,
-          previewUrls: !hasAuth,
-        },
-        // `auth` defaults the exposure to authenticated (generate.ts), and
-        // authenticated maps to the contract's `authenticated-public`.
-        access: { exposureClass: hasAuth ? 'authenticated-public' : 'public' },
-        bindings: { d1: hasDatabase ? [{ binding: 'DB' }] : [], kv: [], queues: [], cron: [] },
-      })
-      // Live Cloudflare facts stay ABSENT rather than fabricated -- the same
-      // rule wrangler.jsonc's missing `account_id` follows. Onboarding adds
-      // these, and the deployment check reports NOT ADOPTED (exit 0) until it
-      // does.
-      expect(declared.deployment, label).toBeUndefined()
-      expect(declared.domains, label).toBeUndefined()
-      expect((declared.product as Record<string, unknown>).repository, label).toBeUndefined()
+      // The app's declaration is owned by its Operator Portal app row
+      // (D-PORTAL-APP-CONFIG-1): a new app carries neither config file, and its
+      // docs say where the declaration lives and how tooling resolves it.
+      expect(byPath.has('Config/cloudflare-app.json'), label).toBe(false)
+      expect(byPath.has('Config/project-lifecycle.json'), label).toBe(false)
+      const deploymentDoc = byPath.get('docs/workers-builds.md') ?? ''
+      expect(deploymentDoc, label).toContain('Operator Portal app row')
+      expect(deploymentDoc, label).toContain('OPERATOR_PORTAL_APP_CONFIG_TOKEN')
+      expect(deploymentDoc, label).toContain('NARDUK_APP_CONFIG_SOURCE')
+      expect(deploymentDoc, label).not.toContain('declares its half of the standard in')
 
       // docs/e2e-testing.md + apps/web/tests/e2e/visual-audit.spec.ts: the
       // shared narduk-testkit UI-quality toolkit, scoped to the one route
@@ -964,7 +943,8 @@ describe('create-narduk-app generation contract', () => {
       expect(visualAudit, label).toContain("{ name: 'home', path: '/' }")
 
       // apps/web/scripts/validate-manifests.mjs: manifests:validate's
-      // implementation, no-ops gracefully pre-onboarding.
+      // implementation, says so (and exits 0) when the repository carries no
+      // declaration, which is every new app.
       const validateScript = byPath.get('apps/web/scripts/validate-manifests.mjs')
       expect(validateScript, label).toBeDefined()
       expect(validateScript, label).toContain("error.code === 'ENOENT'")
@@ -1162,7 +1142,7 @@ describe('create-narduk-app generation contract', () => {
     }
   })
 
-  it('validate-manifests.mjs runs, no-ops pre-onboarding, and detects a real binding mismatch', async () => {
+  it('validate-manifests.mjs runs, says so without a declaration, and detects a real binding mismatch', async () => {
     const files = buildGeneratedFiles({
       appName: 'validate-manifests-fixture',
       capabilities: [],
@@ -1179,13 +1159,14 @@ describe('create-narduk-app generation contract', () => {
     await writeFile(join(webDir, 'wrangler.jsonc'), wrangler.contents)
     const run = () => runValidateManifests(webDir)
 
-    // Pre-onboarding: ../../Config/cloudflare-app.json does not exist yet.
-    // The generator's script must no-op with exit 0, not throw.
+    // A new app: ../../Config/cloudflare-app.json is not in the repository
+    // (the portal app row owns it). The generator's script must say so and
+    // exit 0, not throw.
     const beforeOnboarding = run()
     expect(beforeOnboarding.status, beforeOnboarding.stderr).toBe(0)
-    expect(beforeOnboarding.stdout).toContain('does not exist yet')
+    expect(beforeOnboarding.stdout).toContain('the portal app row owns it')
 
-    // Onboarding creates Config/cloudflare-app.json with bindings that agree
+    // An app that still carries Config/cloudflare-app.json with bindings that agree
     // with wrangler.jsonc's zero-binding shape (no database, no uploads).
     await mkdir(join(root, 'Config'), { recursive: true })
     await writeFile(
@@ -2757,7 +2738,7 @@ describe('a fresh scaffold passes its own gate', () => {
       expect(docs).not.toContain('deploy:dev')
       expect(docs).toContain('## Ship')
       expect(docs).toContain('`pnpm ship`')
-      expect(map.get('Config/cloudflare-app.json')).not.toContain('"development"')
+      expect(map.has('Config/cloudflare-app.json')).toBe(false)
       const scripts = JSON.parse(map.get('package.json') ?? '{}').scripts
       expect(scripts.ship).toBeDefined()
       for (const removed of ['deploy:dev', 'deploy:local', 'deploy:hotfix', 'hotfix:check'])
@@ -2765,7 +2746,7 @@ describe('a fresh scaffold passes its own gate', () => {
     }
   })
 
-  it('declares its own half of Config/cloudflare-app.json, agreeing with wrangler.jsonc', async () => {
+  it('writes no Config/cloudflare-app.json, so a new app is portal-owned from its first commit', async () => {
     const files = buildGeneratedFiles({
       appName: 'declaration-fixture',
       capabilities: ['auth', 'seo', 'analytics', 'uploads'],
@@ -2773,27 +2754,24 @@ describe('a fresh scaffold passes its own gate', () => {
       targetDir: '/tmp/declaration-fixture',
     })
     const byPath = new Map(files.map((file) => [file.path, file.contents]))
+    expect(byPath.has('Config/cloudflare-app.json')).toBe(false)
+    expect(byPath.has('Config/project-lifecycle.json')).toBe(false)
+
     const root = await makeTempDirectory()
     const webDir = join(root, 'apps', 'web')
     await mkdir(join(webDir, 'scripts'), { recursive: true })
-    await mkdir(join(root, 'Config'), { recursive: true })
-    for (const path of [
-      'apps/web/scripts/validate-manifests.mjs',
-      'apps/web/wrangler.jsonc',
-      'Config/cloudflare-app.json',
-    ]) {
+    for (const path of ['apps/web/scripts/validate-manifests.mjs', 'apps/web/wrangler.jsonc']) {
       await writeFile(join(root, path), byPath.get(path)!)
     }
 
-    // The generated pair must agree on the generator's own output -- this is
-    // the check that runs pre-deploy on every build, and before this change
-    // it could only ever no-op.
+    // The generated validator is not a silent no-op: it names the portal as
+    // the owner and where the real cross-check runs.
     const result = spawnSync(process.execPath, ['scripts/validate-manifests.mjs'], {
       cwd: webDir,
       encoding: 'utf8',
     })
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('agree')
-    expect(result.stdout).not.toContain('does not exist yet')
+    expect(result.stdout).toContain('the portal app row owns it')
+    expect(result.stdout).toContain('narduk-app manifests validate')
   })
 })

@@ -135,7 +135,8 @@ exists.
   (`wrangler d1 migrations apply <database> --local` / `--remote`) is proposed
   only when that key is missing. They are not `pnpm --filter web`.
 - **Database.** `databaseBackend: 'none'` or `'d1'` in the Nuxt config wins.
-  Otherwise a D1 binding in `Config/cloudflare-app.json` (`bindings.d1`) or in
+  Otherwise a D1 binding in a checkout's `Config/cloudflare-app.json`
+  (`bindings.d1`, when it still has one; the portal copy is not consulted) or in
   the wrangler file (`d1_databases` in JSON, JSONC, or `wrangler.toml`) selects
   `d1`. No binding selects `none`, and the migrate scripts are not proposed.
   Auth is inferred from `@narduk-enterprises/narduk-auth` (or a declared
@@ -445,10 +446,15 @@ Scaffolds match the reference app shape Buoys is being brought to
   `manifests:validate` scripts, plus the `@narduk-enterprises/narduk-app-tools`
   devDependency that backs them. `apps/web/scripts/validate-manifests.mjs` runs
   pre-deploy and fails the build when `apps/web/wrangler.jsonc` bindings
-  disagree with `Config/cloudflare-app.json`. Both files are generated together
-  and agree from the first commit, so this is a real cross-check immediately; it
-  still no-ops rather than throwing when the declaration is absent, for apps
-  scaffolded before the generator wrote one.
+  disagree with `Config/cloudflare-app.json`. A new app has no such file: the
+  Operator Portal's app row owns its declaration (D-PORTAL-APP-CONFIG-1), the
+  generator writes neither `Config/cloudflare-app.json` nor
+  `Config/project-lifecycle.json`, and the script says so and exits 0 rather
+  than comparing against nothing. `narduk-app manifests validate` and
+  `foundation:check` resolve the declaration from the portal
+  (`OPERATOR_PORTAL_APP_CONFIG_TOKEN`,
+  `NARDUK_APP_CONFIG_SOURCE=auto|file|portal`). An app scaffolded earlier, which
+  still carries the file, keeps the full in-build comparison.
 - `CONTRACT.md` and `docs/workers-builds.md` are generated alongside
   `README.md`/`AGENTS.md`, documenting the app's own health contract and its
   Cloudflare Workers Builds connection settings.
@@ -559,16 +565,18 @@ Earlier versions were not. The generator left `Config/cloudflare-app.json` to
 onboarding, so item 1.2 was a decided FAIL (`apps/web/wrangler.jsonc` exists but
 the declaration does not), 1.4/3.1/3.2 were `UNKNOWN` for want of
 `access.exposureClass`, and 1.1 failed as soon as a build had run
-(narduk-libs#350). This README previously called that "expected and not a
-generator defect"; it was one, and nothing inside a new app could fix it. The
-generator now writes the half of that file a checkout can know — product
-identity, the Worker shape, the exposure class and the bindings mirror — and
-leaves the live Cloudflare facts (`product.repository`, the account id,
-`domains`, the `deployment` block) to onboarding, absent rather than fabricated.
+(narduk-libs#350, #617). The declaration now lives on the app's Operator Portal
+row (D-PORTAL-APP-CONFIG-1), so the generator writes neither
+`Config/cloudflare-app.json` nor `Config/project-lifecycle.json`: registering
+the app records them, and `narduk-app` resolves them with
+`OPERATOR_PORTAL_APP_CONFIG_TOKEN` (see the narduk-app-tools README, "Where the
+app declaration comes from"). Until the app is registered the checker fails
+loudly instead of guessing.
 `packages/tooling/narduk-app-tools/tests/foundation/generated-app-conformance.test.ts`
-runs the real checker over real generator output and is what keeps this true:
-1.5 is the only thing an untouched scaffold fails, and after `db create` it
-passes.
+runs the real checker over real generator output, with the registered
+declaration served through an injected fetch, and is what keeps the claim true:
+1.5 is the only thing an untouched, registered scaffold fails, and after
+`db create` it passes.
 
 One check is deliberately outside the local chain. `foundation:check` reads the
 package registry over the network, so it stays out of `quality:static`. Default

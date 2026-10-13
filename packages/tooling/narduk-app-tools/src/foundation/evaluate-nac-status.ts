@@ -30,8 +30,7 @@
  *    covers delivery or security, and stops counting the day after `expires`.
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readAppConfigText } from '../app-config/resolve.js'
 
 export const NAC_STATUS_DECISION = 'D-NAC-STATUS-1'
 export const NAC_STATUS_SCHEMA_VERSION = 1
@@ -209,12 +208,12 @@ function normaliseIssue(value: unknown): string | null {
  * read as "no waivers".
  */
 export function readWaiverConfig(root: string): unknown[] | 'malformed' {
-  let raw: string
-  try {
-    raw = readFileSync(join(root, 'Config', 'cloudflare-app.json'), 'utf8')
-  } catch {
-    return []
-  }
+  // Through the shared resolver: the local file when there is one (unchanged),
+  // else the portal's copy. A document that cannot be resolved throws; waivers
+  // are never dropped because the file went away. `null` is an authoritative
+  // "this repository declares none".
+  const raw = readAppConfigText({ root, file: 'cloudflare-app.json' })
+  if (raw === null) return []
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
