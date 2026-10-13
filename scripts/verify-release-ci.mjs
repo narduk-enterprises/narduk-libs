@@ -144,11 +144,46 @@ export function verifyTreeEvidence({
   return { runId: run.id, pr: pr.number, headSha: pr.head.sha, tree: mainCommit.tree.sha }
 }
 
-function ghApi(path) {
-  const result = spawnSync('gh', ['api', path], { encoding: 'utf8', timeout: 30_000 })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(`Unable to read CI evidence (${result.status})`)
-  return JSON.parse(result.stdout)
+export function ghApi(
+  path,
+  request = spawnSync,
+  wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = request('gh', ['api', path], { encoding: 'utf8', timeout: 30_000 })
+    if (result.error) throw result.error
+    if (result.status === 0) return JSON.parse(result.stdout)
+    // Retry GitHub server errors only. Auth refusals and invalid evidence still fail closed.
+    if (attempt === 2 || !/HTTP 5\d\d/u.test(result.stderr || ''))
+      throw new Error(`Unable to read CI evidence (${result.status})`)
+    wait(1000 * (attempt + 1))
+  }
+}
+
+/** Bound each GitHub response while reading every job in the exact CI attempt. */
+export function readAttemptJobs(api, repository, run) {
+  const jobs = []
+  let total
+  for (let page = 1; page <= 100; page += 1) {
+    const response = api(
+      `repos/${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=10&page=${page}`,
+    )
+    if (
+      !Number.isInteger(response.total_count) ||
+      response.total_count < 0 ||
+      response.total_count > 1000 ||
+      !Array.isArray(response.jobs) ||
+      response.jobs.length > 10 ||
+      (total !== undefined && total !== response.total_count)
+    )
+      throw new Error('Invalid or changing CI job pagination')
+    total = response.total_count
+    jobs.push(...response.jobs)
+    if (jobs.length === total) return jobs
+    if (jobs.length > total || response.jobs.length !== 10)
+      throw new Error('Incomplete CI job pagination')
+  }
+  throw new Error('CI job pagination exceeded its bound')
 }
 
 function readEvidence(api, repository, sha) {
@@ -168,11 +203,7 @@ function readPushEvidence(api, base) {
   const { repository, sha } = base
   const runs = readPushRuns(api, repository, sha)
   const latest = [...runs].sort((a, b) => b.id - a.id)[0]
-  const jobs = latest
-    ? api(
-        `repos/${repository}/actions/runs/${latest.id}/attempts/${latest.run_attempt}/jobs?per_page=100`,
-      ).jobs
-    : []
+  const jobs = latest ? readAttemptJobs(api, repository, latest) : []
   return { ...base, runs, jobs }
 }
 
@@ -189,11 +220,7 @@ function readTreeEvidence(api, base) {
   const latest = [...runs]
     .filter((entry) => entry.head_sha === pr.head.sha)
     .sort((a, b) => b.id - a.id)[0]
-  const jobs = latest
-    ? api(
-        `repos/${repository}/actions/runs/${latest.id}/attempts/${latest.run_attempt}/jobs?per_page=100`,
-      ).jobs
-    : []
+  const jobs = latest ? readAttemptJobs(api, repository, latest) : []
   return { ...base, pulls, mainCommit, headCommit, runs, jobs }
 }
 

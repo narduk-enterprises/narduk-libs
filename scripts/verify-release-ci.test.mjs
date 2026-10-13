@@ -4,7 +4,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { decideRelease, verifyReleaseEvidence, verifyTreeEvidence } from './verify-release-ci.mjs'
+import {
+  decideRelease,
+  ghApi,
+  readAttemptJobs,
+  verifyReleaseEvidence,
+  verifyTreeEvidence,
+} from './verify-release-ci.mjs'
 
 test('a detached release checkout gives Changesets its verified local base', () => {
   const workflow = readFileSync(
@@ -368,7 +374,8 @@ function routedApi(treeInput, { pushRuns = [], pushJobs = [], failing = [], call
     if (path.includes('/actions/workflows/ci.yml/runs?event=pull_request'))
       return { workflow_runs: treeInput.runs }
     if (path.includes('/attempts/')) {
-      return { jobs: path.includes('/runs/7/') ? pushJobs : treeInput.jobs }
+      const jobs = path.includes('/runs/7/') ? pushJobs : treeInput.jobs
+      return { total_count: jobs.length, jobs }
     }
     if (path.includes(`/commits/${treeInput.sha}/pulls`)) return treeInput.pulls
     if (path.endsWith(`/git/commits/${treeInput.sha}`)) return treeInput.mainCommit
@@ -545,5 +552,107 @@ test('with no push run to overrule it, a tree that does not match leaves the pus
   assert.throws(
     () => decideStandard(input, { runs: [], jobs: [] }),
     /latest main CI run for this exact SHA must have succeeded/u,
+  )
+})
+
+test('transient GitHub 5xx reads retry without accepting failed evidence', () => {
+  let calls = 0
+  const waits = []
+  const result = ghApi(
+    'evidence',
+    () => {
+      calls += 1
+      return calls < 3
+        ? { status: 1, stderr: 'gh: Server Error (HTTP 502)' }
+        : { status: 0, stdout: '{"conclusion":"failure"}' }
+    },
+    (ms) => waits.push(ms),
+  )
+  assert.equal(calls, 3)
+  assert.deepEqual(waits, [1000, 2000])
+  assert.equal(result.conclusion, 'failure')
+})
+
+test('auth refusals, exhausted server retries and malformed JSON fail closed', () => {
+  for (const stderr of ['HTTP 403', 'HTTP 502']) {
+    let calls = 0
+    assert.throws(
+      () =>
+        ghApi(
+          'evidence',
+          () => {
+            calls += 1
+            return { status: 1, stderr }
+          },
+          () => {},
+        ),
+      /Unable to read CI evidence/u,
+    )
+    assert.equal(calls, stderr === 'HTTP 403' ? 1 : 3)
+  }
+  assert.throws(() => ghApi('evidence', () => ({ status: 0, stdout: 'invalid' })), SyntaxError)
+})
+
+test('job pagination reads later-page verify evidence from the same attempt', () => {
+  const input = evidence()
+  const calls = []
+  const api = (path) => {
+    calls.push(path)
+    return path.endsWith('page=1')
+      ? {
+          total_count: 11,
+          jobs: Array.from({ length: 10 }, (_, id) => ({ name: `package ${id}` })),
+        }
+      : { total_count: 11, jobs: input.jobs }
+  }
+  const jobs = readAttemptJobs(api, input.repository, input.runs[0])
+  assert.equal(verifyReleaseEvidence({ ...input, jobs }), 7)
+  assert.deepEqual(
+    calls,
+    [1, 2].map(
+      (page) => `repos/example/libs/actions/runs/7/attempts/2/jobs?per_page=10&page=${page}`,
+    ),
+  )
+})
+
+test('job pagination refuses missing pages, changing totals and excessive scope', () => {
+  for (const response of [
+    { total_count: 11, jobs: [] },
+    { total_count: 1001, jobs: [] },
+    { jobs: [] },
+    { total_count: 0, jobs: [{}] },
+  ])
+    assert.throws(() => readAttemptJobs(() => response, 'example/libs', { id: 7, run_attempt: 2 }))
+  let calls = 0
+  assert.throws(
+    () =>
+      readAttemptJobs(
+        () => {
+          calls += 1
+          return { total_count: calls === 1 ? 11 : 12, jobs: Array(10).fill({}) }
+        },
+        'example/libs',
+        { id: 7, run_attempt: 2 },
+      ),
+    /changing CI job pagination/u,
+  )
+})
+
+test('paginated run jobs cannot substitute a successful earlier attempt', () => {
+  const input = evidence()
+  const jobs = readAttemptJobs(
+    () => ({
+      total_count: 2,
+      jobs: [
+        { ...input.jobs[0], run_attempt: 1 },
+        { ...input.jobs[0], conclusion: 'failure' },
+      ],
+    }),
+    input.repository,
+    input.runs[0],
+  )
+  assert.throws(
+    () => verifyReleaseEvidence({ ...input, jobs }),
+    /successful full verify aggregate/u,
   )
 })
