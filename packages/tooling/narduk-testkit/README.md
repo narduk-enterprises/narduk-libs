@@ -90,6 +90,12 @@ import { registerUsersApiSpec } from '@narduk-enterprises/narduk-testkit/e2e/spe
 registerUsersApiSpec({ apiPath: '/api/users' })
 ```
 
+`loginAsAdmin(page, { email?, password? })` signs in as the app's seeded admin
+user. No seed file ships a usable password, so it reads `E2E_ADMIN_PASSWORD`
+(and `E2E_ADMIN_EMAIL`, default `admin@example.com`) when no credentials are
+passed, and throws when there is no password. The app's own seed step must store
+a hash of that password, for example with the layer's `hashUserPassword()`.
+
 ## Vue warnings fail unit tests
 
 Vue renders an unresolved component as an unknown element

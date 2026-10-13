@@ -238,18 +238,26 @@ export async function registerAndLogin(
 }
 
 /**
- * Log in as the seeded admin user (admin@example.com / testpass123).
+ * Log in as the app's seeded admin user.
+ *
+ * No seed file ships a usable password, so the credentials come from the
+ * caller or from the environment: pass `{ email, password }`, or set
+ * `E2E_ADMIN_PASSWORD` (and optionally `E2E_ADMIN_EMAIL`, default
+ * `admin@example.com`). The app's own seed step must store a hash of that
+ * password (for example with the layer's `hashUserPassword()`).
  */
-export async function loginAsAdmin(page: Page) {
-  return page.evaluate(async () => {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      body: JSON.stringify({ email: 'admin@example.com', password: 'testpass123' }),
-    })
-    if (!response.ok) throw new Error(await response.text())
-    return response.json()
-  })
+export async function loginAsAdmin(
+  page: Page,
+  credentials: { email?: string; password?: string } = {},
+) {
+  const email = credentials.email || process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
+  const password = credentials.password || process.env.E2E_ADMIN_PASSWORD
+  if (!password) {
+    throw new Error(
+      'loginAsAdmin needs a password: pass { password } or set E2E_ADMIN_PASSWORD (and seed the admin user with a hash of it).',
+    )
+  }
+  return loginViaApi(page, { email, password })
 }
 
 /**

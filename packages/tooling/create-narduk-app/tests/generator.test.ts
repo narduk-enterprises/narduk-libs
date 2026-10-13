@@ -1141,6 +1141,27 @@ describe('create-narduk-app generation contract', () => {
     expect(bareWeb.scripts['dev:seed']).toBeUndefined()
   })
 
+  // A generated app must not ship a usable password hash: seed files bind
+  // `password_hash` to NULL only, and no file carries a `hashUserPassword()`
+  // shaped `salt:hash` string.
+  it('generates no file with a usable password hash', () => {
+    const files = buildGeneratedFiles({
+      appName: 'no-hash-fixture',
+      capabilities: ['auth'],
+      noGit: true,
+      targetDir: '/tmp/no-hash-fixture',
+    })
+    const hashShape = /\b[0-9a-f]{32}:[0-9a-f]{64}\b/iu
+    expect(files.some((file) => file.path.endsWith('.sql'))).toBe(true)
+    for (const file of files) {
+      expect(file.contents, file.path).not.toMatch(hashShape)
+      if (!file.path.endsWith('.sql')) continue
+      for (const match of file.contents.matchAll(/password_hash`?\s*=\s*('[^']*'|[^\s,;]+)/giu)) {
+        expect(match[1], file.path).toMatch(/^(?:NULL|excluded\.password_hash)$/iu)
+      }
+    }
+  })
+
   it('validate-manifests.mjs runs, no-ops pre-onboarding, and detects a real binding mismatch', async () => {
     const files = buildGeneratedFiles({
       appName: 'validate-manifests-fixture',
