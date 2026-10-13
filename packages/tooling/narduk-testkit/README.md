@@ -707,6 +707,71 @@ off by default: a bare `playwright test` would otherwise run every `.web` /
 scan. When both are passed, undeclared files still under `testDir` fail config
 load.
 
+### Local E2E budget (`assertLocalE2eScope`, `e2eBudgetDefaults`)
+
+A budget written as prose does not hold: one QA lane built and ran a 19-spec
+suite 21 times in a day, because a lane that calls `pnpm exec playwright test`
+directly never meets a wrapper script. The one place every run passes is the
+config. Call `assertLocalE2eScope()` at the top of `playwright.config.ts` and
+state every time bound with `e2eBudgetDefaults()`:
+
+```ts
+import { defineConfig, devices } from '@playwright/test'
+import {
+  assertLocalE2eScope,
+  createNardukPlaywrightPreset,
+  e2eBudgetDefaults,
+} from '@narduk-enterprises/narduk-testkit/playwright/config'
+
+assertLocalE2eScope() // before anything else loads
+
+const preset = createNardukPlaywrightPreset({
+  baseURL,
+  browserUse: devices['Desktop Chrome'],
+})
+const budget = e2eBudgetDefaults()
+
+export default defineConfig({
+  ...preset,
+  ...budget,
+  use: { ...preset.use, ...budget.use }, // merge `use`: a spread would drop baseURL or the action bounds
+})
+```
+
+Outside CI (and without the override env) a `playwright test` is refused with
+exit 1 and a message before any build or server when it:
+
+- names no spec file (a bare `--grep` included: it still loads every file);
+- selects more than `maxSpecs` spec files (default 3), by name or by one broad
+  filter, judged as Playwright does (a regular expression over the absolute
+  path, else a substring);
+- selects a spec carrying `// @sweep` in its first 10 lines (a route sweep: the
+  scheduled run's job, not a lane's).
+
+`--last-failed`, `--list` and `--only-changed` pass, as does a Playwright worker
+(`TEST_WORKER_INDEX`), a subcommand other than `test`, and a run under a
+different `--config` basename than `configFile`. In CI, and with
+`E2E_ALLOW_BROAD=1` (a person reproducing a red scheduled run on purpose),
+nothing is refused.
+
+Options, with the defaults shown: `specDir: 'tests/e2e'` (resolved against
+`cwd`), `maxSpecs: 3`, `sweepTag: '@sweep'`, `allowBroadEnv: 'E2E_ALLOW_BROAD'`,
+`configFile: 'playwright.config.ts'`, and `guidance: []` (extra lines for the
+refusal, such as where your project documents its budget). `localScopeVerdict`
+is the pure form (`{ ok: true }` or `{ ok: false, problems }`) for a unit test.
+
+`e2eBudgetDefaults()` returns `timeout` 30 s, `expect.timeout` 5 s,
+`use.actionTimeout` 15 s, `use.navigationTimeout` 30 s, and, for a local run
+only, `maxFailures: 5` and `globalTimeout: 15 min` (both `0`, no limit, in CI
+and under the override). Each is an option (`testTimeoutMs`, `expectTimeoutMs`,
+`actionTimeoutMs`, `navigationTimeoutMs`, `localMaxFailures`,
+`localGlobalTimeoutMs`). Pair it with the `narduk/e2e-timeout-ceiling` lint rule
+in `@narduk-enterprises/eslint-config` (the `e2e` pack), which caps literal
+`test.setTimeout` and `{ timeout }` values in the specs.
+
+Like the tier preset, this module is loaded from a config before the runner
+exists, so it imports neither `@playwright/test` nor `e2e/fixtures`.
+
 ### Quarantine (`@quarantine`)
 
 A flake leaves the PR gate with a Playwright tag, not `test.skip` and not

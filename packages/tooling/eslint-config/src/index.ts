@@ -8,7 +8,7 @@
  *
  * ## Tier layout
  *
- * Rules live in `src/rules/<tier>/<rule-name>.ts` under six tiers. A tier is a
+ * Rules live in `src/rules/<tier>/<rule-name>.ts` under seven tiers. A tier is a
  * *file location*, not a scope: `configs/*.mjs` decides which globs each rule
  * runs against, which is why, for instance, `no-blocking-io-in-server-plugin`
  * sits in `nuxt/` but is enabled by the `server` pack.
@@ -21,6 +21,7 @@
  * | `nuxt/`      | rebuilt Nuxt data-fetch and app-structure rules |
  * | `server/`    | the rebuilt Nitro mutation-route security tier |
  * | `cloudflare/`| the four Worker runtime rules |
+ * | `e2e/`       | browser-test time-budget rules, enabled by the `e2e` pack |
  *
  * Shared gates live in `src/rules/utils/` (`path-scope`, `mutation-route`,
  * `cloudflare-runtime`) and are not part of this manifest. Per-tier `_internal`
@@ -92,6 +93,9 @@ import requireFetchTimeout from './rules/server/require-fetch-timeout'
 import requireImmediateMutationBodyValidation from './rules/server/require-immediate-mutation-body-validation'
 import requireLimitOnDrizzleListQueries from './rules/server/require-limit-on-drizzle-list-queries'
 import requireValidatedQuery from './rules/server/require-validated-query'
+
+// ── e2e ─────────────────────────────────────────────────────────────────────
+import e2eTimeoutCeiling from './rules/e2e/e2e-timeout-ceiling'
 
 // ── cloudflare ──────────────────────────────────────────────────────────────
 import noProcessEnvInWorkerRuntime from './rules/cloudflare/no-process-env-in-worker-runtime'
@@ -174,6 +178,9 @@ const plugin = {
     'require-immediate-mutation-body-validation': requireImmediateMutationBodyValidation,
     'require-limit-on-drizzle-list-queries': requireLimitOnDrizzleListQueries,
     'require-validated-query': requireValidatedQuery,
+
+    // e2e
+    'e2e-timeout-ceiling': e2eTimeoutCeiling,
 
     // cloudflare
     'no-process-env-in-worker-runtime': noProcessEnvInWorkerRuntime,

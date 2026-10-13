@@ -114,11 +114,40 @@ in its source.
 | `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only                                                                              |
 | `complexity`    | High-signal `sonarjs` rules, warn-only                                                                                      |
 | `formatting`    | `eslint-plugin-perfectionist` import/type ordering                                                                          |
-| `e2e`           | `eslint-plugin-playwright`, scoped to Playwright specs                                                                      |
+| `e2e`           | `eslint-plugin-playwright`, scoped to Playwright specs; `narduk/e2e-timeout-ceiling` (below)                                |
 | `monorepo`      | Registered, contributes no rules                                                                                            |
 
 Both v1 spellings resolve, so `'designSystem'` and `'nuxtUi'` keep working
 alongside `'design-system'` and `'nuxt-ui'`.
+
+### E2E time-budget ceilings (`e2e`)
+
+`narduk/e2e-timeout-ceiling` runs at `warn` (apps lint at `--max-warnings 0`, so
+it enforces) on `tests/e2e/**` and `e2e/**`, never on `playwright.config.*`,
+where `webServer.timeout` and `globalTimeout` are legitimately large. It flags,
+by numeric literal only:
+
+- `test.setTimeout(n)` with `n` over `testTimeoutMs` (default 60 000);
+- any `{ timeout: n }` property with `n` over `waitTimeoutMs` (default 30 000):
+  a sleep wearing a selector;
+- `new Promise((resolve) => setTimeout(resolve, n))`, which is
+  `page.waitForTimeout` spelled so `playwright/no-wait-for-timeout` cannot see
+  it.
+
+A test that walks N routes states a budget per route (`routes.length * 10_000`),
+which the rule leaves alone. A spec that really waits out a server window turns
+the rule off for that file in the app's own flat config; keep that list as an
+app constant and make it shrink-only:
+
+```js
+{ files: ['tests/e2e/board-write-windows.spec.ts'], rules: { 'narduk/e2e-timeout-ceiling': 'off' } }
+// or other ceilings:
+{ rules: { 'narduk/e2e-timeout-ceiling': ['warn', { testTimeoutMs: 90_000, waitTimeoutMs: 45_000 }] } }
+```
+
+The testkit's `assertLocalE2eScope()` and `e2eBudgetDefaults()`
+(`@narduk-enterprises/narduk-testkit/playwright/config`) are the config-side
+half of the same budget.
 
 ### Declared CSRF exemptions (`auth`)
 
