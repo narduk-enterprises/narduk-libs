@@ -1,5 +1,18 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.72
+
+### Patch Changes
+
+- 8b59a48: Pins the `@narduk-enterprises/narduk-testkit` and
+  `@narduk-enterprises/eslint-config` releases that add the local E2E budget
+  (`assertLocalE2eScope`, `e2eBudgetDefaults`) and the
+  `narduk/e2e-timeout-ceiling` rule.
+- fcad514: Production builds no longer serve `/_openapi.json` by default. A
+  public spec is a route map for scanners, so an app that wants it now opts in
+  with `NUXT_OPENAPI_PRODUCTION=prerender` (or `true`) or `runtime`. An
+  unrecognised value also serves nothing.
+
 ## 0.21.71
 
 ### Patch Changes

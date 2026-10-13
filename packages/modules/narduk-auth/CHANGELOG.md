@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.13
+
+### Patch Changes
+
+- Updated dependencies [fcad514]
+  - @narduk-enterprises/narduk-core@2.27.0
+  - @narduk-enterprises/narduk-app@1.20.3
+
 ## 1.34.12
 
 ### Patch Changes

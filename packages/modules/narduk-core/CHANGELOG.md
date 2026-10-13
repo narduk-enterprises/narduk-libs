@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-core
 
+## 2.27.0
+
+### Minor Changes
+
+- fcad514: Production builds no longer serve `/_openapi.json` by default. A
+  public spec is a route map for scanners, so an app that wants it now opts in
+  with `NUXT_OPENAPI_PRODUCTION=prerender` (or `true`) or `runtime`. An
+  unrecognised value also serves nothing.
+
 ## 2.26.1
 
 ### Patch Changes
