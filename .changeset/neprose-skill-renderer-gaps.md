@@ -1,4 +1,5 @@
 ---
+'@narduk-enterprises/create-narduk-app': patch
 '@narduk-enterprises/narduk-shell': minor
 ---
 
@@ -20,3 +21,5 @@ render unchanged.
 - Exports `parseProseInline` and `proseText`, with the `ParseProseOptions` and
   `NeProseTableSlotProps` types.
 - NeProse renders h4 in the suite's type scale.
+
+The generator pins `@narduk-enterprises/narduk-shell`, so `create-narduk-app` takes the new pin as a patch.
