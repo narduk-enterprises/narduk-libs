@@ -109,6 +109,9 @@ const props = withDefaults(defineProps<NeCollectionTableProps<T>>(), {
   more: undefined,
   noMatchText: 'Nothing matches that search and filter.',
   noun: undefined,
+  query: undefined,
+  remote: false,
+  total: undefined,
   phoneLayout: 'cards',
   primaryColumn: undefined,
   rowAttrs: undefined,
@@ -128,6 +131,7 @@ const props = withDefaults(defineProps<NeCollectionTableProps<T>>(), {
 const emit = defineEmits<{
   /** A row was picked. Only emitted when `selectedKey` is given. */
   select: [key: string | number, row: T]
+  'update:query': [query: string]
   /** The sort changed, from a header or the phone sort select. */
   'update:sort': [sort: string | null]
 }>()
@@ -255,7 +259,7 @@ const matchedGroups = computed<RenderGroup[]>(() => {
       {
         grouped: false,
         key: sortedAcross.value ? '__ne-across' : '__ne-rows',
-        rows: collection.rows.value,
+        rows: props.remote ? [...allRows.value] : collection.rows.value,
       },
     ]
   }
@@ -264,7 +268,7 @@ const matchedGroups = computed<RenderGroup[]>(() => {
       group,
       grouped: true,
       key: group.key,
-      rows: collection.apply(group.rows),
+      rows: props.remote ? [...group.rows] : collection.apply(group.rows),
     }))
     .filter((group) => group.rows.length > 0)
 })
@@ -275,7 +279,7 @@ const matchedCount = computed(() =>
 
 const expanded = ref(false)
 const limited = computed(
-  () => !expanded.value && props.limit !== undefined && matchedCount.value > props.limit,
+  () => !props.remote && !expanded.value && props.limit !== undefined && matchedCount.value > props.limit,
 )
 
 const renderGroups = computed<RenderGroup[]>(() => {
@@ -291,6 +295,12 @@ const renderGroups = computed<RenderGroup[]>(() => {
 })
 
 const countLabel = computed(() => {
+  if (props.remote) {
+    const noun = props.noun ?? 'rows'
+    return props.total == null
+      ? `${formatNumber(allRows.value.length)} ${noun} shown · total unknown`
+      : `${formatNumber(props.total)} ${noun}`
+  }
   const total = allRows.value.length
   const noun = props.noun ?? (total === 1 ? 'row' : 'rows')
   const shown = matchedCount.value
@@ -537,6 +547,14 @@ function groupAttrs(group: NeCollectionGroup<T> | undefined): Record<string, str
   return out
 }
 
+const searchModel = computed({
+  get: () => props.remote ? (props.query ?? '') : collection.query.value,
+  set: (value: string) => {
+    if (props.remote) emit('update:query', value)
+    else collection.query.value = value
+  },
+})
+
 const filterModel = computed({
   get: () => collection.filter.value,
   set: (value: string | null) => {
@@ -562,14 +580,14 @@ const filterModel = computed({
     >
       <NeSearchInput
         v-if="toolbarOn"
-        v-model="collection.query.value"
+        v-model="searchModel"
         class="min-w-0 flex-[0_1_20rem] max-sm:basis-full"
         :debounce="searchDebounce"
         :label="`Search ${caption}`"
         :placeholder="searchPlaceholder"
       />
       <NeFilterBar
-        v-if="toolbarOn && collection.items.value.length > 0"
+        v-if="!remote && toolbarOn && collection.items.value.length > 0"
         v-model="filterModel"
         flush
         :items="collection.items.value"

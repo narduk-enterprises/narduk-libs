@@ -57,6 +57,7 @@
     "runtime/server/scheduled-jobs.ts",
     "runtime/server/wait-until.ts",
     "runtime/server/list-cursor.ts",
+    "runtime/server/sql-list.ts",
     "runtime/server/json-error-no-store.ts",
     "runtime/server/api/health.get.ts",
     "runtime/server/api/runtime/status.get.ts",

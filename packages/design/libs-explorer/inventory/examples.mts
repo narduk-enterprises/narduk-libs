@@ -79,6 +79,7 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'A modal confirmation, usually opened through useConfirm().',
   ),
   shell('NeStatePanel', 'State panel', 'Loading, empty, error and gap states for a data region.'),
+  shell('NeCursorPager', 'Cursor pager', 'Older and newer navigation with honest unknown totals.'),
   shell('NePager', 'Pager', 'Page controls bound to useCollection() state.'),
   shell('NeFilterBar', 'Filter bar', 'Chips or tabs that pick one view of a list, with counts.'),
   shell(

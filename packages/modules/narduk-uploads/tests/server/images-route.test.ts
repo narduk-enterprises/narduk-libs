@@ -8,8 +8,10 @@ vi.mock('h3', () => ({
   createError: (input: { message?: string; statusCode?: number }) =>
     Object.assign(new Error(input.message), input),
   defineEventHandler: (handler: unknown) => handler,
+  getRequestHeader: () => {},
   getRouterParam,
   setResponseHeaders,
+  setResponseStatus: vi.fn(),
 }))
 
 vi.mock('@narduk-enterprises/narduk-uploads/runtime/server/utils/r2', () => ({

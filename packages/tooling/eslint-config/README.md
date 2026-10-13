@@ -549,3 +549,8 @@ pnpm run quality      # build + typecheck + lint + test
 
 The packs import the built `dist/index.js`, so `pnpm run build` has to run
 before `pnpm run test:unit` on a fresh checkout.
+
+When adding a shared component, update the owning registry/export, this
+package's `shared-components.ts` catalog, and the libs-explorer example and
+usage file. The workspace input declaration selects this package when a shared
+registry changes, so the drift check runs before publication.

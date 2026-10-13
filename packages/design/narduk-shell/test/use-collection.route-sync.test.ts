@@ -36,13 +36,14 @@ function page(options: {
   items?: Runner[]
   limit?: number
   offset?: number
+  q?: string
   total?: number | null
 }): OffsetListResponse<Runner> {
   return {
     items: options.items ?? [],
     limit: options.limit ?? LIST_QUERY_DEFAULT_LIMIT,
     offset: options.offset ?? 0,
-    q: null,
+    q: options.q ?? null,
     sort: null,
     total: options.total ?? null,
   }
@@ -217,4 +218,18 @@ describe('syncQuery', () => {
     expect(calls.at(-1)!.query).toEqual({ limit: 10, offset: 490 })
     unmount()
   })
+})
+
+it('namespaces a second list without consuming the primary list query', async () => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
+  await router.push('/?page=7&q=primary&grants_page=2&grants_q=secondary')
+  await router.isReady()
+  const fetch = vi.fn(async (query: NeCollectionQuery) => ({ ...page({ offset: query.offset, total: 100 }), q: query.q ?? null }))
+  let collection!: NeCollection<Runner>
+  const wrapper = mount(defineComponent({ setup() { collection = useCollection({ fetch, syncQuery: true, queryPrefix: 'grants_', limit: 25 }); return () => h('div') } }), { global: { plugins: [router] } })
+  await flushPromises()
+  expect(fetch.mock.calls[0]?.[0]).toMatchObject({ offset: 25, q: 'secondary' })
+  collection.setPage(3); await flushPromises()
+  expect(router.currentRoute.value.query).toMatchObject({ page: '7', q: 'primary', grants_page: '3', grants_q: 'secondary' })
+  wrapper.unmount()
 })

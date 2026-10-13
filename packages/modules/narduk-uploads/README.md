@@ -12,6 +12,50 @@ export default defineNuxtConfig({
 
 Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
 
+### Serving images from your own bucket and prefixes
+
+An app that only serves R2 images, with no upload surface, can configure the
+image route and leave the upload route out:
+
+```ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-uploads/nuxt'],
+  nardukUploads: {
+    imports: false,
+    uploadRoute: false,
+    images: {
+      binding: 'IMAGES',
+      prefixes: [
+        // Versioned variants never change under their URL.
+        {
+          prefix: 'v1/',
+          cacheControl: 'public, max-age=31536000, immutable',
+          typeFromExtension: true,
+        },
+        // Replaceable originals.
+        {
+          prefix: 'products/',
+          cacheControl: 'public, max-age=3600, stale-while-revalidate=86400',
+          typeFromExtension: true,
+        },
+      ],
+    },
+  },
+})
+```
+
+- `uploadRoute` (default `true`) registers `POST /api/upload`.
+- `images.binding` (default `BUCKET`) is the R2 binding `GET`/`HEAD /images/**`
+  reads.
+- `images.prefixes` (default: `uploads/` with a one-year immutable cache) lists
+  the served key prefixes, first match wins. A key outside every prefix is a 404
+  before R2 is read. An empty prefix is refused at build time, since it would
+  serve the whole bucket.
+- `typeFromExtension` takes the type from an allow-listed raster extension
+  (`avif`, `gif`, `jpeg`/`jpg`, `png`, `webp`) when there is one, and from the
+  stored metadata otherwise. The allow-list still applies, so SVG and non-images
+  stay 415 whatever the key or metadata says.
+
 ## Runtime Surface
 
 - `POST /api/upload` accepts authenticated multipart image uploads
@@ -30,7 +74,8 @@ Apps must provide a Cloudflare R2 bucket binding named `BUCKET`.
   request is stored. The stored content type and key extension come from the
   bytes, never from the label.
 - `GET /images/uploads/*` streams those objects from R2 when the stored content
-  type is on the same allow-list (parameters stripped, lowercased). Other types
+  type is on the same allow-list (parameters stripped, lowercased). `HEAD` is
+  answered from metadata, and a matching `If-None-Match` gets a 304. Other types
   — including missing metadata, SVG, HTML, and JavaScript — return 415.
   `uploadToR2` still writes any prefix and type; non-allow-listed objects under
   `uploads/` are stored but not served.

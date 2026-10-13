@@ -87,7 +87,9 @@ const last = computed(() => state.value.offset + state.value.items.length)
  * it is actually showing, and an empty set says so instead of `0–0 of 0`.
  */
 const summary = computed(() => {
-  const { items, total } = state.value
+  const { items, total, pending, error } = state.value
+  if (error) return `Could not read ${props.noun}`
+  if (pending && items.length === 0) return `Reading ${props.noun}`
   if (items.length === 0) {
     return total === null || total === 0 ? `No ${props.noun}` : `No ${props.noun} on this page`
   }
