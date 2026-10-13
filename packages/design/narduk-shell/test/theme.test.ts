@@ -310,9 +310,7 @@ describe('--ui-* bridge', () => {
         new RegExp(`^var\\(--ui-color-${alias}-400, #[0-9a-f]{6}\\)$`),
       )
     }
-    expect(NARDUK_SHELL_APP_CONFIG).toEqual({
-      ui: { colors: { primary: 'sky', neutral: 'slate' } },
-    })
+    expect(NARDUK_SHELL_APP_CONFIG.ui.colors).toEqual({ primary: 'sky', neutral: 'slate' })
   })
 
   /**
@@ -522,5 +520,28 @@ describe('default colour contrast (narduk-libs#1785)', () => {
       .filter((sel) => sel.length > 0 && !sel.startsWith('media'))
     expect(selectors.length).toBeGreaterThan(0)
     for (const selector of selectors) expect(selector).toMatch(/^:where\(/)
+  })
+})
+
+describe('mobile web QA theme defaults', () => {
+  const FIELDS = ['input', 'inputMenu', 'inputNumber', 'inputTags', 'select', 'selectMenu', 'textarea'] as const
+
+  it('renders every small form control at 16px on a phone and 14px from sm: up', () => {
+    for (const field of FIELDS) {
+      const sizes = NARDUK_SHELL_APP_CONFIG.ui[field].variants.size
+      expect(sizes.xs.base, field).toBe('text-base sm:text-sm')
+      expect(sizes.sm.base, field).toBe('text-base sm:text-sm')
+    }
+  })
+
+  it('gives buttons a 44px coarse-pointer tap target built on --ns-tap-min', () => {
+    const base = NARDUK_SHELL_APP_CONFIG.ui.button.slots.base
+    expect(base).toContain('pointer-coarse:min-h-[var(--ns-tap-min,44px)]')
+    expect(base).toContain('pointer-coarse:min-w-[var(--ns-tap-min,44px)]')
+  })
+
+  it('defaults the bottom-bar token to 0 and feeds it to scroll-padding-bottom', () => {
+    expect(light.get('--ne-bottom-bar-h')).toBe('0px')
+    expect(themeCss).toMatch(/:where\(html\)\s*\{\s*scroll-padding-bottom:\s*var\(--ne-bottom-bar-h\)/)
   })
 })

@@ -61,11 +61,13 @@ watch(
 
 <template>
   <!-- eslint-disable-next-line vue/no-restricted-html-elements -- layer scaffold: semantic landmark element -->
-  <header class="sticky top-0 z-50 border-b border-default bg-default/80 backdrop-blur-xl">
+  <header
+    class="sticky top-0 z-50 border-b border-default bg-default/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl"
+  >
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
       <!-- Brand / Logo Area -->
       <slot name="logo">
-        <ULink to="/" class="flex items-center gap-2.5 group shrink-0">
+        <ULink to="/" class="flex min-h-11 min-w-11 items-center gap-2.5 group shrink-0">
           <div
             class="size-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-sm"
           >

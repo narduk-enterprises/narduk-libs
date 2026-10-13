@@ -57,6 +57,23 @@ app that wants light-only sets
 `colorMode: { preference: 'light', fallback: 'light' }` (Buoys does). An app can
 still override `classSuffix`.
 
+## Mobile defaults
+
+Every app that loads the layer inherits the mobile web QA basics, so none of
+them is a per-app chore:
+
+| Default                                                                                                                                                                | Where                               | Opt out                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `viewport` `width=device-width, initial-scale=1, viewport-fit=cover` (no zoom lock)                                                                                    | `app.head`                          | set your own `app.head.viewport`                                                        |
+| `color-scheme` `light dark`, `theme-color` (light and dark, by media query), `format-detection` `telephone=no`, `apple-mobile-web-app-capable` and `-status-bar-style` | `app.head.meta`                     | set a `meta` entry with the same `name`, or `useHead()` per page; `head: false` for all |
+| `touch-action: manipulation` and a transparent tap highlight on controls, a visible `:focus-visible`                                                                   | `main.css`, `@layer base`           | a utility class, or an unlayered rule                                                   |
+| `overscroll-behavior: contain` on `[role=dialog]`                                                                                                                      | `main.css`, `@layer base`           | an `overscroll-*` utility                                                               |
+| `@media (prefers-reduced-motion: reduce)` removes transitions, animations and smooth scroll                                                                            | `main.css`, unlayered, `!important` | none; honour the user's setting                                                         |
+
+`theme-color` is Nuxt UI's `bg-default` per scheme (`#ffffff`, and `#0f172a` for
+the default `slate` neutral). An app with its own palette sets its own
+`theme-color` entries.
+
 ## First-paint defaults
 
 narduk-core sets three defaults that cost first paint and LCP on server-rendered
@@ -600,7 +617,7 @@ narduk-core is a module installed under `node_modules`, so it registers its own
 files (narduk-libs#700):
 
 - `main.css` carries `@source '../../'`, so the utilities core's `runtime/app`
-  files use (the error page's `text-7xl` and `min-h-screen`, the header's
+  files use (the error page's `text-7xl` and `min-h-dvh`, the header's
   `md:flex`) are generated in an app that never names them.
 - When an app turns on `ui.experimental.componentDetection`, core adds the Nuxt
   UI components its own files render (`src/nuxt-ui-components.ts`; `UButton` on

@@ -23,8 +23,34 @@ export interface NardukShellColorAliases {
   neutral: string
 }
 
+/** One `base` class string, appended to a Nuxt UI slot or size variant. */
+interface NardukShellBaseClass {
+  base: string
+}
+
+type NardukShellFieldSizes = Record<'xs' | 'sm', NardukShellBaseClass>
+
+/** The Nuxt UI form controls whose `xs`/`sm` sizes ship 14px text. */
+const FIELD_COMPONENTS = [
+  'input',
+  'inputMenu',
+  'inputNumber',
+  'inputTags',
+  'select',
+  'selectMenu',
+  'textarea',
+] as const
+
 export interface NardukShellUiAppConfig {
   colors: NardukShellColorAliases
+  button: { slots: NardukShellBaseClass; variants: { square: { true: string } } }
+  input: { variants: { size: NardukShellFieldSizes } }
+  inputMenu: { variants: { size: NardukShellFieldSizes } }
+  inputNumber: { variants: { size: NardukShellFieldSizes } }
+  inputTags: { variants: { size: NardukShellFieldSizes } }
+  select: { variants: { size: NardukShellFieldSizes } }
+  selectMenu: { variants: { size: NardukShellFieldSizes } }
+  textarea: { variants: { size: NardukShellFieldSizes } }
 }
 
 export interface NardukShellAppConfig {
@@ -38,6 +64,28 @@ export interface NardukShellAppConfig {
  * radius, `rounded-lg` the NE panel radius). Setting radius here would be a
  * second, silently-ignored source of truth.
  */
+/**
+ * iOS Safari zooms the page when a focused field renders below 16px, so the
+ * small sizes are 16px on a phone and keep their 14px from `sm:` up. (The `md`
+ * and larger sizes are already `text-base`.) `text-base` drops the size's
+ * `/line-height`, which is what we want: 1.5 is the right leading at 16px.
+ */
+const MOBILE_SAFE_FIELD_TEXT = 'text-base sm:text-sm'
+
+const fieldSizes = (): NardukShellFieldSizes => ({
+  xs: { base: MOBILE_SAFE_FIELD_TEXT },
+  sm: { base: MOBILE_SAFE_FIELD_TEXT },
+})
+
+/**
+ * Tap targets are 44px on a coarse pointer (mobile web QA rule 8). It is a
+ * theme class and not base CSS because a Tailwind utility outranks any base
+ * rule: a `size-8` icon button would otherwise win. `--ns-tap-min` is the
+ * narduk-ui token; the fallback keeps the class valid without it.
+ */
+const COARSE_POINTER_TAP_TARGET =
+  'pointer-coarse:min-h-[var(--ns-tap-min,44px)] pointer-coarse:min-w-[var(--ns-tap-min,44px)]'
+
 export const NARDUK_SHELL_APP_CONFIG: NardukShellAppConfig = {
   ui: {
     colors: {
@@ -48,5 +96,13 @@ export const NARDUK_SHELL_APP_CONFIG: NardukShellAppConfig = {
       // quietly warm the suite's greys: NE's ink and surfaces are cool.
       neutral: 'slate',
     },
+    button: {
+      slots: { base: COARSE_POINTER_TAP_TARGET },
+      // The minimum width widens an icon-only button, so its icon has to stay centred.
+      variants: { square: { true: 'justify-center' } },
+    },
+    ...(Object.fromEntries(
+      FIELD_COMPONENTS.map((name) => [name, { variants: { size: fieldSizes() } }]),
+    ) as Pick<NardukShellUiAppConfig, (typeof FIELD_COMPONENTS)[number]>),
   },
 }

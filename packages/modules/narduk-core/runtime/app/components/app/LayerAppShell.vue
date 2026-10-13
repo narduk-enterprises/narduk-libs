@@ -22,7 +22,7 @@
       Skip to content
     </ULink>
 
-    <div class="app-shell min-h-screen flex flex-col">
+    <div class="app-shell min-h-dvh flex flex-col">
       <!-- Header slot -->
       <slot name="header"></slot>
 

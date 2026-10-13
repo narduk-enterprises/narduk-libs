@@ -267,7 +267,7 @@ onUnmounted(() => {
 
         <!-- Media + optional side details -->
         <div
-          class="max-w-[90vw] max-h-[85vh] flex flex-col md:flex-row items-center md:items-start gap-4"
+          class="max-w-[90vw] max-h-[85dvh] flex flex-col md:flex-row items-center md:items-start gap-4"
           data-testid="app-lightbox-stage"
         >
           <div class="max-w-full flex flex-col items-center min-w-0">
@@ -275,7 +275,7 @@ onUnmounted(() => {
               v-if="currentItem.video"
               :src="currentItem.src"
               controls
-              class="max-w-full max-h-[80vh] rounded-lg"
+              class="max-w-full max-h-[80dvh] rounded-lg"
               data-testid="app-lightbox-video"
             >
               <track kind="captions" srclang="en" label="Captions" />
@@ -284,7 +284,7 @@ onUnmounted(() => {
               v-else
               :src="currentItem.src"
               :alt="currentItem.alt || ''"
-              class="max-w-full max-h-[80vh] rounded-lg object-contain select-none"
+              class="max-w-full max-h-[80dvh] rounded-lg object-contain select-none"
               draggable="false"
               data-testid="app-lightbox-image"
             />
@@ -335,7 +335,7 @@ onUnmounted(() => {
 
           <aside
             v-if="$slots.side"
-            class="w-full md:w-72 md:max-h-[80vh] md:overflow-y-auto text-white/80"
+            class="w-full md:w-72 md:max-h-[80dvh] md:overflow-y-auto text-white/80"
             data-testid="app-lightbox-side"
           >
             <slot name="side" :item="currentItem" :index="currentIndex" />

@@ -10,7 +10,7 @@ const vbH = 640
 <template>
   <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
     <svg
-      class="h-full w-full min-h-[min(420px,50vh)]"
+      class="h-full w-full min-h-[min(420px,50dvh)]"
       :viewBox="`0 0 ${vbW} ${vbH}`"
       preserveAspectRatio="xMidYMid slice"
       xmlns="http://www.w3.org/2000/svg"

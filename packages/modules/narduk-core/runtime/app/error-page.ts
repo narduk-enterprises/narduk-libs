@@ -69,7 +69,7 @@ export interface ErrorPageLink {
 export interface ErrorPageUi {
   /** The Go Home button, merged into its classes. */
   home?: string
-  /** The outer wrapper. Replaces `min-h-screen bg-default`. */
+  /** The outer wrapper. Replaces `min-h-dvh bg-default`. */
   root?: string
   /** The status code. Replaces `text-primary`. */
   status?: string

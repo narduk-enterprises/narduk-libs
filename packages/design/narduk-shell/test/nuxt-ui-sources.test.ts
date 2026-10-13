@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SHELL_NUXT_UI_COMPONENTS } from '../src/nuxt-ui-sources'
 
+const APP_CONFIG_FILE = fileURLToPath(new URL('../src/app-config.ts', import.meta.url))
 const RUNTIME_DIR = fileURLToPath(new URL('../src/runtime', import.meta.url))
 const NUXT_UI_COMPONENTS_DIR = fileURLToPath(
   new URL('../node_modules/@nuxt/ui/dist/runtime/components', import.meta.url),
@@ -84,7 +85,9 @@ describe('narduk-shell registers its runtime with Tailwind and Nuxt UI (#978)', 
 
   it("prepends an @source for src/runtime to Nuxt UI's ui.css", async () => {
     const { css } = await setupShell({})
-    expect(css).toBe(`@source ${JSON.stringify(RUNTIME_DIR)};\n@source "./ui";`)
+    expect(css).toBe(
+      `@source ${JSON.stringify(RUNTIME_DIR)};\n@source ${JSON.stringify(APP_CONFIG_FILE)};\n@source "./ui";`,
+    )
   })
 
   it('still registers with components off, since useConfirm renders NeConfirmDialog', async () => {

@@ -76,6 +76,23 @@ const RAW_PALETTE_UTILITIES = [
   'stroke',
 ]
 
+/**
+ * Mobile web QA rule 4: `100vh` is the large viewport, so on a phone it hides
+ * content behind the browser chrome. Every variant is covered by the leading
+ * `(?:^|:)`; the captured prefix lets the autofix keep the variants.
+ */
+const VIEWPORT_HEIGHT_MESSAGE =
+  'Use dvh or svh units, not vh or screen: `h-dvh`/`min-h-dvh` follow the visible viewport, `h-svh` is the smallest one (mobile web QA rule 4).'
+
+const VIEWPORT_HEIGHT_RESTRICTIONS = [
+  { pattern: '^((?:[^:]+:)*)h-screen$', fix: '$1h-dvh' },
+  { pattern: '^((?:[^:]+:)*)min-h-screen$', fix: '$1min-h-dvh' },
+  { pattern: '(?:^|:)max-h-screen$' },
+  // Arbitrary values: `min-h-[calc(100vh-8rem)]`, `max-h-[60vh]`. `100dvh` and
+  // `100svh` do not match because a letter sits between the digits and `vh`.
+  { pattern: '(?:^|:)[^:]*\\[[^\\]]*\\d+vh' },
+].map((restriction) => ({ ...restriction, message: VIEWPORT_HEIGHT_MESSAGE }))
+
 const RAW_PALETTE_PATTERN = `^(?:${RAW_PALETTE_UTILITIES.join('|')})-(?:${RAW_PALETTE_COLORS.join('|')})-\\d{2,3}$`
 
 /** One entry per element, carrying v1's guidance. */
@@ -185,6 +202,7 @@ const designSystemConfigs = [
               message:
                 'Raw Tailwind palette class — use a Nuxt UI semantic class (text-dimmed, text-muted, text-primary, bg-elevated, bg-muted, bg-default, border-default).',
             },
+            ...VIEWPORT_HEIGHT_RESTRICTIONS,
           ],
         },
       ],

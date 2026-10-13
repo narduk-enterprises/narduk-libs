@@ -146,6 +146,7 @@
   /* ---- layout ----------------------------------------------------------- */
   --ne-container: 1320px;
   --ne-header-height: 4rem;
+  --ne-bottom-bar-h: 0px; /* height of an app's fixed bottom bar; see README */
 
   /* ---- the bridge -------------------------------------------------------
    * Every target below is a variable the installed Nuxt UI actually reads;
@@ -191,6 +192,14 @@
   --ui-info: var(--ui-color-info-700, #1d4ed8);
   --ui-warning: var(--ui-color-warning-700, #a16207);
   --ui-error: var(--ui-color-error-700, #b91c1c);
+}
+
+/*
+ * A focused field or an anchor jump must scroll clear of a fixed bottom bar.
+ * The token is 0 until an app with a bar sets it (README § Bottom bar).
+ */
+:where(html) {
+  scroll-padding-bottom: var(--ne-bottom-bar-h);
 }
 
 :where(.dark) {
@@ -251,6 +260,7 @@
 
   --ne-container: 1320px;
   --ne-header-height: 4rem;
+  --ne-bottom-bar-h: 0px; /* height of an app's fixed bottom bar; see README */
 
   --ui-bg: var(--ne-surface);
   --ui-bg-muted: var(--ne-surface-muted);
@@ -351,6 +361,7 @@
 
     --ne-container: 1320px;
     --ne-header-height: 4rem;
+    --ne-bottom-bar-h: 0px; /* height of an app's fixed bottom bar; see README */
 
     --ui-bg: var(--ne-surface);
     --ui-bg-muted: var(--ne-surface-muted);

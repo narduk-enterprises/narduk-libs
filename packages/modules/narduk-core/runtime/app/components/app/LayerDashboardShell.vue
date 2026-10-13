@@ -187,7 +187,7 @@ function navItemTestId(item: DashboardNavItem) {
 </script>
 
 <template>
-  <UDashboardGroup class="min-h-screen bg-default text-default">
+  <UDashboardGroup class="min-h-dvh bg-default text-default">
     <!-- eslint-disable narduk/no-unknown-component-prop -- UDashboardSidebar is from Nuxt UI Pro which is not fully covered by the rule -->
     <UDashboardSidebar
       data-testid="dashboard-sidebar"

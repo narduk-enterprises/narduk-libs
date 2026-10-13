@@ -240,11 +240,36 @@ Do not add this package to `create-narduk-app`'s default module list. That is
 backlog item 4
 ([narduk-libs#251](https://github.com/narduk-enterprises/narduk-libs/issues/251)).
 
+## Bottom bar
+
+`theme.css` declares `--ne-bottom-bar-h` (default `0px`) and sets
+`html { scroll-padding-bottom: var(--ne-bottom-bar-h) }`, so a focused field or
+an anchor jump scrolls clear of a fixed bottom bar instead of landing under it.
+An app that has a bottom bar (a tab bar, a mini player, a sticky action row)
+sets the token to that bar's height, safe-area inset included, and pads its
+content by the same amount:
+
+```css
+:root {
+  --ne-bottom-bar-h: calc(3.5rem + env(safe-area-inset-bottom));
+}
+
+.app-main {
+  padding-bottom: var(--ne-bottom-bar-h);
+}
+```
+
+Set it from the app's own stylesheet (it is loaded after `theme.css`, so the
+same specificity wins). `narduk-core` already sets `viewport-fit=cover`, which is
+what makes `env(safe-area-inset-*)` non-zero on a notched phone.
+
 ## Bounce guard
 
 `bounce-guard.css` makes a shell-style app feel like a desktop app: no elastic
 rubber-band, no two-finger swipe back/forward inside the app, and no scroll
-chaining from an inner pane into the page. It is CSS only (no JavaScript) and
+chaining from an inner pane into the page. (`[role='dialog']` is not in it any
+more: `narduk-core`'s base CSS gives every dialog `overscroll-behavior: contain`
+by default.) It is CSS only (no JavaScript) and
 **opt-in**, because it makes the page itself unscrollable on any document that
 contains an app shell; an app with ordinary page scrolling must not load it.
 
@@ -548,6 +573,7 @@ blocks, so nothing resolves by accident.
 | `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                              | `0.12em`                                                                              |
 | `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                              | `1320px`                                                                              |
 | `--ne-header-height`    | App header height.                                                               | `4rem`                                                                                | `4rem`                                                                                |
+| `--ne-bottom-bar-h` | Height of an app's fixed bottom bar; `html` scroll-padding-bottom. | `0px` | `0px` |
 
 <!-- ne-token-table:end -->
 

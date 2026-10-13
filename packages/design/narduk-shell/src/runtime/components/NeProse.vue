@@ -257,8 +257,10 @@ ProseBlocks.props = ['blocks']
   text-underline-offset: 0.15em;
 }
 
-.ne-prose :deep(a:hover) {
-  text-decoration-thickness: 2px;
+@media (hover: hover) {
+  .ne-prose :deep(a:hover) {
+    text-decoration-thickness: 2px;
+  }
 }
 
 .ne-prose :deep(:is(ul, ol)) {

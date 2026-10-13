@@ -59,6 +59,42 @@
   h4 {
     font-family: var(--font-display);
   }
+
+  /*
+   * Mobile web QA defaults. `manipulation` drops the 300ms double-tap-zoom
+   * delay; the tap highlight is a grey flash that fights the app's own press
+   * states. Both live in `@layer base`, so an app opts out with an ordinary
+   * utility or rule. The highlight is hidden, not the focus indicator:
+   * `:focus-visible` below keeps a ring for keyboard users.
+   */
+  a,
+  button,
+  [role='button'],
+  input,
+  select,
+  textarea,
+  label,
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  [role='button']:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--ui-primary, currentColor);
+    outline-offset: 2px;
+  }
+
+  /* A dialog scrolls inside itself and never hands the gesture to the page behind it. */
+  [role='dialog'],
+  [role='alertdialog'] {
+    overscroll-behavior: contain;
+  }
 }
 
 /*
@@ -103,8 +139,10 @@
   transition: box-shadow var(--transition-base);
 }
 
-.card-base:hover {
-  box-shadow: var(--shadow-elevated);
+@media (hover: hover) {
+  .card-base:hover {
+    box-shadow: var(--shadow-elevated);
+  }
 }
 
 /* ─── Dark Mode Enhancements ─── */
@@ -133,4 +171,28 @@
 .page-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/*
+ * Reduced motion. Unlayered on purpose: it has to beat Tailwind's `transition`
+ * and `animate-*` utilities and any component `<style>`, none of which can
+ * outrank an `!important` declaration. 0.01ms (not 0s) keeps `transitionend`
+ * and `animationend` firing, so code that waits on them still completes. This
+ * neutralises the page transitions above as well.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+
+  .page-enter-from,
+  .page-leave-to {
+    transform: none;
+  }
 }

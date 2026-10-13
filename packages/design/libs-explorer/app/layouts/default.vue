@@ -25,9 +25,9 @@ watch(
 </script>
 
 <template>
-  <div class="min-h-screen lg:grid lg:grid-cols-[18rem_1fr]">
+  <div class="min-h-dvh lg:grid lg:grid-cols-[18rem_1fr]">
     <aside
-      class="border-b border-default bg-default lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-b-0"
+      class="border-b border-default bg-default lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto lg:border-r lg:border-b-0"
     >
       <div class="flex items-center justify-between gap-2 p-4">
         <NuxtLink to="/" class="font-semibold text-highlighted">Narduk Libs Explorer</NuxtLink>
