@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/eslint-config': patch
+'@narduk-enterprises/narduk-app-tools': patch
 '@narduk-enterprises/narduk-shell': patch
 '@narduk-enterprises/create-narduk-app': patch
 ---

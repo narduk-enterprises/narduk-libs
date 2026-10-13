@@ -27,10 +27,11 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 - Preserve unrelated local changes.
 - Make narrow package changes and validate the touched packages before publish.
 - A shared component addition or rename updates its owning registry/export,
-  eslint-config's `src/rules/utils/shared-components.ts`, and libs-explorer's
-  inventory plus complete usage example. Supply the shell README, design card,
-  mount and SSR proofs required by `surface:check`. Declare file-reading
-  consumers with `nardukWorkspaceInputs` so scoped CI runs their drift checks.
+  eslint-config's `src/rules/utils/shared-components.ts`, narduk-app-tools'
+  `src/foundation/shared-components.ts`, and libs-explorer's inventory plus
+  complete usage example. Supply the shell README, design card, mount and SSR
+  proofs required by `surface:check`. Declare file-reading consumers with
+  `nardukWorkspaceInputs` so scoped CI runs their drift checks.
 - Do not commit token-bearing files such as `.npmrc.auth`.
 - Publish package versions from this repo only after build/pack validation.
 
