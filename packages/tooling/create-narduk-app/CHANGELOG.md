@@ -1,5 +1,16 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.71
+
+### Patch Changes
+
+- d461229: Remove production domain routes from e2e-serve's in-memory local
+  configuration so canonical-host redirects cannot loop. Deployment routes and
+  canonical enforcement remain unchanged.
+- 96b8603: Make generated agent guidance require suitable shared capabilities,
+  reusable library ownership, bounded pagination and incidental adoption issues
+  without cross-app adopter hunts.
+
 ## 0.21.70
 
 ### Patch Changes

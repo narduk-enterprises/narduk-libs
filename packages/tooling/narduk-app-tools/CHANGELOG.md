@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.39.2
+
+### Patch Changes
+
+- d461229: Remove production domain routes from e2e-serve's in-memory local
+  configuration so canonical-host redirects cannot loop. Deployment routes and
+  canonical enforcement remain unchanged.
+
 ## 0.39.1
 
 ### Patch Changes
