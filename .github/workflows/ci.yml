@@ -149,7 +149,7 @@ jobs:
 
   ci:
     needs: [affected]
-    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@90f4421b46a6eb600c7e0bf9d7d1e60b301eac16 # v2
+    uses: narduk-enterprises/workflows/.github/workflows/node-library.yml@8192a81c8f1b3de36f1141b60fcd8de1c539772e # v2
     permissions:
       contents: read
     with:
