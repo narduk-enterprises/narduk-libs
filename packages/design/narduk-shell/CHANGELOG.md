@@ -1,5 +1,25 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.22.0
+
+### Minor Changes
+
+- 7188fd6: `NeCollectionTable` takes `cardDensity: 'comfortable' | 'compact'`
+  (default `'comfortable'`, so existing tables render unchanged). `compact`
+  keeps every column on a phone card but runs the cells on as wrapped inline
+  label-value pairs under the full-width primary cell, with no divider between
+  them, instead of one line per column. It is CSS on the root's new
+  `data-ne-card-density` attribute (#1777).
+
+### Patch Changes
+
+- 2647899: Ship AA-passing default colours: solid
+  primary/secondary/success/info/warning/error read the 700 shade in light mode
+  (400 in dark), `--ui-text-dimmed` reads the new AA `--ne-ink-dimmed-text`, and
+  every theme selector is wrapped in `:where()` so a plain `:root` rule
+  overrides any token (#1785). `NeFilterBar` counts no longer use `opacity-70`,
+  so the selected chip count meets AA (#1447).
+
 ## 0.21.1
 
 ### Patch Changes
