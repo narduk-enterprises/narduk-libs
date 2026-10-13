@@ -54,6 +54,7 @@ import {
   type DeploymentArtefact,
 } from './evaluate-deployment.js'
 import {
+  GRACE_PERIOD_DAYS,
   runPackageCurrencyCheck,
   type PackageCurrencyReport,
   type PackageCurrencyRow,
@@ -366,7 +367,9 @@ export async function runAdoptionCheck(
   const coverage = runCapabilityCoverageCheck(shared)
   const toolchain = runToolchainCheck(shared)
   const deployment = runDeploymentCheck(shared)
-  const currency = await runPackageCurrencyCheck({ reality, root })
+  // The grace window is measured on the report's own clock, the same instant
+  // freshness and waivers read, so one artefact never mixes two "nows".
+  const currency = await runPackageCurrencyCheck({ now: new Date(generated), reality, root })
   const mapkit = runMapKitProvenanceCheck(root)
 
   // The app's own declaration decides what gets probed. `deployment` is
@@ -614,17 +617,33 @@ function requirement1(deployment: DeploymentArtefact): AdoptionRequirement {
 
 function requirement2(currency: PackageCurrencyReport): AdoptionRequirement {
   const behind = currency.failures.filter((row) => row.status === 'behind')
-  return {
-    detail: currency.clean
+  const grace = currency.withinGrace
+  // A passing R2 is what check 5 shows on a pass, so the grace rows are named
+  // here with their due dates: a pin inside the window passes, but the lag is
+  // never hidden. Kept compact -- the check detail is cut at 600 characters.
+  const graceNote = grace
+    .map(
+      (row) =>
+        `${row.package.replace(/^@narduk-enterprises\//u, '')} ${row.declared} -> ${row.latest ?? '?'} (due ${row.graceDue?.slice(0, 10) ?? '?'})`,
+    )
+    .join(', ')
+  const cleanDetail =
+    grace.length === 0
       ? `all ${currency.rows.length} estate pin(s) exact, agreed and latest`
-      : currency.failures
-          .map((row) => `${row.package}: ${row.detail}`)
-          .join('; ')
-          .slice(0, 600),
+      : `all ${currency.rows.length} estate pin(s) exact and agreed; ${grace.length} behind within the ${GRACE_PERIOD_DAYS}-day grace: ${graceNote}`
+  return {
+    detail: (currency.clean
+      ? cleanDetail
+      : currency.failures.map((row) => `${row.package}: ${row.detail}`).join('; ')
+    ).slice(0, 600),
     enforcement: 'enforced',
     evidence: [
       'narduk-app doctor --adoption (package table)',
-      behind.length > 0 ? `${behind.length} package(s) behind the registry` : 'registry comparison',
+      behind.length > 0
+        ? `${behind.length} package(s) behind the registry outside the ${GRACE_PERIOD_DAYS}-day grace`
+        : grace.length > 0
+          ? `${grace.length} package(s) behind the registry within the ${GRACE_PERIOD_DAYS}-day grace`
+          : 'registry comparison',
     ],
     id: 'R2',
     owner: OWNER_APP,

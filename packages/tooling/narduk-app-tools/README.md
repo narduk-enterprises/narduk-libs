@@ -1007,14 +1007,43 @@ Portal's `/products/adoption` row. They are emitted under `checks`, in this
 order, each with `id`, `number`, `title`, `group`, `verdict`, `measured`,
 `detail`, `reason`, `from`, `diagnostics`, `evidence` and `waiver`.
 
-| #   | `id`        | `group`      | Rolled up from           | Answered by                                                                              |
-| --- | ----------- | ------------ | ------------------------ | ---------------------------------------------------------------------------------------- |
-| 1   | `platform`  | `structural` | R4, R10                  | `foundation:check` items 1-9, shared-UI pins, capability coverage                        |
-| 2   | `delivery`  | `structural` | R1, R5, R6, R7           | `foundation:check:deployment` 12.x, live `x-build-version` vs `--expect-sha`             |
-| 3   | `security`  | `structural` | R8 + the Dependabot read | `foundation:check:security-headers --live`, open fixable high/critical alerts            |
-| 4   | `health`    | `structural` | R12                      | the live health route (`liveProof.healthPath`)                                           |
-| 5   | `packages`  | `currency`   | R2, R3, R9               | the package table against the estate's newest releases, the toolchain, MapKit provenance |
-| 6   | `freshness` | `currency`   | R15                      | `generated` and `toolVersion` of this artefact                                           |
+| #   | `id`        | `group`      | Rolled up from           | Answered by                                                                                             |
+| --- | ----------- | ------------ | ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| 1   | `platform`  | `structural` | R4, R10                  | `foundation:check` items 1-9, shared-UI pins, capability coverage                                       |
+| 2   | `delivery`  | `structural` | R1, R5, R6, R7           | `foundation:check:deployment` 12.x, live `x-build-version` vs `--expect-sha`                            |
+| 3   | `security`  | `structural` | R8 + the Dependabot read | `foundation:check:security-headers --live`, open fixable high/critical alerts                           |
+| 4   | `health`    | `structural` | R12                      | the live health route (`liveProof.healthPath`)                                                          |
+| 5   | `packages`  | `currency`   | R2, R3, R9               | the package table against the estate's newest releases (14-day grace), the toolchain, MapKit provenance |
+| 6   | `freshness` | `currency`   | R15                      | `generated` and `toolVersion` of this artefact                                                          |
+
+**Packages current and the 14-day grace** (Logan, 2026-10-13). Every
+`@narduk-enterprises/*` pin is a row in `packages[]` with one `status`:
+
+| `status`                    | Passes? | Meaning                                                                                                 |
+| --------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `current`                   | yes     | exact, agreed across manifests, installed as declared, and the latest stable release (or ahead of it)   |
+| `behind-within-grace`       | yes     | behind `latest`, and the first release it is missing was published less than 14 days before `generated` |
+| `workspace-link`            | yes     | a `workspace:` link; nothing published to compare against                                               |
+| `behind`                    | no      | behind `latest` and the grace has ended, or the publish time of a missing release could not be read     |
+| `not-exact`                 | no      | a range or other non-exact specifier                                                                    |
+| `disagrees`                 | no      | two manifests pin different versions                                                                    |
+| `not-installed-as-declared` | no      | `node_modules` holds a different version from the one declared                                          |
+| `unreadable`                | unknown | the registry could not be read, so currency is undecided                                                |
+
+The grace clock starts at the publish time (the packument's `time` map) of the
+**first** release the pin is missing, never at `latest`, so a library that
+releases daily cannot keep restarting it. "First" is the earliest-published of
+the stable releases above the pin and at or below `latest`; prereleases count
+only when the pin is itself a prerelease. The window is exclusive: a row passes
+while the report's `generated` time is strictly before publish time + 14 × 24 h,
+and is `behind` from that instant on. Missing data fails closed: when the
+publish time of any missing release cannot be read, the row is plain `behind`,
+never within grace. Behind rows carry `firstMissed`, `firstMissedPublished` and
+`graceDue` (null on every other row), and a passing check 5 still names each
+grace row with its due date, for example
+`narduk-testkit 1.12.0 -> 1.12.1 (due 2026-10-27)`. A failing row's detail says
+when the grace ended and how many days overdue it is. Only `behind` has a grace;
+every other status is as strict as before.
 
 `verdict` is `pass`, `fail`, `unknown` or `waived`. `measured` is what the
 checker saw before any waiver (`pass`, `fail` or `unknown`). Within a check,
