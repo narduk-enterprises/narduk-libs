@@ -166,6 +166,29 @@ describe('e2e-serve service bindings with a stub wrangler', () => {
     expect(stderr()).not.toContain('dropping service binding')
   })
 
+  it.each([false, true])(
+    'removes production routes with keep-service-bindings=%s',
+    async (keep) => {
+      const root = stubApp('4.107.0', {
+        ...externalConfig,
+        route: 'canonical.example/*',
+        routes: [{ pattern: 'canonical.example', custom_domain: true }],
+        vars: { CANONICAL_REDIRECT_HOSTS: 'www.canonical.example' },
+      })
+      const stderr = captureStderr()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const args = ['e2e-serve', '4401', '--cwd', root]
+      if (keep) args.push('--keep-service-bindings')
+      expect(await main(args)).toBe(1)
+      const config = startConfig() as Record<string, unknown>
+      expect(config).not.toHaveProperty('route')
+      expect(config).not.toHaveProperty('routes')
+      expect(config.vars).toEqual({ CANONICAL_REDIRECT_HOSTS: 'www.canonical.example' })
+      expect(config.services).toEqual(keep ? externalConfig.services : [externalConfig.services[1]])
+      expect(stderr()).toContain('dropping production routes')
+    },
+  )
+
   it('refuses with the upgrade path when wrangler cannot take a config object', async () => {
     const root = stubApp('4.90.1', externalConfig)
     captureStderr()

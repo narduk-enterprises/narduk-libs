@@ -28,6 +28,14 @@ narduk-app e2e-serve <port> [--entrypoint <file>] [--config <file>] \
 forwarded as plain-text Worker bindings so Playwright `webServer.env` test
 secrets reach the isolate. Do not put real secrets in those names.
 
+## Production routes
+
+The local server removes `route` and `routes` from the in-memory Wrangler
+configuration. Production custom domains otherwise become the local request
+host, making a canonical HTTP-to-HTTPS redirect loop back to the local URL. The
+committed deployment config and canonical-host enforcement are unchanged. This
+also applies with `--keep-service-bindings`.
+
 ## Service bindings
 
 The run holds exactly one Worker. A `services` binding to any other Worker has
