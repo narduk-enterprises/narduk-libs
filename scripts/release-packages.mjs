@@ -185,7 +185,11 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
 function childEnvironment(overrides = {}) {
   const { NO_COLOR: _ignoredNoColor, ...environment } = process.env
-  return consumerSmokeTestEnv({ ...environment, ...overrides })
+  // The fixtures are not registered apps and the smoke holds no portal
+  // credential (the CI repository is narduk-libs itself, which has no app row),
+  // so narduk-app reads the declaration this smoke materialised rather than
+  // asking the portal. An explicit setting still wins.
+  return consumerSmokeTestEnv({ NARDUK_APP_CONFIG_SOURCE: 'file', ...environment, ...overrides })
 }
 
 async function runChecked(command, commandArgs, options) {
