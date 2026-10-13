@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5
+
+### Patch Changes
+
+- 07b1536: Bump the Python helper's lockfile pin of mako from 1.4.1 to 1.4.2.
+
 ## 0.4.4
 
 ### Patch Changes

@@ -11,6 +11,12 @@ updates:
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    ignore:
+      # changesets/action v2 requires Changesets CLI v3; this repo is on CLI v2.
+      # A grouped bump to v2.1.2 (#1744) broke the release workflow. Lift this
+      # with the CLI v3 migration.
+      - dependency-name: "changesets/action"
+        update-types: ["version-update:semver-major"]
     groups:
       github-actions:
         patterns:
