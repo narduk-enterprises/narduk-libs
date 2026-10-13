@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.61
+
+### Patch Changes
+
+- a4cd49d: Pin the `@vue/server-renderer` dev dependency to 3.5.42, which fixes
+  the high-severity server-renderer advisory. Dev-only: no change to the shipped
+  code or the published peer ranges.
+
 ## 0.21.60
 
 ### Patch Changes
