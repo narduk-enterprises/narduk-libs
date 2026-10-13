@@ -1,5 +1,13 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.12
+
+### Patch Changes
+
+- e8d821a: Add server-controlled collection tables and shared cursor collection
+  navigation, preserving bounded rows, cancelation, scope reset and unknown
+  totals.
+
 ## 0.0.11
 
 ### Patch Changes
