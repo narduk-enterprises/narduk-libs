@@ -1,10 +1,11 @@
 /**
  * Adoption requirement 2 -- *current, reproducible dependencies*.
  *
- * Every consumed estate package must be exact-pinned at the latest published
- * stable release, every manifest that pins it must agree, and the version
- * actually installed must be the version declared. Four separate failures hide
- * behind "the dependencies are fine":
+ * Every consumed estate package must be exact-pinned, every manifest that pins
+ * it must agree, the version actually installed must be the version declared,
+ * and the pin must not stay behind the latest published stable release for
+ * longer than the grace window (below). Four separate failures hide behind
+ * "the dependencies are fine":
  *
  *   1. A caret or range spec, which makes the build unreproducible.
  *   2. Two manifests in one workspace pinning different versions of the same
@@ -12,7 +13,7 @@
  *      dependencies in `apps/web`, so a root devDependency and a workspace
  *      devDependency naming the same tool is the normal shape and the normal
  *      way the two fall out of step.
- *   3. A pin that is behind the registry.
+ *   3. A pin that is behind the registry for longer than the grace window.
  *   4. A pin that matches the registry while `node_modules` holds something
  *      else, which is what a stale install looks like from the manifest side.
  *
@@ -22,15 +23,44 @@
  * ratified 7-item contract is not the place to grow it (see
  * `evaluate-capability-coverage.ts` for the same reasoning about item 9).
  *
+ * THE 14-DAY GRACE (Logan, 2026-10-13: "14-day grace (Recommended)").
+ * narduk-libs releases several times a day, so "any lag behind `latest` fails"
+ * turned certified apps red on their next deploy with no change of their own.
+ * A pin that is behind now passes as `behind-within-grace` until the OLDEST
+ * release it is missing is `GRACE_PERIOD_DAYS` old:
+ *
+ *   - The clock starts at the first release the app is missing, never at
+ *     `latest`. Otherwise a library that releases every day would restart the
+ *     window forever. "First" is the earliest publish time among the missing
+ *     releases -- on a linear release history that is also the lowest version,
+ *     and on a backport it is the stricter of the two.
+ *   - The missing releases are the stable releases above the pin, up to
+ *     `latest`. Prereleases count only when the pin is itself a prerelease.
+ *   - The boundary is EXCLUSIVE: the row passes while `now` is strictly before
+ *     `publishedAt + 14 x 24h`. At exactly 14 days it is plain `behind`.
+ *   - MISSING DATA FAILS CLOSED. If the publish time of any missing release
+ *     cannot be read, nobody can say when the clock started, so the row is
+ *     plain `behind` -- never within grace.
+ *
+ * Only `behind` gets a grace. `not-exact`, `disagrees`,
+ * `not-installed-as-declared` and `unreadable` are as strict as they were.
+ *
  * REALITY IS INJECTABLE, same discipline as the rest of this directory: the
  * registry and `node_modules` reads live behind `RegistryReality`, so the
- * decision logic is tested against a fake rather than a live registry.
+ * decision logic is tested against a fake rather than a live registry. The
+ * clock is injected the same way (`now`); nothing below reads the wall clock.
  */
 
 import { AppRepo } from './source.js'
 import { collectCapabilityInventory } from './capability-inventory.js'
 import type { EstateDependencyRow } from './capability-inventory.js'
-import type { RegistryReality } from './npm-registry.js'
+import type { PublishedRelease, RegistryReality } from './npm-registry.js'
+
+/** How long a pin may stay behind, counted from the publish time of the first
+ * release it is missing. Exclusive: see the file header. */
+export const GRACE_PERIOD_DAYS = 14
+const DAY_MS = 86_400_000
+const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * DAY_MS
 
 /** An exact release, optionally a prerelease. Anything else -- `^1.2.3`,
  * `~1.2`, `1.x`, `>=1`, a URL, a tarball path -- is not exact. */
@@ -45,7 +75,11 @@ const WORKSPACE_PROTOCOL = 'workspace:'
 export type PackageCurrencyStatus =
   /** Exact, agreed across manifests, installed as declared, and latest. */
   | 'current'
-  /** Exact and consistent, but the registry has a newer stable release. */
+  /** Exact and consistent, behind the registry, and the first release it is
+   * missing was published less than `GRACE_PERIOD_DAYS` ago. NOT a failure. */
+  | 'behind-within-grace'
+  /** Exact and consistent, but behind the registry past the grace window, or
+   * behind with no readable publish time to start the window from. */
   | 'behind'
   /** The specifier is not an exact version. */
   | 'not-exact'
@@ -73,21 +107,35 @@ export interface PackageCurrencyRow {
   latest: string | null
   status: PackageCurrencyStatus
   detail: string
+  /** For a pin behind the registry: the release the grace clock runs from
+   * (the earliest-published release the pin is missing). Null otherwise, and
+   * null when no publish time could be read. */
+  firstMissed: string | null
+  /** ISO publish time of `firstMissed`, or null. */
+  firstMissedPublished: string | null
+  /** ISO time the grace ends (`firstMissedPublished` + 14 days), or null. The
+   * row is `behind-within-grace` strictly before it and `behind` from it on. */
+  graceDue: string | null
 }
 
 export interface PackageCurrencyReport {
   rows: PackageCurrencyRow[]
-  /** Rows whose status is neither `current` nor `workspace-link`. */
+  /** Rows whose status is not `current`, `behind-within-grace` or
+   * `workspace-link`. */
   failures: PackageCurrencyRow[]
-  /** True when every row is `current` or `workspace-link`. */
+  /** True when every row is `current`, `behind-within-grace` or
+   * `workspace-link`. */
   clean: boolean
+  /** Rows that are behind but inside the grace window. Passing, and listed so
+   * a report can still show the lag and its due date. */
+  withinGrace: PackageCurrencyRow[]
   /** True when at least one row could not be decided against the registry.
    * Separated from `clean` because an unreadable registry is an undecided
    * check, not a failed one, and the two need different remedies. */
   undecided: boolean
 }
 
-interface ParsedVersion {
+export interface ParsedVersion {
   major: number
   minor: number
   patch: number
@@ -137,15 +185,84 @@ function groupByPackage(rows: readonly EstateDependencyRow[]): Map<string, Estat
   return grouped
 }
 
+function isoDay(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
+function overdueLabel(days: number): string {
+  if (days < 1) return 'overdue by less than a day'
+  return `${days} day${days === 1 ? '' : 's'} overdue`
+}
+
+/**
+ * The release the grace clock runs from: of the releases above `pin` and at
+ * or below `latest` (stable only, unless `pin` is a prerelease), the one
+ * published earliest. Null -- fail closed -- when there are no release times,
+ * or when ANY candidate's time is unknown: the unknown one could be the
+ * earliest, and skipping it would silently start the clock later.
+ *
+ * `latest` itself is always a candidate, even if the registry's version list
+ * somehow omits it, so an incomplete list cannot hide the release the pin is
+ * most obviously missing.
+ */
+export function firstMissedRelease(
+  pin: ParsedVersion,
+  latest: ParsedVersion,
+  releases: readonly PublishedRelease[] | undefined,
+): { version: string; publishedMs: number } | null {
+  if (!releases) return null
+  const allowPrerelease = pin.prerelease !== null
+  const times = new Map<string, string | null>()
+  for (const release of releases) times.set(release.version, release.publishedAt)
+
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const latestText = formatVersion(latest)
+  for (const version of [...times.keys(), latestText]) {
+    if (seen.has(version)) continue
+    seen.add(version)
+    const parsed = parseExactVersion(version)
+    if (!parsed) continue
+    if (parsed.prerelease !== null && !allowPrerelease) continue
+    if (compareVersions(parsed, pin) <= 0) continue
+    if (compareVersions(parsed, latest) > 0) continue
+    candidates.push(version)
+  }
+  if (candidates.length === 0) return null
+
+  let earliest: { version: string; publishedMs: number } | null = null
+  for (const version of candidates) {
+    const raw = times.get(version) ?? null
+    const ms = raw === null ? Number.NaN : Date.parse(raw)
+    if (Number.isNaN(ms)) return null
+    if (earliest === null || ms < earliest.publishedMs) earliest = { publishedMs: ms, version }
+  }
+  return earliest
+}
+
+function formatVersion(version: ParsedVersion): string {
+  const core = `${version.major}.${version.minor}.${version.patch}`
+  return version.prerelease === null ? core : `${core}-${version.prerelease}`
+}
+
 async function evaluateOne(
   pkgName: string,
   pins: readonly EstateDependencyRow[],
   reality: RegistryReality,
+  now: Date,
 ): Promise<PackageCurrencyRow> {
   const declaredSpecs = [...new Set(pins.map((pin) => pin.version))].sort()
   const manifests = [...new Set(pins.map((pin) => pin.manifest))].sort()
   const declared = declaredSpecs[0] ?? ''
-  const base = { declared, declaredSpecs, manifests, package: pkgName }
+  const base = {
+    declared,
+    declaredSpecs,
+    firstMissed: null,
+    firstMissedPublished: null,
+    graceDue: null,
+    manifests,
+    package: pkgName,
+  }
 
   if (declaredSpecs.every((spec) => spec.startsWith(WORKSPACE_PROTOCOL))) {
     return {
@@ -221,11 +338,41 @@ async function evaluateOne(
 
   const ordering = compareVersions(parsed, latestParsed)
   if (ordering < 0) {
-    return {
+    const behindDetail = `${declared} is behind the latest published release ${publication.latest}`
+    const behindBase = {
       ...base,
-      detail: `${declared} is behind the latest published release ${publication.latest}`,
       installed: installedVersion,
       latest: publication.latest,
+    }
+    const clock = firstMissedRelease(parsed, latestParsed, publication.releases)
+    if (clock === null) {
+      return {
+        ...behindBase,
+        detail: `${behindDetail}; the publish time of the releases it is missing could not be read, so no ${GRACE_PERIOD_DAYS}-day grace applies`,
+        status: 'behind',
+      }
+    }
+    const dueMs = clock.publishedMs + GRACE_PERIOD_MS
+    const graceFields = {
+      firstMissed: clock.version,
+      firstMissedPublished: new Date(clock.publishedMs).toISOString(),
+      graceDue: new Date(dueMs).toISOString(),
+    }
+    const published = isoDay(clock.publishedMs)
+    const due = isoDay(dueMs)
+    if (now.getTime() < dueMs) {
+      return {
+        ...behindBase,
+        ...graceFields,
+        detail: `${behindDetail}, within grace (${clock.version} published ${published}, due ${due})`,
+        status: 'behind-within-grace',
+      }
+    }
+    const overdueDays = Math.floor((now.getTime() - dueMs) / DAY_MS)
+    return {
+      ...behindBase,
+      ...graceFields,
+      detail: `${behindDetail}; the ${GRACE_PERIOD_DAYS}-day grace from ${clock.version} (published ${published}) ended ${due}, ${overdueLabel(overdueDays)}`,
       status: 'behind',
     }
   }
@@ -249,6 +396,10 @@ async function evaluateOne(
 export interface RunPackageCurrencyOptions {
   root: string
   reality: RegistryReality
+  /** The clock the grace window is measured against. Required, so no default
+   * can quietly read the wall clock inside the decision; the adoption report
+   * passes its own `generated` time. */
+  now: Date
 }
 
 export async function runPackageCurrencyCheck(
@@ -260,17 +411,25 @@ export async function runPackageCurrencyCheck(
 
   const rows: PackageCurrencyRow[] = []
   for (const [pkgName, pins] of [...grouped.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    rows.push(await evaluateOne(pkgName, pins, options.reality))
+    rows.push(await evaluateOne(pkgName, pins, options.reality, options.now))
   }
 
-  const failures = rows.filter((row) => row.status !== 'current' && row.status !== 'workspace-link')
+  const failures = rows.filter((row) => !PASSING_STATUSES.has(row.status))
   return {
     clean: failures.length === 0,
     failures,
     rows,
     undecided: failures.some((row) => row.status === 'unreadable'),
+    withinGrace: rows.filter((row) => row.status === 'behind-within-grace'),
   }
 }
+
+/** The statuses that are not a failure of requirement 2. */
+export const PASSING_STATUSES: ReadonlySet<PackageCurrencyStatus> = new Set([
+  'current',
+  'behind-within-grace',
+  'workspace-link',
+])
 
 export function formatPackageCurrencyRows(report: PackageCurrencyReport): string {
   if (report.rows.length === 0) return '  (no @narduk-enterprises/* pins found)'
@@ -279,7 +438,21 @@ export function formatPackageCurrencyRows(report: PackageCurrencyReport): string
     .map((row) => {
       const name = row.package.padEnd(width)
       const latest = row.latest ? ` -> ${row.latest}` : ''
-      return `  ${name}  ${row.declared}${latest}  ${row.status}`
+      return `  ${name}  ${row.declared}${latest}  ${statusLabel(row)}`
     })
     .join('\n')
+}
+
+/** The status column of the package table. A row behind the registry carries
+ * its grace state and due date, so the lag stays visible while it passes:
+ * `behind, within grace (published 2026-10-13, due 2026-10-27)`. */
+function statusLabel(row: PackageCurrencyRow): string {
+  if (row.status === 'behind-within-grace' && row.firstMissedPublished && row.graceDue) {
+    return `behind, within grace (published ${row.firstMissedPublished.slice(0, 10)}, due ${row.graceDue.slice(0, 10)})`
+  }
+  if (row.status === 'behind' && row.graceDue) {
+    return `behind, grace ended ${row.graceDue.slice(0, 10)}`
+  }
+  if (row.status === 'behind') return 'behind, no publish time (no grace)'
+  return row.status
 }

@@ -92,6 +92,49 @@ describe('FilesystemRegistryReality.publicationOf', () => {
     })
   })
 
+  it("carries each version's publish time from the packument time map (the currency grace clock)", async () => {
+    stubRegistry({
+      [TARGET]: {
+        status: 200,
+        body: {
+          'dist-tags': { latest: '1.5.0' },
+          // `created`/`modified` and the unpublished 1.3.0 are in `time` but
+          // not in `versions`; the release list comes from `versions`.
+          time: {
+            '1.3.0': '2026-09-01T00:00:00Z',
+            '1.4.2': '2026-10-01T10:00:00Z',
+            '1.5.0': 'not a date',
+            created: '2026-08-01T00:00:00Z',
+            modified: '2026-10-13T00:00:00Z',
+          },
+          versions: { '1.4.2': {}, '1.5.0': {}, '1.6.0-rc.1': {} },
+        },
+      },
+    })
+    expect(await reader().publicationOf(TARGET)).toEqual({
+      latest: '1.5.0',
+      major: 1,
+      releases: [
+        { publishedAt: '2026-10-01T10:00:00Z', version: '1.4.2' },
+        { publishedAt: null, version: '1.5.0' },
+        { publishedAt: null, version: '1.6.0-rc.1' },
+      ],
+      status: 'published',
+    })
+  })
+
+  it('omits release times when the packument has no time map (abbreviated packument)', async () => {
+    stubRegistry({
+      [TARGET]: {
+        status: 200,
+        body: { 'dist-tags': { latest: '1.4.2' }, versions: { '1.4.2': {} } },
+      },
+    })
+    const publication = await reader().publicationOf(TARGET)
+    expect(publication).toEqual({ latest: '1.4.2', major: 1, status: 'published' })
+    expect('releases' in publication).toBe(false)
+  })
+
   it('treats a readable but empty packument as unpublished', async () => {
     stubRegistry({ [TARGET]: { status: 200, body: { versions: {} } } })
     expect(await reader().publicationOf(TARGET)).toEqual({ status: 'unpublished' })

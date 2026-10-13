@@ -33,7 +33,25 @@ export interface ResolvedVersion {
 export type RegistryPublication =
   | { status: 'unreadable' }
   | { status: 'unpublished' }
-  | { status: 'published'; latest: string; major: number }
+  | {
+      status: 'published'
+      latest: string
+      major: number
+      /** Every published version with its publish time from the packument's
+       * `time` map, when the packument carried one. Absent (or a release with
+       * `publishedAt: null`) means the time is unknown, and every consumer
+       * must treat unknown as "no evidence", never as "recent": the package
+       * currency grace (`evaluate-package-currency.ts`) fails such a row
+       * closed. */
+      releases?: PublishedRelease[]
+    }
+
+export interface PublishedRelease {
+  version: string
+  /** ISO timestamp from the packument's `time[version]`, or null when the
+   * packument has no usable entry for it. */
+  publishedAt: string | null
+}
 
 export interface RegistryReality {
   /** The resolved (installed, or manifest-pinned as a fallback) version of a
@@ -245,6 +263,36 @@ export function resolveRegistryAuthToken(
   return undefined
 }
 
+/**
+ * The published versions of a packument with their publish times.
+ *
+ * The version list comes from `versions`, never from the keys of `time`: a
+ * full npm packument also carries `created` and `modified` there, and keeps
+ * entries for versions that were later unpublished. Each time is looked up
+ * in `time` and kept only when it parses as a date; anything else is `null`.
+ *
+ * Returns undefined when the packument has no `versions` object or no `time`
+ * object at all. That is what an abbreviated packument
+ * (`application/vnd.npm.install-v1+json`) looks like -- the reader asks for
+ * one first, and both npm.pkg.github.com and npm.nard.uk answer with the
+ * full document today (measured 2026-10-13). If a registry ever honours that
+ * media type, every release time reads as unknown and the currency grace
+ * fails closed, by design.
+ */
+function releasesOf(body: {
+  versions?: Record<string, unknown>
+  time?: Record<string, unknown>
+}): PublishedRelease[] | undefined {
+  const { versions, time } = body
+  if (!versions || typeof versions !== 'object') return undefined
+  if (!time || typeof time !== 'object') return undefined
+  return Object.keys(versions).map((version) => {
+    const raw = time[version]
+    const publishedAt = typeof raw === 'string' && !Number.isNaN(Date.parse(raw)) ? raw : null
+    return { publishedAt, version }
+  })
+}
+
 /** Read `node_modules/<scope>/<name>/package.json` under any of `roots`
  * (root, apps/web, apps/api, web, app -- the same monorepo candidates every
  * other item checks) and fall back to the manifest's own pinned spec, which
@@ -408,11 +456,14 @@ export class FilesystemRegistryReality implements RegistryReality {
     const body = response.body as {
       'dist-tags'?: { latest?: string }
       versions?: Record<string, unknown>
+      time?: Record<string, unknown>
     }
+    const releases = releasesOf(body)
+    const withReleases = releases ? { releases } : {}
     const latestTag = body['dist-tags']?.latest
     if (typeof latestTag === 'string') {
       const major = majorOf(latestTag)
-      if (major !== null) return { status: 'published', latest: latestTag, major }
+      if (major !== null) return { status: 'published', latest: latestTag, major, ...withReleases }
     }
     const published = (body.versions ? Object.keys(body.versions) : [])
       .map((version) => ({ version, major: majorOf(version) }))
@@ -421,7 +472,7 @@ export class FilesystemRegistryReality implements RegistryReality {
     published.sort((left, right) => left.major - right.major)
     const top = published[published.length - 1]
     return top
-      ? { status: 'published', latest: top.version, major: top.major }
+      ? { status: 'published', latest: top.version, major: top.major, ...withReleases }
       : { status: 'unpublished' }
   }
 

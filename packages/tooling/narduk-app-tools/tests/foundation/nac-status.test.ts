@@ -24,7 +24,7 @@ import {
   type NacMeasured,
   type RequirementLike,
 } from '../../src/foundation/evaluate-nac-status.js'
-import type { RegistryReality } from '../../src/foundation/npm-registry.js'
+import type { RegistryPublication, RegistryReality } from '../../src/foundation/npm-registry.js'
 import {
   BASELINE_PINS,
   NO_ALERTS,
@@ -87,17 +87,24 @@ function check(artefact: AdoptionArtefact, id: NacCheckId): NacCheck {
   return found
 }
 
-/** The estate has published a newer core than the app pins. */
-function behindReality(): RegistryReality {
+/** The estate has published a newer core than the app pins. With
+ * `core350PublishedAt` the registry also reports when 3.5.0 went out, which is
+ * what the 14-day grace is measured from; without it there is no publish time
+ * and the row fails closed. */
+function behindReality(core350PublishedAt?: string): RegistryReality {
   const installed: Record<string, { version: string; major: number; source: 'manifest-pin' }> = {}
-  const publications: Record<string, { status: 'published'; latest: string; major: number }> = {}
+  const publications: Record<string, RegistryPublication> = {}
   for (const [name, version] of Object.entries(BASELINE_PINS)) {
     const major = Number(version.split('.')[0])
     installed[name] = { major, source: 'manifest-pin', version }
+    const isCore = name === '@narduk-enterprises/narduk-core'
     publications[name] = {
-      latest: name === '@narduk-enterprises/narduk-core' ? '3.5.0' : version,
+      latest: isCore ? '3.5.0' : version,
       major,
       status: 'published',
+      ...(isCore && core350PublishedAt
+        ? { releases: [{ publishedAt: core350PublishedAt, version: '3.5.0' }] }
+        : {}),
     }
   }
   return fakeReality({ installed, publications })
@@ -231,6 +238,30 @@ describe('what each check rolls up', () => {
     expect(check(artefact, 'packages').detail).toContain('narduk-core')
     // Behind is not "not a Narduk app": the structural four still pass.
     expect(artefact.status).toBe('narduk-app')
+    expect(artefact.upToDate).toBe(false)
+  })
+
+  it('packages passes a pin behind a release still inside the 14-day grace, and shows the due date', async () => {
+    // GENERATED is 2026-10-04T12:00Z; 3.5.0 went out 13 days earlier.
+    const artefact = await run({ reality: behindReality('2026-09-21T12:00:00.000Z') })
+    const packages = check(artefact, 'packages')
+
+    expect(packages.title).toBe('Packages current')
+    expect(packages.verdict).toBe('pass')
+    expect(packages.detail).toContain('behind within the 14-day grace')
+    expect(packages.detail).toContain('narduk-core')
+    expect(packages.detail).toContain('due 2026-10-05')
+    expect(artefact.upToDate).toBe(true)
+    const core = artefact.packages.find((row) => row.package === '@narduk-enterprises/narduk-core')
+    expect(core?.status).toBe('behind-within-grace')
+    expect(core?.graceDue).toBe('2026-10-05T12:00:00.000Z')
+  })
+
+  it('packages fails once the first missed release is 14 days old, measured on the report clock', async () => {
+    const artefact = await run({ reality: behindReality('2026-09-20T12:00:00.000Z') })
+
+    expect(check(artefact, 'packages').verdict).toBe('fail')
+    expect(check(artefact, 'packages').detail).toContain('grace')
     expect(artefact.upToDate).toBe(false)
   })
 

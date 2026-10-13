@@ -4,14 +4,21 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   compareVersions,
+  formatPackageCurrencyRows,
+  GRACE_PERIOD_DAYS,
   parseExactVersion,
   runPackageCurrencyCheck,
 } from '../../src/foundation/evaluate-package-currency.js'
 import type { PackageCurrencyRow } from '../../src/foundation/evaluate-package-currency.js'
+import type { PublishedRelease, RegistryPublication } from '../../src/foundation/npm-registry.js'
 import { fakeReality, makeTempRepo, writeJson } from './helpers.js'
 
 const CORE = '@narduk-enterprises/narduk-core'
 const TOOLS = '@narduk-enterprises/narduk-app-tools'
+
+/** A fixed clock for every test that does not set its own. */
+const NOW = new Date('2026-10-13T12:00:00.000Z')
+const DAY_MS = 86_400_000
 
 const tempDirs: string[] = []
 afterEach(() => {
@@ -25,11 +32,12 @@ async function run(
     installed: { [CORE]: { version: '2.6.4', major: 2, source: 'node_modules' } },
     publications: { [CORE]: { status: 'published', latest: '2.6.4', major: 2 } },
   }),
+  now: Date = NOW,
 ) {
   const root = makeTempRepo()
   tempDirs.push(root)
   write(root)
-  return runPackageCurrencyCheck({ reality, root })
+  return runPackageCurrencyCheck({ now, reality, root })
 }
 
 function row(report: { rows: PackageCurrencyRow[] }, pkg: string): PackageCurrencyRow {
@@ -195,6 +203,276 @@ describe('package currency (adoption requirement 2)', () => {
     })
 
     expect(report.rows.map((r) => r.package)).toEqual([CORE])
+  })
+})
+
+/** ISO time `days` days before `NOW`. */
+function daysAgo(days: number): string {
+  return new Date(NOW.getTime() - days * DAY_MS).toISOString()
+}
+
+/** core pinned at 2.5.0 in package.json and installed as declared. */
+function pinCoreAt(pin: string) {
+  return (root: string) => {
+    writeJson(root, 'package.json', { dependencies: { [CORE]: pin } })
+  }
+}
+
+function realityWith(pin: string, publication: RegistryPublication) {
+  return fakeReality({
+    installed: {
+      [CORE]: { version: pin, major: Number(pin.split('.')[0]), source: 'node_modules' },
+    },
+    publications: { [CORE]: publication },
+  })
+}
+
+function published(latest: string, releases?: PublishedRelease[]): RegistryPublication {
+  return {
+    latest,
+    major: Number(latest.split('.')[0]),
+    status: 'published',
+    ...(releases ? { releases } : {}),
+  }
+}
+
+/** Run with the first missed release (2.6.0) published exactly `ageMs` before NOW. */
+async function runWithFirstMissedAge(ageMs: number) {
+  return run(
+    pinCoreAt('2.5.0'),
+    realityWith(
+      '2.5.0',
+      published('2.6.0', [
+        { publishedAt: daysAgo(60), version: '2.5.0' },
+        { publishedAt: new Date(NOW.getTime() - ageMs).toISOString(), version: '2.6.0' },
+      ]),
+    ),
+  )
+}
+
+describe('the 14-day grace on a pin behind the registry (Logan, 2026-10-13)', () => {
+  it('is fourteen days', () => {
+    expect(GRACE_PERIOD_DAYS).toBe(14)
+  })
+
+  it('day 13: a pin behind a release published 13 days ago passes, and the lag stays visible', async () => {
+    const report = await runWithFirstMissedAge(13 * DAY_MS)
+    const core = row(report, CORE)
+
+    expect(core.status).toBe('behind-within-grace')
+    expect(core.firstMissed).toBe('2.6.0')
+    expect(core.graceDue).toBe(new Date(NOW.getTime() + DAY_MS).toISOString())
+    expect(core.detail).toContain('within grace')
+    expect(core.detail).toContain('due 2026-10-14')
+    expect(report.clean).toBe(true)
+    expect(report.failures).toEqual([])
+    expect(report.withinGrace.map((r) => r.package)).toEqual([CORE])
+  })
+
+  it('one millisecond before 14 days still passes', async () => {
+    const report = await runWithFirstMissedAge(14 * DAY_MS - 1)
+    expect(row(report, CORE).status).toBe('behind-within-grace')
+  })
+
+  it('day 14 exactly FAILS: the boundary is exclusive', async () => {
+    // "passes until the oldest newer release is 14 days old" -- at 14 days old
+    // it no longer passes. Documented in evaluate-package-currency.ts.
+    const report = await runWithFirstMissedAge(14 * DAY_MS)
+    const core = row(report, CORE)
+
+    expect(core.status).toBe('behind')
+    expect(core.detail).toContain('overdue by less than a day')
+    expect(report.clean).toBe(false)
+    expect(report.undecided).toBe(false)
+  })
+
+  it('day 15 fails and names how overdue it is', async () => {
+    const report = await runWithFirstMissedAge(15 * DAY_MS)
+    const core = row(report, CORE)
+
+    expect(core.status).toBe('behind')
+    expect(core.detail).toContain('is behind the latest published release 2.6.0')
+    expect(core.detail).toContain('1 day overdue')
+    expect(report.clean).toBe(false)
+    expect(report.undecided).toBe(false)
+  })
+
+  it('the clock runs from the FIRST missed release, not latest: latest 1 day old, first missed 20 days old FAILS', async () => {
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.8.0', [
+          { publishedAt: daysAgo(40), version: '2.5.0' },
+          { publishedAt: daysAgo(20), version: '2.6.0' },
+          { publishedAt: daysAgo(10), version: '2.7.0' },
+          { publishedAt: daysAgo(1), version: '2.8.0' },
+        ]),
+      ),
+    )
+    const core = row(report, CORE)
+
+    expect(core.status).toBe('behind')
+    expect(core.firstMissed).toBe('2.6.0')
+    expect(core.detail).toContain('6 days overdue')
+    expect(report.clean).toBe(false)
+  })
+
+  it('daily releases do not reset the window: a 3-day-old first miss passes whatever latest is', async () => {
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.5.3', [
+          { publishedAt: daysAgo(3), version: '2.5.1' },
+          { publishedAt: daysAgo(2), version: '2.5.2' },
+          { publishedAt: daysAgo(0), version: '2.5.3' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).firstMissed).toBe('2.5.1')
+    expect(row(report, CORE).status).toBe('behind-within-grace')
+  })
+
+  it('MISSING DATA FAILS CLOSED: no release times at all is plain behind, never within grace', async () => {
+    const report = await run(pinCoreAt('2.5.0'), realityWith('2.5.0', published('2.6.0')))
+    const core = row(report, CORE)
+
+    expect(core.status).toBe('behind')
+    expect(core.firstMissed).toBeNull()
+    expect(core.graceDue).toBeNull()
+    expect(core.detail).toContain('could not be read')
+    expect(report.clean).toBe(false)
+    // A decided failure, not an undecided one: the pin IS behind.
+    expect(report.undecided).toBe(false)
+  })
+
+  it('MISSING DATA FAILS CLOSED: an unknown time on the first missed release is plain behind', async () => {
+    // 2.7.0 is recent, but 2.6.0's time is unknown and could be the oldest.
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.7.0', [
+          { publishedAt: null, version: '2.6.0' },
+          { publishedAt: daysAgo(1), version: '2.7.0' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).status).toBe('behind')
+    expect(report.clean).toBe(false)
+  })
+
+  it('MISSING DATA FAILS CLOSED: latest absent from the release list is plain behind', async () => {
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith('2.5.0', published('2.6.0', [{ publishedAt: daysAgo(70), version: '2.5.0' }])),
+    )
+    expect(row(report, CORE).status).toBe('behind')
+  })
+
+  it('ignores prereleases above a stable pin', async () => {
+    // A 30-day-old 2.6.0-rc.1 must not start the clock for a stable pin.
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.6.0', [
+          { publishedAt: daysAgo(30), version: '2.6.0-rc.1' },
+          { publishedAt: daysAgo(2), version: '2.6.0' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).firstMissed).toBe('2.6.0')
+    expect(row(report, CORE).status).toBe('behind-within-grace')
+  })
+
+  it('counts prereleases when the pin is itself a prerelease', async () => {
+    const report = await run(
+      pinCoreAt('2.6.0-rc.1'),
+      realityWith(
+        '2.6.0-rc.1',
+        published('2.6.0', [
+          { publishedAt: daysAgo(30), version: '2.6.0-rc.1' },
+          { publishedAt: daysAgo(20), version: '2.6.0-rc.2' },
+          { publishedAt: daysAgo(2), version: '2.6.0' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).firstMissed).toBe('2.6.0-rc.2')
+    expect(row(report, CORE).status).toBe('behind')
+  })
+
+  it('a release above latest (an untagged publish) does not start the clock', async () => {
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.6.0', [
+          { publishedAt: daysAgo(2), version: '2.6.0' },
+          { publishedAt: daysAgo(1), version: '3.0.0' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).firstMissed).toBe('2.6.0')
+  })
+
+  it('a backport published after a newer line: the earliest publish time wins', async () => {
+    // 2.5.1 (a backport) went out after 2.6.0; the app has been missing 2.6.0
+    // for longer, so 2.6.0 starts the clock.
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.6.0', [
+          { publishedAt: daysAgo(1), version: '2.5.1' },
+          { publishedAt: daysAgo(20), version: '2.6.0' },
+        ]),
+      ),
+    )
+    expect(row(report, CORE).firstMissed).toBe('2.6.0')
+    expect(row(report, CORE).status).toBe('behind')
+  })
+
+  it('the grace does not soften the other failures', async () => {
+    const recent = published('2.6.0', [{ publishedAt: daysAgo(1), version: '2.6.0' }])
+
+    const range = await run(pinCoreAt('^2.5.0'), realityWith('2.5.0', recent))
+    expect(row(range, CORE).status).toBe('not-exact')
+    expect(range.clean).toBe(false)
+
+    const stale = await run(
+      pinCoreAt('2.5.0'),
+      fakeReality({
+        installed: { [CORE]: { version: '2.4.0', major: 2, source: 'node_modules' } },
+        publications: { [CORE]: recent },
+      }),
+    )
+    expect(row(stale, CORE).status).toBe('not-installed-as-declared')
+    expect(stale.clean).toBe(false)
+
+    const unreadable = await run(pinCoreAt('2.5.0'), realityWith('2.5.0', { status: 'unreadable' }))
+    expect(row(unreadable, CORE).status).toBe('unreadable')
+    expect(unreadable.undecided).toBe(true)
+  })
+
+  it('the package table shows the lag and the due date', async () => {
+    const report = await run(
+      pinCoreAt('2.5.0'),
+      realityWith(
+        '2.5.0',
+        published('2.6.0', [{ publishedAt: '2026-10-13T09:00:00.000Z', version: '2.6.0' }]),
+      ),
+    )
+    expect(formatPackageCurrencyRows(report)).toContain(
+      '2.5.0 -> 2.6.0  behind, within grace (published 2026-10-13, due 2026-10-27)',
+    )
+
+    const overdue = await run(
+      pinCoreAt('2.5.0'),
+      realityWith('2.5.0', published('2.6.0', [{ publishedAt: daysAgo(20), version: '2.6.0' }])),
+    )
+    expect(formatPackageCurrencyRows(overdue)).toContain('behind, grace ended')
   })
 })
 
