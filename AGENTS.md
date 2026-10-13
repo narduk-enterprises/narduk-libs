@@ -40,6 +40,20 @@ a continuing sync, reconcile, drift, or control-plane relationship with apps.
 - Do not let one app quietly fork shared behavior unless the app has a genuine
   product-specific requirement that does not belong in the reusable package.
 
+## Use, Extend And Promote
+
+The handbook's Reusable Libraries And Packages > Shared Libraries First applies
+to every capability, including pagination, contracts, server helpers and
+tooling. Use suitable existing exports. Extend the owning package when it falls
+short; build clearly reusable responsibilities here from the first consumer,
+keeping app domain policy in the app. Publish compatible changes with docs and
+tests, then consume the release. The README's capability pointers make discovery
+bounded.
+
+If normal work reveals another app that benefits, check for an existing issue
+and file a labelled adoption issue there, naming evidence, package/export and
+done-when. Do not search other apps just to find adopters or start a rollout.
+
 ## Issue labels
 
 Label every issue at creation time with one type, one priority and one area,

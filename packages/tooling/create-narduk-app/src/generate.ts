@@ -850,7 +850,11 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         'Shared packages: ' +
           sharedPackageList +
-          '. Fix a shared behavior in its package in narduk-libs, not with a local copy.',
+          '. Before design or implementation, check the narduk-libs catalog and owning README/public exports. Use suitable shared capabilities across UI, server, contracts, data, tests and tooling. Extend incomplete capabilities or build clearly reusable primitives in the owning package; publish and adopt the release instead of copying locally. Keep product policy in the app and respect recorded stack exceptions.',
+        '',
+        'Growing collections require bounded source queries and reachable continuation. Use narduk-core parseListQuery/listResponse and server/list-cursor, narduk-platform list types, and narduk-shell useCollection/NePager for offset lists (useCollection is not a cursor client). A cap or browser slice alone is not pagination. Document enforced bounds for fixed catalogs, previews, snapshots and viewport/map queries. See the handbook Web Apps collection navigation and Backend bounded list query rules.',
+        '',
+        'When normal work reveals another app that would benefit from a shared capability, check for an existing issue and file a labelled adoption issue in that app with observed evidence, package/export, benefit and done-when. Do not hunt across apps merely to find adopters or start an unrequested rollout.',
         '',
         '`pnpm exec narduk-app doctor` checks the app-local prerequisites and the dependency audit and prints one verdict line; run it first when something about the toolchain or Cloudflare configuration looks wrong. `pnpm dlx @narduk-enterprises/create-narduk-app upgrade .` shows what the generator would refresh, including this block.',
         '',
