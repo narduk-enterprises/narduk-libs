@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.22.3
+
+### Patch Changes
+
+- 454d311: Check the same-origin token route before downloading MapKit JS.
+  Unconfigured or refused maps skip the SDK, concurrent callers share the
+  preflight, and the first token is reused for initialization while renewal
+  still requests a fresh token.
+
 ## 2.22.2
 
 ### Patch Changes
