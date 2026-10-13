@@ -1,5 +1,11 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.28
+
+### Patch Changes
+
+- @narduk-enterprises/narduk-core@2.25.1
+
 ## 0.4.27
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.30.1
+
+### Patch Changes
+
+- 09c5519: Keep both analytics type-preparation hooks type-safe when a Nuxt
+  consumer compiles the published module without Nitro's optional hook
+  augmentation. Preserve the real Nitro event and its type-reference
+  registration instead of requiring an app-local hook cast.
+
 ## 1.30.0
 
 ### Minor Changes
