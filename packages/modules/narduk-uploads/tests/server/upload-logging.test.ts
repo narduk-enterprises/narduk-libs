@@ -242,7 +242,10 @@ describe('upload storage records', () => {
     const event = requestEvent('/images/uploads/a.png')
     event.context.params = { slug: 'uploads/a.png' }
 
-    await expect(route(event)).rejects.toThrow('R2 unavailable')
+    // The cause goes to the log; the client gets a generic 500 that names no storage detail.
+    const failure = await route(event).catch((error: unknown) => error)
+    expect(failure).toMatchObject({ statusCode: 500, message: 'Error retrieving image' })
+    expect(JSON.stringify(failure)).not.toContain('R2 unavailable')
     expect(sink.records).toContainEqual(
       expect.objectContaining({
         level: 'error',
