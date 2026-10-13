@@ -1,5 +1,13 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.11
+
+### Patch Changes
+
+- c98751d: Use `dvh` instead of `vh`/`h-screen` for viewport heights (auth
+  pages, admin users tab, brand backdrop) so mobile browser chrome no longer
+  hides the bottom of the page.
+
 ## 0.0.10
 
 ### Patch Changes

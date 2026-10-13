@@ -1,5 +1,33 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.23.0
+
+### Minor Changes
+
+- c98751d: Nuxt UI theme and tokens for the mobile web QA rules. `app-config.ts`
+  renders `input`, `inputMenu`, `inputNumber`, `inputTags`, `select`,
+  `selectMenu` and `textarea` at 16px on a phone (`text-base sm:text-sm` for
+  `xs`/`sm`), so iOS Safari stops zooming on focus, and gives `UButton` a
+  `--ns-tap-min` (44px) minimum height and width on coarse pointers. `theme.css`
+  adds `--ne-bottom-bar-h` (default `0px`) and
+  `html { scroll-padding-bottom: var(--ne-bottom-bar-h) }`; see README § Bottom
+  bar. The `[role=dialog]` overscroll rule moves out of the opt-in
+  `bounce-guard.css` into narduk-core's base CSS. `NeCommandPalette`,
+  `NeCommandPaletteTrigger` and `NeProse` hover styles are gated under
+  `@media (hover: hover)`, and viewport-unit heights use `dvh`.
+- e8a2ad4: `NeSortHeader` draws a muted `i-lucide-arrow-up-down` glyph on an
+  unsorted column, so a reader can tell a header sorts before touching it; a
+  sorted column still draws the single `i-lucide-arrow-up` or
+  `i-lucide-arrow-down`. The button carries `data-ne-sort="idle"` at rest and
+  `"active"` while sorted, and the idle glyph is `opacity: .45` in the
+  component's own `@layer components` rule. `aria-sort` is unchanged (none on
+  the `<th>` at rest). This is a visible default change for every `NeDataTable`
+  and `NeCollectionTable` sortable header (and any direct `NeSortHeader`) in the
+  desktop layout; the `NeCollectionTable` phone card, which draws no header
+  buttons, is unchanged. To keep the old bare header, hide it with CSS:
+  `[data-ne-sort='idle'] > [data-slot='trailingIcon'] { display: none }`
+  (operator-portal#2227).
+
 ## 0.22.0
 
 ### Minor Changes

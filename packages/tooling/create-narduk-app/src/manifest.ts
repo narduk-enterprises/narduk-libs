@@ -43,14 +43,14 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit': '2.22.2',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.37.0',
-  '@narduk-enterprises/eslint-config': '3.1.1',
-  '@narduk-enterprises/narduk-ai': '0.4.28',
+  '@narduk-enterprises/eslint-config': '3.2.0',
+  '@narduk-enterprises/narduk-ai': '0.4.29',
   '@narduk-enterprises/narduk-analytics': '1.30.1',
-  '@narduk-enterprises/narduk-auth': '1.34.10',
-  '@narduk-enterprises/narduk-charts': '2.11.3',
-  '@narduk-enterprises/narduk-core': '2.25.1',
+  '@narduk-enterprises/narduk-auth': '1.34.11',
+  '@narduk-enterprises/narduk-charts': '2.11.4',
+  '@narduk-enterprises/narduk-core': '2.26.0',
   '@narduk-enterprises/narduk-logging': '0.4.5',
-  '@narduk-enterprises/narduk-maps': '0.2.0',
+  '@narduk-enterprises/narduk-maps': '0.2.1',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
   // direct dependency of a generated app. narduk-core, narduk-ai and
   // narduk-auth each ship it as `workspace:*`, so the app installs it three
@@ -72,7 +72,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.22.0',
+  '@narduk-enterprises/narduk-shell': '0.23.0',
   '@narduk-enterprises/narduk-testkit': '1.12.0',
   '@narduk-enterprises/narduk-uploads': '1.21.5',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own

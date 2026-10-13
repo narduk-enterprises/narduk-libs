@@ -1,5 +1,16 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.11
+
+### Patch Changes
+
+- c98751d: Use `dvh` instead of `vh`/`h-screen` for viewport heights (auth
+  pages, admin users tab, brand backdrop) so mobile browser chrome no longer
+  hides the bottom of the page.
+- Updated dependencies [c98751d]
+  - @narduk-enterprises/narduk-core@2.26.0
+  - @narduk-enterprises/narduk-app@1.20.3
+
 ## 1.34.10
 
 ### Patch Changes
