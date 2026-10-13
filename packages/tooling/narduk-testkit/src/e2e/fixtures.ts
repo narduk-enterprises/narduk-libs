@@ -6,6 +6,8 @@ import {
   isHydrationConsoleText,
 } from './hydration-mismatch.js'
 
+import { E2E_ADMIN_PASSWORD_ENV, resolveE2eAdminEmail } from './admin-credential.js'
+
 import type { Browser, Page } from '@playwright/test'
 
 export {
@@ -243,18 +245,23 @@ export async function registerAndLogin(
  * No seed file ships a usable password, so the credentials come from the
  * caller or from the environment: pass `{ email, password }`, or set
  * `E2E_ADMIN_PASSWORD` (and optionally `E2E_ADMIN_EMAIL`, default
- * `admin@example.com`). The app's own seed step must store a hash of that
- * password (for example with the layer's `hashUserPassword()`).
+ * `admin@example.com`). The usual wiring is `ensureE2eAdminPassword()` from
+ * `@narduk-enterprises/narduk-testkit/e2e/admin-credential` at the top of
+ * `playwright.config.ts` plus `narduk-testkit e2e seed-admin --database <name>
+ * --local` in the `webServer` command after the seed step; see the README.
  */
 export async function loginAsAdmin(
   page: Page,
   credentials: { email?: string; password?: string } = {},
 ) {
-  const email = credentials.email || process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
-  const password = credentials.password || process.env.E2E_ADMIN_PASSWORD
+  const email = credentials.email || resolveE2eAdminEmail()
+  const password = credentials.password || process.env[E2E_ADMIN_PASSWORD_ENV]
   if (!password) {
     throw new Error(
-      'loginAsAdmin needs a password: pass { password } or set E2E_ADMIN_PASSWORD (and seed the admin user with a hash of it).',
+      'loginAsAdmin needs a password: pass { password } or set E2E_ADMIN_PASSWORD. ' +
+        'Call ensureE2eAdminPassword() from @narduk-enterprises/narduk-testkit/e2e/admin-credential ' +
+        'at the top of playwright.config.ts and run `narduk-testkit e2e seed-admin --database <name> --local` ' +
+        'after the seed step in the webServer command.',
     )
   }
   return loginViaApi(page, { email, password })
