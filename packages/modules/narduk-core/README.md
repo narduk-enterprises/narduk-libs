@@ -3572,3 +3572,14 @@ it. An app migrates by writing it in its own layout.
 | `LayerAppShell` skip link and `<main>`      | built in                               | `UApp` is not part of the shell: keep it in the app's `app.vue`.                                           |
 | `LayerAppShell` `#header` / `#footer`       | — (none today)                         | Page header / footer framing around the shell is an open question, tracked in narduk-libs#389.             |
 | `LayerChromelessShell`                      | — (no shell)                           | A chromeless layout (auth, blank) simply does not render `NeAppShell`.                                     |
+
+### SQL offset list reads
+
+`readOffsetSqlPage` from `@narduk-enterprises/narduk-core/server/sql-list`
+accepts a D1-compatible database, a validated `parseListQuery` offset query, and
+trusted SELECT/FROM/WHERE/sort expressions. It applies authorization/domain
+predicates and literal-substring search before both count and page, binds every
+request value, and executes two statements. Always supply stable unique
+tie-breakers. The application owns its projection, authorization and filter
+policy. Histories that must avoid retained-table counts should use the cursor
+contract instead.

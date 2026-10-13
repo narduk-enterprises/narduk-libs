@@ -628,3 +628,15 @@ describe('NeCollectionTable: phone', () => {
     )
   })
 })
+
+describe('NeCollectionTable: remote pages', () => {
+  it('keeps server order and page rows even when search, sort and a local fold are supplied', async () => {
+    const wrapper = render({ caption: 'Repositories', columns, rows: repos, remote: true, query: 'outside this page', sort: 'name:asc', limit: 1, total: 105, toolbar: 'always' })
+    expect(rowNames(wrapper)).toEqual(repos.map((row) => row.name))
+    expect(wrapper.text()).toContain('105 rows')
+    expect(wrapper.text()).not.toContain('Show all')
+    await header(wrapper, 'issues').find('button').trigger('click')
+    expect(wrapper.emitted('update:sort')).toBeTruthy()
+    expect(rowNames(wrapper)).toEqual(repos.map((row) => row.name))
+  })
+})
