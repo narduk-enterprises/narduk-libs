@@ -15,11 +15,12 @@ admin surfaces now belong to `@narduk-enterprises/narduk-ai` in
 > explicitly register the SEO package and use `useSeo(...)` for proper
 > structured metadata.
 
-Nitro OpenAPI generation is enabled here for all downstream apps. By default,
-production builds prerender `/_openapi.json`, while the Scalar and Swagger UI
-routes stay disabled unless an app opts into `nitro.openAPI.ui`. Set
-`NUXT_OPENAPI_PRODUCTION=runtime` to serve the spec dynamically or
-`NUXT_OPENAPI_PRODUCTION=false` to disable the production route entirely.
+Nitro OpenAPI generation is enabled here for all downstream apps in development.
+Production builds serve no `/_openapi.json` by default, because a public spec is
+a route map for scanners. An app that wants it opts in with
+`NUXT_OPENAPI_PRODUCTION=prerender` (or `true`) to prerender the spec, or
+`NUXT_OPENAPI_PRODUCTION=runtime` to serve it dynamically. The Scalar and
+Swagger UI routes stay disabled unless an app opts into `nitro.openAPI.ui`.
 
 The core security headers keep browser geolocation disabled by default. Apps
 that intentionally need user-location prompts can set
