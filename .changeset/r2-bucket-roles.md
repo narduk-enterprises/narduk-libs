@@ -1,5 +1,6 @@
 ---
 '@narduk-enterprises/narduk-app-tools': minor
+'@narduk-enterprises/narduk-uploads': patch
 ---
 
 `Config/cloudflare-app.json` `bindings.r2[]` entries take an optional `role`:
@@ -13,8 +14,8 @@ dependency. When every declared bucket has another role it is `not-applicable`,
 and the detail names each binding and role. A `read-only-assets` bucket also
 fails 3.3 when a file under `server/` calls `.put(` or `.delete(` on its
 binding. An app with no manifest `bindings.r2` entry still falls back to its
-wrangler config, which carries no role, so it keeps today's verdict. Closes
-narduk-libs#1285.
+wrangler config, which carries no role, so it keeps today's verdict. The
+narduk-uploads README points at the role vocabulary. Refs narduk-libs#1285.
 
 An app with a non-upload bucket writes, for example,
 `{ "binding": "TIMELINES", "bucketName": "music-timelines", "role": "app-data" }`
