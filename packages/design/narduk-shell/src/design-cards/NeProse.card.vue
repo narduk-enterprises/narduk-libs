@@ -5,7 +5,9 @@
  * One short runbook exercises every construct the subset reads, so a reviewer
  * sees the whole type ramp at once: the demoted h1, h2 and h3, a paragraph
  * with inline code, bold, italic and a link, a nested list, a fenced block, an
- * aligned table and a blockquote. The last row is the safety case: raw HTML
+ * aligned table and a blockquote, with `:max-heading-level="4"` for the h4. The
+ * second row shows a heading id prefix with GitHub slugs (a card's links stay
+ * in-page, so the link base and new-tab options are not drawn). The last row is the safety case: raw HTML
  * and a `javascript:` link render as text.
  */
 import NeProse from '../runtime/components/NeProse.vue'
@@ -30,12 +32,20 @@ const runbook = [
   '',
   '### Expected lag',
   '',
+  '#### Per region',
+  '',
   '| Region | Propagation | Retries |',
   '| :----- | :---------: | ------: |',
   '| us     | 30 s        | 2       |',
   '| eu     | 90 s        | 4       |',
   '',
   '> Never paste a key into a ticket.',
+].join('\n')
+
+const prefixed = [
+  '## A & B',
+  '',
+  'Jump to [a & b](#a--b): the id is prefixed, and the link follows it.',
 ].join('\n')
 
 const unsafe = 'Raw <b>markup</b> stays text, and [this link](javascript:alert(1)) has no href.'
@@ -49,7 +59,10 @@ const unsafe = 'Raw <b>markup</b> stays text, and [this link](javascript:alert(1
       <code>#</code> renders as h2; every heading carries a slug id for a table of contents.
     </p>
     <div class="preview-row">
-      <NeProse :source="runbook" />
+      <NeProse :source="runbook" :max-heading-level="4" />
+    </div>
+    <div class="preview-row">
+      <NeProse :source="prefixed" github-slugs heading-id-prefix="card-" />
     </div>
     <div class="preview-row">
       <NeProse :source="unsafe" />

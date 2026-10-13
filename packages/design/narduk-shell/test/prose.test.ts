@@ -5,8 +5,14 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { parseProse, proseOutline } from '../src/index'
-import { createProseSlugger, safeProseHref } from '../src/runtime/utils/prose'
+import { parseProse, parseProseInline, proseOutline, proseText } from '../src/index'
+import {
+  createProseSlugger,
+  isExternalProseHref,
+  proseHeadingSlug,
+  resolveProseHref,
+  safeProseHref,
+} from '../src/runtime/utils/prose'
 
 import type { NeProseBlock, NeProseInline } from '../src/index'
 
@@ -464,5 +470,162 @@ describe('parseProse: blockquotes and rules', () => {
       { type: 'rule' },
       paragraph(text('b')),
     ])
+  })
+})
+
+describe('parseProse: heading level 4 (maxHeadingLevel)', () => {
+  const levels = (source: string, options?: Parameters<typeof parseProse>[1]) =>
+    parseProse(source, options).map((block) => (block.type === 'heading' ? block.level : null))
+
+  it('keeps ####, and clamps ##### and ###### to it, when maxHeadingLevel is 4', () => {
+    expect(
+      levels('# T\n\n## A\n\n### B\n\n#### C\n\n##### D\n\n###### E', { maxHeadingLevel: 4 }),
+    ).toEqual([2, 2, 3, 4, 4, 4])
+  })
+
+  it('leaves the default clamp to h3 alone', () => {
+    expect(levels('#### C\n\n##### D')).toEqual([3, 3])
+    expect(levels('#### C', { maxHeadingLevel: 3 })).toEqual([3])
+  })
+
+  it('lists an h4 in the outline', () => {
+    expect(proseOutline(parseProse('#### Deep', { maxHeadingLevel: 4 }))).toEqual([
+      { id: 'deep', level: 4, text: 'Deep' },
+    ])
+  })
+})
+
+describe('GitHub heading slugs', () => {
+  it('githubSlugs turns each space into one hyphen, so "a & b" is a--b', () => {
+    const slug = (text: string) => proseHeadingSlug(text, true)
+    expect(slug('a & b')).toBe('a--b')
+    expect(slug('x — y')).toBe('x--y')
+    expect(slug('What is `x`?')).toBe('what-is-x')
+    expect(slug('Snake_case and kebab-case')).toBe('snake_case-and-kebab-case')
+    expect(slug('  Spaced  ')).toBe('spaced')
+    expect(slug('Ünïcode 日本')).toBe('ünïcode-日本')
+    expect(slug('Cafe\u0301')).toBe('cafe\u0301')
+    expect(slug('???')).toBe('')
+  })
+
+  it('collapses the whitespace run by default, as earlier releases did', () => {
+    expect(proseHeadingSlug('a & b')).toBe('a-b')
+    expect(proseHeadingSlug('x — y')).toBe('x-y')
+  })
+
+  it('githubSlugs gives a heading that id, and a repeat -1', () => {
+    const source = '## A & B\n\n## A & B'
+    const ids = (options?: Parameters<typeof parseProse>[1]) =>
+      parseProse(source, options).map((b) => (b.type === 'heading' ? b.id : ''))
+    expect(ids({ githubSlugs: true })).toEqual(['a--b', 'a--b-1'])
+    expect(ids()).toEqual(['a-b', 'a-b-1'])
+  })
+})
+
+describe('parseProse: headingIdPrefix', () => {
+  it('prefixes every heading id, numbering repeats as an unprefixed document does', () => {
+    const blocks = parseProse('## Intro\n\n## Intro\n\n## ???\n\n> ### Quoted', {
+      headingIdPrefix: 'sec-',
+    })
+    const ids = blocks.flatMap((b) =>
+      b.type === 'heading'
+        ? [b.id]
+        : b.type === 'blockquote'
+          ? b.children.map((c) => (c.type === 'heading' ? c.id : ''))
+          : [],
+    )
+    expect(ids).toEqual(['sec-intro', 'sec-intro-1', 'sec-section', 'sec-quoted'])
+  })
+
+  it('rewrites a #fragment link to the prefixed GitHub slug, so it still lands', () => {
+    const [block] = parseProse('See [a](#a--b), [b](#Caf%C3%A9) and [c](#)', {
+      githubSlugs: true,
+      headingIdPrefix: 'sec-',
+    })
+    expect(block).toEqual(
+      paragraph(
+        text('See '),
+        { type: 'link', href: '#sec-a--b', children: [text('a')] },
+        text(', '),
+        { type: 'link', href: '#sec-café', children: [text('b')] },
+        text(' and c'),
+      ),
+    )
+  })
+
+  it('slugs fragments by the default rule unless githubSlugs is set', () => {
+    const [block] = parseProse('[a](#a%20%20b)', { headingIdPrefix: 'sec-' })
+    expect(block).toEqual(paragraph({ type: 'link', href: '#sec-a-b', children: [text('a')] }))
+  })
+
+  it('changes nothing without a prefix', () => {
+    expect(parseProse('## Intro\n\n[x](#Not-A-Slug)')).toEqual([
+      { type: 'heading', level: 2, id: 'intro', children: [text('Intro')] },
+      paragraph({ type: 'link', href: '#Not-A-Slug', children: [text('x')] }),
+    ])
+  })
+})
+
+describe('parseProse: linkBase', () => {
+  const BASE = 'https://github.com/o/r/blob/main/skills/s/'
+  const hrefs = (source: string, options = { linkBase: BASE }) => {
+    const [block] = parseProse(source, options)
+    if (block?.type !== 'paragraph') throw new Error('expected a paragraph')
+    return block.children.flatMap((run) => (run.type === 'link' ? [run.href] : []))
+  }
+
+  it('resolves relative links against the base and leaves absolute ones alone', () => {
+    expect(
+      hrefs('[a](docs/a.md) [b](../b.md#x) [c](/root) [d](https://x.test/y) [e](#frag) [f](?q=1)'),
+    ).toEqual([
+      `${BASE}docs/a.md`,
+      'https://github.com/o/r/blob/main/skills/b.md#x',
+      'https://github.com/root',
+      'https://x.test/y',
+      '#frag',
+      `${BASE}?q=1`,
+    ])
+  })
+
+  it('keeps the text of a link whose base is not a URL', () => {
+    const [block] = parseProse('[a](docs/a.md)', { linkBase: 'not a url' })
+    expect(block).toEqual(paragraph(text('a')))
+  })
+
+  it('keeps relative links as written without a base', () => {
+    expect(hrefs('[a](docs/a.md)', {} as { linkBase: string })).toEqual(['docs/a.md'])
+  })
+
+  it('resolveProseHref refuses unsafe schemes before it resolves anything', () => {
+    expect(resolveProseHref('javascript:alert(1)', { linkBase: BASE })).toBeNull()
+    expect(resolveProseHref('mailto:a@b.test', { linkBase: BASE })).toBe('mailto:a@b.test')
+  })
+})
+
+describe('isExternalProseHref', () => {
+  it('is true for absolute http(s) URLs only', () => {
+    expect(isExternalProseHref('https://a.test')).toBe(true)
+    expect(isExternalProseHref('HTTP://a.test')).toBe(true)
+    expect(isExternalProseHref('mailto:a@b.test')).toBe(false)
+    expect(isExternalProseHref('/a')).toBe(false)
+    expect(isExternalProseHref('#a')).toBe(false)
+  })
+})
+
+describe('parseProseInline and proseText', () => {
+  it('parses one line of inline markdown and reads it back as plain text', () => {
+    const runs = parseProseInline('A `code` **bold** [link](docs/a.md)', {
+      linkBase: 'https://x.test/base/',
+    })
+    expect(runs.at(-1)).toEqual({
+      type: 'link',
+      href: 'https://x.test/base/docs/a.md',
+      children: [text('link')],
+    })
+    expect(proseText(runs)).toBe('A code bold link')
+  })
+
+  it('takes no options', () => {
+    expect(proseText(parseProseInline('*a* b'))).toBe('a b')
   })
 })

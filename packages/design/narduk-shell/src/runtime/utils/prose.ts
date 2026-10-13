@@ -24,6 +24,7 @@ import type {
   NeProseHeading,
   NeProseInline,
   NeProseListItem,
+  ParseProseOptions,
 } from '../components/ne-prose-types'
 
 /** Schemes a link may carry. Anything else with a scheme is dropped. */
@@ -47,21 +48,38 @@ export function safeProseHref(raw: string): string | null {
 }
 
 /**
- * A heading-id generator for one document. GitHub's rule: lowercase, drop
- * everything but letters, digits, spaces, `_` and `-`, spaces to `-`; a repeat
- * gets `-1`, `-2`, …. An empty result is `section`. Each document gets its own
+ * A heading's slug, without the repeat suffix. By default: lowercase,
+ * everything but letters, digits, whitespace, `_` and `-` dropped, each run of
+ * whitespace one `-`. With `github`, GitHub's own rule: marks are kept and
+ * each whitespace character is one `-`, so "a & b" is `a--b`, which is what
+ * lets a document's own `#anchor` links land. Empty when nothing is left.
+ */
+export function proseHeadingSlug(text: string, github = false): string {
+  const lower = text.toLowerCase()
+  if (github) {
+    return lower
+      .replaceAll(/[^\p{L}\p{M}\p{N}\s_-]/gu, '')
+      .trim()
+      .replaceAll(/\s/g, '-')
+  }
+  return lower
+    .trim()
+    .replaceAll(/[^\p{L}\p{N}\s_-]/gu, '')
+    .trim()
+    .replaceAll(/\s+/g, '-')
+}
+
+/**
+ * A heading-id generator for one document: `proseHeadingSlug`, a repeat gets
+ * `-1`, `-2`, …, and an empty result is `section`. `prefix` is put in front of
+ * every id after the repeat suffix is chosen, so a prefixed document numbers
+ * its repeats exactly as an unprefixed one does. Each document gets its own
  * generator so ids are stable for a given source.
  */
-export function createProseSlugger(): (text: string) => string {
+export function createProseSlugger(prefix = '', github = false): (text: string) => string {
   const seen = new Map<string, number>()
   return (text) => {
-    let base = text
-      .toLowerCase()
-      .trim()
-      .replaceAll(/[^\p{L}\p{N}\s_-]/gu, '')
-      .trim()
-      .replaceAll(/\s+/g, '-')
-    if (base === '') base = 'section'
+    const base = proseHeadingSlug(text, github) || 'section'
     let id = base
     if (seen.has(base)) {
       let count = seen.get(base) ?? 0
@@ -72,8 +90,45 @@ export function createProseSlugger(): (text: string) => string {
       seen.set(base, count)
     }
     seen.set(id, 0)
-    return id
+    return `${prefix}${id}`
   }
+}
+
+function decodeFragment(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+/**
+ * The href a link in a document parsed with `options` carries, or `null` to
+ * keep the link's text alone: `safeProseHref`, then the two rewrites the
+ * options ask for. A `#fragment` becomes the prefixed id its heading has
+ * (`headingIdPrefix`), and a relative link resolves against `linkBase`. With
+ * neither option the result is `safeProseHref(raw)` exactly.
+ */
+export function resolveProseHref(raw: string, options: ParseProseOptions = {}): string | null {
+  const href = safeProseHref(raw)
+  if (href === null) return null
+  if (href.startsWith('#')) {
+    if (!options.headingIdPrefix) return href
+    const anchor = proseHeadingSlug(decodeFragment(href.slice(1)), options.githubSlugs)
+    return anchor === '' ? null : `#${options.headingIdPrefix}${anchor}`
+  }
+  if (!options.linkBase || /^[a-z][a-z0-9+.-]*:/i.test(href)) return href
+  try {
+    const resolved = new URL(href, options.linkBase)
+    return resolved.protocol === 'https:' || resolved.protocol === 'http:' ? resolved.href : null
+  } catch {
+    return null
+  }
+}
+
+/** Whether a rendered href leaves the site: an absolute `http(s)` URL. */
+export function isExternalProseHref(href: string): boolean {
+  return /^https?:\/\//i.test(href)
 }
 
 /** Inline runs as plain text: what a heading's id and outline entry read. */
@@ -104,9 +159,18 @@ export function proseOutline(input: string | readonly NeProseBlock[]): NeProseHe
 }
 
 /** Parse a markdown string into NeProse's block AST. */
-export function parseProse(source: string): NeProseBlock[] {
+export function parseProse(source: string, options: ParseProseOptions = {}): NeProseBlock[] {
   const lines = source.replaceAll(/\r\n?/g, '\n').split('\n')
-  return parseBlocks(lines, createProseSlugger())
+  return parseBlocks(lines, {
+    slug: createProseSlugger(options.headingIdPrefix, options.githubSlugs),
+    options,
+  })
+}
+
+/** What the block parser carries down into nested blocks: one slugger, the options. */
+interface ParseContext {
+  slug: (text: string) => string
+  options: ParseProseOptions
 }
 
 // ---------------------------------------------------------------------------
@@ -224,18 +288,19 @@ function readAlignment(line: string, columns: number): NeProseAlign[] | null {
 function heading(
   level: number,
   text: string,
-  slug: (text: string) => string,
+  context: ParseContext,
 ): Extract<NeProseBlock, { type: 'heading' }> {
-  const children = parseInline(text)
+  const children = parseInline(text, context.options)
+  const deepest = context.options.maxHeadingLevel === 4 ? 4 : 3
   return {
     type: 'heading',
-    level: level <= 2 ? 2 : 3,
-    id: slug(prosePlainText(children)),
+    level: level <= 2 ? 2 : (Math.min(level, deepest) as 3 | 4),
+    id: context.slug(prosePlainText(children)),
     children,
   }
 }
 
-function parseBlocks(lines: readonly string[], slug: (text: string) => string): NeProseBlock[] {
+function parseBlocks(lines: readonly string[], context: ParseContext): NeProseBlock[] {
   const blocks: NeProseBlock[] = []
   let index = 0
 
@@ -265,7 +330,7 @@ function parseBlocks(lines: readonly string[], slug: (text: string) => string): 
     const atx = ATX.exec(line)
     if (atx) {
       const text = (atx[2] ?? '').replace(/(?:^|[ \t]+)#+[ \t]*$/, '').trim()
-      blocks.push(heading((atx[1] ?? '').length, text, slug))
+      blocks.push(heading((atx[1] ?? '').length, text, context))
       index += 1
       continue
     }
@@ -292,13 +357,13 @@ function parseBlocks(lines: readonly string[], slug: (text: string) => string): 
         else break
         index += 1
       }
-      blocks.push({ type: 'blockquote', children: parseBlocks(inner, slug) })
+      blocks.push({ type: 'blockquote', children: parseBlocks(inner, context) })
       continue
     }
 
     const marker = readMarker(line)
     if (marker) {
-      const [list, next] = parseList(lines, index, slug)
+      const [list, next] = parseList(lines, index, context)
       blocks.push(list)
       index = next
       continue
@@ -315,10 +380,15 @@ function parseBlocks(lines: readonly string[], slug: (text: string) => string): 
           const current = lines[index] ?? ''
           if (isBlank(current) || startsBlock(current)) break
           const cells = splitRow(current)
-          rows.push(align.map((_, column) => parseInline(cells[column] ?? '')))
+          rows.push(align.map((_, column) => parseInline(cells[column] ?? '', context.options)))
           index += 1
         }
-        blocks.push({ type: 'table', align, head: head.map((cell) => parseInline(cell)), rows })
+        blocks.push({
+          type: 'table',
+          align,
+          head: head.map((cell) => parseInline(cell, context.options)),
+          rows,
+        })
         continue
       }
     }
@@ -344,8 +414,8 @@ function parseBlocks(lines: readonly string[], slug: (text: string) => string): 
     const joined = text.join('\n').trimEnd()
     blocks.push(
       setext === null
-        ? { type: 'paragraph', children: parseInline(joined) }
-        : heading(setext, joined, slug),
+        ? { type: 'paragraph', children: parseInline(joined, context.options) }
+        : heading(setext, joined, context),
     )
   }
 
@@ -356,7 +426,7 @@ function parseBlocks(lines: readonly string[], slug: (text: string) => string): 
 function parseList(
   lines: readonly string[],
   start: number,
-  slug: (text: string) => string,
+  context: ParseContext,
 ): [NeProseBlock, number] {
   const first = readMarker(lines[start] ?? '') as ListMarker
   const items: NeProseListItem[] = []
@@ -388,7 +458,7 @@ function parseList(
       index += 1
     }
 
-    items.push({ children: parseBlocks(body, slug) })
+    items.push({ children: parseBlocks(body, context) })
   }
 
   const list: NeProseBlock = first.ordered
@@ -546,7 +616,11 @@ function findCloser(text: string, from: number, char: string, size: number): num
   return -1
 }
 
-function readEmphasis(text: string, at: number): { node: NeProseInline; end: number } | null {
+function readEmphasis(
+  text: string,
+  at: number,
+  options: ParseProseOptions,
+): { node: NeProseInline; end: number } | null {
   const char = text[at] ?? ''
   const run = runLength(text, at, char)
   const after = text[at + run] ?? ''
@@ -555,7 +629,7 @@ function readEmphasis(text: string, at: number): { node: NeProseInline; end: num
   if (char === '_' && WORD_CHAR.test(before)) return null
   const close = findCloser(text, at + run, char, run)
   if (close === -1) return null
-  const children = parseInline(text.slice(at + run, close))
+  const children = parseInline(text.slice(at + run, close), options)
   const node: NeProseInline =
     run === 1
       ? { type: 'em', children }
@@ -582,8 +656,12 @@ function trimBareUrl(url: string): string {
   }
 }
 
-/** Parse inline markdown into runs. Adjacent text is merged into one run. */
-export function parseInline(text: string): NeProseInline[] {
+/**
+ * Parse inline markdown into runs. Adjacent text is merged into one run.
+ * `options.linkBase` and `options.headingIdPrefix` shape the links, as they do
+ * for `parseProse`; the heading options mean nothing here.
+ */
+export function parseInline(text: string, options: ParseProseOptions = {}): NeProseInline[] {
   const out: NeProseInline[] = []
   let buffer = ''
   const flush = () => {
@@ -646,7 +724,7 @@ export function parseInline(text: string): NeProseInline[] {
       const image = readLink(text, index + 1)
       if (image) {
         // Images are out of the subset: the alt text stands in for one.
-        buffer += prosePlainText(parseInline(image.text))
+        buffer += prosePlainText(parseInline(image.text, options))
         index = image.end
         continue
       }
@@ -655,8 +733,8 @@ export function parseInline(text: string): NeProseInline[] {
     if (char === '[') {
       const link = readLink(text, index)
       if (link) {
-        const children = parseInline(link.text)
-        const href = safeProseHref(link.destination)
+        const children = parseInline(link.text, options)
+        const href = resolveProseHref(link.destination, options)
         flush()
         if (href === null) pushAll(out, children)
         else out.push({ type: 'link', href, children })
@@ -699,7 +777,7 @@ export function parseInline(text: string): NeProseInline[] {
     }
 
     if (char === '*' || char === '_') {
-      const emphasis = readEmphasis(text, index)
+      const emphasis = readEmphasis(text, index, options)
       if (emphasis) {
         flush()
         out.push(emphasis.node)

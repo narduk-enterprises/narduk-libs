@@ -3150,16 +3150,16 @@ A markdown document rendered in the suite's type scale
 ([narduk-libs#1005](https://github.com/narduk-enterprises/narduk-libs/issues/1005)):
 a runbook, a help page, a changelog entry. Body copy reads `--ne-text-body` at
 `--ne-leading-body`, h2 the section-heading size (`--ne-text-heading`), h3 the
-body size at weight 600, code and tables `--ne-text-small` and `--ne-font-mono`,
-links `--ne-accent`.
+body size at weight 600, h4 (opt in, below) `--ne-text-small` at weight 600,
+code and tables `--ne-text-small` and `--ne-font-mono`, links `--ne-accent`.
 
 The page header owns the page's h1, so **NeProse never renders an h1**: a `#`
 heading is demoted to h2 (its text is kept, not dropped), and `####`–`######`
-clamp to h3. Every heading carries a slug `id` — GitHub's rule: lowercase,
-punctuation dropped, spaces to `-`, repeats suffixed `-1`, `-2` — so a table of
-contents can link to `#install`. `parseProse()` and `proseOutline()` are
-exported from the package root, so a page parses once and builds its TOC from
-the same AST it renders.
+clamp to h3, or to h4 with `:max-heading-level="4"`. Every heading carries a slug
+`id` — lowercase, punctuation dropped, spaces to `-`, repeats suffixed `-1`,
+`-2` — so a table of contents can link to `#install`. `parseProse()` and
+`proseOutline()` are exported from the package root, so a page parses once and
+builds its TOC from the same AST it renders.
 
 It is XSS-safe by construction, not by sanitising. There is no `v-html` on the
 path: `parseProse()` (a small pure parser in `src/runtime/utils/prose.ts`, no
@@ -3170,6 +3170,31 @@ is kept only when it is `http:`, `https:`, `mailto:` or has no scheme at all
 (relative, `/root`, `#fragment`, `?query`); `javascript:`, `data:`, `vbscript:`
 and every other scheme drop the anchor and keep the link text. The href is
 checked again at render time, so a hand-built `blocks` AST gets the same rule.
+
+Every option below defaults to the behaviour of earlier releases.
+
+- **`headingIdPrefix`** puts a prefix in front of every heading id (`sec-`), so
+  a document body can never collide with the page's own ids, and rewrites the
+  document's own `[x](#anchor)` links to the prefixed id so they still land.
+- **`githubSlugs`** makes the heading ids exactly GitHub's slug rule: each
+  whitespace character is one hyphen, so `## A & B` is `a--b` and `## x — y` is
+  `x--y` (the default collapses a whitespace run, `a-b`). Turn it on when the
+  document's own anchors were written against GitHub's ids, as a SKILL.md or
+  README's are. The fragment links are slugged by the same rule.
+- **`linkBase`** is an absolute URL that a relative link (`docs/a.md`, `/root`,
+  `../up`) resolves against; one that cannot resolve to `http(s)` renders as its
+  text. Without it a relative link keeps its written href. `#fragment` links are
+  never resolved against it.
+- **`externalLinksNewTab`** renders an absolute `http(s)` link with
+  `target="_blank"` and `rel="noopener"`. Relative, fragment and `mailto:` links
+  are untouched.
+- **`#table` slot** replaces the built-in `<table>` per table, so an application
+  keeps its own collection table (reflowing on a phone, with a caption naming
+  the heading it sits under).
+
+The first three shape parsing, so they apply to `source` and do nothing to a
+pre-parsed `blocks`; pass them to `parseProse(source, options)` instead.
+`externalLinksNewTab` and the slot apply at render time to either.
 
 #### The subset
 
@@ -3215,15 +3240,32 @@ const toc = computed(() =>
 
 #### Props
 
-| Prop     | Type             | Default     | What it does                                                                                                                                      |
-| -------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source` | `string`         | `''`        | The markdown to render, parsed with `parseProse()`.                                                                                               |
-| `blocks` | `NeProseBlock[]` | `undefined` | A pre-parsed document — from `parseProse()` or built by hand — rendered as given (hrefs are still checked). Wins over `source` when both are set. |
+| Prop                  | Type             | Default     | What it does                                                                                                                                      |
+| --------------------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`              | `string`         | `''`        | The markdown to render, parsed with `parseProse()`.                                                                                               |
+| `blocks`              | `NeProseBlock[]` | `undefined` | A pre-parsed document — from `parseProse()` or built by hand — rendered as given (hrefs are still checked). Wins over `source` when both are set. |
+| `maxHeadingLevel`     | `3 \| 4`         | `3`         | The deepest heading: `3` clamps `####` and deeper to h3, `4` keeps `####` as h4 (`#####` and `######` clamp to it). Parsing only.                 |
+| `headingIdPrefix`     | `string`         | `''`        | Prefix for every heading id; the document's own `#fragment` links are rewritten to match. Parsing only.                                           |
+| `githubSlugs`         | `boolean`        | `false`     | Heading ids use GitHub's exact slug rule (`a & b` is `a--b`) instead of collapsing whitespace. Parsing only.                                      |
+| `linkBase`            | `string`         | `undefined` | Absolute URL that relative links resolve against. Parsing only.                                                                                   |
+| `externalLinksNewTab` | `boolean`        | `false`     | Absolute `http(s)` links get `target="_blank"` and `rel="noopener"`.                                                                              |
 
 #### Slots
 
-None. The document is the content; a page that needs its own markup around a
-section splits the document.
+| Slot    | Props                                                          | What it does                                                                                                                                                                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `table` | `{ block, index, heading, ordinal }` (`NeProseTableSlotProps`) | Replaces the built-in `<table>` (and its scroll wrapper) for each table. `block` is the parsed table (`align`, `head`, `rows` of inline runs), `index` its zero-based place among the document's tables, `heading` the plain text of the heading above it (`null` before any), `ordinal` its one-based place under that heading. |
+
+```vue
+<NeProse :source="markdown" :max-heading-level="4" external-links-new-tab>
+  <template #table="{ block, heading, ordinal }">
+    <MyTable :caption="`Table ${ordinal} under ${heading ?? 'the introduction'}`" :block="block" />
+  </template>
+</NeProse>
+```
+
+Cells are inline runs; render one with `proseText(cell)` for plain text, or walk
+it for markup.
 
 #### Events
 
@@ -3232,19 +3274,34 @@ exists on the server's first paint too.
 
 #### Helpers
 
-- `parseProse(source: string): NeProseBlock[]` — the parser. Pure: no Vue, no
-  DOM. Heading ids are unique within one call and stable for a given source.
+- `parseProse(source: string, options?: ParseProseOptions): NeProseBlock[]` —
+  the parser. Pure: no Vue, no DOM. Heading ids are unique within one call and
+  stable for a given source. `ParseProseOptions` is
+  `{ headingIdPrefix?, githubSlugs?, linkBase?, maxHeadingLevel? }`, the same
+  four as the props above.
 - `proseOutline(input: string | NeProseBlock[]): NeProseHeading[]` — the
   document's top-level headings as `{ id, level, text }` in order (a heading
   inside a blockquote or list is not a section and is left out).
+- `parseProseInline(text: string, options?: ParseProseOptions): NeProseInline[]`
+  — one string of inline markdown (code, emphasis, links) as runs, for a table
+  cell, a title or a summary outside a document. Only `linkBase`, `githubSlugs`
+  and `headingIdPrefix` mean anything to it, as they shape links.
+- `proseText(runs: readonly NeProseInline[]): string` — the plain words of a run
+  list, markup removed: what a heading id, a sort key or an accessible name
+  reads.
 
 Two NeProse documents on one page share the document's id namespace; give the
-second one headings that do not collide, or render it without a TOC.
+second one a `headingIdPrefix`, or render it without a TOC.
 
 #### Types
 
 ```ts
-import { parseProse, proseOutline } from '@narduk-enterprises/narduk-shell'
+import {
+  parseProse,
+  parseProseInline,
+  proseOutline,
+  proseText,
+} from '@narduk-enterprises/narduk-shell'
 import type {
   NeProseAlign,
   NeProseBlock,
@@ -3252,6 +3309,8 @@ import type {
   NeProseInline,
   NeProseListItem,
   NeProseProps,
+  NeProseTableSlotProps,
+  ParseProseOptions,
 } from '@narduk-enterprises/narduk-shell'
 ```
 

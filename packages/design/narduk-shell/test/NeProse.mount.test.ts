@@ -5,11 +5,12 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { h } from 'vue'
 
 import NeProse from '../src/runtime/components/NeProse.vue'
 import { parseProse } from '../src/index'
 
-import type { NeProseProps } from '../src/index'
+import type { NeProseProps, NeProseTableSlotProps } from '../src/index'
 
 function render(props: NeProseProps) {
   return mount(NeProse, { props })
@@ -157,5 +158,83 @@ describe('NeProse', () => {
 
   it('turns a hard line break into <br>', () => {
     expect(render({ source: 'a  \nb' }).find('br').exists()).toBe(true)
+  })
+
+  it('renders h4 when maxHeadingLevel is 4, and h3 by default', () => {
+    expect(render({ source: '#### Deep' }).find('h4').exists()).toBe(false)
+    expect(render({ source: '#### Deep' }).get('h3').text()).toBe('Deep')
+    const wrapper = render({ source: '#### Deep', maxHeadingLevel: 4 })
+    expect(wrapper.get('h4').attributes('id')).toBe('deep')
+  })
+
+  it('prefixes heading ids and rewrites fragment links to match', () => {
+    const wrapper = render({
+      source: '## A & B\n\n[x](#a--b)',
+      githubSlugs: true,
+      headingIdPrefix: 'sec-',
+    })
+    expect(wrapper.get('h2').attributes('id')).toBe('sec-a--b')
+    expect(wrapper.get('a').attributes('href')).toBe('#sec-a--b')
+  })
+
+  it('resolves relative links against linkBase', () => {
+    const wrapper = render({ source: '[a](docs/a.md)', linkBase: 'https://x.test/base/' })
+    expect(wrapper.get('a').attributes('href')).toBe('https://x.test/base/docs/a.md')
+  })
+
+  it('renders every link the same way unless externalLinksNewTab is set', () => {
+    const source = '[abs](https://x.test) [rel](/a) [frag](#a) [mail](mailto:a@b.test)'
+    const plain = render({ source })
+    expect(plain.findAll('a').map((a) => a.attributes('target'))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ])
+
+    const wrapper = render({ source, externalLinksNewTab: true })
+    const anchors = wrapper.findAll('a')
+    expect(anchors.map((a) => a.attributes('target'))).toEqual([
+      '_blank',
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(anchors.map((a) => a.attributes('rel'))).toEqual([
+      'noopener',
+      undefined,
+      undefined,
+      undefined,
+    ])
+  })
+
+  it('hands each table to the #table slot with its heading and position', () => {
+    const table = '| A |\n| - |\n| 1 |'
+    const source = `${table}\n\n## One\n\n${table}\n\n${table}\n\n### Two *x*\n\n> ${table.replaceAll('\n', '\n> ')}`
+    const seen: Array<[number, string | null, number, string]> = []
+    const wrapper = mount(NeProse, {
+      props: { source },
+      slots: {
+        table: (slot: NeProseTableSlotProps) => {
+          seen.push([slot.index, slot.heading, slot.ordinal, slot.block.head.length.toString()])
+          return h('figure', { class: 'custom' }, `table ${slot.index}`)
+        },
+      },
+    })
+    expect(seen).toEqual([
+      [0, null, 1, '1'],
+      [1, 'One', 1, '1'],
+      [2, 'One', 2, '1'],
+      [3, 'Two x', 1, '1'],
+    ])
+    expect(wrapper.findAll('figure.custom')).toHaveLength(4)
+    expect(wrapper.find('table').exists()).toBe(false)
+    expect(wrapper.find('.ne-prose__table').exists()).toBe(false)
+  })
+
+  it('renders the built-in table when no #table slot is given', () => {
+    expect(
+      render({ source: '| A |\n| - |\n| 1 |' }).find('.ne-prose__table > table').exists(),
+    ).toBe(true)
   })
 })

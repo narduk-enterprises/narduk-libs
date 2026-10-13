@@ -184,13 +184,19 @@ export type {
 } from './runtime/components/ne-collection-table-types'
 
 /**
- * NeProse's parser and AST (narduk-libs#1005). `parseProse` and
- * `proseOutline` are pure functions with no Vue or DOM import, so a page can
+ * NeProse's parser and AST (narduk-libs#1005). `parseProse`, `proseOutline`,
+ * `parseProseInline` (one line of inline markdown) and `proseText` (inline
+ * runs as plain text) are pure functions with no Vue or DOM import, so a page can
  * parse a document once, build its table of contents from the outline and
  * hand the same blocks to `<NeProse :blocks>`, and a server route can run the
  * parser too.
  */
-export { parseProse, proseOutline } from './runtime/utils/prose'
+export {
+  parseInline as parseProseInline,
+  parseProse,
+  prosePlainText as proseText,
+  proseOutline,
+} from './runtime/utils/prose'
 export type {
   NeProseAlign,
   NeProseBlock,
@@ -198,6 +204,8 @@ export type {
   NeProseInline,
   NeProseListItem,
   NeProseProps,
+  NeProseTableSlotProps,
+  ParseProseOptions,
 } from './runtime/components/ne-prose-types'
 
 /**

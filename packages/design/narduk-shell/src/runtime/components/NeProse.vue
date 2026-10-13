@@ -18,19 +18,56 @@
  * rendered elements come from a render function rather than this template, so
  * the rules reach them through `:deep()` under the root class.
  */
-import { computed, h } from 'vue'
+import { computed, h, useSlots } from 'vue'
 
-import { parseProse, safeProseHref } from '../utils/prose'
+import { isExternalProseHref, parseProse, prosePlainText, safeProseHref } from '../utils/prose'
 
-import type { NeProseAlign, NeProseBlock, NeProseInline, NeProseProps } from './ne-prose-types'
+import type {
+  NeProseAlign,
+  NeProseBlock,
+  NeProseInline,
+  NeProseProps,
+  NeProseTableSlotProps,
+} from './ne-prose-types'
 import type { FunctionalComponent, VNodeChild } from 'vue'
 
 const props = withDefaults(defineProps<NeProseProps>(), {
   blocks: undefined,
+  externalLinksNewTab: false,
+  githubSlugs: false,
+  headingIdPrefix: '',
+  linkBase: undefined,
+  maxHeadingLevel: 3,
   source: '',
 })
 
-const tree = computed(() => props.blocks ?? parseProse(props.source))
+defineSlots<{
+  /**
+   * Replaces the built-in `<table>` for each table in the document, e.g. with
+   * the application's own table component. The slot owns the whole table: the
+   * default scroll wrapper is not rendered around it.
+   */
+  table?: (props: NeProseTableSlotProps) => unknown
+}>()
+const slots = useSlots()
+
+const tree = computed(
+  () =>
+    props.blocks ??
+    parseProse(props.source, {
+      githubSlugs: props.githubSlugs,
+      headingIdPrefix: props.headingIdPrefix,
+      linkBase: props.linkBase,
+      maxHeadingLevel: props.maxHeadingLevel,
+    }),
+)
+
+/** Reading-order state for the `#table` slot, fresh for every render of the tree. */
+interface RenderState {
+  heading: string | null
+  ordinal: number
+  tables: number
+}
 
 function renderRuns(runs: readonly NeProseInline[]): VNodeChild[] {
   return runs.map((run) => renderInline(run))
@@ -55,7 +92,13 @@ function renderInline(run: NeProseInline): VNodeChild {
     }
     case 'link': {
       const href = safeProseHref(run.href)
-      return href === null ? renderRuns(run.children) : h('a', { href }, renderRuns(run.children))
+      if (href === null) return renderRuns(run.children)
+      const newTab = props.externalLinksNewTab && isExternalProseHref(href)
+      return h(
+        'a',
+        { href, target: newTab ? '_blank' : undefined, rel: newTab ? 'noopener' : undefined },
+        renderRuns(run.children),
+      )
     }
   }
 }
@@ -64,16 +107,23 @@ function alignStyle(align: NeProseAlign | undefined) {
   return align ? { textAlign: align } : undefined
 }
 
-function renderBlock(block: NeProseBlock): VNodeChild {
+function renderBlock(block: NeProseBlock, state: RenderState): VNodeChild {
   switch (block.type) {
     case 'heading': {
+      state.heading = prosePlainText(block.children)
+      state.ordinal = 0
       return h(`h${block.level}`, { id: block.id }, renderRuns(block.children))
     }
     case 'paragraph': {
       return h('p', renderRuns(block.children))
     }
     case 'list': {
-      const items = block.items.map((item) => h('li', item.children.map(renderBlock)))
+      const items = block.items.map((item) =>
+        h(
+          'li',
+          item.children.map((child) => renderBlock(child, state)),
+        ),
+      )
       return block.ordered
         ? h('ol', { start: block.start === 1 ? undefined : block.start }, items)
         : h('ul', items)
@@ -86,12 +136,21 @@ function renderBlock(block: NeProseBlock): VNodeChild {
       )
     }
     case 'blockquote': {
-      return h('blockquote', block.children.map(renderBlock))
+      return h(
+        'blockquote',
+        block.children.map((child) => renderBlock(child, state)),
+      )
     }
     case 'rule': {
       return h('hr')
     }
     case 'table': {
+      state.ordinal += 1
+      const index = state.tables
+      state.tables += 1
+      if (slots.table) {
+        return slots.table({ block, index, heading: state.heading, ordinal: state.ordinal })
+      }
       return h('div', { class: 'ne-prose__table' }, [
         h('table', [
           h(
@@ -120,8 +179,10 @@ function renderBlock(block: NeProseBlock): VNodeChild {
   }
 }
 
-const ProseBlocks: FunctionalComponent<{ blocks: readonly NeProseBlock[] }> = (nodeProps) =>
-  nodeProps.blocks.map(renderBlock)
+const ProseBlocks: FunctionalComponent<{ blocks: readonly NeProseBlock[] }> = (nodeProps) => {
+  const state: RenderState = { heading: null, ordinal: 0, tables: 0 }
+  return nodeProps.blocks.map((block) => renderBlock(block, state))
+}
 ProseBlocks.props = ['blocks']
 </script>
 
@@ -134,7 +195,7 @@ ProseBlocks.props = ['blocks']
  * Token reads only (README § Styling contract): type sizes, leading and
  * tracking from the `--ne-text-*` scale, ink and lines from `--ne-*`. Spacing
  * is plain em/rem, as there is no NE space scale. The type hierarchy here is
- * the document's own — h2 at the section-heading size, h3 at body size — and
+ * the document's own — h2 at the section-heading size, h3 at body size, h4 at small size — and
  * sits under the page header's h1.
  */
 .ne-prose {
@@ -173,6 +234,15 @@ ProseBlocks.props = ['blocks']
   font-weight: 600;
   line-height: var(--ne-leading-tight);
   color: var(--ne-ink);
+  scroll-margin-top: calc(var(--ne-header-height) + 1rem);
+}
+
+.ne-prose :deep(h4) {
+  margin: 1.25em 0 0.5em;
+  font-size: var(--ne-text-small);
+  font-weight: 600;
+  line-height: var(--ne-leading-tight);
+  color: var(--ne-ink-secondary);
   scroll-margin-top: calc(var(--ne-header-height) + 1rem);
 }
 
