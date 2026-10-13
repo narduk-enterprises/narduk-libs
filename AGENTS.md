@@ -117,8 +117,9 @@ baseline 190 drained, and the count admitted since the freeze.
 - **When to run the full preflight before pushing** (Logan, 2026-09-25, for this
   repo only): this repo is public, its CI runs on GitHub-hosted runners, and the
   ruleset makes CI a merge gate, so a local preflight re-runs checks CI will run
-  anyway. Before every push, run the affected packages'
-  `pnpm --filter <package> run quality`, plus
+  anyway. Before every push, run `pnpm run release-plan:check` when the diff adds a changeset
+  (seconds; it names a generator-pinned package's missing `create-narduk-app` changeset), and
+  the affected packages' `pnpm --filter <package> run quality`, plus
   `pnpm --filter <package> run build` for a package that commits its `dist/`
   (`narduk-mapkit`, `narduk-realtime`): `quality` does not build, and CI fails a
   stale committed `dist/` on its dist-clean check. Run the full
