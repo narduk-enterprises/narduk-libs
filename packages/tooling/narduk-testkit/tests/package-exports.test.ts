@@ -76,6 +76,12 @@ describe('narduk-testkit runner boundaries', () => {
     expect(source).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
     expect(quarantine).not.toMatch(/from ['"]@playwright\/test['"]/)
     expect(quarantine).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    // The local E2E budget is called from the top of a config, before the runner exists.
+    const budget = readFileSync(join(packageRoot, 'src/playwright/e2e-budget.ts'), 'utf8')
+    expect(source).toContain("from './e2e-budget.js'")
+    expect(budget).not.toMatch(/from ['"]@playwright\/test['"]/)
+    expect(budget).not.toMatch(/from ['"].*e2e\/fixtures['"]/)
+    expect(budget).not.toMatch(/^\s*await\s/m)
     expect(Object.keys(packageJson.exports)).toContain('./playwright/config')
     const config = packageJson.exports['./playwright/config']
     expect(config.require).toBe('./dist/playwright/config.js')

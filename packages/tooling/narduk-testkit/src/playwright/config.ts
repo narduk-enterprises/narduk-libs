@@ -35,6 +35,43 @@ export {
 } from './quarantine.js'
 
 /*
+ * The local E2E budget: a scope guard for the top of `playwright.config.ts`
+ * and stated time bounds. Pure, no `@playwright/test` import (see the file).
+ */
+export {
+  E2E_ACTION_TIMEOUT_MS,
+  E2E_ALLOW_BROAD_ENV,
+  E2E_EXPECT_TIMEOUT_MS,
+  E2E_GUARDED_CONFIG,
+  E2E_LOCAL_GLOBAL_TIMEOUT_MS,
+  E2E_LOCAL_MAX_FAILURES,
+  E2E_MAX_LOCAL_SPECS,
+  E2E_NAVIGATION_TIMEOUT_MS,
+  E2E_SPEC_DIR,
+  E2E_SWEEP_TAG,
+  E2E_SWEEP_TAG_WINDOW_LINES,
+  E2E_TEST_TIMEOUT_MS,
+  E2E_VALUE_FLAGS,
+  assertLocalE2eScope,
+  e2eBudgetDefaults,
+  e2eBudgetLifted,
+  hasSweepTag,
+  listSpecFiles,
+  listSweepSpecs,
+  localScopeRefusal,
+  localScopeVerdict,
+  selectedSpecs,
+  specFilters,
+} from './e2e-budget.js'
+export type {
+  AssertLocalE2eScopeOptions,
+  E2eBudgetDefaults,
+  E2eBudgetDefaultsOptions,
+  E2eLocalScopeOptions,
+  E2eLocalScopeVerdict,
+} from './e2e-budget.js'
+
+/*
  * Pure helpers from the `narduk-testkit e2e` runner (#997), for apps that keep
  * a custom runner script. `e2e-runner` imports nothing from this file.
  */
