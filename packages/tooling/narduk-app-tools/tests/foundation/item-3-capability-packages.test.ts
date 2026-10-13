@@ -88,6 +88,21 @@ describe('item 3 -- capability packages', () => {
     expect(subCheckStatus(await run(root), '3.2')).toBe('pass')
   })
 
+  it('3.1/3.2 treat customer-authenticated as a login app, not a public site (narduk-libs#1212)', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    writeJson(root, 'Config/cloudflare-app.json', {
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'cloudflare_module' },
+      access: { exposureClass: 'customer-authenticated' },
+      bindings: { r2: [] },
+    })
+    const artefact = await run(root)
+    expect(subCheckStatus(artefact, '3.1')).toBe('not-applicable')
+    expect(subCheckStatus(artefact, '3.2')).toBe('fail')
+  })
+
   it('3.3 fails an R2-writing app missing narduk-uploads, passes with it', async () => {
     const root = makeTempRepo()
     tempDirs.push(root)

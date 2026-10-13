@@ -69,6 +69,14 @@ function scanSourceForPattern(repo: AppRepo, pattern: RegExp): string | null {
   return null
 }
 
+// Every class behind a login boundary; the schema's other class is `public`
+// (narduk-libs#1212: customer-authenticated read as public).
+const AUTHENTICATED_EXPOSURE_CLASSES: ReadonlySet<string> = new Set([
+  'authenticated-public',
+  'customer-authenticated',
+  'private',
+])
+
 function evaluate31And32(
   repo: AppRepo,
   exposureClass: string | null,
@@ -94,7 +102,7 @@ function evaluate31And32(
       ),
     ]
   }
-  const isAuthenticated = exposureClass === 'authenticated-public' || exposureClass === 'private'
+  const isAuthenticated = AUTHENTICATED_EXPOSURE_CLASSES.has(exposureClass)
   const publicCheck: FoundationSubCheck = isAuthenticated
     ? check(
         '3.1',
