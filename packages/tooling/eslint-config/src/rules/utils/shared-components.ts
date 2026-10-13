@@ -39,6 +39,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeCommandPaletteTrigger',
       'NeConfirmDialog',
       'NeCsvDownload',
+      'NeCursorPager',
       'NeCta',
       'NeDataAttribution',
       'NeDataTable',
