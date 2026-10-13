@@ -419,4 +419,25 @@ describe('NardukBarChart missing values (narduk-libs#1544)', () => {
     expect(geometry(rects[4]!.element).height).toBeGreaterThan(0)
     expect(geometry(rects[5]!.element).height).toBe(0)
   })
+
+  it('a11y: the plot svg is never role=img while bars are focusable (axe nested-interactive)', () => {
+    const w = mount(NardukBarChart, {
+      props: {
+        series: [{ name: 'A', data: [4, 6] }],
+        labels: ['x', 'y'],
+        chartTitle: 'Totals',
+        width: 400,
+        height: 160,
+        animate: false,
+      },
+    })
+    const svg = w.find('svg')
+    // An img role hides its children from assistive tech; group keeps the bars reachable.
+    expect(svg.attributes('role')).toBe('group')
+    expect(svg.attributes('aria-labelledby')).toBeTruthy()
+    expect(w.findAll('[role="button"][tabindex]').length).toBeGreaterThan(0)
+    for (const img of w.findAll('[role="img"]')) {
+      expect(img.find('[tabindex], [role="button"]').exists()).toBe(false)
+    }
+  })
 })
