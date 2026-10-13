@@ -128,7 +128,16 @@ describe('e2e-serve refusal paths', () => {
 describe('e2e-serve real worker start', () => {
   it('serves a request from a tiny fixture worker and shuts down by PID', async () => {
     const root = tempDir('narduk-e2e-serve-real-')
-    writeFixtureWorker(root)
+    writeFixtureWorker(root, {
+      config: {
+        routes: [{ pattern: 'canonical.example', custom_domain: true }],
+        vars: { CANONICAL_REDIRECT_HOSTS: 'www.canonical.example' },
+      },
+      source: `export default { fetch(request) {
+        if (new URL(request.url).hostname !== '127.0.0.1') return new Response('wrong local host', { status: 503 });
+        return new Response('e2e-serve-fixture-ok');
+      } }`,
+    })
     linkWorkspaceWrangler(root)
     const port = await allocatePort()
     const child = spawn(process.execPath, [ensureBuiltBin(), 'e2e-serve', String(port)], {

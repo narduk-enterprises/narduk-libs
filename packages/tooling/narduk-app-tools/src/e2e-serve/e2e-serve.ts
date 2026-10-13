@@ -202,7 +202,6 @@ function resolveStartConfig(
 ): string | E2eWranglerConfig {
   if (options.keepServiceBindings) {
     note('keeping every service binding (--keep-service-bindings)')
-    return options.config
   }
   if (!wrangler.unstable_readConfig) return options.config
 
@@ -218,16 +217,27 @@ function resolveStartConfig(
     },
     { useRedirectIfAvailable: true, hideWarnings: true },
   )
-  const { config, dropped } = stripExternalServiceBindings(read)
-  if (dropped.length === 0) return options.config
+  const { config, dropped } = options.keepServiceBindings
+    ? { config: read, dropped: [] }
+    : stripExternalServiceBindings(read)
+  // Wrangler presents a custom-domain route as the request host even locally,
+  // so canonical HTTPS redirects become a loop after Wrangler rewrites them.
+  const hasRoutes =
+    Boolean(config.route) || (Array.isArray(config.routes) && config.routes.length > 0)
+  if (dropped.length === 0 && !hasRoutes) return options.config
 
   for (const entry of dropped) note(describeDroppedServiceBinding(entry))
+  if (hasRoutes) note('dropping production routes from the local E2E server')
   if (!wranglerSupportsInlineConfig(version)) {
     throw new Error(
-      `wrangler ${version ?? '(unknown version)'} cannot start a Worker from an edited config, so e2e-serve cannot drop service binding(s) ${dropped.map((entry) => entry.binding).join(', ')}. Upgrade the app's wrangler to >=${WRANGLER_INLINE_CONFIG_MIN_VERSION}, or pass --keep-service-bindings and run the target Worker alongside.`,
+      `wrangler ${version ?? '(unknown version)'} cannot start a Worker from an edited config, so e2e-serve cannot remove production routes or service binding(s) ${dropped.map((entry) => entry.binding).join(', ')}. Upgrade the app's wrangler to >=${WRANGLER_INLINE_CONFIG_MIN_VERSION}, or pass --keep-service-bindings and run the target Worker alongside.`,
     )
   }
-  return config
+  if (!hasRoutes) return config
+  const localConfig = { ...config }
+  delete localConfig.route
+  delete localConfig.routes
+  return localConfig
 }
 
 /** Only the app's own install. Do not walk out of `root` to a workspace wrangler. */
