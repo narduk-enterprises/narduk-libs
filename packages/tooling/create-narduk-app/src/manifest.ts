@@ -397,7 +397,10 @@ export function createRootPackageManifest(
       'ship:check': 'pnpm run lint && pnpm run typecheck && pnpm run test:unit',
       'ship:build':
         'NARDUK_CLOUDFLARE_BUILD=1 NITRO_PRESET=cloudflare_module pnpm --filter web run cf:build',
-      ship: `nvault run -p ${appName} -e prd -c og-image -- nvault run -p ${appName} -e prd -c session -- nvault run -p cloudflare -e prd -c narduk-enterprises-${appName}-deploy -- pnpm --filter web exec narduk-app ship`,
+      // The deploy credential is the app's standard worker-deploy persona
+      // (agent-infrastructure scripts/mint-standard-persona): config
+      // narduk-enterprises-<app>-worker-deploy, key <APP>_WORKER_DEPLOY_CF_TOKEN.
+      ship: `nvault run -p ${appName} -e prd -c og-image -- nvault run -p ${appName} -e prd -c session -- nvault run -p cloudflare -e prd -c narduk-enterprises-${appName}-worker-deploy -- pnpm --filter web exec narduk-app ship --token-env ${`${appName}-worker-deploy`.toUpperCase().replaceAll(/[^A-Z\d]+/gu, '_')}_CF_TOKEN`,
       test: 'pnpm --filter web run test:unit && pnpm exec playwright test',
       'test:unit': 'pnpm --filter web run test:unit',
       'test:e2e': 'playwright test',
