@@ -87,3 +87,45 @@ describe.each(Object.keys(BREAKPOINTS) as Array<keyof typeof BREAKPOINTS>)(
     })
   },
 )
+
+describe.each(Object.keys(BREAKPOINTS) as Array<keyof typeof BREAKPOINTS>)(
+  'NeCollectionTable compact card density, below %s (narduk-libs#1777)',
+  (breakpoint) => {
+    const scope = below(breakpoint)
+    const compact = `[data-ne-collection-table][data-ne-stack-below='${breakpoint}'][data-ne-phone-layout='cards'][data-ne-card-density='compact']`
+
+    it('runs the row on as wrapped lines, headed by the full-width primary cell', () => {
+      const row = rule(scope, `${compact} .ne-row {`)
+      expect(row).toContain('flex-direction: row')
+      expect(row).toContain('flex-wrap: wrap')
+      expect(row).toContain('align-items: baseline')
+      expect(rule(scope, `${compact} .ne-cell--pri {`)).toContain('flex: 1 1 100%')
+    })
+
+    it('sizes each other cell to its content, with no divider and no padding', () => {
+      const cell = rule(scope, `${compact} .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri) {`)
+      expect(cell).toContain('flex: 0 1 auto')
+      expect(cell).toContain('padding: 0')
+      expect(cell).toContain('border-width: 0')
+      expect(cell).toContain('max-width: 100%')
+    })
+
+    it('sizes the label to its text and the value to its content', () => {
+      expect(
+        rule(scope, `${compact} .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {`),
+      ).toContain('flex: 0 0 auto')
+      expect(
+        rule(
+          scope,
+          `${compact} .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free) > * {`,
+        ),
+      ).toContain('flex: 0 1 auto')
+    })
+  },
+)
+
+it('keys density only on `compact`, so the default card keeps the rules it had', () => {
+  const mentions = css.match(/data-ne-card-density='[^']*'/g) ?? []
+  expect(mentions.length).toBeGreaterThan(0)
+  expect(new Set(mentions)).toEqual(new Set(["data-ne-card-density='compact'"]))
+})

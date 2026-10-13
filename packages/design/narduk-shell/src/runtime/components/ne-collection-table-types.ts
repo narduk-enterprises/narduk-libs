@@ -140,6 +140,12 @@ export interface NeCollectionTableProps<TRow = Record<string, unknown>> {
   stackBelow?: NeCollectionStackBreakpoint
   /** The phone layout: rows reflow into cards, or the table keeps its columns (minus `phone: false`). */
   phoneLayout?: 'cards' | 'columns'
+  /**
+   * How tall a phone card is, for `phoneLayout: 'cards'`. `comfortable` (default) draws one labelled line per
+   * cell. `compact` keeps every column: the primary cell heads the card and the rest run on as wrapped
+   * label-value pairs, with no divider between them.
+   */
+  cardDensity?: 'comfortable' | 'compact'
 }
 
 export interface NeCollectionCellSlotProps<TRow = Record<string, unknown>> {

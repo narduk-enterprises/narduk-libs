@@ -56,6 +56,15 @@
  * else the table's, else the `missing` slot, else an em dash with "No value"
  * for a screen reader. No app is forced into the dash.
  *
+ * ## Compact cards
+ *
+ * `cardDensity="compact"` (default `comfortable`, one labelled line per cell)
+ * keeps every column but spends fewer lines on it (narduk-libs#1777): the
+ * primary cell heads the card across its full width and the other cells run
+ * on beneath it as wrapped label-value pairs, with no divider between them. It
+ * is CSS keyed on the root's `data-ne-card-density`, so the markup and the
+ * server render do not change; it applies to `phoneLayout="cards"` only.
+ *
  * Tokens only, as the README's styling contract requires.
  */
 import UButton from '@nuxt/ui/components/Button.vue'
@@ -86,6 +95,7 @@ import type {
 } from './ne-collection-table-types'
 
 const props = withDefaults(defineProps<NeCollectionTableProps<T>>(), {
+  cardDensity: 'comfortable',
   defaultFilter: undefined,
   empty: 'No rows',
   filters: undefined,
@@ -538,6 +548,7 @@ const filterModel = computed({
 <template>
   <div
     data-ne-collection-table
+    :data-ne-card-density="cardDensity"
     :data-ne-phone-layout="phoneLayout"
     :data-ne-sorted-across="sortedAcross ? '' : undefined"
     :data-ne-stack-below="stackBelow"
@@ -1033,6 +1044,39 @@ const filterModel = computed({
       .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
       display: none;
     }
+
+    /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.875rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+      flex: 1 1 100%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri) {
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      flex: 0 0 auto;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='sm'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      flex: 0 1 auto;
+    }
   }
 
   /* ---- below md (48rem) ---- */
@@ -1134,6 +1178,39 @@ const filterModel = computed({
       .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
       display: none;
     }
+
+    /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.875rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+      flex: 1 1 100%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri) {
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      flex: 0 0 auto;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='md'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      flex: 0 1 auto;
+    }
   }
 
   /* ---- below lg (64rem) ---- */
@@ -1234,6 +1311,39 @@ const filterModel = computed({
     [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards']
       .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):has(> [data-ne-empty]:only-child) {
       display: none;
+    }
+
+    /* compact density: the primary cell heads the card, the rest run on as wrapped label-value pairs */
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-row {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0.875rem;
+      row-gap: 0.125rem;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact'] .ne-cell--pri {
+      flex: 1 1 100%;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri) {
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      padding: 0;
+      border-width: 0;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri)::before {
+      flex: 0 0 auto;
+    }
+
+    [data-ne-collection-table][data-ne-stack-below='lg'][data-ne-phone-layout='cards'][data-ne-card-density='compact']
+      .ne-cell:not(.ne-cell--drop):not(.ne-cell--pri):not(.ne-cell--free)
+      > * {
+      flex: 0 1 auto;
     }
   }
 }

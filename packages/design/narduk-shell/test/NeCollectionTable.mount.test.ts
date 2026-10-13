@@ -463,6 +463,21 @@ describe('NeCollectionTable: phone', () => {
     expect(header(wrapper, 'note').classes()).toContain('ne-head--drop')
   })
 
+  it('draws comfortable cards unless `cardDensity` says compact (narduk-libs#1777)', () => {
+    const root = (props: Record<string, unknown> = {}) =>
+      render({ caption: 'R', columns, rows: repos, ...props }).find('[data-ne-collection-table]')
+    expect(root().attributes('data-ne-card-density')).toBe('comfortable')
+    expect(root({ cardDensity: 'compact' }).attributes('data-ne-card-density')).toBe('compact')
+  })
+
+  it('keeps the same cells in the same order when compact, only the root attribute differs', () => {
+    const cells = (props: Record<string, unknown>) =>
+      render({ caption: 'R', columns, rows: repos, ...props })
+        .findAll('td[data-ne-column]')
+        .map((cell) => `${cell.attributes('data-ne-column')}:${cell.text()}:${cell.classes().join(' ')}`)
+    expect(cells({ cardDensity: 'compact' })).toEqual(cells({}))
+  })
+
   it('clamps a free-text column to its own line', () => {
     const wrapper = render({
       caption: 'R',
