@@ -73,7 +73,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.23.0',
-  '@narduk-enterprises/narduk-testkit': '1.12.1',
+  '@narduk-enterprises/narduk-testkit': '1.13.0',
   '@narduk-enterprises/narduk-uploads': '1.21.5',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
