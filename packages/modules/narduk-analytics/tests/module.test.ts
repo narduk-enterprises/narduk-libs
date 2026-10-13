@@ -136,6 +136,35 @@ describe('narduk-analytics module', () => {
     expect(installModule).toHaveBeenCalledWith(CORE)
   })
 
+  it.each([true, false])(
+    'preserves Nuxt and Nitro type registration and references with app=%s',
+    async (app) => {
+      mockNuxtKit(() => true)
+      const mod = (await import('../src/module')).default as unknown as {
+        setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+      }
+      const nuxt = makeNuxt()
+      await mod.setup({ app, server: true }, nuxt)
+
+      for (const name of ['prepare:types', 'nitro:prepare:types']) {
+        const callback = nuxt.hook.mock.calls.find(([event]) => event === name)?.[1]
+        expect(callback, `${name} must remain registered`).toBeTypeOf('function')
+        const prepared = {
+          references: [{ path: '/consumer/existing.d.ts' }],
+          tsConfig: { include: ['/consumer/existing.d.ts'] },
+        }
+        callback(prepared)
+        callback(prepared)
+        const paths = prepared.references.map(({ path }) => path)
+        expect(paths).toContain('/consumer/existing.d.ts')
+        expect(paths.some((path) => path.endsWith('/app/types/runtime-config.d.ts'))).toBe(true)
+        expect(paths.some((path) => path.endsWith('/app/types/posthog.d.ts'))).toBe(app)
+        expect(paths).toHaveLength(app ? 3 : 2)
+        expect(prepared.tsConfig.include).toEqual(paths)
+      }
+    },
+  )
+
   it('does not double-install narduk-core when the app already lists it', async () => {
     const { hasNuxtModule, installModule } = mockNuxtKit((name) => name === CORE)
 
