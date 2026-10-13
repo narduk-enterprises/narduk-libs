@@ -896,7 +896,7 @@ function horizontalBarRoundedPath(bar: BarRect): string {
         ref="svgRef"
         :width="chartWidth"
         :height="chartHeight"
-        role="img"
+        role="group"
         :aria-labelledby="chartDescription?.trim() ? `${svgTitleId} ${svgDescId}` : svgTitleId"
         @mousemove="onMouseMove"
         @mouseleave="onMouseLeave"
