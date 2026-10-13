@@ -1,5 +1,20 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.24.0
+
+### Minor Changes
+
+- e8d821a: Add server-controlled collection tables and shared cursor collection
+  navigation, preserving bounded rows, cancelation, scope reset and unknown
+  totals.
+
+### Patch Changes
+
+- e42e0ba: Recognize NeCursorPager as a shared component and run its ownership
+  drift check when a shared registry changes.
+
+  Keep cursor fetches retryable when a caller throws before returning a promise.
+
 ## 0.23.0
 
 ### Minor Changes

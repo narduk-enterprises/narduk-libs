@@ -1,5 +1,26 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.73
+
+### Patch Changes
+
+- e42e0ba: Recognize NeCursorPager as a shared component and run its ownership
+  drift check when a shared registry changes.
+
+  Keep cursor fetches retryable when a caller throws before returning a promise.
+
+- e8d821a: Add server-controlled collection tables and shared cursor collection
+  navigation, preserving bounded rows, cancelation, scope reset and unknown
+  totals.
+- a4744c3: The image route can serve an app's own bucket and key prefixes:
+  `images.binding`, `images.prefixes` (each with its own `Cache-Control` and
+  opt-in `typeFromExtension`), and `uploadRoute: false` to leave
+  `POST /api/upload` out. `HEAD /images/**` is answered from metadata and a
+  matching `If-None-Match` gets a 304. With no options set, behaviour is
+  unchanged: `uploads/` from `BUCKET` with a one-year immutable cache. The
+  content-type allow-list still applies to every response, so SVG stays refused
+  (narduk-libs#1828).
+
 ## 0.21.72
 
 ### Patch Changes

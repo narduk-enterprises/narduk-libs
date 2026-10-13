@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 2.28.0
+
+### Minor Changes
+
+- e8d821a: Add server-controlled collection tables and shared cursor collection
+  navigation, preserving bounded rows, cancelation, scope reset and unknown
+  totals.
+
 ## 2.27.0
 
 ### Minor Changes
