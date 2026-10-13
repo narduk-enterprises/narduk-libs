@@ -286,6 +286,10 @@ narduk-app manifests validate [--checkout <dir>] [--wrangler <path>]... [--json 
   `durableObjects`) are compared as sorted sets on both sides, and only the
   kinds the manifest declares. Queues read as `<binding>:producer` and
   `<queue>:consumer`, the generator seed's shape.
+- **R2 bucket roles.** A `bindings.r2[].role`, when present, must be one of the
+  vocabulary under [R2 bucket roles](#r2-bucket-roles-bindingsr2role); an
+  unknown word is a finding in `Config/cloudflare-app.json`
+  (`bindings.r2[<n>].role`), so a typo cannot quietly turn off foundation 3.3.
 - **`account_id`.** When the manifest declares `deployment.accountId`, every
   compared config must declare the same `account_id`; without it
   `deploy versions-promote` falls back to wrangler's unpaged listing.
@@ -1421,6 +1425,47 @@ Sub-check 3.4 remains explicitly `not-applicable` to preserve artifact IDs;
 product names do not require `narduk-ui` or `status-runtime`. Existing
 status-runtime consumers remain supported. All actual capability checks and
 exact-pin requirements continue to apply.
+
+### R2 bucket roles (`bindings.r2[].role`)
+
+Sub-check 3.3 ("writes R2: narduk-uploads") exists for buckets that take user
+uploads, which is what `narduk-uploads` provides (`POST /api/upload`,
+`GET /images/**`, binding `BUCKET`). A bucket that is not an upload store says
+so in `Config/cloudflare-app.json` (narduk-libs#1285):
+
+```json
+{
+  "bindings": {
+    "r2": [
+      {
+        "binding": "TIMELINES",
+        "bucketName": "music-timelines",
+        "role": "app-data"
+      }
+    ]
+  }
+}
+```
+
+| `role`             | Meaning                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `uploads`          | User-uploaded objects through narduk-uploads. The default when `role` is absent.       |
+| `read-only-assets` | Objects filled outside the app and only read by it. 3.3 fails if server code writes.   |
+| `archive`          | A cold or historical store that takes no user uploads.                                 |
+| `app-data`         | Server-written application data that is not user uploads (a bearer-token `PUT` store). |
+
+3.3 fails only when at least one bucket has the role `uploads` (declared or
+defaulted) and `narduk-uploads` is not a dependency; it passes when the package
+is installed; when every declared bucket has another role it is
+`not-applicable`, and the detail names each binding and role. A
+`read-only-assets` bucket also fails 3.3 when a file under `server/` or
+`apps/web/server/` calls `<BINDING>.put(` or `<BINDING>.delete(`, so the role
+cannot hide a writer (a textual scan: it does not follow the binding through an
+alias). An app with no manifest `bindings.r2` entry falls back to its wrangler
+config, which has no role, so any `r2_buckets` entry there counts as `uploads`.
+`narduk-app manifests validate` rejects a role outside this vocabulary, and 3.3
+treats an unrecognised one as `uploads`. The vocabulary is exported as
+`R2_BUCKET_ROLES`.
 
 ### Security headers (`foundation:check:security-headers`)
 

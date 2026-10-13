@@ -27,6 +27,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { AppRepo, findWranglerConfig, isRecord, parseJson } from './foundation/source.js'
 
 import { CLOUDFLARE_APP_MANIFEST } from './database-ownership.js'
+import { R2_BUCKET_ROLES, isR2BucketRole } from './r2-roles.js'
 
 export interface ManifestFinding {
   /** The wrangler config the finding is about (repo-relative), or the manifest. */
@@ -244,6 +245,27 @@ export function manifestBindings(manifest: unknown): Record<BindingKind, string[
   }
 }
 
+/**
+ * `bindings.r2[].role` (narduk-libs#1285) is optional, and when present must be
+ * one of the shared vocabulary (`R2_BUCKET_ROLES`). An unknown word is rejected
+ * so a typo can never silently turn into "not uploads" for foundation item 3.3.
+ */
+export function validateR2BucketRoles(manifest: unknown): ManifestFinding[] {
+  const bindings = isRecord(manifest) && isRecord(manifest.bindings) ? manifest.bindings : null
+  const list = bindings && Array.isArray(bindings.r2) ? (bindings.r2 as unknown[]) : []
+  const findings: ManifestFinding[] = []
+  for (const [index, entry] of list.entries()) {
+    if (!isRecord(entry) || entry.role === undefined || isR2BucketRole(entry.role)) continue
+    const name = typeof entry.binding === 'string' ? ` (${entry.binding})` : ''
+    findings.push({
+      file: CLOUDFLARE_APP_MANIFEST,
+      field: `bindings.r2[${index}].role`,
+      message: `${JSON.stringify(entry.role)}${name} is not a known R2 bucket role; use one of ${R2_BUCKET_ROLES.join(', ')}`,
+    })
+  }
+  return findings
+}
+
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index])
 }
@@ -355,6 +377,8 @@ export function validateCloudflareManifest(
     })
     return result
   }
+
+  result.findings.push(...validateR2BucketRoles(manifest))
 
   const declared =
     isRecord(manifest.worker) && typeof manifest.worker.wranglerConfig === 'string'

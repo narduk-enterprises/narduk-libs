@@ -22,13 +22,13 @@ import { check } from '../schema.js'
 import {
   bindingNames,
   findWranglerConfig,
-  isRecord,
   mergedDeps,
   collectPackages,
   detectNuxt,
   type AppRepo,
   type NuxtPresence,
 } from '../source.js'
+import { isR2BucketRole, manifestR2Buckets, type ManifestR2Bucket } from '../../r2-roles.js'
 import { readCloudflareApp, readCloudflareAppExposureClass } from './item-1-scaffold-parity.js'
 import {
   STATUS_FAIL,
@@ -133,41 +133,98 @@ function evaluate31And32(
   return [publicCheck, loginCheck]
 }
 
+const R2_CHECK_NAME = 'writes R2: narduk-uploads'
+const SERVER_SCAN_DIRS = ['server', 'apps/web/server'] as const
+
+/**
+ * A read-only bucket must not be written (narduk-libs#1285): returns the first
+ * server file that calls `<BINDING>.put(` or `<BINDING>.delete(` on one of the
+ * given binding names, so the role cannot hide a writer.
+ */
+function findR2Writer(
+  repo: AppRepo,
+  bindings: readonly string[],
+): { binding: string; file: string } | null {
+  if (bindings.length === 0) return null
+  const escaped = bindings.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const writeRe = new RegExp(`\\b(${escaped.join('|')})\\s*\\??\\.\\s*(?:put|delete)\\s*\\(`)
+  let scanned = 0
+  for (const dir of SERVER_SCAN_DIRS) {
+    for (const rel of repo.walk(dir, ['.ts', '.mts', '.js', '.mjs'])) {
+      if (scanned >= SOURCE_SCAN_FILE_LIMIT) return null
+      scanned += 1
+      const match = writeRe.exec(repo.read(rel) ?? '')
+      if (match) return { binding: match[1]!, file: rel }
+    }
+  }
+  return null
+}
+
 function evaluate33(repo: AppRepo, merged: Record<string, string>): FoundationSubCheck {
   const hasUploads = '@narduk-enterprises/narduk-uploads' in merged
-  const cfApp = readCloudflareApp(repo)
-  const declaredR2 =
-    isRecord(cfApp?.bindings) && Array.isArray((cfApp!.bindings as Record<string, unknown>).r2)
-      ? ((cfApp!.bindings as Record<string, unknown>).r2 as unknown[])
-      : []
-  let writesR2 = declaredR2.length > 0
+  const buckets = manifestR2Buckets(readCloudflareApp(repo))
+  const label = (bucket: ManifestR2Bucket) => bucket.binding ?? '(unnamed binding)'
   let evidence = 'Config/cloudflare-app.json bindings.r2'
+  // An unrecognised role is rejected by `manifests validate`; here it counts as
+  // an upload bucket, so a typo can never turn 3.3 off.
+  let uploadBuckets = buckets.filter(
+    (bucket) => bucket.role === 'uploads' || !isR2BucketRole(bucket.role),
+  )
+  let writesR2 = buckets.length > 0
   if (!writesR2) {
     const wranglerRel = findWranglerConfig(repo)
     if (wranglerRel) {
       const names = bindingNames(repo, wranglerRel)
       const cfg = repo.read(wranglerRel)
       // r2_buckets is a distinct key from the generic binding-name set; check
-      // the raw config text for the key's presence with at least one entry.
+      // the raw config text for the key's presence with at least one entry. The
+      // wrangler config carries no role, so such a bucket counts as uploads.
       writesR2 = names.size > 0 && !!cfg && /"r2_buckets"\s*:\s*\[\s*\{/.test(cfg)
       evidence = wranglerRel
+      uploadBuckets = writesR2 ? [{ binding: null, role: 'uploads', defaulted: true }] : []
     }
   }
   if (!writesR2) {
     return check(
       '3.3',
-      'writes R2: narduk-uploads',
+      R2_CHECK_NAME,
       STATUS_NA,
       'no r2 binding declared in Config/cloudflare-app.json or the wrangler config',
     )
   }
+  const readOnly = buckets.filter((bucket) => bucket.role === 'read-only-assets' && bucket.binding)
+  const writer = findR2Writer(
+    repo,
+    readOnly.map((bucket) => bucket.binding!),
+  )
+  if (writer) {
+    return check(
+      '3.3',
+      R2_CHECK_NAME,
+      STATUS_FAIL,
+      `R2 binding ${writer.binding} is declared role "read-only-assets" but ${writer.file} calls .put( or .delete( on it`,
+      writer.file,
+    )
+  }
+  if (uploadBuckets.length === 0) {
+    return check(
+      '3.3',
+      R2_CHECK_NAME,
+      STATUS_NA,
+      `every declared R2 bucket has a role other than "uploads" (${buckets.map((bucket) => `${label(bucket)}: ${bucket.role}`).join(', ')}); narduk-uploads serves user uploads only`,
+      evidence,
+    )
+  }
+  const named = uploadBuckets.filter((bucket) => bucket.binding !== null).map(label)
+  const which =
+    named.length > 0 ? ` (${named.join(', ')}: role "uploads", declared or defaulted)` : ''
   return check(
     '3.3',
-    'writes R2: narduk-uploads',
+    R2_CHECK_NAME,
     hasUploads ? STATUS_PASS : STATUS_FAIL,
     hasUploads
       ? 'narduk-uploads is a dependency and an R2 binding is declared'
-      : 'an R2 binding is declared but narduk-uploads is not a dependency',
+      : `an R2 binding is declared${which} but narduk-uploads is not a dependency; give a bucket that is not user uploads a role in Config/cloudflare-app.json bindings.r2[].role (read-only-assets, archive or app-data)`,
     evidence,
   )
 }
@@ -241,7 +298,7 @@ function nonNuxtCapabilityChecks(nuxt: NuxtPresence): FoundationSubCheck[] {
       reason('narduk-seo and narduk-analytics', true),
     ),
     check('3.2', 'has a login: narduk-auth', STATUS_NA, reason('narduk-auth', false)),
-    check('3.3', 'writes R2: narduk-uploads', STATUS_NA, reason('narduk-uploads', false)),
+    check('3.3', R2_CHECK_NAME, STATUS_NA, reason('narduk-uploads', false)),
   ]
 }
 
