@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /*
  * NE Base design card for NeSortHeader (narduk-libs#528): the header cell's
- * states from the buoys round-2 board — at rest, sorted strongest first,
+ * states from the buoys round-2 board — at rest (a muted up-down glyph says the
+ * column sorts), sorted strongest first,
  * flipped — each in a real `<th>` so the arrow sits where a table puts it.
  * Hover and keyboard focus are the button's own states and are not faked.
  */
 import NeSortHeader from '../runtime/components/NeSortHeader.vue'
 
 const rows = [
-  { note: 'At rest: no aria-sort', sort: null },
+  { note: 'At rest: muted up-down glyph, no aria-sort', sort: null },
   { note: 'Sorted, strongest first: aria-sort="descending"', sort: 'wind:desc' },
   { note: 'Flipped: aria-sort="ascending"', sort: 'wind:asc' },
 ] as const
@@ -24,7 +25,7 @@ const rows = [
     <h2>Sort header</h2>
     <p>
       First click picks the useful way (readings strongest first, names A–Z); the second flips it.
-      The arrow, <code>aria-sort</code> and the column tint say which column sorts.
+      The idle up-down glyph, the arrow, <code>aria-sort</code> and the column tint say which column sorts.
     </p>
     <div v-for="row in rows" :key="row.note" class="preview-row">
       <table>

@@ -11,6 +11,9 @@
  * - **Server mode.** `sortKey` + `sort` (wire form, `'wind:desc'`) emit
  *   `update:sort`, which is what `useCollection().setSort` takes. The header
  *   never reorders rows; the server does.
+ * - **An idle glyph at rest.** An unsorted column draws a muted up-down arrow
+ *   (`data-ne-sort="idle"` on the button) so a reader can tell the header sorts;
+ *   a sorted one draws the single arrow for its direction.
  * - **`aria-sort` on the `<th>`.** The attribute belongs to the column header
  *   cell, not to the button inside it, and `UTable` gives a header slot no way
  *   to set attributes on its `<th>`. So the header writes it onto its closest
@@ -47,7 +50,7 @@ const direction = computed<false | NeSortDirection>(() => {
 const icon = computed(() => {
   if (direction.value === 'asc') return 'i-lucide-arrow-up'
   if (direction.value === 'desc') return 'i-lucide-arrow-down'
-  return
+  return 'i-lucide-arrow-up-down'
 })
 
 const ariaSort = computed(() => {
@@ -99,6 +102,7 @@ onBeforeUnmount(() => cell()?.removeAttribute('aria-sort'))
       size="xs"
       class="-mx-2 gap-1 font-medium"
       :class="direction ? 'text-highlighted' : 'text-muted'"
+      :data-ne-sort="direction ? 'active' : 'idle'"
       :trailing-icon="icon"
       @click="toggle"
     >
@@ -107,3 +111,16 @@ onBeforeUnmount(() => cell()?.removeAttribute('aria-sort'))
     </UButton>
   </span>
 </template>
+
+<style>
+/*
+ * The idle up-down glyph reads as a hint, not a state (narduk-libs, operator-portal#2227): muted
+ * to .45 so the sorted column's single arrow is the one thing at full strength. In
+ * `@layer components`, below Tailwind's utilities, so an app's own utility still wins.
+ */
+@layer components {
+  [data-ne-sort='idle'] > [data-slot='trailingIcon'] {
+    opacity: 0.45;
+  }
+}
+</style>

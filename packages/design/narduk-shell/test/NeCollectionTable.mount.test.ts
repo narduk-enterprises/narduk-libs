@@ -125,7 +125,10 @@ describe('NeCollectionTable: sort', () => {
       rows: repos,
     })
     expect(header(wrapper, 'missing').find('button').exists()).toBe(false)
+    expect(header(wrapper, 'missing').find('[data-slot="trailingIcon"]').exists()).toBe(false)
     expect(header(wrapper, 'name').find('button').exists()).toBe(true)
+    expect(header(wrapper, 'name').find('button').attributes('data-ne-sort')).toBe('idle')
+    expect(header(wrapper, 'name').find('button [data-slot="trailingIcon"]').exists()).toBe(true)
     const off = render({ caption: 'Repositories', columns, rows: repos, sortable: false })
     expect(off.findAll('thead button')).toHaveLength(0)
   })
@@ -588,6 +591,7 @@ describe('NeCollectionTable: phone', () => {
     const wrapper = render({ caption: 'R', columns, rows: repos, sort: 'issues:desc' })
     await flushPromises()
     expect(wrapper.findAll('thead button')).toHaveLength(0)
+    expect(wrapper.findAll('thead [data-slot="trailingIcon"]')).toHaveLength(0)
     expect(header(wrapper, 'issues').text()).toBe('Issues')
     expect(header(wrapper, 'issues').attributes('aria-sort')).toBe('descending')
   })
