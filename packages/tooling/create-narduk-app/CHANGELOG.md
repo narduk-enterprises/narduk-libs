@@ -1,5 +1,14 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.21.62
+
+### Patch Changes
+
+- 940ca29: `NardukBarChart`: give the plot `<svg>` `role="group"` instead of
+  `role="img"`. The bars are `role="button"` with a roving `tabindex`, so the
+  `img` role hid focusable children and axe reported serious
+  `nested-interactive` (narduk-libs#1781). `aria-labelledby` is unchanged.
+
 ## 0.21.61
 
 ### Patch Changes

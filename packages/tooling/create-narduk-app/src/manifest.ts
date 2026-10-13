@@ -47,7 +47,7 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-ai': '0.4.28',
   '@narduk-enterprises/narduk-analytics': '1.30.1',
   '@narduk-enterprises/narduk-auth': '1.34.10',
-  '@narduk-enterprises/narduk-charts': '2.11.2',
+  '@narduk-enterprises/narduk-charts': '2.11.3',
   '@narduk-enterprises/narduk-core': '2.25.1',
   '@narduk-enterprises/narduk-logging': '0.4.5',
   '@narduk-enterprises/narduk-maps': '0.2.0',
