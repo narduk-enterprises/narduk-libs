@@ -64,7 +64,13 @@ import {
   type PublicResolve,
   type VerifyResolverMode,
 } from './live-dns.js'
-import type { LiveProbe, LiveResponse } from './live-probe.js'
+import {
+  createChallengeFallbackProbe,
+  formatEgress,
+  type EgressRoute,
+  type EgressSummary,
+} from './egress-fallback.js'
+import type { FetchTransport, LiveProbe, LiveResponse } from './live-probe.js'
 
 /** Distinct per failure class, so a promote job can branch without parsing text. */
 export const VERIFY_EXIT = {
@@ -130,6 +136,14 @@ export interface VerifyReport {
   attemptsAllowed: number
   /** Present only when the probes went through `--resolver public`. */
   resolver?: 'public'
+  /**
+   * The route the final attempt's requests took. `residential` means at least
+   * one request, answered `403` + `cf-mitigated: challenge` on the direct route,
+   * was retried once through `NARDUK_APP_EGRESS_PROXY` and answered there.
+   */
+  egress?: EgressRoute
+  /** Present when Cloudflare challenged a direct request in the final attempt. */
+  egressDetail?: EgressSummary
   assertions: VerifyAssertion[]
   result: 'PASS' | 'FAIL'
   exitCode: number
@@ -804,6 +818,11 @@ export interface VerifyContext {
    * `--resolver public`; `node:dns` pinned to 1.1.1.1 / 8.8.8.8 by default.
    */
   resolvePublic?: PublicResolve
+  /**
+   * Injected in tests: the transport used for the challenge fallback's retry in
+   * place of a real CONNECT tunnel to `NARDUK_APP_EGRESS_PROXY`.
+   */
+  egressProxyFetch?: FetchTransport
 }
 
 /** The query parameter name the cache buster uses. */
@@ -929,12 +948,22 @@ export async function runVerifyLive(
     exitCode: VERIFY_EXIT.unreachable,
     resolvePublic: context.resolvePublic,
   })
+  // The challenge fallback sits under the DNS diagnoser, so a name that does not
+  // resolve is diagnosed as before and never retried. The retry's budget is
+  // whatever is left of the overall deadline.
+  const fallback = createChallengeFallbackProbe({
+    env: context.env,
+    proxyFetch: context.egressProxyFetch,
+    remainingMs: () => deadline - now(),
+  })
   const rawProbe = dns.wrap(
-    context.probe ??
-      createResolverProbe(resolverMode, {
-        timeoutMs: flags.timeoutMs,
-        resolvePublic: context.resolvePublic,
-      }),
+    fallback.wrap(
+      context.probe ??
+        createResolverProbe(resolverMode, {
+          timeoutMs: flags.timeoutMs,
+          resolvePublic: context.resolvePublic,
+        }),
+    ),
   )
   const probe: LiveProbe = async (url, options = {}) => {
     const remaining = Math.floor(deadline - now())
@@ -956,6 +985,7 @@ export async function runVerifyLive(
       `${Date.now().toString(36)}-${String(n)}-${Math.random().toString(36).slice(2, 8)}`)
   while (attempt < flags.attempts) {
     attempt += 1
+    fallback.reset()
     assertions = dns.annotate(await runOnce(flags, probe, token(attempt), accessHeaders))
     context.onAttempt?.({ attempt, assertions })
     exitCode = resolveExitCode(assertions)
@@ -967,6 +997,7 @@ export async function runVerifyLive(
       if (now() >= deadline) break
     }
   }
+  const egress = fallback.summary()
   return {
     schemaVersion: 1,
     tool: '@narduk-enterprises/narduk-app-tools/verify-live',
@@ -977,6 +1008,8 @@ export async function runVerifyLive(
     attemptsUsed: attempt,
     attemptsAllowed: flags.attempts,
     ...(resolverMode === 'public' ? { resolver: 'public' as const } : {}),
+    egress: egress.route,
+    ...(egress.challenged > 0 ? { egressDetail: egress } : {}),
     assertions,
     result: exitCode === VERIFY_EXIT.pass ? 'PASS' : 'FAIL',
     exitCode,
@@ -992,6 +1025,9 @@ export function formatVerifyReport(report: VerifyReport): string {
   if (report.resolver === 'public') {
     lines.push(`  resolver   public (${PUBLIC_RESOLVERS.join(', ')}), SNI and Host kept`)
   }
+  lines.push(
+    `  egress     ${report.egressDetail ? formatEgress(report.egressDetail) : (report.egress ?? 'direct')}`,
+  )
   lines.push('')
   for (const assertion of report.assertions) {
     const mark =

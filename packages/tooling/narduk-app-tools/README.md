@@ -854,6 +854,35 @@ any request, naming the variable and not its value. Neither value appears in the
 report or the JSON. This proves the right build is live to a holder of the
 token; that anonymous visitors are still refused is a separate proof.
 
+#### A Cloudflare challenge on the runner's address (`NARDUK_APP_EGRESS_PROXY`)
+
+A deploy runner's datacentre address can be answered `403` with
+`cf-mitigated: challenge` by Bot Fight Mode on a client's Free-plan zone, while
+the same URLs answer 200 from a workstation (harmony-hot-sauce#148). Set
+`NARDUK_APP_EGRESS_PROXY=http://host:port`, an HTTP CONNECT proxy whose exit is
+allowed through (the estate's residential egress on fleet CT 630,
+`http://10.70.0.63:1056`), and the proof retries **only that request, once**,
+through the proxy:
+
+- the trigger is exactly `403` plus `cf-mitigated: challenge`. A 403 without the
+  header, a 5xx, a timeout or a DNS failure stays direct and is never retried;
+- it fails closed. With no proxy, a value that is not a plain `http://host:port`
+  URL, a refused CONNECT, a timeout or a transport error, the direct `403` is
+  the answer and the proof fails as it always did. The reason is in the report;
+  the proxy URL, which may carry credentials, is never printed;
+- the retry shares the proof's overall deadline and gets only what is left of
+  it;
+- the report records the route: `"egress": "direct" | "residential"` in the JSON
+  and an `egress` line in the text (`residential` when any request of the final
+  attempt was answered through the proxy), plus `egressDetail` with the counts
+  and the fallback error whenever a request was challenged.
+
+Set the variable on the proof step only, so pnpm, wrangler and D1 traffic never
+use it. For an app's own post-deploy script that fetches the same host, import
+`createChallengeFallbackFetch` from
+`@narduk-enterprises/narduk-app-tools/egress` and use its `.fetch` for that host
+only; calls to other hosts stay on plain `fetch`.
+
 #### A stale local DNS answer (`--resolver public`)
 
 After a DNS change, a workstation's resolver can keep a negative (NXDOMAIN)

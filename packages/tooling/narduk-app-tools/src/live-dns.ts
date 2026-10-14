@@ -139,7 +139,7 @@ export function publicLookup(resolve: PublicResolve): LookupFunction {
 }
 
 /** `URL.hostname` keeps an IPv6 literal's brackets; sockets and `isIP` want it bare. */
-function bareHostname(url: URL): string {
+export function bareHostname(url: URL): string {
   return url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname
 }
 
@@ -147,15 +147,27 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
 const MAX_REDIRECTS = 20
 
+/** The request headers of a fetch `init`, as the plain object `node:http` takes. */
+export function plainHeaders(init: RequestInit): Record<string, string> {
+  const headers: Record<string, string> = {}
+  new Headers(init.headers).forEach((value, name) => {
+    headers[name] = value
+  })
+  return headers
+}
+
+/** One request, no redirects: the part of a node-http fetch that differs per transport. */
+export type SendOnce = (
+  url: URL,
+  init: RequestInit,
+) => Promise<{ message: IncomingMessage; body: Buffer }>
+
 function send(
   url: URL,
   init: RequestInit,
   lookup: LookupFunction,
 ): Promise<{ message: IncomingMessage; body: Buffer }> {
-  const headers: Record<string, string> = {}
-  new Headers(init.headers).forEach((value, name) => {
-    headers[name] = value
-  })
+  const headers = plainHeaders(init)
   const hostname = bareHostname(url)
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest
   return new Promise((resolve, reject) => {
@@ -193,12 +205,20 @@ function send(
  * transport error on `cause` -- so the probe reports it identically.
  */
 export function createPinnedFetch(lookup: LookupFunction): FetchTransport {
+  return createNodeFetch((url, init) => send(url, init, lookup))
+}
+
+/**
+ * A fetch over `node:http(s)`: `sendOnce` makes one request, this follows
+ * redirects like fetch and reports a transport failure the way fetch does.
+ */
+export function createNodeFetch(sendOnce: SendOnce): FetchTransport {
   return async (input, init = {}) => {
     let url = new URL(input)
     let redirected = false
     try {
       for (let hop = 0; ; hop += 1) {
-        const { message, body } = await send(url, init, lookup)
+        const { message, body } = await sendOnce(url, init)
         const status = message.statusCode ?? 0
         const location = message.headers.location
         if (init.redirect !== 'manual' && REDIRECT_STATUSES.has(status) && location) {
