@@ -670,6 +670,7 @@ function repoWith(options: {
   deployment?: Record<string, unknown>
   worker?: Record<string, unknown>
   wrangler?: Record<string, unknown>
+  environments?: Array<Record<string, unknown>>
   extraFiles?: Record<string, string>
 }): string {
   const root = makeTempRepo()
@@ -680,6 +681,7 @@ function repoWith(options: {
     schemaVersion: 1,
     product: { name: 'Fixture', repository: 'narduk-enterprises/fixture' },
     ...(options.worker ? { worker: options.worker } : {}),
+    ...(options.environments ? { environments: options.environments } : {}),
     deployment: options.deployment ?? block(),
   })
   for (const [rel, text] of Object.entries(options.extraFiles ?? {})) writeFile(root, rel, text)
@@ -887,6 +889,170 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
         preview_urls: false,
         env: { production: { workers_dev: true, preview_urls: false } },
       },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('lists, and does not compare, an env scope a non-production environment deploys from', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { nonprod: { workers_dev: true, preview_urls: true } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('pass')
+    expect(detailOf(root, '12.6')).toContain('not compared, non-production environment scope')
+    expect(detailOf(root, '12.6')).toContain('workers_dev=true at env.nonprod.')
+  })
+
+  it('still fails on an env scope no environment row accounts for', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [{ name: 'production', hostname: 'fixture.example', workerEnv: null }],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { nonprod: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('workers_dev=true at env.nonprod.')
+  })
+
+  it('still compares the env scope production deploys from, even if another row names it', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: 'live' },
+        { name: 'staging', hostname: null, workerEnv: 'live' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { live: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('still fails when only a non-production scope sets the flag and production inherits the default', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        preview_urls: false,
+        env: { nonprod: { workers_dev: false, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('never sets workers_dev')
+  })
+
+  it('fails a silent top level even when the production row names an env that sets the flags', () => {
+    // Production uploads the top level (12.1 forbids --env), so env.live does not cover it.
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: 'live' },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        env: {
+          live: { workers_dev: false, preview_urls: false },
+          nonprod: { workers_dev: true },
+        },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('never sets workers_dev at the top level')
+  })
+
+  it('compares a non-production scope that deploys to the production Worker name', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { nonprod: { name: 'fixture', workers_dev: true, preview_urls: true } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('does not count a dotted env key as the top level', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      wrangler: { name: 'fixture', env: { 'a.b': { workers_dev: false, preview_urls: false } } },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('skips nothing when no environment row is production', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [{ name: 'staging', hostname: null, workerEnv: 'production' }],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { production: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('treats a differently-cased Production row as production', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'Production', hostname: 'fixture.example', workerEnv: 'production' },
+        { name: 'staging', hostname: null, workerEnv: 'production' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { production: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('never skips a TOML env scope', () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeJson(root, 'package.json', { name: 'fixture-app' })
+    writeFile(
+      root,
+      'wrangler.toml',
+      'name = "fixture"\nworkers_dev = false\npreview_urls = false\n\n[env.nonprod]\nworkers_dev = true\n',
+    )
+    writeJson(root, CLOUDFLARE_APP_FILE, {
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      deployment: block(),
     })
     expect(statusOf(root, '12.6')).toBe('fail')
   })
