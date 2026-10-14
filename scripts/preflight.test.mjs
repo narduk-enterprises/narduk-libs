@@ -265,11 +265,23 @@ test('only the release branch or --release-pr claims the release PR', () => {
   assert.equal(claimsReleasePr({ releasePr: true, branch: '' }), true)
   // CI's rule and the skip it gates stay where preflight mirrors them.
   const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
-  assert.match(ci, /IS_CHANGESET_RELEASE: \$\{\{ github\.head_ref == 'changeset-release\/main'/u)
+  assert.match(ci, /IS_CHANGESET_RELEASE: "?\$\{\{ github\.head_ref == 'changeset-release\/main'/u)
   assert.match(
     ci,
     /if \[ "\$\{IS_CHANGESET_RELEASE\}" != "true" \]; then\n\s+pnpm run release-plan:check/u,
   )
+})
+
+// #1863: the push of the release PR's merge skips the guard too, and only that
+// push: a leftover Changeset is judged by every later PR and by release:version.
+test('the release merge push skips the pending-changeset guard, no other push does', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  assert.match(
+    ci,
+    /\(github\.event_name == 'push' && startsWith\(github\.event\.head_commit\.message, 'chore: release packages'\)\)/u,
+  )
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.match(pkg.scripts['release:version'], /^pnpm run release-plan:check && changeset version/u)
 })
 
 test('a claimed release PR skips the guard only on proof', () => {
