@@ -8,7 +8,7 @@ import {
   dependabotMatchesRegistry,
   detectPackageRegistry,
   githubPackagesDependabot,
-  hasExplicitZeroCooldown,
+  hasPolicyCooldown,
   hasNpmUpdateBlock,
 } from '../src/dependabot-registry.js'
 import { createNardukApp, upgradeNardukApp } from '../src/index.js'
@@ -48,7 +48,7 @@ const githubWorking = [
   '      - npm-github',
   '    open-pull-requests-limit: 2',
   '    cooldown:',
-  '      default-days: 0',
+  '      default-days: 1',
   '    groups:',
   '      safe:',
   '        patterns:',
@@ -82,8 +82,8 @@ const mirrorWorking = [
   '      - npm-nard-uk',
   '    open-pull-requests-limit: 1',
   '    cooldown:',
-  '      default-days: 0',
-  '      semver-major-days: 0',
+  '      default-days: 1',
+  '      semver-major-days: 1',
   '    groups:',
   '      dependencies:',
   '        patterns:',
@@ -122,8 +122,8 @@ describe('package registry detection', () => {
     expect(detectPackageRegistry(null, 'https://npm.nard.uk.evil.example/x\n')).toBe('unknown')
   })
 
-  it('treats cooldown 0 plus the matching registry as already working', () => {
-    expect(hasExplicitZeroCooldown(githubWorking)).toBe(true)
+  it('treats the policy cooldown plus the matching registry as already working', () => {
+    expect(hasPolicyCooldown(githubWorking)).toBe(true)
     expect(dependabotMatchesRegistry(githubWorking, 'github-packages')).toBe(true)
     expect(dependabotMatchesRegistry(githubWorking, 'narduk-mirror')).toBe(false)
     expect(dependabotMatchesRegistry(mirrorWorking, 'narduk-mirror')).toBe(true)
@@ -142,10 +142,10 @@ describe('package registry detection', () => {
       '  - package-ecosystem: github-actions',
       '    directory: /',
       '    cooldown:',
-      '      default-days: 0',
+      '      default-days: 1',
       '',
     ].join('\n')
-    expect(hasExplicitZeroCooldown(actionsOnly)).toBe(true)
+    expect(hasPolicyCooldown(actionsOnly)).toBe(true)
     expect(hasNpmUpdateBlock(actionsOnly)).toBe(false)
     expect(hasNpmUpdateBlock(mirrorWorking)).toBe(true)
     expect(dependabotMatchesRegistry(actionsOnly, 'narduk-mirror')).toBe(false)
@@ -227,7 +227,7 @@ describe('upgrade dependabot registry', () => {
       '  - package-ecosystem: github-actions',
       '    directory: /',
       '    cooldown:',
-      '      default-days: 0',
+      '      default-days: 1',
       '',
     ].join('\n')
     await write(targetDir, '.npmrc', '@narduk-enterprises:registry=https://npm.nard.uk\n')

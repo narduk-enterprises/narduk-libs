@@ -1,8 +1,12 @@
 /** Minimum publication age for the maintainer pin refresh. */
 export const DEPENDENCY_COOLDOWN_DAYS = 14
 
-/** A nonzero Dependabot cooldown also gates required transitive pins (#1707, #737). */
-export const DEPENDABOT_COOLDOWN_DAYS = 0
+/**
+ * One day, matching the generated `minimumReleaseAge: 1440`: Dependabot must not propose a
+ * version pnpm then refuses (ERR_PNPM_NO_MATURE_MATCHING_VERSION). A longer window also gates
+ * required transitive pins (#1707, #737).
+ */
+export const DEPENDABOT_COOLDOWN_DAYS = 1
 
 /** Deliberate toolchain ceilings apply equally to Dependabot and pin refreshes. */
 export const DEPENDENCY_UPDATE_LIMITS = {
