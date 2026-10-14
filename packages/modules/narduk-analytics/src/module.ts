@@ -76,6 +76,8 @@ export interface NardukAnalyticsModuleOptions {
    * `useUserSession` (narduk-auth). Never set it on a client site.
    */
   authenticatedOwner?: boolean
+  /** Exclude bot/headless user agents before SDK loading; default keeps automation classification. */
+  botTraffic?: 'classify' | 'exclude'
   /** Foreground active-time deltas and once-per-visit scroll milestones. */
   engagement?: boolean
   /** Register v-track for explicitly declared click interactions. */
@@ -94,6 +96,8 @@ export interface NardukAnalyticsModuleOptions {
    * does not carry — a Worker variable cannot turn it off. Default `'standard'`.
    */
   privacy?: 'standard' | 'strict'
+  /** Respect browser Do Not Track before collection and in PostHog's SDK. Default false. */
+  respectDnt?: boolean
   server?: boolean
   surface?: 'web'
   /** Opt into the existing native PostHog web-vitals pipeline. */
@@ -331,6 +335,8 @@ export default defineNuxtModule<NardukAnalyticsModuleOptions>({
       public: {
         analyticsLoadStrategy: readAnalyticsLoadStrategy(),
         analyticsPrivacy: 'standard',
+        analyticsBotTraffic: options.botTraffic ?? 'classify',
+        analyticsRespectDnt: options.respectDnt === true,
         analyticsAppId: options.appId ?? '',
         analyticsSurface: options.surface ?? 'web',
         analyticsEventsEnabled: options.events === true,

@@ -66,6 +66,29 @@ export default defineNuxtConfig({
 })
 ```
 
+## PostHog collection policy for concept demos
+
+Use the existing project public key through Worker vars and opt into:
+
+```ts
+nardukAnalytics: {
+  botTraffic: 'exclude',
+  respectDnt: true,
+}
+```
+
+`botTraffic: 'exclude'` skips PostHog initialization, SDK imports, attribution
+and event collection for user agents matching `HeadlessChrome`, `Lighthouse`,
+`bot`, `crawl` or `spider`, case-insensitively. It also retains the SDK's
+default bot filter, including for estate-marked automation. The default
+`'classify'` keeps the existing automation tagging behavior. `respectDnt: true`
+skips collection when `navigator.doNotTrack` is `1` or `yes` and sets the SDK's
+`respect_dnt` option; the default is false. These settings affect PostHog; keep
+GA empty for demos without an existing GA property.
+
+PostHog explicitly uses `person_profiles: 'identified_only'`. Every event
+registers `site` as the current hostname along with the existing app context.
+
 ## Strict privacy mode (private apps)
 
 For an app whose pages hold private records — signed-in farm, finance or health

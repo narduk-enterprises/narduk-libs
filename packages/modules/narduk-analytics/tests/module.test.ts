@@ -50,6 +50,24 @@ function makeNuxt() {
 }
 
 describe('narduk-analytics module', () => {
+  it('seeds opt-in PostHog bot and DNT policies without changing existing defaults', async () => {
+    mockNuxtKit(() => true)
+    const mod = (await import('../src/module')).default as unknown as {
+      setup: (options: unknown, nuxt: Record<string, unknown>) => Promise<void>
+    }
+    const defaults = makeNuxt()
+    await mod.setup({ app: false, server: false }, defaults)
+    expect(defaults.options.runtimeConfig.public).toMatchObject({
+      analyticsBotTraffic: 'classify',
+      analyticsRespectDnt: false,
+    })
+    const demo = makeNuxt()
+    await mod.setup({ app: false, server: false, botTraffic: 'exclude', respectDnt: true }, demo)
+    expect(demo.options.runtimeConfig.public).toMatchObject({
+      analyticsBotTraffic: 'exclude',
+      analyticsRespectDnt: true,
+    })
+  })
   it.each([true, false])('registers the SSR directive stub only when events=%s', async (events) => {
     const { addPlugin } = mockNuxtKit(() => true)
     const mod = (await import('../src/module')).default as unknown as {
