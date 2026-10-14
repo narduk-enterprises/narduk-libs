@@ -594,11 +594,17 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         })
       })
     }
+    if (!nardukNetworkDirectoryUrl) {
+      extendRouteRules('/narduk-network', { robots: 'noindex, follow' })
+    }
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
       // narduk-libs#1442: with no directory configured the page is an empty
       // shell, so it stays out of the sitemap until one is.
       urls: nardukNetworkDirectoryUrl ? ['/narduk-network'] : [],
-      exclude: nonPublicSitemapRoutes,
+      exclude: [
+        ...nonPublicSitemapRoutes,
+        ...(!nardukNetworkDirectoryUrl ? ['/narduk-network'] : []),
+      ],
     })
     nuxtOptions.robots = defu((nuxtOptions.robots ?? {}) as Record<string, unknown>, {
       disallowNonIndexableRoutes: false,
