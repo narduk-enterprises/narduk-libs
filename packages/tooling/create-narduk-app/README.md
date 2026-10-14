@@ -608,6 +608,6 @@ wrangler at build time.
 
 The weekly [generator pin refresh](../../../docs/generator-pin-refresh.md) opens
 a tested PR for mature same-major dependency updates and the shared workflow
-pin. Its 14-day selection policy is separate from the one-day Dependabot cooldown
-workaround documented there. Majors and runtime version changes remain
+pin. Its 14-day selection policy is separate from the one-day Dependabot
+cooldown workaround documented there. Majors and runtime version changes remain
 deliberate.

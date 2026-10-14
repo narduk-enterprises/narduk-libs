@@ -146,11 +146,7 @@ export function registryEntries(contents: string): RegistryEntry[] {
  * scope-bearing GitHub Packages block on an `npm.nard.uk` app.
  */
 export function dependabotMatchesRegistry(contents: string, registry: PackageRegistry): boolean {
-  if (
-    registry === 'unknown' ||
-    !hasPolicyCooldown(contents) ||
-    !hasNpmUpdateBlock(contents)
-  ) {
+  if (registry === 'unknown' || !hasPolicyCooldown(contents) || !hasNpmUpdateBlock(contents)) {
     return false
   }
   const entries = registryEntries(contents)
@@ -263,7 +259,8 @@ export function resolveDependabot(
   }
   if (registry !== 'unknown' && dependabotMatchesRegistry(current, registry)) {
     return {
-      detail: 'Dependabot already targets the app registry with the policy cooldown; left untouched.',
+      detail:
+        'Dependabot already targets the app registry with the policy cooldown; left untouched.',
       status: 'clean',
     }
   }

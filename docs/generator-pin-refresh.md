@@ -58,12 +58,13 @@ The refresh's 14-day selection window is separate from Dependabot's resolver
 cooldown. Setting `cooldown.default-days: 14` was tested on 2026-10-08 for
 [issue #1707](https://github.com/narduk-enterprises/narduk-libs/issues/1707) and
 failed: pnpm reported `ERR_PNPM_NO_MATURE_MATCHING_VERSION` for
-`@img/sharp-libvips-linux-ppc64@1.3.4`, published 11 days earlier and required by
-`sharp@0.35.5`. That extends [company-hq#737](https://github.com/narduk-enterprises/company-hq/issues/737).
+`@img/sharp-libvips-linux-ppc64@1.3.4`, published 11 days earlier and required
+by `sharp@0.35.5`. That extends
+[company-hq#737](https://github.com/narduk-enterprises/company-hq/issues/737).
 
 A zero cooldown fails the other way. The generated workspace sets
-`minimumReleaseAge: 1440`, which pnpm applies inside Dependabot's updater too, so
-with cooldown 0 Dependabot proposed versions under a day old (`nuxt-og-image`
+`minimumReleaseAge: 1440`, which pnpm applies inside Dependabot's updater too,
+so with cooldown 0 Dependabot proposed versions under a day old (`nuxt-og-image`
 7.0.6, `@cloudflare/workers-types`) and every npm job failed with
 `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, reported only as `unknown_error`.
 `DEPENDABOT_COOLDOWN_DAYS = 1` matches the pnpm window. Proven on ai-api
