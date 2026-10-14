@@ -63,10 +63,13 @@ package needs an entry there, or `scripts:test` fails.
      the SHA has completed, or is being re-run after an earlier attempt, the
      push rule's answer is final: a red, cancelled or incomplete push run
      refuses the release in every mode, whatever the tree rule would say,
-     because the release PR's run skips `release-plan:check` and the push run
-     does not. A failed read of the push runs refuses as well. A tree that
-     differs by one byte, or a tree read that fails, leaves the push rule's
-     refusal standing.
+     because the release PR's run skips `release-plan:check` and the push run of
+     any other commit does not. (The push run of the release merge itself skips
+     it too, #1863: a Changeset left pending on main by a PR that landed after
+     the release PR was built belongs to the next release, and `release:version`
+     checks it before the bot builds that PR.) A failed read of the push runs
+     refuses as well. A tree that differs by one byte, or a tree read that
+     fails, leaves the push rule's refusal standing.
 
    `release.yml` also listens for CI `requested` events on `main`, but only a
    commit whose message starts with `chore: release packages` takes part: that

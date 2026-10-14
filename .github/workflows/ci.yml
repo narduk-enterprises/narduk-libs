@@ -215,7 +215,14 @@ jobs:
           # pending-changeset guard on this branch for any actor — a non-bot
           # retrigger (needed when the bot's first run stays action_required)
           # must not demand a second Changeset for the version bump itself.
-          IS_CHANGESET_RELEASE: ${{ github.head_ref == 'changeset-release/main' || github.ref_name == 'changeset-release/main' }}
+          # The push of the release PR's merge is skipped too (#1863): a
+          # feature PR that landed after the release PR was built leaves its
+          # Changeset pending on main, and judging that leftover here turns main
+          # red and blocks the publish of the versions the merge already bumped.
+          # The leftover is still judged where someone can act on it: every
+          # later PR runs this guard, and `release:version` runs it before the
+          # bot builds the next release PR.
+          IS_CHANGESET_RELEASE: "${{ github.head_ref == 'changeset-release/main' || github.ref_name == 'changeset-release/main' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore: release packages')) }}"
         run: |
           set -euo pipefail
           pnpm run versions:check
