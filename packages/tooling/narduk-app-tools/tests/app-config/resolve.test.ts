@@ -17,7 +17,7 @@ import {
   resolveAppRepoSlug,
   scrubAppConfigSecrets,
 } from '../../src/app-config/resolve.js'
-import { fakePortal, TOKEN } from './fake-portal.js'
+import { fakePortal, noBackoff, TOKEN } from './fake-portal.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -198,6 +198,7 @@ describe('portal failures are loud', () => {
       env: baseEnv(extra),
       fetch: portal.fetch,
       timeoutMs: 50,
+      ...noBackoff,
     })
 
   it('a missing token names the variable and file mode', async () => {
@@ -276,6 +277,7 @@ describe('portal failures are loud', () => {
         env: baseEnv(),
         fetch: stalled,
         timeoutMs: 20,
+        ...noBackoff,
       }),
     ).rejects.toMatchObject({ code: 'timeout' })
   })
@@ -338,6 +340,7 @@ describe('prime and sync read', () => {
         files: ['cloudflare-app.json'],
         env,
         fetch: fakePortal({}, { status: 503 }).fetch,
+        ...noBackoff,
       }),
     ).rejects.toMatchObject({ code: 'unavailable' })
     expect(() => readAppConfigSync({ root, file: 'cloudflare-app.json', env })).toThrow(

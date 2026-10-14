@@ -37,7 +37,7 @@ import { readCloudflareApp } from '../../src/foundation/items/item-1-scaffold-pa
 import { AppRepo } from '../../src/foundation/source.js'
 import { validateCloudflareManifest } from '../../src/manifests-validate.js'
 import { readProductionTarget } from '../../src/ship-support.js'
-import { fakePortal, TOKEN } from './fake-portal.js'
+import { fakePortal, noBackoff, TOKEN } from './fake-portal.js'
 
 const REPO = 'example/app'
 const ACCOUNT = '0123456789abcdef0123456789abcdef'
@@ -111,6 +111,7 @@ describe('foundation checks (AppRepo)', () => {
     await expect(
       withPrimedAppCheckout({ checkoutDir: root }, 'test', {
         fetch: fakePortal({}, { status: 503 }).fetch,
+        ...noBackoff,
       }),
     ).rejects.toMatchObject({ code: 'unavailable' })
     await withPrimedAppCheckout({ checkoutDir: root }, 'test', { fetch: fakePortal().fetch })
@@ -245,6 +246,7 @@ describe('database ownership guard', () => {
         dir: root,
         files: ['cloudflare-app.json'],
         fetch: fakePortal({}, { status: 503 }).fetch,
+        ...noBackoff,
       }),
     ).rejects.toMatchObject({ code: 'unavailable' })
     expect(() => assertMigrationRunnerOwnership({ database: 'DB', cwd: root })).toThrow(
@@ -467,7 +469,9 @@ describe('the CLI primes before it reads', () => {
     const printed = errors.mock.calls.flat().join('\n')
     expect(printed).toContain('Could not reach the portal')
     expect(printed).not.toContain(TOKEN)
+    expect(printed).toContain('3 attempts made')
     vi.unstubAllGlobals()
     errors.mockRestore()
-  })
+    // The CLI uses the real backoff (about 1 s then 3 s).
+  }, 20_000)
 })

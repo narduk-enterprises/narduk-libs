@@ -40,7 +40,10 @@ export function withAppCheckout<Flags extends { checkoutDir: string }>(
 export async function withPrimedAppCheckout<Flags extends { checkoutDir: string }>(
   flags: Flags,
   commandName: string,
-  options: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs'> = {},
+  options: Pick<
+    AppConfigOptions,
+    'env' | 'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random'
+  > = {},
 ): Promise<Flags> {
   withAppCheckout(flags, commandName)
   await primeAppCheckoutConfig(flags.checkoutDir, options)

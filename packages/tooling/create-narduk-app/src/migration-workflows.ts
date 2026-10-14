@@ -61,6 +61,9 @@ export function createMigrationWorkflowFiles(visibility: AppVisibility): Generat
 # skips with exit 0 and writes superseded=true to this step's outputs. That commit
 # moves nothing, so its migrations must not run either: the guard below keeps the
 # D1 steps and every later step that assumes this commit was promoted off it.
+# The enclosing promote job needs \`id-token: write\` in its \`permissions:\`: the
+# narduk-app steps below resolve the app's config from the Operator Portal with
+# the job's OIDC token, which is absent without that grant.
 steps:
   - name: Check migrations are expand-only (foundation 12.9)
     run: pnpm exec narduk-app foundation:check:deployment --checkout ../.. --json "$RUNNER_TEMP/foundation-deployment.json" || true
@@ -130,6 +133,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      id-token: write # lets narduk-app resolve this app's config from the Operator Portal (OIDC)
     timeout-minutes: 15
     steps:
       - uses: ${checkout}
@@ -173,6 +177,7 @@ jobs:
       contents: read
       actions: read
       packages: read
+      id-token: write # lets narduk-app resolve this app's config from the Operator Portal (OIDC)
     timeout-minutes: 20
     steps:
       - uses: ${checkout}

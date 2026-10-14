@@ -100,7 +100,10 @@ export interface RunFoundationCheckOptions {
   appOverrides?: Partial<FoundationAppInfo>
   generated?: string
   /** Portal resolution of the two app-config documents (env, fetch, timeout). */
-  appConfig?: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs' | 'repo'>
+  appConfig?: Pick<
+    AppConfigOptions,
+    'env' | 'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random' | 'repo'
+  >
 }
 
 export async function runFoundationCheck(

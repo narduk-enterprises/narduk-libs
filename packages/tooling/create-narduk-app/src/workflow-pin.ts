@@ -14,7 +14,7 @@
 
 import { WORKFLOWS_MAIN_PARENTS } from './workflow-history.js'
 
-export const NUXT_CLOUDFLARE_WORKFLOW_SHA = '90f4421b46a6eb600c7e0bf9d7d1e60b301eac16'
+export const NUXT_CLOUDFLARE_WORKFLOW_SHA = '73e050ae42ece50497ff3140e21767505cca0076'
 
 /** Previous values of {@link NUXT_CLOUDFLARE_WORKFLOW_SHA}, oldest first. */
 export const NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS = [
@@ -24,6 +24,7 @@ export const NUXT_CLOUDFLARE_WORKFLOW_ANCESTORS = [
   '1513b2a2f4b147b2e625478e56eb9de0cc5d5399',
   '59825ef09ce484e8189c1932d0ac18f3892dd8d0',
   '77cd64d734ea80b84ff9860a8c0492a759183736',
+  '90f4421b46a6eb600c7e0bf9d7d1e60b301eac16',
 ] as const
 
 export type WorkflowPinMove = 'forward' | 'refuse' | 'same' | 'unknown'

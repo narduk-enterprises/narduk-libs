@@ -36,15 +36,18 @@ const workflowSha = NUXT_CLOUDFLARE_WORKFLOW_SHA
  * workflow can only narrow what its caller grants, and GitHub validates every
  * job's request before any job runs, skipped or not: the preview job asks for
  * `pull-requests: write` and, from the ordinary CI pin on, the reuse-plan and
- * e2e-plan jobs ask for `actions: read`. A caller that grants less gets a
- * `startup_failure` with no jobs at all, which is how every private app
- * generated with only `contents` and `packages` first ran.
+ * e2e-plan jobs ask for `actions: read`. From workflows#199 on, the jobs that
+ * run `narduk-app` ask for `id-token: write` so they can resolve the app's
+ * config from the Operator Portal with the job's OIDC token. A caller that
+ * grants less gets a `startup_failure` with no jobs at all, which is how every
+ * private app generated with only `contents` and `packages` first ran.
  */
 export const SHARED_WORKFLOW_CALLER_PERMISSIONS = [
   'contents: read',
   'packages: read',
   'actions: read',
   'pull-requests: write',
+  'id-token: write',
 ] as const
 
 // Resolved from fleet's organization routes. Creating files does not grant
@@ -639,7 +642,7 @@ export function createCiWorkflow(visibility: AppVisibility): string {
       '  # These routes do not grant selected-repository membership themselves.',
       ...createRunnerOnboardingJob(),
       '  ci:',
-      `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${workflowSha}`,
+      `    uses: narduk-enterprises/workflows/.github/workflows/nuxt-cloudflare.yml@${workflowSha} # v2 + id-token (workflows#199)`,
       '    permissions:',
       ...SHARED_WORKFLOW_CALLER_PERMISSIONS.map((entry) => '      ' + entry),
       '    with:',

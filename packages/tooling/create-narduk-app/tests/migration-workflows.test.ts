@@ -69,6 +69,11 @@ describe('D1 workflow trust and failure boundaries', () => {
       expect(migrate.run).toContain('--check')
       expect(preview.jobs.migrate.if).toContain('head_repository.full_name == github.repository')
       expect(preview.jobs.migrate.if).toContain("conclusion == 'success'")
+      // Every job that runs narduk-app resolves the app's config from the
+      // Operator Portal with the job's OIDC token, which needs this grant.
+      expect(bundle.permissions['id-token']).toBe('write')
+      expect(preview.jobs.migrate.permissions['id-token']).toBe('write')
+      expect(promoteSteps.contents).toContain('needs `id-token: write`')
     },
   )
   it('refuses to migrate unless 12.9 passes, whatever the other sub-checks say', () => {
