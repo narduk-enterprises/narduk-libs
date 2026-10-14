@@ -42,8 +42,8 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.137',
   '@narduk-enterprises/narduk-mapkit': '2.22.3',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.42.3',
-  '@narduk-enterprises/eslint-config': '3.3.2',
+  '@narduk-enterprises/narduk-app-tools': '0.42.4',
+  '@narduk-enterprises/eslint-config': '3.3.3',
   '@narduk-enterprises/narduk-ai': '0.4.34',
   '@narduk-enterprises/narduk-analytics': '1.31.0',
   '@narduk-enterprises/narduk-auth': '1.34.16',
@@ -72,7 +72,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.25.0',
+  '@narduk-enterprises/narduk-shell': '0.26.0',
   '@narduk-enterprises/narduk-testkit': '1.14.0',
   '@narduk-enterprises/narduk-uploads': '1.22.0',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
