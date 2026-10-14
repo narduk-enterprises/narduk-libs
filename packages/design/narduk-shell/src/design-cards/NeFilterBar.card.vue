@@ -33,6 +33,12 @@ const views: NeFilterBarItem[] = [
   { key: 'timeline', label: 'Timeline' },
 ]
 
+const pages: NeFilterBarItem[] = [
+  { key: 'overview', label: 'Overview', to: '#overview' },
+  { key: 'queue', label: 'Queue', to: '#queue', count: 4 },
+  { key: 'history', label: 'History', to: '#history', disabled: true },
+]
+
 const kindItems: NeFilterBarItem[] = [
   { key: 'app', label: 'Apps', count: 9 },
   { key: 'lib', label: 'Libraries', count: 5 },
@@ -61,10 +67,10 @@ const view = ref<string | null>('board')
   >
     <h2>Filter bar</h2>
     <p>
-      The row above a collection. Three kinds share one DOM shape and differ in what they mean:
+      The row above a collection. Four kinds share one DOM shape and differ in what they mean:
       <code>chips</code> toggle, <code>facets</code> scope, <code>tabs</code> are a real
-      <code>tablist</code> with the APG keyboard model. A count is the caller's figure, never
-      derived here.
+      <code>tablist</code> with the APG keyboard model, <code>links</code> are route-linked tabs. A
+      count is the caller's figure, never derived here.
     </p>
 
     <div class="preview-row">
@@ -106,6 +112,20 @@ const view = ref<string | null>('board')
     <div class="preview-row">
       <NeFilterBar v-model="view" kind="tabs" label="View" id-prefix="demo" :items="views" />
       <p class="mono">tabs · arrows wrap, Home and End jump, one tab in the page tab order</p>
+    </div>
+
+    <div class="preview-row">
+      <NeFilterBar
+        kind="links"
+        label="Section"
+        model-value="queue"
+        :items="pages"
+        note="History lands with the run ledger"
+      />
+      <p class="mono">
+        links · each control is a real link in a labelled nav; the current page is aria-current,
+        every link stays in the tab order
+      </p>
     </div>
   </section>
 </template>

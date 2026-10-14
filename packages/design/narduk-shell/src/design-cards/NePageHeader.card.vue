@@ -33,5 +33,18 @@ import NePageHeader from '../runtime/components/NePageHeader.vue'
         </template>
       </NePageHeader>
     </div>
+    <div class="preview-row">
+      <NePageHeader title="Runners" eyebrow="Infrastructure">
+        <template #lead>
+          <UButton label="Back" icon="i-lucide-arrow-left" variant="link" color="neutral" />
+        </template>
+        <template #meta>
+          <span class="mono">read 10:42 CT</span>
+        </template>
+        <template #actions>
+          <UButton label="Refresh" variant="outline" color="neutral" />
+        </template>
+      </NePageHeader>
+    </div>
   </section>
 </template>

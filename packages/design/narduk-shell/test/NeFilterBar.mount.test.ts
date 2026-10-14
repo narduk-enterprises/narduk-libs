@@ -63,7 +63,9 @@ describe('NeFilterBar: chips', () => {
       if (!count.exists()) continue
       // The chip colour is already AA (theme.test.ts); any opacity, or a
       // dimmed/muted ink, would blend it toward the fill and drop below 4.5:1.
-      expect(count.classes().filter((c) => /^(?:opacity-|text-(?:dimmed|muted))/.test(c))).toEqual([])
+      expect(count.classes().filter((c) => /^(?:opacity-|text-(?:dimmed|muted))/.test(c))).toEqual(
+        [],
+      )
     }
     wrapper.unmount()
   })
@@ -479,5 +481,109 @@ describe('NeFilterBar: more than one pressed (narduk-libs#1545)', () => {
       'false',
     ])
     array.unmount()
+  })
+})
+
+describe('NeFilterBar: links (route-linked tabs)', () => {
+  const LINKS: NeFilterBarItem[] = [
+    { key: 'overview', label: 'Overview', to: '/runners' },
+    { key: 'queue', label: 'Queue', to: '/runners/queue', count: 4 },
+    { key: 'soon', label: 'History', to: '/runners/history', disabled: true },
+    { key: 'plain', label: 'Plain' },
+  ]
+
+  it('is a labelled nav, not a tablist or a group', () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'overview' })
+    const row = wrapper.get('[data-ne-filter-controls]')
+
+    expect(row.element.tagName).toBe('NAV')
+    expect(row.attributes('aria-label')).toBe('State')
+    expect(row.attributes('role')).toBeUndefined()
+    expect(wrapper.get('[data-ne-filter-bar]').attributes('data-ne-filter-kind')).toBe('links')
+    wrapper.unmount()
+  })
+
+  it('renders each item with a `to` as a real link to that location', () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'overview' })
+    const [overview, queue] = controls(wrapper)
+
+    expect(overview!.element.tagName).toBe('A')
+    expect(overview!.attributes('href')).toBe('/runners')
+    expect(queue!.attributes('href')).toBe('/runners/queue')
+    wrapper.unmount()
+  })
+
+  it('marks only the current one aria-current="page", with no pressed or selected state', () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'queue' })
+
+    expect(controls(wrapper).map((c) => c.attributes('aria-current'))).toEqual([
+      undefined,
+      'page',
+      undefined,
+      undefined,
+    ])
+    for (const control of controls(wrapper)) {
+      expect(control.attributes('aria-pressed')).toBeUndefined()
+      expect(control.attributes('aria-selected')).toBeUndefined()
+      expect(control.attributes('role')).toBeUndefined()
+    }
+    wrapper.unmount()
+  })
+
+  it('keeps every link in the tab order: no roving tabindex', () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'overview' })
+    for (const control of controls(wrapper)) expect(control.attributes('tabindex')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('leaves a disabled item, and an item with no `to`, as buttons in the row', async () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'overview' })
+    const [, , soon, plain] = controls(wrapper)
+
+    expect(soon!.element.tagName).toBe('BUTTON')
+    expect(soon!.attributes('href')).toBeUndefined()
+    expect(soon!.attributes('aria-disabled')).toBe('true')
+    expect(plain!.element.tagName).toBe('BUTTON')
+
+    await soon!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await plain!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['plain']])
+    wrapper.unmount()
+  })
+
+  it('renders a count, and has no tablist keyboard handling', async () => {
+    const wrapper = render({ kind: 'links', items: LINKS, modelValue: 'overview' })
+    expect(wrapper.get('[data-ne-filter-key="queue"] [data-ne-filter-count]').text()).toBe('4')
+
+    await controls(wrapper)[0]!.trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('refuses `multiple`: one current page', () => {
+    const wrapper = render({ kind: 'links', multiple: true, items: LINKS, modelValue: 'queue' })
+    expect(controls(wrapper).map((c) => c.attributes('aria-current'))).toEqual([
+      undefined,
+      'page',
+      undefined,
+      undefined,
+    ])
+    wrapper.unmount()
+
+    const array = render({ kind: 'links', multiple: true, items: LINKS, modelValue: ['queue'] })
+    expect(controls(array).map((c) => c.attributes('aria-current'))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ])
+    array.unmount()
+  })
+
+  it('ignores `to` outside kind="links"', () => {
+    const wrapper = render({ kind: 'chips', items: LINKS, modelValue: 'overview' })
+    expect(controls(wrapper)[0]!.element.tagName).toBe('BUTTON')
+    wrapper.unmount()
   })
 })

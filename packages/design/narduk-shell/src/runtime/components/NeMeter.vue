@@ -21,23 +21,41 @@
  *
  * Numbers go through `./format`'s `formatNumber` (fixed `en-US`), so the
  * server and the browser print the same digits on the first paint.
+ *
+ * `segments` switches to the multi-segment reading: several consecutive parts
+ * (each a `value`, a `tone` and a `label`) filling one track against the same
+ * `max` — used, cached and free; passed, failed and skipped. Nothing about the
+ * single-value reading changes without it. A segmented meter is `role="img"`
+ * whose name lists every part, because ARIA's `meter` has one value and a part
+ * list is not one; and a part with no producer draws nothing and is named "not
+ * reported" rather than counted as zero.
  */
 import { computed } from 'vue'
 
 import { formatNumber } from '../../format'
 import { NE_UNREPORTED_TEXT } from '../utils/unreported'
 
-import { readMeter } from './ne-meter-types'
+import { readMeter, readMeterSegments } from './ne-meter-types'
 
 import type { NeMeterProps } from './ne-meter-types'
 
 const props = withDefaults(defineProps<NeMeterProps>(), {
   label: '',
+  segments: undefined,
   value: null,
   variant: 'block',
 })
 
+const segmented = computed(() => props.segments !== undefined)
+
 const reading = computed(() => readMeter(props.value, props.max))
+const parts = computed(() => readMeterSegments(props.segments ?? [], props.max))
+
+/** The parts that have a place on the track; an unreported part has none to draw. */
+const drawn = computed(() => parts.value.segments.filter((part) => part.reported))
+
+/** Whether anything produced a figure, in either reading. */
+const reported = computed(() => (segmented.value ? parts.value.reported : reading.value.reported))
 
 /** Width of the fill, in percent. Rounded so the inline style is stable. */
 const percent = computed(() =>
@@ -45,7 +63,11 @@ const percent = computed(() =>
 )
 
 /** The real value, unclamped — geometry clamps, the figure never lies. */
-const valueText = computed(() => formatNumber(reading.value.reported ? props.value : null))
+const valueText = computed(() =>
+  segmented.value
+    ? formatNumber(parts.value.total)
+    : formatNumber(reading.value.reported ? props.value : null),
+)
 const maxText = computed(() => formatNumber(props.max))
 
 /**
@@ -56,19 +78,30 @@ const maxText = computed(() => formatNumber(props.max))
  * exists to avoid — so it is an `img` whose name says so.
  */
 const semantics = computed(() => {
-  if (!reading.value.reported) {
+  if (!reported.value) {
     const unreported = props.label
       ? `${props.label}: ${NE_UNREPORTED_TEXT.toLowerCase()}`
       : NE_UNREPORTED_TEXT
     return { role: 'img', 'aria-label': unreported }
   }
+  if (segmented.value) {
+    const named = parts.value.segments.map((part) => {
+      if (!part.reported) return `${part.label ?? 'Segment'} ${NE_UNREPORTED_TEXT.toLowerCase()}`
+      const figure = formatNumber(part.value)
+      return part.label ? `${part.label} ${figure}` : figure
+    })
+    const list = `${named.join(', ')} of ${maxText.value}`
+    return { role: 'img', 'aria-label': props.label ? `${props.label}: ${list}` : list }
+  }
   const valueTextFull = `${valueText.value} of ${maxText.value}`
+  // `reported` is true here, so `now` is a number; the `?? undefined` only
+  // narrows the type for the one place `reported` is read off a second computed.
   return {
     role: 'meter',
     'aria-label': props.label || valueTextFull,
     'aria-valuemin': 0,
     'aria-valuemax': reading.value.ceiling,
-    'aria-valuenow': reading.value.now,
+    'aria-valuenow': reading.value.now ?? undefined,
     'aria-valuetext': valueTextFull,
   }
 })
@@ -77,14 +110,28 @@ const semantics = computed(() => {
 <template>
   <div
     class="ne-meter"
-    :class="[`ne-meter--${variant}`, { 'ne-meter--unreported': !reading.reported }]"
+    :class="[
+      `ne-meter--${variant}`,
+      { 'ne-meter--unreported': !reported, 'ne-meter--segmented': segmented },
+    ]"
     data-testid="ne-meter"
-    :data-state="reading.reported ? 'reported' : 'unreported'"
+    :data-state="reported ? 'reported' : 'unreported'"
     v-bind="semantics"
   >
     <span v-if="label" class="ne-meter__label">{{ label }}</span>
     <span class="ne-meter__track">
-      <span v-if="reading.reported" class="ne-meter__fill" :style="{ width: `${percent}%` }" />
+      <template v-if="segmented">
+        <span
+          v-for="(part, index) in drawn"
+          :key="index"
+          class="ne-meter__segment"
+          :class="`ne-meter__segment--${part.tone}`"
+          data-ne-meter-segment
+          :title="part.label"
+          :style="{ width: `${Math.round(part.fraction * 10_000) / 100}%` }"
+        />
+      </template>
+      <span v-else-if="reading.reported" class="ne-meter__fill" :style="{ width: `${percent}%` }" />
     </span>
     <span class="ne-meter__figure"
       ><span class="ne-meter__value">{{ valueText }}</span
@@ -184,6 +231,49 @@ const semantics = computed(() => {
   background-color: var(--ne-accent);
 }
 
+/*
+ * Multi-segment mode (README § NeMeter). The track becomes a row of parts; each
+ * part is cut off from the next by a surface-coloured rule, so the boundary
+ * does not depend on telling two colours apart. Tones read Nuxt UI's semantic
+ * colours, and `accent` is the same ink the single fill uses.
+ */
+.ne-meter--segmented .ne-meter__track {
+  display: flex;
+}
+
+.ne-meter__segment {
+  display: block;
+  box-sizing: border-box;
+  flex: none;
+  height: 100%;
+  background-color: var(--ne-accent);
+  border-inline-end: 1px solid var(--ne-surface);
+}
+
+.ne-meter__segment:last-child {
+  border-inline-end: 0;
+}
+
+.ne-meter__segment--ok {
+  background-color: var(--ui-success);
+}
+
+.ne-meter__segment--warn {
+  background-color: var(--ui-warning);
+}
+
+.ne-meter__segment--error {
+  background-color: var(--ui-error);
+}
+
+.ne-meter__segment--info {
+  background-color: var(--ui-info);
+}
+
+.ne-meter__segment--neutral {
+  background-color: var(--ne-ink-dimmed);
+}
+
 /* The unreported treatment: texture, no magnitude, and an em-dash figure. */
 .ne-meter--unreported .ne-meter__track {
   background-color: var(--ne-surface);
@@ -203,9 +293,15 @@ const semantics = computed(() => {
     outline-offset: -1px;
   }
 
-  .ne-meter__fill {
+  .ne-meter__fill,
+  .ne-meter__segment {
     background-color: Highlight;
     forced-color-adjust: none;
+  }
+
+  /* One system colour for every part: the rules between them carry the boundary. */
+  .ne-meter__segment {
+    border-inline-end-color: Canvas;
   }
 }
 </style>

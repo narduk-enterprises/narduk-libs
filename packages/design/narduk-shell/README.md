@@ -260,8 +260,8 @@ content by the same amount:
 ```
 
 Set it from the app's own stylesheet (it is loaded after `theme.css`, so the
-same specificity wins). `narduk-core` already sets `viewport-fit=cover`, which is
-what makes `env(safe-area-inset-*)` non-zero on a notched phone.
+same specificity wins). `narduk-core` already sets `viewport-fit=cover`, which
+is what makes `env(safe-area-inset-*)` non-zero on a notched phone.
 
 ## Bounce guard
 
@@ -269,9 +269,9 @@ what makes `env(safe-area-inset-*)` non-zero on a notched phone.
 rubber-band, no two-finger swipe back/forward inside the app, and no scroll
 chaining from an inner pane into the page. (`[role='dialog']` is not in it any
 more: `narduk-core`'s base CSS gives every dialog `overscroll-behavior: contain`
-by default.) It is CSS only (no JavaScript) and
-**opt-in**, because it makes the page itself unscrollable on any document that
-contains an app shell; an app with ordinary page scrolling must not load it.
+by default.) It is CSS only (no JavaScript) and **opt-in**, because it makes the
+page itself unscrollable on any document that contains an app shell; an app with
+ordinary page scrolling must not load it.
 
 Turn it on in config, or import the sheet by hand after the app's Tailwind
 entry:
@@ -573,7 +573,7 @@ blocks, so nothing resolves by accident.
 | `--ne-tracking-label`   | Tracking for uppercase mono labels.                                              | `0.12em`                                                                              | `0.12em`                                                                              |
 | `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                              | `1320px`                                                                              |
 | `--ne-header-height`    | App header height.                                                               | `4rem`                                                                                | `4rem`                                                                                |
-| `--ne-bottom-bar-h` | Height of an app's fixed bottom bar; `html` scroll-padding-bottom. | `0px` | `0px` |
+| `--ne-bottom-bar-h`     | Height of an app's fixed bottom bar; `html` scroll-padding-bottom.               | `0px`                                                                                 | `0px`                                                                                 |
 
 <!-- ne-token-table:end -->
 
@@ -618,13 +618,16 @@ zero", which for a figure nobody measured is false. `narduk-ui`'s `NsLevelWell`
 had this rule first ("missing wells are hatched with an em-dash, never rendered
 empty"); this is the same rule on the NE token layer.
 
-It comes in two shapes, and the second is the one to reach for:
+It comes in three shapes; reach for them in this order:
 
 1. **Components take `null` and render it themselves.** `NeMeter` and
    `NeKpiTile` accept a `null` (or `undefined`, or a non-finite number) value
    and draw the treatment on their own, so a call site cannot forget it — pass
    the `null` straight from the API rather than defaulting it to `0`.
-2. **A token and a CSS contract**, for a figure in your own markup:
+2. **`NeAbsent`, for a cell you own.** A table cell, a card field or a KPI value
+   that nothing produced: `<NeAbsent label="90-day uptime" />` draws the hatch
+   in a fixed slot and names it. See [NeAbsent](#neabsent).
+3. **A token and a CSS contract**, for a figure in your own markup:
 
 ```css
 /* The slot keeps its reported size — a row must not reflow when data arrives. */
@@ -855,16 +858,30 @@ without nesting a second heading inside `UPageHeader`'s own `<h1>`.
 
 #### Slots
 
-| Slot          | Description                                                                                               |
-| ------------- | --------------------------------------------------------------------------------------------------------- |
-| `actions`     | Right-aligned actions next to the title (maps to `UPageHeader`'s `links` slot). Never inside the heading. |
-| `default`     | Pass-through of `UPageHeader`'s default slot, below the title/description block.                          |
-| `title`       | Overrides the title text. Still rendered inside the heading element.                                      |
-| `description` | Overrides the description text.                                                                           |
+| Slot          | Description                                                                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actions`     | Right-aligned actions next to the title (maps to `UPageHeader`'s `links` slot). Never inside the heading.                                                                                                  |
+| `lead`        | A small control ahead of the title, typically a back link. Sits in the headline row above the title, before the eyebrow. Never inside the heading.                                                         |
+| `meta`        | A read-out about the page rather than an action: a clock or "as of" tag, a count, a status chip. Sits with the actions, ahead of them. Never inside the heading, so the page's name stays the title alone. |
+| `default`     | Pass-through of `UPageHeader`'s default slot, below the title/description block.                                                                                                                           |
+| `title`       | Overrides the title text. Still rendered inside the heading element.                                                                                                                                       |
+| `description` | Overrides the description text.                                                                                                                                                                            |
 
 #### Events
 
 None.
+
+#### Lead, meta and the phone
+
+`lead` and `meta` are for the head a data-dense page carries beyond a title: a
+way back, and when the page was read. Both are optional and add no markup when
+unused, so an existing header is unchanged. `lead` and `meta` render on the `as`
+override path too.
+
+Below `40rem` (a phone) the header stacks: the title wraps rather than widening
+the page, `meta` takes its own row, the actions row takes the full width, and
+every button or link in it holds a `2.75rem` tap floor. Above that it is Nuxt
+UI's own layout.
 
 #### Example
 
@@ -878,6 +895,12 @@ None.
     { label: 'Runners' },
   ]"
 >
+  <template #lead>
+    <UButton to="/infrastructure" icon="i-lucide-arrow-left" variant="link" label="Back" />
+  </template>
+  <template #meta>
+    <time :datetime="readAt">read 10:42 CT</time>
+  </template>
   <template #actions>
     <UButton>New</UButton>
   </template>
@@ -1429,22 +1452,52 @@ fixed nine times.
 the field to `useCollection()`'s `c.q` with `:debounce="0"` — that composable
 already applies the 250 ms window.
 
-#### Three kinds, one DOM shape
+#### Four kinds, one DOM shape
 
-A wrapping row of buttons in the order you pass them — nothing sorted, nothing
+A wrapping row of controls in the order you pass them — nothing sorted, nothing
 hidden. They differ in what they mean, and the ARIA follows the meaning:
 
-| `kind`   | Row role  | Control state                | For                                             |
-| -------- | --------- | ---------------------------- | ----------------------------------------------- |
-| `chips`  | `group`   | `aria-pressed`               | Toggling a filter on and off.                   |
-| `facets` | `group`   | `aria-pressed`               | Choosing a scope. Same mechanics, quieter fill. |
-| `tabs`   | `tablist` | `aria-selected` + `tabindex` | Switching views. Full APG keyboard model.       |
+| `kind`   | Row role  | Control state                | For                                               |
+| -------- | --------- | ---------------------------- | ------------------------------------------------- |
+| `chips`  | `group`   | `aria-pressed`               | Toggling a filter on and off.                     |
+| `facets` | `group`   | `aria-pressed`               | Choosing a scope. Same mechanics, quieter fill.   |
+| `tabs`   | `tablist` | `aria-selected` + `tabindex` | Switching in-page views. Full APG keyboard model. |
+| `links`  | `nav`     | `aria-current="page"`        | Route-linked tabs: each control is a real link.   |
 
 `tabs` is a real tablist: arrows move and wrap, `Home` and `End` jump to the
 ends, and exactly **one** tab sits in the page's tab order at a time (the
 selected one, or the first when nothing is selected). Your panels name the tab
 that controls them through `idPrefix` — `<prefix>-tab-<key>` and
 `<prefix>-panel-<key>`.
+
+#### Route-linked tabs (`kind="links"`)
+
+When the tabs are pages, not panels, use `links`. Each item with a `to` renders
+as a real link (`<a href>`), so middle-click, open-in-new-tab and a plain
+navigation all work, inside a `nav` named by `label`. The route is the state:
+set `modelValue` to the key of the current page and that link carries
+`aria-current="page"`.
+
+```vue
+<NeFilterBar
+  kind="links"
+  label="Runners"
+  :model-value="current"
+  :items="[
+    { key: 'overview', label: 'Overview', to: '/runners' },
+    { key: 'queue', label: 'Queue', to: '/runners/queue', count: 4 },
+  ]"
+/>
+```
+
+It is deliberately **not** a `tablist`. A tablist owns panels it switches
+between; a route does not, and a roving `tabindex` would take links out of a
+keyboard user's tab order for nothing. So every link keeps its natural tab stop
+and there is no arrow-key handling. `multiple` is ignored (one current page). An
+item with no `to`, or a disabled one, stays a button in the row —
+`aria-disabled` and the `note`, as everywhere else. A click still emits
+`update:modelValue`, so a caller that tracks the current key in state sees it; a
+router-driven page can ignore the event.
 
 A **disabled tab is not a destination**: arrows, `Home` and `End` all walk past
 it to the next enabled one. APG omits disabled tabs from the roving model, and
@@ -1501,15 +1554,15 @@ count element at all when you leave it out.
 | `label`      | `string`                        | —          | Required. The row's accessible name.                                                                                            |
 | `kind`       | `'chips' \| 'facets' \| 'tabs'` | `'chips'`  |                                                                                                                                 |
 | `modelValue` | `string \| string[] \| null`    | `null`     | The selected key, or with `multiple` the array of pressed keys. `null` is "nothing selected".                                   |
-| `multiple`   | `boolean`                       | `false`    | More than one control may be pressed; see "More than one pressed" below. Ignored for `kind: 'tabs'`.                            |
+| `multiple`   | `boolean`                       | `false`    | More than one control may be pressed; see "More than one pressed" below. Ignored for `kind: 'tabs'` and `'links'`.              |
 | `note`       | `string`                        | —          | A caption — when the disabled controls land, typically.                                                                         |
 | `flush`      | `boolean`                       | `false`    | Drop the top margin in a container that already spaces the row.                                                                 |
 | `idPrefix`   | `string`                        | `'filter'` | Tabs only: the prefix your `tabpanel`s are named under.                                                                         |
 | `ui`         | `NeFilterBarUi`                 | —          | Extra classes for `root`, `controls`, `control`, `selected`, `count`, `note` (an app drawing filters in its own design system). |
 
 `NeFilterBarItem`: `key`, `label`, and optional `count`, `disabled`, `title`,
-`testid`, `attrs`. An `undefined` value in `attrs` is dropped rather than
-rendered as the string `"undefined"`.
+`testid`, `attrs`, and `to` (`kind="links"` only). An `undefined` value in
+`attrs` is dropped rather than rendered as the string `"undefined"`.
 
 #### More than one pressed
 
@@ -2031,9 +2084,9 @@ already the phone's:
   card in fewer lines, and still keeps every column (narduk-libs#1777). The
   primary cell heads the card across its full width; every other cell runs on
   beneath it as a **wrapped inline label-value pair** (`flex: 0 1 auto`, the
-  label `flex-basis: auto` instead of 7.5rem), with no divider between cells.
-  It is CSS keyed on the root's `data-ne-card-density='compact'`, so the markup
-  and the server render are unchanged, and it applies to `phoneLayout: 'cards'`
+  label `flex-basis: auto` instead of 7.5rem), with no divider between cells. It
+  is CSS keyed on the root's `data-ne-card-density='compact'`, so the markup and
+  the server render are unchanged, and it applies to `phoneLayout: 'cards'`
   only. Empty cells are still dropped. A table with six non-primary columns is
   then two or three lines a row instead of seven.
 - `phoneLayout: 'columns'` keeps the table, and fixed widths become hints. A
@@ -2046,10 +2099,10 @@ A row, header cell and cell carry only a role class (`ne-row`, `ne-head`,
 `ne-cell` and modifiers such as `ne-cell--num`, `--em`, `--sorted`, `--pri`,
 `--free`, `--drop`), and the layout, the phone card included, is
 `@layer components` CSS in the component's own `<style>` block, keyed on the
-root's `data-ne-phone-layout`, `data-ne-card-density` and `data-ne-stack-below` (narduk-libs#1704). A
-cell's markup is its value plus a role, about 25 bytes of class instead of
-about 520. Style a cell from the app with a utility or a selector on those
-classes.
+root's `data-ne-phone-layout`, `data-ne-card-density` and `data-ne-stack-below`
+(narduk-libs#1704). A cell's markup is its value plus a role, about 25 bytes of
+class instead of about 520. Style a cell from the app with a utility or a
+selector on those classes.
 
 Either way a `phone: false` column is dropped, and the search, chips, sort
 select, its sort-direction button (44px wide as well, `min-w-11`), "Show all",
@@ -2103,37 +2156,37 @@ const filters: Array<NeCollectionFilter<Repo>> = [
 
 #### Props
 
-| Prop                | Type                                   | Default     | Notes                                                                           |
-| ------------------- | -------------------------------------- | ----------- | ------------------------------------------------------------------------------- |
-| `caption`           | `string`                               | —           | Required. A visually hidden caption, and the scroll region's label.             |
-| `columns`           | `NeCollectionColumn<T>[]`              | —           | Required. See the column contract below.                                        |
-| `rows`              | `T[]`                                  | —           | Flat rows. Ignored when `groups` is given.                                      |
-| `groups`            | `NeCollectionGroup<T>[]`               | —           | `{ key, label, rows, count?, attrs? }`.                                         |
-| `groupSort`         | `'within' \| 'across'`                 | `'within'`  | Whether a header sort keeps the groups or orders across them.                   |
-| `groupedSort`       | `string \| null`                       | `sort`      | The sort under which `'across'` shows the groups.                               |
-| `groupResetLabel`   | `string`                               | —           | The label of the return-to-groups control. Default "Back to groups".            |
-| `rowKey`            | `(row, index) => string \| number`     | id/key/i    | Default: `row.id`, else `row.key`, else the row's position in the caller's set. |
-| `rowAttrs`          | `(row) => Record<string, string \| …>` | —           | Spread onto each `<tr>` (`data-testid`). `undefined` values are dropped.        |
-| `rowHref`           | `(row) => string \| null`              | —           | The row is a link. `null` for a row with nowhere to go.                         |
-| `selectedKey`       | `string \| number \| null`             | —           | Absent: no selection. `null`: selectable, nothing picked.                       |
-| `primaryColumn`     | `string`                               | 1st column  | The link and card headline.                                                     |
-| `sort`              | `string \| null`                       | —           | Initial sort, `key:asc\|desc`. Followed when it changes.                        |
-| `sortable`          | `boolean`                              | `true`      | `false` turns header sorting off.                                               |
-| `toolbar`           | `boolean \| number \| 'always'`        | `true`      | `true` from 25 rows; a number from that many; `'always'`; `false` never.        |
-| `filters`           | `NeCollectionFilter<T>[]`              | —           | `{ key, label, test, title? }`. "All" is added in front.                        |
-| `defaultFilter`     | `string`                               | `'all'`     | The chip selected on first render.                                              |
-| `initialQuery`      | `string`                               | —           | A search the page arrives with. Followed when it changes.                       |
-| `searchText`        | `(row) => string`                      | —           | Text a row is found by that no column shows.                                    |
-| `searchPlaceholder` | `string`                               | `'Search'`  |                                                                                 |
-| `searchDebounce`    | `number`                               | `250`       | `NeSearchInput`'s debounce.                                                     |
-| `noun`              | `string`                               | `row(s)`    | The count's noun.                                                               |
-| `limit`             | `number`                               | —           | Rows drawn before "Show all N".                                                 |
-| `more`              | `{ label, href?, linkLabel? }`         | —           | The bounded-read footer.                                                        |
-| `missingText`       | `string`                               | —           | What a missing cell reads. Unset: an em dash named "No value".                  |
-| `empty`             | `string`                               | `'No rows'` | A table with no rows at all.                                                    |
-| `noMatchText`       | `string`                               | see source  | When search and filter leave nothing.                                           |
-| `stackBelow`        | `'sm' \| 'md' \| 'lg'`                 | `'md'`      | Where the phone layout starts.                                                  |
-| `phoneLayout`       | `'cards' \| 'columns'`                 | `'cards'`   | Rows reflow into cards, or the table keeps its columns.                         |
+| Prop                | Type                                   | Default         | Notes                                                                                   |
+| ------------------- | -------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
+| `caption`           | `string`                               | —               | Required. A visually hidden caption, and the scroll region's label.                     |
+| `columns`           | `NeCollectionColumn<T>[]`              | —               | Required. See the column contract below.                                                |
+| `rows`              | `T[]`                                  | —               | Flat rows. Ignored when `groups` is given.                                              |
+| `groups`            | `NeCollectionGroup<T>[]`               | —               | `{ key, label, rows, count?, attrs? }`.                                                 |
+| `groupSort`         | `'within' \| 'across'`                 | `'within'`      | Whether a header sort keeps the groups or orders across them.                           |
+| `groupedSort`       | `string \| null`                       | `sort`          | The sort under which `'across'` shows the groups.                                       |
+| `groupResetLabel`   | `string`                               | —               | The label of the return-to-groups control. Default "Back to groups".                    |
+| `rowKey`            | `(row, index) => string \| number`     | id/key/i        | Default: `row.id`, else `row.key`, else the row's position in the caller's set.         |
+| `rowAttrs`          | `(row) => Record<string, string \| …>` | —               | Spread onto each `<tr>` (`data-testid`). `undefined` values are dropped.                |
+| `rowHref`           | `(row) => string \| null`              | —               | The row is a link. `null` for a row with nowhere to go.                                 |
+| `selectedKey`       | `string \| number \| null`             | —               | Absent: no selection. `null`: selectable, nothing picked.                               |
+| `primaryColumn`     | `string`                               | 1st column      | The link and card headline.                                                             |
+| `sort`              | `string \| null`                       | —               | Initial sort, `key:asc\|desc`. Followed when it changes.                                |
+| `sortable`          | `boolean`                              | `true`          | `false` turns header sorting off.                                                       |
+| `toolbar`           | `boolean \| number \| 'always'`        | `true`          | `true` from 25 rows; a number from that many; `'always'`; `false` never.                |
+| `filters`           | `NeCollectionFilter<T>[]`              | —               | `{ key, label, test, title? }`. "All" is added in front.                                |
+| `defaultFilter`     | `string`                               | `'all'`         | The chip selected on first render.                                                      |
+| `initialQuery`      | `string`                               | —               | A search the page arrives with. Followed when it changes.                               |
+| `searchText`        | `(row) => string`                      | —               | Text a row is found by that no column shows.                                            |
+| `searchPlaceholder` | `string`                               | `'Search'`      |                                                                                         |
+| `searchDebounce`    | `number`                               | `250`           | `NeSearchInput`'s debounce.                                                             |
+| `noun`              | `string`                               | `row(s)`        | The count's noun.                                                                       |
+| `limit`             | `number`                               | —               | Rows drawn before "Show all N".                                                         |
+| `more`              | `{ label, href?, linkLabel? }`         | —               | The bounded-read footer.                                                                |
+| `missingText`       | `string`                               | —               | What a missing cell reads. Unset: an em dash named "No value".                          |
+| `empty`             | `string`                               | `'No rows'`     | A table with no rows at all.                                                            |
+| `noMatchText`       | `string`                               | see source      | When search and filter leave nothing.                                                   |
+| `stackBelow`        | `'sm' \| 'md' \| 'lg'`                 | `'md'`          | Where the phone layout starts.                                                          |
+| `phoneLayout`       | `'cards' \| 'columns'`                 | `'cards'`       | Rows reflow into cards, or the table keeps its columns.                                 |
 | `cardDensity`       | `'comfortable' \| 'compact'`           | `'comfortable'` | `'compact'` runs a card's cells on as wrapped label-value pairs under the primary cell. |
 
 #### Column contract (`NeCollectionColumn`)
@@ -3143,12 +3196,48 @@ the `--ns-*` layer and are not aliased here.
 
 #### Props
 
-| Prop      | Type                  | Default   | What it does                                                                                                                                                                 |
-| --------- | --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `value`   | `number \| null`      | `null`    | The measured quantity. `null`/`undefined`/non-finite renders the unreported treatment. The fill is clamped to `[0, max]`; the figure always shows the real, unclamped value. |
-| `max`     | `number`              | —         | The ceiling. Zero or less (or not finite) is a ceiling with no room: a reported `0` renders empty, anything above it renders full, and nothing divides by zero.              |
-| `label`   | `string`              | `''`      | Shown beside the track and used as the accessible name. Without one, the meter is named by its own reading (`4,200 of 5,000`).                                               |
-| `variant` | `'block' \| 'inline'` | `'block'` | `block`: label and figure on one line, the track full-width under them. `inline`: label, track and figure in one row, for a table cell or a list row.                        |
+| Prop       | Type                  | Default   | What it does                                                                                                                                                                 |
+| ---------- | --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value`    | `number \| null`      | `null`    | The measured quantity. `null`/`undefined`/non-finite renders the unreported treatment. The fill is clamped to `[0, max]`; the figure always shows the real, unclamped value. |
+| `max`      | `number`              | —         | The ceiling. Zero or less (or not finite) is a ceiling with no room: a reported `0` renders empty, anything above it renders full, and nothing divides by zero.              |
+| `label`    | `string`              | `''`      | Shown beside the track and used as the accessible name. Without one, the meter is named by its own reading (`4,200 of 5,000`).                                               |
+| `variant`  | `'block' \| 'inline'` | `'block'` | `block`: label and figure on one line, the track full-width under them. `inline`: label, track and figure in one row, for a table cell or a list row.                        |
+| `segments` | `NeMeterSegment[]`    | —         | Multi-segment mode: consecutive parts filling the track against `max`. `value` is ignored. See "Multi-segment mode" below.                                                   |
+
+#### Multi-segment mode
+
+`segments` fills the track with several consecutive parts that together read
+against the one `max` — used, cached and free; passed, failed and skipped. Each
+part is `{ value, tone?, label? }`; `tone` is `accent` (default), `ok`, `warn`,
+`error`, `info` or `neutral`.
+
+```vue
+<NeMeter
+  label="Disk"
+  :max="100"
+  :segments="[
+    { label: 'Used', value: 48, tone: 'warn' },
+    { label: 'Cache', value: 22, tone: 'info' },
+    { label: 'Free', value: null },
+  ]"
+/>
+```
+
+- **The figure is the sum of the reported parts** (`70 / 100` above). Geometry
+  is clamped so parts never exceed the track; the real sum is still printed.
+- **A part nobody reported draws nothing and is not counted as zero.** It is
+  named "not reported" in the accessible name. If no part is reported (or the
+  array is empty) the whole meter takes the unreported treatment: the
+  `--ne-hatch` track, an em-dash, `data-state="unreported"`.
+- **It is `role="img"`, not `role="meter"`.** ARIA's `meter` carries one value,
+  and a list of parts is not one. The name lists every part:
+  `Disk: Used 48, Cache 22, Free not reported of 100`. Colour is never the only
+  cue: parts are cut apart by a surface-coloured rule, titled with their
+  `label`, and named in that string.
+- Without `segments` the meter is exactly the single-value reading above.
+
+`readMeterSegments(segments, max)` is the pure function behind it, exported from
+the package root next to `readMeter`.
 
 #### Slots
 
@@ -3540,8 +3629,8 @@ The string is split once in script by `splitTruncate` (see `./format`), and CSS
 does the shrinking, so there is no measurement and the server and the browser
 render the same markup. The text content is the whole value (it copies, searches
 and reads out in full) and the same value is the `title`. A `title` does nothing
-on touch or from the keyboard, so the root is a focusable `role="button"`: a tap,
-Enter or Space toggles it open, wrapping the full value in place
+on touch or from the keyboard, so the root is a focusable `role="button"`: a
+tap, Enter or Space toggles it open, wrapping the full value in place
 (`aria-expanded` reports it).
 
 Use it in dense rows and cards. Keep wrapping in detail views and in sentences,
@@ -3558,12 +3647,12 @@ where the reader wants the whole value.
 
 #### Props
 
-| Prop   | Type                                 | Default  | What it does                                                                                       |
-| ------ | ------------------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
-| `text` | `string`                             | required | The full value: the text content and the tooltip.                                                  |
-| `mode` | `'end' \| 'middle'`                  | `middle` | `end` is a plain trailing ellipsis with no split.                                                  |
-| `tail` | `number`                             | `14`     | Characters kept whole at the end. Text of at most `2 * tail` characters is not split.              |
-| `kind` | `'url' \| 'path' \| 'id'`            | none     | `url` keeps the last path segment (query included), `path` the filename, `id` the last `tail`.     |
+| Prop   | Type                      | Default  | What it does                                                                                   |
+| ------ | ------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `text` | `string`                  | required | The full value: the text content and the tooltip.                                              |
+| `mode` | `'end' \| 'middle'`       | `middle` | `end` is a plain trailing ellipsis with no split.                                              |
+| `tail` | `number`                  | `14`     | Characters kept whole at the end. Text of at most `2 * tail` characters is not split.          |
+| `kind` | `'url' \| 'path' \| 'id'` | none     | `url` keeps the last path segment (query included), `path` the filename, `id` the last `tail`. |
 
 #### Slots
 
@@ -3572,6 +3661,165 @@ None.
 #### Events
 
 None.
+
+### NeAbsent
+
+The cell-level unreported mark: a value nothing produced, inside a table cell, a
+card field or a KPI value. It is the component-sized half of
+[the unreported treatment](#the-unreported-treatment): `NeMeter` and `NeKpiTile`
+draw it for their own figures, `NeStatePanel` covers a whole panel, and this is
+the part in between, for markup the suite does not own. The look is the
+`--ne-hatch` token, so it follows the scheme and any token override with no
+colour of its own.
+
+It is geometry with texture and no magnitude, in a slot of fixed size so a row
+does not reflow when data arrives. Never an empty cell, a `0` or a bare dash —
+each of those reads as a measurement.
+
+| `variant` | What it draws                                                                                         |
+| --------- | ----------------------------------------------------------------------------------------------------- |
+| `cell`    | A small hatched mark, no visible words: `role="img"` named `<label>: not reported`, and a `title`.    |
+| `block`   | A hatched box with the words `<label> · Not reported`, and a default slot for one action beside them. |
+
+`cell` carries `data-ne-empty`, which `NeCollectionTable`'s phone card reads: it
+drops a cell whose only element has nothing to say, rather than draw a label
+beside the mark. Put `NeAbsent` in a `#cell-<key>` slot and the card does the
+right thing.
+
+#### Example
+
+```vue
+<!-- In a table cell: -->
+<template #cell-uptime="{ row }">
+  <NeAbsent v-if="row.uptime === null" label="90-day uptime" />
+  <template v-else>{{ formatPercent(row.uptime) }}</template>
+</template>
+
+<!-- A chart well with nothing to draw, linking to where it is tracked: -->
+<NeAbsent variant="block" label="90-day uptime">
+  <NuxtLink to="/proposals/uptime">Where it lands</NuxtLink>
+</NeAbsent>
+```
+
+Decide "absent" with `isUnreported(value)` from the package root.
+
+#### Props
+
+| Prop      | Type                | Default          | What it does                                                                                                                           |
+| --------- | ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`   | `string`            | —                | The field with no value. Its accessible name is `<label>: not reported`, and it is the hover title and, for `block`, the visible text. |
+| `variant` | `'cell' \| 'block'` | `'cell'`         | See the table above.                                                                                                                   |
+| `word`    | `string \| null`    | `'Not reported'` | `block` only: the word after the label. `null` drops it.                                                                               |
+
+#### Slots
+
+| Slot      | Description                                                                   |
+| --------- | ----------------------------------------------------------------------------- |
+| `default` | `block` only: content after the words, typically one link. Ignored by `cell`. |
+
+#### Events
+
+None.
+
+#### Types
+
+```ts
+import { absentName } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeAbsentProps,
+  NeAbsentVariant,
+} from '@narduk-enterprises/narduk-shell'
+
+absentName('Uptime') // 'Uptime: not reported'
+```
+
+### NeShowMore / useRowLimit()
+
+"Show all N" under a list that is capped to its first few rows — the same
+control `NeCollectionTable` draws under a limited table, for the lists that are
+rows rather than columns: an agenda, a feed, a stack of cards.
+
+`useRowLimit(items, n)` slices; `NeShowMore` asks. Pass the **whole** list,
+flattened across any grouping, so the cap runs across groups and `hidden` counts
+exactly what the button would add. Neither sorts, filters or fetches, and the
+expanded state lives in the composable — nothing enters the URL. `useRowLimit`
+is auto-imported by the module (`addImports`), like `useCollection`.
+
+#### Example
+
+```vue
+<script setup lang="ts">
+const limit = useRowLimit(() => runners.value, 5)
+</script>
+
+<template>
+  <ul id="runners">
+    <li v-for="runner in limit.visible.value" :key="runner.id">
+      {{ runner.name }}
+    </li>
+  </ul>
+  <NeShowMore
+    controls="runners"
+    noun="runners"
+    :total="limit.total.value"
+    :hidden="limit.hidden.value"
+    @expand="limit.expand"
+  />
+</template>
+```
+
+`n` may follow the viewport: pass a ref or a getter (five on a phone, ten on a
+desk).
+
+#### `useRowLimit(items, n)`
+
+`items` and `n` are each a value, a ref or a getter. Returns:
+
+| Field      | Type                  | What it is                                                            |
+| ---------- | --------------------- | --------------------------------------------------------------------- |
+| `visible`  | `ComputedRef<T[]>`    | The first `n` rows in the list's order, or all of them once expanded. |
+| `hidden`   | `ComputedRef<number>` | How many rows are cut; `0` when the list fits or is expanded.         |
+| `total`    | `ComputedRef<number>` | The whole list's length.                                              |
+| `showAll`  | `Ref<boolean>`        | `true` once expanded; writable.                                       |
+| `expand`   | `() => void`          | Show every row.                                                       |
+| `collapse` | `() => void`          | Cap again.                                                            |
+
+A fractional `n` is floored, a negative one shows no rows, and `NaN` applies no
+cap rather than hiding the list. It stays expanded when `items` changes.
+
+#### NeShowMore props
+
+| Prop       | Type     | Default | What it does                                                                            |
+| ---------- | -------- | ------- | --------------------------------------------------------------------------------------- |
+| `total`    | `number` | —       | The whole list's length, formatted through `./format`. Required.                        |
+| `hidden`   | `number` | —       | When given, the control renders nothing at `0` or less. Omit it and use `v-if` instead. |
+| `noun`     | `string` | —       | Appended to the default label: `Show all 24 runners`.                                   |
+| `label`    | `string` | —       | Replaces the whole label. Default `Show all <total>`.                                   |
+| `controls` | `string` | —       | The id of the list it reveals (`aria-controls`).                                        |
+
+It wraps `UButton` (outline, neutral), holds a `2.75rem` tap floor, and sits at
+the list's left edge rather than stretching across it. Attributes fall through
+to the button, so a test id is `<NeShowMore data-testid="…" />`.
+
+#### Slots
+
+None.
+
+#### Events
+
+| Event    | Payload | When                                          |
+| -------- | ------- | --------------------------------------------- |
+| `expand` | —       | The button is clicked. The caller owns state. |
+
+#### Types
+
+```ts
+import { showMoreLabel } from '@narduk-enterprises/narduk-shell'
+import type {
+  NeRowLimit,
+  NeShowMoreProps,
+} from '@narduk-enterprises/narduk-shell'
+```
 
 ### NeSkipLink
 
@@ -4288,10 +4536,10 @@ import { createFormatters } from '@narduk-enterprises/narduk-shell/format'
 Backlog item 5
 ([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)).
 Eleven functions for dates, numbers, money, percentages, quantities, spans and
-middle truncation,
-built on `Intl` and on nothing else (`splitTruncate` is plain string code). No Vue, no Nuxt, no dependency: the same
-function is callable from a component, from a Nitro route, from a plain Node
-script and from `nuxt.config.ts`.
+middle truncation, built on `Intl` and on nothing else (`splitTruncate` is plain
+string code). No Vue, no Nuxt, no dependency: the same function is callable from
+a component, from a Nitro route, from a plain Node script and from
+`nuxt.config.ts`.
 
 ### The rule the whole module is built around
 
@@ -4513,13 +4761,16 @@ off the USGS feed. An unsanctioned unit is appended after a space instead.
 ### `splitTruncate`
 
 ```ts
-splitTruncate('https://cdn.example.com/a/b/og-image.png', { kind: 'url', tail: 8 })
+splitTruncate('https://cdn.example.com/a/b/og-image.png', {
+  kind: 'url',
+  tail: 8,
+})
 // { head: 'https://cdn.example.com/a/b', tail: '/og-image.png' }
 ```
 
 The pure split behind `NeTruncate`: `{ head, tail }` with `head + tail` equal to
-the input. Counts code points, so a multi-byte character is never cut. Text of at
-most `2 * tail` characters (default `tail` 14) comes back whole as the head.
+the input. Counts code points, so a multi-byte character is never cut. Text of
+at most `2 * tail` characters (default `tail` 14) comes back whole as the head.
 `kind: 'path'` keeps the filename, `kind: 'url'` the last path segment (while it
 is at most `3 * tail` long), otherwise the last `tail` characters.
 
@@ -4685,21 +4936,24 @@ the app's own Vite build compiles what it imports.
 
 ### NeCursorPager / useCursorCollection()
 
-`useCursorCollection({ fetch, filters, limit, sortable, syncQuery: true })` consumes
-the narduk-platform cursor list response. It replaces one bounded page at a time,
-aborts and discards superseded reads, debounces search, resets navigation on scope
-changes, and mirrors cursor/search/sort in the URL. Await `refresh()` for SSR.
-Bind `q` to the search input, call `setSort` / `setLimit`, and bind `state` to
-`NeCursorPager`; forward `next`, `previous` and `newest` to the composable.
-Totals remain unknown when omitted. A shared cursor URL has no visited-page stack;
-Newer then returns to the newest page. No page numbers or total are invented.
+`useCursorCollection({ fetch, filters, limit, sortable, syncQuery: true })`
+consumes the narduk-platform cursor list response. It replaces one bounded page
+at a time, aborts and discards superseded reads, debounces search, resets
+navigation on scope changes, and mirrors cursor/search/sort in the URL. Await
+`refresh()` for SSR. Bind `q` to the search input, call `setSort` / `setLimit`,
+and bind `state` to `NeCursorPager`; forward `next`, `previous` and `newest` to
+the composable. Totals remain unknown when omitted. A shared cursor URL has no
+visited-page stack; Newer then returns to the newest page. No page numbers or
+total are invented.
 
 #### Server-controlled NeCollectionTable
 
 `remote` renders the server's bounded rows in their received order, disables the
 local Show all fold and filter chips, and emits `update:query` / `update:sort`
-instead of filtering or sorting the current page. Bind `query`, `sort` and `total`
-from the shared collection; keep domain filter controls outside the table and
-provide the matching pager. Existing client mode is unchanged.
+instead of filtering or sorting the current page. Bind `query`, `sort` and
+`total` from the shared collection; keep domain filter controls outside the
+table and provide the matching pager. Existing client mode is unchanged.
 
-`useCollection({ syncQuery: true, queryPrefix: "grants_" })` gives a second list independent `grants_page`, `grants_q` and `grants_sort` URL state while leaving the first list and other query parameters unchanged.
+`useCollection({ syncQuery: true, queryPrefix: "grants_" })` gives a second list
+independent `grants_page`, `grants_q` and `grants_sort` URL state while leaving
+the first list and other query parameters unchanged.

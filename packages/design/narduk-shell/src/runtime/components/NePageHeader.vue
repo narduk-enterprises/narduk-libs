@@ -27,6 +27,22 @@
  * the default h1 treatment; the `as` override path only swaps the heading
  * element and keeps the same token classes.
  *
+ * Three optional slots cover what a data-dense app's page head carries beyond
+ * a title (portal-polish L1):
+ *
+ *   - `lead`    — a small control ahead of the title, typically a back link.
+ *     It is placed in `UPageHeader`'s headline row, above the title and before
+ *     the eyebrow, never inside the heading element.
+ *   - `meta`    — a read-out about the page rather than an action: a clock or
+ *     "as of" tag, a count, a status chip. It sits with the actions, ahead of
+ *     them, and never inside the heading, so the page's accessible name stays
+ *     the title alone.
+ *   - `actions` — as before, right-aligned.
+ *
+ * Without `lead` and `meta` the markup is what it always was. On a phone the
+ * actions row takes the full width, controls hold a 2.75rem tap floor and a long
+ * title wraps instead of widening the page.
+ *
  * Components-library backlog item 9 (narduk-libs#256); plan
  * docs/plans/components-library-plan.md §2 item 9.
  */
@@ -87,13 +103,17 @@ defineSlots<{
   default?(): unknown
   /** Overrides the description text. */
   description?(): unknown
+  /** A control ahead of the title, e.g. a back link. Above the title, never inside the heading element. */
+  lead?(): unknown
+  /** A read-out beside the actions, e.g. a clock tag. Never inside the heading element. */
+  meta?(): unknown
   /** Overrides the title text. Still rendered inside the heading element. */
   title?(): unknown
 }>()
 </script>
 
 <template>
-  <div>
+  <div class="ne-page-header">
     <!-- Deliberately unwrapped: UBreadcrumb's own root is the navigation
          landmark, and the label below lands on it. See the header comment. -->
     <UBreadcrumb
@@ -106,6 +126,10 @@ defineSlots<{
          page's one heading and everything (headline, description, links)
          comes from its native layout. -->
     <UPageHeader v-if="as === 'h1'" :title="title" :headline="eyebrow" :description="description">
+      <template v-if="$slots.lead" #headline>
+        <span data-ne-page-header-lead class="ne-page-header__lead"><slot name="lead" /></span>
+        <span v-if="eyebrow">{{ eyebrow }}</span>
+      </template>
       <template #title>
         <slot name="title">{{ title }}</slot>
       </template>
@@ -113,6 +137,9 @@ defineSlots<{
         <slot name="description">{{ description }}</slot>
       </template>
       <template #links>
+        <span v-if="$slots.meta" data-ne-page-header-meta class="ne-page-header__meta"
+          ><slot name="meta"
+        /></span>
         <slot name="actions" />
       </template>
       <slot />
@@ -124,6 +151,9 @@ defineSlots<{
          Token classes only — no hardcoded size, weight, colour or radius. -->
     <UPageHeader v-else :description="description">
       <template #headline>
+        <span v-if="$slots.lead" data-ne-page-header-lead class="ne-page-header__lead"
+          ><slot name="lead"
+        /></span>
         <p v-if="eyebrow" class="text-primary">{{ eyebrow }}</p>
         <component :is="as" class="text-highlighted">
           <slot name="title">{{ title }}</slot>
@@ -133,9 +163,52 @@ defineSlots<{
         <slot name="description">{{ description }}</slot>
       </template>
       <template #links>
+        <span v-if="$slots.meta" data-ne-page-header-meta class="ne-page-header__meta"
+          ><slot name="meta"
+        /></span>
         <slot name="actions" />
       </template>
       <slot />
     </UPageHeader>
   </div>
 </template>
+
+<style scoped>
+/*
+ * The phone layout. Nuxt UI's header already stacks title and links below `lg`;
+ * what it does not do is make the stack comfortable on a 390px screen. Token
+ * reads and plain rem only (README § Styling contract); `data-slot` is Nuxt
+ * UI's documented styling hook for the header's parts.
+ */
+.ne-page-header__lead,
+.ne-page-header__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+@media (max-width: 40rem) {
+  .ne-page-header :deep([data-slot='root']) {
+    padding-block: 1rem;
+  }
+
+  .ne-page-header :deep([data-slot='title']) {
+    overflow-wrap: anywhere;
+  }
+
+  .ne-page-header :deep([data-slot='links']) {
+    width: 100%;
+  }
+
+  .ne-page-header :deep([data-slot='links'] button),
+  .ne-page-header :deep([data-slot='links'] a) {
+    min-height: 2.75rem;
+  }
+
+  .ne-page-header__meta {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+}
+</style>

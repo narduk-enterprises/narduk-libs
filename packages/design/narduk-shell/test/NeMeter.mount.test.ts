@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import NeMeter from '../src/runtime/components/NeMeter.vue'
 import { isUnreported, NE_UNREPORTED_TEXT, type NeMeterProps } from '../src/index'
-import { readMeter } from '../src/runtime/components/ne-meter-types'
+import { readMeter, readMeterSegments } from '../src/runtime/components/ne-meter-types'
 
 function mountMeter(props: NeMeterProps) {
   return mount(NeMeter, { props })
@@ -202,5 +202,107 @@ describe('NeMeter variants', () => {
     expect(wrapper.classes()).toEqual(
       expect.arrayContaining(['ne-meter--inline', 'ne-meter--unreported']),
     )
+  })
+})
+
+describe('readMeterSegments', () => {
+  it('fills the track in order and sums the real values', () => {
+    const reading = readMeterSegments([{ value: 40 }, { value: 20, tone: 'warn' }], 100)
+    expect(reading).toMatchObject({ ceiling: 100, reported: true, total: 60 })
+    expect(reading.segments.map((part) => part.fraction)).toEqual([0.4, 0.2])
+    expect(reading.segments.map((part) => part.tone)).toEqual(['accent', 'warn'])
+  })
+
+  it('clamps an overrun to the track but keeps the real total', () => {
+    const reading = readMeterSegments([{ value: 80 }, { value: 50 }, { value: 10 }], 100)
+    expect(reading.segments.map((part) => part.fraction)).toEqual([0.8, 0.2, 0])
+    expect(reading.total).toBe(140)
+  })
+
+  it('draws an unreported part as nothing and does not count it as zero', () => {
+    const reading = readMeterSegments([{ value: 30 }, { value: null }, { value: 10 }], 100)
+    expect(reading.segments.map((part) => [part.reported, part.value, part.fraction])).toEqual([
+      [true, 30, 0.3],
+      [false, null, 0],
+      [true, 10, 0.1],
+    ])
+    expect(reading.total).toBe(40)
+  })
+
+  it('is unreported when no part is, or there are none', () => {
+    expect(readMeterSegments([{ value: null }, { value: Number.NaN }], 100)).toMatchObject({
+      reported: false,
+      total: null,
+    })
+    expect(readMeterSegments([], 100)).toMatchObject({ reported: false, total: null })
+  })
+
+  it('divides by nothing when the ceiling has no room', () => {
+    const reading = readMeterSegments([{ value: 3 }, { value: 2 }], 0)
+    expect(reading.segments.map((part) => part.fraction)).toEqual([1, 0])
+  })
+})
+
+describe('NeMeter segments', () => {
+  const SEGMENTS = [
+    { label: 'Used', value: 40, tone: 'warn' },
+    { label: 'Cache', value: 20 },
+  ] as const
+
+  it('draws one part per reported segment, widths from the ceiling', () => {
+    const wrapper = mountMeter({ segments: SEGMENTS, max: 100, label: 'Disk' })
+    const parts = wrapper.findAll('[data-ne-meter-segment]')
+
+    expect(wrapper.classes()).toContain('ne-meter--segmented')
+    expect(parts.map((part) => (part.element as HTMLElement).style.width)).toEqual(['40%', '20%'])
+    expect(parts.map((part) => part.classes())).toEqual([
+      expect.arrayContaining(['ne-meter__segment--warn']),
+      expect.arrayContaining(['ne-meter__segment--accent']),
+    ])
+    expect(parts.map((part) => part.attributes('title'))).toEqual(['Used', 'Cache'])
+    expect(wrapper.find('.ne-meter__fill').exists()).toBe(false)
+  })
+
+  it('shows the summed figure against the ceiling', () => {
+    const wrapper = mountMeter({ segments: SEGMENTS, max: 100 })
+    expect(wrapper.get('.ne-meter__value').text()).toBe('60')
+    expect(wrapper.get('.ne-meter__ceiling').text()).toBe('/ 100')
+  })
+
+  it('is one image whose name lists every part, not a meter with one value', () => {
+    const wrapper = mountMeter({ segments: SEGMENTS, max: 100, label: 'Disk' })
+    expect(wrapper.attributes('role')).toBe('img')
+    expect(wrapper.attributes('aria-label')).toBe('Disk: Used 40, Cache 20 of 100')
+    expect(wrapper.attributes('aria-valuenow')).toBeUndefined()
+    expect(wrapper.attributes('data-state')).toBe('reported')
+  })
+
+  it('names an unreported part and draws nothing for it', () => {
+    const wrapper = mountMeter({
+      segments: [
+        { label: 'Used', value: 40 },
+        { label: 'Cache', value: null },
+      ],
+      max: 100,
+    })
+    expect(wrapper.findAll('[data-ne-meter-segment]')).toHaveLength(1)
+    expect(wrapper.attributes('aria-label')).toBe('Used 40, Cache not reported of 100')
+  })
+
+  it('takes the unreported treatment when no part is reported', () => {
+    const wrapper = mountMeter({ segments: [{ value: null }], max: 100, label: 'Disk' })
+    expect(wrapper.attributes('data-state')).toBe('unreported')
+    expect(wrapper.attributes('aria-label')).toBe('Disk: not reported')
+    expect(wrapper.findAll('[data-ne-meter-segment]')).toHaveLength(0)
+    expect(wrapper.get('.ne-meter__value').text()).toBe('—')
+  })
+
+  it('ignores `value` in segment mode, and leaves the single reading unchanged without it', () => {
+    const segmented = mountMeter({ segments: SEGMENTS, value: 99, max: 100 })
+    expect(segmented.get('.ne-meter__value').text()).toBe('60')
+    const single = mountMeter({ value: 99, max: 100 })
+    expect(single.classes()).not.toContain('ne-meter--segmented')
+    expect(single.attributes('role')).toBe('meter')
+    expect(fillWidth(single)).toBe('99%')
   })
 })

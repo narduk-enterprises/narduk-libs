@@ -12,7 +12,7 @@
  * items should append their own describe blocks (or a sibling *.ssr.test.ts)
  * rather than rewriting these cases.
  */
-import { createSSRApp, type Component } from 'vue'
+import { createSSRApp, h, type Component } from 'vue'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderToString } from '@vue/server-renderer'
 
@@ -81,6 +81,24 @@ describe('NePageHeader', () => {
     expect(html).toContain('<nav')
     expect(html).toContain('aria-label="Breadcrumb"')
     expect(html).toContain('href="/infrastructure"')
+  })
+
+  it('renders the lead and meta slots in the server output', async () => {
+    const html = await renderToString(
+      createSSRApp({
+        render: () =>
+          h(
+            NePageHeader,
+            { title: 'Runners', eyebrow: 'Infrastructure' },
+            { lead: () => h('a', { href: '/infra' }, 'Back'), meta: () => 'read 10:42 CT' },
+          ),
+      }),
+    )
+
+    expect(html).toContain('data-ne-page-header-lead')
+    expect(html).toContain('href="/infra"')
+    expect(html).toContain('data-ne-page-header-meta')
+    expect(html).toContain('read 10:42 CT')
   })
 
   it('omits the breadcrumb nav when the trail is empty', async () => {

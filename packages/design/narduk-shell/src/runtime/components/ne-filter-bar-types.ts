@@ -6,8 +6,12 @@
  * to get it.
  */
 
-/** Which of the three rows to render. They share a DOM shape and differ in role. */
-export type NeFilterBarKind = 'chips' | 'facets' | 'tabs'
+/**
+ * Which row to render. They share a DOM shape and differ in role. `links` is
+ * the route-linked tab strip: each control is a real link and the current page
+ * carries `aria-current="page"`.
+ */
+export type NeFilterBarKind = 'chips' | 'facets' | 'tabs' | 'links'
 
 export interface NeFilterBarItem {
   /**
@@ -35,6 +39,13 @@ export interface NeFilterBarItem {
   testid?: string
   /** Hover text — a disabled control's reason, typically. */
   title?: string
+  /**
+   * `kind: 'links'` only: where the control goes. It renders as a link to this
+   * location, so the browser handles middle-click, open-in-new-tab and a plain
+   * navigation. An item without one (or a disabled one) stays a button in the
+   * row. Ignored by every other kind.
+   */
+  to?: string
 }
 
 /**
@@ -79,7 +90,7 @@ export interface NeFilterBarProps {
    * the array of pressed keys and each of them carries `aria-pressed="true"`
    * and `ui.selected`. A click still emits just the clicked key; the caller
    * toggles it in its array, as it toggles the single key today. Default
-   * `false`. Ignored for `kind: 'tabs'` (a tablist has one selected tab).
+   * `false`. Ignored for `kind: 'tabs'` and `'links'` (one tab, one page).
    */
   multiple?: boolean
   /** A caption for the row — when the disabled controls land, typically. */

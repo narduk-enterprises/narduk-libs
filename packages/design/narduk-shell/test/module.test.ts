@@ -125,6 +125,18 @@ describe('narduk-shell module', () => {
     expect(call.from).toContain('/src/runtime/utils/status-map')
   })
 
+  it('wires useRowLimit through addImports, with no component on its path', async () => {
+    const { addImports } = mockNuxtKit()
+    mockRegistry([])
+
+    const module_ = await loadModule()
+    await module_.setup({ components: false }, makeNuxt())
+
+    const call = importCall(addImports, 'useRowLimit')
+    expect(call.from.startsWith('/')).toBe(true)
+    expect(call.from).toContain('/src/runtime/composables/use-row-limit')
+  })
+
   // narduk-libs#388: Nuxt's import protection refuses app code that imports
   // the module's own entry specifier, so the legal-template helpers reach an
   // app page the way defineStatusMap does: as auto-imports.

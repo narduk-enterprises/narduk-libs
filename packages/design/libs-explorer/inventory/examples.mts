@@ -141,6 +141,16 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'A long URL, path or id on one line, cut in the middle with the end kept whole; click to expand.',
   ),
   shell(
+    'NeAbsent',
+    'Absent',
+    'A hatched, named mark for a cell or value nothing produced; never a blank or a zero.',
+  ),
+  shell(
+    'NeShowMore',
+    'Show more',
+    'The first few rows of a list, then Show all N; pairs with useRowLimit().',
+  ),
+  shell(
     'NeCsvDownload',
     'CSV download',
     'Downloads exactly the rows in view, raw values, missing as empty.',
