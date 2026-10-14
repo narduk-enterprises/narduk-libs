@@ -7,6 +7,22 @@ const API_KEY_WILDCARD_SCOPE = '*'
 
 const DEFAULT_API_KEY_EXPIRY_DAYS = 30
 
+/**
+ * `api_keys.last_used_at` is rewritten at most this often per key
+ * (narduk-libs#1856). Every authentication used to write it, which made it the
+ * largest write source in an API-key-heavy auth database.
+ */
+export const API_KEY_LAST_USED_INTERVAL_MS = 5 * 60 * 1000
+
+/**
+ * The ISO timestamp a stored `last_used_at` must be older than for the next
+ * authentication to rewrite it. Both sides are `toISOString()` text, so the
+ * comparison is lexical and runs inside the UPDATE itself.
+ */
+export function apiKeyLastUsedCutoff(now: number = Date.now()): string {
+  return new Date(now - API_KEY_LAST_USED_INTERVAL_MS).toISOString()
+}
+
 function nowSec(): number {
   return Math.floor(Date.now() / 1000)
 }
