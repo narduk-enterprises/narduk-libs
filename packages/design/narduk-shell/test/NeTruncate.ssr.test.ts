@@ -18,7 +18,11 @@ function render(props: Props): Promise<string> {
   return renderToString(createSSRApp({ render: () => h(NeTruncate, props) }))
 }
 
-const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, '')
+/** The text of the head and tail spans, joined; the markup between them carries none. */
+const textOf = (html: string) =>
+  [...html.matchAll(/<span class="ne-truncate__(?:head|tail)"[^>]*>([^<]*)<\/span>/g)]
+    .map((match) => match[1])
+    .join('')
 
 describe('NeTruncate server rendering', () => {
   it('has no DOM in this file', () => {
