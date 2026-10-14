@@ -3,6 +3,7 @@
 '@narduk-enterprises/eslint-config': patch
 '@narduk-enterprises/libs-explorer': patch
 '@narduk-enterprises/narduk-app-tools': patch
+'@narduk-enterprises/create-narduk-app': patch
 ---
 
 Add the generic pieces a data-dense app hand-builds today to `narduk-shell`:
