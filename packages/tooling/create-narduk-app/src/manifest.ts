@@ -42,7 +42,7 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.137',
   '@narduk-enterprises/narduk-mapkit': '2.22.3',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.41.0',
+  '@narduk-enterprises/narduk-app-tools': '0.41.1',
   '@narduk-enterprises/eslint-config': '3.3.1',
   '@narduk-enterprises/narduk-ai': '0.4.32',
   '@narduk-enterprises/narduk-analytics': '1.30.1',
