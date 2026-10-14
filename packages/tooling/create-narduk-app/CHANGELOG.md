@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.22.10
+
+### Patch Changes
+
+- c5656a7: Normalize the unconfigured network directory robots header before
+  prerender export, so Cloudflare receives one noindex header rather than two
+  differently cased copies.
+
 ## 0.22.9
 
 ### Patch Changes
