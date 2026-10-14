@@ -21,6 +21,7 @@ interface ContextOptions {
 export function createAnalyticsContext(options: ContextOptions): () => AnalyticsProperties {
   return () => ({
     app: options.appName,
+    site: options.hostname,
     // Existing consumers need no new config; explicit registry IDs win.
     app_id: options.appId || options.hostname.toLowerCase(),
     surface: options.surface || 'web',

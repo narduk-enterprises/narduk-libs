@@ -73,6 +73,67 @@ beforeEach(() => {
 })
 
 describe('posthog.client — enabled path', () => {
+  it.each([
+    ['Mozilla/5.0 HeadlessChrome/131.0', undefined],
+    ['Mozilla/5.0 NardukAutomation/Lighthouse', undefined],
+    ['GPTBot', undefined],
+    ['ClaudeBot', undefined],
+    ['ExampleCrawler', undefined],
+    ['ExampleSpider', undefined],
+    ['Mozilla/5.0 Chrome/131.0', '1'],
+    ['Mozilla/5.0 Chrome/131.0', 'yes'],
+  ])(
+    'skips initialization and disables capture for %s with DNT=%s',
+    async (userAgent, doNotTrack) => {
+      runtimeConfigValue = {
+        public: {
+          analyticsLoadStrategy: 'immediate',
+          posthogPublicKey: 'phc_fixture',
+          posthogHost: '',
+          appName: 'fixture',
+          analyticsBotTraffic: 'exclude',
+          analyticsRespectDnt: true,
+        },
+      }
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent!)
+      Object.defineProperty(navigator, 'doNotTrack', { configurable: true, value: doNotTrack })
+      try {
+        const plugin = (await import('../app/plugins/posthog.client')).default
+        const provide = vi.fn()
+        expect(plugin.setup?.({ provide })).toEqual({ provide: { posthog: undefined } })
+        const transport = provide.mock.calls.find(([key]) => key === 'analytics')?.[1]
+        expect(transport.status).toBe('disabled')
+        expect(transport.capture('$pageview')).toBe(false)
+        await Promise.resolve()
+        expect(posthogInit).not.toHaveBeenCalled()
+      } finally {
+        vi.restoreAllMocks()
+        Reflect.deleteProperty(navigator, 'doNotTrack')
+      }
+    },
+  )
+
+  it('initializes human traffic with DNT, identified-only profiles and default bot filtering', async () => {
+    runtimeConfigValue = {
+      public: {
+        analyticsLoadStrategy: 'immediate',
+        posthogPublicKey: 'phc_fixture',
+        posthogHost: '',
+        appName: 'fixture',
+        analyticsBotTraffic: 'exclude',
+        analyticsRespectDnt: true,
+      },
+    }
+    const plugin = (await import('../app/plugins/posthog.client')).default
+    plugin.setup?.({ provide: vi.fn() })
+    await vi.waitFor(() => expect(posthogInit).toHaveBeenCalled())
+    expect(posthogInit.mock.calls[0]![1]).toMatchObject({
+      respect_dnt: true,
+      person_profiles: 'identified_only',
+    })
+    expect(posthogInit.mock.calls[0]![1].opt_out_useragent_filter).toBeUndefined()
+    expect(posthogRegister).toHaveBeenCalledWith(expect.objectContaining({ site: 'example.com' }))
+  })
   it('blocks native SDK capture until the identity baseline and after a failed barrier', async () => {
     runtimeConfigValue = {
       public: {

@@ -368,6 +368,7 @@ describe('shared event contract and privacy', () => {
     })()
     expect(context).toMatchObject({
       app: 'GoNoGo Offshore',
+      site: 'example.com',
       app_id: 'gonogo',
       is_owner: false,
       is_internal_user: false,

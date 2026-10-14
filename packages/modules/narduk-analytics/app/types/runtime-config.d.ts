@@ -13,6 +13,8 @@ interface AnalyticsRuntimeConfig {
 
 interface AnalyticsPublicRuntimeConfig {
   analyticsAppId: string
+  analyticsBotTraffic: 'classify' | 'exclude'
+  analyticsRespectDnt: boolean
   analyticsSurface: 'web'
   analyticsEventsEnabled: boolean
   analyticsEngagementEnabled: boolean

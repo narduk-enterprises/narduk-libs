@@ -2,6 +2,7 @@ import { defineNuxtPlugin, nextTick, useRouter, useRuntimeConfig } from '#import
 
 import { pageTrafficProperties } from '../traffic/trafficClassBrowser'
 import { analyticsLandingAttribution } from '../utils/analyticsAttribution'
+import { allowsAnalyticsCollection } from '../utils/analyticsCollectionPolicy'
 import { createAnalyticsContext } from '../utils/analyticsContext'
 import { installAnalyticsEngagement } from '../utils/analyticsEngagementBrowser'
 import {
@@ -64,7 +65,13 @@ export default defineNuxtPlugin({
       !previewSafeMode &&
       !import.meta.server &&
       !isLocalhost &&
-      strategy !== 'off'
+      strategy !== 'off' &&
+      allowsAnalyticsCollection({
+        botTraffic: runtimeConfig.public.analyticsBotTraffic,
+        respectDnt: runtimeConfig.public.analyticsRespectDnt === true,
+        doNotTrack: navigator.doNotTrack,
+        userAgent: navigator.userAgent,
+      })
     const router = useRouter()
     const resolveRoute = (path: string) => router.resolve(path)
     const baseContext = createAnalyticsContext({
@@ -188,6 +195,8 @@ export default defineNuxtPlugin({
       )
 
       const posthogClient = posthog.init(posthogApiKey, {
+        respect_dnt: runtimeConfig.public.analyticsRespectDnt === true,
+        person_profiles: 'identified_only',
         api_host: posthogHost === '' ? 'https://us.i.posthog.com' : posthogHost,
         capture_pageview: false, // We'll handle this manually for Nuxt SPA navigation
         capture_pageleave: true,
@@ -227,7 +236,10 @@ export default defineNuxtPlugin({
         // tags above could ship. Our own marked automation is the one class we
         // tag and read back, so only it opts out of that filter; every other
         // bot keeps the default. PostHog also stamps `$browser_type: bot`.
-        ...(traffic?.traffic_evidence === 'ua_marker' ? { opt_out_useragent_filter: true } : {}),
+        ...(runtimeConfig.public.analyticsBotTraffic !== 'exclude' &&
+        traffic?.traffic_evidence === 'ua_marker'
+          ? { opt_out_useragent_filter: true }
+          : {}),
 
         // Use XHR instead of sendBeacon on page unload (avoids 64KB cap entirely)
         transport: 'XHR',
