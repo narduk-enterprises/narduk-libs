@@ -27,6 +27,7 @@ import {
   formatQuantity,
   formatRelative,
   isSameCalendarDay,
+  splitTruncate,
 } from '../src/format'
 
 const CHICAGO = 'America/Chicago'
@@ -641,5 +642,88 @@ describe('the Intl cache', () => {
     } finally {
       counter.restore()
     }
+  })
+})
+
+describe('splitTruncate', () => {
+  const join = (split: { head: string; tail: string }) => split.head + split.tail
+
+  it('does not split text that is short', () => {
+    expect(splitTruncate('report.pdf')).toEqual({ head: 'report.pdf', tail: '' })
+    expect(splitTruncate('')).toEqual({ head: '', tail: '' })
+  })
+
+  it('splits only above 2 * tail characters (exact boundary)', () => {
+    const at = 'x'.repeat(28)
+    expect(splitTruncate(at)).toEqual({ head: at, tail: '' })
+    const over = 'x'.repeat(14) + 'y' + 'z'.repeat(14)
+    expect(splitTruncate(over)).toEqual({ head: 'x'.repeat(14) + 'y', tail: 'z'.repeat(14) })
+    expect(splitTruncate('abcdef', { tail: 3 })).toEqual({ head: 'abcdef', tail: '' })
+    expect(splitTruncate('abcdefg', { tail: 3 })).toEqual({ head: 'abcd', tail: 'efg' })
+  })
+
+  it('does not split when the tail is longer than the text, or zero', () => {
+    expect(splitTruncate('short', { tail: 50 })).toEqual({ head: 'short', tail: '' })
+    expect(splitTruncate('x'.repeat(40), { tail: 0 }).tail).toBe('')
+  })
+
+  it('counts code points, never cutting a multi-byte character', () => {
+    const emoji = '😀'.repeat(10)
+    expect(splitTruncate(emoji, { tail: 3 })).toEqual({ head: '😀'.repeat(7), tail: '😀'.repeat(3) })
+    const accented = 'é'.repeat(5) + 'ü'.repeat(3)
+    expect(splitTruncate(accented, { tail: 3 })).toEqual({ head: 'é'.repeat(5), tail: 'ü'.repeat(3) })
+    // 7 code points, 14 UTF-16 units: not split, because it is counted by code point.
+    expect(splitTruncate('😀'.repeat(7), { tail: 3 }).tail).toBe('😀'.repeat(3))
+    expect(splitTruncate('😀'.repeat(6), { tail: 3 }).tail).toBe('')
+  })
+
+  describe('kind', () => {
+    it('path keeps the filename whole, longer or shorter than tail', () => {
+      const dir = '/var/lib/narduk/releases/2026-10-14'
+      expect(splitTruncate(`${dir}/a.tar.gz`, { kind: 'path' })).toEqual({
+        head: dir,
+        tail: '/a.tar.gz',
+      })
+      const long = '/a-very-long-build-artifact-name.tar.gz'
+      expect(splitTruncate(`${dir}${long}`, { kind: 'path' }).tail).toBe(long)
+      // A trailing slash is skipped: the last directory is the name.
+      expect(splitTruncate(`${dir}/`, { kind: 'path', tail: 4 }).tail).toBe('/2026-10-14/')
+    })
+
+    it('path with no directory falls back to the last tail characters', () => {
+      const name = 'a-single-very-long-file-name-without-a-directory.tar.gz'
+      expect(splitTruncate(name, { kind: 'path' }).tail).toBe(name.slice(-14))
+    })
+
+    it('url keeps the last path segment, query included, and the host stays in the head', () => {
+      const url =
+        'https://cdn.example.com/assets/brand/social/og-image-1200x630-final.png?v=8f3a1c2d'
+      const split = splitTruncate(url, { kind: 'url' })
+      expect(split.tail).toBe('/og-image-1200x630-final.png?v=8f3a1c2d')
+      expect(split.head.startsWith('https://cdn.example.com/')).toBe(true)
+      expect(join(split)).toBe(url)
+    })
+
+    it('url falls back to the last tail characters for a bare host or a huge last segment', () => {
+      const host = 'https://a-rather-long-subdomain.example.com'
+      expect(splitTruncate(host, { kind: 'url' }).tail).toBe(host.slice(-14))
+      const huge = `https://example.com/p/${'q'.repeat(80)}`
+      expect(splitTruncate(huge, { kind: 'url' }).tail).toBe(huge.slice(-14))
+    })
+
+    it('id keeps the last tail characters', () => {
+      const id = '3f9c1a52-7d4e-4b8a-9e0f-62c1d8a7b305'
+      expect(splitTruncate(id, { kind: 'id', tail: 8 })).toEqual({
+        head: id.slice(0, -8),
+        tail: id.slice(-8),
+      })
+    })
+
+    it('every kind joins back to the input', () => {
+      const text = 'https://example.com/a/b/c/some-long-file-name-here.png?x=1#frag'
+      for (const kind of ['url', 'path', 'id'] as const) {
+        expect(join(splitTruncate(text, { kind }))).toBe(text)
+      }
+    })
   })
 })

@@ -95,6 +95,8 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   { name: 'NeSkipLink', filePath: './runtime/components/NeSkipLink.vue' },
   // narduk-libs#1400: one sortable, searchable, filterable table over rows the
   // page holds, merging operator-portal's KitTable and CollectionTable.
+  // narduk-libs#1855: middle truncation for long URLs, paths and ids.
+  { name: 'NeTruncate', filePath: './runtime/components/NeTruncate.vue' },
   { name: 'NeCollectionTable', filePath: './runtime/components/NeCollectionTable.vue' },
   // The shared Cmd/Ctrl+K search palette and the header button that opens it.
   // Register both: an app mounts the palette lazily (`LazyNeCommandPalette`)

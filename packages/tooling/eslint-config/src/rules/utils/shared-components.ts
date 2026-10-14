@@ -64,6 +64,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeSortHeader',
       'NeStatePanel',
       'NeStatusBadge',
+      'NeTruncate',
     ],
   },
   {

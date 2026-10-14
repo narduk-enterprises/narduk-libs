@@ -136,6 +136,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
   ),
   shell('NeSortHeader', 'Sort header', 'A sortable column header for server or client sorting.'),
   shell(
+    'NeTruncate',
+    'Truncate',
+    'A long URL, path or id on one line, cut in the middle with the end kept whole; click to expand.',
+  ),
+  shell(
     'NeCsvDownload',
     'CSV download',
     'Downloads exactly the rows in view, raw values, missing as empty.',

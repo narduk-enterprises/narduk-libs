@@ -775,6 +775,70 @@ export function formatQuantity(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Middle truncation                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** What `NeTruncate` is shortening; picks where the always-visible tail starts. */
+export type NeTruncateKind = 'url' | 'path' | 'id'
+
+export type NeTruncateSplitOptions = {
+  /** Characters kept whole at the end. Default 14. */
+  tail?: number
+  /** `url` keeps the last path segment, `path` the filename, `id` the last `tail` characters. */
+  kind?: NeTruncateKind
+}
+
+/** The two halves of a middle-truncated string: `head + tail === text`. */
+export type NeTruncateSplit = { head: string; tail: string }
+
+/** The longest last URL segment (query included) `url` keeps whole, as a multiple of `tail`. */
+const URL_SEGMENT_TAIL_FACTOR = 3
+
+/**
+ * Split `text` so a component can shrink the head with an ellipsis and keep the
+ * tail whole. `head + tail` is always `text`.
+ *
+ * Counts code points, never UTF-16 units, so an emoji or an astral character is
+ * never cut in half. Text of at most `2 * tail` characters is not split: the
+ * head is the whole text and the tail is empty, because a tail that long
+ * against a head that short reads worse than plain end truncation.
+ *
+ * - no `kind` and `id`: the last `tail` characters.
+ * - `path`: the filename with its leading `/` (a trailing `/` is skipped), kept
+ *   whole however long it is.
+ * - `url`: the last path segment with any query and fragment, kept whole while
+ *   it is at most `3 * tail` characters; otherwise, or for a bare host, the
+ *   last `tail` characters. The host is at the front of the head, so it
+ *   survives until the head itself is cut.
+ */
+export function splitTruncate(text: string, options: NeTruncateSplitOptions = {}): NeTruncateSplit {
+  const chars = Array.from(text)
+  const tail = Math.max(0, Math.floor(options.tail ?? 14))
+  const whole: NeTruncateSplit = { head: text, tail: '' }
+  if (tail === 0 || chars.length <= tail * 2) return whole
+
+  let keep = tail
+  if (options.kind === 'path') {
+    const end = chars.at(-1) === '/' ? chars.length - 1 : chars.length
+    const slash = chars.lastIndexOf('/', end - 1)
+    if (slash > 0) keep = chars.length - slash
+  } else if (options.kind === 'url') {
+    const pathEnd = chars.findIndex((char) => char === '?' || char === '#')
+    const limit = pathEnd === -1 ? chars.length : pathEnd
+    const schemeEnd = text.indexOf('://')
+    const hostEnd = chars.indexOf('/', schemeEnd === -1 ? 0 : Array.from(text.slice(0, schemeEnd)).length + 3)
+    const slash = chars.lastIndexOf('/', limit - 1)
+    if (hostEnd !== -1 && slash >= hostEnd) {
+      const segment = chars.length - slash
+      if (segment <= tail * URL_SEGMENT_TAIL_FACTOR) keep = Math.max(tail, segment)
+    }
+  }
+
+  if (keep >= chars.length) return whole
+  return { head: chars.slice(0, -keep).join(''), tail: chars.slice(-keep).join('') }
+}
+
+/* -------------------------------------------------------------------------- */
 /* One bound set per app                                                      */
 /* -------------------------------------------------------------------------- */
 
