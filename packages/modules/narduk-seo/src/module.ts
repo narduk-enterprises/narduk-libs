@@ -596,6 +596,14 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     }
     if (!nardukNetworkDirectoryUrl) {
       extendRouteRules('/narduk-network', { robots: 'noindex, follow' })
+      // robots adds an uppercase header; prerender responses use lowercase.
+      // Normalize before nuxt-security merges both into Cloudflare _headers.
+      nuxt.hook('nitro:config', (config) => {
+        const headers = config.routeRules?.['/narduk-network']?.headers
+        if (!headers?.['X-Robots-Tag']) return
+        headers['x-robots-tag'] = headers['X-Robots-Tag']
+        delete headers['X-Robots-Tag']
+      })
     }
     nuxtOptions.sitemap = defu((nuxtOptions.sitemap ?? {}) as Record<string, unknown>, {
       // narduk-libs#1442: with no directory configured the page is an empty

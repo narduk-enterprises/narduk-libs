@@ -473,6 +473,26 @@ describe('narduk-seo module', () => {
     ).toMatchObject({ exclude: expect.arrayContaining([NETWORK_ROUTE]) })
   })
 
+  it('exports one robots header when a prerender response is merged with route rules', async () => {
+    const { nuxt } = await setupModule()
+    const config = {
+      routeRules: {
+        [NETWORK_ROUTE]: {
+          headers: { 'X-Robots-Tag': 'noindex, follow', 'Cache-Control': 'public' },
+        },
+      },
+    }
+    for (const [name, hook] of nuxt.hook.mock.calls) {
+      if (name === 'nitro:config') hook(config)
+    }
+    const prerenderHeaders = { 'x-robots-tag': 'noindex, follow' }
+    const exported = { ...config.routeRules[NETWORK_ROUTE].headers, ...prerenderHeaders }
+    expect(Object.keys(exported).filter((name) => name.toLowerCase() === 'x-robots-tag')).toEqual([
+      'x-robots-tag',
+    ])
+    expect(exported).toMatchObject({ 'x-robots-tag': 'noindex, follow', 'Cache-Control': 'public' })
+  })
+
   it('forces noindex robots and sitemap suppression for staging deployments', async () => {
     vi.stubEnv('NARDUK_DEPLOY_TARGET', 'staging')
 
