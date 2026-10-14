@@ -54,6 +54,12 @@ export interface LiveResponse {
    * that did not resolve from a refused connection (narduk-libs#783).
    */
   errorCode?: string
+  /**
+   * The route that answered, set by the challenge fallback (`egress-fallback.ts`):
+   * `residential` only when a Cloudflare challenge on the direct request was
+   * retried through the egress proxy and that retry answered.
+   */
+  egress?: 'direct' | 'residential'
 }
 
 export interface LiveProbeOptions {

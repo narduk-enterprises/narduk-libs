@@ -24,6 +24,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./egress": {
+      "types": "./dist/egress-fallback.d.ts",
+      "import": "./dist/egress-fallback.js"
+    },
     "./migrations": {
       "types": "./dist/migrations.d.ts",
       "import": "./dist/migrations.js"
