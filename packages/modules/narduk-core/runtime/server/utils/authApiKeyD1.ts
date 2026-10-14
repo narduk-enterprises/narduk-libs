@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import {
+  apiKeyLastUsedCutoff,
   getApiKeyFromAuthorization,
   hashApiKeyText,
   hasRequiredApiKeyScopes,
@@ -107,9 +108,13 @@ export async function authenticateD1ApiKey(
   }
 
   if (options.updateLastUsed ?? true) {
+    // Conditional in the statement itself: a key used within the last five
+    // minutes writes no row and costs no extra read (narduk-libs#1856).
     await db
-      .prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
-      .bind(new Date().toISOString(), row.api_key_id)
+      .prepare(
+        'UPDATE api_keys SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)',
+      )
+      .bind(new Date().toISOString(), row.api_key_id, apiKeyLastUsedCutoff())
       .run()
   }
 

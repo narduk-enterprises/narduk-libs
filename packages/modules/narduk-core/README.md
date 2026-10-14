@@ -2634,6 +2634,13 @@ deploying a Worker built with this version. A Postgres app adds the column with
 its own DDL: `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
 `tests/api-key-revocation-d1.test.ts` covers it on Miniflare D1.
 
+`api_keys.last_used_at` is rewritten at most once per
+`API_KEY_LAST_USED_INTERVAL_MS` (five minutes) per key by both authenticate
+functions (#1856): the `UPDATE` carries
+`AND (last_used_at IS NULL OR last_used_at < cutoff)`, so a recently used key
+writes no row and adds no read. Read the column as "last used, to within five
+minutes". `tests/api-key-one-read-d1.test.ts` covers both paths on Miniflare D1.
+
 ## Type declarations in `types/`
 
 Nuxt's generated tsconfigs (`.nuxt/tsconfig.app.json`, `.server.json`,
