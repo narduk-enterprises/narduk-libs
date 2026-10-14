@@ -18,7 +18,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createD1QueryHarness, expectQueryPlan } from '../../../tooling/narduk-testkit/src/d1'
 import * as schema from '../runtime/server/database/schema'
 import { authenticateApiKey } from '../runtime/server/utils/auth'
-import { hashApiKeyText } from '../runtime/server/utils/authApiKeyText'
+import { authenticateD1ApiKey } from '../runtime/server/utils/authApiKeyD1'
+import {
+  API_KEY_LAST_USED_INTERVAL_MS,
+  hashApiKeyText,
+} from '../runtime/server/utils/authApiKeyText'
 
 import type { D1QueryHarness } from '../../../tooling/narduk-testkit/src/d1'
 import type { LayerDatabase } from '../runtime/server/utils/database'
@@ -225,5 +229,75 @@ describe('authenticateApiKey answers', () => {
       forbidFullScanOf: ['api_keys', 'users'],
     })
     expect(plan.join('\n')).toMatch(/SEARCH api_keys USING INDEX api_keys_key_hash_idx/u)
+  })
+
+  describe('last_used_at (narduk-libs#1856)', () => {
+    const MINUTE_MS = 60_000
+    const ageIso = (ms: number): string => new Date(Date.now() - ms).toISOString()
+
+    async function storedLastUsed(): Promise<string | null> {
+      const row = await harness.raw
+        .prepare('SELECT last_used_at FROM api_keys WHERE id = ?')
+        .bind(KEY_ID)
+        .first<{ last_used_at: string | null }>()
+      return row!.last_used_at
+    }
+
+    async function seedLastUsed(value: string | null): Promise<void> {
+      await seed(harness, CASES[0]!)
+      await harness.raw
+        .prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
+        .bind(value, KEY_ID)
+        .run()
+      harness.reset()
+    }
+
+    const touch = {
+      drizzle: async () => {
+        await authenticateApiKey(bearerEvent(db))
+        // last_used_at is written fire-and-forget; let it land before reading.
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      },
+      d1: async () => {
+        await authenticateD1ApiKey(harness.db, RAW_KEY)
+      },
+    }
+
+    describe.each(Object.entries(touch))('through the %s path', (_path, authenticate) => {
+      it.each([
+        { name: 'never used', age: null },
+        { name: 'last used past the interval', age: API_KEY_LAST_USED_INTERVAL_MS + MINUTE_MS },
+      ])('writes last_used_at when the key was $name', async ({ age }) => {
+        const before = age === null ? null : ageIso(age)
+        await seedLastUsed(before)
+
+        await authenticate()
+
+        const after = await storedLastUsed()
+        expect(after).not.toBeNull()
+        if (before !== null) expect(after! > before).toBe(true)
+      })
+
+      it('leaves last_used_at alone when the key was used within the interval', async () => {
+        const recent = ageIso(MINUTE_MS)
+        await seedLastUsed(recent)
+
+        await authenticate()
+
+        expect(await storedLastUsed()).toBe(recent)
+      })
+
+      it('still issues one conditional UPDATE, never an extra read', async () => {
+        await seedLastUsed(ageIso(MINUTE_MS))
+
+        await authenticate()
+
+        const updates = harness.statements.filter((sql) => /^\s*update\b/iu.test(sql))
+        expect(updates).toHaveLength(1)
+        expect(updates[0]).toMatch(/last_used_at"?\s+is null/iu)
+        expect(updates[0]).toMatch(/last_used_at"?\s*<\s*\?/iu)
+        expect(harness.statements.filter((sql) => /^\s*select\b/iu.test(sql))).toHaveLength(1)
+      })
+    })
   })
 })

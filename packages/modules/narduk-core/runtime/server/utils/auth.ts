@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, lt, or } from 'drizzle-orm'
 import { createError, deleteCookie, getCookie, getRequestHeader, setCookie } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
@@ -6,6 +6,7 @@ import { apiKeys, sessions, users } from '#narduk-core/schema'
 
 import {
   API_KEY_PREFIX,
+  apiKeyLastUsedCutoff,
   getApiKeyFromAuthorization,
   hashApiKeyText,
   hasRequiredApiKeyScopes,
@@ -198,7 +199,8 @@ export async function getSessionUser(event: H3Event): Promise<User | null> {
 /**
  * Authenticate via API key (Authorization: Bearer nk_...).
  * Returns the user + key metadata, or null if invalid, revoked or expired.
- * Updates last_used_at on successful authentication.
+ * Updates last_used_at on successful authentication, at most once per
+ * `API_KEY_LAST_USED_INTERVAL_MS` per key (narduk-libs#1856).
  */
 export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedApiKey | null> {
   const rawKey = getApiKeyFromAuthorization(event)
@@ -229,9 +231,19 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
   // Check expiration
   if (key.expiresAt && key.expiresAt < nowSec()) return null
 
-  // Update last_used_at (fire-and-forget, don't block the response)
+  // Update last_used_at (fire-and-forget, don't block the response). The age
+  // test is in the UPDATE's WHERE, so a key used in the last five minutes
+  // writes no row and costs no extra read (narduk-libs#1856).
   executeDatabaseQuery(
-    db.update(apiKeys).set({ lastUsedAt: new Date().toISOString() }).where(eq(apiKeys.id, key.id)),
+    db
+      .update(apiKeys)
+      .set({ lastUsedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(apiKeys.id, key.id),
+          or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, apiKeyLastUsedCutoff())),
+        ),
+      ),
   ).catch((err: unknown) =>
     useLogger(event)
       .child('Auth')
