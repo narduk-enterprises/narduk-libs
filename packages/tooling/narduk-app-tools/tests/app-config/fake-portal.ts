@@ -2,6 +2,9 @@ import type { AppConfigFetch, AppConfigFetchResponse } from '../../src/app-confi
 
 export const TOKEN = 'nk_test_0123456789abcdef'
 
+/** Retry options for tests that fail on purpose: no real backoff timers. */
+export const noBackoff = { sleep: async () => {}, random: () => 0.5 }
+
 export interface FakeCall {
   url: URL
   authorization: string | undefined

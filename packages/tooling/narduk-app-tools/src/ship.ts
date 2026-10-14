@@ -126,7 +126,10 @@ export interface ShipContext {
   containment?: (repoRoot: string, candidate: string, served: string) => Containment
   now?: () => number
   /** Portal resolution of `Config/cloudflare-app.json` when the checkout has no file. */
-  appConfig?: Pick<AppConfigOptions, 'fetch' | 'timeoutMs' | 'repo'>
+  appConfig?: Pick<
+    AppConfigOptions,
+    'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random' | 'repo'
+  >
 }
 
 // GitHub expressions ignore case, so `github.TOKEN` counts too.

@@ -292,6 +292,12 @@ reads either one goes through one resolver (`src/app-config/resolve.ts`):
   `repository` claim. Precedence is the explicit key, then OIDC. A job without
   the permission fails with a message that names `permissions: id-token: write`
   and `NARDUK_APP_CONFIG_SOURCE=file`. Neither token is ever printed.
+- **An outage is retried, an answer is not.** A network error, a timeout (10 s
+  per attempt) or HTTP 429/502/503/504, from the portal or from GitHub's OIDC
+  token endpoint, is attempted up to 3 times in all with a jittered backoff of
+  about 1 s then 3 s (35 s at worst). A 400/401/403/404/409 or a malformed
+  document is an answer and fails on the first attempt. When the attempts run
+  out the error says how many were made.
 - **It fails loudly.** No token, a 401, a 503, a timeout or a malformed answer
   stops the command with one `AppConfigError`; it never falls back to a missing
   file or to a stale cache. Only a 404 ("this repository has no such document")

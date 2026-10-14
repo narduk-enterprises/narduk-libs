@@ -306,7 +306,10 @@ export async function primeDeployAppConfig(
   args: readonly string[],
   appDir: string,
   env: DeployEnv = process.env,
-  options: Pick<AppConfigOptions, 'fetch' | 'timeoutMs' | 'repo'> = {},
+  options: Pick<
+    AppConfigOptions,
+    'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random' | 'repo'
+  > = {},
 ): Promise<void> {
   const { action } = parseDeployArgs([...args])
   if (action !== 'versions-upload' || !env.WORKERS_CI_BRANCH?.trim()) return

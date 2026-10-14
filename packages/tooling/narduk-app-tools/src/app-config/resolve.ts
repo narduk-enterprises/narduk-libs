@@ -17,8 +17,16 @@
  *   portal          ignore any local file and fetch from the portal. This is how
  *                   a repo proves it can lose its files.
  *
+ * RETRIES. A portal stall must not turn a CI run red, so an OUTAGE is retried:
+ * a network error, a timeout, or HTTP 429/502/503/504, from the portal or from
+ * GitHub's OIDC token endpoint, up to `APP_CONFIG_MAX_ATTEMPTS` attempts in all,
+ * each with its own timeout and a jittered backoff (about 1 s, then 3 s) between
+ * them. An ANSWER (400/401/403/404/409, a malformed body) is never retried: it
+ * fails on the first attempt. The worst case is about 35 s.
+ *
  * FAILURE IS LOUD. A portal fetch with no token, a 401, a 503, a timeout or a
- * malformed answer throws `AppConfigError`; it never falls back to a missing
+ * malformed answer throws `AppConfigError` (after the retries above, saying how
+ * many attempts were made); it never falls back to a missing
  * file and never to a stale cache. Only a definitive 404 ("this repo has no such
  * document") reads as absent, and a tool that cannot proceed without the
  * document asks for `required`, which turns that absence into an error too.
@@ -61,7 +69,13 @@ export const APP_CONFIG_SOURCE_ENV = 'NARDUK_APP_CONFIG_SOURCE'
 export const APP_CONFIG_ORIGIN_ENV = 'OPERATOR_PORTAL_URL'
 export const APP_CONFIG_DEFAULT_ORIGIN = 'https://ops.nardukenterprises.com'
 export const APP_CONFIG_ROUTE = '/api/estate/app-config'
-export const APP_CONFIG_DEFAULT_TIMEOUT_MS = 15_000
+/** Per attempt (the OIDC request and the portal request share one attempt's budget). */
+export const APP_CONFIG_DEFAULT_TIMEOUT_MS = 10_000
+export const APP_CONFIG_MAX_ATTEMPTS = 3
+/** Nominal wait before attempt 2 and attempt 3; each is jittered by +/-25%. */
+export const APP_CONFIG_BACKOFF_MS: readonly number[] = [1000, 3000]
+/** Outage statuses: the portal or GitHub is busy or down, not answering the question. */
+const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504])
 
 export type AppConfigSourceMode = 'auto' | 'file' | 'portal'
 
@@ -93,13 +107,24 @@ export type AppConfigErrorCode =
 export class AppConfigError extends Error {
   readonly code: AppConfigErrorCode
   readonly status: number | undefined
+  /** How many portal attempts were made, when the failure came from the fetch. */
+  readonly attempts: number | undefined
 
-  constructor(code: AppConfigErrorCode, message: string, status?: number) {
+  constructor(code: AppConfigErrorCode, message: string, status?: number, attempts?: number) {
     super(message)
     this.name = 'AppConfigError'
     this.code = code
     this.status = status
+    this.attempts = attempts
   }
+}
+
+/** Errors that are outages (worth another attempt), as opposed to answers. */
+const transientErrors = new WeakSet<Error>()
+
+function transient(error: AppConfigError): AppConfigError {
+  transientErrors.add(error)
+  return error
 }
 
 /** The slice of `fetch` the resolver uses, so a test can inject an answer. */
@@ -133,7 +158,14 @@ export interface AppConfigOptions {
   /** The app's `owner/repo`; derived from the environment and checkout when omitted. */
   repo?: string
   fetch?: AppConfigFetch
+  /** Timeout of ONE attempt (default 10 s). */
   timeoutMs?: number
+  /** Total attempts for an outage (default 3). Answers are never retried. */
+  maxAttempts?: number
+  /** Wait between attempts; injectable so a test needs no real timers. */
+  sleep?: (ms: number) => Promise<void>
+  /** Jitter source in [0, 1); injectable for determinism. */
+  random?: () => number
   /** Turn "absent from every source consulted" into an error. */
   required?: boolean
 }
@@ -341,8 +373,8 @@ async function portalBearer(
   // The request URL normally carries `?api-version=...`; `searchParams` appends
   // with `&` then, and starts the query with `?` when there is none.
   requestUrl.searchParams.set('audience', origin)
-  const failure = (reason: string): AppConfigError =>
-    new AppConfigError(
+  const failure = (reason: string, retryable = false): AppConfigError => {
+    const error = new AppConfigError(
       'oidc',
       scrubAppConfigSecrets(
         `Could not get a GitHub OIDC token for the portal (${reason}) to read ${file} of ${slug}. ` +
@@ -350,6 +382,8 @@ async function portalBearer(
         env,
       ),
     )
+    return retryable ? transient(error) : error
+  }
   let response: AppConfigFetchResponse
   let body: string
   try {
@@ -365,14 +399,18 @@ async function portalBearer(
     body = response.status === 200 ? await response.text() : ''
   } catch (error) {
     if (signal.aborted) {
-      throw new AppConfigError(
-        'timeout',
-        `GitHub did not answer the OIDC token request for ${file} of ${slug} in time.`,
+      throw transient(
+        new AppConfigError(
+          'timeout',
+          `GitHub did not answer the OIDC token request for ${file} of ${slug} in time.`,
+        ),
       )
     }
-    throw failure(error instanceof Error ? error.message : String(error))
+    throw failure(error instanceof Error ? error.message : String(error), true)
   }
-  if (response.status !== 200) throw failure(`HTTP ${response.status}`)
+  if (response.status !== 200) {
+    throw failure(`HTTP ${response.status}`, RETRYABLE_STATUSES.has(response.status))
+  }
   let value: unknown
   try {
     value = (JSON.parse(body) as { value?: unknown }).value
@@ -383,11 +421,38 @@ async function portalBearer(
   return { bearer: value.trim(), via: 'oidc' }
 }
 
-/** One portal fetch. `null` is a definitive 404; everything else wrong throws. */
+/** Nominal backoff before the next attempt, jittered by +/-25%. */
+function backoffMs(attempt: number, random: () => number): number {
+  const nominal =
+    APP_CONFIG_BACKOFF_MS[Math.min(attempt, APP_CONFIG_BACKOFF_MS.length) - 1] ??
+    APP_CONFIG_BACKOFF_MS.at(-1) ??
+    0
+  return Math.round(nominal * (0.75 + random() * 0.5))
+}
+
+/** Say how many attempts were made, unless it was one attempt at an answer. */
+function withAttempts(error: AppConfigError, attempts: number): AppConfigError {
+  if (attempts === 1 && !transientErrors.has(error)) return error
+  return new AppConfigError(
+    error.code,
+    `${error.message} (${attempts} attempt${attempts === 1 ? '' : 's'} made.)`,
+    error.status,
+    attempts,
+  )
+}
+
+/**
+ * One portal fetch, retried only for an outage (network error, timeout, HTTP
+ * 429/502/503/504). `null` is a definitive 404; every other answer that is not
+ * the document throws on the attempt that received it.
+ */
 export async function fetchPortalAppConfig(
   slug: string,
   file: AppConfigFile,
-  options: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs'> = {},
+  options: Pick<
+    AppConfigOptions,
+    'env' | 'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random'
+  > = {},
 ): Promise<ResolvedAppConfig | null> {
   const env = options.env ?? process.env
   if (!env[APP_CONFIG_TOKEN_ENV]?.trim() && !oidcAvailable(env)) {
@@ -398,96 +463,121 @@ export async function fetchPortalAppConfig(
   url.searchParams.set('repo', slug)
   url.searchParams.set('file', file)
   const doFetch: AppConfigFetch = options.fetch ?? ((u, init) => fetch(u, init))
-  const controller = new AbortController()
   const timeoutMs = options.timeoutMs ?? APP_CONFIG_DEFAULT_TIMEOUT_MS
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const { bearer, via } = await portalBearer(file, slug, origin, env, doFetch, controller.signal)
-    const credential = via === 'oidc' ? 'the GitHub OIDC token' : APP_CONFIG_TOKEN_ENV
-    let response: AppConfigFetchResponse
-    let body: string
+  const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? APP_CONFIG_MAX_ATTEMPTS))
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
+  const random = options.random ?? Math.random
+  // A minted OIDC token is kept across attempts: only the failed hop is redone.
+  let minted: { bearer: string; via: 'token' | 'oidc' } | undefined
+
+  const attemptOnce = async (): Promise<ResolvedAppConfig | null> => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      response = await doFetch(url.toString(), {
-        method: 'GET',
-        headers: { accept: 'application/json', authorization: `Bearer ${bearer}` },
-        redirect: 'manual',
-        signal: controller.signal,
-      })
-      body = response.status === 200 ? await response.text() : ''
-    } catch (error) {
-      if (controller.signal.aborted) {
-        throw new AppConfigError(
-          'timeout',
-          `The portal did not answer for ${file} of ${slug} within ${timeoutMs} ms.`,
+      minted ??= await portalBearer(file, slug, origin, env, doFetch, controller.signal)
+      const { bearer, via } = minted
+      const credential = via === 'oidc' ? 'the GitHub OIDC token' : APP_CONFIG_TOKEN_ENV
+      let response: AppConfigFetchResponse
+      let body: string
+      try {
+        response = await doFetch(url.toString(), {
+          method: 'GET',
+          headers: { accept: 'application/json', authorization: `Bearer ${bearer}` },
+          redirect: 'manual',
+          signal: controller.signal,
+        })
+        body = response.status === 200 ? await response.text() : ''
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw transient(
+            new AppConfigError(
+              'timeout',
+              `The portal did not answer for ${file} of ${slug} within ${timeoutMs} ms.`,
+            ),
+          )
+        }
+        if (error instanceof AppConfigError) throw error
+        throw transient(
+          new AppConfigError(
+            'network',
+            scrubAppConfigSecrets(
+              `Could not reach the portal for ${file} of ${slug}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              env,
+            )
+              .split(bearer)
+              .join('[redacted]'),
+          ),
         )
       }
-      if (error instanceof AppConfigError) throw error
-      throw new AppConfigError(
-        'network',
-        scrubAppConfigSecrets(
-          `Could not reach the portal for ${file} of ${slug}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          env,
+      const status = response.status
+      if (status === 401 || status === 403) {
+        throw new AppConfigError(
+          'unauthorized',
+          `The portal refused ${credential} for ${file} of ${slug} (HTTP ${status}). ` +
+            (via === 'oidc'
+              ? 'The portal admits an OIDC token only for the repository in its own claim, and only for the app it is linked to.'
+              : 'It must be the single-purpose producer:app-config-read key.'),
+          status,
         )
-          .split(bearer)
-          .join('[redacted]'),
-      )
+      }
+      if (status === 404) return null
+      if (RETRYABLE_STATUSES.has(status)) {
+        throw transient(
+          new AppConfigError(
+            'unavailable',
+            `The portal's app registry is unavailable (HTTP ${status}) for ${file} of ${slug}. Nothing was read from a file or a cache.`,
+            status,
+          ),
+        )
+      }
+      if (status !== 200) {
+        throw new AppConfigError(
+          'bad-response',
+          `The portal answered HTTP ${status} for ${file} of ${slug}.`,
+          status,
+        )
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(body)
+      } catch {
+        throw new AppConfigError(
+          'bad-response',
+          `The portal's ${file} for ${slug} is not valid JSON.`,
+        )
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new AppConfigError(
+          'bad-response',
+          `The portal's ${file} for ${slug} is not a JSON object.`,
+        )
+      }
+      const ownership = (parsed as Record<string, unknown>).contractOwnership
+      if (ownership !== undefined && !isAcceptedContractOwnership(ownership)) {
+        throw new AppConfigError(
+          'bad-response',
+          `The portal's ${file} for ${slug} declares contractOwnership ${JSON.stringify(ownership)}; expected "portal-owned".`,
+        )
+      }
+      const revisionText = response.headers.get('x-app-config-revision')
+      const revision =
+        revisionText !== null && /^\d+$/u.test(revisionText) ? Number(revisionText) : undefined
+      return { text: body, source: 'portal', ...(revision === undefined ? {} : { revision }) }
+    } finally {
+      clearTimeout(timer)
     }
-    const status = response.status
-    if (status === 401 || status === 403) {
-      throw new AppConfigError(
-        'unauthorized',
-        `The portal refused ${credential} for ${file} of ${slug} (HTTP ${status}). ` +
-          (via === 'oidc'
-            ? 'The portal admits an OIDC token only for the repository in its own claim, and only for the app it is linked to.'
-            : 'It must be the single-purpose producer:app-config-read key.'),
-        status,
-      )
-    }
-    if (status === 404) return null
-    if (status === 503) {
-      throw new AppConfigError(
-        'unavailable',
-        `The portal's app registry is unavailable (HTTP 503) for ${file} of ${slug}. Retry; nothing was read from a file or a cache.`,
-        status,
-      )
-    }
-    if (status !== 200) {
-      throw new AppConfigError(
-        'bad-response',
-        `The portal answered HTTP ${status} for ${file} of ${slug}.`,
-        status,
-      )
-    }
-    let parsed: unknown
+  }
+
+  for (let attempt = 1; ; attempt += 1) {
     try {
-      parsed = JSON.parse(body)
-    } catch {
-      throw new AppConfigError(
-        'bad-response',
-        `The portal's ${file} for ${slug} is not valid JSON.`,
-      )
+      return await attemptOnce()
+    } catch (error) {
+      if (!(error instanceof AppConfigError)) throw error
+      if (!transientErrors.has(error) || attempt >= maxAttempts) throw withAttempts(error, attempt)
+      await sleep(backoffMs(attempt, random))
     }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new AppConfigError(
-        'bad-response',
-        `The portal's ${file} for ${slug} is not a JSON object.`,
-      )
-    }
-    const ownership = (parsed as Record<string, unknown>).contractOwnership
-    if (ownership !== undefined && !isAcceptedContractOwnership(ownership)) {
-      throw new AppConfigError(
-        'bad-response',
-        `The portal's ${file} for ${slug} declares contractOwnership ${JSON.stringify(ownership)}; expected "portal-owned".`,
-      )
-    }
-    const revisionText = response.headers.get('x-app-config-revision')
-    const revision =
-      revisionText !== null && /^\d+$/u.test(revisionText) ? Number(revisionText) : undefined
-    return { text: body, source: 'portal', ...(revision === undefined ? {} : { revision }) }
-  } finally {
-    clearTimeout(timer)
   }
 }
 
@@ -623,7 +713,10 @@ export function readAppConfigText(options: ReadAppConfigOptions): string | null 
 /** Prime both documents of a checkout whose root is already known. */
 export async function primeAppCheckoutConfig(
   root: string,
-  options: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs' | 'repo'> = {},
+  options: Pick<
+    AppConfigOptions,
+    'env' | 'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random' | 'repo'
+  > = {},
 ): Promise<void> {
   await primeAppConfig({ ...options, dir: root, exact: true, files: APP_CONFIG_FILES })
 }

@@ -7,7 +7,7 @@ import {
   type AppConfigFetch,
   type AppConfigFetchResponse,
 } from '../../src/app-config/resolve.js'
-import { TOKEN } from './fake-portal.js'
+import { noBackoff, TOKEN } from './fake-portal.js'
 
 const REPO = 'example/app'
 const ORIGIN = 'https://ops.nardukenterprises.com'
@@ -57,7 +57,7 @@ const actionsEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
 })
 
 const get = (env: NodeJS.ProcessEnv, fetch: AppConfigFetch) =>
-  fetchPortalAppConfig(REPO, 'cloudflare-app.json', { env, fetch })
+  fetchPortalAppConfig(REPO, 'cloudflare-app.json', { env, fetch, ...noBackoff })
 
 describe('GitHub OIDC credential', () => {
   it('is used when only the Actions variables exist: the minted token is the Bearer', async () => {

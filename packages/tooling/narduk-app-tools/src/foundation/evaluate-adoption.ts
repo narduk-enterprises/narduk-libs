@@ -353,7 +353,10 @@ export interface RunAdoptionCheckOptions {
    * default answers `unknown` when the run's token cannot read alerts. */
   dependabotReality?: DependabotReality
   /** Portal resolution of the two app-config documents (env, fetch, timeout). */
-  appConfig?: Pick<AppConfigOptions, 'env' | 'fetch' | 'timeoutMs' | 'repo'>
+  appConfig?: Pick<
+    AppConfigOptions,
+    'env' | 'fetch' | 'timeoutMs' | 'maxAttempts' | 'sleep' | 'random' | 'repo'
+  >
 }
 
 export async function runAdoptionCheck(

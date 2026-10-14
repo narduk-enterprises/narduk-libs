@@ -305,7 +305,7 @@ describe('upgrade completes a private caller', () => {
 describe("upgrade grants the shared workflow's caller permissions", () => {
   /** The caller's permissions as every private app was generated before 2026-09-28. */
   function toNarrowCaller(ci: string): string {
-    return ci.replace(/^ {6}actions: read\n {6}pull-requests: write\n/mu, '')
+    return ci.replace(/^ {6}actions: read\n {6}pull-requests: write\n {6}id-token: write\n/mu, '')
   }
 
   function callerPermissions(ci: string): Record<string, string> {
@@ -318,24 +318,27 @@ describe("upgrade grants the shared workflow's caller permissions", () => {
     await edit(targetDir, CI, (text) =>
       toNarrowCaller(text).replace(
         '      packages: read\n',
-        '      packages: read\n      id-token: write # app-owned\n',
+        '      packages: read\n      checks: read # app-owned\n',
       ),
     )
 
     const report = await upgradeNardukApp({ targetDir, write: true })
     const ci = change(report, CI)
     expect(ci.status).toBe('drift')
-    expect(ci.detail).toContain('Grants the caller actions: read, pull-requests: write.')
+    expect(ci.detail).toContain(
+      'Grants the caller actions: read, pull-requests: write, id-token: write.',
+    )
 
     const after = await read(targetDir, CI)
     expect(callerPermissions(after)).toEqual({
       actions: 'read',
+      checks: 'read',
       contents: 'read',
       'id-token': 'write',
       packages: 'read',
       'pull-requests': 'write',
     })
-    expect(after).toContain('      id-token: write # app-owned\n')
+    expect(after).toContain('      checks: read # app-owned\n')
 
     const again = await upgradeNardukApp({ targetDir })
     expect(change(again, CI).status).toBe('clean')
