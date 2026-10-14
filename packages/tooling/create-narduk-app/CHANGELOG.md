@@ -1,5 +1,23 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.22.6
+
+### Patch Changes
+
+- 8832121: `authenticateApiKey` and `authenticateD1ApiKey` rewrite
+  `api_keys.last_used_at` at most once per five minutes per key
+  (narduk-libs#1856). The age test is in the UPDATE's `WHERE`
+  (`last_used_at IS NULL OR last_used_at < cutoff`), so a recently used key
+  writes no row and costs no extra read. Every authentication used to write,
+  about 175k rows a day in operator-portal's auth database. `last_used_at` is
+  now accurate to five minutes; `API_KEY_LAST_USED_INTERVAL_MS` names the
+  interval.
+- ef71a46: Generate Dependabot `cooldown` with `default-days` and
+  `semver-major-days` of 1 (was 0), matching the generated
+  `minimumReleaseAge: 1440`. With 0, Dependabot proposed versions under a day
+  old and pnpm refused them, failing every npm update job. Existing files at
+  cooldown 0 are now rewritten to the template.
+
 ## 0.22.5
 
 ### Patch Changes

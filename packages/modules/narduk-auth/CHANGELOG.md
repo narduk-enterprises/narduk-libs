@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.34.15
+
+### Patch Changes
+
+- Updated dependencies [8832121]
+  - @narduk-enterprises/narduk-core@2.28.1
+  - @narduk-enterprises/narduk-app@1.20.3
+
 ## 1.34.14
 
 ### Patch Changes
