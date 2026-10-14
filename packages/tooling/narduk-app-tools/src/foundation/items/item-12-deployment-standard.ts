@@ -276,9 +276,12 @@ export interface DeclaredFlag {
   value: boolean
 }
 
+/** The scope name of a flag set outside any `env` (and, in TOML, before any table header). */
+const TOP_LEVEL_SCOPE = '(top level)'
+
 export function exposureFlagsFromToml(text: string): DeclaredFlag[] {
   const out: DeclaredFlag[] = []
-  let scope = '(top level)'
+  let scope = TOP_LEVEL_SCOPE
   for (const line of text.split(/\r?\n/u)) {
     const header = /^\s*\[\[?([^\]]+)\]\]?\s*$/u.exec(line)
     if (header) {
@@ -299,7 +302,7 @@ export function exposureFlagsFromJson(config: unknown): DeclaredFlag[] {
     for (const key of EXPOSURE_FLAGS) {
       const value = scope[key]
       if (typeof value === 'boolean') {
-        out.push({ rel: '', scope: prefix === '' ? '(top level)' : prefix, key, value })
+        out.push({ rel: '', scope: prefix === '' ? TOP_LEVEL_SCOPE : prefix, key, value })
       }
     }
   }
@@ -1187,7 +1190,7 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
       // stop a silent top level from shipping Cloudflare's default.
       if (
         set.length > 0 &&
-        !set.some((flag) => envOfScope(flag.scope) === null) &&
+        !set.some((flag) => flag.scope === TOP_LEVEL_SCOPE) &&
         want !== WRANGLER_EXPOSURE_DEFAULT
       ) {
         disagreements.push(

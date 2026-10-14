@@ -998,6 +998,14 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
     expect(statusOf(root, '12.6')).toBe('fail')
   })
 
+  it('does not count a dotted env key as the top level', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      wrangler: { name: 'fixture', env: { 'a.b': { workers_dev: false, preview_urls: false } } },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
   it('skips nothing when no environment row is production', () => {
     const root = repoWith({
       worker: { workersDev: false, previewUrls: false },
