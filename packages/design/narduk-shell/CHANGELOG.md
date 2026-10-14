@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.25.0
+
+### Minor Changes
+
+- cc0bda1: Add `NeTruncate`, middle truncation for long URLs, paths and ids
+  (head shrinks with an ellipsis, tail stays whole, full value as text and
+  tooltip, focusable and click-to-expand, SSR-safe), and its pure
+  `splitTruncate` helper in the `./format` subpath. The shared-component lists
+  in eslint-config and narduk-app-tools know the new name.
+
 ## 0.24.0
 
 ### Minor Changes

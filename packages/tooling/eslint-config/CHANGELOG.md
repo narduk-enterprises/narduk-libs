@@ -1,5 +1,15 @@
 # @narduk-enterprises/eslint-config
 
+## 3.3.2
+
+### Patch Changes
+
+- cc0bda1: Add `NeTruncate`, middle truncation for long URLs, paths and ids
+  (head shrinks with an ellipsis, tail stays whole, full value as text and
+  tooltip, focusable and click-to-expand, SSR-safe), and its pure
+  `splitTruncate` helper in the `./format` subpath. The shared-component lists
+  in eslint-config and narduk-app-tools know the new name.
+
 ## 3.3.1
 
 ### Patch Changes
