@@ -1,3 +1,4 @@
+import { DEPENDABOT_COOLDOWN_DAYS } from './dependency-policy.js'
 import { isDisowned, UNMANAGED_MARKER, unmanagedMarkerFor } from './ownership.js'
 
 /**
@@ -81,8 +82,8 @@ function uncommented(contents: string): string {
     .join('\n')
 }
 
-/** `default-days: 0`, and `semver-major-days` absent or 0. A missing block is not zero: Dependabot then applies its own default. */
-export function hasExplicitZeroCooldown(contents: string): boolean {
+/** `default-days` at the policy value, and `semver-major-days` absent or the same. A missing block does not count: Dependabot then applies its own default. */
+export function hasPolicyCooldown(contents: string): boolean {
   const lines = uncommented(contents).split('\n')
   const start = lines.findIndex((line) => /^[ \t]*cooldown:[ \t]*$/u.test(line))
   if (start === -1) return false
@@ -99,8 +100,9 @@ export function hasExplicitZeroCooldown(contents: string): boolean {
     const major = /semver-major-days:\s*(\d+)/u.exec(line)
     if (major?.[1]) majorDays = major[1]
   }
-  if (defaultDays !== '0') return false
-  return majorDays === null || majorDays === '0'
+  const policy = String(DEPENDABOT_COOLDOWN_DAYS)
+  if (defaultDays !== policy) return false
+  return majorDays === null || majorDays === policy
 }
 
 /** An `updates` entry whose package-ecosystem is npm. github-actions alone is not one. */
@@ -138,17 +140,13 @@ export function registryEntries(contents: string): RegistryEntry[] {
 }
 
 /**
- * A file already pointed at this app's registry, with cooldown held at 0.
+ * A file already pointed at this app's registry, with the policy cooldown.
  * Rewriting it to the other template is the failure the audits hit: a
  * placeholder `npm.nard.uk` registry on a GitHub Packages app, or a
  * scope-bearing GitHub Packages block on an `npm.nard.uk` app.
  */
 export function dependabotMatchesRegistry(contents: string, registry: PackageRegistry): boolean {
-  if (
-    registry === 'unknown' ||
-    !hasExplicitZeroCooldown(contents) ||
-    !hasNpmUpdateBlock(contents)
-  ) {
+  if (registry === 'unknown' || !hasPolicyCooldown(contents) || !hasNpmUpdateBlock(contents)) {
     return false
   }
   const entries = registryEntries(contents)
@@ -190,8 +188,8 @@ export function githubPackagesDependabot(): string {
     "      - 'dependencies'",
     '    open-pull-requests-limit: 2',
     '    cooldown:',
-    '      default-days: 0',
-    '      semver-major-days: 0',
+    `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
+    `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
     '    groups:',
     '      safe:',
     '        patterns:',
@@ -261,7 +259,8 @@ export function resolveDependabot(
   }
   if (registry !== 'unknown' && dependabotMatchesRegistry(current, registry)) {
     return {
-      detail: 'Dependabot already targets the app registry with cooldown 0; left untouched.',
+      detail:
+        'Dependabot already targets the app registry with the policy cooldown; left untouched.',
       status: 'clean',
     }
   }

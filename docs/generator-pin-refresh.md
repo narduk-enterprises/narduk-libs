@@ -52,29 +52,22 @@ The smoke retains a failed fixture at the path it prints; it removes a
 successful fixture. A change to the scheduled workflow or repository CI scripts
 also requires the repository's full preflight before pushing.
 
-## Why Dependabot still has a zero cooldown
+## Why Dependabot has a one-day cooldown
 
 The refresh's 14-day selection window is separate from Dependabot's resolver
 cooldown. Setting `cooldown.default-days: 14` was tested on 2026-10-08 for
-[issue #1707](https://github.com/narduk-enterprises/narduk-libs/issues/1707).
-With the generated workspace's `@narduk-enterprises/*` exclusion present, this
-real updater command still failed:
-
-```sh
-pnpm update prettier@3.9.9 --lockfile-only --no-save -r --config.minimum-release-age=20160
-```
-
-pnpm reported `ERR_PNPM_NO_MATURE_MATCHING_VERSION` for
+[issue #1707](https://github.com/narduk-enterprises/narduk-libs/issues/1707) and
+failed: pnpm reported `ERR_PNPM_NO_MATURE_MATCHING_VERSION` for
 `@img/sharp-libvips-linux-ppc64@1.3.4`, published 11 days earlier and required
-by `sharp@0.35.5` under `narduk-app-tools@0.35.0`. The generator requires that
-Sharp line for security fixes. Exempting internal package names does not exempt
-their third-party dependencies. This extends the resolver failure documented in
+by `sharp@0.35.5`. That extends
 [company-hq#737](https://github.com/narduk-enterprises/company-hq/issues/737).
 
-Keep `DEPENDABOT_COOLDOWN_DAYS = 0` until a real Dependabot run proves a nonzero
-window works without rejecting required transitive pins. The generated pnpm
-workspace retains its existing one-day resolution policy and internal exemption.
-The smoke exercises that policy. It is not proof of GitHub's hosted Dependabot
-behavior; [#1235](https://github.com/narduk-enterprises/narduk-libs/issues/1235)
-tracks that observation. Recent releases can still produce Dependabot PRs; the
-refresh addresses the backlog of older, eligible minor and patch releases.
+A zero cooldown fails the other way. The generated workspace sets
+`minimumReleaseAge: 1440`, which pnpm applies inside Dependabot's updater too,
+so with cooldown 0 Dependabot proposed versions under a day old (`nuxt-og-image`
+7.0.6, `@cloudflare/workers-types`) and every npm job failed with
+`ERR_PNPM_NO_MATURE_MATCHING_VERSION`, reported only as `unknown_error`.
+`DEPENDABOT_COOLDOWN_DAYS = 1` matches the pnpm window. Proven on ai-api
+(2026-10-14): all five Dependabot runs succeeded after the change. A transitive
+pin published under a day ago can still fail a run; that is self-healing within
+a day.

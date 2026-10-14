@@ -304,7 +304,7 @@ lookalike URL is not the registry. An app on `https://npm.pkg.github.com` is
 never given `npm.nard.uk` or `NPM_NARD_UK_PLACEHOLDER`. An app on
 `https://npm.nard.uk` is never given a scope-bearing GitHub Packages registry. A
 file that already targets that registry, has an npm `updates` block, and sets
-`cooldown.default-days: 0` (with `semver-major-days` absent or 0) is left
+`cooldown.default-days: 1` (with `semver-major-days` absent or 1) is left
 untouched, including its own `ignore` rules. A github-actions-only file is not
 that match. Anything else is rewritten to the template for the registry the app
 actually uses. When the registry cannot be told, a missing file is left missing
@@ -608,6 +608,6 @@ wrangler at build time.
 
 The weekly [generator pin refresh](../../../docs/generator-pin-refresh.md) opens
 a tested PR for mature same-major dependency updates and the shared workflow
-pin. Its 14-day selection policy is separate from the zero Dependabot cooldown
-workaround documented there. Majors and runtime version changes remain
+pin. Its 14-day selection policy is separate from the one-day Dependabot
+cooldown workaround documented there. Majors and runtime version changes remain
 deliberate.
