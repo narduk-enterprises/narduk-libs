@@ -1,5 +1,13 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.22.9
+
+### Patch Changes
+
+- 9c1e562: Keep an unconfigured network directory out of the sitemap, including
+  automatically discovered pages, and apply its noindex policy to the HTTP
+  response as well as its meta tag.
+
 ## 0.22.8
 
 ### Patch Changes
