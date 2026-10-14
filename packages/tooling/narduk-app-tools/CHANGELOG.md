@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.42.1
+
+### Patch Changes
+
+- e237678: `narduk-app assets favicons` writes `favicon.ico` as a real ICO
+  container holding 16, 32 and 48 px PNG images. Before this, it wrote bare 32
+  px PNG bytes under the `.ico` name.
+
 ## 0.42.0
 
 ### Minor Changes
