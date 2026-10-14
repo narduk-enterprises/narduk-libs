@@ -670,6 +670,7 @@ function repoWith(options: {
   deployment?: Record<string, unknown>
   worker?: Record<string, unknown>
   wrangler?: Record<string, unknown>
+  environments?: Array<Record<string, unknown>>
   extraFiles?: Record<string, string>
 }): string {
   const root = makeTempRepo()
@@ -680,6 +681,7 @@ function repoWith(options: {
     schemaVersion: 1,
     product: { name: 'Fixture', repository: 'narduk-enterprises/fixture' },
     ...(options.worker ? { worker: options.worker } : {}),
+    ...(options.environments ? { environments: options.environments } : {}),
     deployment: options.deployment ?? block(),
   })
   for (const [rel, text] of Object.entries(options.extraFiles ?? {})) writeFile(root, rel, text)
@@ -889,6 +891,74 @@ describe('S10 -- the two design §2.2 tier-1 assertions that were missing', () =
       },
     })
     expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('lists, and does not compare, an env scope a non-production environment deploys from', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { nonprod: { workers_dev: true, preview_urls: true } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('pass')
+    expect(detailOf(root, '12.6')).toContain('not compared, non-production environment scope')
+    expect(detailOf(root, '12.6')).toContain('workers_dev=true at env.nonprod.')
+  })
+
+  it('still fails on an env scope no environment row accounts for', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [{ name: 'production', hostname: 'fixture.example', workerEnv: null }],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { nonprod: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('workers_dev=true at env.nonprod.')
+  })
+
+  it('still compares the env scope production deploys from, even if another row names it', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: 'live' },
+        { name: 'staging', hostname: null, workerEnv: 'live' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        workers_dev: false,
+        preview_urls: false,
+        env: { live: { workers_dev: true, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+  })
+
+  it('still fails when only a non-production scope sets the flag and production inherits the default', () => {
+    const root = repoWith({
+      worker: { workersDev: false, previewUrls: false },
+      environments: [
+        { name: 'production', hostname: 'fixture.example', workerEnv: null },
+        { name: 'staging', hostname: null, workerEnv: 'nonprod' },
+      ],
+      wrangler: {
+        name: 'fixture',
+        preview_urls: false,
+        env: { nonprod: { workers_dev: false, preview_urls: false } },
+      },
+    })
+    expect(statusOf(root, '12.6')).toBe('fail')
+    expect(detailOf(root, '12.6')).toContain('never sets workers_dev')
   })
 
   it('passes when they agree', () => {

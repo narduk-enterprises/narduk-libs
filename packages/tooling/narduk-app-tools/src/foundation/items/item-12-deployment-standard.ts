@@ -329,6 +329,41 @@ export function declaredExposure(cloudflareApp: unknown): Partial<Record<Exposur
   return out
 }
 
+/**
+ * Which wrangler env scope each declared environment deploys from, read from
+ * `Config/cloudflare-app.json` `environments[]` (`name`, `workerEnv`). The
+ * production row's `workerEnv` names the scope production deploys from; null
+ * or absent means the top level, which is what `narduk-app deploy` uploads
+ * after it flattens `env` away. Any other row's `workerEnv` names a scope that
+ * only a non-production Worker deploys from.
+ */
+export interface ExposureEnvironments {
+  production: string | null
+  nonProduction: string[]
+}
+
+export function exposureEnvironments(cloudflareApp: unknown): ExposureEnvironments {
+  const out: ExposureEnvironments = { production: null, nonProduction: [] }
+  if (!isRecord(cloudflareApp) || !Array.isArray(cloudflareApp.environments)) return out
+  for (const row of cloudflareApp.environments) {
+    if (!isRecord(row)) continue
+    const workerEnv = typeof row.workerEnv === 'string' ? row.workerEnv.trim() : ''
+    if (row.name === 'production') {
+      if (workerEnv !== '') out.production = workerEnv
+    } else if (workerEnv !== '') {
+      out.nonProduction.push(workerEnv)
+    }
+  }
+  out.nonProduction = out.nonProduction.filter((name) => name !== out.production)
+  return out
+}
+
+/** The env name of a flag's scope (`env.nonprod.` or TOML `env.nonprod`), or null at the top level. */
+function envOfScope(scope: string): string | null {
+  const match = /^env\.([^.]+)\.?$/u.exec(scope)
+  return match ? (match[1] as string) : null
+}
+
 /* -------------------------------------------------------------------------- */
 /* Workers Cache (12.7, narduk-libs#435)                                        */
 /* -------------------------------------------------------------------------- */
@@ -449,6 +484,8 @@ export interface DeploymentScan {
   exposureFlags: DeclaredFlag[]
   /** `worker.workersDev` / `worker.previewUrls` from Config/cloudflare-app.json. */
   declaredExposure: Partial<Record<ExposureFlag, boolean>>
+  /** Which wrangler scopes production and non-production environments deploy from (12.6). */
+  exposureEnvironments?: ExposureEnvironments
   /** Every wrangler scope that sets `cache.enabled: true` (12.7). */
   edgeCache: EdgeCacheSwitch[]
   /** The app's narduk-core dependency, if it declares one (12.7). */
@@ -630,6 +667,7 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     accountIds: sortedUnique(accounts.map((entry) => entry.accountId)),
     exposureFlags: declaredExposureFlags(repo, wranglerRel),
     declaredExposure: declaredExposure(cloudflareApp),
+    exposureEnvironments: exposureEnvironments(cloudflareApp),
     edgeCache: edgeCacheSwitches(repo, wranglerRels),
     nardukCore: declaredNardukCore(repo),
     migrationSources:
@@ -1109,10 +1147,28 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
     if (!scan.wranglerRel) {
       return check('12.6', name, STATUS_UNKNOWN, 'no wrangler config found at a known path')
     }
+    // The declaration is about production. A scope that a non-production
+    // environment row names (and production does not) is a different Worker:
+    // it is listed, not compared. The production scope, and any env scope no
+    // row accounts for, are compared as before.
+    const envs = scan.exposureEnvironments ?? { production: null, nonProduction: [] }
+    const nonProduction = new Set(envs.nonProduction)
+    const isNonProduction = (flag: DeclaredFlag): boolean => {
+      const env = envOfScope(flag.scope)
+      return env !== null && nonProduction.has(env)
+    }
+    const skipped = scan.exposureFlags.filter(isNonProduction)
+    const compared = scan.exposureFlags.filter((flag) => !isNonProduction(flag))
+    const skippedNote =
+      skipped.length > 0
+        ? `; not compared, non-production environment scope: ${sortedUnique(
+            skipped.map((flag) => `${flag.key}=${String(flag.value)} at ${flag.scope}`),
+          ).join(', ')}`
+        : ''
     const disagreements: string[] = []
     for (const key of keys) {
       const want = scan.declaredExposure[key]
-      const set = scan.exposureFlags.filter((flag) => flag.key === key)
+      const set = compared.filter((flag) => flag.key === key)
       if (set.length === 0) {
         if (want !== WRANGLER_EXPOSURE_DEFAULT) {
           disagreements.push(
@@ -1138,7 +1194,7 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
         name,
         STATUS_FAIL,
         `${disagreements.join('; ')}. Wrangler reads the config, not the declaration: where they ` +
-          `disagree the declaration is the one that is wrong about production.`,
+          `disagree the declaration is the one that is wrong about production${skippedNote}.`,
         scan.wranglerRel,
       )
     }
@@ -1147,7 +1203,7 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
       name,
       STATUS_PASS,
       `${keys.map((key) => `${key}=${String(scan.declaredExposure[key])}`).join(', ')} in ` +
-        `${scan.wranglerRel} matches ${CLOUDFLARE_APP_FILE}`,
+        `${scan.wranglerRel} matches ${CLOUDFLARE_APP_FILE}${skippedNote}`,
       scan.wranglerRel,
     )
   })
