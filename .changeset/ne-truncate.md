@@ -1,6 +1,7 @@
 ---
 '@narduk-enterprises/narduk-shell': minor
 '@narduk-enterprises/eslint-config': patch
+'@narduk-enterprises/libs-explorer': patch
 '@narduk-enterprises/narduk-app-tools': patch
 ---
 
