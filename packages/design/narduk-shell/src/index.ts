@@ -70,7 +70,11 @@ export type {
   NeCollectionState,
 } from './runtime/composables/use-collection'
 
-export type { NeCursorCollectionOptions, NeCursorCollectionQuery, NeCursorCollectionState } from './runtime/composables/use-cursor-collection'
+export type {
+  NeCursorCollectionOptions,
+  NeCursorCollectionQuery,
+  NeCursorCollectionState,
+} from './runtime/composables/use-cursor-collection'
 
 export type { NePagerProps } from './runtime/components/ne-pager-types'
 
@@ -126,7 +130,29 @@ export type {
  * neither an SFC nor `@nuxt/ui` enters the barrel's value-import graph.
  */
 export { isUnreported, NE_UNREPORTED_TEXT } from './runtime/utils/unreported'
-export type { NeMeterProps, NeMeterVariant } from './runtime/components/ne-meter-types'
+export { readMeter, readMeterSegments } from './runtime/components/ne-meter-types'
+export type {
+  NeMeterProps,
+  NeMeterSegment,
+  NeMeterSegmentReading,
+  NeMeterSegmentsReading,
+  NeMeterTone,
+  NeMeterVariant,
+} from './runtime/components/ne-meter-types'
+
+/**
+ * The cell-level unreported mark (`NeAbsent`) and the show-more control
+ * (`NeShowMore`) with the row limiter it pairs with (`useRowLimit`). Plain
+ * modules, so no SFC or `@nuxt/ui` enters the barrel's value-import graph.
+ * `absentName` and `showMoreLabel` are values on purpose: a test or a server
+ * route can say the same words the components do. `useRowLimit` itself reaches
+ * app code through `addImports`, like `useCollection`; only its type is here.
+ */
+export { absentName } from './runtime/components/ne-absent-types'
+export type { NeAbsentProps, NeAbsentVariant } from './runtime/components/ne-absent-types'
+export { showMoreLabel } from './runtime/components/ne-show-more-types'
+export type { NeShowMoreProps } from './runtime/components/ne-show-more-types'
+export type { NeRowLimit } from './runtime/composables/use-row-limit'
 
 /**
  * The data-table family (narduk-libs#528). `toCsv` and `parseSort` are pure

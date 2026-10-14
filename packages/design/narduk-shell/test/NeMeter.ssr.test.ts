@@ -57,4 +57,32 @@ describe('NeMeter server rendering', () => {
     expect(html).toContain('ne-meter--inline')
     expect(html).toContain('width:25%')
   })
+
+  it('carries a segmented reading into the first paint: parts, widths, tones and a named list', async () => {
+    const html = await render({
+      segments: [
+        { label: 'Used', value: 40, tone: 'warn' },
+        { label: 'Cache', value: 20 },
+      ],
+      max: 100,
+      label: 'Disk',
+    })
+
+    expect(html).toContain('ne-meter--segmented')
+    expect(html.match(/data-ne-meter-segment/g)).toHaveLength(2)
+    expect(html).toContain('width:40%')
+    expect(html).toContain('width:20%')
+    expect(html).toContain('ne-meter__segment--warn')
+    expect(html).toContain('role="img"')
+    expect(html).toContain('aria-label="Disk: Used 40, Cache 20 of 100"')
+    expect(html).toContain('60')
+  })
+
+  it('renders an all-unreported segmented meter as the hatch', async () => {
+    const html = await render({ segments: [{ value: null }], max: 100, label: 'Disk' })
+
+    expect(html).toContain('ne-meter--unreported')
+    expect(html).toContain('aria-label="Disk: not reported"')
+    expect(html).not.toContain('data-ne-meter-segment')
+  })
 })

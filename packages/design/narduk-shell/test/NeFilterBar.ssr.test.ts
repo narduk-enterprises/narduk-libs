@@ -126,3 +126,25 @@ describe('NeFilterBar multiple, server-rendered (narduk-libs#1545)', () => {
     expect(html.match(/aria-pressed="false"/g)).toHaveLength(1)
   })
 })
+
+describe('NeFilterBar links, server-rendered', () => {
+  it('carries the nav, the real hrefs and aria-current into the first paint', async () => {
+    const html = await render({
+      kind: 'links',
+      label: 'Runners',
+      modelValue: 'queue',
+      items: [
+        { key: 'overview', label: 'Overview', to: '/runners' },
+        { key: 'queue', label: 'Queue', to: '/runners/queue' },
+      ],
+    })
+
+    expect(html).toContain('<nav')
+    expect(html).toContain('aria-label="Runners"')
+    expect(html).toContain('href="/runners"')
+    expect(html).toContain('href="/runners/queue"')
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1)
+    expect(html).not.toContain('role="tablist"')
+    expect(html).not.toContain('aria-pressed')
+  })
+})

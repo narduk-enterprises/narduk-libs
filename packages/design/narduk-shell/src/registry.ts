@@ -97,6 +97,10 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // page holds, merging operator-portal's KitTable and CollectionTable.
   // narduk-libs#1855: middle truncation for long URLs, paths and ids.
   { name: 'NeTruncate', filePath: './runtime/components/NeTruncate.vue' },
+  // portal-polish L1: the cell-level unreported mark, and the "Show all N"
+  // control that sits under a list `useRowLimit` capped.
+  { name: 'NeAbsent', filePath: './runtime/components/NeAbsent.vue' },
+  { name: 'NeShowMore', filePath: './runtime/components/NeShowMore.vue' },
   { name: 'NeCollectionTable', filePath: './runtime/components/NeCollectionTable.vue' },
   // The shared Cmd/Ctrl+K search palette and the header button that opens it.
   // Register both: an app mounts the palette lazily (`LazyNeCommandPalette`)

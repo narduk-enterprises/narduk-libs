@@ -16,5 +16,14 @@ const state = ref<string | null>('open')
       note="By owner lands with the owner ledger"
     />
     <p class="font-mono text-xs">selected: {{ state ?? 'none' }}</p>
+    <NeFilterBar
+      kind="links"
+      label="Section"
+      model-value="queue"
+      :items="[
+        { key: 'overview', label: 'Overview', to: '#overview' },
+        { key: 'queue', label: 'Queue', to: '#queue', count: 4 },
+      ]"
+    />
   </div>
 </template>

@@ -6,7 +6,7 @@
  * count and its own disabled treatment. The pressed-chip count inversion was
  * carried nine times and fixed nine times. It is carried once, here.
  *
- * Three kinds, one DOM shape — a wrapping row of buttons in the order the
+ * Four kinds, one DOM shape — a wrapping row of controls in the order the
  * caller gives them, nothing sorted and nothing hidden:
  *
  *   - `chips`  — a toggle row. `aria-pressed` carries the selection.
@@ -15,6 +15,12 @@
  *     that wrap, Home and End to the ends (WAI-ARIA APG). The caller's panels
  *     name the tab that controls them through `idPrefix`
  *     (`<prefix>-tab-<key>` / `<prefix>-panel-<key>`).
+ *   - `links`  — route-linked tabs: the same row, but each control is a real
+ *     link (`item.to`) inside a labelled `nav`, and the current one carries
+ *     `aria-current="page"`. This is NOT a tablist: there are no panels to
+ *     switch between, the route is the state, and every link stays in the
+ *     page's tab order (a roving tabindex would hide links from a keyboard
+ *     user for no gain). A tablist for in-page panels, links for pages.
  *
  * ## A filter with no producer stays in the row
  *
@@ -72,18 +78,31 @@ const emit = defineEmits<{ 'update:modelValue': [key: string] }>()
 defineSlots<{ after?: () => unknown }>()
 
 const isTabs = computed(() => props.kind === 'tabs')
+const isLinks = computed(() => props.kind === 'links')
 
 /**
  * More than one control may be pressed (narduk-libs#1545). A tablist has one
- * selected tab, so `kind: 'tabs'` refuses `multiple`: it stays a single
- * selection and an array model selects nothing there.
+ * selected tab, and a link row has one current page, so `kind: 'tabs'` and
+ * `'links'` refuse `multiple`: they stay a single selection and an array model
+ * selects nothing there.
  */
-const isMultiple = computed(() => props.multiple && !isTabs.value)
+const isMultiple = computed(() => props.multiple && !isTabs.value && !isLinks.value)
 
-if (import.meta.dev && props.multiple && props.kind === 'tabs') {
+if (import.meta.dev && props.multiple && (props.kind === 'tabs' || props.kind === 'links')) {
   console.warn(
-    '[NeFilterBar] `multiple` is ignored for kind="tabs": a tablist has exactly one selected tab.',
+    `[NeFilterBar] \`multiple\` is ignored for kind="${props.kind}": there is exactly one ${
+      props.kind === 'tabs' ? 'selected tab' : 'current page'
+    }.`,
   )
+}
+
+/**
+ * Where a control goes, or `undefined` when it is a button: the row is not
+ * `links`, the item has no `to`, or it is disabled (a disabled control must not
+ * be navigable, and a link cannot be `aria-disabled` away from a middle-click).
+ */
+function linkOf(item: NeFilterBarItem): string | undefined {
+  return isLinks.value && item.to && !item.disabled ? item.to : undefined
 }
 
 function selected(item: NeFilterBarItem): boolean {
@@ -238,11 +257,12 @@ function onTabKey(event: KeyboardEvent, index: number): void {
       siblings of it. `group` moves with it so one selector, one assertion and
       one mental model cover all three kinds.
     -->
-    <div
+    <component
+      :is="isLinks ? 'nav' : 'div'"
       data-ne-filter-controls
       class="flex flex-wrap items-center gap-2"
       :class="ui?.controls"
-      :role="isTabs ? 'tablist' : 'group'"
+      :role="isTabs ? 'tablist' : isLinks ? undefined : 'group'"
       :aria-label="label"
     >
       <UButton
@@ -250,7 +270,8 @@ function onTabKey(event: KeyboardEvent, index: number): void {
         :id="isTabs ? tabId(item) : undefined"
         :key="item.key"
         :ref="setControl(index)"
-        type="button"
+        :type="linkOf(item) ? undefined : 'button'"
+        :to="linkOf(item)"
         size="xs"
         :color="colorOf(item)"
         :variant="variantOf(item)"
@@ -262,8 +283,11 @@ function onTabKey(event: KeyboardEvent, index: number): void {
         data-ne-filter-control
         :data-ne-filter-key="item.key"
         :role="isTabs ? 'tab' : undefined"
-        :aria-pressed="isTabs || (item.disabled && !selected(item)) ? undefined : selected(item)"
+        :aria-pressed="
+          isTabs || isLinks || (item.disabled && !selected(item)) ? undefined : selected(item)
+        "
         :aria-selected="isTabs ? selected(item) : undefined"
+        :aria-current="isLinks && selected(item) ? 'page' : undefined"
         :aria-controls="isTabs ? panelId(item) : undefined"
         :aria-disabled="item.disabled ? 'true' : undefined"
         :aria-describedby="item.disabled && note ? noteId : undefined"
@@ -292,7 +316,7 @@ function onTabKey(event: KeyboardEvent, index: number): void {
           }}</span></template
         >
       </UButton>
-    </div>
+    </component>
     <span
       v-if="note"
       :id="noteId"

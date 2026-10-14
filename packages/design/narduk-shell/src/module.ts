@@ -277,6 +277,12 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useNardukShellSections',
       from: resolver.resolve('./runtime/composables/use-narduk-shell-sections'),
     })
+    // The first `n` rows of a list, then all of them on request. Pairs with
+    // NeShowMore but needs no component on its path.
+    addImports({
+      name: 'useRowLimit',
+      from: resolver.resolve('./runtime/composables/use-row-limit'),
+    })
 
     if (options.components === false) return
 

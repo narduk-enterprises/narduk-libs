@@ -137,6 +137,82 @@ describe('NePageHeader', () => {
     expect(wrapper.find('[data-testid="extra"]').exists()).toBe(true)
   })
 
+  describe('lead and meta slots', () => {
+    it('renders lead above the title, ahead of the eyebrow, and outside the heading', () => {
+      const wrapper = mount(NePageHeader, {
+        props: { title: 'Runners', eyebrow: 'Infrastructure' },
+        slots: { lead: '<a href="/infra" data-testid="back">Infrastructure</a>' },
+      })
+
+      const headline = wrapper.get('[data-slot="headline"]')
+      expect(headline.find('[data-testid="back"]').exists()).toBe(true)
+      expect(headline.text()).toContain('Infrastructure')
+      expect(wrapper.get('h1').find('[data-testid="back"]').exists()).toBe(false)
+      expect(
+        headline
+          .get('[data-ne-page-header-lead]')
+          .element.compareDocumentPosition(wrapper.get('h1').element) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('keeps the eyebrow when lead is given, and shows lead with no eyebrow', () => {
+      const withBoth = mount(NePageHeader, {
+        props: { title: 'Runners', eyebrow: 'Infrastructure' },
+        slots: { lead: '<a href="/">Back</a>' },
+      })
+      expect(withBoth.get('[data-slot="headline"]').text()).toBe('BackInfrastructure')
+
+      const leadOnly = mount(NePageHeader, {
+        props: { title: 'Runners' },
+        slots: { lead: '<a href="/">Back</a>' },
+      })
+      expect(leadOnly.get('[data-slot="headline"]').text()).toBe('Back')
+    })
+
+    it('renders meta beside the actions, ahead of them, and never inside the heading', () => {
+      const wrapper = mount(NePageHeader, {
+        props: { title: 'Runners' },
+        slots: {
+          meta: '<time data-testid="clock">read 10:42 CT</time>',
+          actions: '<button type="button">Refresh</button>',
+        },
+      })
+
+      const links = wrapper.get('[data-slot="links"]')
+      expect(links.get('[data-ne-page-header-meta]').text()).toBe('read 10:42 CT')
+      expect(
+        links
+          .get('[data-testid="clock"]')
+          .element.compareDocumentPosition(links.get('button').element) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(wrapper.get('h1').text()).toBe('Runners')
+    })
+
+    it('renders lead and meta on the heading-override path too', () => {
+      const wrapper = mount(NePageHeader, {
+        props: { title: 'Widget total', as: 'h2', eyebrow: 'Dashboard' },
+        slots: { lead: '<a href="/">Back</a>', meta: '<span>as of 10:42</span>' },
+      })
+
+      expect(wrapper.get('[data-ne-page-header-lead]').text()).toBe('Back')
+      expect(wrapper.get('[data-ne-page-header-meta]').text()).toBe('as of 10:42')
+      expect(wrapper.get('h2').text()).toBe('Widget total')
+    })
+
+    it('adds no lead or meta markup when neither slot is given', () => {
+      const wrapper = mount(NePageHeader, {
+        props: { title: 'Runners', eyebrow: 'Infrastructure' },
+        slots: { actions: '<button type="button">New</button>' },
+      })
+
+      expect(wrapper.find('[data-ne-page-header-lead]').exists()).toBe(false)
+      expect(wrapper.find('[data-ne-page-header-meta]').exists()).toBe(false)
+      expect(wrapper.get('[data-slot="headline"]').text()).toBe('Infrastructure')
+    })
+  })
+
   describe('as override', () => {
     it('renders the given tag instead of h1, and stops UPageHeader from also rendering one', () => {
       const wrapper = mount(NePageHeader, { props: { title: 'Widget total', as: 'h2' } })
