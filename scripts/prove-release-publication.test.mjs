@@ -134,6 +134,17 @@ test('the GitHub Packages decision only re-dispatches an idle, green, unsupersed
   const red = decide({ ci: { id: 7, status: 'completed', conclusion: 'failure' } })
   assert.equal(red.kind, 'fail')
   assert.match(red.reason, /push CI run 7 for this commit concluded failure/u)
+  assert.match(red.reason, /push a fix to main, then dispatch release\.yml with verified-sha/u)
+  const early = decide({
+    elapsed: 2 * minute,
+    ci: { id: 7, status: 'completed', conclusion: 'failure' },
+  })
+  assert.equal(
+    early.kind,
+    'fail',
+    'a finished red push CI fails inside the grace period, not after it',
+  )
+  assert.equal(decide({ elapsed: 2 * minute, ci: { id: 8, status: 'in_progress' } }).kind, 'wait')
 
   const overtaken = decide({ byState: { present: [], superseded: [tools], missing: [core] } })
   assert.equal(overtaken.kind, 'fail')
@@ -205,19 +216,34 @@ test('a publish that never lands fails with the exact missing versions after one
   assert.ok(clock.now() < 30 * minute, 'fails soon after the dispatched run goes idle')
 })
 
-test('a normal release that publishes during the grace period never dispatches or reads Actions', async () => {
+test('a normal release that publishes during the grace period never dispatches or reads the release group', async () => {
   const clock = fakeClock()
   const result = await proveGithubPackages({
     targets: [core],
     ...clock,
     readRegistry: async () =>
       statesFrom([[core, clock.now() >= 12 * minute ? 'present' : 'missing']]),
-    readCi: async () => assert.fail('no Actions read inside the grace period'),
-    readReleaseBusy: async () => assert.fail('no Actions read inside the grace period'),
+    // Push CI is read each poll so a red run fails fast; the release group is not.
+    readCi: async () => ({ id: 3, status: 'in_progress' }),
+    readReleaseBusy: async () => assert.fail('no release-group read inside the grace period'),
     dispatch: async () => assert.fail('no dispatch'),
   })
   assert.equal(result.dispatched, false)
   assert.deepEqual(result.present, [core])
+})
+
+test('a red push CI fails the proof within the grace period instead of after it', async () => {
+  const clock = fakeClock()
+  const result = await proveGithubPackages({
+    targets: [core],
+    ...clock,
+    readRegistry: async () => statesFrom([[core, 'missing']]),
+    readCi: async () => ({ id: 9, status: 'completed', conclusion: 'failure' }),
+    readReleaseBusy: async () => assert.fail('no release-group read for a red CI'),
+    dispatch: async () => assert.fail('never dispatch a release whose CI is red'),
+  })
+  assert.match(result.failure, /push CI run 9 .* concluded failure/u)
+  assert.ok(clock.now() < 20 * minute, 'fails before the grace period ends')
 })
 
 test('a busy release group is waited out to the deadline rather than replaced', async () => {
