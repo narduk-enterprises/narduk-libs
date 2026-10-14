@@ -330,32 +330,48 @@ export function declaredExposure(cloudflareApp: unknown): Partial<Record<Exposur
 }
 
 /**
- * Which wrangler env scope each declared environment deploys from, read from
- * `Config/cloudflare-app.json` `environments[]` (`name`, `workerEnv`). The
- * production row's `workerEnv` names the scope production deploys from; null
- * or absent means the top level, which is what `narduk-app deploy` uploads
- * after it flattens `env` away. Any other row's `workerEnv` names a scope that
- * only a non-production Worker deploys from.
+ * The wrangler `env.*` scopes 12.6 may leave out of the production comparison.
+ *
+ * Production always uploads the top level: 12.1 holds the production command to
+ * `narduk-app deploy versions-upload`, which flattens `env` away, so a
+ * production row's `workerEnv` is never what production deploys from. A scope
+ * is left out only when ALL of these hold, and every other scope is compared:
+ * - `environments[]` has a `production` row (names compared case-insensitively);
+ * - a non-production row names the scope through `workerEnv`, and the
+ *   production row does not;
+ * - the wrangler config is JSON (the only kind `narduk-app deploy` reads), and
+ *   the scope's Worker is a different Worker: its `name`, or wrangler's implicit
+ *   `<top-level name>-<env>` when unset, differs from the top-level `name`.
  */
-export interface ExposureEnvironments {
-  production: string | null
-  nonProduction: string[]
-}
-
-export function exposureEnvironments(cloudflareApp: unknown): ExposureEnvironments {
-  const out: ExposureEnvironments = { production: null, nonProduction: [] }
-  if (!isRecord(cloudflareApp) || !Array.isArray(cloudflareApp.environments)) return out
-  for (const row of cloudflareApp.environments) {
-    if (!isRecord(row)) continue
-    const workerEnv = typeof row.workerEnv === 'string' ? row.workerEnv.trim() : ''
-    if (row.name === 'production') {
-      if (workerEnv !== '') out.production = workerEnv
-    } else if (workerEnv !== '') {
-      out.nonProduction.push(workerEnv)
-    }
+export function nonProductionExposureScopes(
+  cloudflareApp: unknown,
+  repo: AppRepo,
+  wranglerRel: string | null,
+): string[] {
+  if (!isRecord(cloudflareApp) || !Array.isArray(cloudflareApp.environments)) return []
+  if (!wranglerRel || wranglerRel.endsWith('.toml')) return []
+  const rows = cloudflareApp.environments.filter(isRecord)
+  const isProduction = (row: Record<string, unknown>): boolean =>
+    typeof row.name === 'string' && row.name.trim().toLowerCase() === 'production'
+  if (!rows.some(isProduction)) return []
+  const workerEnvOf = (row: Record<string, unknown>): string =>
+    typeof row.workerEnv === 'string' ? row.workerEnv.trim() : ''
+  const productionEnvs = new Set(rows.filter(isProduction).map(workerEnvOf))
+  const config = parseJson(repo.read(wranglerRel))
+  if (!isRecord(config) || typeof config.name !== 'string' || !isRecord(config.env)) return []
+  const topName = config.name
+  const envs = config.env
+  const out: string[] = []
+  for (const row of rows) {
+    if (isProduction(row)) continue
+    const env = workerEnvOf(row)
+    if (env === '' || productionEnvs.has(env)) continue
+    const scope = envs[env]
+    if (!isRecord(scope)) continue
+    const workerName = typeof scope.name === 'string' ? scope.name : `${topName}-${env}`
+    if (workerName !== topName) out.push(env)
   }
-  out.nonProduction = out.nonProduction.filter((name) => name !== out.production)
-  return out
+  return sortedUnique(out)
 }
 
 /** The env name of a flag's scope (`env.nonprod.` or TOML `env.nonprod`), or null at the top level. */
@@ -484,8 +500,8 @@ export interface DeploymentScan {
   exposureFlags: DeclaredFlag[]
   /** `worker.workersDev` / `worker.previewUrls` from Config/cloudflare-app.json. */
   declaredExposure: Partial<Record<ExposureFlag, boolean>>
-  /** Which wrangler scopes production and non-production environments deploy from (12.6). */
-  exposureEnvironments?: ExposureEnvironments
+  /** `env.*` scopes 12.6 leaves out of the production comparison (non-production Workers). */
+  nonProductionExposureScopes?: string[]
   /** Every wrangler scope that sets `cache.enabled: true` (12.7). */
   edgeCache: EdgeCacheSwitch[]
   /** The app's narduk-core dependency, if it declares one (12.7). */
@@ -667,7 +683,7 @@ export function scanDeployment(repo: AppRepo): DeploymentScan {
     accountIds: sortedUnique(accounts.map((entry) => entry.accountId)),
     exposureFlags: declaredExposureFlags(repo, wranglerRel),
     declaredExposure: declaredExposure(cloudflareApp),
-    exposureEnvironments: exposureEnvironments(cloudflareApp),
+    nonProductionExposureScopes: nonProductionExposureScopes(cloudflareApp, repo, wranglerRel),
     edgeCache: edgeCacheSwitches(repo, wranglerRels),
     nardukCore: declaredNardukCore(repo),
     migrationSources:
@@ -1147,12 +1163,10 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
     if (!scan.wranglerRel) {
       return check('12.6', name, STATUS_UNKNOWN, 'no wrangler config found at a known path')
     }
-    // The declaration is about production. A scope that a non-production
-    // environment row names (and production does not) is a different Worker:
-    // it is listed, not compared. The production scope, and any env scope no
-    // row accounts for, are compared as before.
-    const envs = scan.exposureEnvironments ?? { production: null, nonProduction: [] }
-    const nonProduction = new Set(envs.nonProduction)
+    // The declaration is about production, and production uploads the top
+    // level. An env scope that is a separate, declared non-production Worker
+    // is listed, not compared; every other scope is compared as before.
+    const nonProduction = new Set(scan.nonProductionExposureScopes ?? [])
     const isNonProduction = (flag: DeclaredFlag): boolean => {
       const env = envOfScope(flag.scope)
       return env !== null && nonProduction.has(env)
@@ -1169,6 +1183,19 @@ function evaluate126(scan: DeploymentScan): FoundationSubCheck {
     for (const key of keys) {
       const want = scan.declaredExposure[key]
       const set = compared.filter((flag) => flag.key === key)
+      // Production reads the top level; an env scope setting the flag does not
+      // stop a silent top level from shipping Cloudflare's default.
+      if (
+        set.length > 0 &&
+        !set.some((flag) => envOfScope(flag.scope) === null) &&
+        want !== WRANGLER_EXPOSURE_DEFAULT
+      ) {
+        disagreements.push(
+          `worker.${EXPOSURE_DECLARATION_KEYS[key]} is ${String(want)} but ${scan.wranglerRel} ` +
+            `never sets ${key} at the top level, which production uploads, and Cloudflare ` +
+            `defaults it to ${String(WRANGLER_EXPOSURE_DEFAULT)}`,
+        )
+      }
       if (set.length === 0) {
         if (want !== WRANGLER_EXPOSURE_DEFAULT) {
           disagreements.push(
