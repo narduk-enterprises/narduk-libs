@@ -3527,6 +3527,52 @@ narduk-core's `LayerAppShell`, `LayerChromelessShell` and `LayerDashboardShell`
 are deprecated in favour of `NeAppShell` and are removed in the next narduk-core
 major. Their behaviour is unchanged until then.
 
+### NeTruncate
+
+A long URL, path or id on one line, cut in the middle
+([narduk-libs#1855](https://github.com/narduk-enterprises/narduk-libs/issues/1855)).
+Wrapping turns a 300-character `og:image` URL into a 22-line block, and
+`text-overflow: ellipsis` alone drops the end, which is the part that identifies
+the value (the filename, the hash). `NeTruncate` shrinks the head with an
+ellipsis and keeps the tail whole.
+
+The string is split once in script by `splitTruncate` (see `./format`), and CSS
+does the shrinking, so there is no measurement and the server and the browser
+render the same markup. The text content is the whole value (it copies, searches
+and reads out in full) and the same value is the `title`. A `title` does nothing
+on touch or from the keyboard, so the root is a focusable `role="button"`: a tap,
+Enter or Space toggles it open, wrapping the full value in place
+(`aria-expanded` reports it).
+
+Use it in dense rows and cards. Keep wrapping in detail views and in sentences,
+where the reader wants the whole value.
+
+#### Example
+
+```vue
+<NeTruncate :text="site.ogImageUrl" kind="url" />
+<NeTruncate :text="file.path" kind="path" />
+<NeTruncate :text="run.id" kind="id" :tail="8" />
+<NeTruncate :text="note.url" mode="end" />
+```
+
+#### Props
+
+| Prop   | Type                                 | Default  | What it does                                                                                       |
+| ------ | ------------------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
+| `text` | `string`                             | required | The full value: the text content and the tooltip.                                                  |
+| `mode` | `'end' \| 'middle'`                  | `middle` | `end` is a plain trailing ellipsis with no split.                                                  |
+| `tail` | `number`                             | `14`     | Characters kept whole at the end. Text of at most `2 * tail` characters is not split.              |
+| `kind` | `'url' \| 'path' \| 'id'`            | none     | `url` keeps the last path segment (query included), `path` the filename, `id` the last `tail`.     |
+
+#### Slots
+
+None.
+
+#### Events
+
+None.
+
 ### NeSkipLink
 
 "Skip to content" that moves keyboard focus, not only the scroll position
@@ -4241,8 +4287,9 @@ import { createFormatters } from '@narduk-enterprises/narduk-shell/format'
 
 Backlog item 5
 ([narduk-libs#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)).
-Ten functions for dates, numbers, money, percentages, quantities and spans,
-built on `Intl` and on nothing else. No Vue, no Nuxt, no dependency: the same
+Eleven functions for dates, numbers, money, percentages, quantities, spans and
+middle truncation,
+built on `Intl` and on nothing else (`splitTruncate` is plain string code). No Vue, no Nuxt, no dependency: the same
 function is callable from a component, from a Nitro route, from a plain Node
 script and from `nuxt.config.ts`.
 
@@ -4462,6 +4509,19 @@ formatQuantity(1234, { unit: 'cfs' }) // '1,234 cfs'
 `Intl` throws a `RangeError` for any unit outside its sanctioned list, and half
 the estate's units are outside it — riverstatus alone reads `cfs` and `ft3/s`
 off the USGS feed. An unsanctioned unit is appended after a space instead.
+
+### `splitTruncate`
+
+```ts
+splitTruncate('https://cdn.example.com/a/b/og-image.png', { kind: 'url', tail: 8 })
+// { head: 'https://cdn.example.com/a/b', tail: '/og-image.png' }
+```
+
+The pure split behind `NeTruncate`: `{ head, tail }` with `head + tail` equal to
+the input. Counts code points, so a multi-byte character is never cut. Text of at
+most `2 * tail` characters (default `tail` 14) comes back whole as the head.
+`kind: 'path'` keeps the filename, `kind: 'url'` the last path segment (while it
+is at most `3 * tail` long), otherwise the last `tail` characters.
 
 ### `createFormatters`
 
