@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const NETWORK_ROUTE = '/narduk-network'
+
 const repoPackages = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 const nuxtOgImagePackage = vi.hoisted(() => ({ resolvable: true }))
@@ -445,11 +447,30 @@ describe('narduk-seo module', () => {
   })
 
   it('lists /narduk-network in the sitemap only when a directory is configured', async () => {
-    const { nuxt } = await setupModule({
+    const { nuxt, extendRouteRules } = await setupModule({
       moduleOptions: { networkDirectoryUrl: 'https://directory.example.com/sites.json' },
     })
 
-    expect(nuxt.options.sitemap).toMatchObject({ urls: ['/narduk-network'] })
+    expect(nuxt.options.sitemap).toMatchObject({ urls: [NETWORK_ROUTE] })
+    expect(nuxt.options.sitemap.exclude).not.toContain(NETWORK_ROUTE)
+    expect(extendRouteRules).not.toHaveBeenCalledWith(NETWORK_ROUTE, expect.anything())
+  })
+
+  it('excludes an unconfigured directory from automatic sitemap discovery and HTTP indexing', async () => {
+    const { nuxt, extendRouteRules, installSnapshots } = await setupModule({
+      nuxtOptions: { sitemap: { urls: ['/custom'], exclude: ['/private'] } },
+    })
+
+    expect(nuxt.options.sitemap.urls).toEqual(['/custom'])
+    expect(nuxt.options.sitemap.exclude).toEqual(
+      expect.arrayContaining(['/private', NETWORK_ROUTE]),
+    )
+    expect(extendRouteRules).toHaveBeenCalledWith(NETWORK_ROUTE, {
+      robots: 'noindex, follow',
+    })
+    expect(
+      installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/sitemap')?.sitemap,
+    ).toMatchObject({ exclude: expect.arrayContaining([NETWORK_ROUTE]) })
   })
 
   it('forces noindex robots and sitemap suppression for staging deployments', async () => {
