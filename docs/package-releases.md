@@ -397,11 +397,14 @@ commit bumped (a commit that bumps none finishes in seconds), then:
    waiting or running, it re-dispatches `release.yml` once with `verified-sha`
    set to the commit. It never dispatches into a busy `narduk-libs-release`
    group, because a new queued run replaces the pending one there. It fails at
-   once, naming the CI run, when push CI for the commit concluded red. A missing
-   version whose package already has a newer `latest` is _superseded_: it is
-   reported as a warning and never republished (step 4 below). When a plain
-   missing version sits beside a superseded one, the proof fails instead of
-   dispatching, because `release.yml` refuses to move `latest` backwards;
+   once, naming the CI run, when push CI for the commit concluded red, even
+   inside the 20 minutes (a re-run helps only when a job flaked; a failure in
+   the commit's tree needs a fix on main, then `release.yml` dispatched with
+   `verified-sha` set to the fixed commit). A missing version whose package
+   already has a newer `latest` is _superseded_: it is reported as a warning and
+   never republished (step 4 below). When a plain missing version sits beside a
+   superseded one, the proof fails instead of dispatching, because `release.yml`
+   refuses to move `latest` backwards;
 2. polls `npm.nard.uk` anonymously for 15 minutes, re-dispatches the
    package-delivery "Sync to R2" once through the same downscoped
    `narduk-lane-automation` token as `notify-mirror`, and polls another 20
