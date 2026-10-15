@@ -144,6 +144,40 @@ describe('assets generate', () => {
     expect(forced.og).toBeNull()
   }, 30_000)
 
+  it.each([false, true])(
+    'uses the selected custom brand for a source-less social inventory (default present: %s)',
+    async (defaultPresent) => {
+      writeBrand()
+      const customPath = 'Config/other-brand.json'
+      writeFileSync(
+        join(root, customPath),
+        JSON.stringify({
+          ...BRAND,
+          name: 'Other brand',
+          colors: { ...BRAND.colors, accent: '#ffcc00' },
+        }),
+      )
+      if (!defaultPresent) rmSync(join(root, 'Config/brand.json'))
+      writeFileSync(
+        join(root, 'Config/social-previews.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          siteUrl: 'https://example.com',
+          defaultImage: { path: '/share.png', alt: 'Other brand share card' },
+          routes: [{ source: 'index.vue', kind: 'default', paths: ['/'] }],
+        }),
+      )
+
+      const result = await generateBrandAssets({ root, brand: customPath })
+      const expected = await renderDefaultCard(readBrandConfig(root, customPath), root)
+      expect(result.og).toMatchObject({ action: 'written', path: join(root, 'public/share.png') })
+      expect(await inspectSocialImage(readFileSync(join(root, 'public/share.png')))).toBe(
+        await inspectSocialImage(expected),
+      )
+    },
+    30_000,
+  )
+
   it('renders every layout as a 1200x630 card that keeps the type on the card', async () => {
     const hashes = new Set<string>()
     for (const layout of ['poster', 'split', 'stamp', 'ledger'] as const) {

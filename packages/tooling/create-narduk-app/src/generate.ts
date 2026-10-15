@@ -1656,6 +1656,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
       path: 'apps/web/nuxt.config.ts',
       contents: text(
         "import { fileURLToPath } from 'node:url'",
+        ...(!capabilities.includes('seo') ? ["import brand from './Config/brand.json'"] : []),
         '',
         'const localPort = ' + localPort,
         constDeclaration('siteUrl', tsString(siteUrl)),
@@ -1759,6 +1760,8 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
               '      title: appName,',
               '      meta: [',
               "        { name: 'description', content: appDescription },",
+              "        { name: 'theme-color', content: 'themeColor' in brand && typeof brand.themeColor === 'string' ? brand.themeColor : brand.colors.primary, media: '(prefers-color-scheme: light)' },",
+              "        { name: 'theme-color', content: brand.colors.ink, media: '(prefers-color-scheme: dark)' },",
               "        { property: 'og:title', content: appName },",
               "        { property: 'og:description', content: appDescription },",
               "        { property: 'og:type', content: 'website' },",

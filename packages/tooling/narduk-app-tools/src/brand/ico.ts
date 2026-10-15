@@ -20,7 +20,7 @@ export interface IcoEntry {
   bytes: Uint8Array
 }
 
-export function encodeIco(images: IcoImage[]): Buffer {
+export function encodeIco(images: readonly IcoImage[]): Buffer {
   if (images.length === 0) throw new Error('An ICO needs at least one image')
   const header = Buffer.alloc(HEADER_BYTES)
   header.writeUInt16LE(0, 0)

@@ -369,6 +369,7 @@ export function createRootPackageManifest(
       'performance-budget': 'pnpm --filter web run performance-budget',
       'assets:generate': 'pnpm --filter web run assets:generate',
       'assets:check': 'pnpm --filter web run assets:check',
+      'assets:check:live': 'pnpm --filter web run assets:check:live',
       'og:generate': 'pnpm --filter web run og:generate',
       'og:check': 'pnpm --filter web run og:check',
       'og:check:live': 'pnpm --filter web run og:check:live',

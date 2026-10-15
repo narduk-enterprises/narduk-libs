@@ -145,6 +145,20 @@ describe('create-narduk-app generation contract', () => {
         )
       }
       expect(manifest.scripts['assets:check:live']).toBe('narduk-app assets check --live')
+      const rootManifest = JSON.parse(files.get('package.json') ?? '{}')
+      expect(rootManifest.scripts['assets:check:live']).toBe(
+        'pnpm --filter web run assets:check:live',
+      )
+      if (!capability.includes('seo')) {
+        const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
+        expect(nuxtConfig).toContain("import brand from './Config/brand.json'")
+        expect(nuxtConfig).toContain(
+          "content: 'themeColor' in brand && typeof brand.themeColor === 'string' ? brand.themeColor : brand.colors.primary, media: '(prefers-color-scheme: light)'",
+        )
+        expect(nuxtConfig).toContain(
+          "content: brand.colors.ink, media: '(prefers-color-scheme: dark)'",
+        )
+      }
       expect(files.get('apps/web/tests/e2e/social-previews.spec.ts')).toContain(
         'checkSocialPreviews',
       )

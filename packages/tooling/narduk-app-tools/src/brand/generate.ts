@@ -169,6 +169,7 @@ async function generateOg(
     // og:generate's own path: an app-owned source image wins, else the brand card.
     const social = readSocialPreviewConfig(root, SOCIAL_PREVIEW_CONFIG_PATH)
     const target = appPath(root, 'public' + social.defaultImage.path)
+    if (!social.defaultImage.source) return writeCard(brand, root, target, options.force)
     const existed = existsSync(target)
     const path = await generateSocialImage(social, root, {
       force: options.force,
