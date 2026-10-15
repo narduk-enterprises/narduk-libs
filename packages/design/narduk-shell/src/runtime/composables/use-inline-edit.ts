@@ -26,7 +26,8 @@
  *   A draft equal to the value, or one `validate` rejects by returning `false`,
  *   closes (or stays open) without a request.
  * - A failed save puts the old value back (`useOptimistic`'s rollback and toast)
- *   and reopens the field holding what the user typed, so nothing typed is lost.
+ *   and reopens the field holding what the user typed, unless a newer editing
+ *   session has started or been cancelled.
  * - `onKeydown`: Escape cancels; Enter commits, or Cmd/Ctrl+Enter when
  *   `multiline` is set (Enter is then a newline). Enter during IME composition
  *   is left alone.
@@ -72,13 +73,16 @@ export function useInlineEdit<T>(
   const optimistic = useOptimistic(value, options)
   const editing = ref(false)
   const draft = ref(value.value) as Ref<T>
+  let editGeneration = 0
 
   function start() {
+    editGeneration++
     draft.value = value.value
     editing.value = true
   }
 
   function cancel() {
+    editGeneration++
     editing.value = false
     draft.value = value.value
   }
@@ -89,11 +93,12 @@ export function useInlineEdit<T>(
     if (options.validate && !options.validate(next)) return false
     editing.value = false
     if (Object.is(next, value.value)) return true
+    const generation = editGeneration
     const result = await optimistic.mutate(
       () => next,
       (confirmed) => save(confirmed),
     )
-    if (!result.ok) {
+    if (!result.ok && generation === editGeneration && Object.is(draft.value, next)) {
       draft.value = next
       editing.value = true
     }

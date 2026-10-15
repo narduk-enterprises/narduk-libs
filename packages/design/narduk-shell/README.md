@@ -788,8 +788,9 @@ const result = await optimistic.mutate(
 ```
 
 - Returns `{ mutate, pending, error }`. `mutate` resolves `{ ok: true, value }`
-  or `{ ok: false, error }` and never rejects, so a click handler needs no
-  `try/catch`. `pending` is true while any request runs (use it for a quiet cue,
+  or `{ ok: false, error }` for action failures. Programming errors thrown by
+  `update`, the toast handler or `onError` still propagate.
+  `pending` is true while any request runs (use it for a quiet cue,
   not a spinner); `error` holds the last failure.
 - Options: `errorTitle` (toast title), `toast: false` (no toast),
   `onError(error)` (runs after the rollback, toast or not).
@@ -804,7 +805,8 @@ Headless click-to-edit. Returns
 `{ editing, draft, start, cancel, commit, onKeydown }`. Enter (or `commit()`
 from a blur) closes the field with the new text already shown and saves through
 `useOptimistic`; Escape cancels; a failed save restores the old value and
-reopens the field holding what was typed. Options extend `useOptimistic`'s with
+reopens the field holding what was typed unless a newer editing session has
+started or been cancelled. Options extend `useOptimistic`'s with
 `multiline` (Cmd/Ctrl+Enter commits, Enter is a newline) and `validate(draft)`
 (return `false` to refuse and stay open).
 

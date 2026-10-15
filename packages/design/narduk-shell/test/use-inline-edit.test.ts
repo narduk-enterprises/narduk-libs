@@ -42,6 +42,14 @@ function key(init: Partial<KeyboardEvent> & { key: string }) {
   }
 }
 
+function pendingSave() {
+  let reject!: (reason: Error) => void
+  const promise = new Promise<void>((_resolve, rejectPromise) => {
+    reject = rejectPromise
+  })
+  return { promise, reject }
+}
+
 describe('useInlineEdit', () => {
   it('opens on the current value', () => {
     const { edit } = harness('Alpha', async () => {})
@@ -137,6 +145,56 @@ describe('useInlineEdit', () => {
     expect(edit.editing.value).toBe(true)
     expect(edit.draft.value).toBe('Beta')
     expect(onError).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves a newer draft when an older save fails', async () => {
+    const pending = pendingSave()
+    const { edit } = harness('Alpha', () => pending.promise)
+    edit.start()
+    edit.draft.value = 'Beta'
+    const commit = edit.commit()
+    edit.start()
+    edit.draft.value = 'Gamma'
+
+    pending.reject(new Error('old save failed'))
+    await expect(commit).resolves.toBe(false)
+
+    expect(edit.editing.value).toBe(true)
+    expect(edit.draft.value).toBe('Gamma')
+  })
+
+  it('does not reopen an older draft after a newer save succeeds', async () => {
+    const pending = pendingSave()
+    const save = vi.fn().mockImplementationOnce(() => pending.promise).mockResolvedValue(undefined)
+    const { edit, value } = harness('Alpha', save)
+    edit.start()
+    edit.draft.value = 'Beta'
+    const commit = edit.commit()
+    edit.start()
+    edit.draft.value = 'Gamma'
+    await expect(edit.commit()).resolves.toBe(true)
+
+    pending.reject(new Error('old save failed'))
+    await expect(commit).resolves.toBe(false)
+
+    expect(value.value).toBe('Gamma')
+    expect(edit.editing.value).toBe(false)
+    expect(edit.draft.value).toBe('Gamma')
+  })
+
+  it('does not reopen after a newer editing session is cancelled', async () => {
+    const pending = pendingSave()
+    const { edit } = harness('Alpha', () => pending.promise)
+    edit.start()
+    edit.draft.value = 'Beta'
+    const commit = edit.commit()
+    edit.start()
+    edit.cancel()
+
+    pending.reject(new Error('old save failed'))
+    await expect(commit).resolves.toBe(false)
+
+    expect(edit.editing.value).toBe(false)
   })
 
   it('leaves Enter as a newline in multiline mode, and commits on Cmd or Ctrl+Enter', async () => {

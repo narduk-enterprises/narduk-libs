@@ -27,8 +27,8 @@
  * 3. On success the value stays and `mutate` resolves `{ ok: true, value }`.
  * 4. On failure `state` goes back to what it was before step 1, `error` holds
  *    the thrown value, a toast names the failure, and `mutate` resolves
- *    `{ ok: false, error }`. It never rejects, so a click handler needs no
- *    try/catch.
+ *    `{ ok: false, error }`. Action failures do not reject. Programming errors
+ *    thrown by `update`, the toast handler or `onError` still propagate.
  *
  * ## Concurrent calls
  *
