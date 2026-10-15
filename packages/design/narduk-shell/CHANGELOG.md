@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.26.1
+
+### Patch Changes
+
+- 8de6a65: Name command palette triggers with their rendered platform shortcut
+  and preserve a literal DOM separator before the hint. Compact names and
+  explicit label overrides remain unchanged.
+
 ## 0.26.0
 
 ### Minor Changes
