@@ -244,6 +244,16 @@ function resolveOgImageColor(name: string, value: string | undefined): string {
   return normalizeSeoOgImageHexColor(trimmed, '')
 }
 
+function resolveBrandOgImageColors(
+  ogImage: NardukSeoModuleOptions['ogImage'],
+  brand: NardukSeoBrand | null,
+): { primaryColor: string; secondaryColor: string } {
+  return {
+    primaryColor: resolveOgImageColor('primaryColor', ogImage?.primaryColor || brand?.primary),
+    secondaryColor: resolveOgImageColor('secondaryColor', ogImage?.secondaryColor || brand?.accent),
+  }
+}
+
 function resolveFrom(root: string, path: string): string {
   return isAbsolute(path) ? path : resolve(root, path)
 }
@@ -566,16 +576,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
         nardukSeoBrand: brand,
-        nardukSeoOgImageColors: {
-          primaryColor: resolveOgImageColor(
-            'primaryColor',
-            options.ogImage?.primaryColor || brand?.primary,
-          ),
-          secondaryColor: resolveOgImageColor(
-            'secondaryColor',
-            options.ogImage?.secondaryColor || brand?.accent,
-          ),
-        },
+        nardukSeoOgImageColors: resolveBrandOgImageColors(options.ogImage, brand),
         nardukSeoOgImageModule: true,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
