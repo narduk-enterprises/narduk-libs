@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.45.0
+
+### Minor Changes
+
+- d36d315: `deployment.liveProof.smokeContentType` (optional) names the content
+  type the smoke path answers with. `ship` and `deploy staging` pass it to
+  `verify --live` as `--expect-content-type`, so a JSON smoke route such as
+  `/api/auth/runtime-public` proves instead of failing the `text/html` default.
+
 ## 0.44.0
 
 ### Minor Changes
