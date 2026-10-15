@@ -21,6 +21,8 @@ import {
   SEO_OG_IMAGE_DEFAULT_SECONDARY,
 } from '../../app/utils/ogImageDefinition'
 
+import type { CSSProperties } from 'vue'
+
 const props = withDefaults(
   defineProps<{
     badgeLabel?: string
@@ -193,8 +195,14 @@ const rootStyle = computed(() => ({
   backgroundColor: plan.value.background,
   fontFamily: TEXT,
 }))
-const FULL = { position: 'absolute', top: '0px', left: '0px', width: '1200px', height: '630px' }
-const PANEL = { ...FULL, left: '740px', width: '460px', objectFit: 'cover' }
+const FULL = {
+  position: 'absolute',
+  top: '0px',
+  left: '0px',
+  width: '1200px',
+  height: '630px',
+} satisfies CSSProperties
+const PANEL = { ...FULL, left: '740px', width: '460px', objectFit: 'cover' } satisfies CSSProperties
 </script>
 
 <template>
