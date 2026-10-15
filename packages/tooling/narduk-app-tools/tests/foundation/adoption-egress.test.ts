@@ -46,7 +46,11 @@ function recording(answer: (url: string) => Response) {
 
 async function run(
   direct: FetchTransport,
-  extra: { env?: Record<string, string>; proxy?: FetchTransport } = {},
+  extra: {
+    env?: Record<string, string>
+    proxy?: FetchTransport
+    retry?: { attempts: number; intervalMs?: number }
+  } = {},
 ): Promise<AdoptionArtefact> {
   const root = makeTempRepo()
   tempDirs.push(root)
@@ -56,6 +60,7 @@ async function run(
     egressProxyFetch: extra.proxy,
     env: extra.env ?? {},
     expectSha: SHA,
+    liveRetry: extra.retry ?? { attempts: 1 },
     liveTransport: direct,
     liveUrl: 'https://buoystat.us',
     reality: baselineReality(),
@@ -118,5 +123,30 @@ describe('doctor --adoption --live egress fallback', () => {
     expect(artefact.live?.egressDetail?.fallbackError).toContain('proxy refused CONNECT')
     for (const id of ['R5', 'R8', 'R12']) expect(req(artefact, id).verdict).toBe('unknown')
     expect(artefact.requirements.filter((r) => r.verdict === 'fail')).toEqual([])
+  })
+
+  it('re-reads a stale build stamp before grading R5', async () => {
+    let reads = 0
+    const direct = recording((url) => {
+      if (url.endsWith('/api/health')) return healthy(url)
+      reads += 1
+      const response = healthy(url)
+      if (reads >= 3) return response
+      return new Response('', { headers: { 'x-build-version': 'e4df9478b4c5' }, status: 200 })
+    })
+    const artefact = await run(direct.transport, { retry: { attempts: 5, intervalMs: 0 } })
+
+    expect(req(artefact, 'R5').verdict).toBe('pass')
+  })
+
+  it('grades FAIL once a stale stamp outlasts every attempt', async () => {
+    const direct = recording((url) =>
+      url.endsWith('/api/health')
+        ? healthy(url)
+        : new Response('', { headers: { 'x-build-version': 'e4df9478b4c5' }, status: 200 }),
+    )
+    const artefact = await run(direct.transport, { retry: { attempts: 2, intervalMs: 0 } })
+
+    expect(req(artefact, 'R5').verdict).toBe('fail')
   })
 })
