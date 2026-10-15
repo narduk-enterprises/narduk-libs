@@ -148,6 +148,18 @@
   --ne-header-height: 4rem;
   --ne-bottom-bar-h: 0px; /* height of an app's fixed bottom bar; see README */
 
+  /* ---- feel -------------------------------------------------------------
+   * Timing for the feel utilities at the foot of this file (README § Feel
+   * primitives). Declared once, in this block only: they are the same in both
+   * schemes, and `.dark` and the auto-dark block stay token-for-token
+   * identical to each other. The reduced-motion block at the foot sets the two
+   * durations to 0ms, which an app's own `transition: opacity
+   * var(--ne-feel-fast)` collapses with.
+   */
+  --ne-feel-fast: 120ms;
+  --ne-feel-base: 150ms;
+  --ne-ease-out: cubic-bezier(0.2, 0, 0, 1);
+
   /* ---- the bridge -------------------------------------------------------
    * Every target below is a variable the installed Nuxt UI actually reads;
    * test/theme.test.ts proves that against the installed package rather than
@@ -388,5 +400,143 @@
     --ui-info: var(--ui-color-info-400, #60a5fa);
     --ui-warning: var(--ui-color-warning-400, #facc15);
     --ui-error: var(--ui-color-error-400, #f87171);
+  }
+}
+
+/*
+ * Feel utilities — the Notion-like "works like butter" rules as classes
+ * (README § Feel primitives).
+ *
+ * The contract every rule below keeps:
+ *
+ *   - Feedback lands in `--ne-feel-fast` (120ms) or `--ne-feel-base` (150ms).
+ *   - Only `opacity` and `transform` animate. Never width, height, top, left,
+ *     margin or padding: layout stays where it was, so CLS stays 0.
+ *   - Fade in place. Nothing slides a neighbour out of the way.
+ *   - Motion carries meaning; the reduced-motion block at the foot removes the
+ *     rest.
+ *
+ * Every selector is wrapped in `:where()` like the rest of this file, so an app
+ * restyles any of them with a plain class and no specificity fight.
+ */
+
+/*
+ * .ne-press — press feedback on anything clickable (button, row, card). The
+ * element dips to 98% and dims a touch while held, and springs back on release.
+ * Disabled and aria-disabled elements do not move.
+ */
+:where(.ne-press) {
+  transition:
+    transform var(--ne-feel-fast) var(--ne-ease-out),
+    opacity var(--ne-feel-fast) var(--ne-ease-out);
+}
+
+:where(.ne-press:active:not(:disabled, [aria-disabled='true'])) {
+  transform: scale(0.98);
+  opacity: 0.88;
+}
+
+/*
+ * .ne-hover-reveal on a row, card or list item; .ne-reveal on the controls
+ * inside it (edit, delete, drag handle, "…" menu). The controls keep their
+ * layout box at opacity 0, so showing them moves nothing, and they appear
+ * exactly where the pointer reaches: on :hover of the parent, or on keyboard
+ * focus anywhere inside it. On a device with no hover (touch) they are always
+ * visible, because there is no pointer to reach them with.
+ */
+:where(.ne-hover-reveal .ne-reveal) {
+  opacity: 0;
+  transition: opacity var(--ne-feel-fast) var(--ne-ease-out);
+}
+
+:where(.ne-hover-reveal:hover .ne-reveal, .ne-hover-reveal:focus-within .ne-reveal) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  :where(.ne-hover-reveal .ne-reveal) {
+    opacity: 1;
+  }
+}
+
+/*
+ * .ne-fade-in — an element that appears (loaded content replacing a skeleton,
+ * a panel after a v-if) fades in where it stands. `both` holds the first frame
+ * at opacity 0 and the last at 1.
+ */
+@keyframes ne-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+:where(.ne-fade-in) {
+  animation: ne-fade-in var(--ne-feel-base) var(--ne-ease-out) both;
+}
+
+/*
+ * The same fade as a Vue transition: `<Transition name="ne-fade">` swaps two
+ * states by opacity alone. Use `mode="out-in"` only when both states share a
+ * box; two boxes of different heights are a layout shift no class here can fix.
+ */
+:where(.ne-fade-enter-active, .ne-fade-leave-active) {
+  transition: opacity var(--ne-feel-fast) var(--ne-ease-out);
+}
+
+:where(.ne-fade-enter-from, .ne-fade-leave-to) {
+  opacity: 0;
+}
+
+/*
+ * .ne-skeleton — a stable placeholder. It reserves its box (give it the
+ * loaded content's width and height, or an aspect-ratio) and pulses opacity
+ * only, so the content that replaces it shifts nothing. Under reduced motion
+ * it is a still block.
+ */
+@keyframes ne-skeleton-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.5;
+  }
+}
+
+:where(.ne-skeleton) {
+  display: block;
+  min-height: 1em;
+  border-radius: var(--ne-radius-control);
+  background: var(--ne-surface-accented);
+  animation: ne-skeleton-pulse 1.2s var(--ne-ease-out) infinite alternate;
+}
+
+/*
+ * Reduced motion. Durations collapse to 0ms (the tokens above, so an app's own
+ * `var(--ne-feel-fast)` transition collapses with them), the press loses its
+ * scale and keeps only the opacity dip, the fade-in becomes an instant appear,
+ * and the skeleton stops pulsing. Nothing is removed that carries information.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :where(:root, .light) {
+    --ne-feel-fast: 0ms;
+    --ne-feel-base: 0ms;
+  }
+
+  :where(.ne-press:active:not(:disabled, [aria-disabled='true'])) {
+    transform: none;
+  }
+
+  :where(.ne-fade-in) {
+    animation: none;
+  }
+
+  :where(.ne-skeleton) {
+    animation: none;
+    opacity: 0.75;
   }
 }

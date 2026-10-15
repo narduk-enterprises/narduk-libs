@@ -270,6 +270,13 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useCursorCollection',
       from: resolver.resolve('./runtime/composables/use-cursor-collection'),
     })
+    // The feel set (README § Feel primitives): useInlineEdit, useOptimistic,
+    // useReducedMotion and useSlashFocus. Plain composables with no component
+    // on their path, so they ride along even with `components: false`.
+    addImports({
+      name: 'useInlineEdit',
+      from: resolver.resolve('./runtime/composables/use-inline-edit'),
+    })
     // Plain shared state (useState), no component involved: an app can seed
     // or mutate the rail's sections even with `components: false` and its own
     // import of NeAppShell.
@@ -277,11 +284,23 @@ export default defineNuxtModule<NardukShellModuleOptions>({
       name: 'useNardukShellSections',
       from: resolver.resolve('./runtime/composables/use-narduk-shell-sections'),
     })
+    addImports({
+      name: 'useOptimistic',
+      from: resolver.resolve('./runtime/composables/use-optimistic'),
+    })
+    addImports({
+      name: 'useReducedMotion',
+      from: resolver.resolve('./runtime/composables/use-reduced-motion'),
+    })
     // The first `n` rows of a list, then all of them on request. Pairs with
     // NeShowMore but needs no component on its path.
     addImports({
       name: 'useRowLimit',
       from: resolver.resolve('./runtime/composables/use-row-limit'),
+    })
+    addImports({
+      name: 'useSlashFocus',
+      from: resolver.resolve('./runtime/composables/use-slash-focus'),
     })
 
     if (options.components === false) return
