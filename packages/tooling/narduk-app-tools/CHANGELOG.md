@@ -1,5 +1,31 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.44.0
+
+### Minor Changes
+
+- 972fc70: `Config/brand.json` takes an optional `fonts.display` (`family`,
+  `weight`, `style`, or a local `.ttf` `file`). `narduk-app assets generate`
+  resolves it from Google Fonts (or the file) into
+  `public/fonts/brand-display.ttf` and sets the static card's title and monogram
+  in it; `assets check` fails when that file is missing or a variable font.
+  narduk-seo serves the same file as an app `@font-face`, so the runtime
+  `OgImageDefault` and `OgImageArticle` cards use it for the title and monogram
+  and the app gets `--brand-font-display` for its wordmark. A face that cannot
+  be resolved falls back to the bundled one with a warning. The card renderer
+  now forces libvips onto fontconfig (`PANGOCAIRO_BACKEND=fc`, a minimal
+  `FONTCONFIG_FILE`), so macOS renders the bundled and brand fonts instead of
+  Helvetica.
+- 0723dd1: `narduk-app deploy staging --sha <commit>` executes an enabled
+  `deployment.staging` stage: it uploads the built staging bundle to
+  `staging.workerName` tagged with the commit, deploys it at 100%, proves
+  `https://<staging.hostname>` with the `liveProof` settings, and rolls staging
+  back (exit 4) when the proof fails. `staging.wranglerConfig` optionally names
+  a committed staging wrangler config, checked against the declared Worker,
+  hostname and bindings. While staging is enabled, `deploy versions-promote`
+  refuses production (exit 11, `staging-not-proven`) unless the staging Worker
+  serves a version tagged with the same commit.
+
 ## 0.43.1
 
 ### Patch Changes

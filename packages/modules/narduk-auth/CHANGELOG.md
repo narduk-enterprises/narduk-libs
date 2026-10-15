@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.35.1
+
+### Patch Changes
+
+- 3480b54: Auth card headings (sign in, register, reset password, exchange,
+  native and OAuth authorize) now carry `text-highlighted`. They had no colour
+  class, so an app whose body text is light on a dark brand surface rendered
+  them near-invisible on the white light-mode card.
+
 ## 1.35.0
 
 ### Minor Changes
