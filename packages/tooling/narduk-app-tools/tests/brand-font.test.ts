@@ -1,12 +1,4 @@
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -258,22 +250,30 @@ describe('the card in the brand face', () => {
   })
 
   it('typesets the title and monogram from public/fonts/brand-display.ttf', async () => {
-    writeBrand(BRAND)
-    const bundled = await renderDefaultCard(readBrandConfig(root), root)
+    const bundled = await renderDefaultCard(parseBrandConfig(BRAND), root)
+
+    // Each card gets its own app: fontconfig caches a font by its path, and a
+    // real app writes brand-display.ttf once, before its first render.
+    const cardWith = async (family: string, font: Buffer): Promise<Buffer> => {
+      const app = mkdtempSync(join(tmpdir(), 'brand-font-card-'))
+      try {
+        mkdirSync(join(app, 'public/fonts'), { recursive: true })
+        writeFileSync(join(app, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH), font)
+        const brand = parseBrandConfig({ ...BRAND, fonts: { display: { family, weight: 400 } } })
+        expect(displayFace(brand, app).family).toBe(readFontInfo(font).family)
+        return await renderDefaultCard(brand, app)
+      } finally {
+        rmSync(app, { force: true, recursive: true })
+      }
+    }
 
     // The bundled display face under the brand key draws the same card: the
     // key swaps the face and nothing else.
-    writeBrand({ ...BRAND, fonts: { display: { family: 'NE Brand Display', weight: 400 } } })
-    mkdirSync(join(root, 'public/fonts'), { recursive: true })
-    copyFileSync(brandFontFile('display'), join(root, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH))
-    expect(displayFace(readBrandConfig(root), root).family).toBe('NE Brand Display')
-    const same = await renderDefaultCard(readBrandConfig(root), root)
+    const same = await cardWith('NE Brand Display', readFileSync(brandFontFile('display')))
     expect((await pixels(same)).equals(await pixels(bundled))).toBe(true)
 
     // The mono glyphs as the display face: the reference for the card below.
-    writeBrand({ ...BRAND, fonts: { display: { family: 'NE Brand Mono', weight: 400 } } })
-    copyFileSync(brandFontFile('mono'), join(root, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH))
-    const mono = await renderDefaultCard(readBrandConfig(root), root)
+    const mono = await cardWith('NE Brand Mono', readFileSync(brandFontFile('mono')))
     expect((await pixels(mono)).equals(await pixels(bundled))).toBe(false)
 
     // The same glyphs under a family only the downloaded file carries, whose
