@@ -43,6 +43,7 @@ import {
   USER_SESSION_IMPORT_NAME,
 } from './auth-utils-install'
 import { resolveBuildVersion } from './build-version'
+import { applyAssetMissNoStoreEntry, type NitroEntryHost } from './cloudflare-asset-miss-entry'
 import { seedDesignSystemFonts } from './design-system-fonts'
 import { applyHeadDefaults, type HeadOptionsLike } from './head-defaults'
 import { addIconCssScanPlugin } from './icon-css-scan'
@@ -525,7 +526,7 @@ function registerTypeReference(options: TypePrepareOptions, path: string): void 
 }
 
 interface NitroErrorHandlerHost {
-  options: {
+  options: NitroEntryHost['options'] & {
     errorHandler?: string | string[]
   }
 }
@@ -950,6 +951,14 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
             resolver.resolve('../runtime/server/error-sanitizer'),
             resolver.resolve('../runtime/server/json-error-no-store'),
           ])
+          // A missing /_nuxt chunk's 404 is never cached (operator-portal#2534):
+          // the cloudflare_module entry is swapped for a wrapper, any other
+          // preset or an app's own entry is left alone.
+          applyAssetMissNoStoreEntry(
+            nitro,
+            resolver.resolve('../runtime/nitro/cloudflare-module.ts'),
+            nuxtOptions.appConfig,
+          )
         },
       )
     },

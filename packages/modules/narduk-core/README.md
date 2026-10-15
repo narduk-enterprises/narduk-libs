@@ -650,6 +650,27 @@ isChunkLoadError(error) // string, Error or { message }; false for anything else
 `claimChunkReload(storage, now)` returns true exactly once per window and
 records the time; `reloadForChunkError(env, url)` is that guard plus the reload.
 
+### A missing chunk is never cached
+
+Nitro's `cloudflare_module` entry answers a `/_nuxt/*` URL with
+`env.ASSETS.fetch(request)`. For a chunk the last deploy removed, the assets
+layer answers 404 and still applies Nitro's `_headers` rule for `/_nuxt/*`,
+`cache-control: public, max-age=31536000, immutable`. Safari keeps that 404 for
+a year, so the reload above lands on the same cached miss. On the
+`cloudflare_module` preset the module therefore points `nitro.entry` at a thin
+wrapper (`runtime/nitro/cloudflare-module.ts`) that runs Nitro's own entry with
+an `ASSETS` binding that answers a 404 `cache-control: no-store`. Every other
+status is returned untouched, and an app needs no `nitropack` patch.
+
+The swap happens only while the entry is the preset's default, so
+`cloudflare_durable`, an app's own `nitro.entry` and `nuxt dev` are unchanged.
+Opt out with `appConfig.narduk.assetMissNoStore = false`, in `app.config.ts` or
+the `appConfig` key of `nuxt.config.ts`:
+
+```ts
+export default defineAppConfig({ narduk: { assetMissNoStore: false } })
+```
+
 ## Tailwind sources and Nuxt UI component detection
 
 Nuxt UI adds an `@source` and scans for `U*` components only in Nuxt _layers_.
