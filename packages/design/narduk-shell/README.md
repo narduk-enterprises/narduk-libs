@@ -4039,10 +4039,16 @@ hint on touch screens.
 | Prop             | Type      | Default       | What it does                                                                                 |
 | ---------------- | --------- | ------------- | -------------------------------------------------------------------------------------------- |
 | `placeholder`    | `string`  | `'Search'`    | The text in the button.                                                                      |
-| `label`          | `string`  | `placeholder` | The accessible name.                                                                         |
+| `label`          | `string`  | automatic     | Overrides the accessible name.                                                                         |
 | `compact`        | `boolean` | `false`       | Icon only (a phone header).                                                                  |
 | `shortcuts`      | `boolean` | `true`        | Bind Cmd/Ctrl+K and "/" from this component. Turn off when a layout binds them itself.       |
 | `fallbackAction` | `string`  | none          | A search page. The button sits in a GET form that submits there if pressed before hydration. |
+
+The default accessible name includes the desktop shortcut after mount, using the
+same platform hint the button displays. Compact mode keeps the placeholder as
+its name. An explicit `label` overrides this default and should include the
+visible button text. A literal text separator keeps the placeholder and hint
+separate in the DOM as well as visually.
 
 Class and attributes land on the button.
 
