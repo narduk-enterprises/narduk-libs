@@ -42,13 +42,13 @@ export const PACKAGE_VERSIONS = {
   '@iconify-json/lucide': '1.2.137',
   '@narduk-enterprises/narduk-mapkit': '2.22.3',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
-  '@narduk-enterprises/narduk-app-tools': '0.42.4',
+  '@narduk-enterprises/narduk-app-tools': '0.43.0',
   '@narduk-enterprises/eslint-config': '3.3.3',
-  '@narduk-enterprises/narduk-ai': '0.4.35',
+  '@narduk-enterprises/narduk-ai': '0.4.36',
   '@narduk-enterprises/narduk-analytics': '1.31.0',
-  '@narduk-enterprises/narduk-auth': '1.34.17',
+  '@narduk-enterprises/narduk-auth': '1.34.18',
   '@narduk-enterprises/narduk-charts': '2.11.4',
-  '@narduk-enterprises/narduk-core': '2.29.0',
+  '@narduk-enterprises/narduk-core': '2.30.0',
   '@narduk-enterprises/narduk-logging': '0.4.5',
   '@narduk-enterprises/narduk-maps': '0.2.1',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
@@ -57,7 +57,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.4.0',
-  '@narduk-enterprises/narduk-seo': '2.10.3',
+  '@narduk-enterprises/narduk-seo': '2.11.0',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
@@ -72,7 +72,7 @@ export const PACKAGE_VERSIONS = {
   // version above actually resolves on the registry before create-narduk-app
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
-  '@narduk-enterprises/narduk-shell': '0.26.1',
+  '@narduk-enterprises/narduk-shell': '0.27.0',
   '@narduk-enterprises/narduk-testkit': '1.14.0',
   '@narduk-enterprises/narduk-uploads': '1.22.0',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own

@@ -1,5 +1,43 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.0
+
+### Minor Changes
+
+- d9c764d: New apps get `apps/web/Config/brand.json` (one of ten
+  contrast-checked palettes, a layout and a texture picked from the app name)
+  instead of the generic `public/og-source.svg`. `build` and `cf:build` run
+  `narduk-app assets generate --if-missing`, `og:check` and
+  `narduk-app assets check` before `nuxt build`, so a build without a real
+  favicon set and share card fails; `assets:generate`, `assets:check` and
+  `assets:check:live` scripts are added. `narduk-app upgrade` does not change an
+  existing app's build scripts.
+
+### Patch Changes
+
+- baf12f4: Never let a browser cache a missing build asset. A Nuxt app on
+  Workers Static Assets answers a `/_nuxt/*.js` chunk that a deploy removed with
+  a 404 that carries Nitro's `_headers` rule for `/_nuxt/*`
+  (`cache-control: public, max-age=31536000, immutable`), so Safari kept the 404
+  for a year and a tab open across a deploy reloaded into the same miss forever.
+  On the `cloudflare_module` preset, `nitro.entry` now points at a wrapper that
+  runs Nitro's own entry with an `ASSETS` binding that answers a 404
+  `cache-control: no-store`; every other status is untouched. Apps that patched
+  `nitropack` for this can drop the patch.
+
+  The swap applies only while the entry is the preset's default. Opt out with
+  `appConfig.narduk.assetMissNoStore = false`. The pure pieces
+  (`withUncachedAssetMiss`, `withUncachedAssetMissEnv`,
+  `withUncachedAssetMissHandler`, `isAssetMissNoStoreEnabled`) are exported from
+  `@narduk-enterprises/narduk-core/shared/asset-miss-no-store`.
+
+- 5cce366: The production error sanitizer lets an authored 5xx through on an
+  explicit opt-in.
+  `createError({ statusCode: 503, message, data: { expose: true } })` keeps its
+  message, statusMessage and data; `cause` and `stack` are still dropped. Every
+  other 5xx stays "Server Error" (SSR crashes and re-wrapped caught errors are
+  handled H3Errors, so nothing is inferred from `unhandled` or `fatal`).
+
 ## 0.22.12
 
 ### Patch Changes
