@@ -382,3 +382,45 @@ describe('module prepends the sanitizer on nitro:init', () => {
     )
   })
 })
+
+describe('explicit expose opt-in for authored 5xx (narduk-libs#1714)', () => {
+  const event = { context: {} }
+
+  function run(error: SanitizableServerError) {
+    config.current = { public: { previewSafeMode: false } }
+    applyProductionErrorSanitizer(error, event, false)
+    return error
+  }
+
+  it('keeps message, statusMessage and data for data.expose === true, drops cause and stack', () => {
+    const error = run(
+      leakyError({
+        statusCode: 503,
+        message: 'Upstream is down, retry later',
+        statusMessage: 'Service Unavailable',
+        data: { expose: true, retryAfter: 30 },
+      }),
+    )
+    expect(error.message).toBe('Upstream is down, retry later')
+    expect(error.statusMessage).toBe('Service Unavailable')
+    expect(error.data).toEqual({ expose: true, retryAfter: 30 })
+    expect(error.cause).toBeUndefined()
+    expect(error.stack).toBe('')
+  })
+
+  it.each([
+    ['a Nuxt-wrapped crash (handled, no mark)', { unhandled: false }],
+    ['a wrapped FetchError with an internal URL', { data: { url: 'http://10.0.0.1/x?k=1' } }],
+    ['expose as a truthy non-true value', { data: { expose: 'true' } }],
+    ['expose: false', { data: { expose: false } }],
+  ])('still scrubs %s', (_name, overrides) => {
+    const error = run(leakyError(overrides as Partial<SanitizableServerError>))
+    expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+    expect(error.data).toBeUndefined()
+  })
+
+  it('still scrubs unhandled and fatal errors even when they carry data.expose !== true', () => {
+    const error = run(leakyError({ unhandled: true, fatal: true } as never))
+    expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+  })
+})
