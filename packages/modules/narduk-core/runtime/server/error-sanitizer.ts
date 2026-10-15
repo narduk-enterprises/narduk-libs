@@ -69,6 +69,19 @@ export function readErrorStatusCode(error: SanitizableServerError): number {
   return 500
 }
 
+/**
+ * A 5xx the code marked as safe to show: `createError({ statusCode: 503,
+ * message, data: { expose: true } })`. Opt-in per error, never inferred from
+ * `unhandled`/`fatal`: Nuxt wraps SSR crashes and re-wrapped caught errors in
+ * handled H3Errors, so any inferred rule brings back the leak of narduk-libs#439
+ * (see #1715, #1714). The author owns everything in `data`: never spread a
+ * caught error or an upstream body into an exposed error.
+ */
+export function isExposedServerError(error: SanitizableServerError): boolean {
+  const data = error.data
+  return Boolean(data) && typeof data === 'object' && (data as { expose?: unknown }).expose === true
+}
+
 export function shouldSanitizeProductionError(
   error: SanitizableServerError,
   previewSafeMode: boolean,
@@ -194,7 +207,15 @@ export function applyProductionErrorSanitizer(
     return
   }
 
-  sanitizeProductionError(error, readErrorRequestId(error, event))
+  const requestId = readErrorRequestId(error, event)
+  if (isExposedServerError(error)) {
+    // Message, statusMessage and data are the author's; the internals are not.
+    dropField(error, 'cause')
+    scrubField(error, 'stack', '')
+    if (requestId) scrubField(error, 'requestId', requestId)
+    return
+  }
+  sanitizeProductionError(error, requestId)
 }
 
 export default function nardukProductionErrorSanitizer(
