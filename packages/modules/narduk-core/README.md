@@ -611,6 +611,45 @@ not escalated.
 Operational guide:
 [an error page is showing / exceptions are spiking](../../../docs/operations/error-page-and-exceptions.md).
 
+## Stale chunks after a deploy
+
+A deploy replaces the previous build's hashed `/_nuxt/*.js` chunks. A tab opened
+before the deploy then fails its next navigation with "Importing a module script
+failed" (Safari), "Failed to fetch dynamically imported module" (Chrome) or
+"error loading dynamically imported module" (Firefox), and the error page shows
+a 500. The module ships a client plugin (`narduk-chunk-reload`) that handles
+`vite:preloadError`, Nuxt's `app:chunkError` and router errors that carry one of
+those messages. It does one hard reload to the page being opened.
+
+A `sessionStorage` guard (`narduk:chunk-reload`) allows one reload per 10
+seconds, so a deploy that is genuinely missing a chunk lands on the error page
+instead of looping. The guard fails closed: with no usable `sessionStorage`
+there is no reload.
+
+Opt out in `app.config.ts`:
+
+```ts
+export default defineAppConfig({ narduk: { chunkReload: false } })
+```
+
+The matcher and the guard are pure and importable, for an app's own error page
+(for example to say "a new version is available" instead of a 500):
+
+```ts
+import {
+  CHUNK_RELOAD_WINDOW_MS,
+  claimChunkReload,
+  isChunkLoadError,
+  isChunkReloadEnabled,
+  reloadForChunkError,
+} from '@narduk-enterprises/narduk-core/shared/chunk-reload'
+
+isChunkLoadError(error) // string, Error or { message }; false for anything else
+```
+
+`claimChunkReload(storage, now)` returns true exactly once per window and
+records the time; `reloadForChunkError(env, url)` is that guard plus the reload.
+
 ## Tailwind sources and Nuxt UI component detection
 
 Nuxt UI adds an `@source` and scans for `U*` components only in Nuxt _layers_.

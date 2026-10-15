@@ -673,6 +673,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
         addPlugin(resolver.resolve('../runtime/app/plugins/00-runtime-public.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/build-info.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/build-meta'))
+        addPlugin(resolver.resolve('../runtime/app/plugins/chunk-reload.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/exception-capture.client'))
         addPlugin(resolver.resolve('../runtime/app/plugins/fetch.client'))
         addSignedOutUserSession(
