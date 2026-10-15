@@ -310,16 +310,40 @@ function egressFields(
   }
 }
 
+export interface LiveRetry {
+  /** Reads of the smoke route before a stale `--expect-sha` stamp is graded. */
+  attempts: number
+  intervalMs: number
+  sleep: (ms: number) => Promise<void>
+}
+
+const DEFAULT_LIVE_RETRY: LiveRetry = {
+  attempts: 6,
+  intervalMs: 10_000,
+  sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+}
+
 async function readLive(
   liveUrl: string,
   expectSha: string | null,
   reality: AdoptionLiveReality,
   contract: LiveProofContract,
+  retry: LiveRetry,
 ): Promise<AdoptionLiveReading> {
   const smokeUrl = resolveAgainst(liveUrl, contract.smokePath)
   const healthUrl = resolveAgainst(liveUrl, contract.healthPath)
 
-  const smoke = await reality.read(smokeUrl)
+  let smoke = await reality.read(smokeUrl)
+  // Right after a promotion the edge can still serve the previous build; the
+  // deploy proof retries that, so a single stale read must not grade R5 FAIL
+  // (narduk-libs#1889). Only a readable, mismatched stamp is re-read.
+  for (let attempt = 1; expectSha !== null && attempt < retry.attempts; attempt += 1) {
+    const stamp =
+      smoke.challenged === true ? null : headerValue(smoke.headers, contract.buildVersionHeader)
+    if (stamp === null || matchesCommit(expectSha, stamp)) break
+    await retry.sleep(retry.intervalMs)
+    smoke = await reality.read(smokeUrl)
+  }
   const smokeChallenged = smoke.challenged === true
   // A challenge page carries no build stamp of the app's: never read one off it.
   const buildVersion = smokeChallenged
@@ -394,6 +418,8 @@ export interface RunAdoptionCheckOptions {
    * requirement 8 would then be evidence about production rather than about
    * this code. */
   headerProbe?: HeaderProbe
+  /** Re-reads of a stale build stamp; tests shorten it. */
+  liveRetry?: Partial<LiveRetry>
   /** Where `NARDUK_APP_EGRESS_PROXY` is read from; `process.env` by default. */
   env?: Record<string, string | undefined>
   /** Tests: the direct transport the default live probes send through. */
@@ -450,6 +476,7 @@ export async function runAdoptionCheck(
         options.expectSha ?? null,
         options.liveReality ?? createFetchLiveReality(probe),
         liveProof,
+        { ...DEFAULT_LIVE_RETRY, ...options.liveRetry },
       )
     : null
 

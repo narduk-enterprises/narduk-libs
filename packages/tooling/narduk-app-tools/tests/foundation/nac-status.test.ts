@@ -71,6 +71,7 @@ async function run(options: RunOptions = {}): Promise<AdoptionArtefact> {
     expectSha: live ? SHA : undefined,
     generated: GENERATED,
     headerProbe: fakeHeaderProbe,
+    liveRetry: { attempts: 1 },
     liveReality: live
       ? fakeLive({ 'x-build-version': options.stamp ?? STAMP }, options.health)
       : undefined,

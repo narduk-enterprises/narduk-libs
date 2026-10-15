@@ -44,6 +44,7 @@ async function run(
   write(root)
   return runAdoptionCheck({
     dependabotReality: NO_ALERTS,
+    liveRetry: { attempts: 1 },
     reality: baselineReality(),
     root,
     toolVersion: TOOL_VERSION,
