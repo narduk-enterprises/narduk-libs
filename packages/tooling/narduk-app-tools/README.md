@@ -1382,6 +1382,9 @@ production half runs:
     pnpm exec narduk-app db migrate-deployment --target staging --sha
     "$VERIFIED_SHA"
 - name: Build the staging bundle
+  # Under workflow_run, GITHUB_SHA is main's head at trigger time, not the
+  # verified commit, and the core layer stamps x-build-version from it first.
+  env: { BUILD_VERSION: '${{ github.event.workflow_run.head_sha }}' }
   run: pnpm --filter web run cf:build:staging
 - name: Deploy and prove staging
   working-directory: apps/web
