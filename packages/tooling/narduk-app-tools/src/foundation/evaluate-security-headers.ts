@@ -16,7 +16,8 @@
  * command exits 2.
  */
 
-import { createLiveProbe } from '../live-probe.js'
+import { isCloudflareChallenge } from '../egress-fallback.js'
+import { createLiveProbe, type LiveProbe } from '../live-probe.js'
 
 import { evaluateItem10, type ProbedRoute } from './items/item-10-security-headers.js'
 import { rollUp } from './schema.js'
@@ -56,15 +57,27 @@ const DEFAULT_TIMEOUT_MS = 15_000
  * user-agent behaviour. This one never reads the body -- a header verdict does
  * not need it -- and returns the narrower `ProbedRoute` shape the item consumes.
  */
-export function createFetchProbe(timeoutMs = DEFAULT_TIMEOUT_MS): HeaderProbe {
-  const probe = createLiveProbe({
+export function createFetchProbe(
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  /** A probe to send through instead (the challenge fallback wraps one). */
+  via?: LiveProbe,
+): HeaderProbe {
+  const defaults = {
     timeoutMs,
     readBody: false,
     userAgent: 'narduk-app-tools/foundation-check-security-headers',
-  })
+  }
+  const probe = via ?? createLiveProbe(defaults)
   return async (url: string): Promise<ProbedRoute> => {
-    const response = await probe(url)
+    const response = await probe(url, via ? defaults : undefined)
     if (response.error !== undefined) return { url, error: response.error }
+    // A challenge page's headers are Cloudflare's, not the app's: no verdict.
+    if (isCloudflareChallenge(response)) {
+      return {
+        url,
+        error: 'Cloudflare answered with a managed challenge (403, cf-mitigated: challenge)',
+      }
+    }
     return { url, status: response.status, headers: response.headers }
   }
 }
