@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,10 +74,13 @@ export function ensureFontconfig(env: NodeJS.ProcessEnv = process.env): void {
   const file = join(dir, 'fonts.conf')
   if (!existsSync(file)) {
     mkdirSync(dir, { recursive: true })
+    // Write then rename, so a parallel process never reads a half-written file.
+    const partial = `${file}.${process.pid}`
     writeFileSync(
-      file,
+      partial,
       `<?xml version="1.0"?>\n<fontconfig>\n  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n  <cachedir>${join(dir, 'cache')}</cachedir>\n</fontconfig>\n`,
     )
+    renameSync(partial, file)
   }
   env.FONTCONFIG_FILE = file
 }

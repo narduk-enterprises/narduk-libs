@@ -118,6 +118,10 @@ export async function runAssetsCommand(args: string[]): Promise<number> {
         `[assets] display font ${name(font.path)} (${font.info?.family} ${font.info?.weight}): ${font.action}`,
       )
     for (const warning of font?.warnings ?? []) console.warn(`[assets] WARN ${warning}`)
+    if (font?.action === 'written' && (result.og?.action === 'kept' || result.kept.length > 0))
+      console.warn(
+        '[assets] WARN kept files still use the previous face; run assets generate --force to redraw them',
+      )
     return 0
   }
   if (subcommand === 'check') {

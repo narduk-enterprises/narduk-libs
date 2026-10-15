@@ -29,8 +29,6 @@ const props = withDefaults(
     description?: string
     /** The brand's display face (brand.json `fonts.display`), loaded from app CSS. */
     displayFamily?: string
-    displayStyle?: string
-    displayWeight?: number
     eyebrow?: string
     host?: string
     image?: string
@@ -49,8 +47,6 @@ const props = withDefaults(
     title: 'Nuxt 4 Template',
     description: '',
     displayFamily: '',
-    displayStyle: 'normal',
-    displayWeight: 700,
     siteName: 'Nuxt 4 Demo',
     eyebrow: '',
     badgeLabel: '',
@@ -74,10 +70,12 @@ const TEXT = 'Inter, sans-serif'
 const MONO = 'ui-monospace, Menlo, monospace, Inter'
 
 // The brand face first; Takumi drops a family it could not load and uses the next.
+// narduk-seo also declares the brand file as 400 normal (shared/brand.ts
+// brandFontCss), the one weight nuxt-og-image's static font scan bundles for
+// this card, so asking for 400 draws the file's own glyphs at its real weight.
 const display = computed(() => ({
   fontFamily: props.displayFamily ? `'${props.displayFamily}', ${DISPLAY}` : DISPLAY,
-  fontWeight: props.displayFamily ? props.displayWeight : 800,
-  fontStyle: props.displayFamily && props.displayStyle === 'italic' ? 'italic' : 'normal',
+  fontWeight: props.displayFamily ? 400 : 800,
 }))
 
 const px = (value: number) => `${value}px`
@@ -233,14 +231,7 @@ const PANEL = { ...FULL, left: '740px', width: '460px', objectFit: 'cover' } sat
     <div :style="eyebrowStyle">{{ eyebrowText }}</div>
 
     <div :style="titleBoxStyle">
-      <!-- The fontFamily here is what nuxt-og-image's build scan reads as a
-           props-driven face, so it bundles every app font (the brand face
-           included) for this card instead of only the families named in it. -->
-      <div
-        :style="{ ...titleStyle, fontFamily: props.displayFamily ? display.fontFamily : DISPLAY }"
-      >
-        {{ title }}
-      </div>
+      <div :style="titleStyle">{{ title }}</div>
       <div v-if="description" :style="descriptionStyle">{{ description }}</div>
     </div>
 

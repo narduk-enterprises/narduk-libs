@@ -99,6 +99,14 @@ describe('Config/brand.json', () => {
     expect(css).toContain("font-family: 'Libre Caslon O\\'Condensed';")
     expect(css).toContain("src: url('/fonts/brand-display.ttf') format('truetype');")
     expect(css).toContain('font-weight: 700;')
+    // The card's copy of the face, at the one weight the OG font scan bundles.
+    expect(css.match(/@font-face/gu)).toHaveLength(2)
+    expect(css).toContain('font-weight: 400;\n  font-style: normal;')
+    expect(
+      brandFontCss({ family: 'Inter', src: '/f.ttf', style: 'normal', weight: 400 }).match(
+        /@font-face/gu,
+      ),
+    ).toHaveLength(1)
     expect(css).toContain(
       "--brand-font-display: 'Libre Caslon O\\'Condensed', system-ui, sans-serif;",
     )
@@ -211,13 +219,9 @@ describe('runtime brand card', () => {
     expect(resolveSeoOgImageDefinition({ ...base, brand })?.props).not.toHaveProperty(
       'displayFamily',
     )
-    const displayFont = { family: 'Libre Caslon Condensed', style: 'normal', weight: 700 }
+    const displayFont = { family: 'Libre Caslon Condensed' }
     expect(
       resolveSeoOgImageDefinition({ ...base, brand: { ...brand, displayFont } })?.props,
-    ).toMatchObject({
-      displayFamily: 'Libre Caslon Condensed',
-      displayStyle: 'normal',
-      displayWeight: 700,
-    })
+    ).toMatchObject({ displayFamily: 'Libre Caslon Condensed' })
   })
 })

@@ -36,8 +36,27 @@ const BRAND = {
 
 const CASLON = { family: 'Libre Caslon Condensed', weight: 700 }
 const GSTATIC = 'https://fonts.gstatic.com/s/librecasloncondensed/v1/caslon-700.ttf'
-// The bundled mono face stands in for a downloaded Google font: a real static TTF, no network.
-const MONO = readFileSync(brandFontFile('mono'))
+/**
+ * A copy of a font whose family is renamed to a same-length name the bundled
+ * fonts do not use, so a render in that family proves this file was loaded.
+ */
+function renamed(bytes: Buffer, from: string, to: string): Buffer {
+  const copy = Buffer.from(bytes)
+  for (const encode of [(v: string) => Buffer.from(v, 'latin1'), utf16be]) {
+    const [needle, value] = [encode(from), encode(to)]
+    for (let at = copy.indexOf(needle); at !== -1; at = copy.indexOf(needle, at + 1))
+      value.copy(copy, at)
+  }
+  return copy
+}
+
+function utf16be(value: string): Buffer {
+  return Buffer.from(value, 'utf16le').swap16()
+}
+
+// A downloaded Google font stand-in: the bundled mono face (a real static TTF,
+// no network) under a family name the renderer has not otherwise seen.
+const MONO = renamed(readFileSync(brandFontFile('mono')), 'NE Brand Mono', 'ZQ Brand Mono')
 
 let root: string
 
@@ -125,7 +144,7 @@ describe('fonts.display config', () => {
 describe('font files', () => {
   it('reads the family, weight and style a file declares', () => {
     expect(readFontInfo(MONO)).toEqual({
-      family: 'NE Brand Mono',
+      family: 'ZQ Brand Mono',
       weight: 400,
       italic: false,
       variable: false,
@@ -181,7 +200,7 @@ describe('resolveBrandDisplayFont', () => {
     const written = await resolveBrandDisplayFont(brand, root, { fetcher: first.fetcher })
     expect(written).toMatchObject({
       action: 'written',
-      info: { family: 'NE Brand Mono' },
+      info: { family: 'ZQ Brand Mono' },
       warnings: [],
     })
     expect(readFileSync(join(root, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH))).toEqual(MONO)
@@ -253,7 +272,7 @@ describe('the card in the brand face', () => {
     const result = await generateBrandAssets({ root, force: true, fetcher: googleStub().fetcher })
     expect(result.font).toMatchObject({ action: 'written' })
     expect(displayFace(readBrandConfig(root), root)).toMatchObject({
-      family: 'NE Brand Mono',
+      family: 'ZQ Brand Mono',
       weight: 400,
     })
     const branded = readFileSync(join(root, 'public/og.png'))

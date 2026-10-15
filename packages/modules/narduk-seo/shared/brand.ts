@@ -118,14 +118,22 @@ function readDisplayFont(
  */
 export function brandFontCss(font: NardukSeoBrandFont): string {
   const family = font.family.replaceAll("'", "\\'")
-  return [
+  const face = (weight: number, style: string) => [
     '@font-face {',
     `  font-family: '${family}';`,
     `  src: url('${font.src}') format('truetype');`,
-    `  font-weight: ${font.weight};`,
-    `  font-style: ${font.style};`,
+    `  font-weight: ${weight};`,
+    `  font-style: ${style};`,
     '  font-display: swap;',
     '}',
+  ]
+  // The same file again as 400 normal: nuxt-og-image's static font scan
+  // bundles each family at 400 for the runtime card, which asks for 400 and so
+  // draws this file's own glyphs. Declaring it is what keeps the scan static.
+  const card = font.weight === 400 && font.style === 'normal' ? [] : face(400, 'normal')
+  return [
+    ...face(font.weight, font.style),
+    ...card,
     `:root { --brand-font-display: '${family}', system-ui, sans-serif; }`,
     '',
   ].join('\n')
