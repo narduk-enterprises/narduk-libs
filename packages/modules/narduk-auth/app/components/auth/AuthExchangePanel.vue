@@ -74,7 +74,7 @@ onMounted(async () => {
   <UCard class="w-full max-w-lg">
     <template #header>
       <div class="space-y-2 text-center">
-        <h1 class="text-2xl font-bold">
+        <h1 class="text-2xl font-bold text-highlighted">
           {{ props.title }}
         </h1>
         <p class="text-sm text-muted">

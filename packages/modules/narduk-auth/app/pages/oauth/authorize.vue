@@ -10,7 +10,7 @@ const { state, loading, busy, failure, approve, deny, returnToClient } = useMcpO
 
 <template>
   <UCard class="mx-auto w-full max-w-md">
-    <template #header><h1 class="text-xl font-semibold">Connect an app</h1></template>
+    <template #header><h1 class="text-xl font-semibold text-highlighted">Connect an app</h1></template>
     <p v-if="loading || state?.status === 'login'" class="text-muted">Loading…</p>
     <div v-else-if="state?.status === 'error'" class="space-y-4">
       <UAlert color="error" :title="state.message" />

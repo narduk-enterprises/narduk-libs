@@ -123,7 +123,7 @@ async function onAppleSignIn() {
   <UCard class="w-full max-w-md">
     <template #header>
       <div class="space-y-2 text-center">
-        <h1 class="text-2xl font-bold">
+        <h1 class="text-2xl font-bold text-highlighted">
           {{ title }}
         </h1>
         <p class="text-sm text-muted">

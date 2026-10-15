@@ -139,7 +139,7 @@ async function onUpdatePassword() {
     <UCard class="w-full">
       <template #header>
         <div class="space-y-2 text-center">
-          <h1 class="text-2xl font-bold">
+          <h1 class="text-2xl font-bold text-highlighted">
             {{ isRecoveryMode ? 'Choose a new password' : 'Reset your password' }}
           </h1>
           <p class="text-sm text-muted">
