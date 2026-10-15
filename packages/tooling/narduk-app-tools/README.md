@@ -1336,8 +1336,15 @@ inside the promote workflow, for the commit `ci / Required` verified:
    `wrangler versions upload --tag <commit>`, deploys that version at 100%, and
    runs the live proof (`verify --live https://<hostname> --expect-sha <commit>`
    with the `liveProof` settings, egress fallback included).
-4. A failed proof rolls the staging Worker back to the version it served before
-   and exits 4, so the job stops before any production step.
+4. A failed proof (or one that could not run) rolls the staging Worker back to
+   the version it served before and exits 4, so the job stops before any
+   production step.
+
+`versions upload` never applies routes, so `hostname` must already be attached
+to the staging Worker (a custom domain or route); the derived config's route
+only records it. A derived config rebinds D1, KV and R2 only, so it is refused
+when production also binds Hyperdrive, Vectorize, queues, services or Analytics
+Engine: commit a staging config for that app.
 
 A Worker version belongs to one script, so the version Workers Builds uploaded
 to the production Worker cannot serve staging. The promote job builds the

@@ -259,6 +259,20 @@ describe('planStagingConfig', () => {
     ).toThrow(/production resource: kv:KV id=prod-kv/u)
   })
 
+  it('refuses to derive a config when production binds state it cannot rebind', () => {
+    expect(() =>
+      planStagingConfig({
+        root: '/r',
+        production: {
+          ...PRODUCTION_WRANGLER,
+          hyperdrive: [{ binding: 'HD', id: 'prod-hd' }],
+          queues: { producers: [{ binding: 'Q', queue: 'prod-q' }] },
+        },
+        deployment: block(),
+      }),
+    ).toThrow(/binds hyperdrive, queues.*staging\.wranglerConfig/u)
+  })
+
   const committed = {
     ...PRODUCTION_WRANGLER,
     name: 'harmony-hot-sauce-staging',
@@ -362,6 +376,18 @@ describe('runStagingDeploy', () => {
       { id: STAGING_VERSION, percentage: 100 },
       { id: PREVIOUS_VERSION, percentage: 100 },
     ])
+  })
+
+  it('treats a proof that throws as a failed proof and rolls staging back', async () => {
+    const { appDir } = checkout()
+    const context = stagingContext(appDir, {
+      verify: async () => {
+        throw new Error('fetch failed')
+      },
+    })
+    const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), context)
+    expect(result.outcome).toBe('proof-failed')
+    expect(result.rolledBackTo).toBe(PREVIOUS_VERSION)
   })
 
   it('refuses outside Actions, off the production branch, or on another checkout', async () => {

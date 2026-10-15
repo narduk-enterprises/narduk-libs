@@ -72,6 +72,14 @@ import { currentDeployment, soleDeployedVersionId } from './worker-deployment.js
 /** The derived staging config, written beside the production wrangler config. */
 export const STAGING_CONFIG_FILENAME = '.wrangler.deploy.staging.json'
 
+/** Stateful binding blocks a derived staging config would share with production. */
+export const DERIVED_UNISOLATED_BLOCKS = [
+  'hyperdrive',
+  'vectorize',
+  'analytics_engine_datasets',
+  'services',
+] as const
+
 /** The `--message` a staging upload and deploy carry. */
 export const STAGING_MESSAGE_PREFIX = 'narduk-app staging'
 
@@ -229,6 +237,19 @@ export function planStagingConfig(options: {
   }
   const expected = rebind.config ?? production
   if (!staging.wranglerConfig) {
+    // Only D1, KV and R2 are rebound. Any other stateful binding would carry
+    // production's resource into staging, so it needs a committed config.
+    const unisolated: string[] = DERIVED_UNISOLATED_BLOCKS.filter(
+      (block) => Array.isArray(production[block]) && (production[block] as unknown[]).length > 0,
+    )
+    const queues = production.queues as Record<string, unknown[]> | undefined
+    if (queues && (queues.producers?.length || queues.consumers?.length)) unisolated.push('queues')
+    if (unisolated.length > 0) {
+      throw new Error(
+        `the production config binds ${unisolated.join(', ')}, which a derived staging config ` +
+          'cannot rebind; commit a staging config and name it in staging.wranglerConfig',
+      )
+    }
     const config = JSON.parse(JSON.stringify(expected)) as WranglerConfig
     delete config.env
     config.name = staging.workerName
@@ -496,8 +517,10 @@ export async function runStagingDeploy(
         '--message',
         message,
       ],
-      { cwd: appDir, env: runEnv as NodeJS.ProcessEnv, stdio: 'inherit' },
+      // stdout is captured and replayed on stderr, so `--json` stays one document.
+      { cwd: appDir, env: runEnv as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'inherit'] },
     )
+    if (upload.stdout) process.stderr.write(upload.stdout)
     if (upload.error) throw upload.error
     if (upload.status !== 0) {
       throw new Error(`wrangler versions upload exited ${String(upload.status ?? upload.signal)}`)
@@ -535,8 +558,20 @@ export async function runStagingDeploy(
     context.verify ??
     ((args: string[], proofEnv: DeployEnv) =>
       runVerifyLive(parseVerifyArgs(args), { env: proofEnv }))
-  const report = await verify(proofArgs, env)
-  log(formatVerifyReport(report))
+  let report: VerifyReport
+  try {
+    report = await verify(proofArgs, env)
+    log(formatVerifyReport(report))
+  } catch (error) {
+    // A proof that could not run is a proof that did not pass.
+    log(`narduk-app deploy staging: the live proof did not run: ${String(error)}`)
+    report = {
+      result: 'FAIL',
+      attemptsUsed: 0,
+      egress: 'direct',
+      exitCode: STAGING_EXIT.proofFailed,
+    } as VerifyReport
+  }
   const proof = {
     result: report.result,
     attemptsUsed: report.attemptsUsed,

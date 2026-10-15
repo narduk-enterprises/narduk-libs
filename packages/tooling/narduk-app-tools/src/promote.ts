@@ -1487,15 +1487,16 @@ export function defaultPromoteSha(env: DeployEnv, haveVersionId: boolean): strin
 }
 
 /* -------------------------------------------------------------------------- */
-/* The staging gate (`./staging.ts`)                                                       */
+/* The staging gate (`./staging.ts`)                                         */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Null when the staging Worker serves, at 100%, a version tagged with `sha`;
  * otherwise the refusal. `versions-promote` calls this for a production
  * promotion while staging is enabled, so production never moves to a commit
- * the staging stage did not deploy (and, because a failed proof rolls staging
- * back, did not prove).
+ * the staging stage did not deploy. A failed staging proof rolls staging back
+ * when it can; when that rollback itself fails, `deploy staging` says so and
+ * staging keeps the unproven version until the next run.
  */
 export async function checkStagingServesSha(
   sha: string,
