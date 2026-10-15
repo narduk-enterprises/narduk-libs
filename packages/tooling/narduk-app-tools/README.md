@@ -1384,8 +1384,9 @@ production half runs:
 - name: Build the staging bundle
   # Under workflow_run, GITHUB_SHA is main's head at trigger time, not the
   # verified commit, and the core layer stamps x-build-version from it first.
-  env: { BUILD_VERSION: '${{ github.event.workflow_run.head_sha }}' }
-  run: pnpm --filter web run cf:build:staging
+  # Twelve characters, as a Workers Build stamps production.
+  run:
+    BUILD_VERSION="${VERIFIED_SHA::12}" pnpm --filter web run cf:build:staging
 - name: Deploy and prove staging
   working-directory: apps/web
   env:
