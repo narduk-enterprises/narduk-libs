@@ -25,6 +25,10 @@ export interface SeoOgImageOptions {
   eyebrow?: string
   icon?: string
   image?: string
+  /** Card composition; defaults to the brand's `og.layout`. */
+  layout?: 'poster' | 'split' | 'stamp' | 'ledger'
+  /** Background texture; defaults to the brand's `og.pattern`. */
+  pattern?: 'grid' | 'dots' | 'contours' | 'diagonal' | 'none'
   primaryColor?: string
   secondaryColor?: string
   siteName?: string
@@ -44,11 +48,28 @@ interface SeoOgImageDefinition {
     eyebrow?: string
     host?: string
     image?: string
+    inkColor?: string
+    layout?: string
+    logo?: string
+    monogram?: string
+    paperColor?: string
+    pattern?: string
     primaryColor: string
     secondaryColor: string
     siteName: string
     title: string
   }
+}
+
+/** The subset of the baked `nardukSeoBrand` the card reads. */
+export interface SeoOgImageBrand {
+  ink: string
+  layout: string
+  logo: string
+  monogram: string
+  name: string
+  paper: string
+  pattern: string
 }
 
 /**
@@ -63,6 +84,8 @@ export interface SeoOgImageAppColors {
 interface ResolveSeoOgImageDefinitionOptions {
   /** App-wide colour defaults: below a per-call `ogImage` colour, above the package default. */
   appColors?: SeoOgImageAppColors
+  /** The app's brand file, baked at build; supplies ink, paper, layout, pattern and mark. */
+  brand?: SeoOgImageBrand | null
   canonicalUrl?: string
   description: string
   image?: string
@@ -128,13 +151,23 @@ export function hasNoindexRobots(robots?: string): boolean {
 export function resolveSeoOgImageDefinition(
   input: ResolveSeoOgImageDefinitionOptions,
 ): SeoOgImageDefinition | null {
-  const { title, description, type, image, canonicalUrl, siteUrl, siteName, ogImage, appColors } =
-    input
+  const {
+    title,
+    description,
+    type,
+    image,
+    canonicalUrl,
+    siteUrl,
+    siteName,
+    ogImage,
+    appColors,
+    brand,
+  } = input
 
   if (ogImage === false) return null
 
   const component = ogImage?.component ?? (type === 'article' ? 'Article' : 'Default')
-  const resolvedSiteName = ogImage?.siteName ?? siteName ?? 'Nuxt 4 App'
+  const resolvedSiteName = ogImage?.siteName ?? brand?.name ?? siteName ?? 'Nuxt 4 App'
   const resolvedTitle = ogImage?.title ?? title
   const resolvedDescription = ogImage?.description ?? description
   const resolvedImage = ogImage?.image ?? image
@@ -164,6 +197,18 @@ export function resolveSeoOgImageDefinition(
       ...(resolvedImage ? { image: resolvedImage } : {}),
       primaryColor: resolvedPrimaryColor,
       secondaryColor: resolvedSecondaryColor,
+      ...(brand
+        ? {
+            inkColor: brand.ink,
+            paperColor: brand.paper,
+            monogram: brand.monogram,
+            ...(brand.logo ? { logo: brand.logo } : {}),
+          }
+        : {}),
+      ...((ogImage?.layout ?? brand?.layout) ? { layout: ogImage?.layout ?? brand?.layout } : {}),
+      ...((ogImage?.pattern ?? brand?.pattern)
+        ? { pattern: ogImage?.pattern ?? brand?.pattern }
+        : {}),
     },
     options: {
       alt: ogImage?.alt ?? `${resolvedTitle} | ${resolvedSiteName}`,

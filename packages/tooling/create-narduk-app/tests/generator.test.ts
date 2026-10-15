@@ -132,12 +132,33 @@ describe('create-narduk-app generation contract', () => {
       )
       const config = JSON.parse(files.get('apps/web/Config/social-previews.json') ?? '{}')
       const manifest = JSON.parse(files.get('apps/web/package.json') ?? '{}')
-      expect(config.defaultImage).toMatchObject({ path: '/og.png', source: 'public/og-source.svg' })
+      // No hand-drawn source: the card renders from Config/brand.json.
+      expect(config.defaultImage).toEqual(expect.objectContaining({ path: '/og.png' }))
+      expect(config.defaultImage).not.toHaveProperty('source')
+      expect(files.has('apps/web/public/og-source.svg')).toBe(false)
       expect(config.routes).toContainEqual({ source: 'index.vue', kind: 'default', paths: ['/'] })
-      expect(files.get('apps/web/public/og-source.svg')).toContain('width="1200" height="630"')
-      expect(files.get('apps/web/public/og-source.svg')).toContain('Shareable App')
-      expect(manifest.scripts.build).toContain('og:check && nuxt build')
-      expect(manifest.scripts['cf:build']).toContain('og:check && nuxt build')
+      const brand = JSON.parse(files.get('apps/web/Config/brand.json') ?? '{}')
+      expect(brand).toMatchObject({ schemaVersion: 1, name: 'Shareable App' })
+      for (const script of [manifest.scripts.build, manifest.scripts['cf:build']]) {
+        expect(script).toMatch(
+          /^narduk-app assets generate --if-missing && narduk-app og:check && narduk-app assets check && nuxt build/u,
+        )
+      }
+      expect(manifest.scripts['assets:check:live']).toBe('narduk-app assets check --live')
+      const rootManifest = JSON.parse(files.get('package.json') ?? '{}')
+      expect(rootManifest.scripts['assets:check:live']).toBe(
+        'pnpm --filter web run assets:check:live',
+      )
+      if (!capability.includes('seo')) {
+        const nuxtConfig = files.get('apps/web/nuxt.config.ts') ?? ''
+        expect(nuxtConfig).toContain("import brand from './Config/brand.json'")
+        expect(nuxtConfig).toContain(
+          "content: 'themeColor' in brand && typeof brand.themeColor === 'string' ? brand.themeColor : brand.colors.primary, media: '(prefers-color-scheme: light)'",
+        )
+        expect(nuxtConfig).toContain(
+          "content: brand.colors.ink, media: '(prefers-color-scheme: dark)'",
+        )
+      }
       expect(files.get('apps/web/tests/e2e/social-previews.spec.ts')).toContain(
         'checkSocialPreviews',
       )
@@ -1517,7 +1538,7 @@ describe('create-narduk-app generation contract', () => {
     // store for every generated app.
     expect(webPackage.scripts.dev).toBe('nuxt dev --host 127.0.0.1')
     expect(webPackage.scripts['dev:test']).toBe(
-      'narduk-app og:generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
+      'narduk-app assets generate --if-missing && TEST=1 nuxt dev --host 127.0.0.1',
     )
     expect(webPackage.scripts['cf:deploy']).toContain('narduk-app db migrate')
     expect(webPackage.scripts['cf:deploy']).toContain('--workers-build-only')

@@ -1,3 +1,4 @@
+import { assertBuiltBrandAssets, retiredReferencePattern } from './consumer-smoke-references.mjs'
 import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -141,32 +142,6 @@ const ignoredGeneratedDirectories = new Set([
   'playwright-report',
   'test-results',
 ])
-const retiredReferencePattern = new RegExp(
-  [
-    'narduk-template',
-    'narduk-nuxt-template',
-    'narduk-fleet',
-    'narduk-cli',
-    'narduk-starter-toolkit',
-    'narduk-nuxt-module',
-    '\\.template-reference',
-    '\\.template-version',
-    'narduk\\.layout\\.json',
-    'guardrail-exceptions\\.json',
-    'scripts/narduk-toolchain\\.mjs',
-    'provision\\.json',
-    '#layer',
-    '#server/(?:app|core)-orm-tables',
-    'command\\.nard\\.uk',
-    'CONTROL_PLANE_URL',
-    '/api/control-plane',
-    'templateManaged',
-    'site\\.webmanifest',
-    'service-worker',
-    'serviceWorker',
-  ].join('|'),
-  'i',
-)
 const forbiddenSourceReferencePattern = new RegExp(
   ['workspace:', 'link:', 'file:/', escapeRegExp(root)].join('|'),
   'i',
@@ -305,11 +280,7 @@ function assertNoRetiredBuiltReferences(generatedDirectory) {
   if (offenders.length > 0) {
     throw new Error(`Built consumer contains retired references:\n${offenders.join('\n')}`)
   }
-  for (const retiredAsset of ['apple-touch-icon.png', 'site.webmanifest']) {
-    if (existsSync(join(outputDirectory, 'public', retiredAsset))) {
-      throw new Error(`Generated consumer unexpectedly built retired PWA asset ${retiredAsset}.`)
-    }
-  }
+  assertBuiltBrandAssets(join(outputDirectory, 'public'))
 }
 
 // Preserve the fail-closed immutable-image proof for legacy isolated-pool
@@ -736,7 +707,7 @@ function addPackedShellRootValueImportSmoke(generatedDirectory) {
 }
 
 // The generator's own `og:check` step (wired into the generated app's `build`
-// script: `narduk-app og:generate --if-missing && narduk-app og:check && nuxt
+// script: `narduk-app assets generate --if-missing && narduk-app og:check && narduk-app assets check && nuxt
 // build`) requires every `app/pages/*.vue` file to be classified in
 // `Config/social-previews.json`, or the build fails before `nuxt build` -- and
 // therefore before Playwright -- ever runs (see

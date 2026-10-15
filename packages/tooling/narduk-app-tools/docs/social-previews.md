@@ -13,14 +13,20 @@ Narduk compatibility contract, not a claim that every social platform has
 identical limits. Keep the image legible when reduced to a message bubble: app
 identity, a short useful description, and generous margins.
 
-The generator writes `public/og-source.svg`, an app-branded source rather than a
-generic library logo. It does not need an image-generation service. After the
-first install, render and commit the image:
+The generator writes `Config/brand.json`, and the default image is the brand
+card drawn from it: the app's palette, mark, layout and texture, with the app
+name as the title. It does not need an image-generation service. After the first
+install, render and commit the image with the favicon set
+([brand assets](brand-assets.md)):
 
 ```sh
-pnpm exec narduk-app og:generate
+pnpm exec narduk-app assets generate
 pnpm exec narduk-app og:check
+pnpm exec narduk-app assets check
 ```
+
+An app with its own artwork names it as `defaultImage.source` instead, and
+`og:generate` renders that.
 
 `og:generate` refuses to overwrite artwork. `--force` deliberately replaces it;
 `--if-missing` generates only an absent image and validates any existing image.
@@ -136,8 +142,7 @@ Store `Config/social-previews.json` relative to the web app root:
   "siteUrl": "https://example.com",
   "defaultImage": {
     "path": "/og.png",
-    "alt": "Example app",
-    "source": "public/og-source.svg"
+    "alt": "Example app"
   },
   "pagesDir": "app/pages",
   "routes": [

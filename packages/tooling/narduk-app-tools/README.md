@@ -511,8 +511,14 @@ The command never writes secret files. Registry auth writes the requested
 `.npmrc.auth` path and scopes GitHub Packages to `@narduk-enterprises`. It drops
 any stale route for the retired `@narduk-geo` and `@loganrenz` scopes.
 
-`narduk-app assets favicons` creates ordinary browser favicon files only. It
-does not create a web manifest, service worker, install UI, or PWA icon set.
+`narduk-app assets generate` writes the favicon set (a real 16/32/48 ICO, SVG,
+32 px PNG, 180 px apple-touch icon), the 192/512/maskable manifest icons, the
+web manifest and the default share card from `Config/brand.json`;
+`narduk-app assets check [--live [url]]` fails on any that is missing or a
+placeholder. See [brand assets](docs/brand-assets.md).
+
+`narduk-app assets favicons` is the older single-source command: it resizes one
+SVG into browser favicon files only, with no manifest or share card.
 
 ## Automatic D1 migration gate
 

@@ -47,8 +47,20 @@ export async function generateSocialImage(
     }
     if (!options.force) throw new Error('Default image already exists; use --force to replace it')
   }
-  if (!config.defaultImage.source)
-    throw new Error('defaultImage.source is required to generate the image')
+  if (!config.defaultImage.source) {
+    // No hand-made source: the brand card is the default (Config/brand.json).
+    const { hasBrandConfig, readBrandConfig } = await import('../brand/config.js')
+    if (!hasBrandConfig(root))
+      throw new Error(
+        'defaultImage.source or Config/brand.json is required to generate the image (narduk-app assets generate)',
+      )
+    const { renderDefaultCard } = await import('../brand/card.js')
+    const bytes = await renderDefaultCard(readBrandConfig(root), root)
+    await inspectSocialImage(bytes)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, bytes, { flag: options.force ? 'w' : 'wx' })
+    return target
+  }
   const sharp = (await import('sharp')).default
   const source = readFileSync(appPath(root, config.defaultImage.source))
   if (source.byteLength > MAX_IMAGE_BYTES) throw new Error('Default image source exceeds 5 MB')

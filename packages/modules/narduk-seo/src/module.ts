@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { applyCoreViteBuildWarningPolicy } from '@narduk-enterprises/narduk-core/shared/vite-build-warnings'
@@ -22,6 +23,7 @@ import { defu } from 'defu'
 
 import { isSeoOgImageHexColor, normalizeSeoOgImageHexColor } from '../app/utils/ogImageDefinition'
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
+import { brandHeadTags, readBrandFile } from '../shared/brand'
 import {
   DEPLOYMENT_TARGET_ENV_KEYS,
   resolveBuildDeploymentTarget,
@@ -49,6 +51,8 @@ import { assertResolvedSeoUnheadCompatibility } from '../shared/seoUnheadCompat'
 
 import { writeBuildCiOutputMarker } from './buildCiOutputMarker'
 import { applySitemapLastmod } from './sitemapLastmod'
+
+import type { NardukSeoBrand } from '../shared/brand'
 
 export {
   AI_CRAWLERS,
@@ -118,13 +122,16 @@ interface ViteExtendContext {
 
 interface MutableNuxtOptionsRecord {
   alias: Record<string, string>
+  app?: { head?: { link?: Array<Record<string, unknown>>; meta?: Array<Record<string, unknown>> } }
   build: {
     transpile: string[]
   }
+  dir?: { public?: string }
   future?: Record<string, unknown>
   nitro?: Record<string, unknown>
   ogImage?: Record<string, unknown>
   robots?: Record<string, unknown>
+  rootDir?: string
   runtimeConfig: Record<string, unknown>
   seo?: Record<string, unknown>
   site?: Record<string, unknown>
@@ -153,6 +160,13 @@ export interface NardukSeoModuleOptions {
    */
   aiCrawlers?: AiCrawlersOption
   app?: boolean
+  /**
+   * The app's brand file, relative to the Nuxt root (default `Config/brand.json`,
+   * the file `narduk-app assets generate` reads). When present it supplies the
+   * runtime OG card's palette, layout and pattern, and `theme-color`. `false`
+   * ignores it. A brand file that is present but invalid fails the build.
+   */
+  brand?: string | false
   /** App-owned 1200x630 static fallback for every page, including noindex routes. */
   defaultOgImage?: { alt: string; url: string }
   /**
@@ -165,6 +179,13 @@ export interface NardukSeoModuleOptions {
    * targets keep the existing build-time noindex safety.
    */
   hostAwareIndexing?: boolean
+  /**
+   * Emit `<link>` tags for the favicon set in `public/` (`favicon.ico`,
+   * `favicon.svg`, `favicon-32x32.png`, `apple-touch-icon.png`,
+   * `site.webmanifest`) and, with a brand file, `theme-color` per colour
+   * scheme. Only files that exist get a tag. Default `true`.
+   */
+  icons?: boolean
   indexNonProduction?: boolean
   /**
    * Absolute HTTPS endpoint serving the Narduk network directory feed for
@@ -221,6 +242,54 @@ function resolveOgImageColor(name: string, value: string | undefined): string {
     )
   }
   return normalizeSeoOgImageHexColor(trimmed, '')
+}
+
+function resolveBrandOgImageColors(
+  ogImage: NardukSeoModuleOptions['ogImage'],
+  brand: NardukSeoBrand | null,
+): { primaryColor: string; secondaryColor: string } {
+  return {
+    primaryColor: resolveOgImageColor('primaryColor', ogImage?.primaryColor || brand?.primary),
+    secondaryColor: resolveOgImageColor('secondaryColor', ogImage?.secondaryColor || brand?.accent),
+  }
+}
+
+function resolveFrom(root: string, path: string): string {
+  return isAbsolute(path) ? path : resolve(root, path)
+}
+
+/** The app's public dir and its Config/brand.json, read once at build time. */
+function resolveBrandSetup(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  option: string | false | undefined,
+): { brand: NardukSeoBrand | null; publicDir: string | undefined } {
+  const rootDir = nuxtOptions.rootDir
+  if (!rootDir) return { brand: null, publicDir: undefined }
+  const publicDir = resolveFrom(rootDir, nuxtOptions.dir?.public ?? 'public')
+  const brand =
+    option === false ? null : readBrandFile(rootDir, publicDir, option ?? 'Config/brand.json')
+  return { brand, publicDir }
+}
+
+/** Adds icon links and theme-color unless the app already declares the same tag. */
+function appendBrandHeadTags(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  options: Pick<NardukSeoModuleOptions, 'app' | 'icons'>,
+  publicDir: string | undefined,
+  brand: NardukSeoBrand | null,
+): void {
+  if (!options.app || options.icons === false || !publicDir) return
+  const tags = brandHeadTags(publicDir, brand)
+  if (tags.link.length === 0 && tags.meta.length === 0) return
+  nuxtOptions.app ??= {}
+  nuxtOptions.app.head ??= {}
+  const link = (nuxtOptions.app.head.link ??= [])
+  const meta = (nuxtOptions.app.head.meta ??= [])
+  for (const tag of tags.link) {
+    if (!link.some((entry) => entry.rel === tag.rel && entry.href === tag.href)) link.push(tag)
+  }
+  // An app that sets its own theme-color keeps it.
+  if (!meta.some((entry) => entry.name === 'theme-color')) meta.push(...tags.meta)
 }
 
 function pushUnique<T>(items: T[], item: T): void {
@@ -502,16 +571,16 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     const hostAwareIndexing = shouldEnableHostAwareIndexing(options)
     const securityTxtBody = resolveSecurityTxtBody(options.securityTxt)
 
+    const { brand, publicDir } = resolveBrandSetup(nuxtOptions, options.brand)
+
     nuxtOptions.runtimeConfig = defu(nuxtOptions.runtimeConfig, {
       nardukSeoSecurityTxt: securityTxtBody,
       public: {
         nardukSeoDefaultImage: options.defaultOgImage ?? null,
         nardukNetworkDirectoryUrl,
         nardukSeoHostAwareIndexing: hostAwareIndexing,
-        nardukSeoOgImageColors: {
-          primaryColor: resolveOgImageColor('primaryColor', options.ogImage?.primaryColor),
-          secondaryColor: resolveOgImageColor('secondaryColor', options.ogImage?.secondaryColor),
-        },
+        nardukSeoBrand: brand,
+        nardukSeoOgImageColors: resolveBrandOgImageColors(options.ogImage, brand),
         nardukSeoOgImageModule: true,
         ogImagePreviewLab: process.env.NUXT_PUBLIC_OG_IMAGE_PREVIEW === 'true',
         publicCatalogBaseUrl,
@@ -684,6 +753,8 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
         { node: true, nuxt: true },
       )
     }
+
+    appendBrandHeadTags(nuxtOptions, options, publicDir, brand)
 
     if (options.app) {
       if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))

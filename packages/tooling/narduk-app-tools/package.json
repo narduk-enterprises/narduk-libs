@@ -36,6 +36,7 @@
   "files": [
     "dist/",
     "docs/",
+    "fonts/",
     "README.md",
     "tsconfig.json",
     "tsconfig.build.json",
