@@ -41,7 +41,9 @@ async function connect() {
 
 <template>
   <UCard class="mx-auto w-full max-w-md">
-    <template #header><h1 class="text-xl font-semibold text-highlighted">Connect your app</h1></template>
+    <template #header
+      ><h1 class="text-xl font-semibold text-highlighted">Connect your app</h1></template
+    >
     <UAlert
       v-if="error"
       color="error"
