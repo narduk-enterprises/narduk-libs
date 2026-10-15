@@ -1283,6 +1283,12 @@ with the reason, rather than failing on the 401 the app is right to send (#585).
 An app whose promote workflow passes `--no-health` should declare it here, so
 the manifest and the workflow agree.
 
+`liveProof.smokeContentType` is optional. Unset, the smoke assertion expects
+`verify --live`'s default, `text/html`. A JSON smoke route such as
+`/api/auth/runtime-public` declares `"application/json"`, and `ship` and
+`deploy staging` pass it as `--expect-content-type`. An app whose promote
+workflow passes `--expect-content-type` should declare it here too.
+
 `staging.enabled` defaults to `false` and `previewBindings` to all-empty, so a
 block that omits them still validates. `previewChecks` is accepted and optional
 (the shared workflow's `preview-checks` input). A `standard` other than

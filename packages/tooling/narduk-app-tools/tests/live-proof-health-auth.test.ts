@@ -4,6 +4,7 @@ import {
   defaultDeploymentBlock,
   healthArgs,
   readDeploymentBlock,
+  smokeArgs,
 } from '../src/deployment-config.js'
 import { parseVerifyArgs } from '../src/verify-live.js'
 
@@ -39,5 +40,53 @@ describe('liveProof.healthAuth (narduk-libs#585)', () => {
     ])
     expect(flags.healthPath).toBeNull()
     expect(flags.smokePath).toBe('/login')
+  })
+})
+
+describe('liveProof.smokeContentType', () => {
+  it('is optional, so an existing manifest parses and proves text/html as before', () => {
+    const outcome = readDeploymentBlock({
+      deployment: defaultDeploymentBlock({ appSlug: 'fixture' }),
+    })
+    expect(outcome.kind).toBe('valid')
+    if (outcome.kind !== 'valid') return
+    expect(outcome.block.liveProof.smokeContentType).toBeUndefined()
+    const flags = parseVerifyArgs([
+      '--live',
+      'https://app.example',
+      ...smokeArgs(outcome.block.liveProof),
+    ])
+    expect(flags.smokePath).toBe('/')
+    expect(flags.expectContentType).toBe('text/html')
+  })
+
+  it('asks verify --live for the declared content type on a JSON smoke route', () => {
+    const deployment = defaultDeploymentBlock({
+      appSlug: 'fixture',
+      smokePath: '/api/auth/runtime-public',
+    })
+    const outcome = readDeploymentBlock({
+      deployment: {
+        ...deployment,
+        liveProof: {
+          ...(deployment.liveProof as Record<string, unknown>),
+          smokeContentType: 'application/json',
+        },
+      },
+    })
+    expect(outcome.kind).toBe('valid')
+    if (outcome.kind !== 'valid') return
+    expect(smokeArgs(outcome.block.liveProof)).toEqual([
+      '--smoke-path',
+      '/api/auth/runtime-public',
+      '--expect-content-type',
+      'application/json',
+    ])
+    const flags = parseVerifyArgs([
+      '--live',
+      'https://app.example',
+      ...smokeArgs(outcome.block.liveProof),
+    ])
+    expect(flags.expectContentType).toBe('application/json')
   })
 })

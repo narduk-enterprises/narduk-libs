@@ -94,6 +94,7 @@ function deploymentDoc(staging: Record<string, unknown>): Record<string, unknown
         buildVersionHeader: 'x-build-version',
         healthPath: '/api/health',
         smokePath: '/api/auth/runtime-public',
+        smokeContentType: 'application/json',
         attempts: 10,
         intervalSeconds: 10,
       },
@@ -361,7 +362,14 @@ describe('runStagingDeploy', () => {
       SHA,
     ])
     expect(proofArgs).toEqual(
-      expect.arrayContaining(['--smoke-path', '/api/auth/runtime-public', '--attempts', '10']),
+      expect.arrayContaining([
+        '--smoke-path',
+        '/api/auth/runtime-public',
+        '--expect-content-type',
+        'application/json',
+        '--attempts',
+        '10',
+      ]),
     )
   })
 
