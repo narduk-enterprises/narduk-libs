@@ -1,11 +1,34 @@
 /**
  * Password hashing and verification using Web Crypto API (PBKDF2-SHA256).
  * Safe for Cloudflare Workers — no Node.js crypto required.
+ *
+ * Verification also accepts an imported bcrypt hash (`$2a$`, `$2b$`, `$2y$`, as
+ * Supabase `auth.users.encrypted_password` stores) through pure-JS `bcryptjs`, so an
+ * app can move users over without a password reset. New hashes are always PBKDF2:
+ * callers that see `isBcryptPasswordHash()` rewrite the row after a successful check.
  */
+import bcrypt from 'bcryptjs'
 
 const SALT_LENGTH = 16
 const ITERATIONS = 100_000
 const KEY_LENGTH = 256
+/** Imported bcrypt hashes above this cost fail closed; Supabase writes cost 10. */
+const MAX_BCRYPT_COST = 12
+const BCRYPT_HASH_PATTERN = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/u
+
+/** True when `stored` is a well-formed bcrypt hash this module will verify. */
+export function isBcryptPasswordHash(stored: string): boolean {
+  const match = BCRYPT_HASH_PATTERN.exec(stored)
+  return match !== null && Number(match[1]) <= MAX_BCRYPT_COST
+}
+
+async function verifyBcryptPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    return await bcrypt.compare(password, stored)
+  } catch {
+    return false
+  }
+}
 
 function toHex(buf: ArrayBuffer | Uint8Array): string {
   const arr = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
@@ -45,10 +68,13 @@ export async function hashUserPassword(password: string): Promise<string> {
 }
 
 /**
- * Verify a password against a stored "salt:hash" string.
+ * Verify a password against a stored "salt:hash" string, or an imported bcrypt hash.
  * Uses timing-safe comparison to prevent timing attacks.
  */
 export async function verifyUserPassword(password: string, stored: string): Promise<boolean> {
+  if (stored.startsWith('$2')) {
+    return isBcryptPasswordHash(stored) ? verifyBcryptPassword(password, stored) : false
+  }
   const [saltHex, hashHex] = stored.split(':')
   if (!saltHex || !hashHex) return false
   const salt = fromHex(saltHex)

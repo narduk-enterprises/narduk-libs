@@ -121,6 +121,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/server-renderer": "3.5.42",
     "@vue/test-utils": "2.4.11",
+    "bcryptjs": "3.0.3",
     "eslint": "^10.8.0",
     "h3": "^1.15.11",
     "happy-dom": "20.10.6",

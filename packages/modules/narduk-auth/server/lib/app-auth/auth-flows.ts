@@ -1,10 +1,14 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { getDatabaseRow, useDatabase } from '#layer/server/utils/database'
+import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
-import { hashUserPassword, verifyUserPassword } from '#layer/server/utils/password'
+import {
+  hashUserPassword,
+  isBcryptPasswordHash,
+  verifyUserPassword,
+} from '#layer/server/utils/password'
 import { authUserLinks } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-session-stability'
@@ -138,6 +142,10 @@ async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<Aut
     })
   }
 
+  if (isBcryptPasswordHash(user.passwordHash)) {
+    await upgradeImportedPasswordHash(event, user.id, user.passwordHash, body.password)
+  }
+
   const sessionUser = await establishLocalSessionUser(event, user, {
     authProvider: user.appleId ? 'apple' : 'email',
     authProviders: user.appleId ? ['apple', 'email'] : ['email'],
@@ -149,6 +157,34 @@ async function loginWithLocalAuth(event: H3Event, body: LoginInput): Promise<Aut
   return {
     user: sessionUser,
     nextStep: 'signed_in',
+  }
+}
+
+/**
+ * An imported bcrypt hash has just verified: replace it with PBKDF2 in this request.
+ * The write is conditional on the row still holding that bcrypt hash, so a concurrent
+ * password change is never overwritten. A failed write leaves the bcrypt hash in
+ * place and the next sign-in retries; it never fails an otherwise valid sign-in.
+ */
+export async function upgradeImportedPasswordHash(
+  event: H3Event,
+  userId: string,
+  bcryptHash: string,
+  password: string,
+): Promise<void> {
+  try {
+    const db = useDatabase(event)
+    await executeDatabaseQuery(
+      db
+        .update(users)
+        .set({
+          passwordHash: await hashUserPassword(password),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(and(eq(users.id, userId), eq(users.passwordHash, bcryptHash))),
+    )
+  } catch {
+    useLogger(event).child('AppAuth').warn('Imported password hash upgrade did not complete')
   }
 }
 

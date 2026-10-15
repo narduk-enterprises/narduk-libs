@@ -368,6 +368,35 @@ The admin routes take an admin-owned API key only where its scopes allow it.
 session-only: no API key can grant or revoke admin, whatever its scopes. Admin
 sessions need no scope.
 
+## Importing users with a bcrypt password hash (local backend)
+
+An app moving off Supabase can keep its users' passwords. Insert each user as an
+ordinary `users` row and put the bcrypt hash in `users.password_hash`
+(`auth.users.encrypted_password` in Supabase, `$2a$`/`$2b$`/`$2y$`, cost 12 or
+lower; anything else fails closed):
+
+```ts
+await db.insert(users).values({
+  id: crypto.randomUUID(),
+  email: 'owner@example.com', // lower-cased; sign-in looks it up normalised
+  passwordHash: '$2a$10$…', // the imported bcrypt hash, verbatim
+  name: null,
+  isAdmin: false,
+})
+```
+
+There is no separate `needsPasswordSetup` column: it is derived per session, and
+a local user with a `password_hash` signs in with `needsPasswordSetup: false`. A
+row with a null hash is the one that gets the password-setup flow, so never
+import a user without their hash if they should keep their password.
+
+On the first successful email sign-in, `loginUser` verifies the hash with
+pure-JS `bcryptjs`, then rewrites `password_hash` as PBKDF2 in the same request
+(only if the row still holds that bcrypt hash). A wrong password, a malformed
+hash or an unknown email all fail alike (401, same attempt throttle); a rewrite
+that cannot be written leaves the bcrypt hash for the next sign-in. This is not
+a migration tool; reading the source users is the app's job.
+
 ## nuxt-auth-utils' session route
 
 nuxt-auth-utils serves `GET /api/_auth/session`, which
