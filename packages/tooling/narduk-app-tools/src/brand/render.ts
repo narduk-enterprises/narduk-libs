@@ -64,21 +64,32 @@ export function displayFace(brand: BrandConfig, root: string): FontFace {
  * honours `fontfile` through fontconfig, and the macOS build defaults to
  * CoreText with no fontconfig file, which silently draws every card in
  * Helvetica. A minimal config keeps the system's own fonts.conf when there is
- * one (Linux). Must run before the first text render; respects a caller's own
- * settings.
+ * one (Linux) and the macOS font folders, so a Mac matches what fontconfig
+ * sees on Linux. Must run before the first text render; respects a caller's
+ * own settings.
  */
 export function ensureFontconfig(env: NodeJS.ProcessEnv = process.env): void {
   env.PANGOCAIRO_BACKEND ??= 'fc'
   if (env.FONTCONFIG_FILE) return
-  const dir = join(tmpdir(), 'narduk-app-fontconfig')
-  const file = join(dir, 'fonts.conf')
+  // Per user: a shared /tmp directory owned by another user is not writable.
+  const dir = join(tmpdir(), `narduk-app-fontconfig-${process.getuid?.() ?? 'user'}`)
+  const file = join(dir, 'fonts-2.conf')
   if (!existsSync(file)) {
     mkdirSync(dir, { recursive: true })
     // Write then rename, so a parallel process never reads a half-written file.
     const partial = `${file}.${process.pid}`
     writeFileSync(
       partial,
-      `<?xml version="1.0"?>\n<fontconfig>\n  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n  <cachedir>${join(dir, 'cache')}</cachedir>\n</fontconfig>\n`,
+      [
+        '<?xml version="1.0"?>',
+        '<fontconfig>',
+        '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>',
+        '  <dir>/System/Library/Fonts</dir>',
+        '  <dir>/Library/Fonts</dir>',
+        `  <cachedir>${join(dir, 'cache')}</cachedir>`,
+        '</fontconfig>',
+        '',
+      ].join('\n'),
     )
     renameSync(partial, file)
   }
@@ -176,7 +187,9 @@ export async function renderText(sharpFactory: Sharp, box: TextBox): Promise<Ren
     const image = sharpFactory({
       text: {
         text,
-        font: `${font.family} ${px}`,
+        // The comma ends the family: without it Pango reads a trailing style
+        // word ("Libre Caslon Condensed", "… Black") as a style, not the name.
+        font: `${font.family}, ${px}`,
         fontfile: font.file,
         width: box.width,
         dpi: 72,

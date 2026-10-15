@@ -111,7 +111,7 @@ export async function runAssetsCommand(args: string[]): Promise<number> {
     const font = result.font
     if (font?.action === 'failed')
       console.warn(
-        `[assets] WARN display font not resolved, the card uses the bundled face: ${font.error}`,
+        `[assets] WARN display font not resolved, the card uses ${existsSync(font.path) ? `the existing ${name(font.path)}` : 'the bundled face'}: ${font.error}`,
       )
     else if (font)
       console.log(

@@ -168,7 +168,12 @@ export async function resolveBrandDisplayFont(
   const warnings: string[] = []
   if (existsSync(path) && !options.force) {
     try {
-      return { path, action: 'kept', info: readFontInfo(readFileSync(path)), warnings }
+      const info = readFontInfo(readFileSync(path))
+      if (!font.file && info.family.toLowerCase() !== font.family.toLowerCase())
+        warnings.push(
+          `public/${BRAND_DISPLAY_FONT_PUBLIC_PATH} is "${info.family}", not fonts.display "${font.family}"; run assets generate --force`,
+        )
+      return { path, action: 'kept', info, warnings }
     } catch (error) {
       return { path, action: 'failed', error: `${path}: ${String(error)}`, warnings }
     }

@@ -55,8 +55,9 @@ function utf16be(value: string): Buffer {
 }
 
 // A downloaded Google font stand-in: the bundled mono face (a real static TTF,
-// no network) under a family name the renderer has not otherwise seen.
-const MONO = renamed(readFileSync(brandFontFile('mono')), 'NE Brand Mono', 'ZQ Brand Mono')
+// no network) under a family name the renderer has not otherwise seen, ending
+// in a style word as "Libre Caslon Condensed" does.
+const MONO = renamed(readFileSync(brandFontFile('mono')), 'NE Brand Mono', 'Z Q Condensed')
 
 let root: string
 
@@ -144,7 +145,7 @@ describe('fonts.display config', () => {
 describe('font files', () => {
   it('reads the family, weight and style a file declares', () => {
     expect(readFontInfo(MONO)).toEqual({
-      family: 'ZQ Brand Mono',
+      family: 'Z Q Condensed',
       weight: 400,
       italic: false,
       variable: false,
@@ -200,16 +201,19 @@ describe('resolveBrandDisplayFont', () => {
     const written = await resolveBrandDisplayFont(brand, root, { fetcher: first.fetcher })
     expect(written).toMatchObject({
       action: 'written',
-      info: { family: 'ZQ Brand Mono' },
+      info: { family: 'Z Q Condensed' },
       warnings: [],
     })
     expect(readFileSync(join(root, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH))).toEqual(MONO)
 
     const second = googleStub()
-    expect(await resolveBrandDisplayFont(brand, root, { fetcher: second.fetcher })).toMatchObject({
-      action: 'kept',
-    })
+    const kept = await resolveBrandDisplayFont(brand, root, { fetcher: second.fetcher })
+    expect(kept).toMatchObject({ action: 'kept' })
     expect(second.urls).toEqual([])
+    // The stand-in's family is not the configured one: a stale file is named.
+    expect(kept?.warnings).toEqual([
+      'public/fonts/brand-display.ttf is "Z Q Condensed", not fonts.display "Libre Caslon Condensed"; run assets generate --force',
+    ])
 
     const forced = googleStub()
     expect(
@@ -266,17 +270,24 @@ describe('the card in the brand face', () => {
     const same = await renderDefaultCard(readBrandConfig(root), root)
     expect((await pixels(same)).equals(await pixels(bundled))).toBe(true)
 
-    // A different face draws a different card. Were the renderer ignoring the
-    // file (macOS CoreText without fontconfig), both cards would match.
+    // The mono glyphs as the display face: the reference for the card below.
+    writeBrand({ ...BRAND, fonts: { display: { family: 'NE Brand Mono', weight: 400 } } })
+    copyFileSync(brandFontFile('mono'), join(root, 'public', BRAND_DISPLAY_FONT_PUBLIC_PATH))
+    const mono = await renderDefaultCard(readBrandConfig(root), root)
+    expect((await pixels(mono)).equals(await pixels(bundled))).toBe(false)
+
+    // The same glyphs under a family only the downloaded file carries, whose
+    // name ends in a style word, draw that same card. A renderer that ignored
+    // the file, or let Pango read "Condensed" as a stretch, would draw a system face.
     writeBrand({ ...BRAND, fonts: { display: CASLON } })
     const result = await generateBrandAssets({ root, force: true, fetcher: googleStub().fetcher })
     expect(result.font).toMatchObject({ action: 'written' })
     expect(displayFace(readBrandConfig(root), root)).toMatchObject({
-      family: 'ZQ Brand Mono',
+      family: 'Z Q Condensed',
       weight: 400,
     })
     const branded = readFileSync(join(root, 'public/og.png'))
-    expect((await pixels(branded)).equals(await pixels(bundled))).toBe(false)
+    expect((await pixels(branded)).equals(await pixels(mono))).toBe(true)
   }, 30_000)
 
   it('falls back to the bundled face when the font cannot be resolved', async () => {
