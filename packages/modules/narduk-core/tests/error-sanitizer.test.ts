@@ -419,8 +419,20 @@ describe('explicit expose opt-in for authored 5xx (narduk-libs#1714)', () => {
     expect(error.data).toBeUndefined()
   })
 
-  it('still scrubs unhandled and fatal errors even when they carry data.expose !== true', () => {
+  it('still scrubs unhandled and fatal errors that carry no expose mark', () => {
     const error = run(leakyError({ unhandled: true, fatal: true } as never))
     expect(error.message).toBe(GENERIC_SERVER_ERROR_MESSAGE)
+  })
+
+  it('the mark alone decides: expose wins over unhandled/fatal flags', () => {
+    const error = run(
+      leakyError({
+        unhandled: true,
+        fatal: true,
+        message: 'Authored',
+        data: { expose: true },
+      } as never),
+    )
+    expect(error.message).toBe('Authored')
   })
 })

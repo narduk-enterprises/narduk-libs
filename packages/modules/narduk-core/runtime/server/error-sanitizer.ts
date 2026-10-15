@@ -74,7 +74,8 @@ export function readErrorStatusCode(error: SanitizableServerError): number {
  * message, data: { expose: true } })`. Opt-in per error, never inferred from
  * `unhandled`/`fatal`: Nuxt wraps SSR crashes and re-wrapped caught errors in
  * handled H3Errors, so any inferred rule brings back the leak of narduk-libs#439
- * (see #1715, #1714).
+ * (see #1715, #1714). The author owns everything in `data`: never spread a
+ * caught error or an upstream body into an exposed error.
  */
 export function isExposedServerError(error: SanitizableServerError): boolean {
   const data = error.data
