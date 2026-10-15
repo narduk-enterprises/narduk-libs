@@ -1,5 +1,11 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.1
+
+### Patch Changes
+
+- b64a726: Pin `@narduk-enterprises/narduk-app-tools` 0.43.1 in generated apps.
+
 ## 0.23.0
 
 ### Minor Changes
