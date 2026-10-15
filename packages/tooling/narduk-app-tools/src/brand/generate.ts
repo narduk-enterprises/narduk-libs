@@ -6,6 +6,8 @@ import { generateSocialImage, inspectSocialImage } from '../social/images.js'
 import { brandMonogram, brandShortName, brandThemeColor, readBrandConfig } from './config.js'
 import type { BrandConfig } from './config.js'
 import { SOCIAL_PREVIEW_CONFIG_PATH, renderDefaultCard } from './card.js'
+import { resolveBrandDisplayFont } from './font.js'
+import type { DisplayFontResult } from './font.js'
 import { encodeIco } from './ico.js'
 import { loadSharp, onColor, readable, renderMark, xml } from './render.js'
 
@@ -33,12 +35,16 @@ export interface BrandAssetOptions {
   force?: boolean
   /** Skip the share card even when the brand would render it. */
   skipOg?: boolean
+  /** Fetches the Google Fonts face; tests pass a stub. */
+  fetcher?: typeof fetch
 }
 
 export interface BrandAssetResult {
   written: string[]
   kept: string[]
   og: { path: string; action: 'written' | 'kept' | 'source' | 'skipped' } | null
+  /** `public/fonts/brand-display.ttf`, when brand.json names `fonts.display`. */
+  font: DisplayFontResult | null
 }
 
 function publicDir(root: string): string {
@@ -204,7 +210,12 @@ export async function generateBrandAssets(options: BrandAssetOptions): Promise<B
   const brand = readBrandConfig(options.root, options.brand)
   const target = publicDir(options.root)
   mkdirSync(target, { recursive: true })
-  const result: BrandAssetResult = { written: [], kept: [], og: null }
+  // First: the monogram and the card typeset from this file.
+  const font = await resolveBrandDisplayFont(brand, options.root, {
+    force: options.force,
+    fetcher: options.fetcher,
+  })
+  const result: BrandAssetResult = { written: [], kept: [], og: null, font }
   const buffers = await iconBuffers(brand, options.root)
   for (const [name, bytes] of Object.entries(buffers)) {
     const path = join(target, name)

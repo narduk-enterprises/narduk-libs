@@ -27,6 +27,38 @@ const localFile = z
   )
   .refine((value) => /\.(?:svg|png)$/iu.test(value), 'Expected an SVG or PNG file')
 
+export const brandDisplayFontSchema = z
+  .object({
+    /** The family as Google Fonts names it, e.g. `Libre Caslon Condensed`. */
+    family: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[\p{L}\p{N} .'-]+$/u, 'Expected a font family name'),
+    /** 100-900. Google Fonts serves a static instance at exactly this weight. */
+    weight: z.number().int().min(100).max(900).multipleOf(100).default(700),
+    style: z.enum(['normal', 'italic']).default('normal'),
+    /**
+     * A static TrueType file inside the app, for a face Google Fonts does not
+     * carry. Absent, the face is downloaded from Google Fonts by `family`.
+     */
+    file: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine(
+        (value) =>
+          !isAbsolute(value) && !value.split(/[\\/]/u).includes('..') && !value.includes('\\'),
+        'Expected a relative path inside the app',
+      )
+      .refine((value) => /\.ttf$/iu.test(value), 'Expected a .ttf file')
+      .optional(),
+  })
+  .strict()
+
+export type BrandDisplayFont = z.output<typeof brandDisplayFontSchema>
+
 export const brandConfigSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -59,6 +91,11 @@ export const brandConfigSchema = z
     iconMaskable: localFile.optional(),
     /** One to three characters for the generated monogram. Defaults to the name's initials. */
     monogram: z.string().trim().min(1).max(3).optional(),
+    /**
+     * The app's own display face for card titles, the monogram and the app's
+     * wordmark. Absent, cards use the bundled display face.
+     */
+    fonts: z.object({ display: brandDisplayFontSchema.optional() }).strict().optional(),
     og: z
       .object({
         layout: z.enum(OG_LAYOUTS).default('poster'),

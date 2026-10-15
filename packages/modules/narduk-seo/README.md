@@ -130,6 +130,10 @@ At build the module reads `Config/brand.json` under the app root, the file
   palette, `og.layout`, `og.pattern`, monogram and `public/icon-512.png`, with
   the page title as the largest thing on the card; a page passing its own
   `image` gets the `split` layout with the image in the panel;
+- with `fonts.display` and its generated `public/fonts/brand-display.ttf`, the
+  module adds an app stylesheet declaring that face: the runtime card sets its
+  title and monogram in it, and the app can use `var(--brand-font-display)` for
+  its wordmark (missing file: a build warning and the default face);
 - `nardukSeo.ogImage` colours default to the brand's `primary` and `accent`;
 - `theme-color` is emitted for light (`themeColor`, default `primary`) and dark
   (`ink`) schemes, unless the app sets its own.

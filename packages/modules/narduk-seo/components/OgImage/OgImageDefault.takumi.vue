@@ -27,6 +27,10 @@ const props = withDefaults(
   defineProps<{
     badgeLabel?: string
     description?: string
+    /** The brand's display face (brand.json `fonts.display`), loaded from app CSS. */
+    displayFamily?: string
+    displayStyle?: string
+    displayWeight?: number
     eyebrow?: string
     host?: string
     image?: string
@@ -44,6 +48,9 @@ const props = withDefaults(
   {
     title: 'Nuxt 4 Template',
     description: '',
+    displayFamily: '',
+    displayStyle: 'normal',
+    displayWeight: 700,
     siteName: 'Nuxt 4 Demo',
     eyebrow: '',
     badgeLabel: '',
@@ -62,7 +69,16 @@ const props = withDefaults(
 
 const DISPLAY = 'Outfit, Inter, sans-serif'
 const TEXT = 'Inter, sans-serif'
-const MONO = 'ui-monospace, Menlo, monospace'
+// Takumi has no system fonts: without Inter (always bundled) here, a mono run
+// falls back to the first loaded family, which can be the brand display face.
+const MONO = 'ui-monospace, Menlo, monospace, Inter'
+
+// The brand face first; Takumi drops a family it could not load and uses the next.
+const display = computed(() => ({
+  fontFamily: props.displayFamily ? `'${props.displayFamily}', ${DISPLAY}` : DISPLAY,
+  fontWeight: props.displayFamily ? props.displayWeight : 800,
+  fontStyle: props.displayFamily && props.displayStyle === 'italic' ? 'italic' : 'normal',
+}))
 
 const px = (value: number) => `${value}px`
 const at = (slot: { height?: number; left: number; top: number; width?: number }) => ({
@@ -107,8 +123,7 @@ const monogramStyle = computed(() => {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontFamily: DISPLAY,
-    fontWeight: 800,
+    ...display.value,
     fontSize: px(Math.round(slot.size * (mark.value.length > 1 ? 0.4 : 0.56))),
     letterSpacing: '-0.04em',
   }
@@ -152,8 +167,7 @@ const titleBoxStyle = computed(() => ({
   gap: '20px',
 }))
 const titleStyle = computed(() => ({
-  fontFamily: DISPLAY,
-  fontWeight: 800,
+  ...display.value,
   fontSize: px(ogTitleSize(props.title, layout.value)),
   lineHeight: '0.94',
   letterSpacing: '-0.035em',
@@ -219,7 +233,14 @@ const PANEL = { ...FULL, left: '740px', width: '460px', objectFit: 'cover' } sat
     <div :style="eyebrowStyle">{{ eyebrowText }}</div>
 
     <div :style="titleBoxStyle">
-      <div :style="titleStyle">{{ title }}</div>
+      <!-- The fontFamily here is what nuxt-og-image's build scan reads as a
+           props-driven face, so it bundles every app font (the brand face
+           included) for this card instead of only the families named in it. -->
+      <div
+        :style="{ ...titleStyle, fontFamily: props.displayFamily ? display.fontFamily : DISPLAY }"
+      >
+        {{ title }}
+      </div>
       <div v-if="description" :style="descriptionStyle">{{ description }}</div>
     </div>
 
