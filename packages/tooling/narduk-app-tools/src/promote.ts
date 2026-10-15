@@ -79,7 +79,8 @@ import {
   type Ancestry,
   type Containment,
 } from './commit-containment.js'
-import { readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import { readCloudflareAppConfigDocument, readJsonc, resolveWranglerConfigPath } from './deploy.js'
+import { readDeploymentBlock } from './deployment-config.js'
 import {
   currentDeployment,
   soleDeployedVersionId,
@@ -216,6 +217,11 @@ export const PROMOTE_EXIT = {
    * (or containment could not be proven). Promoting would undo shipped work.
    */
   shipNotContained: 10,
+  /**
+   * `deployment.staging` is enabled and the staging Worker does not serve a
+   * version tagged with this commit: the staging stage did not prove it.
+   */
+  stagingNotProven: 11,
 } as const
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on'])
@@ -1246,6 +1252,8 @@ export type PromoteOutcome =
   | 'gate-mismatch'
   /** Production serves a shipped commit that this commit does not contain. */
   | 'ship-not-contained'
+  /** Staging is enabled and does not serve this commit (`./staging.ts`). */
+  | 'staging-not-proven'
   /** Wrangler exited non-zero. `trafficMayHaveChanged` says whether traffic is at risk. */
   | 'wrangler-failed'
   | 'dry-run'
@@ -1371,6 +1379,13 @@ export interface PromoteContext {
   ancestry?: (candidate: string, live: string) => Ancestry
   /** Injected in tests; `readPromoteDispatchInputs` (the checkout's promote.yml) otherwise. */
   dispatchInputs?: (appDir: string) => PromoteDispatchInputs | null
+  /** Injected in tests; `readEnabledStaging` (the app's deployment block) otherwise. */
+  staging?: (
+    appDir: string,
+    env: DeployEnv,
+  ) => { workerName: string; accountId: string | null } | null
+  /** Injected in tests; `createWranglerCli` for the staging Worker otherwise. */
+  stagingClient?: WranglerVersionsClient
 }
 
 function resolveWorker(
@@ -1469,6 +1484,62 @@ export function defaultPromoteSha(env: DeployEnv, haveVersionId: boolean): strin
     )
   }
   return sha
+}
+
+/* -------------------------------------------------------------------------- */
+/* The staging gate (`./staging.ts`)                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Null when the staging Worker serves, at 100%, a version tagged with `sha`;
+ * otherwise the refusal. `versions-promote` calls this for a production
+ * promotion while staging is enabled, so production never moves to a commit
+ * the staging stage did not deploy. A failed staging proof rolls staging back
+ * when it can; when that rollback itself fails, `deploy staging` says so and
+ * staging keeps the unproven version until the next run.
+ */
+export async function checkStagingServesSha(
+  sha: string,
+  stagingWorker: string,
+  client: Pick<WranglerVersionsClient, 'listDeployments' | 'listVersions'>,
+): Promise<string | null> {
+  const live = soleDeployedVersionId(currentDeployment(await client.listDeployments()))
+  if (!live) {
+    return (
+      `staging is enabled, but ${stagingWorker} serves no single version at 100%, so this ` +
+      `commit was not proven on staging. Run \`narduk-app deploy staging --sha ${sha}\` first.`
+    )
+  }
+  const { versions } = await client.listVersions(20)
+  const version: WorkerVersion | undefined = versions.find((entry) => entry.id === live)
+  const tag = version?.annotations?.[VERSION_TAG_ANNOTATION]
+  if (shaMatchesTag(sha, tag)) return null
+  return (
+    `staging is enabled, but ${stagingWorker} serves version ${live}` +
+    (tag ? ` tagged ${tag}` : ' with no commit tag') +
+    `, not ${sha}. Production follows a green staging proof of the same commit: run ` +
+    `\`narduk-app deploy staging --sha ${sha}\` first.`
+  )
+}
+
+/**
+ * The staging stage as `versions-promote` sees it from the app checkout, or
+ * null when there is none to enforce (no readable declaration, not narduk-v1,
+ * staging disabled). Never throws: a promote of an app without a declaration
+ * behaves as it always has.
+ */
+export function readEnabledStaging(
+  appDir: string,
+  env: DeployEnv,
+): { workerName: string; accountId: string | null } | null {
+  try {
+    const outcome = readDeploymentBlock(readCloudflareAppConfigDocument(appDir, env))
+    if (outcome.kind !== 'valid' || !outcome.block.staging.enabled) return null
+    const workerName = outcome.block.staging.workerName
+    return workerName ? { workerName, accountId: outcome.block.accountId ?? null } : null
+  } catch {
+    return null
+  }
 }
 
 export async function runVersionsPromote(
@@ -1869,6 +1940,52 @@ async function promoteVersion(
       versionSearch,
       detail: `Would run: wrangler versions deploy ${versionId}@${String(flags.percentage)}`,
       exitCode: PROMOTE_EXIT.ok,
+    }
+  }
+
+  // §5.2: with staging enabled, production follows a green staging proof of
+  // the same commit. Skipped under the manual override (deliberate recovery)
+  // and for a promote of the staging Worker itself.
+  const staging = isManualPromoteAllowed(env)
+    ? null
+    : (context.staging ?? readEnabledStaging)(appDir, env)
+  if (staging && staging.workerName !== workerName) {
+    const stagingRead = await withWranglerFailure(
+      'versions-promote',
+      workerName,
+      `staging check on ${staging.workerName}`,
+      false,
+      async () =>
+        sha
+          ? checkStagingServesSha(
+              sha,
+              staging.workerName,
+              context.stagingClient ??
+                createWranglerCli({
+                  workerName: staging.workerName,
+                  accountId: staging.accountId ?? accountId ?? undefined,
+                  appDir,
+                  env,
+                }),
+            )
+          : 'staging is enabled, and a --version-id promote names no commit to check against ' +
+            'the staging Worker; pass --sha.',
+    )
+    if (!stagingRead.ok) return { ...stagingRead.result, sha, versionId, previousVersionId }
+    if (stagingRead.value) {
+      return {
+        action: 'versions-promote',
+        outcome: 'staging-not-proven',
+        worker: workerName,
+        sha,
+        versionId,
+        previousVersionId,
+        percentage: null,
+        searchedVersions,
+        versionSearch,
+        detail: stagingRead.value,
+        exitCode: PROMOTE_EXIT.stagingNotProven,
+      }
     }
   }
 

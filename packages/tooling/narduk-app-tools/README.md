@@ -1312,6 +1312,96 @@ Staging is a **separate Worker name**, never a wrangler `env.staging` block --
 behind on a disabled stage is rejected rather than ignored, because it reads as
 a live staging setup and is not one.
 
+`bindings` names the staging D1, KV and R2 resources in the same form as
+`previewBindings`, and must rebind every one: it is what
+`db migrate-deployment --target staging` migrates and what the staging Worker
+binds. `"wranglerConfig": "apps/web/wrangler.staging.json"` is optional, for a
+staging Worker that also differs in vars, routes or rate-limit namespaces;
+without it the executor derives the staging config from the production one.
+
+**The executor.**
+`narduk-app deploy staging --sha <commit> [--dry-run] [--json]` runs the stage
+inside the promote workflow, for the commit `ci / Required` verified:
+
+1. It refuses outside the Actions promote context (the `versions-promote` guard,
+   including the production-branch ref check) and when the checkout's `HEAD` is
+   not `--sha`.
+2. It plans the staging config. A committed `wranglerConfig` is used as written
+   once it names `workerName`, the deployment account, a route to `hostname`, no
+   `env` block, and exactly the D1/KV/R2 resources `bindings` declares.
+   Otherwise it writes `.wrangler.deploy.staging.json` beside the production
+   config: production, rebound, renamed, routed to `hostname` as a custom
+   domain, with `keep_vars`. Add that file to `.gitignore`.
+3. It uploads the already built bundle to the staging Worker with
+   `wrangler versions upload --tag <commit>`, deploys that version at 100%, and
+   runs the live proof (`verify --live https://<hostname> --expect-sha <commit>`
+   with the `liveProof` settings, egress fallback included).
+4. A failed proof (or one that could not run) rolls the staging Worker back to
+   the version it served before and exits 4, so the job stops before any
+   production step.
+
+`versions upload` never applies routes, so `hostname` must already be attached
+to the staging Worker (a custom domain or route); the derived config's route
+only records it. A derived config rebinds D1, KV and R2 only, so it is refused
+when production also binds Hyperdrive, Vectorize, queues, services or Analytics
+Engine: commit a staging config for that app.
+
+A Worker version belongs to one script, so the version Workers Builds uploaded
+to the production Worker cannot serve staging. The promote job builds the
+verified commit's staging bundle itself, before this command, with the promote
+credential (Workers Scripts Write on the account).
+
+| Exit | Meaning                                                             |
+| ---- | ------------------------------------------------------------------- |
+| 0    | `proven`, `dry-run`, or `not-enabled` (staging off: nothing to do)  |
+| 1    | the Actions, event, branch or checkout guard refused                |
+| 2    | bad arguments, an invalid stage, or the staging bundle is not built |
+| 4    | `proof-failed`: staging rolled back, production must not continue   |
+| 5    | wrangler failed; `trafficMayHaveChanged` says whether staging moved |
+
+Step outputs: `outcome`, `enabled`, `version_id`, `previous_version_id`,
+`approval` and `environment`.
+
+**Production follows staging.** While `staging.enabled` is true,
+`deploy versions-promote` refuses a production promotion (exit 11,
+`staging-not-proven`) unless the staging Worker serves, at 100%, a version
+tagged with the same commit. Its `--dry-run` is not gated, so the "eligible
+version" check can still run first. `NARDUK_ALLOW_MANUAL_PROMOTE=1` skips the
+gate for recovery work.
+
+The order in the promote job is: production `--dry-run` → staging migrations →
+staging build → `deploy staging` → production migrations → production promote →
+production proof. Production migrations come after the staging proof because
+they are the step that cannot be undone. The `approval` mode sets where the
+production half runs:
+
+- `"auto-after-proof"`: the production steps follow in the same job, and a green
+  staging proof is the gate.
+- `"environment"`: the production steps run in a second job with
+  `needs: staging` and `environment: <staging.environment>`, the GitHub
+  Environment whose required reviewers approve the promotion.
+
+```yaml
+- name: Migrate staging D1
+  working-directory: apps/web
+  env: { CLOUDFLARE_API_TOKEN: '${{ secrets.D1_MIGRATE_API_TOKEN }}' }
+  run:
+    pnpm exec narduk-app db migrate-deployment --target staging --sha
+    "$VERIFIED_SHA"
+- name: Build the staging bundle
+  # Under workflow_run, GITHUB_SHA is main's head at trigger time, not the
+  # verified commit, and the core layer stamps x-build-version from it first.
+  # Twelve characters, as a Workers Build stamps production.
+  run:
+    BUILD_VERSION="${VERIFIED_SHA::12}" pnpm --filter web run cf:build:staging
+- name: Deploy and prove staging
+  working-directory: apps/web
+  env:
+    CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_PROMOTE_API_TOKEN }}'
+    NARDUK_APP_EGRESS_PROXY: '${{ vars.NARDUK_APP_EGRESS_PROXY }}'
+  run: pnpm exec narduk-app deploy staging --sha "$VERIFIED_SHA"
+```
+
 #### `accountId`, and what 12.5 can and cannot decide
 
 `"accountId": "<32 hex>"` is optional and names the Cloudflare account this app
