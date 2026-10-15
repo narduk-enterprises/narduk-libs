@@ -8,6 +8,7 @@ const props = withDefaults(
     badgeLabel?: string
     category?: string
     description?: string
+    displayFamily?: string
     eyebrow?: string
     host?: string
     image?: string
@@ -25,6 +26,7 @@ const props = withDefaults(
   {
     title: 'Article Title',
     description: '',
+    displayFamily: '',
     category: 'Article',
     eyebrow: '',
     badgeLabel: '',

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ogBrandArtSvg,
@@ -15,7 +15,7 @@ import {
   ogTitleSize,
 } from '../app/utils/ogBrandCard'
 import { resolveSeoOgImageDefinition } from '../app/utils/ogImageDefinition'
-import { brandHeadTags, brandMonogram, readBrandFile } from '../shared/brand'
+import { brandFontCss, brandHeadTags, brandMonogram, readBrandFile } from '../shared/brand'
 
 const BRAND = {
   schemaVersion: 1,
@@ -58,7 +58,58 @@ describe('Config/brand.json', () => {
       pattern: 'dots',
       monogram: 'CE',
       logo: '/icon-512.png',
+      displayFont: null,
     })
+  })
+
+  it('reads the display face once narduk-app assets generate wrote its file', () => {
+    const fonts = { display: { family: 'Libre Caslon Condensed', weight: 700 } }
+    writeBrand({ ...BRAND, fonts })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(readBrandFile(root, join(root, 'public'))?.displayFont).toBeNull()
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/public\/fonts\/brand-display.ttf is missing/u)
+    warn.mockRestore()
+
+    mkdirSync(join(root, 'public/fonts'))
+    writeFileSync(join(root, 'public/fonts/brand-display.ttf'), 'ttf')
+    expect(readBrandFile(root, join(root, 'public'))?.displayFont).toEqual({
+      family: 'Libre Caslon Condensed',
+      src: '/fonts/brand-display.ttf',
+      style: 'normal',
+      weight: 700,
+    })
+    writeBrand({ ...BRAND, fonts: { display: { family: 'Instrument Serif', style: 'italic' } } })
+    expect(readBrandFile(root, join(root, 'public'))?.displayFont).toMatchObject({
+      style: 'italic',
+      weight: 700,
+    })
+    writeBrand({ ...BRAND, fonts: { display: { family: 'x</style>' } } })
+    expect(() => readBrandFile(root, join(root, 'public'))).toThrow(/fonts.display.family/u)
+    writeBrand({ ...BRAND, fonts: { display: { family: 'Inter', weight: 1200 } } })
+    expect(() => readBrandFile(root, join(root, 'public'))).toThrow(/fonts.display.weight/u)
+  })
+
+  it('declares the face and the --brand-font-display variable', () => {
+    const css = brandFontCss({
+      family: "Libre Caslon O'Condensed",
+      src: '/fonts/brand-display.ttf',
+      style: 'normal',
+      weight: 700,
+    })
+    expect(css).toContain("font-family: 'Libre Caslon O\\'Condensed';")
+    expect(css).toContain("src: url('/fonts/brand-display.ttf') format('truetype');")
+    expect(css).toContain('font-weight: 700;')
+    // The card's copy of the face, at the one weight the OG font scan bundles.
+    expect(css.match(/@font-face/gu)).toHaveLength(2)
+    expect(css).toContain('font-weight: 400;\n  font-style: normal;')
+    expect(
+      brandFontCss({ family: 'Inter', src: '/f.ttf', style: 'normal', weight: 400 }).match(
+        /@font-face/gu,
+      ),
+    ).toHaveLength(1)
+    expect(css).toContain(
+      "--brand-font-display: 'Libre Caslon O\\'Condensed', system-ui, sans-serif;",
+    )
   })
 
   it('fails the build on a broken brand file', () => {
@@ -165,5 +216,12 @@ describe('runtime brand card', () => {
       resolveSeoOgImageDefinition({ ...base, brand, ogImage: { layout: 'ledger' } })?.props.layout,
     ).toBe('ledger')
     expect(resolveSeoOgImageDefinition(base)?.props).not.toHaveProperty('layout')
+    expect(resolveSeoOgImageDefinition({ ...base, brand })?.props).not.toHaveProperty(
+      'displayFamily',
+    )
+    const displayFont = { family: 'Libre Caslon Condensed' }
+    expect(
+      resolveSeoOgImageDefinition({ ...base, brand: { ...brand, displayFont } })?.props,
+    ).toMatchObject({ displayFamily: 'Libre Caslon Condensed' })
   })
 })

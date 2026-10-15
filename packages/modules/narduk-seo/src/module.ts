@@ -10,6 +10,7 @@ import {
   addPlugin,
   addServerHandler,
   addServerScanDir,
+  addTemplate,
   addTypeTemplate,
   createResolver,
   defineNuxtModule,
@@ -23,7 +24,7 @@ import { defu } from 'defu'
 
 import { isSeoOgImageHexColor, normalizeSeoOgImageHexColor } from '../app/utils/ogImageDefinition'
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
-import { brandHeadTags, readBrandFile } from '../shared/brand'
+import { brandFontCss, brandHeadTags, readBrandFile } from '../shared/brand'
 import {
   DEPLOYMENT_TARGET_ENV_KEYS,
   resolveBuildDeploymentTarget,
@@ -126,6 +127,7 @@ interface MutableNuxtOptionsRecord {
   build: {
     transpile: string[]
   }
+  css?: Array<string | { src?: string }>
   dir?: { public?: string }
   future?: Record<string, unknown>
   nitro?: Record<string, unknown>
@@ -269,6 +271,26 @@ function resolveBrandSetup(
   const brand =
     option === false ? null : readBrandFile(rootDir, publicDir, option ?? 'Config/brand.json')
   return { brand, publicDir }
+}
+
+/**
+ * The display face from brand.json as an app stylesheet, so nuxt-og-image
+ * loads it for the runtime card and the app's wordmark can use
+ * `var(--brand-font-display)`.
+ */
+function addBrandFontStylesheet(
+  nuxtOptions: MutableNuxtOptionsRecord,
+  brand: ReturnType<typeof readBrandFile>,
+): void {
+  const displayFont = brand?.displayFont
+  if (!displayFont) return
+  const template = addTemplate({
+    filename: 'narduk-seo/brand-fonts.css',
+    write: true,
+    getContents: () => brandFontCss(displayFont),
+  })
+  nuxtOptions.css ??= []
+  if (!nuxtOptions.css.includes(template.dst)) nuxtOptions.css.push(template.dst)
 }
 
 /** Adds icon links and theme-color unless the app already declares the same tag. */
@@ -757,6 +779,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
     appendBrandHeadTags(nuxtOptions, options, publicDir, brand)
 
     if (options.app) {
+      addBrandFontStylesheet(nuxtOptions, brand)
       if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))
       addImportsDir(resolver.resolve('../app/composables'))
       addImportsDir(resolver.resolve('../app/utils'))

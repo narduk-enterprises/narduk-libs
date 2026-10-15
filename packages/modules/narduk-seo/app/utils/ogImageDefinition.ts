@@ -45,6 +45,7 @@ interface SeoOgImageDefinition {
     badgeLabel?: string
     category?: string
     description: string
+    displayFamily?: string
     eyebrow?: string
     host?: string
     image?: string
@@ -63,6 +64,7 @@ interface SeoOgImageDefinition {
 
 /** The subset of the baked `nardukSeoBrand` the card reads. */
 export interface SeoOgImageBrand {
+  displayFont?: { family: string } | null
   ink: string
   layout: string
   logo: string
@@ -203,6 +205,7 @@ export function resolveSeoOgImageDefinition(
             paperColor: brand.paper,
             monogram: brand.monogram,
             ...(brand.logo ? { logo: brand.logo } : {}),
+            ...(brand.displayFont ? { displayFamily: brand.displayFont.family } : {}),
           }
         : {}),
       ...((ogImage?.layout ?? brand?.layout) ? { layout: ogImage?.layout ?? brand?.layout } : {}),

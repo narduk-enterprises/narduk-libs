@@ -108,6 +108,20 @@ export async function runAssetsCommand(args: string[]): Promise<number> {
         `[assets] kept ${result.kept.length} existing files (--force replaces them): ${result.kept.map(name).join(', ')}`,
       )
     if (result.og) console.log(`[assets] share card ${name(result.og.path)}: ${result.og.action}`)
+    const font = result.font
+    if (font?.action === 'failed')
+      console.warn(
+        `[assets] WARN display font not resolved, the card uses ${existsSync(font.path) ? `the existing ${name(font.path)}` : 'the bundled face'}: ${font.error}`,
+      )
+    else if (font)
+      console.log(
+        `[assets] display font ${name(font.path)} (${font.info?.family} ${font.info?.weight}): ${font.action}`,
+      )
+    for (const warning of font?.warnings ?? []) console.warn(`[assets] WARN ${warning}`)
+    if (font?.action === 'written' && (result.og?.action === 'kept' || result.kept.length > 0))
+      console.warn(
+        '[assets] WARN kept files still use the previous face; run assets generate --force to redraw them',
+      )
     return 0
   }
   if (subcommand === 'check') {

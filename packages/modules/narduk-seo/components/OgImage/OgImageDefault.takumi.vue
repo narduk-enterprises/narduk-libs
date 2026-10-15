@@ -27,6 +27,8 @@ const props = withDefaults(
   defineProps<{
     badgeLabel?: string
     description?: string
+    /** The brand's display face (brand.json `fonts.display`), loaded from app CSS. */
+    displayFamily?: string
     eyebrow?: string
     host?: string
     image?: string
@@ -44,6 +46,7 @@ const props = withDefaults(
   {
     title: 'Nuxt 4 Template',
     description: '',
+    displayFamily: '',
     siteName: 'Nuxt 4 Demo',
     eyebrow: '',
     badgeLabel: '',
@@ -62,7 +65,18 @@ const props = withDefaults(
 
 const DISPLAY = 'Outfit, Inter, sans-serif'
 const TEXT = 'Inter, sans-serif'
-const MONO = 'ui-monospace, Menlo, monospace'
+// Takumi has no system fonts: without Inter (always bundled) here, a mono run
+// falls back to the first loaded family, which can be the brand display face.
+const MONO = 'ui-monospace, Menlo, monospace, Inter'
+
+// The brand face first; Takumi drops a family it could not load and uses the next.
+// narduk-seo also declares the brand file as 400 normal (shared/brand.ts
+// brandFontCss), the one weight nuxt-og-image's static font scan bundles for
+// this card, so asking for 400 draws the file's own glyphs at its real weight.
+const display = computed(() => ({
+  fontFamily: props.displayFamily ? `'${props.displayFamily}', ${DISPLAY}` : DISPLAY,
+  fontWeight: props.displayFamily ? 400 : 800,
+}))
 
 const px = (value: number) => `${value}px`
 const at = (slot: { height?: number; left: number; top: number; width?: number }) => ({
@@ -107,8 +121,7 @@ const monogramStyle = computed(() => {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontFamily: DISPLAY,
-    fontWeight: 800,
+    ...display.value,
     fontSize: px(Math.round(slot.size * (mark.value.length > 1 ? 0.4 : 0.56))),
     letterSpacing: '-0.04em',
   }
@@ -152,8 +165,7 @@ const titleBoxStyle = computed(() => ({
   gap: '20px',
 }))
 const titleStyle = computed(() => ({
-  fontFamily: DISPLAY,
-  fontWeight: 800,
+  ...display.value,
   fontSize: px(ogTitleSize(props.title, layout.value)),
   lineHeight: '0.94',
   letterSpacing: '-0.035em',

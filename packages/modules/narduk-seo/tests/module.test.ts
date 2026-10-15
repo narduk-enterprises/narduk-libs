@@ -38,6 +38,10 @@ async function setupModule(options: SetupModuleOptions = {}) {
   const addPlugin = vi.fn()
   const addServerHandler = vi.fn()
   const addServerScanDir = vi.fn()
+  const addTemplate = vi.fn((template: { filename: string }) => ({
+    ...template,
+    dst: `/app/.nuxt/${template.filename}`,
+  }))
   const addTypeTemplate = vi.fn()
   const extendPages = vi.fn()
   const extendRouteRules = vi.fn()
@@ -86,6 +90,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addPlugin,
     addServerHandler,
     addServerScanDir,
+    addTemplate,
     addTypeTemplate,
     createResolver: (url: string) => ({
       resolve: (path: string) => new URL(path, url).pathname,
@@ -121,6 +126,7 @@ async function setupModule(options: SetupModuleOptions = {}) {
     addPlugin,
     addServerHandler,
     addServerScanDir,
+    addTemplate,
     addTypeTemplate,
     extendPages,
     extendRouteRules,
@@ -264,6 +270,48 @@ describe('narduk-seo module', () => {
       '/site.webmanifest',
     ])
     expect(head.meta).toEqual([{ name: 'theme-color', content: '#000000' }])
+  })
+
+  it('serves the brand display face as an app stylesheet for the runtime card', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'narduk-seo-brand-app-'))
+    compiledOutputRoots.push(join(rootDir, 'x'))
+    mkdirSync(join(rootDir, 'Config'))
+    mkdirSync(join(rootDir, 'public/fonts'), { recursive: true })
+    writeFileSync(
+      join(rootDir, 'Config/brand.json'),
+      JSON.stringify({
+        name: 'Newton County Broadband',
+        colors: { primary: '#1f6f5c', accent: '#f2b33d', ink: '#0f1f1b', paper: '#f4efe4' },
+        fonts: { display: { family: 'Libre Caslon Condensed', weight: 700 } },
+      }),
+    )
+    writeFileSync(join(rootDir, 'public/fonts/brand-display.ttf'), 'ttf')
+    const { nuxt, addTemplate } = await setupModule({
+      nuxtOptions: { rootDir, css: ['~/main.css'] },
+    })
+    expect(nuxt.options.runtimeConfig).toMatchObject({
+      public: {
+        nardukSeoBrand: {
+          displayFont: { family: 'Libre Caslon Condensed', weight: 700, style: 'normal' },
+        },
+      },
+    })
+    const template = addTemplate.mock.calls[0]?.[0] as unknown as {
+      filename: string
+      getContents: () => string
+    }
+    expect(template.filename).toBe('narduk-seo/brand-fonts.css')
+    expect(template.getContents()).toContain("font-family: 'Libre Caslon Condensed';")
+    expect((nuxt.options as { css?: string[] }).css).toEqual([
+      '~/main.css',
+      '/app/.nuxt/narduk-seo/brand-fonts.css',
+    ])
+  })
+
+  it('adds no font stylesheet without a display face', async () => {
+    const { nuxt, addTemplate } = await setupModule()
+    expect(addTemplate).not.toHaveBeenCalled()
+    expect((nuxt.options as { css?: string[] }).css).toBeUndefined()
   })
 
   it('adds no icon links when icons: false, and ignores the brand when brand: false', async () => {

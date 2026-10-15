@@ -8,6 +8,7 @@ import type { DefaultTreeAdapterMap } from 'parse5'
 import { readSocialPreviewConfig } from '../social/config.js'
 import { MAX_IMAGE_BYTES, inspectSocialImage } from '../social/images.js'
 import { hasBrandConfig, readBrandConfig } from './config.js'
+import { BRAND_DISPLAY_FONT_PUBLIC_PATH, readFontInfo } from './font.js'
 import { decodeIco } from './ico.js'
 import { BRAND_ICON_FILES, ICO_SIZES, SOCIAL_PREVIEW_CONFIG_PATH } from './generate.js'
 import { loadSharp } from './render.js'
@@ -202,7 +203,20 @@ export async function checkBrandAssets(root: string): Promise<AssetCheckReport> 
   }
   if (hasBrandConfig(root)) {
     try {
-      readBrandConfig(root)
+      const brand = readBrandConfig(root)
+      // The static card, the runtime card and the app's wordmark all read this one file.
+      const font = brand.fonts?.display ? read(BRAND_DISPLAY_FONT_PUBLIC_PATH) : null
+      if (font) {
+        try {
+          if (readFontInfo(font).variable)
+            fail(
+              `public/${BRAND_DISPLAY_FONT_PUBLIC_PATH}`,
+              'is a variable font; use a static instance',
+            )
+        } catch (error) {
+          fail(`public/${BRAND_DISPLAY_FONT_PUBLIC_PATH}`, `is not a usable font: ${String(error)}`)
+        }
+      }
     } catch (error) {
       report.errors.push(error instanceof Error ? error.message : String(error))
     }

@@ -13,8 +13,26 @@ export const BRAND_PATTERNS = ['grid', 'dots', 'contours', 'diagonal', 'none'] a
 export type BrandLayout = (typeof BRAND_LAYOUTS)[number]
 export type BrandPattern = (typeof BRAND_PATTERNS)[number]
 
+/**
+ * The app's display face: `fonts.display` in brand.json, served from the file
+ * `narduk-app assets generate` writes. Null when unset or not yet generated.
+ */
+export interface NardukSeoBrandFont {
+  family: string
+  /** Public URL of the TrueType file. */
+  src: string
+  style: 'normal' | 'italic'
+  weight: number
+}
+
+/** Where `narduk-app assets generate` writes the display face, under `public/`. */
+export const BRAND_DISPLAY_FONT_PUBLIC_PATH = 'fonts/brand-display.ttf'
+
+const RE_FONT_FAMILY = /^[\p{L}\p{N} .'-]{1,64}$/u
+
 export interface NardukSeoBrand {
   accent: string
+  displayFont: NardukSeoBrandFont | null
   ink: string
   layout: BrandLayout
   /** Public path of a square brand icon for the runtime card; empty when there is none. */
@@ -63,6 +81,64 @@ export const BRAND_PUBLIC_FILES = {
   legacyManifest: 'manifest.webmanifest',
 } as const
 
+function readDisplayFont(
+  value: unknown,
+  publicDir: string,
+  file: string,
+): NardukSeoBrandFont | null {
+  if (value === undefined) return null
+  const font = (value ?? {}) as Record<string, unknown>
+  const family = typeof font.family === 'string' ? font.family.trim() : ''
+  if (!RE_FONT_FAMILY.test(family))
+    throw new Error(`[narduk-seo] ${file} fonts.display.family must be a font family name`)
+  const weight = font.weight === undefined ? 700 : font.weight
+  if (typeof weight !== 'number' || !Number.isInteger(weight) || weight < 100 || weight > 900)
+    throw new Error(`[narduk-seo] ${file} fonts.display.weight must be 100-900`)
+  if (!existsSync(join(publicDir, BRAND_DISPLAY_FONT_PUBLIC_PATH))) {
+    // The card and the app fall back to their default faces; `narduk-app assets
+    // check` is what fails the build for the missing file.
+    console.warn(
+      `[narduk-seo] ${file} names fonts.display "${family}" but public/${BRAND_DISPLAY_FONT_PUBLIC_PATH} is missing; run narduk-app assets generate. Using the default face.`,
+    )
+    return null
+  }
+  return {
+    family,
+    src: `/${BRAND_DISPLAY_FONT_PUBLIC_PATH}`,
+    style: font.style === 'italic' ? 'italic' : 'normal',
+    weight,
+  }
+}
+
+/**
+ * The stylesheet that makes the display face usable everywhere: an
+ * `@font-face` for the one file (nuxt-og-image reads app CSS font faces into
+ * the runtime card's font list) and `--brand-font-display` for the app's own
+ * wordmark.
+ */
+export function brandFontCss(font: NardukSeoBrandFont): string {
+  const family = font.family.replaceAll("'", "\\'")
+  const face = (weight: number, style: string) => [
+    '@font-face {',
+    `  font-family: '${family}';`,
+    `  src: url('${font.src}') format('truetype');`,
+    `  font-weight: ${weight};`,
+    `  font-style: ${style};`,
+    '  font-display: swap;',
+    '}',
+  ]
+  // The same file again as 400 normal: nuxt-og-image's static font scan
+  // bundles each family at 400 for the runtime card, which asks for 400 and so
+  // draws this file's own glyphs. Declaring it is what keeps the scan static.
+  const card = font.weight === 400 && font.style === 'normal' ? [] : face(400, 'normal')
+  return [
+    ...face(font.weight, font.style),
+    ...card,
+    `:root { --brand-font-display: '${family}', system-ui, sans-serif; }`,
+    '',
+  ].join('\n')
+}
+
 /** Returns null when the app has no brand file; throws when it has a broken one. */
 export function readBrandFile(
   rootDir: string,
@@ -96,6 +172,11 @@ export function readBrandFile(
     layout: oneOf(og.layout, BRAND_LAYOUTS, 'poster'),
     pattern: oneOf(og.pattern, BRAND_PATTERNS, 'grid'),
     monogram: brandMonogram(name, json.monogram),
+    displayFont: readDisplayFont(
+      (json.fonts as Record<string, unknown> | undefined)?.display,
+      publicDir,
+      path,
+    ),
     logo: existsSync(join(publicDir, BRAND_PUBLIC_FILES.icon512))
       ? `/${BRAND_PUBLIC_FILES.icon512}`
       : '',

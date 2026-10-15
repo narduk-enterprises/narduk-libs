@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { OverlayOptions } from 'sharp'
@@ -6,6 +8,7 @@ import type sharp from 'sharp'
 
 import { brandMonogram } from './config.js'
 import type { BrandConfig, OgLayout, OgPattern } from './config.js'
+import { brandDisplayFontFile, readFontInfo } from './font.js'
 
 type Sharp = typeof sharp
 type Composite = OverlayOptions
@@ -13,6 +16,7 @@ type Composite = OverlayOptions
 export const OG_WIDTH = 1200
 export const OG_HEIGHT = 630
 
+// Each bundled file is a renamed static instance that declares weight 400 (fonts/README.md).
 const FONTS = {
   display: { family: 'NE Brand Display', file: 'ne-brand-display.ttf' },
   text: { family: 'NE Brand Text', file: 'ne-brand-text.ttf' },
@@ -21,11 +25,79 @@ const FONTS = {
 
 type FontRole = keyof typeof FONTS
 
+/** One font file and the family, weight and style Pango must ask for to get it. */
+export interface FontFace {
+  family: string
+  file: string
+  weight: number
+  italic: boolean
+}
+
 export function brandFontFile(role: FontRole): string {
   return fileURLToPath(new URL(`../../fonts/${FONTS[role].file}`, import.meta.url))
 }
 
+export function bundledFace(role: FontRole): FontFace {
+  const font = FONTS[role]
+  return { family: font.family, file: brandFontFile(role), weight: 400, italic: false }
+}
+
+/**
+ * The display face for this brand: `public/fonts/brand-display.ttf` when
+ * `fonts.display` is set and the file reads as a font, else the bundled face.
+ * Asks for the family, weight and style the file itself declares, because
+ * fontconfig quietly substitutes the nearest face for any mismatch.
+ */
+export function displayFace(brand: BrandConfig, root: string): FontFace {
+  if (!brand.fonts?.display) return bundledFace('display')
+  const file = brandDisplayFontFile(root)
+  try {
+    const info = readFontInfo(readFileSync(file))
+    return { family: info.family, file, weight: info.weight, italic: info.italic }
+  } catch {
+    return bundledFace('display')
+  }
+}
+
+/**
+ * Make libvips typeset with the files it is given. Its text renderer only
+ * honours `fontfile` through fontconfig, and the macOS build defaults to
+ * CoreText with no fontconfig file, which silently draws every card in
+ * Helvetica. A minimal config keeps the system's own fonts.conf when there is
+ * one (Linux) and the macOS font folders, so a Mac matches what fontconfig
+ * sees on Linux. Must run before the first text render; respects a caller's
+ * own settings.
+ */
+export function ensureFontconfig(env: NodeJS.ProcessEnv = process.env): void {
+  env.PANGOCAIRO_BACKEND ??= 'fc'
+  if (env.FONTCONFIG_FILE) return
+  // Per user: a shared /tmp directory owned by another user is not writable.
+  const dir = join(tmpdir(), `narduk-app-fontconfig-${process.getuid?.() ?? 'user'}`)
+  const file = join(dir, 'fonts-2.conf')
+  if (!existsSync(file)) {
+    mkdirSync(dir, { recursive: true })
+    // Write then rename, so a parallel process never reads a half-written file.
+    const partial = `${file}.${process.pid}`
+    writeFileSync(
+      partial,
+      [
+        '<?xml version="1.0"?>',
+        '<fontconfig>',
+        '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>',
+        '  <dir>/System/Library/Fonts</dir>',
+        '  <dir>/Library/Fonts</dir>',
+        `  <cachedir>${join(dir, 'cache')}</cachedir>`,
+        '</fontconfig>',
+        '',
+      ].join('\n'),
+    )
+    renameSync(partial, file)
+  }
+  env.FONTCONFIG_FILE = file
+}
+
 export async function loadSharp(): Promise<Sharp> {
+  ensureFontconfig()
   try {
     return (await import('sharp')).default
   } catch {
@@ -78,6 +150,8 @@ export function onColor(brand: BrandConfig, background: string): string {
 interface TextBox {
   text: string
   role: FontRole
+  /** Overrides the role's bundled face, e.g. with the brand's display face. */
+  face?: FontFace
   color: string
   width: number
   height: number
@@ -101,19 +175,22 @@ export interface RenderedText {
 
 /** Typeset with Pango and the bundled font; shrinks until it fits, never overflows. */
 export async function renderText(sharpFactory: Sharp, box: TextBox): Promise<RenderedText> {
-  const font = FONTS[box.role]
+  const font = box.face ?? bundledFace(box.role)
+  const face = ` font_weight="${font.weight}" font_style="${font.italic ? 'italic' : 'normal'}"`
   const minPx = box.minPx ?? Math.max(12, Math.round(box.maxPx * 0.35))
   let px = box.maxPx
   for (;;) {
     const spacing = Math.round((box.tracking ?? 0) * px * 1024)
     const alpha = box.opacity === undefined ? '' : ` alpha="${Math.round(box.opacity * 100)}%"`
     const lineHeight = box.leading ? ` line_height="${box.leading}"` : ''
-    const text = `<span foreground="${box.color}"${alpha} letter_spacing="${spacing}"${lineHeight}>${markup(box.text)}</span>`
+    const text = `<span foreground="${box.color}"${alpha}${face} letter_spacing="${spacing}"${lineHeight}>${markup(box.text)}</span>`
     const image = sharpFactory({
       text: {
         text,
-        font: `${font.family} ${px}`,
-        fontfile: brandFontFile(box.role),
+        // The comma ends the family: without it Pango reads a trailing style
+        // word ("Libre Caslon Condensed", "… Black") as a style, not the name.
+        font: `${font.family}, ${px}`,
+        fontfile: font.file,
         width: box.width,
         dpi: 72,
         rgba: true,
@@ -258,6 +335,7 @@ export async function renderMark(
   const glyph = await renderText(sharpFactory, {
     text: monogram,
     role: 'display',
+    face: displayFace(brand, root),
     color: ink,
     width: glyphBox,
     height: Math.round(glyphBox * (monogram.length > 1 ? 0.62 : 0.8)),
@@ -374,6 +452,7 @@ async function poster(
   const title = await text(sharpFactory, {
     text: card.title,
     role: 'display',
+    face: displayFace(brand, root),
     color: paper,
     width: 820,
     height: 300 - subtitleHeight + 40,
@@ -483,6 +562,7 @@ async function split(
   const title = await text(sharpFactory, {
     text: card.title,
     role: 'display',
+    face: displayFace(brand, root),
     color: ink,
     width: 590,
     height: 330 - subtitleHeight + 30,
@@ -584,6 +664,7 @@ async function stamp(
   const title = await text(sharpFactory, {
     text: card.title,
     role: 'display',
+    face: displayFace(brand, root),
     color: fg,
     width: 640,
     height: 340 - subtitleHeight + 20,
@@ -702,6 +783,7 @@ async function ledger(
   const title = await text(sharpFactory, {
     text: card.title,
     role: 'display',
+    face: displayFace(brand, root),
     color: ink,
     width: OG_WIDTH - 176,
     height: 360 - subtitleHeight - 24,
