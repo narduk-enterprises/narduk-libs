@@ -272,10 +272,14 @@ function resolveBrandSetup(
 }
 
 /** Adds icon links and theme-color unless the app already declares the same tag. */
-function appendHeadTags(
+function appendBrandHeadTags(
   nuxtOptions: MutableNuxtOptionsRecord,
-  tags: { link: Array<Record<string, string>>; meta: Array<Record<string, string>> },
+  options: Pick<NardukSeoModuleOptions, 'app' | 'icons'>,
+  publicDir: string | undefined,
+  brand: NardukSeoBrand | null,
 ): void {
+  if (!options.app || options.icons === false || !publicDir) return
+  const tags = brandHeadTags(publicDir, brand)
   if (tags.link.length === 0 && tags.meta.length === 0) return
   nuxtOptions.app ??= {}
   nuxtOptions.app.head ??= {}
@@ -750,8 +754,7 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       )
     }
 
-    if (options.app && options.icons !== false && publicDir)
-      appendHeadTags(nuxtOptions, brandHeadTags(publicDir, brand))
+    appendBrandHeadTags(nuxtOptions, options, publicDir, brand)
 
     if (options.app) {
       if (options.defaultOgImage) addPlugin(resolver.resolve('../app/plugins/defaultSocialImage'))
