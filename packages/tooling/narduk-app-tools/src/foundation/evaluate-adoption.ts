@@ -44,6 +44,7 @@ import {
   type CapabilityCoverageArtefact,
 } from './evaluate-capability-coverage.js'
 import {
+  createFetchProbe,
   runSecurityHeadersCheck,
   type HeaderProbe,
   type SecurityHeadersArtefact,
@@ -74,7 +75,14 @@ import {
   type DependabotReality,
   type NacStatus,
 } from './evaluate-nac-status.js'
-import { createLiveProbe, type LiveProbe } from '../live-probe.js'
+import {
+  createChallengeFallbackProbe,
+  formatEgress,
+  isCloudflareChallenge,
+  type EgressRoute,
+  type EgressSummary,
+} from '../egress-fallback.js'
+import { createLiveProbe, type FetchTransport, type LiveProbe } from '../live-probe.js'
 import { FilesystemRegistryReality, type RegistryReality } from './npm-registry.js'
 import type {
   FoundationAppInfo,
@@ -127,6 +135,16 @@ export interface AdoptionLiveReading {
   /** The health route's status string, or null. */
   health: string | null
   healthOk: boolean | null
+  /** The smoke route was still a Cloudflare challenge after the egress fallback,
+   * so its headers describe the challenge page, not the app. */
+  smokeChallenged: boolean
+  /** The health route was still a Cloudflare challenge after the fallback. */
+  healthChallenged: boolean
+  /** `residential` when a challenged request was answered through
+   * `NARDUK_APP_EGRESS_PROXY`; `direct` otherwise. */
+  egress: EgressRoute
+  /** The fallback's own account, present only when Cloudflare challenged a request. */
+  egressDetail?: EgressSummary
 }
 
 export interface AdoptionArtefact extends NacStatus {
@@ -167,14 +185,23 @@ export interface AdoptionArtefact extends NacStatus {
 
 /** Seam for the tests: real runs fetch. */
 export interface AdoptionLiveReality {
-  read(url: string): Promise<{ status: number | null; headers: Record<string, string> }>
+  read(url: string): Promise<{
+    status: number | null
+    headers: Record<string, string>
+    /** True when the answer is a Cloudflare managed challenge: nothing about the app. */
+    challenged?: boolean
+  }>
 }
 
 export function createFetchLiveReality(probe: LiveProbe = createLiveProbe()): AdoptionLiveReality {
   return {
     async read(url) {
       const response = await probe(url)
-      return { headers: response.headers ?? {}, status: response.status ?? null }
+      return {
+        challenged: isCloudflareChallenge(response),
+        headers: response.headers ?? {},
+        status: response.status ?? null,
+      }
     },
   }
 }
@@ -274,6 +301,15 @@ export function matchesCommit(expectSha: string, buildVersion: string): boolean 
   return commit.startsWith(stamp) || stamp.startsWith(commit)
 }
 
+function egressFields(
+  summary: EgressSummary,
+): Pick<AdoptionLiveReading, 'egress' | 'egressDetail'> {
+  return {
+    egress: summary.route,
+    ...(summary.challenged > 0 ? { egressDetail: summary } : {}),
+  }
+}
+
 async function readLive(
   liveUrl: string,
   expectSha: string | null,
@@ -284,16 +320,22 @@ async function readLive(
   const healthUrl = resolveAgainst(liveUrl, contract.healthPath)
 
   const smoke = await reality.read(smokeUrl)
-  const buildVersion = headerValue(smoke.headers, contract.buildVersionHeader)
+  const smokeChallenged = smoke.challenged === true
+  // A challenge page carries no build stamp of the app's: never read one off it.
+  const buildVersion = smokeChallenged
+    ? null
+    : headerValue(smoke.headers, contract.buildVersionHeader)
   const base = {
     buildVersion,
     buildVersionHeader: contract.buildVersionHeader,
+    egress: 'direct' as EgressRoute,
     expectSha,
     healthUrl,
     matched:
       expectSha === null || buildVersion === null ? null : matchesCommit(expectSha, buildVersion),
     reachable: smoke.status !== null && smoke.status < 500,
     smokeUrl,
+    smokeChallenged,
     url: liveUrl,
   }
 
@@ -302,10 +344,14 @@ async function readLive(
   // An authenticated health route answers an anonymous read with 401 by
   // design; reading it would report that refusal as an unhealthy app
   // (narduk-libs#585). Both stay null, so R12 says why it is unknown.
-  if (contract.healthAuth === 'authenticated') return { ...base, health, healthOk }
+  let healthChallenged = false
+  if (contract.healthAuth === 'authenticated') {
+    return { ...base, health, healthChallenged, healthOk }
+  }
   try {
     const response = await reality.read(healthUrl)
-    if (response.status !== null) {
+    healthChallenged = response.challenged === true
+    if (response.status !== null && !healthChallenged) {
       healthOk = response.status === 200
       health = String(response.status)
     }
@@ -315,7 +361,7 @@ async function readLive(
     // exist on this app at all.
   }
 
-  return { ...base, health, healthOk }
+  return { ...base, health, healthChallenged, healthOk }
 }
 
 /**
@@ -348,6 +394,12 @@ export interface RunAdoptionCheckOptions {
    * requirement 8 would then be evidence about production rather than about
    * this code. */
   headerProbe?: HeaderProbe
+  /** Where `NARDUK_APP_EGRESS_PROXY` is read from; `process.env` by default. */
+  env?: Record<string, string | undefined>
+  /** Tests: the direct transport the default live probes send through. */
+  liveTransport?: FetchTransport
+  /** Tests: stands in for the CONNECT tunnel to the egress proxy. */
+  egressProxyFetch?: FetchTransport
   /** The Dependabot alerts read behind check 3. Injectable like the other
    * probes: a test that reached GitHub would be evidence about GitHub. The
    * default answers `unknown` when the run's token cannot read alerts. */
@@ -383,11 +435,20 @@ export async function runAdoptionCheck(
   // already resolved above, so this costs no extra read.
   const liveProof = resolveLiveProofContract(deployment.declaration.liveProof)
 
+  // The same challenge fallback `verify --live` uses: a Cloudflare challenge on
+  // the direct request is retried once through NARDUK_APP_EGRESS_PROXY, and
+  // fails closed to the original answer, which is then read as UNKNOWN.
+  const fallback = createChallengeFallbackProbe({
+    env: options.env,
+    proxyFetch: options.egressProxyFetch,
+  })
+  const probe = fallback.wrap(createLiveProbe({}, options.liveTransport))
+
   const live = options.liveUrl
     ? await readLive(
         options.liveUrl,
         options.expectSha ?? null,
-        options.liveReality ?? createFetchLiveReality(),
+        options.liveReality ?? createFetchLiveReality(probe),
         liveProof,
       )
     : null
@@ -397,9 +458,11 @@ export async function runAdoptionCheck(
         ...shared,
         baseUrl: options.liveUrl,
         paths: options.headerPaths ?? [liveProof.smokePath],
-        probe: options.headerProbe,
+        probe: options.headerProbe ?? createFetchProbe(undefined, probe),
       })
     : null
+  // The headers read after the live reading; report the whole run's route.
+  if (live) Object.assign(live, egressFields(fallback.summary()))
 
   const requirements: AdoptionRequirement[] = [
     requirement1(deployment),
@@ -747,6 +810,14 @@ function requirement5(
       verdict: 'unknown',
     }
   }
+  if (live.smokeChallenged) {
+    return {
+      ...base,
+      detail: `${live.smokeUrl} answered a Cloudflare challenge (403, cf-mitigated: challenge)${egressNote(live)}, so the deployed commit is unverified`,
+      enforcement: 'partially-enforced',
+      verdict: 'unknown',
+    }
+  }
   if (live.matched === null) {
     return {
       ...base,
@@ -765,6 +836,11 @@ function requirement5(
     enforcement: 'partially-enforced',
     verdict: live.matched ? 'pass' : 'fail',
   }
+}
+
+/** Why a challenged answer stayed a challenge, for a requirement's detail. */
+function egressNote(live: AdoptionLiveReading): string {
+  return live.egressDetail ? ` (egress ${formatEgress(live.egressDetail)})` : ''
 }
 
 function requirement6(deployment: DeploymentArtefact): AdoptionRequirement {
@@ -919,6 +995,17 @@ function requirement12(
   live: AdoptionLiveReading | null,
   contract: LiveProofContract,
 ): AdoptionRequirement {
+  if (live !== null && live.healthChallenged) {
+    return {
+      detail: `GET ${live.healthUrl} answered a Cloudflare challenge (403, cf-mitigated: challenge)${egressNote(live)}; the app's health is unverified`,
+      enforcement: 'manual',
+      evidence: [live.healthUrl, "the app's own capability contract tests"],
+      id: 'R12',
+      owner: OWNER_APP,
+      title: 'Honest capabilities and health',
+      verdict: 'unknown',
+    }
+  }
   if (live === null || live.healthOk === null) {
     return {
       detail:
@@ -1006,6 +1093,7 @@ export function formatAdoptionSummary(artefact: AdoptionArtefact): string {
   if (artefact.live) {
     lines.push(
       `  live       ${artefact.live.smokeUrl} -> ${artefact.live.buildVersion ?? '(no header)'}`,
+      `  egress     ${artefact.live.egressDetail ? formatEgress(artefact.live.egressDetail) : artefact.live.egress}`,
     )
   }
   lines.push(...formatNacStatus(artefact), '')
