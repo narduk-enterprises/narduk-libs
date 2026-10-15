@@ -19,6 +19,7 @@
   },
   "include": [
     "runtime/internal/**/*.ts",
+    "runtime/nitro/**/*.ts",
     "runtime/app/components/shared/appConfirmModalDeprecation.ts",
     "runtime/app/error-page.ts",
     "runtime/app/plugins/00-runtime-public.client.ts",
