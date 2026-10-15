@@ -173,9 +173,20 @@ export const stagingSchema = z
     approval: z.enum(STAGING_APPROVALS).optional(),
     environment: z.string().trim().min(1).max(200).optional(),
     bindings: previewBindingsSchema.optional(),
+    /** Checkout-relative staging wrangler config, for a staging Worker that also
+     * differs in vars, routes or rate-limit namespaces. Without it the executor
+     * derives one from the production config (`./staging.ts`). */
+    wranglerConfig: z.string().trim().min(1).max(2000).optional(),
   })
   .superRefine((value, ctx) => {
-    const configured = ['workerName', 'hostname', 'approval', 'environment', 'bindings'] as const
+    const configured = [
+      'workerName',
+      'hostname',
+      'approval',
+      'environment',
+      'bindings',
+      'wranglerConfig',
+    ] as const
     if (!value.enabled) {
       for (const key of configured) {
         if (value[key] !== undefined) {

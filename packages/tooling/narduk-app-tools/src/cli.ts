@@ -32,6 +32,13 @@ import {
   runVersionsPromote,
   writePromoteStepOutputs,
 } from './promote.js'
+import {
+  formatStagingResult,
+  parseStagingArgs,
+  runStagingDeploy,
+  STAGING_EXIT,
+  writeStagingStepOutputs,
+} from './staging.js'
 import { formatVerifyReport, parseVerifyArgs, runVerifyLive } from './verify-live.js'
 import {
   MIGRATION_LOCK_WAIT_ENV,
@@ -174,7 +181,14 @@ function usage(): string {
     '                                       2 usage, 3 version not found, 4 ambiguous, 5 wrangler',
     '                                       failed (traffic state may be unknown), 7 the target is',
     '                                       older than the live version, 8 not a production-branch',
-    '                                       build, 9 --gate-verified names a different commit.',
+    '                                       build, 9 --gate-verified names a different commit,',
+    '                                       11 staging is enabled and does not serve this commit.',
+    '  deploy staging --sha <commit> [--dry-run] [--json]',
+    '                                       The deployment.staging stage: upload the built staging',
+    '                                       bundle to staging.workerName tagged <commit>, deploy it',
+    '                                       at 100% and prove https://<staging.hostname>. Exit 0',
+    '                                       proven or not enabled, 1 guard, 2 config, 4 proof',
+    '                                       failed (staging rolled back), 5 wrangler failed.',
     '  deploy rollback [--to <version-id>] [--name <worker>] [--account-id <id>]',
     '      [--message <text>] [--dry-run] [--json]',
     '                                       Roll back to the previous deployed version, or a named',
@@ -443,6 +457,19 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       // own GitHub Actions guard; they never reach `runDeploy`, whose
       // Workers-Builds guard would refuse them. See `./promote.ts`.
       const [action, ...actionArgs] = rest
+      if (action === 'staging') {
+        let result
+        try {
+          result = await runStagingDeploy(parseStagingArgs(actionArgs))
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error))
+          return STAGING_EXIT.usage
+        }
+        const json = actionArgs.includes('--json')
+        console.log(json ? JSON.stringify(result, null, 2) : formatStagingResult(result))
+        writeStagingStepOutputs(result)
+        return result.exitCode
+      }
       if (action === 'versions-promote' || action === 'rollback') {
         const context = {
           resolveWorkerName: readWranglerScriptName,
