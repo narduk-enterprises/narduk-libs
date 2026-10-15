@@ -397,6 +397,13 @@ hash or an unknown email all fail alike (401, same attempt throttle); a rewrite
 that cannot be written leaves the bcrypt hash for the next sign-in. This is not
 a migration tool; reading the source users is the app's job.
 
+Two properties come from bcrypt and pure-JS verification, not from this layer:
+bcrypt ignores everything past a password's first 72 bytes, and `bcryptjs` at
+cost 10 takes tens to hundreds of milliseconds of CPU per sign-in, which needs
+the Workers Paid CPU limit. An account still holding a bcrypt hash therefore
+takes a different amount of time to refuse than an unknown address or a PBKDF2
+account, until its owner has signed in once.
+
 ## nuxt-auth-utils' session route
 
 nuxt-auth-utils serves `GET /api/_auth/session`, which

@@ -15,6 +15,7 @@ import type { H3Event } from 'h3'
 
 const state = vi.hoisted(() => ({
   attempts: [] as string[],
+  failWrites: false,
   db: null as unknown,
   sessions: [] as Array<{ id: string }>,
   sqlite: null as unknown,
@@ -26,7 +27,15 @@ vi.mock('#layer/server/utils/logger', () => {
 })
 
 vi.mock('#layer/server/utils/database', () => ({
-  executeDatabaseQuery: async (query: unknown) => query,
+  executeDatabaseQuery: async (query: unknown) => {
+    if (
+      state.failWrites &&
+      (query as { constructor: { name: string } }).constructor.name.includes('Update')
+    ) {
+      throw new Error('write failed')
+    }
+    return query
+  },
   getDatabaseRow: async (query: unknown) => {
     const rows = (await query) as unknown[]
     return rows[0]
@@ -113,6 +122,7 @@ describe('sign-in with an imported bcrypt hash', () => {
       return { rows: method === 'get' ? (rows[0] as never) : rows }
     })
     state.attempts = []
+    state.failWrites = false
     state.sessions = []
   })
 
@@ -182,6 +192,16 @@ describe('sign-in with an imported bcrypt hash', () => {
 
     await expect(login(PASSWORD)).resolves.toMatchObject({ nextStep: 'signed_in' })
     expect(storedHash()).toBe(pbkdf2)
+  })
+
+  it('still signs in when the PBKDF2 rewrite cannot be written, and keeps the bcrypt hash', async () => {
+    const bcryptHash = await bcrypt.hash(PASSWORD, 10)
+    seed(bcryptHash)
+    state.failWrites = true
+
+    await expect(login(PASSWORD)).resolves.toMatchObject({ nextStep: 'signed_in' })
+
+    expect(storedHash()).toBe(bcryptHash)
   })
 
   it('does not overwrite a password changed between the check and the rewrite', async () => {
