@@ -384,3 +384,17 @@ export {
 // options shape directly (a typed wrapper, a typed test fixture) without
 // reaching into Nuxt's own inferred `nuxt.config.ts` module-options typing.
 export type { NardukShellModuleOptions } from './module'
+
+/**
+ * The feel composables' public types (README § Feel primitives). The composables
+ * themselves reach app code through `addImports` in `src/module.ts`, like
+ * `useConfirm`: `useOptimistic` imports Nuxt UI's `useToast`, so a value
+ * re-export here would put that on every value-import of this barrel.
+ */
+export type { NeInlineEdit, NeInlineEditOptions } from './runtime/composables/use-inline-edit'
+export type {
+  NeOptimistic,
+  NeOptimisticOptions,
+  NeOptimisticResult,
+} from './runtime/composables/use-optimistic'
+export type { NeSlashFocusTarget } from './runtime/composables/use-slash-focus'

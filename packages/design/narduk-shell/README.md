@@ -522,7 +522,10 @@ The module's brand plugin reads the values from `app.config` and puts one
 Light is `:root, .light`; dark is `.dark` (and the opt-in
 `[data-ne-scheme="auto"]` media block, which carries the identical
 declarations). A value that is the same in both columns is declared in both
-blocks, so nothing resolves by accident.
+blocks, so nothing resolves by accident. The one exception is the three feel
+tokens (`--ne-feel-*`, `--ne-ease-out`): they are scheme-free, so they are
+declared once, in the light block, where the reduced-motion block can zero them
+(§ Feel primitives).
 
 <!-- ne-token-table:start -->
 
@@ -574,6 +577,9 @@ blocks, so nothing resolves by accident.
 | `--ne-container`        | Maximum content width.                                                           | `1320px`                                                                              | `1320px`                                                                              |
 | `--ne-header-height`    | App header height.                                                               | `4rem`                                                                                | `4rem`                                                                                |
 | `--ne-bottom-bar-h`     | Height of an app's fixed bottom bar; `html` scroll-padding-bottom.               | `0px`                                                                                 | `0px`                                                                                 |
+| `--ne-feel-fast`        | Press, reveal and fade duration; 0ms under reduced motion.                       | `120ms`                                                                               | `120ms`                                                                               |
+| `--ne-feel-base`        | Enter duration for `.ne-fade-in`; 0ms under reduced motion.                      | `150ms`                                                                               | `150ms`                                                                               |
+| `--ne-ease-out`         | Easing for every feel transition: fast start, soft landing.                      | `cubic-bezier(0.2, 0, 0, 1)`                                                          | `cubic-bezier(0.2, 0, 0, 1)`                                                          |
 
 <!-- ne-token-table:end -->
 
@@ -688,6 +694,145 @@ and any override of those tokens with no colour of their own;
 literal. `NeFilterBar` meets the same rule a different way: an uncounted control
 renders no count element at all (see
 [A count is your figure, rendered](#a-count-is-your-figure-rendered)).
+
+### Feel primitives
+
+The rules behind an app that "works like butter" (Notion's feel), as tokens,
+classes and composables, so no app re-derives them. They ship in `theme.css`
+(tokens and classes, so `theme: false` drops them) and as auto-imported
+composables (always available, even with `components: false`).
+
+| Rule                                                                                 | Primitive                                                           |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Feedback on hover, press and toggle lands in 100-150ms                               | `--ne-feel-fast` (120ms), `--ne-feel-base` (150ms), `--ne-ease-out` |
+| Animate `opacity` and `transform` only, never layout (CLS stays 0)                   | every class below                                                   |
+| Press feedback on anything clickable                                                 | `.ne-press`                                                         |
+| Hover-revealed controls appear where the pointer reaches; visible on touch and focus | `.ne-hover-reveal` + `.ne-reveal`                                   |
+| Fade in place; nothing slides a neighbour                                            | `.ne-fade-in`, `<Transition name="ne-fade">`                        |
+| Stable skeletons with reserved size                                                  | `.ne-skeleton`                                                      |
+| Optimistic updates instead of spinners; roll back with a toast                       | `useOptimistic()`                                                   |
+| Inline edit: Enter or blur keeps, Escape cancels                                     | `useInlineEdit()`                                                   |
+| Keyboard shortcuts: Nuxt UI's `defineShortcuts`, plus "/" focuses search             | `useSlashFocus()`                                                   |
+| Motion only for meaning; `prefers-reduced-motion` respected                          | reduced-motion block in `theme.css`, `useReducedMotion()`           |
+
+#### Classes
+
+```vue
+<template>
+  <!-- A row whose edit and delete controls show on hover or focus. -->
+  <li class="ne-hover-reveal flex items-center gap-2">
+    <span class="flex-1">{{ row.name }}</span>
+    <UButton
+      class="ne-reveal ne-press"
+      icon="i-lucide-pencil"
+      aria-label="Edit"
+    />
+    <UButton
+      class="ne-reveal ne-press"
+      icon="i-lucide-trash"
+      aria-label="Delete"
+    />
+  </li>
+
+  <!-- Loading: reserve the size of what will arrive; swap with a fade. -->
+  <div v-if="pending" class="ne-skeleton" style="height: 3.5rem" />
+  <NeCard v-else class="ne-fade-in">…</NeCard>
+
+  <!-- Two states of one box swapped by opacity alone. -->
+  <Transition name="ne-fade" mode="out-in">
+    <p :key="status">{{ status }}</p>
+  </Transition>
+</template>
+```
+
+- `.ne-press`: while `:active` the element scales to 0.98 and dims to 0.88, in
+  `--ne-feel-fast`. Disabled and `aria-disabled="true"` elements do not move.
+- `.ne-hover-reveal` on the parent, `.ne-reveal` on each control inside it. The
+  controls sit at `opacity: 0` in their normal layout box (so revealing moves
+  nothing) and go to 1 on the parent's `:hover` or `:focus-within`. Under
+  `@media (hover: none)` (touch) they are always visible.
+- `.ne-fade-in`: opacity 0 to 1 over `--ne-feel-base` on first paint.
+  `<Transition name="ne-fade">` does the same for enter and leave over
+  `--ne-feel-fast`. Give both states the same box: a fade cannot hide a height
+  change.
+- `.ne-skeleton`: `display: block`, `--ne-surface-accented` fill, control
+  radius, an opacity pulse. It reserves nothing by itself: set the width and
+  height (or `aspect-ratio`) of the loaded content so the swap shifts nothing.
+- Every selector is `:where()`-wrapped (zero specificity), so a utility class
+  from the app overrides any of them.
+
+#### Reduced motion
+
+Under `prefers-reduced-motion: reduce` the last block of `theme.css` sets
+`--ne-feel-fast` and `--ne-feel-base` to `0ms` (so an app's own
+`transition: opacity var(--ne-feel-fast)` collapses too), drops the press scale
+and keeps the opacity dip, turns `.ne-fade-in` into an instant appear, and stops
+the skeleton pulse. For motion CSS cannot reach, read `useReducedMotion()`.
+
+#### `useOptimistic(state, options?)`
+
+Apply a change to `state` now, run the request behind it, restore the old value
+and toast if it fails. No spinner between click and result.
+
+```ts
+const starred = ref(row.starred)
+const optimistic = useOptimistic(starred, {
+  errorTitle: 'Could not star the row',
+})
+
+const result = await optimistic.mutate(
+  (current) => !current, // returns the NEXT value; never mutate `current` in place
+  (next) =>
+    $fetch(`/api/rows/${row.id}`, { method: 'PATCH', body: { starred: next } }),
+)
+```
+
+- Returns `{ mutate, pending, error }`. `mutate` resolves `{ ok: true, value }`
+  or `{ ok: false, error }` and never rejects, so a click handler needs no
+  `try/catch`. `pending` is true while any request runs (use it for a quiet cue,
+  not a spinner); `error` holds the last failure.
+- Options: `errorTitle` (toast title), `toast: false` (no toast),
+  `onError(error)` (runs after the rollback, toast or not).
+- The toast is Nuxt UI's `useToast()` (colour `error`) and needs the call to be
+  in a component's setup; outside one there is no toast, so pass `onError`.
+- Overlapping calls: only the newest one rolls back. Await each call when saves
+  must be strictly ordered.
+
+#### `useInlineEdit(value, save, options?)`
+
+Headless click-to-edit. Returns
+`{ editing, draft, start, cancel, commit, onKeydown }`. Enter (or `commit()`
+from a blur) closes the field with the new text already shown and saves through
+`useOptimistic`; Escape cancels; a failed save restores the old value and
+reopens the field holding what was typed. Options extend `useOptimistic`'s with
+`multiline` (Cmd/Ctrl+Enter commits, Enter is a newline) and `validate(draft)`
+(return `false` to refuse and stay open).
+
+```vue
+<input
+  v-if="edit.editing.value"
+  v-model="edit.draft.value"
+  @keydown="edit.onKeydown"
+  @blur="edit.commit()"
+/>
+<button v-else type="button" @click="edit.start()">{{ name }}</button>
+```
+
+#### `useSlashFocus(target, options?)`
+
+Press "/" outside a text field to focus (and select) the target: an element, a
+component instance such as a `UInput` ref (its first input is used) or a getter.
+Built on Nuxt UI's `defineShortcuts`, which is the tool for every other shortcut
+(`Cmd+K`, `g-d`, per-page keys); this adds only the focus step. `options.key`
+changes the key. `useCommandPaletteShortcuts()` also opens the palette on "/"
+unless told `{ slash: false }`, so an app with both chooses one.
+
+#### `useReducedMotion()`
+
+A read-only `Ref<boolean>`, `true` while the visitor asks for reduced motion and
+live as the setting changes. `false` on the server and through the first client
+render (so hydration agrees), read in `onMounted`; outside a component it reads
+once.
 
 ## Components
 
@@ -4036,13 +4181,13 @@ hint on touch screens.
 
 #### NeCommandPaletteTrigger props
 
-| Prop             | Type      | Default       | What it does                                                                                 |
-| ---------------- | --------- | ------------- | -------------------------------------------------------------------------------------------- |
-| `placeholder`    | `string`  | `'Search'`    | The text in the button.                                                                      |
-| `label`          | `string`  | automatic     | Overrides the accessible name.                                                                         |
-| `compact`        | `boolean` | `false`       | Icon only (a phone header).                                                                  |
-| `shortcuts`      | `boolean` | `true`        | Bind Cmd/Ctrl+K and "/" from this component. Turn off when a layout binds them itself.       |
-| `fallbackAction` | `string`  | none          | A search page. The button sits in a GET form that submits there if pressed before hydration. |
+| Prop             | Type      | Default    | What it does                                                                                 |
+| ---------------- | --------- | ---------- | -------------------------------------------------------------------------------------------- |
+| `placeholder`    | `string`  | `'Search'` | The text in the button.                                                                      |
+| `label`          | `string`  | automatic  | Overrides the accessible name.                                                               |
+| `compact`        | `boolean` | `false`    | Icon only (a phone header).                                                                  |
+| `shortcuts`      | `boolean` | `true`     | Bind Cmd/Ctrl+K and "/" from this component. Turn off when a layout binds them itself.       |
+| `fallbackAction` | `string`  | none       | A search page. The button sits in a GET form that submits there if pressed before hydration. |
 
 The default accessible name includes the desktop shortcut after mount, using the
 same platform hint the button displays. Compact mode keeps the placeholder as

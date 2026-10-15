@@ -515,7 +515,12 @@ describe('default colour contrast (narduk-libs#1785)', () => {
   })
 
   it('has zero selector specificity so a plain :root rule overrides any token', () => {
-    const selectors = [...themeCss.replaceAll(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@;]+)\{/g)]
+    // `@keyframes` blocks are dropped first: their `from` / `to` are stops on a
+    // timeline, not selectors, so they carry no specificity to keep at zero.
+    const css = themeCss
+      .replaceAll(/\/\*[\s\S]*?\*\//g, '')
+      .replaceAll(/@keyframes[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
+    const selectors = [...css.matchAll(/([^{}@;]+)\{/g)]
       .map((m) => m[1]!.trim())
       .filter((sel) => sel.length > 0 && !sel.startsWith('media'))
     expect(selectors.length).toBeGreaterThan(0)
@@ -524,7 +529,15 @@ describe('default colour contrast (narduk-libs#1785)', () => {
 })
 
 describe('mobile web QA theme defaults', () => {
-  const FIELDS = ['input', 'inputMenu', 'inputNumber', 'inputTags', 'select', 'selectMenu', 'textarea'] as const
+  const FIELDS = [
+    'input',
+    'inputMenu',
+    'inputNumber',
+    'inputTags',
+    'select',
+    'selectMenu',
+    'textarea',
+  ] as const
 
   it('renders every small form control at 16px on a phone and 14px from sm: up', () => {
     for (const field of FIELDS) {
@@ -542,6 +555,8 @@ describe('mobile web QA theme defaults', () => {
 
   it('defaults the bottom-bar token to 0 and feeds it to scroll-padding-bottom', () => {
     expect(light.get('--ne-bottom-bar-h')).toBe('0px')
-    expect(themeCss).toMatch(/:where\(html\)\s*\{\s*scroll-padding-bottom:\s*var\(--ne-bottom-bar-h\)/)
+    expect(themeCss).toMatch(
+      /:where\(html\)\s*\{\s*scroll-padding-bottom:\s*var\(--ne-bottom-bar-h\)/,
+    )
   })
 })
