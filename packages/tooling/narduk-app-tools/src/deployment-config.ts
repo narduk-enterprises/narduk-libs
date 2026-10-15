@@ -305,6 +305,12 @@ export const deploymentBlockSchema = z.strictObject({
      */
     healthAuth: z.enum(['anonymous', 'authenticated']).default('anonymous'),
     smokePath: appPath,
+    /**
+     * The content type `smokePath` answers with. Unset, the proof expects
+     * `verify --live`'s default (`text/html`); a JSON smoke route such as
+     * `/api/auth/runtime-public` declares `application/json`.
+     */
+    smokeContentType: z.string().trim().min(1).max(200).optional(),
     attempts: z.number().int().min(1).max(60).default(6),
     intervalSeconds: z.number().int().min(1).max(600).default(10),
   }),
@@ -364,6 +370,20 @@ export function healthArgs(
   return liveProof.healthAuth === 'authenticated'
     ? ['--no-health']
     : ['--health-path', liveProof.healthPath]
+}
+
+/**
+ * The `verify --live` smoke arguments a declared `liveProof` asks for: the path,
+ * plus `--expect-content-type` when the block names one.
+ */
+export function smokeArgs(
+  liveProof: Pick<DeploymentBlock['liveProof'], 'smokePath' | 'smokeContentType'>,
+): string[] {
+  return [
+    '--smoke-path',
+    liveProof.smokePath,
+    ...(liveProof.smokeContentType ? ['--expect-content-type', liveProof.smokeContentType] : []),
+  ]
 }
 
 export interface DeploymentIssue {

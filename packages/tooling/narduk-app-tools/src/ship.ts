@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { primeAppConfig, type AppConfigOptions } from './app-config/resolve.js'
 import { resolveContainment, type Containment } from './commit-containment.js'
 import { DEPLOY_APP_CONFIG_LOCATE, resolveAppDir, runDeploy } from './deploy.js'
-import { healthArgs } from './deployment-config.js'
+import { healthArgs, smokeArgs } from './deployment-config.js'
 import { isAppSource, loadMigrationConfig } from './migrations.js'
 import {
   createWranglerCli,
@@ -447,8 +447,7 @@ async function ship(
     '--build-version-header',
     target.deployment.liveProof.buildVersionHeader,
     ...healthArgs(target.deployment.liveProof),
-    '--smoke-path',
-    target.deployment.liveProof.smokePath,
+    ...smokeArgs(target.deployment.liveProof),
     '--attempts',
     String(target.deployment.liveProof.attempts),
     '--interval-seconds',

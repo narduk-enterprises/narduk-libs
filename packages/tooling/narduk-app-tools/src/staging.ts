@@ -46,6 +46,7 @@ import {
   healthArgs,
   readDeploymentBlock,
   PREVIEW_BINDING_KINDS,
+  smokeArgs,
   type DeploymentBlock,
 } from './deployment-config.js'
 import {
@@ -547,8 +548,7 @@ export async function runStagingDeploy(
     '--build-version-header',
     deployment.liveProof.buildVersionHeader,
     ...healthArgs(deployment.liveProof),
-    '--smoke-path',
-    deployment.liveProof.smokePath,
+    ...smokeArgs(deployment.liveProof),
     '--attempts',
     String(deployment.liveProof.attempts),
     '--interval-seconds',
