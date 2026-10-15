@@ -28,7 +28,7 @@
  * run the click opens the palette instead.
  */
 import UIcon from '@nuxt/ui/components/Icon.vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { useCommandPalette, useCommandPaletteShortcuts } from '../composables/use-command-palette'
 
@@ -49,6 +49,11 @@ const palette = useCommandPalette()
 if (props.shortcuts) useCommandPaletteShortcuts()
 
 const hint = ref('')
+const accessibleLabel = computed(
+  () =>
+    props.label ??
+    [props.placeholder, props.compact ? '' : hint.value].filter(Boolean).join(' '),
+)
 onMounted(() => {
   const platform = navigator.platform || navigator.userAgent
   hint.value = /mac|iphone|ipad|ipod/i.test(platform) ? '⌘K' : 'Ctrl K'
@@ -72,7 +77,7 @@ function onClick(event: MouseEvent) {
       class="ne-cmd-trigger"
       :class="{ 'is-compact': compact }"
       data-ne-command-trigger
-      :aria-label="label ?? placeholder"
+      :aria-label="accessibleLabel"
       aria-haspopup="dialog"
       :aria-expanded="palette.isOpen.value"
       aria-keyshortcuts="Control+K Meta+K"
@@ -82,7 +87,7 @@ function onClick(event: MouseEvent) {
       @touchstart.passive="palette.preload()"
     >
       <UIcon name="i-lucide-search" class="ne-cmd-trigger__icon" aria-hidden="true" />
-      <span class="ne-cmd-trigger__text">{{ placeholder }}</span>
+      <span class="ne-cmd-trigger__text">{{ placeholder }}</span>{{ ' ' }}
       <kbd v-if="hint" class="ne-cmd-trigger__hint" aria-hidden="true">{{ hint }}</kbd>
     </button>
   </component>

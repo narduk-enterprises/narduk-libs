@@ -43,8 +43,9 @@ describe('NeCommandPaletteTrigger', () => {
     wrapper.unmount()
   })
 
-  it('takes a separate accessible label', () => {
+  it('takes a separate accessible label', async () => {
     const wrapper = mountTrigger({ label: 'Search River Status', placeholder: 'Search' })
+    await nextTick()
     expect(wrapper.get('button').attributes('aria-label')).toBe('Search River Status')
     wrapper.unmount()
   })
@@ -90,20 +91,25 @@ describe('NeCommandPaletteTrigger', () => {
     await nextTick()
     expect(mac.get('kbd').text()).toBe('⌘K')
     expect(mac.get('kbd').attributes('aria-hidden')).toBe('true')
+    expect(mac.get('button').attributes('aria-label')).toBe('Search ⌘K')
+    expect(mac.get('button').element.textContent?.trim()).toMatch(/^Search\s+⌘K$/u)
     mac.unmount()
 
     setPlatform('Win32')
     const win = mountTrigger()
     await nextTick()
     expect(win.get('kbd').text()).toBe('Ctrl K')
+    expect(win.get('button').attributes('aria-label')).toBe('Search Ctrl K')
+    expect(win.get('button').element.textContent?.trim()).toMatch(/^Search\s+Ctrl K$/u)
     win.unmount()
   })
 
-  it('passes class and attributes to the button, and a compact mode keeps the label for assistive tech', () => {
+  it('passes class and attributes to the button, and a compact mode keeps the label for assistive tech', async () => {
     const wrapper = mountTrigger(
       { compact: true, placeholder: 'Search' },
       { class: 'header-search', id: 'hs' },
     )
+    await nextTick()
     const button = wrapper.get('button')
     expect(button.classes()).toContain('header-search')
     expect(button.classes()).toContain('is-compact')
