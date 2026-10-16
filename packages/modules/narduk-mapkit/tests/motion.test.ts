@@ -73,6 +73,16 @@ describe('interpolateLatLng', () => {
       lng: 5,
     })
   })
+
+  it('goes the short way round the antimeridian and wraps the result', () => {
+    const from = { lat: 0, lng: 179.9 }
+    const to = { lat: 0, lng: -179.9 }
+    expect(interpolateLatLng(from, to, 0.25).lng).toBeCloseTo(179.95, 6)
+    expect(interpolateLatLng(from, to, 0.5).lng).toBeCloseTo(-180, 6)
+    expect(interpolateLatLng(from, to, 0.75).lng).toBeCloseTo(-179.95, 6)
+    expect(interpolateLatLng(to, from, 0.5).lng).toBeCloseTo(-180, 6)
+    expect(interpolateLatLng(from, to, 1).lng).toBeCloseTo(-179.9, 6)
+  })
 })
 
 describe('glide paths', () => {

@@ -54,10 +54,23 @@ export function unwrapHeading(current, target) {
 export function normalizeHeading(heading) {
     return ((heading % 360) + 360) % 360;
 }
-/** The point `t` (0 to 1, clamped) of the way from `from` to `to`, linearly in latitude and longitude. */
+/**
+ * The point `t` (0 to 1, clamped) of the way from `from` to `to`, linearly in
+ * latitude and longitude.
+ *
+ * Longitude goes the short way round the antimeridian (179.9 to -179.9 is 0.2
+ * degrees, not 359.8) and the result is wrapped back into [-180, 180). That
+ * makes this a straight line in latitude and longitude, not a great circle: for
+ * the few hundred metres of one poll, the two are the same.
+ */
 export function interpolateLatLng(from, to, t) {
     const k = Math.min(1, Math.max(0, t));
-    return { lat: from.lat + (to.lat - from.lat) * k, lng: from.lng + (to.lng - from.lng) * k };
+    const lng = from.lng + shortestAngleDelta(from.lng, to.lng) * k;
+    return {
+        lat: from.lat + (to.lat - from.lat) * k,
+        // Only wrap when it left the range, so an ordinary longitude is returned bit for bit.
+        lng: lng >= -180 && lng < 180 ? lng : ((((lng + 180) % 360) + 360) % 360) - 180,
+    };
 }
 /**
  * The reason a move must be drawn at once, or `null` when it may glide. The

@@ -17,4 +17,4 @@ From `./geometry`:
 - Motion: `bearingDegrees`, `shortestAngleDelta`, `unwrapHeading`, `normalizeHeading`, `interpolateLatLng`, `mapKitSnapReason`, `buildGlidePath`, `pathAlongPolylines`, `pointAlongPath`, `pathEndHeading`.
 - Declutter: `chooseMapKitMarkerTier` (dot, symbol or detail from measured on-screen overlap, with hysteresis and same-spot tolerance), `chooseMapKitSpanTier`, `collapseNearbyPoints`, `anyCloserThanPixels`, `minSeparationPixels`, `metersPerPixel`, `isInVisibleRegion`, `pointsInVisibleRegion`.
 
-All additions; nothing existing changes behaviour.
+Everything here is an addition. The one internal change is that `<AppMapKit>`'s pin layer now calls the shared `writeMapKitHitArea` instead of its own private copy, with identical output. (The anchor and callout-default behaviour changes are in the two changesets this one is stacked on, `mapkit-csp-wasm-and-anchor` and `mapkit-callout-behaviour-hit-areas`.)

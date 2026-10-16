@@ -143,6 +143,34 @@ describe('createMapKitPoller', () => {
   })
 })
 
+describe('createMapKitPoller default visibility', () => {
+  it('reads document.hidden, like the moving-marker layer', async () => {
+    const doc = { hidden: true }
+    vi.stubGlobal('document', doc)
+    try {
+      const timers = createFakeTimer()
+      const run = vi.fn(() => Promise.resolve(1))
+      const poller = createMapKitPoller<number>({
+        intervalMs: 1000,
+        onResult: vi.fn(),
+        run,
+        timers,
+      })
+      poller.start()
+      await flushMicrotasks()
+      expect(run).not.toHaveBeenCalled()
+
+      doc.hidden = false
+      poller.visibilityChanged()
+      await flushMicrotasks()
+      expect(run).toHaveBeenCalledTimes(1)
+      poller.stop()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('mapKitMapLimit', () => {
   it('keeps the input order and never exceeds the limit', async () => {
     let inFlight = 0

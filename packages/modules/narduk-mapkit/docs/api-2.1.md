@@ -232,6 +232,14 @@ the `./testing` fake places elements the same way. A callout opens at the pin's
 top-centre whatever the anchor: for a `top-left` pin the 2.22.x formula put it
 half the pin's width too far east (up to ~225 px for a wide pill).
 
+_This moves pins._ For a sized pin 2.1.0 handed MapKit `(-width / 2, -height)`
+for the default `bottom-center` anchor; it now hands it `(0, 0)`, so every sized
+pin lands somewhere different on screen than before, the default one included.
+An app that compensated for the old output (float-forecast `(-21, -34)`,
+borderwaitstat-us 6, 8 and 12 px west, lakestat-us 15 px west, bluebonnet 9 px
+west, the Wave Transit concept) shifts until it states its anchor and drops its
+offsets. A pin with no `size` is unchanged.
+
 ### c.4 Slots
 
 | Slot        | Scope                                                                                                           | Purpose                                                                                                                                                                                                                                                                          |

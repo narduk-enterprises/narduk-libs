@@ -6,10 +6,16 @@
  * Built for live vehicle feeds (every ~15 s), but it is just a polite loop.
  * Plain TypeScript with injectable timers, so it is tested without a clock.
  * Wire `visibilityChanged` to the document's `visibilitychange` event.
+ *
+ * **Client-only.** The default visibility check reads `document.hidden`, and a
+ * poll that runs during SSR would fire a request per render. Create it in
+ * `onMounted` (or behind `import.meta.client`), never at module or setup scope
+ * of a server-rendered component; on the server `document` is absent, the
+ * default check reports "visible", and the poll would run.
  */
 import { defaultMapKitTimerScheduler } from './timers.js';
 export function createMapKitPoller(options) {
-    const isVisible = options.isVisible ?? (() => globalThis.document?.visibilityState !== 'hidden');
+    const isVisible = options.isVisible ?? (() => globalThis.document?.hidden !== true);
     const timers = options.timers ?? defaultMapKitTimerScheduler;
     let running = false;
     let busy = false;

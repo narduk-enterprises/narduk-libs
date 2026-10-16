@@ -443,6 +443,33 @@ describe('hover tooltip on pins', () => {
     layer.destroy()
     expect(container.querySelector('[role="tooltip"]')).toBeNull()
   })
+
+  it('detaches a removed pin from the tooltip, and dismissTooltip hides a shown one', () => {
+    const timer = createFakeTimer()
+    const container = document.createElement('div')
+    document.body.append(container)
+    const layer = layerFor({
+      hoverTooltip: { container, scheduler: timer, text: (item) => `Tip ${item.label}` },
+    })
+    layer.setItems([station(1), station(2)])
+    const removed = layer.hostFor('station-2') as HTMLElement
+    const kept = layer.hostFor('station-1') as HTMLElement
+
+    const release = vi.spyOn(removed, 'removeEventListener')
+    layer.setItems([station(1)])
+    expect(release.mock.calls.map(([type]) => type)).toContain('pointerenter')
+    pointerEnter(removed)
+    timer.advance(200)
+    expect(layer.dismissTooltip()).toBe(false)
+
+    pointerEnter(kept)
+    timer.advance(200)
+    const tooltip = container.querySelector('[role="tooltip"]') as HTMLElement
+    expect(tooltip.style.visibility).not.toBe('hidden')
+    expect(layer.dismissTooltip()).toBe(true)
+    expect(tooltip.style.visibility).toBe('hidden')
+    expect(layer.dismissTooltip()).toBe(false)
+  })
 })
 
 describe('hit area', () => {

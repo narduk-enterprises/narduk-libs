@@ -17,7 +17,15 @@ export declare function shortestAngleDelta(from: number, to: number): number;
 export declare function unwrapHeading(current: number | undefined, target: number): number;
 /** Fold an unwrapped heading back to [0, 360) for display or a `data-` attribute. */
 export declare function normalizeHeading(heading: number): number;
-/** The point `t` (0 to 1, clamped) of the way from `from` to `to`, linearly in latitude and longitude. */
+/**
+ * The point `t` (0 to 1, clamped) of the way from `from` to `to`, linearly in
+ * latitude and longitude.
+ *
+ * Longitude goes the short way round the antimeridian (179.9 to -179.9 is 0.2
+ * degrees, not 359.8) and the result is wrapped back into [-180, 180). That
+ * makes this a straight line in latitude and longitude, not a great circle: for
+ * the few hundred metres of one poll, the two are the same.
+ */
 export declare function interpolateLatLng(from: LatLng, to: LatLng, t: number): LatLng;
 /** Why a move is drawn at once instead of glided. */
 export type MapKitSnapReason = 'first' | 'hidden' | 'jump' | 'reduced-motion';

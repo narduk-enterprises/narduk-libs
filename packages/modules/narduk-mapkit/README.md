@@ -225,8 +225,12 @@ const selectedId = ref<string | null>(null)
   the element on the coordinate with its bottom edge on it and moves it by the
   _negative_ of `anchorOffset`), so an app states which point of its pin marks
   the place and never computes an offset. The callout points at the pin's
-  top-centre whatever the anchor. This was wrong for any non-default anchor
-  before narduk-libs#1908; see `docs/api-2.1.md` §c.3.
+  top-centre whatever the anchor. This was wrong before narduk-libs#1908, and
+  fixing it moves pins: any pin with a `size` is placed differently from 2.1.0,
+  the default `bottom-center` one included (2.1.0 gave MapKit
+  `(-width / 2, -height)`; it now gets `(0, 0)`). An app that compensated for
+  the old output must state its anchor (`'center'` or `{ x, y }`) and drop its
+  hand-measured offsets; see `docs/api-2.1.md` §c.3.
 - **`#callout`** is a scoped slot (`{ close, id, item, placement, position }`)
   rendered through a `Teleport` into a host the library positions. MapKit's own
   callout can only hold DOM handed to it as an element, which is why a
@@ -266,7 +270,23 @@ const selectedId = ref<string | null>(null)
   room, slides it along an edge instead of being clipped, and writes
   `--mapkit-callout-caret-x` (and `data-mapkit-callout-shifted`) so a caret
   keeps pointing at the pin. A map or callout that cannot be measured keeps the
-  plain above-or-below placement.
+  plain above-or-below placement. The callout is fitted again when its content
+  arrives or changes size (the slot is teleported in after the first placement).
+  A tap that lands on a pin or an open callout, or follows a pin's own selection
+  within 400 ms, never counts as a tap on empty map. One `Escape` closes a
+  visible tooltip first; the callout takes a second.
+
+  > **These defaults change behaviour for an app that already handles its own
+  > dismissal.** `dismissOnMapClick`, `dismissOnEscape` and `calloutKeepInView`
+  > are on by default, so an app that listens to `map-click` or `Escape` itself
+  > to close its callout will now see the selection cleared a second time, and a
+  > callout that used to overflow an edge now stays inside it (and is positioned
+  > by its top-left corner). An app that draws its own callouts should set
+  > `calloutFollowSelection` to `false`, which turns Escape and map-click
+  > dismissal into no-ops; otherwise pass `:dismiss-on-map-click="false"`,
+  > `:dismiss-on-escape="false"` and `:callout-keep-in-view="false"` to keep the
+  > old behaviour.
+
 - **`pinHitArea`** (`true` = 44, or a number of CSS px) grows each pin's
   interactive host to a touch-sized target while the glyph stays exactly where
   `anchor` puts it: a 12 px dot gets a 44 px target. A `bottom-center` pin grows
@@ -2397,8 +2417,11 @@ and removed only past `keepPadding` (0.6), so nothing flickers at the boundary.
 
 `createMapKitPoller` asks again only while the tab is visible, never runs two
 requests at once, asks straight away when the tab returns, and drops an answer
-that belongs to something the page has left (`restart()`). `mapKitMapLimit` runs
-an async function over a list with a cap on how many are in flight.
+that belongs to something the page has left (`restart()`). It is client-only:
+create it in `onMounted` (or behind `import.meta.client`), because on the server
+there is no `document` to say the tab is hidden and the poll would run.
+`mapKitMapLimit` runs an async function over a list with a cap on how many are
+in flight.
 
 ## Playback
 

@@ -95,6 +95,8 @@ export class MapKitPinLayer {
     #rovingId = null;
     #selectedId = null;
     #tooltip;
+    /** Detaches each pin host's tooltip listeners, by pin key. */
+    #tooltipDetachers = new Map();
     constructor(options) {
         this.#options = options;
         this.#document = options.document ?? globalThis.document;
@@ -151,6 +153,16 @@ export class MapKitPinLayer {
     geometryFor(key) {
         return this.#entries.get(key)?.geometry;
     }
+    /**
+     * Hide the hover tooltip if one is showing. `true` when it was, so an Escape
+     * that dismissed a tooltip is not also spent on the callout behind it.
+     */
+    dismissTooltip() {
+        if (!this.#tooltip?.visible)
+            return false;
+        this.#tooltip.hide();
+        return true;
+    }
     /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
     focusPin(key) {
         const host = this.#entries.get(key)?.host;
@@ -206,6 +218,7 @@ export class MapKitPinLayer {
             if (!entry)
                 continue;
             entry.cleanup?.();
+            this.#detachTooltip(key);
             this.#entries.delete(key);
             diff.removed.push(key);
         }
@@ -276,6 +289,8 @@ export class MapKitPinLayer {
             return;
         for (const entry of this.#entries.values())
             entry.cleanup?.();
+        for (const key of [...this.#tooltipDetachers.keys()])
+            this.#detachTooltip(key);
         this.#entries.clear();
         this.#tooltip?.destroy();
         this.#registry.destroy();
@@ -380,6 +395,10 @@ export class MapKitPinLayer {
             'Pass itemLabel, or build the layer with focusable: false for pins that are not ' +
             'interactive controls.');
     }
+    #detachTooltip(key) {
+        this.#tooltipDetachers.get(key)?.();
+        this.#tooltipDetachers.delete(key);
+    }
     #buildHost(key, item) {
         const host = this.#document.createElement('div');
         host.setAttribute('data-map-pin', '');
@@ -394,11 +413,13 @@ export class MapKitPinLayer {
         }
         const tooltipOptions = this.#options.hoverTooltip;
         if (this.#tooltip && tooltipOptions) {
-            this.#tooltip.attach(host, () => {
+            // A rebuilt host for the same key replaces the old one's listeners.
+            this.#detachTooltip(key);
+            this.#tooltipDetachers.set(key, this.#tooltip.attach(host, () => {
                 const entry = this.#entries.get(key);
                 // The selected pin has its callout open: a tooltip on top of it is noise.
                 return !entry || entry.selected ? null : tooltipOptions.text(entry.item);
-            });
+            }));
         }
         if (!this.#focusable) {
             // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a

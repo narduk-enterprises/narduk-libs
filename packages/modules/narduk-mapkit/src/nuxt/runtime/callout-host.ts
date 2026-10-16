@@ -102,6 +102,9 @@ export interface MapKitCalloutHostOptions<T> {
 interface MapKitCalloutRecord<T> extends MapKitCalloutEntry<T> {
   anchorOffset: MapKitCalloutPoint
   coordinate: { lat: number; lng: number }
+  /** Sizes this layer itself produced (at the origin, and in place); a resize to one of them is not news. */
+  knownSizes: Set<string>
+  observer: ResizeObserver | undefined
 }
 
 export class MapKitCalloutHostLayer<T> {
@@ -139,12 +142,15 @@ export class MapKitCalloutHostLayer<T> {
       host,
       id: request.id,
       item: request.item,
+      knownSizes: existing?.knownSizes ?? new Set(),
       layout: null,
+      observer: existing?.observer,
       placement: this.#options.placement ?? 'above',
       position: existing?.position ?? { x: 0, y: 0 },
     }
     this.#records.set(request.id, record)
     this.#place(record)
+    this.#observe(record)
     this.#emit()
     return record
   }
@@ -153,6 +159,7 @@ export class MapKitCalloutHostLayer<T> {
     const record = this.#records.get(id)
     if (!record) return false
     this.#records.delete(id)
+    record.observer?.disconnect()
     record.host.remove()
     this.#emit()
     return true
@@ -160,7 +167,10 @@ export class MapKitCalloutHostLayer<T> {
 
   closeAll(): void {
     if (this.#records.size === 0) return
-    for (const record of this.#records.values()) record.host.remove()
+    for (const record of this.#records.values()) {
+      record.observer?.disconnect()
+      record.host.remove()
+    }
     this.#records.clear()
     this.#emit()
   }
@@ -176,6 +186,34 @@ export class MapKitCalloutHostLayer<T> {
     if (this.#destroyed) return
     this.closeAll()
     this.#destroyed = true
+  }
+
+  /**
+   * Fit the callout again when its content changes size.
+   *
+   * The content is teleported into the host after the host is first placed (and
+   * may load later still: an image, a fetched row), so the first measurement can
+   * be 0 x 0 or too small. A resize the layer caused itself -- measuring at the
+   * origin, then moving to the final place -- is recognised by its size and
+   * ignored, which is what keeps this from looping.
+   */
+  #observe(record: MapKitCalloutRecord<T>): void {
+    if (record.observer || this.#options.keepInView === false) return
+    const Observer = (this.#document.defaultView ?? globalThis).ResizeObserver as
+      typeof ResizeObserver | undefined
+    if (!Observer) return
+    record.observer = new Observer((observed) => {
+      const live = this.#records.get(record.id)
+      if (!live || this.#destroyed) return
+      const box = observed.at(-1)?.contentRect
+      const size = box
+        ? sizeKey(box.width, box.height)
+        : sizeKey(live.host.offsetWidth, live.host.offsetHeight)
+      if (live.knownSizes.has(size)) return
+      this.#place(live)
+      this.#emit()
+    })
+    record.observer.observe(record.host)
   }
 
   #createHost(id: string): HTMLElement {
@@ -226,6 +264,8 @@ export class MapKitCalloutHostLayer<T> {
     host.style.top = '0px'
     host.style.transform = 'none'
     const size = { height: host.offsetHeight, width: host.offsetWidth }
+    record.knownSizes.clear()
+    record.knownSizes.add(sizeKey(size.width, size.height))
     const { container } = this.#options
     const bounds = { height: container.clientHeight, width: container.clientWidth }
     if (size.width <= 0 || size.height <= 0 || bounds.width <= 0 || bounds.height <= 0) {
@@ -251,10 +291,16 @@ export class MapKitCalloutHostLayer<T> {
     host.setAttribute('data-mapkit-callout-placement', record.placement)
     if (layout.shifted || layout.clamped) host.setAttribute('data-mapkit-callout-shifted', '')
     else host.removeAttribute('data-mapkit-callout-shifted')
+    // Moving to the final place can change a shrink-to-fit host's width.
+    record.knownSizes.add(sizeKey(host.offsetWidth, host.offsetHeight))
     return true
   }
 
   #emit(): void {
     this.#options.onChange?.(this.entries())
   }
+}
+
+function sizeKey(width: number, height: number): string {
+  return `${String(Math.round(width))}x${String(Math.round(height))}`
 }

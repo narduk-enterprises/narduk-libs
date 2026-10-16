@@ -226,6 +226,8 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   #rovingId: string | null = null
   #selectedId: string | null = null
   readonly #tooltip: MapKitHoverTooltip | null
+  /** Detaches each pin host's tooltip listeners, by pin key. */
+  readonly #tooltipDetachers = new Map<string, () => void>()
 
   constructor(options: MapKitPinLayerOptions<T>) {
     this.#options = options
@@ -292,6 +294,16 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     return this.#entries.get(key)?.geometry
   }
 
+  /**
+   * Hide the hover tooltip if one is showing. `true` when it was, so an Escape
+   * that dismissed a tooltip is not also spent on the callout behind it.
+   */
+  dismissTooltip(): boolean {
+    if (!this.#tooltip?.visible) return false
+    this.#tooltip.hide()
+    return true
+  }
+
   /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
   focusPin(key: string): boolean {
     const host = this.#entries.get(key)?.host
@@ -348,6 +360,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       const entry = this.#entries.get(key)
       if (!entry) continue
       entry.cleanup?.()
+      this.#detachTooltip(key)
       this.#entries.delete(key)
       diff.removed.push(key)
     }
@@ -415,6 +428,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   destroy(): void {
     if (this.#destroyed) return
     for (const entry of this.#entries.values()) entry.cleanup?.()
+    for (const key of [...this.#tooltipDetachers.keys()]) this.#detachTooltip(key)
     this.#entries.clear()
     this.#tooltip?.destroy()
     this.#registry.destroy()
@@ -521,6 +535,11 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     )
   }
 
+  #detachTooltip(key: string): void {
+    this.#tooltipDetachers.get(key)?.()
+    this.#tooltipDetachers.delete(key)
+  }
+
   #buildHost(key: string, item: T): HTMLElement {
     const host = this.#document.createElement('div')
     host.setAttribute('data-map-pin', '')
@@ -536,11 +555,16 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
 
     const tooltipOptions = this.#options.hoverTooltip
     if (this.#tooltip && tooltipOptions) {
-      this.#tooltip.attach(host, () => {
-        const entry = this.#entries.get(key)
-        // The selected pin has its callout open: a tooltip on top of it is noise.
-        return !entry || entry.selected ? null : tooltipOptions.text(entry.item)
-      })
+      // A rebuilt host for the same key replaces the old one's listeners.
+      this.#detachTooltip(key)
+      this.#tooltipDetachers.set(
+        key,
+        this.#tooltip.attach(host, () => {
+          const entry = this.#entries.get(key)
+          // The selected pin has its callout open: a tooltip on top of it is noise.
+          return !entry || entry.selected ? null : tooltipOptions.text(entry.item)
+        }),
+      )
     }
 
     if (!this.#focusable) {

@@ -1,7 +1,7 @@
 import type { MapKitTimerScheduler } from './timers.js';
 export interface MapKitPollerOptions<T> {
     intervalMs: number;
-    /** Whether the page is on screen. Default: the document is not hidden. */
+    /** Whether the page is on screen. Default: `document.hidden` is not `true`. */
     isVisible?: () => boolean;
     /** A request failed. The poll goes on at the normal interval. Default: ignored. */
     onError?: (error: unknown) => void;

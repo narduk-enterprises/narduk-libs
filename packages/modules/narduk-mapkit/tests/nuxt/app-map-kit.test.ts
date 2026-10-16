@@ -1059,6 +1059,155 @@ describe('map-click and feature-select (narduk-libs#1729)', () => {
   })
 })
 
+describe('callouts: late content, pin-tap echoes and the Escape order', () => {
+  const slots = {
+    callout: (scope: { item: Station }) => h('div', { class: 'callout-body' }, scope.item.label),
+  }
+  const station2 = STATIONS[1]!
+  const tapStation = () => {
+    fake.inspect.tapMap(fake.inspect.maps[0]!, {
+      latitude: station2.lat,
+      longitude: station2.lng,
+    })
+  }
+  const updates = (wrapper: Awaited<ReturnType<typeof mountMap>>) =>
+    (wrapper.emitted('update:selectedId') ?? []).map(([id]) => id)
+
+  it('fits a callout whose content is teleported in after the host was first placed', async () => {
+    // happy-dom does no layout: a callout host measures 200 x 120 once it has
+    // content and 0 x 0 before, and the map is 600 x 400.
+    const sizeOf = (element: Element, axis: 'height' | 'width'): number => {
+      if (element.hasAttribute('data-mapkit-callout')) {
+        return element.childElementCount === 0 ? 0 : axis === 'width' ? 200 : 120
+      }
+      return axis === 'width' ? 600 : 400
+    }
+    const proto = HTMLElement.prototype
+    const originals = new Map(
+      ['offsetHeight', 'offsetWidth', 'clientHeight', 'clientWidth'].map((name) => [
+        name,
+        Object.getOwnPropertyDescriptor(proto, name) ??
+          Object.getOwnPropertyDescriptor(Element.prototype, name),
+      ]),
+    )
+    for (const [name, axis] of [
+      ['offsetHeight', 'height'],
+      ['offsetWidth', 'width'],
+      ['clientHeight', 'height'],
+      ['clientWidth', 'width'],
+    ] as const) {
+      Object.defineProperty(proto, name, {
+        configurable: true,
+        get(this: Element) {
+          return sizeOf(this, axis)
+        },
+      })
+    }
+    try {
+      await mountMap({ items: STATIONS, selectedId: 'station-2' }, slots)
+      await vi.waitFor(() => {
+        const host = document.querySelector('[data-mapkit-callout="station-2"]') as HTMLElement
+        expect(host.childElementCount).toBeGreaterThan(0)
+        // Placed by the measuring layout, not by the plain translate fallback.
+        expect(host.style.transform).toBe('none')
+      })
+    } finally {
+      for (const [name, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(proto, name, descriptor)
+        else Reflect.deleteProperty(proto, name)
+      }
+    }
+  })
+
+  it('does not close the callout a pin tap just opened when MapKit also reports the tap on the map', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+    ;(document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement).click()
+    await wrapper.setProps({ selectedId: 'station-2' })
+    await nextTick()
+    expect(updates(wrapper)).toStrictEqual(['station-2'])
+
+    tapStation()
+
+    expect(updates(wrapper)).toStrictEqual(['station-2'])
+    expect(document.querySelector('[data-mapkit-callout="station-2"]')).not.toBeNull()
+  })
+
+  it('closes on a map tap once the pin-tap guard window has passed', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+    ;(document.querySelector('[data-mapkit-pin="station-2"]') as HTMLElement).click()
+    await wrapper.setProps({ selectedId: 'station-2' })
+    await nextTick()
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 2000)
+
+    tapStation()
+
+    clock.mockRestore()
+    expect(updates(wrapper)).toStrictEqual(['station-2', null])
+  })
+
+  it('leaves Escape and map taps alone when calloutFollowSelection is off', async () => {
+    const wrapper = await mountMap(
+      { calloutFollowSelection: false, items: STATIONS, selectedId: 'station-2' },
+      slots,
+    )
+
+    // The app draws and closes its own callouts: open one by hand.
+    ;(wrapper.vm as unknown as { openCallout: (id: string) => void }).openCallout('station-2')
+    await nextTick()
+    expect(document.querySelector('[data-mapkit-callout="station-2"]')).not.toBeNull()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }))
+    fake.inspect.tapMap(fake.inspect.maps[0]!, { latitude: 30.5, longitude: -87.65 })
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+    expect(wrapper.emitted('callout-close')).toBeUndefined()
+    expect(document.querySelector('[data-mapkit-callout="station-2"]')).not.toBeNull()
+    expect(wrapper.emitted('map-click')).toHaveLength(1)
+  })
+
+  it('closes a shown tooltip with the first Escape and the callout with the second', async () => {
+    const wrapper = await mountMap(
+      {
+        itemTooltip: (item: Station) => `Tip ${item.label}`,
+        items: STATIONS,
+        selectedId: 'station-2',
+      },
+      slots,
+    )
+    const other = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    other.dispatchEvent(new FocusEvent('focus'))
+    await vi.waitFor(() => {
+      expect((document.querySelector('[role="tooltip"]') as HTMLElement).style.visibility).not.toBe(
+        'hidden',
+      )
+    })
+
+    const first = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    document.dispatchEvent(first)
+    expect(first.defaultPrevented).toBe(true)
+    expect((document.querySelector('[role="tooltip"]') as HTMLElement).style.visibility).toBe(
+      'hidden',
+    )
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }),
+    )
+    expect(updates(wrapper)).toStrictEqual([null])
+  })
+
+  it('removes its Escape listener from the document it was added to', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+    const remove = vi.spyOn(document, 'removeEventListener')
+
+    wrapper.unmount()
+
+    expect(remove.mock.calls.map(([type]) => type)).toContain('keydown')
+    remove.mockRestore()
+  })
+})
+
 describe('dismissing a callout (Escape, map tap) and returning focus', () => {
   const CalloutCard = defineComponent({
     props: { label: { required: true, type: String } },
