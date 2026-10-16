@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { createFakeMapKit } from '../../src/testing/index.js'
 import {
   DEFAULT_MAPKIT_PIN_ANCHOR,
+  expandMapKitHitArea,
   mapKitAnchorOffset,
   mapKitAnchorPoint,
   mapKitCalloutAnchorOffset,
@@ -204,5 +205,81 @@ describe('mapKitPinGeometrySignature', () => {
     expect(mapKitPinGeometrySignature({ anchor: { x: 1, y: 2 } })).not.toBe(
       mapKitPinGeometrySignature({ anchor: { x: 2, y: 1 } }),
     )
+  })
+})
+
+describe('expandMapKitHitArea', () => {
+  it('grows a small dot to 44 px and keeps it centred on the coordinate', () => {
+    const geometry: MapKitPinGeometry = { anchor: 'center', size: { height: 16, width: 16 } }
+
+    const { geometry: grown, padding } = expandMapKitHitArea(geometry)
+
+    expect(grown.size).toStrictEqual({ height: 44, width: 44 })
+    expect(padding).toStrictEqual({ bottom: 14, left: 14, right: 14, top: 14 })
+    const { left, top } = placed(grown)
+    expect(left + padding.left + 8).toBeCloseTo(CENTRE.x, 6)
+    expect(top + padding.top + 8).toBeCloseTo(CENTRE.y, 6)
+  })
+
+  it('grows a bottom-centre pin upward so its tip stays on the coordinate', () => {
+    const geometry: MapKitPinGeometry = { size: { height: 30, width: 20 } }
+
+    const { geometry: grown, padding } = expandMapKitHitArea(geometry)
+
+    expect(padding).toStrictEqual({ bottom: 0, left: 12, right: 12, top: 14 })
+    expect(grown.anchor).toBe('bottom-center')
+    const { left, top } = placed(grown)
+    // The glyph's bottom-centre is (left + 12 + 10, top + 14 + 30).
+    expect(left + 22).toBeCloseTo(CENTRE.x, 6)
+    expect(top + 44).toBeCloseTo(CENTRE.y, 6)
+  })
+
+  it('grows a top-left pin down and right, moving the anchor onto the glyph corner', () => {
+    const geometry: MapKitPinGeometry = { anchor: 'top-left', size: { height: 20, width: 30 } }
+
+    const { geometry: grown, padding } = expandMapKitHitArea(geometry)
+
+    expect(padding).toStrictEqual({ bottom: 24, left: 7, right: 7, top: 0 })
+    expect(grown.anchor).toStrictEqual({ x: 7, y: 0 })
+    const { left, top } = placed(grown)
+    expect(left + 7).toBeCloseTo(CENTRE.x, 6)
+    expect(top).toBeCloseTo(CENTRE.y, 6)
+  })
+
+  it('carries an explicit anchor point and the app offset through', () => {
+    const geometry: MapKitPinGeometry = {
+      anchor: { x: 5, y: 6 },
+      anchorOffset: { x: 3, y: -2 },
+      size: { height: 12, width: 40 },
+    }
+
+    const { geometry: grown, padding } = expandMapKitHitArea(geometry, 44)
+
+    expect(grown.anchor).toStrictEqual({ x: 5 + padding.left, y: 6 + padding.top })
+    expect(grown.anchorOffset).toStrictEqual({ x: 3, y: -2 })
+    expect(grown.size).toStrictEqual({ height: 44, width: 44 })
+  })
+
+  it('returns a geometry that is already large enough, or has no size, as it was', () => {
+    const big: MapKitPinGeometry = { size: { height: 60, width: 50 } }
+    const unsized: MapKitPinGeometry = { anchor: 'center' }
+
+    expect(expandMapKitHitArea(big).geometry).toBe(big)
+    expect(expandMapKitHitArea(unsized).geometry).toBe(unsized)
+    expect(expandMapKitHitArea(big).padding).toStrictEqual({ bottom: 0, left: 0, right: 0, top: 0 })
+    expect(expandMapKitHitArea({ size: { height: 8, width: 8 } }, 0).geometry.size).toStrictEqual({
+      height: 8,
+      width: 8,
+    })
+  })
+
+  it('only grows the dimension that is short', () => {
+    const { geometry, padding } = expandMapKitHitArea({
+      anchor: 'center',
+      size: { height: 20, width: 120 },
+    })
+
+    expect(geometry.size).toStrictEqual({ height: 44, width: 120 })
+    expect(padding).toStrictEqual({ bottom: 12, left: 0, right: 0, top: 12 })
   })
 })

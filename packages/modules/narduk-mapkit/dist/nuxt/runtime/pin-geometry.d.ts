@@ -117,4 +117,39 @@ export declare function mapKitCoordinateWithinPin(geometry: MapKitPinGeometry, m
 }): MapKitPoint2D;
 /** Stable string for a geometry, so an unchanged one never repaints a pin. */
 export declare function mapKitPinGeometrySignature(geometry: MapKitPinGeometry): string;
+/**
+ * WCAG 2.5.8 (target size, minimum) asks for 24 CSS px; the platform guidance
+ * (Apple HIG, Material) and WCAG 2.5.5 (enhanced) ask for 44. A map dot is
+ * usually 8 to 16 px, so the touch target must be bigger than the glyph.
+ */
+export declare const MAPKIT_MIN_HIT_TARGET = 44;
+/** CSS px of transparent hit area around the visual glyph, per side. */
+export interface MapKitHitAreaPadding {
+    bottom: number;
+    left: number;
+    right: number;
+    top: number;
+}
+export interface MapKitHitArea {
+    /** The geometry of the enlarged host: hand this to MapKit instead of the visual one. */
+    geometry: MapKitPinGeometry;
+    /** Padding that keeps the visual glyph where `anchor` says it is inside the larger host. */
+    padding: MapKitHitAreaPadding;
+}
+/**
+ * Grow a pin's host to at least `minTarget` x `minTarget` CSS px while its
+ * visual glyph stays exactly where it was.
+ *
+ * The host is the interactive element (`role="button"`, the click target), so
+ * enlarging it enlarges the tap target without touching the glyph. The visual
+ * is centred horizontally. Vertically it keeps the edge its anchor names, so a
+ * `bottom-center` pin keeps its tip on the coordinate and grows its hit area
+ * upward, a `top-center`/`top-left` pin grows downward, and a `center` pin grows
+ * both ways. The returned geometry moves the anchor by the padding, so the
+ * coordinate stays on the same point of the glyph.
+ *
+ * A geometry with no `size` cannot be enlarged (its box is unknown) and is
+ * returned as is, with no padding.
+ */
+export declare function expandMapKitHitArea(geometry: MapKitPinGeometry, minTarget?: number): MapKitHitArea;
 //# sourceMappingURL=pin-geometry.d.ts.map

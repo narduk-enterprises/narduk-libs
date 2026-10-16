@@ -1,7 +1,7 @@
 import { defaultMapKitItemKey } from '../pin-layer.js';
 import type { MapKitCalloutPoint } from '../callout-host.js';
 import type { MapKitPinGeometry } from '../pin-geometry.js';
-import type { MapKitPinElement, MapKitPinItem } from '../pin-layer.js';
+import type { MapKitPinElement, MapKitPinItem, MapKitPinNavigation } from '../pin-layer.js';
 import type { MapKitLatLng } from '../region.js';
 import type { MapKitFailure, MapKitLibrary } from '../../../client/mapkit.js';
 import type { GeoJSONFeature, GeoJSONFeatureCollection, GeoJSONFeatureProperties, MapKitCircle, MapKitColorScheme, MapKitMapType, OverlayStyle } from '../../types.js';
@@ -48,6 +48,16 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: true;
         readonly type: BooleanConstructor;
     };
+    /**
+     * Keep the callout inside the map: flip to the side with room, slide along an
+     * edge instead of being clipped by it, and expose `--mapkit-callout-caret-x`
+     * so the caret still points at the pin. On by default; a callout or map that
+     * cannot be measured keeps the plain above-or-below placement.
+     */
+    readonly calloutKeepInView: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
     readonly circleScaleFactor: {
         readonly default: 0.004;
         readonly type: NumberConstructor;
@@ -75,6 +85,20 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly createPinElement: {
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem, isSelected: boolean) => MapKitPinElement>;
+    };
+    /**
+     * `Escape` closes the open callout (deselects the pin) and, when focus was in
+     * the map, returns it to the pin. Ignored while focus is in an unrelated
+     * control elsewhere on the page. On by default.
+     */
+    readonly dismissOnEscape: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
+    /** A tap on empty map closes the open callout (deselects the pin). On by default. */
+    readonly dismissOnMapClick: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
     };
     readonly dynamicCircleRadius: {
         readonly default: false;
@@ -129,6 +153,15 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: typeof defaultMapKitItemKey;
         readonly type: PropType<(item: MapKitItem, index: number) => string>;
     };
+    /**
+     * Hover and keyboard-focus tooltip text for a pin (`null` for none). Shown
+     * after a short delay for a mouse or pen, never for touch, dismissed by
+     * `Escape`, and not shown on the selected pin. Supplements `itemLabel`.
+     */
+    readonly itemTooltip: {
+        readonly default: undefined;
+        readonly type: PropType<(item: MapKitItem) => string | null | undefined>;
+    };
     /** REQUIRED when `items` is non-empty: the accessible name of the pin. */
     readonly itemLabel: {
         readonly default: undefined;
@@ -171,6 +204,25 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly pinGeometry: {
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem) => MapKitPinGeometry>;
+    };
+    /**
+     * Grow every pin's tap target to at least this many CSS px square without
+     * moving or resizing the glyph: `true` is 44, a number is that size, `false`
+     * (default) keeps the host the size of the glyph. Needs a `size` from
+     * `pinGeometry`.
+     */
+    readonly pinHitArea: {
+        readonly default: false;
+        readonly type: PropType<boolean | number>;
+    };
+    /**
+     * `'tab'` (default): every pin is a Tab stop. `'roving'`: the pins are one Tab
+     * stop and the arrow keys, Home and End move between them.
+     */
+    readonly pinNavigation: {
+        readonly default: "tab";
+        readonly type: PropType<MapKitPinNavigation>;
+        readonly validator: (value: unknown) => value is "roving" | "tab";
     };
     /**
      * Whether a pin is an interactive control (2.1.1, K-8).
@@ -269,6 +321,16 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: true;
         readonly type: BooleanConstructor;
     };
+    /**
+     * Keep the callout inside the map: flip to the side with room, slide along an
+     * edge instead of being clipped by it, and expose `--mapkit-callout-caret-x`
+     * so the caret still points at the pin. On by default; a callout or map that
+     * cannot be measured keeps the plain above-or-below placement.
+     */
+    readonly calloutKeepInView: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
     readonly circleScaleFactor: {
         readonly default: 0.004;
         readonly type: NumberConstructor;
@@ -296,6 +358,20 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly createPinElement: {
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem, isSelected: boolean) => MapKitPinElement>;
+    };
+    /**
+     * `Escape` closes the open callout (deselects the pin) and, when focus was in
+     * the map, returns it to the pin. Ignored while focus is in an unrelated
+     * control elsewhere on the page. On by default.
+     */
+    readonly dismissOnEscape: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
+    };
+    /** A tap on empty map closes the open callout (deselects the pin). On by default. */
+    readonly dismissOnMapClick: {
+        readonly default: true;
+        readonly type: BooleanConstructor;
     };
     readonly dynamicCircleRadius: {
         readonly default: false;
@@ -350,6 +426,15 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         readonly default: typeof defaultMapKitItemKey;
         readonly type: PropType<(item: MapKitItem, index: number) => string>;
     };
+    /**
+     * Hover and keyboard-focus tooltip text for a pin (`null` for none). Shown
+     * after a short delay for a mouse or pen, never for touch, dismissed by
+     * `Escape`, and not shown on the selected pin. Supplements `itemLabel`.
+     */
+    readonly itemTooltip: {
+        readonly default: undefined;
+        readonly type: PropType<(item: MapKitItem) => string | null | undefined>;
+    };
     /** REQUIRED when `items` is non-empty: the accessible name of the pin. */
     readonly itemLabel: {
         readonly default: undefined;
@@ -392,6 +477,25 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly pinGeometry: {
         readonly default: undefined;
         readonly type: PropType<(item: MapKitItem) => MapKitPinGeometry>;
+    };
+    /**
+     * Grow every pin's tap target to at least this many CSS px square without
+     * moving or resizing the glyph: `true` is 44, a number is that size, `false`
+     * (default) keeps the host the size of the glyph. Needs a `size` from
+     * `pinGeometry`.
+     */
+    readonly pinHitArea: {
+        readonly default: false;
+        readonly type: PropType<boolean | number>;
+    };
+    /**
+     * `'tab'` (default): every pin is a Tab stop. `'roving'`: the pins are one Tab
+     * stop and the arrow keys, Home and End move between them.
+     */
+    readonly pinNavigation: {
+        readonly default: "tab";
+        readonly type: PropType<MapKitPinNavigation>;
+        readonly validator: (value: unknown) => value is "roving" | "tab";
     };
     /**
      * Whether a pin is an interactive control (2.1.1, K-8).
@@ -467,6 +571,7 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly boundingPadding: number;
     readonly calloutFocus: MapKitCalloutFocus;
     readonly calloutFollowSelection: boolean;
+    readonly calloutKeepInView: boolean;
     readonly circleScaleFactor: number;
     readonly circles: MapKitCircle[];
     readonly clusteringIdentifier: string;
@@ -476,6 +581,8 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
         memberAnnotations: unknown[];
     }, count: number) => HTMLElement;
     readonly createPinElement: (item: MapKitItem, isSelected: boolean) => MapKitPinElement;
+    readonly dismissOnEscape: boolean;
+    readonly dismissOnMapClick: boolean;
     readonly dynamicCircleRadius: boolean;
     readonly fallbackCenter: MapKitLatLng;
     readonly hoveredId: string | null;
@@ -485,11 +592,14 @@ declare const AppMapKitImpl: import("vue").DefineComponent<import("vue").Extract
     readonly isZoomEnabled: boolean;
     readonly items: readonly MapKitItem[];
     readonly itemKey: (item: MapKitItem, index: number) => string;
+    readonly itemTooltip: (item: MapKitItem) => string | null | undefined;
     readonly itemLabel: (item: MapKitItem) => string;
     readonly mapType: MapKitMapType;
     readonly maxCircleRadius: number;
     readonly minCircleRadius: number;
     readonly pinGeometry: (item: MapKitItem) => MapKitPinGeometry;
+    readonly pinHitArea: number | boolean;
+    readonly pinNavigation: MapKitPinNavigation;
     readonly pinsFocusable: boolean;
     readonly preserveRegion: boolean;
     readonly selectedId: string | null;
@@ -519,6 +629,7 @@ export interface AppMapKitItemProps<T extends MapKitPinItem> {
     createPinElement?: ((item: T, isSelected: boolean) => MapKitPinElement) | undefined;
     itemKey?: ((item: T, index: number) => string) | undefined;
     itemLabel?: ((item: T) => string) | undefined;
+    itemTooltip?: ((item: T) => string | null | undefined) | undefined;
     items?: readonly T[] | undefined;
     pinGeometry?: ((item: T) => MapKitPinGeometry) | undefined;
 }

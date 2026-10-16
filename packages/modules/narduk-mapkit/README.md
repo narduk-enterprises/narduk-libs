@@ -260,6 +260,48 @@ const selectedId = ref<string | null>(null)
 - **`mapType`** accepts Apple's `'mutedStandard'` as well as this library's
   `'muted'` from 2.1.1, and both it and `colorScheme` are now written to a live
   map when the prop changes, not only in the constructor.
+- **Callout behaviour**, all on by default and each with an off switch: one
+  callout at a time (the selection is the callout); `dismissOnMapClick`
+  deselects on a tap on empty map; `dismissOnEscape` deselects on `Escape` and,
+  when focus was in the map, returns it to the pin that was open (a callout that
+  closes itself from the slot's `close()` returns focus too, instead of dropping
+  it on `<body>`) — an `Escape` aimed at a control elsewhere on the page is left
+  alone; `calloutKeepInView` measures the callout and flips it to the side with
+  room, slides it along an edge instead of being clipped, and writes
+  `--mapkit-callout-caret-x` (and `data-mapkit-callout-shifted`) so a caret
+  keeps pointing at the pin. A map or callout that cannot be measured keeps the
+  plain above-or-below placement. The callout is fitted again when its content
+  arrives or changes size (the slot is teleported in after the first placement).
+  A tap that lands on a pin or an open callout, or follows a pin's own selection
+  within 400 ms, never counts as a tap on empty map. One `Escape` closes a
+  visible tooltip first; the callout takes a second.
+
+  > **These defaults change behaviour for an app that already handles its own
+  > dismissal.** `dismissOnMapClick`, `dismissOnEscape` and `calloutKeepInView`
+  > are on by default, so an app that listens to `map-click` or `Escape` itself
+  > to close its callout will now see the selection cleared a second time, and a
+  > callout that used to overflow an edge now stays inside it (and is positioned
+  > by its top-left corner). An app that draws its own callouts should set
+  > `calloutFollowSelection` to `false`, which turns Escape and map-click
+  > dismissal into no-ops; otherwise pass `:dismiss-on-map-click="false"`,
+  > `:dismiss-on-escape="false"` and `:callout-keep-in-view="false"` to keep the
+  > old behaviour.
+
+- **`pinHitArea`** (`true` = 44, or a number of CSS px) grows each pin's
+  interactive host to a touch-sized target while the glyph stays exactly where
+  `anchor` puts it: a 12 px dot gets a 44 px target. A `bottom-center` pin grows
+  its target upward so the tip stays on the coordinate. Needs a `size` from
+  `pinGeometry`; `expandMapKitHitArea` (on `./geometry`) is the pure function
+  behind it.
+- **`pinNavigation="roving"`** makes the pins one Tab stop. Arrow keys move to
+  the nearest pin in that compass direction (by latitude and longitude, so it
+  needs no projection and gives the same answer at every zoom), `Home`/`End`
+  jump to the first and last in reading order. `nextMapKitRovingKey` on
+  `./geometry` is the pure part. The default `'tab'` is unchanged.
+- **`itemTooltip`** `(item) => string | null` shows a `role="tooltip"` after a
+  short delay on mouse or pen hover and on keyboard focus (never for touch),
+  dismisses on `Escape` (WCAG 1.4.13) and stays off the selected pin.
+  `MapKitHoverTooltip` on `./client` is the framework-free primitive.
 
 #### App colour mode and CSP nonce
 

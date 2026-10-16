@@ -23,6 +23,7 @@
  * `undefined`), and injecting it is what lets a plain-TypeScript test assert
  * that a `region-change` actually re-projects every open callout.
  */
+import { layoutMapKitCallout } from '../../client/callouts.js';
 export class MapKitCalloutHostLayer {
     #document;
     #options;
@@ -55,11 +56,15 @@ export class MapKitCalloutHostLayer {
             host,
             id: request.id,
             item: request.item,
+            knownSizes: existing?.knownSizes ?? new Set(),
+            layout: null,
+            observer: existing?.observer,
             placement: this.#options.placement ?? 'above',
             position: existing?.position ?? { x: 0, y: 0 },
         };
         this.#records.set(request.id, record);
         this.#place(record);
+        this.#observe(record);
         this.#emit();
         return record;
     }
@@ -68,6 +73,7 @@ export class MapKitCalloutHostLayer {
         if (!record)
             return false;
         this.#records.delete(id);
+        record.observer?.disconnect();
         record.host.remove();
         this.#emit();
         return true;
@@ -75,8 +81,10 @@ export class MapKitCalloutHostLayer {
     closeAll() {
         if (this.#records.size === 0)
             return;
-        for (const record of this.#records.values())
+        for (const record of this.#records.values()) {
+            record.observer?.disconnect();
             record.host.remove();
+        }
         this.#records.clear();
         this.#emit();
     }
@@ -93,6 +101,36 @@ export class MapKitCalloutHostLayer {
             return;
         this.closeAll();
         this.#destroyed = true;
+    }
+    /**
+     * Fit the callout again when its content changes size.
+     *
+     * The content is teleported into the host after the host is first placed (and
+     * may load later still: an image, a fetched row), so the first measurement can
+     * be 0 x 0 or too small. A resize the layer caused itself -- measuring at the
+     * origin, then moving to the final place -- is recognised by its size and
+     * ignored, which is what keeps this from looping.
+     */
+    #observe(record) {
+        if (record.observer || this.#options.keepInView === false)
+            return;
+        const Observer = (this.#document.defaultView ?? globalThis).ResizeObserver;
+        if (!Observer)
+            return;
+        record.observer = new Observer((observed) => {
+            const live = this.#records.get(record.id);
+            if (!live || this.#destroyed)
+                return;
+            const box = observed.at(-1)?.contentRect;
+            const size = box
+                ? sizeKey(box.width, box.height)
+                : sizeKey(live.host.offsetWidth, live.host.offsetHeight);
+            if (live.knownSizes.has(size))
+                return;
+            this.#place(live);
+            this.#emit();
+        });
+        record.observer.observe(record.host);
     }
     #createHost(id) {
         const host = this.#document.createElement('div');
@@ -113,19 +151,72 @@ export class MapKitCalloutHostLayer {
         const x = projected.x + record.anchorOffset.x;
         const y = projected.y + record.anchorOffset.y;
         const preferred = this.#options.placement ?? 'above';
+        record.position = { x, y };
+        if (this.#placeInView(record, preferred))
+            return;
         // `offsetHeight` is 0 in a headless DOM, which simply means the preferred
         // placement stands -- the flip is a browser affordance, not a contract.
         const height = record.host.offsetHeight;
+        record.layout = null;
         record.placement = preferred === 'above' && y - height < 0 ? 'below' : preferred;
-        record.position = { x, y };
         record.host.style.left = `${String(x)}px`;
         record.host.style.top = `${String(y)}px`;
         record.host.setAttribute('data-mapkit-callout-placement', record.placement);
+        record.host.removeAttribute('data-mapkit-callout-shifted');
+        record.host.style.removeProperty('--mapkit-callout-caret-x');
         record.host.style.transform =
             record.placement === 'above' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
+    }
+    /** `true` when the host was measured and placed; `false` leaves the plain placement to run. */
+    #placeInView(record, preferred) {
+        const keep = this.#options.keepInView ?? true;
+        if (keep === false)
+            return false;
+        const { host } = record;
+        // Measure at the origin so a shrink-to-fit host is not narrowed by the room
+        // to its right: the natural size is what has to fit.
+        host.style.left = '0px';
+        host.style.top = '0px';
+        host.style.transform = 'none';
+        const size = { height: host.offsetHeight, width: host.offsetWidth };
+        record.knownSizes.clear();
+        record.knownSizes.add(sizeKey(size.width, size.height));
+        const { container } = this.#options;
+        const bounds = { height: container.clientHeight, width: container.clientWidth };
+        if (size.width <= 0 || size.height <= 0 || bounds.width <= 0 || bounds.height <= 0) {
+            return false;
+        }
+        const tuning = keep === true ? {} : keep;
+        const layout = layoutMapKitCallout({
+            anchor: record.position,
+            bounds,
+            caretSize: tuning.caretSize ?? 12,
+            edgePadding: tuning.edgePadding ?? 8,
+            flip: true,
+            gap: tuning.gap ?? 0,
+            placement: preferred,
+            size,
+        });
+        record.layout = layout;
+        record.placement = layout.placement === 'below' ? 'below' : 'above';
+        host.hidden = !layout.visible;
+        host.style.left = `${String(layout.x)}px`;
+        host.style.top = `${String(layout.y)}px`;
+        host.style.setProperty('--mapkit-callout-caret-x', `${String(layout.caret.x)}px`);
+        host.setAttribute('data-mapkit-callout-placement', record.placement);
+        if (layout.shifted || layout.clamped)
+            host.setAttribute('data-mapkit-callout-shifted', '');
+        else
+            host.removeAttribute('data-mapkit-callout-shifted');
+        // Moving to the final place can change a shrink-to-fit host's width.
+        record.knownSizes.add(sizeKey(host.offsetWidth, host.offsetHeight));
+        return true;
     }
     #emit() {
         this.#options.onChange?.(this.entries());
     }
+}
+function sizeKey(width, height) {
+    return `${String(Math.round(width))}x${String(Math.round(height))}`;
 }
 //# sourceMappingURL=callout-host.js.map

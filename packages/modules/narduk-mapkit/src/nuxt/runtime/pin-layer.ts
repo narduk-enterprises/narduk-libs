@@ -36,10 +36,19 @@
  * every app re-implementing it -- the third defect the 2.1.0 fake pinned.
  */
 import { MapKitAnnotationRegistry } from '../../client/annotations.js'
+import { MapKitHoverTooltip } from '../../client/hover-tooltip.js'
+import { nextMapKitRovingKey } from '../../geometry/roving.js'
 
-import { mapKitAnchorOffset, mapKitPinGeometrySignature } from './pin-geometry.js'
+import {
+  MAPKIT_MIN_HIT_TARGET,
+  expandMapKitHitArea,
+  mapKitAnchorOffset,
+  mapKitPinGeometrySignature,
+} from './pin-geometry.js'
 
-import type { MapKitPinGeometry } from './pin-geometry.js'
+import type { MapKitTimerScheduler } from '../../client/timers.js'
+import type { MapKitRovingDirection } from '../../geometry/roving.js'
+import type { MapKitHitAreaPadding, MapKitPinGeometry } from './pin-geometry.js'
 import type {
   MapKitAnnotationLike,
   MapKitAnnotationOptionsLike,
@@ -69,6 +78,26 @@ export interface MapKitPinElement {
 /** How a pin selection was made. */
 export type MapKitSelectVia = 'keyboard' | 'pointer'
 
+/**
+ * How the pins take keyboard focus.
+ *
+ * `'tab'` (default, and 2.1.x's only behaviour): every pin is a Tab stop.
+ * `'roving'`: the pins are ONE Tab stop and the arrow keys move between them
+ * (Home and End jump to the first and last), the way a toolbar or radio group
+ * works. 300 stops are 300 Tab presses to get past a map.
+ */
+export type MapKitPinNavigation = 'roving' | 'tab'
+
+/** A tooltip that follows the pointer or focus onto a pin. See `MapKitHoverTooltip`. */
+export interface MapKitPinTooltipOptions<T> {
+  /** The map container; the tooltip is positioned inside it. */
+  container: HTMLElement
+  scheduler?: MapKitTimerScheduler
+  showDelayMs?: number
+  /** The text for an item, or nothing for "no tooltip". Not shown on the selected pin. */
+  text: (item: T) => string | null | undefined
+}
+
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
   clusteringIdentifier?: string
@@ -87,6 +116,15 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
    * no click or key listener, and no required `itemLabel`.
    */
   focusable?: boolean
+  /**
+   * Grow every pin host to at least this many CSS px square, keeping the glyph
+   * where it is: a 12 px dot gets a 44 px tap target. `true` is
+   * `MAPKIT_MIN_HIT_TARGET` (44), `false` or omitted leaves hosts the size of
+   * their glyph. Needs a `size` in `pinGeometry`; a pin without one is left as is.
+   */
+  hitArea?: boolean | number
+  /** A hover and focus tooltip on each pin, for apps that would otherwise use `title`. */
+  hoverTooltip?: MapKitPinTooltipOptions<T>
   /** Stable identity per item. Must be non-blank and unique. */
   itemKey: (item: T, index: number) => string
   /**
@@ -97,6 +135,8 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
   itemLabel?: (item: T) => string
   map: MapKitMapLike
   mapkit: MapKitNamespaceLike
+  /** Tab stop per pin (default) or one roving Tab stop with arrow keys. */
+  navigation?: MapKitPinNavigation
   /**
    * Called when the pointer enters or leaves a pin host. The layer does not
    * apply hover itself -- the host's `hoveredId` (or the app) writes it back
@@ -114,11 +154,28 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
 interface MapKitPinEntry<T> {
   annotation: MapKitAnnotationLike
   cleanup: (() => void) | undefined
+  /** The geometry MapKit was given: the app's, grown by the hit area. */
+  geometry: MapKitPinGeometry
   geometrySignature: string
   host: HTMLElement
   item: T
   key: string
   selected: boolean
+}
+
+const ROVING_KEYS: Readonly<Record<string, MapKitRovingDirection>> = {
+  ArrowDown: 'south',
+  ArrowLeft: 'west',
+  ArrowRight: 'east',
+  ArrowUp: 'north',
+  End: 'last',
+  Home: 'first',
+}
+
+const NO_PADDING: MapKitHitAreaPadding = { bottom: 0, left: 0, right: 0, top: 0 }
+
+function paddingSignature(padding: MapKitHitAreaPadding): string {
+  return [padding.top, padding.right, padding.bottom, padding.left].map(String).join(',')
 }
 
 function emptyDiff(): MapKitDiff {
@@ -165,11 +222,25 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   #destroyed = false
   #hoveredId: string | null = null
   #lastDiff: MapKitDiff = emptyDiff()
+  #rovingId: string | null = null
   #selectedId: string | null = null
+  readonly #tooltip: MapKitHoverTooltip | null
+  /** Detaches each pin host's tooltip listeners, by pin key. */
+  readonly #tooltipDetachers = new Map<string, () => void>()
 
   constructor(options: MapKitPinLayerOptions<T>) {
     this.#options = options
     this.#document = options.document ?? globalThis.document
+    this.#tooltip = options.hoverTooltip
+      ? new MapKitHoverTooltip({
+          container: options.hoverTooltip.container,
+          document: this.#document,
+          ...(options.hoverTooltip.scheduler ? { scheduler: options.hoverTooltip.scheduler } : {}),
+          ...(options.hoverTooltip.showDelayMs === undefined
+            ? {}
+            : { showDelayMs: options.hoverTooltip.showDelayMs }),
+        })
+      : null
     this.#registry = new MapKitAnnotationRegistry<MapKitAnnotationLike>({
       map: {
         addAnnotations: (annotations) => {
@@ -213,6 +284,34 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     return this.#entries.get(key)?.item
   }
 
+  /**
+   * The geometry MapKit was given for a key: the app's `pinGeometry`, grown by
+   * the hit area when one is set. Anything that reads the host's box (rather
+   * than the glyph's) must use this one.
+   */
+  geometryFor(key: string): MapKitPinGeometry | undefined {
+    return this.#entries.get(key)?.geometry
+  }
+
+  /**
+   * Hide the hover tooltip if one is showing. `true` when it was, so an Escape
+   * that dismissed a tooltip is not also spent on the callout behind it.
+   */
+  dismissTooltip(): boolean {
+    if (!this.#tooltip?.visible) return false
+    this.#tooltip.hide()
+    return true
+  }
+
+  /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
+  focusPin(key: string): boolean {
+    const host = this.#entries.get(key)?.host
+    if (!host || !this.#focusable) return false
+    this.#setRoving(key)
+    host.focus({ preventScroll: true })
+    return true
+  }
+
   keys(): readonly string[] {
     return [...this.#entries.keys()]
   }
@@ -234,8 +333,8 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     const keyFor = this.#options.itemKey
     const descriptors = items.map((item, index) => {
       const key = keyFor(item, index)
-      const geometry = this.#options.pinGeometry?.(item) ?? {}
-      const geometrySignature = mapKitPinGeometrySignature(geometry)
+      const { geometry, padding } = this.#resolveGeometry(item)
+      const geometrySignature = `${mapKitPinGeometrySignature(geometry)}|${paddingSignature(padding)}`
       const signature = [
         String(item.lat),
         String(item.lng),
@@ -244,11 +343,11 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       ].join('|')
 
       return {
-        create: () => this.#createAnnotation(key, item, geometry, geometrySignature, diff),
+        create: () => this.#createAnnotation(key, item, geometry, padding, geometrySignature, diff),
         key,
         signature,
         update: () => {
-          this.#updateAnnotation(key, item, geometry, geometrySignature, diff)
+          this.#updateAnnotation(key, item, geometry, padding, geometrySignature, diff)
         },
       }
     })
@@ -260,6 +359,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       const entry = this.#entries.get(key)
       if (!entry) continue
       entry.cleanup?.()
+      this.#detachTooltip(key)
       this.#entries.delete(key)
       diff.removed.push(key)
     }
@@ -279,6 +379,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       throw new Error('MapKitPinLayer: an annotation was recreated instead of updated in place')
     }
 
+    this.#syncRoving()
     this.#lastDiff = diff
     return diff
   }
@@ -326,9 +427,82 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
   destroy(): void {
     if (this.#destroyed) return
     for (const entry of this.#entries.values()) entry.cleanup?.()
+    for (const key of [...this.#tooltipDetachers.keys()]) this.#detachTooltip(key)
     this.#entries.clear()
+    this.#tooltip?.destroy()
     this.#registry.destroy()
     this.#destroyed = true
+  }
+
+  /** The app's geometry grown by the hit area, and the padding that keeps the glyph in place. */
+  #resolveGeometry(item: T): { geometry: MapKitPinGeometry; padding: MapKitHitAreaPadding } {
+    const geometry = this.#options.pinGeometry?.(item) ?? {}
+    const hitArea = this.#options.hitArea
+    if (hitArea === undefined || hitArea === false) return { geometry, padding: NO_PADDING }
+    return expandMapKitHitArea(geometry, hitArea === true ? MAPKIT_MIN_HIT_TARGET : hitArea)
+  }
+
+  /** Size and pad the host so the larger tap target leaves the glyph exactly where it was. */
+  #writeHitArea(
+    host: HTMLElement,
+    geometry: MapKitPinGeometry,
+    padding: MapKitHitAreaPadding,
+  ): void {
+    const grown = padding.top + padding.right + padding.bottom + padding.left > 0
+    if (!grown || !geometry.size) {
+      host.removeAttribute('data-mapkit-hit-area')
+      for (const name of ['box-sizing', 'height', 'padding', 'width'])
+        host.style.removeProperty(name)
+      return
+    }
+    host.setAttribute('data-mapkit-hit-area', '')
+    host.style.boxSizing = 'border-box'
+    host.style.height = `${String(geometry.size.height)}px`
+    host.style.width = `${String(geometry.size.width)}px`
+    host.style.padding = [padding.top, padding.right, padding.bottom, padding.left]
+      .map((value) => `${String(value)}px`)
+      .join(' ')
+  }
+
+  get #roving(): boolean {
+    return this.#focusable && this.#options.navigation === 'roving'
+  }
+
+  /** Make `key` the one Tab stop of a roving group. */
+  #setRoving(key: string): void {
+    if (!this.#roving || this.#rovingId === key || !this.#entries.has(key)) return
+    const previous = this.#rovingId === null ? undefined : this.#entries.get(this.#rovingId)
+    previous?.host.setAttribute('tabindex', '-1')
+    this.#entries.get(key)?.host.setAttribute('tabindex', '0')
+    this.#rovingId = key
+  }
+
+  /** After the pin set changes: exactly one Tab stop, and it is a pin that exists. */
+  #syncRoving(): void {
+    if (!this.#roving) return
+    if (this.#rovingId !== null && !this.#entries.has(this.#rovingId)) this.#rovingId = null
+    if (this.#rovingId === null) {
+      const first =
+        this.#selectedId ?? nextMapKitRovingKey(this.#rovingPoints(), null, 'first') ?? null
+      if (first !== null) this.#setRoving(first)
+    }
+    for (const [key, entry] of this.#entries) {
+      entry.host.setAttribute('tabindex', key === this.#rovingId ? '0' : '-1')
+    }
+  }
+
+  #rovingPoints(): Array<{ key: string; lat: number; lng: number }> {
+    return [...this.#entries.values()].map((entry) => ({
+      key: entry.key,
+      lat: entry.item.lat,
+      lng: entry.item.lng,
+    }))
+  }
+
+  #moveRoving(from: string, direction: MapKitRovingDirection): boolean {
+    const next = nextMapKitRovingKey(this.#rovingPoints(), from, direction)
+    if (next === null || next === from) return false
+    return this.focusPin(next)
   }
 
   #applySelection(key: string, selected: boolean, diff: MapKitDiff): void {
@@ -382,6 +556,11 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     )
   }
 
+  #detachTooltip(key: string): void {
+    this.#tooltipDetachers.get(key)?.()
+    this.#tooltipDetachers.delete(key)
+  }
+
   #buildHost(key: string, item: T): HTMLElement {
     const host = this.#document.createElement('div')
     host.setAttribute('data-map-pin', '')
@@ -395,6 +574,20 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       })
     }
 
+    const tooltipOptions = this.#options.hoverTooltip
+    if (this.#tooltip && tooltipOptions) {
+      // A rebuilt host for the same key replaces the old one's listeners.
+      this.#detachTooltip(key)
+      this.#tooltipDetachers.set(
+        key,
+        this.#tooltip.attach(host, () => {
+          const entry = this.#entries.get(key)
+          // The selected pin has its callout open: a tooltip on top of it is noise.
+          return !entry || entry.selected ? null : tooltipOptions.text(entry.item)
+        }),
+      )
+    }
+
     if (!this.#focusable) {
       // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
       // roleless element is what axe reports as `aria-allowed-attr`. The label
@@ -404,7 +597,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     }
 
     host.setAttribute('role', 'button')
-    host.setAttribute('tabindex', '0')
+    host.setAttribute('tabindex', this.#roving ? '-1' : '0')
     host.style.cursor = 'pointer'
     // `#assertLabelling` has already refused a focusable layer without one.
     host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '')
@@ -416,7 +609,20 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       event.stopPropagation()
       activate('pointer')
     })
+    if (this.#roving) {
+      host.addEventListener('focus', () => {
+        this.#setRoving(key)
+      })
+    }
     host.addEventListener('keydown', (event) => {
+      const direction = this.#roving ? ROVING_KEYS[event.key] : undefined
+      if (direction) {
+        if (this.#moveRoving(key, direction)) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
       if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
       event.preventDefault()
       event.stopPropagation()
@@ -429,6 +635,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     key: string,
     item: T,
     geometry: MapKitPinGeometry,
+    padding: MapKitHitAreaPadding,
     geometrySignature: string,
     diff: MapKitDiff,
   ): MapKitAnnotationLike {
@@ -437,6 +644,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     const entry: MapKitPinEntry<T> = {
       annotation: undefined as unknown as MapKitAnnotationLike,
       cleanup: undefined,
+      geometry,
       geometrySignature,
       host,
       item,
@@ -444,6 +652,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       selected: this.#selectedId === key,
     }
     this.#renderGlyph(entry)
+    this.#writeHitArea(host, geometry, padding)
 
     const offset = mapKitAnchorOffset(geometry)
     const options: MapKitAnnotationOptionsLike = {
@@ -473,6 +682,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     key: string,
     item: T,
     geometry: MapKitPinGeometry,
+    padding: MapKitHitAreaPadding,
     geometrySignature: string,
     diff: MapKitDiff,
   ): void {
@@ -489,6 +699,8 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
 
     if (entry.geometrySignature !== geometrySignature) {
       entry.geometrySignature = geometrySignature
+      entry.geometry = geometry
+      this.#writeHitArea(entry.host, geometry, padding)
       const offset = mapKitAnchorOffset(geometry)
       entry.annotation.anchorOffset = new DOMPoint(offset.x, offset.y)
       entry.annotation.size = geometry.size
