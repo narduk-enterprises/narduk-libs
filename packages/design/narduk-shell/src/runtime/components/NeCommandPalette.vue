@@ -218,8 +218,26 @@ function hide() {
   else element.removeAttribute('open')
 }
 
-/** The `close` event: Escape, a backdrop click, `hide()` or a form method. */
+/**
+ * The `cancel` event: Escape. It fires in the keypress's own task, before the
+ * browser removes `open` and long before the queued `close` event, so the shared
+ * state follows the dialog at once. Without it a Cmd/Ctrl+K in that gap toggled a
+ * still-true flag to false and the palette stayed shut (riverstatus#543).
+ */
+function onCancel() {
+  palette.close()
+}
+
+/**
+ * The `close` event: Escape, a backdrop click, `hide()` or a form method. It is
+ * queued, so a newer open can have re-shown the dialog by the time it runs; that
+ * open wins and this late close must not reset the providers or close the state.
+ */
 function onClosed() {
+  if (dialog.value?.open) {
+    emit('close')
+    return
+  }
   runner.reset()
   palette.close()
   emit('close')
@@ -338,6 +356,7 @@ const actionHint = computed(() =>
     data-ne-command-palette
     :aria-label="title"
     @click="onDialogClick"
+    @cancel="onCancel"
     @close="onClosed"
   >
     <div class="ne-cmd__panel">
