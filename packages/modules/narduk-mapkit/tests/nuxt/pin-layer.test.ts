@@ -56,7 +56,10 @@ function makeLayer(options: {
   itemLabel?: (item: Station) => string
   onHover?: (id: string | null) => void
   onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
-  pinGeometry?: (item: Station) => { anchor?: 'center' | 'top-center'; size?: { height: number; width: number } }
+  pinGeometry?: (item: Station) => {
+    anchor?: 'center' | 'top-center'
+    size?: { height: number; width: number }
+  }
 }): MapKitPinLayer<Station> {
   return new MapKitPinLayer<Station>({
     map: harness.map,
