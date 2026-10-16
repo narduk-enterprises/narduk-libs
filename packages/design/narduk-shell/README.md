@@ -330,7 +330,7 @@ it explicitly.
 | `@narduk-enterprises/narduk-shell/module`           | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
 | `@narduk-enterprises/narduk-shell/format`           | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
 | `@narduk-enterprises/narduk-shell/theme.css`        | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
-| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Opt-in desktop overscroll guards (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
+| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Desktop overscroll guards, on by default (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
 
 Install and register the module exactly as before —
 `modules: ['@narduk-enterprises/narduk-shell']` in `nuxt.config.ts` — and it
