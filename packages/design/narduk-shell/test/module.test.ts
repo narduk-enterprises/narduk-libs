@@ -388,8 +388,8 @@ describe('narduk-shell theme wiring', () => {
     const module_ = await loadModule()
     const nuxt = makeNuxt({}, ['~/assets/app.css'])
 
-    await module_.setup({ theme: true }, nuxt)
-    await module_.setup({ theme: true }, nuxt)
+    await module_.setup({ theme: true, bounceGuard: false }, nuxt)
+    await module_.setup({ theme: true, bounceGuard: false }, nuxt)
 
     // Front of the list, so the app's own sheet is later in source order and
     // therefore still wins: both are unlayered.
@@ -401,7 +401,7 @@ describe('narduk-shell theme wiring', () => {
     const module_ = await loadModule()
     const nuxt = makeNuxt({ ui: { colors: { primary: 'emerald' } } })
 
-    await module_.setup({ theme: true }, nuxt)
+    await module_.setup({ theme: true, bounceGuard: false }, nuxt)
 
     const ui = (nuxt.options.appConfig as { ui: { colors: Record<string, string> } }).ui
     // The value that was already there survives; the missing one is filled.
@@ -414,7 +414,7 @@ describe('narduk-shell theme wiring', () => {
     const module_ = await loadModule()
     const nuxt = makeNuxt()
 
-    await module_.setup({ theme: true }, nuxt)
+    await module_.setup({ theme: true, bounceGuard: false }, nuxt)
 
     expect((nuxt.options.appConfig as { ui: unknown }).ui).toEqual(NARDUK_SHELL_APP_CONFIG.ui)
   })
@@ -424,7 +424,7 @@ describe('narduk-shell theme wiring', () => {
     const module_ = await loadModule()
     const nuxt = makeNuxt()
 
-    await module_.setup({ theme: false }, nuxt)
+    await module_.setup({ theme: false, bounceGuard: false }, nuxt)
 
     expect(nuxt.options.css).toEqual([])
     expect(nuxt.options.appConfig).toEqual({})
@@ -436,7 +436,7 @@ describe('narduk-shell theme wiring', () => {
     const module_ = await loadModule()
     const nuxt = makeNuxt()
 
-    await module_.setup({ components: false, theme: true }, nuxt)
+    await module_.setup({ components: false, theme: true, bounceGuard: false }, nuxt)
 
     expect(addComponent).not.toHaveBeenCalled()
     expect(nuxt.options.css).toEqual([THEME_STYLESHEET])
@@ -460,15 +460,17 @@ describe('narduk-shell bounce guard (narduk-libs#1336)', () => {
     vi.doUnmock('../src/registry')
   })
 
-  it('is opt-in: off by default, and no stylesheet is added unless asked', async () => {
+  it('is on by default, and bounceGuard: false opts out', async () => {
     mockNuxtKit()
     const module_ = await loadModule()
-    expect(module_.defaults.bounceGuard).toBeUndefined()
-    const nuxt = makeNuxt({}, ['~/assets/app.css'])
+    expect(module_.defaults.bounceGuard).toBe(true)
+    const on = makeNuxt({}, ['~/assets/app.css'])
+    await module_.setup({ theme: false }, on)
+    expect(on.options.css).toEqual(['~/assets/app.css', BOUNCE_GUARD_STYLESHEET])
 
-    await module_.setup({ theme: false }, nuxt)
-
-    expect(nuxt.options.css).toEqual(['~/assets/app.css'])
+    const off = makeNuxt({}, ['~/assets/app.css'])
+    await module_.setup({ theme: false, bounceGuard: false }, off)
+    expect(off.options.css).toEqual(['~/assets/app.css'])
   })
 
   it('appends bounce-guard.css after the app css, exactly once', async () => {
