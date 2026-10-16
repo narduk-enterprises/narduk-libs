@@ -56,12 +56,15 @@ export class MapKitCalloutHostLayer {
             host,
             id: request.id,
             item: request.item,
+            knownSizes: existing?.knownSizes ?? new Set(),
             layout: null,
+            observer: existing?.observer,
             placement: this.#options.placement ?? 'above',
             position: existing?.position ?? { x: 0, y: 0 },
         };
         this.#records.set(request.id, record);
         this.#place(record);
+        this.#observe(record);
         this.#emit();
         return record;
     }
@@ -70,6 +73,7 @@ export class MapKitCalloutHostLayer {
         if (!record)
             return false;
         this.#records.delete(id);
+        record.observer?.disconnect();
         record.host.remove();
         this.#emit();
         return true;
@@ -77,8 +81,10 @@ export class MapKitCalloutHostLayer {
     closeAll() {
         if (this.#records.size === 0)
             return;
-        for (const record of this.#records.values())
+        for (const record of this.#records.values()) {
+            record.observer?.disconnect();
             record.host.remove();
+        }
         this.#records.clear();
         this.#emit();
     }
@@ -95,6 +101,36 @@ export class MapKitCalloutHostLayer {
             return;
         this.closeAll();
         this.#destroyed = true;
+    }
+    /**
+     * Fit the callout again when its content changes size.
+     *
+     * The content is teleported into the host after the host is first placed (and
+     * may load later still: an image, a fetched row), so the first measurement can
+     * be 0 x 0 or too small. A resize the layer caused itself -- measuring at the
+     * origin, then moving to the final place -- is recognised by its size and
+     * ignored, which is what keeps this from looping.
+     */
+    #observe(record) {
+        if (record.observer || this.#options.keepInView === false)
+            return;
+        const Observer = (this.#document.defaultView ?? globalThis).ResizeObserver;
+        if (!Observer)
+            return;
+        record.observer = new Observer((observed) => {
+            const live = this.#records.get(record.id);
+            if (!live || this.#destroyed)
+                return;
+            const box = observed.at(-1)?.contentRect;
+            const size = box
+                ? sizeKey(box.width, box.height)
+                : sizeKey(live.host.offsetWidth, live.host.offsetHeight);
+            if (live.knownSizes.has(size))
+                return;
+            this.#place(live);
+            this.#emit();
+        });
+        record.observer.observe(record.host);
     }
     #createHost(id) {
         const host = this.#document.createElement('div');
@@ -143,6 +179,8 @@ export class MapKitCalloutHostLayer {
         host.style.top = '0px';
         host.style.transform = 'none';
         const size = { height: host.offsetHeight, width: host.offsetWidth };
+        record.knownSizes.clear();
+        record.knownSizes.add(sizeKey(size.width, size.height));
         const { container } = this.#options;
         const bounds = { height: container.clientHeight, width: container.clientWidth };
         if (size.width <= 0 || size.height <= 0 || bounds.width <= 0 || bounds.height <= 0) {
@@ -170,10 +208,15 @@ export class MapKitCalloutHostLayer {
             host.setAttribute('data-mapkit-callout-shifted', '');
         else
             host.removeAttribute('data-mapkit-callout-shifted');
+        // Moving to the final place can change a shrink-to-fit host's width.
+        record.knownSizes.add(sizeKey(host.offsetWidth, host.offsetHeight));
         return true;
     }
     #emit() {
         this.#options.onChange?.(this.entries());
     }
+}
+function sizeKey(width, height) {
+    return `${String(Math.round(width))}x${String(Math.round(height))}`;
 }
 //# sourceMappingURL=callout-host.js.map

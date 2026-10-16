@@ -270,7 +270,23 @@ const selectedId = ref<string | null>(null)
   room, slides it along an edge instead of being clipped, and writes
   `--mapkit-callout-caret-x` (and `data-mapkit-callout-shifted`) so a caret
   keeps pointing at the pin. A map or callout that cannot be measured keeps the
-  plain above-or-below placement.
+  plain above-or-below placement. The callout is fitted again when its content
+  arrives or changes size (the slot is teleported in after the first placement).
+  A tap that lands on a pin or an open callout, or follows a pin's own selection
+  within 400 ms, never counts as a tap on empty map. One `Escape` closes a
+  visible tooltip first; the callout takes a second.
+
+  > **These defaults change behaviour for an app that already handles its own
+  > dismissal.** `dismissOnMapClick`, `dismissOnEscape` and `calloutKeepInView`
+  > are on by default, so an app that listens to `map-click` or `Escape` itself
+  > to close its callout will now see the selection cleared a second time, and a
+  > callout that used to overflow an edge now stays inside it (and is positioned
+  > by its top-left corner). An app that draws its own callouts should set
+  > `calloutFollowSelection` to `false`, which turns Escape and map-click
+  > dismissal into no-ops; otherwise pass `:dismiss-on-map-click="false"`,
+  > `:dismiss-on-escape="false"` and `:callout-keep-in-view="false"` to keep the
+  > old behaviour.
+
 - **`pinHitArea`** (`true` = 44, or a number of CSS px) grows each pin's
   interactive host to a touch-sized target while the glyph stays exactly where
   `anchor` puts it: a 12 px dot gets a 44 px target. A `bottom-center` pin grows

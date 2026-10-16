@@ -77,6 +77,9 @@ export interface MapKitLeaderProp {
   anchor: HTMLElement | null
 }
 
+/** A map tap this soon after a pin asked to be selected is that pin's own tap, not a tap on empty map. */
+const PIN_TAP_GUARD_MS = 400
+
 const CALLOUT_FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -318,6 +321,7 @@ const AppMapKitImpl = defineComponent({
     const wrapperRef = ref<HTMLElement | null>(null)
 
     let calloutLayer: MapKitCalloutHostLayer<MapKitItem> | null = null
+    let keydownDocument: Document | null = null
     let leaderOverlay: MapKitLeaderOverlay | null = null
     let map: MapKitMapLike | null = null
     let overlayLayer: MapKitOverlayLayer | null = null
@@ -478,6 +482,9 @@ const AppMapKitImpl = defineComponent({
         item,
       })
       emit('callout-open', { id, item })
+      // The slot content is teleported into the host on the next tick: the host
+      // was 0 x 0 when it was first placed, so fit it again once it has a size.
+      void nextTick(() => calloutLayer?.reposition())
     }
 
     function closeCallout(id?: string): void {
@@ -489,11 +496,17 @@ const AppMapKitImpl = defineComponent({
       }
     }
 
+    // When a pin last asked to be selected. Some MapKit builds deliver a tap on a
+    // pin as a `single-tap` on the map as well; that second event must not close
+    // the callout the first one just opened.
+    let lastPinSelectAt = Number.NEGATIVE_INFINITY
+
     // The id whose callout should take focus once it renders: set by a keyboard
     // selection, consumed by the next `applySelection` (narduk-libs#746).
     let focusCalloutFor: string | null = null
 
     function select(id: string | null, via: MapKitSelectVia = 'pointer'): void {
+      if (id !== null) lastPinSelectAt = Date.now()
       focusCalloutFor =
         via === 'keyboard' && id !== null && componentProps.calloutFocus === 'keyboard' ? id : null
       if (id !== componentProps.selectedId) {
@@ -557,12 +570,13 @@ const AppMapKitImpl = defineComponent({
      */
     function dismissCallout(restoreFocus = false): boolean {
       const id = componentProps.selectedId
-      if (id === null) return false
+      // With `calloutFollowSelection` off the app draws its own callouts and owns
+      // when they close: there is nothing here to dismiss.
+      if (id === null || !componentProps.calloutFollowSelection) return false
       const container = containerRef.value
       const active = container?.ownerDocument.activeElement ?? null
       const focusWasInMap = Boolean(container && active && container.contains(active))
-      if (componentProps.calloutFollowSelection) select(null)
-      else closeCallout()
+      select(null)
       if (restoreFocus && focusWasInMap) pinLayer?.focusPin(id)
       return true
     }
@@ -573,14 +587,35 @@ const AppMapKitImpl = defineComponent({
      * map or nowhere: an Escape aimed at a dialog or input elsewhere is theirs.
      */
     function onDocumentKeydown(event: KeyboardEvent): void {
-      if (event.key !== 'Escape' || event.defaultPrevented || !componentProps.dismissOnEscape)
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // One Escape closes the tooltip; the callout behind it takes a second.
+      if (pinLayer?.dismissTooltip()) {
+        event.preventDefault()
         return
+      }
+      if (!componentProps.dismissOnEscape) return
       const container = containerRef.value
       if (!container || componentProps.selectedId === null) return
       const active = container.ownerDocument.activeElement
       const focusIsFree = !active || active === container.ownerDocument.body
       if (!focusIsFree && !container.contains(active)) return
       if (dismissCallout(true)) event.preventDefault()
+    }
+
+    /**
+     * Whether a map tap is really a tap on a pin or on an open callout, or the
+     * echo of one: the element under the point is a pin or callout host, or a pin
+     * asked to be selected a moment ago (`PIN_TAP_GUARD_MS`).
+     */
+    function tapIsOnPinOrCallout(pointOnPage: { x: number; y: number }): boolean {
+      if (Date.now() - lastPinSelectAt < PIN_TAP_GUARD_MS) return true
+      const doc = containerRef.value?.ownerDocument
+      const view = doc?.defaultView
+      const under = doc?.elementFromPoint?.(
+        pointOnPage.x - (view?.scrollX ?? 0),
+        pointOnPage.y - (view?.scrollY ?? 0),
+      )
+      return Boolean(under?.closest?.('[data-mapkit-pin], [data-mapkit-callout]'))
     }
 
     /**
@@ -597,7 +632,9 @@ const AppMapKitImpl = defineComponent({
       const coordinate = map.convertPointOnPageToCoordinate(event.pointOnPage)
       const point: MapKitLatLng = { lat: coordinate.latitude, lng: coordinate.longitude }
       emit('map-click', point)
-      if (componentProps.dismissOnMapClick) dismissCallout()
+      if (componentProps.dismissOnMapClick && !tapIsOnPinOrCallout(event.pointOnPage)) {
+        dismissCallout()
+      }
       const feature = overlayLayer?.hitTestFeature(point)
       if (feature) emit('feature-select', feature)
     }
@@ -674,7 +711,8 @@ const AppMapKitImpl = defineComponent({
       })
 
       map.addEventListener('single-tap', onSingleTap)
-      container.ownerDocument.addEventListener('keydown', onDocumentKeydown)
+      keydownDocument = container.ownerDocument
+      keydownDocument.addEventListener('keydown', onDocumentKeydown)
       map.addEventListener('region-change-end', () => {
         const region = map?.region
         if (!region) return
@@ -831,7 +869,10 @@ const AppMapKitImpl = defineComponent({
     )
 
     function stopDocumentListeners(): void {
-      containerRef.value?.ownerDocument.removeEventListener('keydown', onDocumentKeydown)
+      // The document the listener was added to, not whatever the container is by
+      // now: on unmount the container ref is already cleared.
+      keydownDocument?.removeEventListener('keydown', onDocumentKeydown)
+      keydownDocument = null
     }
 
     onBeforeUnmount(() => {

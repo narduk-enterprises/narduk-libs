@@ -113,6 +113,11 @@ export declare class MapKitPinLayer<T extends MapKitPinItem> {
      * than the glyph's) must use this one.
      */
     geometryFor(key: string): MapKitPinGeometry | undefined;
+    /**
+     * Hide the hover tooltip if one is showing. `true` when it was, so an Escape
+     * that dismissed a tooltip is not also spent on the callout behind it.
+     */
+    dismissTooltip(): boolean;
     /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
     focusPin(key: string): boolean;
     keys(): readonly string[];

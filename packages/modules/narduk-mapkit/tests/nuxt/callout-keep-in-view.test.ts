@@ -118,3 +118,110 @@ describe('MapKitCalloutHostLayer keepInView', () => {
     expect(host.style.transform).toBe('translate(-50%, -100%)')
   })
 })
+
+describe('MapKitCalloutHostLayer content that arrives after the first placement', () => {
+  type ObserverCallback = (
+    entries: Array<{ contentRect: { height: number; width: number } }>,
+  ) => void
+  let callbacks: ObserverCallback[] = []
+  let disconnects = 0
+
+  class FakeResizeObserver {
+    constructor(callback: ObserverCallback) {
+      callbacks.push(callback)
+    }
+
+    disconnect(): void {
+      disconnects++
+    }
+
+    observe(): void {}
+  }
+
+  /** An unsized host, like the one the layer creates before the Teleport has filled it. */
+  function lateHarness(point: MapKitCalloutPoint) {
+    callbacks = []
+    disconnects = 0
+    ;(document.defaultView as unknown as { ResizeObserver: unknown }).ResizeObserver =
+      FakeResizeObserver
+    const container = document.createElement('div')
+    define(container, 'clientWidth', MAP.width)
+    define(container, 'clientHeight', MAP.height)
+    document.body.append(container)
+    let projections = 0
+    const layer = new MapKitCalloutHostLayer<{ id: string }>({
+      container,
+      projectCoordinate: () => {
+        projections++
+        return point
+      },
+    })
+    const entry = layer.open({ coordinate: { lat: 0, lng: 0 }, id: 'a', item: { id: 'a' } })
+    if (!entry) throw new Error('callout did not open')
+    const fill = (width: number, height: number): void => {
+      define(entry.host, 'offsetWidth', width)
+      define(entry.host, 'offsetHeight', height)
+    }
+    return { entry, fill, host: entry.host, layer, projections: () => projections }
+  }
+
+  it('falls back to the plain placement while the host is empty, then fits it when it is filled', () => {
+    const { entry, fill, host } = lateHarness({ x: 580, y: 250 })
+    expect(entry.layout).toBeNull()
+    expect(host.style.transform).toBe('translate(-50%, -100%)')
+    expect(callbacks).toHaveLength(1)
+
+    fill(CALLOUT.width, CALLOUT.height)
+    callbacks[0]!([{ contentRect: { height: CALLOUT.height, width: CALLOUT.width } }])
+
+    // Slid inside the right edge instead of staying where it would be clipped.
+    expect(host.style.left).toBe('392px')
+    expect(host.style.transform).toBe('none')
+    expect(host.hasAttribute('data-mapkit-callout-shifted')).toBe(true)
+  })
+
+  it('fits again when the content grows later (an image, a fetched row)', () => {
+    const { fill, host } = lateHarness({ x: 300, y: 250 })
+    fill(200, 60)
+    callbacks[0]!([{ contentRect: { height: 60, width: 200 } }])
+    expect(host.style.top).toBe('190px')
+
+    fill(200, 120)
+    callbacks[0]!([{ contentRect: { height: 120, width: 200 } }])
+    expect(host.style.top).toBe('130px')
+  })
+
+  it('does not loop on the resize its own measuring causes', () => {
+    const { fill, projections } = lateHarness({ x: 300, y: 250 })
+    fill(200, 120)
+    callbacks[0]!([{ contentRect: { height: 120, width: 200 } }])
+    const placed = projections()
+
+    // The observer reports the size the layer itself just produced.
+    callbacks[0]!([{ contentRect: { height: 120, width: 200 } }])
+    callbacks[0]!([{ contentRect: { height: 120, width: 200 } }])
+
+    expect(projections()).toBe(placed)
+  })
+
+  it('stops observing when the callout closes or the layer is destroyed', () => {
+    const { layer } = lateHarness({ x: 300, y: 250 })
+    layer.close('a')
+    expect(disconnects).toBe(1)
+    layer.open({ coordinate: { lat: 0, lng: 0 }, id: 'b', item: { id: 'b' } })
+    layer.destroy()
+    expect(disconnects).toBe(2)
+  })
+
+  it('does not observe when keepInView is off', () => {
+    callbacks = []
+    const container = document.createElement('div')
+    document.body.append(container)
+    new MapKitCalloutHostLayer<{ id: string }>({
+      container,
+      keepInView: false,
+      projectCoordinate: () => ({ x: 1, y: 1 }),
+    }).open({ coordinate: { lat: 0, lng: 0 }, id: 'a', item: { id: 'a' } })
+    expect(callbacks).toHaveLength(0)
+  })
+})
