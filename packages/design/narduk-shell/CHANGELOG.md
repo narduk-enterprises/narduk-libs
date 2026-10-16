@@ -1,5 +1,24 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.28.0
+
+### Minor Changes
+
+- 0be27db: `bounce-guard.css` (desktop overscroll guards, ported from
+  harbor#801) now loads by default with `@narduk-enterprises/narduk-shell`, so
+  every shell app gets no rubber-band, no swipe-to-history and no scroll
+  chaining without opting in. It only makes the page unscrollable on a document
+  that contains a `[data-app-shell]` element; a page with no shell keeps natural
+  scrolling. An app that wants page scrolling inside a shell opts out with
+  `nardukShell: { bounceGuard: false }`.
+
+### Patch Changes
+
+- 7a234bd: NeCommandPalette: pressing Cmd/Ctrl+K right after Escape reopens the
+  palette. The shared open flag now follows the dialog's `cancel` event, and a
+  queued `close` from the earlier Escape no longer undoes a newer open
+  (riverstatus#543).
+
 ## 0.27.0
 
 ### Minor Changes

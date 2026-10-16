@@ -1,5 +1,159 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.5
+
+### Patch Changes
+
+- 0be27db: `bounce-guard.css` (desktop overscroll guards, ported from
+  harbor#801) now loads by default with `@narduk-enterprises/narduk-shell`, so
+  every shell app gets no rubber-band, no swipe-to-history and no scroll
+  chaining without opting in. It only makes the page unscrollable on a document
+  that contains a `[data-app-shell]` element; a page with no shell keeps natural
+  scrolling. An app that wants page scrolling inside a shell opts out with
+  `nardukShell: { bounceGuard: false }`.
+- a9e7b5b: `narduk-mapkit`: callouts behave, and pins are reachable.
+
+  `<AppMapKit>`:
+
+  - A callout is dismissed by a tap on empty map (`dismissOnMapClick`) and by
+    `Escape` (`dismissOnEscape`), both on by default. Escape returns focus to
+    the pin when focus was in the map, and the slot's `close()` returns it too
+    instead of dropping it on `<body>`. An Escape aimed at a control elsewhere
+    on the page is left alone.
+  - `calloutKeepInView` (default on) measures the callout and keeps it inside
+    the map: it flips to the side with room, slides along an edge instead of
+    being clipped, and writes `--mapkit-callout-caret-x` so a caret keeps
+    pointing at the pin. A map or callout that cannot be measured keeps the
+    plain placement. `MapKitCalloutHostLayer` takes `keepInView` and entries
+    carry `layout`.
+  - `pinHitArea` grows each pin's tap target to 44 px (or a given size) without
+    moving the glyph; `expandMapKitHitArea` and `MAPKIT_MIN_HIT_TARGET` are
+    exported from `./geometry`.
+  - `pinNavigation="roving"` makes the pins one Tab stop with arrow-key, Home
+    and End movement; `nextMapKitRovingKey` is exported from `./geometry`. The
+    default `'tab'` is unchanged.
+  - `itemTooltip` shows an accessible hover and focus tooltip;
+    `MapKitHoverTooltip` / `createMapKitHoverTooltip` are exported from
+    `./client`.
+  - The pin geometry helpers (`mapKitAnchorOffset`, `mapKitCalloutAnchorOffset`,
+    ...) are now reachable from `./geometry` for apps that place their own
+    markers.
+
+  Fixes folded in from review: the callout is fitted again once its teleported
+  content has a size (a `ResizeObserver` on the host and a re-measure on the
+  next tick), a tap that lands on a pin or open callout, or that follows a pin's
+  own selection within 400 ms, no longer dismisses the callout it just opened,
+  `calloutFollowSelection: false` makes Escape and map-click dismissal no-ops,
+  one Escape closes a shown tooltip before the callout, the Escape listener is
+  removed from the document it was added to, and a removed pin detaches its
+  tooltip listeners.
+
+  **Warning: `dismissOnMapClick`, `dismissOnEscape` and `calloutKeepInView` are
+  on by default.** An app that already closes its own callout on `map-click` or
+  Escape, or that draws its own callouts, changes behaviour on upgrade: set
+  `calloutFollowSelection` to `false` (Escape and map-click dismissal then do
+  nothing), or pass the three props as `false`.
+
+  Behaviour change: with `calloutKeepInView` on, a callout that would have
+  overflowed an edge now stays inside it, and the host is positioned by its
+  top-left corner (the anchor is still `position` in the slot scope). Pass
+  `:callout-keep-in-view="false"` to keep the old placement.
+
+- 556a457: MapKit loads without an app-level CSP workaround, and pins land where
+  `pinGeometry` says (narduk-libs#1908).
+
+  **narduk-core** adds `'wasm-unsafe-eval'` to `script-src` for every app that
+  lists `@narduk-enterprises/narduk-mapkit` (or its `/nuxt` subpath, or the
+  frozen `-nuxt` adapter) in `modules`, on either baseline and wherever the
+  module sits in the list. MapKit JS 6.1 compiles `astc-loader.wasm`; without
+  the keyword every map load logged a `CompileError` and MapKit fell back to a
+  slower path. The keyword allows WebAssembly compilation only, never JS eval.
+  An app that added `allow: { script: ["'wasm-unsafe-eval'"] }` can drop it (a
+  duplicate is merged).
+
+  **narduk-mapkit** fixes the pin anchor at its root. MapKit JS centres an
+  annotation on the coordinate with its bottom edge on it and then moves it by
+  the **negative** of `anchorOffset` (measured on 6.0.128 and 6.1.182); 2.1.0
+  assumed the top-left lands on `projected + anchorOffset`, and its fake agreed,
+  so every test passed. `mapKitAnchorOffset` now solves
+  `anchorPoint - (width / 2, height) - appOffset`, the callout points at the
+  pin's top-centre whatever the anchor (a `top-left` pin's callout was up to
+  ~225 px too far east), and the `./testing` fake places elements the way MapKit
+  does. New: `anchor` also takes an explicit `{ x, y }` point, and
+  `mapKitCalloutAnchorOffset` and `mapKitCoordinateWithinPin` are exported from
+  the geometry module.
+
+  **Breaking (3.0.0), visible on screen:** every pin with a `size` is now placed
+  differently from the previous library output, the default `bottom-center` pin
+  included. 2.1.0 handed MapKit `(-width / 2, -height)` for a sized
+  `bottom-center` pin; the library now hands it `(0, 0)`, MapKit's own default,
+  so the pin moves by `(width / 2, height)` on the screen. A `top-left`,
+  `center`, `top-center` or `{ x, y }` anchor, or an app `anchorOffset`, moves
+  it by the difference between the old and new maths. A pin with no `size` is
+  unchanged.
+
+  An app that compensated for the old output has to adopt before it upgrades:
+  pass the point that marks the place (`anchor: 'center'`, or `{ x, y }`), and
+  drop its hand-measured offsets and its callout correction. Known consumers
+  that shift until they do:
+
+  - float-forecast, whose offset is `(-21, -34)`;
+  - borderwaitstat-us, 6, 8 and 12 px west depending on the pin;
+  - lakestat-us, 15 px west;
+  - bluebonnet, 9 px west;
+  - the Wave Transit concept breaks until it adopts (its `calloutShift`
+    workaround and the app-level CSP `allow` entry go away).
+
+  `docs/api-2.1.md` §c.3 and §d item 8, which said `'wasm-unsafe-eval'` was not
+  needed, are corrected.
+
+  This is why `narduk-mapkit` is a major release. The README has a "Migrating
+  from 2.x to 3.0" section covering the anchor model, the callout dismissal
+  defaults that arrive with the callout changes in the same release, and
+  dropping the app-level `'wasm-unsafe-eval'`.
+
+- d714340: `narduk-mapkit`: moving markers, measured zoom tiers,
+  viewport-bounded annotations and a polite poller.
+
+  From `./client`:
+
+  - `MapKitMovingMarkerLayer` (and `createMapKitMovingMarkerLayer`) keeps one
+    annotation per id and glides each to its new fix with one
+    `requestAnimationFrame` loop, optionally along its route line (`lines`). A
+    first fix, a hidden tab, `prefers-reduced-motion` and a jump longer than
+    `maxGlideMetres` snap instead of gliding; returning to a hidden tab finishes
+    every glide. The heading is unwrapped so it turns the short way and ignores
+    GPS noise. `setTier` writes `data-mapkit-tier`, `follow(id)` keeps the
+    camera on one marker until the user moves the map, and `hitArea` / `label` /
+    `onSelect` give a 44 px focusable target.
+  - `MapKitViewportAnnotations` keeps only the items near the visible region in
+    the DOM, with enter/keep hysteresis and a `pinned` set.
+  - `createMapKitPoller` polls only while the tab is visible, never overlaps
+    requests, asks at once on return and drops stale answers; `mapKitMapLimit`
+    caps concurrent async work.
+  - `writeMapKitHitArea`, the writer `<AppMapKit>`'s pin layer already used, is
+    now shared and exported.
+
+  From `./geometry`:
+
+  - Motion: `bearingDegrees`, `shortestAngleDelta`, `unwrapHeading`,
+    `normalizeHeading`, `interpolateLatLng`, `mapKitSnapReason`,
+    `buildGlidePath`, `pathAlongPolylines`, `pointAlongPath`, `pathEndHeading`.
+  - Declutter: `chooseMapKitMarkerTier` (dot, symbol or detail from measured
+    on-screen overlap, with hysteresis and same-spot tolerance),
+    `chooseMapKitSpanTier`, `collapseNearbyPoints`, `anyCloserThanPixels`,
+    `minSeparationPixels`, `metersPerPixel`, `isInVisibleRegion`,
+    `pointsInVisibleRegion`.
+
+  Everything here is an addition. The one internal change is that
+  `<AppMapKit>`'s pin layer now calls the shared `writeMapKitHitArea` instead of
+  its own private copy, with identical output. (The anchor and callout-default
+  behaviour changes are in the two changesets this one is stacked on,
+  `mapkit-csp-wasm-and-anchor` and `mapkit-callout-behaviour-hit-areas`.)
+
+- 7a234bd: Pin `@narduk-enterprises/narduk-shell` 0.27.1, which fixes the
+  command palette not reopening on Cmd/Ctrl+K right after Escape.
+
 ## 0.23.4
 
 ### Patch Changes
