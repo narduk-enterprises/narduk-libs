@@ -113,10 +113,10 @@ export default defineNuxtConfig({
     // `false` leaves the app on Nuxt UI's own look and is the escape hatch for
     // an app with a finished design era of its own that only wants the markup.
     theme: true,
-    // Load bounce-guard.css (desktop overscroll guards). Default: false. Opt-in:
-    // it makes the page unscrollable on any document with a [data-app-shell]
-    // element. See "Bounce guard" below.
-    bounceGuard: false,
+    // Load bounce-guard.css (desktop overscroll guards). Default: true. It makes
+    // the page unscrollable only on a document with a [data-app-shell] element;
+    // `false` opts out. See "Bounce guard" below.
+    bounceGuard: true,
     // The two brand hooks, as config. Each sets its token app-wide, teleported
     // overlays included; unset sets nothing. See "Overriding: the two brand
     // hooks" below.
@@ -269,18 +269,17 @@ is what makes `env(safe-area-inset-*)` non-zero on a notched phone.
 rubber-band, no two-finger swipe back/forward inside the app, and no scroll
 chaining from an inner pane into the page. (`[role='dialog']` is not in it any
 more: `narduk-core`'s base CSS gives every dialog `overscroll-behavior: contain`
-by default.) It is CSS only (no JavaScript) and **opt-in**, because it makes the
-page itself unscrollable on any document that contains an app shell; an app with
-ordinary page scrolling must not load it.
-
-Turn it on in config, or import the sheet by hand after the app's Tailwind
-entry:
+by default.) It is CSS only (no JavaScript) and **on by default**: it makes the
+page itself unscrollable only on a document that contains an app shell, so a
+page with no shell keeps natural scrolling. An app that wants page scrolling
+inside a shell opts out in config. The module appends the sheet after the app's
+own css; with the module off, import it by hand after the app's Tailwind entry:
 
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
   modules: ['@narduk-enterprises/narduk-shell'],
-  nardukShell: { bounceGuard: true }, // appended after the app's own css
+  nardukShell: { bounceGuard: false }, // opt out
 })
 ```
 
@@ -331,7 +330,7 @@ it explicitly.
 | `@narduk-enterprises/narduk-shell/module`           | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
 | `@narduk-enterprises/narduk-shell/format`           | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
 | `@narduk-enterprises/narduk-shell/theme.css`        | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
-| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Opt-in desktop overscroll guards (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
+| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Desktop overscroll guards, on by default (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
 
 Install and register the module exactly as before —
 `modules: ['@narduk-enterprises/narduk-shell']` in `nuxt.config.ts` — and it
