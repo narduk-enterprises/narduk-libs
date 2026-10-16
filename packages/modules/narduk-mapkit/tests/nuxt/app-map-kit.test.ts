@@ -101,12 +101,15 @@ const BASE_PROPS = {
   itemLabel: (item: MapKitPinItem) => (item as Station).label,
 }
 
+const mounted: Array<{ unmount: () => void }> = []
+
 async function mountMap(props: Record<string, unknown> = {}, slots: Record<string, unknown> = {}) {
   const wrapper = mount(AppMapKit, {
     attachTo: document.body,
     props: { ...BASE_PROPS, ...props },
     slots,
   })
+  mounted.push(wrapper)
   await vi.waitFor(() => {
     expect(wrapper.find('[data-mapkit-state="ready"]').exists()).toBe(true)
   })
@@ -124,6 +127,14 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // A map left mounted keeps its document-level Escape listener alive.
+  for (const wrapper of mounted.splice(0)) {
+    try {
+      wrapper.unmount()
+    } catch {
+      // Already unmounted by the test.
+    }
+  }
   resetMapKitClientStateForTests()
   resetMapKitComposableStateForTests()
   document.body.replaceChildren()
@@ -1045,5 +1056,230 @@ describe('map-click and feature-select (narduk-libs#1729)', () => {
 
     wrapper.unmount()
     expect(fake.inspect.maps).toHaveLength(0)
+  })
+})
+
+describe('dismissing a callout (Escape, map tap) and returning focus', () => {
+  const CalloutCard = defineComponent({
+    props: { label: { required: true, type: String } },
+    setup: (props) => () =>
+      h('div', [
+        h('span', props.label),
+        h('button', { class: 'callout-close', type: 'button' }, 'Close'),
+      ]),
+  })
+  const slots = {
+    callout: (scope: { close: () => void; item: Station }) =>
+      h(
+        'div',
+        { class: 'callout-body' },
+        h(CalloutCard, {
+          label: scope.item.label,
+          onClick: scope.close,
+        }),
+      ),
+  }
+
+  const tap = (latitude: number, longitude: number) => {
+    fake.inspect.tapMap(fake.inspect.maps[0]!, { latitude, longitude })
+  }
+
+  async function open(props: Record<string, unknown> = {}) {
+    const wrapper = await mountMap({ items: STATIONS, selectedId: 'station-2', ...props }, slots)
+    await nextTick()
+    return wrapper
+  }
+
+  const lastSelection = (wrapper: Awaited<ReturnType<typeof mountMap>>) =>
+    (wrapper.emitted('update:selectedId') ?? []).at(-1)
+
+  it('shows one callout at a time as the selection moves', async () => {
+    const wrapper = await open()
+
+    await wrapper.setProps({ selectedId: 'station-1' })
+    await nextTick()
+
+    expect(document.querySelectorAll('[data-mapkit-callout]')).toHaveLength(1)
+    expect(document.querySelector('[data-mapkit-callout="station-1"]')).not.toBeNull()
+  })
+
+  it('deselects on a tap on the map', async () => {
+    const wrapper = await open()
+
+    tap(30.5, -87.65)
+
+    expect(lastSelection(wrapper)).toStrictEqual([null])
+  })
+
+  it('keeps the callout on a map tap when dismissOnMapClick is off', async () => {
+    const wrapper = await open({ dismissOnMapClick: false })
+
+    tap(30.5, -87.65)
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+    expect(wrapper.emitted('map-click')).toHaveLength(1)
+  })
+
+  it('deselects on Escape and returns focus to the pin that was open', async () => {
+    const wrapper = await open()
+    const close = document.querySelector('[data-mapkit-callout="station-2"] .callout-close')
+    ;(close as HTMLElement).focus()
+    expect(document.activeElement).toBe(close)
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    document.dispatchEvent(escape)
+
+    expect(lastSelection(wrapper)).toStrictEqual([null])
+    expect(escape.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(document.querySelector('[data-mapkit-pin="station-2"]'))
+  })
+
+  it('does not steal focus on Escape when the pointer opened the callout', async () => {
+    const wrapper = await open()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }),
+    )
+
+    expect(lastSelection(wrapper)).toStrictEqual([null])
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('leaves Escape alone while focus is in an unrelated control on the page', async () => {
+    const wrapper = await open()
+    const input = document.createElement('input')
+    document.body.append(input)
+    input.focus()
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }))
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+  })
+
+  it('ignores Escape when dismissOnEscape is off or the event was handled', async () => {
+    const off = await open({ dismissOnEscape: false })
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }))
+    expect(off.emitted('update:selectedId')).toBeUndefined()
+    off.unmount()
+
+    const on = await open()
+    const handled = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    handled.preventDefault()
+    document.dispatchEvent(handled)
+    expect(on.emitted('update:selectedId')).toBeUndefined()
+  })
+
+  it('does nothing on Escape with no callout open', async () => {
+    const wrapper = await mountMap({ items: STATIONS }, slots)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }))
+
+    expect(wrapper.emitted('update:selectedId')).toBeUndefined()
+  })
+
+  it('stops listening for Escape once unmounted', async () => {
+    const wrapper = await open()
+    wrapper.unmount()
+
+    expect(() =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' })),
+    ).not.toThrow()
+  })
+
+  it('returns focus to the pin when the callout closes itself from inside', async () => {
+    const wrapper = await open()
+    const close = document.querySelector(
+      '[data-mapkit-callout="station-2"] .callout-close',
+    ) as HTMLElement
+    close.focus()
+
+    close.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(lastSelection(wrapper)).toStrictEqual([null])
+    expect(document.activeElement).toBe(document.querySelector('[data-mapkit-pin="station-2"]'))
+  })
+})
+
+describe('pin hit area and roving tabindex', () => {
+  const DOTS = {
+    pinGeometry: () => ({ anchor: 'center' as const, size: { height: 16, width: 16 } }),
+  }
+
+  it('grows the tap target to 44 px without moving the glyph', async () => {
+    const plain = await mountMap({ ...DOTS, items: [STATIONS[0]!] })
+    const flat = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    const centre = {
+      x: Number.parseFloat(flat.style.left) + 8,
+      y: Number.parseFloat(flat.style.top) + 8,
+    }
+    plain.unmount()
+
+    await mountMap({ ...DOTS, items: [STATIONS[0]!], pinHitArea: true })
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+
+    expect(host.hasAttribute('data-mapkit-hit-area')).toBe(true)
+    expect(host.style.width).toBe('44px')
+    expect(host.style.height).toBe('44px')
+    expect(host.style.padding).toBe('14px')
+    expect(Number.parseFloat(host.style.left) + 22).toBeCloseTo(centre.x, 6)
+    expect(Number.parseFloat(host.style.top) + 22).toBeCloseTo(centre.y, 6)
+  })
+
+  it('leaves pins that are already large enough alone', async () => {
+    await mountMap({
+      items: [STATIONS[0]!],
+      pinGeometry: () => ({ size: { height: 60, width: 60 } }),
+      pinHitArea: true,
+    })
+
+    const host = document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement
+    expect(host.hasAttribute('data-mapkit-hit-area')).toBe(false)
+    expect(host.style.width).toBe('')
+  })
+
+  it('takes an explicit minimum size', async () => {
+    await mountMap({ ...DOTS, items: [STATIONS[0]!], pinHitArea: 32 })
+
+    expect(
+      (document.querySelector('[data-mapkit-pin="station-1"]') as HTMLElement).style.width,
+    ).toBe('32px')
+  })
+
+  it('makes the pins one Tab stop and moves between them with the arrow keys', async () => {
+    await mountMap({ items: STATIONS, pinNavigation: 'roving' })
+    const pin = (id: string) => document.querySelector(`[data-mapkit-pin="${id}"]`) as HTMLElement
+    const stops = () =>
+      [...document.querySelectorAll('[data-mapkit-pin][tabindex="0"]')].map((element) =>
+        element.getAttribute('data-mapkit-pin'),
+      )
+
+    // Reading order: north to south, so Mobile Bay (30.4) is first.
+    expect(stops()).toStrictEqual(['station-3'])
+
+    pin('station-3').focus()
+    pin('station-3').dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowDown' }),
+    )
+    // Due south of Mobile Bay: Fort Morgan is nearer the line than Dauphin Island.
+    expect(document.activeElement).toBe(pin('station-2'))
+    expect(stops()).toStrictEqual(['station-2'])
+
+    pin('station-2').dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowLeft' }),
+    )
+    expect(document.activeElement).toBe(pin('station-1'))
+
+    pin('station-1').dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Home' }),
+    )
+    expect(document.activeElement).toBe(pin('station-3'))
+  })
+
+  it('keeps every pin a Tab stop by default', async () => {
+    await mountMap({ items: STATIONS })
+
+    expect(document.querySelectorAll('[data-mapkit-pin][tabindex="0"]')).toHaveLength(3)
   })
 })

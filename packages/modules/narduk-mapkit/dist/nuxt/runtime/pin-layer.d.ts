@@ -1,3 +1,4 @@
+import type { MapKitTimerScheduler } from '../../client/timers.js';
 import type { MapKitPinGeometry } from './pin-geometry.js';
 import type { MapKitAnnotationLike, MapKitMapLike, MapKitNamespaceLike } from './mapkit-surface.js';
 /** The minimum an `<AppMapKit>` item carries: somewhere to put it. */
@@ -18,6 +19,24 @@ export interface MapKitPinElement {
 }
 /** How a pin selection was made. */
 export type MapKitSelectVia = 'keyboard' | 'pointer';
+/**
+ * How the pins take keyboard focus.
+ *
+ * `'tab'` (default, and 2.1.x's only behaviour): every pin is a Tab stop.
+ * `'roving'`: the pins are ONE Tab stop and the arrow keys move between them
+ * (Home and End jump to the first and last), the way a toolbar or radio group
+ * works. 300 stops are 300 Tab presses to get past a map.
+ */
+export type MapKitPinNavigation = 'roving' | 'tab';
+/** A tooltip that follows the pointer or focus onto a pin. See `MapKitHoverTooltip`. */
+export interface MapKitPinTooltipOptions<T> {
+    /** The map container; the tooltip is positioned inside it. */
+    container: HTMLElement;
+    scheduler?: MapKitTimerScheduler;
+    showDelayMs?: number;
+    /** The text for an item, or nothing for "no tooltip". Not shown on the selected pin. */
+    text: (item: T) => string | null | undefined;
+}
 export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     /** Merges nearby pins into cluster bubbles at low zoom. Unchanged from 2.0.x. */
     clusteringIdentifier?: string;
@@ -36,6 +55,15 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
      * no click or key listener, and no required `itemLabel`.
      */
     focusable?: boolean;
+    /**
+     * Grow every pin host to at least this many CSS px square, keeping the glyph
+     * where it is: a 12 px dot gets a 44 px tap target. `true` is
+     * `MAPKIT_MIN_HIT_TARGET` (44), `false` or omitted leaves hosts the size of
+     * their glyph. Needs a `size` in `pinGeometry`; a pin without one is left as is.
+     */
+    hitArea?: boolean | number;
+    /** A hover and focus tooltip on each pin, for apps that would otherwise use `title`. */
+    hoverTooltip?: MapKitPinTooltipOptions<T>;
     /** Stable identity per item. Must be non-blank and unique. */
     itemKey: (item: T, index: number) => string;
     /**
@@ -46,6 +74,8 @@ export interface MapKitPinLayerOptions<T extends MapKitPinItem> {
     itemLabel?: (item: T) => string;
     map: MapKitMapLike;
     mapkit: MapKitNamespaceLike;
+    /** Tab stop per pin (default) or one roving Tab stop with arrow keys. */
+    navigation?: MapKitPinNavigation;
     /**
      * Called when the pointer enters or leaves a pin host. The layer does not
      * apply hover itself -- the host's `hoveredId` (or the app) writes it back
@@ -77,6 +107,14 @@ export declare class MapKitPinLayer<T extends MapKitPinItem> {
     /** The library-owned host element for a key. The `#callout` seam anchors on it. */
     hostFor(key: string): HTMLElement | undefined;
     itemFor(key: string): T | undefined;
+    /**
+     * The geometry MapKit was given for a key: the app's `pinGeometry`, grown by
+     * the hit area when one is set. Anything that reads the host's box (rather
+     * than the glyph's) must use this one.
+     */
+    geometryFor(key: string): MapKitPinGeometry | undefined;
+    /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
+    focusPin(key: string): boolean;
     keys(): readonly string[];
     /**
      * Sync the map to exactly `items`.

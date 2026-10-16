@@ -23,7 +23,17 @@
  * `undefined`), and injecting it is what lets a plain-TypeScript test assert
  * that a `region-change` actually re-projects every open callout.
  */
+import type { MapKitCalloutLayout } from '../../client/callouts.js';
 export type MapKitCalloutPlacement = 'above' | 'below';
+/** How close to the container's edge a callout may get; see `keepInView`. */
+export interface MapKitCalloutKeepInViewOptions {
+    /** Caret extent, and the closest the caret keeps to a corner of the box. Default 12. */
+    caretSize?: number;
+    /** Minimum distance from every container edge, in CSS px. Default 8. */
+    edgePadding?: number;
+    /** Distance between the anchor and the near edge of the box, in CSS px. Default 0. */
+    gap?: number;
+}
 export interface MapKitCalloutPoint {
     x: number;
     y: number;
@@ -32,6 +42,13 @@ export interface MapKitCalloutEntry<T> {
     host: HTMLElement;
     id: string;
     item: T;
+    /**
+     * The measured placement (flip, shift and clamp), when `keepInView` could
+     * measure the host. `layout.caret.x` is where a caret should sit along the
+     * box so it still points at the pin after the box slid away from an edge; the
+     * host also exposes it as `--mapkit-callout-caret-x`.
+     */
+    layout: MapKitCalloutLayout | null;
     placement: MapKitCalloutPlacement;
     position: MapKitCalloutPoint;
 }
@@ -48,6 +65,19 @@ export interface MapKitCalloutOpenRequest<T> {
 export interface MapKitCalloutHostOptions<T> {
     container: HTMLElement;
     document?: Document;
+    /**
+     * Keep the callout inside the container (default `true`).
+     *
+     * The host is measured and placed with the shared `layoutMapKitCallout`: it
+     * flips to the side with room, slides along the edge instead of being clipped
+     * by it, and is pinned inside a container smaller than itself. A container or
+     * callout that cannot be measured (a headless DOM) keeps the plain
+     * flip-above-or-below placement. `false` opts out of the measuring entirely.
+     *
+     * The host is positioned by its top-left corner when this applies, and
+     * `--mapkit-callout-caret-x` carries the caret position along the box.
+     */
+    keepInView?: boolean | MapKitCalloutKeepInViewOptions;
     /** Fires after every open, close and reposition, with the live entry list. */
     onChange?: (entries: ReadonlyArray<MapKitCalloutEntry<T>>) => void;
     /** Preferred side. Flips when the callout would leave the container. */

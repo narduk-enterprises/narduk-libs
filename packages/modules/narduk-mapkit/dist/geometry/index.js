@@ -1,4 +1,6 @@
 export * from './geometry.js';
 export * from './helpers.js';
 export * from './fit-bounds.js';
+export * from './roving.js';
+export * from '../nuxt/runtime/pin-geometry.js';
 //# sourceMappingURL=index.js.map

@@ -15,7 +15,10 @@ import { MapKitPinLayer, defaultMapKitItemKey } from '../../src/nuxt/runtime/pin
 import { createFakeMapKit } from '../../src/testing/index.js'
 
 import type { MapKitMapLike, MapKitNamespaceLike } from '../../src/nuxt/runtime/mapkit-surface.js'
+import type { MapKitTimerScheduler } from '../../src/client/timers.js'
 import type { FakeMapKitHandle } from '../../src/testing/index.js'
+
+import { createFakeTimer } from '../fake-timer.js'
 
 interface Station {
   id: string
@@ -52,8 +55,15 @@ function layerFor(options: Partial<Parameters<typeof makeLayer>[0]> = {}): MapKi
 function makeLayer(options: {
   createPinElement?: (item: Station, isSelected: boolean) => { element: HTMLElement }
   focusable?: boolean
+  hitArea?: boolean | number
+  hoverTooltip?: {
+    container: HTMLElement
+    scheduler?: MapKitTimerScheduler
+    text: (item: Station) => string | null | undefined
+  }
   itemKey: (item: Station, index: number) => string
   itemLabel?: (item: Station) => string
+  navigation?: 'roving' | 'tab'
   onHover?: (id: string | null) => void
   onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
   pinGeometry?: (item: Station) => {
@@ -397,5 +407,100 @@ describe('itemKey (§c.1)', () => {
   it('names a duplicate key rather than silently dropping a pin', () => {
     const layer = layerFor()
     expect(() => layer.setItems([station(1), station(1)])).toThrow('duplicate annotation key')
+  })
+})
+
+describe('hover tooltip on pins', () => {
+  function pointerEnter(host: HTMLElement): void {
+    const event = new Event('pointerenter')
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' })
+    host.dispatchEvent(event)
+  }
+
+  it('shows the item text after the delay, and not on the selected pin', () => {
+    const timer = createFakeTimer()
+    const container = document.createElement('div')
+    document.body.append(container)
+    const layer = layerFor({
+      hoverTooltip: { container, scheduler: timer, text: (item) => `Tip ${item.label}` },
+    })
+    layer.setItems([station(1), station(2)])
+    const first = layer.hostFor('station-1') as HTMLElement
+    const second = layer.hostFor('station-2') as HTMLElement
+
+    pointerEnter(first)
+    timer.advance(200)
+    const tooltip = container.querySelector('[role="tooltip"]') as HTMLElement
+    expect(tooltip.textContent).toBe('Tip Station 1')
+    expect(first.getAttribute('aria-describedby')).toBe(tooltip.id)
+
+    layer.setSelected('station-2')
+    pointerEnter(second)
+    timer.advance(200)
+    expect(first.hasAttribute('aria-describedby')).toBe(true)
+    expect(second.hasAttribute('aria-describedby')).toBe(false)
+
+    layer.destroy()
+    expect(container.querySelector('[role="tooltip"]')).toBeNull()
+  })
+})
+
+describe('hit area', () => {
+  it('sizes the host and the annotation to the larger target, and exposes the geometry', () => {
+    const layer = layerFor({
+      hitArea: true,
+      pinGeometry: () => ({ anchor: 'center', size: { height: 12, width: 12 } }),
+    })
+    layer.setItems([station(1)])
+
+    const host = layer.hostFor('station-1') as HTMLElement
+    expect(host.style.width).toBe('44px')
+    expect(host.style.padding).toBe('16px')
+    expect(layer.annotationFor('station-1')?.size).toStrictEqual({ height: 44, width: 44 })
+    expect(layer.geometryFor('station-1')?.size).toStrictEqual({ height: 44, width: 44 })
+  })
+
+  it('applies a changed pin size in place, keeping the host', () => {
+    let size = 12
+    const layer = layerFor({
+      hitArea: true,
+      pinGeometry: () => ({ anchor: 'center', size: { height: size, width: size } }),
+    })
+    layer.setItems([station(1)])
+    const host = layer.hostFor('station-1')
+
+    size = 50
+    layer.setItems([station(1)])
+
+    expect(layer.hostFor('station-1')).toBe(host)
+    expect((host as HTMLElement).hasAttribute('data-mapkit-hit-area')).toBe(false)
+    expect((host as HTMLElement).style.width).toBe('')
+    expect(layer.annotationFor('station-1')?.size).toStrictEqual({ height: 50, width: 50 })
+  })
+})
+
+describe('roving navigation', () => {
+  it('keeps one Tab stop as pins come and go', () => {
+    const layer = layerFor({ navigation: 'roving' })
+    layer.setItems([station(1), station(2), station(3)])
+    const stops = () =>
+      layer.keys().filter((key) => layer.hostFor(key)?.getAttribute('tabindex') === '0')
+
+    // Station 3 is the most northern.
+    expect(stops()).toStrictEqual(['station-3'])
+
+    layer.focusPin('station-1')
+    expect(stops()).toStrictEqual(['station-1'])
+
+    layer.setItems([station(2), station(3)])
+    expect(stops()).toHaveLength(1)
+  })
+
+  it('does nothing for a non-focusable layer', () => {
+    const layer = layerFor({ focusable: false, navigation: 'roving' })
+    layer.setItems([station(1)])
+
+    expect(layer.hostFor('station-1')?.hasAttribute('tabindex')).toBe(false)
+    expect(layer.focusPin('station-1')).toBe(false)
   })
 })

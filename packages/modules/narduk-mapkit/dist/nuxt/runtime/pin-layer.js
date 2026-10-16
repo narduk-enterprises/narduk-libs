@@ -36,7 +36,21 @@
  * every app re-implementing it -- the third defect the 2.1.0 fake pinned.
  */
 import { MapKitAnnotationRegistry } from '../../client/annotations.js';
-import { mapKitAnchorOffset, mapKitPinGeometrySignature } from './pin-geometry.js';
+import { MapKitHoverTooltip } from '../../client/hover-tooltip.js';
+import { nextMapKitRovingKey } from '../../geometry/roving.js';
+import { MAPKIT_MIN_HIT_TARGET, expandMapKitHitArea, mapKitAnchorOffset, mapKitPinGeometrySignature, } from './pin-geometry.js';
+const ROVING_KEYS = {
+    ArrowDown: 'south',
+    ArrowLeft: 'west',
+    ArrowRight: 'east',
+    ArrowUp: 'north',
+    End: 'last',
+    Home: 'first',
+};
+const NO_PADDING = { bottom: 0, left: 0, right: 0, top: 0 };
+function paddingSignature(padding) {
+    return [padding.top, padding.right, padding.bottom, padding.left].map(String).join(',');
+}
 function emptyDiff() {
     return { added: [], moved: [], removed: [], restyled: [] };
 }
@@ -77,10 +91,22 @@ export class MapKitPinLayer {
     #destroyed = false;
     #hoveredId = null;
     #lastDiff = emptyDiff();
+    #rovingId = null;
     #selectedId = null;
+    #tooltip;
     constructor(options) {
         this.#options = options;
         this.#document = options.document ?? globalThis.document;
+        this.#tooltip = options.hoverTooltip
+            ? new MapKitHoverTooltip({
+                container: options.hoverTooltip.container,
+                document: this.#document,
+                ...(options.hoverTooltip.scheduler ? { scheduler: options.hoverTooltip.scheduler } : {}),
+                ...(options.hoverTooltip.showDelayMs === undefined
+                    ? {}
+                    : { showDelayMs: options.hoverTooltip.showDelayMs }),
+            })
+            : null;
         this.#registry = new MapKitAnnotationRegistry({
             map: {
                 addAnnotations: (annotations) => {
@@ -116,6 +142,23 @@ export class MapKitPinLayer {
     itemFor(key) {
         return this.#entries.get(key)?.item;
     }
+    /**
+     * The geometry MapKit was given for a key: the app's `pinGeometry`, grown by
+     * the hit area when one is set. Anything that reads the host's box (rather
+     * than the glyph's) must use this one.
+     */
+    geometryFor(key) {
+        return this.#entries.get(key)?.geometry;
+    }
+    /** Move keyboard focus to a pin, e.g. back to it when its callout closes. */
+    focusPin(key) {
+        const host = this.#entries.get(key)?.host;
+        if (!host || !this.#focusable)
+            return false;
+        this.#setRoving(key);
+        host.focus({ preventScroll: true });
+        return true;
+    }
     keys() {
         return [...this.#entries.keys()];
     }
@@ -136,8 +179,8 @@ export class MapKitPinLayer {
         const keyFor = this.#options.itemKey;
         const descriptors = items.map((item, index) => {
             const key = keyFor(item, index);
-            const geometry = this.#options.pinGeometry?.(item) ?? {};
-            const geometrySignature = mapKitPinGeometrySignature(geometry);
+            const { geometry, padding } = this.#resolveGeometry(item);
+            const geometrySignature = `${mapKitPinGeometrySignature(geometry)}|${paddingSignature(padding)}`;
             const signature = [
                 String(item.lat),
                 String(item.lng),
@@ -145,11 +188,11 @@ export class MapKitPinLayer {
                 itemToken(item),
             ].join('|');
             return {
-                create: () => this.#createAnnotation(key, item, geometry, geometrySignature, diff),
+                create: () => this.#createAnnotation(key, item, geometry, padding, geometrySignature, diff),
                 key,
                 signature,
                 update: () => {
-                    this.#updateAnnotation(key, item, geometry, geometrySignature, diff);
+                    this.#updateAnnotation(key, item, geometry, padding, geometrySignature, diff);
                 },
             };
         });
@@ -179,6 +222,7 @@ export class MapKitPinLayer {
         if (result.recreated > 0) {
             throw new Error('MapKitPinLayer: an annotation was recreated instead of updated in place');
         }
+        this.#syncRoving();
         this.#lastDiff = diff;
         return diff;
     }
@@ -232,8 +276,74 @@ export class MapKitPinLayer {
         for (const entry of this.#entries.values())
             entry.cleanup?.();
         this.#entries.clear();
+        this.#tooltip?.destroy();
         this.#registry.destroy();
         this.#destroyed = true;
+    }
+    /** The app's geometry grown by the hit area, and the padding that keeps the glyph in place. */
+    #resolveGeometry(item) {
+        const geometry = this.#options.pinGeometry?.(item) ?? {};
+        const hitArea = this.#options.hitArea;
+        if (hitArea === undefined || hitArea === false)
+            return { geometry, padding: NO_PADDING };
+        return expandMapKitHitArea(geometry, hitArea === true ? MAPKIT_MIN_HIT_TARGET : hitArea);
+    }
+    /** Size and pad the host so the larger tap target leaves the glyph exactly where it was. */
+    #writeHitArea(host, geometry, padding) {
+        const grown = padding.top + padding.right + padding.bottom + padding.left > 0;
+        if (!grown || !geometry.size) {
+            host.removeAttribute('data-mapkit-hit-area');
+            for (const name of ['box-sizing', 'height', 'padding', 'width'])
+                host.style.removeProperty(name);
+            return;
+        }
+        host.setAttribute('data-mapkit-hit-area', '');
+        host.style.boxSizing = 'border-box';
+        host.style.height = `${String(geometry.size.height)}px`;
+        host.style.width = `${String(geometry.size.width)}px`;
+        host.style.padding = [padding.top, padding.right, padding.bottom, padding.left]
+            .map((value) => `${String(value)}px`)
+            .join(' ');
+    }
+    get #roving() {
+        return this.#focusable && this.#options.navigation === 'roving';
+    }
+    /** Make `key` the one Tab stop of a roving group. */
+    #setRoving(key) {
+        if (!this.#roving || this.#rovingId === key || !this.#entries.has(key))
+            return;
+        const previous = this.#rovingId === null ? undefined : this.#entries.get(this.#rovingId);
+        previous?.host.setAttribute('tabindex', '-1');
+        this.#entries.get(key)?.host.setAttribute('tabindex', '0');
+        this.#rovingId = key;
+    }
+    /** After the pin set changes: exactly one Tab stop, and it is a pin that exists. */
+    #syncRoving() {
+        if (!this.#roving)
+            return;
+        if (this.#rovingId !== null && !this.#entries.has(this.#rovingId))
+            this.#rovingId = null;
+        if (this.#rovingId === null) {
+            const first = this.#selectedId ?? nextMapKitRovingKey(this.#rovingPoints(), null, 'first') ?? null;
+            if (first !== null)
+                this.#setRoving(first);
+        }
+        for (const [key, entry] of this.#entries) {
+            entry.host.setAttribute('tabindex', key === this.#rovingId ? '0' : '-1');
+        }
+    }
+    #rovingPoints() {
+        return [...this.#entries.values()].map((entry) => ({
+            key: entry.key,
+            lat: entry.item.lat,
+            lng: entry.item.lng,
+        }));
+    }
+    #moveRoving(from, direction) {
+        const next = nextMapKitRovingKey(this.#rovingPoints(), from, direction);
+        if (next === null || next === from)
+            return false;
+        return this.focusPin(next);
     }
     #applySelection(key, selected, diff) {
         const entry = this.#entries.get(key);
@@ -298,6 +408,14 @@ export class MapKitPinLayer {
                 this.#options.onHover?.(null);
             });
         }
+        const tooltipOptions = this.#options.hoverTooltip;
+        if (this.#tooltip && tooltipOptions) {
+            this.#tooltip.attach(host, () => {
+                const entry = this.#entries.get(key);
+                // The selected pin has its callout open: a tooltip on top of it is noise.
+                return !entry || entry.selected ? null : tooltipOptions.text(entry.item);
+            });
+        }
         if (!this.#focusable) {
             // K-8: no role, so no `aria-pressed` either -- `aria-pressed` on a
             // roleless element is what axe reports as `aria-allowed-attr`. The label
@@ -306,7 +424,7 @@ export class MapKitPinLayer {
             return host;
         }
         host.setAttribute('role', 'button');
-        host.setAttribute('tabindex', '0');
+        host.setAttribute('tabindex', this.#roving ? '-1' : '0');
         host.style.cursor = 'pointer';
         // `#assertLabelling` has already refused a focusable layer without one.
         host.setAttribute('aria-label', this.#options.itemLabel?.(item) ?? '');
@@ -317,7 +435,20 @@ export class MapKitPinLayer {
             event.stopPropagation();
             activate('pointer');
         });
+        if (this.#roving) {
+            host.addEventListener('focus', () => {
+                this.#setRoving(key);
+            });
+        }
         host.addEventListener('keydown', (event) => {
+            const direction = this.#roving ? ROVING_KEYS[event.key] : undefined;
+            if (direction) {
+                if (this.#moveRoving(key, direction)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                return;
+            }
             if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar')
                 return;
             event.preventDefault();
@@ -326,12 +457,13 @@ export class MapKitPinLayer {
         });
         return host;
     }
-    #createAnnotation(key, item, geometry, geometrySignature, diff) {
+    #createAnnotation(key, item, geometry, padding, geometrySignature, diff) {
         const { mapkit } = this.#options;
         const host = this.#buildHost(key, item);
         const entry = {
             annotation: undefined,
             cleanup: undefined,
+            geometry,
             geometrySignature,
             host,
             item,
@@ -339,6 +471,7 @@ export class MapKitPinLayer {
             selected: this.#selectedId === key,
         };
         this.#renderGlyph(entry);
+        this.#writeHitArea(host, geometry, padding);
         const offset = mapKitAnchorOffset(geometry);
         const options = {
             anchorOffset: new DOMPoint(offset.x, offset.y),
@@ -358,7 +491,7 @@ export class MapKitPinLayer {
         diff.added.push(key);
         return entry.annotation;
     }
-    #updateAnnotation(key, item, geometry, geometrySignature, diff) {
+    #updateAnnotation(key, item, geometry, padding, geometrySignature, diff) {
         const entry = this.#entries.get(key);
         if (!entry)
             return;
@@ -371,6 +504,8 @@ export class MapKitPinLayer {
         }
         if (entry.geometrySignature !== geometrySignature) {
             entry.geometrySignature = geometrySignature;
+            entry.geometry = geometry;
+            this.#writeHitArea(entry.host, geometry, padding);
             const offset = mapKitAnchorOffset(geometry);
             entry.annotation.anchorOffset = new DOMPoint(offset.x, offset.y);
             entry.annotation.size = geometry.size

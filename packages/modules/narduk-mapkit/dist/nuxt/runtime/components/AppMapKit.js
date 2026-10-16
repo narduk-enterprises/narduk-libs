@@ -47,6 +47,13 @@ const props = {
     },
     /** Open the callout for the selected item. Off hands control to `openCallout`. */
     calloutFollowSelection: { default: true, type: Boolean },
+    /**
+     * Keep the callout inside the map: flip to the side with room, slide along an
+     * edge instead of being clipped by it, and expose `--mapkit-callout-caret-x`
+     * so the caret still points at the pin. On by default; a callout or map that
+     * cannot be measured keeps the plain above-or-below placement.
+     */
+    calloutKeepInView: { default: true, type: Boolean },
     circleScaleFactor: { default: 0.004, type: Number },
     circles: { default: () => [], type: Array },
     clusteringIdentifier: { default: undefined, type: String },
@@ -60,6 +67,14 @@ const props = {
         default: undefined,
         type: Function,
     },
+    /**
+     * `Escape` closes the open callout (deselects the pin) and, when focus was in
+     * the map, returns it to the pin. Ignored while focus is in an unrelated
+     * control elsewhere on the page. On by default.
+     */
+    dismissOnEscape: { default: true, type: Boolean },
+    /** A tap on empty map closes the open callout (deselects the pin). On by default. */
+    dismissOnMapClick: { default: true, type: Boolean },
     dynamicCircleRadius: { default: false, type: Boolean },
     fallbackCenter: { default: undefined, type: Object },
     geojson: { default: null, type: Object },
@@ -86,6 +101,15 @@ const props = {
         default: defaultMapKitItemKey,
         type: Function,
     },
+    /**
+     * Hover and keyboard-focus tooltip text for a pin (`null` for none). Shown
+     * after a short delay for a mouse or pen, never for touch, dismissed by
+     * `Escape`, and not shown on the selected pin. Supplements `itemLabel`.
+     */
+    itemTooltip: {
+        default: undefined,
+        type: Function,
+    },
     /** REQUIRED when `items` is non-empty: the accessible name of the pin. */
     itemLabel: { default: undefined, type: Function },
     language: { default: undefined, type: String },
@@ -104,6 +128,22 @@ const props = {
     pinGeometry: {
         default: undefined,
         type: Function,
+    },
+    /**
+     * Grow every pin's tap target to at least this many CSS px square without
+     * moving or resizing the glyph: `true` is 44, a number is that size, `false`
+     * (default) keeps the host the size of the glyph. Needs a `size` from
+     * `pinGeometry`.
+     */
+    pinHitArea: { default: false, type: [Boolean, Number] },
+    /**
+     * `'tab'` (default): every pin is a Tab stop. `'roving'`: the pins are one Tab
+     * stop and the arrow keys, Home and End move between them.
+     */
+    pinNavigation: {
+        default: 'tab',
+        type: String,
+        validator: (value) => value === 'tab' || value === 'roving',
     },
     /**
      * Whether a pin is an interactive control (2.1.1, K-8).
@@ -278,7 +318,7 @@ const AppMapKitImpl = defineComponent({
             const host = pinLayer?.hostFor(id);
             if (!host)
                 return null;
-            const geometry = componentProps.pinGeometry?.(pinLayer?.itemFor(id)) ?? {};
+            const geometry = pinLayer?.geometryFor(id) ?? {};
             const within = mapKitCoordinateWithinPin(geometry, {
                 height: host.offsetHeight,
                 width: host.offsetWidth,
@@ -337,6 +377,7 @@ const AppMapKitImpl = defineComponent({
                 return;
             calloutLayer ??= new MapKitCalloutHostLayer({
                 container,
+                keepInView: componentProps.calloutKeepInView,
                 onChange: (entries) => {
                     calloutEntries.value = entries;
                 },
@@ -423,6 +464,45 @@ const AppMapKitImpl = defineComponent({
                 map.setRegionAnimated(overviewRegion, true);
         }
         /**
+         * Close the open callout the way the user asked to (Escape, a tap on the
+         * map). Deselects the pin so the callout and the selected state stay one
+         * thing, and returns focus to the pin when it was in the map -- otherwise
+         * closing a callout that held focus drops focus on `<body>`.
+         */
+        function dismissCallout(restoreFocus = false) {
+            const id = componentProps.selectedId;
+            if (id === null)
+                return false;
+            const container = containerRef.value;
+            const active = container?.ownerDocument.activeElement ?? null;
+            const focusWasInMap = Boolean(container && active && container.contains(active));
+            if (componentProps.calloutFollowSelection)
+                select(null);
+            else
+                closeCallout();
+            if (restoreFocus && focusWasInMap)
+                pinLayer?.focusPin(id);
+            return true;
+        }
+        /**
+         * Escape, while a callout is open. Document-level so it works with focus on
+         * `<body>` after a pointer selection, but only claimed when focus is in the
+         * map or nowhere: an Escape aimed at a dialog or input elsewhere is theirs.
+         */
+        function onDocumentKeydown(event) {
+            if (event.key !== 'Escape' || event.defaultPrevented || !componentProps.dismissOnEscape)
+                return;
+            const container = containerRef.value;
+            if (!container || componentProps.selectedId === null)
+                return;
+            const active = container.ownerDocument.activeElement;
+            const focusIsFree = !active || active === container.ownerDocument.body;
+            if (!focusIsFree && !container.contains(active))
+                return;
+            if (dismissCallout(true))
+                event.preventDefault();
+        }
+        /**
          * A tap on the map surface (narduk-libs#1729).
          *
          * `map-click` carries the tapped coordinate. `feature-select` carries the
@@ -437,6 +517,8 @@ const AppMapKitImpl = defineComponent({
             const coordinate = map.convertPointOnPageToCoordinate(event.pointOnPage);
             const point = { lat: coordinate.latitude, lng: coordinate.longitude };
             emit('map-click', point);
+            if (componentProps.dismissOnMapClick)
+                dismissCallout();
             const feature = overlayLayer?.hitTestFeature(point);
             if (feature)
                 emit('feature-select', feature);
@@ -485,12 +567,23 @@ const AppMapKitImpl = defineComponent({
                 itemKey: (item, index) => componentProps.itemKey(item, index),
                 pinGeometry: (item) => componentProps.pinGeometry?.(item) ?? {},
                 focusable: componentProps.pinsFocusable,
+                hitArea: componentProps.pinHitArea,
+                navigation: componentProps.pinNavigation,
+                ...(componentProps.itemTooltip
+                    ? {
+                        hoverTooltip: {
+                            container,
+                            text: (item) => componentProps.itemTooltip?.(item),
+                        },
+                    }
+                    : {}),
                 map,
                 mapkit: namespace,
                 onHover: (id) => emit('update:hoveredId', id),
                 onSelect: select,
             });
             map.addEventListener('single-tap', onSingleTap);
+            container.ownerDocument.addEventListener('keydown', onDocumentKeydown);
             map.addEventListener('region-change-end', () => {
                 const region = map?.region;
                 if (!region)
@@ -626,7 +719,11 @@ const AppMapKitImpl = defineComponent({
             if (value)
                 emit('mapkit-error', value);
         });
+        function stopDocumentListeners() {
+            containerRef.value?.ownerDocument.removeEventListener('keydown', onDocumentKeydown);
+        }
         onBeforeUnmount(() => {
+            stopDocumentListeners();
             leaderOverlay?.destroy();
             leaderOverlay = null;
             calloutLayer?.destroy();
@@ -640,6 +737,7 @@ const AppMapKitImpl = defineComponent({
             map = null;
         });
         function retry() {
+            stopDocumentListeners();
             leaderOverlay?.destroy();
             leaderOverlay = null;
             pinLayer?.destroy();
@@ -725,9 +823,15 @@ const AppMapKitImpl = defineComponent({
                 children.push(h(Teleport, { key: entry.id, to: entry.host }, {
                     default: () => slots.callout?.({
                         close: () => {
+                            const active = entry.host.ownerDocument.activeElement;
+                            const hadFocus = Boolean(active && entry.host.contains(active));
                             closeCallout(entry.id);
                             if (componentProps.calloutFollowSelection)
                                 select(null);
+                            // The close button is inside the callout it just removed:
+                            // without this, focus falls to <body>.
+                            if (hadFocus)
+                                pinLayer?.focusPin(entry.id);
                         },
                         id: entry.id,
                         item: entry.item,

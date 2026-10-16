@@ -110,4 +110,54 @@ export function mapKitPinGeometrySignature(geometry) {
         `${String(offset.x)},${String(offset.y)}`,
     ].join('|');
 }
+/**
+ * WCAG 2.5.8 (target size, minimum) asks for 24 CSS px; the platform guidance
+ * (Apple HIG, Material) and WCAG 2.5.5 (enhanced) ask for 44. A map dot is
+ * usually 8 to 16 px, so the touch target must be bigger than the glyph.
+ */
+export const MAPKIT_MIN_HIT_TARGET = 44;
+const NO_PADDING = { bottom: 0, left: 0, right: 0, top: 0 };
+/**
+ * Grow a pin's host to at least `minTarget` x `minTarget` CSS px while its
+ * visual glyph stays exactly where it was.
+ *
+ * The host is the interactive element (`role="button"`, the click target), so
+ * enlarging it enlarges the tap target without touching the glyph. The visual
+ * is centred horizontally. Vertically it keeps the edge its anchor names, so a
+ * `bottom-center` pin keeps its tip on the coordinate and grows its hit area
+ * upward, a `top-center`/`top-left` pin grows downward, and a `center` pin grows
+ * both ways. The returned geometry moves the anchor by the padding, so the
+ * coordinate stays on the same point of the glyph.
+ *
+ * A geometry with no `size` cannot be enlarged (its box is unknown) and is
+ * returned as is, with no padding.
+ */
+export function expandMapKitHitArea(geometry, minTarget = MAPKIT_MIN_HIT_TARGET) {
+    const size = geometry.size;
+    if (!size || minTarget <= 0)
+        return { geometry, padding: NO_PADDING };
+    const width = Math.max(size.width, minTarget);
+    const height = Math.max(size.height, minTarget);
+    if (width === size.width && height === size.height)
+        return { geometry, padding: NO_PADDING };
+    const anchor = geometry.anchor ?? DEFAULT_MAPKIT_PIN_ANCHOR;
+    const extraX = (width - size.width) / 2;
+    const extraY = height - size.height;
+    const verticalShare = anchor === 'bottom-center' ? 1 : anchor === 'top-center' || anchor === 'top-left' ? 0 : 0.5;
+    const padding = {
+        bottom: extraY * (1 - verticalShare),
+        left: extraX,
+        right: extraX,
+        top: extraY * verticalShare,
+    };
+    const visualAnchor = mapKitAnchorPoint(anchor, size);
+    const enlarged = {
+        ...geometry,
+        anchor: typeof anchor === 'string' && anchor !== 'top-left'
+            ? anchor
+            : { x: visualAnchor.x + padding.left, y: visualAnchor.y + padding.top },
+        size: { height, width },
+    };
+    return { geometry: enlarged, padding };
+}
 //# sourceMappingURL=pin-geometry.js.map
