@@ -1,7 +1,7 @@
 ---
 '@narduk-enterprises/create-narduk-app': patch
 '@narduk-enterprises/narduk-core': minor
-'@narduk-enterprises/narduk-mapkit': minor
+'@narduk-enterprises/narduk-mapkit': major
 ---
 
 MapKit loads without an app-level CSP workaround, and pins land where
@@ -28,7 +28,7 @@ far east), and the `./testing` fake places elements the way MapKit does. New:
 `mapKitCalloutAnchorOffset` and `mapKitCoordinateWithinPin` are exported from
 the geometry module.
 
-Behaviour change, visible on screen: every pin with a `size` is now placed
+**Breaking (3.0.0), visible on screen:** every pin with a `size` is now placed
 differently from the previous library output, the default `bottom-center` pin
 included. 2.1.0 handed MapKit `(-width / 2, -height)` for a sized
 `bottom-center` pin; the library now hands it `(0, 0)`, MapKit's own default, so
@@ -50,3 +50,8 @@ until they do:
 
 `docs/api-2.1.md` §c.3 and §d item 8, which said `'wasm-unsafe-eval'` was not
 needed, are corrected.
+
+This is why `narduk-mapkit` is a major release. The README has a "Migrating from
+2.x to 3.0" section covering the anchor model, the callout dismissal defaults
+that arrive with the callout changes in the same release, and dropping the
+app-level `'wasm-unsafe-eval'`.
