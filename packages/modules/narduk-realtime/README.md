@@ -395,6 +395,44 @@ substituting a normal closure (1000) for the reserved codes 1005 and 1006, which
 hibernatable socket stays half-closed until the runtime times it out, which
 keeps it in `getWebSockets()` and skews every session count.
 
+## Browser client (`./client`)
+
+`createLiveSocket` connects a page to a socket a `HibernatingDurableObject`
+serves, keeps it alive and reconnects it. It has no framework or Worker import,
+so a page bundle may import it; wrap it in your app's own composable.
+
+```ts
+import { createLiveSocket } from '@narduk-enterprises/narduk-realtime/client'
+
+const live = createLiveSocket({
+  url: () => `${location.origin.replace(/^http/u, 'ws')}/api/things/live`,
+  onFrame: (frame) => scheduleRefetch(frame),
+  onState: (state) => {
+    // Frames sent while closed are gone: re-read when the socket opens, and
+    // keep a slow fallback poll while it is open, a fast one while it is not.
+    if (state === 'open') refetchEverything()
+  },
+})
+live.start()
+// later: live.stop()
+```
+
+- **Keepalive** is the exact text `ping` every 30 s (`pingMs`). The base class
+  answers it with `pong` while the object hibernates, so an idle page never
+  wakes the object; never send any other keepalive text.
+- **Dead sockets**: one that has heard nothing, not even `pong`, for 2.5 ping
+  intervals (`deadMs`) is closed and replaced.
+- **Reconnect** backs off from 1 s, doubling to 60 s, with +/-20 % jitter, and
+  resets only after a socket has stayed open a full ping interval (a server that
+  accepts and closes at once is retried ever more slowly). A handshake still
+  pending after 15 s (`connectTimeoutMs`) is abandoned and retried.
+- **No visibility or network hooks**: the client does not watch
+  `visibilitychange` or `online`; the page decides what to re-read when.
+- **Frames** are the server's JSON text frames, parsed; `pong`, non-JSON and
+  binary frames are dropped. The client sends nothing but `ping`.
+- A push socket is a hint, never the record: treat a frame as "re-read this",
+  and keep the data on the HTTP routes.
+
 ## The cost rule
 
 From the company-hq paved-paths `web-cf` stack note (D-PAVED-1):

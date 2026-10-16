@@ -61,6 +61,14 @@ describe('narduk-realtime package surface', () => {
     expect(`${manifest.name}/worker/upgrade-router`).toBe(UPGRADE_ROUTER_MODULE)
   })
 
+  // The browser client: framework-free, no `cloudflare:workers` import, so a page bundle may import it.
+  it('exposes the framework-free browser client', () => {
+    expect(manifest.exports['./client']).toEqual({
+      types: './dist/client/live-socket.d.ts',
+      import: './dist/client/live-socket.js',
+    })
+  })
+
   // Everything the exports map names has to be inside a `files` entry, or the
   // published tarball resolves to nothing on the consumer's side.
   it('ships every export target in the tarball', () => {

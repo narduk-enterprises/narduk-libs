@@ -38,6 +38,10 @@
     "./worker/principal": {
       "types": "./dist/worker/principal.d.ts",
       "import": "./dist/worker/principal.js"
+    },
+    "./client": {
+      "types": "./dist/client/live-socket.d.ts",
+      "import": "./dist/client/live-socket.js"
     }
   },
   "files": [
