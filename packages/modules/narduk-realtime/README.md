@@ -423,7 +423,11 @@ live.start()
 - **Dead sockets**: one that has heard nothing, not even `pong`, for 2.5 ping
   intervals (`deadMs`) is closed and replaced.
 - **Reconnect** backs off from 1 s, doubling to 60 s, with +/-20 % jitter, and
-  resets after a socket opens.
+  resets only after a socket has stayed open a full ping interval (a server that
+  accepts and closes at once is retried ever more slowly). A handshake still
+  pending after 15 s (`connectTimeoutMs`) is abandoned and retried.
+- **No visibility or network hooks**: the client does not watch
+  `visibilitychange` or `online`; the page decides what to re-read when.
 - **Frames** are the server's JSON text frames, parsed; `pong`, non-JSON and
   binary frames are dropped. The client sends nothing but `ping`.
 - A push socket is a hint, never the record: treat a frame as "re-read this",

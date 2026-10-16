@@ -140,9 +140,93 @@ describe('createLiveSocket', () => {
     vi.advanceTimersByTime(1)
     expect(FakeSocket.all).toHaveLength(3)
     FakeSocket.all[2]!.open()
+    clock = 30_000
+    FakeSocket.all[2]!.message('pong')
+    vi.advanceTimersByTime(30_000)
     FakeSocket.all[2]!.drop()
     vi.advanceTimersByTime(1000)
     expect(FakeSocket.all).toHaveLength(4)
+  })
+
+  it('keeps backing off when a server accepts and then closes at once', () => {
+    const { socket } = client()
+    socket.start()
+    for (const [index, wait] of [1000, 2000, 4000, 8000].entries()) {
+      FakeSocket.all[index]!.open()
+      FakeSocket.all[index]!.message('{"type":"hello"}')
+      FakeSocket.all[index]!.drop()
+      vi.advanceTimersByTime(wait - 1)
+      expect(FakeSocket.all).toHaveLength(index + 1)
+      vi.advanceTimersByTime(1)
+      expect(FakeSocket.all).toHaveLength(index + 2)
+    }
+  })
+
+  it('abandons a handshake that never completes', () => {
+    const { socket, states } = client({ connectTimeoutMs: 15_000 })
+    socket.start()
+    vi.advanceTimersByTime(15_000)
+    expect(FakeSocket.all[0]!.closed).toBe(true)
+    expect(states.at(-1)).toBe('closed')
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
+  })
+
+  it('ignores a replaced socket: a late open, frame or close changes nothing', () => {
+    const { socket, frames, states } = client()
+    socket.start()
+    const first = FakeSocket.all[0]!
+    socket.stop()
+    first.open()
+    first.message('{"type":"lane"}')
+    first.drop()
+    expect(frames).toEqual([])
+    expect(states.at(-1)).toBe('stopped')
+    vi.advanceTimersByTime(120_000)
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+
+  it('start twice opens one socket, and an error then close retries once', () => {
+    const { socket } = client()
+    socket.start()
+    socket.start()
+    expect(FakeSocket.all).toHaveLength(1)
+    FakeSocket.all[0]!.emit('error')
+    FakeSocket.all[0]!.drop()
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
+  })
+
+  it('a throwing onState does not stop the retry', () => {
+    const socket = createLiveSocket({
+      url: 'wss://example.test/live',
+      onFrame: () => {},
+      onState: () => {
+        throw new Error('boom')
+      },
+      WebSocket: FakeSocket,
+      random: () => 0.5,
+      now: () => clock,
+    })
+    socket.start()
+    FakeSocket.all[0]!.drop()
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
+  })
+
+  it('a send that throws replaces the socket', () => {
+    const { socket } = client()
+    socket.start()
+    const fake = FakeSocket.all[0]!
+    fake.send = () => {
+      throw new Error('gone')
+    }
+    fake.open()
+    clock = 30_000
+    vi.advanceTimersByTime(30_000)
+    expect(fake.closed).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(FakeSocket.all).toHaveLength(2)
   })
 
   it('stop closes the socket and never reconnects', () => {

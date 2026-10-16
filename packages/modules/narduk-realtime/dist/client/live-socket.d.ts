@@ -46,6 +46,8 @@ export interface LiveSocketOptions {
     minBackoffMs?: number;
     /** Retry delay ceiling. Default 60 s. */
     maxBackoffMs?: number;
+    /** A handshake still pending after this long is abandoned and retried. Default 15 s. */
+    connectTimeoutMs?: number;
     /** Defaults to `globalThis.WebSocket`. */
     WebSocket?: LiveSocketConstructor;
     /** Jitter source in [0, 1). Defaults to `Math.random`. */

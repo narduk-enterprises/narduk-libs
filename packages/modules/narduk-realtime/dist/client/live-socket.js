@@ -32,6 +32,7 @@ export function createLiveSocket(options) {
     const deadMs = options.deadMs ?? Math.round(pingMs * 2.5);
     const minBackoffMs = options.minBackoffMs ?? 1000;
     const maxBackoffMs = options.maxBackoffMs ?? 60_000;
+    const connectTimeoutMs = options.connectTimeoutMs ?? 15_000;
     const random = options.random ?? Math.random;
     const now = options.now ?? Date.now;
     const Impl = options.WebSocket ?? globalThis.WebSocket;
@@ -45,7 +46,12 @@ export function createLiveSocket(options) {
         if (next === current)
             return;
         current = next;
-        options.onState?.(next);
+        try {
+            options.onState?.(next);
+        }
+        catch {
+            // A throwing callback must not leave the client without its timers.
+        }
     }
     function clearTimers() {
         if (pingTimer !== null)
@@ -94,10 +100,14 @@ export function createLiveSocket(options) {
             return;
         }
         socket = target;
+        // A handshake that never completes (a black-holed network) is abandoned rather than left `connecting`.
+        retryTimer = setTimeout(() => lost(target), connectTimeoutMs);
         target.addEventListener('open', () => {
             if (target !== socket)
                 return;
-            failures = 0;
+            if (retryTimer !== null)
+                clearTimeout(retryTimer);
+            retryTimer = null;
             lastHeard = now();
             setState('open');
             pingTimer = setInterval(() => {
@@ -105,6 +115,9 @@ export function createLiveSocket(options) {
                     return;
                 if (now() - lastHeard > deadMs)
                     return lost(target);
+                // The backoff resets only once a socket has stayed open a full ping interval: a server that accepts and then
+                // closes at once must still be retried more and more slowly, never every second.
+                failures = 0;
                 try {
                     if (target.readyState === OPEN)
                         target.send(LIVE_SOCKET_PING);
