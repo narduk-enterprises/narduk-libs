@@ -1,0 +1,338 @@
+/**
+ * Zoom tiers and declutter, decided from what is measured on screen.
+ *
+ * A marker that is right at one zoom is wrong at another: a 48 px bus badge is
+ * fine when buses are a kilometre apart and a pile of overlapping badges when
+ * they are not. The rule here is the one the Wave Transit concept shipped, and
+ * it is about *pixels*, not zoom levels: **draw the compact form whenever any
+ * two markers would be closer on screen than a marker is wide**. That holds at
+ * every latitude, screen size and density, and it needs no projection --
+ * metres per pixel follows from the visible latitude span and the map's pixel
+ * height.
+ *
+ * Everything here is pure (plain numbers in, plain values out), so it runs
+ * without MapKit and is table-testable.
+ *
+ * - `chooseMapKitMarkerTier` picks `'dot' | 'symbol' | 'detail'` for a set of
+ *   markers, with hysteresis so a pinch near the threshold does not flicker.
+ * - `chooseMapKitSpanTier` picks a named tier from the latitude span alone, for
+ *   static pins (stop dots small until you zoom in, then full size).
+ * - `collapseNearbyPoints` merges points that are practically one place into
+ *   the first of them, never averaging or inventing a coordinate.
+ */
+import { haversineDistanceMetres } from './helpers.js'
+
+import type { LatLng } from './helpers.js'
+
+const METRES_PER_DEGREE_LATITUDE = 111_320
+
+/** The visible region as `<AppMapKit>`'s `region-change` event reports it. */
+export interface MapKitVisibleRegion {
+  centerLat: number
+  centerLng: number
+  latDelta: number
+  lngDelta: number
+}
+
+/** Metres one screen pixel covers, from the visible latitude span and the map's pixel height. */
+export function metersPerPixel(latSpanDegrees: number, mapHeightPx: number): number {
+  return (latSpanDegrees * METRES_PER_DEGREE_LATITUDE) / Math.max(1, mapHeightPx)
+}
+
+function lngDifference(a: number, b: number): number {
+  return ((((a - b) % 360) + 540) % 360) - 180
+}
+
+/**
+ * Whether a point is inside the visible region, plus `padding` of the region's
+ * size on every side (default 0.05, so a marker just off the edge still counts).
+ * Longitude wraps, so a region across the antimeridian works.
+ */
+export function isInVisibleRegion(
+  point: LatLng,
+  region: MapKitVisibleRegion,
+  padding = 0.05,
+): boolean {
+  return (
+    Math.abs(point.lat - region.centerLat) <= (region.latDelta / 2) * (1 + 2 * padding) &&
+    Math.abs(lngDifference(point.lng, region.centerLng)) <=
+      (region.lngDelta / 2) * (1 + 2 * padding)
+  )
+}
+
+/** The points inside the visible region (see `isInVisibleRegion`); the others cannot overlap anything you can see. */
+export function pointsInVisibleRegion<T extends LatLng>(
+  points: readonly T[],
+  region: MapKitVisibleRegion,
+  padding = 0.05,
+): T[] {
+  return points.filter((point) => isInVisibleRegion(point, region, padding))
+}
+
+/**
+ * Two markers this close are at one spot (a layover at the same stop, or one
+ * vehicle reported twice). They overlap at every zoom, so they must not hold
+ * every other marker in its compact form for good.
+ */
+export const MAPKIT_SAME_SPOT_METRES = 15
+
+export interface MapKitSeparationOptions {
+  /** Pairs closer than this are one spot and are ignored. Default `MAPKIT_SAME_SPOT_METRES`. */
+  sameSpotMetres?: number
+}
+
+/**
+ * The smallest on-screen gap between any two points, in pixels; `Infinity` with
+ * fewer than two. Compares every pair, so it is for tens of points. For
+ * thousands use `anyCloserThanPixels`.
+ */
+export function minSeparationPixels(
+  points: readonly LatLng[],
+  latSpanDegrees: number,
+  mapHeightPx: number,
+  options: MapKitSeparationOptions = {},
+): number {
+  const sameSpot = options.sameSpotMetres ?? MAPKIT_SAME_SPOT_METRES
+  const mpp = metersPerPixel(latSpanDegrees, mapHeightPx)
+  let min = Number.POSITIVE_INFINITY
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const metres = haversineDistanceMetres(points[i] as LatLng, points[j] as LatLng)
+      if (metres >= sameSpot) min = Math.min(min, metres / mpp)
+    }
+  }
+  return min
+}
+
+/**
+ * Whether any two points (not at one spot) are closer than `thresholdPx` on
+ * screen. Hashes into a grid one threshold wide, so it is linear in the number
+ * of points where `minSeparationPixels` is quadratic.
+ */
+export function anyCloserThanPixels(
+  points: readonly LatLng[],
+  thresholdPx: number,
+  latSpanDegrees: number,
+  mapHeightPx: number,
+  options: MapKitSeparationOptions = {},
+): boolean {
+  if (points.length < 2) return false
+  const sameSpot = options.sameSpotMetres ?? MAPKIT_SAME_SPOT_METRES
+  const limit = thresholdPx * metersPerPixel(latSpanDegrees, mapHeightPx)
+  if (limit <= sameSpot) return false
+  const grid = new MetreGrid(limit, widestLatitude(points))
+  for (const [index, point] of points.entries()) grid.add(point, index)
+  for (const [i, point] of points.entries()) {
+    for (const j of grid.near(point)) {
+      if (j <= i) continue
+      const metres = haversineDistanceMetres(point, points[j] as LatLng)
+      if (metres >= sameSpot && metres < limit) return true
+    }
+  }
+  return false
+}
+
+/** A hash grid with cells `cellMetres` wide, for neighbour queries within that distance. */
+class MetreGrid {
+  readonly #cellLat: number
+  readonly #cellLng: number
+  readonly #cells = new Map<string, number[]>()
+
+  /** `referenceLat` fixes the longitude cell width, so points can be added one at a time. */
+  constructor(cellMetres: number, referenceLat: number) {
+    this.#cellLat = cellMetres / METRES_PER_DEGREE_LATITUDE
+    this.#cellLng = this.#cellLat / Math.max(Math.cos((referenceLat * Math.PI) / 180), 1e-6)
+  }
+
+  add(point: LatLng, index: number): void {
+    const key = this.#key(this.#row(point), this.#column(point))
+    const cell = this.#cells.get(key)
+    if (cell) cell.push(index)
+    else this.#cells.set(key, [index])
+  }
+
+  /** Indices in this point's cell and the eight around it, ascending. */
+  near(point: LatLng): number[] {
+    const row = this.#row(point)
+    const column = this.#column(point)
+    const found: number[] = []
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const cell = this.#cells.get(this.#key(row + dr, column + dc))
+        if (cell) found.push(...cell)
+      }
+    }
+    return found.sort((x, y) => x - y)
+  }
+
+  #row(point: LatLng): number {
+    return Math.floor(point.lat / this.#cellLat)
+  }
+
+  #column(point: LatLng): number {
+    return Math.floor(point.lng / this.#cellLng)
+  }
+
+  #key(row: number, column: number): string {
+    return `${String(row)}:${String(column)}`
+  }
+}
+
+/**
+ * The latitude that makes grid cells widest in degrees of longitude (the one
+ * nearest a pole), so a cell is never narrower than the distance it must cover
+ * for any point in the set.
+ */
+function widestLatitude(points: readonly LatLng[]): number {
+  return Math.min(
+    89,
+    points.reduce((max, point) => Math.max(max, Math.abs(point.lat)), 0),
+  )
+}
+
+/** `dot`: compact, for crowds. `symbol`: the normal marker. `detail`: close in, drawn with detail such as a heading. */
+export type MapKitMarkerTier = 'detail' | 'dot' | 'symbol'
+
+export interface MapKitMarkerTierInput {
+  /** Latitude span (degrees) at or below which the `detail` tier is chosen; omit for never. */
+  detailBelowSpan?: number
+  /** Leaving the dot tier needs this much more room than entering it. Default 1.2. */
+  hysteresis?: number
+  /** Pixel height of the map. */
+  mapHeightPx: number
+  /** On-screen width of the `symbol` tier, in CSS px: closer than this and markers would overlap. */
+  markerPx: number
+  /** The markers' positions. Only those in `region` (when given) count. */
+  points: readonly LatLng[]
+  /** The tier now drawn, for hysteresis. */
+  previous?: MapKitMarkerTier
+  /** The visible region, when known. */
+  region?: MapKitVisibleRegion | null
+  sameSpotMetres?: number
+  /** Latitude span in view, degrees; `null` before MapKit has reported a region. */
+  span: number | null
+  /** The tier to use before the span is known. Default `'symbol'`; a map of several routes might say `'dot'`. */
+  unknownSpanTier?: 'dot' | 'symbol'
+  /** Padding of the visible-region filter, as a fraction of the region. Default 0.05. */
+  viewPadding?: number
+}
+
+/**
+ * The tier to draw a set of markers in.
+ *
+ * 1. Before the span is known: `unknownSpanTier`.
+ * 2. Any two markers (in view, not at one spot) closer than `markerPx` on
+ *    screen: `'dot'`. Staying in `'dot'` needs `markerPx * hysteresis` of room
+ *    to leave, so a pinch around the threshold does not flicker.
+ * 3. Otherwise `'detail'` when the span is at or below `detailBelowSpan`, else
+ *    `'symbol'`.
+ */
+export function chooseMapKitMarkerTier(input: MapKitMarkerTierInput): MapKitMarkerTier {
+  if (input.span === null) return input.unknownSpanTier ?? 'symbol'
+  const points = input.region
+    ? pointsInVisibleRegion(input.points, input.region, input.viewPadding ?? 0.05)
+    : input.points
+  const limit = input.markerPx * (input.previous === 'dot' ? (input.hysteresis ?? 1.2) : 1)
+  const crowded = anyCloserThanPixels(points, limit, input.span, input.mapHeightPx, {
+    sameSpotMetres: input.sameSpotMetres ?? MAPKIT_SAME_SPOT_METRES,
+  })
+  if (crowded) return 'dot'
+  return input.detailBelowSpan !== undefined && input.span <= input.detailBelowSpan
+    ? 'detail'
+    : 'symbol'
+}
+
+/** A tier that applies while the latitude span is at or below `maxSpan`. */
+export interface MapKitSpanTier<TTier extends string> {
+  maxSpan: number
+  tier: TTier
+}
+
+/**
+ * A named tier from the latitude span alone, for static pins.
+ *
+ * `tiers` apply while `span <= maxSpan`, tightest first; anything wider than
+ * every `maxSpan` (and an unknown span) is `fallback`. With `previous`, a span
+ * within `hysteresis` of that tier's own edges keeps it, so a pinch around a
+ * boundary does not flicker. Example for stops: `[{ maxSpan: 0.012, tier:
+ * 'pairs-apart' }, { maxSpan: 0.03, tier: 'full' }]`, fallback `'small'`.
+ */
+export function chooseMapKitSpanTier<TTier extends string>(
+  span: number | null,
+  tiers: ReadonlyArray<MapKitSpanTier<TTier>>,
+  fallback: TTier,
+  previous?: TTier,
+  hysteresis = 1.15,
+): TTier {
+  if (span === null) return fallback
+  const sorted = [...tiers].sort((a, b) => a.maxSpan - b.maxSpan)
+  const names = [...sorted.map((entry) => entry.tier), fallback]
+  const upperOf = (i: number): number => sorted[i]?.maxSpan ?? Number.POSITIVE_INFINITY
+  const lowerOf = (i: number): number => (i === 0 ? 0 : (sorted[i - 1]?.maxSpan ?? 0))
+
+  const found = sorted.findIndex((entry) => span <= entry.maxSpan)
+  const raw = found === -1 ? sorted.length : found
+  const held = previous === undefined ? -1 : names.indexOf(previous)
+  if (held === -1 || held === raw) return names[raw] as TTier
+  const stays = span > lowerOf(held) / hysteresis && span <= upperOf(held) * hysteresis
+  return names[stays ? held : raw] as TTier
+}
+
+export interface MapKitCollapseOptions<T> {
+  /** Items for which this is `false` are never merged into another nor take one in. */
+  mergeable?: (item: T) => boolean
+  /** Merge items within this many metres. Default 40: the two sides of one street. */
+  maxMetres?: number
+  /** Items for which this is `true` always stand alone (the selected one). */
+  pinned?: (item: T) => boolean
+}
+
+/** A kept item and the items it stands for. `members` excludes `item` itself. */
+export interface MapKitCollapsedPoint<T> {
+  item: T
+  members: T[]
+}
+
+/**
+ * Collapse points that sit within `maxMetres` of one already kept into that one.
+ *
+ * The kept item stays on its own real coordinate -- nothing is averaged or
+ * invented -- and lists the others in `members`, so the caller can fold their
+ * labels or routes into it. Items that are not `mergeable` or are `pinned`
+ * always stand alone. Order is the input order, and the first item in a group is
+ * the one kept.
+ */
+export function collapseNearbyPoints<T extends LatLng>(
+  items: readonly T[],
+  options: MapKitCollapseOptions<T> = {},
+): Array<MapKitCollapsedPoint<T>> {
+  const maxMetres = options.maxMetres ?? 40
+  const mergeable = options.mergeable ?? (() => true)
+  const pinned = options.pinned ?? (() => false)
+  const out: Array<MapKitCollapsedPoint<T>> = []
+  const hosts: Array<MapKitCollapsedPoint<T>> = []
+  const grid = new MetreGrid(maxMetres, widestLatitude(items))
+
+  for (const item of items) {
+    if (!mergeable(item) || pinned(item)) {
+      out.push({ item, members: [] })
+      continue
+    }
+    const hostIndex = grid
+      .near(item)
+      .find(
+        (index) =>
+          haversineDistanceMetres((hosts[index] as MapKitCollapsedPoint<T>).item, item) <=
+          maxMetres,
+      )
+    if (hostIndex !== undefined) {
+      ;(hosts[hostIndex] as MapKitCollapsedPoint<T>).members.push(item)
+      continue
+    }
+    const entry: MapKitCollapsedPoint<T> = { item, members: [] }
+    grid.add(item, hosts.length)
+    hosts.push(entry)
+    out.push(entry)
+  }
+  return out
+}

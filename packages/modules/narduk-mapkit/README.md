@@ -2308,6 +2308,98 @@ controller-owned host, so it stays inside the page's own Vue tree: reactivity,
 `provide`/`inject`, `useNuxtApp()`, and Nuxt UI's app config all reach it. See
 the Nuxt adapter's README for the props, events, and exposed methods.
 
+## Moving markers
+
+Vehicles, boats and people that report a new position every few seconds should
+glide, not jump. `MapKitMovingMarkerLayer` (from `./client`) keeps one MapKit
+annotation per id and animates it with a single `requestAnimationFrame` loop. It
+was extracted from the Wave Transit concept's live bus layer.
+
+```ts
+import { MapKitMovingMarkerLayer } from '@narduk-enterprises/narduk-mapkit/client'
+
+const buses = new MapKitMovingMarkerLayer({
+  map,
+  mapkit,
+  createElement: (bus) => drawBus(bus), // your glyph; the layer owns the host around it
+  label: (bus) => `Route ${bus.route}, bus ${bus.id}`,
+  lines: (bus) => routeShapes[bus.route], // optional: glide along the route
+  hitArea: true, // a 44 px target over a smaller glyph
+  onSelect: (id) => select(id),
+})
+
+setInterval(async () => buses.set(await fetchBuses()), 15_000)
+```
+
+`set(markers)` makes the map show exactly those markers
+(`{ id, lat, lng, ... }`). A marker that is still there glides from where it is
+_drawn_ to its new fix over `glideMs` (default 13 s); one that stopped reporting
+is removed; a repeat poll that changed nothing touches nothing.
+
+| Snap           | When                                              | Why                                                               |
+| -------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| first fix      | a marker the layer has not drawn yet              | there is nothing to glide from                                    |
+| hidden tab     | the tab was hidden since the last fix             | nothing sweeps across the map on return; frames stop while hidden |
+| reduced motion | `prefers-reduced-motion: reduce`                  | honour the setting                                                |
+| jump           | the move is longer than `maxGlideMetres` (1500 m) | a new place, not one poll of travel                               |
+
+Heading is written as `--mapkit-heading` (degrees, unwrapped so a CSS transition
+turns the short way) and `data-mapkit-heading`. It comes from the route line
+where there is one, otherwise from the move, and a move shorter than
+`minHeadingMoveMetres` (15 m) is GPS noise and changes nothing. `follow(id)`
+keeps the camera on one marker until the user scrolls or zooms.
+
+The pure parts are on `./geometry`: `bearingDegrees`, `shortestAngleDelta`,
+`unwrapHeading`, `mapKitSnapReason`, `pathAlongPolylines`, `pointAlongPath`.
+`pathAlongPolylines` glides along a route only when both fixes sit on it and the
+way along it is not a detour; otherwise it returns `null` and the glide is
+straight. Nothing is invented.
+
+### Zoom tiers and declutter
+
+`chooseMapKitMarkerTier` decides `'dot'`, `'symbol'` or `'detail'` from the
+_measured_ on-screen separation of the markers in view, not from a zoom level
+somebody tuned by eye. Two markers closer than `markerPx` on screen make every
+marker a dot; leaving dots needs `hysteresis` (1.2) times more room, so a pinch
+around the threshold does not flicker. Two markers at one spot (a layover) are
+ignored: they would otherwise hold the whole map in dots for good.
+
+```ts
+import { chooseMapKitMarkerTier } from '@narduk-enterprises/narduk-mapkit/geometry'
+
+tier = chooseMapKitMarkerTier({
+  points: buses,
+  region,
+  span: region.latDelta,
+  mapHeightPx: mapEl.clientHeight,
+  markerPx: 36,
+  previous: tier,
+  detailBelowSpan: 0.03,
+})
+layer.setTier(tier) // writes data-mapkit-tier on every host; CSS owns the look
+```
+
+`chooseMapKitSpanTier` is the same idea from the latitude span alone, for static
+pins. `collapseNearbyPoints` folds points within `maxMetres` (40) into the first
+of them, which keeps its real coordinate and lists the rest as `members`.
+`isInVisibleRegion` / `pointsInVisibleRegion` filter to the visible region.
+
+### Viewport-bounded annotations
+
+`MapKitViewportAnnotations` keeps only the markers near the visible region in
+the DOM. Call `sync(items, region)` from `region-change-end` and when the data
+changes; an item is added within `enterPadding` (0.25 of the region) of the edge
+and removed only past `keepPadding` (0.6), so nothing flickers at the boundary.
+`pinned` keeps the selected item on the map wherever it is. It wraps
+`MapKitAnnotationRegistry`, so unchanged items are not touched.
+
+### Polling
+
+`createMapKitPoller` asks again only while the tab is visible, never runs two
+requests at once, asks straight away when the tab returns, and drops an answer
+that belongs to something the page has left (`restart()`). `mapKitMapLimit` runs
+an async function over a list with a cap on how many are in flight.
+
 ## Playback
 
 Playback helpers are plain TypeScript and do not require MapKit JS:
@@ -2545,20 +2637,20 @@ in the app.
 
 ## API Surface
 
-| Export                                               | Purpose                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                                                                                         |
-| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                                                                                     |
-| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                                                                                          |
-| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                                                                                         |
-| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, canvas point layer, label layer, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling, `rectBeside`, leader overlay |
-| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing                                                                                                                                                                                                                                                                         |
-| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                                                                                  |
-| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                                                                                |
-| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                                                                                              |
-| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                                                               |
-| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                                                       |
-| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                                                          |
+| Export                                               | Purpose                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@narduk-enterprises/narduk-mapkit/apple-maps`       | Maps Server API auth exchange, access-token cache, search, and geocoding                                                                                                                                                                                                                                                                                                               |
+| `@narduk-enterprises/narduk-mapkit/server`           | Worker-safe Fetch responses, explicit config, Worker env bridge, token cache                                                                                                                                                                                                                                                                                                           |
+| `@narduk-enterprises/narduk-mapkit/worker`           | Explicit Worker-safe token entry point; never imports Node.js built-ins                                                                                                                                                                                                                                                                                                                |
+| `@narduk-enterprises/narduk-mapkit/node`             | Opt-in `process.env` and Doppler CLI resolution for Node server runtimes                                                                                                                                                                                                                                                                                                               |
+| `@narduk-enterprises/narduk-mapkit/client`           | MapKit JS loading, runtime constructors, tile overlays, canvas point layer, label layer, layer and annotation registries, crossfades, temporal playback and its layer controller, pointer probe plumbing, render coalescing, fullscreen presentation, anchored callouts, zoom-adaptive pin scaling, `rectBeside`, leader overlay, moving markers, viewport-bounded annotations, poller |
+| `@narduk-enterprises/narduk-mapkit/geometry`         | Bounds, GeoJSON, drawable framing, distance, hit testing, marker motion and heading, zoom tiers and declutter                                                                                                                                                                                                                                                                          |
+| `@narduk-enterprises/narduk-mapkit/marks`            | Framework-free point-map marks: declutter engine, label placement, keyed mark layer, DOM pin builders and their stylesheet, frame/camera math, overview framing                                                                                                                                                                                                                        |
+| `@narduk-enterprises/narduk-mapkit/playback`         | Route progress, line slicing, duration formatting                                                                                                                                                                                                                                                                                                                                      |
+| `@narduk-enterprises/narduk-mapkit/testing`          | Dev-only deterministic MapKit JS v6 fake, operation log, and Playwright init script                                                                                                                                                                                                                                                                                                    |
+| `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                                                                                                                     |
+| `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                                                                                                             |
+| `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                                                                                                                |
 
 ## Maintainer Migration Notes
 

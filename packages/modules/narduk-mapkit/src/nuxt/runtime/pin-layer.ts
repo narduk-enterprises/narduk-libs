@@ -36,6 +36,7 @@
  * every app re-implementing it -- the third defect the 2.1.0 fake pinned.
  */
 import { MapKitAnnotationRegistry } from '../../client/annotations.js'
+import { writeMapKitHitArea } from '../../client/hit-area.js'
 import { MapKitHoverTooltip } from '../../client/hover-tooltip.js'
 import { nextMapKitRovingKey } from '../../geometry/roving.js'
 
@@ -428,28 +429,6 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     return expandMapKitHitArea(geometry, hitArea === true ? MAPKIT_MIN_HIT_TARGET : hitArea)
   }
 
-  /** Size and pad the host so the larger tap target leaves the glyph exactly where it was. */
-  #writeHitArea(
-    host: HTMLElement,
-    geometry: MapKitPinGeometry,
-    padding: MapKitHitAreaPadding,
-  ): void {
-    const grown = padding.top + padding.right + padding.bottom + padding.left > 0
-    if (!grown || !geometry.size) {
-      host.removeAttribute('data-mapkit-hit-area')
-      for (const name of ['box-sizing', 'height', 'padding', 'width'])
-        host.style.removeProperty(name)
-      return
-    }
-    host.setAttribute('data-mapkit-hit-area', '')
-    host.style.boxSizing = 'border-box'
-    host.style.height = `${String(geometry.size.height)}px`
-    host.style.width = `${String(geometry.size.width)}px`
-    host.style.padding = [padding.top, padding.right, padding.bottom, padding.left]
-      .map((value) => `${String(value)}px`)
-      .join(' ')
-  }
-
   get #roving(): boolean {
     return this.#focusable && this.#options.navigation === 'roving'
   }
@@ -628,7 +607,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
       selected: this.#selectedId === key,
     }
     this.#renderGlyph(entry)
-    this.#writeHitArea(host, geometry, padding)
+    writeMapKitHitArea(host, geometry, padding)
 
     const offset = mapKitAnchorOffset(geometry)
     const options: MapKitAnnotationOptionsLike = {
@@ -676,7 +655,7 @@ export class MapKitPinLayer<T extends MapKitPinItem> {
     if (entry.geometrySignature !== geometrySignature) {
       entry.geometrySignature = geometrySignature
       entry.geometry = geometry
-      this.#writeHitArea(entry.host, geometry, padding)
+      writeMapKitHitArea(entry.host, geometry, padding)
       const offset = mapKitAnchorOffset(geometry)
       entry.annotation.anchorOffset = new DOMPoint(offset.x, offset.y)
       entry.annotation.size = geometry.size

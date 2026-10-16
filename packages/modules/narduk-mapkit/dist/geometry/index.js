@@ -3,4 +3,6 @@ export * from './helpers.js';
 export * from './fit-bounds.js';
 export * from './roving.js';
 export * from '../nuxt/runtime/pin-geometry.js';
+export * from './motion.js';
+export * from './declutter.js';
 //# sourceMappingURL=index.js.map
