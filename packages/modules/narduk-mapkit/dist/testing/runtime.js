@@ -921,8 +921,15 @@ export function createFakeMapKitRuntime(rawOptions = {}) {
         place(annotation) {
             const point = project(annotation.coordinate, this.regionValue, this.viewport());
             const element = annotation.element;
-            element.style.left = `${point.x + annotation.anchorOffset.x}px`;
-            element.style.top = `${point.y + annotation.anchorOffset.y}px`;
+            // MapKit JS (6.0.128 and 6.1.182, measured): the element is centred on the
+            // coordinate horizontally with its bottom edge on it, then moved by the
+            // NEGATIVE of `anchorOffset`. `left` / `top` are the element's top-left.
+            const size = annotation.size ?? {
+                height: element.offsetHeight,
+                width: element.offsetWidth,
+            };
+            element.style.left = `${point.x - size.width / 2 - annotation.anchorOffset.x}px`;
+            element.style.top = `${point.y - size.height - annotation.anchorOffset.y}px`;
         }
         applySelection(next) {
             const previous = this.selectedValue;

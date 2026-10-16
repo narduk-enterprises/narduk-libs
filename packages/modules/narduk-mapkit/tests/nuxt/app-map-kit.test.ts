@@ -271,27 +271,32 @@ describe('per-pin geometry on a mounted map (§c.3)', () => {
       items: STATIONS,
       pinGeometry: (item: Station) =>
         item.id === 'station-1'
-          ? { size: { height: 150, width: 170 } }
+          ? { anchor: 'top-center', size: { height: 150, width: 170 } }
           : { anchor: 'center', size: { height: 16, width: 16 } },
     })
 
+    // MapKit's offset is `anchorPoint - (width / 2, height)`: top-centre of a
+    // 170x150 card is (0, -150), the centre of a 16x16 dot is (0, -8).
     const map = api(wrapper).getMap() as { annotations: Array<{ anchorOffset: DOMPoint }> }
-    expect(map.annotations[0]?.anchorOffset).toMatchObject({ x: -85, y: -150 })
-    expect(map.annotations[1]?.anchorOffset).toMatchObject({ x: -8, y: -8 })
+    expect(map.annotations[0]?.anchorOffset).toMatchObject({ x: 0, y: -150 })
+    expect(map.annotations[1]?.anchorOffset).toMatchObject({ x: 0, y: -8 })
   })
 
   it('rewrites the anchor when pinGeometry changes and the items do not', async () => {
     const wrapper = await mountMap({
       items: STATIONS,
-      pinGeometry: () => ({ size: { height: 150, width: 170 } }),
+      pinGeometry: () => ({ anchor: 'center', size: { height: 150, width: 170 } }),
     })
     const annotation = (api(wrapper).getMap() as { annotations: Array<{ anchorOffset: DOMPoint }> })
       .annotations[0]
+    expect(annotation?.anchorOffset).toMatchObject({ x: 0, y: -75 })
 
-    await wrapper.setProps({ pinGeometry: () => ({ size: { height: 200, width: 170 } }) })
+    await wrapper.setProps({
+      pinGeometry: () => ({ anchor: 'center', size: { height: 200, width: 170 } }),
+    })
     await nextTick()
 
-    expect(annotation?.anchorOffset).toMatchObject({ x: -85, y: -200 })
+    expect(annotation?.anchorOffset).toMatchObject({ x: 0, y: -100 })
     expect(api(wrapper).getDiagnostics().lastDiff).toMatchObject({
       added: [],
       removed: [],

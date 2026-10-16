@@ -154,6 +154,24 @@ the Worker `env` binding. No option, log line, or `runtimeConfig.public` key
 ever carries a value. Missing signing material returns `503` with
 `{"error": "unconfigured"}`; a request that is not same-origin returns `403`.
 
+### Content-Security-Policy
+
+MapKit JS 6.1 compiles a WebAssembly module (`astc-loader.wasm`, from
+`mk-csr.js`). Under a strict `script-src` that does not allow it, the browser
+logs
+`CompileError: WebAssembly.compileStreaming() ... 'unsafe-eval' is not an allowed source`
+on every map load and MapKit falls back to a slower path.
+
+With `@narduk-enterprises/narduk-core`, nothing is needed: core recognises this
+module in `modules` and adds `'wasm-unsafe-eval'` to `script-src`, wherever the
+module sits in the list. The keyword allows WebAssembly compilation only, never
+JavaScript eval, so the security-headers check (which flags `'unsafe-inline'`
+and `'unsafe-eval'`) stays green. An app that builds its own CSP adds the
+keyword to `script-src` and `https://cdn.apple-mapkit.com` as a script origin
+(see the narduk-core README for the rest of MapKit's origins). Remove any
+app-level `allow: { script: ["'wasm-unsafe-eval'"] }` once it runs a core that
+includes the contribution; it is deduplicated, so leaving it is harmless.
+
 ### `<AppMapKit>`
 
 > **`window.mapkit` is NOT the namespace your map belongs to.** MapKit JS 6
@@ -200,9 +218,19 @@ const selectedId = ref<string | null>(null)
   annotation off the map and rebuilding it. It defaults to the item's `id`.
 - **`pinGeometry`** returns `{ anchor, anchorOffset, size }` per pin, replacing
   2.0.x's single global `annotationSize`. `anchor` defaults to
-  `'bottom-center'`, which is what a teardrop pin wants; MapKit positions the
-  element's top-left, so the library computes the offset from the size rather
-  than making each app do it.
+  `'bottom-center'`, which is what a teardrop pin wants, and also takes an
+  explicit `{ x, y }` (CSS px from the pin's top-left) for a pin whose tip is
+  not a named point. `anchorOffset` moves the pin afterwards (`+x` right, `+y`
+  down). The library solves MapKit's own offset from the size (MapKit centres
+  the element on the coordinate with its bottom edge on it and moves it by the
+  _negative_ of `anchorOffset`), so an app states which point of its pin marks
+  the place and never computes an offset. The callout points at the pin's
+  top-centre whatever the anchor. This was wrong before narduk-libs#1908, and
+  fixing it moves pins: any pin with a `size` is placed differently from 2.1.0,
+  the default `bottom-center` one included (2.1.0 gave MapKit
+  `(-width / 2, -height)`; it now gets `(0, 0)`). An app that compensated for
+  the old output must state its anchor (`'center'` or `{ x, y }`) and drop its
+  hand-measured offsets; see `docs/api-2.1.md` §c.3.
 - **`#callout`** is a scoped slot (`{ close, id, item, placement, position }`)
   rendered through a `Teleport` into a host the library positions. MapKit's own
   callout can only hold DOM handed to it as an element, which is why a
@@ -2509,6 +2537,63 @@ in the app.
 | `@narduk-enterprises/narduk-mapkit/token`            | Low-level JWT signing and decoding                                                                                                                                                                                                                                                                                               |
 | `@narduk-enterprises/narduk-mapkit-nuxt`             | Nuxt module, `AppMapKit`, `AppMapKitCallout`, composables, and token route                                                                                                                                                                                                                                                       |
 | `@narduk-enterprises/narduk-mapkit/nuxt/composables` | `useMapKitView()` and `useMapKitFullscreen()` as explicit imports, for callers outside Nuxt auto-import                                                                                                                                                                                                                          |
+
+## Migrating from 2.x to 3.0
+
+3.0.0 is a major release because three things change what an existing app sees.
+Nothing else is removed or renamed.
+
+### 1. The pin anchor model (narduk-libs#1908)
+
+MapKit JS centres an annotation on the coordinate with its bottom edge on it,
+then moves it by the **negative** of `anchorOffset`. 2.x assumed the top-left
+landed on `projected + anchorOffset`, so for any pin with a `size` it handed
+MapKit the wrong offset. 3.0 solves the offset from what the app states: which
+point of the pin marks the place.
+
+**Every pin with a `size` is placed differently from 2.x, the default
+`bottom-center` one included** (2.x gave MapKit `(-width / 2, -height)`; 3.0
+gives `(0, 0)`). A pin with no `size` is unchanged.
+
+An app that compensated for the old output (a `top-left` anchor plus
+hand-measured offsets, a callout-correction constant) should:
+
+1. return the point that marks the place from `pinGeometry`: `anchor: 'center'`
+   for a dot or badge, `anchor: 'bottom-center'` for a teardrop, or an explicit
+   `{ x, y }` (CSS px from the pin's top-left) for a pill whose dot, not its
+   middle, marks the place;
+2. delete its hand-measured `anchorOffset` (an `anchorOffset` now means "move
+   the pin this much after the anchor is applied", `+x` right, `+y` down);
+3. delete its callout correction. The callout now points at the pin's top-centre
+   whatever the anchor.
+
+Check the pin against the real map: `mapKitAnchorOffset(geometry)` is the offset
+MapKit receives, and `./testing`'s fake places elements the way MapKit does.
+
+### 2. Callout dismissal and fitting are on by default
+
+`<AppMapKit>` now has three props that default to **on**:
+
+| Prop                | Default | Does                                                                 | Opt out                         |
+| ------------------- | ------- | -------------------------------------------------------------------- | ------------------------------- |
+| `dismissOnMapClick` | `true`  | a tap on empty map deselects, closing the callout                    | `:dismiss-on-map-click="false"` |
+| `dismissOnEscape`   | `true`  | `Escape` deselects and returns focus to the pin                      | `:dismiss-on-escape="false"`    |
+| `calloutKeepInView` | `true`  | the callout is measured and kept inside the map (flip, slide, clamp) | `:callout-keep-in-view="false"` |
+
+An app that already closes its own callout on `map-click` or `Escape` will see
+the selection cleared twice; an app that draws its own callouts should set
+`calloutFollowSelection` to `false`, which makes Escape and map-click dismissal
+no-ops. With `calloutKeepInView` the callout host is positioned by its top-left
+corner, not centred with a transform; the `position` in the slot scope is
+unchanged.
+
+### 3. Drop the app-level `'wasm-unsafe-eval'`
+
+MapKit JS 6.1 compiles WebAssembly. `narduk-core` now adds `'wasm-unsafe-eval'`
+to `script-src` for every app that lists the mapkit module, so an app that added
+it by hand can delete `allow: { script: ["'wasm-unsafe-eval'"] }` (a duplicate
+is merged, so leaving it is harmless). The keyword allows WebAssembly
+compilation only, never JS eval.
 
 ## Maintainer Migration Notes
 

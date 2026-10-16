@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { resolveSecurityHeaders } from '../runtime/shared/security-headers'
 import { applyCspContributionPoint, CSP_LATE_CONTRIBUTION_ERROR } from '../src/csp-contributions'
 
 import type * as SecurityHeaders from '../runtime/shared/security-headers'
@@ -14,7 +15,10 @@ import type { NardukCoreModuleOptions } from '../src/module'
 import type * as NuxtKit from '@nuxt/kit'
 
 const CSP_HOOK = 'narduk-core:csp'
+const MODULES_DONE = 'modules:done'
 const WIDGETS_ORIGIN = 'https://widgets.example'
+const MAPKIT_NUXT_MODULE = '@narduk-enterprises/narduk-mapkit/nuxt'
+const ENABLED_HEADERS = { security: { headers: { enabled: true } } }
 
 type HookHandler = (...args: never[]) => unknown
 
@@ -88,7 +92,7 @@ describe('CSP contribution point (narduk-libs#410)', () => {
       allow.script.push('https://too-late.example')
     })
 
-    await expect(nuxt.run('modules:done')).rejects.toThrow(CSP_LATE_CONTRIBUTION_ERROR)
+    await expect(nuxt.run(MODULES_DONE)).rejects.toThrow(CSP_LATE_CONTRIBUTION_ERROR)
   })
 
   it('does not throw at modules:done when every contribution was merged', async () => {
@@ -99,7 +103,104 @@ describe('CSP contribution point (narduk-libs#410)', () => {
     })
     await applyCspContributionPoint(options, nuxt)
 
-    await expect(nuxt.run('modules:done')).resolves.toBeUndefined()
+    await expect(nuxt.run(MODULES_DONE)).resolves.toBeUndefined()
+  })
+})
+
+describe('built-in contributions for estate modules (narduk-libs#1908)', () => {
+  const WASM = "'wasm-unsafe-eval'"
+
+  function nuxtWith(modules: unknown[]) {
+    return { ...createHookable(), options: { modules } }
+  }
+
+  it.each([
+    ['the subpath entry', MAPKIT_NUXT_MODULE],
+    ['the package root', '@narduk-enterprises/narduk-mapkit'],
+    ['the frozen 2.0.x adapter', '@narduk-enterprises/narduk-mapkit-nuxt'],
+  ])('adds wasm-unsafe-eval when %s is installed', async (_name, specifier) => {
+    const options: CspContributionHost = structuredClone(ENABLED_HEADERS)
+
+    await applyCspContributionPoint(options, nuxtWith([specifier]))
+
+    expect(options.security?.headers).toEqual({
+      enabled: true,
+      allow: expect.objectContaining({ script: [WASM] }),
+    })
+  })
+
+  it('reads a module written as a [specifier, options] tuple', async () => {
+    const options: CspContributionHost = structuredClone(ENABLED_HEADERS)
+
+    await applyCspContributionPoint(
+      options,
+      nuxtWith([[MAPKIT_NUXT_MODULE, { tokenRoutePath: '/mk' }]]),
+    )
+
+    expect((options.security?.headers as { allow?: { script?: string[] } }).allow?.script).toEqual([
+      WASM,
+    ])
+  })
+
+  it('adds nothing when narduk-mapkit is not installed', async () => {
+    const options: CspContributionHost = structuredClone(ENABLED_HEADERS)
+
+    await applyCspContributionPoint(
+      options,
+      nuxtWith(['@nuxt/ui', '@narduk-enterprises/narduk-analytics', () => 0, 42]),
+    )
+
+    expect(options.security?.headers).toEqual({ enabled: true })
+  })
+
+  it('does not match a package that merely contains the name', async () => {
+    const options: CspContributionHost = structuredClone(ENABLED_HEADERS)
+
+    await applyCspContributionPoint(
+      options,
+      nuxtWith(['@narduk-enterprises/narduk-mapkit-extras', 'not-narduk-mapkit']),
+    )
+
+    expect(options.security?.headers).toEqual({ enabled: true })
+  })
+
+  it('merges with the app allowlist and a hook contribution without duplicates', async () => {
+    const nuxt = nuxtWith([MAPKIT_NUXT_MODULE])
+    const options = {
+      security: { headers: { enabled: true, allow: { script: ['https://app.example', WASM] } } },
+    }
+    nuxt.hook(CSP_HOOK, (allow: MutableSecurityHeadersAllowlist) => {
+      allow.script.push(WASM, 'https://cdn.example')
+    })
+
+    await applyCspContributionPoint(options, nuxt)
+
+    expect(options.security.headers.allow?.script).toEqual([
+      'https://app.example',
+      WASM,
+      'https://cdn.example',
+    ])
+  })
+
+  it('is order independent: modules:done sees the same contribution, so it never throws', async () => {
+    const nuxt = nuxtWith([MAPKIT_NUXT_MODULE])
+    await applyCspContributionPoint({ security: { headers: { enabled: true } } }, nuxt)
+
+    await expect(nuxt.run(MODULES_DONE)).resolves.toBeUndefined()
+  })
+
+  it('puts the keyword on script-src without admitting unsafe-eval or unsafe-inline', () => {
+    const strict = resolveSecurityHeaders({
+      enabled: true,
+      enforce: true,
+      allow: { script: [WASM] },
+    })
+    const scriptSrc = strict.csp['script-src'] as string[]
+
+    expect(scriptSrc).toContain(WASM)
+    // Allowing WebAssembly compilation is not allowing JS eval.
+    expect(scriptSrc).not.toContain("'unsafe-eval'")
+    expect(scriptSrc).not.toContain("'unsafe-inline'")
   })
 })
 
@@ -288,6 +389,22 @@ describe('the published module entry through the real defineNuxtModule', () => {
       enabled: true,
       allow: { script: [WIDGETS_ORIGIN, APP_SCRIPT_ORIGIN] },
     })
+    await expect(entry.nuxt.callHook('modules:done')).resolves.toBeUndefined()
+  })
+
+  it('reaches nuxt-security script-src for an app that installs narduk-mapkit (#1908)', async () => {
+    const entry = await loadRealEntry()
+    ;(entry.nuxt.options as { modules?: unknown[] }).modules = [
+      '@narduk-enterprises/narduk-core',
+      MAPKIT_NUXT_MODULE,
+    ]
+
+    await entry.mod({}, entry.nuxt)
+
+    expect(entry.nuxtSecurityScriptSrc()).toEqual(
+      expect.arrayContaining([APP_SCRIPT_ORIGIN, "'wasm-unsafe-eval'"]),
+    )
+    expect(entry.nuxtSecurityScriptSrc()).not.toContain("'unsafe-eval'")
     await expect(entry.nuxt.callHook('modules:done')).resolves.toBeUndefined()
   })
 

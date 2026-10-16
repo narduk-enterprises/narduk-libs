@@ -293,27 +293,38 @@ describe('map and annotations', () => {
     expect(fake.inspect.annotationCounts(pin)).toMatchObject({ added: 1, removed: 1 })
   })
 
-  it('builds a generic Annotation through its factory and honours anchorOffset', () => {
+  it('builds a generic Annotation through its factory and places it as MapKit does', () => {
     const { fake, map } = readyMap({ viewport: { height: 600, width: 800 } })
-    const annotation = new fake.mapkit.Annotation(
-      { latitude: 0, longitude: 0 },
-      () => {
-        const element = document.createElement('div')
-        element.className = 'pin-170x150'
-        return element
-      },
-      { anchorOffset: new DOMPoint(-85, -150), id: 'tall-pin', size: { height: 150, width: 170 } },
-    )
+    const make = (id: string, anchorOffset: DOMPoint) =>
+      new fake.mapkit.Annotation(
+        { latitude: 0, longitude: 0 },
+        () => {
+          const element = document.createElement('div')
+          element.className = id
+          return element
+        },
+        { anchorOffset, id, size: { height: 150, width: 170 } },
+      )
+    const plain = make('plain', new DOMPoint(0, 0))
+    const lifted = make('lifted', new DOMPoint(10, -20))
     map.region = new fake.mapkit.CoordinateRegion(
       { latitude: 0, longitude: 0 },
       { latitudeDelta: 2, longitudeDelta: 2 },
     )
-    map.addAnnotation(annotation)
+    map.addAnnotation(plain)
+    map.addAnnotation(lifted)
 
-    // Centre of an 800x600 viewport, shifted by the anchor offset.
-    expect(annotation.element.style.left).toBe('315px')
-    expect(annotation.element.style.top).toBe('150px')
-    expect(annotation.element.className).toBe('pin-170x150')
+    // Measured on MapKit JS 6.0.128 and 6.1.182 (narduk-libs#1908): with no
+    // offset the element is centred on the coordinate with its bottom edge on
+    // it. The viewport centre is (400, 300), so the 170x150 box starts at
+    // (400 - 85, 300 - 150).
+    expect(plain.element.style.left).toBe('315px')
+    expect(plain.element.style.top).toBe('150px')
+    // A non-zero offset moves the element by its NEGATIVE: (10, -20) is 10 px
+    // left and 20 px down.
+    expect(lifted.element.style.left).toBe('305px')
+    expect(lifted.element.style.top).toBe('170px')
+    expect(plain.element.className).toBe('plain')
   })
 
   it('frames items with showItems', () => {

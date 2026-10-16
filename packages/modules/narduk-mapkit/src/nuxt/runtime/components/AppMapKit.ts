@@ -36,7 +36,7 @@ import { applyMapKitBasemap, resolveMapKitMapType } from '../basemap.js'
 import { MapKitCalloutHostLayer } from '../callout-host.js'
 import { useMapKitPreload } from '../preload.js'
 import { MapKitOverlayLayer } from '../overlay-layer.js'
-import { mapKitAnchorOffset } from '../pin-geometry.js'
+import { mapKitCalloutAnchorOffset, mapKitCoordinateWithinPin } from '../pin-geometry.js'
 import { MapKitPinLayer, defaultMapKitItemKey } from '../pin-layer.js'
 import { mapKitBoundingRegion, mapKitGeometryPoints } from '../region.js'
 import { mapKitColorModeInjectionKey, mapKitNonceInjectionKey } from '../injection-keys.js'
@@ -362,19 +362,18 @@ const AppMapKitImpl = defineComponent({
       const host = pinLayer?.hostFor(id)
       if (!host) return null
       const geometry = componentProps.pinGeometry?.(pinLayer?.itemFor(id) as MapKitItem) ?? {}
-      const offset = mapKitAnchorOffset(geometry)
+      const within = mapKitCoordinateWithinPin(geometry, {
+        height: host.offsetHeight,
+        width: host.offsetWidth,
+      })
       const left = host.offsetLeft || Number.parseFloat(host.style.left || '0')
       const top = host.offsetTop || Number.parseFloat(host.style.top || '0')
-      return {
-        x: left - offset.x + (geometry.size ? geometry.size.width / 2 + offset.x : 0),
-        y: top,
-      }
+      return { x: left + within.x, y: top + within.y }
     }
 
+    /** Where a callout points, relative to the coordinate: the top-centre of the pin. */
     function calloutAnchorOffset(item: MapKitItem): MapKitCalloutPoint {
-      const geometry = componentProps.pinGeometry?.(item) ?? {}
-      const offset = mapKitAnchorOffset(geometry)
-      return { x: offset.x + (geometry.size?.width ?? 0) / 2, y: offset.y }
+      return mapKitCalloutAnchorOffset(componentProps.pinGeometry?.(item) ?? {})
     }
 
     function leaderPoint(): { x: number; y: number } | null {

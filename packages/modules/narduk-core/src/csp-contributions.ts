@@ -52,6 +52,59 @@ export interface CspContributionHost {
 export interface CspContributionNuxt {
   callHook(name: string, ...args: unknown[]): unknown
   hook(name: string, handler: (...args: never[]) => unknown): unknown
+  /** The resolved Nuxt options; only `modules` is read, to find built-in contributors. */
+  options?: { modules?: readonly unknown[] }
+}
+
+/**
+ * Sources that an estate module needs whenever it is installed, added without
+ * that module having to win an install-order race (narduk-libs#1908).
+ *
+ * The `narduk-core:csp` hook is order dependent: a module installed after
+ * narduk-core registers its listener too late, which `modules:done` turns into
+ * a build error. A source an estate module cannot work without should not
+ * depend on where the app listed it, so core recognises the module by name in
+ * `nuxt.options.modules` (layers' modules are merged into it before any module
+ * installs) and contributes for it.
+ */
+export const BUILT_IN_CSP_CONTRIBUTIONS: ReadonlyArray<{
+  allow: Partial<Record<CspAllowDirective, readonly string[]>>
+  /** Matches a `nuxt.config` `modules` entry written as a package specifier. */
+  module: RegExp
+  reason: string
+}> = [
+  {
+    module: /(^|[\\/])narduk-mapkit(-nuxt)?([\\/]nuxt)?[\\/]?$/,
+    // MapKit JS 6.1 compiles `astc-loader.wasm` (mk-csr.js). Without this the
+    // browser logs "WebAssembly.compileStreaming(): ... 'unsafe-eval' is not an
+    // allowed source" on every map load and MapKit falls back to a slower path.
+    // `'wasm-unsafe-eval'` allows WebAssembly compilation only, never JS eval.
+    allow: { script: ["'wasm-unsafe-eval'"] },
+    reason: 'narduk-mapkit loads its WebAssembly renderer',
+  },
+]
+
+function moduleSpecifier(entry: unknown): string | undefined {
+  const head = Array.isArray(entry) ? entry[0] : entry
+  return typeof head === 'string' ? head : undefined
+}
+
+/** Add what the estate modules named in `nuxt.options.modules` always need. */
+export function addBuiltInCspContributions(
+  allow: MutableSecurityHeadersAllowlist,
+  nuxt: CspContributionNuxt,
+): void {
+  const specifiers = (nuxt.options?.modules ?? [])
+    .map(moduleSpecifier)
+    .filter((value): value is string => value !== undefined)
+  for (const contribution of BUILT_IN_CSP_CONTRIBUTIONS) {
+    if (!specifiers.some((specifier) => contribution.module.test(specifier))) continue
+    for (const key of CSP_ALLOW_DIRECTIVES) {
+      for (const source of contribution.allow[key] ?? []) {
+        if (!allow[key].includes(source)) allow[key].push(source)
+      }
+    }
+  }
 }
 
 export function createMutableCspAllow(): MutableSecurityHeadersAllowlist {
@@ -139,10 +192,12 @@ export async function collectCspContributions(
   nuxt: CspContributionNuxt,
 ): Promise<MutableSecurityHeadersAllowlist> {
   const contributed = createMutableCspAllow()
+  addBuiltInCspContributions(contributed, nuxt)
   await nuxt.callHook('narduk-core:csp', contributed)
   const snapshot = snapshotAllow(contributed)
   nuxt.hook('modules:done', (async () => {
     const again = createMutableCspAllow()
+    addBuiltInCspContributions(again, nuxt)
     await nuxt.callHook('narduk-core:csp', again)
     if (snapshotAllow(again) !== snapshot) {
       throw new Error(CSP_LATE_CONTRIBUTION_ERROR)

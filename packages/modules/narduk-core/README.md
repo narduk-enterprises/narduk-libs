@@ -394,6 +394,14 @@ Reach for it only when the app genuinely contacts nothing third-party. An app
 that installs narduk-analytics or narduk-mapkit wants the default, or it will be
 restating those modules' hosts in `allow` by hand.
 
+An app that lists `@narduk-enterprises/narduk-mapkit` (or its `/nuxt` subpath,
+or the frozen `-nuxt` adapter) in `modules` also gets `'wasm-unsafe-eval'` on
+`script-src`, on either baseline and wherever the module sits in the list
+(narduk-libs#1908). MapKit JS 6.1 compiles a WebAssembly renderer; without the
+keyword every map load logs a `CompileError` and falls back to a slower path.
+The keyword allows WebAssembly compilation only, never JS eval. The
+`narduk-core:csp` hook is still the route for any other source.
+
 > [!WARNING] `'strict-dynamic'` makes a conforming browser **ignore every host**
 > in `script-src`, `'self'` included, and trust only scripts created by already-
 > trusted script. That is what makes a nonce policy strong, and it is also why a

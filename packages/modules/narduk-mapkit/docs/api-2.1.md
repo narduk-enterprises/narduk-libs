@@ -200,18 +200,45 @@ interface MapKitPinGeometry {
   /** Element box in CSS px. Default: measured from the rendered glyph. */
   size?: { width: number; height: number }
   /** Which point of the element sits on the coordinate. Default 'bottom-center'. */
-  anchor?: 'center' | 'bottom-center' | 'top-center' | 'top-left'
+  anchor?:
+    | 'center'
+    | 'bottom-center'
+    | 'top-center'
+    | 'top-left'
+    | { x: number; y: number }
   /** CSS px added AFTER the anchor is applied. Default { x: 0, y: 0 }. */
   anchorOffset?: { x: number; y: number }
 }
 ```
 
 Semantics: the annotation's coordinate lands on the element's `anchor` point,
-then `anchorOffset` shifts it (`+x` right, `+y` down). The library computes
+then `anchorOffset` shifts the pin (`+x` right, `+y` down). The library computes
 MapKit's `anchorOffset` from `size` + `anchor` + `anchorOffset`; apps never
 compute it. `size` is per-pin, so a 170×150 pin and a 16×16 pin in the same map
 are both correct. **There is no global `annotationSize` and no hard-coded
-`(0, -6)`.**
+`(0, -6)`.** `anchor` also takes an explicit `{ x, y }` (CSS px from the pin's
+top-left) for a pin whose tip is not one of the four named points.
+
+_Corrected in narduk-libs#1908._ 2.1.0 wrote this section, the fake and the
+tests around the belief that MapKit puts the element's top-left at
+`projectedPoint + anchorOffset`. Measured on live MapKit JS (6.0.128 and
+6.1.182, `convertCoordinateToPointOnPage` against the element's bounding box):
+with `anchorOffset (0, 0)` the element is centred horizontally on the coordinate
+with its **bottom** edge on it, and a non-zero offset moves it by the
+**negative** of the offset. The library now solves
+`mapKitOffset = anchorPoint - (width / 2, height) - appOffset`, so a
+`bottom-center` pin gets `(0, 0)` and a 16×16 `center` dot gets `(0, -8)`, and
+the `./testing` fake places elements the same way. A callout opens at the pin's
+top-centre whatever the anchor: for a `top-left` pin the 2.22.x formula put it
+half the pin's width too far east (up to ~225 px for a wide pill).
+
+_This moves pins._ For a sized pin 2.1.0 handed MapKit `(-width / 2, -height)`
+for the default `bottom-center` anchor; it now hands it `(0, 0)`, so every sized
+pin lands somewhere different on screen than before, the default one included.
+An app that compensated for the old output (float-forecast `(-21, -34)`,
+borderwaitstat-us 6, 8 and 12 px west, lakestat-us 15 px west, bluebonnet 9 px
+west, the Wave Transit concept) shifts until it states its anchor and drops its
+offsets. A pin with no `size` is unchanged.
 
 ### c.4 Slots
 
@@ -391,11 +418,21 @@ await new Promise<void>((resolve, reject) => {
 6. Error enum is Apple's `ConfigurationErrorStatus` **verbatim** (§c.7).
 7. Types come from `@types/apple-mapkit ^6`, transitively via the loader.
    `declare const mapkit: any` and every app-local `MapKitGlobal` go.
-8. **CSP: no change needed anywhere.** narduk-core's shipped preset ran v6 with
-   zero violations in Chromium and WebKit, 600 annotations, hybrid + 3D camera.
-   `'wasm-unsafe-eval'` is **not** needed; zero WebAssembly calls, no `.wasm`
-   asset. The narduk-core CSP contribution point is descoped to 2.2
-   (narduk-libs#410). Bounded: see §i.
+8. **CSP: `'wasm-unsafe-eval'` IS needed on MapKit JS 6.1.** _Corrected in
+   narduk-libs#1908._ This item originally read "no change needed anywhere",
+   from a headless spike on MapKit 6.0.128 with no GPU, where no WebAssembly was
+   compiled. Live MapKit JS 6.1.182 compiles `astc-loader.wasm` from `mk-csr.js`
+   and, under a strict `script-src` without the keyword, logs
+   `CompileError: WebAssembly.compileStreaming(): ... 'unsafe-eval' is not an allowed source`
+   on every map load, then falls back to a slower path (measured on
+   wave.nard.uk: with the keyword the error is gone and the module loads in 77
+   ms). The keyword allows WebAssembly compilation only, never JS eval, and the
+   item-10 security-headers check (which flags only `'unsafe-inline'` and
+   `'unsafe-eval'`) stays green. **narduk-core adds it to `script-src` for every
+   app that lists `@narduk-enterprises/narduk-mapkit` (or `/nuxt`, or the frozen
+   `-nuxt` adapter) in `modules`, wherever it sits in the list; an app needs no
+   `allow` entry of its own.** The `narduk-core:csp` hook (#410) is still the
+   route for any other source.
 
 ---
 
@@ -616,12 +653,14 @@ Copied from S1 §10 and §2.3. Every item below is an unknown, not a decision.
    its own and the library must schedule its own re-init before 1800 s — S4 must
    not assume the positive.** Cheaper substitute: assert it against the fake's
    controllable accessKey clock (§g).
-2. `'wasm-unsafe-eval'` not needed **for what was measured**: MapKit 6.0.128,
-   libraries `map`/`annotations`/`overlays`, `standard` + `hybrid`, a 3D camera,
-   headless Chromium/SwiftShader and WebKit. **Not** covered: Flyover, Look
-   Around, `services`, `geocoder`, `directions`, `user-location`, a future
-   MapKit version, a real GPU. Read as "not required today". Buoys' report-only
-   soak is what turns it into a standing claim.
+2. **Superseded by narduk-libs#1908.** `'wasm-unsafe-eval'` was "not needed
+   **for what was measured**": MapKit 6.0.128, libraries
+   `map`/`annotations`/`overlays`, `standard` + `hybrid`, a 3D camera, headless
+   Chromium/SwiftShader and WebKit, which compiled no WebAssembly. A real GPU on
+   MapKit 6.1.182 does (`astc-loader.wasm`), so it is needed today and
+   narduk-core now supplies it whenever this package is installed (see §d item
+   8). Still **not** covered: Flyover, Look Around, `services`, `geocoder`,
+   `directions`, `user-location`.
 3. `https://*.apple.com` in `connect-src` was never contacted; which library
    needs it is unknown.
 4. `upgrade-insecure-requests` could not be exercised on an `http:` fixture.
