@@ -27,4 +27,8 @@ export * from './vector-tiles.js';
 export * from './vector-tile-paint-worker.js';
 export * from './vector-tile-areas.js';
 export * from './vector-tile-paths.js';
+export * from './hit-area.js';
+export * from './moving-markers.js';
+export * from './poller.js';
+export * from './viewport-annotations.js';
 //# sourceMappingURL=index.d.ts.map
