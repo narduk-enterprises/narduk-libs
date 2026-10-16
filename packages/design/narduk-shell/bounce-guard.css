@@ -1,8 +1,8 @@
 /*
  * @narduk-enterprises/narduk-shell/bounce-guard.css: desktop-app overscroll guards.
  *
- * Opt-in. The module loads this sheet only when `nardukShell: { bounceGuard: true }` is set; an app
- * can also import it by hand after its Tailwind entry. It names only `html`, `body`, `main`,
+ * On by default. The module loads this sheet unless `nardukShell: { bounceGuard: false }` is set; an
+ * app can also import it by hand after its Tailwind entry. It names only `html`, `body`, `main`,
  * `aside`, `nav`, `[data-scroll-region]`, the shell marker and Nuxt UI / Reka overlay roles.
  *
  * The shell marker is `[data-app-shell]`. `NeAppShell` sets it on its root; an app with its own

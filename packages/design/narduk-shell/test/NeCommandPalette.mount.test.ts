@@ -88,6 +88,27 @@ describe('NeCommandPalette', () => {
     wrapper.unmount()
   })
 
+  it('reopens on a toggle in the gap after Escape (riverstatus#543)', async () => {
+    const wrapper = mountPalette([STATES])
+    const dialog = wrapper.get('dialog').element as HTMLDialogElement
+    await openPalette()
+    // Escape: `cancel` fires first, the browser removes `open`, `close` is queued.
+    dialog.dispatchEvent(new Event('cancel'))
+    dialog.open = false
+    await nextTick()
+    expect(useCommandPalette().isOpen.value).toBe(false)
+    useCommandPalette().toggle()
+    await nextTick()
+    await nextTick()
+    expect(dialog.open).toBe(true)
+    // The queued `close` from the Escape arrives after the reopen and must not undo it.
+    dialog.dispatchEvent(new Event('close'))
+    await nextTick()
+    expect(dialog.open).toBe(true)
+    expect(useCommandPalette().isOpen.value).toBe(true)
+    wrapper.unmount()
+  })
+
   it('opens at once when it is mounted after the open (the lazy chunk arrives late)', async () => {
     useCommandPalette().open()
     const wrapper = mountPalette([STATES])
