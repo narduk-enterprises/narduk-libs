@@ -56,7 +56,7 @@ function makeLayer(options: {
   itemLabel?: (item: Station) => string
   onHover?: (id: string | null) => void
   onSelect?: (id: string | null, via: 'keyboard' | 'pointer') => void
-  pinGeometry?: (item: Station) => { anchor?: 'center'; size?: { height: number; width: number } }
+  pinGeometry?: (item: Station) => { anchor?: 'center' | 'top-center'; size?: { height: number; width: number } }
 }): MapKitPinLayer<Station> {
   return new MapKitPinLayer<Station>({
     map: harness.map,
@@ -340,20 +340,22 @@ describe('per-pin geometry on the map (§c.3)', () => {
     const layer = layerFor({
       pinGeometry: (item) =>
         item.id === 'station-1'
-          ? { size: { height: 150, width: 170 } }
+          ? { anchor: 'top-center', size: { height: 150, width: 170 } }
           : { anchor: 'center', size: { height: 16, width: 16 } },
     })
 
     layer.setItems([station(1), station(2)])
 
-    expect(layer.annotationFor('station-1')?.anchorOffset).toMatchObject({ x: -85, y: -150 })
+    expect(layer.annotationFor('station-1')?.anchorOffset).toMatchObject({ x: 0, y: -150 })
     expect(layer.annotationFor('station-1')?.size).toMatchObject({ height: 150, width: 170 })
-    expect(layer.annotationFor('station-2')?.anchorOffset).toMatchObject({ x: -8, y: -8 })
+    expect(layer.annotationFor('station-2')?.anchorOffset).toMatchObject({ x: 0, y: -8 })
   })
 
   it('rewrites the anchor in place when only the geometry changed', () => {
     let height = 150
-    const layer = layerFor({ pinGeometry: () => ({ size: { height, width: 170 } }) })
+    const layer = layerFor({
+      pinGeometry: () => ({ anchor: 'center', size: { height, width: 170 } }),
+    })
     layer.setItems([station(1)])
     const annotation = layer.annotationFor('station-1')
     harness.fake.inspect.reset()
@@ -364,7 +366,7 @@ describe('per-pin geometry on the map (§c.3)', () => {
     expect(harness.fake.inspect.annotationsAdded).toBe(0)
     expect(harness.fake.inspect.annotationsRemoved).toBe(0)
     expect(layer.annotationFor('station-1')).toBe(annotation)
-    expect(annotation?.anchorOffset).toMatchObject({ x: -85, y: -200 })
+    expect(annotation?.anchorOffset).toMatchObject({ x: 0, y: -100 })
     expect(diff.restyled).toStrictEqual(['station-1'])
   })
 })
