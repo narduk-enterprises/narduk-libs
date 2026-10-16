@@ -225,8 +225,12 @@ const selectedId = ref<string | null>(null)
   the element on the coordinate with its bottom edge on it and moves it by the
   _negative_ of `anchorOffset`), so an app states which point of its pin marks
   the place and never computes an offset. The callout points at the pin's
-  top-centre whatever the anchor. This was wrong for any non-default anchor
-  before narduk-libs#1908; see `docs/api-2.1.md` §c.3.
+  top-centre whatever the anchor. This was wrong before narduk-libs#1908, and
+  fixing it moves pins: any pin with a `size` is placed differently from 2.1.0,
+  the default `bottom-center` one included (2.1.0 gave MapKit
+  `(-width / 2, -height)`; it now gets `(0, 0)`). An app that compensated for
+  the old output must state its anchor (`'center'` or `{ x, y }`) and drop its
+  hand-measured offsets; see `docs/api-2.1.md` §c.3.
 - **`#callout`** is a scoped slot (`{ close, id, item, placement, position }`)
   rendered through a `Teleport` into a host the library positions. MapKit's own
   callout can only hold DOM handed to it as an element, which is why a
