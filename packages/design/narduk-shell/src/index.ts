@@ -237,6 +237,25 @@ export type {
 } from './runtime/components/ne-prose-types'
 
 /**
+ * NeMessageProse's rules for what an agent or a bot wrote, as pure functions
+ * (no Vue, no DOM): `messageProseBlocks` (headings demoted to bold, only
+ * `https:` links kept, a flattened list restored; never throws),
+ * `messageProseInline` and `messageProseText` (one line, and its plain words),
+ * `unflattenLists`.
+ */
+export {
+  messageProseBlocks,
+  messageProseInline,
+  messageProseText,
+  unflattenLists,
+} from './runtime/utils/message-prose'
+export type { MessageProseOptions } from './runtime/utils/message-prose'
+export type {
+  NeMessageProseMode,
+  NeMessageProseProps,
+} from './runtime/components/ne-message-prose-types'
+
+/**
  * The command palette (`NeCommandPalette`, `NeCommandPaletteTrigger`): its
  * shapes, and the engine as pure functions. Scoring, grouping, recents and the
  * async runner have no Vue or DOM import, so an app can unit test its groups

@@ -3593,6 +3593,89 @@ import type {
 } from '@narduk-enterprises/narduk-shell'
 ```
 
+### NeMessageProse
+
+What an agent or a bot wrote, formatted: `**bold**`, backticks, `-` bullets and
+lists a producer flattened onto one line, instead of the markers showing. It is
+`NeProse` (no `v-html`; every source character reaches the DOM as a text node)
+on blocks that `messageProseBlocks()` makes, in a compact skin that takes its
+type, leading and ink from the place it sits in, so one component serves a chat
+bubble, a timeline row and a table cell. The skin's own reads are tokens only:
+`--ne-font-mono` and `--ne-surface-muted` for code, `--ne-accent` for links and
+the Show more button.
+
+Message rules, on top of the NeProse subset:
+
+- **A heading is a bold paragraph.** No message draws a type step above bold
+  weight or mints an id (a stream holds many messages; two `## Plan` headings
+  would share one).
+- **Only `https:` links are links**, and they open in a new tab
+  (`rel="noopener"`). A `#fragment`, relative, `http:`, `mailto:`, `javascript:`
+  or any other link renders as its text.
+- **A flattened list is restored** (`unflattenLists`). Text with no line break,
+  and at least two ` - ` or `1.` markers each after a sentence end or a colon,
+  gets its line breaks back; the numbers must count up or all repeat (`1. 1. 1.`).
+  A lone " - " in prose stays a dash.
+- **A single newline is a line break** (markdown would fold it into a space).
+- **It never throws.** A marker a producer cut off (a dangling `**`, a backtick,
+  half a link) has no rule, so it stays visible text and swallows nothing after
+  it. An unclosed code fence is a code block of the rest, as in CommonMark.
+
+```vue
+<template>
+  <!-- A hand-back in a stream, cut at seven lines -->
+  <NeMessageProse :text="message.body" :clamp="7" />
+
+  <!-- A title, option, table cell or log line: one line, caller's ellipsis -->
+  <p class="truncate"><NeMessageProse :text="row.summary" mode="inline" /></p>
+</template>
+```
+
+#### Props
+
+| Prop    | Type                  | Default   | What it does                                                                                                                                                                                                                                                      |
+| ------- | --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`  | `string \| null`      | —         | The message, as markdown in plain text. `null`, `undefined` and `''` render nothing.                                                                                                                                                                              |
+| `mode`  | `'block' \| 'inline'` | `'block'` | `block` renders paragraphs, lists, code and tables. `inline` renders one line: bold, em, code and `https:` links, never a block element, a line break as a space. It is a `span`, so the caller's ellipsis or line-clamp applies, and `title` is the text without markers. |
+| `clamp` | `number`              | none      | Block mode only: lines shown before Show more / Show less. The clamp is a measured height (`max-height: <n>lh`), not a hover rule, so nothing jumps when the pointer moves. The button exists only once the text is measured to overflow. Not a positive number: no clamp. |
+
+#### Slots and events
+
+None. Show more / Show less is local state: it closes again when `text`, `mode`
+or `clamp` changes. The button is `aria-expanded` and `aria-controls` the text.
+On a client-rendered list the overflow is measured before the first paint; on a
+server-rendered page a message that overflows gets its button when the page
+hydrates.
+
+#### Helpers
+
+Pure functions (no Vue, no DOM), exported from the package root:
+
+- `messageProseBlocks(text, options?): NeProseBlock[]` — the blocks above, for
+  `<NeProse :blocks>` or a test. `options.unflatten: false` skips the list
+  restore. Never throws.
+- `unflattenLists(text): string` — the list restore on its own; text it does
+  not recognise comes back unchanged.
+- `messageProseInline(text): NeProseInline[]` — the inline-mode runs.
+- `messageProseText(text): string` — the plain words of one line: what inline
+  mode puts in `title`.
+
+#### Types
+
+```ts
+import {
+  messageProseBlocks,
+  messageProseInline,
+  messageProseText,
+  unflattenLists,
+} from '@narduk-enterprises/narduk-shell'
+import type {
+  MessageProseOptions,
+  NeMessageProseMode,
+  NeMessageProseProps,
+} from '@narduk-enterprises/narduk-shell'
+```
+
 ### NeAppShell
 
 The application frame: a left rail of labelled sections, a navbar row, and the
