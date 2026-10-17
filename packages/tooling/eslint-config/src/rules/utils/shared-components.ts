@@ -54,6 +54,7 @@ export const SHARED_COMPONENT_OWNERS: readonly SharedComponentOwner[] = [
       'NeKpiTile',
       'NeLegalPage',
       'NeMarketingFooter',
+      'NeMessageProse',
       'NeMeter',
       'NePageHeader',
       'NePager',

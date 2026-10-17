@@ -161,6 +161,11 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'A markdown document in the type scale, h1 demoted, heading ids for a TOC, no v-html.',
   ),
   shell(
+    'NeMessageProse',
+    'Message prose',
+    'What an agent or bot wrote, formatted: lists restored, https links only, a measured clamp, or one inline line.',
+  ),
+  shell(
     'NeAppShell',
     'App shell',
     'The opt-in sectioned left rail, navbar row and page frame; a slide-over below lg.',
