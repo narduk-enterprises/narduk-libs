@@ -45,15 +45,17 @@ function mergeText(runs: readonly NeProseInline[]): NeProseInline[] {
   return out
 }
 
-function onlyHttpsLinks(runs: readonly NeProseInline[]): NeProseInline[] {
+/** Keeps `https:` links only, and never a link inside a link (an anchor in an anchor is invalid HTML). */
+function onlyHttpsLinks(runs: readonly NeProseInline[], inLink = false): NeProseInline[] {
   return mergeText(
     runs.flatMap((run): NeProseInline[] => {
       if (run.type === 'link') {
-        const children = onlyHttpsLinks(run.children)
-        return isMessageHref(run.href) ? [{ ...run, children }] : children
+        const keep = !inLink && isMessageHref(run.href)
+        const children = onlyHttpsLinks(run.children, inLink || keep)
+        return keep ? [{ ...run, children }] : children
       }
       if (run.type === 'strong' || run.type === 'em') {
-        return [{ ...run, children: onlyHttpsLinks(run.children) }]
+        return [{ ...run, children: onlyHttpsLinks(run.children, inLink) }]
       }
       return [run]
     }),
@@ -96,12 +98,14 @@ function messageBlock(block: NeProseBlock): NeProseBlock {
   }
 }
 
-const FLAT_BULLET = /(?<=[.:!?)`*])\s+-\s+(?=\*\*|[A-Z`[])/g
-const FLAT_NUMBER = /(?<=[.:!?)`*])\s+(\d{1,2})\.\s+(?=\*\*|[A-Z`[])/g
+// A marker follows a sentence end or a colon, which may be closed by `)`, a backtick or `*` ("done.)", "`x`.", "**Next:**"). A bare
+// closer is not enough: "**Plan** - Foo" and "`a` - Foo" are a label and its text, not two list items.
+const FLAT_BULLET = /(?<=[.:!?][)`*]*)\s+-\s+(?=\*\*|[A-Z`[])/g
+const FLAT_NUMBER = /(?<=[.:!?][)`*]*)\s+(\d{1,2})\.\s+(?=\*\*|[A-Z`[])/g
 
 /** Restores the line breaks of a list a producer flattened into one line; any other text comes back unchanged. */
 export function unflattenLists(text: string): string {
-  if (text.includes('\n')) return text
+  if (/[\n\r]/.test(text)) return text
   let out = text
   if ((out.match(FLAT_BULLET) ?? []).length >= 2) out = out.replaceAll(FLAT_BULLET, '\n- ')
   const numbers = [...out.matchAll(FLAT_NUMBER)].map((match) => Number(match[1]))
@@ -111,6 +115,44 @@ export function unflattenLists(text: string): string {
   if (numbers.length >= 2 && (counting || repeating)) out = out.replaceAll(FLAT_NUMBER, '\n$1. ')
   // A list opens after a blank line, so the sentence before it stays a paragraph of its own.
   return out.replace(/\n(- |\d{1,2}\. )/, '\n\n$1')
+}
+
+/**
+ * Past these, a message is shown as the text it is, not parsed: a nesting NeProse's render would overflow the stack on (2000 `>` is a
+ * 500 on the server), and a length the parser's worst case takes seconds on. No message a person or an agent writes comes near either.
+ */
+const MAX_DEPTH = 32
+const MAX_BLOCK_LENGTH = 50_000
+const MAX_INLINE_LENGTH = 10_000
+
+function runsDeeperThan(runs: readonly NeProseInline[], limit: number): boolean {
+  if (limit < 0) return true
+  return runs.some((run) => 'children' in run && runsDeeperThan(run.children, limit - 1))
+}
+
+function blocksDeeperThan(blocks: readonly NeProseBlock[], limit: number): boolean {
+  if (limit < 0) return true
+  return blocks.some((block) => {
+    switch (block.type) {
+      case 'paragraph':
+      case 'heading': {
+        return runsDeeperThan(block.children, limit - 1)
+      }
+      case 'list': {
+        return block.items.some((item) => blocksDeeperThan(item.children, limit - 1))
+      }
+      case 'blockquote': {
+        return blocksDeeperThan(block.children, limit - 1)
+      }
+      case 'table': {
+        return [...block.head, ...block.rows.flat()].some((cell) => runsDeeperThan(cell, limit - 1))
+      }
+      case 'code':
+      case 'rule': {
+        return false
+      }
+    }
+  })
 }
 
 /** What `messageProseBlocks()` can be asked. */
@@ -126,8 +168,14 @@ export function messageProseBlocks(
 ): NeProseBlock[] {
   const source = String(text ?? '')
   try {
+    if (source.length > MAX_BLOCK_LENGTH) throw new RangeError('message too long to parse')
     const markdown = options.unflatten === false ? source : unflattenLists(source)
-    return parseProse(markdown, { linkBase: NO_LINK_BASE }).map((block) => messageBlock(block))
+    const blocks = parseProse(markdown, { linkBase: NO_LINK_BASE }).map((block) =>
+      messageBlock(block),
+    )
+    if (blocksDeeperThan(blocks, MAX_DEPTH))
+      throw new RangeError('message nests too deep to render')
+    return blocks
   } catch {
     return source.trim() === ''
       ? []
@@ -142,21 +190,26 @@ export function messageProseBlocks(
 export function messageProseInline(text: string | null | undefined): NeProseInline[] {
   const source = String(text ?? '')
   try {
-    return squashWhitespace(onlyHttpsLinks(parseInline(source, { linkBase: NO_LINK_BASE })))
+    if (source.length > MAX_INLINE_LENGTH) throw new RangeError('message too long to parse')
+    const runs = squashWhitespace(onlyHttpsLinks(parseInline(source, { linkBase: NO_LINK_BASE })))
+    if (runsDeeperThan(runs, MAX_DEPTH)) throw new RangeError('message nests too deep to render')
+    return runs
   } catch {
     return source === '' ? [] : [{ type: 'text', value: source.replaceAll(/\s+/g, ' ') }]
   }
 }
 
+/** A break is a space, and every run of whitespace is one space: joined first, so a space at a seam is not doubled. */
 function squashWhitespace(runs: readonly NeProseInline[]): NeProseInline[] {
-  return mergeText(
-    runs.map((run): NeProseInline => {
-      if (run.type === 'break') return { type: 'text', value: ' ' }
-      if (run.type === 'text') return { type: 'text', value: run.value.replaceAll(/\s+/g, ' ') }
-      if (run.type === 'code') return { type: 'code', value: run.value.replaceAll(/\s+/g, ' ') }
-      return { ...run, children: squashWhitespace(run.children) }
-    }),
+  const joined = mergeText(
+    runs.map((run): NeProseInline => (run.type === 'break' ? { type: 'text', value: ' ' } : run)),
   )
+  return joined.map((run): NeProseInline => {
+    if (run.type === 'text') return { type: 'text', value: run.value.replaceAll(/\s+/g, ' ') }
+    if (run.type === 'code') return { type: 'code', value: run.value.replaceAll(/\s+/g, ' ') }
+    if (run.type === 'break') return run
+    return { ...run, children: squashWhitespace(run.children) }
+  })
 }
 
 /** The plain words of `messageProseInline(text)`: markers removed, one line. What a `title` reads. */

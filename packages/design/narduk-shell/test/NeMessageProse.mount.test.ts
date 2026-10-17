@@ -70,6 +70,12 @@ describe('NeMessageProse block mode', () => {
     expect(wrapper.find('strong, code').exists()).toBe(false)
   })
 
+  it('mounts a message nested far past what the renderer could recurse, as text', () => {
+    const text = '> '.repeat(2000) + 'deep'
+    expect(() => render({ text })).not.toThrow()
+    expect(render({ text }).text()).toBe(text)
+  })
+
   it('renders nothing for null, undefined and empty text, and no button', () => {
     for (const text of [null, undefined, '']) {
       const wrapper = render({ text, clamp: 7 })

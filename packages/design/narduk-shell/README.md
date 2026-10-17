@@ -330,7 +330,7 @@ it explicitly.
 | `@narduk-enterprises/narduk-shell/module`           | The Nuxt module definition, found via an unchanged `modules: ['@narduk-enterprises/narduk-shell']` (narduk-libs#295) | Item 1 ([#248](https://github.com/narduk-enterprises/narduk-libs/issues/248))           |
 | `@narduk-enterprises/narduk-shell/format`           | Ten `Intl`-based formatters (see [Formatters](#formatters-format))                                                   | Filled by item 5 ([#252](https://github.com/narduk-enterprises/narduk-libs/issues/252)) |
 | `@narduk-enterprises/narduk-shell/theme.css`        | The NE token layer and its `--ui-*` bridge (see [Styling contract](#styling-contract))                               | Filled by item 2 ([#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)) |
-| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Desktop overscroll guards, on by default (see [Bounce guard](#bounce-guard))                                                 | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
+| `@narduk-enterprises/narduk-shell/bounce-guard.css` | Desktop overscroll guards, on by default (see [Bounce guard](#bounce-guard))                                         | [#1336](https://github.com/narduk-enterprises/narduk-libs/issues/1336)                  |
 
 Install and register the module exactly as before —
 `modules: ['@narduk-enterprises/narduk-shell']` in `nuxt.config.ts` — and it
@@ -788,9 +788,9 @@ const result = await optimistic.mutate(
 
 - Returns `{ mutate, pending, error }`. `mutate` resolves `{ ok: true, value }`
   or `{ ok: false, error }` for action failures. Programming errors thrown by
-  `update`, the toast handler or `onError` still propagate.
-  `pending` is true while any request runs (use it for a quiet cue,
-  not a spinner); `error` holds the last failure.
+  `update`, the toast handler or `onError` still propagate. `pending` is true
+  while any request runs (use it for a quiet cue, not a spinner); `error` holds
+  the last failure.
 - Options: `errorTitle` (toast title), `toast: false` (no toast),
   `onError(error)` (runs after the rollback, toast or not).
 - The toast is Nuxt UI's `useToast()` (colour `error`) and needs the call to be
@@ -805,9 +805,9 @@ Headless click-to-edit. Returns
 from a blur) closes the field with the new text already shown and saves through
 `useOptimistic`; Escape cancels; a failed save restores the old value and
 reopens the field holding what was typed unless a newer editing session has
-started or been cancelled. Options extend `useOptimistic`'s with
-`multiline` (Cmd/Ctrl+Enter commits, Enter is a newline) and `validate(draft)`
-(return `false` to refuse and stay open).
+started or been cancelled. Options extend `useOptimistic`'s with `multiline`
+(Cmd/Ctrl+Enter commits, Enter is a newline) and `validate(draft)` (return
+`false` to refuse and stay open).
 
 ```vue
 <input
@@ -3613,13 +3613,19 @@ Message rules, on top of the NeProse subset:
   (`rel="noopener"`). A `#fragment`, relative, `http:`, `mailto:`, `javascript:`
   or any other link renders as its text.
 - **A flattened list is restored** (`unflattenLists`). Text with no line break,
-  and at least two ` - ` or `1.` markers each after a sentence end or a colon,
-  gets its line breaks back; the numbers must count up or all repeat (`1. 1. 1.`).
-  A lone " - " in prose stays a dash.
+  and at least two `-` or `1.` markers each after a sentence end or a colon,
+  gets its line breaks back; the numbers must count up or all repeat
+  (`1. 1. 1.`). A sentence end may be closed by `)`, a backtick or `*`
+  (`done.)`, `**Next:**`), but a bare closer is not one: `**Plan** - Foo` stays
+  prose. A lone " - " in prose stays a dash.
 - **A single newline is a line break** (markdown would fold it into a space).
 - **It never throws.** A marker a producer cut off (a dangling `**`, a backtick,
   half a link) has no rule, so it stays visible text and swallows nothing after
-  it. An unclosed code fence is a code block of the rest, as in CommonMark.
+  it. An unclosed code fence is a code block of the rest, as in CommonMark. A
+  message nested more than 32 levels deep, or longer than 50,000 characters
+  (10,000 inline), is shown as the text it is, unparsed: the renderer would
+  overflow its stack on the first, and the parser's worst case takes seconds on
+  the second. A link inside a link keeps the outer one only.
 
 ```vue
 <template>
@@ -3633,9 +3639,9 @@ Message rules, on top of the NeProse subset:
 
 #### Props
 
-| Prop    | Type                  | Default   | What it does                                                                                                                                                                                                                                                      |
-| ------- | --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text`  | `string \| null`      | —         | The message, as markdown in plain text. `null`, `undefined` and `''` render nothing.                                                                                                                                                                              |
+| Prop    | Type                  | Default   | What it does                                                                                                                                                                                                                                                               |
+| ------- | --------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`  | `string \| null`      | —         | The message, as markdown in plain text. `null`, `undefined` and `''` render nothing.                                                                                                                                                                                       |
 | `mode`  | `'block' \| 'inline'` | `'block'` | `block` renders paragraphs, lists, code and tables. `inline` renders one line: bold, em, code and `https:` links, never a block element, a line break as a space. It is a `span`, so the caller's ellipsis or line-clamp applies, and `title` is the text without markers. |
 | `clamp` | `number`              | none      | Block mode only: lines shown before Show more / Show less. The clamp is a measured height (`max-height: <n>lh`), not a hover rule, so nothing jumps when the pointer moves. The button exists only once the text is measured to overflow. Not a positive number: no clamp. |
 
@@ -3654,8 +3660,8 @@ Pure functions (no Vue, no DOM), exported from the package root:
 - `messageProseBlocks(text, options?): NeProseBlock[]` — the blocks above, for
   `<NeProse :blocks>` or a test. `options.unflatten: false` skips the list
   restore. Never throws.
-- `unflattenLists(text): string` — the list restore on its own; text it does
-  not recognise comes back unchanged.
+- `unflattenLists(text): string` — the list restore on its own; text it does not
+  recognise comes back unchanged.
 - `messageProseInline(text): NeProseInline[]` — the inline-mode runs.
 - `messageProseText(text): string` — the plain words of one line: what inline
   mode puts in `title`.

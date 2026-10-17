@@ -132,6 +132,34 @@ describe('messageProseBlocks', () => {
     expect(() => messageProseBlocks({} as unknown as string)).not.toThrow()
   })
 
+  describe('a message too deep or too long to parse', () => {
+    it('is shown as text, not parsed, when nested past what NeProse can render', () => {
+      for (const text of [
+        '> '.repeat(2000) + 'x',
+        '- '.repeat(500) + 'x',
+        '*a '.repeat(500) + 'x',
+      ]) {
+        const blocks = messageProseBlocks(text)
+        expect(blocks).toEqual([{ type: 'paragraph', children: [{ type: 'text', value: text }] }])
+      }
+    })
+
+    it('parses a message nested a few levels, as ever', () => {
+      const blocks = messageProseBlocks('> > > x\n\n- a\n  - b\n    - c')
+      expect(blocks.map((block) => block.type)).toEqual(['blockquote', 'list'])
+    })
+
+    it('shows text past the length cap as text', () => {
+      const long = '**x** '.repeat(10_000)
+      expect(messageProseBlocks(long)).toEqual([
+        { type: 'paragraph', children: [{ type: 'text', value: long }] },
+      ])
+      expect(messageProseInline('**x** '.repeat(3000))).toEqual([
+        { type: 'text', value: '**x** '.repeat(3000).replaceAll(/\s+/g, ' ') },
+      ])
+    })
+  })
+
   describe('a marker a producer cut off', () => {
     it('shows a dangling ** as text and does not swallow the rest', () => {
       const blocks = messageProseBlocks('Merged the fix, then **Next: wait for CI')
@@ -226,6 +254,26 @@ describe('unflattenLists (a producer that flattened a message onto one line)', (
     expect(unflattenLists(prose)).toBe(prose)
   })
 
+  it('leaves a "label - text" prose style alone, however many it has', () => {
+    for (const prose of [
+      '**Plan** - Foo bar. **Risk** - Baz qux.',
+      'Use `a` - Foo and `b` - Bar here',
+      'Fixed (see notes) - Done now. Also (x) - Next up',
+    ]) {
+      expect(unflattenLists(prose)).toBe(prose)
+    }
+  })
+
+  it('takes a sentence end closed by a bracket, backtick or bold as a sentence end', () => {
+    const text = 'Open: - **A.** First. - `b`. Second (x.) - Third.'
+    expect(unflattenLists(text)).toBe('Open:\n\n- **A.** First.\n- `b`. Second (x.)\n- Third.')
+  })
+
+  it('treats text with a lone carriage return as already broken into lines', () => {
+    const text = 'Done. - **A** x. - **B** y.\rmore'
+    expect(unflattenLists(text)).toBe(text)
+  })
+
   it('can be switched off', () => {
     const blocks = messageProseBlocks(STILL_OPEN, { unflatten: false })
     expect(blocks.map((block) => block.type)).toEqual(['paragraph'])
@@ -266,6 +314,17 @@ describe('messageProseInline and messageProseText', () => {
     )
     expect(messageProseText(null)).toBe('')
     expect(messageProseText('   ')).toBe('')
+  })
+
+  it('never nests a link in a link', () => {
+    const runs = messageProseInline('[a [b](https://x.test)](https://y.test)')
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ type: 'link', href: 'https://y.test' })
+    expect(JSON.stringify(runs).match(/"link"/g)).toHaveLength(1)
+  })
+
+  it('does not double a space where a break meets one', () => {
+    expect(messageProseText('a \\\n b  c')).toBe('a b c')
   })
 
   it('shows a cut marker as text', () => {
