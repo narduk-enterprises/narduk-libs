@@ -683,12 +683,12 @@ describe('create-narduk-app generation contract', () => {
     expect(generatedText).not.toContain('postinstall')
     expect(generatedText).not.toContain('git+')
     expect(generatedText).not.toContain('provision.json')
-    // narduk-libs#172 siblings: the committed .npmrc is scope routing ONLY.
+    // narduk-libs#172 siblings: the committed .npmrc contains explicit registry routing only.
     // pnpm 10 warns 'Failed to replace env in config' on an unresolved
     // ${VAR} and pnpm 11 removes .npmrc env interpolation outright, so the
     // file must carry no _authToken line at all -- not even an env reference.
     expect(files.find((file) => file.path === '.npmrc')?.contents).toBe(
-      '@narduk-enterprises:registry=https://npm.nard.uk\n',
+      'registry=https://registry.npmjs.org\n@narduk-enterprises:registry=https://npm.nard.uk\n',
     )
     // Private apps delegate install/cleanup and the fail-closed aggregate to
     // the pinned shared workflow; the public renderer is exercised separately.
@@ -1810,7 +1810,7 @@ describe('generated app typecheck and lint surfaces', () => {
       const ci = files.get('.github/workflows/ci.yml') ?? ''
       const readme = files.get('README.md') ?? ''
 
-      expect(npmrc, label).toBe('@narduk-enterprises:registry=https://npm.nard.uk\n')
+      expect(npmrc, label).toBe('registry=https://registry.npmjs.org\n@narduk-enterprises:registry=https://npm.nard.uk\n')
       expect(npmrc, label).not.toContain('_authToken')
       expect(npmrc, label).not.toContain('${')
       expect(npmrc, label).not.toContain('npm.pkg.github.com')
@@ -1850,7 +1850,7 @@ describe('generated app typecheck and lint surfaces', () => {
       expect(dependabot, label).toContain("package-ecosystem: 'npm'")
       expect(dependabot, label).toContain("package-ecosystem: 'github-actions'")
       expect(dependabot, label).not.toContain('scope:')
-      expect(dependabot, label).toContain('safe:')
+      expect(dependabot, label).toContain('all-minor-and-patch:')
       expect(dependabot, label).toContain('majors:')
       expect(dependabot, label).toContain("- '@narduk-enterprises/*'")
       expect(dependabot, label).not.toContain('npm.pkg.github.com')
@@ -1897,9 +1897,9 @@ describe('generated app typecheck and lint surfaces', () => {
       >
       expect(workspace.minimumReleaseAgeExclude, label).toContain('@narduk-enterprises/*')
       expect(npmUpdate?.registries, label).toEqual(['npm-nard-uk'])
-      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
-      expect(npmUpdate?.groups.safe.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
-      expect(npmUpdate?.groups.safe['update-types'], label).toEqual(['minor', 'patch'])
+      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(1)
+      expect(npmUpdate?.groups['all-minor-and-patch'].patterns, label).toEqual(['*', '@narduk-enterprises/*'])
+      expect(npmUpdate?.groups['all-minor-and-patch']['update-types'], label).toEqual(['minor', 'patch'])
       expect(npmUpdate?.groups.majors.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
       expect(npmUpdate?.groups.majors['update-types'], label).toEqual(['major'])
       const actionsUpdate = parsed.updates.find(

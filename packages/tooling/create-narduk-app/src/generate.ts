@@ -660,14 +660,18 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
     },
     {
       path: '.npmrc',
-      // SCOPE ROUTING ONLY. D-PKG-6 reads `@narduk-enterprises/*` from the
+      // Explicit public default prevents Dependabot from probing the mirror
+      // for every public package. D-PKG-6 reads `@narduk-enterprises/*` from the
       // anonymous `https://npm.nard.uk` mirror. The committed file carries no
       // `_authToken` line -- not even an env reference. pnpm 10 warns
       // 'Failed to replace env in config' whenever the variable is absent,
       // and pnpm 11 drops env interpolation in .npmrc entirely. Break-glass
       // GitHub Packages auth stays in `scripts/gh-packages-run.mjs`, unused
       // by the default install path. See company-hq D-PKG-6.
-      contents: text('@narduk-enterprises:registry=https://npm.nard.uk'),
+      contents: text(
+        'registry=https://registry.npmjs.org',
+        '@narduk-enterprises:registry=https://npm.nard.uk',
+      ),
     },
     {
       path: '.prettierignore',
@@ -773,7 +777,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      timezone: 'America/Chicago'",
         '    labels:',
         "      - 'dependencies'",
-        '    open-pull-requests-limit: 2',
+        '    open-pull-requests-limit: 1',
         '    cooldown:',
         `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
         `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
@@ -785,7 +789,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           `        versions: ['${limit.inclusive ? '>' : '>='}${limit.version}']`,
         ]),
         '    groups:',
-        '      safe:',
+        '      all-minor-and-patch:',
         '        patterns:',
         "          - '*'",
         "          - '@narduk-enterprises/*' # explicit scope required by foundation item 5.2",
