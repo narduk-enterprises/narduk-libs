@@ -49,7 +49,7 @@ import { applyHeadDefaults, type HeadOptionsLike } from './head-defaults'
 import { addIconCssScanPlugin } from './icon-css-scan'
 import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
-import { localIconDefaults, nuxtIconModuleEntry } from './nuxt-icon-module'
+import { localIconDefaults, lucideIconsIn, nuxtIconModuleEntry } from './nuxt-icon-module'
 import { CORE_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
 import { registerNuxtUiSources } from './nuxt-ui-sources'
 import { resolveOpenApiProductionMode } from './openapi-production'
@@ -611,6 +611,15 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       nuxtOptions.icon = defu(
         (nuxtOptions.icon ?? {}) as Record<string, unknown>,
         localIconDefaults(nuxt.options.rootDir),
+      )
+
+      // This package's own runtime components name icons `@nuxt/icon`'s layer scan
+      // does not see; bundle them so none loads through the icon API mid-render.
+      ;(nuxt.hook as (name: string, handler: (icons: Set<string>) => void) => void)(
+        'icon:clientBundleIcons',
+        (icons) => {
+          for (const icon of lucideIconsIn(runtimeRoot)) icons.add(icon)
+        },
       )
 
       // Set before `@nuxtjs/color-mode` installs below (narduk-libs#1464): a

@@ -2,6 +2,7 @@ import { addComponent, addImports, addPlugin, createResolver, defineNuxtModule }
 import { defu } from 'defu'
 
 import { NARDUK_SHELL_APP_CONFIG } from './app-config'
+import { lucideIconsIn } from './icon-bundle'
 import {
   registerNuxtUiSources,
   SHELL_NUXT_UI_COMPONENTS,
@@ -100,6 +101,7 @@ interface MinimalNuxt {
     // Module-supplied app config; the app's own app.config.ts still wins.
     appConfig?: Record<string, unknown>
   }
+  hook: (name: string, handler: (icons: Set<string>) => void) => void
 }
 
 export default defineNuxtModule<NardukShellModuleOptions>({
@@ -172,6 +174,14 @@ export default defineNuxtModule<NardukShellModuleOptions>({
     // installed, because app.config.ts can set the tokens without nuxt.config;
     // with neither set it renders no style at all.
     addPlugin(resolver.resolve('./runtime/plugins/shell-brand'))
+
+    // The icons this package's components name ship in the client bundle, so no
+    // page waits on the icon API for one while it renders (operator-portal#2757).
+    // `@nuxt/icon` calls this hook when it is installed and nothing otherwise.
+    const runtimeDir = resolver.resolve('./runtime')
+    ;(nuxt as unknown as MinimalNuxt).hook('icon:clientBundleIcons', (icons) => {
+      for (const icon of lucideIconsIn(runtimeDir)) icons.add(icon)
+    })
 
     // Tailwind and Nuxt UI's detection see layers only, and this is a module:
     // without this, utilities only the suite uses are never generated in the
