@@ -789,7 +789,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
           `        versions: ['${limit.inclusive ? '>' : '>='}${limit.version}']`,
         ]),
         '    groups:',
-        '      all-minor-and-patch:',
+        '      safe:',
         '        patterns:',
         "          - '*'",
         "          - '@narduk-enterprises/*' # explicit scope required by foundation item 5.2",
