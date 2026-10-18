@@ -190,11 +190,6 @@ export const MANAGED_TARGETS: readonly ManagedTarget[] = [
     mode: 'pin',
     unit: 'shared nuxt-cloudflare workflow pin and repository gate',
   },
-  {
-    path: '.github/workflows/copilot-setup-steps.yml',
-    mode: 'file',
-    unit: 'whole file',
-  },
   { path: '.github/dependabot.yml', mode: 'file', unit: 'whole file' },
   {
     path: '.github/workflows/dependabot-merge.yml',

@@ -5,7 +5,6 @@ import { createActionlintConfig, customRunnerLabels } from './actionlint-config.
 import {
   createCiWorkflow,
   createDependabotMergeWorkflow,
-  createCopilotSetupWorkflow,
   createGhPackagesRunScript,
   createPromoteGateScript,
   LINUX_CI_RUNNER_LABELS,
@@ -718,12 +717,6 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         ]
       : []),
     {
-      // Both visibilities: Copilot's sandbox installs the same frozen
-      // lockfile from `https://npm.nard.uk` with no package secret.
-      path: '.github/workflows/copilot-setup-steps.yml',
-      contents: createCopilotSetupWorkflow(),
-    },
-    {
       // Two npm lanes, not one (narduk-libs#U2 / gonogo#104, the reference
       // shape). A single all-in `dependencies` group used to stack: every
       // app that adopted the old canonical shape (limit 10, ~10 groups)
@@ -973,7 +966,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         '',
         ...(visibility === 'private'
           ? [
-              '> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. A repository that has not been added to the selected-repository runner groups has no runner to pick those jobs up, so they sit in `queued` with no log. The hosted `Runner group onboarding` job still starts on GitHub-hosted Ubuntu and annotates the run when sibling jobs stay queued. The route names in `.github/workflows/ci.yml` do not grant membership. Onboard this repository into both fleet runner groups, and grant it access to the shared workflows, before pushing. If a run is already stuck queued, that is the cause: cancel it and re-run after onboarding.',
+              "> **Before the first push.** CI here runs on self-hosted, manifest-routed runners. Onboard this repository into the fleet runner groups with `scripts/register-app` before the first push; the Operator Portal's runner-queue-eligibility gate flags jobs that no runner group admits.",
               '',
             ]
           : []),

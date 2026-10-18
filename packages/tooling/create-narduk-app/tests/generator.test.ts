@@ -777,14 +777,9 @@ describe('create-narduk-app generation contract', () => {
       })
       const byPath = asFileMap(files)
 
-      // .github/workflows/copilot-setup-steps.yml: emitted unconditionally
-      // (both visibilities); createCopilotSetupWorkflow() itself is covered
-      // in ci-workflow.test.ts, so this only proves it is actually wired
-      // into buildGeneratedFiles()'s output.
-      const copilotWorkflow = byPath.get('.github/workflows/copilot-setup-steps.yml')
-      expect(copilotWorkflow, label).toBeDefined()
-      expect(copilotWorkflow, label).toContain('workflow_dispatch:')
-      expect(copilotWorkflow, label).toContain('runs-on: ubuntu-latest')
+      // The Copilot coding-agent setup workflow is no longer generated: it
+      // never ran and its GitHub-hosted runner tripped the runner-policy gate.
+      expect(byPath.has('.github/workflows/copilot-setup-steps.yml'), label).toBe(false)
 
       // CONTRACT.md: generic skeleton, conditioned on hasDatabase and the
       // auth capability.
@@ -2732,12 +2727,12 @@ describe('a fresh scaffold passes its own gate', () => {
       }).find((file) => file.path === 'README.md')?.contents ?? ''
 
     // Self-hosted jobs sit in `queued` with no log when no runner can pick
-    // them up. The hosted onboarding job still starts and annotates the run.
-    expect(readme('private')).toContain('Runner group onboarding')
-    expect(readme('private')).toContain('annotates the run')
-    expect(readme('private')).toContain('fleet runner groups')
+    // them up; the portal's runner-queue-eligibility gate flags that centrally.
+    expect(readme('private')).toContain('scripts/register-app')
+    expect(readme('private')).toContain('runner-queue-eligibility')
+    expect(readme('private')).not.toContain('Runner group onboarding')
     // Public apps run on GitHub-hosted runners and never hit this.
-    expect(readme('public')).not.toContain('fleet runner groups')
+    expect(readme('public')).not.toContain('register-app')
   })
 
   it('carries no development mode, hotfix or validate.yml, and documents ship', () => {

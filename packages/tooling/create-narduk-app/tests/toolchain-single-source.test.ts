@@ -124,7 +124,9 @@ describe.each(VISIBILITIES)('%s app: one declared source per toolchain', (visibi
         }
       }
     }
-    expect(found).toBeGreaterThan(0)
+    // A private app's workflows delegate Node and pnpm setup to the shared
+    // workflow, so no generated file of its own runs pnpm/action-setup.
+    if (visibility === 'public') expect(found).toBeGreaterThan(0)
   })
 
   it('records the Workers Builds build environment from the same two sources', () => {
@@ -139,17 +141,11 @@ describe('the upgrade codemod does not own the Node source', () => {
     expect(MANAGED_TARGETS.some((target) => target.path === NODE_SOURCE_FILE)).toBe(false)
   })
 
-  it('manages copilot-setup-steps.yml, which now carries no version literal at all', () => {
-    const target = MANAGED_TARGETS.find(
-      (entry) => entry.path === '.github/workflows/copilot-setup-steps.yml',
-    )
-    expect(target?.mode).toBe('file')
-    // Whole-file management is only safe here because the file stopped
-    // restating versions: re-applying it can no longer move an app's Node or
-    // pnpm version behind its back.
-    const contents = generated('private').get('.github/workflows/copilot-setup-steps.yml')!
-    expect(contents).not.toContain(NODE_VERSION)
-    expect(contents).not.toContain(PNPM_VERSION)
+  it('no longer manages or generates copilot-setup-steps.yml', () => {
+    expect(
+      MANAGED_TARGETS.some((entry) => entry.path === '.github/workflows/copilot-setup-steps.yml'),
+    ).toBe(false)
+    expect(generated('private').has('.github/workflows/copilot-setup-steps.yml')).toBe(false)
   })
 })
 
