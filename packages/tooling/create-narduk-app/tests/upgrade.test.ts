@@ -109,7 +109,7 @@ describe('upgrade ownership contract', () => {
   it('refreshes managed units and leaves app-owned content untouched', async () => {
     const targetDir = await scaffold()
     const pristine = {
-      copilot: await read(targetDir, '.github/workflows/copilot-setup-steps.yml'),
+      dependabotMerge: await read(targetDir, '.github/workflows/dependabot-merge.yml'),
       dependabot: await read(targetDir, '.github/dependabot.yml'),
     }
 
@@ -132,7 +132,7 @@ describe('upgrade ownership contract', () => {
     await edit(targetDir, 'AGENTS.md', (contents) =>
       contents.replace(/^Every shareable route.*$/mu, 'Stale router sentence.'),
     )
-    await edit(targetDir, '.github/workflows/copilot-setup-steps.yml', () => 'name: Stale\n')
+    await edit(targetDir, '.github/workflows/dependabot-merge.yml', () => 'name: Stale\n')
     await edit(targetDir, '.github/dependabot.yml', () => 'version: 2\n')
 
     // App-owned content the codemod must preserve, in each managed file.
@@ -167,8 +167,8 @@ describe('upgrade ownership contract', () => {
     expect(await read(targetDir, '.github/workflows/ci.yml')).toContain(
       `nuxt-cloudflare.yml@${NUXT_CLOUDFLARE_WORKFLOW_SHA}`,
     )
-    expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe(
-      pristine.copilot,
+    expect(await read(targetDir, '.github/workflows/dependabot-merge.yml')).toBe(
+      pristine.dependabotMerge,
     )
     expect(await read(targetDir, '.github/dependabot.yml')).toBe(pristine.dependabot)
     expect(await read(targetDir, 'AGENTS.md')).toContain('Every shareable route needs a preview.')
@@ -190,7 +190,7 @@ describe('upgrade ownership contract', () => {
 
   it('is idempotent: a second write run reports no drift', async () => {
     const targetDir = await scaffold()
-    await edit(targetDir, '.github/workflows/copilot-setup-steps.yml', () => 'name: Stale\n')
+    await edit(targetDir, '.github/workflows/dependabot-merge.yml', () => 'name: Stale\n')
     await edit(targetDir, 'package.json', (contents) =>
       contents.replace(/"build:ci": "[^"]*"/u, '"build:ci": "pnpm run build"'),
     )
@@ -1025,7 +1025,7 @@ describe('upgrade CLI', () => {
   it('limits the run to the paths named by --only', async () => {
     const targetDir = await scaffold()
     await edit(targetDir, '.github/dependabot.yml', () => 'version: 2\n')
-    await edit(targetDir, '.github/workflows/copilot-setup-steps.yml', () => 'name: Stale\n')
+    await edit(targetDir, '.github/workflows/dependabot-merge.yml', () => 'name: Stale\n')
 
     const result = await runUpgrade([
       'upgrade',
@@ -1037,7 +1037,7 @@ describe('upgrade CLI', () => {
     expect(result.code).toBe(0)
     expect(await read(targetDir, '.github/dependabot.yml')).toContain("package-ecosystem: 'npm'")
     expect(await read(targetDir, '.github/dependabot.yml')).toContain("url: 'https://npm.nard.uk'")
-    expect(await read(targetDir, '.github/workflows/copilot-setup-steps.yml')).toBe('name: Stale\n')
+    expect(await read(targetDir, '.github/workflows/dependabot-merge.yml')).toBe('name: Stale\n')
   })
 
   it('rejects an --only path that is not a managed unit', async () => {
@@ -1191,7 +1191,7 @@ describe('app-owned workflow runner labels (#1192, #1279)', () => {
 
   it('derives labels from managed workflow edits that will land in this run', async () => {
     const targetDir = await scaffold({ databaseBackend: 'none' })
-    const workflowPath = '.github/workflows/copilot-setup-steps.yml'
+    const workflowPath = '.github/workflows/dependabot-merge.yml'
     const original = await read(targetDir, workflowPath)
     await writeFile(
       join(targetDir, workflowPath),
