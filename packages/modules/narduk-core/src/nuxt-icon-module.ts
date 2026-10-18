@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -109,4 +109,30 @@ export function nuxtIconModuleEntry(): string {
       { cause: error },
     )
   }
+}
+
+const LUCIDE_NAME = /\b(?:i-)?lucide[:-]([a-z0-9]+(?:-[a-z0-9]+)*)\b/g
+const SOURCE_FILE = /\.(?:vue|ts)$/
+
+/**
+ * The Lucide icons the `.vue` and `.ts` sources under `dir` name, as
+ * `lucide:<name>`. `@nuxt/icon` scans Nuxt layers only, so the icons this
+ * package's own runtime components render are handed to its
+ * `icon:clientBundleIcons` hook instead; left out, each is loaded through
+ * `/api/_nuxt_icon` while the page renders and a cold worker waits out the
+ * module's 1500 ms timeout (operator-portal#2757). A name no installed
+ * collection carries is skipped by `@nuxt/icon`, so over-matching is harmless.
+ */
+export function lucideIconsIn(dir: string, found = new Set<string>()): Set<string> {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules') lucideIconsIn(path, found)
+    } else if (SOURCE_FILE.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      for (const [, name] of readFileSync(path, 'utf8').matchAll(LUCIDE_NAME)) {
+        found.add(`lucide:${name}`)
+      }
+    }
+  }
+  return found
 }
