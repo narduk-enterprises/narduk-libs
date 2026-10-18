@@ -38,8 +38,8 @@ export const PACKAGE_VERSIONS = {
   // narduk-testkit's `expectAccessible` runs axe through this optional
   // peer; the generated home e2e spec calls it, so the app installs it.
   '@axe-core/playwright': '4.13.0',
-  '@cloudflare/workers-types': '5.20260927.1',
-  '@iconify-json/lucide': '1.2.137',
+  '@cloudflare/workers-types': '5.20261004.1',
+  '@iconify-json/lucide': '1.2.139',
   '@narduk-enterprises/narduk-mapkit': '3.0.0',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.45.1',
@@ -81,14 +81,14 @@ export const PACKAGE_VERSIONS = {
   // virtual file before build; making it explicit here fixes that, matching
   // the reference app's own modules array and devDependency exactly.
   '@nuxt/icon': '2.5.1',
-  '@nuxt/test-utils': '4.3.2',
+  '@nuxt/test-utils': '4.3.3',
   '@nuxt/ui': '4.11.1',
   '@playwright/test': '1.61.1',
   // Nuxt 4.5 resolves Vite 8. Tailwind 4.2 only declares support through
   // Vite 7, which makes a newly generated app install with a peer warning.
   '@tailwindcss/vite': '4.3.3',
-  '@types/node': '22.20.4',
-  '@typescript-eslint/utils': '8.70.1',
+  '@types/node': '22.20.5',
+  '@typescript-eslint/utils': '8.71.0',
   cac: '7.0.0',
   'drizzle-kit': '0.31.11',
   'drizzle-orm': '0.45.3',
@@ -108,11 +108,11 @@ export const PACKAGE_VERSIONS = {
   // `@narduk-enterprises/*` package versions above, not third-party pins like
   // this one. The scheduled refresh updates its minor/patch versions; major
   // bumps still move deliberately alongside eslint-config's peer requirement.
-  eslint: '10.11.0',
+  eslint: '10.12.0',
   glob: '13.0.6',
   h3: '1.15.11',
   'happy-dom': '20.14.5',
-  knip: '6.38.0',
+  knip: '6.39.0',
   // narduk-seo's current module set uses Unhead 3's tree-shake transform.
   // Nuxt 4.5 supplies that runtime; Nuxt 4.4 logs a warning and skips it.
   nuxt: '4.5.2',
@@ -129,8 +129,8 @@ export const PACKAGE_VERSIONS = {
   tailwindcss: '4.3.3',
   typescript: '6.0.3',
   vitest: '4.1.11',
-  'vue-tsc': '3.3.11',
-  wrangler: '4.142.0',
+  'vue-tsc': '3.3.12',
+  wrangler: '4.147.0',
   zod: '4.6.5',
 } as const
 
