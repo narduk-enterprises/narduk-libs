@@ -72,7 +72,7 @@ import { spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { fetchCloudflareEnvelope } from './cloudflare.js'
+import { fetchCloudflareEnvelope, listWorkerDeploymentsViaApi } from './cloudflare.js'
 import {
   resolveAncestry,
   resolveContainment,
@@ -724,11 +724,23 @@ export function createWranglerCli(options: WranglerCliOptions): WranglerVersions
         source: 'wrangler',
       }
     },
-    listDeployments: async () =>
-      parseWranglerVersionsJson<WorkerDeployment[]>(
+    listDeployments: async () => {
+      // Eligibility and the final guard each read deployment metadata. Reuse
+      // the authenticated REST path rather than starting Wrangler twice; this
+      // reads the same allocation without loading the app's dependency tree.
+      if (api) {
+        return listWorkerDeploymentsViaApi({
+          accountId: api.accountId,
+          apiToken: api.apiToken,
+          scriptName: bound.workerName,
+          fetchImpl: bound.fetchImpl,
+        })
+      }
+      return parseWranglerVersionsJson<WorkerDeployment[]>(
         runWrangler(bound, ['deployments', 'list', '--json'], true).stdout,
         'deployments list',
-      ),
+      )
+    },
     deployVersion: async (versionId, percentage, message) => {
       const args = ['versions', 'deploy', `${versionId}@${String(percentage)}`, '--yes']
       if (message) args.push('--message', message)

@@ -866,6 +866,33 @@ describe('S5 -- below the WranglerVersionsClient seam', () => {
     expect(shaMatchesTag(SHA, versions[0].annotations?.['workers/tag'])).toBe(true)
   })
 
+  it('reads deployment allocations through the authenticated API without starting Wrangler', async () => {
+    const calls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input))
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: { deployments: [deployment('d-live', 'v-live', '2026-10-18T00:00:00Z')] },
+        }),
+        { status: 200 },
+      )
+    }) as typeof fetch
+    const cli = createWranglerCli({
+      workerName: 'buoys',
+      accountId: 'acct-1',
+      env: { CLOUDFLARE_API_TOKEN: 'test-token' },
+      fetchImpl,
+      spawn: () => {
+        throw new Error('API reads must not start Wrangler')
+      },
+    })
+    expect(soleDeployedVersionId((await cli.listDeployments())[0])).toBe('v-live')
+    expect(calls).toEqual([
+      'https://api.cloudflare.com/client/v4/accounts/acct-1/workers/scripts/buoys/deployments?per_page=100&page=1',
+    ])
+  })
+
   it('builds the deploy, rollback and deployments argv', async () => {
     const { spawn, calls } = recordingSpawn(RECORDED_DEPLOYMENTS)
     const cli = createWranglerCli({ workerName: 'buoys', appDir: '/tmp/app', env: {}, spawn })
