@@ -1,5 +1,17 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.29.1
+
+### Patch Changes
+
+- df2ac51: Bundle the icons the package's own components name into the
+  `@nuxt/icon` client bundle. The module scans Nuxt layers only, so an icon such
+  as `lucide:arrow-up-down` (`NeSortHeader`) was loaded through
+  `/api/_nuxt_icon` while a page rendered, and a cold worker waited out the
+  module's 1500 ms timeout on the first page that used one
+  (operator-portal#2757). Each package now adds its runtime's Lucide icons
+  through `icon:clientBundleIcons`.
+
 ## 0.29.0
 
 ### Minor Changes

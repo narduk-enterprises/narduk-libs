@@ -1,5 +1,30 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.8
+
+### Patch Changes
+
+- 238f603: Stop generating the GitHub-hosted workflows that tripped the Operator
+  Portal's runner-policy drift gate in every new app. The generator no longer
+  emits `.github/workflows/copilot-setup-steps.yml` (the Copilot coding agent is
+  not used in the estate; its `ubuntu-latest` job never ran) and the private
+  `ci.yml` no longer carries the hosted `Runner group onboarding` job
+  (`ubuntu-24.04`). A missing runner-group assignment is now caught centrally by
+  the portal's runner-queue-eligibility gate; the generated README tells the
+  author to run `scripts/register-app` before the first push.
+  `copilot-setup-steps.yml` is removed from the `upgrade` managed set; `upgrade`
+  has no removal mechanism, so an app deletes its existing copy by hand. Patch:
+  removes generated output only; the generator's internal helpers
+  `createCopilotSetupWorkflow`, `createRunnerOnboardingScript` and the
+  `RUNNER_ONBOARDING_*` constants are gone, no consumer-facing API changed.
+- df2ac51: Bundle the icons the package's own components name into the
+  `@nuxt/icon` client bundle. The module scans Nuxt layers only, so an icon such
+  as `lucide:arrow-up-down` (`NeSortHeader`) was loaded through
+  `/api/_nuxt_icon` while a page rendered, and a cold worker waited out the
+  module's 1500 ms timeout on the first page that used one
+  (operator-portal#2757). Each package now adds its runtime's Lucide icons
+  through `icon:clientBundleIcons`.
+
 ## 0.23.7
 
 ### Patch Changes
