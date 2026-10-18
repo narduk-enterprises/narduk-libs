@@ -1,5 +1,12 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.7
+
+### Patch Changes
+
+- 839112a: Add shared Unicode word matching and an equivalent SQLite predicate
+  for source-bounded search before counting and pagination.
+
 ## 0.23.6
 
 ### Patch Changes

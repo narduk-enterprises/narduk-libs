@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-core
 
+## 2.33.0
+
+### Minor Changes
+
+- 839112a: Add shared Unicode word matching and an equivalent SQLite predicate
+  for source-bounded search before counting and pagination.
+
 ## 2.32.0
 
 ### Minor Changes
