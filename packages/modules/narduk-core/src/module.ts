@@ -24,6 +24,7 @@ import {
   resolveDatabaseBackendSelection,
   usesNardukAuth,
 } from '../runtime/shared/database-backend'
+import { DEFAULT_POSTGRES_SCHEMA, resolvePostgresSchema } from '../runtime/shared/postgres-schema'
 import {
   buildNuxtSecurityConfig,
   resolveSecurityHeaders,
@@ -47,6 +48,7 @@ import { resolveBuildVersion } from './build-version'
 import { applyAssetMissNoStoreEntry, type NitroEntryHost } from './cloudflare-asset-miss-entry'
 import { seedDesignSystemFonts } from './design-system-fonts'
 import { applyHeadDefaults, type HeadOptionsLike } from './head-defaults'
+import { ignoreLayerHealthRoute } from './health-route'
 import { addIconCssScanPlugin } from './icon-css-scan'
 import { iconSeedArrivedLate } from './icon-order'
 import { prependNitroErrorHandlers } from './nitro-error-handler'
@@ -151,6 +153,13 @@ export interface NardukCoreModuleOptions {
    * or over-broad entry fails the build.
    */
   csrf?: {
+    /**
+     * `false` turns the CSRF middleware off for the whole app (narduk-libs#1940),
+     * for an app adopting the layer mid-life whose clients do not send
+     * `X-Requested-With`. Default `true`: unchanged. The app then owns CSRF
+     * protection (SameSite cookies, an Origin check); `exemptPaths` is moot.
+     */
+    enabled?: boolean
     exemptPaths?: string[]
   }
   /**
@@ -165,6 +174,13 @@ export interface NardukCoreModuleOptions {
    * app's head as it set it. See `./head-defaults.ts`.
    */
   head?: boolean
+  /**
+   * The layer's own `GET /api/health`. `false` does not register it, so the
+   * app's own `/api/health` is the only one (narduk-libs#1940). Default `true`:
+   * unchanged. With `false`, `nardukHealth` options and `registerHealthCheck`
+   * have no route to report through.
+   */
+  health?: boolean
   image?: boolean
   /**
    * First-paint defaults (narduk-libs#1369): Nuxt UI component detection, no
@@ -172,6 +188,16 @@ export interface NardukCoreModuleOptions {
    * Each is on; `false` opts that one out. See `./performance-defaults.ts`.
    */
   performance?: NardukCorePerformanceOptions
+  /**
+   * The Postgres schema every narduk-core and narduk-auth table lives in
+   * (narduk-libs#1953). Default `public`: unchanged. A name such as `'narduk'`
+   * makes the Drizzle schemas `pgSchema(name).table(...)` and is the schema to
+   * apply the shipped `drizzle-pg/*.sql` into, so an app that already owns
+   * `public.api_keys` (or `users`, `sessions`...) in another shape keeps it
+   * untouched. Only for `databaseBackend: 'postgres'`; any other backend fails
+   * the build rather than ignoring it.
+   */
+  postgresSchema?: string
   /**
    * The opt-in shared security-headers preset. `false` or omitted leaves an
    * app's headers exactly as they are today; see
@@ -182,6 +208,48 @@ export interface NardukCoreModuleOptions {
     headers?: SecurityHeadersOptions | boolean
   }
   server?: boolean
+}
+
+/** The configured schema name; a named one only makes sense on Postgres. */
+function resolvePostgresSchemaForBackend(value: string | undefined, backend: string): string {
+  const schema = resolvePostgresSchema(value)
+  if (schema !== DEFAULT_POSTGRES_SCHEMA && backend !== 'postgres') {
+    throw new Error(
+      `[narduk-core] nardukCore.postgresSchema ${JSON.stringify(schema)} only applies to databaseBackend 'postgres'; the resolved backend is '${backend}'.`,
+    )
+  }
+  return schema
+}
+
+/**
+ * The file `#narduk-core/postgres-schema` aliases. The default schema aliases the
+ * static module; a named one is a generated file, so the table factory reads the
+ * name at build time and every tool that honours Nuxt aliases (Nitro, the Vitest
+ * alias helper) agrees on it.
+ */
+function postgresSchemaAliasTarget(schema: string, staticEntry: string): string {
+  if (schema === DEFAULT_POSTGRES_SCHEMA) return staticEntry
+  return addTemplate({
+    filename: 'narduk-core/postgres-schema.ts',
+    getContents: () => `export const postgresSchema: string = ${JSON.stringify(schema)}\n`,
+    write: true,
+  }).dst
+}
+
+/**
+ * The `nardukCsrf` runtime config. Only an explicit boolean `enabled` is kept
+ * from an existing value; the default is on.
+ */
+function csrfRuntimeConfig(
+  existingValue: unknown,
+  option: { enabled?: boolean; exemptPaths?: readonly string[] } | undefined,
+): Record<string, unknown> {
+  const existing = existingValue as { enabled?: unknown; exemptPaths?: unknown } | undefined
+  return {
+    ...existing,
+    enabled: option?.enabled ?? (typeof existing?.enabled === 'boolean' ? existing.enabled : true),
+    exemptPaths: assertCsrfExemptPaths(option?.exemptPaths ?? existing?.exemptPaths ?? []),
+  }
 }
 
 function pushUnique<T>(items: T[], item: T): void {
@@ -571,6 +639,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
             databaseBackendSource: existingRuntimeConfig.databaseBackendSource,
           },
         })
+      const postgresSchema = resolvePostgresSchemaForBackend(
+        options.postgresSchema,
+        databaseBackend,
+      )
       const appVersion =
         process.env.APP_VERSION || process.env.npm_package_version || readPackageVersion()
       const buildVersion = resolveBuildVersion(process.env, readGitSha, appVersion)
@@ -601,11 +673,17 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
 
       pushUnique(nuxtOptions.build.transpile, PACKAGE_NAME)
 
+      const postgresSchemaEntry = postgresSchemaAliasTarget(
+        postgresSchema,
+        resolver.resolve('../runtime/internal/postgres-schema.ts'),
+      )
+
       nuxtOptions.alias = {
         ...nuxtOptions.alias,
         '#layer': runtimeRoot,
         '#narduk-core/schema': resolver.resolve(`../runtime/${ormTablesEntry}`),
         '#narduk-core/postgres-runtime': resolver.resolve(`../runtime/${postgresRuntimeEntry}`),
+        '#narduk-core/postgres-schema': postgresSchemaEntry,
       }
 
       // Seed the local-only contract before @nuxt/icon installs. @nuxt/ui
@@ -735,6 +813,11 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
 
       if (options.server) {
         addServerScanDir(resolver.resolve('../runtime/server'))
+        ignoreLayerHealthRoute(
+          nuxt,
+          resolver.resolve('../runtime/server/api/health.get.ts'),
+          options.health,
+        )
       }
 
       // The app's existing CSP_*_SRC values are folded into the preset's
@@ -837,14 +920,10 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
 
       // CSRF exemptions are assigned, never merged with defu: defu concatenates
       // arrays, which would silently keep an entry the app meant to replace.
-      const existingCsrf = nuxtOptions.runtimeConfig.nardukCsrf as
-        { exemptPaths?: unknown } | undefined
-      nuxtOptions.runtimeConfig.nardukCsrf = {
-        ...existingCsrf,
-        exemptPaths: assertCsrfExemptPaths(
-          options.csrf?.exemptPaths ?? existingCsrf?.exemptPaths ?? [],
-        ),
-      }
+      nuxtOptions.runtimeConfig.nardukCsrf = csrfRuntimeConfig(
+        nuxtOptions.runtimeConfig.nardukCsrf,
+        options.csrf,
+      )
 
       // Assigned, never defu-merged, for the same array-concatenation reason.
       nuxtOptions.runtimeConfig.nardukBotBlock = resolveBotBlockOptions(options.botBlock)
@@ -853,6 +932,7 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
       // the server runtime and /api/health all agree on one backend.
       nuxtOptions.runtimeConfig.databaseBackend = databaseBackend
       nuxtOptions.runtimeConfig.databaseBackendSource = databaseBackendSource
+      nuxtOptions.runtimeConfig.postgresSchema = postgresSchema
 
       // Other modules (narduk-auth) finish configuring after this setup runs, so
       // the conflict check waits until every module is installed.

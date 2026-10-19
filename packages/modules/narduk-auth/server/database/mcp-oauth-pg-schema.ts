@@ -1,11 +1,13 @@
-import { bigint, index, pgTable, text } from 'drizzle-orm/pg-core'
+import { bigint, index, text } from 'drizzle-orm/pg-core'
+
+import { nardukPgTable } from '#layer/server/database/pg-table'
 
 /**
  * PostgreSQL mirror of `mcp-oauth-schema.ts`: the KV-shaped store behind the
  * MCP OAuth authorization server. `expires_at` is unix seconds; `null` never
  * expires.
  */
-export const authOAuthKv = pgTable(
+export const authOAuthKv = nardukPgTable(
   'auth_oauth_kv',
   {
     key: text('key').primaryKey(),

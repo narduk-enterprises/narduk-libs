@@ -22,6 +22,7 @@
       "#layer/*": ["../narduk-core/runtime/*"],
       "#narduk-analytics-server/*": ["./server/*"],
       "#narduk-core/postgres-runtime": ["../narduk-core/runtime/internal/postgres-runtime.stub.ts"],
+      "#narduk-core/postgres-schema": ["../narduk-core/runtime/internal/postgres-schema.ts"],
       "#narduk-core/schema": ["../narduk-core/runtime/server/database/schema.ts"]
     }
   },

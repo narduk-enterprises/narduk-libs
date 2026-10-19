@@ -1,11 +1,12 @@
-import { bigint, index, pgTable, text } from 'drizzle-orm/pg-core'
+import { bigint, index, text } from 'drizzle-orm/pg-core'
 
 import { users } from '#layer/server/database/pg-schema'
+import { nardukPgTable } from '#layer/server/database/pg-table'
 
 const epochSeconds = (name: string) => bigint(name, { mode: 'number' })
 
 /** PostgreSQL mirror of `native-auth-schema.ts`. */
-export const authNativeSessions = pgTable(
+export const authNativeSessions = nardukPgTable(
   'auth_native_sessions',
   {
     id: text('id').primaryKey(),
@@ -27,7 +28,7 @@ export const authNativeSessions = pgTable(
   (table) => [index('auth_native_sessions_user').on(table.userId)],
 )
 
-export const authVerifiedEmails = pgTable('auth_verified_emails', {
+export const authVerifiedEmails = nardukPgTable('auth_verified_emails', {
   userId: text('user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),

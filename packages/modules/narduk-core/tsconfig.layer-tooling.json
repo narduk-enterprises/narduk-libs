@@ -14,7 +14,8 @@
       "#layer": ["./runtime"],
       "#layer/*": ["./runtime/*"],
       "#narduk-core/schema": ["./runtime/server/database/schema.ts"],
-      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"]
+      "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"],
+      "#narduk-core/postgres-schema": ["./runtime/internal/postgres-schema.ts"]
     }
   },
   "include": [
@@ -67,6 +68,7 @@
     "runtime/server/api/runtime/status.get.ts",
     "runtime/server/database/d1RoundTrips.ts",
     "runtime/server/database/pg-schema.ts",
+    "runtime/server/database/pg-table.ts",
     "runtime/server/database/schema.ts",
     "runtime/server/health/**/*.ts",
     "runtime/server/utils/atomic-batch.ts",
@@ -121,7 +123,9 @@
     "src/**/*.ts",
     "tests/**/*.ts",
     // The D1 query harness, imported from source by the D1 driver tests.
-    "../../tooling/narduk-testkit/src/d1.ts"
+    "../../tooling/narduk-testkit/src/d1.ts",
+    // The Postgres migration runner, applied from source by the schema parity tests.
+    "../narduk-postgres/src/**/*.ts"
   ],
   "exclude": [
     // A standalone Nuxt app driven by `scripts/prove-nonce.mjs`, not layer
