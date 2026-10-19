@@ -8,7 +8,8 @@ import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-dat
 import { authEmailLinks } from '#narduk-auth/schema'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
-import { recordLocalEmailVerification } from '../../utils/verified-email'
+import { useNativeAuth } from '../../utils/native-auth'
+import { getLocalEmailVerification, recordLocalEmailVerification } from '../../utils/verified-email'
 
 import { deriveDisplayName } from './helpers'
 import {
@@ -30,7 +31,7 @@ import {
   clearLocalEmailAttempts,
   recordLocalEmailAttemptFailure,
 } from './local-email-throttle'
-import { establishLocalSessionUser } from './session'
+import { establishLocalSessionUser, revokeUserAuthSessions } from './session'
 import { getAuthConfig, readRuntimeConfigString } from './supabase-client'
 
 import type { AuthMutationResult } from './types'
@@ -208,6 +209,24 @@ export async function redeemLocalEmailSignInLink(
     if (!user) {
       throw createError({ statusCode: 500, statusMessage: 'Failed to create the account.' })
     }
+  }
+
+  // An account this app never proved the address of may have been registered
+  // by someone else (pre-hijack). The link's holder owns the address, so, as a
+  // password reset would, drop the unproven password and every other session
+  // before signing them in.
+  if (user.passwordHash && !(await getLocalEmailVerification(event, user.id, link.email))) {
+    await executeDatabaseQuery(
+      db
+        .update(users)
+        .set({ passwordHash: null, updatedAt: consumedAt })
+        .where(eq(users.id, user.id)),
+    )
+    user = { ...user, passwordHash: null }
+    if (useRuntimeConfig(event).authNativeClients?.length) {
+      await useNativeAuth(event).revokeUser(user.id)
+    }
+    await revokeUserAuthSessions(event, user.id)
   }
 
   // Redeeming the link proves control of the address.

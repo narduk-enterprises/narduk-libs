@@ -681,9 +681,10 @@ client.
 first Google sign-in links to an existing account with the same address only
 when Google marks it verified **and** this app has proven it
 (`auth_verified_emails`), the same rule as Apple; otherwise it is refused
-with 409. An address Google has not verified never links or creates. With no
-match, a password-less account is created when public sign-up is open (403 when
-closed).
+with 409. Proof is recorded only when `authLocalEmailVerification` is on; with
+it off, linking to an existing account is always refused. An address Google has
+not verified never links or creates. With no match, a password-less account is
+created when public sign-up is open (403 when closed).
 
 ### Importing Google identities
 
@@ -722,6 +723,10 @@ The page never redeems on load: the user presses "Sign in", which posts the
 token to `POST /api/auth/email-link/redeem`; one conditional update claims the
 link, so it signs in once. A password setup or reset token posted there, or a
 sign-in token posted to the password route, is refused without being spent.
+Redeeming a link for an account whose address this app has not proven (for
+example one registered by someone else; with `authLocalEmailVerification` off,
+that is every account with a password) drops that account's password and its
+other sessions, as a password reset would, before signing the holder in.
 
 `GET /api/auth/runtime-public` reports `emailLinkEnabled`; `useAuth()` exposes
 `requestEmailLink({ email, next? })` and `signInWithEmailLink({ token })`.

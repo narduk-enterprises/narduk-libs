@@ -75,6 +75,16 @@ function assertTimeClaims(payload: Record<string, unknown>, nowSeconds: number):
   }
 }
 
+function assertAudience(payload: Record<string, unknown>, clientId: string): void {
+  if (!audienceMatches(payload.aud, [clientId])) refuse('wrong_audience')
+  // OIDC Core 3.1.3.7: a multi-audience token must name this client as `azp`,
+  // and any `azp` present must be this client.
+  const multiAudience = Array.isArray(payload.aud) && payload.aud.length > 1
+  if ((multiAudience || payload.azp !== undefined) && payload.azp !== clientId) {
+    refuse('wrong_authorized_party')
+  }
+}
+
 export async function verifyGoogleIdToken(
   token: string,
   options: VerifyGoogleIdTokenOptions,
@@ -112,7 +122,7 @@ export async function verifyGoogleIdToken(
   }
 
   if (!(GOOGLE_ISSUERS as readonly unknown[]).includes(payload.iss)) refuse('wrong_issuer')
-  if (!audienceMatches(payload.aud, [options.clientId])) refuse('wrong_audience')
+  assertAudience(payload, options.clientId)
   assertTimeClaims(payload, Math.floor(now.getTime() / 1000))
   if (payload.nonce !== (await sha256Hex(options.rawNonce))) refuse('nonce_mismatch')
   if (typeof payload.sub !== 'string' || !payload.sub) refuse('missing_subject')

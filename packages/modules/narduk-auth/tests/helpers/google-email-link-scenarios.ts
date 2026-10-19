@@ -350,6 +350,10 @@ export function describeGoogleAndEmailLinkScenarios(getContext: () => ScenarioCo
         `INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
          VALUES ('u-link', 'member@example.com', 'aa:bb', 'Member', 'x', 'x')`,
       )
+      await ctx.exec(
+        `INSERT INTO auth_verified_emails (user_id, email, verified_at)
+         VALUES ('u-link', 'member@example.com', 'x')`,
+      )
       const issued = await request('Member@Example.com', '/inbox?x=1')
       expect(issued).toMatchObject({ user: null, nextStep: 'email_link_sent' })
       const link = new URL(issued.selfServeLink!)
@@ -376,8 +380,29 @@ export function describeGoogleAndEmailLinkScenarios(getContext: () => ScenarioCo
       })
       expect(responseCookies(event).get('nuxt-session')).toBeTruthy()
       expect(await sql.count('auth_verified_emails', "user_id = 'u-link'")).toBe(1)
+      // A proven account keeps its password.
+      expect(await sql.count('users', "id = 'u-link' AND password_hash = 'aa:bb'")).toBe(1)
 
       await expect(redeem(token)).rejects.toMatchObject({ statusCode: 400 })
+    })
+
+    it('takes back an account registered under an address the app never proved (pre-hijack)', async () => {
+      // Someone else registered the address with their own password and holds a session.
+      await ctx.exec(
+        `INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+         VALUES ('u-squat', 'owner@example.com', 'attacker:hash', 'Owner', 'x', 'x')`,
+      )
+      await ctx.exec(
+        `INSERT INTO auth_sessions (id, local_user_id, auth_user_id, access_token, refresh_token, expires_at)
+         VALUES ('s-attacker', 'u-squat', 'u-squat', 'a', 'r', 4102444800)`,
+      )
+      const issued = await request('owner@example.com')
+      const { result } = await redeem(tokenFromLink(issued.selfServeLink!))
+
+      expect(result.user).toMatchObject({ id: 'u-squat', needsPasswordSetup: true })
+      expect(await sql.count('users', "id = 'u-squat' AND password_hash IS NULL")).toBe(1)
+      expect(await sql.count('auth_sessions', "id = 's-attacker'")).toBe(0)
+      expect(await sql.count('auth_verified_emails', "user_id = 'u-squat'")).toBe(1)
     })
 
     it('signs a new address up on redemption when the app allows it', async () => {

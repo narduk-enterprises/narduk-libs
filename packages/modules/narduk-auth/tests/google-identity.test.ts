@@ -57,7 +57,7 @@ describe('verifyGoogleIdToken', () => {
 
   it('accepts the bare accounts.google.com issuer and an aud array naming the client', async () => {
     const token = await issuer.signIdToken(
-      await claims({ iss: 'accounts.google.com', aud: ['other', CLIENT_ID] }),
+      await claims({ iss: 'accounts.google.com', aud: ['other', CLIENT_ID], azp: CLIENT_ID }),
     )
     await expect(verify(token)).resolves.toMatchObject({ googleSub: '1234567890' })
   })
@@ -68,6 +68,8 @@ describe('verifyGoogleIdToken', () => {
     ['expired', { exp: Math.floor(Date.now() / 1000) - 3600 }, 'expired'],
     ['issued in the future', { iat: Math.floor(Date.now() / 1000) + 3600 }, 'issued_in_future'],
     ['no subject', { sub: '' }, 'missing_subject'],
+    ['multi-audience without azp', { aud: ['other', CLIENT_ID] }, 'wrong_authorized_party'],
+    ['foreign azp', { azp: 'other.apps.googleusercontent.com' }, 'wrong_authorized_party'],
   ])('refuses a %s token', async (_label, overrides, reason) => {
     await expect(verify(await issuer.signIdToken(await claims(overrides)))).rejects.toMatchObject({
       statusCode: 401,
