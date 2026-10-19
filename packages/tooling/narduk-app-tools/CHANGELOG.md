@@ -1,5 +1,18 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.45.2
+
+### Patch Changes
+
+- 33e2a4d: Resolve the required staging deployment declaration through the
+  shared app-config resolver, including portal-only checkouts. Preserve staging
+  authority checks and return invalid-config before Worker I/O when the selected
+  declaration is unreadable.
+- a6c3cb2: Read promotion deployment metadata through the existing bounded
+  Cloudflare API client when an account and deploy token are available, avoiding
+  Wrangler startup for eligibility and supersede checks. Preserve the CLI
+  fallback and all guards.
+
 ## 0.45.1
 
 ### Patch Changes
