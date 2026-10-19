@@ -28,7 +28,7 @@ function readSessionStorage(): ChunkReloadStorage | null {
  */
 export default defineNuxtPlugin({
   name: 'narduk-chunk-reload',
-  setup(nuxtApp) {
+  setup() {
     if (!isChunkReloadEnabled(useAppConfig())) return
 
     const router = useRouter()
@@ -44,32 +44,11 @@ export default defineNuxtPlugin({
       storage: readSessionStorage(),
     }
 
-    // The page being opened, so the reload lands where the user was going
-    // instead of on the page they were leaving.
-    let pendingPath: string | undefined
-    router.beforeEach((to) => {
-      pendingPath = to.fullPath
-    })
-    router.afterEach(() => {
-      pendingPath = undefined
-    })
-
-    const targetUrl = (path = pendingPath): string =>
-      path ? router.resolve(path).href : window.location.href
-
-    // Vite fires this for every failed preload; preventDefault() keeps it from
-    // being rethrown, which is only right once a reload is underway.
-    window.addEventListener('vite:preloadError', (event) => {
-      if (reloadForChunkError(env, targetUrl())) event.preventDefault()
-    })
-
-    nuxtApp.hook('app:chunkError', () => {
-      reloadForChunkError(env, targetUrl())
-    })
-
-    // A route component's chunk failing reaches the router with its target.
+    // Route errors carry the failed destination. Global preload/chunk events
+    // also cover optional async components: leave those rejections available
+    // to a local error boundary instead of reloading a working page.
     router.onError((error, to) => {
-      if (isChunkLoadError(error)) reloadForChunkError(env, targetUrl(to.fullPath))
+      if (isChunkLoadError(error)) reloadForChunkError(env, router.resolve(to.fullPath).href)
     })
   },
 })

@@ -633,8 +633,10 @@ before the deploy then fails its next navigation with "Importing a module script
 failed" (Safari), "Failed to fetch dynamically imported module" (Chrome) or
 "error loading dynamically imported module" (Firefox), and the error page shows
 a 500. The module ships a client plugin (`narduk-chunk-reload`) that handles
-`vite:preloadError`, Nuxt's `app:chunkError` and router errors that carry one of
-those messages. It does one hard reload to the page being opened.
+router errors carrying one of those messages. It does one hard reload to the
+page being opened. Global `vite:preloadError` and Nuxt `app:chunkError` events
+also cover optional async components, so the plugin leaves those errors to the
+component's local error boundary without reloading the page.
 
 A `sessionStorage` guard (`narduk:chunk-reload`) allows one reload per 10
 seconds, so a deploy that is genuinely missing a chunk lands on the error page

@@ -247,43 +247,47 @@ describe('chunk-reload plugin', () => {
     })
   }
 
-  it('reloads to the page being opened when a preload fails, and suppresses the error', async () => {
+  it('leaves optional component preload errors to the local error boundary', async () => {
     await install()
-    ;(state.captured.beforeEach as (to: { fullPath: string }) => void)({ fullPath: '/next?a=1' })
     const preventDefault = vi.fn()
     listeners.get('vite:preloadError')?.({ preventDefault })
+    hooks.get('app:chunkError')?.()
 
-    expect(location.assign).toHaveBeenCalledExactlyOnceWith('/base/next?a=1')
-    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(location.reload).not.toHaveBeenCalled()
+    expect(location.assign).not.toHaveBeenCalled()
+    expect(storage.values.size).toBe(0)
   })
 
-  it('reloads the current page when no navigation is pending', async () => {
+  it('reloads the current route when its chunk fails', async () => {
     await install()
-    ;(state.captured.beforeEach as (to: { fullPath: string }) => void)({ fullPath: '/next' })
-    ;(state.captured.afterEach as () => void)()
-    listeners.get('vite:preloadError')?.({ preventDefault: vi.fn() })
+    location.href = 'https://app.test/base/current'
+    const onError = state.captured.onError as (error: unknown, to: { fullPath: string }) => void
+    onError(new TypeError('Importing a module script failed.'), { fullPath: '/current' })
 
     expect(location.reload).toHaveBeenCalledTimes(1)
     expect(location.assign).not.toHaveBeenCalled()
   })
 
-  it('lets a second failure inside the window through to the error page', async () => {
+  it('preserves the failed route base, query and fragment', async () => {
     await install()
-    const first = vi.fn()
-    const second = vi.fn()
-    listeners.get('vite:preloadError')?.({ preventDefault: first })
-    vi.setSystemTime(100_000 + CHUNK_RELOAD_WINDOW_MS - 1)
-    listeners.get('vite:preloadError')?.({ preventDefault: second })
+    const onError = state.captured.onError as (error: unknown, to: { fullPath: string }) => void
+    onError(new TypeError('Failed to fetch dynamically imported module: /a.js'), {
+      fullPath: '/next?a=1#content',
+    })
 
-    expect(first).toHaveBeenCalledTimes(1)
-    expect(second).not.toHaveBeenCalled()
-    expect(location.reload).toHaveBeenCalledTimes(1)
+    expect(location.assign).toHaveBeenCalledExactlyOnceWith('/base/next?a=1#content')
   })
 
-  it('reloads on Nuxt app:chunkError', async () => {
+  it('lets a second route failure inside the window reach the error page', async () => {
     await install()
-    ;(hooks.get('app:chunkError') as () => void)()
-    expect(location.reload).toHaveBeenCalledTimes(1)
+    const onError = state.captured.onError as (error: unknown, to: { fullPath: string }) => void
+    const error = new TypeError('Failed to fetch dynamically imported module: /a.js')
+    onError(error, { fullPath: '/next' })
+    vi.setSystemTime(100_000 + CHUNK_RELOAD_WINDOW_MS - 1)
+    onError(error, { fullPath: '/next' })
+
+    expect(location.assign).toHaveBeenCalledExactlyOnceWith('/base/next')
   })
 
   it('reloads on a router error only when it is a chunk error, to that route', async () => {
