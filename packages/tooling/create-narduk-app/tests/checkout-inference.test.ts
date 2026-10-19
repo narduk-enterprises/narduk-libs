@@ -2,14 +2,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { readDevServerPort } from '../src/checkout-facts.js'
+import { readCheckoutFacts, readDevServerPort } from '../src/checkout-facts.js'
 import { inferUpgradeProfile, upgradeNardukApp } from '../src/index.js'
 
 const tempDirectories: string[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   await Promise.all(
     tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   )
@@ -340,5 +342,72 @@ describe('upgrade checkout inference', () => {
       ),
     ).toBe(8787)
     expect(readDevServerPort('devServer: { port: resolvedLocalNuxtPort }\n')).toBeNull()
+  })
+})
+
+describe('upgrade app-config sources', () => {
+  it('uses portal declarations instead of conflicting local copies', async () => {
+    const root = await checkout()
+    await write(
+      root,
+      'Config/project-lifecycle.json',
+      JSON.stringify({ nativeManifests: { wrangler: 'local.json' } }),
+    )
+    await write(root, 'Config/cloudflare-app.json', JSON.stringify({ bindings: { d1: [] } }))
+    await write(root, 'local.json', '{}')
+    await write(root, 'managed/worker.json', '{}')
+    vi.stubEnv('NARDUK_APP_CONFIG_SOURCE', 'portal')
+    vi.stubEnv('GITHUB_REPOSITORY', 'test/upgrade')
+    vi.stubEnv('OPERATOR_PORTAL_APP_CONFIG_TOKEN', 'synthetic-test-key')
+    const fetch = vi.fn(async (url: string) => {
+      const file = new URL(url).searchParams.get('file')
+      const document =
+        file === 'project-lifecycle.json'
+          ? { nativeManifests: { wrangler: 'managed/worker.json' } }
+          : { bindings: { d1: [{ databaseName: 'portal-db' }] } }
+      return new Response(JSON.stringify(document), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const facts = await readCheckoutFacts(root)
+    expect(facts.wranglerPath).toBe('managed/worker.json')
+    expect(facts.databaseBackend).toBe('d1')
+    expect(facts.databaseName).toBe('portal-db')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats definitive absent portal declarations as optional', async () => {
+    const root = await checkout()
+    await write(
+      root,
+      'wrangler.jsonc',
+      JSON.stringify({ d1_databases: [{ database_name: 'native-db' }] }),
+    )
+    vi.stubEnv('NARDUK_APP_CONFIG_SOURCE', 'portal')
+    vi.stubEnv('GITHUB_REPOSITORY', 'test/upgrade')
+    vi.stubEnv('OPERATOR_PORTAL_APP_CONFIG_TOKEN', 'synthetic-test-key')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 404 })),
+    )
+    expect((await readCheckoutFacts(root)).databaseName).toBe('native-db')
+  })
+
+  it('does not hide portal authorization failures behind local inference', async () => {
+    const root = await checkout()
+    await write(root, 'Config/project-lifecycle.json', '{}')
+    vi.stubEnv('NARDUK_APP_CONFIG_SOURCE', 'portal')
+    vi.stubEnv('GITHUB_REPOSITORY', 'test/upgrade')
+    vi.stubEnv('OPERATOR_PORTAL_APP_CONFIG_TOKEN', 'synthetic-test-key')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 })),
+    )
+    await expect(readCheckoutFacts(root)).rejects.toMatchObject({ code: 'unauthorized' })
+  })
+
+  it.each(['{invalid', '[]'])('reports malformed local declaration %s', async (body) => {
+    const root = await checkout()
+    await write(root, 'Config/project-lifecycle.json', body)
+    await expect(readCheckoutFacts(root)).rejects.toThrow(/not a JSON object/)
   })
 })
