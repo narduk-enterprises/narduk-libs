@@ -1,9 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { clearPrimedAppConfig } from '../src/app-config/resolve.js'
+import { fakePortal, TOKEN } from './app-config/fake-portal.js'
 import { readDeploymentBlock, type DeploymentBlock } from '../src/deployment-config.js'
 import {
   checkStagingServesSha,
@@ -26,6 +28,11 @@ import {
   type StagingContext,
 } from '../src/staging.js'
 import type { VerifyReport } from '../src/verify-live.js'
+
+afterEach(() => {
+  clearPrimedAppConfig()
+  vi.unstubAllGlobals()
+})
 
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 const OTHER = '0000000000000000000000000000000000000001'
@@ -326,6 +333,120 @@ describe('deployment.staging.wranglerConfig', () => {
 })
 
 describe('runStagingDeploy', () => {
+  it.each(['auto', 'portal'])(
+    'deploys from a required %s declaration with no local copy',
+    async (source) => {
+      const { root, appDir } = checkout()
+      rmSync(join(root, 'Config', 'cloudflare-app.json'))
+      const portal = fakePortal({
+        [`${ACTIONS_ENV.GITHUB_REPOSITORY}/cloudflare-app.json`]: deploymentDoc(stagingBlock()),
+      })
+      vi.stubGlobal('fetch', portal.fetch)
+      const context = stagingContext(appDir, {
+        env: {
+          ...ACTIONS_ENV,
+          NARDUK_APP_CONFIG_SOURCE: source,
+          OPERATOR_PORTAL_APP_CONFIG_TOKEN: TOKEN,
+        },
+      })
+      const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), context)
+      expect(result.outcome).toBe('proven')
+      expect(result.worker).toBe('harmony-hot-sauce-staging')
+      expect(context.deployed).toEqual([{ id: STAGING_VERSION, percentage: 100 }])
+      expect(portal.calls).toHaveLength(1)
+      expect(existsSync(join(root, 'Config', 'cloudflare-app.json'))).toBe(false)
+    },
+  )
+
+  it('honors portal mode over a conflicting local disabled stage', async () => {
+    const { appDir } = checkout({ enabled: false })
+    const portal = fakePortal({
+      [`${ACTIONS_ENV.GITHUB_REPOSITORY}/cloudflare-app.json`]: deploymentDoc(stagingBlock()),
+    })
+    vi.stubGlobal('fetch', portal.fetch)
+    const result = await runStagingDeploy(
+      parseStagingArgs(['--sha', SHA]),
+      stagingContext(appDir, {
+        env: {
+          ...ACTIONS_ENV,
+          NARDUK_APP_CONFIG_SOURCE: 'portal',
+          OPERATOR_PORTAL_APP_CONFIG_TOKEN: TOKEN,
+        },
+      }),
+    )
+    expect(result.outcome).toBe('proven')
+    expect(portal.calls).toHaveLength(1)
+  })
+
+  it.each([401, 404, 'malformed'])(
+    'returns invalid-config on required portal failure %s before Worker I/O',
+    async (failure) => {
+      const { root, appDir } = checkout()
+      // A rejected portal read must not fall back to this otherwise valid local copy.
+      if (failure !== 401) rmSync(join(root, 'Config', 'cloudflare-app.json'))
+      const portal =
+        typeof failure === 'number'
+          ? fakePortal({}, { status: failure })
+          : fakePortal({ [`${ACTIONS_ENV.GITHUB_REPOSITORY}/cloudflare-app.json`]: '{invalid' })
+      vi.stubGlobal('fetch', portal.fetch)
+      const context = stagingContext(appDir, {
+        env: {
+          ...ACTIONS_ENV,
+          NARDUK_APP_CONFIG_SOURCE: 'portal',
+          OPERATOR_PORTAL_APP_CONFIG_TOKEN: TOKEN,
+        },
+        verify: vi.fn(),
+      })
+      const read = vi.spyOn(context.client!, 'listDeployments')
+      const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), context)
+      expect(result.outcome).toBe('invalid-config')
+      expect(result.exitCode).toBe(STAGING_EXIT.usage)
+      expect(result.detail).not.toContain(TOKEN)
+      expect(context.argv).toEqual([])
+      expect(context.deployed).toEqual([])
+      expect(read).not.toHaveBeenCalled()
+      expect(context.verify).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not ask the portal when file mode requires an absent declaration', async () => {
+    const { root, appDir } = checkout()
+    rmSync(join(root, 'Config', 'cloudflare-app.json'))
+    const portal = fakePortal({
+      [`${ACTIONS_ENV.GITHUB_REPOSITORY}/cloudflare-app.json`]: deploymentDoc(stagingBlock()),
+    })
+    vi.stubGlobal('fetch', portal.fetch)
+    const context = stagingContext(appDir)
+    const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), context)
+    expect(result.outcome).toBe('invalid-config')
+    expect(result.exitCode).toBe(STAGING_EXIT.usage)
+    expect(portal.calls).toEqual([])
+    expect(context.argv).toEqual([])
+  })
+
+  it('preserves the production-branch refusal after a portal read, before Worker I/O', async () => {
+    const { root, appDir } = checkout()
+    rmSync(join(root, 'Config', 'cloudflare-app.json'))
+    const portal = fakePortal({
+      [`${ACTIONS_ENV.GITHUB_REPOSITORY}/cloudflare-app.json`]: deploymentDoc(stagingBlock()),
+    })
+    vi.stubGlobal('fetch', portal.fetch)
+    const context = stagingContext(appDir, {
+      env: {
+        ...ACTIONS_ENV,
+        GITHUB_REF_NAME: 'feature',
+        NARDUK_APP_CONFIG_SOURCE: 'portal',
+        OPERATOR_PORTAL_APP_CONFIG_TOKEN: TOKEN,
+      },
+    })
+    const read = vi.spyOn(context.client!, 'listDeployments')
+    const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), context)
+    expect(result.outcome).toBe('guard-refused')
+    expect(result.detail).toMatch(/not the declared production branch main/u)
+    expect(context.argv).toEqual([])
+    expect(read).not.toHaveBeenCalled()
+  })
+
   it('is a no-op that exits 0 when staging is not enabled', async () => {
     const { appDir } = checkout({ enabled: false })
     const result = await runStagingDeploy(parseStagingArgs(['--sha', SHA]), stagingContext(appDir))

@@ -265,6 +265,11 @@ narduk-app auth agent-key create --database <d1-name> --remote \
 
 ## Where the app declaration comes from (`Config/cloudflare-app.json`, `Config/project-lifecycle.json`)
 
+`deploy staging` resolves its required declaration before any Worker operation,
+including when the checkout has no local copy. An unreadable selected source
+returns `invalid-config`; staging branch, checkout, approval and live-proof
+guards retain the same authority.
+
 The Operator Portal's app row owns an app's `cloudflare-app.json` and
 `project-lifecycle.json` (portal decision D-PORTAL-APP-CONFIG-1). The per-repo
 files are duplicates that get deleted, repo by repo. Every command here that
