@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm'
 
-import { authOAuthKv } from '../../database/mcp-oauth-schema'
+import { authOAuthKv } from '#narduk-auth/schema'
 
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core'
 

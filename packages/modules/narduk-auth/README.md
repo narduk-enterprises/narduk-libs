@@ -218,7 +218,8 @@ app that declares narduk-core's `databaseBackend: 'none'` cannot install it, and
 its build fails with a message naming the conflict. When narduk-auth is
 installed, narduk-core's `/api/health` also checks for its tables on D1.
 
-Apply every SQL file in `drizzle/` to the app database, in order:
+On D1, apply every SQL file in `drizzle/` to the app database, in order (for
+Postgres see [Postgres (Hyperdrive)](#postgres-hyperdrive) below):
 
 1. `drizzle/0001_auth_bridge.sql`
 2. `drizzle/0002_local_email_auth.sql`
@@ -244,9 +245,51 @@ down-migration; reverting means dropping `auth_webauthn_credentials` and
 [MCP OAuth](#mcp-oauth-connected-apps). It is additive (`auth_oauth_kv` and one
 index); dropping the table disconnects every connected app.
 
-The shipped migrations use the D1/SQLite dialect only. This module does not
-publish a Postgres schema or migrations for the auth bridge tables
-(narduk-libs#94) — it is D1-only.
+### Postgres (Hyperdrive)
+
+An app on narduk-core's `databaseBackend: 'postgres'` applies the Postgres
+translations in `drizzle-pg/` instead. They carry the same file names and the
+same tables as `drizzle/`, `drizzle-pg/0001`–`0005`, and are exported as
+`@narduk-enterprises/narduk-auth/drizzle-pg/*`.
+
+Apply narduk-core's `runtime/drizzle-pg/0000`–`0008` **first**: every auth table
+that names a user references `users(id)`, so the auth files fail on a database
+without core's. Keep the two sets in **separate**
+`@narduk-enterprises/narduk-postgres/migrate` ledgers (the runner's `table`
+option), because both number from `0001`. Every statement is `IF NOT EXISTS`, so
+a re-run is a no-op.
+
+The module selects the matching Drizzle schema at `modules:done` through the
+`#narduk-auth/schema` alias, the same way core selects `#narduk-core/schema`;
+nothing in the app changes. Where the dialects differ:
+
+- Epoch-second columns (`expires_at`, `created_at`, passkey `counter`, …) are
+  `bigint`, read back as JS numbers. A 32-bit `integer` would overflow in 2038
+  and cannot hold an unsigned 32-bit passkey counter.
+- Flags such as `auth_sessions.recovery_mode` and
+  `auth_webauthn_credentials.backed_up` are `boolean`, not `0`/`1`.
+- ISO-text timestamps stay `text`; the DDL defaults them with
+  `to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`, the same
+  shape the app writes.
+- `auth_oauth_kv.key` is `COLLATE "C"`. The MCP OAuth store lists keys by prefix
+  with a byte-order range scan; under an ICU or `en_US` database collation that
+  scan returns the wrong rows. Do not drop the collation.
+
+`tests/schema-migration-parity.test.ts` applies both sets to a real PostgreSQL
+17 and diffs the catalog against the Drizzle Postgres schema (types,
+nullability, defaults, collations, `CHECK` values, keys, foreign keys, indexes),
+and `tests/postgres-runtime.integration.test.ts` runs registration, login,
+lockout, sessions, email links, Apple account linking, passkey storage, MCP
+OAuth and native sessions against that server. The tests use
+`embedded-postgres`; set `NARDUK_PG17_TEST_URL` to use an external PostgreSQL 17
+instead.
+
+Two limits. `GET /api/health` on Postgres does not check for the auth tables
+(core reports `unsupported-backend` for that probe). And password hashes are
+PBKDF2-SHA256 (`saltHex:hashHex`, 100,000 iterations); a bcrypt hash imported
+from another system — including Supabase `auth.users.encrypted_password`
+(`$2a$`/`$2b$`/`$2y$`, cost up to 12) — verifies as-is and is rewritten to
+PBKDF2 on that user's first successful login.
 
 ## Additive local email pathway
 

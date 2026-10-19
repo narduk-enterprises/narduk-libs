@@ -3,8 +3,8 @@ import { createError, getHeader, setResponseHeader } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
-import { authLocalEmailAttempts } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
+import { authLocalEmailAttempts } from '#narduk-auth/schema'
 
 import {
   hashLocalEmailValue,
@@ -38,7 +38,7 @@ function rethrowThrottleError(error: unknown): never {
     throw createError({
       statusCode: 500,
       statusMessage:
-        'The auth_local_email_attempts table is missing. Apply drizzle/0002_local_email_auth.sql (required since narduk-auth 1.20.0).',
+        'The auth_local_email_attempts table is missing. Apply drizzle/0002_local_email_auth.sql, or drizzle-pg/0002_local_email_auth.sql on Postgres (required since narduk-auth 1.20.0).',
     })
   }
   throw error

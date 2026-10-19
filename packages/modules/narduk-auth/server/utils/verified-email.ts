@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
-import { authVerifiedEmails } from '../database/native-auth-schema'
+import { authVerifiedEmails } from '#narduk-auth/schema'
 
 import { useAuthBridgeDatabase } from './auth-bridge-database'
 
