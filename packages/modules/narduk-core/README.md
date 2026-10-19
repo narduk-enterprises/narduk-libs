@@ -762,6 +762,42 @@ and segment fetches; native HLS needs the media origin in `cspMediaSrc`. These
 options extend only their named directives and leave scripts, frames, and
 workers unchanged.
 
+## SEO and scraper crawler block (`botBlock`)
+
+`server/middleware/00-0-bot-block` answers `403` (a one-line text body,
+`Cache-Control: public, max-age=86400`, `Vary: User-Agent`) to SEO, backlink and
+scraper crawlers before any render, so they stop costing Worker CPU. It is on by
+default, does no I/O, and runs ahead of `00-canonical-host`. The list is
+`DEFAULT_BLOCKED_BOTS` in `@narduk-enterprises/narduk-core/shared/bot-block`:
+SemrushBot, AhrefsBot, MJ12bot, DotBot, SERankingBacklinksBot, DataForSeoBot,
+BLEXBot, Barkrowler, serpstatbot, PetalBot, Bytespider, MochiImageCrawler,
+SeekportBot, MegaIndex, Linkdex, AwarioBot, ImagesiftBot, Timpibot. A
+case-insensitive substring of the `User-Agent` matches. Search engines
+(Googlebot, bingbot, Applebot, DuckDuckBot), social preview fetchers, uptime
+monitors, `curl` and a missing User-Agent are never blocked, and `/robots.txt`
+and `/api/health` answer everyone. AI and answer-engine crawlers (GPTBot,
+ClaudeBot, PerplexityBot, ...) are not governed here; use narduk-seo's
+`aiCrawlers`.
+
+```ts
+export default defineNuxtConfig({
+  nardukCore: {
+    // botBlock: false,                       // opt out entirely
+    botBlock: {
+      // enabled: false,                      // same, keeping the other keys
+      extra: ['SomeOtherSpider'], // block more User-Agent substrings
+      allow: ['AhrefsBot'], // let a listed crawler through
+    },
+  },
+})
+```
+
+narduk-seo reads the same option and emits a `Disallow: /` robots.txt group for
+the same names, so compliant crawlers stop asking. A deployed app can switch it
+off without a rebuild with `NUXT_NARDUK_BOT_BLOCK_ENABLED=false`. Bytespider is
+in both this list and `AI_CRAWLERS`: an `aiCrawlers.allow` entry keeps it out of
+the robots.txt group, and `botBlock.allow` keeps it past the 403.
+
 ## Canonical host redirect
 
 `server/middleware/00-canonical-host` sends a request that arrives on a

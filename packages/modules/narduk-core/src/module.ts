@@ -16,6 +16,7 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 
+import { type BotBlockOptions, resolveBotBlockOptions } from '../runtime/shared/bot-block'
 import { assertCsrfExemptPaths } from '../runtime/shared/csrf-exempt-paths'
 import {
   type DatabaseBackend,
@@ -133,6 +134,14 @@ export interface NardukCoreModuleOptions {
    * no accounts does not serve `/api/_auth/session` (narduk-libs#169).
    */
   auth?: boolean
+  /**
+   * Default-on 403 for SEO, backlink and scraper crawlers (`DEFAULT_BLOCKED_BOTS`
+   * in `../runtime/shared/bot-block.ts`), and the matching `Disallow: /` groups
+   * in narduk-seo's robots.txt. `false`, or `{ enabled: false }`, opts out;
+   * `extra` adds user-agent substrings; `allow` exempts names. AI crawlers are
+   * governed by narduk-seo's `aiCrawlers`, not by this.
+   */
+  botBlock?: BotBlockOptions | boolean
   coreModules?: boolean
   /**
    * CSRF middleware options. `exemptPaths` declares credential-free routes —
@@ -836,6 +845,9 @@ const nardukCoreModule: NuxtModule<NardukCoreModuleOptions> =
           options.csrf?.exemptPaths ?? existingCsrf?.exemptPaths ?? [],
         ),
       }
+
+      // Assigned, never defu-merged, for the same array-concatenation reason.
+      nuxtOptions.runtimeConfig.nardukBotBlock = resolveBotBlockOptions(options.botBlock)
 
       // The resolved selection overwrites any earlier value so the schema alias,
       // the server runtime and /api/health all agree on one backend.

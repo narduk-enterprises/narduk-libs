@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { DEFAULT_BLOCKED_BOTS } from '@narduk-enterprises/narduk-core/shared/bot-block'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const NETWORK_ROUTE = '/narduk-network'
@@ -182,6 +183,14 @@ function expectOgImageConfigTypes(addTypeTemplate: ReturnType<typeof vi.fn>) {
 }
 
 /** Frozen snapshot of production robots.txt options on origin/main before this change. */
+/** narduk-core's default-blocked crawlers, as narduk-seo's default robots.txt group. */
+function botBlockGroup(skip: readonly string[] = []) {
+  return {
+    userAgent: DEFAULT_BLOCKED_BOTS.filter((name) => !skip.includes(name)),
+    disallow: ['/'],
+  }
+}
+
 const PRODUCTION_ROBOTS_DEFAULTS = {
   disallowNonIndexableRoutes: false,
   disallow: [
@@ -879,23 +888,47 @@ describe('narduk-seo module', () => {
     })
   })
 
-  it('keeps production robots.txt defaults unchanged when aiCrawlers is unset', async () => {
+  it('disallows the default-blocked SEO crawlers in robots.txt when aiCrawlers is unset', async () => {
     const { addServerHandler, installSnapshots, nuxt } = await setupModule()
 
-    expect(nuxt.options.robots).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    const expected = { ...PRODUCTION_ROBOTS_DEFAULTS, groups: [botBlockGroup()] }
+    expect(nuxt.options.robots).toEqual(expected)
     expect(
       installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/robots')?.robots,
-    ).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    ).toEqual(expected)
     expect(addServerHandler).not.toHaveBeenCalled()
     expect(
       (nuxt.options.runtimeConfig as { nardukSeoSecurityTxt?: unknown }).nardukSeoSecurityTxt,
     ).toBeNull()
   })
 
-  it('keeps the same robots.txt defaults when aiCrawlers is explicitly allow', async () => {
+  it('keeps the same robots.txt when aiCrawlers is explicitly allow', async () => {
     const { nuxt } = await setupModule({ moduleOptions: { aiCrawlers: 'allow' } })
 
-    expect(nuxt.options.robots).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    expect(nuxt.options.robots).toEqual({
+      ...PRODUCTION_ROBOTS_DEFAULTS,
+      groups: [botBlockGroup()],
+    })
+  })
+
+  it('keeps production robots.txt defaults unchanged when nardukCore.botBlock is off', async () => {
+    for (const botBlock of [false, { enabled: false }]) {
+      const { nuxt } = await setupModule({ nuxtOptions: { nardukCore: { botBlock } } })
+
+      expect(nuxt.options.robots).toEqual(PRODUCTION_ROBOTS_DEFAULTS)
+    }
+  })
+
+  it('applies nardukCore.botBlock extra and allow to the robots.txt group', async () => {
+    const { nuxt } = await setupModule({
+      nuxtOptions: { nardukCore: { botBlock: { extra: ['NewSeoSpider'], allow: ['DotBot'] } } },
+    })
+
+    const group = botBlockGroup(['DotBot'])
+    expect(nuxt.options.robots).toEqual({
+      ...PRODUCTION_ROBOTS_DEFAULTS,
+      groups: [{ ...group, userAgent: [...group.userAgent, 'NewSeoSpider'] }],
+    })
   })
 
   it('emits @nuxtjs/robots groups that disallow every known AI crawler', async () => {
@@ -906,7 +939,8 @@ describe('narduk-seo module', () => {
 
     const expected = {
       ...PRODUCTION_ROBOTS_DEFAULTS,
-      groups: [{ userAgent: [...AI_CRAWLERS], disallow: ['/'] }],
+      // Bytespider is in both lists; the aiCrawlers group names it, so it is not repeated.
+      groups: [{ userAgent: [...AI_CRAWLERS], disallow: ['/'] }, botBlockGroup(['Bytespider'])],
     }
     expect(nuxt.options.robots).toEqual(expected)
     expect(
@@ -927,6 +961,7 @@ describe('narduk-seo module', () => {
         { userAgent: ['CCBot'], disallow: ['/'] },
         // A named group replaces `*` for GPTBot (RFC 9309), so it restates the disallows.
         { userAgent: ['GPTBot'], allow: ['/'], disallow: PRODUCTION_ROBOTS_DEFAULTS.disallow },
+        botBlockGroup(),
       ],
     })
   })

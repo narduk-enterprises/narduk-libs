@@ -48,6 +48,7 @@
     "runtime/app/utils/footerExtensions.ts",
     "runtime/app/components/shared/appEmptyStateDeprecation.ts",
     "runtime/app/components/shared/appSettingsProfileDeprecation.ts",
+    "runtime/server/middleware/00-0-bot-block.ts",
     "runtime/server/middleware/00-canonical-host.ts",
     "runtime/server/middleware/01-head-as-get.ts",
     "runtime/server/middleware/securityHeaders.ts",
