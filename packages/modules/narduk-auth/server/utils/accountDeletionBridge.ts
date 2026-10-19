@@ -63,7 +63,12 @@ function isForeignKeyConstraintError(error: unknown): boolean {
   let current: unknown = error
   for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
     if ('code' in current && current.code === '23503') return true
-    if ('message' in current && typeof current.message === 'string' && /foreign key/i.test(current.message)) return true
+    if (
+      'message' in current &&
+      typeof current.message === 'string' &&
+      /foreign key/i.test(current.message)
+    )
+      return true
     current = 'cause' in current ? current.cause : null
   }
   return false
