@@ -43,9 +43,10 @@ function parseAuthProviders(value: string | undefined) {
 // Providers the local backend may opt into advertising alongside the always-on
 // `email` provider. This is an advertisement allowlist only: whether a
 // ceremony can complete is answered separately (`passkeysEnabled`,
-// `appleEnabled`: `apple` also needs AUTH_APPLE_SERVICES_ID, narduk-libs#164),
+// `appleEnabled`: `apple` also needs AUTH_APPLE_SERVICES_ID, narduk-libs#164;
+// `googleEnabled`: `google` also needs its OAuth client, narduk-libs#1951),
 // and it must never grow to include a name the package cannot authenticate.
-const LOCAL_AUTH_PROVIDER_ALLOWLIST = ['apple', 'passkey'] as const
+const LOCAL_AUTH_PROVIDER_ALLOWLIST = ['apple', 'google', 'passkey'] as const
 
 function parseLocalAuthProviders(value: string | undefined) {
   const raw = (value ?? '').trim()

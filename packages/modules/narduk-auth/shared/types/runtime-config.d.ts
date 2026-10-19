@@ -27,6 +27,7 @@ interface AuthPublicRuntimeConfig {
   authRegisterPath: string
   authCallbackPath: string
   authConfirmPath: string
+  authEmailLinkPath: string
   authResetPath: string
   authLogoutPath: string
   authRedirectPath: string

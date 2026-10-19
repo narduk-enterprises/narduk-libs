@@ -35,6 +35,7 @@ export const toastAddMock = vi.fn()
 export const authMocks = {
   login: vi.fn(),
   register: vi.fn(),
+  requestEmailLink: vi.fn(),
   startOAuth: vi.fn(),
   signInWithPasskey: vi.fn(),
   exchangeSession: vi.fn(),

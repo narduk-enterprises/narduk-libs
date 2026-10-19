@@ -7,8 +7,8 @@ import type {
   User as SupabaseUser,
 } from '@supabase/auth-js'
 
-export type AppAuthProvider = 'apple' | 'email'
-type OAuthProvider = 'apple'
+export type AppAuthProvider = 'apple' | 'email' | 'google'
+type OAuthProvider = 'apple' | 'google'
 export type AppAuthenticatorAssuranceLevel = 'aal1' | 'aal2'
 
 export interface AppSessionUser {
@@ -29,7 +29,7 @@ export interface AppSessionUser {
 
 export interface AuthMutationResult {
   message?: string
-  nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent'
+  nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent' | 'email_link_sent'
   redirectTo?: string
   selfServeLink?: string
   user: AppSessionUser | null

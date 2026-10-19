@@ -76,7 +76,7 @@ export function useAuthApi() {
     })
   }
 
-  function startOAuth(payload: { next?: string; provider: 'apple' }) {
+  function startOAuth(payload: { next?: string; provider: 'apple' | 'google' }) {
     return csrfFetch<{ url: string }>('/api/auth/oauth/start', {
       method: 'POST',
       body: payload,
@@ -149,6 +149,22 @@ export function useAuthApi() {
 
   function completeLocalEmailPassword(payload: { newPassword: string; token: string }) {
     return csrfFetch<AuthMutationResult>('/api/auth/password/complete', {
+      method: 'POST',
+      body: payload,
+      headers: csrfHeaders,
+    })
+  }
+
+  function requestEmailLink(payload: { email: string; next?: string }) {
+    return csrfFetch<AuthMutationResult>('/api/auth/email-link/request', {
+      method: 'POST',
+      body: payload,
+      headers: csrfHeaders,
+    })
+  }
+
+  function redeemEmailLink(payload: { token: string }) {
+    return csrfFetch<AuthMutationResult>('/api/auth/email-link/redeem', {
       method: 'POST',
       body: payload,
       headers: csrfHeaders,
@@ -230,6 +246,8 @@ export function useAuthApi() {
     revokeApiKey,
     requestPasswordReset,
     completeLocalEmailPassword,
+    requestEmailLink,
+    redeemEmailLink,
     enrollMfa,
     verifyMfa,
     passkeyRegistrationOptions,

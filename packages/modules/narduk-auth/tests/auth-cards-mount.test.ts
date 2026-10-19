@@ -104,6 +104,88 @@ describe('Sign in with Apple affordance (narduk-libs#164)', () => {
   })
 })
 
+describe('Google sign-in affordance (narduk-libs#1951)', () => {
+  it('shows Continue with Google on both cards when the server reports googleEnabled', async () => {
+    authRuntimeData.value = {
+      authBackend: 'local',
+      authProviders: ['email', 'google'],
+      googleEnabled: true,
+      passkeysEnabled: false,
+    }
+    authMocks.startOAuth.mockResolvedValue({ url: '/api/auth/google/start?next=%2Fdashboard%2F' })
+    for (const card of [AuthLoginCard, AuthRegisterCard]) {
+      authMocks.startOAuth.mockClear()
+      navigateToMock.mockClear()
+      const wrapper = mountAuthCard(card)
+      const button = wrapper.find('[data-testid="auth-google"]')
+      expect(button.exists()).toBe(true)
+      expect(button.text()).toBe('Continue with Google')
+      await button.trigger('click')
+      await flushPromises()
+      expect(authMocks.startOAuth).toHaveBeenCalledWith({
+        provider: 'google',
+        next: DASHBOARD_PATH,
+      })
+      expect(navigateToMock).toHaveBeenCalledWith('/api/auth/google/start?next=%2Fdashboard%2F', {
+        external: true,
+      })
+      wrapper.unmount()
+    }
+  })
+
+  it('hides it when google is advertised on local but has no client', () => {
+    authRuntimeData.value = {
+      authBackend: 'local',
+      authProviders: ['email', 'google'],
+      googleEnabled: false,
+      passkeysEnabled: false,
+    }
+    for (const card of [AuthLoginCard, AuthRegisterCard]) {
+      const wrapper = mountAuthCard(card)
+      expect(wrapper.find('[data-testid="auth-google"]').exists()).toBe(false)
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('email sign-in link affordance (narduk-libs#1952)', () => {
+  it('is hidden unless the server reports emailLinkEnabled', () => {
+    const wrapper = mountAuthCard(AuthLoginCard)
+    expect(wrapper.find('[data-testid="auth-login-email-link"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('asks for an address, then requests a link and shows the neutral answer', async () => {
+    authRuntimeData.value = {
+      authBackend: 'local',
+      authProviders: ['email'],
+      emailLinkEnabled: true,
+      passkeysEnabled: false,
+    }
+    authMocks.requestEmailLink.mockResolvedValue({
+      user: null,
+      nextStep: 'email_link_sent',
+      message: 'If that email can sign in to this app, a sign-in link has been sent.',
+    })
+    const wrapper = mountAuthCard(AuthLoginCard)
+    const button = wrapper.find('[data-testid="auth-login-email-link"]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(authMocks.requestEmailLink).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Enter your email address to get a sign-in link.')
+
+    await wrapper.get('[data-testid="auth-login-email"]').setValue(ADA_EMAIL)
+    await button.trigger('click')
+    await flushPromises()
+    expect(authMocks.requestEmailLink).toHaveBeenCalledWith({
+      email: ADA_EMAIL,
+      next: DASHBOARD_PATH,
+    })
+    expect(wrapper.text()).toContain('a sign-in link has been sent')
+    wrapper.unmount()
+  })
+})
+
 describe('AuthLoginCard mount', () => {
   it('renders the default title and credential fields', () => {
     const wrapper = mountAuthCard(AuthLoginCard)
