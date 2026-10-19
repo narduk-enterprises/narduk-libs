@@ -41,7 +41,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
-import { findCloudflareAppConfig, readJsonc, type DeployEnv } from './deploy.js'
+import { primeAppConfig, requireAppConfigRoot } from './app-config/resolve.js'
+import {
+  DEPLOY_APP_CONFIG_LOCATE,
+  readCloudflareAppConfigDocument,
+  readJsonc,
+  type DeployEnv,
+} from './deploy.js'
 import {
   healthArgs,
   readDeploymentBlock,
@@ -360,17 +366,28 @@ export async function runStagingDeploy(
   const appDir = resolve(context.appDir ?? process.cwd())
   const log = context.log ?? ((line: string) => console.error(line))
 
-  const manifestPath = findCloudflareAppConfig(appDir)
-  if (!manifestPath) {
+  let root: string
+  let manifest: Record<string, unknown>
+  try {
+    root = requireAppConfigRoot(appDir, 'cloudflare-app.json', {
+      ...DEPLOY_APP_CONFIG_LOCATE,
+      env,
+    })
+    await primeAppConfig({
+      ...DEPLOY_APP_CONFIG_LOCATE,
+      dir: appDir,
+      env,
+      files: ['cloudflare-app.json'],
+      required: true,
+    })
+    manifest = readCloudflareAppConfigDocument(appDir, env) as Record<string, unknown>
+  } catch (error) {
     return baseResult(
       'invalid-config',
-      'No Config/cloudflare-app.json found above the app directory; the staging stage is ' +
-        'declared there and nowhere else.',
+      error instanceof Error ? error.message : String(error),
       STAGING_EXIT.usage,
     )
   }
-  const root = dirname(dirname(manifestPath))
-  const manifest = readJsonc<Record<string, unknown>>(manifestPath)
   const outcome = readDeploymentBlock(manifest)
   if (outcome.kind !== 'valid') {
     return baseResult(
