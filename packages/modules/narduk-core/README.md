@@ -264,6 +264,13 @@ nuxt-security / Permissions-Policy configuration. Request-time headers already
 read the Worker binding through `readRuntimeBoolean`. Prefer that path over
 baking a wrangler default into `nuxt.config.ts`.
 
+The string, boolean and string-list runtime readers look up only the requested
+keys. They do not copy the full Node environment or access unrelated Worker
+bindings. Worker values still override Node values, including explicit blanks
+and `undefined`, and each call reads the current values without caching.
+`readRuntimeEnvOverlay` and `readWorkerRuntimeEnv` remain full-copy APIs for
+callers that need the complete environment.
+
 ## Security headers (`security.headers`)
 
 narduk-core has always set security headers.

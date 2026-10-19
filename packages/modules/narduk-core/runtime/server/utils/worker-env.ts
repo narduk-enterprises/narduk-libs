@@ -80,6 +80,39 @@ export function readWorkerRuntimeEnv(
   }
 }
 
+/** Read one overlay value without enumerating Node env or unrelated bindings. */
+export function readWorkerRuntimeEnvValue(
+  event: H3Event | undefined,
+  key: string,
+  nodeEnv: WorkerRuntimeEnv = readNodeRuntimeEnv(),
+): unknown {
+  const runtimeEnv = event === undefined ? undefined : getCloudflareEnvFromEvent(event)
+  let hasWorkerValue = false
+  let workerValue: unknown
+  // copyWorkerBindings includes non-enumerable own keys, but assignment to its
+  // plain staging object never creates an own __proto__ property.
+  if (
+    runtimeEnv != null &&
+    typeof runtimeEnv === 'object' &&
+    key !== '__proto__' &&
+    Object.prototype.hasOwnProperty.call(runtimeEnv, key)
+  ) {
+    try {
+      workerValue = (runtimeEnv as WorkerRuntimeEnv)[key]
+      hasWorkerValue = true
+    } catch {
+      // Match copyWorkerBindings: a throwing binding leaves the Node value.
+    }
+  }
+  // The Node side uses object spread, which excludes inherited and hidden keys.
+  // Read it even when masked, retaining a requested Node getter's failure.
+  const nodeValue = Object.prototype.propertyIsEnumerable.call(nodeEnv, key)
+    ? nodeEnv[key]
+    : undefined
+  // An own undefined Worker value still masks Node, unlike a throwing binding.
+  return hasWorkerValue ? workerValue : nodeValue
+}
+
 export function readCloudflareRuntimeEnv(event: H3Event): WorkerRuntimeEnv {
   return copyWorkerBindings(getCloudflareEnvFromEvent(event))
 }

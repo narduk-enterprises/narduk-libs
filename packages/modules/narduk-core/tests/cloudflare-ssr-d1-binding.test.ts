@@ -138,7 +138,7 @@ describe('the same resolver inside workerd (Miniflare, nodejs_compat)', () => {
       compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
     }).outputText
     const entry = `
-      import { readWorkerRuntimeEnv } from './worker-env.js'
+      import { readWorkerRuntimeEnv, readWorkerRuntimeEnvValue } from './worker-env.js'
       export default {
         async fetch(request, env) {
           const nested = { context: {} }
@@ -147,7 +147,10 @@ describe('the same resolver inside workerd (Miniflare, nodejs_compat)', () => {
           globalThis.__env__ = env
           const db = readWorkerRuntimeEnv(nested, {}).DB
           const row = await db.prepare('select 7 as n').first()
-          return Response.json({ before, n: row.n, same: db === env.DB })
+          return Response.json({
+            before, n: row.n, same: db === env.DB,
+            singleKeySame: readWorkerRuntimeEnvValue(nested, 'DB', {}) === env.DB,
+          })
         },
       }
     `
@@ -175,7 +178,7 @@ describe('the same resolver inside workerd (Miniflare, nodejs_compat)', () => {
     try {
       const response = await runtime.dispatchFetch('http://localhost/')
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ before: true, n: 7, same: true })
+      expect(await response.json()).toEqual({ before: true, n: 7, same: true, singleKeySame: true })
     } finally {
       await runtime.dispose()
     }
