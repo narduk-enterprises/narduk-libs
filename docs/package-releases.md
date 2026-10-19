@@ -132,10 +132,14 @@ now a no-op.
 
 Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
 `packages: write`, after `verify-ci` pins the run to a CI-verified commit on
-main. The publishing job does not use the main-only `npm-release` environment:
-that environment holds the estate App key, and GitHub gives environment secrets
-to every job that uses the environment. Only install-free jobs use it
-(`notify-mirror` and `approve-release-pr-ci` in `release.yml`,
+main. After installation, the job builds `narduk-app-tools` before configuring
+registry write auth. The generator imports that workspace package during its
+prepack build even when app-tools has no unpublished version, so publication
+must not rely on app-tools happening to run its own prepack in the same batch
+(#1936). The publishing job does not use the main-only `npm-release`
+environment: that environment holds the estate App key, and GitHub gives
+environment secrets to every job that uses the environment. Only install-free
+jobs use it (`notify-mirror` and `approve-release-pr-ci` in `release.yml`,
 `mirror-redispatch` in `release-proof.yml`), so the key never shares a runner
 with dependency install scripts. GitHub Packages must grant this repository
 Actions access to every existing package, including packages not automatically

@@ -35,6 +35,18 @@ test('every public CI and language job uses a hosted runner without package cred
 // verify and publish jobs run on the job-scoped GITHUB_TOKEN alone.
 const [releasePublish, releaseNotify] = release.split(/^  notify-mirror:$/mu)
 
+test('release builds the generator dependency after install and before registry write auth', () => {
+  const install = releasePublish.indexOf('run: pnpm install --frozen-lockfile')
+  const build = releasePublish.indexOf(
+    'run: pnpm --filter @narduk-enterprises/narduk-app-tools run build',
+  )
+  const auth = releasePublish.indexOf('name: Configure GitHub Packages write auth')
+  const publish = releasePublish.indexOf('name: Publish versions main already bumped')
+  assert.ok(install >= 0 && build > install, 'app-tools builds after dependencies are installed')
+  assert.ok(auth > build, 'the prerequisite builds before write auth is configured')
+  assert.ok(publish > auth, 'publication retains its existing authenticated path')
+})
+
 test('only the verified main release receives a job-scoped package write token', () => {
   // verify-ci, release, recheck-main (#1119), plan-release-pr-approval,
   // notify-mirror and approve-release-pr-ci (#1354).

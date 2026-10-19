@@ -148,6 +148,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The generator imports app-tools even when app-tools is already published
+      # and therefore will not run its own prepack in this release (#1936).
+      - name: Build the generator's workspace dependency
+        run: pnpm --filter @narduk-enterprises/narduk-app-tools run build
+
       - name: Verify the job token can read every existing package
         env:
           GH_TOKEN: ${{ github.token }}
