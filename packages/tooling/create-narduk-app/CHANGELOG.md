@@ -1,5 +1,18 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.11
+
+### Patch Changes
+
+- 281c832: Read individual runtime environment values without copying every Node
+  environment entry and Worker binding. Preserve Worker precedence, explicit
+  empty values, scalar conversions, and fallback behavior; full environment
+  overlays remain unchanged.
+- 748628d: Keep automatic stale-chunk recovery scoped to failed route
+  navigation. Optional async component preload errors now reach their local
+  error boundaries without forcing a document reload; route failures retain the
+  destination and reload loop guard.
+
 ## 0.23.10
 
 ### Patch Changes
