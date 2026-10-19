@@ -1,4 +1,8 @@
-import { readWorkerRuntimeEnv, type WorkerRuntimeEnv } from './worker-env'
+import {
+  readWorkerRuntimeEnv,
+  readWorkerRuntimeEnvValue,
+  type WorkerRuntimeEnv,
+} from './worker-env'
 
 import type { H3Event } from 'h3'
 
@@ -73,11 +77,8 @@ export function readRuntimeString(
   key: string,
   options: RuntimeReadOptions = {},
 ): string {
-  const env = readRuntimeEnvOverlay(event)
-  if (hasRuntimeEnvKey(env, key)) {
-    const fromEnv = readEnvScalar(env[key])
-    if (fromEnv !== undefined) return fromEnv
-  }
+  const fromEnv = readEnvScalar(readWorkerRuntimeEnvValue(event, key))
+  if (fromEnv !== undefined) return fromEnv
 
   const fromFallback = trimRuntimeString(options.fallback)
   if (fromFallback) return fromFallback
@@ -90,10 +91,8 @@ export function readRuntimeStringFromKeys(
   keys: string[],
   options: RuntimeReadOptions & { fallbacks?: unknown[] } = {},
 ): string {
-  const env = readRuntimeEnvOverlay(event)
   for (const key of keys) {
-    if (!hasRuntimeEnvKey(env, key)) continue
-    const fromEnv = readEnvScalar(env[key])
+    const fromEnv = readEnvScalar(readWorkerRuntimeEnvValue(event, key))
     if (fromEnv !== undefined) return fromEnv
   }
 
@@ -110,10 +109,9 @@ export function readRuntimeBoolean(
   key: string,
   options: RuntimeReadOptions & { defaultValue?: boolean } = {},
 ): boolean {
-  const env = readRuntimeEnvOverlay(event)
   // A var that is not a recognisable boolean (empty, `maybe`, an object) falls
   // through to the runtime-config fallback instead of forcing `defaultValue`.
-  const fromEnv = hasRuntimeEnvKey(env, key) ? parseRuntimeBoolean(env[key]) : undefined
+  const fromEnv = parseRuntimeBoolean(readWorkerRuntimeEnvValue(event, key))
   if (fromEnv !== undefined) return fromEnv
 
   return parseRuntimeBoolean(options.fallback) ?? options.defaultValue ?? false
@@ -124,8 +122,7 @@ export function readRuntimeStringList(
   key: string,
   options: RuntimeReadOptions & { fallbackList?: unknown[] } = {},
 ): string[] {
-  const env = readRuntimeEnvOverlay(event)
-  const raw = hasRuntimeEnvKey(env, key) ? readEnvScalar(env[key]) : undefined
+  const raw = readEnvScalar(readWorkerRuntimeEnvValue(event, key))
   if (raw !== undefined) {
     return raw
       .split(',')
