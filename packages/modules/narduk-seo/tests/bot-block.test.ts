@@ -1,7 +1,7 @@
 import { DEFAULT_BLOCKED_BOTS } from '@narduk-enterprises/narduk-core/shared/bot-block'
 import { describe, expect, it } from 'vitest'
 
-import { mergeBotBlockRobotsGroups } from '../shared/botBlock'
+import { mergeBotBlockRobotsGroups, readCoreBotBlockOption } from '../shared/botBlock'
 
 const robots = { disallow: ['/admin'], groups: [{ userAgent: ['GPTBot'], disallow: ['/'] }] }
 
@@ -50,5 +50,39 @@ describe('mergeBotBlockRobotsGroups', () => {
 
     expect(merged.groups[1]?.userAgent).not.toContain('Bytespider')
     expect(merged.groups[1]?.userAgent).toContain('SemrushBot')
+  })
+})
+
+describe('readCoreBotBlockOption', () => {
+  it('reads nardukCore.botBlock', () => {
+    expect(readCoreBotBlockOption({ nardukCore: { botBlock: false } })).toBe(false)
+    expect(readCoreBotBlockOption({})).toBeUndefined()
+  })
+
+  it('prefers an inline narduk-core module option, as core does', () => {
+    const inline = { extra: ['X'] }
+    expect(
+      readCoreBotBlockOption({
+        modules: ['other', ['@narduk-enterprises/narduk-core/nuxt', { botBlock: inline }]],
+        nardukCore: { botBlock: false },
+      }),
+    ).toBe(inline)
+    expect(
+      readCoreBotBlockOption({
+        modules: [['@narduk-enterprises/narduk-core', { botBlock: false }]],
+      }),
+    ).toBe(false)
+  })
+
+  it('ignores other modules and bare module names', () => {
+    expect(
+      readCoreBotBlockOption({
+        modules: [
+          '@narduk-enterprises/narduk-core',
+          ['@narduk-enterprises/narduk-seo', { botBlock: false }],
+        ],
+        nardukCore: { botBlock: { extra: ['Y'] } },
+      }),
+    ).toEqual({ extra: ['Y'] })
   })
 })

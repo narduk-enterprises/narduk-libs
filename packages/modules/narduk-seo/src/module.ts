@@ -24,7 +24,7 @@ import { defu } from 'defu'
 
 import { isSeoOgImageHexColor, normalizeSeoOgImageHexColor } from '../app/utils/ogImageDefinition'
 import { type AiCrawlersOption, mergeAiCrawlerRobotsGroups } from '../shared/aiCrawlers'
-import { mergeBotBlockRobotsGroups } from '../shared/botBlock'
+import { mergeBotBlockRobotsGroups, readCoreBotBlockOption } from '../shared/botBlock'
 import { brandFontCss, brandHeadTags, readBrandFile } from '../shared/brand'
 import {
   DEPLOYMENT_TARGET_ENV_KEYS,
@@ -720,7 +720,9 @@ export default defineNuxtModule<NardukSeoModuleOptions>({
       // One switch for the 403 and the robots.txt: narduk-core's `botBlock`.
       nuxtOptions.robots = mergeBotBlockRobotsGroups(
         (nuxtOptions.robots ?? {}) as Record<string, unknown>,
-        (nuxt.options as unknown as { nardukCore?: { botBlock?: unknown } }).nardukCore?.botBlock,
+        readCoreBotBlockOption(
+          nuxt.options as unknown as { modules?: unknown[]; nardukCore?: { botBlock?: unknown } },
+        ),
       )
       if (options.sitemapLastmod && !nuxtBuildFlags._prepare) {
         // Registered during setup, so it runs before @nuxtjs/sitemap reads the
