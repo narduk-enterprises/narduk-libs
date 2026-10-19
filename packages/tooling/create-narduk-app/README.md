@@ -1,6 +1,11 @@
 # @narduk-enterprises/create-narduk-app
 
-Deterministic, filesystem-only generation of app-owned Narduk Nuxt workspaces.
+Deterministic generation of app-owned Narduk Nuxt workspaces. New scaffolds are
+filesystem-only; upgrading an existing checkout resolves its app declarations
+through `narduk-app-tools` (`NARDUK_APP_CONFIG_SOURCE=auto|file|portal`). Auto
+reads a local declaration when present, otherwise the portal. Portal mode
+ignores local copies; file mode supports offline inference. Unreadable or
+malformed declarations stop upgrade rather than silently guessing the app shape.
 
 ```ts
 import { createNardukApp } from '@narduk-enterprises/create-narduk-app'
@@ -136,8 +141,8 @@ exists.
   only when that key is missing. They are not `pnpm --filter web`.
 - **Database.** `databaseBackend: 'none'` or `'d1'` in the Nuxt config wins.
   Otherwise a D1 binding in a checkout's `Config/cloudflare-app.json`
-  (`bindings.d1`, when it still has one; the portal copy is not consulted) or in
-  the wrangler file (`d1_databases` in JSON, JSONC, or `wrangler.toml`) selects
+  (`bindings.d1`, resolved from the selected app-config source) or in the
+  wrangler file (`d1_databases` in JSON, JSONC, or `wrangler.toml`) selects
   `d1`. No binding selects `none`, and the migrate scripts are not proposed.
   Auth is inferred from `@narduk-enterprises/narduk-auth` (or a declared
   capability) and is not dropped just because no D1 binding was found.
@@ -147,7 +152,7 @@ exists.
   object (for example `https`) is not the dev port. Otherwise
   `narduk.localDevNuxtPort`, otherwise 3000. A non-literal expression such as
   `port: resolvedLocalNuxtPort` is not guessed.
-- **Wrangler.** The managed file is `Config/project-lifecycle.json`'s
+- **Wrangler.** The managed file is the resolved lifecycle document's
   `nativeManifests.wrangler` when that path exists and is JSON or JSONC,
   otherwise the first `wrangler.jsonc` or `wrangler.json` under `apps/web` or at
   the repository root. `--only apps/web/wrangler.jsonc` selects that file on a

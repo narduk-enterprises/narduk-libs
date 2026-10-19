@@ -53,6 +53,7 @@
   },
   "packageManager": "pnpm@10.33.4",
   "dependencies": {
-    "yaml": "2.8.4"
+    "yaml": "2.8.4",
+    "@narduk-enterprises/narduk-app-tools": "workspace:*"
   }
 }

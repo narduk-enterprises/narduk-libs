@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -25,7 +33,7 @@ beforeAll(() => {
   for (const name of Object.keys(manifest.dependencies ?? {})) {
     const destination = join(scratch, 'node_modules', name)
     mkdirSync(dirname(destination), { recursive: true })
-    symlinkSync(dirname(require.resolve(name + '/package.json')), destination, 'dir')
+    symlinkSync(realpathSync(join(packageRoot, 'node_modules', name)), destination, 'dir')
   }
   execFileSync(process.execPath, [
     require.resolve('typescript/bin/tsc'),

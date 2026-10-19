@@ -1,3 +1,4 @@
+import { AppConfigError, resolveAppConfig } from '@narduk-enterprises/narduk-app-tools'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -290,6 +291,23 @@ function declaredDatabase(nuxtConfig: string): GeneratedDatabaseBackend | null {
   return value === 'none' || value === 'd1' ? value : null
 }
 
+/** Only a definitive absent document is optional; unreadable declarations fail upgrade. */
+async function readDeclaration(
+  targetDir: string,
+  file: 'cloudflare-app.json' | 'project-lifecycle.json',
+): Promise<Record<string, unknown> | null> {
+  const resolved = await resolveAppConfig({ root: targetDir, file })
+  if (resolved === null) return null
+  const document = parseJsonOrNull(resolved.text)
+  if (document === null) {
+    throw new AppConfigError(
+      'bad-response',
+      `${file} from ${resolved.source} is not a JSON object.`,
+    )
+  }
+  return document
+}
+
 export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFacts> {
   const rootManifest = parseJsonOrNull(await readIfExists(resolve(targetDir, 'package.json')))
   const appsWebNuxt = await readIfExists(resolve(targetDir, 'apps/web/nuxt.config.ts'))
@@ -297,9 +315,7 @@ export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFact
   const webManifest = parseJsonOrNull(
     await readIfExists(resolve(targetDir, 'apps/web/package.json')),
   )
-  const lifecycle = parseJsonOrNull(
-    await readIfExists(resolve(targetDir, 'Config/project-lifecycle.json')),
-  )
+  const lifecycle = await readDeclaration(targetDir, 'project-lifecycle.json')
   const namedWrangler = relativePath(
     (lifecycle?.nativeManifests as { wrangler?: unknown } | undefined)?.wrangler,
   )
@@ -332,9 +348,7 @@ export async function readCheckoutFacts(targetDir: string): Promise<CheckoutFact
         ? 'root'
         : 'apps-web'
 
-  const cloudflareApp = parseJsonOrNull(
-    await readIfExists(resolve(targetDir, 'Config/cloudflare-app.json')),
-  )
+  const cloudflareApp = await readDeclaration(targetDir, 'cloudflare-app.json')
   const wrangler = parseJsoncObject(
     jsonWrangler ? await readIfExists(resolve(targetDir, jsonWrangler)) : null,
   )
