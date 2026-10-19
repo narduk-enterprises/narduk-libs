@@ -3,12 +3,12 @@ import { createError } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow, useDatabase } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
-import { authWebauthnCredentials } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 import {
   readAuthRuntimeEnv,
   resolveAuthEnvironmentForEvent,
 } from '#narduk-auth-server/utils/auth-runtime-env'
+import { authWebauthnCredentials } from '#narduk-auth/schema'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import {

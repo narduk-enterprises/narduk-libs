@@ -2,8 +2,8 @@ import { count, eq, lt } from 'drizzle-orm'
 import { createError } from 'h3'
 
 import { executeDatabaseQuery } from '#layer/server/utils/database'
-import { authWebauthnChallenges } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
+import { authWebauthnChallenges } from '#narduk-auth/schema'
 
 import { hashLocalEmailValue } from './local-email-core'
 import { isClaimedChallengeUsable } from './webauthn-verification'

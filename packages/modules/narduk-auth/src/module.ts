@@ -234,7 +234,19 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
     nuxtOptions.alias = {
       ...nuxtOptions.alias,
       '#narduk-auth-server': resolver.resolve('../server'),
+      '#narduk-auth/schema': resolver.resolve('../server/app-orm-tables.ts'),
     }
+    // narduk-core selects its Postgres or D1 schema in its own setup. Follow
+    // that choice once every module has run instead of re-deriving it, so the
+    // auth tables can never disagree with the `users` table they reference.
+    nuxt.hook('modules:done', () => {
+      const coreSchema = nuxtOptions.alias['#narduk-core/schema']
+      if (typeof coreSchema === 'string' && /pg-schema\.ts$/u.test(coreSchema)) {
+        nuxtOptions.alias['#narduk-auth/schema'] = resolver.resolve(
+          '../server/app-orm-tables.pg.ts',
+        )
+      }
+    })
 
     if (options.app) {
       addImportsDir(resolver.resolve('../app/composables'))

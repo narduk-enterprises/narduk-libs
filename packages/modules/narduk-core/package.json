@@ -52,6 +52,7 @@
       "import": "./runtime/app/utils/*.ts"
     },
     "./drizzle/*": "./runtime/drizzle/*",
+    "./drizzle-pg/*": "./runtime/drizzle-pg/*",
     "./eslint-app-config": {
       "import": "./eslint-app-config.mjs"
     },
@@ -160,6 +161,7 @@
     "@vitest/coverage-v8": "4.1.6",
     "@vue/test-utils": "^2.4.10",
     "drizzle-kit": "^0.31.10",
+    "embedded-postgres": "17.10.0-beta.17",
     "eslint": "^10.8.0",
     "happy-dom": "^20.9.0",
     "hookable": "5.5.3",

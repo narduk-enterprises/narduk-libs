@@ -3,8 +3,8 @@ import { createError, getHeader, setResponseHeader } from 'h3'
 
 import { executeDatabaseQuery, getDatabaseRow } from '#layer/server/utils/database'
 import { useLogger } from '#layer/server/utils/logger'
-import { authLocalEmailAttempts } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
+import { authLocalEmailAttempts } from '#narduk-auth/schema'
 
 import {
   hashLocalEmailValue,

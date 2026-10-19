@@ -11,7 +11,6 @@ import {
   replaceLayerUserSession,
   setLayerUserSession,
 } from '#layer/server/utils/user-session'
-import { authSessions } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 import {
   getSupabaseSessionErrorSummary,
@@ -20,6 +19,7 @@ import {
   isTerminalSupabaseSessionFailure,
   stampAuthSessionValidated,
 } from '#narduk-auth-server/utils/auth-session-stability'
+import { authSessions } from '#narduk-auth/schema'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { decodeAccessTokenPayload, extractProviderMetadata, toSessionUser } from './helpers'

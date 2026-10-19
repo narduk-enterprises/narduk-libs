@@ -2714,8 +2714,9 @@ child column of `users ON DELETE CASCADE`, so each user delete scanned
 `sessions`. `CREATE INDEX` holds D1 writes while it builds; both tables are
 small in current apps. `tests/user-id-indexes-d1.test.ts` applies every core
 migration on Miniflare D1 and checks both lookups with `EXPLAIN QUERY PLAN`. The
-Postgres schema (`pg-schema.ts`) declares the same indexes; core ships no
-Postgres migrations, so a Postgres app adds them with its own DDL.
+Postgres schema (`pg-schema.ts`) declares the same indexes, and
+`runtime/drizzle-pg/` creates them (see
+[Core Postgres migrations](#core-postgres-migrations)).
 
 `0007` indexes `api_keys.key_hash`, the lookup of every API-key authentication
 (`authenticateApiKey`, `authenticateD1ApiKey`). Without it each authentication
@@ -2734,9 +2735,9 @@ returns `null` for a revoked key, and `authenticateD1ApiKey` answers
 `{ ok: false, reason: 'revoked' }`, checked before expiry. narduk-auth's
 `DELETE /api/auth/api-keys/:id` revokes this way, and its list omits revoked
 keys. Both authenticate functions read the column, so apply `0008` before
-deploying a Worker built with this version. A Postgres app adds the column with
-its own DDL: `ALTER TABLE api_keys ADD COLUMN revoked_at text;`.
-`tests/api-key-revocation-d1.test.ts` covers it on Miniflare D1.
+deploying a Worker built with this version. A Postgres app gets the column from
+`drizzle-pg/0008_api_key_revoked_at.sql`. `tests/api-key-revocation-d1.test.ts`
+covers it on Miniflare D1.
 
 `api_keys.last_used_at` is rewritten at most once per
 `API_KEY_LAST_USED_INTERVAL_MS` (five minutes) per key by both authenticate
@@ -2744,6 +2745,29 @@ functions (#1856): the `UPDATE` carries
 `AND (last_used_at IS NULL OR last_used_at < cutoff)`, so a recently used key
 writes no row and adds no read. Read the column as "last used, to within five
 minutes". `tests/api-key-one-read-d1.test.ts` covers both paths on Miniflare D1.
+
+## Core Postgres migrations
+
+`runtime/drizzle-pg/` is the Postgres translation of `runtime/drizzle/`:
+`0000_initial_schema.sql` to `0008_api_key_revoked_at.sql`, the same names, one
+file per D1 migration (the D1-only `seed.sql` has no counterpart). It is
+exported as `@narduk-enterprises/narduk-core/drizzle-pg/*`. Apply it with
+`@narduk-enterprises/narduk-postgres/migrate` in its **own ledger**, before
+narduk-auth's `drizzle-pg/` set, which references `users(id)`. Every statement
+is `IF NOT EXISTS` (`ADD COLUMN IF NOT EXISTS` for `0008`), so a re-run is a
+no-op.
+
+Epoch-second columns (`sessions.expires_at`, `kv_cache.expires_at`,
+`api_keys.expires_at`) are `bigint` in `pg-schema.ts` and the DDL, read back as
+JS numbers; they were `integer`, which overflows in 2038. No Postgres app could
+have applied a core migration before this release, so nothing existing changes.
+`pg-schema.ts` also declares `idx_notifications_user_unread`, which D1 already
+had.
+
+`tests/pg-migration-parity.test.ts` applies the set to a real PostgreSQL 17
+(`embedded-postgres`; `NARDUK_PG17_TEST_URL` selects an external server) and
+diffs the catalog against `pg-schema.ts`, so a column added to one and not the
+other fails CI. D1 behaviour is untouched.
 
 ## Type declarations in `types/`
 

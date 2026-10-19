@@ -87,7 +87,19 @@ export default defineConfig({
         '../narduk-core/runtime/server/utils/worker-env.ts',
       ),
       '#narduk-auth-server/utils/admin-scopes': join(packageRoot, 'server/utils/admin-scopes.ts'),
-      '#narduk-auth-server/app-orm-tables': join(packageRoot, 'server/app-orm-tables.ts'),
+      '#narduk-core/postgres-runtime': join(
+        packageRoot,
+        '../narduk-core/runtime/internal/postgres-runtime.ts',
+      ),
+      '#narduk-auth/schema': join(packageRoot, 'server/app-orm-tables.ts'),
+      '#layer/server/database/pg-schema': join(
+        packageRoot,
+        '../narduk-core/runtime/server/database/pg-schema.ts',
+      ),
+      '#narduk-auth-server/database/app-pg-schema': join(
+        packageRoot,
+        'server/database/app-pg-schema.ts',
+      ),
       '#narduk-auth-server/database/app-schema': join(packageRoot, 'server/database/app-schema.ts'),
       '#narduk-auth-server/utils/app-auth': join(packageRoot, 'tests/stubs/app-auth.ts'),
       '#narduk-auth-server/utils/auth-bridge-database': join(

@@ -4,7 +4,7 @@
  * Column names match the SQLite schema so migrations and queries stay aligned.
  * Build Workers with `NUXT_DATABASE_BACKEND=postgres` so `#narduk-core/schema` resolves here.
  */
-import { boolean, index, integer, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { bigint, boolean, index, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -28,7 +28,7 @@ export const sessions = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    expiresAt: integer('expires_at').notNull(),
+    expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -51,7 +51,7 @@ export const todos = pgTable('todos', {
 export const kvCache = pgTable('kv_cache', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
-  expiresAt: integer('expires_at').notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
 })
 
 export const apiKeys = pgTable(
@@ -66,7 +66,7 @@ export const apiKeys = pgTable(
     keyPrefix: text('key_prefix').notNull(),
     scopesJson: text('scopes_json').notNull().default('[]'),
     lastUsedAt: text('last_used_at'),
-    expiresAt: integer('expires_at'),
+    expiresAt: bigint('expires_at', { mode: 'number' }),
     revokedAt: text('revoked_at'),
     createdAt: text('created_at')
       .notNull()
@@ -78,24 +78,30 @@ export const apiKeys = pgTable(
   ],
 )
 
-export const notifications = pgTable('notifications', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull(),
-  title: text('title').notNull(),
-  body: text('body').notNull(),
-  icon: text('icon'),
-  actionUrl: text('action_url'),
-  resourceType: text('resource_type'),
-  resourceId: text('resource_id'),
-  isRead: boolean('is_read').notNull().default(false),
-  readAt: text('read_at'),
-  createdAt: text('created_at')
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-})
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    icon: text('icon'),
+    actionUrl: text('action_url'),
+    resourceType: text('resource_type'),
+    resourceId: text('resource_id'),
+    isRead: boolean('is_read').notNull().default(false),
+    readAt: text('read_at'),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    index('idx_notifications_user_unread').on(table.userId, table.isRead, table.createdAt),
+  ],
+)
 
 /**
  * `system_prompts` mirror for the Postgres path. Defined in core so

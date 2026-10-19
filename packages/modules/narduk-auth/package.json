@@ -42,6 +42,7 @@
       "import": "./app/utils/*.ts"
     },
     "./drizzle/*": "./drizzle/*",
+    "./drizzle-pg/*": "./drizzle-pg/*",
     "./server/*": {
       "import": "./server/*.ts"
     },
@@ -61,6 +62,7 @@
   "files": [
     "app/",
     "drizzle/",
+    "drizzle-pg/",
     "server/",
     "shared/",
     "src/",
@@ -128,6 +130,7 @@
     "miniflare": "4.20260701.0",
     "nuxt": "^4.5.2",
     "playwright": "1.61.1",
+    "postgres": "^3.4.9",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.1",
     "typescript": "~6.0.3",

@@ -9,9 +9,9 @@ import {
   isBcryptPasswordHash,
   verifyUserPassword,
 } from '#layer/server/utils/password'
-import { authUserLinks } from '#narduk-auth-server/app-orm-tables'
 import { useAuthBridgeDatabase } from '#narduk-auth-server/utils/auth-bridge-database'
 import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-session-stability'
+import { authUserLinks } from '#narduk-auth/schema'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
 import { resolveAppleSignInForEvent } from '../../utils/auth-runtime-env'

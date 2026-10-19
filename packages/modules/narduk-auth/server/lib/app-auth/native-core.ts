@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import { createError } from 'h3'
 
-import { authNativeSessions } from '../../database/native-auth-schema'
+import { authNativeSessions } from '#narduk-auth/schema'
 
 import type {
   NativeAuthClient,
