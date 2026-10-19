@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.35.6
+
+### Patch Changes
+
+- Updated dependencies [281c832]
+- Updated dependencies [748628d]
+  - @narduk-enterprises/narduk-core@2.34.1
+
 ## 1.35.5
 
 ### Patch Changes
