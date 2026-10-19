@@ -48,11 +48,11 @@ export const authSessions = sqliteTable('auth_sessions', {
     .$defaultFn(() => new Date().toISOString()),
 })
 
-/** Digest-only, single-use setup and reset links for the additive local-email flow. */
+/** Digest-only, single-use setup, reset and sign-in links for the local-email flow. */
 export const authEmailLinks = sqliteTable('auth_email_links', {
   id: text('id').primaryKey(),
   email: text('email').notNull(),
-  purpose: text('purpose', { enum: ['setup', 'reset'] }).notNull(),
+  purpose: text('purpose', { enum: ['setup', 'reset', 'signin'] }).notNull(),
   tokenHash: text('token_hash').notNull().unique(),
   redirectPath: text('redirect_path').notNull(),
   expiresAt: integer('expires_at').notNull(),

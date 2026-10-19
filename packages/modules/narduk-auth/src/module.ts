@@ -282,6 +282,11 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
           file: resolver.resolve('../app/pages/auth/confirm.vue'),
         })
         addPageIfMissing(pages, {
+          name: 'auth-email-link',
+          path: '/auth/email-link',
+          file: resolver.resolve('../app/pages/auth/email-link.vue'),
+        })
+        addPageIfMissing(pages, {
           name: 'dashboard',
           path: '/dashboard',
           file: resolver.resolve('../app/pages/dashboard/index.vue'),
@@ -449,6 +454,7 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
         authRegisterPath: '/register',
         authCallbackPath: '/auth/callback',
         authConfirmPath: '/auth/confirm',
+        authEmailLinkPath: '/auth/email-link',
         authResetPath: '/reset-password',
         authLogoutPath: '/logout',
         authRedirectPath: '/dashboard/',

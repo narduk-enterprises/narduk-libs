@@ -14,12 +14,16 @@ import { stampAuthSessionValidated } from '#narduk-auth-server/utils/auth-sessio
 import { authUserLinks } from '#narduk-auth/schema'
 import { type User as LocalUser, users } from '#narduk-core/schema'
 
-import { resolveAppleSignInForEvent } from '../../utils/auth-runtime-env'
+import {
+  resolveAppleSignInForEvent,
+  resolveGoogleSignInForEvent,
+} from '../../utils/auth-runtime-env'
 import { useNativeAuth } from '../../utils/native-auth'
 import { getLocalEmailVerification } from '../../utils/verified-email'
 
 import { verifyAppleIdentityToken } from './apple-identity'
 import { assertLocalAppleWebEnabled, signInWithAppleIdentity } from './apple-local'
+import { assertLocalGoogleWebEnabled } from './google-local'
 import {
   buildAppPath,
   buildAppUrl,
@@ -359,6 +363,8 @@ async function registerWithSupabase(
 
 /** The local backend's Apple web entry point (narduk-libs#164). */
 export const APPLE_START_PATH = '/api/auth/apple/start'
+/** The local backend's Google web entry point (narduk-libs#1951). */
+export const GOOGLE_START_PATH = '/api/auth/google/start'
 
 export async function startOAuthFlow(event: H3Event, body: OAuthStartInput) {
   const config = getAuthConfig(event)
@@ -368,6 +374,15 @@ export async function startOAuthFlow(event: H3Event, body: OAuthStartInput) {
     // redirects to Apple; the card navigates there like any OAuth URL.
     return {
       url: buildAppUrl(config.appUrl, APPLE_START_PATH, {
+        next: sanitizeNextPath(body.next, config.redirectPath),
+      }),
+    }
+  }
+  if (config.backend === 'local' && body.provider === 'google') {
+    assertLocalGoogleWebEnabled(resolveGoogleSignInForEvent(event, 'local'))
+    // Same shape as Apple: a same-origin GET binds state, nonce and PKCE.
+    return {
+      url: buildAppUrl(config.appUrl, GOOGLE_START_PATH, {
         next: sanitizeNextPath(body.next, config.redirectPath),
       }),
     }

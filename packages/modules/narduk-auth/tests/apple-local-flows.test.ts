@@ -16,6 +16,7 @@ import type { H3Event } from 'h3'
 
 const state = vi.hoisted(() => ({
   apple: null as AppleSignInConfig | null,
+  google: { clientId: '', clientSecret: '', webEnabled: false },
   backend: 'local' as 'local' | 'supabase',
   signedIn: [] as Array<{ appleId: string; email: string | null }>,
 }))
@@ -49,6 +50,7 @@ vi.mock('../server/lib/app-auth/supabase-client', () => ({
 }))
 vi.mock('../server/utils/auth-runtime-env', () => ({
   resolveAppleSignInForEvent: () => state.apple,
+  resolveGoogleSignInForEvent: () => state.google,
 }))
 vi.mock('../server/lib/app-auth/apple-local', async (importOriginal) => {
   const original = await importOriginal<typeof AppleLocal>()
@@ -112,6 +114,20 @@ describe('local-backend Apple entry points (#164)', () => {
     await expect(
       startOAuthFlow(event, { provider: 'apple', next: 'https://evil.example/' }),
     ).resolves.toEqual({ url: 'https://app.example/api/auth/apple/start?next=%2Fdashboard%2F' })
+  })
+
+  it('startOAuthFlow hands the card the same-origin Google start URL (#1951)', async () => {
+    state.google = { clientId: 'id', clientSecret: 'secret', webEnabled: true }
+    const { startOAuthFlow } = await import('../server/lib/app-auth/auth-flows')
+    await expect(
+      startOAuthFlow(event, { provider: 'google', next: '/farm/2?tab=a' }),
+    ).resolves.toEqual({
+      url: 'https://app.example/api/auth/google/start?next=%2Ffarm%2F2%3Ftab%3Da',
+    })
+    state.google = { clientId: '', clientSecret: '', webEnabled: false }
+    await expect(startOAuthFlow(event, { provider: 'google' })).rejects.toMatchObject({
+      statusCode: 501,
+    })
   })
 
   it('startOAuthFlow still answers 501 when Apple is not configured', async () => {

@@ -16,7 +16,7 @@ export interface AuthUser {
 
 export interface AuthMutationResult {
   message?: string
-  nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent'
+  nextStep?: 'signed_in' | 'email_confirmation' | 'password_recovery_sent' | 'email_link_sent'
   redirectTo?: string
   selfServeLink?: string
   user: AuthUser | null
@@ -80,5 +80,9 @@ export interface AuthRuntimePublic {
   appleEnabled?: boolean
   authBackend: 'local' | 'supabase'
   authProviders: string[]
+  /** Passwordless email sign-in links are on (local backend, `AUTH_EMAIL_LINK_SIGNIN`). */
+  emailLinkEnabled?: boolean
+  /** Google sign-in would complete: advertised, and on local also configured. */
+  googleEnabled?: boolean
   passkeysEnabled: boolean
 }

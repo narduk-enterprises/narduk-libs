@@ -28,6 +28,11 @@ export {
 } from '#narduk-auth-server/lib/app-auth/auth-flows'
 export { completeLocalEmailPassword } from '#narduk-auth-server/lib/app-auth/local-email-flow'
 export {
+  redeemLocalEmailSignInLink,
+  requestLocalEmailSignInLink,
+} from '#narduk-auth-server/lib/app-auth/local-email-signin'
+export { signInWithGoogleIdentity } from '#narduk-auth-server/lib/app-auth/google-local'
+export {
   updateProfile,
   changePassword,
   verifySupabaseAccountDeletionCredentials,
