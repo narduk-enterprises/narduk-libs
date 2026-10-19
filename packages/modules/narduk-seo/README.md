@@ -402,6 +402,16 @@ OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai, Google-Extended,
 PerplexityBot, CCBot, Bytespider, Amazonbot, Applebot-Extended,
 meta-externalagent, cohere-ai.
 
+## SEO and scraper crawlers
+
+By default the robots.txt carries one `User-agent: <name>` / `Disallow: /` group
+naming narduk-core's `DEFAULT_BLOCKED_BOTS` (SemrushBot, AhrefsBot, MJ12bot,
+DotBot, and the rest; see narduk-core's "SEO and scraper crawler block"), and
+narduk-core's middleware answers those crawlers `403`. One switch governs both:
+`nardukCore.botBlock` (`false`, `{ enabled: false }`, `extra`, `allow`). Needs
+`@narduk-enterprises/narduk-core` 2.34 or newer. A name an `aiCrawlers` group or
+one of your own robots groups already names is left to that group.
+
 ## Narduk network directory
 
 **The directory endpoint is injectable and has no default. It is off unless you
