@@ -1,5 +1,28 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.9
+
+### Patch Changes
+
+- 22d6aea: Emit an explicit public npm registry default alongside the estate
+  scope so Dependabot avoids probing the mirror for public packages. Limit npm
+  version updates to one open grouped PR while preserving the safe and majors
+  groups.
+- 33e2a4d: Resolve the required staging deployment declaration through the
+  shared app-config resolver, including portal-only checkouts. Preserve staging
+  authority checks and return invalid-config before Worker I/O when the selected
+  declaration is unreadable.
+- 30a4c0b: Resolve existing checkout declarations through the shared app-config
+  resolver during upgrade. Honor portal mode, retain offline file inference, and
+  report unreadable declarations instead of silently guessing the app shape.
+- a6c3cb2: Read promotion deployment metadata through the existing bounded
+  Cloudflare API client when an account and deploy token are available, avoiding
+  Wrangler startup for eligibility and supersede checks. Preserve the CLI
+  fallback and all guards.
+- Updated dependencies [33e2a4d]
+- Updated dependencies [a6c3cb2]
+  - @narduk-enterprises/narduk-app-tools@0.45.2
+
 ## 0.23.8
 
 ### Patch Changes
