@@ -54,14 +54,19 @@ export interface AccountDeletionBridgeHooks {
   ) => Promise<void>
 }
 
+/**
+ * D1 puts "FOREIGN KEY constraint failed" on the error itself; Drizzle's
+ * Postgres driver wraps the failure, so the message is the failed query and
+ * the server's error (SQLSTATE 23503) sits on `cause`.
+ */
 function isForeignKeyConstraintError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string' &&
-    /foreign key/i.test(error.message)
-  )
+  let current: unknown = error
+  for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
+    if ('code' in current && current.code === '23503') return true
+    if ('message' in current && typeof current.message === 'string' && /foreign key/i.test(current.message)) return true
+    current = 'cause' in current ? current.cause : null
+  }
+  return false
 }
 
 function usesSupabaseCredentials(event: H3Event, user: AuthUser): boolean {

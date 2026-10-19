@@ -2759,10 +2759,13 @@ no-op.
 
 Epoch-second columns (`sessions.expires_at`, `kv_cache.expires_at`,
 `api_keys.expires_at`) are `bigint` in `pg-schema.ts` and the DDL, read back as
-JS numbers; they were `integer`, which overflows in 2038. No Postgres app could
-have applied a core migration before this release, so nothing existing changes.
-`pg-schema.ts` also declares `idx_notifications_user_unread`, which D1 already
-had.
+JS numbers; they were `integer`, which overflows in 2038. No core migration
+existed for Postgres before this release, so nothing is altered for you: an app
+that hand-built these tables from the old `integer` schema keeps 32-bit columns
+and widens them itself
+(`ALTER TABLE sessions ALTER COLUMN expires_at TYPE bigint`, likewise `kv_cache`
+and `api_keys`). `pg-schema.ts` also declares `idx_notifications_user_unread`,
+which D1 already had.
 
 `tests/pg-migration-parity.test.ts` applies the set to a real PostgreSQL 17
 (`embedded-postgres`; `NARDUK_PG17_TEST_URL` selects an external server) and

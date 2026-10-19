@@ -1,5 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import bcrypt from 'bcryptjs'
 import { eq } from 'drizzle-orm'
@@ -51,6 +53,7 @@ vi.mock('#narduk-auth/schema', async () => {
 })
 
 const SESSION_PASSWORD = 'narduk-postgres-integration-session-password-32+chars'
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const APP_URL = 'http://127.0.0.1:3000'
 const OWNER_EMAIL = 'owner@example.com'
 
@@ -120,9 +123,11 @@ async function loadModules() {
   const core2 = await import('../server/lib/app-auth/local-email-core')
   const coreAuth = await import('../../narduk-core/runtime/server/utils/auth')
   const notifications = await import('../server/utils/notifications')
+  const deletion = await import('../server/utils/accountDeletionBridge')
   return {
     coreAuth,
     notifications,
+    deletion,
     apple,
     authDb,
     challenges,
@@ -150,8 +155,11 @@ beforeAll(async () => {
   process.env.AUTH_EMAIL_ALLOWLIST = OWNER_EMAIL
   server = await startPostgres17()
   database = await server.createDatabase()
-  await applyMigrationDirectory(database.sql, '../narduk-core/runtime/drizzle-pg')
-  await applyMigrationDirectory(database.sql, 'drizzle-pg')
+  await applyMigrationDirectory(
+    database.sql,
+    join(PACKAGE_ROOT, '../narduk-core/runtime/drizzle-pg'),
+  )
+  await applyMigrationDirectory(database.sql, join(PACKAGE_ROOT, 'drizzle-pg'))
   runtime.config = baseConfig(database.url)
   m = await loadModules()
 }, 180_000)
@@ -903,5 +911,22 @@ describe('core tables the auth module leans on, on PostgreSQL', () => {
     expect(await m.coreAuth.getSessionUser(read)).toMatchObject({ id: OWNER })
     await database.sql.unsafe('UPDATE sessions SET expires_at = 1')
     expect(await m.coreAuth.getSessionUser(visit({ cookie: `${cookieName}=${id}` }))).toBeNull()
+  })
+
+  it('answers 409 when an app table still references the user, and deletes cleanly otherwise', async () => {
+    await seedOwner()
+    await database.sql.unsafe(
+      `CREATE TABLE IF NOT EXISTS app_notes (id text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id))`,
+    )
+    await database.sql.unsafe(`INSERT INTO app_notes VALUES ('n1', '${OWNER}')`)
+    const user = { id: OWNER, email: 'o@example.com' } as never
+    const hooks = { verifyCredentials: async () => {} }
+    await expect(
+      m.deletion.deleteCurrentUserAccountBridge(visit(), user, {}, hooks),
+    ).rejects.toMatchObject({ statusCode: 409 })
+    expect(await rows('SELECT 1 FROM users')).toHaveLength(1)
+    await database.sql.unsafe('DROP TABLE app_notes')
+    await m.deletion.deleteCurrentUserAccountBridge(visit(), user, {}, hooks)
+    expect(await rows('SELECT 1 FROM users')).toHaveLength(0)
   })
 })

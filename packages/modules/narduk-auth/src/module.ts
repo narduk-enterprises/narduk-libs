@@ -19,6 +19,7 @@ import { resolveAuthEnvironment as resolveAuthEnvironmentConfig } from '../share
 
 import { resolveMcpOAuthModuleOptions } from './mcp-oauth-options'
 import { AUTH_NUXT_UI_COMPONENTS } from './nuxt-ui-components'
+import { usesPostgresSchema } from './schema-backend'
 
 import type { NardukAuthMcpOAuthOptions } from './mcp-oauth-options'
 
@@ -240,8 +241,7 @@ export default defineNuxtModule<NardukAuthModuleOptions>({
     // that choice once every module has run instead of re-deriving it, so the
     // auth tables can never disagree with the `users` table they reference.
     nuxt.hook('modules:done', () => {
-      const coreSchema = nuxtOptions.alias['#narduk-core/schema']
-      if (typeof coreSchema === 'string' && /pg-schema\.ts$/u.test(coreSchema)) {
+      if (usesPostgresSchema(nuxtOptions.alias['#narduk-core/schema'])) {
         nuxtOptions.alias['#narduk-auth/schema'] = resolver.resolve(
           '../server/app-orm-tables.pg.ts',
         )
