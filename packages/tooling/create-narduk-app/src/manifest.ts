@@ -44,11 +44,11 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.45.2',
   '@narduk-enterprises/eslint-config': '3.3.4',
-  '@narduk-enterprises/narduk-ai': '0.4.40',
+  '@narduk-enterprises/narduk-ai': '0.4.41',
   '@narduk-enterprises/narduk-analytics': '1.31.0',
-  '@narduk-enterprises/narduk-auth': '1.35.4',
+  '@narduk-enterprises/narduk-auth': '1.35.5',
   '@narduk-enterprises/narduk-charts': '2.11.4',
-  '@narduk-enterprises/narduk-core': '2.33.1',
+  '@narduk-enterprises/narduk-core': '2.34.0',
   '@narduk-enterprises/narduk-logging': '0.4.5',
   '@narduk-enterprises/narduk-maps': '0.2.1',
   // Pinned for its `pnpm.overrides` entry only: narduk-platform is never a
@@ -57,7 +57,7 @@ export const PACKAGE_VERSIONS = {
   // ways down and needs one version named for all of them. `versions:sync`
   // keeps this pin on the workspace version like any other.
   '@narduk-enterprises/narduk-platform': '2.4.0',
-  '@narduk-enterprises/narduk-seo': '2.12.0',
+  '@narduk-enterprises/narduk-seo': '2.13.0',
   // The components-library suite (components-library-plan.md item 4,
   // narduk-libs#251). Pinned to the on-disk workspace version, which is still
   // `0.0.0`: the package has never been published (item 1 shipped the
