@@ -1,8 +1,9 @@
 name: NardukAuthKit Swift
 
 # NardukAuthKit uses Security and CryptoKit, so it builds only on an Apple
-# host. This public repository runs it on a GitHub-hosted macOS image; the
-# Linux Swift job in logging-languages.yml never sees its targets.
+# host. This public repository runs it on a GitHub-hosted macOS image (fleet
+# policy: a public repository never takes the fleet Apple runner class);
+# the Linux Swift job in logging-languages.yml never sees its targets.
 
 on:
   workflow_call:
@@ -17,7 +18,8 @@ jobs:
     timeout-minutes: 30
     env:
       # Xcode 26.6 / Swift 6.3.3 is narduk-logging's declared toolchain. The last
-      # step repeats the consumer on the fleet Apple runner's Xcode 26.0.1.
+      # step repeats the consumer on Xcode 26.0.1, the version the fleet Apple
+      # runners carry, which the hosted image also ships.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       SWIFTLINT_VERSION: 0.63.3
       SWIFTLINT_SHA256: fb045e85e7cb3374f42a4840b6b85a0106302afa69035c0c6f29af4a44c810b6
@@ -25,6 +27,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Require the declared Xcode toolchains on this runner image
+        run: |
+          set -euo pipefail
+          missing=0
+          for xcode in Xcode_26.6 Xcode_26.0.1; do
+            if [ ! -d "/Applications/${xcode}.app/Contents/Developer" ]; then
+              echo "::error::/Applications/${xcode}.app is not on this runner image (${ImageOS:-unknown}); update the Xcode pins in auth-kit-swift.yml to a version the image carries."
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
       - name: Install the pinned SwiftLint release
         run: |
           set -euo pipefail
@@ -40,7 +56,7 @@ jobs:
         env:
           CI: "true"
         run: python3 packages/modules/narduk-auth/swift/scripts/swift-quality.py
-      - name: Resolve and build the consumer with the fleet Apple runner's Xcode 26.0.1 (Swift 6.2)
+      - name: Resolve and build the consumer with Xcode 26.0.1 (Swift 6.2)
         env:
           DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
         run: python3 packages/modules/narduk-auth/swift/scripts/swift-quality.py --consumer-only
