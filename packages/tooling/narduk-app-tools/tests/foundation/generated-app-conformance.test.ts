@@ -24,12 +24,9 @@
  * the real generator output, with Wrangler replaced at the process seam) the
  * app is conformant.
  *
- * The generator is imported from its SOURCE by relative path, never as a
- * dependency: `create-narduk-app` has no runtime dependencies and must not
- * gain one on this package, and the per-package CI gates run
- * `pnpm --filter <name>` without building a workspace sibling's `dist`. Source
- * import keeps that true in both directions -- the same reasoning
- * `generator.test.ts` uses to read this package's fixture by relative path.
+ * Import only generation and manifest source, not the generator's root index:
+ * the index also exports upgrade, which consumes this package's built resolver.
+ * The conformance proof must run before this package's dist exists in cold CI.
  */
 
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -38,7 +35,8 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createNardukApp, PACKAGE_VERSIONS } from '../../../create-narduk-app/src/index.js'
+import { createNardukApp } from '../../../create-narduk-app/src/generate.js'
+import { PACKAGE_VERSIONS } from '../../../create-narduk-app/src/manifest.js'
 import { clearPrimedAppConfig, primeAppCheckoutConfig } from '../../src/app-config/resolve.js'
 import { fakePortal, TOKEN } from '../app-config/fake-portal.js'
 import { PLACEHOLDER_D1_DATABASE_ID, runD1Create } from '../../src/d1-create.js'
