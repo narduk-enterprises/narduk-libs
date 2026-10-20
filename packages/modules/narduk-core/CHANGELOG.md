@@ -1,5 +1,15 @@
 # @narduk-enterprises/narduk-core
 
+## 2.37.0
+
+### Minor Changes
+
+- b67ae79: `getClientIp` accepts `trustFlyClientIp`, which declares the Fly.io
+  proxy the app's edge: it reads the proxy-set `fly-client-ip` header and
+  ignores `cf-connecting-ip` (client-writable without Cloudflare in front). Off
+  by default. It applies to direct `getClientIp` calls; the built-in `'ip'`
+  rate-limit scopes do not take it.
+
 ## 2.36.0
 
 ### Minor Changes
