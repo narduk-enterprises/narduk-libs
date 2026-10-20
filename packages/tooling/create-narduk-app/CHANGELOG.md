@@ -1,5 +1,22 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.14
+
+### Patch Changes
+
+- b67ae79: Pins the released `@narduk-enterprises/narduk-core`, `narduk-ai` and
+  `narduk-auth` versions that follow the `getClientIp` `trustFlyClientIp`
+  option.
+- 2b280db: `foundation:check` reads the Nuxt app's own wrangler config. In a
+  hybrid repo (a data-plane Worker's `wrangler.jsonc` at the repo root, the Nuxt
+  app under `web/` or `apps/web/`), item 1.2 and the other items that resolve
+  the app's wrangler config now judge `web/wrangler.jsonc` against the web app's
+  `Config/cloudflare-app.json`, instead of demanding the root Worker's bindings
+  there. A Nuxt app with no wrangler config of its own still falls back to the
+  first config at a known path (narduk-libs#1967).
+- Updated dependencies [2b280db]
+  - @narduk-enterprises/narduk-app-tools@0.45.3
+
 ## 0.23.13
 
 ### Patch Changes
