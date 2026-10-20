@@ -60,10 +60,7 @@ describe('getClientIp', () => {
       '198.51.100.9',
     )
     expect(
-      await resolve(
-        { ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS },
-        { trustFlyClientIp: true },
-      ),
+      await resolve({ ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS }, { trustFlyClientIp: true }),
     ).toBe(CLOUDFLARE_ADDRESS)
     expect(
       await resolve(
