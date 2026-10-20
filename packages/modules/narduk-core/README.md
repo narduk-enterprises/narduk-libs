@@ -2829,6 +2829,34 @@ which D1 already had.
 diffs the catalog against `pg-schema.ts`, so a column added to one and not the
 other fails CI. D1 behaviour is untouched.
 
+### Adopting the layer in an existing Postgres app
+
+An app that wants only the database accessor and the migration runner, without
+the UI stack, CSRF or `/api/health` it already has, sets (narduk-libs#1940,
+#1953):
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-core'],
+  nardukCore: {
+    app: false, // no layout, pages, components or composables
+    auth: false,
+    coreModules: false, // no @nuxt/ui, color mode, fonts, pinia, image
+    image: false,
+    databaseBackend: 'postgres',
+    postgresSchema: 'narduk', // tables beside the app's own, not over them
+    csrf: { enabled: false }, // the app's clients do not send X-Requested-With
+    health: false, // the app's own /api/health wins
+  },
+})
+```
+
+Supabase-style 14-digit migration files load with
+`loadMigrationsFromDirectory(dir, { allowTimestampNames: true })`
+(`@narduk-enterprises/narduk-postgres/node`). Each option defaults to today's
+behaviour.
+
 ### Tables in their own schema: `postgresSchema`
 
 By default every table lands in the connection's `public` schema. An app that
