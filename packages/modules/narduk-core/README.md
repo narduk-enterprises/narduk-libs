@@ -1505,10 +1505,13 @@ counted by the full address. Only the counter collapses — `getClientIp` still
 returns the full address for audit rows and approximate location.
 `enforceRateLimit` / `enforceRateLimitPolicy` count IPv6 the same way.
 
-On Fly.io, pass `getClientIp(event, { trustFlyClientIp: true })` to read the
-proxy-set `fly-client-ip` header (after `cf-connecting-ip`, before
-`x-forwarded-for`). Enable it only when every request reaches the app through
-the Fly proxy.
+On Fly.io without Cloudflare in front, `cf-connecting-ip` is client-writable, so
+the lookup above is spoofable there. A caller of `getClientIp` itself can pass
+`getClientIp(event, { trustFlyClientIp: true })` to read the proxy-set
+`fly-client-ip` header instead and ignore `cf-connecting-ip`; enable it only
+when every request reaches the app through the Fly proxy. The option affects
+direct `getClientIp` calls only: the built-in `'ip'` scopes and
+`enforceRateLimit` do not take it.
 
 The limiter runs inside the handler, so no spelling the router dispatches to the
 route escapes it: `/path/`, `/path?x=1` and a percent-encoded `/pa%74h` all

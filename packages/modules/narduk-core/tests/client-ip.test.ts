@@ -53,18 +53,25 @@ describe('getClientIp', () => {
     ).toBe(SPOOFED_ADDRESS)
   })
 
-  it('reads fly-client-ip only when asked to, after cf-connecting-ip and before x-forwarded-for', async () => {
+  it('reads fly-client-ip instead of cf-connecting-ip only when asked to', async () => {
     const fly = { 'fly-client-ip': '198.51.100.9', 'x-forwarded-for': SPOOFED_ADDRESS }
     expect(await resolve(fly)).not.toBe('198.51.100.9')
-    expect(await resolve(fly, { trustFlyClientIp: true, trustForwardedFor: true })).toBe(
-      '198.51.100.9',
-    )
+    expect(await resolve(fly, { trustFlyClientIp: true })).toBe('198.51.100.9')
     expect(
       await resolve({ ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS }, { trustFlyClientIp: true }),
-    ).toBe(CLOUDFLARE_ADDRESS)
+    ).toBe('198.51.100.9')
+    expect(await resolve({ ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS })).toBe(
+      CLOUDFLARE_ADDRESS,
+    )
+  })
+
+  it('does not fall back to a client-writable header when fly-client-ip is absent', async () => {
+    const headers = { 'cf-connecting-ip': CLOUDFLARE_ADDRESS, 'x-forwarded-for': SPOOFED_ADDRESS }
+    expect(await resolve(headers, { trustFlyClientIp: true })).not.toBe(CLOUDFLARE_ADDRESS)
+    expect(await resolve(headers, { trustFlyClientIp: true })).not.toBe(SPOOFED_ADDRESS)
     expect(
       await resolve(
-        { 'fly-client-ip': ' ', 'x-forwarded-for': SPOOFED_ADDRESS },
+        { ...headers, 'fly-client-ip': ' ' },
         { trustFlyClientIp: true, trustForwardedFor: true },
       ),
     ).toBe(SPOOFED_ADDRESS)
