@@ -2908,7 +2908,14 @@ PostgreSQL adapter or the D1-safe stub. Capability packages that need core
 tables may use `#narduk-core/schema` after registering the core Nuxt module.
 `#narduk-core/postgres-schema` carries the `postgresSchema` option's name
 (`'public'` unless set) to the Drizzle table factory, so the Nuxt build, Nitro
-and Vitest alias helpers read one value.
+and Vitest alias helpers read one value. Outside a Nuxt build (a script or a
+plain Vitest run importing
+`@narduk-enterprises/narduk-core/server/database/pg-schema`) nothing sets that
+alias, so give the runner one: in Vitest,
+`resolve.alias['#narduk-core/postgres-schema']` pointing at a module that
+exports `postgresSchema` (`narduk-core`'s own
+`runtime/internal/postgres-schema.ts` exports `'public'`). Nuxt apps and
+`nuxtVitestAliases()` get it from `.nuxt/tsconfig.json`.
 
 Application code must use its own `#narduk-db` dialect selector instead. These
 private aliases do not replace Nuxt's native `#server/*` paths, and the former

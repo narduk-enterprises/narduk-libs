@@ -9,7 +9,14 @@ export default defineConfig({
   root: packageRoot,
   resolve: {
     // One module id for this package's tests and narduk-core's logger bridge.
-    alias: { 'nitropack/runtime': join(packageRoot, 'tests/stubs/nitropack-runtime.ts') },
+    alias: {
+      'nitropack/runtime': join(packageRoot, 'tests/stubs/nitropack-runtime.ts'),
+      // narduk-core's Postgres tables read their schema name from a Nuxt alias.
+      '#narduk-core/postgres-schema': join(
+        packageRoot,
+        '../narduk-core/runtime/internal/postgres-schema.ts',
+      ),
+    },
   },
   test: {
     environment: 'node',

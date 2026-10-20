@@ -20,7 +20,7 @@ const manifest = JSON.parse(
 const repoRoot = join(packageRoot, '..', '..', '..')
 const coreManifest = JSON.parse(
   readFileSync(join(repoRoot, 'packages', 'modules', 'narduk-core', 'package.json'), 'utf8'),
-) as { dependencies?: Record<string, string> }
+) as { devDependencies?: Record<string, string> }
 
 /**
  * The subpaths item 1 reserves, plus `./module` (narduk-libs#295). Adding one
