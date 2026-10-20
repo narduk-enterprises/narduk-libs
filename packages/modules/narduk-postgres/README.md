@@ -106,7 +106,11 @@ const plan = await planMigrations(connection, migrations) // read-only
 const result = await applyMigrations(connection, migrations, { dryRun: true })
 ```
 
-- Files are named `NNNN_snake_case.sql` and applied in lexical order.
+- Files are named `NNNN_snake_case.sql` and applied in lexical order. A set that
+  already carries Supabase-CLI names (`20260205145854_remote_schema.sql`) opts
+  in with `allowTimestampNames: true` on `loadMigrationsFromDirectory`,
+  `createMigration` or `createMigrationSet`; both forms then sort together by
+  code unit. The default is unchanged, so a stray file still fails loudly.
 - Each applied file's **sha256 is recorded**. Editing an applied file fails with
   `MIGRATION_MODIFIED` rather than silently diverging environments — the same
   rule mybo-at-v2 enforces on D1 after a migration was edited in place
@@ -137,6 +141,17 @@ const result = await applyMigrations(connection, migrations, { dryRun: true })
   ledger table (default `schema_migrations`), so two independent migration sets
   can share a database without either seeing the other's history. The table name
   is validated against `/^[a-z_][a-z0-9_]*$/`.
+- `applyMigrations(connection, migrations, { schema: 'narduk', table })` applies
+  a set **into a schema** (narduk-libs#1953). It creates the schema, keeps the
+  ledger inside it (`"narduk"."schema_migrations"`) and runs every file with
+  `search_path` set to that schema alone (`SET LOCAL` inside the file's
+  transaction; a no-transaction file sets the session value and restores it), so
+  an unqualified `CREATE TABLE IF NOT EXISTS api_keys` lands in
+  `narduk.api_keys` and can never no-op against, or alter, an app-owned
+  `public.api_keys`. A reference to a table that is not in the schema fails
+  instead of binding to a same-named `public` table. `planMigrations` takes the
+  same `schema` option. The name must be lower_snake_case, at most 63 characters
+  and not `pg_*`. Omitted, nothing changes.
 - The advisory unlock is checked: `pg_advisory_unlock` returning false raises
   `MIGRATION_UNLOCK_FAILED`, and it can never mask a migration failure that
   happened first.

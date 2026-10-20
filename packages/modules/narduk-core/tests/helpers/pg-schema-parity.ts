@@ -12,6 +12,10 @@ import { join } from 'node:path'
 
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
 
+import { applyMigrations } from '../../../narduk-postgres/src/migrate'
+import { loadMigrationsFromDirectory } from '../../../narduk-postgres/src/node'
+
+import type { SqlExecutor } from '../../../narduk-postgres/src/types'
 import type postgres from 'postgres'
 
 type Sql = ReturnType<typeof postgres>
@@ -23,6 +27,38 @@ export async function applyMigrationDirectory(sql: Sql, directory: string): Prom
     .sort()
   for (const file of files) await sql.unsafe(readFileSync(join(directory, file), 'utf8'))
   return files
+}
+
+/**
+ * Apply a shipped `.sql` set into `schema` with the real
+ * `@narduk-enterprises/narduk-postgres` runner, which is what an app uses: the
+ * schema is created, the ledger lives in it and every file runs with
+ * `search_path` set to it alone (narduk-libs#1953).
+ */
+export async function applyMigrationDirectoryInSchema(
+  sql: Sql,
+  directory: string,
+  options: { schema: string; table: string },
+): Promise<string[]> {
+  // The runner's advisory lock is session-scoped: one reserved connection.
+  const reserved = await sql.reserve()
+  try {
+    const executor: SqlExecutor = {
+      async query<Row>(text: string, params: readonly unknown[] = []) {
+        const rows = await reserved.unsafe(text, params as never[])
+        return { rows: [...rows] as Row[], rowCount: rows.count ?? rows.length }
+      },
+    }
+    const migrations = await loadMigrationsFromDirectory(directory)
+    const result = await applyMigrations(executor, migrations, {
+      lockNamespace: `test:${options.schema}:${options.table}`,
+      schema: options.schema,
+      table: options.table,
+    })
+    return result.applied
+  } finally {
+    reserved.release()
+  }
 }
 
 const UDT_BY_SQL_TYPE: Record<string, string> = {
@@ -56,6 +92,7 @@ interface ConstraintRow {
   def: string
   deltype: string
   ref_columns: string[] | null
+  ref_schema: string | null
   ref_table: string | null
   table_name: string
 }
@@ -88,23 +125,31 @@ interface Catalog {
   indexes: IndexRow[]
 }
 
-async function readCatalog(sql: Sql): Promise<Catalog> {
+async function readCatalog(sql: Sql, schema: string): Promise<Catalog> {
   const columns = await sql<ColumnRow[]>`
     SELECT table_name, column_name, udt_name, is_nullable, column_default, collation_name
-    FROM information_schema.columns WHERE table_schema = 'public'`
+    FROM information_schema.columns WHERE table_schema = ${schema}`
+  // Names come from pg_class, not `::regclass::text`, which qualifies a table
+  // that is not on the connection's search_path; schema-qualified comparison is
+  // done explicitly through `ref_schema`.
   const constraints = await sql<ConstraintRow[]>`
-    SELECT c.conrelid::regclass::text AS table_name, c.conname, c.contype::text AS contype,
+    SELECT (SELECT relname::text FROM pg_class WHERE oid = c.conrelid) AS table_name,
+      c.conname, c.contype::text AS contype,
       c.confdeltype::text AS deltype, pg_get_constraintdef(c.oid) AS def,
       ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k (attnum, ord)
             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
             ORDER BY k.ord) AS columns,
-      CASE WHEN c.confrelid = 0 THEN NULL ELSE c.confrelid::regclass::text END AS ref_table,
+      CASE WHEN c.confrelid = 0 THEN NULL
+        ELSE (SELECT relname::text FROM pg_class WHERE oid = c.confrelid) END AS ref_table,
+      CASE WHEN c.confrelid = 0 THEN NULL
+        ELSE (SELECT n2.nspname::text FROM pg_class r JOIN pg_namespace n2 ON n2.oid = r.relnamespace
+              WHERE r.oid = c.confrelid) END AS ref_schema,
       CASE WHEN c.confrelid = 0 THEN NULL ELSE ARRAY(
         SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY k (attnum, ord)
         JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.attnum
         ORDER BY k.ord) END AS ref_columns
     FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-    WHERE n.nspname = 'public'`
+    WHERE n.nspname = ${schema}`
   const indexes = await sql<IndexRow[]>`
     SELECT t.relname::text AS table_name, i.relname::text AS index_name,
       x.indisunique AS is_unique, pg_get_expr(x.indpred, x.indrelid) AS partial,
@@ -115,7 +160,7 @@ async function readCatalog(sql: Sql): Promise<Catalog> {
     JOIN pg_class i ON i.oid = x.indexrelid
     JOIN pg_class t ON t.oid = x.indrelid
     JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE n.nspname = 'public' AND NOT x.indisprimary
+    WHERE n.nspname = ${schema} AND NOT x.indisprimary
       AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = x.indexrelid)`
   return { columns, constraints, indexes }
 }
@@ -279,6 +324,7 @@ function diffForeignKeys(
   config: TableConfig,
   tableConstraints: readonly ConstraintRow[],
   claimed: Set<string>,
+  schema: string,
 ): string[] {
   const table = config.name
   const problems: string[] = []
@@ -298,6 +344,13 @@ function diffForeignKeys(
     if (found.ref_table !== foreignTable || !same(found.ref_columns ?? [], foreignColumns)) {
       problems.push(
         `${table}: foreign key (${columnsOfKey}) targets ${found.ref_table}(${found.ref_columns}), schema says ${foreignTable}(${foreignColumns})`,
+      )
+    }
+    // A key that lands in another schema (an app's own `public.users`) is the
+    // collision #1953 is about; the table name alone would not show it.
+    if (found.ref_schema !== schema) {
+      problems.push(
+        `${table}: foreign key (${columnsOfKey}) targets schema ${found.ref_schema}, expected ${schema}`,
       )
     }
     const onDelete = foreignKey.onDelete ?? 'no action'
@@ -353,14 +406,19 @@ function diffIndexes(config: TableConfig, indexes: readonly IndexRow[]): string[
   return problems
 }
 
-function diffTable(config: TableConfig, catalog: Catalog, collations: Collations): string[] {
+function diffTable(
+  config: TableConfig,
+  catalog: Catalog,
+  collations: Collations,
+  schema: string,
+): string[] {
   const tableConstraints = catalog.constraints.filter((row) => row.table_name === config.name)
   const claimed = new Set<string>()
   const problems = [
     ...diffColumns(config, catalog.columns, tableConstraints, claimed, collations),
     ...diffPrimaryKey(config, tableConstraints, claimed),
     ...diffUniques(config, tableConstraints, claimed),
-    ...diffForeignKeys(config, tableConstraints, claimed),
+    ...diffForeignKeys(config, tableConstraints, claimed, schema),
   ]
   for (const constraint of tableConstraints) {
     if (!claimed.has(constraint.conname)) {
@@ -385,7 +443,14 @@ export async function diffSchemaAgainstDatabase(
   const ignore = new Set(options.ignoreTables ?? [])
   const configs = tables.map((table) => getTableConfig(table))
   const wanted = new Set(configs.map((config) => config.name))
-  const catalog = await readCatalog(sql)
+  // The Drizzle tables say where they live: `pgTable` is `public`, a table from
+  // `pgSchema(name)` carries the name. Mixed schemas are a test error.
+  const schemas = new Set(configs.map((config) => config.schema ?? 'public'))
+  if (schemas.size !== 1) {
+    return [`tables span more than one schema: ${[...schemas].sort().join(', ')}`]
+  }
+  const schema = [...schemas][0] as string
+  const catalog = await readCatalog(sql, schema)
 
   const existingTables = new Set(catalog.columns.map((column) => column.table_name))
   for (const name of existingTables) {
@@ -395,7 +460,7 @@ export async function diffSchemaAgainstDatabase(
   }
   for (const config of configs) {
     if (existingTables.has(config.name)) {
-      problems.push(...diffTable(config, catalog, options.collations ?? {}))
+      problems.push(...diffTable(config, catalog, options.collations ?? {}, schema))
     } else problems.push(`table ${config.name} is missing from the database`)
   }
   return problems

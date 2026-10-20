@@ -100,14 +100,21 @@ export default defineNuxtConfig({
 })
 ```
 
+`@nuxt/ui` is a peer (`>=4.7.1 <5`), not a pinned dependency, so an existing app
+on any Nuxt UI 4.x from 4.7.1 keeps its own version (narduk-libs#1940). The
+layer is tested against 4.11.1, and a generated app lists exactly that. An app
+that installs the UI modules (`coreModules` on) must list `@nuxt/ui` in its own
+`package.json`; core no longer brings it transitively, and pnpm does not install
+a peer unless `auto-install-peers` is on.
+
 narduk-core depends on `@nuxt/icon` 2.5.1 and, when `coreModules` is on,
 registers that module itself after seeding a local-only contract:
 `provider: 'server'`, `fallbackToApi: false`, the Lucide collection bundled on
 the server, and the icons core's own components render bundled on the client.
 `@nuxt/icon` reads that contract once, when it installs. An app does not need to
-list `@nuxt/icon`. `@nuxt/ui` 4.11.1 declares it as a module dependency, but
-Nuxt resolves that name from the app root, where pnpm does not expose the
-transitive package. Without narduk-core's own registration the build fails with
+list `@nuxt/icon`. `@nuxt/ui` declares it as a module dependency, but Nuxt
+resolves that name from the app root, where pnpm does not expose the transitive
+package. Without narduk-core's own registration the build fails with
 `Could not load .nuxt/nuxt-icon-client-bundle` (narduk-libs#1195).
 
 If an app lists `@nuxt/icon` anyway, **list `@narduk-enterprises/narduk-core`
@@ -1070,6 +1077,28 @@ failed one, `kind` for a check built by a core helper, and `durationMs` and
 
 Registered checks follow, in registration order.
 
+### Keeping the app's own `/api/health`
+
+An app that already serves `GET /api/health` (for example one that returns its
+build SHA for a deploy proof) turns the layer's route off:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: { health: false },
+})
+```
+
+`health` defaults to `true`: unchanged. With `false`, Nitro is told to skip
+`runtime/server/api/health.get.ts` while it scans for routes, so the app's route
+is the only handler for `/api/health`, whichever directory it lives in. This
+matters because Nitro keeps the first handler it finds per route and scans
+`server/api/` before `server/routes/`: an app route under `server/routes/api/`
+would otherwise lose to the layer's. The skip is by the layer file's absolute
+path, so an app file of the same name is never skipped. `nardukHealth` options
+and `registerHealthCheck` report through the layer's route, so they have nothing
+to report through with `health: false`.
+
 ### Registering a check
 
 `registerHealthCheck` is auto-imported in server code, or import it from
@@ -1261,6 +1290,26 @@ is skipped for `/api/webhooks/`, `/api/cron/`, `/api/callbacks/`, `/api/_auth/`,
 `/__nuxt_content/`, `/api/owner-tag`, `Authorization: Bearer nk_…` API keys, and
 the `security.headers` CSP report route (browsers deliver reports without the
 header).
+
+### Turning the middleware off (adopting the layer mid-life)
+
+An existing app whose clients do not send `X-Requested-With` cannot take the
+layer without every mutation answering 403. It can turn the middleware off:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: { csrf: { enabled: false } },
+})
+```
+
+`enabled` defaults to `true`, so an app that does not set it is unchanged. The
+runtime key is `runtimeConfig.nardukCsrf.enabled`; only an explicit boolean
+`false` disables the check, so a missing or malformed value keeps it on. With it
+off, `exemptPaths` has nothing to exempt and the app owns CSRF protection
+(`SameSite` cookies, an `Origin` check). Turn it back on once the clients send
+the header (`useAppFetch()` / `useCsrfFetch()` do) rather than leaving a
+mutation surface open.
 
 ### Declaring a credential-free route
 
@@ -2781,6 +2830,89 @@ which D1 already had.
 diffs the catalog against `pg-schema.ts`, so a column added to one and not the
 other fails CI. D1 behaviour is untouched.
 
+### Adopting the layer in an existing Postgres app
+
+An app that wants only the database accessor and the migration runner, without
+the UI stack, CSRF or `/api/health` it already has, sets (narduk-libs#1940,
+#1953):
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@narduk-enterprises/narduk-core'],
+  nardukCore: {
+    app: false, // no layout, pages, components or composables
+    auth: false,
+    coreModules: false, // no @nuxt/ui, color mode, fonts, pinia, image
+    image: false,
+    databaseBackend: 'postgres',
+    postgresSchema: 'narduk', // tables beside the app's own, not over them
+    csrf: { enabled: false }, // the app's clients do not send X-Requested-With
+    health: false, // the app's own /api/health wins
+  },
+})
+```
+
+Supabase-style 14-digit migration files load with
+`loadMigrationsFromDirectory(dir, { allowTimestampNames: true })`
+(`@narduk-enterprises/narduk-postgres/node`). Each option defaults to today's
+behaviour.
+
+### Tables in their own schema: `postgresSchema`
+
+By default every table lands in the connection's `public` schema. An app that
+already owns `public.users`, `public.sessions` or `public.api_keys` in another
+shape would collide: `CREATE TABLE IF NOT EXISTS api_keys` no-ops against the
+app's table, a later `ADD COLUMN IF NOT EXISTS` alters it, and core's API-key
+code then reads and writes it (narduk-libs#1953). Name a schema instead:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  nardukCore: { databaseBackend: 'postgres', postgresSchema: 'narduk' },
+})
+```
+
+```ts
+// scripts/migrate.ts: the same name, the shipped files, one ledger per set
+import { applyMigrations } from '@narduk-enterprises/narduk-postgres/migrate'
+
+await applyMigrations(connection, coreMigrations, {
+  schema: 'narduk',
+  table: 'core_migrations',
+  lockNamespace: 'app:narduk-core',
+})
+await applyMigrations(connection, authMigrations, {
+  schema: 'narduk',
+  table: 'auth_migrations',
+  lockNamespace: 'app:narduk-auth',
+})
+```
+
+- The Drizzle tables are `pgSchema('narduk').table(...)` (`nardukPgTable`), so
+  every query is emitted as `"narduk"."api_keys"`, never as a bare name the
+  connection's `search_path` could resolve to the app's table. narduk-auth's
+  tables follow the same name; there is no separate auth option.
+- The runner creates the schema, keeps the ledger inside it and runs every file
+  with `search_path` set to the schema alone, so the unqualified DDL creates
+  `narduk.api_keys` and a file that names a table not in the schema (auth before
+  core) fails instead of binding to the app's `public` table.
+- `public` (the default, or set explicitly) is exactly the behaviour above:
+  plain `pgTable`s, DDL on the connection's own `search_path`. Nothing in an
+  existing Postgres app changes.
+- The name is lower_snake_case, at most 63 characters, not `pg_*`. A name with
+  `databaseBackend` other than `'postgres'` fails the build rather than being
+  ignored. The resolved name is `runtimeConfig.postgresSchema`; the build seeds
+  the `#narduk-core/postgres-schema` alias with it, which is how
+  `nuxtVitestAliases()` and Nitro agree on one value.
+- Creating the schema and the grants on it are the app's: the application role
+  needs `USAGE` on the schema and DML on its tables. The runner only needs
+  `CREATE` on the database.
+
+`tests/pg-migration-parity.test.ts` runs the parity diff for the default schema
+and again for `narduk` with an app-owned `public.api_keys` of a different shape
+present; the app's table is asserted untouched (columns, indexes, rows).
+
 ## Type declarations in `types/`
 
 Nuxt's generated tsconfigs (`.nuxt/tsconfig.app.json`, `.server.json`,
@@ -2798,11 +2930,21 @@ point, but expect it on the first typecheck after upgrading.
 
 ## Database alias contract
 
-Core-owned server code uses two private Nuxt aliases. `#narduk-core/schema`
+Core-owned server code uses three private Nuxt aliases. `#narduk-core/schema`
 selects the PostgreSQL core schema when `databaseBackend` is `'postgres'` and
 the D1 schema otherwise, while `#narduk-core/postgres-runtime` selects the real
 PostgreSQL adapter or the D1-safe stub. Capability packages that need core
 tables may use `#narduk-core/schema` after registering the core Nuxt module.
+`#narduk-core/postgres-schema` carries the `postgresSchema` option's name
+(`'public'` unless set) to the Drizzle table factory, so the Nuxt build, Nitro
+and Vitest alias helpers read one value. Outside a Nuxt build (a script or a
+plain Vitest run importing
+`@narduk-enterprises/narduk-core/server/database/pg-schema`) nothing sets that
+alias, so give the runner one: in Vitest,
+`resolve.alias['#narduk-core/postgres-schema']` pointing at a module that
+exports `postgresSchema` (`narduk-core`'s own
+`runtime/internal/postgres-schema.ts` exports `'public'`). Nuxt apps and
+`nuxtVitestAliases()` get it from `.nuxt/tsconfig.json`.
 
 Application code must use its own `#narduk-db` dialect selector instead. These
 private aliases do not replace Nuxt's native `#server/*` paths, and the former

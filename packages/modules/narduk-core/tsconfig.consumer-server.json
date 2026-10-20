@@ -20,6 +20,7 @@
     "paths": {
       "#layer/*": ["./runtime/*"],
       "#narduk-core/postgres-runtime": ["./runtime/internal/postgres-runtime.stub.ts"],
+      "#narduk-core/postgres-schema": ["./runtime/internal/postgres-schema.ts"],
       "#narduk-core/schema": ["./runtime/server/database/schema.ts"],
       "nitropack/runtime": ["./tests/fixtures/consumer-nitropack-runtime.ts"]
     }

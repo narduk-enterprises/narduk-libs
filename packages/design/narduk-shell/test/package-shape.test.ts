@@ -20,7 +20,7 @@ const manifest = JSON.parse(
 const repoRoot = join(packageRoot, '..', '..', '..')
 const coreManifest = JSON.parse(
   readFileSync(join(repoRoot, 'packages', 'modules', 'narduk-core', 'package.json'), 'utf8'),
-) as { dependencies?: Record<string, string> }
+) as { devDependencies?: Record<string, string> }
 
 /**
  * The subpaths item 1 reserves, plus `./module` (narduk-libs#295). Adding one
@@ -75,9 +75,9 @@ describe('narduk-shell package shape', () => {
     ])
   })
 
-  it('pins peers to nuxt 4, vue 3.5 and narduk-core exact @nuxt/ui version', () => {
-    const nuxtUiPin = coreManifest.dependencies?.['@nuxt/ui']
-    expect(nuxtUiPin, 'narduk-core must pin @nuxt/ui so this suite can match it').toMatch(
+  it('pins peers to nuxt 4, vue 3.5 and the @nuxt/ui version narduk-core is tested against', () => {
+    const nuxtUiPin = coreManifest.devDependencies?.['@nuxt/ui']
+    expect(nuxtUiPin, 'narduk-core must carry the tested @nuxt/ui as a devDependency so this suite can match it').toMatch(
       /^\d+\.\d+\.\d+$/,
     )
     expect(manifest.peerDependencies).toEqual({

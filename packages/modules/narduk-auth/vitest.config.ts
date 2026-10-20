@@ -91,7 +91,15 @@ export default defineConfig({
         packageRoot,
         '../narduk-core/runtime/internal/postgres-runtime.ts',
       ),
+      '#narduk-core/postgres-schema': join(
+        packageRoot,
+        '../narduk-core/runtime/internal/postgres-schema.ts',
+      ),
       '#narduk-auth/schema': join(packageRoot, 'server/app-orm-tables.ts'),
+      '#layer/server/database/pg-table': join(
+        packageRoot,
+        '../narduk-core/runtime/server/database/pg-table.ts',
+      ),
       '#layer/server/database/pg-schema': join(
         packageRoot,
         '../narduk-core/runtime/server/database/pg-schema.ts',

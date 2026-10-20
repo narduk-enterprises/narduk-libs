@@ -196,6 +196,19 @@ describe('loadMigrationsFromDirectory', () => {
     await expect(loadMigrationsFromDirectory(directory)).rejects.toThrow(/MIGRATION_NAME_INVALID/u)
   })
 
+  it('refuses Supabase 14-digit names unless allowTimestampNames is set', async () => {
+    const directory = await migrationsDirectory({
+      '0001_history_core.sql': 'SELECT 1;',
+      '20260205145854_remote_schema.sql': 'SELECT 2;',
+    })
+    await expect(loadMigrationsFromDirectory(directory)).rejects.toThrow(/MIGRATION_NAME_INVALID/u)
+    const migrations = await loadMigrationsFromDirectory(directory, { allowTimestampNames: true })
+    expect(migrations.map((migration) => migration.name)).toEqual([
+      '0001_history_core.sql',
+      '20260205145854_remote_schema.sql',
+    ])
+  })
+
   it('accepts a file URL as well as a path', async () => {
     const directory = await migrationsDirectory({ '0001_history_core.sql': 'SELECT 1;' })
     const migrations = await loadMigrationsFromDirectory(new URL(`file://${directory}/`))

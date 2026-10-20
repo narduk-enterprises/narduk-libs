@@ -5,6 +5,7 @@ import {
   applyMigrations,
   createMigration,
   createMigrationSet,
+  createMigrationsTableSql,
   migrationLockKey,
   parseMigrationDirectives,
   planMigrations,
@@ -564,5 +565,132 @@ describe('parseMigrationDirectives', () => {
       parseMigrationDirectives('SELECT 1;\n-- see -- narduk:no-transaction for CAggs\n')
         .transactional,
     ).toBe(true)
+  })
+})
+
+describe('timestamp migration names (Supabase CLI)', () => {
+  const SUPABASE = { name: '20260205145854_remote_schema.sql', sql: 'CREATE TABLE t ();' }
+
+  it('refuses a 14-digit name by default, as before', async () => {
+    await expect(createMigration(SUPABASE)).rejects.toThrow(/MIGRATION_NAME_INVALID/u)
+    await expect(createMigrationSet([SUPABASE])).rejects.toThrow(/MIGRATION_NAME_INVALID/u)
+  })
+
+  it('accepts a 14-digit name when allowTimestampNames is set', async () => {
+    await expect(createMigration(SUPABASE, { allowTimestampNames: true })).resolves.toMatchObject({
+      name: SUPABASE.name,
+    })
+  })
+
+  it('still refuses names that are neither form, even when opted in', async () => {
+    for (const name of [
+      '2026020514585_short.sql',
+      '202602051458544_long.sql',
+      '20260205145854_Upper.sql',
+      '20260205145854.sql',
+    ]) {
+      await expect(
+        createMigration({ name, sql: '' }, { allowTimestampNames: true }),
+      ).rejects.toThrow(/MIGRATION_NAME_INVALID/u)
+    }
+  })
+
+  it('orders four-digit and timestamp names together by code unit', async () => {
+    const set = await createMigrationSet(
+      [SUPABASE, CORE, { name: '20260301000000_later.sql', sql: 'SELECT 1;' }],
+      { allowTimestampNames: true },
+    )
+    expect(set.map((migration) => migration.name)).toEqual([
+      CORE.name,
+      SUPABASE.name,
+      '20260301000000_later.sql',
+    ])
+  })
+})
+
+describe('applyMigrations into a schema', () => {
+  /** Answers the ledger reads for a schema-qualified ledger. */
+  function schemaDatabase(): ProtocolFake {
+    return createProtocolFake()
+      .respondTo(/to_regclass/u, [{ exists: false }])
+      .respondTo(/current_setting\('search_path'\)/u, [{ search_path: '"$user", public' }])
+      .respondTo(/pg_try_advisory_lock/u, [{ locked: true }])
+      .respondTo(/pg_advisory_unlock/u, [{ unlocked: true }])
+  }
+
+  it('qualifies the ledger and leaves it unqualified without a schema', () => {
+    expect(createMigrationsTableSql()).toContain('CREATE TABLE IF NOT EXISTS schema_migrations (')
+    expect(createMigrationsTableSql('core_migrations', 'narduk')).toContain(
+      'CREATE TABLE IF NOT EXISTS "narduk"."core_migrations" (',
+    )
+  })
+
+  it('creates the schema, then the ledger inside it, and pins search_path per file', async () => {
+    const set = await createMigrationSet([CORE])
+    const database = schemaDatabase()
+    await applyMigrations(database, set, { schema: 'narduk', table: 'core_migrations' })
+
+    const texts = database.texts
+    const createSchema = texts.indexOf('CREATE SCHEMA IF NOT EXISTS "narduk"')
+    const createLedger = texts.findIndex((text) =>
+      text.startsWith('CREATE TABLE IF NOT EXISTS "narduk"."core_migrations"'),
+    )
+    expect(createSchema).toBeGreaterThan(-1)
+    expect(createLedger).toBeGreaterThan(createSchema)
+    // The file runs inside its transaction with the search_path pinned first.
+    const begin = texts.indexOf('BEGIN')
+    expect(texts[begin + 1]).toBe('SET LOCAL search_path TO "narduk"')
+    expect(texts[begin + 2]).toBe(CORE.sql)
+    expect(texts.some((text) => text.startsWith('INSERT INTO "narduk"."core_migrations"'))).toBe(
+      true,
+    )
+    // The default ledger name is never touched.
+    expect(texts.some((text) => /\bschema_migrations\b/u.test(text))).toBe(false)
+  })
+
+  it('restores the session search_path after a no-transaction file', async () => {
+    const set = await createMigrationSet([
+      { name: '0001_cagg.sql', sql: '-- narduk:no-transaction\nCREATE TABLE a ();' },
+    ])
+    const database = schemaDatabase()
+    await applyMigrations(database, set, { schema: 'narduk' })
+
+    const texts = database.texts
+    const setIndex = texts.indexOf('SET search_path TO "narduk"')
+    const restoreIndex = texts.findIndex((text) => text.includes("set_config('search_path'"))
+    expect(setIndex).toBeGreaterThan(-1)
+    expect(restoreIndex).toBeGreaterThan(setIndex)
+    expect(database.statements[restoreIndex]?.params).toEqual(['"$user", public'])
+  })
+
+  it('restores the session search_path even when the file fails', async () => {
+    const set = await createMigrationSet([
+      { name: '0001_cagg.sql', sql: '-- narduk:no-transaction\nCREATE TABLE a ();' },
+    ])
+    const database = schemaDatabase()
+    const failing: SqlExecutor = {
+      query: async (text, params) => {
+        if (text.startsWith('-- narduk:no-transaction')) throw new Error('boom')
+        return database.query(text, params)
+      },
+    }
+    await expect(applyMigrations(failing, set, { schema: 'narduk' })).rejects.toThrow('boom')
+    expect(database.texts.some((text) => text.includes("set_config('search_path'"))).toBe(true)
+  })
+
+  it('plans against the qualified ledger in a dry run', async () => {
+    const set = await createMigrationSet([CORE])
+    const database = schemaDatabase()
+    await applyMigrations(database, set, { dryRun: true, schema: 'narduk' })
+    expect(database.statements[0]?.params).toEqual(['"narduk"."schema_migrations"'])
+  })
+
+  it('refuses a schema that needs quoting or is a catalog schema', async () => {
+    const set = await createMigrationSet([CORE])
+    for (const schema of ['Narduk', 'a-b', 'a"b', 'pg_catalog', 'public.x', '1x', '']) {
+      await expect(applyMigrations(schemaDatabase(), set, { schema })).rejects.toThrow(
+        /MIGRATION_SCHEMA_INVALID/u,
+      )
+    }
   })
 })

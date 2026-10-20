@@ -413,7 +413,10 @@ describe('the published module entry through the real defineNuxtModule', () => {
 
     await entry.mod(undefined, entry.nuxt)
 
-    expect(entry.nuxt.options.runtimeConfig.nardukCsrf).toEqual({ exemptPaths: [WEBHOOK_PATH] })
+    expect(entry.nuxt.options.runtimeConfig.nardukCsrf).toEqual({
+      enabled: true,
+      exemptPaths: [WEBHOOK_PATH],
+    })
     expect(entry.setupSecurityHeaders()).toEqual({
       enabled: true,
       allow: { script: [APP_SCRIPT_ORIGIN] },
@@ -439,7 +442,10 @@ describe('the published module entry through the real defineNuxtModule', () => {
       entry.nuxt,
     )
 
-    expect(entry.nuxt.options.runtimeConfig.nardukCsrf).toEqual({ exemptPaths: [WEBHOOK_PATH] })
+    expect(entry.nuxt.options.runtimeConfig.nardukCsrf).toEqual({
+      enabled: true,
+      exemptPaths: [WEBHOOK_PATH],
+    })
     expect(entry.setupSecurityHeaders()).toEqual({
       enabled: true,
       allow: { script: [APP_SCRIPT_ORIGIN, WIDGETS_ORIGIN] },

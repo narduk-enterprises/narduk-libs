@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url'
 
 import { getTableConfig as getPgTableConfig, type PgTable } from 'drizzle-orm/pg-core'
 import { getTableConfig as getSqliteTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
   applyMigrationDirectory,
+  applyMigrationDirectoryInSchema,
   diffSchemaAgainstDatabase,
 } from '../../narduk-core/tests/helpers/pg-schema-parity'
 import {
@@ -20,6 +21,7 @@ import * as sqliteAppSchema from '../server/database/app-schema'
 import * as sqliteSchema from '../server/database/auth-bridge-schema'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+const AUTH_MIGRATIONS_DIR = join(packageRoot, 'drizzle-pg')
 
 describe('auth bridge schema migration parity', () => {
   it('narrows auth_email_links.purpose to the values the migration CHECK enforces', () => {
@@ -102,7 +104,7 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
   it('applies core then auth in order and produces exactly the Drizzle schema', async () => {
     expect(server.version.startsWith('17.')).toBe(true)
     await applyMigrationDirectory(database.sql, coreMigrations)
-    const applied = await applyMigrationDirectory(database.sql, join(packageRoot, 'drizzle-pg'))
+    const applied = await applyMigrationDirectory(database.sql, AUTH_MIGRATIONS_DIR)
     expect(applied).toHaveLength(5)
     const coreTables = [
       'api_keys',
@@ -122,7 +124,7 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
   })
 
   it('is idempotent: applying every auth file again changes nothing and errors nowhere', async () => {
-    await applyMigrationDirectory(database.sql, join(packageRoot, 'drizzle-pg'))
+    await applyMigrationDirectory(database.sql, AUTH_MIGRATIONS_DIR)
     const coreTables = [
       'api_keys',
       'kv_cache',
@@ -142,9 +144,7 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
 
   it('refuses the auth files without core first (they reference users)', async () => {
     const empty = await server.createDatabase()
-    await expect(
-      applyMigrationDirectory(empty.sql, join(packageRoot, 'drizzle-pg')),
-    ).rejects.toThrow(/users/u)
+    await expect(applyMigrationDirectory(empty.sql, AUTH_MIGRATIONS_DIR)).rejects.toThrow(/users/u)
   })
 
   it('has one Postgres file for each D1 auth migration, under the same name', () => {
@@ -171,5 +171,104 @@ describe('auth Postgres migrations match the Drizzle pg schema on a real Postgre
     expect(pgSchema.authWebauthnCredentials.deviceType.enumValues).toEqual(
       sqliteSchema.authWebauthnCredentials.deviceType.enumValues,
     )
+  })
+})
+
+/**
+ * narduk-libs#1953: core and auth in a named schema, beside an app that owns
+ * `public.users` and `public.api_keys` in another shape.
+ */
+describe('auth Postgres migrations in a named schema', () => {
+  const SCHEMA = 'narduk'
+  const CORE_TABLES = [
+    'api_keys',
+    'kv_cache',
+    'notifications',
+    'sessions',
+    'system_prompts',
+    'todos',
+    'users',
+  ]
+  const LEDGERS = ['core_migrations', 'auth_migrations']
+  let server: TestPostgres
+  let database: TestDatabase
+  let schemaTables: PgTable[]
+
+  beforeAll(async () => {
+    vi.resetModules()
+    vi.doMock('#narduk-core/postgres-schema', () => ({ postgresSchema: SCHEMA }))
+    const custom = await import('../server/database/app-pg-schema')
+    schemaTables = Object.values(custom).filter(isTable) as PgTable[]
+    server = await startPostgres17()
+    database = await server.createDatabase()
+    await database.sql.unsafe(`
+      CREATE TABLE public.users (uid uuid PRIMARY KEY, handle text NOT NULL);
+      CREATE TABLE public.api_keys (
+        id uuid PRIMARY KEY, user_id uuid NOT NULL, scopes text[] NOT NULL DEFAULT '{}',
+        is_active boolean NOT NULL DEFAULT true, created_by uuid)`)
+  }, 120_000)
+
+  afterAll(async () => {
+    vi.doUnmock('#narduk-core/postgres-schema')
+    await server?.stop()
+  })
+
+  it('declares every auth table in the named schema', () => {
+    expect(schemaTables).toHaveLength(pgTables.length)
+    for (const table of schemaTables) expect(getPgTableConfig(table).schema).toBe(SCHEMA)
+  })
+
+  it('refuses the auth files before core, instead of binding to the app’s public.users', async () => {
+    await expect(
+      applyMigrationDirectoryInSchema(database.sql, AUTH_MIGRATIONS_DIR, {
+        schema: SCHEMA,
+        table: 'auth_migrations',
+      }),
+    ).rejects.toThrow(/users/u)
+  })
+
+  it('applies core then auth into the schema and produces exactly the Drizzle schema', async () => {
+    await applyMigrationDirectoryInSchema(database.sql, coreMigrations, {
+      schema: SCHEMA,
+      table: 'core_migrations',
+    })
+    const applied = await applyMigrationDirectoryInSchema(database.sql, AUTH_MIGRATIONS_DIR, {
+      schema: SCHEMA,
+      table: 'auth_migrations',
+    })
+    expect(applied).toHaveLength(5)
+    expect(
+      await diffSchemaAgainstDatabase(database.sql, schemaTables, {
+        collations: { 'auth_oauth_kv.key': 'C' },
+        ignoreTables: [...CORE_TABLES, ...LEDGERS],
+      }),
+    ).toEqual([])
+  })
+
+  it('points every auth foreign key at narduk.users, not the app’s public.users', async () => {
+    const targets = await database.sql.unsafe(`
+      SELECT DISTINCT n.nspname AS schema, t.relname AS name
+      FROM pg_constraint c
+      JOIN pg_class s ON s.oid = c.conrelid AND s.relname LIKE 'auth\\_%'
+      JOIN pg_namespace sn ON sn.oid = s.relnamespace AND sn.nspname = '${SCHEMA}'
+      JOIN pg_class t ON t.oid = c.confrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE c.contype = 'f'`)
+    expect(targets).toEqual([{ schema: SCHEMA, name: 'users' }])
+  })
+
+  it('leaves the app’s tables exactly as created', async () => {
+    const columns = await database.sql.unsafe(`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public' ORDER BY table_name, ordinal_position`)
+    expect(columns).toEqual([
+      { table_name: 'api_keys', column_name: 'id' },
+      { table_name: 'api_keys', column_name: 'user_id' },
+      { table_name: 'api_keys', column_name: 'scopes' },
+      { table_name: 'api_keys', column_name: 'is_active' },
+      { table_name: 'api_keys', column_name: 'created_by' },
+      { table_name: 'users', column_name: 'uid' },
+      { table_name: 'users', column_name: 'handle' },
+    ])
   })
 })
