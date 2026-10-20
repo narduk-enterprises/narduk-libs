@@ -1505,6 +1505,11 @@ counted by the full address. Only the counter collapses — `getClientIp` still
 returns the full address for audit rows and approximate location.
 `enforceRateLimit` / `enforceRateLimitPolicy` count IPv6 the same way.
 
+On Fly.io, pass `getClientIp(event, { trustFlyClientIp: true })` to read the
+proxy-set `fly-client-ip` header (after `cf-connecting-ip`, before
+`x-forwarded-for`). Enable it only when every request reaches the app through
+the Fly proxy.
+
 The limiter runs inside the handler, so no spelling the router dispatches to the
 route escapes it: `/path/`, `/path?x=1` and a percent-encoded `/pa%74h` all
 count in the bucket of `/path`, in the `'ip-path'` scope too. Do not put a

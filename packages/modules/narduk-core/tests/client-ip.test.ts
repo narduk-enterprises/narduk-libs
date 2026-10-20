@@ -52,4 +52,24 @@ describe('getClientIp', () => {
       ),
     ).toBe(SPOOFED_ADDRESS)
   })
+
+  it('reads fly-client-ip only when asked to, after cf-connecting-ip and before x-forwarded-for', async () => {
+    const fly = { 'fly-client-ip': '198.51.100.9', 'x-forwarded-for': SPOOFED_ADDRESS }
+    expect(await resolve(fly)).not.toBe('198.51.100.9')
+    expect(await resolve(fly, { trustFlyClientIp: true, trustForwardedFor: true })).toBe(
+      '198.51.100.9',
+    )
+    expect(
+      await resolve(
+        { ...fly, 'cf-connecting-ip': CLOUDFLARE_ADDRESS },
+        { trustFlyClientIp: true },
+      ),
+    ).toBe(CLOUDFLARE_ADDRESS)
+    expect(
+      await resolve(
+        { 'fly-client-ip': ' ', 'x-forwarded-for': SPOOFED_ADDRESS },
+        { trustFlyClientIp: true, trustForwardedFor: true },
+      ),
+    ).toBe(SPOOFED_ADDRESS)
+  })
 })

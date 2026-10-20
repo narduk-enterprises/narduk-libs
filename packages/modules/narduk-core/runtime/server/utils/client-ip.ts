@@ -8,7 +8,23 @@ import type { H3Event } from 'h3'
  */
 export const CF_CONNECTING_IP_HEADER = 'cf-connecting-ip'
 
+/**
+ * The header Fly.io's proxy sets to the connecting client's address on every request that reaches
+ * an app machine. The proxy sets it itself; a client cannot choose it.
+ */
+export const FLY_CLIENT_IP_HEADER = 'fly-client-ip'
+
 export interface ClientIpOptions {
+  /**
+   * When `cf-connecting-ip` is absent, read `fly-client-ip` (set by the Fly.io proxy).
+   *
+   * Off by default, because the header is only trustworthy when every request reaches the app
+   * through the Fly proxy; an app also reachable by another route would let a client pick its own
+   * address. It is read before `x-forwarded-for`, so it also removes the need for
+   * `trustForwardedFor` on Fly, whose first entry is client-chosen.
+   */
+  trustFlyClientIp?: boolean
+
   /**
    * When `cf-connecting-ip` is absent, take the first `x-forwarded-for` entry.
    *
@@ -24,7 +40,8 @@ export interface ClientIpOptions {
 /**
  * The address to attribute this request to, for rate limits, lockouts and audit rows.
  *
- * Order: `cf-connecting-ip`; then, only if `trustForwardedFor` is set, the first
+ * Order: `cf-connecting-ip`; then, only if `trustFlyClientIp` is set, `fly-client-ip`; then, only
+ * if `trustForwardedFor` is set, the first
  * `x-forwarded-for` entry; then whatever h3's `getRequestIP` knows without consulting
  * `x-forwarded-for` (`event.context.clientAddress`, then the socket). `undefined` when none of
  * those is present, so a caller can decline to key anything on an address rather than key it on
@@ -37,6 +54,10 @@ export interface ClientIpOptions {
 export function getClientIp(event: H3Event, options: ClientIpOptions = {}): string | undefined {
   const cloudflare = getRequestHeader(event, CF_CONNECTING_IP_HEADER)?.trim()
   if (cloudflare) return cloudflare
+  if (options.trustFlyClientIp) {
+    const fly = getRequestHeader(event, FLY_CLIENT_IP_HEADER)?.trim()
+    if (fly) return fly
+  }
   if (options.trustForwardedFor) {
     const forwarded = getRequestHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim()
     if (forwarded) return forwarded
