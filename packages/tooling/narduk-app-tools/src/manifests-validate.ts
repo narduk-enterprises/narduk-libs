@@ -347,7 +347,8 @@ export function readWranglerFacts(repo: AppRepo, rel: string): WranglerFacts | s
 /**
  * Validate a checkout. The wrangler configs compared are `wranglerPaths` when
  * given (repo-relative or absolute), else the manifest's `worker.wranglerConfig`,
- * else the first wrangler config at a known path.
+ * else the wrangler config beside the Nuxt app, else the first wrangler config
+ * at a known path.
  */
 export function validateCloudflareManifest(
   checkout: string,

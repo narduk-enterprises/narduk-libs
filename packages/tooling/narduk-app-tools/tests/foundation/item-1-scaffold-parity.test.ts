@@ -28,6 +28,12 @@ async function run(root: string) {
   })
 }
 
+function sub12(artefact: Awaited<ReturnType<typeof run>>) {
+  const found = artefact.items.flatMap((item) => item.checks).find((check) => check.id === '1.2')
+  if (!found) throw new Error('no sub-check 1.2 in artefact')
+  return found
+}
+
 describe('item 1 -- scaffold parity', () => {
   it('1.1 passes on the declared preset, and fails when the seeded lie changes it', async () => {
     const root = makeTempRepo()
@@ -129,6 +135,58 @@ describe('item 1 -- scaffold parity', () => {
       bindings: { r2: [], d1: [{ binding: 'DB' }] },
     })
     expect(subCheckStatus(await run(root), '1.2')).toBe('pass')
+  })
+
+  it("1.2 judges a hybrid repo against the web app's own wrangler config (narduk-libs#1967)", async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    // Hybrid layout: a data-plane Worker at the repo root, the Nuxt app in web/.
+    rmSync(`${root}/wrangler.json`, { force: true })
+    rmSync(`${root}/nuxt.config.ts`, { force: true })
+    writeJson(root, 'wrangler.jsonc', {
+      d1_databases: [{ binding: 'DB', database_name: 'x' }],
+      vars: { STATIONMAP_URL: 'https://example.test' },
+    })
+    writeFile(root, 'web/nuxt.config.ts', 'export default defineNuxtConfig({})')
+    writeJson(root, 'web/wrangler.jsonc', {
+      services: [{ binding: 'HYDROGEN_API', service: 'hydrogen' }],
+    })
+    const manifest = (extra: Record<string, unknown>) => ({
+      product: { name: 'Fixture App', repository: 'narduk-enterprises/fixture-app' },
+      worker: { nitroPreset: 'cloudflare_module' },
+      access: { exposureClass: 'public' },
+      bindings: { r2: [], ...extra },
+    })
+
+    // The manifest declares only the web Worker's binding: pass, and the root
+    // Worker's DB / STATIONMAP_URL are not demanded of it.
+    writeJson(
+      root,
+      'Config/cloudflare-app.json',
+      manifest({ services: [{ binding: 'HYDROGEN_API' }] }),
+    )
+    const passing = sub12(await run(root))
+    expect(passing.status).toBe('pass')
+    expect(passing.evidence).toBe('web/wrangler.jsonc')
+
+    // A web binding the manifest does not mirror still fails, naming web/.
+    writeJson(root, 'Config/cloudflare-app.json', manifest({}))
+    const failing = sub12(await run(root))
+    expect(failing.status).toBe('fail')
+    expect(failing.detail).toContain('web/wrangler.jsonc')
+    expect(failing.detail).toContain('HYDROGEN_API')
+    expect(failing.detail).not.toContain('STATIONMAP_URL')
+  })
+
+  it('1.2 falls back to the root wrangler config when the web app has none of its own', async () => {
+    const root = makeTempRepo()
+    tempDirs.push(root)
+    writeConformantBaseline(root)
+    rmSync(`${root}/nuxt.config.ts`, { force: true })
+    writeFile(root, 'web/nuxt.config.ts', 'export default defineNuxtConfig({})')
+    writeJson(root, 'wrangler.json', { d1_databases: [{ binding: 'DB', database_name: 'x' }] })
+    expect(subCheckStatus(await run(root), '1.2')).toBe('fail')
   })
 
   it('1.3 fails without manifests:validate, passes with it', async () => {
