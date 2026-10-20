@@ -339,10 +339,11 @@ narduk-app manifests validate [--checkout <dir>] [--wrangler <path>]... [--json 
 ```
 
 - **Which config.** Every `--wrangler` path given (a staging or preview config
-  too), else the manifest's `worker.wranglerConfig`, else the first wrangler
-  config at a known path. JSON/JSONC is read with `jsonc-parser`, so `//` in a
-  URL and `*/15` in a cron are string content; `wrangler.toml` is read for the
-  same top-level facts.
+  too), else the manifest's `worker.wranglerConfig`, else the wrangler config
+  beside the Nuxt app (`web/`, `apps/web/`), else the first wrangler config at a
+  known path. JSON/JSONC is read with `jsonc-parser`, so `//` in a URL and
+  `*/15` in a cron are string content; `wrangler.toml` is read for the same
+  top-level facts.
 - **Bindings and crons** (`bindings.d1`, `kv`, `r2`, `queues`, `cron`,
   `durableObjects`) are compared as sorted sets on both sides, and only the
   kinds the manifest declares. Queues read as `<binding>:producer` and
