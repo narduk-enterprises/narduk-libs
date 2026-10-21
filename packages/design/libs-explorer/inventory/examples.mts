@@ -185,6 +185,17 @@ export const EXAMPLES: readonly ExampleMeta[] = [
     'Command palette trigger',
     'The header button that looks like a search field and opens the palette.',
   ),
+  shell('NeSettle', 'Settle', 'PACC·TRAC’s one-shot, no-bounce arrival after a state change.'),
+  shell(
+    'NeTimelineHero',
+    'Timeline hero',
+    'TX Spends’ number-led headline and selectable period bars.',
+  ),
+  shell(
+    'NeStatementHero',
+    'Statement hero',
+    'KZFR’s current-state headline, including last-known and unknown states.',
+  ),
   shell('NeHero', 'Hero', 'The top of a landing page: headline, title, description and buttons.'),
   shell('NeFeatureGrid', 'Feature grid', 'Feature tiles in a responsive grid, one list item each.'),
   shell('NeCta', 'Call to action', 'A panel with a title, a description and buttons.'),

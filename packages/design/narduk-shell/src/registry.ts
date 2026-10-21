@@ -33,6 +33,9 @@ export interface NeComponentRegistration {
  * Registered in array order. Filled in by each component backlog item.
  */
 export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
+  { name: 'NeSettle', filePath: './runtime/components/NeSettle.vue' },
+  { name: 'NeTimelineHero', filePath: './runtime/components/NeTimelineHero.vue' },
+  { name: 'NeStatementHero', filePath: './runtime/components/NeStatementHero.vue' },
   // Item 9 (narduk-libs#256): NePageHeader + NeSectionHeader.
   { name: 'NePageHeader', filePath: './runtime/components/NePageHeader.vue' },
   { name: 'NeSectionHeader', filePath: './runtime/components/NeSectionHeader.vue' },

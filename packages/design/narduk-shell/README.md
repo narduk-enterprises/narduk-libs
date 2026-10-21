@@ -578,6 +578,8 @@ declared once, in the light block, where the reduced-motion block can zero them
 | `--ne-bottom-bar-h`     | Height of an app's fixed bottom bar; `html` scroll-padding-bottom.               | `0px`                                                                                 | `0px`                                                                                 |
 | `--ne-feel-fast`        | Press, reveal and fade duration; 0ms under reduced motion.                       | `120ms`                                                                               | `120ms`                                                                               |
 | `--ne-feel-base`        | Enter duration for `.ne-fade-in`; 0ms under reduced motion.                      | `150ms`                                                                               | `150ms`                                                                               |
+| `--ne-settle-duration`  | PACC·TRAC one-shot arrival; 0ms under reduced motion.                            | `180ms`                                                                               | `180ms`                                                                               |
+| `--ne-ease-settle`      | PACC·TRAC arrival curve, with no overshoot.                                      | `cubic-bezier(0.2, 0.6, 0.2, 1)`                                                      | `cubic-bezier(0.2, 0.6, 0.2, 1)`                                                      |
 | `--ne-ease-out`         | Easing for every feel transition: fast start, soft landing.                      | `cubic-bezier(0.2, 0, 0, 1)`                                                          | `cubic-bezier(0.2, 0, 0, 1)`                                                          |
 
 <!-- ne-token-table:end -->
@@ -5198,3 +5200,29 @@ table and provide the matching pager. Existing client mode is unchanged.
 `useCollection({ syncQuery: true, queryPrefix: "grants_" })` gives a second list
 independent `grants_page`, `grants_q` and `grants_sort` URL state while leaving
 the first list and other query parameters unchanged.
+
+### NeSettle
+
+One-shot PACC·TRAC arrival after `motion-key` changes. The slot remounts on a
+new key; the first paint stays at rest. `disabled` and reduced motion both
+suppress the transition. No layout, focus or scrolling policy is added.
+
+### NeTimelineHero
+
+TX Spends' number-led `<h1>` and controlled `v-model` period selector over Nuxt
+UI buttons. Supply `subject`, `verb`, formatted `value` (or `null`), and
+`periods`. Period values share one nonnegative scale; null and invalid values
+render an explicit gap, zero remains zero, and partial periods are labelled. The
+phone strip scrolls with 44px targets; desktop media sits alongside it.
+
+### NeStatementHero
+
+KZFR's `<h1>` built on the caller's current product fact. Supply `title` and a
+`marker` (`state`, `label`, optional `detail`); stale and unknown states carry
+visible qualifiers. Optional `links` use Nuxt UI buttons; `actions`, `media` and
+default slots accept product content. Media stacks on phones.
+
+Use one hero per page. Neither hero fetches, runs a clock, or invents live data.
+See [Hall of fame sections](docs/hall-of-fame.md) for complete examples,
+provenance, selection rationale and adoption boundaries. The Explorer includes
+all three components and their package-owned design cards.

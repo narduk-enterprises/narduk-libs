@@ -60,7 +60,7 @@ describe('every registered component has a card, and every card a component', ()
     .map((component) => component.name)
     .filter((name) => !PENDING_CARDS.includes(name))
     .concat(surfaceNames)
-    .sort()
+    .sort((first, second) => first.localeCompare(second))
 
   it('is not vacuous: PENDING_CARDS cannot swallow every registered component', () => {
     // `required` filters registered names through PENDING_CARDS. If the
