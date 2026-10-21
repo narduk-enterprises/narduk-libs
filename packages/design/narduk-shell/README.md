@@ -712,6 +712,12 @@ composables (always available, even with `components: false`).
 | Fade in place; nothing slides a neighbour                                            | `.ne-fade-in`, `<Transition name="ne-fade">`                        |
 | Stable skeletons with reserved size                                                  | `.ne-skeleton`                                                      |
 | Optimistic updates instead of spinners; roll back with a toast                       | `useOptimistic()`                                                   |
+| A hard-to-reverse action is undoable for a few seconds, not confirmed first          | `useUndoToast()`                                                    |
+| Times stay true without a timer per row; a date once they are old                    | `useTimeAgo()`, `<NeRelativeTime>`                                  |
+| A tab can be linked, reloaded and shared                                             | `useRouteTab()`, `<NeTabs route-param>`                             |
+| A ticking figure changes colour and never width                                      | `<NePriceCell>`                                                     |
+| A phone's bottom CTA clears the home indicator and never covers the last row         | `<NeStickyActionBar>`, `.ne-safe-bottom`                            |
+| Keyboard focus is always visible                                                     | the global `:focus-visible` ring (§ Focus ring)                     |
 | Inline edit: Enter or blur keeps, Escape cancels                                     | `useInlineEdit()`                                                   |
 | Keyboard shortcuts: Nuxt UI's `defineShortcuts`, plus "/" focuses search             | `useSlashFocus()`                                                   |
 | Motion only for meaning; `prefers-reduced-motion` respected                          | reduced-motion block in `theme.css`, `useReducedMotion()`           |
@@ -800,6 +806,49 @@ const result = await optimistic.mutate(
 - Overlapping calls: only the newest one rolls back. Await each call when saves
   must be strictly ordered.
 
+#### `useUndoToast()`
+
+The Gmail "Conversation archived. Undo" pattern: show the result of a
+hard-to-reverse action at once and keep it undoable for a few seconds, instead
+of asking "are you sure?" first. A Nuxt UI toast (the one `useOptimistic` uses)
+with an **Undo** action, a countdown bar, and a 7-second life. Nuxt UI pauses
+the countdown while the pointer is over the toasts or focus is inside one.
+
+```ts
+const undo = useUndoToast()
+
+async function removeFromWatchlist(row: Row) {
+  rows.value = rows.value.filter((r) => r.id !== row.id) // show the result now
+  const outcome = await undo.show({ title: `Removed ${row.symbol}` })
+  if (outcome === 'undone') rows.value = restore(row)
+  else await $fetch(`/api/watchlist/${row.id}`, { method: 'DELETE' })
+}
+```
+
+`show(options)` returns a `Promise<'undone' | 'committed'>` that resolves once
+and never rejects. `'undone'`: Undo was pressed. `'committed'`: anything else
+closed the toast (the countdown, the close button, a swipe, Escape).
+
+| Option        | Type                    | Default | What it does                                           |
+| ------------- | ----------------------- | ------- | ------------------------------------------------------ |
+| `title`       | `string`                | —       | What just happened. Required.                          |
+| `description` | `string`                | —       | A second line.                                         |
+| `duration`    | `number` (ms)           | `7000`  | How long Undo stays offered (6-8 seconds is the band). |
+| `undoLabel`   | `string`                | `Undo`  | The action's label.                                    |
+| `icon`        | `string`                | —       | An icon name for the toast.                            |
+| `onUndo`      | `() => void \| Promise` | —       | Runs before the promise resolves `'undone'`.           |
+| `onCommit`    | `() => void \| Promise` | —       | Runs before the promise resolves `'committed'`.        |
+
+- The countdown bar shows even when the app turned toast progress off for
+  ordinary toasts (`<UApp :toaster="{ progress: false }">`): it is how a person
+  knows how long Undo has left. Raise the app's toast `duration` independently;
+  this one carries its own.
+- **The commit lives in the page.** Closing the tab inside the window drops a
+  deferred commit. If an action must survive that, commit eagerly and make
+  `'undone'` the reversing call.
+- It needs a mounted toaster (`<UApp>` / `<UToaster>`); without one the promise
+  stays pending. Call it in a component's setup, like `useOptimistic`.
+
 #### `useInlineEdit(value, save, options?)`
 
 Headless click-to-edit. Returns
@@ -836,6 +885,58 @@ A read-only `Ref<boolean>`, `true` while the visitor asks for reduced motion and
 live as the setting changes. `false` on the server and through the first client
 render (so hydration agrees), read in `onMounted`; outside a component it reads
 once.
+
+### Focus ring
+
+`theme.css` draws one focus ring for everything: keyboard focus
+(`:focus-visible`, never a mouse click on a button) gets a 2px `--ne-accent`
+outline, 2px off the element, so a control that never thought about focus still
+shows where it is.
+
+```css
+:where(:focus-visible) {
+  outline: 2px solid var(--ne-accent);
+  outline-offset: 2px;
+}
+```
+
+- **Zero specificity** (`:where()`), like every other rule in the sheet: a
+  component or app rule that draws its own ring (Nuxt UI's
+  `focus-visible:ring-*` utilities, `NeTruncate`'s own outline) wins without a
+  fight.
+- **Never remove it without a replacement.** `outline: none` on its own is the
+  one thing this sheet does not do; if a design needs a different ring, set a
+  different `outline` or a visible `box-shadow` on `:focus-visible`.
+- It is an outline, not a shadow, so it survives Windows high-contrast
+  (`forced-colors`).
+- An app that had per-component ring patches to work around a missing global
+  ring can delete them; the accent follows the app's `--ne-accent`.
+
+### Safe areas
+
+Two utilities for chrome pinned to a screen edge on a notched phone. Both read
+`env(safe-area-inset-*)`, which is non-zero only when the page opts in with
+`viewport-fit=cover` (`narduk-core` does) and 0 everywhere else.
+
+| Class             | Rule                                | Use on                                    |
+| ----------------- | ----------------------------------- | ----------------------------------------- |
+| `.ne-safe-top`    | `padding-top` = the top inset       | a sticky or fixed header                  |
+| `.ne-safe-bottom` | `padding-bottom` = the bottom inset | a fixed footer, a bottom sheet, a tab bar |
+
+```vue
+<header class="ne-safe-top sticky top-0">…</header>
+<nav
+  class="ne-safe-bottom fixed inset-x-0 bottom-0"
+  style="--ne-safe-extra-bottom: 0.5rem"
+>…</nav>
+```
+
+A class that sets `padding-top` or `padding-bottom` itself would replace the
+inset, so add your own padding through `--ne-safe-extra-top` /
+`--ne-safe-extra-bottom` (they are summed with the inset). The classes are
+`:where()`-wrapped, so a Tailwind `pb-*` utility on the same element also
+replaces them: use the variable, or put the padding on a child.
+`NeStickyActionBar` does this for a bottom CTA and also reserves its space.
 
 ## Components
 
@@ -5226,3 +5327,215 @@ Use one hero per page. Neither hero fetches, runs a clock, or invents live data.
 See [Hall of fame sections](docs/hall-of-fame.md) for complete examples,
 provenance, selection rationale and adoption boundaries. The Explorer includes
 all three components and their package-owned design cards.
+
+### NeRelativeTime / useTimeAgo()
+
+"3 minutes ago" that stays true, as a real `<time>`: the instant in `datetime`,
+the exact moment (date, time and zone name) in the hover `title`, the relative
+phrase on screen, in tabular figures. Every instance on a page shares **one**
+30-second ticker, so a feed of 200 rows costs one interval, not 200; the last
+instance to unmount stops it, and a hidden tab catches up the moment it is
+visible again.
+
+House rules, from `./format`: **relative while the value is live, absolute once
+it is more than a week from now** (`absolute-after`), and the zone is a required
+decision, never the browser's.
+
+```vue
+<NeRelativeTime :value="notification.createdAt" time-zone="America/New_York" />
+```
+
+```ts
+const ago = useTimeAgo(() => row.observedAt, { timeZone: 'America/New_York' })
+ago.text.value // '3 minutes ago', or 'Mar 8, 2026' once over a week old
+```
+
+#### NeRelativeTime props
+
+| Prop            | Type          | Default | What it does                                                            |
+| --------------- | ------------- | ------- | ----------------------------------------------------------------------- |
+| `value`         | `NeDateInput` | —       | A `Date`, epoch ms or parseable string. `null` renders the empty text.  |
+| `timeZone`      | `string`      | —       | IANA zone. Required, as in `./format`.                                  |
+| `locale`        | `string`      | `en-US` | BCP-47 tag.                                                             |
+| `now`           | `NeDateInput` | clock   | A fixed instant to measure against instead of the shared ticker.        |
+| `absoluteAfter` | `number` (ms) | 7 days  | Beyond this distance the text is a date. `Infinity` is always relative. |
+| `empty`         | `string`      | `—`     | Rendered for a missing or unparseable value.                            |
+| `title`         | `string`      | full    | Replaces the hover tooltip (the full date, time and zone name).         |
+
+The `<time>` is marked `data-allow-mismatch="text"`: the clock is the one input
+the server render and hydration do not share, so a relative phrase may differ by
+a bucket between them without a hydration warning. Pass `now` for a snapshot
+that must not move. No slots and no events.
+
+#### `useTimeAgo(value, options)`
+
+`value` is a value, ref or getter. Options (each a value, ref or getter, except
+that whether `now` is given is decided once, at setup) are `timeZone`
+(required), `locale`, `now`, `absoluteAfter` and `empty`, as above. Returns:
+
+| Field      | Type                               | What it is                                               |
+| ---------- | ---------------------------------- | -------------------------------------------------------- |
+| `text`     | `ComputedRef<string>`              | Relative while live, a date after `absoluteAfter`.       |
+| `absolute` | `ComputedRef<string>`              | The full date, time and zone name, for a tooltip.        |
+| `iso`      | `ComputedRef<string \| undefined>` | ISO-8601 for `<time datetime>`; `undefined` if unusable. |
+| `relative` | `ComputedRef<boolean>`             | `true` while `text` is relative (it will keep changing). |
+
+The ticker is client-only and ends with the calling scope; on the server, and
+outside any component or effect scope, nothing is scheduled and the value is
+computed once. Auto-imported by the module, like `useOptimistic`.
+
+### NePriceCell
+
+A figure that changes without moving anything around it. A live price that goes
+from `$99.99` to `$100.01` is one character wider, and a table of them shimmers.
+The cell reserves its width in `ch`, uses tabular figures, and tints with
+`color` and **nothing else** (never width, weight, border or padding), so a
+tinted cell and an untinted one are the same box.
+
+```vue
+<NePriceCell
+  :value="quote.last"
+  kind="money"
+  currency="USD"
+  :digits="2"
+  :chars="10"
+  tint="flash"
+/>
+<NePriceCell
+  :value="position.pnl"
+  kind="money"
+  currency="USD"
+  :digits="2"
+  signed
+  tint="sign"
+/>
+<NePriceCell :value="quote.changePct" kind="percent" signed tint="sign" />
+```
+
+| Prop       | Type                               | Default     | What it does                                                                                                |
+| ---------- | ---------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `value`    | `number \| null \| undefined`      | —           | The figure. Missing draws `NeAbsent` in the same width, never a blank or a `0`.                             |
+| `kind`     | `'money' \| 'number' \| 'percent'` | `number`    | What the figure means. `money` needs `currency`; without it, a plain number.                                |
+| `currency` | `string`                           | —           | ISO-4217 code. There is no house currency.                                                                  |
+| `digits`   | `number`                           | formatter's | Fraction digits.                                                                                            |
+| `signed`   | `boolean`                          | `false`     | Always write the sign, so colour is never the only cue (zero has none).                                     |
+| `input`    | `'fraction' \| 'percent'`          | `fraction`  | `percent` kind: `0.055` or `5.5` means 5.5%.                                                                |
+| `locale`   | `string`                           | `en-US`     | BCP-47 tag.                                                                                                 |
+| `chars`    | `number`                           | `8`         | Minimum width in `ch` (digits are tabular, so one `ch` is one digit). Size it to the column's widest value. |
+| `align`    | `'end' \| 'start'`                 | `end`       | Where the figure sits in the reserved width.                                                                |
+| `tint`     | `'none' \| 'sign' \| 'flash'`      | `none`      | `sign`: green above zero, red below. `flash`: up or down for `flash-ms` after `value` changes.              |
+| `flashMs`  | `number`                           | `900`       | How long a `flash` tint lasts.                                                                              |
+| `label`    | `string`                           | —           | The unreported mark's accessible name (`Last price: not reported`).                                         |
+
+`flash` runs only in the browser and only after the first render, so the server
+markup and hydration agree, and a changed value restarts its clock. Under
+`prefers-reduced-motion` the tint still shows; only the fade collapses. Status
+colours come from Nuxt UI's `--ui-success` / `--ui-error`.
+`priceCellText(props)` returns the text a cell would show, for a CSV column or a
+screen-reader label (exported from the package root). No slots and no events.
+
+### NeStickyActionBar
+
+The phone's bottom call to action ("Buy", "Save picks", "Continue"): a page
+action, not navigation. It does three things a hand-rolled `fixed bottom-0` bar
+gets wrong.
+
+1. **Safe area.** Its bottom padding includes `env(safe-area-inset-bottom)`, so
+   its buttons clear the home indicator.
+2. **It never covers the last row.** The component renders a spacer in the
+   page's flow exactly as tall as the bar (measured; the bar wraps when its
+   content does), with a CSS fallback for the first paint.
+3. **Focus and anchors land clear.** While mounted it sets `--ne-bottom-bar-h`
+   on the document, which `theme.css` turns into `scroll-padding-bottom`, and
+   puts the old value back when it leaves.
+
+```vue
+<template>
+  <TradeForm />
+  <NeStickyActionBar label="Trade actions">
+    <UButton class="flex-1" color="neutral" variant="outline">Sell</UButton>
+    <UButton class="flex-1">Buy</UButton>
+  </NeStickyActionBar>
+</template>
+```
+
+Put it where the page's content ends, once per page.
+
+| Prop        | Type      | Default   | What it does                                                                                  |
+| ----------- | --------- | --------- | --------------------------------------------------------------------------------------------- |
+| `label`     | `string`  | `Actions` | The bar's accessible name (it is a `group`).                                                  |
+| `phoneOnly` | `boolean` | `true`    | Exists below `md` (48rem) only; on a wider screen the bar and its spacer are `display: none`. |
+
+The default slot is the bar's content, laid out as a flex row. No events.
+
+### NeTabs / useRouteTab()
+
+A tab strip whose state can live in the URL. Hold the selection with `v-model`,
+or with `route-param="tab"` to keep it in `?tab=trades`: written with
+`router.replace` (no history entry per click), other query keys and the hash
+kept, the default tab leaving the URL clean. A tab becomes linkable, reloadable
+and shareable, and Back leaves the page instead of stepping through every click.
+
+```vue
+<script setup lang="ts">
+const items = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'trades', label: 'Trades', badge: 3 },
+  { value: 'rules', label: 'Rules' },
+]
+</script>
+
+<template>
+  <NeTabs :items="items" route-param="tab" label="Game sections">
+    <template #default="{ value }">
+      <GameTrades v-if="value === 'trades'" />
+      <GameRules v-else-if="value === 'rules'" />
+      <GameOverview v-else />
+    </template>
+  </NeTabs>
+</template>
+```
+
+- `role="tablist"` / `tab` / `tabpanel`, `aria-selected`, `aria-controls` and
+  `aria-labelledby` wired with SSR-stable ids.
+- **Roving focus.** One tab is in the Tab order. ArrowLeft / ArrowRight move and
+  select among the enabled tabs, wrapping; Home and End jump to the ends;
+  disabled tabs are skipped.
+- **The active tab is scrolled into view** inside the strip where it overflows
+  (a phone), after a deep link or reload as well as after a click. Only the
+  strip scrolls, never the page, and reduced motion turns the glide into a jump.
+- A 2.75rem tap target, and an indicator that reserves its space, so selecting
+  never moves a tab.
+
+| Prop           | Type          | Default       | What it does                                                          |
+| -------------- | ------------- | ------------- | --------------------------------------------------------------------- |
+| `items`        | `NeTabItem[]` | —             | `{ value, label, icon?, badge?, disabled? }`, in order. Required.     |
+| `modelValue`   | `string`      | —             | The selected `value`, for `v-model`. Ignored with `routeParam`.       |
+| `routeParam`   | `string`      | —             | Keep the selection in this query key. Needs vue-router; decided once. |
+| `defaultValue` | `string`      | first enabled | The tab shown when nothing else picks one (and the clean-URL tab).    |
+| `label`        | `string`      | `Tabs`        | The strip's accessible name.                                          |
+
+The default slot is the selected tab's panel (`{ value }`); leave it out when
+the page below owns the content. Event: `update:modelValue(value)` on every
+change, in both modes. An unknown, disabled or repeated `?tab=` value reads as
+the default.
+
+#### `useRouteTab(options)`
+
+The state behind `route-param`, for tabs that are not the shell's or a panel
+that needs the tab outside the strip. Auto-imported by the module.
+
+```ts
+const { tab, setTab } = useRouteTab({
+  tabs: ['overview', 'trades', 'rules'], // a value, ref or getter
+  defaultTab: 'overview', // default: the first of `tabs`
+  param: 'tab', // default
+  keepDefault: false, // default: the default tab writes no parameter
+})
+tab.value = 'trades' // router.replace; the new tab shows on the next frame
+await setTab('rules') // the same, awaitable
+```
+
+`tab` is a writable ref. Assigning a name that is not in `tabs` is ignored, and
+the chosen tab shows at once and yields to the route if the navigation is
+refused. Needs vue-router and a component's setup.
