@@ -2,6 +2,8 @@
 '@narduk-enterprises/narduk-shell': patch
 '@narduk-enterprises/narduk-seo': patch
 '@narduk-enterprises/narduk-analytics': patch
+'@narduk-enterprises/narduk-ai': patch
+'@narduk-enterprises/narduk-app-tools': patch
 '@narduk-enterprises/create-narduk-app': patch
 ---
 
