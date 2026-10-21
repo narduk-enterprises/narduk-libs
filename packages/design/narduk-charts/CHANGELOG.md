@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.12.0
+
+### Minor Changes
+
+- ea99814: Add Line activeIndex/pointHover events for pointer and keyboard
+  interaction, plus formatYTick/formatXTick aliases and opt-in drawOnVisible
+  animation for Line and Bar. Preserve existing formatter and animation
+  defaults. Document and prove finished fixed-width SSR with animate=false,
+  light-only dark=false, and fractional point annotations between samples.
+
 ## 2.11.4
 
 ### Patch Changes

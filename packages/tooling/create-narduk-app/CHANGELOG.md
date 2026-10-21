@@ -1,5 +1,25 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.15
+
+### Patch Changes
+
+- ea99814: Add Line activeIndex/pointHover events for pointer and keyboard
+  interaction, plus formatYTick/formatXTick aliases and opt-in drawOnVisible
+  animation for Line and Bar. Preserve existing formatter and animation
+  defaults. Document and prove finished fixed-width SSR with animate=false,
+  light-only dark=false, and fractional point annotations between samples.
+- fe63fd8: Pin `@nuxt/image` to 2.1.0 in narduk-core. 2.2.0 registers a server
+  auto-import whose `from` is an object, which nitropack 2.13.5 cannot resolve,
+  so `nuxt typecheck` crashed with `input.replace is not a function` in every
+  generated app. Also document the widened `@nuxt/ui` peer range in the
+  narduk-auth and narduk-core READMEs.
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+- Updated dependencies [fe63fd8]
+  - @narduk-enterprises/narduk-app-tools@0.45.4
+
 ## 0.23.14
 
 ### Patch Changes

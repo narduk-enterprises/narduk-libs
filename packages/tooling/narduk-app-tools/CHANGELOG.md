@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.45.4
+
+### Patch Changes
+
+- fe63fd8: Widen the `@nuxt/ui` peer dependency from exactly `4.11.1` to
+  `>=4.11.1 <5`, matching narduk-core and narduk-auth, so apps on Nuxt UI 4.12
+  can install these packages (narduk-libs#1981).
+
 ## 0.45.3
 
 ### Patch Changes
