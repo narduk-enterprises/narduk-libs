@@ -417,3 +417,11 @@ export type {
   NeOptimisticResult,
 } from './runtime/composables/use-optimistic'
 export type { NeSlashFocusTarget } from './runtime/composables/use-slash-focus'
+
+export type {
+  NeSettleProps,
+  NeTimelinePeriod,
+  NeTimelineHeroProps,
+  NeStatementMarker,
+  NeStatementHeroProps,
+} from './runtime/components/ne-hall-of-fame-types'

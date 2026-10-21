@@ -158,6 +158,8 @@
    */
   --ne-feel-fast: 120ms;
   --ne-feel-base: 150ms;
+  --ne-settle-duration: 180ms;
+  --ne-ease-settle: cubic-bezier(0.2, 0.6, 0.2, 1);
   --ne-ease-out: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- the bridge -------------------------------------------------------
@@ -525,6 +527,7 @@
   :where(:root, .light) {
     --ne-feel-fast: 0ms;
     --ne-feel-base: 0ms;
+    --ne-settle-duration: 0ms;
   }
 
   :where(.ne-press:active:not(:disabled, [aria-disabled='true'])) {

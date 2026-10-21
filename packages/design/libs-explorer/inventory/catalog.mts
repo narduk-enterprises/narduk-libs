@@ -42,6 +42,9 @@ export interface PackageSetup {
 }
 
 const SHELL_DEMOS = [
+  'ne-settle',
+  'ne-timeline-hero',
+  'ne-statement-hero',
   'ne-page-header',
   'ne-section-header',
   'ne-status-badge',
