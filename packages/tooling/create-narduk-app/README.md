@@ -59,6 +59,16 @@ Reads are anonymous; no GitHub Packages credential is required. The opt-in
 `scripts/gh-packages-run.mjs` helper remains for break-glass during a mirror
 outage. Onboarding commits the frozen lockfile before CI is enabled.
 
+Every generated GitHub job that installs (the public CI jobs and the D1
+migration templates) first creates a fresh pnpm store under `RUNNER_TEMP` and
+exports it as `NPM_CONFIG_STORE_DIR`, so the frozen install and any nested
+install, such as the one inside `cf:build`, never read the runner's persistent
+store. The install step fails if pnpm would resolve a store outside it, which is
+what a `storeDir` in `pnpm-workspace.yaml` does. The migration templates run
+`pnpm exec narduk-app --help` right after the install so a CLI that cannot load
+stops the job before any migration. The policy lives in `src/install-policy.ts`
+and touches only generated jobs, not a developer's own install.
+
 Private generated apps use the pinned shared Nuxt CI workflow: lint, typecheck,
 build, formatting, knip and unit tests run on `linux-ci`; the initial single
 browser smoke runs on `playwright-isolated`, using its immutable toolchain. The
