@@ -11,12 +11,12 @@ instead.
 This layer also owns the optional OG preview/admin utilities so public-web SEO
 tooling stays out of `core` and auth-only app shells.
 
-## Peer: `@nuxt/ui` at `4.11.1`
+## Peer: `@nuxt/ui` `>=4.11.1 <5`
 
 The admin components this package ships (`AdminOgImagesTab` and its siblings)
-render Nuxt UI, so `@nuxt/ui` is a peer at exactly `4.11.1`, the version
-narduk-core and narduk-shell pin (narduk-libs#1033). An app on narduk-core
-already installs it.
+render Nuxt UI, so `@nuxt/ui` is a peer at `>=4.11.1 <5`, the range narduk-core
+and narduk-shell accept (narduk-libs#1033, #1981). An app on narduk-core already
+installs it.
 
 ## Unhead 3
 

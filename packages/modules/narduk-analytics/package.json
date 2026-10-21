@@ -113,7 +113,7 @@
   },
   "peerDependencies": {
     "@narduk-enterprises/narduk-core": ">=2.6.3 <3.0.0",
-    "@nuxt/ui": "4.11.1",
+    "@nuxt/ui": ">=4.11.1 <5",
     "nuxt": ">=4.0.0",
     "wrangler": ">=4.90.1"
   },

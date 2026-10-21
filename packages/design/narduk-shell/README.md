@@ -95,9 +95,9 @@ export default defineNuxtConfig({
 })
 ```
 
-Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` at exactly `4.11.1` — the
-version `@narduk-enterprises/narduk-core` pins, so an app on the Narduk core
-layer already has the right one.
+Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` `>=4.11.1 <5`, a range
+that `@narduk-enterprises/narduk-core` also accepts, so an app on the Narduk core
+layer already has a compatible one.
 
 ### Module options
 

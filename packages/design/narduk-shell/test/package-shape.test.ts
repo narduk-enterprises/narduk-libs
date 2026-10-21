@@ -75,13 +75,21 @@ describe('narduk-shell package shape', () => {
     ])
   })
 
-  it('pins peers to nuxt 4, vue 3.5 and the @nuxt/ui version narduk-core is tested against', () => {
+  it('ranges the @nuxt/ui peer from the version narduk-core is tested against to the next major', () => {
     const nuxtUiPin = coreManifest.devDependencies?.['@nuxt/ui']
     expect(nuxtUiPin, 'narduk-core must carry the tested @nuxt/ui as a devDependency so this suite can match it').toMatch(
       /^\d+\.\d+\.\d+$/,
     )
+    const floor = /^>=(\d+\.\d+\.\d+) <5$/.exec(manifest.peerDependencies?.['@nuxt/ui'] ?? '')?.[1]
+    expect(floor, 'the @nuxt/ui peer must read ">=x.y.z <5"').toBeDefined()
+    const [fMajor, fMinor, fPatch] = (floor ?? '').split('.').map(Number)
+    const [pMajor, pMinor, pPatch] = (nuxtUiPin ?? '').split('.').map(Number)
+    expect(
+      fMajor === pMajor && (fMinor < pMinor || (fMinor === pMinor && fPatch <= pPatch)),
+      `peer floor ${floor} must not exceed core's tested ${nuxtUiPin}`,
+    ).toBe(true)
     expect(manifest.peerDependencies).toEqual({
-      '@nuxt/ui': nuxtUiPin,
+      '@nuxt/ui': manifest.peerDependencies?.['@nuxt/ui'],
       nuxt: '>=4.0.0',
       vue: '>=3.5.0',
       // `useCollection({ syncQuery: true })` calls `useRoute()`/`useRouter()`
