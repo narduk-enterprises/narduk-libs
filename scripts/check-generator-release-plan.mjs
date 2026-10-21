@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import getReleasePlan from '@changesets/get-release-plan'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
+import { ignoredWorktreeWarning } from './release-plan-worktree.mjs'
 import {
   classifyChangedPackages,
   ignoredPackageNames,
@@ -157,6 +158,8 @@ export function readManifestAtRevision(revision, path) {
 
 function main() {
   const options = parseArguments(process.argv.slice(2))
+  const worktreeWarning = ignoredWorktreeWarning(root, options.head)
+  if (worktreeWarning) process.stderr.write(`${worktreeWarning}\n`)
   const { base, note: baseNote } = resolveComparisonBase({
     explicit: options.base,
     baseBranch: changesetsBaseBranch(),
