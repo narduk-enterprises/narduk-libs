@@ -102,10 +102,12 @@ export default defineNuxtConfig({
 
 `@nuxt/ui` is a peer (`>=4.7.1 <5`), not a pinned dependency, so an existing app
 on any Nuxt UI 4.x from 4.7.1 keeps its own version (narduk-libs#1940). The
-layer is tested against 4.11.1, and a generated app lists exactly that. An app
-that installs the UI modules (`coreModules` on) must list `@nuxt/ui` in its own
-`package.json`; core no longer brings it transitively, and pnpm does not install
-a peer unless `auto-install-peers` is on.
+layer is tested against 4.11.1, and a generated app lists the version the
+generator carries. narduk-shell, narduk-seo, narduk-analytics and narduk-ai peer
+on `>=4.11.1 <5`. An app that installs the UI modules (`coreModules` on) must
+list `@nuxt/ui` in its own `package.json`; core no longer brings it
+transitively, and pnpm does not install a peer unless `auto-install-peers` is
+on.
 
 narduk-core depends on `@nuxt/icon` 2.5.1 and, when `coreModules` is on,
 registers that module itself after seeding a local-only contract:

@@ -201,11 +201,11 @@ export const NUXT_UI_PACKAGE = '@nuxt/ui'
 
 /**
  * Advisories: warnings that never change a status or the exit code
- * (narduk-libs#1033). narduk-auth, narduk-seo, narduk-analytics and narduk-ai
- * render Nuxt UI components and declare `@nuxt/ui` as an exact peer, as
- * narduk-core and narduk-shell pin it. An app that depends on `@nuxt/ui`
- * through a range can resolve a different version from the one those
- * components were built against.
+ * (narduk-libs#1033). narduk-shell, narduk-seo, narduk-analytics and narduk-ai
+ * render Nuxt UI components and peer on `@nuxt/ui` `>=4.11.1 <5`, narduk-core
+ * and narduk-auth on `>=4.7.1 <5` (narduk-libs#1940, #1981). An app that
+ * depends on `@nuxt/ui` through a range can resolve a different version from
+ * the one it was tested against.
  *
  * Logan, 2026-09-26 (askme, verbatim): "Peers + warn-level check
  * (Recommended)" -- warn first, then ratchet, as his #973 answer set. Statuses
@@ -221,7 +221,8 @@ export function nuxtUiPinAdvisories(repo: AppRepo): string[] {
   if (spec === undefined || EXACT_PIN_RE.test(spec)) return []
   return [
     `${NUXT_UI_PACKAGE} is pinned as ${JSON.stringify(spec)}, not an exact version. ` +
-      'Narduk modules render Nuxt UI and peer on an exact version; pin it exactly, ' +
-      'e.g. "4.11.1". A warning today; it becomes a failing sub-check later (narduk-libs#1033).',
+      'Narduk modules render Nuxt UI and accept any 4.x from 4.11.1 (>=4.11.1 <5); ' +
+      'pin the version your app is tested against, e.g. "4.11.1". A warning today; ' +
+      'it becomes a failing sub-check later (narduk-libs#1033).',
   ]
 }

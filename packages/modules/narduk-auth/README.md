@@ -5,9 +5,9 @@
 The components and pages this package ships (the auth cards and panels,
 `AdminUsersTab`, `AppUserMenu`, the sign-in pages) render Nuxt UI, so `@nuxt/ui`
 is a peer. The range admits an existing app on Nuxt UI 4.7 or later instead of
-forcing the `4.11.1` that narduk-core and narduk-shell are tested against
-(narduk-libs#1033, #1940); the app's own `@nuxt/ui` is the one that runs, and a
-generated app still pins `4.11.1`.
+forcing the `4.11.1` that narduk-core is tested against (narduk-libs#1033,
+#1940); the app's own `@nuxt/ui` is the one that runs, and a generated app pins
+the version the generator carries.
 
 ## Native app sign-in (opt-in, local backend)
 
