@@ -148,6 +148,7 @@ export type ChartLineAnnotation =
     }
   | {
       type: 'point'
+      /** Fractional indices place the marker between samples (1.5 is halfway from 1 to 2). */
       xIndex: number
       y: number
       color?: string
@@ -263,6 +264,8 @@ export interface NardukLineChartProps {
   volumeFraction?: number
   colors?: string[]
   animate?: boolean
+  /** Wait for first visibility before drawing in; requires animate. */
+  drawOnVisible?: boolean
   dark?: boolean
   respectReducedMotion?: boolean
   referenceLines?: ChartReferenceLine[]
@@ -287,6 +290,10 @@ export interface NardukLineChartProps {
   dir?: 'ltr' | 'rtl'
   formatXLabel?: (label: string, index: number) => string
   formatTickValue?: (value: number) => string
+  /** Value-axis formatter; takes precedence over formatTickValue. */
+  formatYTick?: (value: number) => string
+  /** Category formatter; takes precedence over formatXLabel and formatTime. */
+  formatXTick?: (label: string, index: number) => string
   maxRenderPoints?: number
   /** Controlled fractional X window for `v-model:x-window`. */
   xWindow?: LineZoomRange
@@ -337,6 +344,8 @@ export interface NardukBarChartProps {
   stackedPercent?: boolean
   colors?: string[]
   animate?: boolean
+  /** Wait for first visibility before drawing in; requires animate. */
+  drawOnVisible?: boolean
   barRadius?: number
   dark?: boolean
   respectReducedMotion?: boolean
@@ -353,6 +362,10 @@ export interface NardukBarChartProps {
   dir?: 'ltr' | 'rtl'
   formatXLabel?: (label: string, index: number) => string
   formatTickValue?: (value: number) => string
+  /** Value-axis formatter; takes precedence over formatTickValue. */
+  formatYTick?: (value: number) => string
+  /** Category formatter; takes precedence over formatXLabel. */
+  formatXTick?: (label: string, index: number) => string
   /** Default `'vertical'`. `'horizontal'` places categories on the Y axis and bars along +X. */
   orientation?: NardukBarChartOrientation
   /**

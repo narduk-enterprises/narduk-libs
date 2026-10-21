@@ -5,7 +5,7 @@ exports[`NardukLineChart classic output > dark and linear segments 1`] = `
   <div class="narduk-chart narduk-chart--dark" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Line chart: This season, Last season, Sparse</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
@@ -90,7 +90,7 @@ exports[`NardukLineChart classic output > plain multi-series chart 1`] = `
   <div class="narduk-chart" style="width: 560px;" role="group" aria-labelledby="nc-cap-v-0">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Plain</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
@@ -138,7 +138,7 @@ exports[`NardukLineChart classic output > with y bands, a band between series, a
   <div class="narduk-chart" style="width: 560px;" role="group" aria-label="Line chart: This season, Last season, Sparse">
     <div id="nc-live-v-0" aria-live="polite" aria-atomic="true" class="narduk-sr-only"></div>
 <span id="nc-svgt-v-0" hidden="">Line chart: This season, Last season, Sparse</span>
-<svg width="560" height="300" class="narduk-line-chart__svg" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
+<svg width="560" height="300" class="narduk-line-chart__svg" style="touch-action: pan-y;" role="img" aria-labelledby="nc-svgt-v-0" tabindex="0">
       <defs>
         <clipPath id="nc-clip-v-0">
           <rect x="0" y="24" width="560" height="228"></rect>
