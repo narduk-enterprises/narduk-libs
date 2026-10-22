@@ -2,7 +2,9 @@
   "lane": "shell-tests",
   "status": "done",
   "pr_urls": [],
-  "heads": ["745025c320919cc05c241b970a11cf56ed43a164"],
+  "heads": [
+    "4af1ce0dfbcd51988da96f78deb82efa5cae960c"
+  ],
   "checks": [],
   "summary": "Ponytail audit of packages/design/narduk-shell/test. 1 must-fix, 17 should-fix, 1 nice. Cursor back-navigation drops the page. Several tests stay green if the behavior they name is removed. Report: audit-ponytail/shell-tests.md.",
   "needs_logan": false
