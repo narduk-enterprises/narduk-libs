@@ -546,6 +546,11 @@ ComponentSample sampleObservedArea(
   }
   ivec2 start = areaBoundary(lowUv, size, false);
   ivec2 stop = areaBoundary(highUv, size, true);
+  // A footprint inside one cell holds no cell centre; sample the cell it sits in.
+  vec2 areaScale = anchorCenter == 1 ? vec2(size - 1) : vec2(size);
+  ivec2 only = clamp(ivec2(floor((lowUv + highUv) * 0.5 * areaScale + (anchorCenter == 1 ? 0.5 : 0.0))), ivec2(0), size - 1);
+  if (stop.x <= start.x) { start.x = only.x; stop.x = only.x + 1; }
+  if (stop.y <= start.y) { start.y = only.y; stop.y = only.y + 1; }
   ivec2 extent = max(stop - start, ivec2(0));
   int fullArea = extent.x * extent.y;
   if (fullArea <= 0) return ComponentSample(vec3(0.0), 0.0, 0.0, 0.0, false);

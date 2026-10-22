@@ -114,7 +114,18 @@ export function areaSampleBoundsFromUv(
     const offset = anchor === 'cell-center' ? 0 : -0.5
     const start = Math.max(0, Math.min(size, Math.ceil(low * scale + offset)))
     const stop = high >= 1 ? size : Math.max(0, Math.min(size, Math.ceil(high * scale + offset)))
-    return [start, Math.max(start, stop)]
+    // A footprint inside one cell holds no cell centre; sample the cell it sits in.
+    if (stop <= start) {
+      const cell = Math.max(
+        0,
+        Math.min(
+          size - 1,
+          Math.floor(((low + high) / 2) * scale + (anchor === 'cell-center' ? 0.5 : 0)),
+        ),
+      )
+      return [cell, cell + 1]
+    }
+    return [start, stop]
   }
   const [columnStart, columnStop] = bounds(lowU, highU, width)
   const [rowStart, rowStop] = bounds(lowV, highV, height)
