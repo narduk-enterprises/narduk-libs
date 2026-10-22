@@ -2,7 +2,7 @@
   "lane": "auth-tenancy-pg",
   "status": "complete",
   "pr_urls": [],
-  "heads": ["62c025ea7798a58d9bed0d0b39ece05c4b71408a"],
+  "heads": ["c7819c7e069bae72305d7a635f2a7ca6c78bdf71"],
   "checks": [],
   "summary": "Read-only ponytail audit of narduk-auth, narduk-tenancy, and narduk-postgres. 1 must, 10 should, 4 nice. No source changes. Local passwordless account deletion is the release blocker. MCP authorization codes are claimed before PKCE is checked.",
   "needs_logan": false
