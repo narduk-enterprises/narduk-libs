@@ -215,6 +215,10 @@ describe('emitted steps against the real pnpm', () => {
       // Hermetic: no user or global config, and a default store inside the sandbox.
       NPM_CONFIG_USERCONFIG: emptyConfig,
       NPM_CONFIG_GLOBALCONFIG: emptyConfig,
+      // `pnpm --silent run` exports its reporter to scripts. Keep the fixture's
+      // frozen-lockfile error observable, regardless of the outer gate's reporter.
+      npm_config_reporter: 'append-only',
+      NPM_CONFIG_REPORTER: 'append-only',
       XDG_DATA_HOME: join(dir, 'xdg'),
     }
     delete env[JOB_PNPM_STORE_ENV]
