@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -157,10 +157,10 @@ describe('promoteRun', () => {
     const latestPath = join(directory, 'latest')
     promoteRun(catalog(), manifest, directory, {
       currentDigest: DIGEST,
-      runId: 'run-1',
+      runId: basename(directory),
       latestPath,
     })
-    expect(readFileSync(latestPath, 'utf8').trim()).toBe('run-1')
+    expect(readFileSync(latestPath, 'utf8').trim()).toBe(basename(directory))
   })
 
   it('refuses a failed run and a stale declaration', () => {

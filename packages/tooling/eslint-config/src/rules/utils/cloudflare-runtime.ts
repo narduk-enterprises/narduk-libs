@@ -24,7 +24,7 @@ import { existsSync } from 'node:fs'
 
 import type { SourceCode } from 'eslint'
 
-import { isTestOrFixturePath } from './path-scope'
+import { isExemptTestPath } from './mutation-route'
 
 /* -------------------------------------------------------------------------- */
 /* Worker-runtime file detection                                              */
@@ -163,7 +163,7 @@ export function classifyWorkerRuntimeFile(
   options: WorkerRuntimeOptions = {},
 ): WorkerRuntimeClassification {
   const normalized = normalize(filename)
-  const isTestOrFixture = options.isTestOrFixture ?? isTestOrFixturePath
+  const isTestOrFixture = options.isTestOrFixture ?? isExemptTestPath
 
   if (!normalized) {
     return { isWorkerRuntime: false, reason: 'not-worker', projectRoot: null, relativePath: null }

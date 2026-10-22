@@ -34,7 +34,7 @@ ruleTester.run('no-process-env-in-worker-runtime', rule, {
     },
     {
       name: 'test file is not Worker runtime',
-      filename: 'server/api/things.test.ts',
+      filename: 'server/utils/things.test.ts',
       code: `export const key = process.env.API_KEY`,
     },
     {

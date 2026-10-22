@@ -469,12 +469,15 @@ describe('isExemptTestPath', () => {
     expect(isExemptTestPath(filename)).toBe(false)
   })
 
-  it.each([
-    'tests/server/api/deploy.post.ts',
-    'server/api/__tests__/deploy.post.ts',
-    'server/api/fixtures/seed.post.ts',
-  ])('still exempts %s — a real test or fixture directory', (filename) => {
-    expect(isExemptTestPath(filename)).toBe(true)
+  it.each(['tests/server/api/deploy.post.ts', 'server/api/__tests__/deploy.post.ts'])(
+    'still exempts %s — a real test or fixture directory',
+    (filename) => {
+      expect(isExemptTestPath(filename)).toBe(true)
+    },
+  )
+
+  it('does not exempt a plain fixtures directory inside the served route tree', () => {
+    expect(isExemptTestPath('server/api/fixtures/seed.post.ts')).toBe(false)
   })
 
   it.each(['app/stores/user.test.ts', 'server/utils/db.test.ts', 'src/rules/x.spec.ts'])(

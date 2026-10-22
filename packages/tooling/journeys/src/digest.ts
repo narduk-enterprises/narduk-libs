@@ -111,6 +111,17 @@ function regexEnd(source: string, start: number): number {
  * literals hold no `;` and no whitespace but single spaces digests exactly as
  * before.
  */
+/**
+ * Collapse whitespace and drop ASI semicolons, but keep one that a following
+ * `+ - / ( [` or backtick would otherwise fuse into the next statement.
+ */
+function stripSemicolons(code: string): string {
+  return code
+    .replaceAll(/\s+/gu, ' ')
+    .replaceAll(/; ?(?=[-+/([`])/gu, ';|')
+    .replaceAll(';', '')
+}
+
 function normalizeFunctionSource(source: string): string {
   let normalized = ''
   let code = ''
@@ -120,7 +131,10 @@ function normalizeFunctionSource(source: string): string {
   let braces = 0
   const templateBraces: number[] = []
   const takeLiteral = (start: number, end: number): number => {
-    normalized += code.replaceAll(/\s+/gu, ' ').replaceAll(';', '') + source.slice(start, end)
+    // A `;` ending the chunk is the only thing keeping a following backtick
+    // or regex from fusing with the previous expression (tag / division).
+    const fuses = (source[start] === '`' || source[start] === '/') && /;\s*$/u.test(code)
+    normalized += stripSemicolons(code) + (fuses ? ';|' : '') + source.slice(start, end)
     code = ''
     recent = 'x'
     return end
@@ -166,7 +180,7 @@ function normalizeFunctionSource(source: string): string {
       index += 1
     }
   }
-  normalized += code.replaceAll(/\s+/gu, ' ').replaceAll(';', '')
+  normalized += stripSemicolons(code)
   return normalized.trim()
 }
 

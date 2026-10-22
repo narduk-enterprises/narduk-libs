@@ -174,11 +174,17 @@ function run(command: string, args: string[], label: string): string {
 }
 
 function fill(template: string, values: Record<string, string>): string[] {
-  let filled = template
-  for (const [key, value] of Object.entries(values)) {
-    filled = filled.replaceAll(`{${key}}`, value)
-  }
-  const parts = filled.split(/\s+/).filter(Boolean)
+  // Split first, substitute per token: a value with spaces stays one argv element.
+  const parts = template
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => {
+      let filled = token
+      for (const [key, value] of Object.entries(values)) {
+        filled = filled.replaceAll(`{${key}}`, () => value)
+      }
+      return filled
+    })
   if (parts.length === 0) throw new Error(`empty injector template: "${template}"`)
   return parts
 }

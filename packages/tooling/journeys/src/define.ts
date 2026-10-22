@@ -101,6 +101,12 @@ export function defineCatalog(catalog: Catalog): Catalog {
       }
     }
 
+    for (const scenarioId of journey.scenarios) {
+      if (journey.steps.every((step) => step.skipWhen?.scenarios.includes(scenarioId))) {
+        note(`${where}: every step is skipped in scenario "${scenarioId}"`)
+      }
+    }
+
     for (const compromise of journey.compromises ?? []) {
       if (!compromise.what.trim() || !compromise.why.trim() || !compromise.cost.trim()) {
         // A compromise with no stated cost is the ad-hoc flag under a new name.
