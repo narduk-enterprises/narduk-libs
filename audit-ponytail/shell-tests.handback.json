@@ -3,7 +3,7 @@
   "status": "done",
   "pr_urls": [],
   "heads": [
-    "4af1ce0dfbcd51988da96f78deb82efa5cae960c"
+    "cd6fcba00be4f9bbac34976e0cecfa7dd3ed978a"
   ],
   "checks": [],
   "summary": "Ponytail audit of packages/design/narduk-shell/test. 1 must-fix, 18 should-fix, 1 nice. Cursor back drops the page, leaving a list page starts another fetch, and a double Confirm runs twice. Report: audit-ponytail/shell-tests.md.",
