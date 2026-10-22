@@ -91,6 +91,14 @@ export function mirrorMissing(targets, packuments) {
   )
 }
 
+// A superseded target will never mirror (a newer `latest` already shipped), so
+// it is not waited on, but it must not be reported as mirrored either.
+export function mirrorSuperseded(targets, packuments) {
+  return targets.filter(
+    (target) => versionState(packuments.get(target.name), target.version) === 'superseded',
+  )
+}
+
 // Null/unread pending must not be iterated. An empty list means no packuments
 // to fetch this poll; waitForRelease then sees every target still missing.
 export function mirrorPackumentTargets(pending) {
@@ -204,14 +212,19 @@ export async function waitForRelease({
       continue
     }
 
-    const missing = mirrorMissing(targets, await readMirror(targets))
+    const packuments = await readMirror(targets)
+    const missing = mirrorMissing(targets, packuments)
     if (missing.length > 0) {
       log(`waiting for npm.nard.uk ${missing.map(publishTag).join(', ')}`)
       await sleep(intervalMs)
       continue
     }
 
-    return { releaseRunId, versions }
+    return {
+      releaseRunId,
+      versions,
+      superseded: mirrorSuperseded(targets, packuments).map(publishTag),
+    }
   }
 }
 
@@ -441,8 +454,11 @@ async function main() {
     ...io,
     log: (line) => console.log(line),
   })
+  if (result.superseded?.length) {
+    console.log(`Superseded by a newer latest, not mirrored: ${result.superseded.join(', ')}`)
+  }
   console.log(
-    `Release run ${result.releaseRunId} for ${mergeSha} is mirrored: ${
+    `Release run ${result.releaseRunId} for ${mergeSha} is done: ${
       result.versions.join(', ') || '(no publishable bump)'
     }`,
   )

@@ -112,8 +112,8 @@ Build an app-specific capability table before changing package pins:
 | Shared test fixtures                | Consume `@narduk-enterprises/narduk-testkit`; retain app-owned config and wrappers.                       |
 | App-local operations                | Use `@narduk-enterprises/narduk-app-tools`; keep direct package scripts.                                  |
 | AI                                  | Consume `@narduk-enterprises/narduk-ai`; keep `system_prompts` migration ownership in core.               |
-| MapKit                              | Consume canonical packages from `narduk-geo/narduk-mapkit`, not `narduk-libs`.                            |
-| Operator UI                         | Recreate only actually used primitives locally with Nuxt UI.                                              |
+| MapKit                              | Consume `@narduk-enterprises/narduk-mapkit` (Nuxt adapter at `./nuxt`) from `narduk-libs`.                |
+| Operator UI                         | Consume `@narduk-enterprises/narduk-shell`; do not recreate it locally.                                   |
 | PWA                                 | Remove through a service-worker cleanup release followed by a removal release.                            |
 | Ingestion                           | Freeze in place until `narduk-data` passes its acceptance gate. Do not copy or invent an interim package. |
 
