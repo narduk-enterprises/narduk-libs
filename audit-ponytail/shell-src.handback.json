@@ -2,7 +2,7 @@
   "lane": "shell-src",
   "status": "done",
   "pr_urls": [],
-  "heads": [],
+  "heads": ["ae8461bbabbd2ed979ccd406e4615c6a71164294"],
   "checks": [],
   "summary": "Ponytail 5 read-only audit of narduk-shell src, types, and docs. 3 must-fix, 7 should-fix, 2 nice. No source changes.",
   "needs_logan": false
