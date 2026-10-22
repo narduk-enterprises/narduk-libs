@@ -1,0 +1,288 @@
+{
+  "units": [
+    {
+      "coverage_id": "packages%2Fcontracts%2Fnarduk-platform::packages%2Fcontracts%2Fnarduk-platform%23shared%20contract%20authority%20assumptions::packages%2Fcontracts%2Fnarduk-platform::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/contracts/narduk-platform/README.md",
+        "packages/contracts/narduk-platform/src/index.ts",
+        "packages/contracts/narduk-platform/src/list-query.ts",
+        "packages/contracts/narduk-platform/src/package-registry.ts",
+        "packages/contracts/narduk-platform/src/provision-env-contract.ts",
+        "packages/contracts/narduk-platform/src/provision-metadata.ts",
+        "packages/contracts/narduk-platform/src/env-catalog.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/contracts/narduk-platform/README.md",
+            "packages/contracts/narduk-platform/src/list-query.ts"
+          ],
+          "invariant": "A list-query schema must not be treated as authorization, and unknown query keys must not become filters or sort columns.",
+          "method": "source",
+          "result": "listQuerySchema clamps limit, allowlists sort keys, and copies only declared filter keys into filters. Unknown keys are listed on unknownKeys when strict is false and are rejected only when strict is true. The schema never talks to a database and does not decide a principal. README text that says unknown keys are always rejected is stale relative to the default, but the parsed filters still exclude them.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/contracts/narduk-platform/src/package-registry.ts",
+            "packages/contracts/narduk-platform/src/provision-env-contract.ts",
+            "packages/contracts/narduk-platform/src/provision-metadata.ts",
+            "packages/contracts/narduk-platform/src/env-catalog.ts",
+            "packages/contracts/narduk-platform/src/index.ts"
+          ],
+          "invariant": "Registry and provision contracts must not embed a registry token or grant a secret plane.",
+          "method": "source",
+          "result": "buildPackageRegistryAuthLine interpolates an env-var name, not the token value. patchPackageRegistryNpmrcContent strips managed _authToken lines and does not write a token. A secret-classified provision row is rejected when it carries an expected value or a non-secret Cloudflare plane. Env catalog and onboarding metadata describe names and planes; they do not authorize a caller.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fdesign%2Fstatus-runtime::packages%2Fdesign%2Fstatus-runtime%23status%20data%20disclosure::packages%2Fdesign%2Fstatus-runtime::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/design/status-runtime/index.mjs",
+        "packages/design/status-runtime/package.json",
+        "packages/design/design-system-build/scripts/build.mts",
+        "packages/design/design-system-build/package.json",
+        "packages/design/libs-explorer/scripts/serve.mts",
+        "packages/design/libs-explorer/demo/frame.mts",
+        "packages/design/libs-explorer/app/pages/components/[id].vue",
+        "packages/design/libs-explorer/app/pages/frame/[id]/[surface].vue",
+        "packages/design/libs-explorer/app/components/CodeSnippet.vue",
+        "packages/design/libs-explorer/README.md",
+        "packages/design/libs-explorer/package.json"
+      ],
+      "checks": [
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/design/status-runtime/index.mjs",
+            "packages/design/status-runtime/package.json"
+          ],
+          "invariant": "Published status-runtime config must not disclose hosts, tokens, or untrusted HTML.",
+          "method": "source",
+          "result": "The module exports an empty frozen font-link list, a theme-color string, and resolveSourceRevision, which returns a caller-supplied env revision or an empty string. No URL, credential, or HTML sink is present. The package files list is index.mjs, index.d.mts, and README.md.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/design/design-system-build/scripts/build.mts",
+            "packages/design/design-system-build/package.json"
+          ],
+          "invariant": "The static design export must not ship executable or external markup from the prerendered gallery.",
+          "method": "source",
+          "result": "renderBundle rejects script, iframe, object, embed, on* attributes, and src/srcset/href values that do not start with #. Card titles are HTML-escaped. Stylesheets with @import or non-data url() are rejected. The package is private and reads only the local Nuxt generate output and narduk-shell card sources.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/design/libs-explorer/scripts/serve.mts",
+            "packages/design/libs-explorer/demo/frame.mts",
+            "packages/design/libs-explorer/app/pages/components/[id].vue",
+            "packages/design/libs-explorer/app/pages/frame/[id]/[surface].vue",
+            "packages/design/libs-explorer/app/components/CodeSnippet.vue",
+            "packages/design/libs-explorer/README.md",
+            "packages/design/libs-explorer/package.json"
+          ],
+          "invariant": "The explorer must not serve files outside its root, trust cross-origin frame messages, or render snippet text as HTML.",
+          "method": "source",
+          "result": "serve.mts binds 127.0.0.1 and accepts a file only when both the decoded path and realpath stay inside the root. Frame postMessage handlers require event.origin to equal window.location.origin and event.source to be the parent or the known frame. CodeSnippet interpolates code as text. The package is private; README says the public libs.nard.uk target is not deployed. No v-html sink was found under app/.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fgeogrid-web::packages%2Fmodules%2Fgeogrid-web%23untrusted%20grid%20input::packages%2Fmodules%2Fgeogrid-web::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/geogrid-web/src/core/decode/grid.ts",
+        "packages/modules/geogrid-web/src/core/decode/temporal.ts",
+        "packages/modules/geogrid-web/src/render/gl.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": ["packages/modules/geogrid-web/src/core/decode/grid.ts"],
+          "invariant": "An untrusted /grid payload must not choose an unbounded allocation or a shifted plane layout.",
+          "method": "source",
+          "result": "decodeGridBinary rejects header lengths outside 2..1_000_000, plane counts above 16, and value counts above 10_000_000 before allocating planes. Truncated and, by default, trailing payloads throw. Header strings stay in the dataset object and are not interpolated into HTML or SQL. decimatedGridUrl puts layer and date in URLSearchParams.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": ["packages/modules/geogrid-web/src/core/decode/temporal.ts"],
+          "invariant": "Temporal deflate input must not expand past the declared, capped layout.",
+          "method": "source",
+          "result": "decodeTemporalChunk checks magic, header length, dimensions, frame count, and pixel count, then computes expected decompressed bytes and rejects totals above 512 MiB before inflate. inflate cancels the stream once decoded bytes exceed that declared size. The work is in the caller process that supplied the buffer.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": ["packages/modules/geogrid-web/src/render/gl.ts"],
+          "invariant": "Grid header text must not become shader source.",
+          "method": "source",
+          "result": "scalarFragmentShader interpolates only a fixed sampler type from the valueKind enum and a projection snippet chosen by GridShaderProjection viewport or mercator. No layer name, date, or extra header field is concatenated into GLSL.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-ai::packages%2Fmodules%2Fnarduk-ai%23model%20prompt%20and%20tool%20binding::packages%2Fmodules%2Fnarduk-ai::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-ai/src/module.ts",
+        "packages/modules/narduk-ai/server/utils/aiContracts.ts",
+        "packages/modules/narduk-ai/server/utils/aiPromptResolver.ts",
+        "packages/modules/narduk-ai/server/utils/aiXmlEscape.ts",
+        "packages/modules/narduk-ai/server/utils/chatCompletions.ts",
+        "packages/modules/narduk-ai/server/utils/xai.ts",
+        "packages/modules/narduk-ai/server/utils/aiCallLog.ts",
+        "packages/modules/narduk-ai/server/utils/chatModelConfig.ts",
+        "packages/modules/narduk-ai/server/api/admin/ai/model.get.ts",
+        "packages/modules/narduk-ai/server/api/admin/ai/model.put.ts",
+        "packages/modules/narduk-ai/server/api/admin/system-prompts/index.get.ts",
+        "packages/modules/narduk-ai/server/api/admin/system-prompts/index.put.ts",
+        "packages/modules/narduk-ai/README.md"
+      ],
+      "checks": [
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/modules/narduk-ai/server/utils/chatCompletions.ts",
+            "packages/modules/narduk-ai/server/utils/xai.ts",
+            "packages/modules/narduk-ai/server/utils/aiCallLog.ts",
+            "packages/modules/narduk-ai/src/module.ts",
+            "packages/modules/narduk-ai/README.md"
+          ],
+          "invariant": "Model output and caller text must not reach a tool, secret, or other tenant without a source-visible bind.",
+          "method": "source",
+          "result": "The package has no tool schema, tool dispatcher, or MCP client. grokChat, grokChatStream, and chatCompletion forward caller-supplied messages to a chat-completions URL and return content text or parsed JSON to the caller. The API key and baseUrl are arguments of the same caller. Call records contain host, operation, model, status, timing, and token counts only. xaiApiKey is set only on private runtimeConfig.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/modules/narduk-ai/server/utils/aiContracts.ts",
+            "packages/modules/narduk-ai/server/utils/aiPromptResolver.ts",
+            "packages/modules/narduk-ai/server/utils/aiXmlEscape.ts"
+          ],
+          "invariant": "Untrusted prompt context must not break out of its context element or be treated as a system role by this package.",
+          "method": "source",
+          "result": "serializeChunk XML-escapes text unless chunk.trust is exactly trusted. reference and untrusted are escaped, and attribute values are escaped. The rendered string is returned to the caller; this package does not send it to a model or execute it. Cache keys are whatever the provider returns and are not rewritten here.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/modules/narduk-ai/server/api/admin/ai/model.get.ts",
+            "packages/modules/narduk-ai/server/api/admin/ai/model.put.ts",
+            "packages/modules/narduk-ai/server/api/admin/system-prompts/index.get.ts",
+            "packages/modules/narduk-ai/server/api/admin/system-prompts/index.put.ts",
+            "packages/modules/narduk-ai/server/utils/chatModelConfig.ts"
+          ],
+          "invariant": "Admin prompt and model routes must not execute stored prompt text.",
+          "method": "source",
+          "result": "The four routes are wrapped in narduk-core defineAdminQuery or defineAdminMutation. PUT stores a model string or updates system_prompts.content by name. Nothing in this package reads that content into chatCompletion or a tool. Tenant enforcement, if any, is not implemented in these handlers.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-logging::packages%2Fmodules%2Fnarduk-logging%23secret%20redaction%20before%20sink::packages%2Fmodules%2Fnarduk-logging::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-logging/src/sanitize.ts",
+        "packages/modules/narduk-logging/src/logger.ts",
+        "packages/modules/narduk-logging/src/sinks.ts",
+        "packages/modules/narduk-logging/src/h3.ts",
+        "packages/modules/narduk-logging/src/ingestion.ts",
+        "packages/modules/narduk-logging/src/browser.ts",
+        "packages/modules/narduk-logging/src/worker.ts",
+        "packages/modules/narduk-logging/src/node.ts",
+        "packages/modules/narduk-logging/docs/client-diagnostics.md",
+        "packages/modules/narduk-logging/go/handler.go",
+        "packages/modules/narduk-logging/go/sanitize.go",
+        "packages/modules/narduk-logging/python/src/narduk_logging/logger.py",
+        "packages/modules/narduk-logging/python/src/narduk_logging/sanitize.py",
+        "packages/modules/narduk-logging/python/src/narduk_logging/sinks.py",
+        "packages/modules/narduk-logging/swift/Sources/NardukLogging/Logger.swift",
+        "packages/modules/narduk-logging/swift/Sources/NardukLogging/Sanitizer.swift"
+      ],
+      "checks": [
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/modules/narduk-logging/src/sanitize.ts",
+            "packages/modules/narduk-logging/src/logger.ts",
+            "packages/modules/narduk-logging/src/sinks.ts",
+            "packages/modules/narduk-logging/src/h3.ts",
+            "packages/modules/narduk-logging/src/ingestion.ts",
+            "packages/modules/narduk-logging/src/browser.ts",
+            "packages/modules/narduk-logging/src/worker.ts",
+            "packages/modules/narduk-logging/src/node.ts",
+            "packages/modules/narduk-logging/docs/client-diagnostics.md",
+            "packages/modules/narduk-logging/go/handler.go",
+            "packages/modules/narduk-logging/go/sanitize.go",
+            "packages/modules/narduk-logging/swift/Sources/NardukLogging/Logger.swift",
+            "packages/modules/narduk-logging/swift/Sources/NardukLogging/Sanitizer.swift"
+          ],
+          "invariant": "Every ordinary sink must receive records only after key redaction, URL credential stripping, and private-value replacement.",
+          "method": "source",
+          "result": "JS createLogger sanitizes fields and errors before sink.write. Go Handle and Swift emit do the same. Request adapters log the route template, status, and duration, not raw headers. Client ingestion copies only allowlisted data fields and then calls the logger; envelope identity is assigned by the server. URL keys ending in url or uri drop userinfo, query, and fragment. Free-text message and error strings are not pattern-scanned; the package documents that limit. JS boundRecord and Go boundRecord keep the already sanitized error name and message.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h6-ai-log",
+          "reviewed_paths": [
+            "packages/modules/narduk-logging/python/src/narduk_logging/logger.py",
+            "packages/modules/narduk-logging/python/src/narduk_logging/sanitize.py",
+            "packages/modules/narduk-logging/python/src/narduk_logging/sinks.py"
+          ],
+          "invariant": "Oversized-record truncation must not replace a sanitized error with the caller's original error object.",
+          "method": "source",
+          "result": "sanitize_fields walks event fields before _emit pops error: sensitive keys become [REDACTED] and strings pass clean_text at 2048 characters. sanitize_error then copies only string name, message, code, stack, and cause. On a record over 16 KiB, _emit copies name and message from that walked object, not from the caller input. A string message stays inside the 2048-character clean. A nested message can be written back after sanitize_error replaced it with a fixed placeholder, but only with values key redaction already kept. The second bound replaces the error when the reduced record is still over 16 KiB.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "narduk-ai cache keys come entirely from the provider getCacheConfig result and are not bound to AiRequestContext tenantId or userId.",
+    "narduk-ai leaves trust trusted context unescaped by contract; only reference and untrusted text are XML-escaped.",
+    "narduk-logging does not scan free-text messages or error strings for secrets; docs/client-diagnostics.md states that limit. Keys, private markers, and url/uri fields are what the sanitizer covers on the normal path.",
+    "Python _emit, once a record exceeds 16 KiB, copies error name and message from the sanitize_fields result rather than from sanitize_error. A non-string message can therefore be written after the error allowlist replaced it. Sensitive keys and the 2048-character string cap have already been applied.",
+    "isSharedCacheable consults Cache-Control only, not CDN-Cache-Control, before deciding whether to stamp x-request-id.",
+    "packages/contracts/narduk-platform/README.md says unknown list-query keys are rejected, while listQuerySchema defaults strict to false and reports them on unknownKeys without merging them into filters.",
+    "libs-explorer README names a future public host that source says is not deployed; the preview server binds 127.0.0.1."
+  ],
+  "uncovered": [
+    {
+      "surface": "packages/modules/narduk-ai/server/api/admin",
+      "boundary": "admin system-prompt and chat-model writes have no tenant predicate in this package",
+      "subsystem": "packages/modules/narduk-core",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "starting_paths": [
+        "packages/modules/narduk-ai/server/api/admin/system-prompts/index.put.ts",
+        "packages/modules/narduk-ai/server/utils/chatModelConfig.ts"
+      ],
+      "reason": "Prompt updates match the core-owned system_prompts table by name only, and the chat model is stored at the global KV key admin:chatModel. Whether the admin principal is tenant-scoped is decided by narduk-core defineAdminMutation, useDatabase, and kvSet, which are outside these units."
+    }
+  ]
+}

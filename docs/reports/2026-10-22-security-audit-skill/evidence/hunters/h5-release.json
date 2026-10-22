@@ -1,0 +1,268 @@
+{
+  "units": [
+    {
+      "coverage_id": ".github%2Fworkflows::.github%2Fworkflows%23CI%20token%20and%20script%20authority::.github%2Fworkflows::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::publish",
+      "disposition": "covered",
+      "reviewed_paths": [
+        ".github/workflows/release.yml",
+        ".github/workflows/release-proof.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/refresh-generator-pins.yml",
+        ".github/workflows/red-main.yml",
+        ".github/workflows/packed-consumer-reuse-canary.yml",
+        ".github/workflows/auth-kit-swift.yml",
+        ".github/workflows/logging-languages.yml",
+        ".github/dependabot.yml"
+      ],
+      "checks": [
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            ".github/workflows/release.yml",
+            ".github/workflows/release-proof.yml",
+            ".github/workflows/ci.yml"
+          ],
+          "invariant": "An untrusted pull request ref cannot obtain a write token, the npm-release app key, or a publish of a commit that is not proven on main.",
+          "method": "source",
+          "result": "No workflow uses pull_request_target. release.yml verifies from a main checkout, then checks out the verified SHA only after scripts/verify-release-ci.mjs. The npm-release environment is limited to jobs with permissions {} and no checkout. release-proof.yml interpolates RELEASE_SHA from env inside double quotes, which does not re-parse the expanded value as shell syntax. ci.yml grants actions: write only to a no-checkout cancel of the current same-repo run, and cache saves run only on the default branch. The verify job eval expands three hardcoded gate names whose values are job-result env enums.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            ".github/workflows/refresh-generator-pins.yml",
+            ".github/workflows/red-main.yml",
+            ".github/workflows/packed-consumer-reuse-canary.yml",
+            ".github/workflows/auth-kit-swift.yml",
+            ".github/workflows/logging-languages.yml",
+            ".github/dependabot.yml"
+          ],
+          "invariant": "Scheduled and workflow_run automation does not execute an untrusted checkout with a credential or open a pull request outside an allowlist.",
+          "method": "source",
+          "result": "refresh-generator-pins.yml runs only on main, applies a patch, and rejects every path other than the generator pin files and its changeset before opening a reviewable branch. red-main.yml calls the pinned listener only for push or workflow_dispatch on the default branch and passes metadata as with inputs. packed-consumer-reuse-canary.yml is workflow_dispatch on main with contents read and no secrets. auth-kit-swift.yml and logging-languages.yml are workflow_call with contents read, persist-credentials false, and no secrets; SwiftLint is SHA256-pinned. dependabot.yml covers github-actions only.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Ftooling%2Fcreate-narduk-app::packages%2Ftooling%2Fcreate-narduk-app%23generated%20app%20trust%20defaults::packages%2Ftooling%2Fcreate-narduk-app::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::generate",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/tooling/create-narduk-app/src/ci-workflow.ts",
+        "packages/tooling/create-narduk-app/src/ci-test-env.ts",
+        "packages/tooling/create-narduk-app/src/dependabot-registry.ts",
+        "packages/tooling/create-narduk-app/src/manifest.ts",
+        "packages/tooling/create-narduk-app/src/migration-workflows.ts",
+        "packages/tooling/create-narduk-app/src/generate.ts",
+        "packages/tooling/create-narduk-app/src/install-policy.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/create-narduk-app/src/ci-workflow.ts",
+            "packages/tooling/create-narduk-app/src/ci-test-env.ts",
+            "packages/tooling/create-narduk-app/src/dependabot-registry.ts",
+            "packages/tooling/create-narduk-app/src/manifest.ts"
+          ],
+          "invariant": "Generated CI does not hand a fork pull request a write token or a production secret, and committed test placeholders are not Actions secrets.",
+          "method": "source",
+          "result": "Public CI jobs declare contents read and packages read. Workflow-level permissions are contents read. Test NUXT_OG_IMAGE_SECRET and NUXT_SESSION_PASSWORD are the narduk-test-only literals, not secrets.*. Dependabot merge is workflow_run with workflow permissions {}, no checkout, and merges only an app/dependabot head whose changed files match package.json, pnpm-lock.yaml, or pnpm-workspace.yaml. The registry token in dependabot config is a secrets reference, not a committed credential. promote-dispatch runs only for workflow_dispatch on main by github-actions[bot].",
+          "artifact": null
+        },
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/create-narduk-app/src/migration-workflows.ts",
+            "packages/tooling/create-narduk-app/src/generate.ts",
+            "packages/tooling/create-narduk-app/src/install-policy.ts"
+          ],
+          "invariant": "Generated D1 migration workflows do not apply a fork checkout with a D1 credential, and the bundle job is not installed as a live workflow by generation.",
+          "method": "source",
+          "result": "createMigrationWorkflowFiles writes docs/deployment templates. generate.ts states they are inert until a human copies them. The bundle job requires a same-repo pull request, uses ubuntu-24.04, and has no D1 token. preview-d1.yml checks out the default branch, not workflow_run.head_sha, and passes the SQL path to trusted narduk-app tooling. install-policy isolates the pnpm store per job. The private reusable-workflow permission grant is recorded under uncovered because the callee is not in this repository.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Ftooling%2Feslint-config::packages%2Ftooling%2Feslint-config%23lint%20rule%20trust::packages%2Ftooling%2Feslint-config::ATTACK-CLASSES.md%23Obvious%20things",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/tooling/eslint-config/src/rules/nuxt/no-secret-in-public-runtime-config.ts",
+        "packages/tooling/eslint-config/src/rules/server/no-raw-sql-with-variable-input.ts",
+        "packages/tooling/stylelint-config/bin/narduk-stylelint.mjs",
+        "packages/tooling/stylelint-config/index.mjs",
+        "packages/tooling/stylelint-config/plugins/narduk-design.mjs",
+        "packages/tooling/stylelint-config/stylelint-budget.mjs",
+        "packages/tooling/journeys/src/apple-control.ts",
+        "packages/tooling/journeys/src/media.ts",
+        "packages/tooling/journeys/src/web.ts",
+        "packages/tooling/narduk-testkit/src/e2e/admin-credential.ts",
+        "packages/tooling/narduk-testkit/src/e2e/contracts/auth.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/eslint-config/src/rules/nuxt/no-secret-in-public-runtime-config.ts",
+            "packages/tooling/eslint-config/src/rules/server/no-raw-sql-with-variable-input.ts",
+            "packages/tooling/stylelint-config/bin/narduk-stylelint.mjs",
+            "packages/tooling/stylelint-config/index.mjs",
+            "packages/tooling/stylelint-config/plugins/narduk-design.mjs",
+            "packages/tooling/stylelint-config/stylelint-budget.mjs"
+          ],
+          "invariant": "Lint packages do not evaluate untrusted source or ship a credential, and the secret and raw-SQL rules do not silently accept a literal secret or a variable sql.raw call.",
+          "method": "source",
+          "result": "eslint-config and stylelint-config source have no eval, new Function, or shell execution of repository input, and no committed credential material. The public-runtime rule flags credential-named keys and non-empty string defaults under runtimeConfig.public. The raw-SQL rule flags sql.raw with non-constant input. A computed object key that is not a literal is skipped; that is a same-author bypass of a lint hint, recorded as hardening.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/journeys/src/apple-control.ts",
+            "packages/tooling/journeys/src/media.ts",
+            "packages/tooling/journeys/src/web.ts",
+            "packages/tooling/narduk-testkit/src/e2e/admin-credential.ts",
+            "packages/tooling/narduk-testkit/src/e2e/contracts/auth.ts"
+          ],
+          "invariant": "Journey and testkit process execution does not pass operator or fixture text through a shell, and the e2e admin seed cannot target a remote database or interpolate an arbitrary email or hash into SQL.",
+          "method": "source",
+          "result": "apple-control, media, and web use spawnSync with an argument array and shell left unset. fill() splits the substituted template on whitespace and passes argv. admin-credential requires --local, refuses --remote and --preview, and builds SQL only after the email and salt:hash patterns match. password123 in the auth contract is a local fixture password, not a production credential. The narduk-test-only session and OG values are the same placeholders the build path refuses to publish.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Ftooling%2Fnarduk-app-tools::packages%2Ftooling%2Fnarduk-app-tools%23foundation%20check%20authority::packages%2Ftooling%2Fnarduk-app-tools::ATTACK-CLASSES.md%23Business%20logic",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/tooling/narduk-app-tools/src/foundation/schema.ts",
+        "packages/tooling/narduk-app-tools/src/foundation/items/item-6-secrets-and-registry.ts",
+        "packages/tooling/narduk-app-tools/src/foundation/items/item-10-security-headers.ts",
+        "packages/tooling/narduk-app-tools/src/foundation/items/item-12-deployment-standard.ts",
+        "packages/tooling/narduk-app-tools/src/foundation/items/item-15-public-reads-cached.ts",
+        "packages/tooling/narduk-app-tools/src/foundation/evaluate-data-cache.ts",
+        "packages/tooling/narduk-app-tools/src/deploy.ts",
+        "packages/tooling/narduk-app-tools/src/ship.ts",
+        "packages/tooling/narduk-app-tools/src/ship-support.ts",
+        "packages/tooling/narduk-app-tools/src/deployment-migrations.ts",
+        "packages/tooling/narduk-app-tools/src/migration-bundle.ts",
+        "packages/tooling/narduk-app-tools/src/commit-containment.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/narduk-app-tools/src/foundation/schema.ts",
+            "packages/tooling/narduk-app-tools/src/foundation/items/item-6-secrets-and-registry.ts",
+            "packages/tooling/narduk-app-tools/src/foundation/items/item-10-security-headers.ts",
+            "packages/tooling/narduk-app-tools/src/foundation/items/item-12-deployment-standard.ts",
+            "packages/tooling/narduk-app-tools/src/foundation/items/item-15-public-reads-cached.ts",
+            "packages/tooling/narduk-app-tools/src/foundation/evaluate-data-cache.ts"
+          ],
+          "invariant": "A foundation result does not report pass when a check the tool treats as enforcing has failed or is unknown, and an absent claimed control is not rolled up as a silent pass.",
+          "method": "source",
+          "result": "schema.rollUp orders fail above unknown above pass; a sole not-applicable stays not-applicable; empty checks are unknown. Item 6 fails a committed npm credential line and the named env files, and marks the paused nvault check not-applicable in the detail. Item 10 fails a missing or report-only CSP and does not pass when no base URL exists. Item 12.9 fails destructive app SQL without a matching checksum waiver and returns unknown when a declared source cannot be read; package SQL is disclosed as unread rather than claimed reviewed. Item 15 is documented rollout advisory: sub-checks never fail and the exit code stays 0.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "packages/tooling/narduk-app-tools/src/deploy.ts",
+            "packages/tooling/narduk-app-tools/src/ship.ts",
+            "packages/tooling/narduk-app-tools/src/ship-support.ts",
+            "packages/tooling/narduk-app-tools/src/deployment-migrations.ts",
+            "packages/tooling/narduk-app-tools/src/migration-bundle.ts",
+            "packages/tooling/narduk-app-tools/src/commit-containment.ts"
+          ],
+          "invariant": "A build:ci output cannot be uploaded, a preview SQL bundle cannot select production or a fork repository, and GitHub reads do not place the token on argv.",
+          "method": "source",
+          "result": "runDeploy refuses deploy and versions-upload when .narduk-build-ci is present, except dry-run. ship scans public assets for token, secret, password, and GH_PACKAGES_READ values and uploads through that deploy path. assertProductionBuildSecret rejects a present value that is shorter than 32 characters or starts with narduk-test-only-. Preview migration requires GITHUB_ACTIONS, event workflow_run, the same repository, and a production-branch ref before a bundle is applied; production and staging cannot use --bundle. commit-containment passes the bearer header on curl stdin via -K -.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "scripts::scripts%23release%20and%20consumer-smoke%20authority::scripts::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "scripts/verify-release-ci.mjs",
+        "scripts/approve-release-pr-ci.mjs",
+        "scripts/recheck-release-main.mjs",
+        "scripts/publish-verified-packages.mjs",
+        "scripts/prove-release-publication.mjs",
+        "scripts/check-generator-release-plan.mjs",
+        "scripts/install-swift-linux.py",
+        "scripts/refresh-generator-pins.mjs"
+      ],
+      "checks": [
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "scripts/verify-release-ci.mjs",
+            "scripts/approve-release-pr-ci.mjs",
+            "scripts/recheck-release-main.mjs",
+            "scripts/publish-verified-packages.mjs",
+            "scripts/prove-release-publication.mjs",
+            "scripts/check-generator-release-plan.mjs"
+          ],
+          "invariant": "Release scripts accept only a 40-hex commit that is retained on this repository's main, and approval or republication cannot be aimed at a fork head or an arbitrary ref.",
+          "method": "source",
+          "result": "verify-release-ci.mjs requires a 40-hex SHA, ancestry of origin/main, and either the push-run rule or the tree rule that the merged PR head and base repositories are this repository and the trees match. early mode returns verified false when the tree rule cannot prove the SHA. approve-release-pr-ci.mjs requires the github-actions bot author and committer, the release commit message, a completed action_required pull_request run, and the same head SHA and repositories, and it writes only GITHUB_OUTPUT. prove-release-publication.mjs rejects a non-40-hex SHA and dispatches release.yml on ref main with that input, which still passes verify-release-ci.mjs. publish-verified-packages.mjs refuses a registry latest moving backwards and holds the generator private until the pins publishing in the same batch are on the GitHub npm registry.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h5-release",
+          "reviewed_paths": [
+            "scripts/install-swift-linux.py",
+            "scripts/refresh-generator-pins.mjs"
+          ],
+          "invariant": "Toolchain install and pin refresh do not execute an unsigned archive or a workflow checkout as a release.",
+          "method": "source",
+          "result": "install-swift-linux.py downloads a pinned swift.org tarball, imports that vendor's all-keys.asc, verifies the detached signature, and extracts with tarfile filter data before the compile smoke. No in-repo key fingerprint is pinned; that vendor-root gap is hardening. refresh-generator-pins.mjs reads a local workflows checkout with git and rewrites only the generator pin, history, and changeset. It does not execute workflow files or publish.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "ci.yml sets IS_CHANGESET_RELEASE when github.head_ref or github.ref_name is exactly changeset-release/main, so a fork pull request from a branch of that name skips release-plan:check. The skip does not admit that ref to release.yml. Publish still requires a maintainer merge and verify-release-ci.mjs.",
+    "release-proof.yml checks out workflow_dispatch inputs.sha and runs that commit's scripts/prove-release-publication.mjs in the github-packages job, which has actions: write, before an in-workflow ancestor-of-main check. The dispatcher is a write principal. The npm-release mirror job does not checkout or run repository scripts, and a re-dispatch still passes verify-release-ci.mjs.",
+    "refresh-generator-pins.yml checks out narduk-enterprises/workflows at ref main. The result is a pull request whose paths are limited to the generator pin, workflow history, and one changeset. There is no auto-merge.",
+    "scripts/install-swift-linux.py trusts whatever public keys https://www.swift.org/keys/all-keys.asc contains at download time, then verifies the tarball from the same vendor. Extraction uses tarfile filter data. Pinning the Swift signing-key fingerprint in-repo would narrow a vendor-root compromise.",
+    "Item 6.2 scans .env, .env.local, .dev.vars, and apps/web/.dev.vars only. Item 6.3 is explicitly not-applicable while nvault adoption is paused. Item 12.5 can pass internal consistency when deployment.accountId is absent and says it cannot identify the Cloudflare account. Item 12.9 can pass while noting that package-owned migration SQL was not read.",
+    "Item 15 public-reads-are-cached is rollout advisory: sub-checks are pass or not-applicable, never fail, and evaluate-data-cache.ts keeps exit code 0. The file states the ratchet is to report those findings as fail.",
+    "no-secret-in-public-runtime-config skips a runtimeConfig.public key that is not a string literal. That is an author bypass of a lint hint, not a runtime trust decision.",
+    "ship-support hotfixProductionEnv skips NUXT_OG_IMAGE_SECRET and NUXT_SESSION_PASSWORD when they are unset. When set, it rejects a value shorter than 32 characters or prefixed narduk-test-only-. runDeploy still refuses to upload an output marked .narduk-build-ci.",
+    "The generated docs/deployment/ci-d1-bundle.job.yml grants id-token: write to a job that checks out a same-repo pull request head. Generation does not install the workflow. The job if requires head.repo.full_name == github.repository. A same-repo writer can already add that permission by editing the workflow."
+  ],
+  "uncovered": [
+    {
+      "surface": "narduk-enterprises/workflows nuxt-cloudflare.yml",
+      "boundary": "Reusable-workflow caller permissions versus jobs that execute pull-request code",
+      "subsystem": "packages/tooling/create-narduk-app",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "starting_paths": ["packages/tooling/create-narduk-app/src/ci-workflow.ts"],
+      "reason": "createCiWorkflow for a private app grants contents: read, packages: read, actions: read, pull-requests: write, and id-token: write to the whole pinned nuxt-cloudflare.yml call, and that call also runs on pull_request. Whether the called workflow narrows those permissions before a job checks out and runs pull-request code is outside this repository. The workflows checkout was not fetched."
+    },
+    {
+      "surface": "narduk-enterprises/workflows node-library.yml and red-main-listener.yml",
+      "boundary": "CI token and issue authority inside the called workflow",
+      "subsystem": ".github/workflows",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "starting_paths": [".github/workflows/ci.yml", ".github/workflows/red-main.yml"],
+      "reason": "ci.yml calls node-library.yml at 8192a81c8f1b3de36f1141b60fcd8de1c539772e with contents: read and package-registry-auth disabled. red-main.yml calls red-main-listener.yml at the same SHA with issues: write, and only for push or workflow_dispatch on the default branch, passing workflow_run fields as with inputs. The called bodies are not in this checkout, so their run-script handling of those inputs was not reviewed."
+    }
+  ]
+}
