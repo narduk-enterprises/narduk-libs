@@ -12,8 +12,11 @@ of the affected package; the advisory is published once the fix is available.
 
 ## Supported versions
 
-Only the latest published version of each package in this repository receives
-security fixes.
+The latest published version of each package in this repository receives
+security fixes. When a package ships a new major N, the previous major N-1 keeps
+security fixes until its consumers have migrated or for 90 days after N,
+whichever is longer; see
+[`docs/package-support-window.md`](docs/package-support-window.md).
 
 ## What is enabled here
 

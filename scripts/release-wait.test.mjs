@@ -7,6 +7,7 @@ import {
   approveableRunIds,
   commitFetchArgs,
   mirrorMissing,
+  mirrorSuperseded,
   mirrorPackumentTargets,
   missingPublishTags,
   parseVerifiedShaFromLog,
@@ -491,6 +492,33 @@ test('waitForRelease passes resolved targets into readMirror', async () => {
   })
   assert.deepEqual(seen, [[core]])
   assert.deepEqual(result.versions, [`${core.name}@${core.version}`])
+})
+
+test('a superseded target is reported as superseded, not as mirrored', async () => {
+  const result = await waitForRelease({
+    mergeSha,
+    intervalMs: 1_000,
+    deadlineMs: 20_000,
+    ...clock(),
+    readPushCi: async () => successfulPush(),
+    readReleaseRuns: async () => verifiedRelease(),
+    readReleasePrHead: async () => currentHead,
+    readHeldRuns: async () => [],
+    approveRuns: async () => {},
+    readTargets: async () => [core],
+    readTags: async () => [`${core.name}@${core.version}`],
+    readMirror: async () =>
+      new Map([[core.name, { versions: { '2.2.3': {} }, 'dist-tags': { latest: '2.2.3' } }]]),
+    log: () => {},
+  })
+  assert.deepEqual(result.superseded, [`${core.name}@${core.version}`])
+  assert.deepEqual(
+    mirrorSuperseded(
+      [core],
+      new Map([[core.name, { versions: { '2.2.2': {} }, 'dist-tags': { latest: '2.2.2' } }]]),
+    ),
+    [],
+  )
 })
 
 test('confirmed empty targets after a readable comparison are a no-op', async () => {
