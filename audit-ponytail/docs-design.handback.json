@@ -1,0 +1,9 @@
+{
+  "lane": "docs-design",
+  "status": "complete",
+  "pr_urls": [],
+  "heads": ["6fa6e1606cdb753cd400262fd80d33c2be87cad6"],
+  "checks": [],
+  "summary": "Read-only docs audit of main 6fa6e160. 2 must, 11 should, 1 nice. SECURITY.md says only the latest version gets security fixes; the N-1 window says the previous major still does. The template-decoupling runbook still sends MapKit to narduk-geo and tells operators to rebuild shell UI locally. No source files changed. heads is the audited main commit; the branch tip is the commit that adds the two report files.",
+  "needs_logan": false
+}
