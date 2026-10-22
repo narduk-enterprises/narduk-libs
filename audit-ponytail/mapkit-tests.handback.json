@@ -1,0 +1,9 @@
+{
+  "lane": "mapkit-tests",
+  "status": "done",
+  "pr_urls": [],
+  "heads": ["audit/ponytail-5/mapkit-tests"],
+  "checks": [],
+  "summary": "Read-only ponytail 5 audit of narduk-mapkit tests and docs. 1 must, 14 should, 1 nice. docs/releasing.md and docs/centralization-plan.md are stale. Nuxt Worker credential and allowedHosts wiring have no test that fails if the wiring is removed. No PR.",
+  "needs_logan": false
+}
