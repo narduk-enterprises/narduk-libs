@@ -1,0 +1,9 @@
+{
+  "lane": "mapkit-src",
+  "status": "done",
+  "pr_urls": [],
+  "heads": ["audit/ponytail-5/mapkit-src"],
+  "checks": [],
+  "summary": "Read-only ponytail audit of narduk-mapkit src, components, examples, and script, plus narduk-mapkit-nuxt. 2 must-fix, 11 should-fix, 2 nice. No source changes. Full preflight not run.",
+  "needs_logan": false
+}
