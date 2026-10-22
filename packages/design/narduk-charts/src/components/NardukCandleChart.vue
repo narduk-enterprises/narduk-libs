@@ -205,6 +205,8 @@ watch(
     const full = Math.max(0, n - 1)
     xViewMin.value = 0
     xViewMax.value = full
+    // A controlled domain keeps its window; only an uncontrolled view resets to all bars.
+    if (props.domain && n > 0) applyDomain(props.domain)
     if (n > 0) queueMicrotask(() => emitZoomAndDomain())
   },
   { immediate: true },
@@ -212,15 +214,19 @@ watch(
 
 watch(
   () => (props.domain ? ([props.domain.start, props.domain.end] as const) : null),
-  d => {
-    if (!d || sortedBars.value.length === 0) return
-    const bars = sortedBars.value
-    let a = candleIndexAtTime(bars, d[0])
-    let b = candleIndexAtTime(bars, d[1])
-    if (b < a) [a, b] = [b, a]
-    clampViewWindow(a, b)
+  () => {
+    if (props.domain) applyDomain(props.domain)
   },
 )
+
+function applyDomain(d: { end: number; start: number }) {
+  const bars = sortedBars.value
+  if (bars.length === 0) return
+  let a = candleIndexAtTime(bars, d.start)
+  let b = candleIndexAtTime(bars, d.end)
+  if (b < a) [a, b] = [b, a]
+  clampViewWindow(a, b)
+}
 
 /** Left-edge load-more: how close (in bar indices) the view must get to index 0 to fire `reachedStart`. */
 const REACHED_START_THRESHOLD_BARS = 2
@@ -528,10 +534,7 @@ const volumeMax = computed(() => {
   const { i0, i1 } = visibleIndexBounds()
   if (i1 < i0) return 1
   let m = 0
-  for (let i = i0; i <= i1; i++) {
-    const v = sortedBars.value[i]?.v
-    if (v != null) m = Math.max(m, v)
-  }
+  for (const d of drawBuckets.value) m = Math.max(m, d.bar.v ?? 0)
   return m > 0 ? m : 1
 })
 

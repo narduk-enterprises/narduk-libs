@@ -891,13 +891,12 @@ export function createVectorTileOverlaySource(options) {
         if (controller.signal.aborted || !bytes)
             return null;
         const tile = await decode(bytes, { x, y, z });
-        if (!tile)
+        // A read that began against the previous archive must not paint after clearCache.
+        if (!tile || startedAt !== generation)
             return null;
-        if (startedAt === generation) {
-            cache.set(key, tile);
-            if (highlightMissed.delete(key))
-                void refreshHighlight().catch((reason) => onError?.(reason));
-        }
+        cache.set(key, tile);
+        if (highlightMissed.delete(key))
+            void refreshHighlight().catch((reason) => onError?.(reason));
         return tile;
     }
     function decodedTile(z, x, y) {

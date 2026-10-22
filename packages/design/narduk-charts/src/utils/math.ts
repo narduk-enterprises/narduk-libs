@@ -356,7 +356,8 @@ export function decimateCategoryData(
   return { labels: newLabels, series: newSeries }
 }
 
-export function computeHistogramBins(values: number[], binCount: number): HistogramBin[] {
+export function computeHistogramBins(samples: number[], binCount: number): HistogramBin[] {
+  const values = samples.filter(Number.isFinite)
   if (values.length === 0 || binCount < 1) return []
   const min = arrayMin(values)
   const max = arrayMax(values)
@@ -445,10 +446,10 @@ export function aggregateCandlesDetailed(
   }
   const k = maxBuckets
   const out: AggregatedCandleBucket[] = []
-  const chunk = bars.length / k
   for (let b = 0; b < k; b++) {
-    const i0 = Math.floor(b * chunk)
-    const i1 = Math.min(bars.length - 1, Math.ceil((b + 1) * chunk) - 1)
+    // Adjacent buckets share no bar: bucket b starts where bucket b-1 stopped.
+    const i0 = Math.floor((b * bars.length) / k)
+    const i1 = Math.floor(((b + 1) * bars.length) / k) - 1
     if (i0 > i1) continue
     const sub = bars.slice(i0, i1 + 1)
     let h = -Infinity

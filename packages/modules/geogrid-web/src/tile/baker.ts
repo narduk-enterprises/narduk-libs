@@ -335,9 +335,9 @@ export interface GridTileRendererOptions {
 export class GridTileRenderer {
   private readonly gl: WebGL2RenderingContext
   private readonly canvas: OffscreenCanvas
-  private readonly buffer: WebGLBuffer
-  private readonly framebuffer: WebGLFramebuffer
-  private readonly whiteStencil: WebGLTexture
+  private buffer!: WebGLBuffer
+  private framebuffer!: WebGLFramebuffer
+  private whiteStencil!: WebGLTexture
   private readonly pipelines = new Map<GridValueKind, Pipeline>()
   private readonly frames = new Map<string, GpuFrame>()
   private readonly maxGpuFrames: number
@@ -348,6 +348,8 @@ export class GridTileRenderer {
   private lutBytes: Uint8Array | null = null
   private readback: Uint8Array = new Uint8Array(0)
   private destroyed = false
+  /** Set by a `webglcontextlost`/`webglcontextrestored` event; every GL object is dead until rebuilt. */
+  private contextStale = false
 
   /** `null` when the runtime has no OffscreenCanvas WebGL2 to bake with. */
   static create(options: GridTileRendererOptions = {}): GridTileRenderer | null {
@@ -381,7 +383,21 @@ export class GridTileRenderer {
     this.canvas = canvas
     this.gl = gl
     this.maxGpuFrames = Math.max(1, Math.floor(options.maxGpuFrames ?? DEFAULT_MAX_GPU_FRAMES))
+    // A loss and restore between two tiles never shows in `isContextLost()`, so
+    // the events are the only signal that the restored context lost our objects.
+    const markStale = () => {
+      this.contextStale = true
+    }
+    canvas.addEventListener?.('webglcontextlost', (event) => {
+      event.preventDefault() // without this the browser never restores the context
+      markStale()
+    })
+    canvas.addEventListener?.('webglcontextrestored', markStale)
+    this.createContextObjects()
+  }
 
+  private createContextObjects(): void {
+    const gl = this.gl
     const buffer = gl.createBuffer()
     if (!buffer) throw new Error('WebGL buffer unavailable')
     this.buffer = buffer
@@ -442,6 +458,11 @@ export class GridTileRenderer {
     if (this.gl.isContextLost()) {
       this.dropContextState()
       return null
+    }
+    if (this.contextStale) {
+      this.dropContextState()
+      this.createContextObjects()
+      this.contextStale = false
     }
     const layer = toGridTileLayer(source, options.planeIndex ?? 0)
     assertScalar(layer.frame)
