@@ -6,6 +6,6 @@
     "4af1ce0dfbcd51988da96f78deb82efa5cae960c"
   ],
   "checks": [],
-  "summary": "Ponytail audit of packages/design/narduk-shell/test. 1 must-fix, 17 should-fix, 1 nice. Cursor back-navigation drops the page. Several tests stay green if the behavior they name is removed. Report: audit-ponytail/shell-tests.md.",
+  "summary": "Ponytail audit of packages/design/narduk-shell/test. 1 must-fix, 18 should-fix, 1 nice. Cursor back drops the page, leaving a list page starts another fetch, and a double Confirm runs twice. Report: audit-ponytail/shell-tests.md.",
   "needs_logan": false
 }

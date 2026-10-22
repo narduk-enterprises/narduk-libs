@@ -86,18 +86,6 @@ Fix. Allow only `http:` and `https:` on the assign path (relative URLs still use
 
 If we skip it. A provider that copies a URL into `to` can navigate the browser to a script URL. The suite will not see it.
 
-## Nice to have
-
-### 9. One emoji turns highlight off for the whole label — `src/runtime/utils/command-palette.ts:123-128`
-
-What this is. `highlightParts` folds the label one code point at a time, then gives up when the folded length differs from `text.length` (UTF-16). The test (`test/command-palette.test.ts:123-137`) uses `Mississippi River` and `Río`. Those lengths match.
-
-Problem. `highlightParts('🌊 River', 'river')` returns one part, `{ text: '🌊 River', hit: false }`. The row still matches. The mark is missing because the emoji is two UTF-16 units and one code point, so the length check bails out before `indexOf`.
-
-Fix. Walk code points, or compare by code point index. Assert the emoji label. The walker is in `src/` (other lane).
-
-If we skip it. A label with an emoji never highlights the matched word.
-
 ### 10. The equal-filters test never rebuilds the getter — `test/use-collection.test.ts:476-498`
 
 What this is. The test says a `filters` getter that returns a new object every time, including flipped key order, must not refetch. The stable key is `filtersKeyOf` (`use-collection.ts:231-237`), watched at `:492-495`.
@@ -148,15 +136,15 @@ Fix. Drop a cleaned href that starts with `//`. Assert `resolveProseHref('a', { 
 
 If we skip it. A docs page with `linkBase` turns `[x](//evil.example/phish)` into an off-site link, and the non-http base guard can be deleted without a red test.
 
-### 15. The dispose test never arms the search timer — `test/use-collection.test.ts:856-864`
+### 15. Leaving the page starts another list fetch — `src/runtime/composables/use-collection.ts:378-407`
 
-What this is. The title says scope dispose clears the debounce timer and aborts the live request. Dispose does both (`use-collection.ts:504-507`).
+What this is. `run` loops while `settled !== intent`. An abort hits `continue` (`:393`), which skips `settled = token` (`:400`). Dispose aborts the controller and does not stop the loop (`:504-507`).
 
-Problem. The body never assigns `q`, so `debounceTimer` stays unset. Only the abort is checked. Remove `clearTimeout` and the test still passes.
+Problem. The in-flight `fetch` rejects with `AbortError` when its signal aborts, then the scope stops. `settled` stays behind `intent`, `isEnabled()` is still true, and the loop starts a new `fetch`. Dispose has already run, so nothing aborts that call. `test/use-collection.test.ts:856-864` uses a deferred fetch that never rejects, so the loop stays parked and the test stays green. That test also never sets `q`, so deleting `clearTimeout` stays green too.
 
-Fix. With fake timers, set `q` to `gtm`, stop the scope before 250 ms, advance 250 ms, and expect no second fetch and no `q` on the wire.
+Fix. Set a disposed flag in `onScopeDispose` and leave the loop when it is set. In that test, reject the aborted call and expect one fetch. The flag is in `src/` (other lane).
 
-If we skip it. A search typed as the page unmounts still hits the API.
+If we skip it. Leaving a list page still fires the next request. A search typed as the page unmounts is sent too.
 
 ### 16. A full last page is never the counted next-page case — `test/use-collection.test.ts:649-669`
 
@@ -178,28 +166,50 @@ Fix. Add those two calls.
 
 If we skip it. Jan 31 to Mar 30 reads as two months.
 
-### 18. Search is never given an uppercase query — `test/collection-engine.test.ts:132-137`
+### 18. A second Confirm click runs the handler twice — `src/runtime/composables/use-confirm.ts:151-162`
 
-What this is. Search is case-insensitive. `collectRows` lowercases the query (`collection-engine.ts:123`). `rowMatches` lowercases the cells and does not fold the query again (`:78-87`).
+What this is. `NeConfirmDialog` ignores Confirm while `pending` is true (`NeConfirmDialog.vue:109-111`). `useConfirm` sets `call.running` and patches `pending: true`, and never reads `call.running`. The in-flight test clicks once, flushes, then checks the button (`test/use-confirm.test.ts:134-159`).
 
-Problem. Every query in this file is already lower case (`arm`, `pve`, `logan`) or whitespace. `collectRows(hosts, { columns, query: ' PVE ' })` should return `pve-02`, `pve-01`, `pve-10` in that order. Drop `toLowerCase()` and `rowMatches` looks for `PVE` in a lowercased line and returns no rows. The whitespace test still passes, because that string becomes empty and matches before `includes`.
+Problem. `onConfirm` returns a promise that has not settled. Click Confirm twice with no flush between the clicks. The first call patches `pending`, but the component still has `pending === false` until the next render. The second click emits again. The handler does not return, so `onConfirm` runs twice.
 
-Fix. Assert `query: ' PVE '` returns those three names.
+Fix. Return at the start of the handler when `call.running` is already true. Click twice before `settle()` and expect one call. The guard is in `src/` (other lane).
 
-If we skip it. Uppercase search matches nothing. `useClientCollection` uses the same path.
+If we skip it. A double click before the loading state paints posts the action twice.
 
-### 19. Ctrl+Enter is named and never pressed — `test/use-inline-edit.test.ts:200-213`
+### 19. A saved edit still shows the older edit's failure — `src/runtime/composables/use-optimistic.ts:106-113`
 
-What this is. Multiline mode commits on Cmd or Ctrl+Enter (`use-inline-edit.ts:113`). Plain Enter stays a newline.
+What this is. Only the newest ticket may roll `state` back. Any failure still writes `error` and raises the toast. The overlap test (`test/use-optimistic.test.ts:163-186`) rejects the older call while the newer one is still pending, then rejects the newer one too.
 
-Problem. The only commit key in the test is `{ key: 'Enter', metaKey: true }`. `ctrlKey` stays false for the whole file. Delete `|| event.ctrlKey` and the test stays green.
+Problem. State starts at `'a'`. Mutate to `'b'` and leave it in flight. Mutate to `'c'` and resolve that action. Then reject `'b'`. State stays `'c'`, and the catch still sets `error` to `'b'`'s rejection and toasts that the change did not save. The value on screen is the one that saved.
 
-Fix. Press `{ key: 'Enter', ctrlKey: true, metaKey: false }` and expect `save` to be called with the draft.
+Fix. Record `error` and toast only when `ticket === latest`. Assert this order: state `'c'`, `error` null, no error toast. The gate is in `src/` (other lane).
 
-If we skip it. Windows multiline fields do not commit.
+If we skip it. A fast second toggle that saved shows an error toast, and a retry sends the edit again.
 
-9 smaller notes left out: cursor debounce not asserted on scope dispose; fake timers in the cursor file restored only on the success path of the last test; `previous()` from a deep link with an empty stack jumps to the first page; a cursor filter object whose keys are equal but ordered differently resets the cursor; `useOptimistic` leaves the previous optimistic value when two overlapping saves both fail (`use-optimistic.ts:106-108`), which matches its comment and `test/use-optimistic.test.ts:163-186`; after `onConfirm` rejects, `test/use-confirm.test.ts:161-186` never checks the promise is still pending before Cancel; `useTimeAgo` is not given a future instant more than a week out (`test/use-time-ago.test.ts:86-89` uses two hours); `pageActive(-1, -5, 12)` is untested (`test/command-palette.test.ts:149-154` only pages down from no selection). `formatMoney` has no negative input. That last one is a missing string, and the sign comes from `Intl`.
+### 20. Loading skeletons are proved against a stub with no role — `test/NeStatePanel.ssr.test.ts:75-80`
 
-Verdict: The suite is strong on formatters, prose, the offset list, and most components. It never opens a router for the cursor list, so Back drops the page. Several tests stay green when the behavior they name is removed. Fix the cursor watcher first, then those assertions.
+What this is. The loading panel renders three `<USkeleton>` nodes inside a wrapper with `aria-hidden="true"` (`NeStatePanel.vue:194-198`). Mount and SSR register `test/nuxt-ui-stubs.ts`, whose skeleton is a `div` with `data-stub="USkeleton"` and no role. The tests require the panel to be `role="status"`, `aria-live="polite"`, and `aria-busy="true"`.
 
-Not checked: Did not run the suite (no install, no build). `node_modules/@nuxt/ui` is not on disk, so the PageHeader/Breadcrumb stubs were not compared to `@nuxt/ui` 4.11.1; `test/support/nuxt-ui-stubs.ts` says it was read against 4.6.0. Did not line-read every `Ne*.mount.test.ts` / `Ne*.ssr.test.ts` (hero, marketing, admin, form, filter, tabs, price, settle). Read the harness (`test/support/*`, `vitest.config.ts`), registry, format, prose, message prose, collection engine, both collection composables, optimistic/undo/inline-edit/confirm/time-ago/row-limit sources, command palette engine and `go()`, CSV, meter, pager summary, and shell brand. `vitest.config.ts` is outside this lane: it rewrites `import.meta.client` to `true` and `import.meta.server` to `false` for every file outside `node_modules`, so a server-only branch in a component is not what these tests run. Other packages were not audited.
+Problem. Published `@nuxt/ui@4.11.1` `Skeleton.vue` sets `role="alert"`, `aria-live="polite"`, `aria-busy="true"`, and `aria-label="loading"` on each skeleton. The stub cannot emit that. Delete `aria-hidden="true"` from the wrapper and these tests still pass, while the shipped panel exposes three alerts. The same loading case is in `test/NeStatePanel.mount.test.ts:146-151`.
+
+Fix. Render loading with the real `USkeleton` from `test/support/nuxt-ui-globals.ts`. Assert one polite region on the panel, and that each skeleton alert sits inside `aria-hidden`.
+
+If we skip it. A loading panel can ship three `role="alert"` nodes, and this suite stays green.
+
+## Nice to have
+
+### 9. One emoji turns highlight off for the whole label — `src/runtime/utils/command-palette.ts:123-128`
+
+What this is. `highlightParts` folds the label one code point at a time, then gives up when the folded length differs from `text.length` (UTF-16). The test (`test/command-palette.test.ts:123-137`) uses `Mississippi River` and `Río`. Those lengths match.
+
+Problem. `highlightParts('🌊 River', 'river')` returns one part, `{ text: '🌊 River', hit: false }`. The row still matches. The mark is missing because the emoji is two UTF-16 units and one code point, so the length check bails out before `indexOf`.
+
+Fix. Walk code points, or compare by code point index. Assert the emoji label. The walker is in `src/` (other lane).
+
+If we skip it. A label with an emoji never highlights the matched word.
+
+16 smaller notes left out: cursor debounce on dispose; fake timers restored only on the success path; `previous()` from a deep link jumps to the first page; equal cursor filters with flipped keys reset the cursor; both overlapping optimistic saves failing leaves the previous optimistic value (`test/use-optimistic.test.ts:163-186` matches that written rule); `onConfirm` rejection is not shown to leave the promise pending; a future instant more than a week out; `pageActive(-1, -5)`; negative `formatMoney`; uppercase collection search; Ctrl+Enter; `test/NeCollectionTable.style.test.ts:78-81` only checks that a `@media (width >= …)` header exists, so the sorted-column tint inside it can be deleted; `test/design-cards.test.ts:111-127` accepts any HTML longer than 120 characters, and the card heading alone clears that; `test/NeDataTable.ssr.test.ts:62-73` only checks `data-ne-data-table`, which the outer div always has; a cursor page is never the start state when sort, search, or limit changes, so deleting `reset()` stays green; `setPage(999)` after a known `pageCount` is not asserted.
+
+Verdict: The suite is strong on formatters, prose, the offset list, and most components. Back on a cursor list drops the page, and leaving a list page starts another fetch. A double click on Confirm runs the action twice. Fix those three first.
+
+Not checked: Did not run the suite (no install, no build). `node_modules/@nuxt/ui` is not on disk. `Skeleton.vue` was read from the published `v4.11.1` tag. The PageHeader, Breadcrumb, and Badge stubs were not compared to that package; `test/support/nuxt-ui-stubs.ts` says it was read against 4.6.0. Did not line-read every `Ne*.mount.test.ts` / `Ne*.ssr.test.ts` (hero, marketing, admin, form, filter, tabs, price, settle). Read the harness (`test/support/*`, `vitest.config.ts`), registry, format, prose, message prose, collection engine, both collection composables, optimistic/undo/inline-edit/confirm/time-ago/row-limit sources, command palette engine and `go()`, CSV, meter, pager summary, and shell brand. `vitest.config.ts` is outside this lane: it rewrites `import.meta.client` to `true` and `import.meta.server` to `false` for every file outside `node_modules`, so a server-only branch in a component is not what these tests run. Other packages were not audited.
