@@ -152,6 +152,10 @@ baseline 190 drained, and the count admitted since the freeze.
   `verdict=GREEN`. Revisit this if the delivery tiers (E9) stop CI from gating
   merges here, because the local check would then be the only proof.
 - `pnpm install`
+- Direct `release-plan:check` refreshes its named remote comparison branch once
+  (30-second bound) before diffing; a failed refresh is unknown and stops the
+  gate. Explicit local or historical comparison refs retain their existing
+  semantics.
 - `pnpm run quality`
 - `pnpm run surface:check` (inside `quality:artifacts`): every component
   `narduk-shell` registers, and every `./format` export, has a README section,

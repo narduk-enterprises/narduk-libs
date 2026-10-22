@@ -35,6 +35,7 @@ import {
 } from './compute-affected-packages.mjs'
 import { packageGates } from './ci-package-plan.mjs'
 import { runPackageGates } from './ci-packages.mjs'
+import { fetchTargetForBase } from './git-base-refresh.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -134,22 +135,7 @@ function parsePreflightArgs(argv) {
 
 export { parsePreflightArgs }
 
-/**
- * `--base` names the ref this run compares against, so it is the ref worth
- * refreshing -- fetching `origin/main` while comparing against something else
- * is the stale-base failure (#492) with an extra network call in front of it.
- * `origin/main` splits into remote `origin` and ref `main`; a bare branch
- * name, a SHA, or `HEAD~3` names no remote and is left alone rather than
- * guessed at, since a wrong guess fetches the wrong thing silently.
- */
-export function fetchTargetForBase(base, remotes) {
-  const separator = base.indexOf('/')
-  if (separator <= 0) return undefined
-  const remote = base.slice(0, separator)
-  const ref = base.slice(separator + 1)
-  if (!ref || !remotes.includes(remote)) return undefined
-  return { remote, ref }
-}
+export { fetchTargetForBase } from './git-base-refresh.mjs'
 
 /** The branch Changesets opens the `chore: release packages` PR from. */
 export const releasePrBranch = 'changeset-release/main'
