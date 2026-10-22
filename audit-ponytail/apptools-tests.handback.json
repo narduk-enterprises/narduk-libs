@@ -4,6 +4,6 @@
   "pr_urls": [],
   "heads": ["f789e340c65e9bc1fb89a6156ebf83ea0b7f5577"],
   "checks": [],
-  "summary": "Read-only ponytail audit of narduk-app-tools tests, docs, fixtures, and fonts. 2 must, 5 should, 1 nice. A refused ship -m still commits, and the artifact gate skips CLOUDFLARE_API_KEY. No PR.",
+  "summary": "Read-only ponytail audit of narduk-app-tools tests, docs, fixtures, and fonts. 2 must, 9 should, 1 nice. A refused ship -m still commits, and the artifact gate skips CLOUDFLARE_API_KEY. No PR.",
   "needs_logan": false
 }

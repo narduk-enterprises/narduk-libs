@@ -78,9 +78,49 @@ Fix: Two tests. Second `deployVersion` throws, expect `SHIP_EXIT.rollbackFailed`
 
 If we skip it: A rollback that did not stick is reported as a clean refusal or a clean rollback. The person on call stops. Production is on the version that just failed proof.
 
+### 8. tests/foundation/item-6-secrets-and-registry.test.ts:35-65 — the secret checks are only half locked
+
+What this is: Item 6 fails a committed `.npmrc` auth line and a committed env file. The lists are in `src/foundation/items/item-6-secrets-and-registry.ts:13-14`. The auth pattern is `_authToken|_auth|_password|username`. The file list is `.env`, `.env.local`, `.dev.vars`, and `apps/web/.dev.vars`.
+
+Problem: The 6.1 test writes only `_authToken`. The 6.2 test title says `.env/.dev.vars` and the body writes only `.dev.vars`. Concrete case: change the auth pattern so it matches only `_authToken`, and delete `.env` from the file list. Both tests stay green. A committed `.npmrc` line `//npm.pkg.github.com/:_password=ghp_seeded_lie` passes 6.1. A committed `.env` with `SECRET=seeded-lie` passes 6.2. Today both of those inputs fail the check.
+
+Fix: In the existing 6.1 test, also write a `_password=` line and expect fail. In the existing 6.2 test, write `.env`, `.env.local`, and `apps/web/.dev.vars` one at a time and expect fail.
+
+If we skip it: A narrowed check ships, and a committed `.env` or an npm password line passes `foundation:check`.
+
+### 9. docs/deployment-migrations.md:257-258 — 12.8 is described as migrations-only
+
+What this is: The drift section says item 12.8 requires every D1 binding to have a source manifest and a distinct migrate credential. The same doc, lines 39-86, says a contract-owned database must not be given a migration manifest. `evaluate128` accepts either a migrations entry or a `databaseOwnership` contract entry (`src/foundation/items/item-12-deployment-standard.ts:1336-1338`, other lane).
+
+Problem: `fixtures/database-ownership/authenticated-contract-owned-read-model.json` is the passing shape: `READ_MODEL` is contract-owned and has no migrations source. `tests/database-ownership.test.ts:184-199` expects 12.8 pass for that file. Concrete case: an operator who follows only lines 257-258 adds a `deployment.migrations` row for `READ_MODEL` so 12.8 will pass. That is the manufactured baseline the ownership section says not to write, and a binding cannot have both owners.
+
+Fix: Rewrite those two sentences to the rule the checker prints: each D1 binding is migration-owned (manifest plus the migrations block) or contract-owned (ownership entry, contract file, verify script). A migrate credential is required when a migrations block exists.
+
+If we skip it: A contract-owned read model gets a fake migration history so a later reader trusts a ledger that does not describe that database.
+
+### 10. tests/dev-seed.test.ts:128-145 — the credential strip list is not what the test feeds
+
+What this is: `dev:seed` deletes Cloudflare credential variables before it runs Wrangler (`src/dev-seed.ts:37-46`, other lane). The names are `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY`, `CLOUDFLARE_EMAIL`, `CLOUDFLARE_ACCOUNT_ID`, and the `CF_API_TOKEN`, `CF_API_KEY`, `CF_EMAIL`, `CF_ACCOUNT_ID` spellings. The test asserts the child env is `{ PATH: '/bin' }`.
+
+Problem: The test env sets only `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CF_API_TOKEN`. Concrete case: delete `CLOUDFLARE_API_KEY` and `CLOUDFLARE_EMAIL` from `DEV_SEED_STRIPPED_ENV`. This test stays green. A shell that holds the global API key and email still passes them to the Wrangler child. The `--local` flag is a second guard. The strip is the one the README states.
+
+Fix: Build the test env from every `DEV_SEED_STRIPPED_ENV` name set to `secret`, plus `PATH`. Keep the assertion that the child env is `{ PATH: '/bin' }`.
+
+If we skip it: Dropping a strip name does not fail CI. A seed run can see the global API key in its environment.
+
+### 11. tests/foundation/item-2-mandatory-packages.test.ts:95-113 — `file:` and `git+` never fail 2.4
+
+What this is: Sub-check 2.4 fails an estate package whose spec does not come from the registry. The pattern is `workspace:`, `file:`, `link:`, `git+`, `git:`, `github:`, `http:`, `https:`, and a relative path (`src/foundation/items/item-2-mandatory-packages.ts:24`, other lane). The check name lists workspace, git, tarball, and file.
+
+Problem: The only failing input in the test is `'@narduk-enterprises/narduk-testkit': 'workspace:*'`. Concrete case: narrow the pattern to `workspace:` only. The test stays green. `"@narduk-enterprises/narduk-core": "file:../vendor/narduk-core"` passes 2.4. A vendored copy of core ships.
+
+Fix: In that same test, also expect fail for one `file:` spec and one `git+https://` spec.
+
+If we skip it: The fork check keeps its name and stops catching the forms that are not `workspace:`.
+
 ## Nice to have
 
-### 8. tests/foundation/item-4-no-forks.test.ts:49-57 — the pinned fork hash is thrown away
+### 12. tests/foundation/item-4-no-forks.test.ts:49-57 — the pinned fork hash is thrown away
 
 What this is: The 4.2 test builds a one-entry fork list so a known file hash fails the check.
 
@@ -92,7 +132,7 @@ If we skip it: The next edit trusts the comment, drops the overwrite, and 4.2 go
 
 ## Smaller notes left out
 
-Six, all weaker than the list above.
+Nine, all weaker than the list above.
 
 - `docs/brand-assets.md` images live under the repo's `docs/images/`. They render on GitHub. They are not in the npm `files` list, so the same links break inside `node_modules`.
 - The Bricolage files are missing U+00A4 and U+00AD. The README says Latin-1. The card character `·` is present. I checked the cmap.
@@ -100,6 +140,9 @@ Six, all weaker than the list above.
 - `docs/e2e-serve.md:109-111` says a following `ECONNREFUSED` must still print. The filter test never feeds that line. A plain `ECONNREFUSED` line is kept by the current code.
 - `docs/workers-cache.md:108` says 12.7 `unknown` means the core spec names no version. The check also returns `unknown` when cache is on and no `package.json` depends on narduk-core (`src/foundation/items/item-12-deployment-standard.ts:1266-1273`, other lane).
 - `filesUnder` in `src/dev-seed.ts` follows symlinks while collecting local R2 files. The seed is local and the credentials are stripped. No test covers a symlink that points outside the fixture dir.
+- `docs/e2e-serve.md:25` says `<app>` is `resolveAppDir`. When `--config` is set, `resolveServeAppDir` uses the config file's directory (`src/e2e-serve/e2e-serve.ts:377-378`). They match when that file already lives in the app directory.
+- `docs/ship.md:55` says to run the printed `` `deploy rollback --to` ``. The log line is `narduk-app deploy rollback --to <id>` (`src/ship.ts:632`). The words "the printed" point at that line.
+- Core's health route always returns `success: true` (`packages/modules/narduk-core/runtime/server/api/health.get.ts:100`). A body with `success: false` and `status: "ok"` is not a response that route emits, so it is not a finding here. `assessHealth` does not read `success`.
 
 Verdict: The migration runner, live proof, and foundation suites I traced do lock the dangerous edges, and the fixtures match the checkers that read them. Do not ship the next app-tools release on this tree until finding 1 and finding 2 are fixed. A refused `ship -m` creates a commit, and a Cloudflare API key in the client bundle is not a failed artifact gate.
 
