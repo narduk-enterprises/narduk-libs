@@ -1,0 +1,9 @@
+{
+  "lane": "core-tests",
+  "status": "done",
+  "pr_urls": [],
+  "heads": [],
+  "checks": [],
+  "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 2 must, 6 should, 1 nice. The SSRF fetcher and the 192.0.0.9 allow have no failing test. The old login limiter trusts X-Forwarded-For when cf-connecting-ip is absent. No source change.",
+  "needs_logan": false
+}
