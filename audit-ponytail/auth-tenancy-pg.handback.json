@@ -1,0 +1,9 @@
+{
+  "lane": "auth-tenancy-pg",
+  "status": "complete",
+  "pr_urls": [],
+  "heads": [],
+  "checks": [],
+  "summary": "Read-only ponytail audit of narduk-auth, narduk-tenancy, and narduk-postgres. 1 must, 7 should, 2 nice. No source changes. Local passwordless account deletion is the release blocker.",
+  "needs_logan": false
+}
