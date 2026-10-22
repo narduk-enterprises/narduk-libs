@@ -95,8 +95,8 @@ export default defineNuxtConfig({
 })
 ```
 
-Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` `>=4.11.1 <5`, a range
-that `@narduk-enterprises/narduk-core` also accepts, so an app on the Narduk core
+Peers: `nuxt >=4.0.0`, `vue >=3.5.0`, and `@nuxt/ui` `>=4.11.1 <5`, a range that
+`@narduk-enterprises/narduk-core` also accepts, so an app on the Narduk core
 layer already has a compatible one.
 
 ### Module options
@@ -4981,6 +4981,18 @@ the real transition dates for every zone, including the ones that are not the
 United States'. It is appended from a second formatter because
 `Intl.DateTimeFormat` throws a `TypeError` when `timeZoneName` is combined with
 `dateStyle`/`timeStyle`.
+
+### `instantOf`
+
+```ts
+instantOf('2026-03-08T23:30:00') // Date.UTC(2026, 2, 8, 23, 30): no zone reads as UTC
+instantOf(row.observedAt) // epoch ms, or undefined for null / unparseable / out of range
+```
+
+The parser every date formatter here uses. It returns epoch milliseconds, or
+`undefined` for anything that is not an instant. A date-time with no offset is
+read as UTC, so the host's zone never moves it (a UTC Worker and a Chicago
+browser get the same instant).
 
 ### `formatRelative`
 
