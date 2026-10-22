@@ -257,8 +257,10 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     const missing: SeriesDescriptor[] = []
     for (const descriptor of distinct) {
       const cached = this.cache.get(descriptor.vesselId, descriptor.path)
-      if (cached) resolved.push(cached)
-      else missing.push(descriptor)
+      // A differing non-null unit must reach the database to update the row.
+      if (cached && (descriptor.unit == null || descriptor.unit === cached.unit)) {
+        resolved.push(cached)
+      } else missing.push(descriptor)
     }
     if (missing.length === 0) return resolved
 

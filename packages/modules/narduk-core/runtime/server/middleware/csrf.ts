@@ -75,7 +75,7 @@ export default defineEventHandler((event) => {
     path.startsWith('/api/callbacks/') ||
     path.startsWith('/api/_auth/') ||
     path.startsWith('/__nuxt_content/') ||
-    path === '/api/owner-tag'
+    path.split('?')[0] === '/api/owner-tag'
   ) {
     return
   }

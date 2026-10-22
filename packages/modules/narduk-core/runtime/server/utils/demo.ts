@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { createError } from 'h3'
 
 import { users } from '#narduk-core/schema'
 
@@ -43,7 +44,13 @@ export function normalizeDemoRedirectPath(input: unknown): string {
   }
 
   const redirectPath = input.trim()
-  if (!redirectPath.startsWith('/') || redirectPath.startsWith('//')) {
+  // Browsers treat a backslash as a slash, so '/\\evil.example' leaves the origin.
+  if (
+    !redirectPath.startsWith('/') ||
+    redirectPath.startsWith('//') ||
+    // eslint-disable-next-line no-control-regex -- rejects control characters on purpose
+    /[\\\u0000-\u001f\u007f]/.test(redirectPath)
+  ) {
     return DEFAULT_DEMO_REDIRECT_PATH
   }
 

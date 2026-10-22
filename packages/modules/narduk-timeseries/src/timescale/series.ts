@@ -99,13 +99,20 @@ export function assertSeriesDescriptor(descriptor: SeriesDescriptor): SeriesDesc
   return descriptor
 }
 
-/** Distinct by (vesselId, path), first occurrence wins, order preserved. */
+/**
+ * Distinct by (vesselId, path), first occurrence wins, order preserved -- except
+ * that a later non-null unit fills a first one that had none.
+ */
 export function distinctDescriptors(descriptors: readonly SeriesDescriptor[]): SeriesDescriptor[] {
   const seen = new Map<string, SeriesDescriptor>()
   for (const descriptor of descriptors) {
     assertSeriesDescriptor(descriptor)
     const key = seriesCacheKey(descriptor.vesselId, descriptor.path)
-    if (!seen.has(key)) seen.set(key, descriptor)
+    const first = seen.get(key)
+    if (!first) seen.set(key, descriptor)
+    else if (first.unit == null && descriptor.unit != null) {
+      seen.set(key, { ...first, unit: descriptor.unit })
+    }
   }
   return [...seen.values()]
 }
