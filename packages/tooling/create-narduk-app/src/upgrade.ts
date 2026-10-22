@@ -526,16 +526,18 @@ function resolveCiCaller(
   if (pin.status === 'unresolved') return pin
   // A re-pin must never land the app on a workflow its caller cannot start.
   const permissions = applyCallerPermissions(pin.next ?? current)
+  // A grant that cannot be widened leaves the old pin: the new one would not start.
+  if (permissions.problems.length) {
+    return {
+      detail: 'Gate incomplete: ' + permissions.problems.join('; ') + '.',
+      status: 'unresolved',
+    }
+  }
   const edit = applyCallerGate(permissions.contents, gate)
   const base = permissions.added.length
     ? { ...pin, detail: pin.detail + ' Grants the caller ' + permissions.added.join(', ') + '.' }
     : pin
-  return withGateEdit(
-    current,
-    base,
-    { ...edit, problems: [...permissions.problems, ...edit.problems] },
-    'Repository gate inputs present.',
-  )
+  return withGateEdit(current, base, edit, 'Repository gate inputs present.')
 }
 
 function resolveRegion(
