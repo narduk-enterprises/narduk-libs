@@ -2,7 +2,7 @@
   "lane": "repo-scripts-ci",
   "status": "complete",
   "pr_urls": [],
-  "heads": ["e035083359d08466ede1f6a05c9a966624d9a4fa"]
+  "heads": ["6dd7ecc3ddaf2f5ab54b7f67225fbcb29192913b"],
   "checks": [],
   "summary": "Read-only ponytail audit of root CI, release, and gate scripts. 1 must-fix, 14 should-fix, 2 nice. release-wait can report a version as mirrored when the mirror does not have it. No publish bypass found. No PR opened.",
   "needs_logan": false
