@@ -1,0 +1,9 @@
+{
+  "lane": "maps-charts",
+  "status": "done",
+  "pr_urls": [],
+  "heads": ["PENDING_SHA"],
+  "checks": [],
+  "summary": "Read-only ponytail audit of narduk-maps and narduk-charts. 4 must, 12 should, 2 nice. Candle buckets overlap, aggregated volume is scaled to one raw bar, and a controlled candle domain resets when bars append. Histogram NaN throws. One NaN poisons SMA. The SVG map is sound for clean regional GeoJSON; the GL wrapper drops keyboard shapes, print labels, a later mark radius, and the poster after WebGL context loss.",
+  "needs_logan": false
+}
