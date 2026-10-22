@@ -1,0 +1,9 @@
+{
+  "lane": "lint-test-tooling",
+  "status": "done",
+  "pr_urls": [],
+  "heads": ["audit/ponytail-5/lint-test-tooling"],
+  "checks": [],
+  "summary": "Ponytail 5 read-only audit of eslint-config, stylelint-config, journeys, and narduk-testkit. 9 must-fix, 11 should-fix, 0 nice-to-have; 25 smaller cases left out. No source changes. No PR.",
+  "needs_logan": false
+}
