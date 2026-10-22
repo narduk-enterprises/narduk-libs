@@ -2,7 +2,7 @@
   "lane": "core-tests",
   "status": "done",
   "pr_urls": [],
-  "heads": ["bf4c43c023d4c8d2ac9e3e3ac54d699909031e3c"],
+  "heads": ["77da43bc09ae7fca7bfcd0647cc3314b974b3645"],
   "checks": [],
   "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 4 must, 14 should, 1 nice. SSRF, mutation auth wrappers, and a SESSION_PASSWORD-only install that seeds an empty session password have no failing test. No source change.",
   "needs_logan": false
