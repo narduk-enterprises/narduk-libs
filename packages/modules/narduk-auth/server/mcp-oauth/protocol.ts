@@ -8,6 +8,7 @@ import {
   claimMcpOAuthCode,
   mcpOAuthExecutionContext,
   mcpOAuthWebRequest,
+  releaseMcpOAuthCode,
   sendMcpOAuthResponse,
   useMcpOAuth,
 } from '../utils/mcp-oauth'
@@ -72,9 +73,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let code: string | null = null
   if (path === MCP_OAUTH_TOKEN_PATH && request.method === 'POST') {
     ctx.waitUntil(mcp.kv.purgeExpired())
-    const code =
+    code =
       (await formField(request, 'grant_type')) === 'authorization_code'
         ? await formField(request, 'code')
         : null
@@ -84,7 +86,9 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    return await sendMcpOAuthResponse(event, await mcp.fetch(request, ctx))
+    const response = await mcp.fetch(request, ctx)
+    if (code && !response.ok) await releaseMcpOAuthCode(mcp, code)
+    return await sendMcpOAuthResponse(event, response)
   } catch {
     // The library throws a plain Error for a metadata-document client it cannot
     // fetch here; answer as OAuth, never a 500 with a stack.

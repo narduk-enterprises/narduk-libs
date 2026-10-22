@@ -36,6 +36,7 @@ import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { isCsrfExemptPath, resolveCsrfExemptPaths } from '../../shared/csrf-exempt-paths'
 import { DEFAULT_REPORT_ROUTE } from '../../shared/security-headers'
+import { getApiKeyFromAuthorization } from '../utils/authApiKeyText'
 import { useLogger } from '../utils/logger'
 
 /**
@@ -88,9 +89,9 @@ export default defineEventHandler((event) => {
   const declared = (config as { nardukCsrf?: { exemptPaths?: unknown } }).nardukCsrf?.exemptPaths
   if (isCsrfExemptPath(path, resolveCsrfExemptPaths(declared))) return
 
-  // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable
-  const authHeader = getHeader(event, 'authorization')
-  if (authHeader?.startsWith('Bearer nk_')) return
+  // Skip CSRF for API key bearer auth — not browser-based, not CSRF-vulnerable.
+  // The key parser decides, so the skip matches every spelling auth accepts.
+  if (getApiKeyFromAuthorization(event)) return
 
   const xRequestedWith = getHeader(event, 'x-requested-with')
 

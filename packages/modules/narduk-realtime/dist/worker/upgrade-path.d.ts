@@ -46,9 +46,10 @@ export declare function parseUpgradePath(pattern: string): UpgradePathParse;
  * Match a request pathname against parsed segments.
  *
  * Returns the extracted parameters, or `undefined` when the path does not match.
- * A parameter is percent-decoded (as `getRouterParam` would) and must be
- * non-empty; an undecodable value does not match at all, so a malformed URL
- * falls through to the app rather than reaching a Durable Object name.
+ * Every segment is percent-decoded before it is compared; a parameter (decoded
+ * as `getRouterParam` would) must be non-empty, and an undecodable value does
+ * not match at all, so a malformed URL falls through to the app rather than
+ * reaching a Durable Object name.
  */
 export declare function matchUpgradePath(segments: readonly UpgradePathSegment[], pathname: string): Record<string, string> | undefined;
 //# sourceMappingURL=upgrade-path.d.ts.map

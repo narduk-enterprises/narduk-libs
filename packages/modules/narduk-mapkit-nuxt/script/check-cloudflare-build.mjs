@@ -108,9 +108,10 @@ Object.defineProperties(bindings, {
     enumerable: false,
     value: unsignedTokenWithFutureExpiry(),
   },
+  // The token route's host allow-list: the routed host must be on it.
   MAPKIT_ALLOWED_ORIGINS: {
     enumerable: false,
-    value: 'https://allowed.example',
+    value: 'https://worker.example',
   },
 })
 

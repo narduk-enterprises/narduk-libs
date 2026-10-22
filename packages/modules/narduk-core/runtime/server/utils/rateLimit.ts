@@ -183,12 +183,13 @@ export function resolveRateLimitPolicy(event: H3Event, policy: RateLimitPolicy):
 }
 
 /**
- * The layer's shared resolver, with `x-forwarded-for` trusted as this file always has; the
- * placeholder keeps a request with no address at all in one bucket rather than unlimited. An
- * IPv6 caller is counted by its /64 (narduk-libs#430), exactly as `defineRateLimitedHandler` does.
+ * The layer's shared resolver with `defineRateLimitedHandler`'s defaults: `cf-connecting-ip`, then
+ * the socket, never the client-chosen first `x-forwarded-for` entry (ponytail-5). The placeholder
+ * keeps a request with no address at all in one bucket rather than unlimited. An IPv6 caller is
+ * counted by its /64 (narduk-libs#430), exactly as `defineRateLimitedHandler` does.
  */
 function rateLimitClientIp(event: H3Event): string {
-  return rateLimitClientBucket(getClientIp(event, { trustForwardedFor: true }) ?? '127.0.0.1')
+  return rateLimitClientBucket(getClientIp(event) ?? '127.0.0.1')
 }
 
 /**
@@ -254,7 +255,13 @@ async function enforceCloudflareRateLimit(event: H3Event, policy: RateLimitPolic
 
   const ip = rateLimitClientIp(event)
   const key = `${policy.namespace}:${ip}`
-  const { success } = await limiter.limit({ key })
+  let success = true
+  try {
+    success = (await limiter.limit({ key })).success
+  } catch {
+    // A binding that errors must not take the route down with it; the
+    // in-isolate limiter still gives its verdict.
+  }
 
   if (!success) {
     const retryAfterSec = Math.max(1, Math.ceil(policy.windowMs / 1000))

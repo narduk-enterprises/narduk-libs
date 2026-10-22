@@ -15,7 +15,7 @@ const USERS: Record<string, { email: string; id: string; name: string | null }> 
   other: { id: 'other', email: 'other@family.example', name: 'Sam' },
 }
 
-const holder: { db?: ReturnType<typeof drizzle> } = {}
+const holder: { db?: ReturnType<typeof drizzle>; resourcePath?: string } = {}
 
 vi.mock('nitropack/runtime', () => ({
   defineNitroPlugin: <T>(plugin: T) => plugin,
@@ -26,6 +26,7 @@ vi.mock('nitropack/runtime', () => ({
       resourceName: 'Family',
       scopes: [SCOPE],
       requiredScopes: [SCOPE],
+      ...(holder.resourcePath ? { resourcePath: holder.resourcePath } : {}),
     },
     public: { appUrl: ISSUER },
   }),
@@ -466,6 +467,48 @@ describe('MCP OAuth routes', { timeout: 20_000 }, () => {
       [1, 2, 3].map(async () => (await exchange(clientId, code, verifier)).status),
     )
     expect(statuses.filter((status) => status === 200)).toHaveLength(1)
+  })
+
+  // Ponytail-5 repro (#2003 auth-tenancy-pg #9): a wrong verifier must not burn
+  // the code for the real client. Red before the fix.
+  it('still redeems a code with the real verifier after a wrong-verifier attempt', async () => {
+    const { clientId, verifier, code } = await approvedCode()
+    const wrong = await exchange(clientId, code, `${verifier.slice(0, -4)}AAAA`)
+    expect(wrong.status).toBe(400)
+    const real = await exchange(clientId, code, verifier)
+    expect(await real.json()).toMatchObject({ access_token: expect.any(String) })
+    expect(real.status).toBe(200)
+  })
+
+  // Ponytail-5 repro (#2003 auth-tenancy-pg #3): the bearer guard must cover the
+  // trailing-slash spelling the router still dispatches. Red before the fix.
+  it('challenges a cookie-only POST to /mcp/ like /mcp', async () => {
+    for (const path of ['/mcp', '/mcp/']) {
+      const response = await call(path, {
+        method: 'POST',
+        headers: { 'x-test-user': 'owner' },
+        body: '{}',
+      })
+      expect({ path, status: response.status }).toEqual({ path, status: 401 })
+    }
+  })
+
+  // Review follow-up: the schema accepts a configured `/mcp/`, and the CSRF
+  // exemption still matches both spellings, so the guard must too.
+  it('challenges both spellings when resourcePath is configured with a trailing slash', async () => {
+    holder.resourcePath = '/mcp/'
+    try {
+      for (const path of ['/mcp', '/mcp/']) {
+        const response = await call(path, {
+          method: 'POST',
+          headers: { 'x-test-user': 'owner' },
+          body: '{}',
+        })
+        expect({ path, status: response.status }).toEqual({ path, status: 401 })
+      }
+    } finally {
+      delete holder.resourcePath
+    }
   })
 
   it('answers a metadata-document client it cannot fetch with an error, not a 500', async () => {

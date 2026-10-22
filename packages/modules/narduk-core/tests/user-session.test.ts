@@ -106,6 +106,28 @@ describe('user session cookie defaults', () => {
     expect(config.cookie).toMatchObject({ sameSite: 'lax', secure: true })
   })
 
+  // narduk-libs#2001: fail closed like createSession — Secure unless the Host is local.
+  it('keeps cookies secure for a public Host with no x-forwarded-proto', () => {
+    const config = resolveSessionConfig(createConfigEvent({ host: EXAMPLE_HOST }))
+
+    expect(config.cookie).toMatchObject({ sameSite: 'lax', secure: true })
+  })
+
+  it.each(['localhost', 'localhost:3000', '127.0.0.1'])(
+    'allows a local HTTP Host %j to drop Secure',
+    (host) => {
+      expect(resolveSessionConfig(createConfigEvent({ host })).cookie).toMatchObject({
+        secure: false,
+      })
+    },
+  )
+
+  it('does not treat a lookalike Host as local', () => {
+    const config = resolveSessionConfig(createConfigEvent({ host: 'localhost.example.com' }))
+
+    expect(config.cookie).toMatchObject({ secure: true })
+  })
+
   it('preserves an explicit caller cookie override', () => {
     const config = resolveSessionConfig(
       createConfigEvent({ host: EXAMPLE_HOST, 'x-forwarded-proto': 'https' }),

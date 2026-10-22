@@ -352,3 +352,30 @@ describe('custom delete route built on the helper (#1051)', () => {
     expect(state.signIns).toEqual([])
   })
 })
+
+/**
+ * Ponytail-5 repro (#2003 auth-tenancy-pg #1): a local Sign in with Apple user
+ * has `password_hash = null`. With no hash and an old session, the stock route
+ * must still demand recent re-authentication. Red before the fix.
+ */
+describe('local account with no password (ponytail-5 repro)', () => {
+  beforeEach(() => {
+    state.backend = 'local'
+    state.deleted = 0
+    state.localHashChecks = 0
+    state.localPasswordHash = null
+    state.sessionCreatedAt = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString()
+    state.signIns = []
+    state.upstreamDeletes = []
+    state.user = {
+      ...SUPABASE_EMAIL_USER,
+      authBackend: 'local',
+      authProviders: ['apple'],
+    } as AppSessionUser
+  })
+
+  it('refuses {} from a 29-day-old session instead of deleting the account', async () => {
+    await expect(deleteAccount({})).rejects.toMatchObject({ statusCode: 403 })
+    expect(state.deleted).toBe(0)
+  })
+})
