@@ -642,7 +642,13 @@ describe('checkStagingServesSha', () => {
 describe('versions-promote with staging enabled', () => {
   const PROD_VERSION = 'prod-version'
   function promoteContext(stagingVersions: WorkerVersion[]) {
-    const production = client([deployment('prod-old')], [tagged(PROD_VERSION, SHA)])
+    const production = client(
+      [deployment('prod-old')],
+      [
+        tagged(PROD_VERSION, SHA),
+        { ...tagged('prod-old'), metadata: { created_on: '2026-10-14T00:00:00Z' } },
+      ],
+    )
     const staging = client([deployment(STAGING_VERSION)], stagingVersions)
     return {
       production,
@@ -688,5 +694,22 @@ describe('versions-promote with staging enabled', () => {
       context,
     )
     expect(result.outcome).toBe('dry-run')
+  })
+})
+
+describe('ponytail-5 repro (apptools-src #4)', () => {
+  it('#4 refuses to derive a config that keeps a cross-script Durable Object binding', () => {
+    expect(() =>
+      planStagingConfig({
+        root: '/r',
+        production: {
+          ...PRODUCTION_WRANGLER,
+          durable_objects: {
+            bindings: [{ name: 'ROOM', class_name: 'Room', script_name: 'harmony-hot-sauce' }],
+          },
+        },
+        deployment: block(),
+      }),
+    ).toThrow(/durable_objects/u)
   })
 })

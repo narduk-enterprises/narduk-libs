@@ -44,7 +44,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 
-import { parse as parseJsonc } from 'jsonc-parser'
+import { parse as parseJsonc, type ParseError } from 'jsonc-parser'
 import { z } from 'zod'
 
 import {
@@ -323,6 +323,33 @@ interface ContractOwnedDatabases {
   names: Set<string>
 }
 
+/** The database_id a hand-passed wrangler config binds to `requested`. Throws
+ * when that config cannot be read: ownership must be proven, never assumed. */
+function configuredDatabaseId(
+  options: MigrationOwnershipCheck,
+  requested: string,
+): string | undefined {
+  if (!options.wranglerConfig) return
+  const errors: ParseError[] = []
+  const config = parseJsonc(readFileSync(options.wranglerConfig, 'utf8'), errors, {
+    allowEmptyContent: false,
+    allowTrailingComma: true,
+    disallowComments: false,
+  }) as { d1_databases?: unknown } | undefined
+  if (errors.length > 0) {
+    throw new Error(
+      `Refusing to run migrations: --wrangler-config ${options.wranglerConfig} is not ` +
+        'readable JSON/JSONC, so database ownership cannot be proven.',
+    )
+  }
+  const list = Array.isArray(config?.d1_databases) ? config.d1_databases : []
+  for (const entry of list as Array<Record<string, unknown> | null>) {
+    if (entry?.binding !== requested && entry?.database_name !== requested) continue
+    if (typeof entry.database_id === 'string') return entry.database_id.trim()
+  }
+  return
+}
+
 function contractOwnedDatabases(root: string, bindings: Set<string>): ContractOwnedDatabases {
   const ids = new Set<string>()
   const names = new Set<string>()
@@ -482,6 +509,9 @@ export interface MigrationOwnershipCheck {
    * hole where a hand-written wrangler config points some other binding name
    * at the contract-owned database. */
   databaseId?: string | undefined
+  /** An absolute `--wrangler-config` path. When no databaseId is given, the id
+   * this config binds to `database` is checked instead. */
+  wranglerConfig?: string | undefined
 }
 
 /**
@@ -520,7 +550,7 @@ export function assertMigrationRunnerOwnership(options: MigrationOwnershipCheck)
         `as the binding does.`,
     )
   }
-  const databaseId = options.databaseId?.trim()
+  const databaseId = options.databaseId?.trim() || configuredDatabaseId(options, requested)
   if (databaseId && owned.ids.has(databaseId)) {
     throw new Error(
       `Refusing to run migrations against database ${databaseId}: it is the database of a ` +

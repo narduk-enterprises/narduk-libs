@@ -251,6 +251,10 @@ export function planStagingConfig(options: {
     )
     const queues = production.queues as Record<string, unknown[]> | undefined
     if (queues && (queues.producers?.length || queues.consumers?.length)) unisolated.push('queues')
+    // A Durable Object bound by script_name lives in another Worker (production's).
+    const dos = production.durable_objects as
+      { bindings?: Array<{ script_name?: string }> } | undefined
+    if (dos?.bindings?.some((binding) => binding.script_name)) unisolated.push('durable_objects')
     if (unisolated.length > 0) {
       throw new Error(
         `the production config binds ${unisolated.join(', ')}, which a derived staging config ` +

@@ -1812,6 +1812,20 @@ async function promoteVersion(
   }
 
   let forced: true | undefined
+  // Every guard below reads the live version. A split deployment, or a live
+  // version outside the listed window, would otherwise skip them all and let a
+  // stale promote through as `promoted`. No deployment at all stays allowed.
+  if (deployments.length > 0 && !liveVersion) {
+    const detail =
+      (previousVersionId
+        ? `The live version ${previousVersionId} is not in the ${versions.length} listed versions`
+        : 'Production does not serve a single version at 100% (split or undated deployments)') +
+      ', so the ship, ancestry and ordering guards cannot run. Refusing rather than risking a ' +
+      'silent roll-back of production. Raise --max-versions, or pass --force to deploy it anyway.'
+    if (!flags.force) return refuse('stale-promote', PROMOTE_EXIT.stalePromote, detail)
+    forced = true
+    console.warn(`[promote] !! FORCED PAST THE LIVE-VERSION GUARD -- ${detail}`)
+  }
   // A `narduk-app ship` version serves a commit that may not be on main yet.
   // Promoting a main commit that lacks it would silently undo shipped work, so
   // promotion waits until main contains it (the ship's PR merges).
