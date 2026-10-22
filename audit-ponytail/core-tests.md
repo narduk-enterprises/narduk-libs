@@ -4,7 +4,7 @@ What this repo does: narduk-libs publishes the shared Nuxt packages that Narduk 
 
 Load I assumed: a published library on many Nuxt apps, each serving concurrent Cloudflare Worker requests. A test is doing its job when the risky check breaks and that test fails in CI. I treated per-isolate memory as real and not shared across isolates. I treated `cf-connecting-ip` as present on traffic that actually comes through Cloudflare.
 
-6 smaller notes are left out, after the findings.
+5 smaller notes are left out, after the findings.
 
 ## Must fix
 
@@ -28,9 +28,19 @@ Fix: Add tests that call `validateUrl` and `fetchWithValidatedRedirects` with a 
 
 If we skip it: The fetcher can start following redirects, or allowing `localhost.`, and CI stays green.
 
+### 3. Auth and cron mutation wrappers have no test — `runtime/server/utils/mutation.ts:181-253`
+
+What this is: `defineUserMutation`, `defineAdminMutation`, and `defineCronMutation` (`:378-407`). Each is supposed to rate-limit, then require a user, an admin, or `requireCronAuth`, and only then run the handler. Nothing under `tests/` imports them. `mutation-validation.test.ts` only imports `describeValidationFailure`. The code is outside `tests/`.
+
+Problem: Delete the `resolveUserWithScopes` call at line 201, or the `requireCronAuth` call at line 394, and call the handler anyway. Every current test still passes. A user route then runs with no session. A cron route accepts a POST with no `CRON_SECRET`. `requireAuth` and `requireCronAuth` have their own tests. Those tests do not call these wrappers.
+
+Fix: One real h3 request per wrapper. Auth failure is 401 or 403 and the handler is not called. A non-admin session does not satisfy `defineAdminMutation`. A cron POST with no secret is 401.
+
+If we skip it: A one-line edit ships a write route with no identity check. This package will not catch it.
+
 ## Should fix
 
-### 3. The login limiter trusts `X-Forwarded-For`, and its test never calls it — `runtime/server/utils/rateLimit.ts:186-248`
+### 4. The login limiter trusts `X-Forwarded-For`, and its test never calls it — `runtime/server/utils/rateLimit.ts:186-248`
 
 What this is: `enforceRateLimit`, used by `mutation.ts` for `authLogin` and the other auth policies. `tests/rateLimit.test.ts:29-39` only checks that two policy name strings appear in the source. The code is outside `tests/`.
 
@@ -40,7 +50,7 @@ Fix: Stop passing `trustForwardedFor: true`. Add a test where two different `X-F
 
 If we skip it: Off Cloudflare, rotating one header defeats the login limit, and the key map grows with each new header. The source-text test stays green.
 
-### 4. Demo redirect path turns into another host — `runtime/server/utils/demo.ts:40-51`
+### 5. Demo redirect path turns into another host — `runtime/server/utils/demo.ts:40-51`
 
 What this is: `normalizeDemoRedirectPath`. Nothing in this repo calls it. `tests/fixtures/consumer-server-globals.d.ts` exists so typecheck knows about the `createError` this file uses without an import. The code is outside `tests/`.
 
@@ -50,7 +60,7 @@ Fix: Search fleet imports of `server/utils/demo`. If there are none, delete `dem
 
 If we skip it: An app that sends this return value to the browser sends the user to the other host. CI stays green.
 
-### 5. Hard-coded CSRF skips have no boundary test — `runtime/server/middleware/csrf.ts:71-93`
+### 6. Hard-coded CSRF skips have no boundary test — `runtime/server/middleware/csrf.ts:71-93`
 
 What this is: Skips for webhooks, cron, callbacks, auth, Nuxt Content, `/api/owner-tag`, and `Authorization: Bearer nk_`. The exempt-path grammar in `csrf-exempt-paths.test.ts` is tested. These skips are not. `csrf-middleware.test.ts` never posts to them and never sends `Authorization`.
 
@@ -60,7 +70,7 @@ Fix: Match those paths with `isCsrfExemptPath`, including `/api/owner-tag`. Add 
 
 If we skip it: A one-character edit widens the webhook skip, and the owner-tag route 403s as soon as the URL has a query string.
 
-### 6. CORS middleware has no test — `runtime/server/middleware/cors.ts:21-65`
+### 7. CORS middleware has no test — `runtime/server/middleware/cors.ts:21-65`
 
 What this is: The `/api/*` CORS handler. No test imports it.
 
@@ -70,7 +80,7 @@ Fix: One test. An origin that is not on the list gets no `Access-Control-Allow-O
 
 If we skip it: A reflected-origin change ships on a green suite.
 
-### 7. The "ignore forwarded-for" test allows a wrong address — `tests/client-ip.test.ts:32-36`
+### 8. The "ignore forwarded-for" test allows a wrong address — `tests/client-ip.test.ts:32-36`
 
 What this is: The test named "ignores x-forwarded-for by default".
 
@@ -80,7 +90,7 @@ Fix: Assert the exact value this request has with that header ignored (the socke
 
 If we skip it: A change that keys rate limits on the forwarded header, in a shape other than the first address alone, stays green.
 
-### 8. The three CSRF header injectors are not run — `runtime/app/plugins/fetch.client.ts:18-26`
+### 9. The three CSRF header injectors are not run — `runtime/app/plugins/fetch.client.ts:18-26`
 
 What this is: `fetch.client.ts`, `useCsrfFetch` (`runtime/app/composables/useCsrfFetch.ts:22-36`), and `useAppFetch`. `tests/useAppFetch.test.ts:30-33` only checks that the source contains an import line. No test executes the header injection. The middleware tests assume the header is present.
 
@@ -90,9 +100,59 @@ Fix: One test per helper. A relative POST gets the header. An absolute same-orig
 
 If we skip it: The middleware suite stays green while clients stop sending the header, and mutations 403. Or the plugin marks a protocol-relative URL as same-origin.
 
+### 10. Image redirect leaves `/_og/` after the check — `runtime/server/routes/cdn-cgi/image/[...path].ts:23-37`
+
+What this is: The local-dev stand-in for `/cdn-cgi/image/...`. It keeps a redirect only when the path starts with `/_og/`. No test imports this file. The code is outside `tests/`.
+
+Problem: A path `w=80/_og/../../api/secret` builds `/_og/../../api/secret`, which starts with `/_og/`, so the guard allows it. `new URL` then normalizes the pathname to `/api/secret`, and the handler redirects there. The comment says the guard exists to stop an open redirect. A path outside `/_og/` is where the browser lands.
+
+Fix: Reject unless the normalized pathname still starts with `/_og/`. Add that case.
+
+If we skip it: A local image URL redirects the browser to any other path on the same host, including `/api/...`. CI stays green.
+
+### 11. Sitemap rate-limit exemption matches dot-segments — `runtime/server/rate-limit/policy.ts:145-153`
+
+What this is: `isRateLimitExemptPath`, used by `defineRateLimitedHandler` on `event.path`. Tests lock the query string and reject `/robots.txt.map`. They do not send a dot-segment.
+
+Problem: `/sitemap/*` is a prefix. `isRateLimitExemptPath('/sitemap/../api/admin', RATE_LIMIT_DEFAULT_EXEMPT_PATHS)` is true. The same path normalized by `new URL` is `/api/admin`. `/__sitemap__/../api/login` is exempt the same way. CSRF exemptions refuse `.` and `..` for this reason. This one does not.
+
+Fix: Return false when the path contains a `.` or `..` segment, and add those two paths as tests.
+
+If we skip it: A request path that still contains `..` skips the limiter on the way to `/api/admin`.
+
+### 12. `Set-Cookie` after the cache profile stays public — `runtime/server/utils/cacheProfile.ts:271-281`
+
+What this is: `findSuppression` downgrades to `private, no-store` when `Set-Cookie` is already on the response. The only cookie test, `tests/cache-profile.test.ts:205-213`, sets the cookie and then calls `setCacheProfile`. The code is outside `tests/`.
+
+Problem: Call `setCacheProfile(event, 'live')` first. Then set `Set-Cookie: session=abc`. Nothing in `beforeResponse` looks at `Set-Cookie`. The response keeps `Cache-Control: public` and `CDN-Cache-Control: public` plus the cookie. Preferences and errors re-check at `beforeResponse` because their flags show up later. This one does not.
+
+Fix: Add the reverse-order case. Downgrade in `beforeResponse` the way `preferences-cache.ts` already does, and assert `CDN-Cache-Control` is absent.
+
+If we skip it: A shared cache can store one caller’s session cookie under a public profile. The existing test stays green.
+
+### 13. D1 cache tests never check the bound key — `tests/d1-cache-stale.test.ts:22-24`
+
+What this is: The fake `first()` behind `withD1Cache`. Production reads `SELECT value, expires_at FROM kv_cache WHERE key = ?` in `runtime/server/utils/d1Cache.ts`.
+
+Problem: The fake returns the fixture row for every statement whose SQL starts with `SELECT`. It never reads the bound key. Drop the `WHERE` clause and every test in that file still passes, including the stale-window cases. On real D1, `.first()` then returns whichever row it finds first. The cache key is the tenant boundary for this helper.
+
+Fix: Assert the prepared SQL and the bound key, or run the read through the same D1 harness `worker-cache-version-d1.test.ts` already uses.
+
+If we skip it: A refactor that drops the predicate serves another key’s JSON and this file stays green.
+
+### 14. Default security headers are checked as substrings — `tests/security-headers-staging.test.ts:51-58`
+
+What this is: The test for the headers apps get when the strict preset is off.
+
+Problem: The assertion is `toContain("default-src 'self'")`. `default-src 'self' *` and `default-src 'self' https:` still contain that text. `permissions-policy` is `toContain('camera=()')`. `camera=(), microphone=*` still contains `camera=()`. `tests/security-headers.test.ts:86-91` drops every quoted script source before comparing hosts, so adding `'unsafe-inline'` or `'unsafe-eval'` does not change that list. The strict preset tests do forbid those tokens. The default middleware, which mode `off` serves, is not pinned to the full header.
+
+Fix: Assert the full `Content-Security-Policy` and `Permissions-Policy` strings, including the quoted script sources and `microphone=()` and `geolocation=()`.
+
+If we skip it: The policy apps serve today can grow `*` on `default-src` or `microphone`, and this file stays green.
+
 ## Nice to have
 
-### 9. A source test keeps a showcase login policy that shares the real login bucket — `runtime/server/utils/rateLimit.ts:120`
+### 15. A source test keeps a showcase login policy that shares the real login bucket — `runtime/server/utils/rateLimit.ts:120`
 
 What this is: `RATE_LIMIT_POLICIES.showcaseAuthLogin`. The only other mention is `tests/rateLimit.test.ts:34-38`, which requires that source line to exist.
 
@@ -102,9 +162,9 @@ Fix: Confirm no app reads `RATE_LIMIT_POLICIES.showcaseAuthLogin`. Then delete t
 
 If we skip it: The string test blocks removal, and any caller of the showcase policy spends the real login budget.
 
-6 smaller ones left out: the bcrypt cost check is locked at cost 30 and not at 13; `systemPrompts.ts` and the Hyperdrive helper have no behavior test; several UI composables have no test; `requireAuth` calls `authenticateApiKey` again on a path the first branch already returned from (that dead call is in `runtime/server/utils/auth.ts`, outside this lane); a handful of other tests read source text, and I did not find a wrong result in them.
+5 smaller ones left out: `database.ts` `.get()` already returns the first row, and no test would catch a change that returns every row; a rate-limit binding test is a single request, so an always-success binding that replaces the window verdict stays green; `use-shared-now.test.ts` defines its own `useSharedNow`, so a wrong `useState` key in the real composable stays green; `runtime/server/api/runtime/public.get.ts` sets `private, no-store` and no test imports that route; `useMarkdown` allows any `data:image/` URL in an `img` tag, which does not run script.
 
-Verdict: Sessions, the CSRF path grammar, shared secrets, SQL binding, cache privacy, and job leases have tests that fail when the check breaks. The SSRF allow-list and the old login limiter do not. A green run does not cover those two.
+Verdict: Sessions, the CSRF path grammar, shared secrets, SQL binding, cache privacy, and job leases have tests that fail when the check breaks. The SSRF allow-list, the mutation wrappers, and the old login limiter do not. A green run does not cover those.
 
 Lean: -1335 lines, -1 dependency possible. That is `demo.ts` (51) if nothing imports it, plus `urlValidator.ts` (1227), `unfurlResponseUtils.ts` (56), and `undici` if nothing imports the fetcher, plus the showcase policy line after the same kind of check. Do not delete either file on a guess. Both are public `server/*` exports.
 

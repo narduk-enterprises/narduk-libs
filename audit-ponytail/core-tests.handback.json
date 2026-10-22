@@ -4,6 +4,6 @@
   "pr_urls": [],
   "heads": ["fde5fd5e4bf549e9421cac12594d37185e92eff0"],
   "checks": [],
-  "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 2 must, 6 should, 1 nice. The SSRF fetcher and the 192.0.0.9 allow have no failing test. The old login limiter trusts X-Forwarded-For when cf-connecting-ip is absent. No source change. Audit commit fde5fd5e4bf549e9421cac12594d37185e92eff0.",
+  "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 3 must, 11 should, 1 nice. The SSRF fetcher, the 192.0.0.9 allow, and the mutation auth wrappers have no failing test. The old login limiter trusts X-Forwarded-For when cf-connecting-ip is absent. No source change.",
   "needs_logan": false
 }
