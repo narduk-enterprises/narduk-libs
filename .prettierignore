@@ -29,6 +29,10 @@ output/
 apps/web/.data
 .snapshots
 
+# Portal-owned read-through cache materialized by worktree-bootstrap, excluded
+# from Git locally; formatting is owned by the portal, not this repository.
+/Config/project-lifecycle.json
+
 # ── Local env files ─────────────────────────────────────────────────────
 .env
 .env.*

@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import getReleasePlan from '@changesets/get-release-plan'
 
 import { loadWorkspace } from './compute-affected-packages.mjs'
+import { refreshComparisonBase } from './git-base-refresh.mjs'
 import { ignoredWorktreeWarning } from './release-plan-worktree.mjs'
 import {
   classifyChangedPackages,
@@ -165,6 +166,7 @@ function main() {
     baseBranch: changesetsBaseBranch(),
     refExists,
   })
+  const refreshNote = refreshComparisonBase(root, base)
   const workspace = loadWorkspace(root)
   const pinnedLocalPackages = generatorPinnedPackages(workspace)
 
@@ -249,7 +251,9 @@ function main() {
       )
     }
 
-    process.stdout.write(`${baseNote} Merge base ${mergeBase.slice(0, 12)}.\n`)
+    process.stdout.write(
+      `${baseNote}${refreshNote ? ` ${refreshNote}` : ''} Merge base ${mergeBase.slice(0, 12)}.\n`,
+    )
     for (const verdict of [guardVerdict, pinVerdict]) {
       if (verdict.ok) process.stdout.write(verdict.text)
       else process.stderr.write(verdict.text)
