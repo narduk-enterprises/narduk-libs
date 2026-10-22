@@ -316,6 +316,11 @@ usePageSeo({ title: 'Trades', description: 'Every fill in this game.' })
   `buildPageTitle(title, { siteName, separator })`.
 - `titleSeparator: '|'` changes the separator; `titleSuffix: false` leaves the
   bare title (a home page whose title already is the whole line).
+- Precedence: Unhead keeps one `titleTemplate`, and the page's call is the more
+  specific one, so it replaces an app-wide template (a `titleTemplate` in
+  `nuxt.config`, or one from another SEO module) rather than stacking on it.
+  Pages that call `usePageSeo` get this title only; set the separator there, not
+  in a second template.
 
 ## Sitemap `<lastmod>`
 

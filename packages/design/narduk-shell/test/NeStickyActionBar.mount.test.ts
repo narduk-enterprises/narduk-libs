@@ -56,9 +56,9 @@ describe('NeStickyActionBar', () => {
     const wrapper = mount(NeStickyActionBar)
     expect(wrapper.get('[role="group"]').attributes('aria-label')).toBe('Actions')
     expect(wrapper.attributes('data-phone-only')).toBeDefined()
-    expect(
-      mount(NeStickyActionBar, { props: { phoneOnly: false } }).attributes('data-phone-only'),
-    ).toBeUndefined()
+    const wide = mount(NeStickyActionBar, { props: { phoneOnly: false } })
+    expect(wide.attributes('data-phone-only')).toBeUndefined()
+    wide.unmount()
     wrapper.unmount()
   })
 
@@ -96,6 +96,21 @@ describe('NeStickyActionBar', () => {
     const second = mount(NeStickyActionBar)
     second.unmount()
     expect(root().style.getPropertyValue('--ne-bottom-bar-h')).toBe('')
+  })
+
+  it('keeps the newest bar\'s height when an older bar leaves mid page transition', () => {
+    stubHeight(60)
+    root().style.setProperty('--ne-bottom-bar-h', '3rem')
+    const outgoing = mount(NeStickyActionBar)
+    stubHeight(80)
+    const incoming = mount(NeStickyActionBar)
+    expect(root().style.getPropertyValue('--ne-bottom-bar-h')).toBe('80px')
+
+    outgoing.unmount() // the old page leaves after the new one has mounted
+    expect(root().style.getPropertyValue('--ne-bottom-bar-h')).toBe('80px')
+
+    incoming.unmount()
+    expect(root().style.getPropertyValue('--ne-bottom-bar-h')).toBe('3rem')
   })
 
   it('works where there is no ResizeObserver', () => {

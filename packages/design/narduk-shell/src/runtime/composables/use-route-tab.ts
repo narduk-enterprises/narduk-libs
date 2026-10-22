@@ -79,6 +79,7 @@ export function useRouteTab(options: NeRouteTabOptions): NeRouteTab {
 
   // The tab the visitor just chose, shown before the route has caught up.
   const chosen = ref<string | null>(null)
+  let pending = 0
 
   const fromRoute = computed(() => {
     const named = firstValue(route.query[param])
@@ -89,13 +90,16 @@ export function useRouteTab(options: NeRouteTabOptions): NeRouteTab {
     if (!tabs.value.includes(value)) return
     if (value === fromRoute.value && chosen.value === null) return
     chosen.value = value
+    const mine = ++pending
     const query: LocationQueryRaw = { ...route.query }
     if (value === fallback.value && !options.keepDefault) delete query[param]
     else query[param] = value
     try {
       await router.replace({ query, hash: route.hash })
     } finally {
-      chosen.value = null
+      // A later click owns `chosen` now; clearing it here would flash the
+      // route's older tab for a frame.
+      if (mine === pending) chosen.value = null
     }
   }
 

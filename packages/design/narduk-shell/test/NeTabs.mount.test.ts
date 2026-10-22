@@ -31,6 +31,17 @@ const label = (tab: { get: (selector: string) => { text: () => string } }) =>
 const selected = (wrapper: ReturnType<typeof mount>) =>
   tabs(wrapper).filter((tab) => tab.attributes('aria-selected') === 'true')
 
+describe('NeTabs edge cases', () => {
+  it('names no labelling tab when every tab is disabled', () => {
+    const wrapper = mount(NeTabs, {
+      props: { items: items.map((item) => ({ ...item, disabled: true })) },
+      slots: { default: () => 'panel' },
+    })
+    expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBeUndefined()
+    wrapper.unmount()
+  })
+})
+
 describe('NeTabs structure', () => {
   it('is a named tablist of tabs with one selected, the first enabled by default', () => {
     const wrapper = mount(NeTabs, { props: { items, label: 'Game sections' } })

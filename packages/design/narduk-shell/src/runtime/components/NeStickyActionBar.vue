@@ -16,7 +16,7 @@
  * 3. **Focus and anchors land clear.** While mounted and visible it sets
  *    `--ne-bottom-bar-h` on the document, the token `theme.css` turns into
  *    `scroll-padding-bottom`, so a focused field or an anchor jump scrolls above
- *    the bar. It puts the old value back when it leaves.
+ *    the bar. It puts the old value back when the last bar leaves.
  *
  * Put it where the page's content ends, once per page. By default it exists
  * only below `md`; on a wider screen it and its spacer are `display: none`.
@@ -25,6 +25,8 @@
  * out as a flex row (give a button `class="flex-1"` to share the width).
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+
+import { claimBottomBarToken, releaseBottomBarToken } from './ne-sticky-action-bar-token'
 
 import type { NeStickyActionBarProps } from './ne-sticky-action-bar-types'
 
@@ -42,21 +44,19 @@ const bar = ref<HTMLElement | null>(null)
 /** The measured height in px; `null` until mounted. */
 const height = ref<number | null>(null)
 
-const TOKEN = '--ne-bottom-bar-h'
 let observer: ResizeObserver | undefined
-let root: HTMLElement | undefined
-let previousToken = ''
+const entry = { px: 0 }
 
 function publish(px: number) {
   height.value = px
-  root?.style.setProperty(TOKEN, `${px}px`)
+  entry.px = px
+  claimBottomBarToken(entry)
 }
 
 onMounted(() => {
   const element = bar.value
   if (!element) return
-  root = element.ownerDocument.documentElement
-  previousToken = root.style.getPropertyValue(TOKEN)
+  claimBottomBarToken(entry, element.ownerDocument.documentElement)
   publish(element.offsetHeight)
   if (typeof ResizeObserver === 'undefined') return
   observer = new ResizeObserver(() => publish(element.offsetHeight))
@@ -65,9 +65,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   observer?.disconnect()
-  if (!root) return
-  if (previousToken) root.style.setProperty(TOKEN, previousToken)
-  else root.style.removeProperty(TOKEN)
+  releaseBottomBarToken(entry)
 })
 </script>
 

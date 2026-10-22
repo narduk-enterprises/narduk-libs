@@ -83,8 +83,11 @@ describe('useUndoToast', () => {
     const outcome = undo.show({ title: 'Removed AAPL' })
     const toast = await toastOf(toasts)
 
+    // The order a real toaster uses: the close is reported first, then the
+    // button's own onClick, in the same task. (use-undo-toast.toaster.test.ts
+    // proves it against the real <UToaster>.)
+    toast['onUpdate:open'](false)
     toast.actions[0]!.onClick()
-    toast['onUpdate:open'](false) // the action closes the toast right after
 
     await expect(outcome).resolves.toBe('undone')
     wrapper.unmount()
@@ -110,6 +113,7 @@ describe('useUndoToast', () => {
     const toast = await toastOf(toasts)
 
     toast['onUpdate:open'](false)
+    await new Promise((resolve) => setTimeout(resolve, 5)) // a later task: the close stands
     toast.actions[0]!.onClick()
 
     await expect(outcome).resolves.toBe('committed')

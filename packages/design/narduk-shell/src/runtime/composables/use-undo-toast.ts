@@ -23,7 +23,8 @@
  *
  * - `'undone'` — the Undo action was pressed.
  * - `'committed'` — anything else closed the toast: the countdown ran out, the
- *   close button, a swipe, Escape, or `useToast().remove(id)`.
+ *   close button, a swipe, Escape, or `useToast().remove(id)` (the toast
+ *   leaving the toaster's list counts as a close).
  *
  * It never rejects. `onUndo` / `onCommit` run just before it resolves, for a
  * caller who prefers callbacks to `await`.
@@ -43,6 +44,7 @@
  * reads an injection that only exists there.
  */
 import { useToast } from '@nuxt/ui/composables/useToast'
+import { watch } from 'vue'
 
 /** How long the Undo stays offered, in milliseconds (the 6-8 second band). */
 export const NE_UNDO_DURATION_MS = 7000
@@ -78,10 +80,12 @@ export function useUndoToast(): NeUndoToast {
   function show(options: NeUndoToastOptions): Promise<NeUndoOutcome> {
     return new Promise<NeUndoOutcome>((resolve) => {
       let settled = false
+      let stopWatching: (() => void) | undefined
 
       async function settle(outcome: NeUndoOutcome) {
         if (settled) return
         settled = true
+        stopWatching?.()
         try {
           await (outcome === 'undone' ? options.onUndo?.() : options.onCommit?.())
         } finally {
@@ -89,7 +93,7 @@ export function useUndoToast(): NeUndoToast {
         }
       }
 
-      toaster.add({
+      const toast = toaster.add({
         title: options.title,
         description: options.description,
         icon: options.icon,
@@ -104,17 +108,30 @@ export function useUndoToast(): NeUndoToast {
             label: options.undoLabel ?? 'Undo',
             color: 'neutral',
             variant: 'outline',
-            // The action closes the toast right after this runs; `settled`
-            // makes the close that follows a no-op instead of a commit.
             onClick: () => {
               void settle('undone')
             },
           },
         ],
+        // Pressing the action closes the toast too, and in a real Nuxt UI
+        // toaster the close is reported BEFORE the action's own `onClick` (Reka's
+        // ToastAction runs the toast's close first). Reading `open: false` as a
+        // commit on the spot would therefore beat every Undo press. The close
+        // is deferred one macrotask, so the same click's `onClick` settles
+        // 'undone' first; a close nobody claims is then a commit.
         'onUpdate:open': (open: boolean) => {
-          if (!open) void settle('committed')
+          if (!open) setTimeout(() => void settle('committed'), 0)
         },
       })
+
+      // `useToast().remove(id)` drops the toast without a close event, so also
+      // watch the list: leaving it is a close.
+      stopWatching = watch(
+        () => toaster.toasts.value.some((entry) => entry.id === toast.id),
+        (present) => {
+          if (!present) setTimeout(() => void settle('committed'), 0)
+        },
+      )
     })
   }
 

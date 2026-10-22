@@ -30,7 +30,7 @@
  * Styling contract: tokens only.
  */
 import UIcon from '@nuxt/ui/components/Icon.vue'
-import { computed, nextTick, onMounted, ref, toRefs, toValue, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUpdate, onMounted, ref, toRefs, toValue, useId, watch } from 'vue'
 
 import { useReducedMotion } from '../composables/use-reduced-motion'
 import { useRouteTab } from '../composables/use-route-tab'
@@ -93,6 +93,11 @@ const activeIndex = computed(() => props.items.findIndex((item) => item.value ==
 
 const list = ref<HTMLElement | null>(null)
 const buttons = ref<HTMLElement[]>([])
+
+// Refs for tabs that left `items` would linger; re-collect on each render.
+onBeforeUpdate(() => {
+  buttons.value.length = 0
+})
 
 function focusTab(index: number) {
   buttons.value[index]?.focus()
@@ -176,7 +181,7 @@ watch(active, async () => {
       class="ne-tabs__panel"
       role="tabpanel"
       tabindex="0"
-      :aria-labelledby="tabId(activeIndex)"
+      :aria-labelledby="activeIndex >= 0 ? tabId(activeIndex) : undefined"
     >
       <slot :value="active" />
     </div>
