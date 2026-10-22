@@ -2,7 +2,7 @@
   "lane": "generator-small-design",
   "status": "done",
   "pr_urls": [],
-  "heads": [],
+  "heads": ["a3ff3df75517ed2a3e37ba72ca9fb3a9a4341e6a"]
   "checks": [],
   "summary": "Read-only ponytail audit of create-narduk-app, design-system-build, narduk-app, and narduk-ui. 20 findings: 7 must, 12 should, 1 nice. 17 smaller ones left out. Must-fix: the JSON body reader accepts form posts and has no size cap; upgrade --write advances a CI pin the caller cannot start; Dependabot npm limit 1 blocks the safe lane; NsRangeBar layout; naive timestamps disagree between UTC Workers and US browsers.",
   "needs_logan": false
