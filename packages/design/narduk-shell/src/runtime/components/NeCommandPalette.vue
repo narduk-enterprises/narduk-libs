@@ -325,7 +325,8 @@ async function go(to: string) {
     return
   }
   if (isAbsolute(to)) {
-    if (import.meta.client) window.location.assign(to)
+    // Only http(s) leaves the app; `javascript:` and `//host` targets are dropped.
+    if (import.meta.client && /^https?:\/\//i.test(to)) window.location.assign(to)
     return
   }
   await router.push(to)

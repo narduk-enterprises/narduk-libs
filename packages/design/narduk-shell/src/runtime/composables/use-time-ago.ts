@@ -43,7 +43,7 @@
  */
 import { computed, getCurrentScope, onScopeDispose, shallowRef, toValue } from 'vue'
 
-import { formatDate, formatDateTime, formatRelative } from '../../format'
+import { formatDate, formatDateTime, formatRelative, instantOf } from '../../format'
 
 import type { NeDateInput } from '../../format'
 import type { ComputedRef, MaybeRefOrGetter } from 'vue'
@@ -139,14 +139,6 @@ export function timeAgoSubscriberCount(): number {
 /* -------------------------------------------------------------------------- */
 /* The composable                                                              */
 /* -------------------------------------------------------------------------- */
-
-function instantOf(value: NeDateInput): number | undefined {
-  if (value === null || value === undefined) return undefined
-  const ms =
-    value instanceof Date ? value.getTime() : typeof value === 'number' ? value : Date.parse(value)
-  // `Date` itself refuses anything beyond +-8.64e15 ms (`toISOString` throws).
-  return Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? ms : undefined
-}
 
 export function useTimeAgo(
   value: MaybeRefOrGetter<NeDateInput>,

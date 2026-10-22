@@ -539,7 +539,13 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
       const changed =
         page !== pageRef.value || search !== searchApplied.value || sort !== sortRef.value
       pageRef.value = page
-      searchInput.value = search
+      // A pending debounce means the box is ahead of the URL: keep what was typed
+      // unless the URL itself moved to a different search.
+      if (debounceTimer === undefined || search !== searchApplied.value) {
+        if (debounceTimer !== undefined) clearTimeout(debounceTimer)
+        debounceTimer = undefined
+        searchInput.value = search
+      }
       searchApplied.value = search
       sortRef.value = sort
       if (changed && schedules) schedule()

@@ -133,10 +133,11 @@ export function useCursorCollection<T>(options: NeCursorCollectionOptions<T>) {
     if (!route) return
     const incoming = text(route.query.cursor) || null
     const incomingQ = text(route.query.q).slice(0, LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH)
-    const incomingSort = validSort(route.query.sort) ?? options.sort ?? null
-    if (incoming !== cursor.value) { previous.length = 0; cursor.value = incoming }
+    // A URL without a sort keeps the untouched default; any other sort was set (or cleared) and so is cleared.
+    const incomingSort = validSort(route.query.sort) ?? (route.query.sort === undefined && sort.value === (options.sort ?? null) ? sort.value : null)
     if (incomingQ !== appliedQ.value) { clearTimeout(timer); reset(); q.value = incomingQ; appliedQ.value = incomingQ }
     if (incomingSort !== sort.value) { reset(); sort.value = incomingSort }
+    if (incoming !== cursor.value) { previous.length = 0; cursor.value = incoming }
   })
   onScopeDispose(() => { disposed = true; queued = false; clearTimeout(timer); controller?.abort() })
   if (options.immediate !== false && enabled.value) void refresh()
