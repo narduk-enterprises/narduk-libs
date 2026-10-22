@@ -1,0 +1,11 @@
+{
+  "lane": "geogrid",
+  "status": "done",
+  "pr_urls": [],
+  "heads": {
+    "audit/ponytail-5/geogrid": "b5b335a2418950f50dbf4992e8901d1bfc8fa450"
+  },
+  "checks": [],
+  "summary": "Read-only ponytail audit of packages/modules/geogrid-web. 2 must-fix, 5 should-fix, 1 nice. No source changes. No PR.",
+  "needs_logan": false
+}
