@@ -1,0 +1,9 @@
+{
+  "lane": "shell-tests",
+  "status": "done",
+  "pr_urls": [],
+  "heads": [],
+  "checks": [],
+  "summary": "Ponytail audit of packages/design/narduk-shell/test. 1 must-fix, 7 should-fix, 1 nice. Cursor URL back-navigation drops the cursor. Report: audit-ponytail/shell-tests.md.",
+  "needs_logan": false
+}
