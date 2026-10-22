@@ -1,0 +1,83 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "narduk-core.session.secure-follows-request-protocol",
+    "title": "Layer session Secure flag follows the request protocol header",
+    "description": "setLayerUserSession, replaceLayerUserSession, clearLayerUserSession, and getLayerUserSession pass resolveSessionConfig to h3 useSession, which seals the layer session and sets its cookie. resolveSessionConfig sets cookie.secure only when getRequestProtocol(event) returns https, and sets sameSite to lax. That object does not set httpOnly. Locked h3 1.15.11 spreads a default cookie of path /, secure true, and httpOnly true, then overlays this config, so the protocol bit replaces the default Secure flag while HttpOnly remains unless a caller override removes it. That HttpOnly default is calibration, not a second defect. createSession writes a different cookie and sets httpOnly plus secure from a localhost or 127.0.0.1 Host prefix; it does not close this flag. A caller cookie override can force secure false, but that caller is the app, the same principal as the helper. Locked h3 returns https when x-forwarded-proto is exactly the string https, and otherwise only when node.req.connection.encrypted is truthy. A header of http does not by itself force http on an encrypted socket. The unit-test stub uses an empty connection, so a missing header yields secure false and an exact https header yields secure true. The helper does not read Host. On the Nitro Cloudflare handlers locked in this workspace, node-mock-http 1.0.4 sets connection.encrypted only when its protocol option is exactly https, while those handlers pass URL.protocol (https: or http:). That comparison fails, so the socket bit stays unset and an exact https header is the only input that makes the flag true. Whether the deployed edge replaces X-Forwarded-Proto with the scheme it terminated is not in this repository. This session did not mint a cookie.",
+    "claimed_root_cause": "cookie.secure is bound to getRequestProtocol(event) === 'https'. On the unencrypted stub the in-repo test builds, x-forwarded-proto of exactly https selects secure true and its absence selects secure false. Locked h3 does not treat any other header value as https, and the locked Nitro Cloudflare adapter does not mark the socket encrypted from URL.protocol.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 163,
+        "scope": "layer session write",
+        "description": "setLayerUserSession takes the request event and writes the layer session. The untrusted input is the event protocol, not the session data. getLayerUserSession at line 160 uses the same config and can mint a cookie when the request has none."
+      },
+      {
+        "kind": "propagation",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 66,
+        "scope": "cookie flags",
+        "description": "secure is true only when getRequestProtocol(event) returns https. sameSite is lax. This object does not set httpOnly. A caller cookie override spread after secure can replace it."
+      },
+      {
+        "kind": "sink",
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 168,
+        "scope": "h3 useSession",
+        "description": "useSession receives that config. h3's default cookie sets httpOnly and secure true, then this config's secure value replaces the default, so the Set-Cookie Secure option is the protocol-derived boolean."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/user-session.ts",
+        "line": 66,
+        "description": "The Secure flag is the equality of getRequestProtocol(event) with https. Host is not consulted."
+      },
+      {
+        "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+        "line": 95,
+        "description": "A stub whose headers are only host 127.0.0.1:3011, with an empty connection, expects secure false. The assertion does not show a Host special case."
+      },
+      {
+        "file": "packages/modules/narduk-core/tests/user-session.test.ts",
+        "line": 101,
+        "description": "The test named for HTTPS behind Cloudflare expects secure true when x-forwarded-proto is https. It does not cover a missing or non-https header on a public host."
+      },
+      {
+        "file": "packages/modules/narduk-core/runtime/server/utils/auth.ts",
+        "line": 164,
+        "description": "createSession sets secure from a localhost or 127.0.0.1 Host prefix and sets httpOnly on the previous line. That is a different cookie."
+      },
+      {
+        "file": "node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs",
+        "line": 320,
+        "description": "getRequestProtocol returns https only when x-forwarded-proto is exactly https, otherwise only when connection.encrypted is truthy."
+      },
+      {
+        "file": "node_modules/.pnpm/h3@1.15.11/node_modules/h3/dist/index.mjs",
+        "line": 1427,
+        "description": "useSession passes setCookie a default of secure true and httpOnly true, then overlays config.cookie, so the protocol bit replaces Secure and HttpOnly remains."
+      },
+      {
+        "file": "node_modules/.pnpm/node-mock-http@1.0.4/node_modules/node-mock-http/dist/index.mjs",
+        "line": 1,
+        "description": "callNodeRequestHandler sets connection.encrypted from an existing bit or protocol === 'https'. The mock socket does not start encrypted."
+      },
+      {
+        "file": "node_modules/.pnpm/nitropack@2.13.4_better-sqlite3@12.11.1_drizzle-orm@0.45.2_@cloudflare+workers-types@4._206b69838a909de6c9d0970648a8f2cd/node_modules/nitropack/dist/presets/cloudflare/runtime/_module-handler.mjs",
+        "line": 107,
+        "description": "The Cloudflare module handler passes protocol: url.protocol into localFetch. URL.protocol includes the colon, so it does not satisfy the mock's exact https check. The legacy worker handler passes the same field."
+      }
+    ],
+    "blockers": [
+      "No bounded observation of a Set-Cookie was made. Local execution cannot provide an OS sandbox that denies external network, starts from an empty allowlisted environment, mounts the target read-only, and enforces CPU, memory, process, file, disk, and wall-clock limits.",
+      "Whether the deployed edge replaces X-Forwarded-Proto with the scheme it terminated, before the Worker reads it, is not in this repository. On the locked adapter a value other than exactly https leaves Secure false because the socket bit is not set from URL.protocol."
+    ],
+    "validation_plan": {
+      "local": "Offline, call resolveSessionConfig with the existing unencrypted stub and with in-process fixtures that set connection.encrypted true or leave it unset, and set x-forwarded-proto to absent, http, or https. Record cookie.secure. Separately, compare the locked node-mock-http protocol check with the Cloudflare handler's protocol argument and record whether a URL protocol of https: sets connection.encrypted. Do not send traffic.",
+      "deployment": "The owner inspects an already-accepted Worker request that writes a session, or the route's platform header policy, and records whether X-Forwarded-Proto equals the scheme the edge terminated. Do not send a new or modified request."
+    }
+  }
+}

@@ -1,0 +1,218 @@
+[
+  {
+    "hunter": "h1-identity",
+    "note": "api-key-scope-ceiling.ts lines 10-13 say only a * key may mint an unscoped key. findScopesBeyondCaller and its tests allow a caller with an empty scope set to mint another empty set. That child still cannot mint * or any named scope, and empty scopes fail named requireAuthScopes, so it is the same privilege rather than an escalation. Only * is lifetime-capped; an unscoped key may omit expiry, including a child of an unscoped parent."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "ensureLinkedLocalUser adopts an existing local user by normalized email without reading email_confirmed_at. Closed signup passes requireExistingLink, an existing auth link is used first, and an email that belongs to a different local user is 409. Apple linking refuses the same shape unless getLocalEmailVerification returns proof. Whether a Supabase session can exist for an unconfirmed address is IdP configuration, not a second control this package can see."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "Local email attempt throttling prefers cf-connecting-ip and otherwise the first X-Forwarded-For value. A spoofed or shared address changes which bucket increments. The password comparison and the single-use link consume still bind the account transition. Public registration answering 409 for an existing email is account enumeration, and public signup signs the new user in as part of the same product path."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "normalizePrivilegePath strips the query and trailing slashes and does not decode percent-encoding. This package does not show the privilege check and the router observing different paths for the same request. Session refresh loads the auth session by the sealed authSessionId and the user by the sealed user id without comparing auth_sessions.localUserId; forging a divergent seal is outside the source."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "MCP registration applies isAllowedMcpOAuthRedirectUri only when redirect_uris is an array. consent.post.ts calls approveConsent before authorizeMcpOAuthRequest and calls completeAuthorization only after a refusal returns. Whether approveConsent itself issues a grant, and whether the provider accepts a non-array redirect_uris field, is the unread workers-oauth-provider body. The resource guard and the CSRF exemption both use the configured path string; a trailing-slash variant that misses the guard stays outside the exemption string this module appends."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "KeychainCredentialStore SecItemUpdate replaces kSecValueData only, so a pre-existing item keeps whatever accessibility it already had. New items set AfterFirstUnlockThisDeviceOnly and synchronizable false. No source in NardukAuthKit shows a lower-trust reader of that item."
+  },
+  {
+    "hunter": "h1-identity",
+    "note": "createSupportGrant checks org existence, TTL, and non-empty scope entries, and does not call requireRank. revokeSupportGrant and revokeInvite allow any current org member, which removes access rather than granting a higher role. requireSupportGrantOrRole with options.scope omitted treats any active grant as sufficient; the function documents that a scope must be passed when a covering grant is required. acceptInvite compares verifiedEmail only when the caller supplies it; the stored credential is the token hash."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "placeholderTuplesWithCasts in packages/modules/narduk-postgres/src/parameters.ts splices the cast string into SQL with no type-name allowlist. The only in-repo production caller, timescale series resolve, passes the literals uuid, text, text, and text. An application that forwarded a request string as a cast would inject; the helper does not document casts as trusted identifiers the way quoteIdentifier does for GRANT names."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "toNodePostgresOptions interpolates applicationName into a libpq -c key=value options string. applicationName is application connection configuration. The Hyperdrive worker path passes a postgres.js options object and does not build that string."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "Timescale in-flight series resolution joins length-prefixed seriesCacheKey values with '|'. A path containing '|' can make two descriptor sets share one promise. The waiter looks up its own length-prefixed keys in the first query's rows and fails closed with SERIES_UNRESOLVED. That is not a cross-vessel read."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "Rollup seriesIds and series-list paths are not capped before they are bound. Output rows are capped by DEFAULT_MAX_SERIES_ROWS and the rollup and track row ceilings. Resource accumulation was excluded for this unit; the missing request-list cap is a limit gap, not a tenant escape."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "queryTrack has no required tierWindowMs. Rollup reads require a positive window or the explicit literal unrestricted. types.ts assigns the raw and track read clip to the consumer and deletes track rows per tier in retention. A past now cannot lower the rollup floor because clampQueryNowMs keeps the later clock."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "The Influx parity adapter substitutes ISO dates into caller-owned flux and does not add a vessel predicate. assertHostSafeFlux caps the window at four days and the timeout at 120 seconds and rejects a query that mentions a token or omits aggregateWindow. The file says the adapter is temporary and the caller owns the query."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "Image prefix matching is startsWith and does not require a trailing slash. The default prefix is uploads/ and an empty prefix is rejected at module setup. An operator prefix without a delimiter can admit a neighboring key that shares the string prefix."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "GET /images/** allow-lists the stored or extension-derived content type and sets nosniff, and it does not re-sniff bytes. uploadToR2 will store a non-allow-listed type; the serve path returns 415 for that object. Public GET of UUID keys under the prefix is the documented model."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "completeClaimWithRecordedApproval without deviceProof authorizes a first completion from the recorded approval plus four wire values. The interface comment says those values are not a secret and tells the caller to pass deviceProof or verify the signed request first. reissueOnIdempotentReplay without a proof throws before credentials are issued. That caller-verify mode is documented, so it is not a library claim that the proof-less path authenticates the device."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "Recorded-approval failures, including hardware_mismatch before any proof, are written against the claim token digest because callerScopeMatches returns true. Five such failures lock startClaim and completion for that token for 900 seconds. devices-claim-completion.test.ts says locking the rightful device is the point of the counter, and README scopes the #533 do-not-charge-until-org-match rule to completeClaim. The session id is a random UUID that the org console and appliance can display, so a holder of the id can spend the ceremony budget. That is the designed shared counter, not a missed tenancy check."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "issueChallenge accepts a device id and does not issue a session. Bounding unauthenticated challenge minting is a resource-exhaustion question, and that class was not assigned for narduk-devices."
+  },
+  {
+    "hunter": "h2-data",
+    "note": "devices idempotency_key uniqueness is global. Caller-chosen keys are not required to be unguessable, so a colliding key across tenants conflicts. The library does not treat the key as a tenant capability."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "isPrivateIPv4 returns not-private for 192.0.0.9 and 192.0.0.10 before the 192.0.0.0/24 reject. The function's stated purpose is non-global-unicast rejection, and those two addresses are the globally reachable assignments inside that block. The rest of 192.0.0.0/24 still returns private. No private-network bypass is shown."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "getClientIp trusts cf-connecting-ip by default and rateLimit passes trustForwardedFor. The forwarded header is consulted only when the edge header is absent, and no reviewed path authorizes from the address. Spoofing matters only off the edge the library documents."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "CORS does not set Access-Control-Allow-Credentials. Extension origins are reflected only on the scraper-extension prefix. CSRF still requires some non-empty X-Requested-With value on paths that reach the header check, which is a custom-header barrier rather than a token bound to the session."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "Legacy securityHeaders mode off sends script-src unsafe-inline and unsafe-eval. The shared security-headers module documents that as the existing fleet policy and keeps the strict preset off so an upgrade does not change headers."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "readWorkerRuntimeEnv merges process.env under worker bindings. A missing binding can fall through to a string and then fail when used as D1 or KV. Binding names are not request-controlled. copyWorkerBindings does not special-case the key __proto__; readWorkerRuntimeEnvValue does."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "The layer session cookie does not set HttpOnly in resolveSessionConfig. createSession does. That gap is the same cookie path as the Secure candidate and is not a separate root cause."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "narduk-app setAppCookie omits HttpOnly, Secure, and SameSite unless the caller passes them, and it does not reject carriage return or line feed in the name, value, domain, or path. No in-package caller passes request data into the cookie."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "principalFromRequest accepts a caller-chosen header name. The router strips only the x-narduk- prefix, so a custom name is not covered by that guarantee. The default header is covered."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "An unsigned list cursor is documented as safe only when every read re-derives authorization. Omitting bind lets a cursor minted for one filter be replayed under another filter the same caller can already ask for."
+  },
+  {
+    "hunter": "h3-edge",
+    "note": "requireSharedSecret passes an unset secret only when import.meta.dev is true. Production throws."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-maps binds the caller MapPoint.href onto an SVG anchor in NardukGeoMap.vue and a table anchor in MapTable.vue with no scheme allowlist. The field is an app prop, labels are text, and the package has no postMessage or iframe."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-shell NeCommandPalette.go calls location.assign for an absolute command to, including a value later stored by sanitizeRecents, with no scheme allowlist. The value is an app command or same-origin storage, not a request parameter. NeStatePanel unblocksHref, NeCollectionTable rowHref, and NeCommandPaletteTrigger fallbackAction are the same class of app prop."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-shell safeProseHref allows any schemeless value, so a protocol-relative link stays a link and, when linkBase is set, resolves to an absolute http(s) URL. https links are already inside the documented allowlist. Message prose still requires https://, and attribution hrefs require an http(s) URL."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-mapkit createMapKitHtmlSlotRenderer writes caller-supplied HTML. The callouts.ts interpolation of item.name is a comment sample. narduk-mapkit-nuxt cluster markup interpolates annotation count, a number, unless the app supplies createClusterElement."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-mapkit-nuxt still returns a non-empty public.mapkitToken to the browser. The composable documents it as a deprecated origin-unrestricted MapKit JWT, the default is empty, and the Apple private key stays on private runtimeConfig. The 2.1 narduk-mapkit module ignores that public key by name."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-mapkit isMapKitHostAllowed treats an empty allowedHosts list as every routed host, which the handler documents. The token origin is still the routed request; absolute-form targets and a disagreeing Origin fail closed. A forged Host on Node is described as the deployment's duty."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-analytics isSensitiveQueryKey matches token, secret, session, and similar keywords as a whole key or a separator segment, so camelCase keys such as resetToken do not match. The file documents that standard mode keeps paths, record ids, and PostHog autocapture, and scrubs URL-shaped $ properties. The plugin pageview uses the route path."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "notifyIndexNow posts the caller URL list to the constant IndexNow endpoint without repeating assertIndexNowUrlsBelongToHost. The public submit route performs that exact-host check before the same constant fetch."
+  },
+  {
+    "hunter": "h4-client",
+    "note": "narduk-seo host-aware indexing uses X-Forwarded-Host only to set X-Robots-Tag on a host mismatch. It does not build a redirect. OG card image and logo src are caller props with no scheme allowlist; card text is interpolated and colors are hex-checked."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "ci.yml sets IS_CHANGESET_RELEASE when github.head_ref or github.ref_name is exactly changeset-release/main, so a fork pull request from a branch of that name skips release-plan:check. The skip does not admit that ref to release.yml. Publish still requires a maintainer merge and verify-release-ci.mjs."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "release-proof.yml checks out workflow_dispatch inputs.sha and runs that commit's scripts/prove-release-publication.mjs in the github-packages job, which has actions: write, before an in-workflow ancestor-of-main check. The dispatcher is a write principal. The npm-release mirror job does not checkout or run repository scripts, and a re-dispatch still passes verify-release-ci.mjs."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "refresh-generator-pins.yml checks out narduk-enterprises/workflows at ref main. The result is a pull request whose paths are limited to the generator pin, workflow history, and one changeset. There is no auto-merge."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "scripts/install-swift-linux.py trusts whatever public keys https://www.swift.org/keys/all-keys.asc contains at download time, then verifies the tarball from the same vendor. Extraction uses tarfile filter data. Pinning the Swift signing-key fingerprint in-repo would narrow a vendor-root compromise."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "Item 6.2 scans .env, .env.local, .dev.vars, and apps/web/.dev.vars only. Item 6.3 is explicitly not-applicable while nvault adoption is paused. Item 12.5 can pass internal consistency when deployment.accountId is absent and says it cannot identify the Cloudflare account. Item 12.9 can pass while noting that package-owned migration SQL was not read."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "Item 15 public-reads-are-cached is rollout advisory: sub-checks are pass or not-applicable, never fail, and evaluate-data-cache.ts keeps exit code 0. The file states the ratchet is to report those findings as fail."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "no-secret-in-public-runtime-config skips a runtimeConfig.public key that is not a string literal. That is an author bypass of a lint hint, not a runtime trust decision."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "ship-support hotfixProductionEnv skips NUXT_OG_IMAGE_SECRET and NUXT_SESSION_PASSWORD when they are unset. When set, it rejects a value shorter than 32 characters or prefixed narduk-test-only-. runDeploy still refuses to upload an output marked .narduk-build-ci."
+  },
+  {
+    "hunter": "h5-release",
+    "note": "The generated docs/deployment/ci-d1-bundle.job.yml grants id-token: write to a job that checks out a same-repo pull request head. Generation does not install the workflow. The job if requires head.repo.full_name == github.repository. A same-repo writer can already add that permission by editing the workflow."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "narduk-ai cache keys come entirely from the provider getCacheConfig result and are not bound to AiRequestContext tenantId or userId."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "narduk-ai leaves trust trusted context unescaped by contract; only reference and untrusted text are XML-escaped."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "narduk-logging does not scan free-text messages or error strings for secrets; docs/client-diagnostics.md states that limit. Keys, private markers, and url/uri fields are what the sanitizer covers on the normal path."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "Python _emit, once a record exceeds 16 KiB, copies error name and message from the sanitize_fields result rather than from sanitize_error. A non-string message can therefore be written after the error allowlist replaced it. Sensitive keys and the 2048-character string cap have already been applied."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "isSharedCacheable consults Cache-Control only, not CDN-Cache-Control, before deciding whether to stamp x-request-id."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "packages/contracts/narduk-platform/README.md says unknown list-query keys are rejected, while listQuerySchema defaults strict to false and reports them on unknownKeys without merging them into filters."
+  },
+  {
+    "hunter": "h6-ai-log",
+    "note": "libs-explorer README names a future public host that source says is not deployed; the preview server binds 127.0.0.1."
+  }
+]

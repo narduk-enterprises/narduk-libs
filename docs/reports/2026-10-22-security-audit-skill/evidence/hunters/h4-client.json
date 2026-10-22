@@ -1,0 +1,395 @@
+{
+  "units": [
+    {
+      "coverage_id": "packages%2Fdesign%2Fnarduk-charts::packages%2Fdesign%2Fnarduk-charts%23chart%20markup%20sink::packages%2Fdesign%2Fnarduk-charts::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/design/narduk-charts/src/components/ChartLegend.vue",
+        "packages/design/narduk-charts/src/components/ChartTooltip.vue",
+        "packages/design/narduk-charts/src/components/ChartTooltipDefaultBody.vue",
+        "packages/design/narduk-charts/src/components/NardukBarChart.vue",
+        "packages/design/narduk-charts/src/components/NardukBrandBackdrop.vue",
+        "packages/design/narduk-charts/src/components/NardukCandleChart.vue",
+        "packages/design/narduk-charts/src/components/NardukChartStack.vue",
+        "packages/design/narduk-charts/src/components/NardukHistogramChart.vue",
+        "packages/design/narduk-charts/src/components/NardukLineChart.vue",
+        "packages/design/narduk-charts/src/components/NardukPieChart.vue",
+        "packages/design/narduk-charts/src/components/NardukScatterChart.vue",
+        "packages/design/narduk-charts/src/components/hydration-warnings.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/design/narduk-charts/src/components/ChartLegend.vue",
+            "packages/design/narduk-charts/src/components/ChartTooltip.vue",
+            "packages/design/narduk-charts/src/components/ChartTooltipDefaultBody.vue",
+            "packages/design/narduk-charts/src/components/NardukBarChart.vue",
+            "packages/design/narduk-charts/src/components/NardukBrandBackdrop.vue",
+            "packages/design/narduk-charts/src/components/NardukCandleChart.vue",
+            "packages/design/narduk-charts/src/components/NardukChartStack.vue",
+            "packages/design/narduk-charts/src/components/NardukHistogramChart.vue",
+            "packages/design/narduk-charts/src/components/NardukLineChart.vue",
+            "packages/design/narduk-charts/src/components/NardukPieChart.vue",
+            "packages/design/narduk-charts/src/components/NardukScatterChart.vue"
+          ],
+          "invariant": "Chart labels, series text, and tooltip bodies reach the DOM as Vue text, not as HTML, and the package has no message or navigation sink.",
+          "method": "source",
+          "result": "A source search of the chart components found no v-html, innerHTML, dangerouslySetInnerHTML, javascript: URL, postMessage, or iframe. Tooltip and legend strings are text interpolations, which the framework escapes.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": ["packages/design/narduk-charts/src/components/hydration-warnings.ts"],
+          "invariant": "The only innerHTML assignment in the chart package is not a production markup sink.",
+          "method": "source",
+          "result": "hydration-warnings.ts assigns innerHTML only inside a test hydration helper that mounts a fixture string. Production chart components do not call it with caller data.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fdesign%2Fnarduk-maps::packages%2Fdesign%2Fnarduk-maps%23map%20embed%20and%20message%20trust::packages%2Fdesign%2Fnarduk-maps::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/design/narduk-maps/src/basemap-style.ts",
+        "packages/design/narduk-maps/src/components/MapTable.vue",
+        "packages/design/narduk-maps/src/components/NardukGeoMap.vue",
+        "packages/design/narduk-maps/src/components/NardukMap.vue",
+        "packages/design/narduk-maps/src/types.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/design/narduk-maps/src/basemap-style.ts",
+            "packages/design/narduk-maps/src/components/MapTable.vue",
+            "packages/design/narduk-maps/src/components/NardukGeoMap.vue",
+            "packages/design/narduk-maps/src/components/NardukMap.vue",
+            "packages/design/narduk-maps/src/types.ts"
+          ],
+          "invariant": "Map marks do not embed caller HTML or accept a cross-window message, and a mark href is an app-supplied destination rather than a request parameter.",
+          "method": "source",
+          "result": "Package source has no v-html, innerHTML, postMessage, or iframe. NardukGeoMap.vue binds point.point.href onto an SVG anchor and MapTable.vue binds point.href onto an anchor. Names and captions are text interpolations. Attribution markup in the basemap style is a constant. The href is the caller's MapPoint field and the type does not claim a scheme allowlist, so an unsanitized app href is hardening rather than a lower-trust navigation finding.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fdesign%2Fnarduk-shell::packages%2Fdesign%2Fnarduk-shell%23rendered%20HTML%20and%20navigation::packages%2Fdesign%2Fnarduk-shell::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/design/narduk-shell/src/runtime/components/NeLegalPage.vue",
+        "packages/design/narduk-shell/src/runtime/components/NeMessageProse.vue",
+        "packages/design/narduk-shell/src/runtime/components/NeProse.vue",
+        "packages/design/narduk-shell/src/runtime/components/ne-data-attribution-types.ts",
+        "packages/design/narduk-shell/src/runtime/utils/message-prose.ts",
+        "packages/design/narduk-shell/src/runtime/utils/prose.ts",
+        "packages/design/narduk-shell/src/runtime/components/NeCollectionTable.vue",
+        "packages/design/narduk-shell/src/runtime/components/NeCommandPalette.vue",
+        "packages/design/narduk-shell/src/runtime/components/NeCommandPaletteTrigger.vue",
+        "packages/design/narduk-shell/src/runtime/components/NeStatePanel.vue",
+        "packages/design/narduk-shell/src/runtime/components/ne-command-palette-types.ts",
+        "packages/design/narduk-shell/src/runtime/types.ts",
+        "packages/design/narduk-shell/src/runtime/utils/command-palette.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/design/narduk-shell/src/runtime/components/NeLegalPage.vue",
+            "packages/design/narduk-shell/src/runtime/components/NeMessageProse.vue",
+            "packages/design/narduk-shell/src/runtime/components/NeProse.vue",
+            "packages/design/narduk-shell/src/runtime/components/ne-data-attribution-types.ts",
+            "packages/design/narduk-shell/src/runtime/utils/message-prose.ts",
+            "packages/design/narduk-shell/src/runtime/utils/prose.ts"
+          ],
+          "invariant": "Prose, message prose, and data-attribution links drop non-allowlisted schemes before a rendered href, and bodies are not assigned as HTML.",
+          "method": "source",
+          "result": "safeProseHref strips Unicode controls and whitespace, then allows only http, https, mailto, or a schemeless value. resolveProseHref resolves relatives against linkBase and keeps only http(s) after that resolution. isMessageHref keeps only https:// links. safeAttributionHref requires an http(s) prefix and a URL parser protocol of http or https. NeProse and NeMessageProse render with h() and state there is no v-html. NeLegalPage states bodies are text and its table-of-contents href is a fragment id. https links are inside the documented allowlist, including a schemeless protocol-relative value that resolves to http(s).",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/design/narduk-shell/src/runtime/components/NeCollectionTable.vue",
+            "packages/design/narduk-shell/src/runtime/components/NeCommandPalette.vue",
+            "packages/design/narduk-shell/src/runtime/components/NeCommandPaletteTrigger.vue",
+            "packages/design/narduk-shell/src/runtime/components/NeStatePanel.vue",
+            "packages/design/narduk-shell/src/runtime/components/ne-command-palette-types.ts",
+            "packages/design/narduk-shell/src/runtime/types.ts",
+            "packages/design/narduk-shell/src/runtime/utils/command-palette.ts"
+          ],
+          "invariant": "Navigation sinks in the shell do not take a lower-trust request parameter.",
+          "method": "source",
+          "result": "NeCommandPalette.go calls location.assign only when the command item to is absolute (scheme or //) and no navigate prop is set. That to is an app command, later copied through sanitizeRecents into same-origin storage, which accepts any non-empty string and does not add a scheme allowlist. NeStatePanel binds the app unblocksHref prop, NeCollectionTable passes the app rowHref callback to ULink, and NeCommandPaletteTrigger sets a GET form action from the app fallbackAction prop. None of these values is read from a request parameter inside this package. Missing scheme checks on those app props are hardening.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fdesign%2Fnarduk-ui::packages%2Fdesign%2Fnarduk-ui%23rendered%20HTML::packages%2Fdesign%2Fnarduk-ui::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/design/narduk-ui/_core/index.ts",
+        "packages/design/narduk-ui/_core/measure.ts",
+        "packages/design/narduk-ui/_core/signal.ts",
+        "packages/design/narduk-ui/instruments/NsFreshnessChip.vue",
+        "packages/design/narduk-ui/instruments/NsLevelWell.vue",
+        "packages/design/narduk-ui/instruments/NsRangeBar.vue",
+        "packages/design/narduk-ui/instruments/NsReadoutTile.vue"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/design/narduk-ui/_core/index.ts",
+            "packages/design/narduk-ui/_core/measure.ts",
+            "packages/design/narduk-ui/_core/signal.ts",
+            "packages/design/narduk-ui/instruments/NsFreshnessChip.vue",
+            "packages/design/narduk-ui/instruments/NsLevelWell.vue",
+            "packages/design/narduk-ui/instruments/NsRangeBar.vue",
+            "packages/design/narduk-ui/instruments/NsReadoutTile.vue"
+          ],
+          "invariant": "Instrument readouts do not render HTML, bind a URL, or accept a cross-window message.",
+          "method": "source",
+          "result": "A source search of the package found no v-html, innerHTML, href, javascript: URL, or postMessage. Labels, values, units, and deltas are Vue text interpolations. NsRangeBar forwards attributes with v-bind, which does not parse the bound object as HTML.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-analytics::packages%2Fmodules%2Fnarduk-analytics%23analytics%20sink%20and%20script%20insertion::packages%2Fmodules%2Fnarduk-analytics::ATTACK-CLASSES.md%23Injection",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-analytics/app/plugins/00-analytics-head.client.ts",
+        "packages/modules/narduk-analytics/app/plugins/gtag.client.ts",
+        "packages/modules/narduk-analytics/app/plugins/posthog.client.ts",
+        "packages/modules/narduk-analytics/src/module.ts",
+        "packages/modules/narduk-analytics/app/utils/analyticsAttribution.ts",
+        "packages/modules/narduk-analytics/app/utils/analyticsPrivacy.ts",
+        "packages/modules/narduk-analytics/server/utils/owner-tag-proof.ts",
+        "packages/modules/narduk-analytics/server/utils/analyticsWindow.ts",
+        "packages/modules/narduk-analytics/server/utils/analyticsZone.ts",
+        "packages/modules/narduk-analytics/server/utils/posthog.ts",
+        "packages/modules/narduk-analytics/server/utils/posthogQuery.ts",
+        "packages/modules/narduk-analytics/server/api/indexnow/submit.post.ts",
+        "packages/modules/narduk-analytics/server/api/owner/enroll.get.ts",
+        "packages/modules/narduk-analytics/server/utils/indexNow.ts",
+        "packages/modules/narduk-analytics/server/utils/traffic-enrollment.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-analytics/app/plugins/00-analytics-head.client.ts",
+            "packages/modules/narduk-analytics/app/plugins/gtag.client.ts",
+            "packages/modules/narduk-analytics/app/plugins/posthog.client.ts",
+            "packages/modules/narduk-analytics/src/module.ts"
+          ],
+          "invariant": "Analytics script insertion uses a fixed host, and publishable client keys are not private credentials copied into public runtimeConfig.",
+          "method": "source",
+          "result": "gtag.client.ts sets script.src to https://www.googletagmanager.com/gtag/js with the operator measurement id in the query. The host is constant, so the id cannot change the origin. posthog.client.ts calls posthog.init with public.posthogPublicKey and an operator api_host that falls back to https://us.i.posthog.com. The head plugin preconnects that origin plus fixed Google origins. Private ownerTagSecret, posthogOwnerDistinctId, and the private IndexNow key stay off the public block. posthogPublicKey is the publishable project key. The public IndexNow key is the verification value the product serves as text, not the private worker key.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-analytics/app/plugins/posthog.client.ts",
+            "packages/modules/narduk-analytics/app/utils/analyticsAttribution.ts",
+            "packages/modules/narduk-analytics/app/utils/analyticsPrivacy.ts",
+            "packages/modules/narduk-analytics/server/utils/owner-tag-proof.ts"
+          ],
+          "invariant": "Standard analytics URL scrubbing matches its documented floor, and the owner distinct id is not placed in the public bundle.",
+          "method": "source",
+          "result": "sanitizeStandardUrl drops fragments and query keys matched by a separator-bounded keyword list. The file states that paths and record ids stay visible and that standard mode keeps PostHog autocapture while dropping element-text keys. The plugin pageview builds $current_url from the route path, not the raw query. Landing attribution copies only http(s) referrer origins and utm_source, utm_medium, and utm_campaign values matching a bounded character class. CamelCase keys such as resetToken do not match the segment regex; that is an incomplete denylist inside the documented floor, not a script sink. The owner distinct id is returned only after the httpOnly HMAC proof cookie validates.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-analytics/server/utils/analyticsWindow.ts",
+            "packages/modules/narduk-analytics/server/utils/analyticsZone.ts",
+            "packages/modules/narduk-analytics/server/utils/posthog.ts",
+            "packages/modules/narduk-analytics/server/utils/posthogQuery.ts"
+          ],
+          "invariant": "HogQL builders do not interpolate freeform caller SQL.",
+          "method": "source",
+          "result": "escapeHogLiteral doubles backslashes and then quotes before a domain literal is placed in a host comparison. resolvePosthogPeriod interpolates only a parsed positive integer plus h or d. Traffic classes are an allowlist. The zone value used inside the bucket expression must match a word-class pattern and Intl before it is interpolated, so a quote breakout is not available from tz.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-analytics/server/api/indexnow/submit.post.ts",
+            "packages/modules/narduk-analytics/server/api/owner/enroll.get.ts",
+            "packages/modules/narduk-analytics/server/utils/indexNow.ts",
+            "packages/modules/narduk-analytics/server/utils/traffic-enrollment.ts"
+          ],
+          "invariant": "The enrollment redirect is allowlisted, and IndexNow submission does not fetch a caller-supplied URL.",
+          "method": "source",
+          "result": "enroll.get.ts redirects only after verifyEnrollmentToken or unverifiedPortalReturn. trustedReturn requires https and an origin in TRAFFIC_ENROLLMENT_ISSUERS. The unverified fallback also requires the portal step pathname. submit.post.ts posts to the constant https://api.indexnow.org/indexnow after assertIndexNowUrlsBelongToHost, which requires http(s) and an exact host match. notifyIndexNow uses that same constant endpoint and does not repeat the host assert; the caller URL list is request data to IndexNow, not the fetch target.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-mapkit-nuxt::packages%2Fmodules%2Fnarduk-mapkit-nuxt%23client-visible%20runtime%20config::packages%2Fmodules%2Fnarduk-mapkit-nuxt::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-mapkit-nuxt/src/module.ts",
+        "packages/modules/narduk-mapkit-nuxt/src/runtime/composables/useMapkitToken.ts",
+        "packages/modules/narduk-mapkit-nuxt/src/runtime/server/mapkit-token.get.ts",
+        "packages/modules/narduk-mapkit-nuxt/src/runtime/server/runtime-env.ts",
+        "packages/modules/narduk-mapkit-nuxt/src/runtime/components/AppMapKit.vue"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-mapkit-nuxt/src/module.ts",
+            "packages/modules/narduk-mapkit-nuxt/src/runtime/composables/useMapkitToken.ts",
+            "packages/modules/narduk-mapkit-nuxt/src/runtime/server/mapkit-token.get.ts",
+            "packages/modules/narduk-mapkit-nuxt/src/runtime/server/runtime-env.ts"
+          ],
+          "invariant": "Apple signing material stays on private runtimeConfig, and a browser-visible MapKit token is only the public JWT the package documents.",
+          "method": "source",
+          "result": "The module assigns applePrivateKey, appleSecretKey, appleTeamId, appleKeyId, and mapkitAllowedOrigins on private runtimeConfig. Public config receives mapkitToken defaulting to an empty string and mapkitTokenEndpoint. useMapkitToken returns a non-empty public mapkitToken when it is unexpired, and the comment names that value as a deprecated portal token with no origin restriction. The private key is not copied into that field and is not documented as server-only and then shipped. The token route reads the private key from env or private runtimeConfig and does not echo it.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-mapkit-nuxt/src/runtime/components/AppMapKit.vue"
+          ],
+          "invariant": "The default cluster marker does not interpolate a caller string into HTML.",
+          "method": "source",
+          "result": "buildClusterElement sets innerHTML from a template whose only interpolation is memberAnnotations.length, a number. An app-supplied createClusterElement callback returns its own element and is the same principal as the page.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-mapkit::packages%2Fmodules%2Fnarduk-mapkit%23token%20and%20credential%20exposure::packages%2Fmodules%2Fnarduk-mapkit::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-mapkit/src/nuxt/index.ts",
+        "packages/modules/narduk-mapkit/src/nuxt/runtime/server/mapkit-token.get.ts",
+        "packages/modules/narduk-mapkit/src/server/handler.ts",
+        "packages/modules/narduk-mapkit/src/token/jwt.ts",
+        "packages/modules/narduk-mapkit/src/client/callouts.ts",
+        "packages/modules/narduk-mapkit/src/client/render.ts",
+        "packages/modules/narduk-mapkit/src/client/vector-tile-worker.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-mapkit/src/nuxt/index.ts",
+            "packages/modules/narduk-mapkit/src/nuxt/runtime/server/mapkit-token.get.ts",
+            "packages/modules/narduk-mapkit/src/server/handler.ts",
+            "packages/modules/narduk-mapkit/src/token/jwt.ts"
+          ],
+          "invariant": "The Apple private key stays server-side, the minted token origin is the routed request, and signing failures do not echo key material.",
+          "method": "source",
+          "result": "The Nuxt module puts appleKeyId, applePrivateKey, appleSecretKey, and appleTeamId on private runtimeConfig. Public config receives the token route path, libraries, ssrPreload, language, and allowedHosts only when that option is non-empty. warnRetiredKeys ignores public.mapkitToken and does not read its value into the client payload. mapKitRoutedOrigin uses the Fetch request URL and refuses absolute-form and protocol-relative targets. isMapKitRequestSameOrigin fail-closes when Origin disagrees, including an opaque null origin, and when browser signals are absent. An empty allowedHosts list allows every routed host, which the handler documents; a wildcard entry requires the leading dot via endsWith. The JWT is ES256 with an origin claim. The signing-failed response is a constant message. A forged Host on Node is documented as the deployment's duty, not a library copy of the private key into the browser.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-mapkit/src/client/callouts.ts",
+            "packages/modules/narduk-mapkit/src/client/render.ts",
+            "packages/modules/narduk-mapkit/src/client/vector-tile-worker.ts"
+          ],
+          "invariant": "Library-owned MapKit DOM and worker messaging do not take an untrusted HTML or cross-window payload.",
+          "method": "source",
+          "result": "createMapKitHtmlSlotRenderer assigns a caller-supplied html string to innerHTML. That writer is a generic slot helper, not fed by a library-owned untrusted field. The callouts.ts innerHTML example that interpolates item.name is a documentation sample, not executed library code. vector-tile-worker postMessage transfers tile buffers to the same-origin worker and does not use a wildcard target origin.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "packages%2Fmodules%2Fnarduk-seo::packages%2Fmodules%2Fnarduk-seo%23redirect%20and%20canonical%20target::packages%2Fmodules%2Fnarduk-seo::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "packages/modules/narduk-seo/app/composables/useSeo.ts",
+        "packages/modules/narduk-seo/app/utils/safeCanonicalUrl.ts",
+        "packages/modules/narduk-seo/app/utils/same-origin-path.ts",
+        "packages/modules/narduk-seo/src/module.ts",
+        "packages/modules/narduk-seo/app/utils/ogImageDefinition.ts",
+        "packages/modules/narduk-seo/components/OgImage/OgImageDefault.takumi.vue",
+        "packages/modules/narduk-seo/server/middleware/hostAwareIndexing.ts"
+      ],
+      "checks": [
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-seo/app/composables/useSeo.ts",
+            "packages/modules/narduk-seo/app/utils/safeCanonicalUrl.ts",
+            "packages/modules/narduk-seo/app/utils/same-origin-path.ts",
+            "packages/modules/narduk-seo/src/module.ts"
+          ],
+          "invariant": "Canonical and og:url targets stay on the configured site origin, and the package redirect is a fixed path.",
+          "method": "source",
+          "result": "sanitizeSameOriginPath accepts only a single-leading-slash path, rejects a protocol-relative prefix, a raw or percent-encoded backslash, and control characters, then requires the URL parser to keep the same origin and a path that starts with /. resolveSafeCanonicalUrl allows an absolute URL only when its origin equals the site and it has no userinfo; other values fall back to the route and then the site root. useSeo uses that resolver for the canonical link and og:url. The only route redirect is the hardcoded apple-touch-icon-precomposed.png path to /apple-touch-icon.png.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h4-client",
+          "reviewed_paths": [
+            "packages/modules/narduk-seo/app/composables/useSeo.ts",
+            "packages/modules/narduk-seo/app/utils/ogImageDefinition.ts",
+            "packages/modules/narduk-seo/components/OgImage/OgImageDefault.takumi.vue",
+            "packages/modules/narduk-seo/server/middleware/hostAwareIndexing.ts"
+          ],
+          "invariant": "Host-header trust and OG image sources do not become a navigation or fetch target chosen by a lower-trust request parameter.",
+          "method": "source",
+          "result": "hostAwareIndexing.ts reads getRequestHost with xForwardedHost and, on mismatch, sets X-Robots-Tag. It does not set Location. OgImageDefault interpolates title and description as text. The split-layout image and logo src are caller props. The generated art src is a data URI. resolveSeoOgImageDefinition hex-checks colors and passes the image string through. No request parameter in this package selects that image URL. A missing scheme allowlist on an app-supplied image prop is hardening.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "narduk-maps binds the caller MapPoint.href onto an SVG anchor in NardukGeoMap.vue and a table anchor in MapTable.vue with no scheme allowlist. The field is an app prop, labels are text, and the package has no postMessage or iframe.",
+    "narduk-shell NeCommandPalette.go calls location.assign for an absolute command to, including a value later stored by sanitizeRecents, with no scheme allowlist. The value is an app command or same-origin storage, not a request parameter. NeStatePanel unblocksHref, NeCollectionTable rowHref, and NeCommandPaletteTrigger fallbackAction are the same class of app prop.",
+    "narduk-shell safeProseHref allows any schemeless value, so a protocol-relative link stays a link and, when linkBase is set, resolves to an absolute http(s) URL. https links are already inside the documented allowlist. Message prose still requires https://, and attribution hrefs require an http(s) URL.",
+    "narduk-mapkit createMapKitHtmlSlotRenderer writes caller-supplied HTML. The callouts.ts interpolation of item.name is a comment sample. narduk-mapkit-nuxt cluster markup interpolates annotation count, a number, unless the app supplies createClusterElement.",
+    "narduk-mapkit-nuxt still returns a non-empty public.mapkitToken to the browser. The composable documents it as a deprecated origin-unrestricted MapKit JWT, the default is empty, and the Apple private key stays on private runtimeConfig. The 2.1 narduk-mapkit module ignores that public key by name.",
+    "narduk-mapkit isMapKitHostAllowed treats an empty allowedHosts list as every routed host, which the handler documents. The token origin is still the routed request; absolute-form targets and a disagreeing Origin fail closed. A forged Host on Node is described as the deployment's duty.",
+    "narduk-analytics isSensitiveQueryKey matches token, secret, session, and similar keywords as a whole key or a separator segment, so camelCase keys such as resetToken do not match. The file documents that standard mode keeps paths, record ids, and PostHog autocapture, and scrubs URL-shaped $ properties. The plugin pageview uses the route path.",
+    "notifyIndexNow posts the caller URL list to the constant IndexNow endpoint without repeating assertIndexNowUrlsBelongToHost. The public submit route performs that exact-host check before the same constant fetch.",
+    "narduk-seo host-aware indexing uses X-Forwarded-Host only to set X-Robots-Tag on a host mismatch. It does not build a redirect. OG card image and logo src are caller props with no scheme allowlist; card text is interpolated and colors are hex-checked."
+  ],
+  "uncovered": [
+    {
+      "surface": "packages/design/libs-explorer",
+      "boundary": "gallery frame postMessage",
+      "subsystem": "packages/design/libs-explorer",
+      "attack_class": "ATTACK-CLASSES.md#Injection",
+      "starting_paths": [
+        "packages/design/libs-explorer/app/pages/components/[id].vue",
+        "packages/design/libs-explorer/app/pages/frame/[id]/[surface].vue"
+      ],
+      "reason": "A source search of packages/design also hit postMessage between the component gallery and its frame. That package is outside the eight assigned units and was not traced."
+    }
+  ]
+}
