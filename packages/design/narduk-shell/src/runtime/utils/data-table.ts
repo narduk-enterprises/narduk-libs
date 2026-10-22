@@ -75,7 +75,7 @@ export function dataTableMinWidth<TRow>(
 }
 
 /** Characters a spreadsheet treats as the start of a formula. */
-const FORMULA_LEAD = /^[=+\-@\t\r]/u
+const FORMULA_LEAD = /^\s*[=+\-@\t\r]/u
 
 function csvCell(value: unknown): string {
   if (isMissingValue(value)) return ''

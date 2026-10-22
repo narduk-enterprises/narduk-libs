@@ -52,7 +52,7 @@ describe('NeMessageProse block mode', () => {
     expect(links[0]!.attributes()).toMatchObject({
       href: 'https://example.test/a',
       target: '_blank',
-      rel: 'noopener',
+      rel: 'noopener noreferrer',
     })
     expect(wrapper.text()).toBe('a b c d e f')
   })
@@ -198,7 +198,7 @@ describe('NeMessageProse inline mode', () => {
     expect(wrapper.get('a').attributes()).toMatchObject({
       href: 'https://example.test/p',
       target: '_blank',
-      rel: 'noopener',
+      rel: 'noopener noreferrer',
     })
     expect(wrapper.text()).toBe('# Rotate the KEY - at policy fence')
   })

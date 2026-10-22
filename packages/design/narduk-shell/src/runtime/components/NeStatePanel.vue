@@ -33,6 +33,8 @@
  */
 import { computed } from 'vue'
 
+import { safeAttributionHref } from './ne-data-attribution-types'
+
 import type { NeAsyncDataStatus, NeStateGap, NeStatePanelProps, NeStateValue } from '../types'
 
 interface NormalisedGap {
@@ -62,6 +64,9 @@ const props = withDefaults(defineProps<NeStatePanelProps>(), {
   unblocksOn: '',
   unblocksRef: '',
 })
+
+/** `unblocksHref` is caller text: only an http(s) URL becomes a link. */
+const safeHref = computed(() => safeAttributionHref(props.unblocksHref))
 
 /**
  * `useAsyncData()`'s status, mapped onto a reading. `success` is deliberately
@@ -233,9 +238,9 @@ const hasUnblocks = computed(() => Boolean(props.unblocksOn || props.unblocksRef
         <span class="ne-state-panel__unblocks-condition">{{ unblocksOn }}</span>
         <span aria-hidden="true">·</span>
         <a
-          v-if="unblocksHref"
+          v-if="safeHref"
           class="ne-state-panel__unblocks-ref underline"
-          :href="unblocksHref"
+          :href="safeHref"
           rel="noopener noreferrer"
           target="_blank"
           >{{ unblocksRef }}</a
@@ -243,9 +248,9 @@ const hasUnblocks = computed(() => Boolean(props.unblocksOn || props.unblocksRef
         <span v-else class="ne-state-panel__unblocks-ref">{{ unblocksRef }}</span>
       </template>
       <a
-        v-else-if="unblocksHref"
+        v-else-if="safeHref"
         class="ne-state-panel__unblocks-condition underline"
-        :href="unblocksHref"
+        :href="safeHref"
         rel="noopener noreferrer"
         target="_blank"
         >{{ unblocksOn }}</a

@@ -96,7 +96,7 @@ function renderInline(run: NeProseInline): VNodeChild {
       const newTab = props.externalLinksNewTab && isExternalProseHref(href)
       return h(
         'a',
-        { href, target: newTab ? '_blank' : undefined, rel: newTab ? 'noopener' : undefined },
+        { href, target: newTab ? '_blank' : undefined, rel: newTab ? 'noopener noreferrer' : undefined },
         renderRuns(run.children),
       )
     }

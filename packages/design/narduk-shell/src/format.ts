@@ -297,12 +297,22 @@ function relativeTimeFormat(
   return cached('relative', locale, options, () => new Intl.RelativeTimeFormat(locale, options))
 }
 
-/** Epoch milliseconds, or `undefined` for anything that is not an instant. */
-function instantOf(value: NeDateInput): number | undefined {
+const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+
+/**
+ * Epoch milliseconds, or `undefined` for anything that is not an instant. A
+ * date-time with no zone reads as UTC, so the host's zone never moves it.
+ */
+export function instantOf(value: NeDateInput): number | undefined {
   if (value === null || value === undefined) return
   const milliseconds =
-    value instanceof Date ? value.getTime() : typeof value === 'number' ? value : Date.parse(value)
-  return Number.isFinite(milliseconds) ? milliseconds : undefined
+    value instanceof Date
+      ? value.getTime()
+      : typeof value === 'number'
+        ? value
+        : Date.parse(ZONELESS_DATE_TIME.test(value) ? `${value.replace(' ', 'T')}Z` : value)
+  // `Date` itself refuses anything beyond +-8.64e15 ms (`toISOString` throws).
+  return Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15 ? milliseconds : undefined
 }
 
 /**
