@@ -32,7 +32,9 @@ function form(values: Record<string, string>): Request {
   })
 }
 
-describe('MCP OAuth authorization server on D1', () => {
+// Each test runs real PKCE, token hashing and D1 work in a local workerd; that measured about a second at most per test
+// on an idle guest but slips past the 5s default when a loaded lane guest contends for CPU (agent-infrastructure#3844).
+describe('MCP OAuth authorization server on D1', { timeout: 20_000 }, () => {
   const runtime = new Miniflare({
     modules: true,
     script: 'export default { fetch() { return new Response("ok") } }',

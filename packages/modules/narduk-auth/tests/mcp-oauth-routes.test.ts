@@ -218,7 +218,9 @@ const mcp = (authorization?: string) =>
     body: '{}',
   })
 
-describe('MCP OAuth routes', () => {
+// Each test runs real PKCE, token hashing and D1 work in a local workerd; that measured about a second at most per test
+// on an idle guest but slips past the 5s default when a loaded lane guest contends for CPU (agent-infrastructure#3844).
+describe('MCP OAuth routes', { timeout: 20_000 }, () => {
   const runtime = new Miniflare({
     modules: true,
     script: 'export default { fetch() { return new Response("ok") } }',
