@@ -167,13 +167,9 @@ Fix: Either add a `LICENSE` file and include it in `files` (that edit is package
 
 If we skip it: License review of the chart tarball fails on a missing file the doc promised.
 
-## Verdict
+Verdict: Two docs that operators trust disagree with the tree on security support and on where MapKit and the shell come from. Fix those before the next migration or the next N-1 CVE. The other findings send an agent to rebuild a shell, a preflight, or a MapKit 2.1 that already shipped, or to paint maps from draft hexes.
 
-Two docs that operators trust disagree with the tree on security support and on where MapKit and the shell come from. Fix those before the next migration or the next N-1 CVE. The other findings send an agent to rebuild a shell, a preflight, or a MapKit 2.1 that already shipped, or to paint maps from draft hexes.
-
-## Not checked
-
-GitHub's CodeQL, secret-scanning, and private-advisory switches. `SECURITY.md:20-22` says they are on. The repo API returned no `security_and_analysis` block, and the vulnerability-alert endpoints returned 403, so this audit does not say they are off. `dependabot.yml` is present. CI does run `pnpm audit`.
+Not checked: GitHub's CodeQL, secret-scanning, and private-advisory switches. `SECURITY.md:20-22` says they are on. The repo API returned no `security_and_analysis` block, and the vulnerability-alert endpoints returned 403, so this audit does not say they are off. `dependabot.yml` is present. CI does run `pnpm audit`.
 
 Not read in full: the 2026-09-11 per-app evidence dumps under `docs/plans/components-library-evidence-2026-09-11/` (dated snapshots; their parent links resolve), the body of `docs/plans/mapkit-consolidation-plan.md` below the superseded banner, the root `design/narduk-maps` HTML canvases and cutout JSON (except `gen/style.mjs`, which the maps README cites), and the long component sections of `narduk-shell`'s README past the status, install, pager, and `NeTabs` parts. Package READMEs outside `packages/design` were opened only to check a link or a heading this lane cites.
 
