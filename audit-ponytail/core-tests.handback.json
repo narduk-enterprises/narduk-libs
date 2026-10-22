@@ -4,6 +4,6 @@
   "pr_urls": [],
   "heads": ["bf4c43c023d4c8d2ac9e3e3ac54d699909031e3c"],
   "checks": [],
-  "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 3 must, 11 should, 1 nice. The SSRF fetcher, the 192.0.0.9 allow, and the mutation auth wrappers have no failing test. The old login limiter trusts X-Forwarded-For when cf-connecting-ip is absent. No source change.",
+  "summary": "Ponytail 5 read-only audit of packages/modules/narduk-core/tests. 4 must, 14 should, 1 nice. SSRF, mutation auth wrappers, and a SESSION_PASSWORD-only install that seeds an empty session password have no failing test. No source change.",
   "needs_logan": false
 }

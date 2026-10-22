@@ -4,7 +4,7 @@ What this repo does: narduk-libs publishes the shared Nuxt packages that Narduk 
 
 Load I assumed: a published library on many Nuxt apps, each serving concurrent Cloudflare Worker requests. A test is doing its job when the risky check breaks and that test fails in CI. I treated per-isolate memory as real and not shared across isolates. I treated `cf-connecting-ip` as present on traffic that actually comes through Cloudflare.
 
-5 smaller notes are left out, after the findings.
+9 smaller notes are left out, after the findings.
 
 ## Must fix
 
@@ -38,9 +38,19 @@ Fix: One real h3 request per wrapper. Auth failure is 401 or 403 and the handler
 
 If we skip it: A one-line edit ships a write route with no identity check. This package will not catch it.
 
+### 4. `SESSION_PASSWORD` turns sessions on and seeds an empty password — `src/auth-utils-install.ts:140-150`
+
+What this is: The build seed for `runtimeConfig.session`, which `nuxt-auth-utils` uses to seal the cookie. `sessionPasswordConfigured` (`:93-98`) treats `SESSION_PASSWORD` as “this app has a password,” so the session plugin stays on. The code is outside `tests/`.
+
+Problem: `sessionRuntimeConfigSeed(true, { SESSION_PASSWORD: 'only-this-secret-is-32-characters-long' })` returns `password: ''`. `tests/auth-utils-install.test.ts:44-49` only checks that the plugin stays on for that env. The seed test at `:178-185` reads `NUXT_SESSION_PASSWORD` and never this alias. Nuxt overlays `NUXT_SESSION_PASSWORD`, not `SESSION_PASSWORD`. The cookie is sealed with `''`. Core’s own `resolveSessionConfig` reads both names (`runtime/server/utils/user-session.ts:51`).
+
+Fix: Seed `NUXT_SESSION_PASSWORD` or `SESSION_PASSWORD`, whichever is non-empty. Assert the `SESSION_PASSWORD`-only case.
+
+If we skip it: An app that set the alias this package already treats as configured gets a session cookie sealed with an empty password.
+
 ## Should fix
 
-### 4. The login limiter trusts `X-Forwarded-For`, and its test never calls it — `runtime/server/utils/rateLimit.ts:186-248`
+### 5. The login limiter trusts `X-Forwarded-For`, and its test never calls it — `runtime/server/utils/rateLimit.ts:186-248`
 
 What this is: `enforceRateLimit`, used by `mutation.ts` for `authLogin` and the other auth policies. `tests/rateLimit.test.ts:29-39` only checks that two policy name strings appear in the source. The code is outside `tests/`.
 
@@ -50,7 +60,7 @@ Fix: Stop passing `trustForwardedFor: true`. Add a test where two different `X-F
 
 If we skip it: Off Cloudflare, rotating one header defeats the login limit, and the key map grows with each new header. The source-text test stays green.
 
-### 5. Demo redirect path turns into another host — `runtime/server/utils/demo.ts:40-51`
+### 6. Demo redirect path turns into another host — `runtime/server/utils/demo.ts:40-51`
 
 What this is: `normalizeDemoRedirectPath`. Nothing in this repo calls it. `tests/fixtures/consumer-server-globals.d.ts` exists so typecheck knows about the `createError` this file uses without an import. The code is outside `tests/`.
 
@@ -60,17 +70,17 @@ Fix: Search fleet imports of `server/utils/demo`. If there are none, delete `dem
 
 If we skip it: An app that sends this return value to the browser sends the user to the other host. CI stays green.
 
-### 6. Hard-coded CSRF skips have no boundary test — `runtime/server/middleware/csrf.ts:71-93`
+### 7. Hard-coded CSRF skips have no boundary test — `runtime/server/middleware/csrf.ts:71-93`
 
 What this is: Skips for webhooks, cron, callbacks, auth, Nuxt Content, `/api/owner-tag`, and `Authorization: Bearer nk_`. The exempt-path grammar in `csrf-exempt-paths.test.ts` is tested. These skips are not. `csrf-middleware.test.ts` never posts to them and never sends `Authorization`.
 
-Problem: The webhook check is `startsWith('/api/webhooks/')`. Drop the trailing slash and `POST /api/webhooks-evil` with no `X-Requested-With` is allowed. No test fails. `/api/owner-tag` uses exact equality. The report-route comment on lines 83-85 says `event.path` keeps the query string. `POST /api/owner-tag` is skipped. `POST /api/owner-tag?x=1` is 403. `Authorization: Bearer nk_not-a-real-key` on `POST /api/settings` skips CSRF. No test sends that header.
+Problem: The webhook check is `startsWith('/api/webhooks/')`. Drop the trailing slash and `POST /api/webhooks-evil` with no `X-Requested-With` is allowed. No test fails. `/api/owner-tag` uses exact equality. The report-route comment on lines 83-85 says `event.path` keeps the query string. `POST /api/owner-tag` is skipped. `POST /api/owner-tag?x=1` is 403. `Authorization: Bearer nk_not-a-real-key` on `POST /api/settings` skips CSRF. No test sends that header. The test helper always uses POST. Change line 63 to `if (method !== 'POST') return` and PUT, PATCH, and DELETE `/api/settings` with no header return 200. `reportRoute: false` returns null at line 54. Delete that line and `false` falls through to the default report path, so that POST is allowed. No test sets `reportRoute: false`.
 
-Fix: Match those paths with `isCsrfExemptPath`, including `/api/owner-tag`. Add one test each: `/api/webhooks/x` allowed, `/api/webhooks-evil` denied, `/api/owner-tag?x=1` allowed, `Bearer nk_` skipped, `Bearer other` denied.
+Fix: Match those paths with `isCsrfExemptPath`, including `/api/owner-tag`. Add one test each: `/api/webhooks/x` allowed, `/api/webhooks-evil` denied, `/api/owner-tag?x=1` allowed, `Bearer nk_` skipped, `Bearer other` denied, PUT and DELETE without the header denied, and `reportRoute: false` still 403 on the default report path.
 
 If we skip it: A one-character edit widens the webhook skip, and the owner-tag route 403s as soon as the URL has a query string.
 
-### 7. CORS middleware has no test — `runtime/server/middleware/cors.ts:21-65`
+### 8. CORS middleware has no test — `runtime/server/middleware/cors.ts:21-65`
 
 What this is: The `/api/*` CORS handler. No test imports it.
 
@@ -80,7 +90,7 @@ Fix: One test. An origin that is not on the list gets no `Access-Control-Allow-O
 
 If we skip it: A reflected-origin change ships on a green suite.
 
-### 8. The "ignore forwarded-for" test allows a wrong address — `tests/client-ip.test.ts:32-36`
+### 9. The "ignore forwarded-for" test allows a wrong address — `tests/client-ip.test.ts:32-36`
 
 What this is: The test named "ignores x-forwarded-for by default".
 
@@ -90,7 +100,7 @@ Fix: Assert the exact value this request has with that header ignored (the socke
 
 If we skip it: A change that keys rate limits on the forwarded header, in a shape other than the first address alone, stays green.
 
-### 9. The three CSRF header injectors are not run — `runtime/app/plugins/fetch.client.ts:18-26`
+### 10. The three CSRF header injectors are not run — `runtime/app/plugins/fetch.client.ts:18-26`
 
 What this is: `fetch.client.ts`, `useCsrfFetch` (`runtime/app/composables/useCsrfFetch.ts:22-36`), and `useAppFetch`. `tests/useAppFetch.test.ts:30-33` only checks that the source contains an import line. No test executes the header injection. The middleware tests assume the header is present.
 
@@ -100,7 +110,7 @@ Fix: One test per helper. A relative POST gets the header. An absolute same-orig
 
 If we skip it: The middleware suite stays green while clients stop sending the header, and mutations 403. Or the plugin marks a protocol-relative URL as same-origin.
 
-### 10. Image redirect leaves `/_og/` after the check — `runtime/server/routes/cdn-cgi/image/[...path].ts:23-37`
+### 11. Image redirect leaves `/_og/` after the check — `runtime/server/routes/cdn-cgi/image/[...path].ts:23-37`
 
 What this is: The local-dev stand-in for `/cdn-cgi/image/...`. It keeps a redirect only when the path starts with `/_og/`. No test imports this file. The code is outside `tests/`.
 
@@ -110,7 +120,7 @@ Fix: Reject unless the normalized pathname still starts with `/_og/`. Add that c
 
 If we skip it: A local image URL redirects the browser to any other path on the same host, including `/api/...`. CI stays green.
 
-### 11. Sitemap rate-limit exemption matches dot-segments — `runtime/server/rate-limit/policy.ts:145-153`
+### 12. Sitemap rate-limit exemption matches dot-segments — `runtime/server/rate-limit/policy.ts:145-153`
 
 What this is: `isRateLimitExemptPath`, used by `defineRateLimitedHandler` on `event.path`. Tests lock the query string and reject `/robots.txt.map`. They do not send a dot-segment.
 
@@ -120,7 +130,7 @@ Fix: Return false when the path contains a `.` or `..` segment, and add those tw
 
 If we skip it: A request path that still contains `..` skips the limiter on the way to `/api/admin`.
 
-### 12. `Set-Cookie` after the cache profile stays public — `runtime/server/utils/cacheProfile.ts:271-281`
+### 13. `Set-Cookie` after the cache profile stays public — `runtime/server/utils/cacheProfile.ts:271-281`
 
 What this is: `findSuppression` downgrades to `private, no-store` when `Set-Cookie` is already on the response. The only cookie test, `tests/cache-profile.test.ts:205-213`, sets the cookie and then calls `setCacheProfile`. The code is outside `tests/`.
 
@@ -130,7 +140,7 @@ Fix: Add the reverse-order case. Downgrade in `beforeResponse` the way `preferen
 
 If we skip it: A shared cache can store one caller’s session cookie under a public profile. The existing test stays green.
 
-### 13. D1 cache tests never check the bound key — `tests/d1-cache-stale.test.ts:22-24`
+### 14. D1 cache tests never check the bound key — `tests/d1-cache-stale.test.ts:22-24`
 
 What this is: The fake `first()` behind `withD1Cache`. Production reads `SELECT value, expires_at FROM kv_cache WHERE key = ?` in `runtime/server/utils/d1Cache.ts`.
 
@@ -140,7 +150,7 @@ Fix: Assert the prepared SQL and the bound key, or run the read through the same
 
 If we skip it: A refactor that drops the predicate serves another key’s JSON and this file stays green.
 
-### 14. Default security headers are checked as substrings — `tests/security-headers-staging.test.ts:51-58`
+### 15. Default security headers are checked as substrings — `tests/security-headers-staging.test.ts:51-58`
 
 What this is: The test for the headers apps get when the strict preset is off.
 
@@ -150,9 +160,46 @@ Fix: Assert the full `Content-Security-Policy` and `Permissions-Policy` strings,
 
 If we skip it: The policy apps serve today can grow `*` on `default-src` or `microphone`, and this file stays green.
 
+### 16. `expiresAt: 0` never expires a key — `runtime/server/utils/auth.ts:232`
+
+What this is: The expiry check on both API-key paths. The D1 twin is `runtime/server/utils/authApiKeyD1.ts:101`. The code is outside `tests/`.
+
+Problem: Both checks are `if (expiresAt && expiresAt < now)`. `0` is falsy, so it is skipped. `null` means no expiry. `0` is the unix epoch, which is in the past. A key stored with `expires_at = 0` still authenticates. Tests use `null`, a future time, or `100` against a clock of `200`. None use `0`.
+
+Fix: Compare with `!= null`. Add `expiresAt: 0` to the refused cases on both paths.
+
+If we skip it: A key whose expiry is `0` works forever, and the expiry tests stay green.
+
+### 17. The seed-hash scan misses a bcrypt `INSERT … SELECT` — `tests/seed-no-usable-password-hash.test.ts:16-17`
+
+What this is: The test that published SQL must not contain a password a user can sign in with.
+
+Problem: `HASH_SHAPE` is only the PBKDF2 `salt:hash` hex. `passwordHashTerms` only reads a `VALUES` tuple or a `password_hash =` assignment (`:89-111`). This statement has neither, and the hash is bcrypt, which `verifyUserPassword` accepts:
+
+```sql
+INSERT INTO users (id, email, password_hash, name, is_admin, created_at, updated_at)
+SELECT 'x', 'a@b.c', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'A', 1, 't', 't';
+```
+
+That bcrypt string is the public hash of `password`. The file scan stays green. A `DEFAULT` of the same hash is invisible too.
+
+Fix: Reject a `$2a$` / `$2b$` / `$2y$` literal anywhere in the SQL, and run `INSERT … SELECT` column lists through the same NULL check.
+
+If we skip it: A migration can ship a known admin password and this test stays green.
+
+### 18. Multi-scope and unscoped-key checks are never both required — `runtime/server/utils/authApiKeyText.ts:110`
+
+What this is: `hasRequiredApiKeyScopes` must require every named scope. `requireAuthScopes` (`runtime/server/utils/auth.ts:100-114`) must 403 an API key that has none when the route names one. Nothing in `tests/` calls `requireAuthScopes`. Callers that do run pass a single scope. The code is outside `tests/`.
+
+Problem: Change `every` to `some`. `hasRequiredApiKeyScopes(['auth:api-keys:read'], ['auth:api-keys:read', 'auth:api-keys:write'])` becomes true. Every existing call has one required scope, so `every` and `some` agree and the suite passes. Separately, add `|| user.scopes.length === 0` to the early return at `auth.ts:102`. An unscoped API key then passes `requireAuthScopes`. `requireAdminRouteScopes` already returns for an empty scope list on purpose (`:136-138`), so its tests do not cover this helper.
+
+Fix: Assert the two-scope pair is false and the same pair granted is true. Assert an unscoped API key plus one required scope is 403, and a session with the same empty list is not.
+
+If we skip it: A one-word edit lets a key that holds one of two scopes through, or treats every unscoped key as fully scoped.
+
 ## Nice to have
 
-### 15. A source test keeps a showcase login policy that shares the real login bucket — `runtime/server/utils/rateLimit.ts:120`
+### 19. A source test keeps a showcase login policy that shares the real login bucket — `runtime/server/utils/rateLimit.ts:120`
 
 What this is: `RATE_LIMIT_POLICIES.showcaseAuthLogin`. The only other mention is `tests/rateLimit.test.ts:34-38`, which requires that source line to exist.
 
@@ -162,9 +209,9 @@ Fix: Confirm no app reads `RATE_LIMIT_POLICIES.showcaseAuthLogin`. Then delete t
 
 If we skip it: The string test blocks removal, and any caller of the showcase policy spends the real login budget.
 
-5 smaller ones left out: `database.ts` `.get()` already returns the first row, and no test would catch a change that returns every row; a rate-limit binding test is a single request, so an always-success binding that replaces the window verdict stays green; `use-shared-now.test.ts` defines its own `useSharedNow`, so a wrong `useState` key in the real composable stays green; `runtime/server/api/runtime/public.get.ts` sets `private, no-store` and no test imports that route; `useMarkdown` allows any `data:image/` URL in an `img` tag, which does not run script.
+9 smaller ones left out: the constant-time loops can early-return and the cron source regex still passes; a PBKDF2 hash with extra suffix characters is not asserted; bcrypt cost 13 is not the pinned sample (cost 30 is); a seal older than `maxAge` is not peeked; `replaceLayerUserSession` and `clearLayerUserSession` are never called; `generateApiKey` length and randomness are not asserted; two API-key tests wait 50ms for an unawaited `last_used_at` write; `getSessionUser` is not shown to bind the session id; the no-auth SSR test builds its own plugin stub.
 
-Verdict: Sessions, the CSRF path grammar, shared secrets, SQL binding, cache privacy, and job leases have tests that fail when the check breaks. The SSRF allow-list, the mutation wrappers, and the old login limiter do not. A green run does not cover those.
+Verdict: Sessions, the CSRF path grammar, shared secrets, SQL binding, cache privacy, and job leases have tests that fail when the check breaks. The SSRF allow-list, the mutation wrappers, the empty session seed, and the old login limiter do not. A green run does not cover those.
 
 Lean: -1335 lines, -1 dependency possible. That is `demo.ts` (51) if nothing imports it, plus `urlValidator.ts` (1227), `unfurlResponseUtils.ts` (56), and `undici` if nothing imports the fetcher, plus the showcase policy line after the same kind of check. Do not delete either file on a guess. Both are public `server/*` exports.
 
