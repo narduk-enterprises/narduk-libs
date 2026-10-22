@@ -198,6 +198,15 @@ function gitOutput(repositoryRoot, args, execute = spawnSync) {
   return result.status === 0 ? result.stdout.trim() : ''
 }
 
+// Keep planning and the release guard on one immutable base, even if another
+// fetch updates the tracking ref while package checks run. --no-fetch remains local.
+export function plannedComparisonBase(repositoryRoot, base, execute = spawnSync) {
+  const oid = gitOutput(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`], execute)
+  if (!/^[a-f0-9]{40}$/u.test(oid))
+    throw new Error(`Cannot resolve planned comparison base '${base}'.`)
+  return oid
+}
+
 function gitRemotes(repositoryRoot, execute = spawnSync) {
   const result = execute('git', ['remote'], { cwd: repositoryRoot, encoding: 'utf8' })
   if (result.status !== 0 || typeof result.stdout !== 'string') return []
@@ -259,14 +268,11 @@ async function main() {
   }
 
   // --- Plan ---------------------------------------------------------------
-  const changedFiles = preflightChangedFiles(root, options.base)
+  const plannedBase = plannedComparisonBase(root, options.base)
+  const changedFiles = preflightChangedFiles(root, plannedBase)
   const workspace = loadWorkspace(root)
   const plan = computeAffectedSet({ changedFiles, consumerScopeMode: 'scoped' })
-  const baseSha = spawnSync('git', ['rev-parse', '--short', options.base], {
-    cwd: root,
-    encoding: 'utf8',
-  }).stdout?.trim()
-  console.log(`=== plan (against ${options.base}${baseSha ? ` ${baseSha}` : ''}) ===`)
+  console.log(`=== plan (against ${options.base} ${plannedBase.slice(0, 12)}) ===`)
   console.log(`Changed files: ${changedFiles.length}`)
   console.log(
     `Affected packages (${plan.affectedNames.length}): ${plan.affectedNames.join(', ') || 'none'}`,
@@ -336,14 +342,13 @@ async function main() {
         `release PR identity not proven, so release-plan:check ran: ${releaseIdentity.problems.join('; ')}`,
       )
     }
-    // Pass the ref the author asked for, which the fetch above just refreshed.
-    // The script's own default is `origin/<baseBranch>` (#619), which is only as
-    // fresh as the last fetch of that remote; `--base` keeps this phase on the
-    // exact ref preflight planned against.
+    // Pass the immutable base used by the planner. The direct command refreshes
+    // named remote branches; pinning here preserves --no-fetch and prevents a
+    // second fetch from moving the comparison after the plan was computed.
     phase('release-plan:check', 'node', [
       'scripts/check-generator-release-plan.mjs',
       '--base',
-      options.base,
+      plannedBase,
     ])
   }
   phase('format:check', 'pnpm', ['run', 'format:check'])

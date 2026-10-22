@@ -156,6 +156,8 @@ baseline 190 drained, and the count admitted since the freeze.
   (30-second bound) before diffing; a failed refresh is unknown and stops the
   gate. Explicit local or historical comparison refs retain their existing
   semantics.
+- Preflight passes its planned immutable base to the release check, preserving
+  `--no-fetch` and keeping later fetches from changing the planned comparison.
 - `pnpm run quality`
 - `pnpm run surface:check` (inside `quality:artifacts`): every component
   `narduk-shell` registers, and every `./format` export, has a README section,

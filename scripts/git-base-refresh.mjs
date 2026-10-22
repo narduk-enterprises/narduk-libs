@@ -20,12 +20,26 @@ export function fetchTargetForBase(base, remotes) {
 // Refresh only a named remote branch, never a local/historical comparison.
 // Ignore Git's output: a credential helper's diagnostics must not reach this gate.
 export function refreshComparisonBase(root, base, { run = spawnSync, timeout = 30_000 } = {}) {
+  const resolved = run(
+    'git',
+    ['rev-parse', '--symbolic-full-name', '--verify', '--end-of-options', base],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 10_000,
+    },
+  )
+  if (resolved.error) throw new Error('Cannot resolve comparison base; freshness is unknown.')
+  // Computed revisions have no symbolic name. Invalid refs retain the caller's
+  // existing merge-base diagnostic; neither is a branch to fetch.
+  if (resolved.status !== 0 || !resolved.stdout.trim().startsWith('refs/remotes/')) return undefined
+  const remoteBase = resolved.stdout.trim().slice('refs/remotes/'.length)
   const remotes = run('git', ['remote'], { cwd: root, encoding: 'utf8', timeout: 10_000 })
   if (remotes.error || remotes.status !== 0) {
     throw new Error('Cannot discover comparison-base remotes; freshness is unknown.')
   }
-  const target = fetchTargetForBase(base, remotes.stdout.trim().split(/\r?\n/u))
-  if (!target) return undefined
+  const target = fetchTargetForBase(remoteBase, remotes.stdout.trim().split(/\r?\n/u))
+  if (!target) throw new Error('Comparison base has no configured remote; freshness is unknown.')
   const result = run(
     'git',
     [
@@ -33,7 +47,7 @@ export function refreshComparisonBase(root, base, { run = spawnSync, timeout = 3
       '--no-tags',
       '--no-recurse-submodules',
       target.remote,
-      `refs/heads/${target.ref}:refs/remotes/${base}`,
+      `refs/heads/${target.ref}:refs/remotes/${remoteBase}`,
     ],
     {
       cwd: root,
