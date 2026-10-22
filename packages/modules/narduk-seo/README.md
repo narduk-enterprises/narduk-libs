@@ -297,6 +297,31 @@ A canonical hostname that does not normalize fails open and returns the
 canonical directive, as the module guard does, so a misconfigured canonical host
 cannot noindex production.
 
+## Page titles
+
+`usePageSeo` takes exactly the options `useSeo` does and also sets the browser
+`<title>` to `<page> · <site name>` through a `titleTemplate`:
+
+```ts
+usePageSeo({ title: 'Trades', description: 'Every fill in this game.' })
+// <title>Trades · Stonx</title>   og:title "Trades"
+```
+
+- The site name is `useSiteConfig().name`, then `runtimeConfig.public.appName`.
+- Only the browser title carries the suffix. `og:title`, the generated share
+  card and the description stay the page's own words.
+- A title that already names the site (`Stonx rules`) is not suffixed again, an
+  empty title is the site name alone, and with no site name the title is
+  untouched. The rule is the pure
+  `buildPageTitle(title, { siteName, separator })`.
+- `titleSeparator: '|'` changes the separator; `titleSuffix: false` leaves the
+  bare title (a home page whose title already is the whole line).
+- Precedence: Unhead keeps one `titleTemplate`, and the page's call is the more
+  specific one, so it replaces an app-wide template (a `titleTemplate` in
+  `nuxt.config`, or one from another SEO module) rather than stacking on it.
+  Pages that call `usePageSeo` get this title only; set the separator there, not
+  in a second template.
+
 ## Sitemap `<lastmod>`
 
 Production builds give every page a real `<lastmod>`, from the first of these
@@ -487,6 +512,8 @@ literal) when building fleet-app JSON-LD so `isPartOf` points at the hub.
 Available as auto-imported helpers in app `<script setup>`:
 
 - `useSeo(...)` — title, description, OG image, robots.
+- `usePageSeo(...)` — `useSeo` plus the house browser title, `Trades · Stonx`
+  (see [Page titles](#page-titles)).
 - `useWebPageSchema(...)` — WebPage JSON-LD.
 - `useArticleSchema(...)` — Article JSON-LD for blog posts.
 - `useBreadcrumbSchema(...)` — BreadcrumbList JSON-LD.

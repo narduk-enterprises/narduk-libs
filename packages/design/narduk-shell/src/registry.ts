@@ -112,4 +112,12 @@ export const NE_SHELL_COMPONENTS: readonly NeComponentRegistration[] = [
   // and keeps only the small trigger in its first bundle.
   { name: 'NeCommandPalette', filePath: './runtime/components/NeCommandPalette.vue' },
   { name: 'NeCommandPaletteTrigger', filePath: './runtime/components/NeCommandPaletteTrigger.vue' },
+  // Round-8 feel primitives (stonx design round 8): the pieces every live-data
+  // app otherwise rebuilds. A relative `<time>` on one shared ticker, a price
+  // cell that changes colour and never width, the phone's bottom CTA bar, and
+  // tabs whose state can live in `?tab=`.
+  { name: 'NeRelativeTime', filePath: './runtime/components/NeRelativeTime.vue' },
+  { name: 'NePriceCell', filePath: './runtime/components/NePriceCell.vue' },
+  { name: 'NeStickyActionBar', filePath: './runtime/components/NeStickyActionBar.vue' },
+  { name: 'NeTabs', filePath: './runtime/components/NeTabs.vue' },
 ]
