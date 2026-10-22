@@ -1,0 +1,9 @@
+{
+  "lane": "apptools-src",
+  "status": "done",
+  "pr_urls": [],
+  "heads": [],
+  "checks": [],
+  "summary": "Read-only ponytail audit of packages/tooling/narduk-app-tools/src. 5 must-fix, 13 should-fix, 2 nice. Promote, ship, and the staging gate can move production to the wrong version. db migrate can write a contract-owned D1 database through --wrangler-config. No source change. No PR.",
+  "needs_logan": false
+}
