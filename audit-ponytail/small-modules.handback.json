@@ -1,0 +1,9 @@
+{
+  "lane": "small-modules",
+  "status": "done",
+  "pr_urls": [],
+  "heads": [],
+  "checks": [],
+  "summary": "Ponytail audit of logging, timeseries, realtime, ai, uploads, contracts, status-runtime, and libs-explorer. 2 must, 14 should, 2 nice. Release blockers: series-unit cache skips unit updates, and xAI error.message is returned to the client. No PR.",
+  "needs_logan": false
+}
