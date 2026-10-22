@@ -106,9 +106,45 @@ Fix: Before running a no-transaction file, insert a ledger row that marks it sta
 
 If we skip it: One crash after concurrent DDL sticks every later deploy on that file.
 
+### 9. An MCP authorization code is used up before PKCE is checked
+
+`packages/modules/narduk-auth/server/mcp-oauth/protocol.ts:75-84`
+
+What this is: `POST /oauth/token` with `grant_type=authorization_code` inserts a one-time claim row (`claimMcpOAuthCode`, kept for 600 seconds) and only then calls the OAuth library. A second request with the same code is rejected here and never reaches the library.
+
+Problem: The claim does not look at `code_verifier`. Someone who sees the code on the redirect (a log line, a Referer, a custom-scheme handler) can `POST` it with `code_verifier=wrong`. The claim row is written. The library then rejects PKCE, and the row stays. The real client posts the same code with the real verifier inside the code lifetime and gets `invalid_grant` / "already used". PKCE was supposed to make a stolen code useless. It still cannot be redeemed by the thief, but it also cannot be redeemed by the client. Native exchange does not do this: a failed rotate leaves the code in place (`native-core.ts` `rotate`).
+
+Fix: Claim the code only after the library returns a token. If the library returns an error for that grant, delete the claim row before answering. Add a test: bad verifier, then the real verifier, and the second call must succeed.
+
+If we skip it: One look at the redirect code is enough to make that sign-in fail. The user has to start the consent flow again.
+
+### 10. Every MCP token request deletes every expired OAuth row
+
+`packages/modules/narduk-auth/server/mcp-oauth/protocol.ts:75-76` and `server/lib/mcp-oauth/d1-kv.ts:161-163`
+
+What this is: On each `POST /oauth/token`, the handler schedules `purgeExpired()`, which is `DELETE FROM auth_oauth_kv WHERE expires_at <= now` with no limit. The runner bridge already uses a capped delete (`purgeExpiredPrefix`, 50 rows) for the same table.
+
+Problem: Two refreshes at the same time, with thousands of expired consent and code rows in the table, each start that full delete. D1 has one writer. The token write waits on a delete whose size is the whole expired set, not the one grant being refreshed.
+
+Fix: Call `purgeExpiredPrefix` with a small limit, or run the full delete from a scheduled job, not from the token request.
+
+If we skip it: A busy token endpoint gets slower as expired rows pile up, and refreshes contend with that delete.
+
+### 11. Account deletion's Supabase fallback reads the build-time backend
+
+`packages/modules/narduk-auth/server/utils/accountDeletionBridge.ts:77-85` and `server/lib/app-auth/supabase-client.ts:48-53`
+
+What this is: If the user object has no `authBackend`, deletion decides Supabase vs local from `getAuthConfig`, which reads `runtimeConfig.authBackend`. The module copies that from `process.env` at build (`src/module.ts:216-224` and `430-433`). Live Worker vars are read by `resolveAuthEnvironmentForEvent` (`auth-runtime-env.ts:50-72`). A normal session cookie carries `authBackend`, so the stock route does not use this fallback. The public helper does, for a caller with no backend stamp (the case in the #1051 tests).
+
+Problem: The Worker build froze `authBackend: 'local'`. The running Worker has `AUTH_BACKEND=supabase`. The principal has no `authBackend` and the user row has `passwordHash: null`. `usesSupabaseCredentials` is false. The password check is skipped. `{}` deletes the account. The same call is refused when `getAuthConfig` reports supabase.
+
+Fix: Use `resolveAuthEnvironmentForEvent(event).authBackend` for that fallback, not `getAuthConfig`.
+
+If we skip it: A custom delete route on a Worker whose backend is set only at runtime can delete a passwordless Supabase user with an empty body.
+
 ## Nice to have
 
-### 9. A non-integer list limit crashes instead of using the clamp
+### 12. A non-integer list limit crashes instead of using the clamp
 
 `packages/modules/narduk-tenancy/server/utils/tenancy.ts:1341-1342` and `1370-1374`
 
@@ -120,7 +156,7 @@ Fix: If `limit` is not an integer, throw `TenancyError` `invalid`, or ignore it 
 
 If we skip it: A bad query param 500s the audit or support-grant list.
 
-### 10. A down database is reported as a missing connection string
+### 13. A down database is reported as a missing connection string
 
 `packages/modules/narduk-postgres/src/node.ts:83-89`
 
@@ -132,10 +168,34 @@ Fix: Add a code such as `CONNECTION_FAILED` for the driver `catch`, and keep `CO
 
 If we skip it: Deploy and health tooling mis-label "Postgres is down" as "the DSN was not set".
 
+### 14. An empty user id is stored as a member
+
+`packages/modules/narduk-tenancy/server/utils/tenancy.ts:903-914`
+
+What this is: `acceptInvite` rejects a blank `userId`. `addMember` does not. The id is written on the membership row.
+
+Problem: `addMember({ orgId, userId: '', role: 'admin', actorUserId })` from an owner inserts `user_id = ''`. That row is a real admin. It matches no signed-in user. A later lookup or a bad client that sends an empty id hits this slot.
+
+Fix: `requireText(input.userId, 'userId')` on `addMember`, `setMemberRole`, `removeMember`, and the override calls.
+
+If we skip it: One blank id can sit in the org as admin until someone notices the row.
+
+### 15. Two support-grant revokes write two audit rows
+
+`packages/modules/narduk-tenancy/server/utils/tenancy.ts:1322-1337`
+
+What this is: `revokeInvite` updates only while `revoked_at` is still null, and audits the row that update returns. `revokeSupportGrant` updates by id only.
+
+Problem: Two calls revoke the same active grant at once. Both saw `revokedAt === null`. Both updates succeed. Both insert `support_grant.revoke`. The grant is revoked once. The audit lists two revokes.
+
+Fix: `UPDATE … WHERE id = ? AND revoked_at IS NULL`, and audit only when a row comes back. Same shape as `revokeInvite`.
+
+If we skip it: The grant still ends revoked. The audit over-counts that one action.
+
 ## Left out
 
-Eight smaller items did not make the list. `sslmode=Disable` is not in the refusal set, and the driver options still set `ssl: 'require'`. Three loopback host lists are copied (`redirect-uri.ts`, `mcp-oauth/config.ts`, `local-email-core.ts`) and the issuer one also treats any `127.x.x.x` string as loopback. The expired-session sweep cap of 50 and the support-grant scan cap of 100 are named fail-closed limits. Login lockout is checked, then incremented, so a parallel burst can pass the threshold by a few tries. `placeholderTuplesWithCasts` splices the cast into the SQL; callers in this repo pass fixed type names (`uuid`, `text`). The Apple sign-in cookie is not re-checked on read; writing it already requires the browser that holds the `HttpOnly` cookie. `withSessionSearchPath`'s `finally` can replace the original migration error if restoring `search_path` throws.
+These did not make the list. `sslmode=Disable` is not in the refusal set, and the driver options still set `ssl: 'require'`. Three loopback host lists are copied (`redirect-uri.ts`, `mcp-oauth/config.ts`, `local-email-core.ts`) and the issuer one also treats any `127.x.x.x` string as loopback. The expired-session sweep cap of 50 and the support-grant scan cap of 100 are named fail-closed limits. Login lockout is checked, then incremented, so a parallel burst can pass the threshold by a few tries. `placeholderTuplesWithCasts` splices the cast into the SQL; callers in this repo pass fixed type names (`uuid`, `text`). The Apple sign-in cookie is not re-checked on read; writing it already requires the browser that holds the `HttpOnly` cookie. `withSessionSearchPath`'s `finally` can replace the original migration error if restoring `search_path` throws. A blank invite `resource.id` does not write an override (`''` is falsy on accept); it does not create an override row for `''`. Login lockout falls back to `X-Forwarded-For` only when `cf-connecting-ip` is absent; Workers set that header. API keys and native bearers do not pass through the web recovery and MFA allowlists; local native sign-in has no TOTP step. A `verifyCredentials` hook that resolves immediately is the documented way for an app to do its own check. Query errors thrown inside `withHyperdriveConnection` are the caller's error; connect failures are already redacted.
 
-Verdict: The rank re-checks, invite claim, PKCE exchange, and API-key mint ceiling are in good shape and are tested with races. Fix the local account-deletion hole before the next auth release. The other items are partial writes and edge cases that show up when a second statement fails or a path or DSN is slightly off.
+Verdict: The rank re-checks, invite claim, native PKCE exchange, and API-key mint ceiling are in good shape and are tested with races. Fix the local account-deletion hole before the next auth release. The MCP code claim should be fixed in the same release: a stolen code cannot be redeemed, but it can also be burned so the real client cannot redeem it. The other items are partial writes and edge cases that show up when a second statement fails or a path or DSN is slightly off.
 
 Not checked: `narduk-core` password hashing, API-key lookup, `requireAuth`, rate limits, and the `X-Requested-With` middleware (other lanes). The inside of `@cloudflare/workers-oauth-provider` and `@simplewebauthn/server`. Most Vue pages, design cards, and the Swift Keychain client beyond the native refresh and sign-in flow. Live D1 and live Postgres (no installs or builds). Fleet apps outside this repo. I read the security paths, schemas, and the race and deletion tests; I did not read every auth UI test.
