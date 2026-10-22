@@ -42,7 +42,7 @@ What this is. `toCsv` (`src/runtime/utils/data-table.ts:78-91`) prefixes a text 
 
 Problem. Note value ` =HYPERLINK("x")` (space, then `=`). `FORMULA_LEAD` does not match a space. The cell is `" =HYPERLINK(""x"")"`. Excel trims the space and runs the formula. The same function is used for headers and preamble lines. The test also stays green if `+`, `@`, tab, or CR are removed from `FORMULA_LEAD`, because those characters never appear in an expected string.
 
-Fix. After trim-for-detection, prefix any text cell whose first non-space character is in `FORMULA_LEAD`. Assert ` =HYPERLINK("x")`, `+cmd`, and `@SUM(1+1)` in `data-table.test.ts`. The prefix change is in `src/` (other lane).
+Fix. After trim-for-detection, prefix any text cell whose first non-space character is in `FORMULA_LEAD`. Assert ` =HYPERLINK("x")`, an unquoted `=1+1`, `+cmd`, `@SUM(1+1)`, and a text `-2`. Also assert `toCsv` writes `0` and `false` as cells. `isMissingValue(0)` is tested on its own and never calls `csvCell`, so `if (!value) return ''` stays green. The prefix change is in `src/` (other lane).
 
 If we skip it. A note or a name a reader can type becomes a formula when they open the CSV.
 
@@ -98,8 +98,108 @@ Fix. Walk code points, or compare by code point index. Assert the emoji label. T
 
 If we skip it. A label with an emoji never highlights the matched word.
 
-6 smaller notes left out: cursor debounce not asserted on scope dispose (the offset suite asserts it); fake timers in the cursor file restored only on the success path of the last test; `previous()` from a deep link with an empty stack jumps to the first page; a filter object whose keys are the same but ordered differently resets the cursor; `+`, `-`, `@`, tab, and CR are one regex and are not separate cases (folded into finding 4); `useOptimistic` leaves the previous optimistic value when two overlapping saves both fail (`use-optimistic.ts:106-108`). That last one matches the comment in the composable and the assertion in `test/use-optimistic.test.ts:163-186`. The behavior lives in `src/` (other lane). It is a written rule, so it is not a test defect.
+### 10. The equal-filters test never rebuilds the getter — `test/use-collection.test.ts:476-498`
 
-Verdict: The suite is strong on formatters, prose, the offset list, and most components. It never opens a router for the cursor list, so Back drops the page. Fix that test and the watcher first.
+What this is. The test says a `filters` getter that returns a new object every time, including flipped key order, must not refetch. The stable key is `filtersKeyOf` (`use-collection.ts:231-237`), watched at `:492-495`.
+
+Problem. The getter is `() => (Math.random() > 0.5 ? { a: 1, b: 2 } : { b: 2, a: 1 })`. It reads no ref. `filtersValue` is a computed, so Vue runs that getter once and caches it. The loop that reads `collection.state.filters` does not call it again. Delete the `.sort()` in `filtersKeyOf`, or watch the filter object by reference, and this test still sees one fetch.
+
+Fix. Read a ref inside the getter, bump that ref each pass, return the same entries with flipped keys, and expect one fetch.
+
+If we skip it. A refactor that refetches on every new object ships, and any caller whose getter is invalidated by an unrelated reactive refetches on every change.
+
+### 11. The formatted pressure cell is the same string either way — `test/NeDataTable.mount.test.ts:153-161`
+
+What this is. This is the only assertion that a column `format` function ran on a rendered cell. The fixture formats pressure with `toFixed(2)` (`:40`).
+
+Problem. Row 0's pressure is `30.08`. `String(30.08)` and `(30.08).toFixed(2)` are both `30.08`, so the expect stays green if `format` is skipped. Row 1's pressure is `30.1` (`:47`). `toFixed(2)` is `30.10`. `String(30.1)` is `30.1`. That cell is never read. The SSR file has no formatted column.
+
+Fix. Assert row 1's pressure cell is `30.10`.
+
+If we skip it. Printing the raw value, or running `format` on missing cells, stays green.
+
+### 12. "Drops extra cells" allows an extra cell — `test/prose.test.ts:433-441`
+
+What this is. The case `| x \| y | 2 | 3 |` is supposed to keep two cells and drop `3`. The parser keeps only header-width cells (`prose.ts` maps across the align row).
+
+Problem. The expect is `toMatchObject` on a row of two cells. Vitest's `toMatchObject` does not reject extra array indexes. A parser that keeps the third cell `3` still passes. The short row `| 1 |` does lock padding, because a missing second cell fails.
+
+Fix. `toEqual` the rows, and expect the second row's length to be 2.
+
+If we skip it. The "drops extra cells" half of that test never fails.
+
+### 13. The cursor list's initial sort skips the allowlist — `src/runtime/composables/use-cursor-collection.ts:54`
+
+What this is. `validSort` (`:46-49`) checks `setSort` and the URL. The ref is `validSort(route?.query.sort) ?? options.sort ?? null`. The option itself is not checked. `test/use-cursor-collection.test.ts` never passes `sort` or `sortable`. Offset mode refuses a bad sort in `test/use-collection.test.ts:733-764`.
+
+Problem. `useCursorCollection({ sort: 'secret:asc', sortable: ['name'], immediate: false, fetch })` then `refresh()`. The request query contains `sort: 'secret:asc'`. `name:sideways` does the same with no allowlist. `setSort('secret:asc')` would correct the ref, after the first request has already gone out.
+
+Fix. Run `options.sort` through `validSort` before the first fetch, and assert the wire query omits `sort`. The one-line change is in `src/` (other lane).
+
+If we skip it. A strict list route 400s on the collection's own initial sort.
+
+### 14. A protocol-relative link becomes an off-site https URL — `src/runtime/utils/prose.ts:42-48`
+
+What this is. `safeProseHref` keeps any string with no scheme. `resolveProseHref` (`:112-126`) then resolves against `linkBase` and keeps `http:` and `https:`. The keep/drop tables (`test/prose.test.ts:222-251`) use `/root`, `./`, `../`, `#`, `?`, and `https://` only.
+
+Problem. `safeProseHref('//evil.example/phish')` returns `//evil.example/phish`. With `linkBase: 'https://docs.example/guide/'`, `new URL` yields `https://evil.example/phish`, and the protocol check lets it through. `resolveProseHref('a', { linkBase: 'file:///tmp/' })` is `null` only because the resolved protocol is `file:`. The test that refuses unsafe schemes passes `javascript:alert(1)`, which dies in `safeProseHref` before `new URL`. Deleting the protocol check leaves that assertion green and emits `file:///tmp/a`.
+
+Fix. Drop a cleaned href that starts with `//`. Assert `resolveProseHref('a', { linkBase: 'file:///tmp/' })` is `null`. The drop is in `src/` (other lane).
+
+If we skip it. A docs page with `linkBase` turns `[x](//evil.example/phish)` into an off-site link, and the non-http base guard can be deleted without a red test.
+
+### 15. The dispose test never arms the search timer — `test/use-collection.test.ts:856-864`
+
+What this is. The title says scope dispose clears the debounce timer and aborts the live request. Dispose does both (`use-collection.ts:504-507`).
+
+Problem. The body never assigns `q`, so `debounceTimer` stays unset. Only the abort is checked. Remove `clearTimeout` and the test still passes.
+
+Fix. With fake timers, set `q` to `gtm`, stop the scope before 250 ms, advance 250 ms, and expect no second fetch and no `q` on the wire.
+
+If we skip it. A search typed as the page unmounts still hits the API.
+
+### 16. A full last page is never the counted next-page case — `test/use-collection.test.ts:649-669`
+
+What this is. Counted `hasNext` is `page < pageCount`. Uncounted `hasNext` is `items.length >= limit` (`use-collection.ts:295-299`). The counted assertions use total 25: page 1 has 10 rows (both formulas say next) and page 3 has 5 rows (both formulas say stop).
+
+Problem. Limit 10, total 10, one page of 10 rows. `pageCount` is 1, so `canNext` must be false. The length check would say true. No counted assertion is a full last page, so swapping the counted branch to the length check stays green.
+
+Fix. Land that page and expect `canNext === false`.
+
+If we skip it. The pager offers a next page that is empty.
+
+### 17. Month lengths are never adjusted — `test/format.test.ts:188-197`
+
+What this is. `zonedMonthsBetween` (`format.ts:336-343`) subtracts a month when the end day is earlier, and adds one when a negative span's end day is later. `formatRelative` uses that count (`:556-557`).
+
+Problem. The month cases use the same day of the month (`2026-01-08` vs `2026-03-08`, and `2026-05-08`), so both `if`s are skipped. With `timeZone: 'UTC'` and `locale: 'en-US'`, `formatRelative('2026-03-30T12:00:00Z', { now: '2026-01-31T12:00:00Z', ... })` is `next month`. Deleting the first `if` yields `in 2 months`. The reverse, Jan 31 measured from Mar 30, is `last month`. Deleting the second `if` yields `2 months ago`. The existing `2 months ago` / `in 2 months` lines stay green.
+
+Fix. Add those two calls.
+
+If we skip it. Jan 31 to Mar 30 reads as two months.
+
+### 18. Search is never given an uppercase query — `test/collection-engine.test.ts:132-137`
+
+What this is. Search is case-insensitive. `collectRows` lowercases the query (`collection-engine.ts:123`). `rowMatches` lowercases the cells and does not fold the query again (`:78-87`).
+
+Problem. Every query in this file is already lower case (`arm`, `pve`, `logan`) or whitespace. `collectRows(hosts, { columns, query: ' PVE ' })` should return `pve-02`, `pve-01`, `pve-10` in that order. Drop `toLowerCase()` and `rowMatches` looks for `PVE` in a lowercased line and returns no rows. The whitespace test still passes, because that string becomes empty and matches before `includes`.
+
+Fix. Assert `query: ' PVE '` returns those three names.
+
+If we skip it. Uppercase search matches nothing. `useClientCollection` uses the same path.
+
+### 19. Ctrl+Enter is named and never pressed — `test/use-inline-edit.test.ts:200-213`
+
+What this is. Multiline mode commits on Cmd or Ctrl+Enter (`use-inline-edit.ts:113`). Plain Enter stays a newline.
+
+Problem. The only commit key in the test is `{ key: 'Enter', metaKey: true }`. `ctrlKey` stays false for the whole file. Delete `|| event.ctrlKey` and the test stays green.
+
+Fix. Press `{ key: 'Enter', ctrlKey: true, metaKey: false }` and expect `save` to be called with the draft.
+
+If we skip it. Windows multiline fields do not commit.
+
+9 smaller notes left out: cursor debounce not asserted on scope dispose; fake timers in the cursor file restored only on the success path of the last test; `previous()` from a deep link with an empty stack jumps to the first page; a cursor filter object whose keys are equal but ordered differently resets the cursor; `useOptimistic` leaves the previous optimistic value when two overlapping saves both fail (`use-optimistic.ts:106-108`), which matches its comment and `test/use-optimistic.test.ts:163-186`; after `onConfirm` rejects, `test/use-confirm.test.ts:161-186` never checks the promise is still pending before Cancel; `useTimeAgo` is not given a future instant more than a week out (`test/use-time-ago.test.ts:86-89` uses two hours); `pageActive(-1, -5, 12)` is untested (`test/command-palette.test.ts:149-154` only pages down from no selection). `formatMoney` has no negative input. That last one is a missing string, and the sign comes from `Intl`.
+
+Verdict: The suite is strong on formatters, prose, the offset list, and most components. It never opens a router for the cursor list, so Back drops the page. Several tests stay green when the behavior they name is removed. Fix the cursor watcher first, then those assertions.
 
 Not checked: Did not run the suite (no install, no build). `node_modules/@nuxt/ui` is not on disk, so the PageHeader/Breadcrumb stubs were not compared to `@nuxt/ui` 4.11.1; `test/support/nuxt-ui-stubs.ts` says it was read against 4.6.0. Did not line-read every `Ne*.mount.test.ts` / `Ne*.ssr.test.ts` (hero, marketing, admin, form, filter, tabs, price, settle). Read the harness (`test/support/*`, `vitest.config.ts`), registry, format, prose, message prose, collection engine, both collection composables, optimistic/undo/inline-edit/confirm/time-ago/row-limit sources, command palette engine and `go()`, CSV, meter, pager summary, and shell brand. `vitest.config.ts` is outside this lane: it rewrites `import.meta.client` to `true` and `import.meta.server` to `false` for every file outside `node_modules`, so a server-only branch in a component is not what these tests run. Other packages were not audited.
