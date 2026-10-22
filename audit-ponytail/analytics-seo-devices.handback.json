@@ -1,0 +1,9 @@
+{
+  "lane": "analytics-seo-devices",
+  "status": "complete",
+  "pr_urls": [],
+  "heads": ["audit/ponytail-5/analytics-seo-devices"],
+  "checks": [],
+  "summary": "Read-only ponytail audit of narduk-analytics, narduk-seo, and narduk-devices. 2 must-fix, 17 should-fix, 1 nice. No source changes. Full preflight not run (report only).",
+  "needs_logan": false
+}
