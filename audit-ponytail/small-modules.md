@@ -10,9 +10,9 @@ Load I assumed: every request writes one log record and a small buffer flushes i
 
 What this is: `resolveSeries` remembers a vessel path after the first database upsert and skips the statement on every later batch.
 
-Problem: The upsert sets `unit = COALESCE(EXCLUDED.unit, series.unit)`, so a later non-null unit is supposed to replace a null or old one. The cache returns before that statement. First batch: `{ path: 'navigation.speed', unit: null }`. The row is stored with a null unit and cached. Second batch: the same path with `unit: 'm/s'`. No `INSERT INTO series` runs. The row stays null. The same thing happens when the unit changes from `m/s` to `kn`. The steady-state test only repeats an identical batch, so it never sees this. On a long-lived queue process the path set stays in the 5000-entry cache, so the first unit wins for the life of the process.
+Problem: The upsert sets `unit = COALESCE(EXCLUDED.unit, series.unit)`, so a later non-null unit is supposed to replace a null or old one. Two steps drop that unit. Inside one batch, `distinctDescriptors` keeps the first point for a path (`series.ts:102-110`). A batch whose first point has no unit and whose second point has `unit: 'm/s'` binds null. Across batches, the cache returns before the statement. First batch with no unit stores null and caches it. Second batch with `unit: 'm/s'` runs no `INSERT INTO series`. The same skip keeps `m/s` after a later batch says `kn`. The steady-state test repeats an identical batch, so the unit never changes. On a long-lived queue process the path set stays in the 5000-entry cache.
 
-Fix: On a cache hit, if the incoming unit is a non-null string and it differs from `cached.unit`, treat that descriptor as missing and run the upsert. Leave the zero-statement path in place when the unit is omitted or unchanged.
+Fix: When a path is already in the batch, keep a later non-null unit if the saved one is null, and reject two different non-null units. On a cache hit, if the incoming unit is a non-null string and it differs from `cached.unit`, run the upsert. Leave the zero-statement path in place when the unit is omitted or unchanged.
 
 If we skip it: A corrected unit never lands. Charts and exports keep the first unit, including a null.
 
@@ -88,15 +88,15 @@ Fix: Use `JSON.stringify` of the sorted keys as the map key.
 
 If we skip it: A path that contains `|` plus another cache key makes an overlapping resolve fail closed and drop the batch.
 
-### 8. An image prefix without a slash matches the next key (`packages/modules/narduk-uploads/runtime/server/routes/images/[...slug].get.js:77`)
+### 8. A Chatham fall-back hour counts rows outside the bucket (`packages/modules/narduk-timeseries/src/bucket.ts:204-264`)
 
-What this is: `GET /images/**` serves an R2 key when the key starts with a configured prefix. The module rejects an empty prefix because that would serve the whole bucket (`packages/modules/narduk-uploads/src/module.ts:89-94`).
+What this is: `bucketReadings` labels a row by its wall-clock hour, then sets the bucket's start and end with `instantOf`, which returns the earliest instant of that wall time.
 
-Problem: The check is `slug.startsWith(entry.prefix)`. Prefix `v1` matches `v1/ok.png` and also `v1-private/secret.png` and `v10/a.png`. The default prefix is `uploads/`, which is safe. A configured prefix that omits the slash is not. The README examples all include the slash. The setup check does not require it.
+Problem: Pacific/Chatham falls back at 03:45 on 2026-04-05, so 02:45–03:00 happens twice. A reading at `2026-04-04T14:00:00.000Z` is wall time `2026-04-05 02:45`, the second one. With `bucket: '1h'` and `timeZone: 'Pacific/Chatham'` the key is `2026-04-05T02`, `start` is `2026-04-04T12:15:00.000Z`, and `end` is `2026-04-04T13:15:00.000Z`. The reading is counted in `rows` and is outside that interval. I ran this on Node 22. Chicago and Santiago stay aligned because those transitions sit on an hour or on midnight, and the tests only tile those two.
 
-Fix: Reject a prefix that does not end with `/` at setup, next to the empty-prefix check.
+Fix: End the bucket at the last instant that still has that wall-clock key. Add a Pacific/Chatham fall-back test that checks the reading is inside `[start, end)`.
 
-If we skip it: One missing slash publishes every key that shares that character prefix.
+If we skip it: On that morning a Chatham 1-hour chart draws 02:45–03:00 in a bar that ended an hour earlier.
 
 ### 9. `grokChat` waits forever on a silent provider (`packages/modules/narduk-ai/server/utils/xai.ts:131-154`)
 
@@ -148,15 +148,15 @@ Fix: Do not attach `data` before the parser. Count bytes in the one reader that 
 
 If we skip it: Node dev uploads hang or crash the process instead of returning 413.
 
-### 14. `maxChars` is applied before the XML escape (`packages/modules/narduk-ai/server/utils/aiPromptResolver.ts:89-96`)
+### 14. A time string with no offset follows the process timezone (`packages/modules/narduk-timeseries/src/bucket.ts:151-154`)
 
-What this is: `serializeChunk` slices the raw text to `maxChars`, then escapes it, unless `trust` is `trusted`. With no `charBudget`, nothing measures the escaped length.
+What this is: `bucketReadings` parses a string with `new Date(value)`, then buckets that instant in `timeZone`.
 
-Problem: An untrusted chunk with `data` of 100 `&` characters and `maxChars: 100`. The slice keeps all 100. `escapeXmlText` turns each `&` into `&amp;`. The context body is 500 characters. A `<` grows four times, to `&lt;`. `charBudget`, when set, counts the escaped length. The per-chunk cap does not.
+Problem: With `TZ=America/Chicago`, `new Date('2026-09-18T20:30:00')` is `2026-09-19T01:30:00.000Z`. The same string on a UTC Worker is `2026-09-18T20:30:00.000Z`. A daily UTC bucket is then the 19th in Chicago and the 18th in UTC. A `Z` or a numeric offset stays on the 18th in both places. The README says a browser bundle can import this. The tests pass strings that already end in `Z`.
 
-Fix: Escape first, then `applyMaxChars` on the escaped string.
+Fix: Accept a string only when it has `Z` or a numeric offset. Count anything else in `skipped`.
 
-If we skip it: A caller who set `maxChars` as the bound on user text sends up to five times that many characters to the model.
+If we skip it: The same payload buckets on different days in a Chicago browser and a UTC Worker.
 
 ### 15. List `offset` accepts JavaScript numeric literals (`packages/contracts/narduk-platform/src/list-query.ts:217-221`)
 
@@ -178,15 +178,15 @@ Fix: If `flush()` is called while a drain is running, chain one more `drain()` a
 
 If we skip it: Shutdown reports success while the last records are still in memory.
 
-### 17. The list-query README still says a typo'd filter is a 400 (`packages/contracts/narduk-platform/README.md:34-60`)
+### 17. One vessel on two track tiers is deleted at the shorter window (`packages/modules/narduk-timeseries/src/timescale/retention.ts:97-106`)
 
-What this is: The README is the contract a route copies. The schema's default is tolerate-and-warn. `strict: true` is opt-in. The source comment says the next major flips that default.
+What this is: Each tier with `trackWindowMs` emits its own `DELETE` for its vessel list. The id is cast to `uuid`. Validation rejects a comma. It does not reject the same vessel twice.
 
-Problem: The README says unknown keys are rejected and that `schema.safeParse({ statuss: 'idle' }).success` is `false`. That call succeeds. `filters` is `{}`, `unknownKeys` is `['statuss']`, and the route returns the unfiltered page. That is the wrong page the README says it prevents.
+Problem: `now` is `2026-09-12T00:00:00.000Z`. Vessel `E621E1F8-C36C-495A-93FC-0C247A3E6E5F` is on `free` with a 7-day track window, and `e621e1f8-c36c-495a-93fc-0c247a3e6e5f` is on `paid` with a 365-day window. Both deletes run. `::uuid` treats the two spellings as one id. The free delete removes that boat's track older than `2026-09-05`. The paid window does not keep it.
 
-Fix: Document tolerate-and-warn, `unknownKeys`, and `strict: true`. Leave the default until the major that flips it.
+Fix: In `validateRetentionPolicy`, canonicalize each vessel id and throw `RETENTION_POLICY_INVALID` when one vessel is in more than one tier.
 
-If we skip it: A route copied from the README treats `?statuss=open` as no filter.
+If we skip it: A boat left on the free list, or listed once in each spelling, loses track at the free cutoff on the next sweep.
 
 ### 18. A Cloudflare-and-GitHub key drops the GitHub secret (`packages/contracts/narduk-platform/src/provision-env-contract.ts:208-256`)
 
@@ -220,7 +220,7 @@ Fix: Encode fixed-size slices and join those, and refuse objects over `MAX_FILE_
 
 If we skip it: Any app that still calls this helper on a full-size image spends the request on the copy.
 
-I left out 14 smaller ones: `/favicon` matches any path with that prefix, an empty manual prompt placeholder inserts the context between every character, client diagnostics will log a caller-supplied `fatal`, `Cache-Control: max-age` without `public` is not treated as a shared cache, `normalizeExtension` still rewrites `svg+xml`, a Doppler `from` with a fourth slash keeps the wrong key, an Influx comment can hide `aggregateWindow`, `createLiveSocket().start()` with no `WebSocket` sticks in `closed`, a close reason longer than 123 bytes can throw on older compatibility dates, an SSE line with no newline is unbounded, `retries: NaN` never stops, the stored chat model expires after a year, a failed multi-file upload leaves the earlier object, and a cold prompt cache calls `provide` once per request. A corrupt `package.json` is reported as an app with no name, `patchPackageRegistryNpmrcContent` deletes any line containing `/api/packages/`, and `useRequestTiming({ clock: () => Date.now() })` pairs that clock with a `performance.now()` start.
+I left out 22 smaller ones. The earlier notes still stand: `/favicon` prefix match, an empty prompt placeholder, client-supplied `fatal`, `max-age` without `public`, the `svg+xml` rewrite, a four-part Doppler `from`, an Influx comment hiding `aggregateWindow`, a live socket with no `WebSocket`, a close reason over 123 bytes, an unbounded SSE line, `retries: NaN`, a chat model that expires after a year, a multi-file upload that leaves the first object, a cold prompt cache, a corrupt `package.json` read as an empty app, an npmrc line deleted because it contains `/api/packages/`, and a request timer whose `clock` is `Date.now` while `start` is `performance.now()`. Also left out: an image prefix without a trailing slash, `maxChars` counted before XML escape, the list-query README still saying a typo'd filter is a 400, a series resolve that is one statement until the 65535-parameter ceiling, and `installationRole` other than 0 or 1, which is stored and then omitted from every rollup.
 
 Verdict: Fix the shared session signing key, the contract normalizer that can store that key as a plaintext var, the series-unit cache, the xAI error text, and the upload multipart parse before the next release of those packages. Those change who can forge a session, what is stored, or whether a Worker survives an allowed upload. The other findings need a bad input, a stall, or a later failure. Upload auth and the WebSocket authoriser fail closed in this slice. status-runtime did not show a defect at this load.
 

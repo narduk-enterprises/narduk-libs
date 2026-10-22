@@ -4,6 +4,6 @@
   "pr_urls": [],
   "heads": ["1dde706257e2fb08608ed8f5c74120948728b705"],
   "checks": [],
-  "summary": "Ponytail audit of logging, timeseries, realtime, ai, uploads, contracts, status-runtime, and libs-explorer. 5 must, 14 should, 1 nice. Release blockers: shared NUXT_SESSION_PASSWORD, a stored contract can mark that secret as a plaintext var, series-unit cache, xAI error.message, and h3 multipart parse of an allowed 10MB upload. No PR.",
+  "summary": "Ponytail audit of logging, timeseries, realtime, ai, uploads, contracts, status-runtime, and libs-explorer. 5 must, 14 should, 1 nice. Release blockers: shared NUXT_SESSION_PASSWORD, a stored contract can mark that secret as a plaintext var, series-unit cache, xAI error.message, and h3 multipart parse of an allowed 10MB upload. Also: a Chatham fall-back hour excludes its rows, and one vessel on two track tiers is deleted at the shorter window. No PR.",
   "needs_logan": false
 }
