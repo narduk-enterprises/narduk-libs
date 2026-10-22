@@ -2,8 +2,8 @@
   "lane": "docs-design",
   "status": "complete",
   "pr_urls": [],
-  "heads": ["26c06f8a525e88f3d24b64bf490897960f42bfff"],
+  "heads": ["b47a8954325df8b0395a02afd35749784175b69e"],
   "checks": [],
-  "summary": "Read-only docs audit of main 6fa6e160. 2 must, 11 should, 1 nice. SECURITY.md says only the latest version gets security fixes; the N-1 window says the previous major still does. The template-decoupling runbook still sends MapKit to narduk-geo and tells operators to rebuild shell UI locally. No source files changed. heads is the commit that added the report.",
+  "summary": "Read-only docs audit of main 6fa6e160. 2 must, 11 should, 1 nice. SECURITY.md says only the latest version gets security fixes; the N-1 window says the previous major still does. The template-decoupling runbook still sends MapKit to narduk-geo and tells operators to rebuild shell UI locally. No source files changed. heads is the commit with the report text.",
   "needs_logan": false
 }
