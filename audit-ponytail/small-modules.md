@@ -66,9 +66,19 @@ Fix: When `getCatalogEntry(key).secret` is true, reject a plain sensitivity or a
 
 If we skip it: The session signing key can be written as a plaintext Worker var and shown wherever plain values are shown.
 
+### 6. An authorizer that returns `ok: false` still opens the socket (`packages/modules/narduk-realtime/src/worker/upgrade-router.ts:523-554`)
+
+What this is: The upgrade router forwards the handshake unless the authorizer returns a `Response`. `UpgradeAllowed` documents `ok: true` as the success flag. That field is never read.
+
+Problem: An authorizer returns `{ ok: false }`, or the probe object `{ ok: false, response: new Response('nope', { status: 401 }) }`. Neither is a `Response`, so the router calls `idFromName` and `stub.fetch`. The socket opens. `{ ok: false, headers: { 'x-narduk-principal': '{"role":"admin"}' } }` does the same and sets that principal on the forwarded request. A typed authorizer cannot return these. An untyped `export default` can. No test covers a non-`Response` refusal.
+
+Fix: After the `Response` branch, require `verdict.ok === true`. Anything else is a 500 and must not call `stub.fetch`.
+
+If we skip it: An authorizer that returns the probe, or `{ ok: false }`, opens the socket. A principal header on that object is trusted by the Durable Object.
+
 ## Should fix
 
-### 6. Redaction misses compound names (`packages/modules/narduk-logging/src/sanitize.ts:145-158`)
+### 7. Redaction misses compound names (`packages/modules/narduk-logging/src/sanitize.ts:145-158`)
 
 What this is: `isSensitiveKey` redacts an exact key such as `email` or `prompt`, and it redacts a segment such as `token` inside `accessToken`.
 
@@ -78,7 +88,7 @@ Fix: Add those words to `SENSITIVE_SEGMENTS`. Add a fixture for `userEmail` and 
 
 If we skip it: A log line that uses the compound name ships the email, the address, or the prompt to the sink.
 
-### 7. In-flight resolve keys split on a character a path may contain (`packages/modules/narduk-timeseries/src/timescale/index.ts:270-273`)
+### 8. In-flight resolve keys split on a character a path may contain (`packages/modules/narduk-timeseries/src/timescale/index.ts:270-273`)
 
 What this is: Concurrent `resolveSeries` calls share one statement when their sorted cache keys join with `|`.
 
@@ -88,7 +98,7 @@ Fix: Use `JSON.stringify` of the sorted keys as the map key.
 
 If we skip it: A path that contains `|` plus another cache key makes an overlapping resolve fail closed and drop the batch.
 
-### 8. A Chatham fall-back hour counts rows outside the bucket (`packages/modules/narduk-timeseries/src/bucket.ts:204-264`)
+### 9. A Chatham fall-back hour counts rows outside the bucket (`packages/modules/narduk-timeseries/src/bucket.ts:204-264`)
 
 What this is: `bucketReadings` labels a row by its wall-clock hour, then sets the bucket's start and end with `instantOf`, which returns the earliest instant of that wall time.
 
@@ -98,7 +108,7 @@ Fix: End the bucket at the last instant that still has that wall-clock key. Add 
 
 If we skip it: On that morning a Chatham 1-hour chart draws 02:45–03:00 in a bar that ended an hour earlier.
 
-### 9. `grokChat` waits forever on a silent provider (`packages/modules/narduk-ai/server/utils/xai.ts:131-154`)
+### 10. `grokChat` waits forever on a silent provider (`packages/modules/narduk-ai/server/utils/xai.ts:131-154`)
 
 What this is: `grokListModels` aborts after 10 seconds. The comment there says a stalled xAI must not hold the admin request. `grokChat` and `grokChatStream` call `fetch` with no `signal`.
 
@@ -108,7 +118,7 @@ Fix: Pass `AbortSignal.timeout` into `createXaiRequest`, using the same 30 secon
 
 If we skip it: One stalled provider call holds the Worker invocation until the platform kills it.
 
-### 10. An SSE error frame becomes an empty success (`packages/modules/narduk-ai/server/utils/xai.ts:187-204`)
+### 11. An SSE error frame becomes an empty success (`packages/modules/narduk-ai/server/utils/xai.ts:187-204`)
 
 What this is: `createXaiSseStreamParser` enqueues `choices[0].delta.content` when that value is a non-empty string. Anything else is skipped. A JSON parse failure is ignored. `grokChatStream` has already logged `AI provider stream opened` once the HTTP status was 2xx.
 
@@ -118,7 +128,7 @@ Fix: If the parsed payload has `error`, fail the stream with the fixed fallback 
 
 If we skip it: Overload, auth, and content-filter failures that arrive as SSE frames are stored as an empty answer.
 
-### 11. Saving a missing system prompt reports success (`packages/modules/narduk-ai/server/api/admin/system-prompts/index.put.ts:22-36`)
+### 12. Saving a missing system prompt reports success (`packages/modules/narduk-ai/server/api/admin/system-prompts/index.put.ts:22-36`)
 
 What this is: `PUT` updates `system_prompts` where `name` matches, then returns `{ success: true }`.
 
@@ -128,17 +138,17 @@ Fix: Read the affected row count. Return 404 when it is 0.
 
 If we skip it: An admin edits a typo'd name, sees success, and the model keeps the previous prompt.
 
-### 12. Saving a model and reading it back can disagree (`packages/modules/narduk-ai/server/api/admin/ai/model.put.ts:10-22`)
+### 13. An encoded static segment skips the stricter upgrade route (`packages/modules/narduk-realtime/src/worker/upgrade-path.ts:111-127`)
 
-What this is: `PUT` accepts any non-empty string and stores it in KV. `GET`, when an API key is set, returns `resolveStoredChatModel`, which keeps the stored id only if it is in the live catalog.
+What this is: Static path segments are compared to the raw pathname. `:param` values are percent-decoded. Node's URL parser leaves `%61` encoded, so both forms reach the matcher.
 
-Problem: The catalog contains `grok-3-mini` only. `PUT { "model": "not-a-real-model" }` returns `{ success: true, model: "not-a-real-model" }`. The next `GET` returns `{ currentModel: "grok-3-mini" }` (the first preferred id that exists, otherwise the default). KV still holds `not-a-real-model`. `getStoredChatModel` is a public export and still returns that string, so a caller that skips the catalog check sends it to xAI. There is also no max length on `model`.
+Problem: Routes in order: `/api/admin/live` with a strict authorizer, then `/api/:id/live` with a weaker one or `allowUnauthenticated`. `GET /api/%61dmin/live` with `Upgrade: websocket` does not match the static route (`%61dmin` is not `admin`). It matches the param route with `id === 'admin'`. The Durable Object name is `admin`. The literal path `/api/admin/live` hits the strict route. The duplicate-path check only compares the pattern strings.
 
-Fix: In `PUT`, reject with 400 unless the id is in the same catalog `GET` uses, and cap the length.
+Fix: Decode a static segment the same way as a parameter before comparing it. Reject a later pattern that can accept an encoded spelling of an earlier literal route.
 
-If we skip it: The admin screen shows one model and KV holds another.
+If we skip it: A later `:param` route handles the encoded spelling of an earlier literal route, including its authorizer and binding.
 
-### 13. The Node body cap reads the stream before the parser does (`packages/modules/narduk-uploads/runtime/server/utils/upload.js:86-97`)
+### 14. The Node body cap reads the stream before the parser does (`packages/modules/narduk-uploads/runtime/server/utils/upload.js:86-97`)
 
 What this is: `readBoundedFormData` calls `capIncomingMessageBytes` before `readMultipartFormData`. The cap adds a `data` listener. For a live Node stream, `enforceUploadBodyByteCap` returns without reading, and the `await` yields before h3 subscribes.
 
@@ -148,7 +158,7 @@ Fix: Do not attach `data` before the parser. Count bytes in the one reader that 
 
 If we skip it: Node dev uploads hang or crash the process instead of returning 413.
 
-### 14. A time string with no offset follows the process timezone (`packages/modules/narduk-timeseries/src/bucket.ts:151-154`)
+### 15. A time string with no offset follows the process timezone (`packages/modules/narduk-timeseries/src/bucket.ts:151-154`)
 
 What this is: `bucketReadings` parses a string with `new Date(value)`, then buckets that instant in `timeZone`.
 
@@ -158,17 +168,17 @@ Fix: Accept a string only when it has `Z` or a numeric offset. Count anything el
 
 If we skip it: The same payload buckets on different days in a Chicago browser and a UTC Worker.
 
-### 15. List `offset` accepts JavaScript numeric literals (`packages/contracts/narduk-platform/src/list-query.ts:217-221`)
+### 16. `onState` runs before the live socket installs its timers (`packages/modules/narduk-realtime/src/client/live-socket.ts:165-182`)
 
-What this is: `limit` and `offset` go through `z.coerce.number()`, which calls `Number()`. `limit` is then clamped. `offset` is any integer of 0 or more.
+What this is: `setState` calls `onState` in the middle of the open handler and of `lost`. The timer is assigned after that callback returns.
 
-Problem: `?offset=0x10` parses as 16 and skips 16 rows. `?offset=1e2` parses as 100. `?offset=9007199254740991` is a legal page request. `?limit=0x10` becomes 16 before the clamp. A query string is not a JavaScript literal. Every offset-mode list route inherits this.
+Problem: `onState('open')` calls `stop()`. The state is `stopped` and the socket is closed, then the open handler still runs `pingTimer = setInterval(...)`. That interval keeps the closed socket. Each open-and-stop cycle adds another interval. `onState('closed')` that calls `stop()` and then `start()` is worse: `start()` arms the 15s connect timeout, then `lost()` overwrites `retryTimer` without clearing the timeout it just replaced. When that orphaned timeout fires, `lost()` closes the new socket.
 
-Fix: Accept only a canonical decimal integer, and reject `offset` above a ceiling (10_000 unless the route passes `maxOffset`).
+Fix: After `setState`, return unless the state is still the one this handler set and the target is still the current socket. Clear any previous timer before assigning the next one.
 
-If we skip it: A non-decimal offset returns a different page, and one huge offset walks that many rows.
+If we skip it: A page that stops the socket from `onState` keeps an interval for the life of the tab. A reconnect started from `onState('closed')` is torn down when the old connect timeout fires.
 
-### 16. `await flush()` resolves while a record queued for that flush is still buffered (`packages/modules/narduk-logging/src/buffer.ts:98-110`)
+### 17. `await flush()` resolves while a record queued for that flush is still buffered (`packages/modules/narduk-logging/src/buffer.ts:98-110`)
 
 What this is: The delivery queue. `drain` only sends records that were queued when that drain started. A second `flush()` while one is running returns the same promise. `close()` drains the leftover. `flush()` does not.
 
@@ -178,7 +188,7 @@ Fix: If `flush()` is called while a drain is running, chain one more `drain()` a
 
 If we skip it: Shutdown reports success while the last records are still in memory.
 
-### 17. One vessel on two track tiers is deleted at the shorter window (`packages/modules/narduk-timeseries/src/timescale/retention.ts:97-106`)
+### 18. One vessel on two track tiers is deleted at the shorter window (`packages/modules/narduk-timeseries/src/timescale/retention.ts:97-106`)
 
 What this is: Each tier with `trackWindowMs` emits its own `DELETE` for its vessel list. The id is cast to `uuid`. Validation rejects a comma. It does not reject the same vessel twice.
 
@@ -188,7 +198,7 @@ Fix: In `validateRetentionPolicy`, canonicalize each vessel id and throw `RETENT
 
 If we skip it: A boat left on the free list, or listed once in each spelling, loses track at the free cutoff on the next sweep.
 
-### 18. A Cloudflare-and-GitHub key drops the GitHub secret (`packages/contracts/narduk-platform/src/provision-env-contract.ts:208-256`)
+### 19. A Cloudflare-and-GitHub key drops the GitHub secret (`packages/contracts/narduk-platform/src/provision-env-contract.ts:208-256`)
 
 What this is: `buildAppEnvContract` is the requirement list a readiness check evaluates. `CRON_SECRET` goes to `cf:runtime-secret` and `gh:repo-secret`. `NUXT_OG_IMAGE_SECRET` also goes to `gh:repo-secret`.
 
@@ -197,16 +207,6 @@ Problem: `createRequirementForKey` builds `{ key, managedBy: 'app' }`. The catal
 Fix: When `to` contains a `gh:` destination, set `githubScope` on that requirement too.
 
 If we skip it: Cron and OG workflows read as ready while the repo secret is absent.
-
-### 19. Two `Server-Timing` values make `beforeResponse` throw (`packages/modules/narduk-logging/src/response-headers.ts:33-36`)
-
-What this is: `mergeServerTiming` appends this request's timing to a header the handler already set. It calls `existing.trim()`.
-
-Problem: After two `appendResponseHeader(event, 'server-timing', ...)` calls, Node's `getHeader` returns an array. `existing.trim` throws `TypeError`. h3 awaits `onBeforeResponse` before it sends the body, so the throw fails a handler that succeeded. The Fetch path joins with a comma and does not throw. This is the Node path.
-
-Fix: If the header value is an array, join it with `, ` before `trim`.
-
-If we skip it: A route that appends two timing metrics turns a 200 into a hook error.
 
 ## Nice to have
 
@@ -220,8 +220,8 @@ Fix: Encode fixed-size slices and join those, and refuse objects over `MAX_FILE_
 
 If we skip it: Any app that still calls this helper on a full-size image spends the request on the copy.
 
-I left out 22 smaller ones. The earlier notes still stand: `/favicon` prefix match, an empty prompt placeholder, client-supplied `fatal`, `max-age` without `public`, the `svg+xml` rewrite, a four-part Doppler `from`, an Influx comment hiding `aggregateWindow`, a live socket with no `WebSocket`, a close reason over 123 bytes, an unbounded SSE line, `retries: NaN`, a chat model that expires after a year, a multi-file upload that leaves the first object, a cold prompt cache, a corrupt `package.json` read as an empty app, an npmrc line deleted because it contains `/api/packages/`, and a request timer whose `clock` is `Date.now` while `start` is `performance.now()`. Also left out: an image prefix without a trailing slash, `maxChars` counted before XML escape, the list-query README still saying a typo'd filter is a 400, a series resolve that is one statement until the 65535-parameter ceiling, and `installationRole` other than 0 or 1, which is stored and then omitted from every rollup.
+I left out 26 smaller ones. The earlier notes still stand, plus: a saved chat model that `GET` does not echo, `offset=0x10` parsing as 16, two `Server-Timing` values throwing on Node, a mute live socket collected on the next ping rather than at `deadMs`, an authorize `Set-Cookie` that never reaches the browser on a successful upgrade, `broadcast` treating every `send` failure as an empty room, and an upgrade pattern that contains `?` compiling and then matching nothing.
 
-Verdict: Fix the shared session signing key, the contract normalizer that can store that key as a plaintext var, the series-unit cache, the xAI error text, and the upload multipart parse before the next release of those packages. Those change who can forge a session, what is stored, or whether a Worker survives an allowed upload. The other findings need a bad input, a stall, or a later failure. Upload auth and the WebSocket authoriser fail closed in this slice. status-runtime did not show a defect at this load.
+Verdict: Fix the authorizer fail-open before the next realtime release. `{ ok: false }` opens the socket. With that, fix the shared session signing key, the contract normalizer that can store that key as a plaintext var, the series-unit cache, the xAI error text, and the upload multipart parse. Those change who gets a socket, who can forge a session, what is stored, or whether a Worker survives an allowed upload. The other findings need a bad input, a stall, or a later failure. A missing `Origin` and a client `x-narduk-*` header are refused. status-runtime did not show a defect at this load.
 
 Not checked: `defineUserMutation` and `defineAdminMutation` in narduk-core (auth and CSRF live there). narduk-postgres parameter chunking. A live Timescale database, a live xAI call, and a live R2 bucket. The committed `narduk-realtime` `dist/` against a fresh build. Every `libs-explorer` `app/usage/*.vue` body and the Playwright specs. Go and Python logging trees beyond their READMEs. I read `provider-console.ts` as type declarations only.
