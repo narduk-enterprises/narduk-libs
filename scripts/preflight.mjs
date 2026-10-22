@@ -35,7 +35,7 @@ import {
 } from './compute-affected-packages.mjs'
 import { packageGates } from './ci-package-plan.mjs'
 import { runPackageGates } from './ci-packages.mjs'
-import { fetchTargetForBase } from './git-base-refresh.mjs'
+import { fetchTargetForBase, refreshComparisonBase } from './git-base-refresh.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -229,17 +229,8 @@ async function main() {
   // it, and against a stale one it reports packages the branch never touched.
   // The contracts job materializes the base branch for the same reason.
   if (options.fetch) {
-    const target = fetchTargetForBase(options.base, gitRemotes(root))
-    if (!target) {
-      console.log(`preflight: ${options.base} names no remote, so nothing was fetched.`)
-    } else {
-      const fetched = run('git', ['fetch', '--quiet', target.remote, target.ref])
-      if (fetched.status !== 0) {
-        console.warn(
-          `preflight: could not fetch ${target.remote}/${target.ref}; ${options.base} may be stale.`,
-        )
-      }
-    }
+    const refreshed = refreshComparisonBase(root, options.base)
+    console.log(`preflight: ${refreshed ?? `${options.base} names no remote branch to refresh.`}`)
   }
 
   const baseline = trackedTreeSnapshot(root)
