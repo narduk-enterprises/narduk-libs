@@ -2,7 +2,7 @@
   "lane": "core-runtime",
   "status": "done",
   "pr_urls": [],
-  "heads": ["REPLACE_HEAD"],
+  "heads": ["ce8fd10d64c94944b172678b347c47c5410d7379"],
   "checks": [],
   "summary": "Read-only ponytail 5 audit of narduk-core runtime, src, and scripts. 1 must-fix (IPv4 SSRF allow-list), 7 should-fix, 2 nice-to-have. No source changes. No PR.",
   "needs_logan": false
