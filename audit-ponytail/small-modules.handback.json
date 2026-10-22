@@ -2,7 +2,7 @@
   "lane": "small-modules",
   "status": "done",
   "pr_urls": [],
-  "heads": ["4e8ba5b2f5b25c358e346bc78f6c1f280dbe9280"],
+  "heads": ["1dde706257e2fb08608ed8f5c74120948728b705"],
   "checks": [],
   "summary": "Ponytail audit of logging, timeseries, realtime, ai, uploads, contracts, status-runtime, and libs-explorer. 5 must, 14 should, 1 nice. Release blockers: shared NUXT_SESSION_PASSWORD, a stored contract can mark that secret as a plaintext var, series-unit cache, xAI error.message, and h3 multipart parse of an allowed 10MB upload. No PR.",
   "needs_logan": false
