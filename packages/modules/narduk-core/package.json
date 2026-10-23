@@ -143,7 +143,7 @@
     "postgres": "^3.4.9",
     "posthog-js": "^1.373.4",
     "tailwindcss": "^4.2.1",
-    "undici": "^8.9.0",
+    "undici": "^8.12.2",
     "zod": "^4.6.6"
   },
   "//devDependencies": "@vitejs/plugin-vue is pinned to the exact version already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen it in a deliberate workspace-wide bump, not here.",
@@ -163,7 +163,7 @@
     "drizzle-kit": "^0.31.10",
     "embedded-postgres": "17.10.0-beta.17",
     "eslint": "^10.8.0",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "hookable": "5.5.3",
     "miniflare": "4.20260701.0",
     "nitropack": "2.13.4",
