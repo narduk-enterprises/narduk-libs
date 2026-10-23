@@ -54,6 +54,16 @@ describe('securityHeaderFindings', () => {
       expect(ids(weak, { minHstsMaxAge: 100, production: true })).toEqual([])
     })
 
+    it('rejects a max-age that is not a whole directive of digits', () => {
+      for (const value of ['not-max-age=31536000', 'max-age=31536000oops']) {
+        expect(ids({ ...GOOD, 'Strict-Transport-Security': value }, { production: true })).toEqual([
+          'hsts',
+        ])
+      }
+      const quoted = { ...GOOD, 'Strict-Transport-Security': 'max-age="31536000"; preload' }
+      expect(ids(quoted, { production: true })).toEqual([])
+    })
+
     it('rejects a header with no max-age', () => {
       const bad = { ...GOOD, 'Strict-Transport-Security': 'includeSubDomains' }
       expect(securityHeaderFindings(bad, { production: true })[0]?.message).toContain('no max-age')
@@ -194,6 +204,9 @@ describe('securityHeaderFindings', () => {
     expect(ids(GOOD, { production: false })).toEqual(['robots-noindex'])
     expect(ids({ ...GOOD, 'X-Robots-Tag': 'noindex, nofollow' }, { production: false })).toEqual([])
     expect(ids({ ...GOOD, 'X-Robots-Tag': 'none' }, { production: false })).toEqual([])
+    expect(
+      ids({ ...GOOD, 'X-Robots-Tag': 'bingbot: noindex, nofollow' }, { production: false }),
+    ).toEqual(['robots-noindex'])
     expect(ids({ ...GOOD, 'X-Robots-Tag': 'index' }, { production: false })).toEqual([
       'robots-noindex',
     ])

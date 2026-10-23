@@ -171,11 +171,29 @@ const COLUMN_CONSTRAINT_WORDS = [
 ]
 
 /**
- * Collapse whitespace so a reformatted statement keeps its identity. Case is
- * preserved: a changed string literal is a changed statement.
+ * Collapse whitespace outside quotes so a reformatted statement keeps its
+ * identity. Case and quoted text are preserved: `"old  records"` is another table.
  */
 export function normalizeMigrationStatement(statement: string): string {
-  return statement.replaceAll(/\s+/gu, ' ').trim()
+  let out = ''
+  let closer: string | null = null
+  let space = false
+  for (const char of statement) {
+    if (closer) {
+      out += char
+      if (char === closer) closer = null
+      continue
+    }
+    if (/\s/u.test(char)) {
+      space = true
+      continue
+    }
+    if (space && out) out += ' '
+    space = false
+    out += char
+    closer = char === '[' ? ']' : char === '"' || char === '`' || char === "'" ? char : null
+  }
+  return out
 }
 
 /** sha256 of the normalised statement: the pin an allowance's `statementHash` holds. */

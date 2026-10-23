@@ -201,6 +201,15 @@ describe('destructive-statement', () => {
 })
 
 describe('statement identity', () => {
+  it('keeps whitespace inside quotes, so another quoted name is another statement', () => {
+    expect(normalizeMigrationStatement('DROP   TABLE\n "old  records"')).toBe(
+      'DROP TABLE "old  records"',
+    )
+    expect(hashMigrationStatement('DROP TABLE "old records"')).not.toBe(
+      hashMigrationStatement('DROP TABLE "old  records"'),
+    )
+  })
+
   it('normalises whitespace but not case', () => {
     expect(normalizeMigrationStatement('  DROP\n  TABLE   t ')).toBe('DROP TABLE t')
     expect(hashMigrationStatement('DROP TABLE   t')).toBe(hashMigrationStatement('DROP\nTABLE t'))

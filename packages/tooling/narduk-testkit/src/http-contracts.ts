@@ -120,7 +120,13 @@ export function securityHeaderFindings(
     if (!hsts) {
       findings.push({ id: 'hsts', message: 'Strict-Transport-Security is missing.' })
     } else {
-      const maxAge = /max-age\s*=\s*"?(\d+)"?/iu.exec(hsts)?.[1]
+      // RFC 6797 §6.1: a whole `max-age` directive whose value is all digits.
+      const maxAge = hsts
+        .split(';')
+        .map((directive) => /^max-age\s*=\s*(?:(\d+)|"(\d+)")$/iu.exec(directive.trim()))
+        .find(Boolean)
+        ?.slice(1)
+        .find((value) => value !== undefined)
       if (maxAge === undefined) {
         findings.push({
           id: 'hsts',
@@ -190,8 +196,16 @@ export function securityHeaderFindings(
   }
 
   if (!options.production) {
+    // `bingbot: noindex, nofollow` binds one crawler; only a rule before any
+    // user-agent prefix binds them all.
     const robots = (headerValue(headers, 'x-robots-tag') ?? '').toLowerCase()
-    if (!/\b(?:noindex|none)\b/u.test(robots)) {
+    let scoped = false
+    let blocked = false
+    for (const rule of robots.split(',').map((value) => value.trim())) {
+      if (/^[\w-]+\s*:/u.test(rule) && !rule.startsWith('unavailable_after')) scoped = true
+      if (!scoped && (rule === 'noindex' || rule === 'none')) blocked = true
+    }
+    if (!blocked) {
       findings.push({
         id: 'robots-noindex',
         message: 'A non-production host must send X-Robots-Tag: noindex.',
