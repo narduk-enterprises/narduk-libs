@@ -23,6 +23,9 @@
     "./server/errors": {
       "import": "./src/server/errors.ts"
     },
+    "./server/security-headers": {
+      "import": "./src/server/security-headers.ts"
+    },
     "./server/request-body": {
       "import": "./src/server/request-body.ts"
     },
