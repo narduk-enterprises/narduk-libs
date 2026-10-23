@@ -1212,6 +1212,16 @@ export function createTenancy(
         )
       }
 
+      if (invite.resourceKind !== null || invite.resourceId !== null) {
+        const recipient = await findMembership(invite.orgId, userId)
+        if (!recipient || !roleAtLeast(recipient.role, invite.role)) {
+          throw new TenancyError(
+            'forbidden',
+            'Resource-scoped invitations require an existing membership at or above the invited role.',
+          )
+        }
+      }
+
       const claimed = await claimInviteMembership(db, invite, userId, acceptedAt, nextId)
       const accepted = await findInviteByToken(input.token)
       if (!accepted || accepted.acceptedByUserId !== userId) {

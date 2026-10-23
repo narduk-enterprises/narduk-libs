@@ -36,6 +36,26 @@ export async function claimInviteMembership(
     eq(tenancyMemberships.orgId, tenancyInvites.orgId),
     eq(tenancyMemberships.userId, userId),
   )
+  const organizationInvite = and(
+    isNull(tenancyInvites.resourceKind),
+    isNull(tenancyInvites.resourceId),
+  )
+  // A scoped invitation only narrows an existing membership. Recheck the
+  // recipient in the claim so a concurrent removal or demotion fails closed.
+  const recipientInScope = sql`EXISTS (
+    SELECT 1 FROM tenancy_memberships AS recipient
+    WHERE recipient.org_id = ${tenancyInvites.orgId}
+      AND recipient.user_id = ${userId}
+      AND ${sqlRoleRank(sql`recipient.role`)} >= ${sqlRoleRank(tenancyInvites.role)}
+  )`
+  const acceptanceInScope = or(
+    organizationInvite,
+    and(
+      sql`${tenancyInvites.resourceKind} IS NOT NULL`,
+      sql`${tenancyInvites.resourceId} IS NOT NULL`,
+      recipientInScope,
+    ),
+  )
   const promotes = sql`${sqlRoleRank(tenancyInvites.role)} > ${sqlRoleRank(tenancyMemberships.role)}`
   const incomingPromotes = sql`${sqlRoleRank(sql`excluded.role`)} > ${sqlRoleRank(tenancyMemberships.role)}`
 
@@ -74,6 +94,7 @@ export async function claimInviteMembership(
             isNull(tenancyInvites.revokedAt),
             gt(tenancyInvites.expiresAt, acceptedAt),
             inviterStillInRank,
+            acceptanceInScope,
           ),
         ),
     )
@@ -103,7 +124,7 @@ export async function claimInviteMembership(
         })
         .from(tenancyInvites)
         .leftJoin(tenancyMemberships, memberScope)
-        .where(and(inviteScope, or(isNull(tenancyMemberships.id), promotes))),
+        .where(and(inviteScope, organizationInvite, or(isNull(tenancyMemberships.id), promotes))),
     )
     .returning({ id: tenancyAuditEvents.id })
 
@@ -120,7 +141,7 @@ export async function claimInviteMembership(
           updatedAt: timestamp.as('updated_at'),
         })
         .from(tenancyInvites)
-        .where(inviteScope),
+        .where(and(inviteScope, organizationInvite)),
     )
     .onConflictDoUpdate({
       target: [tenancyMemberships.orgId, tenancyMemberships.userId],
