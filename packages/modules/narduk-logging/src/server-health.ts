@@ -82,12 +82,31 @@ function fnv1a(text: string, seed: number): string {
   return h.toString(16).padStart(8, '0')
 }
 
+const isDigits = (text: string) => text.length > 0 && !/\D/.test(text)
+
+/** `file:line` from the tail of a V8 frame location, `file:line:column` or `file:line`; null when it has neither. Index scans only, so hostile text stays linear. */
+function fileAndLine(where: string): string | null {
+  const numbers: string[] = []
+  let end = where.length
+  while (numbers.length < 2) {
+    const colon = where.lastIndexOf(':', end - 1)
+    if (colon < 0 || !isDigits(where.slice(colon + 1, end))) break
+    numbers.push(where.slice(colon + 1, end))
+    end = colon
+  }
+  if (numbers.length === 0) return null
+  const line = numbers.at(-1)
+  const query = where.indexOf('?')
+  const path = where.slice(0, query >= 0 && query < end ? query : end)
+  const file = path.slice(path.lastIndexOf('/') + 1).trim()
+  return file ? `${file}:${line}` : null
+}
+
 function frameKey(line: string): string {
   const open = line.indexOf('(')
   const fn = open > 0 ? line.slice(3, open).trim() : ''
   const where = open > 0 ? line.slice(open + 1).replace(/\)$/, '') : line.slice(3)
-  const match = /([^/\s?]+)(?:\?[^:\s]*)?:(\d+)(?::\d+)?$/.exec(where)
-  return `${fn}(${match ? `${match[1]}:${match[2]}` : where.slice(-40)})`
+  return `${fn}(${fileAndLine(where) ?? where.slice(-40)})`
 }
 
 /** The top frames as function and file:line, with origins, columns and query strings dropped: stable across builds of one code path, distinct per call site. */
@@ -298,25 +317,43 @@ export async function beginJobRun(db: D1Like, job: string, at: string): Promise<
     .run()
 }
 
+/**
+ * Records a run's outcome. Pass the `startedAt` the run began with: overlapping runs of one job
+ * share a row, and only the run whose start the row still holds may write its outcome. A run
+ * that was replaced still advances `last_ok_at` when it succeeded. Without `startedAt` the
+ * outcome lands on whatever run the row holds.
+ */
 export async function finishJobRun(
   db: D1Like,
   job: string,
   at: string,
-  outcome: { ok: boolean; error?: string | null },
+  outcome: { ok: boolean; error?: string | null; startedAt?: string },
 ): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE job_runs SET finished_at = ?, ok = ?, error = ?, last_ok_at = CASE WHEN ? = 1 THEN ? ELSE last_ok_at END WHERE job = ?`,
+  const startedAt = outcome.startedAt ?? null
+  const statements = [
+    db
+      .prepare(
+        `UPDATE job_runs SET finished_at = ?, ok = ?, error = ? WHERE job = ? AND (? IS NULL OR started_at = ?)`,
+      )
+      .bind(
+        at,
+        outcome.ok ? 1 : 0,
+        outcome.ok ? null : scrubErrorMessage(outcome.error ?? 'failed').slice(0, JOB_ERROR_MAX),
+        job,
+        startedAt,
+        startedAt,
+      ),
+  ]
+  if (outcome.ok) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE job_runs SET last_ok_at = ? WHERE job = ? AND (last_ok_at IS NULL OR last_ok_at < ?)`,
+        )
+        .bind(at, job, at),
     )
-    .bind(
-      at,
-      outcome.ok ? 1 : 0,
-      outcome.ok ? null : scrubErrorMessage(outcome.error ?? 'failed').slice(0, JOB_ERROR_MAX),
-      outcome.ok ? 1 : 0,
-      at,
-      job,
-    )
-    .run()
+  }
+  await db.batch(statements)
 }
 
 export async function listJobRuns(db: D1Like): Promise<JobRunRow[]> {
@@ -361,22 +398,24 @@ export async function runWithHeartbeat(
         `heartbeat ${what} failed for ${job}`,
         error instanceof Error ? error.message : error,
       ))
+  const startedAt = now().toISOString()
   try {
-    await beginJobRun(db, job, now().toISOString())
+    await beginJobRun(db, job, startedAt)
   } catch (error) {
     report('start', error)
   }
-  let outcome: { ok: boolean; error?: string }
+  let outcome: { ok: boolean; error?: string; startedAt: string }
   try {
     const failedSteps = await run()
     outcome = failedSteps.length
-      ? { ok: false, error: `failed: ${failedSteps.join(', ')}` }
-      : { ok: true }
+      ? { ok: false, error: `failed: ${failedSteps.join(', ')}`, startedAt }
+      : { ok: true, startedAt }
   } catch (error) {
     try {
       await finishJobRun(db, job, now().toISOString(), {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
+        startedAt,
       })
     } catch {
       // the job's own error is the one to surface

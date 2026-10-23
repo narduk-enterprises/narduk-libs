@@ -110,7 +110,9 @@ expand-only migration. Nothing here imports `h3`, `nitropack` or
   whether it should fail anything.
 - `recordServerError`, `listServerErrors`, `beginJobRun`, `finishJobRun` and
   `listJobRuns` are the storage calls for an app's own list page or health
-  route.
+  route. Pass the `startedAt` given to `beginJobRun` as `finishJobRun`'s
+  `outcome.startedAt`: overlapping runs of one job share a row, and only the run
+  the row still holds writes its outcome (`runWithHeartbeat` does this itself).
 
 This is a small durable record for operators, not crash reporting or an audit
 trail: rows are deduplicated, counts are best effort, and nothing is sent

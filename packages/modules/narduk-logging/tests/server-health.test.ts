@@ -129,6 +129,24 @@ describe('route, message and hash', () => {
       hash,
     )
   })
+  it('ignores the column and a query string when hashing a frame', () => {
+    const frames = (location: string) => ({
+      ...base,
+      stack: `Error: boom\n    at save (${location})\n    at handler (file:///srv/.output/chunks/b.mjs:12:3)`,
+    })
+    const hash = serverErrorHash(frames('file:///srv/a.mjs:10:9'))
+    expect(serverErrorHash(frames('file:///srv/a.mjs:10:99'))).toBe(hash)
+    expect(serverErrorHash(frames('file:///srv/a.mjs?v=1:10:9'))).toBe(hash)
+    expect(serverErrorHash(frames('file:///srv/a.mjs:10'))).toBe(hash)
+    expect(serverErrorHash(frames('file:///srv/a.mjs:11:9'))).not.toBe(hash)
+    expect(serverErrorHash(frames('file:///srv/c.mjs:10:9'))).not.toBe(hash)
+  })
+  it('hashes a frame with no line or file in linear time', () => {
+    const started = performance.now()
+    for (const location of ['!'.repeat(200_000), `${'!'.repeat(200_000)}:`, ':'.repeat(200_000)])
+      serverErrorHash({ ...base, stack: `Error\n    at f (${location})` })
+    expect(performance.now() - started).toBeLessThan(200)
+  })
   it('hashes a different status, name, wording or call site differently', () => {
     const hash = serverErrorHash(base)
     for (const change of [
@@ -354,6 +372,56 @@ describe('heartbeat', () => {
         finishedAt: null,
         ok: null,
         lastOkAt: '2026-10-23T12:00:01.000Z',
+      }),
+    ])
+  })
+  it('lets only the run the row still holds write its outcome', async () => {
+    const first = '2026-10-23T12:00:00.000Z'
+    const second = '2026-10-23T12:10:00.000Z'
+    await beginJobRun(db, 'job', first)
+    await beginJobRun(db, 'job', second)
+    await finishJobRun(db, 'job', '2026-10-23T12:11:00.000Z', {
+      ok: false,
+      error: 'old run',
+      startedAt: first,
+    })
+    expect(await listJobRuns(db)).toEqual([
+      expect.objectContaining({ startedAt: second, finishedAt: null, ok: null, error: null }),
+    ])
+    await finishJobRun(db, 'job', '2026-10-23T12:12:00.000Z', { ok: true, startedAt: second })
+    expect(await listJobRuns(db)).toEqual([
+      expect.objectContaining({
+        startedAt: second,
+        finishedAt: '2026-10-23T12:12:00.000Z',
+        ok: true,
+        lastOkAt: '2026-10-23T12:12:00.000Z',
+      }),
+    ])
+  })
+  it('still counts a replaced run that succeeded as the last success', async () => {
+    const first = '2026-10-23T12:00:00.000Z'
+    await beginJobRun(db, 'job', first)
+    await beginJobRun(db, 'job', '2026-10-23T12:10:00.000Z')
+    await finishJobRun(db, 'job', '2026-10-23T12:11:00.000Z', { ok: true, startedAt: first })
+    expect(await listJobRuns(db)).toEqual([
+      expect.objectContaining({ finishedAt: null, ok: null, lastOkAt: '2026-10-23T12:11:00.000Z' }),
+    ])
+  })
+  it('keeps overlapping runWithHeartbeat calls from finishing each other', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const older = runWithHeartbeat(db, 'job', async () => (await gate, []), {
+      now: clock('2026-10-23T12:00:00.000Z', '2026-10-23T12:20:00.000Z'),
+    })
+    await vi.waitFor(async () => expect(await listJobRuns(db)).toHaveLength(1))
+    await beginJobRun(db, 'job', '2026-10-23T12:10:00.000Z')
+    release()
+    await older
+    expect(await listJobRuns(db)).toEqual([
+      expect.objectContaining({
+        startedAt: '2026-10-23T12:10:00.000Z',
+        finishedAt: null,
+        ok: null,
       }),
     ])
   })
