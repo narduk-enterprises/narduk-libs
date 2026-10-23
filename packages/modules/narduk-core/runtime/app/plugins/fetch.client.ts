@@ -7,23 +7,13 @@ import { defineNuxtPlugin, useNuxtApp } from '#imports'
  *   same-origin mutation requests to satisfy the shared CSRF middleware.
  */
 import { MUTATION_METHODS } from '../utils/mutationMethods'
+import { isSameOriginRequest } from '../utils/sameOrigin'
 
 function getRequestUrl(request: RequestInfo | URL): string | undefined {
   if (typeof request === 'string') return request
   if (request instanceof URL) return request.href
   if (request instanceof Request) return request.url
   return undefined
-}
-
-function isSameOriginRequest(requestUrl: string | undefined, currentOrigin: string): boolean {
-  if (!requestUrl) return false
-  if (requestUrl.startsWith('/')) return true
-
-  try {
-    return new URL(requestUrl, currentOrigin).origin === currentOrigin
-  } catch {
-    return false
-  }
 }
 
 export default defineNuxtPlugin(() => {

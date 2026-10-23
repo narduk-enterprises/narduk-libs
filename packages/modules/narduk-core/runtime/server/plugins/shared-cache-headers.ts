@@ -2,6 +2,8 @@ import { getResponseStatus } from 'h3'
 import { defineNitroPlugin } from 'nitropack/runtime'
 
 import {
+  applyNoStoreToEvent,
+  isSharedCacheable,
   isWebResponseLike,
   stripPerRequestHeadersFromEvent,
   stripPerRequestHeadersFromWebResponse,
@@ -43,6 +45,22 @@ export default defineNitroPlugin((nitro) => {
       stripPerRequestHeadersFromEvent(event)
       return
     }
-    stripPerRequestHeadersIfShared(event, getResponseStatus(event))
+    const status = getResponseStatus(event)
+    const res = event.node.res
+    // A cookie written after the profile was chosen belongs to one caller; the
+    // response must not be stored for everyone (`setCacheProfile` only sees
+    // cookies already on the response).
+    if (
+      status < 400 &&
+      res.hasHeader('set-cookie') &&
+      isSharedCacheable((name) => {
+        const value = res.getHeader(name)
+        return value === undefined ? undefined : String(value)
+      })
+    ) {
+      applyNoStoreToEvent(event)
+      return
+    }
+    stripPerRequestHeadersIfShared(event, status)
   })
 })

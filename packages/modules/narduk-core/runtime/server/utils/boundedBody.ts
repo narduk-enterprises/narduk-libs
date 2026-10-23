@@ -41,6 +41,7 @@ export async function readBoundedBody(
 
   const declaredLength = Number(response.headers.get('content-length') ?? '')
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => {})
     throw tooLarge()
   }
 

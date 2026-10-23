@@ -175,12 +175,17 @@ export async function withD1Cache<T>(
 }
 
 /**
- * Clean up expired cache entries. Call from a cron or periodic route.
+ * Clean up expired cache entries. Call from a cron or periodic route. Pass the
+ * largest `staleWindowSeconds` any caller uses so rows still servable as stale
+ * are kept until that window closes.
  */
-export async function cleanExpiredCache(event: H3Event): Promise<number> {
+export async function cleanExpiredCache(
+  event: H3Event,
+  options: { staleWindowSeconds?: number } = {},
+): Promise<number> {
   const d1 = getD1CacheDB(event)
   if (!d1) return 0
-  const nowSec = Math.floor(Date.now() / 1000)
-  const result = await d1.prepare('DELETE FROM kv_cache WHERE expires_at < ?').bind(nowSec).run()
+  const cutoff = Math.floor(Date.now() / 1000) - (options.staleWindowSeconds ?? 0)
+  const result = await d1.prepare('DELETE FROM kv_cache WHERE expires_at < ?').bind(cutoff).run()
   return result.meta.changes
 }

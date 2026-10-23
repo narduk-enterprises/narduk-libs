@@ -18,11 +18,14 @@
  */
 
 import { MUTATION_METHODS } from '../utils/mutationMethods'
+import { isSameOriginRequest } from '../utils/sameOrigin'
 
 export function useCsrfFetch() {
+  // On the server only relative URLs can be same-origin; the placeholder origin is never sent.
+  const origin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin
   return $fetch.create({
     onRequest({ options, request }) {
-      if (typeof request !== 'string' || !request.startsWith('/')) return
+      if (typeof request !== 'string' || !isSameOriginRequest(request, origin)) return
       const method = (options.method ?? 'GET').toString().toUpperCase()
       if (!MUTATION_METHODS.has(method)) return
 
