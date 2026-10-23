@@ -312,12 +312,11 @@ finding rather than an audit line. Every rule below is `warn`, which
   { rules: { 'narduk/require-safe-redirect-query': ['warn', { guards: ['facilityLoginNext'] }] } }
   ```
 
-- **Native dialogs.** `alert()`, `confirm()`, `prompt()` and their `window.`
-  and `globalThis.` forms are reported in app code, in script and in template
-  handlers: they block the page
-  and cannot be styled or driven by a browser test. Use a `<UModal>` through
-  `useOverlay()`, or a toast. A local that shadows the name
-  (`const { confirm } = useConfirmDialog()`) is not reported.
+- **Native dialogs.** `alert()`, `confirm()`, `prompt()` and their `window.` and
+  `globalThis.` forms are reported in app code, in script and in template
+  handlers: they block the page and cannot be styled or driven by a browser
+  test. Use a `<UModal>` through `useOverlay()`, or a toast. A local that
+  shadows the name (`const { confirm } = useConfirmDialog()`) is not reported.
 - **`vue/no-v-html`** was only in the community tail. It is now in `core` too,
   and `trustedHtmlFiles` (content apps) still switches it off per file.
 - **`narduk/no-viewport-vh-units`** reports `vh` in a `style` attribute or a
