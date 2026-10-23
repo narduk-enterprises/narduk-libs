@@ -254,9 +254,13 @@ only SELECT/PRAGMA reads: it creates no ledger, lock or recovery snapshot. A
 successful result is a point-in-time history/checksum observation. It does not
 prove absence of manual schema/data edits that bypassed the ledger.
 
-Foundation item **12.8** requires every declared D1 binding to have a source
-manifest and a distinct migrate credential declaration. No-D1 apps are
-not-applicable. It reads the repository only and says explicitly that remote
+Foundation item **12.8** requires every declared D1 binding to have exactly one
+schema owner. A migration-owned binding has a `deployment.migrations` entry with
+a source manifest. A contract-owned binding has a `deployment.databaseOwnership`
+entry whose contract file and verification command exist, and no migration
+manifest (see above). When a migrations block exists, its migrate credential
+must be a `cloudflare/` path distinct from the promote credential. No-D1 apps
+are not-applicable. It reads the repository only and says explicitly that remote
 parity needs the command above. It cannot prove token scope or that an app has
 actually activated its workflow; keep those onboarding proof items open.
 

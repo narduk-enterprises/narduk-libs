@@ -147,6 +147,21 @@ describe('font files', () => {
     expect(() => readFontInfo(Buffer.from('<html>not a font</html>'))).toThrow(/not a TrueType/u)
   })
 
+  it('ponytail-5 apptools-tests #6: each bundled file declares the face the renderer asks for', () => {
+    for (const [role, family] of [
+      ['display', 'NE Brand Display'],
+      ['text', 'NE Brand Text'],
+      ['mono', 'NE Brand Mono'],
+    ] as const) {
+      expect(readFontInfo(readFileSync(brandFontFile(role)))).toEqual({
+        family,
+        weight: 400,
+        italic: false,
+        variable: false,
+      })
+    }
+  })
+
   it('asks Google Fonts for one static instance and finds its TrueType file', () => {
     expect(googleFontCssUrl({ ...CASLON, style: 'normal' })).toBe(
       'https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:ital,wght@0,700',

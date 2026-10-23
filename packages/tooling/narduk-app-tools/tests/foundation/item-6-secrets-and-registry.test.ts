@@ -47,6 +47,10 @@ describe('item 6 -- secrets and registry', () => {
       }
     }
 
+    // ponytail-5 apptools-tests #8: every auth spelling fails, not only _authToken.
+    writeFile(root, '.npmrc', '//npm.pkg.github.com/:_password=ghp_seeded_lie\n')
+    expect(subCheckStatus(await run(root), '6.1')).toBe('fail')
+
     writeFile(root, '.npmrc', '@narduk-enterprises:registry=https://npm.pkg.github.com\n')
     expect(subCheckStatus(await run(root), '6.1')).toBe('pass')
   })
@@ -62,6 +66,13 @@ describe('item 6 -- secrets and registry', () => {
 
     rmSync(`${root}/.dev.vars`, { force: true })
     expect(subCheckStatus(await run(root), '6.2')).toBe('pass')
+
+    // ponytail-5 apptools-tests #8: each committed env file fails on its own.
+    for (const file of ['.env', '.env.local', 'apps/web/.dev.vars']) {
+      writeFile(root, file, 'SECRET=seeded-lie\n')
+      expect(subCheckStatus(await run(root), '6.2')).toBe('fail')
+      rmSync(`${root}/${file}`, { force: true })
+    }
   })
 
   it('6.3 is always not-applicable (nvault paused, D-ORG-1 h)', async () => {

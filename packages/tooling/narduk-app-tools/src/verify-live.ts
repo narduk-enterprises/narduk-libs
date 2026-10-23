@@ -396,6 +396,19 @@ export function parseVerifyArgs(args: string[]): VerifyFlags {
   ) {
     throw new Error('verify --live needs at least one assertion; nothing was enabled')
   }
+  // An absolute or protocol-relative path never redirects, so assessOrigin
+  // cannot see that it proved another host.
+  const origin = new URL(baseUrl).origin
+  for (const path of [
+    flags.healthPath,
+    flags.smokePath,
+    ...flags.edgeCachePaths,
+    ...flags.edgeUncachedPaths,
+  ]) {
+    if (path !== null && new URL(path, baseUrl).origin !== origin) {
+      throw new Error(`Probe path ${JSON.stringify(path)} resolves outside the origin ${origin}`)
+    }
+  }
   return { ...flags, baseUrl }
 }
 
