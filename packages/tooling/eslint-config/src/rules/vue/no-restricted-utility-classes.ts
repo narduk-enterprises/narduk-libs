@@ -199,23 +199,56 @@ export default {
       return raw.length === String(node.value).length + 2 ? node.range[0] + 1 : null
     }
 
+    /** Visit only positions whose value becomes a class: never a test or a comparison. */
     function checkExpression(expression: any): void {
       if (!expression || typeof expression !== 'object') return
-      if (expression.type === 'Literal' && typeof expression.value === 'string') {
-        checkText(expression, expression.value, verbatimStart(expression))
-        return
-      }
-      if (expression.type === 'TemplateLiteral') {
-        const last = expression.quasis.length - 1
-        for (const [index, quasi] of expression.quasis.entries()) {
-          checkText(quasi, quasi.value.cooked ?? '', null, [index > 0, index < last])
+      switch (expression.type) {
+        case 'Literal':
+          if (typeof expression.value === 'string')
+            checkText(expression, expression.value, verbatimStart(expression))
+          return
+        case 'TemplateLiteral': {
+          const last = expression.quasis.length - 1
+          for (const [index, quasi] of expression.quasis.entries()) {
+            checkText(quasi, quasi.value.cooked ?? '', null, [index > 0, index < last])
+          }
+          for (const inner of expression.expressions) checkExpression(inner)
+          return
         }
-      }
-      for (const key of Object.keys(expression)) {
-        if (key === 'parent' || key === 'loc' || key === 'range' || key === 'quasis') continue
-        const child = expression[key]
-        if (Array.isArray(child)) for (const item of child) checkExpression(item)
-        else if (child && typeof child.type === 'string') checkExpression(child)
+        case 'ConditionalExpression':
+          checkExpression(expression.consequent)
+          checkExpression(expression.alternate)
+          return
+        case 'LogicalExpression':
+          // `active && 'x'` yields only its right side as a class.
+          if (expression.operator !== '&&') checkExpression(expression.left)
+          checkExpression(expression.right)
+          return
+        case 'ArrayExpression':
+          for (const element of expression.elements) checkExpression(element)
+          return
+        case 'ObjectExpression':
+          // `{ 'bg-blue-50': on }` keys are classes; `:ui="{ base: '…' }"` values are.
+          for (const property of expression.properties) {
+            if (property.type === 'SpreadElement') checkExpression(property.argument)
+            else {
+              if (!property.computed) checkExpression(property.key)
+              checkExpression(property.value)
+            }
+          }
+          return
+        case 'CallExpression':
+          if (expression.callee.type === 'Identifier' && CLASS_CALLEES.has(expression.callee.name))
+            for (const argument of expression.arguments) checkExpression(argument)
+          return
+        case 'SpreadElement':
+        case 'ChainExpression':
+        case 'TSAsExpression':
+        case 'TSNonNullExpression':
+        case 'TSSatisfiesExpression':
+          checkExpression(expression.argument ?? expression.expression)
+          return
+        default:
       }
     }
 

@@ -31,6 +31,10 @@ vue.run('no-restricted-utility-classes', rule, {
     tpl('<div data-class="h-screen text-slate-500">x</div>'),
     tpl('<div :aria-label="\'bg-gray-900\'">x</div>'),
     tpl('<div :class="{ active: isOn(\'blue\') }">x</div>'),
+    // A test or comparison is not a class, so it is neither flagged nor rewritten.
+    tpl(`<div :class="mode === 'h-screen' ? 'h-dvh' : ''">x</div>`),
+    tpl(`<div :class="{ active: tone !== 'text-red-500' }">x</div>`),
+    tpl(`<div :class="isTone('bg-gray-900') && 'text-muted'">x</div>`),
     script("const label = 'text-slate-500'"),
     script("track('bg-gray-900')"),
     {
