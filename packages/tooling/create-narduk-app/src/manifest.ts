@@ -43,10 +43,10 @@ export const PACKAGE_VERSIONS = {
   '@narduk-enterprises/narduk-mapkit': '3.0.1',
   '@narduk-enterprises/narduk-mapkit-nuxt': '2.0.6',
   '@narduk-enterprises/narduk-app-tools': '0.45.5',
-  '@narduk-enterprises/eslint-config': '3.3.5',
+  '@narduk-enterprises/eslint-config': '3.4.0',
   '@narduk-enterprises/narduk-ai': '0.4.47',
   '@narduk-enterprises/narduk-analytics': '1.31.3',
-  '@narduk-enterprises/narduk-auth': '1.37.3',
+  '@narduk-enterprises/narduk-auth': '1.37.4',
   '@narduk-enterprises/narduk-charts': '2.12.1',
   '@narduk-enterprises/narduk-core': '2.37.2',
   '@narduk-enterprises/narduk-logging': '0.4.6',
@@ -73,7 +73,7 @@ export const PACKAGE_VERSIONS = {
   // itself publishes, so this (or any future) unpublished pin fails the
   // release closed instead of shipping unnoticed (narduk-libs#284).
   '@narduk-enterprises/narduk-shell': '0.30.0',
-  '@narduk-enterprises/narduk-testkit': '1.14.1',
+  '@narduk-enterprises/narduk-testkit': '1.15.0',
   '@narduk-enterprises/narduk-uploads': '1.22.1',
   // Explicit module (see generate.ts's moduleList -- narduk-core's own
   // installModule('@nuxt/ui') nests an installModule('@nuxt/icon') call too
