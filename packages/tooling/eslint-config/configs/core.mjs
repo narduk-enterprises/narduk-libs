@@ -21,7 +21,8 @@ const NATIVE_DIALOG_MESSAGE =
 
 const NATIVE_DIALOGS = ['alert', 'confirm', 'prompt']
 
-const DIALOG_HOSTS = ['window', 'globalThis', 'self']
+// Not `self`: it is a common local name (`const self = useConfirmDialog()`).
+const DIALOG_HOSTS = ['window', 'globalThis']
 
 /** @type {import('eslint').Linter.Config[]} */
 const coreConfigs = [

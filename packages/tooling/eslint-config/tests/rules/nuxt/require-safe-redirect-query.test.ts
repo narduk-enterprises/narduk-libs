@@ -98,6 +98,12 @@ vue.run('require-safe-redirect-query (vue)', rule, {
       filename: PAGE,
       code: `<script setup lang="ts">\nconst next = route.query.next\nconst to = sanitizeSameOriginPath(next, '/')\n</script>\n<template><NuxtLink v-for="next in links" :key="next" :to="next" /></template>`,
     },
+    {
+      filename: PAGE,
+      code: sfc(
+        "const next = computed(() => {\n  return route.query.next\n})\nawait navigateTo(sanitizeSameOriginPath(next.value, '/'))",
+      ),
+    },
     // Not a redirect parameter, and not a query object.
     { filename: PAGE, code: sfc('const tab = route.query.tab') },
     { filename: PAGE, code: sfc('const n = props.next') },

@@ -214,7 +214,13 @@ export default {
           for (const [index, quasi] of expression.quasis.entries()) {
             checkText(quasi, quasi.value.cooked ?? '', null, [index > 0, index < last])
           }
-          for (const inner of expression.expressions) checkExpression(inner, keysAreClasses)
+          // `custom-${'h-screen'}` is part of one class; only a whitespace-bounded part is whole.
+          for (const [index, inner] of expression.expressions.entries()) {
+            const before = expression.quasis[index].value.cooked ?? ''
+            const after = expression.quasis[index + 1].value.cooked ?? ''
+            if ((before === '' || /\s$/u.test(before)) && (after === '' || /^\s/u.test(after)))
+              checkExpression(inner, keysAreClasses)
+          }
           return
         }
         case 'ConditionalExpression':

@@ -36,6 +36,7 @@ vue.run('no-restricted-utility-classes', rule, {
     tpl(`<div :class="{ active: tone !== 'text-red-500' }">x</div>`),
     tpl(`<div :class="isTone('bg-gray-900') && 'text-muted'">x</div>`),
     script("const card = tv({ variants: { size: { 'h-screen': 'h-10' } } })"),
+    tpl('<div :class="`custom-${\'h-screen\'}`">x</div>'),
     script("const label = 'text-slate-500'"),
     script("track('bg-gray-900')"),
     {

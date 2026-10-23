@@ -312,8 +312,9 @@ finding rather than an audit line. Every rule below is `warn`, which
   { rules: { 'narduk/require-safe-redirect-query': ['warn', { guards: ['facilityLoginNext'] }] } }
   ```
 
-- **Native dialogs.** `alert()`, `confirm()`, `prompt()` and their `window.`,
-  `globalThis.` and `self.` forms are reported in app code: they block the page
+- **Native dialogs.** `alert()`, `confirm()`, `prompt()` and their `window.`
+  and `globalThis.` forms are reported in app code, in script and in template
+  handlers: they block the page
   and cannot be styled or driven by a browser test. Use a `<UModal>` through
   `useOverlay()`, or a toast. A local that shadows the name
   (`const { confirm } = useConfirmDialog()`) is not reported.

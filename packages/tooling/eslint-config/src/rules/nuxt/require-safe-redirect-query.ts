@@ -244,6 +244,21 @@ export default {
           node = call
           continue
         }
+        if (parent.type === 'ReturnStatement') {
+          // `computed(() => { return q.next })`: the returned value is the getter's.
+          const getter = parent.parent?.type === 'BlockStatement' ? parent.parent.parent : null
+          const call = getter?.parent
+          if (
+            (getter?.type !== 'ArrowFunctionExpression' && getter?.type !== 'FunctionExpression') ||
+            call?.type !== 'CallExpression' ||
+            !call.arguments.includes(getter)
+          )
+            return false
+          if (calleeName(call.callee) === 'watch') return true
+          if (!PASS_THROUGH_CALLS.has(calleeName(call.callee) ?? '')) return false
+          node = call
+          continue
+        }
         if (
           parent.type === 'VariableDeclarator' &&
           parent.init === node &&
