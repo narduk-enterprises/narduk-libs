@@ -530,7 +530,7 @@ async function runJourney(args: RunJourneyArgs): Promise<void> {
     parallelIndex: info.parallelIndex,
   })
   const startedAt = new Date()
-  const attemptId = makeRunId(commit, startedAt)
+  const attemptId = makeRunId(commit, startedAt, scenarioId)
   const paths = runPaths({
     outRoot: options.outRoot,
     environment: options.environment,

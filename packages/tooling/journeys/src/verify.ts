@@ -217,13 +217,11 @@ export function readRunManifest(runDirectory: string): RunManifest {
  * Shared by every adapter so one journey's web and Apple attempts are named
  * the same way.
  */
-export function makeRunId(commit: string, startedAt: Date): string {
-  const stamp = startedAt
-    .toISOString()
-    .replaceAll(/[-:]/g, '')
-    .replace(/\..*$/, '')
-    .replace('T', '-')
-  return `${stamp}-${commit.slice(0, 8)}`
+export function makeRunId(commit: string, startedAt: Date, scenarioId?: string): string {
+  // Milliseconds and the scenario keep two scenarios of one journey that start
+  // in the same second from sharing (and overwriting) one attempt directory.
+  const stamp = startedAt.toISOString().replaceAll(/[-:.]/g, '').replace('T', '-').replace('Z', '')
+  return `${stamp}-${commit.slice(0, 8)}${scenarioId ? `-${scenarioId}` : ''}`
 }
 
 /** The canonical attempt-directory layout (§4.3). */

@@ -269,10 +269,12 @@ export class TimescaleHistoryStore implements TelemetryHistoryStore {
     // Sorted: the same descriptor set arriving in two orders is one resolve,
     // not two. Unsorted, a batch of the same paths in a different order missed
     // the in-flight entry and issued a second identical statement.
-    const key = missing
-      .map((d) => seriesCacheKey(d.vesselId, d.path))
-      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-      .join('|')
+    // JSON, not a joined string: a path may contain any separator.
+    const key = JSON.stringify(
+      missing
+        .map((d) => seriesCacheKey(d.vesselId, d.path))
+        .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+    )
     const existing = this.#inFlightResolves.get(key)
     const inFlight =
       existing ??

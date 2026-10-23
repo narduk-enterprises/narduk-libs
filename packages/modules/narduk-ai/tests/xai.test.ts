@@ -67,6 +67,38 @@ describe('xAI helpers', () => {
     )
   })
 
+  it('fails the stream on an SSE error frame, without copying the provider text', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('data: {"error":{"message":"prompt was: secret"}}\n\n'),
+        )
+        controller.close()
+      },
+    })
+    const failure = new Response(source.pipeThrough(createXaiSseStreamParser())).text()
+    await expect(failure).rejects.toMatchObject({ statusCode: 502 })
+    await expect(failure).rejects.not.toMatchObject({ message: expect.stringContaining('secret') })
+  })
+
+  it('bounds a chat call that never answers', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+          }),
+      ),
+    )
+    const pending = grokChat('k', [], 'grok-4')
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' })
+    await vi.advanceTimersByTimeAsync(30_000)
+    await assertion
+    vi.useRealTimers()
+  })
+
   it('passes through xAI model listing and reports list failures', async () => {
     vi.stubGlobal(
       'fetch',

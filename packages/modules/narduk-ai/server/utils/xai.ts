@@ -16,6 +16,7 @@ export interface XaiCallOptions {
 }
 
 const XAI_PROVIDER = 'api.x.ai'
+const XAI_CHAT_TIMEOUT_MS = 30_000
 
 export interface XaiModel {
   created?: number
@@ -88,13 +89,28 @@ async function xaiCall<T>(
   options: XaiCallOptions,
   onResponse: (response: Response) => Promise<T>,
   completedMessage = 'AI provider call completed',
+  bound: 'body' | 'headers' | 'none' = 'none',
 ): Promise<T> {
   const startedAt = Date.now()
   const elapsed = () => Date.now() - startedAt
+  // A provider that accepts the connection and goes quiet must not hold the
+  // invocation: 'body' bounds the whole call, 'headers' only the wait for the
+  // response (a stream is consumed after this returns).
+  let timer: ReturnType<typeof setTimeout> | undefined
+  if (bound !== 'none') {
+    const controller = new AbortController()
+    timer = setTimeout(
+      () => controller.abort(new DOMException('xAI did not answer in time.', 'TimeoutError')),
+      XAI_CHAT_TIMEOUT_MS,
+    )
+    init = { ...init, signal: controller.signal }
+  }
   let response: Response
   try {
     response = await fetch(url, init)
+    if (bound === 'headers') clearTimeout(timer)
   } catch (error) {
+    clearTimeout(timer)
     logAiCallFailure(options.logger, fields, {
       durationMs: elapsed(),
       reason: error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'network',
@@ -110,6 +126,7 @@ async function xaiCall<T>(
   }
   try {
     const result = await onResponse(response)
+    clearTimeout(timer)
     options.logger?.info(completedMessage, {
       ...fields,
       statusCode: response.status,
@@ -117,6 +134,7 @@ async function xaiCall<T>(
     })
     return result
   } catch (error) {
+    clearTimeout(timer)
     if (response.ok) {
       logAiCallFailure(options.logger, fields, {
         durationMs: elapsed(),
@@ -150,6 +168,8 @@ export async function grokChat(
       const content = payload.choices?.[0]?.message?.content
       return typeof content === 'string' ? content.trim() : ''
     },
+    undefined,
+    'body',
   )
 }
 
@@ -176,6 +196,7 @@ export async function grokChatStream(
     },
     // Time to headers: the stream itself is consumed after this returns.
     'AI provider stream opened',
+    'headers',
   )
 }
 
@@ -191,16 +212,18 @@ export function createXaiSseStreamParser(): TransformStream<Uint8Array, Uint8Arr
     const payload = trimmed.slice('data:'.length).trim()
     if (!payload || payload === '[DONE]') return
 
+    let data: { choices?: Array<{ delta?: { content?: unknown } }>; error?: unknown }
     try {
-      const data = JSON.parse(payload) as {
-        choices?: Array<{ delta?: { content?: unknown } }>
-      }
-      const content = data.choices?.[0]?.delta?.content
-      if (typeof content === 'string' && content.length > 0) {
-        controller.enqueue(encoder.encode(content))
-      }
+      data = JSON.parse(payload)
     } catch {
-      // Ignore malformed SSE records and continue the stream.
+      return // Ignore malformed SSE records and continue the stream.
+    }
+    // A rejection that arrives as a frame is a failure, not an empty answer.
+    // The fixed sentence only: the provider's text can echo the prompt.
+    if (data.error) throw createError({ statusCode: 502, message: 'Failed to reach xAI.' })
+    const content = data.choices?.[0]?.delta?.content
+    if (typeof content === 'string' && content.length > 0) {
+      controller.enqueue(encoder.encode(content))
     }
   }
 

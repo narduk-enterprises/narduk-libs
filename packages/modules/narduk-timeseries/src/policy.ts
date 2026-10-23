@@ -89,6 +89,7 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
     )
   }
 
+  const trackTierOf = new Map<string, string>()
   for (const [tierName, tier] of Object.entries(policy.tiers)) {
     if (!Array.isArray(tier.vesselIds)) {
       throw new NardukTimeseriesError(
@@ -108,6 +109,21 @@ export function validateRetentionPolicy(policy: RetentionPolicyInput): Validated
           `Tier ${tierName} lists a vessel id that is not a non-empty, comma-free string.`,
           { tier: tierName },
         )
+      }
+      // Each track tier deletes its own vessels at its own cutoff, so a vessel
+      // on two of them is trimmed at the SHORTER window. `::uuid` reads
+      // upper- and lower-case as one id, so compare canonically.
+      if (tier.trackWindowMs !== undefined) {
+        const canonical = vesselId.trim().toLowerCase()
+        const first = trackTierOf.get(canonical)
+        if (first !== undefined && first !== tierName) {
+          throw new NardukTimeseriesError(
+            'RETENTION_POLICY_INVALID',
+            `A vessel is listed on two track tiers (${first} and ${tierName}); it would be trimmed at the shorter window.`,
+            { tier: tierName },
+          )
+        }
+        trackTierOf.set(canonical, tierName)
       }
     }
 

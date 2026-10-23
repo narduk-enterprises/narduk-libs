@@ -47,6 +47,14 @@ function fetchCalleeName(callee: any): string | null {
   return null
 }
 
+/** `undefined`, `null` and `void 0` all leave the request unbounded. */
+function isNoValue(node: any): boolean {
+  const target = unwrapTsWrappers(node)
+  if (target?.type === 'Identifier') return target.name === 'undefined'
+  if (target?.type === 'Literal') return target.value === null && target.raw === 'null'
+  return target?.type === 'UnaryExpression' && target.operator === 'void'
+}
+
 /** A same-origin path (`'/api/x'`, `` `/api/${id}` ``) that Nitro serves in-process. */
 function isInternalPath(node: any): boolean {
   const target = unwrapTsWrappers(node)
@@ -91,7 +99,13 @@ export default {
           if (init.type !== 'ObjectExpression') return
           for (const property of init.properties ?? []) {
             if (property.type !== 'Property') return // spread: may carry a signal
-            if (BOUNDING_KEYS.has(getIdentifierName(property.key) ?? '')) return
+            // `timeout: undefined` bounds nothing
+            if (
+              BOUNDING_KEYS.has(getIdentifierName(property.key) ?? '') &&
+              !isNoValue(property.value)
+            ) {
+              return
+            }
           }
         }
         context.report({ node, messageId: 'requireTimeout', data: { callee } })

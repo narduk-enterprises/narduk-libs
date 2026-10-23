@@ -26,6 +26,16 @@ export const test = base.extend<{ page: Page }>({
 
     await use(page)
 
+    // A spec that returned before Nuxt finished hydrating has not logged its
+    // mismatch yet; give a Nuxt page a moment to finish before scanning.
+    try {
+      if (await page.evaluate(() => document.getElementById('__nuxt') !== null)) {
+        await waitForVueHydrated(page, { timeout: 3_000 })
+      }
+    } catch {
+      // closed page, navigated away, or never hydrates: scan what was logged
+    }
+
     const hydrationErrors = consoleLogs.filter(isHydrationConsoleText)
     if (hydrationErrors.length > 0) {
       throw formatHydrationMismatchFailure(hydrationErrors)
@@ -50,10 +60,10 @@ export const test = base.extend<{ page: Page }>({
  */
 export function isVueAppHydrated(): boolean {
   type Root = { __vue_app__?: { $nuxt?: { isHydrating?: boolean } } }
-  const candidates = [
-    document.getElementById('__nuxt'),
-    ...Array.from(document.body?.children ?? []),
-  ]
+  // A Nuxt document is judged by `#__nuxt` alone: another Vue root mounted on
+  // <body> must not stand in for it while Nuxt is still hydrating.
+  const nuxtRoot = document.getElementById('__nuxt')
+  const candidates = nuxtRoot ? [nuxtRoot] : Array.from(document.body?.children ?? [])
   for (const element of candidates) {
     const app = (element as unknown as Root | null)?.__vue_app__
     if (!app) continue
@@ -152,7 +162,19 @@ export async function warmUpApp(browser: Pick<Browser, 'newPage'>, baseUrl: stri
   const page = await browser.newPage()
 
   try {
-    await page.goto(new URL(path, baseUrl).toString(), { timeout: 60_000 })
+    // `goto` resolves on an HTTP error document too: insist on a 2xx/3xx, and
+    // retry until the readiness deadline.
+    const deadline = Date.now() + 60_000
+    let status: number | undefined
+    for (;;) {
+      const response = await page.goto(new URL(path, baseUrl).toString(), { timeout: 60_000 })
+      status = response?.status()
+      if (status === undefined || (status >= 200 && status < 400)) break
+      if (Date.now() >= deadline) {
+        throw new Error(`Warm-up of ${path} on ${baseUrl} kept returning HTTP ${status}`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+    }
     await page.waitForLoadState('load', { timeout: 20_000 })
   } finally {
     await page.close()
