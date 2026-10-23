@@ -1,5 +1,7 @@
 import { useLogger } from '@narduk-enterprises/narduk-core/server/utils/logger'
-import { getRequestHeaders } from 'h3'
+import { getRequestHeader } from 'h3'
+
+import { sanitizeSameOriginPath } from '../../app/utils/same-origin-path'
 
 import { pickOgImageContentFromHtml } from './pickOgImageContentFromHtml'
 
@@ -27,11 +29,12 @@ export async function resolveAdminOgImageRoutePreviewEntry(
   fallback: string,
 ): Promise<AdminOgImageRoutePreviewEntry> {
   try {
-    const res = await fetch(`${origin}${target.routePath}`, {
-      headers: {
-        ...getRequestHeaders(event),
-        accept: 'text/html',
-      },
+    // The admin cookie is forwarded, so the target must stay on this origin.
+    const routePath = sanitizeSameOriginPath(target.routePath, '')
+    if (!routePath) throw new Error(`OG preview route is not same-origin: ${target.routePath}`)
+    const cookie = getRequestHeader(event, 'cookie')
+    const res = await fetch(`${origin}${routePath}`, {
+      headers: { accept: 'text/html', ...(cookie ? { cookie } : {}) },
       signal: AbortSignal.timeout(OG_PREVIEW_FETCH_TIMEOUT_MS),
     })
     if (!res.ok) {

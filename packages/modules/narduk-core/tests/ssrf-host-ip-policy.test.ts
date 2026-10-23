@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { isPrivateIPv6, stripIPv6Brackets } from '../runtime/server/utils/ssrfHostIpPolicy'
+import {
+  isPrivateIPv4,
+  isPrivateIPv6,
+  stripIPv6Brackets,
+} from '../runtime/server/utils/ssrfHostIpPolicy'
 
 /**
  * Cases `isPrivateIPv6` must get right. The first block is the orchestrator's
@@ -115,5 +119,18 @@ describe('isPrivateIPv6', () => {
       const hostname = stripIPv6Brackets(new URL(href).hostname)
       expect(isPrivateIPv6(hostname), href).toBe(isPrivate)
     }
+  })
+})
+
+describe('isPrivateIPv4', () => {
+  it.each([
+    ['192.0.0.9', false], // PCP anycast, RFC 7723
+    ['192.0.0.10', false], // TURN anycast, RFC 8155
+    ['192.0.0.8', true],
+    ['192.0.0.11', true],
+    ['127.0.0.1', true],
+    ['8.8.8.8', false],
+  ])('%s private=%s', (address, expected) => {
+    expect(isPrivateIPv4(address)).toBe(expected)
   })
 })

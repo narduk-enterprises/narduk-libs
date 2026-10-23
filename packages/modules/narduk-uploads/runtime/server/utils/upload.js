@@ -96,6 +96,32 @@ export function capIncomingMessageBytes(req, maxBytes) {
   })
 }
 
+/**
+ * Read a live Node request stream while counting bytes. Reading it here, once,
+ * means no earlier 'data' listener can drain it before the parser; on overflow
+ * the listener is dropped and the rest is discarded, so the caller can still
+ * answer 413.
+ */
+function readCappedNodeStream(stream, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let seen = 0
+    const onData = (chunk) => {
+      seen += chunkByteLength(chunk)
+      if (seen <= maxBytes) {
+        chunks.push(chunk)
+        return
+      }
+      stream.off('data', onData)
+      stream.resume()
+      reject(uploadTooLargeError(maxBytes))
+    }
+    stream.on('data', onData)
+    stream.once('end', () => resolve(globalThis.Buffer.concat(chunks)))
+    stream.once('error', reject)
+  })
+}
+
 const H3_RAW_BODY = Symbol.for('h3RawBody')
 
 function uploadTooLargeError(maxBytes) {
@@ -166,8 +192,8 @@ export async function readCappedWebStream(stream, maxBytes) {
  *
  * Resolution order mirrors h3's own so no body shape it would read is missed.
  * A web stream is read through a counting reader; already-materialised bytes
- * are measured and refused before the parse; a live Node stream is left to
- * `capIncomingMessageBytes`, which owns that path.
+ * are measured and refused before the parse; a live Node stream is read once
+ * through a counting reader and handed to the parse as bounded bytes.
  */
 export async function enforceUploadBodyByteCap(event, maxBytes) {
   const req = event?.node?.req
@@ -178,7 +204,14 @@ export async function enforceUploadBodyByteCap(event, maxBytes) {
     req?.rawBody ??
     req?.body
   if (typeof body?.then === 'function') body = await body
-  if (body == null || isNodeReadableStream(body)) return undefined
+  if (body == null && isNodeReadableStream(req)) body = req
+  if (body == null) return undefined
+
+  if (isNodeReadableStream(body)) {
+    const bytes = await readCappedNodeStream(body, maxBytes)
+    event._requestBody = bytes
+    return bytes
+  }
 
   if (!isWebReadableStream(body)) {
     if (chunkByteLength(body) > maxBytes) throw uploadTooLargeError(maxBytes)
@@ -250,4 +283,50 @@ export function validateUploadFiles(files) {
 export function normalizeExtension(mimeType) {
   const sub = mimeType.split('/')[1] ?? 'bin'
   return sub.replace('jpeg', 'jpg').replace('svg+xml', 'svg')
+}
+
+/**
+ * Split an already-bounded multipart body into h3-shaped parts
+ * (`{ name, filename?, type?, data }`). h3's own parser pushes one number per
+ * body byte, which costs ~35x the part size in heap; this one slices the
+ * buffer. Returns `undefined` when the content type carries no boundary.
+ */
+export function parseMultipartBody(body, contentType) {
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/iu.exec(contentType ?? '')
+  const boundary = (match?.[1] ?? match?.[2])?.trim()
+  if (!boundary) return undefined
+
+  const { Buffer } = globalThis
+  const buffer = Buffer.isBuffer(body)
+    ? body
+    : Buffer.from(body.buffer, body.byteOffset, body.byteLength)
+  const opening = Buffer.from(`--${boundary}`)
+  const delimiter = Buffer.from(`\r\n--${boundary}`)
+  const headerEnd = Buffer.from('\r\n\r\n')
+
+  const parts = []
+  let start = buffer.indexOf(opening)
+  if (start === -1) return parts
+  start += opening.length
+  while (buffer[start] === 0x0d && buffer[start + 1] === 0x0a) {
+    const headersEnd = buffer.indexOf(headerEnd, start)
+    if (headersEnd === -1) break
+    const dataStart = headersEnd + headerEnd.length
+    const dataEnd = buffer.indexOf(delimiter, dataStart)
+    if (dataEnd === -1) break
+
+    const headers = buffer.toString('utf8', start + 2, headersEnd)
+    const disposition = /^content-disposition:.*$/imu.exec(headers)?.[0] ?? ''
+    const name = /\bname="([^"]*)"/iu.exec(disposition)?.[1]
+    const filename = /\bfilename="([^"]*)"/iu.exec(disposition)?.[1]
+    const type = /^content-type:(.*)$/imu.exec(headers)?.[1]?.trim()
+    parts.push({
+      data: buffer.subarray(dataStart, dataEnd),
+      name,
+      ...(filename === undefined ? {} : { filename }),
+      ...(type === undefined ? {} : { type }),
+    })
+    start = dataEnd + delimiter.length
+  }
+  return parts
 }

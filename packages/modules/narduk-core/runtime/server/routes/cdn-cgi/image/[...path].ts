@@ -33,6 +33,11 @@ export default defineEventHandler(async (event) => {
     forwarded.searchParams.set(key, value)
   }
 
+  // Dot-segments in a raw request normalize out of /_og/ here.
+  if (!forwarded.pathname.startsWith('/_og/')) {
+    throw createError({ statusCode: 404, statusMessage: 'Unsupported image source path' })
+  }
+
   log.debug('CDN image redirect', { targetPath })
   return sendRedirect(event, `${forwarded.pathname}${forwarded.search}`, 302)
 })

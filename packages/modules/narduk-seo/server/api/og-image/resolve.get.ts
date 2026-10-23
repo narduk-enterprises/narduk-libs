@@ -11,6 +11,7 @@ import {
   SEO_OG_IMAGE_DEFAULT_PRIMARY,
   SEO_OG_IMAGE_DEFAULT_SECONDARY,
 } from '../../../app/utils/ogImageDefinition'
+import { sanitizeSameOriginPath } from '../../../app/utils/same-origin-path'
 import { isOgImageSigningSecretConfigured } from '../../../shared/ogImageSecret'
 
 const PREVIEW_MAX_LENGTH = {
@@ -23,7 +24,7 @@ const PREVIEW_MAX_LENGTH = {
 } as const
 
 function isSafePreviewImagePath(value: string): boolean {
-  return value === '' || /^\/(?!\/)/.test(value)
+  return value === '' || sanitizeSameOriginPath(value, '') === value
 }
 
 const querySchema = z.object({

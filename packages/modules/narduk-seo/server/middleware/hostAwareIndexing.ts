@@ -20,7 +20,7 @@ export default defineEventHandler((event) => {
   const config = useRuntimeConfig(event)
   if (!config.public?.nardukSeoHostAwareIndexing) return
 
-  const requestHost = getRequestHost(event, { xForwardedHost: true })
+  const requestHost = getRequestHost(event)
   if (isNonCanonicalIndexingHost(requestHost, config.public.siteUrl)) {
     setResponseHeader(event, 'X-Robots-Tag', hostAwareNoindexRule)
   }

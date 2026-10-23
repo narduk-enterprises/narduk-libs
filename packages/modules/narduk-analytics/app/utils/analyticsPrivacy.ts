@@ -46,8 +46,8 @@ export function templatePath(path: string, resolveRoute: ResolveRoute | undefine
  * A URL with every identifying part removed. Same-origin URLs keep the origin
  * and the route pattern; any other origin keeps its origin only, so a search
  * engine's query or another site's path never reaches analytics. A value that
- * is not an absolute http(s) URL (PostHog's `$direct`, an empty string) is
- * returned unchanged.
+ * is neither an absolute http(s) URL nor a relative one (PostHog's `$direct`, an
+ * empty string) is returned unchanged; a relative one is templated to its path.
  */
 export function templateUrl(
   value: string,
@@ -58,7 +58,10 @@ export function templateUrl(
   try {
     url = new URL(value)
   } catch {
-    return value
+    // A relative reference ('/p?token=x#f') still carries a path and query.
+    return /^[/?#]/u.test(value)
+      ? templatePath(value.split(/[?#]/u)[0] || '/', resolveRoute)
+      : value
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return value
   if (url.origin !== origin) return url.origin

@@ -24,6 +24,7 @@ export function isPrivateIPv4(address: string): boolean {
   const ipv4 = (((a * 256 + b) * 256 + c) * 256 + d) >>> 0
   const inRange = (start: number, end: number) => ipv4 >= start && ipv4 <= end
 
+  // 192.0.0.9 (PCP) and 192.0.0.10 (TURN) are globally reachable anycast, RFC 7723/8155.
   if (ipv4 === 0xc0000009 || ipv4 === 0xc000000a) return false
 
   if (inRange(0x00000000, 0x00ffffff)) return true // 0.0.0.0/8 — "this network"
