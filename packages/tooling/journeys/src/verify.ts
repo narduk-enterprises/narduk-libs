@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join, relative, resolve, isAbsolute } from 'node:path'
 
 import { digestJourney } from './digest.js'
 import type { Catalog, Journey, Mode, RunManifest } from './types.js'
@@ -29,6 +29,13 @@ export interface VerifyOptions {
    * of that journey instead, so adding a sibling does not stale it.
    */
   currentDigest?: string
+}
+
+/** A manifest-named file, resolved only when it stays inside the attempt directory. */
+function insideRun(runDirectory: string, file: string): string | null {
+  const full = resolve(runDirectory, file)
+  const rel = relative(resolve(runDirectory), full)
+  return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? null : full
 }
 
 function sha256(buffer: Buffer): string {
@@ -79,7 +86,10 @@ export function verifyRun(
   // Exact sequence equality against the declaration (§4.3): a manifest that
   // omitted a declared step fails here, whatever it attests about itself.
   const executedIds = manifest.steps.map((step) => step.id)
-  if (executedIds.join(' ') !== expected.join(' ')) {
+  if (
+    executedIds.length !== expected.length ||
+    executedIds.some((id, index) => id !== expected[index])
+  ) {
     issues.push(
       `manifest step sequence [${executedIds.join(', ')}] does not equal declared ` +
         `sequence [${expected.join(', ')}] for scenario "${manifest.scenario.id}"`,
@@ -92,7 +102,10 @@ export function verifyRun(
       issues.push(`step "${step.id}": ordinal ${step.ordinal} out of order`)
     }
     const declared = declaredSteps.get(step.id)
-    if (!declared) continue
+    if (!declared) {
+      issues.push(`step "${step.id}": not a step this journey declares`)
+      continue
+    }
     if (declared.say !== step.say) {
       issues.push(`step "${step.id}": manifest prose diverges from the declaration`)
     }
@@ -110,8 +123,10 @@ export function verifyRun(
       if (!step.shot || !step.shotSha256) {
         issues.push(`step "${step.id}": capture mode requires a shot and its hash`)
       } else {
-        const shotPath = join(runDirectory, step.shot)
-        if (!existsSync(shotPath)) {
+        const shotPath = insideRun(runDirectory, step.shot)
+        if (!shotPath) {
+          issues.push(`step "${step.id}": shot path escapes the attempt directory (${step.shot})`)
+        } else if (!existsSync(shotPath)) {
           issues.push(`step "${step.id}": shot file missing (${step.shot})`)
         } else if (sha256(readFileSync(shotPath)) !== step.shotSha256) {
           issues.push(`step "${step.id}": shot hash mismatch (${step.shot})`)
@@ -129,8 +144,10 @@ export function verifyRun(
     if (!manifest.video) {
       issues.push('capture mode requires a video')
     } else {
-      const videoPath = join(runDirectory, manifest.video.file)
-      if (!existsSync(videoPath)) {
+      const videoPath = insideRun(runDirectory, manifest.video.file)
+      if (!videoPath) {
+        issues.push(`video path escapes the attempt directory (${manifest.video.file})`)
+      } else if (!existsSync(videoPath)) {
         issues.push(`video file missing (${manifest.video.file})`)
       } else if (sha256(readFileSync(videoPath)) !== manifest.video.sha256) {
         issues.push(`video hash mismatch (${manifest.video.file})`)
@@ -170,6 +187,9 @@ export function promoteRun(
   const issues = verifyRun(catalog, manifest, runDirectory, options)
   if (options.currentDigest === undefined) {
     issues.push('promotion requires the current declaration digest')
+  }
+  if (options.runId !== basename(runDirectory)) {
+    issues.push(`run id "${options.runId}" is not the attempt directory's name`)
   }
   if (manifest.verdict !== 'passed') {
     issues.push(`only a passed run can be promoted (verdict: ${manifest.verdict})`)

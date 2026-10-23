@@ -73,7 +73,7 @@ ruleTester.run('no-worker-global-scope-operations', rule, {
     },
     {
       name: 'test file is not Worker runtime',
-      filename: 'server/api/proxy.test.ts',
+      filename: 'server/utils/proxy.test.ts',
       code: `export const boot = fetch('https://example.com')`,
     },
   ],

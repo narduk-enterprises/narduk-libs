@@ -58,6 +58,8 @@ interface Options {
 const DEFAULT_CSRF_HEADERS = ['x-requested-with', 'x-csrf-token', 'x-xsrf-token']
 const DEFAULT_CLIENT_SCOPES = ['app/composables', 'app/stores', 'app/utils']
 
+const CSRF_VERIFIER = /^(?:assert|check|enforce|ensure|require|validate|verify)\w*(?:csrf|xsrf)/i
+
 const HEADER_READERS = new Set(['getHeader', 'getRequestHeader', 'getRequestHeaders'])
 
 function literalString(node: any): string | null {
@@ -213,11 +215,12 @@ export default {
             if (APPROVED_MUTATION_WRAPPERS.has(definingCall)) verified = true
           }
 
-          // A CSRF helper of any shape: assertCsrf(event), validateCsrfToken(…),
-          // security.requireCsrf(event).
-          if (looksCsrfRelated(callee) || (calleeName && /csrf|xsrf/i.test(calleeName))) {
-            verified = true
-          }
+          // A CSRF verifier: assertCsrf(event), validateCsrfToken(…),
+          // security.requireCsrf(event). A name that merely mentions csrf
+          // (logCsrfFailure, getCsrfToken) verifies nothing.
+          const verifierName =
+            callee?.type === 'MemberExpression' ? getIdentifierName(callee.property) : calleeName
+          if (verifierName && CSRF_VERIFIER.test(verifierName)) verified = true
 
           // getHeader(event, 'x-requested-with')
           if (calleeName && HEADER_READERS.has(calleeName)) {
