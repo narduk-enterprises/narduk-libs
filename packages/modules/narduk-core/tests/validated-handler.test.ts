@@ -115,6 +115,8 @@ function json(value: unknown): RequestOptions {
 }
 
 const GREET = '/api/greet'
+/** A value no 400 may ever echo back. */
+const SECRET = 'hunter2-secret'
 const THING = '/api/thing'
 const SEARCH = '/api/search'
 
@@ -218,12 +220,12 @@ describe('defineValidatedHandler', () => {
       const result = await request(
         handler,
         GREET,
-        json({ mode: 'hunter2-mode', name: 42, password: 'hunter2-secret' }),
+        json({ mode: 'hunter2-mode', name: 42, password: SECRET }),
       )
 
       expect(result.status).toBe(400)
       expect(result.body).not.toContain('hunter2-mode')
-      expect(result.body).not.toContain('hunter2-secret')
+      expect(result.body).not.toContain(SECRET)
       // The rejected *key* survives, as a path segment — that is what makes the
       // error actionable — but never as prose, and never with its value.
       expect(issuesOf(result)).toContainEqual({
@@ -241,10 +243,10 @@ describe('defineValidatedHandler', () => {
         handler: () => ({ ok: true }),
       })
 
-      const result = await request(handler, GREET, json({ 'tenant-42': 'hunter2-secret' }))
+      const result = await request(handler, GREET, json({ 'tenant-42': SECRET }))
 
       expect(result.status).toBe(400)
-      expect(result.body).not.toContain('hunter2-secret')
+      expect(result.body).not.toContain(SECRET)
       expect(issuesOf(result)).toEqual([
         { message: 'Invalid input: expected number, received string', path: 'body.tenant-42' },
       ])
@@ -262,14 +264,14 @@ describe('defineValidatedHandler', () => {
         handler: () => ({ ok: true }),
       })
 
-      const none = await request(handler, GREET, json({ c: 'hunter2-secret' }))
+      const none = await request(handler, GREET, json({ c: SECRET }))
       expect(none.status).toBe(400)
-      expect(none.body).not.toContain('hunter2-secret')
+      expect(none.body).not.toContain(SECRET)
       expect(issuesOf(none)).toEqual([{ message: 'Invalid input', path: 'body' }])
 
-      const near = await request(handler, GREET, json({ a: 'x', 'hunter2-key': 'hunter2-secret' }))
+      const near = await request(handler, GREET, json({ a: 'x', 'hunter2-key': SECRET }))
       expect(near.status).toBe(400)
-      expect(near.body).not.toContain('hunter2-secret')
+      expect(near.body).not.toContain(SECRET)
       expect(near.body).not.toContain('Unrecognized key: ')
       expect(issuesOf(near)).toEqual([{ message: 'Unrecognized key', path: 'body.hunter2-key' }])
     })
