@@ -305,6 +305,18 @@ describe('createConsoleTracker', () => {
     await expect(tracker.expectClean()).rejects.toThrow()
   })
 
+  it('records only the requested console levels, and always records pageerror', () => {
+    const stub = stubPage()
+    const tracker = createConsoleTracker(stub.page, { levels: ['error'] })
+
+    stub.emitConsole('warning', 'a warning')
+    stub.emitConsole('error', 'an error')
+    stub.emitConsole('log', 'chatter')
+    stub.emitPageError(new Error('boom'))
+
+    expect(tracker.getIssues()).toEqual(['[console:error] an error', '[pageerror] boom'])
+  })
+
   it('still accepts a bare pattern list as the second argument', () => {
     const ignoredPatterns: RegExp[] = [/^\[build\]/]
     const stub = stubPage()

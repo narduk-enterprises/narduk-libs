@@ -23,6 +23,10 @@
       "types": "./dist/d1.d.ts",
       "import": "./dist/d1.js"
     },
+    "./d1-migration-lint": {
+      "types": "./dist/d1-migration-lint.d.ts",
+      "import": "./dist/d1-migration-lint.js"
+    },
     "./e2e/fixtures": {
       "types": "./dist/e2e/fixtures.d.ts",
       "import": "./dist/e2e/fixtures.js"
@@ -64,6 +68,10 @@
       "types": "./dist/playwright/accessibility.d.ts",
       "import": "./dist/playwright/accessibility.js"
     },
+    "./playwright/console-guard": {
+      "types": "./dist/playwright/console-guard.d.ts",
+      "import": "./dist/playwright/console-guard.js"
+    },
     "./playwright/config": {
       "types": "./dist/playwright/config.d.ts",
       "import": "./dist/playwright/config.js",
@@ -73,6 +81,10 @@
       "types": "./dist/playwright/dev-port.d.ts",
       "import": "./dist/playwright/dev-port.js",
       "require": "./dist/playwright/dev-port.js"
+    },
+    "./playwright/layout": {
+      "types": "./dist/playwright/layout.d.ts",
+      "import": "./dist/playwright/layout.js"
     },
     "./playwright/deterministic-capture": {
       "types": "./dist/playwright/deterministic-capture.d.ts",
@@ -141,6 +153,10 @@
     "./vue-strict-setup": {
       "types": "./dist/vue-strict-setup.d.ts",
       "import": "./dist/vue-strict-setup.js"
+    },
+    "./http-contracts": {
+      "types": "./dist/http-contracts.d.ts",
+      "import": "./dist/http-contracts.js"
     }
   },
   "files": [
