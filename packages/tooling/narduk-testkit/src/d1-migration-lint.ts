@@ -226,7 +226,8 @@ function declaredTypeWords(definition: Token[]): string[] {
   for (const token of definition.slice(1)) {
     if (token.kind === 'word' && COLUMN_CONSTRAINT_WORDS.includes(token.value.toUpperCase())) break
     if (token.kind === 'punct' && token.value === '(') break
-    if (token.kind === 'word') words.push(token.value.toUpperCase())
+    // SQLite accepts a quoted type name (`price "REAL"`) and records it unchanged.
+    if (token.kind === 'word' || token.kind === 'quoted') words.push(token.value.toUpperCase())
   }
   return words
 }

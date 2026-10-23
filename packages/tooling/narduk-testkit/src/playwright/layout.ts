@@ -242,6 +242,9 @@ export async function measureHorizontalOverflow(
 /** Collect raw facts about every interactive element at the current viewport. */
 export async function measureTouchTargets(page: Page): Promise<TouchTargetCandidate[]> {
   return await page.evaluate((selector) => {
+    // Whitespace between inline links is not prose.
+    const inkLength = (text: string | null | undefined) =>
+      (text ?? '').replaceAll(/\s/gu, '').length
     const describe = (element: Element) => {
       const id = element.id ? `#${element.id}` : ''
       const classes = [...element.classList]
@@ -268,14 +271,14 @@ export async function measureTouchTargets(page: Page): Promise<TouchTargetCandid
       const parent = element.parentElement
       const targetText = [
         ...(parent?.querySelectorAll('a, button, [role="link"], [role="button"]') ?? []),
-      ].reduce((total, target) => total + (target.textContent ?? '').trim().length, 0)
+      ].reduce((total, target) => total + inkLength(target.textContent), 0)
       return {
         ariaHidden: element.closest('[aria-hidden="true"], [inert]') !== null,
         disabled: element.matches(':disabled') || element.getAttribute('aria-disabled') === 'true',
         display: getComputedStyle(element).display,
         height: box.height,
         selector: describe(element),
-        siblingTextLength: Math.max(0, (parent?.textContent ?? '').trim().length - targetText),
+        siblingTextLength: Math.max(0, inkLength(parent?.textContent) - targetText),
         tag: element.tagName.toLowerCase(),
         visible: element.checkVisibility({ checkVisibilityCSS: true }),
         width: box.width,

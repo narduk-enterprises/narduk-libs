@@ -128,6 +128,11 @@ describe('money-real-column', () => {
     expect(findings.map((finding) => finding.message.split(' ')[0])).toEqual(['t.price'])
   })
 
+  it('reads a quoted type name', () => {
+    expect(ids('CREATE TABLE t (price "REAL")')).toEqual(['money-real-column'])
+    expect(ids('ALTER TABLE t ADD COLUMN amount "NUMERIC"')).toEqual(['money-real-column'])
+  })
+
   it('does not read a money word inside a default or a check as a column', () => {
     expect(ids("CREATE TABLE t (note TEXT DEFAULT 'price REAL', n INTEGER CHECK (n > 0))")).toEqual(
       [],
