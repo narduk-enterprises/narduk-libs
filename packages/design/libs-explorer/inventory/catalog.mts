@@ -170,7 +170,13 @@ export const CATALOG: Record<string, CatalogEntry> = {
   },
   '@narduk-enterprises/narduk-notify': {
     kind: 'server',
-    capabilities: ['APNs', 'Live Activity push', 'Resend email', 'notification preferences', 'delivery audit'],
+    capabilities: [
+      'APNs',
+      'Live Activity push',
+      'Resend email',
+      'notification preferences',
+      'delivery audit',
+    ],
     prerequisites: [
       'An APNs auth key and a Resend API key in secret bindings, and the D1 migration applied.',
     ],
