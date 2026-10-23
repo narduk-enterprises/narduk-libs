@@ -89,7 +89,7 @@ const VIEWPORT_FIXES: Array<[RegExp, string]> = [
 ]
 const VIEWPORT_UNFIXABLE = [new RegExp(`^${VARIANTS}!?max-h-screen!?$`), /\[[^\]]*\dvh(?![a-z])/]
 
-const CLASS_ATTRIBUTE = /^(?:class|ui)$|-class$|Class$/
+const CLASS_ATTRIBUTE = /^(?:class|ui)$|^(?!data-).+(?:-class|Class)$/
 const CLASS_CALLEES = new Set([
   'cc',
   'clb',

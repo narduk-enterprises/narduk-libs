@@ -18,9 +18,11 @@
  *
  * A read is followed through `as`, `!`, `?.`, `??`/`||`, a ternary's branches
  * and one `const` binding (whose every use must then reach a guard). Guards are
- * the narduk-auth sanitizers, any callee whose name starts with `safe`,
- * `sanitize`, `isSafe`, `isSameOrigin` or `sameOrigin`, and the rule's `guards`
- * option for an app's own helper. Test trees are exempt.
+ * the narduk-auth sanitizers, a `safe…`/`sanitize…`/`isSafe…` callee naming a
+ * redirect, path, URL or target (`safeLoginRedirect`, not `safeParse`),
+ * `isSameOrigin…`, and the rule's `guards` option for an app's own helper.
+ * `String()`, `decodeURIComponent()`, `computed()`, `r[0]`, `r.trim()` and
+ * `.value` pass the value on. Test trees are exempt.
  */
 
 import type { Rule } from 'eslint'
@@ -50,7 +52,34 @@ const DEFAULT_GUARDS = [
   'sanitizeSameOriginPath',
 ]
 
-const GUARD_PREFIX = /^(?:safe|sanitize|isSafe|isSameOrigin|sameOrigin)/
+/** `safeLoginRedirect`, `sanitizeReturnPath`, `isSameOriginUrl`; not zod's `safeParse`. */
+const GUARD_NAME =
+  /^(?:isSameOrigin|sameOrigin)|^(?:safe|sanitize|isSafe)\w*(?:Redirect|Path|Url|Href|Next|Target)/
+
+/** Calls that return the same value, so its use is decided further out. */
+const PASS_THROUGH_CALLS = new Set([
+  'String',
+  'computed',
+  'decodeURI',
+  'decodeURIComponent',
+  'toRef',
+  'toValue',
+  'unref',
+])
+
+/** Members that return the value or part of it: `r[0]`, `r.trim()`, `ref.value`. */
+const PASS_THROUGH_MEMBERS = new Set([
+  'at',
+  'normalize',
+  'replace',
+  'slice',
+  'substring',
+  'toLowerCase',
+  'toString',
+  'trim',
+  'value',
+  'valueOf',
+])
 
 /** Wrappers a value passes through unchanged. */
 const TRANSPARENT = new Set([
@@ -110,7 +139,7 @@ export default {
 
     const isGuard = (callee: any) => {
       const name = calleeName(callee)
-      return name !== null && (guards.has(name) || GUARD_PREFIX.test(name))
+      return name !== null && (guards.has(name) || GUARD_NAME.test(name))
     }
 
     /** `x.query`, `getQuery(e)`, `useRoute().query`, or a `const` bound to one. */
@@ -182,9 +211,27 @@ export default {
           continue
         }
         if (parent.type === 'UnaryExpression' || parent.type === 'BinaryExpression') return true
-        if (parent.type === 'MemberExpression' && parent.object === node) return true
+        if (parent.type === 'MemberExpression' && parent.object === node) {
+          // `r.startsWith('/')`, `r.length`: a test of the value, not a use of it.
+          if (!parent.computed && !PASS_THROUGH_MEMBERS.has(propertyName(parent) ?? '')) return true
+          const call = parent.parent
+          node = call?.type === 'CallExpression' && call.callee === parent ? call : parent
+          continue
+        }
         if (parent.type === 'CallExpression' && parent.arguments.includes(node)) {
-          return isGuard(parent.callee) || calleeName(parent.callee) === 'isArray'
+          if (isGuard(parent.callee) || calleeName(parent.callee) === 'isArray') return true
+          if (!PASS_THROUGH_CALLS.has(calleeName(parent.callee) ?? '')) return false
+          node = parent
+          continue
+        }
+        if (parent.type === 'ArrowFunctionExpression' && parent.body === node) {
+          // `computed(() => q.next)` passes the value on; a `watch` source is untracked.
+          const call = parent.parent
+          if (call?.type !== 'CallExpression' || !call.arguments.includes(parent)) return false
+          if (calleeName(call.callee) === 'watch') return true
+          if (!PASS_THROUGH_CALLS.has(calleeName(call.callee) ?? '')) return false
+          node = call
+          continue
         }
         if (
           parent.type === 'VariableDeclarator' &&
@@ -202,9 +249,12 @@ export default {
     function bindingFlowsOnlyToGuards(id: any, hops: number): boolean {
       const variable = variableOf(id)
       if (!variable) return false
-      return variable.references
-        .filter((reference: any) => !reference.init)
-        .every((reference: any) => flowsOnlyToGuards(reference.identifier, hops))
+      const uses = variable.references.filter((reference: any) => !reference.init)
+      // No script use in an SFC usually means the template reads it (`:to="next"`).
+      return (
+        uses.length > 0 &&
+        uses.every((reference: any) => flowsOnlyToGuards(reference.identifier, hops))
+      )
     }
 
     const report = (node: any, param: string) =>

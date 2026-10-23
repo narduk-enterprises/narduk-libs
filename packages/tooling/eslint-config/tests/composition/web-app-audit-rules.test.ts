@@ -88,6 +88,7 @@ describe('a11y pack: Nuxt UI awareness', () => {
     '<UButton icon="i-lucide-x" aria-label="Close" @click="close" />',
     '<NuxtLink to="/" aria-label="Home"><UIcon name="i-lucide-home" /></NuxtLink>',
     '<NuxtLink to="/">{{ label }}</NuxtLink>',
+    '<NuxtLink to="/"><NuxtImg src="/logo.png" alt="Home" /></NuxtLink>',
     '<h2>{{ title }}</h2>',
     '<h2><slot /></h2>',
     '<UFormField label="Name"><UInput v-model="name" /></UFormField>',

@@ -62,6 +62,24 @@ vue.run('require-safe-redirect-query (vue)', rule, {
         "const next = typeof route.query.next === 'string' ? route.query.next : undefined\nawait navigateTo(sanitizeLocalRedirectPath(next, '/'))",
       ),
     },
+    // Wrappers that pass the value on to a guard.
+    {
+      filename: PAGE,
+      code: sfc(
+        "const to = sanitizeSameOriginPath(decodeURIComponent(String(route.query.redirect)), '/')",
+      ),
+    },
+    {
+      filename: PAGE,
+      code: sfc(
+        "const r = computed(() => route.query.redirect)\nawait navigateTo(sanitizeSameOriginPath(r.value, '/'))",
+      ),
+    },
+    {
+      filename: PAGE,
+      code: sfc('watch(() => route.query.next, (next) => log(next))'),
+    },
+    { filename: PAGE, code: sfc("const ok = route.query.next?.startsWith('/') ?? false") },
     // Not a redirect parameter, and not a query object.
     { filename: PAGE, code: sfc('const tab = route.query.tab') },
     { filename: PAGE, code: sfc('const n = props.next') },
@@ -81,6 +99,20 @@ vue.run('require-safe-redirect-query (vue)', rule, {
       errors: [{ messageId: 'unguarded', data: { param: 'returnTo' } }],
     },
     // pacc-trac terms/index.vue: `startsWith('/')` lets `//evil.example` through.
+    ...[
+      'await navigateTo(route.query.redirect[0])',
+      'await navigateTo(route.query.redirect.trim())',
+      'await navigateTo(route.query.redirect.toString())',
+      'const r = route.query.redirect\nawait navigateTo(Array.isArray(r) ? r[0] : r)',
+      "const parsed = schema.safeParse(route.query.redirect)\nawait navigateTo(parsed.data ?? '/')",
+      "const r = computed(() => route.query.redirect)\nawait navigateTo(r.value ?? '/')",
+      // Read only by the template (`<NuxtLink :to="next">`).
+      'const next = route.query.next as string',
+    ].map((code) => ({
+      filename: PAGE,
+      code: sfc(code),
+      errors: [{ messageId: 'unguarded' as const }],
+    })),
     {
       filename: 'app/pages/terms/index.vue',
       code: sfc(

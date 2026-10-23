@@ -84,7 +84,10 @@ const a11yConfigs = recommended.map((entry, index) => {
           object: ['object'],
         },
       ],
-      'vuejs-accessibility/anchor-has-content': ['warn', { components: LINK_COMPONENTS }],
+      'vuejs-accessibility/anchor-has-content': [
+        'warn',
+        { components: LINK_COMPONENTS, accessibleChildren: ['NuxtImg', 'NuxtPicture', 'UAvatar'] },
+      ],
       // Upstream's default demands nesting AND `for`; either one associates
       // the label (HTML 4.10.4), so `<label for="x">` beside its input is fine.
       'vuejs-accessibility/label-has-for': [

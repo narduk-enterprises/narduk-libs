@@ -29,6 +29,7 @@ vue.run('no-viewport-vh-units', rule, {
     { filename: FILE, code: '<template><div /></template><style>.a { height: 100vh }</style>' },
   ],
   invalid: [
+    { ...tpl('<div style="height: 100VH">x</div>'), errors: [{ messageId: 'vhUnit' }] },
     { ...tpl('<div style="height: 100vh">x</div>'), errors: [{ messageId: 'vhUnit' }] },
     { ...tpl('<div style="max-height:.5vh">x</div>'), errors: [{ messageId: 'vhUnit' }] },
     { ...tpl('<div :style="{ minHeight: \'100vh\' }">x</div>'), errors: [{ messageId: 'vhUnit' }] },

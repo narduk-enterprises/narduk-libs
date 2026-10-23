@@ -65,7 +65,10 @@ const RESTRICTED_ELEMENTS = [
 const RESTRICTED_LAYOUT_ELEMENTS = [
   { element: 'footer', message: 'Use <UFooter>, which renders the <footer> landmark.' },
   { element: 'main', message: 'Use <UMain>, which renders the <main> landmark.' },
-  { element: 'nav', message: 'Use <UNavigationMenu> inside a <nav> landmark, or <UHeader>.' },
+  {
+    element: 'nav',
+    message: 'Use <UNavigationMenu> or <UHeader>, which render the <nav> landmark.',
+  },
 ]
 
 /** @type {import('eslint').Linter.Config[]} */

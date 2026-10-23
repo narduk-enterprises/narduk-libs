@@ -1217,6 +1217,8 @@ export function createAppLintConfig({
 
   const composed = withNuxt(
     ...sanitizedSharedConfigs,
+    // Before the content relaxations, so a file in both lists stays relaxed.
+    ...buildRawPaletteOverrides(allowedRawPaletteFiles, capabilityPacks),
     ...buildContentRelaxedOverrides(contentRelaxedFiles),
     // v1's additionalNuxtUiComponents fed narduk/no-unknown-nuxt-ui-component;
     // in v2 they widen the same vue/no-undef-components allowlist as the
@@ -1227,7 +1229,6 @@ export function createAppLintConfig({
     ]),
     ...buildUtilityComposableOverrides(utilityComposableFiles),
     ...tailwindThemeOverrides,
-    ...buildRawPaletteOverrides(allowedRawPaletteFiles, capabilityPacks),
     ...appTypeOverrides,
     ...extraOverrides,
     ...buildVueProgramWarmConfig(appRootDir),

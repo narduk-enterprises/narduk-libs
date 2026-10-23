@@ -23,7 +23,7 @@ import type { Rule } from 'eslint'
 import { templateBodyVisitor } from '../hydration/_internal'
 
 /** A number immediately followed by `vh` and no further letter (`100dvh` has one between). */
-const VH_UNIT = /(?:\d|\})vh\b/
+const VH_UNIT = /(?:\d|\})vh\b/i
 
 function literalTexts(expression: any, out: string[] = []): string[] {
   if (!expression || typeof expression !== 'object') return out

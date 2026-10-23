@@ -298,10 +298,15 @@ finding rather than an audit line. Every rule below is `warn`, which
   `const` alias, or destructured) that is used before it reaches a same-origin
   guard: `?next=//evil.example` is an open redirect. Guards are narduk-auth's
   sanitizers (`sanitizeSameOriginPath`, `sanitizeLocalRedirectPath`,
-  `resolveLocalRedirectRequest`, `sanitizeNextPath`, …) and any callee named
-  `safe*`, `sanitize*`, `isSafe*`, `isSameOrigin*` or `sameOrigin*`. A `typeof`
-  test or comparison is not a use. Options: `params` (replaces the list) and
-  `guards` (adds an app's own helper names):
+  `resolveLocalRedirectRequest`, `sanitizeNextPath`, …), `isSameOrigin*` and
+  `sameOrigin*`, and a `safe*`/`sanitize*`/`isSafe*` callee whose name says
+  redirect, path, URL, href, next or target (`safeLoginRedirect`; zod's
+  `safeParse` is not a guard). A `typeof` test, a comparison or a test such as
+  `r.startsWith('/')` is not a use. `String()`, `decodeURIComponent()`,
+  `computed()`, `r[0]`, `r.trim()` and `.value` pass the value on. A binding
+  with no script use is reported, since the template is probably reading it.
+  Options: `params` (replaces the list) and `guards` (adds an app's own helper
+  names):
 
   ```js
   { rules: { 'narduk/require-safe-redirect-query': ['warn', { guards: ['facilityLoginNext'] }] } }

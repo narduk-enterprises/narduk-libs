@@ -28,6 +28,7 @@ vue.run('no-restricted-utility-classes', rule, {
     tpl('<div class="bg-[var(--chart-1)] bg-(--color-ink) text-[13px] h-dvh">x</div>'),
     tpl('<div :class="`text-${tone}-500 bg-${tone}-50`">x</div>'),
     tpl('<div title="text-slate-500 h-screen">x</div>'),
+    tpl('<div data-class="h-screen text-slate-500">x</div>'),
     tpl('<div :aria-label="\'bg-gray-900\'">x</div>'),
     tpl('<div :class="{ active: isOn(\'blue\') }">x</div>'),
     script("const label = 'text-slate-500'"),
