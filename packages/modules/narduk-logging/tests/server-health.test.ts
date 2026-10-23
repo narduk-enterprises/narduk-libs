@@ -190,6 +190,19 @@ describe('storage bounds', () => {
       }),
     ])
   })
+  it('keeps the newest occurrence when an older write lands last', async () => {
+    await recordServerError(db, { ...entry('aaaa', '2026-10-23T12:05:00.000Z'), requestId: 'ray-new' })
+    await recordServerError(db, { ...entry('aaaa', '2026-10-23T12:00:00.000Z'), requestId: 'ray-old' })
+    expect(await listServerErrors(db)).toEqual([
+      expect.objectContaining({
+        occurrences: 2,
+        firstSeenAt: '2026-10-23T12:00:00.000Z',
+        lastSeenAt: '2026-10-23T12:05:00.000Z',
+        requestId: 'ray-new',
+      }),
+    ])
+  })
+
   it('keeps only the newest rows when distinct errors keep arriving', async () => {
     const cap = DEFAULT_SERVER_ERROR_ROW_CAP
     for (let i = 0; i < cap + 15; i++)

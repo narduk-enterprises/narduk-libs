@@ -248,7 +248,9 @@ export async function recordServerError(
         `INSERT INTO server_errors (stack_hash, service, status, method, route, message, request_id, occurrences, first_seen_at, last_seen_at)
          VALUES (?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(stack_hash) DO UPDATE SET occurrences = occurrences + excluded.occurrences,
-           last_seen_at = excluded.last_seen_at, request_id = excluded.request_id`,
+           first_seen_at = MIN(first_seen_at, excluded.first_seen_at),
+           last_seen_at = MAX(last_seen_at, excluded.last_seen_at),
+           request_id = CASE WHEN excluded.last_seen_at >= last_seen_at THEN excluded.request_id ELSE request_id END`,
       )
       .bind(
         entry.stackHash,
