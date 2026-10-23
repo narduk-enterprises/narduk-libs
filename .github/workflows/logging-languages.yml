@@ -22,11 +22,16 @@ jobs:
       - name: Check Python contract, adapters, wheel and source installs
         working-directory: packages/modules/narduk-logging/python
         run: uv run --locked --all-extras python scripts/quality.py
+      - name: Check Go format, vet, tests and an isolated consumer
+        run: python3 packages/modules/narduk-logging/scripts/go-quality.py
 
   swift-linux:
     name: Swift Linux artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SWIFTLINT_VERSION: 0.63.3
+      SWIFTLINT_SHA256: 26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +41,18 @@ jobs:
           python-version: "3.14.7"
       - name: Provision and verify Swift 6.3.3
         run: python scripts/install-swift-linux.py
+      - name: Install the pinned SwiftLint release
+        run: |
+          set -euo pipefail
+          directory="${RUNNER_TEMP}/swiftlint"
+          mkdir -p "${directory}"
+          curl --fail --silent --show-error --location --output "${directory}/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip"
+          echo "${SWIFTLINT_SHA256}  ${directory}/swiftlint.zip" | sha256sum -c -
+          unzip -q "${directory}/swiftlint.zip" swiftlint-static -d "${directory}"
+          mv "${directory}/swiftlint-static" "${directory}/swiftlint"
+          "${directory}/swiftlint" version
+          echo "${directory}" >> "${GITHUB_PATH}"
       - name: Check Swift contract, Linux adapters and version-tag consumer
         run: python packages/modules/narduk-logging/scripts/swift-quality.py
       - name: Remove the job-local Swift fallback

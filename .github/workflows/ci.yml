@@ -129,7 +129,7 @@ jobs:
           pattern='(^|/)package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|(^|/)tsconfig[^/]*\.json$|(^|/)(tsup|vite|rollup|nuxt|turbo)\.config\.[cm]?[jt]s$|^turbo\.json$|^\.changeset/|^packages/([^/]+/)?create-narduk-app/|^\.npmrc$|(^|/)vite\.[a-z.]*config\.[cm]?[jt]s$|^scripts/(consumer-smoke|prepare-packed-consumer|packed-consumer|reuse-packed-consumer|ci-packages|ci-package-plan|compute-affected|release-packages|hosted-playwright-toolchain)|^\.github/workflows/(ci|packed-consumer-reuse-canary)\.yml$'
           # Write the list first: `grep -q` exits at the first match, which
           # would SIGPIPE `git diff` and (under pipefail) read as "no match".
-          git diff --name-only "${PR_BASE_SHA}...${PR_HEAD_SHA}" >"${RUNNER_TEMP}/changed-files.txt"
+          git diff --name-only --no-renames "${PR_BASE_SHA}...${PR_HEAD_SHA}" >"${RUNNER_TEMP}/changed-files.txt"
           if grep -Eq "${pattern}" "${RUNNER_TEMP}/changed-files.txt"; then
             echo "run=true" >>"${GITHUB_OUTPUT}"
           else

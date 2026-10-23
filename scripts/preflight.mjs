@@ -236,13 +236,28 @@ async function main() {
   const baseline = trackedTreeSnapshot(root)
   const failures = []
 
-  const guard = (label) => {
+  // `narduk-mapkit` and `narduk-realtime` commit their `dist/`; a rebuild that
+  // changes it is a stale commit to fix by committing, not by discarding.
+  const committedDist = /^packages\/modules\/narduk-(?:mapkit|realtime)\/dist\//u
+  const guard = (label, phaseOk = true) => {
     const dirtied = newlyDirtyPaths(baseline, trackedTreeSnapshot(root))
     if (dirtied.length === 0) return
+    const dist = dirtied.filter((path) => committedDist.test(path))
+    const rest = dirtied.filter((path) => !committedDist.test(path))
+    if (dist.length > 0) {
+      // The package build gate already fails for stale committed dist.
+      if (phaseOk) failures.push(`${label} modified the working tree`)
+      console.error(
+        `\npreflight: ${label} rebuilt committed dist/ output, which CI requires you to commit:\n` +
+          dist.map((path) => `  ${path}`).join('\n') +
+          '\nCommit those paths; do not discard them.',
+      )
+    }
+    if (rest.length === 0) return
     failures.push(`${label} modified the working tree`)
     console.error(
       `\npreflight: the working tree changed during ${label}, which a check must never do:\n` +
-        dirtied.map((path) => `  ${path}`).join('\n') +
+        rest.map((path) => `  ${path}`).join('\n') +
         '\nDiscard those paths before committing (narduk-libs#623).\n' +
         'If you were editing while this ran, those are your own edits, not the phase: ' +
         'the guard can only see that the tree changed, not who changed it. Re-run on a ' +
@@ -254,7 +269,7 @@ async function main() {
     console.log(`\n=== ${label} ===`)
     const result = run(file, args)
     if (result.status !== 0) failures.push(`${label} failed (exit ${result.status})`)
-    guard(label)
+    guard(label, result.status === 0)
     return result.status === 0
   }
 

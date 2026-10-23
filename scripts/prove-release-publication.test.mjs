@@ -239,11 +239,26 @@ test('a red push CI fails the proof within the grace period instead of after it'
     ...clock,
     readRegistry: async () => statesFrom([[core, 'missing']]),
     readCi: async () => ({ id: 9, status: 'completed', conclusion: 'failure' }),
-    readReleaseBusy: async () => assert.fail('no release-group read for a red CI'),
+    readReleaseBusy: async () => false,
     dispatch: async () => assert.fail('never dispatch a release whose CI is red'),
   })
   assert.match(result.failure, /push CI run 9 .* concluded failure/u)
   assert.ok(clock.now() < 20 * minute, 'fails before the grace period ends')
+})
+
+test('a red push CI does not fail the proof while a Release run can still publish', async () => {
+  const clock = fakeClock()
+  const result = await proveGithubPackages({
+    targets: [core],
+    ...clock,
+    readRegistry: async () =>
+      statesFrom([[core, clock.now() >= 8 * minute ? 'present' : 'missing']]),
+    readCi: async () => ({ id: 9, status: 'completed', conclusion: 'failure' }),
+    readReleaseBusy: async () => clock.now() < 8 * minute,
+    dispatch: async () => assert.fail('never dispatch a release whose CI is red'),
+  })
+  assert.equal(result.failure, undefined)
+  assert.deepEqual(result.present, [core])
 })
 
 test('a busy release group is waited out to the deadline rather than replaced', async () => {

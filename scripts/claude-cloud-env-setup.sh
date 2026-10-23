@@ -68,13 +68,17 @@ fi
 # --- 1b. Node, pnpm, gh (standalone) ---------------------------------------------
 if [ "$(/opt/node24/bin/node --version 2>/dev/null)" != "v${NODE_PIN}" ]; then
   node_tar="node-v${NODE_PIN}-linux-x64.tar.xz"
-  if timeout 120 curl -fsSL "https://nodejs.org/dist/v${NODE_PIN}/${node_tar}" -o "/tmp/${node_tar}"; then
+  if timeout 120 curl -fsSL "https://nodejs.org/dist/v${NODE_PIN}/${node_tar}" -o "/tmp/${node_tar}" \
+    && node_sum="$(timeout 60 curl -fsSL "https://nodejs.org/dist/v${NODE_PIN}/SHASUMS256.txt" \
+      | awk -v f="${node_tar}" '$2 == f { print $1 }')" \
+    && [ -n "$node_sum" ] && echo "${node_sum}  /tmp/${node_tar}" | sha256sum -c --status -; then
     rm -rf /opt/node24 && mkdir -p /opt/node24 \
       && tar -xJf "/tmp/${node_tar}" -C /opt/node24 --strip-components=1 \
       && log "node ${NODE_PIN} installed" || log "WARN: node unpack failed"
     rm -f "/tmp/${node_tar}"
   else
-    log "WARN: node ${NODE_PIN} download failed"
+    rm -f "/tmp/${node_tar}"
+    log "WARN: node ${NODE_PIN} download or checksum failed"
   fi
 fi
 export PATH="/opt/node24/bin:${PATH}"
