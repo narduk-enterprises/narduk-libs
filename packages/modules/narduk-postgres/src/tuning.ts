@@ -166,7 +166,8 @@ export function toNodePostgresOptions(tuning: ConnectionTuning): NodePostgresOpt
     idleTimeoutMillis: tuning.idleTimeoutSeconds * 1000,
     max: tuning.maxConnections,
     options: Object.entries(parameters)
-      .map(([key, value]) => `-c ${key}=${value}`)
+      // The server splits `options` on unescaped whitespace: escape so a value cannot add a flag.
+      .map(([key, value]) => `-c ${key}=${String(value).replaceAll(/[\s\\]/gu, '\\$&')}`)
       .join(' '),
     statement_timeout: tuning.statementTimeoutMs,
   }

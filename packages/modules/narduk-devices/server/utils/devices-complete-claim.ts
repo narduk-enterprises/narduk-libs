@@ -33,6 +33,11 @@ export interface CompleteClaimBatchInput {
   deviceId: string
   idempotencyKey: string
   installationId: string
+  /**
+   * A first completion's device-proof nonce, burned in this batch only when the
+   * device row lands, so a batch that fails leaves the device's retry valid.
+   */
+  proofNonce?: ScopedNonceRef | null
   token: ClaimToken
 }
 
@@ -56,6 +61,7 @@ export async function completeClaimAtomically(
   const nullable = (value: string | null, alias: string) => sql<string | null>`${value}`.as(alias)
   const numeric = (value: number | null, alias: string) => sql<number>`${value}`.as(alias)
   const deviceExists = sql`EXISTS (SELECT 1 FROM devices_devices WHERE id = ${input.deviceId})`
+  const proofNonce = input.proofNonce ?? null
 
   const device = db
     .insert(devicesDevices)
@@ -83,10 +89,33 @@ export async function completeClaimAtomically(
             eq(devicesClaimSessions.id, input.claimSessionId),
             eq(devicesClaimSessions.status, 'pending_user_approval'),
             gt(devicesClaimSessions.expiresAt, input.completedAt),
+            proofNonce === null
+              ? undefined
+              : sql`NOT EXISTS (SELECT 1 FROM devices_scoped_nonces WHERE scope = ${proofNonce.scope} AND nonce = ${proofNonce.nonce})`,
           ),
         ),
     )
     .returning({ id: devicesDevices.id })
+
+  // No ON CONFLICT: a proof spent inside this transaction aborts the batch.
+  const burnProof =
+    proofNonce === null
+      ? null
+      : db
+          .insert(devicesScopedNonces)
+          .select(
+            db
+              .select({
+                id: text(nextId(), 'id'),
+                scope: text(proofNonce.scope, 'scope'),
+                nonce: text(proofNonce.nonce, 'nonce'),
+                expiresAt: numeric(proofNonce.expiresAt, 'expires_at'),
+                createdAt: numeric(input.completedAt, 'created_at'),
+              })
+              .from(devicesDevices)
+              .where(eq(devicesDevices.id, input.deviceId)),
+          )
+          .returning({ id: devicesScopedNonces.id })
 
   const session = db
     .update(devicesClaimSessions)
@@ -156,8 +185,17 @@ export async function completeClaimAtomically(
     )
     .returning({ id: devicesAuditEvents.id })
 
-  const [inserted] = await runDevicesBatch(db, [device, session, ...credentials, audit])
-  return inserted.length > 0
+  const statements = [
+    device,
+    ...(burnProof === null ? [] : [burnProof]),
+    session,
+    ...credentials,
+    audit,
+  ] as unknown as [BatchItem<'sqlite'>, ...Array<BatchItem<'sqlite'>>]
+  const [inserted] = (await runDevicesBatch(db, statements)) as unknown as Array<
+    Array<{ id: string }>
+  >
+  return (inserted ?? []).length > 0
 }
 
 export interface ReissueCredentialsInput {
@@ -268,7 +306,15 @@ export async function reissueCredentialsAtomically(
           createdAt: numeric(reissuedAt, 'created_at'),
         })
         .from(devicesDevices)
-        .where(and(eq(devicesDevices.id, device.id), proofUnspent)),
+        // Still at the generation this call read: a rotation that committed in
+        // between bumped it, and this stale call must not revoke its secret.
+        .where(
+          and(
+            eq(devicesDevices.id, device.id),
+            eq(devicesDevices.revocationGeneration, device.revocationGeneration),
+            proofUnspent,
+          ),
+        ),
     )
     .onConflictDoNothing()
     .returning({ id: devicesScopedNonces.id })
@@ -423,7 +469,7 @@ export async function reissueCredentialsAtomically(
 }
 
 /** Is this proof's `(scope, nonce)` already recorded as redeemed? */
-async function proofAlreadySpent(
+export async function proofAlreadySpent(
   db: DevicesDatabase,
   proofNonce: ScopedNonceRef | null,
 ): Promise<boolean> {

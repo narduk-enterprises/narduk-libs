@@ -1,5 +1,6 @@
 import { requireAdmin } from '@narduk-enterprises/narduk-core/server/utils/auth'
 
+import { normalizeReferrerDomain } from '#narduk-analytics-server/utils/analyticsOrigins'
 import {
   buildPosthogCurrentUrlClause,
   resolvePosthogProjectConfig,
@@ -65,11 +66,13 @@ export default defineEventHandler(async (event): Promise<PosthogReferrersRespons
         return {
           rows: rows.map((row) => {
             const referrer = row[0] === null || row[0] === undefined ? '' : String(row[0])
+            // PostHog stores a missing referrer as `$direct`; that is unknown too.
+            const known = normalizeReferrerDomain(referrer) !== ''
             return {
-              referrer: referrer || '(no referrer)',
+              referrer: known ? referrer : '(no referrer)',
               visits: posthogNumber(row[1]),
               uniqueVisitors: posthogNumber(row[2]),
-              ...(referrer ? {} : { unknown: true }),
+              ...(known ? {} : { unknown: true }),
             }
           }),
         }

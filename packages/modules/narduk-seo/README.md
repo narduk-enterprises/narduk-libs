@@ -471,11 +471,13 @@ configured".
 Separately, `runtimeConfig.public.publicCatalogBaseUrl` (env
 `PUBLIC_CATALOG_BASE_URL`) supplies the catalog-hub link that
 `LayerNetworkFooter` renders and the `isPartOf` JSON-LD wiring. It is a link
-target only — it never triggers a fetch — and the footer omits the hub link when
-it is unset. The SEO layer adds `/narduk-network` to the sitemap only when its
-directory endpoint is configured. Otherwise it explicitly excludes the page from
-automatic sitemap discovery and serves `noindex, follow` in both robots meta and
-the HTTP policy. It does not render an all-to-all list of sites in every footer.
+target only — it never triggers a fetch. When it is unset, this module and
+narduk-core's runtime overlay both default it to `https://catalog.nard.uk`; the
+footer omits the hub link only when the value resolves empty. The SEO layer adds
+`/narduk-network` to the sitemap only when its directory endpoint is configured.
+Otherwise it explicitly excludes the page from automatic sitemap discovery and
+serves `noindex, follow` in both robots meta and the HTTP policy. It does not
+render an all-to-all list of sites in every footer.
 
 The catalog application owns curation, publication, and the public/indexable
 classification. The feed shape is:

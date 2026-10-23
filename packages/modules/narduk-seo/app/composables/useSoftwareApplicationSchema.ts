@@ -54,7 +54,8 @@ export function useSoftwareApplicationSchema(
     author,
   } = value
 
-  const canonicalUrl = catalogUrl ?? url ?? undefined
+  // `catalogUrl` is the catalog hub (README): a fallback for `isPartOf`, never the app's own url.
+  const partOfUrl = isPartOfUrl ?? catalogUrl
   const screenshotNodes = (screenshots ?? [])
     .filter((shot) => shot.url)
     .map((shot) => ({
@@ -68,7 +69,7 @@ export function useSoftwareApplicationSchema(
       '@type': 'SoftwareApplication' as const,
       name,
       ...(description && { description }),
-      ...(canonicalUrl && { url: canonicalUrl }),
+      ...(url && { url }),
       ...(applicationCategory && { applicationCategory }),
       operatingSystem,
       ...(image && { image }),
@@ -84,10 +85,10 @@ export function useSoftwareApplicationSchema(
           ...(author.url && { url: author.url }),
         },
       }),
-      ...(isPartOfUrl && {
+      ...(partOfUrl && {
         isPartOf: {
           '@type': 'WebSite' as const,
-          url: isPartOfUrl,
+          url: partOfUrl,
         },
       }),
     },

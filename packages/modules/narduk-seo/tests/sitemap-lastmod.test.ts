@@ -25,6 +25,19 @@ describe('readSeoModifiedAt', () => {
     )
   })
 
+  it('reads a datetime with no zone as UTC, whatever the build machine zone (ponytail-5 s8 #16)', () => {
+    const zone = process.env.TZ
+    process.env.TZ = 'Pacific/Auckland'
+    try {
+      expect(readSeoModifiedAt(`useSeo({ modifiedAt: '2026-01-15T00:30:00' })`)).toBe(
+        '2026-01-15T00:30:00.000Z',
+      )
+    } finally {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    }
+  })
+
   it('ignores template literals with interpolation and invalid dates', () => {
     expect(readSeoModifiedAt('useSeo({ modifiedAt: `${date}` })')).toBeUndefined()
     expect(readSeoModifiedAt(`useSeo({ modifiedAt: 'not a date' })`)).toBeUndefined()

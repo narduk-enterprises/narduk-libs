@@ -152,8 +152,11 @@ export interface RotateCredentialBatchInput {
  * row and not the device, so a device revoked between the caller's read and
  * this batch would otherwise gain a live bearer nothing could see; instead the
  * batch issues nothing and the caller reports `revoked`. The two revocations
- * are unconditional for the reason `revokeDeviceAtomically` gives: revoking a
- * live row of this device is right in every state.
+ * do not check the device for the reason `revokeDeviceAtomically` gives:
+ * revoking a live row of this device is right in every state. Every statement
+ * except the bump also requires the prepared version to be free, so an
+ * overlapping rotation that took it first is left intact (the bump follows the
+ * issued row instead).
  *
  * The audit row goes first so that its counts are read before the statements
  * that change them (see `revokeDeviceAtomically`).
@@ -166,6 +169,10 @@ export async function rotateCredentialAtomically(
   nextId: () => string,
 ): Promise<boolean> {
   const { credential, device, rotatedAt } = input
+  // Two overlapping rotations both read the same current version. Only the
+  // first batch may supersede and issue; the second sees its version taken and
+  // changes nothing, so the secret the first returned stays live.
+  const versionFree = sql`NOT EXISTS (SELECT 1 FROM devices_credentials WHERE device_id = ${device.id} AND credential_class = ${credential.credentialClass} AND version >= ${credential.version})`
 
   const audit = db
     .insert(devicesAuditEvents)
@@ -189,7 +196,7 @@ export async function rotateCredentialAtomically(
           createdAt: numeric(rotatedAt, 'created_at'),
         })
         .from(devicesDevices)
-        .where(stillClaimed(device)),
+        .where(and(stillClaimed(device), versionFree)),
     )
     .returning({ id: devicesAuditEvents.id })
 
@@ -201,6 +208,7 @@ export async function rotateCredentialAtomically(
         eq(devicesSessions.deviceId, device.id),
         eq(devicesSessions.credentialClass, credential.credentialClass),
         isNull(devicesSessions.revokedAt),
+        versionFree,
       ),
     )
     .returning({ id: devicesSessions.id })
@@ -213,6 +221,7 @@ export async function rotateCredentialAtomically(
         eq(devicesCredentials.deviceId, device.id),
         eq(devicesCredentials.credentialClass, credential.credentialClass),
         isNull(devicesCredentials.revokedAt),
+        versionFree,
       ),
     )
     .returning({ id: devicesCredentials.id })
@@ -233,14 +242,19 @@ export async function rotateCredentialAtomically(
           revokedAt: numeric(null, 'revoked_at'),
         })
         .from(devicesDevices)
-        .where(stillClaimed(device)),
+        .where(and(stillClaimed(device), versionFree)),
     )
     .returning({ id: devicesCredentials.id })
 
   const bump = db
     .update(devicesDevices)
     .set({ revocationGeneration: sql`${devicesDevices.revocationGeneration} + 1` })
-    .where(stillClaimed(device))
+    .where(
+      and(
+        stillClaimed(device),
+        sql`EXISTS (SELECT 1 FROM devices_credentials WHERE id = ${credential.id})`,
+      ),
+    )
     .returning({ id: devicesDevices.id })
 
   const [, , , issued] = await runDevicesBatch(db, [audit, sessions, superseded, issue, bump])
