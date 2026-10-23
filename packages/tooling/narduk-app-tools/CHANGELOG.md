@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.45.7
+
+### Patch Changes
+
+- 922e148: List `@narduk-enterprises/narduk-notify` in the libs explorer
+  inventory and in the generated capability catalog.
+
 ## 0.45.6
 
 ### Patch Changes
