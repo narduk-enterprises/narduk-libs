@@ -270,7 +270,8 @@ export default {
         if (!node || typeof node !== 'object') return
         if (node.type === 'VExpressionContainer') {
           for (const reference of node.references ?? [])
-            if (reference.id?.name === name) found.push(reference.id)
+            // A resolved `variable` is a `v-for` or slot-scope local shadowing the binding.
+            if (reference.id?.name === name && !reference.variable) found.push(reference.id)
         }
         for (const key of ['children', 'startTag', 'attributes', 'value']) {
           const child = node[key]

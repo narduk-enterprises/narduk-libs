@@ -105,6 +105,8 @@ const CLASS_CALLEES = new Set([
   'twJoin',
   'twMerge',
 ])
+/** Builders whose object keys name variants, not classes. */
+const CONFIG_BUILDERS = new Set(['cva', 'tv'])
 const CLASS_VARIABLE = /^(?:classNames?|classes|styles?)$/
 
 interface Options {
@@ -200,7 +202,7 @@ export default {
     }
 
     /** Visit only positions whose value becomes a class: never a test or a comparison. */
-    function checkExpression(expression: any): void {
+    function checkExpression(expression: any, keysAreClasses = true): void {
       if (!expression || typeof expression !== 'object') return
       switch (expression.type) {
         case 'Literal':
@@ -212,41 +214,43 @@ export default {
           for (const [index, quasi] of expression.quasis.entries()) {
             checkText(quasi, quasi.value.cooked ?? '', null, [index > 0, index < last])
           }
-          for (const inner of expression.expressions) checkExpression(inner)
+          for (const inner of expression.expressions) checkExpression(inner, keysAreClasses)
           return
         }
         case 'ConditionalExpression':
-          checkExpression(expression.consequent)
-          checkExpression(expression.alternate)
+          checkExpression(expression.consequent, keysAreClasses)
+          checkExpression(expression.alternate, keysAreClasses)
           return
         case 'LogicalExpression':
           // `active && 'x'` yields only its right side as a class.
-          if (expression.operator !== '&&') checkExpression(expression.left)
-          checkExpression(expression.right)
+          if (expression.operator !== '&&') checkExpression(expression.left, keysAreClasses)
+          checkExpression(expression.right, keysAreClasses)
           return
         case 'ArrayExpression':
-          for (const element of expression.elements) checkExpression(element)
+          for (const element of expression.elements) checkExpression(element, keysAreClasses)
           return
         case 'ObjectExpression':
-          // `{ 'bg-blue-50': on }` keys are classes; `:ui="{ base: '…' }"` values are.
+          // `{ 'bg-blue-50': on }` keys are classes; in a `tv`/`cva` config they are variant names.
           for (const property of expression.properties) {
-            if (property.type === 'SpreadElement') checkExpression(property.argument)
+            if (property.type === 'SpreadElement')
+              checkExpression(property.argument, keysAreClasses)
             else {
-              if (!property.computed) checkExpression(property.key)
-              checkExpression(property.value)
+              if (keysAreClasses && !property.computed) checkExpression(property.key)
+              checkExpression(property.value, keysAreClasses)
             }
           }
           return
         case 'CallExpression':
           if (expression.callee.type === 'Identifier' && CLASS_CALLEES.has(expression.callee.name))
-            for (const argument of expression.arguments) checkExpression(argument)
+            for (const argument of expression.arguments)
+              checkExpression(argument, !CONFIG_BUILDERS.has(expression.callee.name))
           return
         case 'SpreadElement':
         case 'ChainExpression':
         case 'TSAsExpression':
         case 'TSNonNullExpression':
         case 'TSSatisfiesExpression':
-          checkExpression(expression.argument ?? expression.expression)
+          checkExpression(expression.argument ?? expression.expression, keysAreClasses)
           return
         default:
       }
@@ -271,7 +275,8 @@ export default {
       {
         CallExpression(node: any) {
           if (node.callee.type === 'Identifier' && CLASS_CALLEES.has(node.callee.name)) {
-            for (const argument of node.arguments) checkExpression(argument)
+            for (const argument of node.arguments)
+              checkExpression(argument, !CONFIG_BUILDERS.has(node.callee.name))
           }
         },
         VariableDeclarator(node: any) {
