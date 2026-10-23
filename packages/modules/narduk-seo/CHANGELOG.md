@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-seo
 
+## 2.14.1
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
 ## 2.14.0
 
 ### Minor Changes

@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-app-tools
 
+## 0.45.6
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
 ## 0.45.5
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @narduk-enterprises/narduk-shell
 
+## 0.30.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @narduk-enterprises/narduk-platform@2.4.2
+
 ## 0.30.0
 
 ### Minor Changes

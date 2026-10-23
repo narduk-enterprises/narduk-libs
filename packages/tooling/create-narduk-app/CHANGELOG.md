@@ -1,5 +1,25 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.19
+
+### Patch Changes
+
+- 6a0c7dd: Add the `./server-health` entry: a Nitro `error` hook that records
+  unhandled 5xx errors to D1 with stack-hash dedupe, a per-isolate throttle and
+  a row cap; a cron heartbeat helper (`runWithHeartbeat`); and the `jobState`
+  staleness rule (stale past twice the interval). Apps keep their own
+  migrations, job names and intervals.
+- 92fd524: Add `@narduk-enterprises/narduk-app/server/security-headers`:
+  `buildSecurityHeaders()` and `applySecurityHeaders()` give any h3/Nitro app
+  the baseline response headers (nosniff, frame options, referrer policy, HSTS
+  on https, optional Permissions-Policy and `X-Robots-Tag`) and an
+  app-allowlisted Content-Security-Policy served only as report-only.
+
+  The generator's pinned `narduk-auth` moves with its `narduk-app` dependency.
+
+- Updated dependencies
+  - @narduk-enterprises/narduk-app-tools@0.45.6
+
 ## 0.23.18
 
 ### Patch Changes

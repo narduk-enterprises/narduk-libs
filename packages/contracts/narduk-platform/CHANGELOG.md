@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-platform
 
+## 2.4.2
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
 ## 2.4.1
 
 ### Patch Changes
