@@ -37,7 +37,7 @@ interface Options {
 
 const DEFAULT_ALLOWED_FILES = ['server/utils/worker-env']
 
-const GLOBAL_OBJECTS: ReadonlySet<string> = new Set(['globalThis', 'self', 'window'])
+const GLOBAL_OBJECTS: ReadonlySet<string> = new Set(['globalThis', 'global', 'self', 'window'])
 
 export default {
   meta: {
@@ -113,6 +113,17 @@ export default {
       if (node?.type === 'Identifier') {
         const variable = resolveVariable(node)
         if (variable && processAliases.has(variable)) return true
+        // `import process from 'node:process'` is the same object.
+        if (
+          variable?.defs?.some(
+            (def: any) =>
+              def.type === 'ImportBinding' &&
+              ['node:process', 'process'].includes(def.parent?.source?.value) &&
+              def.node?.type !== 'ImportSpecifier',
+          )
+        ) {
+          return true
+        }
         if (node.name !== 'process') return false
         // A declared local named `process` shadows the global. A `globals`
         // entry has no defs, so the real global still qualifies.

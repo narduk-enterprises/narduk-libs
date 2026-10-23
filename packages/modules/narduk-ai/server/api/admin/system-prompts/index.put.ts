@@ -1,10 +1,11 @@
-import { executeDatabaseQuery } from '@narduk-enterprises/narduk-core/server/utils/database'
+import { getDatabaseRows } from '@narduk-enterprises/narduk-core/server/utils/database'
 import {
   defineAdminMutation,
   withValidatedBody,
 } from '@narduk-enterprises/narduk-core/server/utils/mutation'
 import { RATE_LIMIT_POLICIES } from '@narduk-enterprises/narduk-core/server/utils/rateLimit'
 import { eq } from 'drizzle-orm'
+import { createError } from 'h3'
 import { z } from 'zod'
 
 import { getAiSystemPromptsTable, useAiDatabase } from '../../../utils/aiDatabase'
@@ -23,15 +24,20 @@ export default defineAdminMutation(
     const db = useAiDatabase(event)
     const table = getAiSystemPromptsTable(event)
 
-    await executeDatabaseQuery(
+    const updated = await getDatabaseRows(
       db
         .update(table)
         .set({
           content: body.content,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(table.name, body.name)),
+        .where(eq(table.name, body.name))
+        .returning({ name: table.name }),
     )
+    // An update that matched no row saved nothing: do not report success.
+    if (updated.length === 0) {
+      throw createError({ statusCode: 404, message: 'No such system prompt.' })
+    }
 
     return { success: true }
   },

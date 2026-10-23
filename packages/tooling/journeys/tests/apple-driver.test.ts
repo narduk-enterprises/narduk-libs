@@ -386,6 +386,51 @@ describe('the Apple adapter, driven', () => {
     expect(session.failed).toBe(0)
   })
 
+  it('does not read UNSCHEDULED as SCHEDULED, or a frame number as a label', async () => {
+    const one = (requires: [string]) => ({
+      ...journey(),
+      steps: [
+        {
+          id: 'open-sheet',
+          say: 'Open the trailer',
+          press: { kind: 'tap' as const, x: 201, y: 258 },
+          lands: { screen: 'the sheet', requires },
+        },
+      ],
+    })
+    const run = async (sheet: string, requires: [string]) => {
+      const { options } = harness('test', screens({ sheet: { tree: sheet } }), {
+        catalog: { ...fixtureCatalog(), journeys: [one(requires)] },
+      })
+      return (await runAppleJourneys(options)).failed
+    }
+    expect(await run('UNSCHEDULED | Mark arrived', ['SCHEDULED'])).toBe(1)
+    expect(await run('SCHEDULED | Mark arrived', ['SCHEDULED'])).toBe(0)
+    const json = JSON.stringify([{ AXLabel: 'Mark arrived', frame: { x: 201 } }])
+    expect(await run(json, ['201'])).toBe(1)
+    expect(await run(json, ['Mark arrived'])).toBe(0)
+  })
+
+  it('fails an `unchanged` beat whose gesture changed the screen', async () => {
+    const same = {
+      ...journey(),
+      steps: [
+        {
+          id: 'open-sheet',
+          say: 'Open the trailer',
+          press: { kind: 'tap' as const, x: 201, y: 258 },
+          lands: { screen: 'the yard', requires: ['WCF-TT-21'] as [string], unchanged: true },
+        },
+      ],
+    }
+    const { options } = harness('test', screens(), {
+      catalog: { ...fixtureCatalog(), journeys: [same] },
+    })
+    const session = await runAppleJourneys(options)
+    expect(session.failed).toBe(1)
+    expect(session.results[0]!.manifest.steps[0]?.error).toContain('declares it unchanged')
+  })
+
   it('fails when the launched world is not the one the journey declares', async () => {
     const device = screens()
     device.screens.yard = { tree: 'PACC TRAC yard | nothing due today', on: {} }

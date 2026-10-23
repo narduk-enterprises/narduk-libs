@@ -96,7 +96,15 @@ export function createBoundedBuffer<T>(options: BufferOptions<T>): {
   }
 
   function flush(): Promise<void> {
-    if (running) return running
+    // A flush asked for while one is running must also cover what was queued
+    // since that drain began, so it chains one more drain instead of resolving
+    // with those records still buffered.
+    // (Not after an abort: close() gave up on delivery.)
+    if (running) {
+      return running.then(() =>
+        queue.length > 0 && !controller?.signal.aborted ? flush() : undefined,
+      )
+    }
     if (timer) {
       clearTimeout(timer)
       timer = undefined

@@ -93,4 +93,24 @@ describe('AI admin route contracts', () => {
     )
     expect(mocks.withValidatedBody).toHaveBeenCalledWith(expect.any(Function))
   })
+
+  it('answers 404, not success, when a prompt write matches no row', async () => {
+    const chain: Record<string, unknown> = {}
+    for (const method of ['update', 'set', 'where', 'returning']) chain[method] = () => chain
+    vi.doMock('../server/utils/aiDatabase', () => ({
+      getAiSystemPromptsTable: () => ({ name: 'name' }),
+      useAiDatabase: () => chain,
+    }))
+    const { getDatabaseRows } =
+      await import('@narduk-enterprises/narduk-core/server/utils/database')
+    const rows = vi.mocked(getDatabaseRows)
+    const handler = (await import('../server/api/admin/system-prompts/index.put'))
+      .default as unknown as (event: { body: unknown }) => Promise<unknown>
+    const body = { name: 'does-not-exist', content: 'hello' }
+
+    rows.mockResolvedValueOnce([])
+    await expect(handler({ body })).rejects.toMatchObject({ statusCode: 404 })
+    rows.mockResolvedValueOnce([{ name: 'does-not-exist' }])
+    await expect(handler({ body })).resolves.toEqual({ success: true })
+  })
 })
