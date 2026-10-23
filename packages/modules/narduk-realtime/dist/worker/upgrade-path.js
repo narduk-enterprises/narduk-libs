@@ -60,9 +60,10 @@ export function parseUpgradePath(pattern) {
  * Match a request pathname against parsed segments.
  *
  * Returns the extracted parameters, or `undefined` when the path does not match.
- * A parameter is percent-decoded (as `getRouterParam` would) and must be
- * non-empty; an undecodable value does not match at all, so a malformed URL
- * falls through to the app rather than reaching a Durable Object name.
+ * Every segment is percent-decoded before it is compared; a parameter (decoded
+ * as `getRouterParam` would) must be non-empty, and an undecodable value does
+ * not match at all, so a malformed URL falls through to the app rather than
+ * reaching a Durable Object name.
  */
 export function matchUpgradePath(segments, pathname) {
     const candidate = segmentsOf(pathname);
@@ -71,17 +72,19 @@ export function matchUpgradePath(segments, pathname) {
     const params = {};
     for (const [index, segment] of segments.entries()) {
         const value = candidate[index] ?? '';
-        if (segment.kind === 'static') {
-            if (value !== segment.value)
-                return undefined;
-            continue;
-        }
         let decoded;
         try {
             decoded = decodeURIComponent(value);
         }
         catch {
             return undefined;
+        }
+        // Decoded like a parameter, so `%61dmin` cannot slip past a literal
+        // `admin` route to a later `:param` route with a weaker authoriser.
+        if (segment.kind === 'static') {
+            if (decoded !== segment.value)
+                return undefined;
+            continue;
         }
         if (decoded.length === 0)
             return undefined;

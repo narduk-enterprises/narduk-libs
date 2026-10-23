@@ -374,3 +374,8 @@ export async function mcpOAuthConsentOwner(mcp: McpOAuth, handle: string): Promi
 export async function claimMcpOAuthCode(mcp: McpOAuth, code: string): Promise<boolean> {
   return mcp.kv.claimOnce(`narduk-code-claim:${await sha256Hex(code)}`, CONSENT_OWNER_TTL)
 }
+
+/** Undo a claim the library refused to redeem, so a wrong verifier cannot burn the code. */
+export async function releaseMcpOAuthCode(mcp: McpOAuth, code: string): Promise<void> {
+  await mcp.kv.delete(`narduk-code-claim:${await sha256Hex(code)}`)
+}

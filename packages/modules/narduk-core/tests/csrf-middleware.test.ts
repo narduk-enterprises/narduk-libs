@@ -166,3 +166,14 @@ describe('csrf middleware — disable switch (narduk-libs#1940)', () => {
     },
   )
 })
+
+describe('csrf middleware — API key bearer spellings (ponytail-5)', () => {
+  // The same header the API-key parser accepts: any-case scheme, any whitespace.
+  it.each(['Bearer nk_abc', 'bearer nk_abc', 'Bearer  nk_abc'])('skips %j', async (value) => {
+    expect((await post(SETTINGS_ROUTE, { authorization: value })).status).toBe(200)
+  })
+
+  it.each(['Bearer abc', 'Basic nk_abc'])('still protects %j', async (value) => {
+    expect((await post(SETTINGS_ROUTE, { authorization: value })).status).toBe(403)
+  })
+})

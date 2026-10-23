@@ -7,10 +7,14 @@ import { verifyUserPassword } from '#layer/server/utils/password'
 import { clearLayerUserSession } from '#layer/server/utils/user-session'
 import { users } from '#narduk-core/schema'
 
-import { verifySupabaseAccountDeletionCredentials } from '../lib/app-auth/profile'
+import {
+  assertRecentSupabaseSignIn,
+  verifySupabaseAccountDeletionCredentials,
+} from '../lib/app-auth/profile'
 import { getAuthConfig } from '../lib/app-auth/supabase-client'
 
 import type { AuthUser } from '#layer/server/utils/auth'
+import type { AppSessionUser } from '../lib/app-auth/types'
 import type { H3Event } from 'h3'
 
 export interface DeleteAccountBridgeInput {
@@ -123,6 +127,10 @@ export async function deleteCurrentUserAccountBridge(
         statusMessage: 'Invalid current password.',
       })
     }
+  } else {
+    // No password to prove (local Sign in with Apple, magic link): the session
+    // must have signed in recently, as a social-only Supabase account must.
+    await assertRecentSupabaseSignIn(event, user as AppSessionUser)
   }
 
   if (hooks?.beforeDelete) {

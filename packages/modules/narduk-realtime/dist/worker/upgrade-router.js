@@ -260,6 +260,11 @@ export function createUpgradeRouter(options) {
             }
             return verdict;
         }
+        // Fail closed: only an explicit `{ ok: true }` opens the socket. An untyped
+        // authoriser that answers `{ ok: false }` or nothing is a refusal.
+        if (verdict?.ok !== true) {
+            return routerFailure(`The authoriser for "${route.path}" returned neither a Response nor { ok: true }.`);
+        }
         // An authoriser writes only in the router's own namespace. Any other name
         // would let it re-add `cookie` or overwrite `upgrade`, which is exactly what
         // `forwardHeaders` is validated at build time to prevent.

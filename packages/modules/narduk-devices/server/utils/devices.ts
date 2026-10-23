@@ -2468,6 +2468,23 @@ export function createDevices(
         createdAt,
       }
       await db.insert(devicesSessions).values(session).run()
+      // A revoke or rotation that committed while this open awaited the
+      // signature check ran its session-revoking batch before this row
+      // existed. Re-read the device and credential now that it does: one
+      // committed later revokes the row itself, so this closes the gap for
+      // every getter without touching the other credential class (#2003).
+      const [deviceNow, credentialNow] = await Promise.all([
+        findDevice(device.id),
+        findCredential(credential.id),
+      ])
+      if (deviceNow?.status !== 'claimed' || !credentialNow || credentialNow.revokedAt !== null) {
+        await db
+          .update(devicesSessions)
+          .set({ revokedAt: now() })
+          .where(eq(devicesSessions.id, session.id))
+          .run()
+        throw new DevicesError('revoked', 'Session open refused: revoked during open.')
+      }
       await audit({
         orgId: device.orgId,
         action: 'session.open',
