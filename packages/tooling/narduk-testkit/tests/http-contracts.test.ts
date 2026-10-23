@@ -113,6 +113,12 @@ describe('securityHeaderFindings', () => {
       expect(
         ids({ ...GOOD, 'Content-Security-Policy': 'frame-ancestors;' }, { production: true }),
       ).toEqual(['clickjacking'])
+      expect(
+        ids(
+          { ...GOOD, 'Content-Security-Policy': "frame-ancestors 'self' https:" },
+          { production: true },
+        ),
+      ).toEqual(['clickjacking'])
     })
 
     it('does not mistake a source value for a directive name', () => {
@@ -126,6 +132,18 @@ describe('securityHeaderFindings', () => {
     expect(ids({ ...GOOD, 'X-Content-Type-Options': 'sniff' }, { production: true })).toEqual([
       'nosniff',
     ])
+    // Two layers both set it.
+    expect(
+      ids({ ...GOOD, 'X-Content-Type-Options': 'nosniff, nosniff' }, { production: true }),
+    ).toEqual([])
+  })
+
+  it("reads Node's array-valued headers", () => {
+    const node = { ...GOOD, 'x-content-type-options': ['nosniff'] } as unknown as Record<
+      string,
+      string
+    >
+    expect(ids(node, { production: true })).toEqual([])
   })
 
   it('rejects leaky referrer policies, judging the last value of a fallback list', () => {
@@ -292,7 +310,27 @@ describe('checkStatusContract', () => {
     ).rejects.toThrow(/must start with \/api\//)
     await expect(
       checkStatusContract('https://app.test', { protectedApiPath: '/api/x', unknownPath: 'gone' }),
-    ).rejects.toThrow(/must start with \//)
+    ).rejects.toThrow(/starting with one \//)
+    await expect(
+      checkStatusContract('https://app.test', {
+        protectedApiPath: '/api/x',
+        unknownPath: '//evil.example/x',
+      }),
+    ).rejects.toThrow(/starting with one \//)
+  })
+
+  it('keeps a path prefix on the base URL', async () => {
+    const urls: string[] = []
+    const fetch: FetchLike = async (url) => {
+      urls.push(String(url))
+      return new Response('{}', { status: 401, headers: { 'content-type': 'application/json' } })
+    }
+    await checkStatusContract('https://app.test/app/', {
+      fetch,
+      protectedApiPath: '/api/x',
+      unknownPath: '/missing',
+    })
+    expect(urls).toEqual(['https://app.test/app/api/x', 'https://app.test/app/missing'])
   })
 
   it('draws a different unknown path each call', async () => {

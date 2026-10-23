@@ -48,8 +48,9 @@ function headerValue(headers: HeadersLike, name: string): string | null {
     return (headers as { get(name: string): string | null }).get(name)
   }
   const wanted = name.toLowerCase()
-  for (const [key, value] of Object.entries(headers as Record<string, string>)) {
-    if (key.toLowerCase() === wanted) return value
+  // Node's IncomingHttpHeaders holds repeated headers as arrays.
+  for (const [key, value] of Object.entries(headers as Record<string, string | string[]>)) {
+    if (key.toLowerCase() === wanted) return Array.isArray(value) ? value.join(', ') : value
   }
   return null
 }
@@ -73,8 +74,12 @@ function cspDirectives(policyHeader: string | null): Array<Map<string, string[]>
 function hasEffectiveFrameAncestors(policies: Array<Map<string, string[]>>): boolean {
   return policies.some((policy) => {
     const sources = policy.get('frame-ancestors')
-    // `frame-ancestors *` (or an empty list) restricts nothing.
-    return sources !== undefined && sources.length > 0 && !sources.includes('*')
+    // `*`, a bare scheme (`https:`) or an empty list lets any site frame the page.
+    return (
+      sources !== undefined &&
+      sources.length > 0 &&
+      !sources.some((source) => source === '*' || /^[a-z][\d+.a-z-]*:$/iu.test(source))
+    )
   })
 }
 
@@ -151,7 +156,8 @@ export function securityHeaderFindings(
   }
 
   const nosniff = headerValue(headers, 'x-content-type-options')
-  if (nosniff?.trim().toLowerCase() !== 'nosniff') {
+  // Two layers setting it arrive joined (`nosniff, nosniff`); browsers read the first.
+  if (nosniff?.split(',')[0]?.trim().toLowerCase() !== 'nosniff') {
     findings.push({ id: 'nosniff', message: 'X-Content-Type-Options: nosniff is missing.' })
   }
 
@@ -243,6 +249,11 @@ function describeResponse(response: Response): string {
   return location ? `${response.status} to ${location}` : `${response.status}`
 }
 
+/** Joins rather than resolves, so a `baseUrl` path prefix (`/app`) is kept. */
+function pathUrl(baseUrl: string, path: string): string {
+  return new URL(baseUrl.replace(/\/+$/u, '') + path).href
+}
+
 /**
  * Check that unauthenticated callers get status codes a client can act on: 401
  * with JSON for a protected API path, 404 for an unknown one. Requests use
@@ -258,14 +269,14 @@ export async function checkStatusContract(
   }
   const unknownPath =
     options.unknownPath ?? `/__narduk-status-contract-${crypto.randomUUID().replaceAll('-', '')}`
-  if (!unknownPath.startsWith('/')) {
-    throw new Error(`unknownPath must start with /, got "${unknownPath}".`)
+  if (!unknownPath.startsWith('/') || unknownPath.startsWith('//')) {
+    throw new Error(`unknownPath must be a path starting with one /, got "${unknownPath}".`)
   }
   const doFetch = options.fetch ?? fetch
   const findings: ContractFinding[] = []
 
   // Accept headers match what each caller is: an API client and a browser navigation.
-  const api = await doFetch(new URL(options.protectedApiPath, baseUrl).href, {
+  const api = await doFetch(pathUrl(baseUrl, options.protectedApiPath), {
     headers: { accept: 'application/json' },
     redirect: 'manual',
   })
@@ -287,7 +298,7 @@ export async function checkStatusContract(
     })
   }
 
-  const unknown = await doFetch(new URL(unknownPath, baseUrl).href, {
+  const unknown = await doFetch(pathUrl(baseUrl, unknownPath), {
     headers: { accept: 'text/html' },
     redirect: 'manual',
   })
