@@ -69,9 +69,22 @@ function migrationPaths(migrations: string | readonly string[]): string[] {
  * (`BEGIN … END`) is not supported — pass such a file through `raw.exec`
  * yourself.
  */
+/** A linear scan: a lazy `/\*[\s\S]*?\*\//` backtracks quadratically on unclosed comments. */
+function stripBlockComments(sql: string): string {
+  let out = ''
+  let at = 0
+  for (;;) {
+    const open = sql.indexOf('/*', at)
+    if (open === -1) return out + sql.slice(at)
+    out += sql.slice(at, open)
+    const close = sql.indexOf('*/', open + 2)
+    if (close === -1) return out + sql.slice(open)
+    at = close + 2
+  }
+}
+
 export function splitSqlStatements(sql: string): string[] {
-  return sql
-    .replaceAll(/\/\*[\s\S]*?\*\//gu, '')
+  return stripBlockComments(sql)
     .replaceAll(/--[^\n]*/gu, '')
     .split(';')
     .map((statement) => statement.trim())
