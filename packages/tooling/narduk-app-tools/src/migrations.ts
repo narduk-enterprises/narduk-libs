@@ -901,6 +901,7 @@ function migrationDatabase(
     database: options.database,
     cwd,
     databaseId: options.target?.databaseId,
+    wranglerConfig: options.wranglerConfig ? resolve(cwd, options.wranglerConfig) : undefined,
   })
   if (options.persistTo && options.location !== '--local')
     throw new Error('Local state cannot select a remote migration target')

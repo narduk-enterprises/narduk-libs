@@ -238,7 +238,10 @@ describe('sha to version resolution', () => {
 
   it('takes GITHUB_SHA when no --sha is given, and prints the version it will replace', async () => {
     const { context: ctx, calls } = context(
-      [version('v-new', SHA)],
+      [
+        version('v-new', SHA),
+        version('v-old', undefined, { metadata: { created_on: '2026-09-16T00:00:00Z' } }),
+      ],
       [deployment('d1', 'v-old', '2026-09-17T01:00:00Z')],
     )
     const result = await runVersionsPromote(parseVersionsPromoteArgs([]), ctx)
@@ -537,7 +540,10 @@ describe('B2 -- every documented exit code is reachable', () => {
     const boom = (): never => {
       throw new Error(`wrangler ${on} exited 1`)
     }
-    const base = stubClient([numbered('v1', SHA, 5)], [deployment('d1', 'v0', '2026-09-17T01:00Z')])
+    const base = stubClient(
+      [numbered('v1', SHA, 5), version('v0', undefined, { number: 4 })],
+      [deployment('d1', 'v0', '2026-09-17T01:00Z')],
+    )
     return { ...base.client, [on]: async () => boom() }
   }
 
@@ -1545,6 +1551,7 @@ describe('--gate-verified binds the gate result to the promoted commit (narduk-l
     numbered('v-target', SHA, 12),
     numbered('v-other', OTHER, 11),
     version('v-untagged', undefined, { number: 10 }),
+    version('v-live', undefined, { number: 9 }),
   ]
   const live = [deployment('d1', 'v-live', '2026-09-17T01:00:00Z')]
 

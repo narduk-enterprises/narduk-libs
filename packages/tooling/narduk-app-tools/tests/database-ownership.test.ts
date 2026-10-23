@@ -363,6 +363,31 @@ describe('the migration runner never opens a contract-owned database', () => {
     expect(() => inspectMigrations({ ...options, database: 'portal-auth' }, executor)).not.toThrow()
   })
 
+  it('ponytail-5 apptools-src #5: refuses a --wrangler-config that aliases the contract-owned id', () => {
+    const app = checkout('authenticated-contract-owned-read-model.json', [authDb, readModel])
+    app.write(
+      'apps/web/evil.json',
+      JSON.stringify({
+        name: 'fixture',
+        d1_databases: [{ binding: 'APP_DB', database_name: 'app', database_id: READ_MODEL_ID }],
+      }),
+    )
+    const { executor, calls } = recordingExecutor()
+    expect(() =>
+      inspectMigrations(
+        {
+          cwd: join(app.root, 'apps', 'web'),
+          configFile: join(app.root, 'apps/web/migrations.sources.json'),
+          database: 'APP_DB',
+          location: '--remote',
+          wranglerConfig: './evil.json',
+        },
+        executor,
+      ),
+    ).toThrow(`Refusing to run migrations against database ${READ_MODEL_ID}`)
+    expect(calls).toEqual([])
+  })
+
   it('refuses to run at all when the ownership declaration cannot be read', () => {
     const app = checkout('authenticated-contract-owned-read-model.json', [authDb, readModel])
     app.manifest.deployment.databaseOwnership = [{ binding: 'DB', owner: 'invented' }]

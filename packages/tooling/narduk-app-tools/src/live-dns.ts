@@ -223,7 +223,16 @@ export function createNodeFetch(sendOnce: SendOnce): FetchTransport {
         const location = message.headers.location
         if (init.redirect !== 'manual' && REDIRECT_STATUSES.has(status) && location) {
           if (hop >= MAX_REDIRECTS) throw new Error('redirect count exceeded')
-          url = new URL(location, url)
+          const next = new URL(location, url)
+          // As native fetch does: credentials never follow a cross-origin redirect.
+          if (next.origin !== url.origin) {
+            const headers: Headers = new Headers(init.headers)
+            for (const name of ['authorization', 'cookie', 'proxy-authorization']) {
+              headers.delete(name)
+            }
+            init = { ...init, headers }
+          }
+          url = next
           redirected = true
           continue
         }

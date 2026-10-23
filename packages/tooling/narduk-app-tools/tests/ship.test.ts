@@ -599,6 +599,90 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
   })
 })
 
+describe(
+  'ponytail-5 repro (apptools-src #2, apptools-tests #1, #2)',
+  { timeout: GIT_TIMEOUT },
+  () => {
+    it('src #2: does not roll back over a version another writer deployed during the proof', async () => {
+      const h = harness()
+      const MAIN = '33333333-3333-4333-8333-333333333333'
+      h.proof.result = 'FAIL'
+      h.proof.exitCode = 1
+      const deploy = vi.mocked(h.client.deployVersion)
+      const verify = vi.mocked(h.context.verify!)
+      const realVerify = verify.getMockImplementation()!
+      verify.mockImplementationOnce(async (...args) => {
+        // The main promote job lands while ship is proving.
+        await deploy(MAIN, 100, 'narduk-app promote main')
+        return realVerify(...args)
+      })
+      const exit = await runShip(parseShipArgs(['--no-pr']), h.context)
+      const ids = deploy.mock.calls.map((call) => call[0])
+      expect(ids.slice(ids.indexOf(MAIN) + 1)).toEqual([])
+      expect(exit).toBe(SHIP_EXIT.rollbackFailed)
+    })
+
+    it('tests #1: a refused ship -m (migration change) leaves HEAD where it was', async () => {
+      const h = harness({ migrations: true })
+      const before = h.git('rev-parse', 'HEAD')
+      writeFileSync(join(h.app, 'migrations/0002.sql'), 'alter table a add b int;\n')
+      await expect(runShip(parseShipArgs(['--no-pr', '-m', 'migrate']), h.context)).resolves.toBe(
+        SHIP_EXIT.refused,
+      )
+      expect(h.git('rev-parse', 'HEAD')).toBe(before)
+    })
+
+    it('tests #1: a refused ship -m (no token) leaves HEAD where it was', async () => {
+      const h = harness()
+      const before = h.git('rev-parse', 'HEAD')
+      const { CLOUDFLARE_API_TOKEN: _token, ...rest } = h.context.env!
+      h.context.env = rest
+      writeFileSync(join(h.app, 'dirty.txt'), 'x\n')
+      await expect(runShip(parseShipArgs(['--no-pr', '-m', 'wip']), h.context)).resolves.toBe(
+        SHIP_EXIT.refused,
+      )
+      expect(h.git('rev-parse', 'HEAD')).toBe(before)
+    })
+
+    it('tests #1: ship -m with an unset Access variable leaves HEAD where it was', async () => {
+      const h = harness()
+      const before = h.git('rev-parse', 'HEAD')
+      h.context.env = { ...h.context.env, ACCESS_A: 'id' }
+      writeFileSync(join(h.app, 'dirty.txt'), 'x\n')
+      const args = ['--no-pr', '-m', 'wip', '--access-client-id-env', 'ACCESS_A']
+      args.push('--access-client-secret-env', 'ACCESS_B')
+      await expect(runShip(parseShipArgs(args), h.context)).resolves.toBe(SHIP_EXIT.refused)
+      expect(h.git('rev-parse', 'HEAD')).toBe(before)
+    })
+
+    it('tests #1: a plain error after the ship -m commit still restores HEAD', async () => {
+      const h = harness()
+      const before = h.git('rev-parse', 'HEAD')
+      vi.mocked(h.client.listVersions).mockRejectedValueOnce(new Error('listing down'))
+      writeFileSync(join(h.app, 'dirty.txt'), 'x\n')
+      await expect(runShip(parseShipArgs(['--no-pr', '-m', 'wip']), h.context)).rejects.toThrow(
+        'listing down',
+      )
+      expect(h.git('rev-parse', 'HEAD')).toBe(before)
+    })
+
+    it('tests #2: a CLOUDFLARE_API_KEY value in public JS refuses the upload', async () => {
+      const h = harness()
+      const KEY = 'cfglobalapikey0123456789abcdef'
+      h.context.env = { ...h.context.env, CLOUDFLARE_API_KEY: KEY }
+      const run = vi.mocked(h.context.run!)
+      const realRun = run.getMockImplementation()!
+      run.mockImplementation(async (args, cwd, childEnv) => {
+        await realRun(args, cwd, childEnv)
+        if (args[1] === 'ship:build')
+          writeFileSync(join(h.app, '.output/public/app.js'), `k="${KEY}"`)
+      })
+      await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(SHIP_EXIT.refused)
+      expect(h.upload).not.toHaveBeenCalled()
+    })
+  },
+)
+
 describe('lockVersionChanged', () => {
   const core = '@narduk-enterprises/narduk-core'
 
