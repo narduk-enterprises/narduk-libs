@@ -126,6 +126,25 @@ const coreConfigs = [
   },
 
   {
+    // The core rules above read only the script; this covers an inline handler such as
+    // `@click="window.confirm('Delete?') && remove()"`. A bare `confirm` in a template
+    // resolves to a setup binding first, so only the host-qualified call is reported.
+    name: 'narduk/core-native-dialogs-template',
+    files: ['**/*.vue'],
+    ignores: ['**/*.{test,spec}.*', '**/{test,tests,__tests__,e2e}/**'],
+    plugins: { vue },
+    rules: {
+      'vue/no-restricted-syntax': [
+        'warn',
+        {
+          selector: `CallExpression > MemberExpression.callee[object.name=/^(?:${DIALOG_HOSTS.join('|')})$/][property.name=/^(?:${NATIVE_DIALOGS.join('|')})$/]`,
+          message: NATIVE_DIALOG_MESSAGE.replace('{{name}}', NATIVE_DIALOGS.join('/')),
+        },
+      ],
+    },
+  },
+
+  {
     name: 'narduk/core-redirect-query',
     plugins: { narduk },
     rules: {

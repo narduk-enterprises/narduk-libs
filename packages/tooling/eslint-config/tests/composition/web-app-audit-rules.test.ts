@@ -129,6 +129,15 @@ describe('core pack: native dialogs', () => {
     ).toBe(true)
   })
 
+  it('reports a host-qualified dialog in an inline template handler', async () => {
+    expect(
+      await ruleIds(template(`<UButton @click="window.confirm('Delete?') && remove()" />`)),
+    ).toContain('vue/no-restricted-syntax')
+    expect(await ruleIds(template(`<UButton @click="confirm('Delete?')" />`))).not.toContain(
+      'vue/no-restricted-syntax',
+    )
+  })
+
   it('leaves a shadowing local alone', async () => {
     const ids = await ruleIds(
       script("const { confirm } = useConfirmDialog()\nawait confirm('Delete?')"),
