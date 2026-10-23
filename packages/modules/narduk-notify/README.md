@@ -96,9 +96,11 @@ await apns.send(
   any request.
 - **Results, not throws.** `send` resolves to
   `{ ok, status, apnsId, reason, retryable, tokenInvalid }`. `tokenInvalid` is
-  true for `410` and for `BadDeviceToken`, `Unregistered` and
-  `DeviceTokenNotForTopic`. Drop that token. `retryable` covers `429`, `5xx` and
-  transport errors.
+  true only for `410 Unregistered`: drop that token. `BadDeviceToken` and
+  `DeviceTokenNotForTopic` stay in `reason` and do not set it, because a sandbox
+  token sent to production, or a wrong bundle id, produces them for every valid
+  token. `retryable` covers `429`, `5xx` and transport errors, including a
+  stream reset before any response.
 - **`buildApnsRequest`** returns the exact request (URL, lowercase headers,
   body) without sending it, for fixtures and custom transports. `origin`
   overrides Apple's host for a local fixture or an egress proxy.
@@ -106,9 +108,10 @@ await apns.send(
 ### Transport
 
 APNs accepts **HTTP/2 only**. In Node, use `createNodeHttp2Transport`. It holds
-one session per origin, as Apple recommends, and replaces it after close or
-GOAWAY. Node's global `fetch` does not negotiate HTTP/2 by default.
-`createFetchApnsTransport(fetch)` adapts any `fetch` that does.
+one session per origin, as Apple recommends, and replaces it after close, GOAWAY
+or a request timeout (a silent peer is treated as half-open). `timeoutMs` is an
+idle timeout per request. Node's global `fetch` does not negotiate HTTP/2 by
+default. `createFetchApnsTransport(fetch)` adapts any `fetch` that does.
 
 ## Email (Resend)
 
@@ -166,7 +169,7 @@ const notifier = createNotifier({
   email: { client: resend, from: 'MyBoat <alerts@mybo.at>' },
 })
 
-const { deliveries, auditError } = await notifier.send({
+const { deliveries, auditError, preferencesError } = await notifier.send({
   userId,
   category: 'anchor-alarm',
   push: {
@@ -185,13 +188,18 @@ attempt written to `notify_deliveries` in one D1 batch. That covers `sent`,
 `failed`, `suppressed` (`preference_off`) and `skipped`
 (`channel_not_configured`). A malformed target fails its own row and does not
 fail the event. If the audit batch fails, the sends still happened and
-`auditError` says so.
+`auditError` says so. If the preference read fails, the event still goes out on
+the category's defaults and mandatory channels, and `preferencesError` says so.
+An alarm never waits on D1.
 
 Audit rows hold a SHA-256 `target_ref` of the token or the lowercased address,
-never the value. They also record the provider id (`apns-id` or Resend id), the
-status code, the reason and `token_invalid`. `listDeliveries` pages a user's
-rows newest first by index. `pruneDeliveries({ olderThan, limit })` deletes in
-bounded chunks; the retention window is the app's choice.
+never the value. One email is one row, and its ref covers the `to` list joined.
+Rows also record the provider id (`apns-id` or Resend id), the status code, the
+reason and `token_invalid`. `listDeliveries` pages a user's rows newest first by
+index. To page back, pass the previous page's last row as `before`. The cursor
+is `(createdAt, id)` because all rows of one event share a timestamp.
+`pruneDeliveries({ olderThan, limit })` deletes in bounded chunks; the retention
+window is the app's choice.
 
 ## Migrations
 

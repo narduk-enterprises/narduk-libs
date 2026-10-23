@@ -315,7 +315,8 @@ describe('createApnsClient', () => {
     [
       400,
       '{"reason":"BadDeviceToken"}',
-      { tokenInvalid: true, retryable: false, reason: 'BadDeviceToken' },
+      // Also what a sandbox token sent to production gets: never marks it dead.
+      { tokenInvalid: false, retryable: false, reason: 'BadDeviceToken' },
     ],
     [
       429,

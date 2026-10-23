@@ -1,4 +1,4 @@
-import { createServer, type Http2Server, type IncomingHttpHeaders } from 'node:http2'
+import { constants, createServer, type Http2Server, type IncomingHttpHeaders } from 'node:http2'
 import type { AddressInfo } from 'node:net'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -180,6 +180,64 @@ describe('fixture app → HTTP/2 APNs fixture', () => {
       expect(result).toMatchObject({ ok: false, status: 400, reason: 'InvalidProviderToken' })
     } finally {
       transport.close()
+    }
+  })
+
+  it('reports a stream reset before any response as a retryable TransportError', async () => {
+    const reset = createServer()
+    reset.on('stream', (stream) => stream.close(constants.NGHTTP2_NO_ERROR))
+    await new Promise<void>((resolve) => reset.listen(0, '127.0.0.1', resolve))
+    const transport = createNodeHttp2Transport()
+    const client = createApnsClient({
+      bundleId: BUNDLE,
+      environment: 'production',
+      origin: `http://127.0.0.1:${(reset.address() as AddressInfo).port}`,
+      credentials: { teamId: TEAM, keyId: KID, privateKey: key.p8 },
+      transport: transport.send,
+    })
+    try {
+      const result = await client.send(
+        { pushType: 'alert', alert: { title: 't', body: 'b' } },
+        { deviceToken: DEVICE_TOKEN },
+      )
+      expect(result).toMatchObject({
+        ok: false,
+        status: 0,
+        reason: 'TransportError',
+        retryable: true,
+      })
+    } finally {
+      transport.close()
+      await new Promise((resolve) => reset.close(resolve))
+    }
+  })
+
+  it('replaces a session after a timeout instead of reusing a silent connection', async () => {
+    let sessions = 0
+    let answer = false
+    const silent = createServer()
+    silent.on('session', () => {
+      sessions += 1
+    })
+    silent.on('stream', (stream) => {
+      if (!answer) return // say nothing: a half-open peer
+      stream.respond({ ':status': 200 })
+      stream.end()
+    })
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${(silent.address() as AddressInfo).port}/3/device/x`
+    const transport = createNodeHttp2Transport({ timeoutMs: 200 })
+    try {
+      await expect(
+        transport.send({ method: 'POST', url, headers: {}, body: '{}' }),
+      ).rejects.toThrow(/timed out/u)
+      answer = true
+      const response = await transport.send({ method: 'POST', url, headers: {}, body: '{}' })
+      expect(response.status).toBe(200)
+      expect(sessions).toBe(2)
+    } finally {
+      transport.close()
+      await new Promise((resolve) => silent.close(resolve))
     }
   })
 

@@ -92,6 +92,7 @@ export function createResendClient(options: ResendClientOptions): ResendClient {
       if (message.tags?.length) body.tags = message.tags
 
       let response: Response
+      let parsed: Record<string, unknown>
       try {
         response = await fetcher(`${origin}/emails`, {
           method: 'POST',
@@ -99,10 +100,10 @@ export function createResendClient(options: ResendClientOptions): ResendClient {
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
         })
+        parsed = parseJson(await response.text())
       } catch {
         return { ok: false, status: 0, id: null, reason: 'TransportError', retryable: true }
       }
-      const parsed = parseJson(await response.text())
       if (response.ok) {
         return {
           ok: true,

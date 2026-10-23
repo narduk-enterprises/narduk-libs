@@ -127,7 +127,7 @@ describe('preferences', () => {
           enabled: true,
         }),
       ),
-    ).toBe('unknown_category')
+    ).toBe('unknown_channel')
     expect(
       await codeOf(
         preferences.set({ userId: 'u', category: 'anchor-alarm', channel: 'push', enabled: false }),
@@ -188,8 +188,27 @@ describe('delivery audit', () => {
     const page = await listDeliveries(db, { userId: 'u1', limit: 3 })
     expect(page.map((row) => row.id)).toEqual(['email', 'd4', 'd3'])
     expect(page[0]).toEqual(rows.at(-1))
-    const next = await listDeliveries(db, { userId: 'u1', before: page.at(-1)?.createdAt ?? 0 })
+    const next = await listDeliveries(db, { userId: 'u1', before: page.at(-1) })
     expect(next.map((row) => row.id)).toEqual(['d2', 'd1', 'd0'])
+  })
+
+  it('pages through rows of one event that share a timestamp without skipping any', async () => {
+    // One notifier event writes every row with the same createdAt.
+    const tied = ['a', 'b', 'c', 'd', 'e'].map((id) => record({ id, createdAt: 3000 }))
+    await recordDeliveries(db, [...tied, record({ id: 'z', createdAt: 1000 })])
+    const seen: string[] = []
+    let before: DeliveryRecord | undefined
+    for (;;) {
+      const page = await listDeliveries(db, {
+        userId: 'u1',
+        limit: 2,
+        ...(before ? { before } : {}),
+      })
+      if (page.length === 0) break
+      seen.push(...page.map((row) => row.id))
+      before = page.at(-1)
+    }
+    expect(seen).toEqual(['e', 'd', 'c', 'b', 'a', 'z'])
   })
 
   it('reads by the user index, not a table scan', async () => {
@@ -361,6 +380,37 @@ describe('notifier', () => {
     expect(await listDeliveries(db, { userId: 'u1' })).toHaveLength(3)
   })
 
+  it('still sends defaults and mandatory channels when the preference read fails', async () => {
+    const { pushes } = await setup()
+    const failingRead: NotifyD1Database = {
+      prepare: (sql) => {
+        if (sql.startsWith('SELECT category')) throw new Error('D1 read failed')
+        return db.prepare(sql)
+      },
+      batch: (statements) => db.batch(statements),
+    }
+    const key = await generateTestApnsKey()
+    const notifier = createNotifier({
+      db: failingRead,
+      categories: CATEGORIES,
+      apns: createApnsClient({
+        bundleId: 'at.mybo.app',
+        environment: 'production',
+        credentials: { teamId: 'T', keyId: 'K', privateKey: key.p8 },
+        transport: async () => ({ status: 200, headers: {}, body: '' }),
+      }),
+    })
+    const result = await notifier.send({
+      userId: 'u1',
+      category: 'anchor-alarm',
+      push: { notification: alert, targets: [{ deviceToken: DEVICE_TOKEN }] },
+    })
+    expect(result.preferencesError).toBeInstanceOf(Error)
+    expect(result.deliveries).toMatchObject([{ status: 'sent' }])
+    expect(pushes).toHaveLength(0)
+    expect(await listDeliveries(db, { userId: 'u1' })).toHaveLength(1)
+  })
+
   it('records a bad target or a provider rejection as failed rows instead of throwing', async () => {
     const { notifier, pushes } = await setup({ emailFails: true })
     const result = await notifier.send({
@@ -373,6 +423,7 @@ describe('notifier', () => {
       email: { to: ['a@example.com', 'b@example.com'], subject: 's', text: 't' },
     })
     expect(pushes).toHaveLength(1)
+    expect(result.deliveries[0]?.targetRef).toBe(await hashTarget('not-hex'))
     expect(result.deliveries.map(({ status, reason }) => ({ status, reason }))).toEqual([
       { status: 'failed', reason: 'invalid_device_token' },
       { status: 'sent', reason: null },

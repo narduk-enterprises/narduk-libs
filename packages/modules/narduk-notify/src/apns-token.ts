@@ -15,8 +15,12 @@ export interface ApnsCredentials {
 }
 
 export interface ApnsTokenProvider {
-  /** Drop the cached token, e.g. after APNs answers `ExpiredProviderToken`. */
-  invalidate: () => void
+  /**
+   * Drop the cached token, e.g. after APNs answers `ExpiredProviderToken`.
+   * Given the token that failed, it drops only that one, so parallel sends
+   * that all saw the old token re-sign once, not once each.
+   */
+  invalidate: (stale?: string) => void
   token: () => Promise<string>
 }
 
@@ -136,7 +140,7 @@ export function createApnsTokenProvider(
     throw new RangeError('refreshAfterSeconds must be a finite positive number')
   }
   let keyPromise: Promise<CryptoKey> | undefined
-  let cached: { issuedAtSeconds: number; token: Promise<string> } | undefined
+  let cached: { issuedAtSeconds: number; token: Promise<string>; value?: string } | undefined
 
   const key = (): Promise<CryptoKey> => {
     if (typeof credentials.privateKey !== 'string') return Promise.resolve(credentials.privateKey)
@@ -145,8 +149,8 @@ export function createApnsTokenProvider(
   }
 
   return {
-    invalidate: () => {
-      cached = undefined
+    invalidate: (stale) => {
+      if (stale === undefined || cached?.value === stale) cached = undefined
     },
     token: () => {
       const nowSeconds = Math.floor(now() / 1000)
@@ -154,11 +158,16 @@ export function createApnsTokenProvider(
         const pending = key().then((privateKey) =>
           createApnsProviderToken({ ...credentials, privateKey }, nowSeconds),
         )
-        const entry = { issuedAtSeconds: nowSeconds, token: pending }
+        const entry: NonNullable<typeof cached> = { issuedAtSeconds: nowSeconds, token: pending }
         cached = entry
-        pending.catch(() => {
-          if (cached === entry) cached = undefined
-        })
+        const settle = async (): Promise<void> => {
+          try {
+            entry.value = await pending
+          } catch {
+            if (cached === entry) cached = undefined
+          }
+        }
+        void settle()
       }
       return cached.token
     },

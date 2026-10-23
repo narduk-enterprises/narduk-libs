@@ -39,17 +39,34 @@ export function createNodeHttp2Transport(
     return session
   }
 
+  const drop = (origin: string, session: ClientHttp2Session): void => {
+    if (sessions.get(origin) === session) sessions.delete(origin)
+    session.destroy()
+  }
+
+  // Settles exactly once. A stream that ends or closes before a `:status`
+  // arrived (RST_STREAM, GOAWAY, a dropped connection) rejects, so the client
+  // reports a retryable TransportError rather than a status-0 answer.
   const send: ApnsTransport = (request) =>
     new Promise((resolve, reject) => {
       const url = new URL(request.url)
-      const stream = sessionFor(url.origin).request({
+      const session = sessionFor(url.origin)
+      const stream = session.request({
         [constants.HTTP2_HEADER_METHOD]: request.method,
         [constants.HTTP2_HEADER_PATH]: url.pathname,
         ...request.headers,
       })
+      let settled = false
+      const fail = (error: Error): void => {
+        if (settled) return
+        settled = true
+        reject(error)
+      }
       stream.setTimeout(timeoutMs, () => {
+        // A silent peer is usually a half-open connection: replace the session.
+        fail(new Error('APNs request timed out'))
         stream.close(constants.NGHTTP2_CANCEL)
-        reject(new Error('APNs request timed out'))
+        drop(url.origin, session)
       })
       let status = 0
       const headers: Record<string, string> = {}
@@ -64,9 +81,16 @@ export function createNodeHttp2Transport(
       })
       stream.on('data', (chunk: Buffer) => chunks.push(chunk))
       stream.on('end', () => {
+        if (settled) return
+        if (status === 0) {
+          fail(new Error('APNs stream ended without a response'))
+          return
+        }
+        settled = true
         resolve({ status, headers, body: Buffer.concat(chunks).toString('utf8') })
       })
-      stream.on('error', reject)
+      stream.on('close', () => fail(new Error('APNs stream closed without a response')))
+      stream.on('error', fail)
       stream.end(request.body)
     })
 

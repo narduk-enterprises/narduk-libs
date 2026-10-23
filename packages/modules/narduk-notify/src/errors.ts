@@ -5,6 +5,7 @@ export type NotifyErrorCode =
   | 'invalid_email'
   | 'payload_too_large'
   | 'unknown_category'
+  | 'unknown_channel'
   | 'mandatory_channel'
 
 /** A caller error: bad input or configuration. Provider rejections are results, never throws. */

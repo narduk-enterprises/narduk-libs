@@ -110,13 +110,17 @@ export interface ApnsSendResult {
   reason: string | null
   retryable: boolean
   status: number
-  /** True when the token will never work again: drop it. */
+  /**
+   * True only for `410 Unregistered`: the token will never work again, drop it.
+   * `BadDeviceToken` and `DeviceTokenNotForTopic` are also what a wrong
+   * environment or bundle id produces, so they stay in `reason` and never
+   * mark a token dead on their own.
+   */
   tokenInvalid: boolean
 }
 
 const DEVICE_TOKEN = /^[0-9a-f]{64,200}$/iu
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
-const INVALID_TOKEN_REASONS = new Set(['BadDeviceToken', 'DeviceTokenNotForTopic', 'Unregistered'])
 
 function invalid(message: string): NotifyError {
   return new NotifyError('invalid_notification', message)
@@ -300,9 +304,10 @@ export function createApnsClient(options: ApnsClientOptions): ApnsClient {
   const tokens = createApnsTokenProvider(options.credentials, options)
   const now = options.now ?? Date.now
 
-  const attempt = async (
+  const deliver = async (
     notification: ApnsNotification,
     sendOptions: ApnsSendOptions,
+    providerToken: string,
   ): Promise<ApnsSendResult> => {
     const request = buildApnsRequest(
       notification,
@@ -312,7 +317,7 @@ export function createApnsClient(options: ApnsClientOptions): ApnsClient {
         environment: sendOptions.environment ?? options.environment,
         ...(options.origin === undefined ? {} : { origin: options.origin }),
       },
-      await tokens.token(),
+      providerToken,
       Math.floor(now() / 1000),
     )
     let response: ApnsTransportResponse
@@ -335,9 +340,17 @@ export function createApnsClient(options: ApnsClientOptions): ApnsClient {
       apnsId: response.headers['apns-id'] ?? request.headers['apns-id'] ?? null,
       reason,
       retryable: response.status === 429 || response.status >= 500,
-      tokenInvalid:
-        response.status === 410 || (reason !== null && INVALID_TOKEN_REASONS.has(reason)),
+      tokenInvalid: response.status === 410 || reason === 'Unregistered',
     }
+  }
+
+  const attempt = async (
+    notification: ApnsNotification,
+    sendOptions: ApnsSendOptions,
+  ): Promise<{ providerToken: string; result: ApnsSendResult }> => {
+    const providerToken = await tokens.token()
+    const result = await deliver(notification, sendOptions, providerToken)
+    return { providerToken, result }
   }
 
   return {
@@ -348,9 +361,9 @@ export function createApnsClient(options: ApnsClientOptions): ApnsClient {
       // One apns-id for both attempts, so APNs and the audit see one notification.
       const pinned = { ...sendOptions, apnsId: sendOptions.apnsId ?? crypto.randomUUID() }
       const first = await attempt(notification, pinned)
-      if (first.reason !== 'ExpiredProviderToken') return first
-      tokens.invalidate()
-      return attempt(notification, pinned)
+      if (first.result.reason !== 'ExpiredProviderToken') return first.result
+      tokens.invalidate(first.providerToken)
+      return (await attempt(notification, pinned)).result
     },
   }
 }

@@ -55,10 +55,10 @@
     "@narduk-enterprises/narduk-maps": {
       "compatibility": "n-and-n-minus-1"
     },
-    "@narduk-enterprises/narduk-platform": {
+    "@narduk-enterprises/narduk-notify": {
       "compatibility": "n-and-n-minus-1"
     },
-    "@narduk-enterprises/narduk-notify": {
+    "@narduk-enterprises/narduk-platform": {
       "compatibility": "n-and-n-minus-1"
     },
     "@narduk-enterprises/narduk-postgres": {

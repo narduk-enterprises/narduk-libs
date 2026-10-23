@@ -89,7 +89,7 @@ export function createNotifyPreferences(options: {
     set: async ({ userId, category, channel, enabled }) => {
       const definition = requireCategory(categories, category)
       if (!NOTIFY_CHANNELS.includes(channel)) {
-        throw new NotifyError('unknown_category', `unknown channel: ${String(channel)}`)
+        throw new NotifyError('unknown_channel', `unknown channel: ${String(channel)}`)
       }
       if (!enabled && definition.mandatory?.includes(channel)) {
         throw new NotifyError(

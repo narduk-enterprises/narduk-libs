@@ -1,12 +1,17 @@
 import { hashTarget, recordDeliveries } from './audit.js'
 import { NotifyError } from './errors.js'
-import { createNotifyPreferences, requireCategory } from './preferences.js'
+import { createNotifyPreferences, requireCategory, resolvePreferences } from './preferences.js'
 
 import type { ApnsClient, ApnsEnvironment, ApnsNotification, ApnsSendOptions } from './apns.js'
 import type { DeliveryRecord } from './audit.js'
 import type { NotifyD1Database } from './d1.js'
 import type { EmailMessage, ResendClient } from './email.js'
-import type { NotifyCategories, NotifyChannel, NotifyPreferences } from './preferences.js'
+import type {
+  NotifyCategories,
+  NotifyChannel,
+  NotifyPreferences,
+  ResolvedPreferences,
+} from './preferences.js'
 
 export interface PushTarget extends Omit<ApnsSendOptions, 'apnsId'> {
   /** A device token, or an activity push token for a Live Activity notification. */
@@ -25,6 +30,11 @@ export interface NotifyResult {
   /** Set when the audit batch failed; the sends above it still happened. */
   auditError: unknown
   deliveries: DeliveryRecord[]
+  /**
+   * Set when the preference read failed. The event was still sent on the
+   * category's defaults and mandatory channels, so an alarm never waits on D1.
+   */
+  preferencesError: unknown
 }
 
 export interface NotifierOptions {
@@ -55,7 +65,15 @@ export function createNotifier(options: NotifierOptions): Notifier {
     preferences,
     send: async (request) => {
       requireCategory(options.categories, request.category)
-      const resolved = (await preferences.get(request.userId))[request.category]
+      let preferencesError: unknown = null
+      let all: ResolvedPreferences
+      try {
+        all = await preferences.get(request.userId)
+      } catch (error) {
+        preferencesError = error
+        all = resolvePreferences(options.categories, [])
+      }
+      const resolved = all[request.category]
       const createdAt = now()
       const base = (channel: NotifyChannel, targetRef: string | null) => ({
         id: newId(),
@@ -83,13 +101,13 @@ export function createNotifier(options: NotifierOptions): Notifier {
       // A bad target (say, a malformed token) fails its own row, not the whole event.
       const attempt = async (
         record: () => Promise<DeliveryRecord>,
-        fallback: () => DeliveryRecord,
+        fallback: () => Promise<DeliveryRecord>,
       ): Promise<DeliveryRecord> => {
         try {
           return await record()
         } catch (error) {
           return {
-            ...fallback(),
+            ...(await fallback()),
             status: 'failed',
             reason: error instanceof NotifyError ? error.code : 'error',
           }
@@ -107,30 +125,23 @@ export function createNotifier(options: NotifierOptions): Notifier {
         } else {
           for (const target of push.targets) {
             const pushBase = async (): Promise<DeliveryRecord> => ({
-              ...base('push', await hashTarget(target.deviceToken)),
+              ...base('push', await hashTarget(String(target.deviceToken))),
               pushType: notification.pushType,
               environment: target.environment ?? apns.environment,
               status: 'failed',
             })
             work.push(
-              attempt(
-                async () => {
-                  const result = await apns.send(notification, target)
-                  return {
-                    ...(await pushBase()),
-                    status: result.ok ? 'sent' : 'failed',
-                    providerId: result.apnsId,
-                    statusCode: result.status,
-                    reason: result.reason,
-                    tokenInvalid: result.tokenInvalid,
-                  }
-                },
-                () => ({
-                  ...base('push', null),
-                  pushType: notification.pushType,
-                  status: 'failed',
-                }),
-              ),
+              attempt(async () => {
+                const result = await apns.send(notification, target)
+                return {
+                  ...(await pushBase()),
+                  status: result.ok ? 'sent' : 'failed',
+                  providerId: result.apnsId,
+                  statusCode: result.status,
+                  reason: result.reason,
+                  tokenInvalid: result.tokenInvalid,
+                }
+              }, pushBase),
             )
           }
         }
@@ -156,7 +167,7 @@ export function createNotifier(options: NotifierOptions): Notifier {
                   reason: result.reason,
                 }
               },
-              () => ({ ...base('email', null), status: 'failed' }),
+              async () => ({ ...base('email', null), status: 'failed' }),
             ),
           )
         }
@@ -169,7 +180,7 @@ export function createNotifier(options: NotifierOptions): Notifier {
       } catch (error) {
         auditError = error
       }
-      return { deliveries, auditError }
+      return { deliveries, auditError, preferencesError }
     },
   }
 }

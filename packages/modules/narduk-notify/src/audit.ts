@@ -101,8 +101,11 @@ export async function recordDeliveries(
 }
 
 export interface ListDeliveriesOptions {
-  /** Only rows created before this time (ms), for paging back. */
-  before?: number
+  /**
+   * Page back from a row: pass the last row of the previous page. Rows of one
+   * event share `createdAt`, so the cursor is `(createdAt, id)`, never time alone.
+   */
+  before?: Pick<DeliveryRecord, 'createdAt' | 'id'>
   limit?: number
   userId: string
 }
@@ -116,10 +119,15 @@ export async function listDeliveries(
   const { results } = await db
     .prepare(
       `SELECT * FROM notify_deliveries
-       WHERE user_id = ?1 AND created_at < ?2
-       ORDER BY created_at DESC, id DESC LIMIT ?3`,
+       WHERE user_id = ?1 AND (created_at < ?2 OR (created_at = ?2 AND id < ?3))
+       ORDER BY created_at DESC, id DESC LIMIT ?4`,
     )
-    .bind(options.userId, options.before ?? Number.MAX_SAFE_INTEGER, limit)
+    .bind(
+      options.userId,
+      options.before?.createdAt ?? Number.MAX_SAFE_INTEGER,
+      options.before?.id ?? '',
+      limit,
+    )
     .all()
   return (results as DeliveryRow[]).map(toRecord)
 }

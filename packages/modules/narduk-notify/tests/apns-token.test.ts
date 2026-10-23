@@ -86,10 +86,38 @@ describe('APNs provider token (ES256)', () => {
     expect(await provider.token()).not.toBe(refreshed)
   })
 
-  it('does not cache a failed signature', async () => {
-    const provider = createApnsTokenProvider({ teamId: TEAM, keyId: KID, privateKey: 'QUJD' })
-    await expect(provider.token()).rejects.toThrow(NotifyError)
-    await expect(provider.token()).rejects.toThrow(NotifyError)
+  it('invalidates only the token that failed, so parallel retries re-sign once', async () => {
+    const key = await generateTestApnsKey()
+    let now = 1_800_000_000_000
+    const provider = createApnsTokenProvider(
+      { teamId: TEAM, keyId: KID, privateKey: key.p8 },
+      { now: () => now },
+    )
+    const stale = await provider.token()
+    now += 1000
+    provider.invalidate(stale)
+    const fresh = await provider.token()
+    expect(fresh).not.toBe(stale)
+    // A second request that also saw `stale` must not discard `fresh`.
+    provider.invalidate(stale)
+    expect(await provider.token()).toBe(fresh)
+  })
+
+  it('does not cache a failed signature: each call retries the sign', async () => {
+    // A cached rejection would keep failing inside the 40-minute window even
+    // after the key binding is fixed; a cleared one signs on the next call.
+    const key = await generateTestApnsKey()
+    const recovering = { teamId: TEAM, keyId: KID, privateKey: 'QUJD' as CryptoKey | string }
+    const later = createApnsTokenProvider(recovering)
+    await expect(later.token()).rejects.toThrow(NotifyError)
+    recovering.privateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      Buffer.from(key.p8.split('\n').slice(1, -1).join(''), 'base64'),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign'],
+    )
+    expect((await verifyJwt(await later.token(), key.publicKey)).valid).toBe(true)
     expect(() =>
       createApnsTokenProvider(
         { teamId: TEAM, keyId: KID, privateKey: 'x' },
