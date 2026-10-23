@@ -154,7 +154,7 @@ describe('timeWeightedBuckets rules', () => {
 describe('planTimeWeightedRefresh', () => {
   const now = Date.parse('2026-10-02T06:00:30.000Z')
 
-  it('widens back to the minute and forward by maxHold, then splits at UTC days', () => {
+  it('widens by maxHold both ways to the minute, then splits at UTC days', () => {
     const plan = planTimeWeightedRefresh(
       {
         maxHoldMs: 600_000,
@@ -168,7 +168,7 @@ describe('planTimeWeightedRefresh', () => {
     )
     expect(plan.range).toEqual({
       end: new Date('2026-10-02T00:09:00.000Z'),
-      start: new Date('2026-10-01T23:50:00.000Z'),
+      start: new Date('2026-10-01T23:40:00.000Z'),
     })
     expect(
       plan.statements.map((statement) => [
@@ -177,7 +177,7 @@ describe('planTimeWeightedRefresh', () => {
         statement.range.end.toISOString(),
       ]),
     ).toEqual([
-      ['minute', '2026-10-01T23:50:00.000Z', '2026-10-02T00:00:00.000Z'],
+      ['minute', '2026-10-01T23:40:00.000Z', '2026-10-02T00:00:00.000Z'],
       ['coarse', '2026-10-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z'],
       ['minute', '2026-10-02T00:00:00.000Z', '2026-10-02T00:09:00.000Z'],
       ['coarse', '2026-10-02T00:00:00.000Z', '2026-10-03T00:00:00.000Z'],
@@ -195,8 +195,8 @@ describe('planTimeWeightedRefresh', () => {
       },
       now,
     )
-    // 29 days, two statements each.
-    expect(plan.statements).toHaveLength(2 * 29 + 2)
+    // 29 days plus the hold back into 08-31 and forward into 09-30, two each.
+    expect(plan.statements).toHaveLength(2 * 31)
     for (const statement of plan.statements) {
       expect(statement.params).toHaveLength(statement.kind === 'minute' ? 4 : 3)
       expect(statement.params[0]).toBeNull()
@@ -205,6 +205,22 @@ describe('planTimeWeightedRefresh', () => {
       )
     }
     expect(plan.statements[0]!.params[3]).toBe('300000 milliseconds')
+  })
+
+  it('finishes, on the next refresh, a minute the last one stopped short of', () => {
+    // A row at 12:00:10 refreshed at 12:00:30 stops short of minute 12:00 (it
+    // has not ended); the next batch starts at 12:01:05 and must still cover it.
+    const t = (iso: string) => new Date(`2026-10-01T${iso}Z`)
+    const first = planTimeWeightedRefresh(
+      { maxHoldMs: 60_000, range: { end: t('12:00:10.001'), start: t('12:00:10') } },
+      t('12:00:30').getTime(),
+    )
+    expect(first.range?.end).toEqual(t('12:00:00'))
+    const next = planTimeWeightedRefresh(
+      { maxHoldMs: 60_000, range: { end: t('12:01:05.001'), start: t('12:01:05') } },
+      t('12:02:30').getTime(),
+    )
+    expect(next.range).toEqual({ end: t('12:02:00'), start: t('12:00:00') })
   })
 
   it('never writes a bucket for time that has not happened', () => {

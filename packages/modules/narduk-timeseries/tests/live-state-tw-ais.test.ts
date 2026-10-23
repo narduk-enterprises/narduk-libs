@@ -327,7 +327,7 @@ describe.skipIf(!dsn)(`live TimescaleDB, migrations 0004-0007 (${SKIP_REASON})`,
       })
       expect(refresh.range).toEqual({
         end: new Date(HELD_VALUE_T0 + 840_000),
-        start: new Date(HELD_VALUE_T0),
+        start: new Date(HELD_VALUE_T0 - HOLD),
       })
 
       const minute = await store.queryTimeWeightedRollup({

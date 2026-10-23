@@ -358,9 +358,12 @@ export interface TimeWeightedRefreshInput {
   maxHoldMs: number
   /**
    * The range whose raw rows changed (a batch just written, or a cron's
-   * lookback). The refresh widens it: back to the minute, and forward by
-   * `maxHoldMs`, because a late row changes how long the row before it held
-   * and what every bucket after it carries in. Never past the current minute.
+   * lookback). The refresh widens it by `maxHoldMs` both ways: forward,
+   * because a late row changes how long the row before it held and what every
+   * bucket after it carries in; back, to finish the minutes an earlier refresh
+   * stopped short of at the current minute. Never past the current minute, so
+   * refreshes must come within `maxHoldMs` of each other, or a cron must look
+   * back further.
    */
   range: TimeRange
   /** One vessel, or every vessel when omitted. */

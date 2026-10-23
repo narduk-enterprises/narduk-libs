@@ -142,11 +142,14 @@ function alignUp(ms: number, unit: number): number {
 /**
  * The refresh plan for a range whose raw changed.
  *
- * The range is widened before it is split: back to its minute, and forward by
- * `maxHoldMs` -- a late row shortens the hold of the row before it and changes
- * what every following minute carries in, up to one hold later. It is then
- * clamped to the current minute, so no bucket is written for time that has not
- * happened (the last value would otherwise "hold" into the future). Windows
+ * The range is widened before it is split, by `maxHoldMs` both ways, to the
+ * minute. Forward, because a late row shortens the hold of the row before it
+ * and changes what every following minute carries in, up to one hold later.
+ * Back, because the end is clamped to the current minute, so no bucket is
+ * written for time that has not happened (the last value would otherwise
+ * "hold" into the future), and the minutes an earlier refresh left unfinished
+ * -- held by a row that was then the latest -- end at most one hold after it:
+ * any later refresh within `maxHoldMs` of the last one settles them. Windows
  * never cross a UTC day, and each minute window is followed by the coarse
  * statement for its day, so the coarse levels always sum finished minutes.
  */
@@ -179,7 +182,7 @@ export function planTimeWeightedRefresh(
   }
   const vessel = input.vesselId ?? null
 
-  const start = alignDown(input.range.start.getTime(), MINUTE_MS)
+  const start = alignDown(input.range.start.getTime() - maxHoldMs, MINUTE_MS)
   const end = Math.min(
     alignUp(input.range.end.getTime() + maxHoldMs, MINUTE_MS),
     alignDown(realNowMs, MINUTE_MS),

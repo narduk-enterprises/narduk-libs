@@ -144,10 +144,13 @@ bucket. The library refreshes it:
 - `maxHoldMs` is **required**: it is the product's heartbeat contract. A gap
   longer than it is no data, not a held value; `heldMs` on a row is the covered
   time and the mean is over that time only. 1 s to 6 h.
-- The range is widened back to its minute and forward by `maxHoldMs` (a late row
-  changes how long the row before it held and what the following minutes carry
-  in), clamped to the current minute, and split at UTC days. Each statement
-  binds four or three parameters and reads at most one day of raw plus the hold.
+- The range is widened by `maxHoldMs` both ways, to the minute: forward, because
+  a late row changes how long the row before it held and what the following
+  minutes carry in; back, to finish the minutes an earlier refresh stopped short
+  of when it clamped to the current minute. So refreshes must come within
+  `maxHoldMs` of each other (or a cron must look back further). The range is
+  then clamped to the current minute and split at UTC days. Each statement binds
+  four or three parameters and reads at most one day of raw plus the hold.
 - It is an idempotent upsert, run as `ops` (it reads raw, which `ingest_writer`
   cannot). **Nothing runs it automatically**: schedule it from Node like
   retention, with a lookback, and call it after a backfill. Until a consumer
