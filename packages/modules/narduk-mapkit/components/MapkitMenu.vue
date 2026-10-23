@@ -42,16 +42,21 @@ function setItemRef(el: unknown, index: number) {
   if (node) itemRefs.value[index] = node
 }
 
+/** The buttons still in the menu: a shrunk list leaves stale slots past `items.length`. */
+function liveItems(): HTMLElement[] {
+  return itemRefs.value.slice(0, props.items.length).filter((el) => el?.isConnected)
+}
+
 function focusIndex(index: number) {
-  const count = itemRefs.value.length
+  const live = liveItems()
+  const count = live.length
   if (count === 0) return
-  const next = ((index % count) + count) % count
-  itemRefs.value[next]?.focus()
+  live[((index % count) + count) % count]?.focus()
 }
 
 function currentIndex(): number {
   if (typeof document === 'undefined') return -1
-  return itemRefs.value.findIndex((el) => el === document.activeElement)
+  return liveItems().findIndex((el) => el === document.activeElement)
 }
 
 function onKeydown(event: KeyboardEvent) {

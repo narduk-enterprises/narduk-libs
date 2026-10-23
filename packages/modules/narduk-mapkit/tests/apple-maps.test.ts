@@ -59,6 +59,37 @@ describe('Apple Maps Server API helpers', () => {
     )
   })
 
+  it('signs a fresh developer token when the configured one expires inside 60 seconds (ponytail-5 s5 #10)', async () => {
+    const stale = unsignedTokenWithExp(Math.floor(Date.now() / 1000) + 30)
+    const token = await createAppleMapsDeveloperToken({
+      appId: 'maps.example.app',
+      authToken: stale,
+      keyId: 'KEY123',
+      privateKey: await createTestPrivateKeyPem(),
+      teamId: 'TEAM123',
+    })
+
+    expect(token).not.toBe(stale)
+    expect(decodeJwt(token).payload).toMatchObject({ iss: 'TEAM123' })
+  })
+
+  it('exchanges again when the cached access token is inside the 60 second refresh window (ponytail-5 s5 #10)', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ accessToken: 'access-token', expiresInSeconds: 30 }), {
+          status: 200,
+        }),
+    )
+    const config = {
+      authToken: unsignedTokenWithExp(Math.floor(Date.now() / 1000) + 1800),
+      fetch: fetchMock,
+    }
+
+    await getAppleMapsAccessToken(config)
+    await getAppleMapsAccessToken(config)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('searches and geocodes with an explicit access token', async () => {
     const requestedUrls: URL[] = []
     const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {

@@ -272,17 +272,12 @@ describe('§F2 the request line cannot name the origin claim', () => {
 })
 
 /**
- * The preview-host case §e.5 calls a prerequisite of the design.
- *
- * narduk-core's `00-canonical-host` 308'd EVERY GET, `/api/*` included, which
- * broke the same-origin fetch on every preview hostname AND burned an Apple
- * mint per preview page load. narduk-libs#408 fixed it by skipping the redirect
- * for non-document requests, and landed in narduk-libs#426 -- so this test,
- * which S4 was told to expect RED, is green here. It guards the shape the fix
- * has to keep: a token fetch reaching the route on a non-canonical host is
- * answered 200 from THAT host, with no Location.
+ * Only claims what this file can run: the handler answers 200 from the host it
+ * was reached on and never emits a `Location`. The canonical-host redirect that
+ * narduk-libs#408 fixed (landed in narduk-libs#426) lives in narduk-core, so a
+ * regression there is NOT caught here.
  */
-describe('§e.5 preview host (narduk-libs#408, landed in #426)', () => {
+describe('§e.5 handler never redirects its own host', () => {
   it('answers the token from the preview host itself, never a redirect', async () => {
     const response = await fetch(`${base}/api/mapkit-token`, {
       headers: {

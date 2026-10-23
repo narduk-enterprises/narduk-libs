@@ -111,6 +111,30 @@ describe('decoded tile cache byte budget', () => {
     expect(reads.filter((x) => x === 7)).toHaveLength(2)
   })
 
+  it('applies the default 64 MiB budget when the caller passes no cacheBytes (ponytail-5 s5 #14)', async () => {
+    // 8 MiB of coordinates each, so 12 tiles are 96 MiB; painting only walks lineStarts.
+    const big = (): DecodedVectorTile => ({
+      ...tileOfPoints(2),
+      coordinates: new Int16Array(4 * 1024 * 1024),
+    })
+    const reads: number[] = []
+    const overlay = createVectorTileOverlaySource<FakeCanvas>({
+      createCanvas: createFakeCanvas,
+      decode: async () => big(),
+      style: () => ({ color: '#2563eb', width: 1 }),
+      tileBytes: async (_z, x) => {
+        reads.push(x)
+        return new Uint8Array([1])
+      },
+    })
+    for (let x = 0; x < 12; x += 1) await overlay.imageForTile(x, 0, 6, 1)
+
+    expect(overlay.cacheBytes).toBeLessThanOrEqual(DEFAULT_VECTOR_TILE_CACHE_BYTES)
+    expect(overlay.size).toBeLessThan(12)
+    await overlay.imageForTile(0, 0, 6, 1)
+    expect(reads.filter((x) => x === 0)).toHaveLength(2)
+  })
+
   it('has a default budget, and Infinity removes the byte cap', async () => {
     expect(DEFAULT_VECTOR_TILE_CACHE_BYTES).toBeGreaterThan(0)
     const decode = vi.fn(async () => tileOfPoints(1000))

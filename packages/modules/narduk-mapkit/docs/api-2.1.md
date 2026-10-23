@@ -511,9 +511,10 @@ end-to-end: the page's `fetch` is 308'd cross-origin, the browser blocks it for
 want of `Access-Control-Allow-Origin`, `Failed to fetch`, **the map never loads
 — and the canonical host still minted a token**, burning an Apple mint and a
 rate-limit slot per preview page-load. This is a **prerequisite of the design,
-not a trap**: S4's preview-host test is **expected RED until narduk-libs#408
-lands** (guard: `Sec-Fetch-Dest !== 'document' ⇒ return`). Another lane owns
-#408.
+not a trap**: narduk-libs#408 landed in #426 (guard:
+`Sec-Fetch-Dest !== 'document' ⇒ return`). The redirect lives in narduk-core, so
+this package's handler tests cannot fail on it; they only prove this handler
+never redirects its own host.
 
 ---
 

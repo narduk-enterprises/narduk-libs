@@ -124,6 +124,9 @@ function worldX(longitude: number): number {
   return (longitude + 180) / 360
 }
 
+/** A ring that crosses the antimeridian is unwrapped past [0, 1], so a shape is also tried a world to either side. */
+const WORLD_COPIES = [0, -1, 1] as const
+
 function worldYToLatitude(y: number): number {
   const n = Math.PI * (1 - 2 * y)
   return (Math.atan(Math.sinh(n)) * 180) / Math.PI
@@ -141,8 +144,11 @@ function buildShape(rings: ReadonlyArray<ReadonlyArray<{ lat: number; lng: numbe
   let cursor = 0
   for (const [index, ring] of rings.entries()) {
     ringStarts[index] = cursor
+    let lastX: number | undefined
     for (const point of ring) {
-      const x = worldX(point.lng)
+      let x = worldX(point.lng)
+      if (lastX !== undefined) x -= Math.round(x - lastX)
+      lastX = x
       const y = worldY(point.lat)
       coordinates[cursor * 2] = x
       coordinates[cursor * 2 + 1] = y
@@ -159,6 +165,10 @@ function buildShape(rings: ReadonlyArray<ReadonlyArray<{ lat: number; lng: numbe
 
 /** Even-odd containment across the rings of one shape: a point in a hole is outside. */
 function shapeContains(shape: VectorTileAreaShape, x: number, y: number): boolean {
+  return WORLD_COPIES.some((copy) => shapeContainsOnce(shape, x - copy, y))
+}
+
+function shapeContainsOnce(shape: VectorTileAreaShape, x: number, y: number): boolean {
   const [west, north, east, south] = shape.box
   if (x < west || x > east || y < north || y > south) return false
   const { coordinates, ringStarts } = shape
@@ -288,6 +298,22 @@ export function vectorTileAreasReach<TData>(
   })
 }
 
+function boxReaches(
+  shape: VectorTileAreaShape,
+  copy: number,
+  left: number,
+  right: number,
+  top: number,
+  bottom: number,
+): boolean {
+  return (
+    shape.box[2] + copy >= left &&
+    shape.box[0] + copy <= right &&
+    shape.box[3] >= top &&
+    shape.box[1] <= bottom
+  )
+}
+
 function areaReaches(
   area: VectorTileArea,
   tile: VectorTileAddress,
@@ -300,12 +326,8 @@ function areaReaches(
   const right = (tile.x + 1) * span + margin
   const top = tile.y * span - margin
   const bottom = (tile.y + 1) * span + margin
-  return area.shapes.some(
-    (shape) =>
-      shape.box[2] >= left &&
-      shape.box[0] <= right &&
-      shape.box[3] >= top &&
-      shape.box[1] <= bottom,
+  return area.shapes.some((shape) =>
+    WORLD_COPIES.some((copy) => boxReaches(shape, copy, left, right, top, bottom)),
   )
 }
 
@@ -357,27 +379,34 @@ export function paintVectorTileAreas<TData>(
 
     context.beginPath()
     let added = false
-    for (const shape of area.shapes) {
+    for (const [shape, copy] of area.shapes.flatMap((s) =>
+      WORLD_COPIES.map((c) => [s, c] as const),
+    )) {
       const span = 1 / tiles
       const margin = (outline + STROKE_REACH_PX) / tileSize / tiles
       if (
-        shape.box[2] < tile.x * span - margin ||
-        shape.box[0] > (tile.x + 1) * span + margin ||
-        shape.box[3] < tile.y * span - margin ||
-        shape.box[1] > (tile.y + 1) * span + margin
+        !boxReaches(
+          shape,
+          copy,
+          tile.x * span - margin,
+          (tile.x + 1) * span + margin,
+          tile.y * span - margin,
+          (tile.y + 1) * span + margin,
+        )
       ) {
         continue
       }
+      const shift = copy * scale
       const { coordinates, ringStarts } = shape
       for (let ring = 0; ring + 1 < ringStarts.length; ring += 1) {
         const start = ringStarts[ring] ?? 0
         const end = ringStarts[ring + 1] ?? start
         if (end - start < 3) continue
-        let lastX = (coordinates[start * 2] ?? 0) * scale - originX
+        let lastX = (coordinates[start * 2] ?? 0) * scale + shift - originX
         let lastY = (coordinates[start * 2 + 1] ?? 0) * scale - originY
         context.moveTo(lastX, lastY)
         for (let point = start + 1; point < end; point += 1) {
-          const x = (coordinates[point * 2] ?? 0) * scale - originX
+          const x = (coordinates[point * 2] ?? 0) * scale + shift - originX
           const y = (coordinates[point * 2 + 1] ?? 0) * scale - originY
           if (point + 1 < end && Math.abs(x - lastX) + Math.abs(y - lastY) < gap) continue
           context.lineTo(x, y)

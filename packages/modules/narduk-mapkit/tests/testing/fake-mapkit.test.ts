@@ -341,6 +341,29 @@ describe('map and annotations', () => {
     expect(map.region.span.latitudeDelta).toBeCloseTo(2, 6)
   })
 
+  it('leaves the region alone for an empty showItems (ponytail-5 s5 #8)', () => {
+    const { fake, map } = readyMap()
+    const before = map.region
+    expect(() => map.showItems([])).not.toThrow()
+    expect(map.region.center.latitude).toBe(before.center.latitude)
+    expect(map.region.span.latitudeDelta).toBe(before.span.latitudeDelta)
+    expect(Number.isFinite(map.region.span.longitudeDelta)).toBe(true)
+    expect(fake).toBeDefined()
+  })
+
+  it('never frames a stack of pins on one point at a zero span (ponytail-5 s5 #8)', () => {
+    const { fake, map } = readyMap()
+    const items = [
+      new fake.mapkit.MarkerAnnotation({ latitude: 30, longitude: -97 }),
+      new fake.mapkit.MarkerAnnotation({ latitude: 30, longitude: -97 }),
+    ]
+    map.addAnnotations(items)
+    map.showItems(items)
+
+    expect(map.region.span.latitudeDelta).toBeGreaterThanOrEqual(0.01)
+    expect(map.region.span.longitudeDelta).toBeGreaterThanOrEqual(0.01)
+  })
+
   it('fires region-change-end on an animated region change', () => {
     const { fake, map } = readyMap()
     let ends = 0
@@ -451,6 +474,31 @@ describe('selection and callouts', () => {
     expect(fake.inspect.calloutElement(pin)).toBeNull()
     expect(callout?.isConnected).toBe(false)
     expect(fake.inspect.annotationCounts('travis')).toMatchObject({ deselected: 1, selected: 1 })
+  })
+
+  it('drives selection and callouts from the selectedAnnotation setter (ponytail-5 s5 #7)', () => {
+    const { fake, map } = readyMap()
+    const content = document.createElement('p')
+    content.textContent = 'Lake Travis'
+    const pin = new fake.mapkit.MarkerAnnotation(
+      { latitude: 30.4, longitude: -97.9 },
+      { callout: { calloutContentForAnnotation: () => content }, id: 'travis' },
+    )
+    map.addAnnotation(pin)
+    const events: string[] = []
+    for (const type of ['select', 'deselect']) {
+      map.addEventListener(type, () => events.push(type))
+    }
+
+    map.selectedAnnotation = pin
+    expect(events).toEqual(['select'])
+    expect(pin.selected).toBe(true)
+    expect(fake.inspect.calloutElement(pin)?.textContent).toBe('Lake Travis')
+
+    map.selectedAnnotation = null
+    expect(events).toEqual(['select', 'deselect'])
+    expect(pin.selected).toBe(false)
+    expect(fake.inspect.calloutElement(pin)).toBeNull()
   })
 
   it('honours calloutShouldAppearForAnnotation and calloutEnabled', () => {
@@ -1019,5 +1067,34 @@ describe('overlays and taps (narduk-libs#1729)', () => {
     const coordinate = map.convertPointOnPageToCoordinate(seen[0]!.pointOnPage)
     expect(coordinate.latitude).toBeCloseTo(0.25, 6)
     expect(coordinate.longitude).toBeCloseTo(0.4, 6)
+  })
+
+  it('converts a tap on a scrolled page back to the tapped location (ponytail-5 s5 #9)', () => {
+    const { fake, map } = readyMap()
+    const scroll = globalThis as { scrollX?: number; scrollY?: number }
+    const before = { x: scroll.scrollX, y: scroll.scrollY }
+    Object.defineProperty(globalThis, 'scrollX', { configurable: true, value: 400, writable: true })
+    Object.defineProperty(globalThis, 'scrollY', { configurable: true, value: 250, writable: true })
+    try {
+      const seen: Array<{ pointOnPage: DOMPoint }> = []
+      map.addEventListener('single-tap', (event) => {
+        seen.push(event as unknown as { pointOnPage: DOMPoint })
+      })
+      fake.inspect.tapMap(map, { latitude: 0.25, longitude: 0.4 })
+      const coordinate = map.convertPointOnPageToCoordinate(seen[0]!.pointOnPage)
+      expect(coordinate.latitude).toBeCloseTo(0.25, 6)
+      expect(coordinate.longitude).toBeCloseTo(0.4, 6)
+    } finally {
+      Object.defineProperty(globalThis, 'scrollX', {
+        configurable: true,
+        value: before.x ?? 0,
+        writable: true,
+      })
+      Object.defineProperty(globalThis, 'scrollY', {
+        configurable: true,
+        value: before.y ?? 0,
+        writable: true,
+      })
+    }
   })
 })

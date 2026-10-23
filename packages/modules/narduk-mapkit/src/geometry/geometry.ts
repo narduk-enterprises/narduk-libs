@@ -430,25 +430,6 @@ export function computeMapKitRegionForDrawables(
   return computeMapKitRegionForPoints(collectMapKitDrawablePoints(input), options)
 }
 
-function closestPointOnSegment(
-  point: MapKitLatLng,
-  start: MapKitLatLng,
-  end: MapKitLatLng,
-): MapKitLatLng {
-  const x = point.lng
-  const y = point.lat
-  const x1 = start.lng
-  const y1 = start.lat
-  const x2 = end.lng
-  const y2 = end.lat
-  const dx = x2 - x1
-  const dy = y2 - y1
-  const denominator = dx * dx + dy * dy
-  if (denominator === 0) return start
-  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / denominator))
-  return { lat: y1 + t * dy, lng: x1 + t * dx }
-}
-
 export function hitTestLineOverlays<TData = unknown>(
   point: MapKitLatLng,
   overlays: ReadonlyArray<MapKitLineDrawable<TData>>,
@@ -458,11 +439,12 @@ export function hitTestLineOverlays<TData = unknown>(
 
   for (const overlay of overlays) {
     for (let i = 1; i < overlay.coordinates.length; i++) {
-      const projected = closestPointOnSegment(
+      const projected = segmentClosestPointV2(
         point,
         overlay.coordinates[i - 1]!,
         overlay.coordinates[i]!,
       )
+      if (!projected) continue
       const distanceMetres = haversineDistanceMetres(point, projected)
       if (distanceMetres > toleranceMetres) continue
       if (!best || distanceMetres < best.distanceMetres) {
@@ -474,19 +456,30 @@ export function hitTestLineOverlays<TData = unknown>(
   return best
 }
 
+/** Ray cast on a ring whose edges take the short way round the antimeridian. */
 export function pointInPolygon(point: MapKitLatLng, ring: readonly MapKitLatLng[]): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const current = ring[i]!
-    const previous = ring[j]!
-    const intersects =
-      current.lng > point.lng !== previous.lng > point.lng &&
-      point.lat <
-        ((previous.lat - current.lat) * (point.lng - current.lng)) / (previous.lng - current.lng) +
-          current.lat
-    if (intersects) inside = !inside
+  // Unwrap each vertex onto the previous one, then try the point a world to either side.
+  const lngs: number[] = []
+  for (const [i, vertex] of ring.entries()) {
+    lngs.push(
+      i === 0
+        ? vertex.lng
+        : lngs[i - 1]! + shortestLongitudeDeltaDegrees(ring[i - 1]!.lng, vertex.lng),
+    )
   }
-  return inside
+  return [0, -360, 360].some((shift) => {
+    const x = point.lng + shift
+    let inside = false
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const cx = lngs[i]!
+      const px = lngs[j]!
+      const intersects =
+        cx > x !== px > x &&
+        point.lat < ((ring[j]!.lat - ring[i]!.lat) * (x - cx)) / (px - cx) + ring[i]!.lat
+      if (intersects) inside = !inside
+    }
+    return inside
+  })
 }
 
 /**
@@ -588,7 +581,8 @@ function segmentClosestPointV2(
 
   const ax = shortestLongitudeDeltaDegrees(point.lng, segmentStart.lng) * lngScale
   const ay = segmentStart.lat - point.lat
-  const bx = shortestLongitudeDeltaDegrees(point.lng, segmentEnd.lng) * lngScale
+  // The segment takes the short way round from its start, even when the point is on the far side.
+  const bx = ax + shortestLongitudeDeltaDegrees(segmentStart.lng, segmentEnd.lng) * lngScale
   const by = segmentEnd.lat - point.lat
 
   const abx = bx - ax

@@ -56,7 +56,7 @@ export function nextMapKitRovingKey(
   let best: { key: string; score: number } | null = null
   for (const point of points) {
     if (point.key === origin.key) continue
-    const east = (point.lng - origin.lng) * scale
+    const east = (((((point.lng - origin.lng + 180) % 360) + 360) % 360) - 180) * scale
     const north = point.lat - origin.lat
     const [along, across] =
       direction === 'north'
