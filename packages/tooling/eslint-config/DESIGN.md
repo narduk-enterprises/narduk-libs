@@ -778,6 +778,17 @@ takes a disable comment that names the server guard (narduk-auth's
 naive `startsWith('/')` check that `//evil.example` passes, and three calls to
 the app's own guards, which the `guards` option names.
 
+`narduk/no-restricted-utility-classes` replaces a plugin rule rather than adding
+a guard that throws when `tailwindcss` does not resolve. The shared packages
+that compose `design-system` (narduk-devices, narduk-tenancy, narduk-ai) have no
+Tailwind install, and a palette or `vh` ban is a class-name regex that never
+needed one. It reads class strings only where a class is expected (class
+attributes, `:class`/`:ui`, class-merging callees, `classes` variables), so a
+`'blue'` argument or a `title="text-slate-500"` is not reported. A token
+touching an interpolation is skipped: `text-${tone}-500` is not a class until
+runtime. On pacc-trac it reported 1037 palette classes, 448 arbitrary colours
+and 2 `vh` heights; the samples read were all real.
+
 Native dialogs use the core `no-restricted-globals` and
 `no-restricted-properties` rules rather than a plugin rule, because their scope
 analysis already ignores a shadowing local.

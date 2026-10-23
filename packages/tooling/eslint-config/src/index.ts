@@ -67,6 +67,7 @@ import noNonSerializableStoreState from './rules/vue/no-non-serializable-store-s
 import noSetupTopLevelSideEffects from './rules/vue/no-setup-top-level-side-effects'
 import noStaticElementInteractions from './rules/vue/no-static-element-interactions'
 import noTemplateComplexExpressions from './rules/vue/no-template-complex-expressions'
+import noRestrictedUtilityClasses from './rules/vue/no-restricted-utility-classes'
 import noViewportVhUnits from './rules/vue/no-viewport-vh-units'
 import preferSharedCollection from './rules/vue/prefer-shared-collection'
 
@@ -155,6 +156,7 @@ const plugin = {
     'no-setup-top-level-side-effects': noSetupTopLevelSideEffects,
     'no-static-element-interactions': noStaticElementInteractions,
     'no-template-complex-expressions': noTemplateComplexExpressions,
+    'no-restricted-utility-classes': noRestrictedUtilityClasses,
     'no-viewport-vh-units': noViewportVhUnits,
     'prefer-shared-collection': preferSharedCollection,
 

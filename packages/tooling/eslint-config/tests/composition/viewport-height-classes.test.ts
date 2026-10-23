@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import nuxtPlugin from '@nuxt/eslint-plugin'
 import { ESLint } from 'eslint'
@@ -11,8 +11,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 /**
  * Mobile web QA rule 4: `100vh` / `h-screen` is the large viewport, so a phone's
  * browser chrome covers the bottom of the page. The design-system pack bans the
- * classes through `better-tailwindcss/no-restricted-classes`, with an autofix for
- * the two that have a drop-in `dvh` twin.
+ * classes through `narduk/no-restricted-utility-classes`, with an autofix for
+ * the two that have a drop-in `dvh` twin, alongside the raw palette ban.
+ *
+ * The app root is outside the workspace, away from the package's own Tailwind
+ * devDependency: the rule reads class names and must not need one.
  */
 
 type FlatConfig = { name?: string; rules?: Record<string, unknown> }
@@ -29,8 +32,6 @@ const withNuxtLike = (...configs: FlatConfig[]): FlatConfig[] => [
   ...configs,
 ]
 
-const PACKAGE_DIR = fileURLToPath(new URL('../..', import.meta.url))
-
 let appRoot: string
 let baseConfig: never
 let eslint: ESLint
@@ -39,9 +40,7 @@ beforeAll(async () => {
   const appConfig = (await import(
     new URL('../../eslint-app-config.mjs', import.meta.url).href
   )) as AppConfigModule
-  appRoot = // Inside the package so the plugin resolves Tailwind from its devDependency;
-    // without it the plugin disables no-restricted-classes with a warning.
-    mkdtempSync(join(PACKAGE_DIR, 'tests', '.tmp-viewport-height-'))
+  appRoot = mkdtempSync(join(tmpdir(), 'narduk-utility-classes-'))
   baseConfig = appConfig.createAppLintConfig({
     withNuxt: withNuxtLike,
     capabilityPacks: ['design-system'],
@@ -67,7 +66,7 @@ const restrictedIn = async (classes: string): Promise<string[]> => {
     filePath: join(appRoot, 'app/components/Probe.vue'),
   })
   return (result?.messages ?? [])
-    .filter((message) => message.ruleId === 'better-tailwindcss/no-restricted-classes')
+    .filter((message) => message.ruleId === 'narduk/no-restricted-utility-classes')
     .map((message) => message.message)
 }
 
@@ -102,5 +101,98 @@ describe('viewport height classes', () => {
       filePath: join(appRoot, 'app/components/Probe.vue'),
     })
     expect(result?.output).toContain('class="h-dvh md:min-h-dvh lg:max-h-screen"')
+  })
+})
+
+describe('raw palette and arbitrary colour classes', () => {
+  it.each([
+    'text-slate-500',
+    'hover:text-slate-500',
+    'dark:bg-gray-900',
+    'md:group-hover:border-red-200',
+    'data-[state=open]:bg-blue-50',
+    'text-slate-400/80',
+    'bg-zinc-900/[0.4]',
+    '!text-slate-400',
+    'text-slate-400!',
+    'border-t-gray-200',
+    'ring-offset-sky-300',
+    'text-[#9aa4b0]',
+    'hover:bg-[rgb(1_2_3)]',
+    'border-[color:#fff]',
+  ])('flags %s and points at a semantic token', async (cls) => {
+    const messages = await restrictedIn(cls)
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatch(/semantic token from your theme/)
+  })
+
+  it.each([
+    'text-muted',
+    'bg-elevated',
+    'text-ink',
+    'hover:text-primary',
+    'bg-[var(--chart-1)]',
+    'bg-(--color-ink)',
+    'text-[13px]',
+    'shadow-[0_0_0_1px_var(--ring)]',
+    'text-white',
+  ])('passes %s', async (cls) => {
+    expect(await restrictedIn(cls)).toEqual([])
+  })
+
+  it('reads :class objects and arrays, skipping classes built around interpolation', async () => {
+    const source = [
+      '<template>',
+      `  <div :class="[{ 'bg-blue-50': on }, 'text-gray-500', \`text-\${tone}-500\`]">x</div>`,
+      '</template>',
+      '',
+    ].join('\n')
+    const [result] = await eslint.lintText(source, {
+      filePath: join(appRoot, 'app/components/Probe.vue'),
+    })
+    const names = (result?.messages ?? [])
+      .filter((message) => message.ruleId === 'narduk/no-restricted-utility-classes')
+      .map((message) => message.message.match(/`([^`]+)`/)?.[1])
+    expect(names).toEqual(['bg-blue-50', 'text-gray-500'])
+  })
+
+  it('allowedRawPaletteFiles keeps the vh ban but allows the palette', async () => {
+    const appConfig = (await import(
+      new URL('../../eslint-app-config.mjs', import.meta.url).href
+    )) as AppConfigModule
+    const chartLint = new ESLint({
+      baseConfig: appConfig.createAppLintConfig({
+        withNuxt: withNuxtLike,
+        capabilityPacks: ['design-system'],
+        appRootDir: appRoot,
+        allowedRawPaletteFiles: ['app/components/charts/**/*.vue'],
+      }) as never,
+      cwd: appRoot,
+      overrideConfigFile: true,
+    })
+    const lint = async (path: string) => {
+      const [result] = await chartLint.lintText(template('text-sky-500 h-screen'), {
+        filePath: join(appRoot, path),
+      })
+      return (result?.messages ?? [])
+        .filter((message) => message.ruleId === 'narduk/no-restricted-utility-classes')
+        .map((message) => message.message.match(/`([^`]+)`/)?.[1])
+    }
+    expect(await lint('app/components/charts/Bars.vue')).toEqual(['h-screen'])
+    expect(await lint('app/components/Card.vue')).toEqual(['text-sky-500', 'h-screen'])
+  })
+
+  it('allowedRawPaletteFiles requires the design-system pack', async () => {
+    const appConfig = (await import(
+      new URL('../../eslint-app-config.mjs', import.meta.url).href
+    )) as AppConfigModule
+    expect(() =>
+      appConfig.createAppLintConfig({
+        withNuxt: withNuxtLike,
+        capabilityPacks: ['core'],
+        appRootDir: appRoot,
+        allowedRawPaletteFiles: ['app/charts/**'],
+      }),
+    ).toThrow(/design-system/)
   })
 })

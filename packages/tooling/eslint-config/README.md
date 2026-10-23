@@ -286,6 +286,7 @@ finding rather than an audit line. Every rule below is `warn`, which
 | `narduk/require-safe-redirect-query`                 | core          | every source file, test trees exempt           |
 | `no-restricted-globals` / `no-restricted-properties` | core          | `app/**` and `.vue`, tests exempt              |
 | `vue/no-v-html`                                      | core          | `.vue` (now kept when `communityLayer: false`) |
+| `narduk/no-restricted-utility-classes`               | design-system | `.vue` classes, `error`                        |
 | `narduk/no-viewport-vh-units`                        | design-system | `style` / `:style` in `.vue` templates         |
 | `narduk/no-static-element-interactions`              | a11y          | `.vue` templates                               |
 | `vuejs-accessibility/*` Nuxt UI options              | a11y          | `.vue` templates                               |
@@ -314,10 +315,30 @@ finding rather than an audit line. Every rule below is `warn`, which
 - **`vue/no-v-html`** was only in the community tail. It is now in `core` too,
   and `trustedHtmlFiles` (content apps) still switches it off per file.
 - **`narduk/no-viewport-vh-units`** reports `vh` in a `style` attribute or a
-  string inside a `:style` binding. The `h-screen`/`min-h-screen` and `[…vh]`
-  classes were already banned, with an autofix to `dvh`, by
-  `better-tailwindcss/no-restricted-classes` in `design-system`. `<style>`
-  blocks and `.css` files belong to stylelint.
+  string inside a `:style` binding. `<style>` blocks and `.css` files belong to
+  stylelint (narduk-libs#2027).
+- **`narduk/no-restricted-utility-classes`** (`design-system`, `error`) replaces
+  `better-tailwindcss/no-restricted-classes`. That plugin rule switched itself
+  off with one stderr line when `tailwindcss` did not resolve from the lint cwd.
+  An app that gets Tailwind only through `@nuxt/ui` never ran it: pacc-trac had
+  1037 raw palette classes. It also matched the whole class, so
+  `hover:text-slate-500`, `text-slate-400/80` and `!text-slate-400` passed. The
+  narduk rule matches class names and needs no Tailwind install. It reports:
+  - raw palette classes behind any variants, `!` or `/opacity`
+  - arbitrary colours (`text-[#9aa4b0]`, `bg-[rgb(…)]`)
+  - `h-screen`/`min-h-screen` (autofixed to `dvh`), `max-h-screen` and `[…vh]`
+
+  It reads classes from `class` and `*-class` attributes, `:class` and `:ui`
+  bindings, the `cn`/`clsx`/`cva`/`tv`/`twMerge` family and `classes` variables.
+  A class built around an interpolation (`text-${tone}-500`) is not read. For
+  chart and data-viz components that need categorical colours, pass
+  `createAppLintConfig({ allowedRawPaletteFiles: ['app/components/charts/**'] })`.
+  The vh ban still applies in those files.
+
+- **Layout elements.** A native `<header>` is no longer reported in pages: it is
+  a landmark, and the old "or a plain `<div>`" advice traded one finding for an
+  a11y one. `<footer>`, `<main>` and `<nav>` point at the Nuxt UI component that
+  renders the landmark.
 - **`a11y` pack.** All twenty `flat/recommended` rules were already on at
   `warn`. They now know Nuxt: `NuxtLink`, `ULink` and `RouterLink` are anchors
   for `anchor-has-content`; a `<label>` wrapping a Nuxt UI control (`UCheckbox`,
@@ -442,7 +463,7 @@ delete it where the rule has no successor:
 | `narduk/no-unknown-nuxt-ui-component`                                              | `vue/no-undef-components`                      |
 | `narduk/no-relative-server-imports`                                                | `no-restricted-imports`                        |
 | `narduk/no-direct-layer-source-imports`                                            | `no-restricted-imports`                        |
-| `narduk/no-raw-tailwind-colors`                                                    | `better-tailwindcss/no-restricted-classes`     |
+| `narduk/no-raw-tailwind-colors`                                                    | `narduk/no-restricted-utility-classes`         |
 | `narduk/no-tailwind-v3-deprecated`                                                 | `better-tailwindcss/no-deprecated-classes`     |
 | `narduk/no-invalid-nuxt-ui-token`                                                  | `better-tailwindcss/no-unknown-classes`        |
 | `narduk/prefer-tailwind-var-shorthand`                                             | `better-tailwindcss/enforce-canonical-classes` |
@@ -512,8 +533,8 @@ export default [
 ]
 ```
 
-`better-tailwindcss/no-restricted-classes` (the raw-palette ban) needs no theme
-and is on regardless.
+The raw-palette ban, `narduk/no-restricted-utility-classes`, needs no theme and
+no Tailwind install, and is on regardless.
 
 **Classes the app defines itself are not unknown.** The plugin resolves classes
 against the compiled theme and `@layer components`. It cannot see a class

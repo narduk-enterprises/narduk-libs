@@ -259,8 +259,8 @@ describe('flat config replaces rule options rather than merging them', () => {
     expect(pageSeverity).toBe(baseSeverity)
     expect(flatten(pageElements)).toEqual(expect.arrayContaining(flatten(baseElements)))
     // …and adds the page-scoped layout elements on top.
-    expect(flatten(pageElements)).toEqual(
-      expect.arrayContaining(['header', 'footer', 'main', 'nav']),
-    )
+    expect(flatten(pageElements)).toEqual(expect.arrayContaining(['footer', 'main', 'nav']))
+    // A native <header> is a landmark the a11y pack wants kept.
+    expect(flatten(pageElements)).not.toContain('header')
   })
 })

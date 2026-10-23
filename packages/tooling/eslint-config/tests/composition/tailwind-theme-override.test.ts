@@ -128,16 +128,17 @@ describe('design-system pack on its own', () => {
     }
   })
 
-  it('still enables the tailwind rule that needs no compiled theme', () => {
-    const packEntry = appConfig
-      .composeSharedConfigs('design-system')
-      .find((entry) => entry.name === PACK_ENTRY_NAME)
+  it('keeps the class bans on a rule that needs no Tailwind install', () => {
+    const entries = appConfig.composeSharedConfigs('design-system')
+    const packEntry = entries.find((entry) => entry.name === PACK_ENTRY_NAME)
+    const classEntry = entries.find(
+      (entry) => entry.name === 'narduk/design-system-utility-classes',
+    )
 
-    // no-restricted-classes matches literal class text, so gating it would be a
-    // regression: it is the narduk/no-raw-tailwind-colors replacement and has to
-    // keep working in packages with no CSS entry.
-    expect(packEntry?.rules?.['better-tailwindcss/no-restricted-classes']).toBeDefined()
-    expect(packEntry?.rules?.['better-tailwindcss/no-restricted-classes']).not.toBe('off')
+    // better-tailwindcss disables no-restricted-classes when `tailwindcss` does
+    // not resolve from the lint cwd, so the narduk rule carries the bans.
+    expect(packEntry?.rules?.['better-tailwindcss/no-restricted-classes']).toBe('off')
+    expect(classEntry?.rules?.['narduk/no-restricted-utility-classes']).toBe('error')
   })
 
   it('adds no theme override — composeSharedConfigs never touches the disk', () => {
