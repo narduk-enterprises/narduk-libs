@@ -10,7 +10,10 @@
  *
  *  - **Global raw** uses `drop_chunks`, which unlinks whole chunks. It is the
  *    cheap operation and it is why docs/13 keeps the raw window short and
- *    global rather than per vessel.
+ *    global rather than per vessel. With `globalRawWindowMs: 'never'` there is
+ *    no raw statement at all (the lossless mode, mybo-at-v2 D-140).
+ *    `telemetry_state`, `telemetry_numeric_tw` and the AIS tables are never
+ *    swept by this plan in either mode.
  *  - **Global rollups**, one `drop_chunks` per level. A continuous aggregate is
  *    a hypertable of materialized buckets, and dropping its old chunks is how
  *    it is pruned. Per-VESSEL rollup retention was the earlier shape here and
@@ -63,14 +66,19 @@ export function buildRetentionStatements(policy: RetentionPolicyInput): Retentio
   const validated = validateRetentionPolicy(policy)
   const statements: RetentionStatement[] = []
 
-  statements.push({
-    kind: 'drop_chunks',
-    params: [cutoff(validated.now, validated.globalRawWindowMs)],
-    rollup: null,
-    target: NUMERIC_TABLE,
-    text: `SELECT drop_chunks('${NUMERIC_TABLE}', older_than => $1::timestamptz)`,
-    tier: null,
-  })
+  // `'never'` plans no raw statement at all -- not a drop with an infinite
+  // cutoff, which would still be a delete statement in the plan a reviewer
+  // reads (mybo-at-v2 D-140: "roll up, never delete").
+  if (!validated.rawNeverSwept) {
+    statements.push({
+      kind: 'drop_chunks',
+      params: [cutoff(validated.now, validated.globalRawWindowMs as number)],
+      rollup: null,
+      target: NUMERIC_TABLE,
+      text: `SELECT drop_chunks('${NUMERIC_TABLE}', older_than => $1::timestamptz)`,
+      tier: null,
+    })
+  }
 
   // One global window per rollup level. A level the policy omits is reported
   // as unswept by the validator, never given a guessed window here.

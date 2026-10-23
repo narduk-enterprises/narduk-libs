@@ -24,7 +24,17 @@ import {
 } from '@narduk-enterprises/narduk-postgres'
 
 import { ROLLUP_BUCKETS } from '../types.js'
-import { NUMERIC_TABLE, SERIES_TABLE, TRACK_TABLE, rollupTable } from './tables.js'
+import {
+  AIS_CONTACT_TABLE,
+  AIS_ENCOUNTER_OPEN_TABLE,
+  AIS_ENCOUNTER_TABLE,
+  NUMERIC_TABLE,
+  SERIES_TABLE,
+  STATE_TABLE,
+  TIME_WEIGHTED_TABLE,
+  TRACK_TABLE,
+  rollupTable,
+} from './tables.js'
 
 const ROLLUP_VIEWS: readonly string[] = ROLLUP_BUCKETS.map((bucket) => rollupTable(bucket))
 
@@ -75,6 +85,68 @@ export const HISTORY_ROLE_PRIVILEGES: Readonly<Record<PostgresRoleName, RolePriv
       update: [],
     },
   })
+
+/**
+ * The grants for the tables migrations 0004-0006 add, as data.
+ *
+ * `0007_history_roles_additions.sql` is generated from this constant the way
+ * 0003 is from `HISTORY_ROLE_PRIVILEGES`, and `tests/migrations.test.ts`
+ * asserts the two agree. It is a second matrix, not an edit of the first,
+ * because 0003 is applied and immutable: its bytes are what its checksum says.
+ *
+ *  - `ingest_writer` INSERTs `telemetry_state` and nothing more there -- no
+ *    UPDATE and no DELETE on a captured change, as on the other hypertables.
+ *    The AIS tables are DERIVED by the encounter builder in the consumer, so
+ *    it may upsert `ais_contact` and `ais_encounter` (UPDATE, no DELETE) and
+ *    fully mutate `ais_encounter_open`, a working table whose rows are deleted
+ *    when an encounter closes and which holds no captured change. It reads
+ *    the three AIS tables because an upsert's `DO UPDATE` reads the row it
+ *    updates. It gets nothing on `telemetry_numeric_tw`: the time-weighted
+ *    refresh reads raw, which the writer cannot, and runs as `ops`.
+ *  - `history_reader` gets SELECT on every new table.
+ *  - `ops` gets SELECT, INSERT, UPDATE and DELETE on every new table: it runs
+ *    the time-weighted refresh (an upsert) and any repair.
+ */
+const ADDED_TABLES: readonly string[] = [
+  STATE_TABLE,
+  TIME_WEIGHTED_TABLE,
+  AIS_CONTACT_TABLE,
+  AIS_ENCOUNTER_TABLE,
+  AIS_ENCOUNTER_OPEN_TABLE,
+]
+
+export const HISTORY_ROLE_PRIVILEGE_ADDITIONS: Readonly<
+  Record<PostgresRoleName, RolePrivilegeSpec>
+> = Object.freeze({
+  history_reader: {
+    ddl: false,
+    insert: [],
+    mutate: [],
+    read: ADDED_TABLES,
+    update: [],
+  },
+  ingest_writer: {
+    ddl: false,
+    insert: [STATE_TABLE, AIS_CONTACT_TABLE, AIS_ENCOUNTER_TABLE, AIS_ENCOUNTER_OPEN_TABLE],
+    mutate: [AIS_ENCOUNTER_OPEN_TABLE],
+    read: [AIS_CONTACT_TABLE, AIS_ENCOUNTER_TABLE, AIS_ENCOUNTER_OPEN_TABLE],
+    update: [AIS_CONTACT_TABLE, AIS_ENCOUNTER_TABLE],
+  },
+  ops: {
+    ddl: true,
+    insert: ADDED_TABLES,
+    mutate: ADDED_TABLES,
+    read: ADDED_TABLES,
+    update: [],
+  },
+})
+
+/** Every GRANT `0007_history_roles_additions.sql` contains, in file order. */
+export function historyRoleAdditionGrantStatements(schema = 'public'): string[] {
+  return POSTGRES_ROLES.flatMap((role) =>
+    roleGrantStatements(role, HISTORY_ROLE_PRIVILEGE_ADDITIONS[role], schema),
+  )
+}
 
 /**
  * Every GRANT `0003_history_roles.sql` contains, in file order.

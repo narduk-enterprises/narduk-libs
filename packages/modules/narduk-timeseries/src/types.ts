@@ -234,6 +234,147 @@ export interface RetentionResult {
   statements: number
 }
 
+/**
+ * A non-number value for `telemetry_state`: a string, a bool, or any other
+ * JSON value (an object such as a SignalK notification, an array, or JSON
+ * null). A number is not a state: it belongs in `writeNumeric`, and an object
+ * whose leaves are all numbers is the consumer's to flatten into numeric
+ * children (docs/19 § 5.1).
+ */
+export type StateValue =
+  string | boolean | null | readonly unknown[] | { readonly [key: string]: unknown }
+
+/** The `series.value_kind` a state value is stored under. */
+export type StateValueKind = 'text' | 'bool' | 'json'
+
+/**
+ * One CHANGE of a non-number path. The edge sends a changed value once, plus
+ * its heartbeat; the store keeps each row as sent and never fills between them.
+ */
+export interface StatePoint {
+  /** 0 primary, 1 shadow -- docs/04 `installation_role`. */
+  installationRole?: number
+  path: string
+  ts: Date
+  unit?: string | null
+  value: StateValue
+  vesselId: string
+}
+
+interface StateQueryBase {
+  /** Defaults to 0, the primary installation. */
+  installationRole?: number
+  /** Optional clock for the tier floor; it may only tighten it, as `RollupQuery.now`. */
+  now?: Date
+  seriesIds: readonly number[]
+  /**
+   * The requesting tier's history depth in ms, or `'unrestricted'`. Required
+   * for the reason `RollupQuery.tierWindowMs` is: an optional tier gate fails
+   * open. A row older than the floor is never returned, even as "the state
+   * at t".
+   */
+  tierWindowMs: number | 'unrestricted'
+  vesselId: string
+}
+
+/** "What was the state at t": the last row at or before `at`, per series. */
+export interface StateAtQuery extends StateQueryBase {
+  at: Date
+}
+
+/** "What changed": every row in a range, oldest first. */
+export interface StateTransitionsQuery extends StateQueryBase {
+  /**
+   * Cap on returned rows; truncation is reported. Values above
+   * `DEFAULT_MAX_STATE_ROWS` (10_000) are `RANGE_INVALID` unless the store
+   * was constructed with a higher `maxStateRows` ceiling.
+   */
+  maxRows?: number
+  range: TimeRange
+}
+
+export interface StateRow {
+  installationRole: number
+  seriesId: number
+  ts: Date
+  /** Decoded by the series' kind: a bool series returns a boolean. */
+  value: StateValue
+  valueKind: StateValueKind
+}
+
+export interface StateAtResult {
+  at: Date
+  /** True when the tier floor bounded the lookup (or excluded `at` entirely). */
+  clipped: boolean
+  /** One row per series that had a state at `at` inside the tier window. */
+  rows: StateRow[]
+}
+
+export interface StateTransitionsResult {
+  clipped: boolean
+  range: TimeRange
+  rows: StateRow[]
+  truncated: boolean
+}
+
+/**
+ * A time-weighted rollup bucket (migration 0005).
+ *
+ * `avg` is the mean weighted by how long each value HELD inside the bucket,
+ * over the covered time only: a change-only series that read 10 for 50 s and
+ * 20 for 10 s averages 11.67 here and 15 in `queryRollup`.
+ */
+export interface TimeWeightedRollupRow {
+  avg: number
+  bucket: Date
+  /** Milliseconds of the bucket a value covered. A gap over `maxHoldMs` is not covered. */
+  heldMs: number
+  /** The value held at the end of the covered time. */
+  last: number | null
+  /** Extremes of the values held in the bucket, including one carried in. */
+  max: number | null
+  min: number | null
+  /** Raw rows that started in the bucket; 0 when the whole bucket was held. */
+  n: number
+  seriesId: number
+}
+
+export interface TimeWeightedRollupResult {
+  bucket: RollupBucket
+  clipped: boolean
+  range: TimeRange
+  rows: TimeWeightedRollupRow[]
+  truncated: boolean
+}
+
+export interface TimeWeightedRefreshInput {
+  /**
+   * The longest a value may hold before the gap counts as no data, in ms.
+   * Required, because it is the product's heartbeat contract, not this
+   * library's: mybo-at-v2's edge repeats an unchanged value every 60 s (300 s
+   * on Free), so a few heartbeats is a held value and an hour is an outage.
+   * At most `MAX_TIME_WEIGHTED_HOLD_MS` (6 h).
+   */
+  maxHoldMs: number
+  /**
+   * The range whose raw rows changed (a batch just written, or a cron's
+   * lookback). The refresh widens it: back to the minute, and forward by
+   * `maxHoldMs`, because a late row changes how long the row before it held
+   * and what every bucket after it carries in. Never past the current minute.
+   */
+  range: TimeRange
+  /** One vessel, or every vessel when omitted. */
+  vesselId?: string
+}
+
+export interface TimeWeightedRefreshResult {
+  /** The 1-minute range actually recomputed from raw, after widening and clamping. */
+  range: TimeRange | null
+  statements: number
+  /** Rows upserted, all levels. */
+  rows: number
+}
+
 export interface TelemetryHistoryStore {
   applyRetention(policy: RetentionPolicyInput): Promise<RetentionResult>
   listSeries(query: SeriesListQuery): Promise<SeriesListResult>
@@ -242,6 +383,24 @@ export interface TelemetryHistoryStore {
   resolveSeries(descriptors: readonly SeriesDescriptor[]): Promise<ResolvedSeries[]>
   writeNumeric(batch: readonly NumericPoint[]): Promise<WriteResult>
   writeTrack(batch: readonly TrackPoint[]): Promise<WriteResult>
+}
+
+/**
+ * Change-only history of non-number values (migration 0004). A separate
+ * interface rather than new `TelemetryHistoryStore` methods, so an existing
+ * implementation of that interface -- a test double, a second backend -- is
+ * not broken by a minor release.
+ */
+export interface TelemetryStateStore {
+  queryStateAt(query: StateAtQuery): Promise<StateAtResult>
+  queryStateTransitions(query: StateTransitionsQuery): Promise<StateTransitionsResult>
+  writeState(batch: readonly StatePoint[]): Promise<WriteResult>
+}
+
+/** Time-weighted rollups (migration 0005), opt-in beside the sample-mean ladder. */
+export interface TimeWeightedRollupStore {
+  queryTimeWeightedRollup(query: RollupQuery): Promise<TimeWeightedRollupResult>
+  refreshTimeWeighted(input: TimeWeightedRefreshInput): Promise<TimeWeightedRefreshResult>
 }
 
 /**
@@ -287,8 +446,18 @@ export interface TierRetention {
 }
 
 export interface RetentionPolicyInput {
-  /** The global raw window in ms. Round 20 (1A) for mybo-at-v2: 7 days. */
-  globalRawWindowMs: number
+  /**
+   * The global raw window in ms, or `'never'`: raw is never swept.
+   *
+   * A number drops raw chunks older than the window for every vessel (round
+   * 20 (1A) for mybo-at-v2: 7 days). `'never'` is the lossless mode
+   * (mybo-at-v2 D-140, "roll up, never delete"): the plan carries no raw
+   * `drop_chunks` and no raw delete, `droppedRawOlderThan` is null, and the
+   * result says so in `skipped`. A tier's `rawWindowMs` stays a read depth
+   * and may be any positive window. Rollup and track windows are unaffected:
+   * omit them as well for a plan that deletes nothing.
+   */
+  globalRawWindowMs: number | 'never'
   /**
    * One global window per rollup level, in ms: how long the store keeps that
    * level for EVERY vessel. Set it to the most generous tier's depth for that
