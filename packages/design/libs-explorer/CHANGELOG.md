@@ -1,5 +1,12 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.17
+
+### Patch Changes
+
+- d3f5426: The component page drops a frame's stale sync answer, so rapid
+  Back/Forward can no longer rewrite the URL to an older demo state.
+
 ## 0.0.16
 
 ### Patch Changes

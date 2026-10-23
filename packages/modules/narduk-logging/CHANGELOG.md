@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### Minor Changes
+
+- 6a0c7dd: Add the `./server-health` entry: a Nitro `error` hook that records
+  unhandled 5xx errors to D1 with stack-hash dedupe, a per-isolate throttle and
+  a row cap; a cron heartbeat helper (`runWithHeartbeat`); and the `jobState`
+  staleness rule (stale past twice the interval). Apps keep their own
+  migrations, job names and intervals.
+
 ## 0.4.6
 
 ### Patch Changes

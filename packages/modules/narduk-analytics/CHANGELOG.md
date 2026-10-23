@@ -1,5 +1,14 @@
 # @narduk-enterprises/narduk-analytics
 
+## 1.31.4
+
+### Patch Changes
+
+- Release the dependencies recorded on main. The published version's manifest
+  still carries the previous ranges:
+
+  - `dependencies.zod`: ^4.4.3 -> ^4.6.6
+
 ## 1.31.3
 
 ### Patch Changes
