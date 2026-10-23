@@ -121,6 +121,21 @@ describe('securityHeaderFindings', () => {
       ).toEqual(['clickjacking'])
     })
 
+    it('ignores X-Frame-Options when an enforced CSP sets frame-ancestors', () => {
+      const both = {
+        ...GOOD,
+        'Content-Security-Policy': 'frame-ancestors *',
+        'X-Frame-Options': 'DENY',
+      }
+      expect(ids(both, { production: true })).toEqual(['clickjacking'])
+      const xfoOnly = {
+        ...GOOD,
+        'Content-Security-Policy': "default-src 'self'",
+        'X-Frame-Options': 'DENY',
+      }
+      expect(ids(xfoOnly, { production: true })).toEqual([])
+    })
+
     it('does not mistake a source value for a directive name', () => {
       const tricky = { ...GOOD, 'Content-Security-Policy': "script-src 'self' frame-ancestors" }
       expect(ids(tricky, { production: true })).toEqual(['clickjacking'])
@@ -144,6 +159,15 @@ describe('securityHeaderFindings', () => {
       string
     >
     expect(ids(node, { production: true })).toEqual([])
+  })
+
+  it('skips an unknown token at the end of a referrer fallback list', () => {
+    expect(
+      ids(
+        { ...GOOD, 'Referrer-Policy': 'unsafe-url, strict-origin-when-cross-orign' },
+        { production: true },
+      ),
+    ).toEqual(['referrer-policy'])
   })
 
   it('rejects leaky referrer policies, judging the last value of a fallback list', () => {

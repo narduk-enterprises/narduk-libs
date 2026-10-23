@@ -281,8 +281,9 @@ function lintStatement(
     let depth = 1
     let end = 0
     for (; end < body.length; end += 1) {
-      if (body[end]?.value === '(') depth += 1
-      if (body[end]?.value === ')') depth -= 1
+      // Only punctuation nests: a `')'` default or a `")"` column name is not a bracket.
+      if (body[end]?.kind === 'punct' && body[end]?.value === '(') depth += 1
+      if (body[end]?.kind === 'punct' && body[end]?.value === ')') depth -= 1
       if (depth === 0) break
     }
     for (const definition of splitTopLevel(body.slice(0, end))) {

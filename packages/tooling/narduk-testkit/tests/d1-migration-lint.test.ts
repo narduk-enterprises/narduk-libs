@@ -119,6 +119,15 @@ describe('money-real-column', () => {
     ).toEqual([])
   })
 
+  it('does not count a parenthesis inside a string or a quoted name as nesting', () => {
+    const findings = lint(`CREATE TABLE t (
+      label TEXT DEFAULT ')',
+      "odd(" TEXT,
+      price REAL
+    )`)
+    expect(findings.map((finding) => finding.message.split(' ')[0])).toEqual(['t.price'])
+  })
+
   it('does not read a money word inside a default or a check as a column', () => {
     expect(ids("CREATE TABLE t (note TEXT DEFAULT 'price REAL', n INTEGER CHECK (n > 0))")).toEqual(
       [],

@@ -42,6 +42,15 @@ export interface SecurityHeaderOptions {
 export const DEFAULT_MIN_HSTS_MAX_AGE = 15_552_000
 
 const UNSAFE_REFERRER_POLICIES = new Set(['unsafe-url', 'no-referrer-when-downgrade'])
+const REFERRER_POLICIES = new Set([
+  ...UNSAFE_REFERRER_POLICIES,
+  'no-referrer',
+  'origin',
+  'origin-when-cross-origin',
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
+])
 
 function headerValue(headers: HeadersLike, name: string): string | null {
   if (typeof (headers as { get?: unknown }).get === 'function') {
@@ -142,10 +151,12 @@ export function securityHeaderFindings(
     .split(',')
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
-  const framingBlocked =
-    hasEffectiveFrameAncestors(cspDirectives(enforcedCsp)) ||
-    (frameOptions.length > 0 &&
-      frameOptions.every((value) => value === 'DENY' || value === 'SAMEORIGIN'))
+  const enforcedPolicies = cspDirectives(enforcedCsp)
+  // An enforced frame-ancestors makes browsers ignore X-Frame-Options (CSP3 §6.4.2).
+  const framingBlocked = enforcedPolicies.some((policy) => policy.has('frame-ancestors'))
+    ? hasEffectiveFrameAncestors(enforcedPolicies)
+    : frameOptions.length > 0 &&
+      frameOptions.every((value) => value === 'DENY' || value === 'SAMEORIGIN')
   if (!framingBlocked) {
     findings.push({
       id: 'clickjacking',
@@ -163,7 +174,11 @@ export function securityHeaderFindings(
 
   const referrer = headerValue(headers, 'referrer-policy')
   // A comma list is a fallback chain; the browser applies the last value it knows.
-  const effectiveReferrer = referrer?.split(',').at(-1)?.trim().toLowerCase()
+  const effectiveReferrer = referrer
+    ?.split(',')
+    .map((value) => value.trim().toLowerCase())
+    .reverse()
+    .find((value) => REFERRER_POLICIES.has(value))
   if (!effectiveReferrer) {
     findings.push({ id: 'referrer-policy', message: 'Referrer-Policy is missing.' })
   } else if (UNSAFE_REFERRER_POLICIES.has(effectiveReferrer)) {

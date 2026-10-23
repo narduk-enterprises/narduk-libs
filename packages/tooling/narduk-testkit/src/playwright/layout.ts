@@ -264,15 +264,18 @@ export async function measureTouchTargets(page: Page): Promise<TouchTargetCandid
       const box = boxes.reduce((best, next) =>
         next.width * next.height > best.width * best.height ? next : best,
       )
+      // Only prose around the link counts: a row of links in a <nav> is not a sentence.
       const parent = element.parentElement
-      const ownText = (element.textContent ?? '').trim().length
+      const targetText = [
+        ...(parent?.querySelectorAll('a, button, [role="link"], [role="button"]') ?? []),
+      ].reduce((total, target) => total + (target.textContent ?? '').trim().length, 0)
       return {
         ariaHidden: element.closest('[aria-hidden="true"], [inert]') !== null,
         disabled: element.matches(':disabled') || element.getAttribute('aria-disabled') === 'true',
         display: getComputedStyle(element).display,
         height: box.height,
         selector: describe(element),
-        siblingTextLength: Math.max(0, (parent?.textContent ?? '').trim().length - ownText),
+        siblingTextLength: Math.max(0, (parent?.textContent ?? '').trim().length - targetText),
         tag: element.tagName.toLowerCase(),
         visible: element.checkVisibility({ checkVisibilityCSS: true }),
         width: box.width,
