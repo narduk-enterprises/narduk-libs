@@ -183,6 +183,14 @@ describe('devices and referrers', () => {
     expect(JSON.stringify(res)).not.toContain('(direct)')
     expect(posthog.calls[0]).not.toContain('(direct)')
   })
+
+  it("reports PostHog's $direct referrer as unknown, not a referrer named $direct", async () => {
+    posthog.answers = [[['$direct', 30, 20]]]
+    const res = await ask(await route('referrers'), { period: '28d' })
+    expect(res.rows).toEqual([
+      { referrer: '(no referrer)', visits: 30, uniqueVisitors: 20, unknown: true },
+    ])
+  })
 })
 
 describe('entry and exit', () => {

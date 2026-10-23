@@ -283,6 +283,23 @@ describe('custom delete route built on the helper (#1051)', () => {
     expect(state.deleted).toBe(0)
   })
 
+  it('reads the running Worker backend, not only the build-frozen one (ponytail-5 s8 #11)', async () => {
+    // Build froze `local`; the Worker runs `AUTH_BACKEND=supabase`. An unstamped
+    // principal must still get the Supabase password check, not recency alone.
+    state.backend = 'local'
+    const principal = { ...SUPABASE_EMAIL_USER }
+    delete (principal as { authBackend?: string }).authBackend
+    const { deleteCurrentUserAccount } = await import('../server/utils/accountDeletion')
+    const event = { context: { cloudflare: { env: { AUTH_BACKEND: 'supabase' } } } }
+    await expect(
+      deleteCurrentUserAccount(event as never, principal as never, {}),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: 'Current password is required to delete this account.',
+    })
+    expect(state.deleted).toBe(0)
+  })
+
   it("refuses when the re-authenticated session is not the principal's account", async () => {
     // A victim's API key resolves the principal; the cookie is the attacker's
     // own session, so the attacker's own password must not unlock the delete.

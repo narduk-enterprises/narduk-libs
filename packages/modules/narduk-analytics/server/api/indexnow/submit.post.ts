@@ -19,7 +19,8 @@ import { analyticsRuntimeConfig } from '#narduk-analytics-server/utils/runtimeCo
 const INDEXNOW_PING_TIMEOUT_MS = 10_000
 
 const bodySchema = z.object({
-  urls: z.array(z.string().url()).optional().default([]),
+  // IndexNow rejects a batch over 10,000 URLs.
+  urls: z.array(z.string().url()).max(10_000).optional().default([]),
 })
 
 /**
@@ -72,7 +73,8 @@ export default definePublicMutation(
 
     const host = new URL(siteUrl).host
     assertIndexNowUrlsBelongToHost(urls, host)
-    const keyLocation = `${siteUrl.replace(/\/$/, '')}/${key}.txt`
+    // The key file is served only at the host root (`indexNowKeyVerification`).
+    const keyLocation = `https://${host}/${key}.txt`
 
     // IndexNow batch API — submit to Bing (which shares with all IndexNow engines)
     const indexNowPayload = {
@@ -116,7 +118,8 @@ export default definePublicMutation(
     log.info('IndexNow submitted', { count: urls.length, results })
 
     return {
-      submitted: urls.length,
+      // IndexNow accepts or rejects the batch whole.
+      submitted: results.some((result) => result.ok) ? urls.length : 0,
       urls,
       results,
     }

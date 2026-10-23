@@ -32,8 +32,11 @@ export interface GitLastmodResult {
 
 const MODIFIED_AT_LITERAL = /\bmodifiedAt\s*:\s*(['"`])([^'"`$\n]+)\1/
 
+/** A date and time with no `Z` or offset, which `Date.parse` would read as local time. */
+const ZONELESS_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+
 export function toIsoDate(value: string): string | undefined {
-  const time = Date.parse(value)
+  const time = Date.parse(ZONELESS_DATETIME.test(value.trim()) ? `${value.trim()}Z` : value)
   return Number.isNaN(time) ? undefined : new Date(time).toISOString()
 }
 

@@ -47,14 +47,14 @@ function parseMetadata(raw: string | null): unknown {
 /**
  * Workers KV semantics on the `auth_oauth_kv` D1 table, so the OAuth library
  * keeps its storage layout while the rows live in the app's own database.
- * Expired rows read as absent; `purgeExpired()` deletes them.
+ * Expired rows read as absent; `purgeExpired()` deletes a bounded batch of them.
  */
 export function createD1KvNamespace(
   db: McpOAuthDatabase,
   clock: () => number = () => Math.floor(Date.now() / 1000),
 ): McpOAuthKvNamespace & {
   claimOnce(key: string, ttlSeconds: number): Promise<boolean>
-  purgeExpired(): Promise<void>
+  purgeExpired(limit?: number): Promise<void>
   purgeExpiredPrefix(prefix: string, limit?: number): Promise<void>
 } {
   const live = () => or(isNull(authOAuthKv.expiresAt), gt(authOAuthKv.expiresAt, clock()))
@@ -158,8 +158,24 @@ export function createD1KvNamespace(
         )
     },
 
-    async purgeExpired() {
-      await db.delete(authOAuthKv).where(lte(authOAuthKv.expiresAt, clock()))
+    /** Oldest `limit` expired rows (index `auth_oauth_kv_expires`): request-path safe. */
+    async purgeExpired(limit = 50) {
+      const rows = await db
+        .select({ key: authOAuthKv.key })
+        .from(authOAuthKv)
+        .where(lte(authOAuthKv.expiresAt, clock()))
+        .orderBy(asc(authOAuthKv.expiresAt))
+        .limit(Math.min(Math.max(1, Math.trunc(limit) || 1), 250))
+      if (rows.length)
+        await db.delete(authOAuthKv).where(
+          and(
+            inArray(
+              authOAuthKv.key,
+              rows.map((row) => row.key),
+            ),
+            lte(authOAuthKv.expiresAt, clock()),
+          ),
+        )
     },
   }
 }

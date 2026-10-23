@@ -7,6 +7,7 @@ import { DEFAULT_BLOCKED_BOTS } from '@narduk-enterprises/narduk-core/shared/bot
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const NETWORK_ROUTE = '/narduk-network'
+const NOINDEX_FOLLOW = 'noindex, follow'
 
 const repoPackages = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -562,6 +563,16 @@ describe('narduk-seo module', () => {
     expect(extendRouteRules).not.toHaveBeenCalledWith(NETWORK_ROUTE, expect.anything())
   })
 
+  it('treats a non-HTTPS directory URL as unconfigured (ponytail-5 s8 #14)', async () => {
+    const { nuxt, extendRouteRules } = await setupModule({
+      moduleOptions: { networkDirectoryUrl: 'http://catalog.example/sites.json' },
+    })
+
+    expect(nuxt.options.sitemap.urls ?? []).not.toContain(NETWORK_ROUTE)
+    expect(nuxt.options.sitemap.exclude).toContain(NETWORK_ROUTE)
+    expect(extendRouteRules).toHaveBeenCalledWith(NETWORK_ROUTE, { robots: NOINDEX_FOLLOW })
+  })
+
   it('excludes an unconfigured directory from automatic sitemap discovery and HTTP indexing', async () => {
     const { nuxt, extendRouteRules, installSnapshots } = await setupModule({
       nuxtOptions: { sitemap: { urls: ['/custom'], exclude: ['/private'] } },
@@ -572,7 +583,7 @@ describe('narduk-seo module', () => {
       expect.arrayContaining(['/private', NETWORK_ROUTE]),
     )
     expect(extendRouteRules).toHaveBeenCalledWith(NETWORK_ROUTE, {
-      robots: 'noindex, follow',
+      robots: NOINDEX_FOLLOW,
     })
     expect(
       installSnapshots.find((snapshot) => snapshot.moduleName === '@nuxtjs/sitemap')?.sitemap,
@@ -584,19 +595,19 @@ describe('narduk-seo module', () => {
     const config = {
       routeRules: {
         [NETWORK_ROUTE]: {
-          headers: { 'X-Robots-Tag': 'noindex, follow', 'Cache-Control': 'public' },
+          headers: { 'X-Robots-Tag': NOINDEX_FOLLOW, 'Cache-Control': 'public' },
         },
       },
     }
     for (const [name, hook] of nuxt.hook.mock.calls) {
       if (name === 'nitro:config') hook(config)
     }
-    const prerenderHeaders = { 'x-robots-tag': 'noindex, follow' }
+    const prerenderHeaders = { 'x-robots-tag': NOINDEX_FOLLOW }
     const exported = { ...config.routeRules[NETWORK_ROUTE].headers, ...prerenderHeaders }
     expect(Object.keys(exported).filter((name) => name.toLowerCase() === 'x-robots-tag')).toEqual([
       'x-robots-tag',
     ])
-    expect(exported).toMatchObject({ 'x-robots-tag': 'noindex, follow', 'Cache-Control': 'public' })
+    expect(exported).toMatchObject({ 'x-robots-tag': NOINDEX_FOLLOW, 'Cache-Control': 'public' })
   })
 
   it('forces noindex robots and sitemap suppression for staging deployments', async () => {
