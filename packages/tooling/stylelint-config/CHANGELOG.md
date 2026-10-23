@@ -1,5 +1,13 @@
 # @narduk-enterprises/stylelint-config
 
+## 1.0.1
+
+### Patch Changes
+
+- c211173: `narduk/no-raw-z-index` and `narduk/no-legacy-breakpoints` now catch
+  uppercase property and at-rule names and every spelling of 620/820/1080px
+  (`620PX`, `0620px`, `620.0px`).
+
 ## 1.0.0
 
 ### Major Changes

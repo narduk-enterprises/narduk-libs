@@ -1,5 +1,31 @@
 # @narduk-enterprises/narduk-auth
 
+## 1.37.3
+
+### Patch Changes
+
+- 0f8f69d: The MCP OAuth token request now purges a bounded batch of the oldest
+  expired `auth_oauth_kv` rows instead of every expired row. Account deletion
+  for a principal with no backend stamp now uses the Supabase password check
+  when either the build config or the running Worker's `AUTH_BACKEND` says
+  Supabase.
+- 82f5b78: Security fixes: deleting a local account with no password (Sign in
+  with Apple, magic link) now requires a sign-in within the last 10 minutes;
+  completing a password reset revokes the user's other sessions before writing
+  the new hash; the MCP bearer guard covers both the `/mcp` and `/mcp/`
+  spellings, whichever one `resourcePath` is configured with; an MCP token
+  exchange the library refuses (for example a wrong PKCE verifier) releases its
+  one-time code claim so the real client can still redeem it.
+- Updated dependencies [873c869]
+- Updated dependencies [fa247c2]
+- Updated dependencies [5ee4d42]
+- Updated dependencies [cbb7b84]
+- Updated dependencies [82f5b78]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-core@2.37.2
+  - @narduk-enterprises/narduk-app@1.20.4
+  - @narduk-enterprises/narduk-platform@2.4.1
+
 ## 1.37.2
 
 ### Patch Changes

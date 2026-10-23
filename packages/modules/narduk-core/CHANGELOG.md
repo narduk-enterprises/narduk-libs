@@ -1,5 +1,37 @@
 # @narduk-enterprises/narduk-core
 
+## 2.37.2
+
+### Patch Changes
+
+- 873c869: Reject backslash and control characters in normalizeDemoRedirectPath,
+  match the hard-coded /api/owner-tag CSRF skip without its query string, return
+  404 when a local cdn-cgi image path dot-segments out of /_og/, and pin the
+  192.0.0.9/.10 SSRF exception with a comment and table test.
+- cbb7b84: Stop the unfurl fetcher retrying a 429 under other crawlers'
+  User-Agents, cap the in-isolate auth rate-limit map and the SSE connection
+  registry (registerSSE takes an optional abort signal), cancel an oversized
+  declared-length body, keep D1 cache rows inside their stale window
+  (cleanExpiredCache takes an optional staleWindowSeconds), stop guessing D1 for
+  a scheduled event without runtime config, refuse an API key whose expiry is 0,
+  make the rate-limit exemption ignore dot-segment paths, make a Set-Cookie
+  written after a cache profile no-store, and decide fetch-header same-origin by
+  resolving the URL so protocol-relative URLs are not marked and absolute
+  same-origin URLs are.
+- 82f5b78: Security fixes: the layer session cookie is `Secure` unless the Host
+  is `localhost` or `127.0.0.1` over plain HTTP (narduk-libs#2001); the CSRF
+  skip for API keys accepts every `Authorization` spelling the key parser
+  accepts; the `SESSION_PASSWORD` alias is seeded into
+  `runtimeConfig.session.password` like `NUXT_SESSION_PASSWORD`;
+  `enforceRateLimitPolicy` keys on `cf-connecting-ip` or the socket and no
+  longer trusts the first `X-Forwarded-For` entry, and a throwing Cloudflare
+  rate-limit binding falls back to the in-isolate limiter instead of a 500.
+- Updated dependencies [873c869]
+- Updated dependencies [c211173]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-logging@0.4.6
+  - @narduk-enterprises/narduk-platform@2.4.1
+
 ## 2.37.1
 
 ### Patch Changes

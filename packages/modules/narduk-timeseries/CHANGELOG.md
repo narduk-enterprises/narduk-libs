@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2
+
+### Patch Changes
+
+- c211173: In-flight series resolves are keyed by JSON instead of a joined
+  string, `bucketReadings` ends a bucket at the last instant that still has its
+  wall-clock key (Pacific/Chatham fall-back) and skips time strings with no
+  offset, and a retention policy refuses a vessel on two track tiers.
+- 873c869: A later non-null series unit now reaches the database instead of
+  being dropped by the cache or by same-batch deduplication.
+- Updated dependencies [0f8f69d]
+  - @narduk-enterprises/narduk-postgres@0.4.1
+
 ## 0.5.1
 
 ### Patch Changes

@@ -1,5 +1,22 @@
 # @narduk-enterprises/narduk-testkit
 
+## 1.14.1
+
+### Patch Changes
+
+- 1428ddf: Journeys verify refuses shot/video paths outside the attempt
+  directory, a promote run id that is not the attempt directory name, fused step
+  ids and all-skipped scenarios, digests no longer collide on `;+`, `must()`
+  matches names exactly, and typed text stays one argv element. eslint-config's
+  CSRF and Worker-runtime rules no longer go quiet on a read-method fall-through
+  route, a `logCsrf*` callee, or a served `fixtures/` or `.test.` route.
+  narduk-testkit's fake D1 counts CTE-led writes and rejects multi-statement
+  `prepare()`.
+- c211173: `waitForVueHydrated` judges a Nuxt page by `#__nuxt` alone, the page
+  fixture waits briefly for a Nuxt page to hydrate before scanning for
+  mismatches, `warmUpApp` retries until the page answers 2xx/3xx, and the R2 and
+  KV fakes copy buffers and metadata and reject a list limit outside 1-1000.
+
 ## 1.14.0
 
 ### Minor Changes
