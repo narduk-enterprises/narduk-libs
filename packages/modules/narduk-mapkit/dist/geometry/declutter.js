@@ -97,11 +97,13 @@ export function anyCloserThanPixels(points, thresholdPx, latSpanDegrees, mapHeig
 class MetreGrid {
     #cellLat;
     #cellLng;
+    #columns;
     #cells = new Map();
     /** `referenceLat` fixes the longitude cell width, so points can be added one at a time. */
     constructor(cellMetres, referenceLat) {
         this.#cellLat = cellMetres / METRES_PER_DEGREE_LATITUDE;
         this.#cellLng = this.#cellLat / Math.max(Math.cos((referenceLat * Math.PI) / 180), 1e-6);
+        this.#columns = Math.max(1, Math.ceil(360 / this.#cellLng));
     }
     add(point, index) {
         const key = this.#key(this.#row(point), this.#column(point));
@@ -111,17 +113,20 @@ class MetreGrid {
         else
             this.#cells.set(key, [index]);
     }
-    /** Indices in this point's cell and the eight around it, ascending. */
+    /** Indices in this point's cell and the eight around it (columns wrap at the antimeridian), ascending. */
     near(point) {
         const row = this.#row(point);
         const column = this.#column(point);
-        const found = [];
+        const keys = new Set();
         for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                const cell = this.#cells.get(this.#key(row + dr, column + dc));
-                if (cell)
-                    found.push(...cell);
-            }
+            for (let dc = -1; dc <= 1; dc++)
+                keys.add(this.#key(row + dr, column + dc));
+        }
+        const found = [];
+        for (const key of keys) {
+            const cell = this.#cells.get(key);
+            if (cell)
+                found.push(...cell);
         }
         return found.sort((x, y) => x - y);
     }
@@ -129,10 +134,10 @@ class MetreGrid {
         return Math.floor(point.lat / this.#cellLat);
     }
     #column(point) {
-        return Math.floor(point.lng / this.#cellLng);
+        return Math.floor(((((point.lng + 180) % 360) + 360) % 360) / this.#cellLng);
     }
     #key(row, column) {
-        return `${String(row)}:${String(column)}`;
+        return `${String(row)}:${String((column + this.#columns) % this.#columns)}`;
     }
 }
 /**

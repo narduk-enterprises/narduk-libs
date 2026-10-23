@@ -49,6 +49,18 @@ function createChannel() {
 
 const address = { x: 31, y: 48, z: 7 }
 
+describe('foreign worker messages (ponytail-5 s5 #15)', () => {
+  it('does not decode a message from another channel', () => {
+    const { workerPort, workerScope } = createChannel()
+    const decode = vi.fn(async () => buildDecodedVectorTile(4096, []))
+    serveVectorTileDecoder(workerScope, decode)
+
+    workerPort.postMessage({ bytes: new ArrayBuffer(4), channel: 'other-app', id: 1 })
+
+    expect(decode).not.toHaveBeenCalled()
+  })
+})
+
 const oneReach = encodeVectorTile([
   {
     features: [

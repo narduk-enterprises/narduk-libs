@@ -178,6 +178,14 @@ describe('the narduk-mapkit Nuxt module (§b)', () => {
     })
   })
 
+  it('publishes allowedHosts for the token route (ponytail-5 s5 #11)', async () => {
+    const nuxt = await setup({ allowedHosts: ['app.example'] })
+
+    expect(nuxt.options.runtimeConfig['nardukMapKit']).toStrictEqual({
+      allowedHosts: ['app.example'],
+    })
+  })
+
   it('never publishes a credential to the client', async () => {
     const nuxt = await setup({}, { applePrivateKey: 'PRIVATE', appleTeamId: 'TEAM123456' })
 

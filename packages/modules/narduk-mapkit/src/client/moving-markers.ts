@@ -263,6 +263,7 @@ export class MapKitMovingMarkerLayer<T extends MapKitMovingMarker> {
       return id === null
     }
     if (ended === id) return true
+    if (ended !== null) this.#endFollow(ended)
     this.#followId = id
     const { map } = this.#options
     for (const type of USER_GESTURES) map.addEventListener?.(type, this.#onUserGesture)

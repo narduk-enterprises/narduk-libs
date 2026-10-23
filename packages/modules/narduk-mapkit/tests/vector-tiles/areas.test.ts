@@ -193,6 +193,41 @@ describe('createVectorTileAreaIndex', () => {
   })
 })
 
+describe('areas across the antimeridian (ponytail-5 s5 #8)', () => {
+  // A 2 degree strip over lng 179..-179: it must not become a world-wide box.
+  const strip = polygon('strip', [179, 0, 181, 10])
+  const wrapped: VectorTileAreaInput = {
+    geometry: {
+      coordinates: [
+        [
+          [179, 0],
+          [-179, 0],
+          [-179, 10],
+          [179, 10],
+          [179, 0],
+        ],
+      ],
+      type: 'Polygon',
+    },
+    id: 'strip',
+  }
+
+  it('contains points in the strip and not the ocean between', () => {
+    expect(strip.id).toBe('strip')
+    const index = createVectorTileAreaIndex([wrapped])
+    expect(index.hitTest({ latitude: 5, longitude: 179.5 })?.id).toBe('strip')
+    expect(index.hitTest({ latitude: 5, longitude: -179.5 })?.id).toBe('strip')
+    expect(index.hitTest({ latitude: 5, longitude: 0 })).toBeNull()
+  })
+
+  it('reaches tiles on both sides of the seam only', () => {
+    const layer = layerOf([wrapped])
+    expect(vectorTileAreasReach(layer, { x: 0, y: 1, z: 1 }, 256)).toBe(true)
+    expect(vectorTileAreasReach(layer, { x: 1, y: 1, z: 1 }, 256)).toBe(true)
+    expect(vectorTileAreasReach(layer, { x: 2, y: 2, z: 2 }, 256)).toBe(false)
+  })
+})
+
 describe('paintVectorTileAreas', () => {
   it('projects a shape into the tile it covers, filled even-odd, then outlined', () => {
     // Tile 0/0/0 is the world: lng 0 is x=128 and lat 0 is y=128 on a 256 tile.

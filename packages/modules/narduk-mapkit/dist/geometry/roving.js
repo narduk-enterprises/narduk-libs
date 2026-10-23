@@ -39,7 +39,7 @@ export function nextMapKitRovingKey(points, from, direction) {
     for (const point of points) {
         if (point.key === origin.key)
             continue;
-        const east = (point.lng - origin.lng) * scale;
+        const east = (((((point.lng - origin.lng + 180) % 360) + 360) % 360) - 180) * scale;
         const north = point.lat - origin.lat;
         const [along, across] = direction === 'north'
             ? [north, east]

@@ -136,12 +136,14 @@ export function anyCloserThanPixels(
 class MetreGrid {
   readonly #cellLat: number
   readonly #cellLng: number
+  readonly #columns: number
   readonly #cells = new Map<string, number[]>()
 
   /** `referenceLat` fixes the longitude cell width, so points can be added one at a time. */
   constructor(cellMetres: number, referenceLat: number) {
     this.#cellLat = cellMetres / METRES_PER_DEGREE_LATITUDE
     this.#cellLng = this.#cellLat / Math.max(Math.cos((referenceLat * Math.PI) / 180), 1e-6)
+    this.#columns = Math.max(1, Math.ceil(360 / this.#cellLng))
   }
 
   add(point: LatLng, index: number): void {
@@ -151,16 +153,18 @@ class MetreGrid {
     else this.#cells.set(key, [index])
   }
 
-  /** Indices in this point's cell and the eight around it, ascending. */
+  /** Indices in this point's cell and the eight around it (columns wrap at the antimeridian), ascending. */
   near(point: LatLng): number[] {
     const row = this.#row(point)
     const column = this.#column(point)
-    const found: number[] = []
+    const keys = new Set<string>()
     for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        const cell = this.#cells.get(this.#key(row + dr, column + dc))
-        if (cell) found.push(...cell)
-      }
+      for (let dc = -1; dc <= 1; dc++) keys.add(this.#key(row + dr, column + dc))
+    }
+    const found: number[] = []
+    for (const key of keys) {
+      const cell = this.#cells.get(key)
+      if (cell) found.push(...cell)
     }
     return found.sort((x, y) => x - y)
   }
@@ -170,11 +174,11 @@ class MetreGrid {
   }
 
   #column(point: LatLng): number {
-    return Math.floor(point.lng / this.#cellLng)
+    return Math.floor(((((point.lng + 180) % 360) + 360) % 360) / this.#cellLng)
   }
 
   #key(row: number, column: number): string {
-    return `${String(row)}:${String(column)}`
+    return `${String(row)}:${String((column + this.#columns) % this.#columns)}`
   }
 }
 

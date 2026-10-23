@@ -607,14 +607,18 @@ export function paintVectorTileHighlight(canvas, tile, options) {
     }
     if (!added)
         return false;
-    context.globalAlpha = style.opacity ?? 1;
+    const alpha = style.opacity ?? 1;
     if (style.casing) {
+        const casing = hairlineStroke((style.width + style.casing.extraWidth) * pixelRatio);
+        context.globalAlpha = alpha * casing.alpha;
         context.strokeStyle = style.casing.color;
-        context.lineWidth = Math.max((style.width + style.casing.extraWidth) * pixelRatio, pixelRatio * 0.5);
+        context.lineWidth = casing.width;
         context.stroke();
     }
+    const line = hairlineStroke(style.width * pixelRatio);
+    context.globalAlpha = alpha * line.alpha;
     context.strokeStyle = style.color;
-    context.lineWidth = Math.max(style.width * pixelRatio, pixelRatio * 0.5);
+    context.lineWidth = line.width;
     context.stroke();
     context.globalAlpha = 1;
     return true;

@@ -350,3 +350,86 @@ describe('the route ceiling (opt-in, narduk-libs#485)', () => {
     expect(mounted).toHaveBeenCalledTimes(3)
   })
 })
+
+/** A one-off listener for the published route, with its own runtime config and Worker binding. */
+async function withBinding<T>(
+  config: Record<string, unknown>,
+  cloudflareEnv: Record<string, string> | undefined,
+  run: (url: string) => Promise<T>,
+): Promise<T> {
+  setTestRuntimeConfig({ public: {}, ...config })
+  const tokenRoute = (await import('../../src/nuxt/runtime/server/mapkit-token.get.js')).default
+  const app = createApp()
+  app.use(
+    defineEventHandler((event) => {
+      if (cloudflareEnv) event.context['cloudflare'] = { env: cloudflareEnv }
+    }),
+  )
+  app.use(tokenRoute)
+  const listener = createServer(toNodeListener(app))
+  await new Promise<void>((resolve) => {
+    listener.listen(0, '127.0.0.1', resolve)
+  })
+  try {
+    return await run(`http://127.0.0.1:${String((listener.address() as AddressInfo).port)}/`)
+  } finally {
+    await new Promise<void>((resolve) => {
+      listener.close(() => {
+        resolve()
+      })
+    })
+  }
+}
+
+describe('Worker bindings (ponytail-5 s5 #12)', () => {
+  const emptyConfig = { appleKeyId: '', applePrivateKey: '', appleTeamId: '' }
+
+  it('signs from event.context.cloudflare.env when runtime config holds no secrets', async () => {
+    for (const name of ['APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY', 'APPLE_TEAM_ID']) {
+      vi.stubEnv(name, '')
+    }
+    try {
+      const env = {
+        APPLE_KEY_ID: 'BINDKEY123',
+        APPLE_PRIVATE_KEY: await createTestPrivateKeyPem(),
+        APPLE_TEAM_ID: 'BINDTEAM12',
+      }
+      const response = await withBinding(emptyConfig, env, (url) =>
+        fetch(url, { headers: SAME_ORIGIN }),
+      )
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { token: string }
+      expect((decodeJwt(body.token).payload as { iss: string }).iss).toBe('BINDTEAM12')
+
+      const empty = await withBinding(emptyConfig, {}, (url) =>
+        fetch(url, { headers: SAME_ORIGIN }),
+      )
+      expect(empty.status).toBe(503)
+      expect(await empty.text()).not.toContain('token":')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
+describe('allowedHosts through the published route (ponytail-5 s5 #11)', () => {
+  it('serves the listed host and refuses another, with no token in the refusal', async () => {
+    const config = {
+      appleKeyId: 'KEY1234567',
+      applePrivateKey: await createTestPrivateKeyPem(),
+      appleTeamId: 'TEAM123456',
+      nardukMapKit: { allowedHosts: ['app.example'] },
+    }
+    const raw = async (host: string) =>
+      await withBinding(config, undefined, async (url) => {
+        const port = Number(new URL(url).port)
+        return await rawRequest(port, '/', host)
+      })
+
+    const allowed = await raw('app.example')
+    expect(allowed).toContain('200 ')
+    const refused = await raw('evil.example')
+    expect(refused).toContain('403 ')
+    expect(refused).not.toContain('"token"')
+  })
+})

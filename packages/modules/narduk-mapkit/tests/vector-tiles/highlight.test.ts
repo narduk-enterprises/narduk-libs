@@ -109,6 +109,16 @@ describe('selection highlight', () => {
     ])
   })
 
+  it('draws a thin highlight with the same hairline floor as the network (ponytail-5 s5 #10)', async () => {
+    const { overlay } = setup()
+    await overlay.imageForTile(100, 200, 12, 3)
+    await overlay.setHighlight({ id: 7, style: { color: '#f97316', width: 0.3 } })
+    const canvas = await overlay.highlightImageForTile(100, 200, 12, 3)
+    const [stroke] = strokes(canvas)
+    expect(stroke).toMatchObject({ lineWidth: 1 })
+    expect(stroke?.op === 'stroke' && stroke.globalAlpha).toBeCloseTo(0.9, 6)
+  })
+
   it('does not read, decode or repaint a base tile when the highlight changes', async () => {
     const replace = vi.fn(async () => {})
     const host: VectorTileRestyleHost<FakeCanvas> = { layerId: 'highlight', replace }

@@ -15,11 +15,35 @@ import type { MapKitTileOverlayUrlTemplate } from '../src/client/index.js'
 describe('browser MapKit runtime helpers', () => {
   it('refreshes a map after its host layout changes', () => {
     const region = { center: 'center', span: 'span' }
-    const map = { region }
+    const writes: unknown[] = []
+    const map = {
+      get region() {
+        return region
+      },
+      set region(value: unknown) {
+        writes.push(value)
+      },
+    }
 
     refreshMapKitMapLayout(map)
 
-    expect(map.region).toBe(region)
+    expect(writes).toEqual([region])
+  })
+
+  it('writes nothing when the map has no region yet', () => {
+    const writes: unknown[] = []
+    const map = {
+      get region() {
+        return null
+      },
+      set region(value: unknown) {
+        writes.push(value)
+      },
+    }
+
+    refreshMapKitMapLayout(map)
+
+    expect(writes).toEqual([])
   })
 
   class Coordinate {

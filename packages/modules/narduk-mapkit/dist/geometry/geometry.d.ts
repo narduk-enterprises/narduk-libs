@@ -53,6 +53,7 @@ export declare function computeMapKitRegionForGeoJson(input: MapKitGeoJsonFeatur
 export declare function collectMapKitDrawablePoints(input: MapKitDrawableRegionInput): MapKitPoint[];
 export declare function computeMapKitRegionForDrawables(input: MapKitDrawableRegionInput, options?: MapKitRegionOptions): MapKitRegion | null;
 export declare function hitTestLineOverlays<TData = unknown>(point: MapKitLatLng, overlays: ReadonlyArray<MapKitLineDrawable<TData>>, toleranceMetres?: number): MapKitLineHit<TData> | null;
+/** Ray cast on a ring whose edges take the short way round the antimeridian. */
 export declare function pointInPolygon(point: MapKitLatLng, ring: readonly MapKitLatLng[]): boolean;
 /**
  * The first polygon whose filled area contains `point`. `rings` is
