@@ -1,5 +1,103 @@
 # @narduk-enterprises/create-narduk-app
 
+## 0.23.17
+
+### Patch Changes
+
+- 0ba5cb8: Add three reusable shipped-design patterns: NeSettle (PACC·TRAC’s
+  one-shot card arrival), NeTimelineHero (TX Spends’ number-led period
+  selector), and NeStatementHero (KZFR’s current-state statement). Include
+  reduced-motion behavior, responsive layouts, honest data gaps, typed props,
+  design cards and complete Explorer examples. Update shared-component ownership
+  inventories.
+- da0d75c: `versions-promote` refuses (stale-promote) when production has no
+  single visible live version (split traffic, or a live version outside the
+  listed window), unless `--force`. `ship` re-reads production before a
+  failed-proof rollback and never rolls back over a version another writer
+  deployed. `ship -m` checks the deploy token and Access variables before
+  committing, and undoes its commit on any refusal or error before the push.
+  `ship` treats `*API_KEY*` environment values (except `NUXT_PUBLIC_*`) as
+  secrets in the public-asset leak scan. A derived staging config refuses a
+  production Durable Object binding that names another Worker (`script_name`).
+  `db migrate`/`db status` check the database id bound in `--wrangler-config`
+  against contract-owned databases. The node fetch transport drops
+  `authorization`, `cookie` and `proxy-authorization` on a cross-origin
+  redirect.
+- 873c869: Reject backslash and control characters in normalizeDemoRedirectPath,
+  match the hard-coded /api/owner-tag CSRF skip without its query string, return
+  404 when a local cdn-cgi image path dot-segments out of /_og/, and pin the
+  192.0.0.9/.10 SSRF exception with a comment and table test.
+- fa247c2: readRawJsonBody now refuses non-JSON content types and bodies over 1
+  MiB; upgrade keeps the old CI pin when the caller grant cannot be widened;
+  Dependabot npm open-pull-requests-limit is 2 again.
+- 5ee4d42: narduk-app: apiErrorMessage ignores a non-string message, and
+  readAppCookie keeps the first duplicate, unquotes values and cannot return a
+  prototype member. create-narduk-app: the database flag is read past comments
+  in either quote style, the GitHub Packages Dependabot file carries the
+  toolchain ceilings and cooldown exclusion, `narduk:unmanaged` now protects
+  package.json, and upgrade no longer throws on a scoped name, a low
+  localDevNuxtPort or an uppercase capability. narduk-ui: a missing tile's
+  reason is not colored as a change, an unknown chip state renders void, and a
+  bad `decimals` falls back instead of throwing. narduk-charts: README and
+  SECURITY now describe the pnpm workflow. design-system-build: the preview
+  sanitizer rejects every @import, remote url() and external form/href/srcset, a
+  planned card must author and render its own id, a failed swap keeps the
+  previous preview, and a stale .output is refused.
+- cbb7b84: Stop the unfurl fetcher retrying a 429 under other crawlers'
+  User-Agents, cap the in-isolate auth rate-limit map and the SSE connection
+  registry (registerSSE takes an optional abort signal), cancel an oversized
+  declared-length body, keep D1 cache rows inside their stale window
+  (cleanExpiredCache takes an optional staleWindowSeconds), stop guessing D1 for
+  a scheduled event without runtime config, refuse an API key whose expiry is 0,
+  make the rate-limit exemption ignore dot-segment paths, make a Set-Cookie
+  written after a cache profile no-store, and decide fetch-header same-origin by
+  resolving the URL so protocol-relative URLs are not marked and absolute
+  same-origin URLs are.
+- d0d2242: `versions-promote` reads the live version with the strict reader:
+  tied or undated newest deployments refuse (stale-promote) unless `--force`. An
+  unnamed `deploy rollback` refuses them too. `deploy rollback` refuses a
+  `pull_request` (or other non-promote) event, as `versions-promote` does.
+  `versions-promote` refuses (staging-not-proven) when
+  `Config/cloudflare-app.json` exists but does not parse, instead of dropping
+  the staging gate. The staging gate searches up to the default version window
+  and no longer calls a live version missing from the listing untagged.
+  `deploy versions-upload` refuses a caller `--message` inside a Workers Build,
+  so the branch label promote trusts comes from `WORKERS_CI_BRANCH`. Migration
+  files sort numerically (`9999` before `10000`), and a migration source the
+  ledger would not keep (anything but `app`, `app:*`, `package:*`, `@scope/*`)
+  is refused before its first apply. `verify --live` refuses a health, smoke or
+  edge path that resolves to another origin. Foundation: the comment stripper
+  behind items 14 and 15 skips string contents, and item 12 reads single-quoted
+  `binding` and `account_id` in `wrangler.toml`.
+- 82f5b78: Security fixes: the layer session cookie is `Secure` unless the Host
+  is `localhost` or `127.0.0.1` over plain HTTP (narduk-libs#2001); the CSRF
+  skip for API keys accepts every `Authorization` spelling the key parser
+  accepts; the `SESSION_PASSWORD` alias is seeded into
+  `runtimeConfig.session.password` like `NUXT_SESSION_PASSWORD`;
+  `enforceRateLimitPolicy` keys on `cf-connecting-ip` or the socket and no
+  longer trusts the first `X-Forwarded-For` entry, and a throwing Cloudflare
+  rate-limit binding falls back to the in-isolate limiter instead of a 500.
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+- Updated dependencies [0ba5cb8]
+- Updated dependencies [da0d75c]
+- Updated dependencies [d0d2242]
+- Updated dependencies [f65cef9]
+  - @narduk-enterprises/narduk-app-tools@0.45.5
+
 ## 0.23.16
 
 ### Patch Changes

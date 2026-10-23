@@ -1,5 +1,19 @@
 # @narduk-enterprises/narduk-ai
 
+## 0.4.47
+
+### Patch Changes
+
+- c211173: `grokChat` and `grokChatStream` give up on a silent provider after 30
+  seconds, an SSE error frame now fails the stream instead of ending it empty,
+  and saving a system prompt that does not exist answers 404 instead of success.
+- Updated dependencies [873c869]
+- Updated dependencies [cbb7b84]
+- Updated dependencies [82f5b78]
+- Updated dependencies [82f5b78]
+  - @narduk-enterprises/narduk-core@2.37.2
+  - @narduk-enterprises/narduk-platform@2.4.1
+
 ## 0.4.46
 
 ### Patch Changes

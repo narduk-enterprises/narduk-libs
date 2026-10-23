@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6
+
+### Patch Changes
+
+- 873c869: Redact compound key names such as userEmail, systemPrompt and
+  homeAddress by treating email, phone, address, latitude, longitude, prompt,
+  completion, body and payload as sensitive segments.
+- c211173: A `flush()` called while a drain is running now also sends the
+  records queued since that drain began.
+
 ## 0.4.5
 
 ### Patch Changes

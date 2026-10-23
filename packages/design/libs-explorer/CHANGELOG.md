@@ -1,5 +1,31 @@
 # @narduk-enterprises/libs-explorer
 
+## 0.0.16
+
+### Patch Changes
+
+- 0ba5cb8: Add three reusable shipped-design patterns: NeSettle (PACC·TRAC’s
+  one-shot card arrival), NeTimelineHero (TX Spends’ number-led period
+  selector), and NeStatementHero (KZFR’s current-state statement). Include
+  reduced-motion behavior, responsive layouts, honest data gaps, typed props,
+  design cards and complete Explorer examples. Update shared-component ownership
+  inventories.
+- f65cef9: Add the round-8 feel primitives to narduk-shell: `useUndoToast()` (a
+  7 second Undo toast with a countdown bar and a promise of `undone` or
+  `committed`, on the Nuxt UI toaster), `useTimeAgo()` and `NeRelativeTime` (one
+  shared 30 second ticker, `<time datetime>` with an absolute title, relative
+  while recent and a date after a week), `NePriceCell` (a fixed-width tabular
+  figure whose up/down tint changes colour only), `NeStickyActionBar` (the phone
+  bottom call to action with safe-area padding and a matching spacer), `NeTabs`
+  and `useRouteTab()` (`?tab=` kept with `router.replace`, roving focus, the
+  active tab scrolled into view), a global `:focus-visible` ring (2px accent
+  outline, 2px offset; it replaces the browser default ring in every consuming
+  app, so expect a visible change on focused controls) and the `.ne-safe-top` /
+  `.ne-safe-bottom` utilities. Every addition is new surface; no existing export
+  changes. Add `usePageSeo()` and `buildPageTitle()` to narduk-seo for the
+  `Page · Site` browser title. Update the shared-component inventories and
+  Explorer examples.
+
 ## 0.0.15
 
 ### Patch Changes

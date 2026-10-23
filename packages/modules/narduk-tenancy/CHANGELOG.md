@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-tenancy
 
+## 0.8.1
+
+### Patch Changes
+
+- 0f8f69d: `removeMember` and `setMemberRole` now write the membership change,
+  its overrides and its audit row in one batch, so a failed second statement no
+  longer leaves a half-applied change.
+
 ## 0.8.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+### Patch Changes
+
+- 0f8f69d: `redactSecrets` now redacts the password of a DSN with an empty
+  username. Node driver `options` escape whitespace and backslashes, so an
+  application name can no longer add its own `-c` flag.
+
 ## 0.4.0
 
 ### Minor Changes

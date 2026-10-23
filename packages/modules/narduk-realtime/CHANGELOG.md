@@ -1,5 +1,16 @@
 # @narduk-enterprises/narduk-realtime
 
+## 0.4.1
+
+### Patch Changes
+
+- c211173: The live socket no longer installs a ping interval after
+  `onState('open')` stopped it, and a reconnect started from `onState('closed')`
+  is no longer torn down by the replaced connect timeout.
+- 82f5b78: The upgrade router opens a socket only for an explicit `{ ok: true }`
+  authoriser verdict, and decodes static path segments before matching so
+  `%61dmin` cannot skip a literal route for a later `:param` route.
+
 ## 0.4.0
 
 ### Minor Changes
