@@ -444,7 +444,8 @@ function isOverShape(e: MapMouseEvent): boolean {
 }
 
 async function start() {
-  if (started || destroyed) return
+  // `plain` is the print view: it stays the SVG poster, with its subtitles and no tab stops.
+  if (started || destroyed || props.plain) return
   started = true
   try {
     const mod = await import('maplibre-gl')
@@ -474,11 +475,11 @@ async function start() {
       install()
       updateZoomState()
       void gl.once('idle', () => {
-        ready.value = true
+        if (!failed.value) ready.value = true
       })
       // Offline or blocked tiles still leave a usable shapes-only map.
       const fallback = setTimeout(() => {
-        ready.value = true
+        if (!failed.value) ready.value = true
       }, 6000)
       teardown.push(() => clearTimeout(fallback))
     })
@@ -492,6 +493,7 @@ async function start() {
       const err = e.error
       if (err?.message?.includes('WebGL')) {
         failed.value = true
+        ready.value = false
         emit('error', err instanceof Error ? err : new Error(err.message))
       }
     })
@@ -607,7 +609,12 @@ defineExpose({
   <div
     ref="root"
     class="narduk-map"
-    :class="{ 'is-ready': ready, 'is-failed': failed, 'narduk-map--dark': scheme === 'dark' }"
+    :class="{
+      'is-ready': ready,
+      'is-failed': failed,
+      'narduk-map--interactive': interactive,
+      'narduk-map--dark': scheme === 'dark',
+    }"
     @keydown.esc="popup = null"
   >
     <NardukGeoMap

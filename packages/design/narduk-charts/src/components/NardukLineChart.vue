@@ -301,10 +301,16 @@ const effLabels = computed(() => {
 
 const effSeries = computed(() => {
   const m = props.maxRenderPoints
-  if (m && props.labels.length > m) {
-    return decimateCategoryData(props.labels, props.series, m).series
-  }
-  return props.series
+  const series =
+    m && props.labels.length > m
+      ? decimateCategoryData(props.labels, props.series, m).series
+      : props.series
+  /* A log axis has no zero or negative: those values are gaps, not a floor-pinned mark. */
+  return series.map((s): ChartSeries => {
+    const mode =
+      props.dualYAxis === true && s.yAxis === 'secondary' ? props.yScaleSecondary : props.yScale
+    return mode === 'log' ? { ...s, data: s.data.map(v => (v != null && v <= 0 ? null : v)) } : s
+  })
 })
 
 /** Bands decimated with the same index map as the series. */
@@ -1418,7 +1424,7 @@ function formatXAxisLabel(i: number): string {
       return props.formatTime ? props.formatTime(t) : defaultTimeAxisLabel(t, props.timeZone)
     }
   }
-  return props.formatXLabel ? props.formatXLabel(raw, i) : raw
+  return props.formatXLabel ? props.formatXLabel(raw, effIndexMap.value?.[i] ?? i) : raw
 }
 
 /** One tooltip row per visible band: its `low – high` range at that index. */
@@ -1521,7 +1527,7 @@ function onPlotKeydown(e: KeyboardEvent) {
     const cur = kbFocusIndex.value
     if (cur === null) return
     emit('pointClick', {
-      index: cur,
+      index: effIndexMap.value?.[cur] ?? cur,
       label: effLabels.value[cur],
       values: visibleSeries.value.map(s => ({
         seriesName: s.name,
@@ -1615,7 +1621,7 @@ function onSvgClick(event: MouseEvent) {
   const idx = pickNearestIndex(svgX)
   if (idx === null) return
   emit('pointClick', {
-    index: idx,
+    index: effIndexMap.value?.[idx] ?? idx,
     label: effLabels.value[idx],
     values: visibleSeries.value.map(s => ({
       seriesName: s.name,

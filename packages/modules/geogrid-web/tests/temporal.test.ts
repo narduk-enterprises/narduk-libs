@@ -471,3 +471,38 @@ describe('decodeTemporalChunk', () => {
     ).rejects.toThrow('dimensions do not match')
   })
 })
+
+describe('ponytail-5 geogrid #5/#6', () => {
+  it('#5: rejects a header that is not valid UTF-8', async () => {
+    const raw = new Uint8Array(2 * 2 * 2 + 4).fill(1)
+    const header = new TextEncoder().encode(
+      JSON.stringify({ dates: ['2020-01-01'], frameCount: 1, width: 2, height: 2, planeCount: 1 }),
+    )
+    // Turn the date's first digit into a lone continuation byte.
+    header[header.indexOf(0x32)] = 0xff
+    const compressed = deflateSync(raw)
+    const magic = new TextEncoder().encode('NARDUKTR1\0')
+    const out = new Uint8Array(magic.length + 4 + header.length + compressed.length)
+    out.set(magic, 0)
+    new DataView(out.buffer).setUint32(magic.length, header.length, true)
+    out.set(header, magic.length + 4)
+    out.set(compressed, magic.length + 4 + header.length)
+    await expect(decodeTemporalChunk(out.buffer, baseManifest())).rejects.toThrow(/UTF-8/)
+  })
+
+  it('#6: rejects an inverted manifest bbox', async () => {
+    const payload = buildChunk({ width: 2, height: 2, dates: ['2020-01-01'] })
+    await expect(
+      decodeTemporalChunk(payload, baseManifest({ bbox: [-100, 30, -90, 20] })),
+    ).rejects.toThrow(/bbox/)
+  })
+
+  it('#6: rejects an inverted stencil bbox before fetching', async () => {
+    const { loadCoastlineStencil } = await import('../src/overlay/stencil.js')
+    await expect(
+      loadCoastlineStencil({ url: 's.png', bbox: [-90, 40, -80, 30] }, 'https://x.test/', (() => {
+        throw new Error('fetched')
+      }) as unknown as typeof fetch),
+    ).rejects.toThrow(/bbox/)
+  })
+})

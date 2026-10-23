@@ -10,7 +10,7 @@ import {
   type GridViewport,
   type RampStop,
 } from '../core/models.js'
-import { defaultBBoxAnchor, gridFrameFromScalarDataset } from '../core/frame.js'
+import { defaultBBoxAnchor, gridFrameFromScalarDataset, isGridFrame } from '../core/frame.js'
 import { gridBounds, type GridScalarDataset } from '../core/decode/grid.js'
 import {
   GridStretchController,
@@ -198,6 +198,9 @@ interface LastRender {
   anchor?: GridBBoxAnchor
 }
 
+const placementKey = (bbox: GridBBox, anchor: GridBBoxAnchor | undefined) =>
+  `${bbox.join(',')}|${anchor ?? defaultBBoxAnchor('float32')}`
+
 class GridOverlayImpl implements GridOverlay {
   private readonly backendImpl: GridRenderBackend
   private readonly stretchController: GridStretchController
@@ -212,6 +215,15 @@ class GridOverlayImpl implements GridOverlay {
    * *new* frame's range. The `renderAt` right after does the painting.
    */
   private adoptingSource = false
+  /** The float32 dataset the stretch samples, so a later `renderAt` can re-aim it. */
+  private scalarSource: {
+    key: string
+    /** The placement the stretch currently samples. */
+    at: string
+    dataset: GridScalarDataset
+    planeIndex: number
+    dateStatistics?: readonly GridPercentileStat[]
+  } | null = null
 
   constructor(options: GridOverlayOptions) {
     this.style = toStyle(options.style)
@@ -380,18 +392,31 @@ class GridOverlayImpl implements GridOverlay {
     // stretch that kept sampling the header's rectangle would compute a
     // perfectly plausible range for cells nobody is looking at, and the error
     // grows without bound as the override moves away.
+    this.scalarSource = {
+      key: frame.key,
+      at: placementKey(bbox, anchor),
+      dataset,
+      planeIndex,
+      ...(options.dateStatistics !== undefined ? { dateStatistics: options.dateStatistics } : {}),
+    }
+    this.adoptStretchSource(options.bbox !== undefined ? { bounds: options.bbox, anchor } : {})
+    this.renderAt(frame, frame, 0, bbox, anchor)
+  }
+
+  private adoptStretchSource(placement: { bounds?: GridBBox; anchor?: GridBBoxAnchor }): void {
+    const source = this.scalarSource
+    if (!source) return
     this.adoptingSource = true
     try {
       this.stretchController.setSource({
-        dataset,
-        planeIndex,
-        ...(options.bbox !== undefined ? { bounds: options.bbox, anchor } : {}),
-        ...(options.dateStatistics !== undefined ? { dateStatistics: options.dateStatistics } : {}),
+        dataset: source.dataset,
+        planeIndex: source.planeIndex,
+        ...placement,
+        ...(source.dateStatistics !== undefined ? { dateStatistics: source.dateStatistics } : {}),
       })
     } finally {
       this.adoptingSource = false
     }
-    this.renderAt(frame, frame, 0, bbox, anchor)
   }
 
   renderAt(
@@ -403,6 +428,21 @@ class GridOverlayImpl implements GridOverlay {
   ): void {
     if (this.destroyed) return
     this.ensureLayoutObserver()
+    // Repainting the stretch's own frame somewhere else: the stretch must sample the
+    // rectangle that is on screen, not the header's.
+    const source = this.scalarSource
+    const at = placementKey(bbox, anchor)
+    if (
+      source &&
+      isGridFrame(lower) &&
+      isGridFrame(upper) &&
+      lower.key === source.key &&
+      upper.key === source.key &&
+      source.at !== at
+    ) {
+      source.at = at
+      this.adoptStretchSource({ bounds: bbox, anchor: anchor ?? defaultBBoxAnchor('float32') })
+    }
     this.lastRender = {
       lower,
       upper,

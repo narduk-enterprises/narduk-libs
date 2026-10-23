@@ -51,7 +51,7 @@ export function markImage(
   // Even, with a pixel of slack, so the picture sits on the pixel grid at ratio 2.
   const size = Math.ceil(markReach(shape, highlighted, metrics)) * 2 + 2
   const key = [color, tokens.markRing, tokens.markCore, tokens.hatch].map(hex).join('-')
-  return { id: `nm-mark-${shape}${highlighted ? '-hl' : ''}-${key}`, size, discs }
+  return { id: `nm-mark-${shape}${highlighted ? '-hl' : ''}-${size}-${key}`, size, discs }
 }
 
 /** Draw a mark image to RGBA pixels. Browser only: it needs a canvas. */

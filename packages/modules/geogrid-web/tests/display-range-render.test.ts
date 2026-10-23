@@ -189,6 +189,7 @@ const VIEWPORT: GridViewport = {
 
 const captured: { image: { data: Uint8ClampedArray } | null } = { image: null }
 const originals: Record<string, unknown> = {}
+const clears = { count: 0 }
 
 /**
  * Read the capture through a declared return type.
@@ -227,7 +228,9 @@ function shimCanvas(): Record<string, unknown> {
     getBoundingClientRect: () => ({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }),
     getContext: () => ({
       setTransform: () => {},
-      clearRect: () => {},
+      clearRect: () => {
+        clears.count += 1
+      },
       drawImage: () => {},
       save: () => {},
       restore: () => {},
@@ -910,5 +913,75 @@ describe('the WebGL2 scalar shader splits decode from normalize', () => {
     const { scalarFragmentShader } = await import('../src/render/gl.js')
     const decode = displayValueBody(scalarFragmentShader('float32'))
     expect(decode).toContain('float displayValue(float raw) { return raw; }')
+  })
+})
+
+describe('ponytail-5 geogrid #3/#4', () => {
+  it('#4: renderAt re-aims the stretch at the bbox it paints', async () => {
+    const { createGridOverlay } = await import('../src/overlay/grid-overlay.js')
+    const { gridFrameFromScalarDataset } = await import('../src/core/frame.js')
+    const make = () => {
+      const overlay = createGridOverlay({
+        prefer: 'canvas2d',
+        style: { rampStops: GREYSCALE, valueRange: WIRE_RANGE, scale: 'linear' },
+        stretch: { mode: 'viewport-minmax', pad: 0 },
+      })
+      overlay.setViewport(VIEWPORT)
+      return overlay
+    }
+    const moved: GridBBox = [
+      DATASET_BBOX[0],
+      DATASET_BBOX[1] + 4,
+      DATASET_BBOX[2],
+      DATASET_BBOX[3] + 4,
+    ]
+    const ds = rampDataset()
+    const viaRender = make()
+    viaRender.setScalarFrame(ds)
+    const frame = gridFrameFromScalarDataset(ds)
+    viaRender.renderAt(frame, frame, 0, moved)
+    const viaOption = make()
+    viaOption.setScalarFrame(ds, 0, { bbox: moved })
+    expect(viaRender.currentDisplayRange()).toEqual(viaOption.currentDisplayRange())
+    const unmoved = make()
+    unmoved.setScalarFrame(ds)
+    expect(viaOption.currentDisplayRange()).not.toEqual(unmoved.currentDisplayRange())
+  })
+
+  it('#3: a rejected frame clears the previous Canvas2D paint', async () => {
+    const { Canvas2DGridBackend } = await import('../src/render/canvas2d.js')
+    const backend = Canvas2DGridBackend.create({
+      mode: 'scalar',
+      style: { rampStops: GREYSCALE, valueRange: WIRE_RANGE, scale: 'linear' },
+    })
+    const element = backend.element() as unknown as { parentElement: unknown }
+    element.parentElement = {
+      getBoundingClientRect: () => ({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }),
+    }
+    backend.setViewport(VIEWPORT)
+    const { values, mask } = rampGrid()
+    const good: GridFrame = {
+      key: 'good',
+      width: GRID_WIDTH,
+      height: GRID_HEIGHT,
+      renderMode: 'scalar',
+      valueKind: 'float32',
+      values,
+      mask,
+    }
+    backend.render({ lower: good, upper: good, progress: 0, bbox: BBOX })
+    const rgb: GridFrame = { ...good, key: 'rgb', renderMode: 'rgb' }
+    clears.count = 0
+    backend.render({ lower: rgb, upper: rgb, progress: 0, bbox: BBOX })
+    expect(clears.count).toBeGreaterThan(0)
+    clears.count = 0
+    const u16: GridFrame = {
+      ...good,
+      key: 'u16',
+      valueKind: 'encoded-u16',
+      values: new Uint16Array(values.length),
+    }
+    backend.render({ lower: good, upper: u16, progress: 0.5, bbox: BBOX })
+    expect(clears.count).toBeGreaterThan(0)
   })
 })
