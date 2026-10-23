@@ -168,6 +168,19 @@ export const CATALOG: Record<string, CatalogEntry> = {
     kind: 'visual',
     capabilities: ['SVG map', 'GL map', 'basemap style', 'choropleth', 'marks', 'OpenFreeMap'],
   },
+  '@narduk-enterprises/narduk-notify': {
+    kind: 'server',
+    capabilities: [
+      'APNs',
+      'Live Activity push',
+      'Resend email',
+      'notification preferences',
+      'delivery audit',
+    ],
+    prerequisites: [
+      'An APNs auth key and a Resend API key in secret bindings, and the D1 migration applied.',
+    ],
+  },
   '@narduk-enterprises/narduk-platform': {
     kind: 'contract',
     capabilities: ['env catalog', 'list query', 'package registry', 'provider contracts'],
