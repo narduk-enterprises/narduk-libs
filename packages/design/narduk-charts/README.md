@@ -907,26 +907,17 @@ interface PieDataItem {
 
 ## Local development
 
-```bash
-npm install
-npm run dev
-```
-
-Runs **Histoire** with library stories (same as `npm run story:dev`). For
-full-page examples, AAPL stream demos, and showcase routes, use the companion
-**marketing site** repository.
+From the monorepo root (`pnpm`; the standalone repo is retired):
 
 ```bash
-npm test
+pnpm install
+pnpm --filter @narduk-enterprises/narduk-charts run dev      # Histoire
+pnpm --filter @narduk-enterprises/narduk-charts run test     # Vitest
+pnpm --filter @narduk-enterprises/narduk-charts run story:build
 ```
 
-Runs Vitest (math, y-scale helpers, streaming composable).
-
-```bash
-npm run story:build
-```
-
-Produces a static Histoire build (optional).
+Full-page examples and showcase routes live at charts.nard.uk. See
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full gate.
 
 ## License
 

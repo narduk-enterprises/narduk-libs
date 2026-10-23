@@ -351,9 +351,13 @@ implicitly migrates target production D1.
 
 ## Phase 11: prepare and execute the final account cutover
 
-This phase remains pending for BSF. Before it can start, the target Workers
-Build, build variables, zone configuration, credentials, billing/verification,
-Registrar acceptance, and target production go/no-go packet must be complete.
+BSF's final traffic cutover is done (BSF PR #70; status
+`traffic-cutover-complete` above). What remains open for BSF is the
+product-proof and 30-day retention work, not a cutover; do not start another
+freeze or account move. For any other app, this phase starts only after the
+target Workers Build, build variables, zone configuration, credentials,
+billing/verification, Registrar acceptance, and target production go/no-go
+packet are complete.
 
 Follow [`../cloudflare-account-cutover.md`](../cloudflare-account-cutover.md)
 for the freeze, final D1 export/import, R2 delta, DNS/Registrar/Custom Domain

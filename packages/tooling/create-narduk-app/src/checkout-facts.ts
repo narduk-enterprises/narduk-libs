@@ -285,10 +285,48 @@ async function firstExisting(
   return null
 }
 
-function declaredDatabase(nuxtConfig: string): GeneratedDatabaseBackend | null {
-  const match = /databaseBackend:\s*'(none|d1)'/u.exec(nuxtConfig)
-  const value = match?.[1]
-  return value === 'none' || value === 'd1' ? value : null
+/**
+ * The literal `databaseBackend: 'none' | 'd1'` (either quote style). Scanned like
+ * `readDevServerPort`, so a comment or an unrelated string cannot supply it.
+ */
+export function declaredDatabase(nuxtConfig: string): GeneratedDatabaseBackend | null {
+  let index = 0
+  while (index < nuxtConfig.length) {
+    const character = nuxtConfig[index] ?? ''
+    if (character === '/' && nuxtConfig[index + 1] === '/') {
+      index = skipLineComment(nuxtConfig, index)
+    } else if (character === '/' && nuxtConfig[index + 1] === '*') {
+      index = skipBlockComment(nuxtConfig, index)
+    } else if (character === "'" || character === '"' || character === '`') {
+      const end = skipQuoted(nuxtConfig, index, character)
+      const quotedKey = nuxtConfig.slice(index + 1, end - 1) === 'databaseBackend'
+      const after = quotedKey ? skipWhitespaceAndComments(nuxtConfig, end) : -1
+      const found = quotedKey ? readBackendValue(nuxtConfig, after) : null
+      if (found) return found
+      index = end
+    } else if (isIdentStart(character)) {
+      const identifier = readIdentifier(nuxtConfig, index)
+      const found =
+        identifier === 'databaseBackend'
+          ? readBackendValue(
+              nuxtConfig,
+              skipWhitespaceAndComments(nuxtConfig, index + identifier.length),
+            )
+          : null
+      if (found) return found
+      index += identifier.length
+    } else {
+      index += 1
+    }
+  }
+  return null
+}
+
+function readBackendValue(source: string, colonAt: number): GeneratedDatabaseBackend | null {
+  if (source[colonAt] !== ':') return null
+  const valueAt = skipWhitespaceAndComments(source, colonAt + 1)
+  const match = /^(['"])(none|d1)\1/u.exec(source.slice(valueAt, valueAt + 6))
+  return match?.[2] === 'none' || match?.[2] === 'd1' ? match[2] : null
 }
 
 /** Only a definitive absent document is optional; unreadable declarations fail upgrade. */

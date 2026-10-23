@@ -4,7 +4,9 @@
 > is kept as written. Its `packages/<name>/**` scope paths predate the
 > four-family layout (`packages/modules|tooling|design|contracts/<name>`,
 > company-hq `D-WEBFOUND-2` Q2 (a), 2026-09-04); see `README.md` for where each
-> package lives now.
+> package lives now. The cross-lane rules below are also wave-era: MapKit now
+> ships from this repo as `@narduk-enterprises/narduk-mapkit`, and the root
+> `postinstall` that builds `@narduk-enterprises/eslint-config` is required.
 
 ## Mission
 

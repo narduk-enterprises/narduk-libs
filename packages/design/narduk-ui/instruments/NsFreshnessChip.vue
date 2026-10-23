@@ -95,7 +95,7 @@ function isDateable(value: Date | string | null | undefined): boolean {
 }
 
 const resolved = computed<SignalState | null>(() => {
-  if (props.state) return props.state;
+  if (props.state) return Object.hasOwn(SIGNALS, props.state) ? props.state : "void";
   const interval = props.intervalMinutes;
   if (interval == null || !(interval > 0) || !isDateable(props.observedAt)) return "void";
   if (clock.value == null) return null;

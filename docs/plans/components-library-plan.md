@@ -30,10 +30,10 @@ pattern (evidence-folder counts, quoted per item as `apps/files`).
 (`packages/design/narduk-shell`, `Ne*` prefix provisional under D-WEBFOUND-2
 Q7's parked renames), it wraps Nuxt UI rather than reimplementing it, and list
 routes use the `parseListQuery` contract. The amendment's Q4 answer (table-first
-waves) is superseded by this backlog. narduk-core pins `@nuxt/ui` 4.6.0 exactly,
-which already ships the Pro-era primitives the suite wraps (`UEmpty`, `UTable`,
-`UPageHeader`, `UDashboardSidebar`, `UPageHero`, `UPageCTA`, `UPagination`,
-`UModal`, `UBadge`, `UForm`).
+waves) is superseded by this backlog. narduk-core pins `@nuxt/ui` 4.11.1 exactly
+(peer `>=4.7.1 <5`), which ships the Pro-era primitives the suite wraps
+(`UEmpty`, `UTable`, `UPageHeader`, `UDashboardSidebar`, `UPageHero`,
+`UPageCTA`, `UPagination`, `UModal`, `UBadge`, `UForm`).
 
 **Standard done-when** (every component item; machinery items state their own):
 
@@ -54,10 +54,11 @@ Dropped or merged, one line each: `NeKpiBand` folds into the KPI item;
 `NeSectionHeader` into the page-header item; `NeSearchInput` into the filter
 bar; `defineColumns` into the table; v1's `NeCollectionList` becomes
 `NeCardList`; pacc-trac's `DenseListPager` becomes `NePager density="dense"`;
-toasts are not wrapped (Nuxt UI `useToast` is enough); tabs and breadcrumbs are
-not wrapped (`UTabs`/`UBreadcrumb` direct; breadcrumbs live inside
-`NePageHeader`); charts, maps and auth screens are adopted, not rebuilt (item
-22); narduk-ui's `Ns*` status instruments stay in narduk-ui for status apps.
+toasts are not wrapped (Nuxt UI `useToast` is enough); breadcrumbs are not
+wrapped (`UBreadcrumb` direct; tabs are the registered `NeTabs`; breadcrumbs
+live inside `NePageHeader`); charts, maps and auth screens are adopted, not
+rebuilt (item 22); narduk-ui's `Ns*` status instruments stay in narduk-ui for
+status apps.
 
 ## 2. Backlog
 
@@ -65,7 +66,7 @@ Each item: what it is with an API sketch, why it sits here (one line), what it
 depends on, which pilot adopts it first, and its issue link (filed in order once
 Logan approves the order).
 
-### 1. `narduk-shell` package skeleton (foundation)
+### 1. `narduk-shell` package skeleton (foundation) — shipped (#248, #249, #250 closed)
 
 - **What:** `packages/design/narduk-shell` — a Nuxt module that registers each
   export with an explicit `addComponent` (never `addComponentsDir`, so an
@@ -84,7 +85,7 @@ Logan approves the order).
 - **Issue:**
   [#248](https://github.com/narduk-enterprises/narduk-libs/issues/248)
 
-### 2. Theming through Nuxt UI (foundation)
+### 2. Theming through Nuxt UI (foundation) — shipped (#248, #249, #250 closed)
 
 - **What:** the narduk-shell `app.config` preset plus `theme.css`: NE tokens
   (the structural half of PACC·TRAC's set per `docs/proposals/narduk-shell.md` —
@@ -101,7 +102,7 @@ Logan approves the order).
 - **Issue:**
   [#249](https://github.com/narduk-enterprises/narduk-libs/issues/249)
 
-### 3. Component surface check + NE Base card mechanism (foundation)
+### 3. Component surface check + NE Base card mechanism (foundation) — shipped (#248, #249, #250 closed)
 
 - **What:** `scripts/check-component-surface.mjs`, wired into
   `quality:artifacts`: for every component narduk-shell registers and every
@@ -111,7 +112,8 @@ Logan approves the order).
   card template and a `design-system:build` fixture so each later item ships its
   card with the component.
 - **Why here:** done-when 1–3 are a claim until something fails when they are
-  missing; today nothing in narduk-libs checks any of them.
+  missing; when this was written nothing checked them; `surface:check` now does
+  (shipped, #250).
 - **Depends on:** 1.
 - **First pilot:** none (narduk-libs CI).
 - **Issue:**

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  assertPlannedCardsRendered,
   galleryCoverage,
   isCodedToken,
   kebabCase,
@@ -257,4 +258,29 @@ test('a shipped card renders into the bundle exactly like an authored one', () =
     rendered.cards.map((preview) => preview.group),
     ['Shell'],
   )
+})
+
+test('sanitizer rejects imports and remote urls in every spelling', () => {
+  const wrap = (inner: string) =>
+    `<section data-design-card="x" data-name="X" data-group="G">${inner}</section>`
+  assert.throws(() => renderBundle(wrap('<p>a</p>'), '@import"https://evil.example/a.css";a{}'))
+  for (const inner of [
+    '<div style="background-image:url(https://evil.example/p.png)">a</div>',
+    '<img src="#." srcset="#. 1x, https://evil.example/p.png 2x">',
+    '<form action="https://evil.example"><p>a</p></form>',
+    '<svg><use xlink:href="https://evil.example/s.svg#a"></use></svg>',
+  ]) {
+    assert.throws(() => renderBundle(wrap(inner), 'a{}'), /executable or external/, inner)
+  }
+})
+
+test('a planned card file must author its own id and render it', () => {
+  const plan = [{ file: 'NeMeter.card.vue', id: 'ne-meter' }]
+  const src = (id: string) =>
+    ({
+      'narduk-shell/src/design-cards/NeMeter.card.vue': `<template><section data-design-card="${id}" data-name="M" data-group="G">x</section></template>`,
+    }) as Record<string, string>
+  assert.doesNotThrow(() => assertPlannedCardsRendered(plan, src('ne-meter'), ['ne-meter']))
+  assert.throws(() => assertPlannedCardsRendered(plan, src('meter'), ['meter']), /exactly one card/)
+  assert.throws(() => assertPlannedCardsRendered(plan, { x: '<template><p/></template>' }, []))
 })

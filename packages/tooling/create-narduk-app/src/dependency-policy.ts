@@ -15,3 +15,19 @@ export const DEPENDENCY_UPDATE_LIMITS = {
   // Keep the browser runner and its installed browser image in step.
   '@playwright/test': { version: '1.61.1', inclusive: true },
 } as const
+
+/** The Dependabot `cooldown` and `ignore` keys of an npm update entry, shared by both registry templates. */
+export function dependabotPolicyLines(): string[] {
+  return [
+    '    cooldown:',
+    `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
+    `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
+    '      exclude:',
+    "        - '@narduk-enterprises/*'",
+    '    ignore:',
+    ...Object.entries(DEPENDENCY_UPDATE_LIMITS).flatMap(([name, limit]) => [
+      `      - dependency-name: '${name}'`,
+      `        versions: ['${limit.inclusive ? '>' : '>='}${limit.version}']`,
+    ]),
+  ]
+}
