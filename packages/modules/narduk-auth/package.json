@@ -109,7 +109,7 @@
     "defu": "^6.1.7",
     "drizzle-orm": "^0.45.2",
     "nuxt-auth-utils": "^0.5.29",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "//devDependencies": "@vue/server-renderer, @vue/test-utils and happy-dom are pinned to the exact versions already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package, which is exactly the silent dependency drift narduk-libs#124 warns folds against. Widen them in a deliberate workspace-wide bump, not here.",
   "devDependencies": {

@@ -99,7 +99,7 @@
     "nuxt-site-config": "4.2.3",
     "ohash": "^2.0.11",
     "ufo": "^1.6.4",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@narduk-enterprises/eslint-config": "workspace:*",

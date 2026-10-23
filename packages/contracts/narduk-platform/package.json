@@ -64,7 +64,7 @@
     "quality": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",

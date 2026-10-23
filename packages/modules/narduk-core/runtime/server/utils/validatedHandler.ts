@@ -346,7 +346,10 @@ interface RawIssue {
  * deliberately left there: they contradict each other (every branch complains
  * about the fields the others declare), and their `unrecognized_keys` prose
  * carries caller key names that the sanitising below would have to be taught to
- * reach. A route that wants per-field detail from a sum type uses
+ * reach. (Since zod 4.6, a union with exactly one branch that fails only on
+ * unrecognized keys reports that branch's `unrecognized_keys` issue instead,
+ * which the loop below sanitises like any other.) A route that wants per-field
+ * detail from a sum type uses
  * `z.discriminatedUnion`, which reports against the discriminator directly.
  * Anything that starts traversing `errors` has to recurse *through here*, or
  * the no-value-leak guarantee above stops being true.
