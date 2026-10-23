@@ -154,6 +154,8 @@ describe('NeDataTable: cells', () => {
     const wrapper = render()
     const cells = bodyRows(wrapper)[0]!.findAll('td')
     expect(cells[3]!.text()).toBe('30.08')
+    // `String(30.1)` is "30.1": only a run `format` makes it "30.10".
+    expect(bodyRows(wrapper)[1]!.findAll('td')[3]!.text()).toBe('30.10')
     expect(cells[1]!.classes()).toEqual(
       expect.arrayContaining(['text-end', 'font-mono', 'tabular-nums', 'font-medium']),
     )
@@ -345,4 +347,14 @@ describe('NeDataTable: overflow and the column floor (narduk-libs#684)', () => {
     expect(wrapper.html()).not.toContain('--ne-data-table-min')
     expect(wrapper.get('table').classes()).not.toContain(floorClass)
   })
+})
+
+it('prints a raw Date cell as an ISO instant, not the host zone', () => {
+  const wrapper = mount(NeDataTable, {
+    props: {
+      columns: [{ key: 'seen', label: 'Seen' }],
+      rows: [{ seen: new Date('2026-03-08T12:00:00Z') }],
+    },
+  })
+  expect(wrapper.get('tbody td').text()).toBe('2026-03-08T12:00:00.000Z')
 })

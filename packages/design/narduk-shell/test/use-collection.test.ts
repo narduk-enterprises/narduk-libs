@@ -478,19 +478,20 @@ describe('page resets to 1 — the search-after-page bug, removed by constructio
     // every evaluation. Comparing by reference would refetch forever; the work
     // has to be bounded to filter sets that actually differ.
     const { calls, fetch } = deferredFetch()
+    const tick = ref(0)
     const { collection, stop } = withCollection<Runner, OffsetListResponse<Runner>>({
       fetch,
-      // Key order deliberately unstable between evaluations.
-      filters: () => (Math.random() > 0.5 ? { a: 1, b: 2 } : { b: 2, a: 1 }),
+      // Reads a ref, so every bump rebuilds the object; key order flips each time.
+      filters: () => (tick.value % 2 ? { a: 1, b: 2 } : { b: 2, a: 1 }),
     })
     await settle()
     calls[0]!.resolve(page({ items: rows(3), total: 3 }))
     await settle()
 
     for (let index = 0; index < 20; index++) {
-      // Read the snapshot the way a template would, forcing re-evaluation.
-      expect(collection.state.filters).toEqual({ a: 1, b: 2 })
+      tick.value += 1
       await settle(1)
+      expect(collection.state.filters).toEqual({ a: 1, b: 2 })
     }
 
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -665,6 +666,21 @@ describe('hasNext / hasPrevious', () => {
     await settle()
 
     expect(collection.canPrevious).toBe(true)
+    expect(collection.canNext).toBe(false)
+    stop()
+  })
+
+  it('stops on a full last page of a counted route', async () => {
+    const { calls, fetch } = deferredFetch()
+    const { collection, stop } = withCollection<Runner, OffsetListResponse<Runner>>({
+      fetch,
+      limit: 10,
+    })
+    await settle()
+    calls[0]!.resolve(page({ items: rows(10), limit: 10, offset: 0, total: 10 }))
+    await settle()
+
+    expect(collection.state.pageCount).toBe(1)
     expect(collection.canNext).toBe(false)
     stop()
   })

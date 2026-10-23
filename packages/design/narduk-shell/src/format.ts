@@ -561,9 +561,12 @@ export function formatRelative(value: NeDateInput, options: NeRelativeOptions): 
     return format.format(Math.round(difference / HOUR_MS), 'hour')
   }
   if (Math.abs(days) < 7) return format.format(days, 'day')
-  if (Math.abs(days) < 30) return format.format(Math.trunc(days / 7), 'week')
+  const weeks = Math.trunc(days / 7)
+  if (Math.abs(days) < 30) return format.format(weeks, 'week')
 
   const months = zonedMonthsBetween(now, instant, options.timeZone)
+  // 30 days can land inside the same calendar month; stay in weeks, not "this month".
+  if (months === 0) return format.format(weeks, 'week')
   if (Math.abs(months) < 12) return format.format(months, 'month')
   return format.format(Math.trunc(months / 12), 'year')
 }

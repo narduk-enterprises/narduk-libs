@@ -35,9 +35,9 @@ export interface NeRowLimit<T> {
   visible: ComputedRef<readonly T[]>
 }
 
-/** `n` as a whole, non-negative count. A non-finite `n` (`NaN`, `undefined` cast) shows no cap. */
+/** `n` as a whole, non-negative count. A missing or `NaN` `n` shows no cap. */
 function capOf(n: number): number {
-  if (Number.isNaN(n)) return Number.POSITIVE_INFINITY
+  if (typeof n !== 'number' || Number.isNaN(n)) return Number.POSITIVE_INFINITY
   return Math.max(0, Math.floor(n))
 }
 

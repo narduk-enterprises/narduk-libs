@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, reactive, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LIST_QUERY_DEFAULT_LIMIT, LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH, type CursorListResponse } from '@narduk-enterprises/narduk-platform/list-query'
+import { LIST_QUERY_DEFAULT_LIMIT, LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH, LIST_QUERY_RESERVED_KEYS, type CursorListResponse } from '@narduk-enterprises/narduk-platform/list-query'
 
 export interface NeCursorCollectionQuery {
   [filter: string]: unknown
@@ -51,7 +51,7 @@ export function useCursorCollection<T>(options: NeCursorCollectionOptions<T>) {
   const cursor = ref<string | null>(text(route?.query.cursor) || null)
   const q = ref(text(route?.query.q).slice(0, LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH))
   const appliedQ = ref(q.value)
-  const sort = ref(validSort(route?.query.sort) ?? options.sort ?? null)
+  const sort = ref(validSort(route?.query.sort) ?? validSort(options.sort) ?? null)
   const limit = ref(Math.max(1, Math.min(options.maxLimit ?? 100, options.limit ?? LIST_QUERY_DEFAULT_LIMIT)))
   const items = shallowRef<readonly T[]>([])
   const nextCursor = ref<string | null>(null)
@@ -64,7 +64,12 @@ export function useCursorCollection<T>(options: NeCursorCollectionOptions<T>) {
   let disposed = false
   let running: Promise<void> | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
-  const filters = computed(() => toValue(options.filters) ?? {})
+  const filters = computed(() => {
+    const value = toValue(options.filters) ?? {}
+    const collisions = Object.keys(value).filter((key) => (LIST_QUERY_RESERVED_KEYS as readonly string[]).includes(key))
+    if (collisions.length > 0) throw new TypeError(`useCursorCollection: filter keys collide with reserved list-query keys: ${collisions.sort().join(', ')}.`)
+    return value
+  })
   const enabled = computed(() => toValue(options.enabled) !== false)
   const query = computed<NeCursorCollectionQuery>(() => ({
     ...filters.value, limit: limit.value,
@@ -134,7 +139,7 @@ export function useCursorCollection<T>(options: NeCursorCollectionOptions<T>) {
     const incoming = text(route.query.cursor) || null
     const incomingQ = text(route.query.q).slice(0, LIST_QUERY_DEFAULT_MAX_QUERY_LENGTH)
     // A URL without a sort keeps the untouched default; any other sort was set (or cleared) and so is cleared.
-    const incomingSort = validSort(route.query.sort) ?? (route.query.sort === undefined && sort.value === (options.sort ?? null) ? sort.value : null)
+    const incomingSort = validSort(route.query.sort) ?? (route.query.sort === undefined && sort.value === (validSort(options.sort) ?? null) ? sort.value : null)
     if (incomingQ !== appliedQ.value) { clearTimeout(timer); reset(); q.value = incomingQ; appliedQ.value = incomingQ }
     if (incomingSort !== sort.value) { reset(); sort.value = incomingSort }
     if (incoming !== cursor.value) { previous.length = 0; cursor.value = incoming }

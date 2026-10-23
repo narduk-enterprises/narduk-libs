@@ -146,6 +146,23 @@ describe('useUndoToast', () => {
     wrapper.unmount()
   })
 
+  it('still resolves, and raises nothing unhandled, when onUndo throws', async () => {
+    const { undo, toasts, wrapper } = harness()
+    const outcome = undo.show({
+      title: 'Removed AAPL',
+      onUndo: () => {
+        throw new Error('fail')
+      },
+    })
+    const toast = await toastOf(toasts)
+
+    toast.actions[0]!.onClick()
+
+    await expect(outcome).resolves.toBe('undone')
+    await new Promise((resolve) => setTimeout(resolve, 5)) // let an unhandled rejection surface
+    wrapper.unmount()
+  })
+
   it('keeps simultaneous undos independent', async () => {
     const { undo, toasts, wrapper } = harness()
     const first = undo.show({ title: 'Removed AAPL' })

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 
 import NeStatePanel from '../src/runtime/components/NeStatePanel.vue'
 import { nuxtUiStubs } from './nuxt-ui-stubs'
+import { nuxtUiGlobals } from './support/nuxt-ui-globals'
 
 import type { NeStateValue } from '../src/runtime/types'
 
@@ -331,3 +332,20 @@ describe('NeStatePanel: gaps, the unblocker, and the action slot', () => {
  * levels of one idea used to coexist — the global contract, this block, and a
  * third inside NeStatusBadge.mount.test.ts — and they had already drifted.
  */
+
+describe('NeStatePanel: loading with the real USkeleton', () => {
+  it('keeps the skeletons\' own alert roles out of the accessibility tree', () => {
+    const wrapper = mount(NeStatePanel, {
+      global: { components: { ...nuxtUiStubs, USkeleton: nuxtUiGlobals.USkeleton! } },
+      props: { state: 'loading' },
+    })
+    const alerts = wrapper.findAll('[role="alert"]')
+
+    expect(alerts.length).toBeGreaterThan(0)
+    for (const alert of alerts) expect(alert.element.closest('[aria-hidden="true"]')).not.toBeNull()
+    const exposed = wrapper
+      .findAll('[aria-live="polite"]')
+      .filter((node) => node.element.closest('[aria-hidden="true"]') === null)
+    expect(exposed).toHaveLength(1)
+  })
+})
