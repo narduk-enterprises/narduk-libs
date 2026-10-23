@@ -101,7 +101,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/contracts/narduk-platform:
     dependencies:
@@ -117,7 +117,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/design/design-system-build:
     devDependencies:
@@ -218,8 +218,8 @@ importers:
         specifier: ^2.4.6
         version: 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       histoire:
         specifier: ^1.0.0-beta.1
         version: 1.0.0-beta.1(@noble/hashes@2.4.0)(@types/node@22.19.19)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(yaml@2.8.4)
@@ -243,7 +243,7 @@ importers:
         version: 4.5.4(@types/node@22.19.19)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -269,8 +269,8 @@ importers:
         specifier: ^2.4.6
         version: 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       maplibre-gl:
         specifier: 6.11.2
         version: 6.11.2
@@ -285,7 +285,7 @@ importers:
         version: 4.5.4(@types/node@22.19.19)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -330,8 +330,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(9b93f308dda8b5d46d763540ce0ad574)
@@ -346,7 +346,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -378,8 +378,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       prettier:
         specifier: 3.9.4
         version: 3.9.4
@@ -388,7 +388,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -412,7 +412,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/geogrid-web:
     devDependencies:
@@ -427,7 +427,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-ai:
     dependencies:
@@ -461,7 +461,7 @@ importers:
         version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@nuxt/ui':
         specifier: 4.11.1
         version: 4.11.1(@oxc-project/types@0.154.0)(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(change-case@5.4.4)(db0@0.3.4(better-sqlite3@12.11.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260511.1)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(pg@8.23.1)(postgres@3.4.9)))(embla-carousel@8.6.0)(esbuild@0.28.1)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(valibot@1.4.2(typescript@6.0.3))(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue-router@5.3.1(@vue/compiler-sfc@3.5.42)(esbuild@0.28.1)(pinia@4.0.3(@vue/devtools-api@8.1.5)(typescript@6.0.3)(vue@3.5.42(typescript@6.0.3)))(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue@3.5.42(typescript@6.0.3)))(vue@3.5.42(typescript@6.0.3))(zod@4.6.6)
@@ -478,8 +478,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       miniflare:
         specifier: 4.20260701.0
         version: 4.20260701.0(@types/node@22.19.19)
@@ -494,7 +494,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -540,7 +540,7 @@ importers:
         version: link:../narduk-core
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
@@ -560,8 +560,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(92d944c108ca83c72475ab9916b76f57)
@@ -582,7 +582,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@6.0.3)
@@ -616,7 +616,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       zod:
         specifier: ^4.6.6
         version: 4.6.6
@@ -671,7 +671,7 @@ importers:
         version: link:../../tooling/eslint-config
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
@@ -703,8 +703,8 @@ importers:
         specifier: ^1.15.11
         version: 1.15.11
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       miniflare:
         specifier: 4.20260701.0
         version: 4.20260701.0(@types/node@22.19.19)
@@ -728,7 +728,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -831,7 +831,7 @@ importers:
         version: 4.5.2
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@nuxt/ui':
         specifier: 4.11.1
         version: 4.11.1(@oxc-project/types@0.154.0)(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(change-case@5.4.4)(db0@0.3.4(better-sqlite3@12.11.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260511.1)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(pg@8.23.1)(postgres@3.4.9)))(embla-carousel@8.6.0)(esbuild@0.28.1)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(valibot@1.4.2(typescript@6.0.3))(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue-router@5.3.1(@vue/compiler-sfc@3.5.42)(esbuild@0.28.1)(pinia@4.0.3(@vue/devtools-api@8.1.5)(typescript@6.0.3)(vue@3.5.42(typescript@6.0.3)))(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue@3.5.42(typescript@6.0.3)))(vue@3.5.42(typescript@6.0.3))(zod@4.6.6)
@@ -863,8 +863,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       hookable:
         specifier: 5.5.3
         version: 5.5.3
@@ -888,7 +888,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -949,7 +949,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@6.0.3)
@@ -998,7 +998,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-mapkit:
     dependencies:
@@ -1034,8 +1034,8 @@ importers:
         specifier: 2.4.11
         version: 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       publint:
         specifier: ^0.3.21
         version: 0.3.21
@@ -1047,7 +1047,7 @@ importers:
         version: 3.4.1(esbuild@0.28.1)(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -1075,7 +1075,7 @@ importers:
         version: 4.5.2
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       '@types/node':
         specifier: 22.19.19
         version: 22.19.19
@@ -1089,8 +1089,8 @@ importers:
         specifier: 2.4.11
         version: 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(160bf8875b5864073195aaf258b79236)
@@ -1102,7 +1102,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -1135,7 +1135,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-postgres:
     devDependencies:
@@ -1162,7 +1162,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-realtime:
     dependencies:
@@ -1196,7 +1196,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-seo:
     dependencies:
@@ -1251,7 +1251,7 @@ importers:
         version: link:../narduk-core
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
@@ -1271,8 +1271,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(92d944c108ca83c72475ab9916b76f57)
@@ -1293,7 +1293,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@6.0.3)
@@ -1348,7 +1348,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@6.0.3)
@@ -1379,7 +1379,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/modules/narduk-uploads:
     dependencies:
@@ -1401,7 +1401,7 @@ importers:
         version: link:../narduk-core
       '@nuxt/test-utils':
         specifier: ^4.0.3
-        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+        version: 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
@@ -1421,8 +1421,8 @@ importers:
         specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       happy-dom:
-        specifier: ^20.9.0
-        version: 20.10.6
+        specifier: ^21.0.4
+        version: 21.0.4
       nuxt:
         specifier: ^4.5.2
         version: 4.5.2(92d944c108ca83c72475ab9916b76f57)
@@ -1440,7 +1440,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-tsc:
         specifier: ^3.2.5
         version: 3.3.6(typescript@6.0.3)
@@ -1474,7 +1474,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/tooling/eslint-config:
     dependencies:
@@ -1489,7 +1489,7 @@ importers:
         version: 8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)
       '@vitest/eslint-plugin':
         specifier: ^1.6.25
-        version: 1.6.25(@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
+        version: 1.6.25(@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.8.0(jiti@2.7.0))
@@ -1565,7 +1565,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue-eslint-parser:
         specifier: ^10.4.1
         version: 10.4.1(eslint@10.8.0(jiti@2.7.0))
@@ -1595,7 +1595,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
   packages/tooling/narduk-app-tools:
     dependencies:
@@ -1641,7 +1641,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       wrangler:
         specifier: ^4.90.1
         version: 4.107.0(@cloudflare/workers-types@4.20260511.1)(@types/node@22.19.19)
@@ -1680,8 +1680,8 @@ importers:
         specifier: ^1.15.11
         version: 1.15.11
       happy-dom:
-        specifier: 20.10.6
-        version: 20.10.6
+        specifier: 21.0.4
+        version: 21.0.4
       miniflare:
         specifier: 5.20260921.0-alpha
         version: 5.20260921.0-alpha(@types/node@22.19.19)
@@ -1693,7 +1693,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
       vue:
         specifier: 3.5.42
         version: 3.5.42(typescript@6.0.3)
@@ -1727,7 +1727,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
 packages:
 
@@ -4775,8 +4775,8 @@ packages:
   '@types/whatwg-mimetype@3.0.2':
     resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
 
-  '@types/ws@8.18.1':
-    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@typescript-eslint/eslint-plugin@8.70.0':
     resolution: {integrity: sha512-/v8HZt6RlyIZxB3ntehELOcUcfxKPVGWXnQdJuHRmzrqgF8nQypcC/oxGW+Ot4VGKDq81XugPKxx0n5PBtf9PA==}
@@ -6971,8 +6971,8 @@ packages:
       crossws:
         optional: true
 
-  happy-dom@20.10.6:
-    resolution: {integrity: sha512-6QD0ilzDDt93tX44y8tbmZdAcdTRYDhUP+Asgi6pC8Pp5IA3cvaZGyoVN/EGtlq9ziT65iPuBBn3ASLr6hCgVw==}
+  happy-dom@21.0.4:
+    resolution: {integrity: sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw==}
     engines: {node: '>=20.0.0'}
 
   has-flag@4.0.0:
@@ -10472,8 +10472,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.21.3:
-    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -12067,7 +12067,7 @@ snapshots:
       vite-plugin-inspect: 11.4.1(@nuxt/kit@4.5.2(magic-string@1.4.1)(magicast@0.5.5)(oxc-parser@0.149.0)(rolldown@1.2.14)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))))(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       vite-plugin-vue-tracer: 1.4.0(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vue@3.5.42(typescript@6.0.3))
       which: 6.0.1
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -12720,7 +12720,7 @@ snapshots:
       rc9: 3.0.1
       std-env: 4.2.0
 
-  '@nuxt/test-utils@4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))':
+  '@nuxt/test-utils@4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))':
     dependencies:
       '@clack/prompts': 1.2.0
       '@nuxt/devtools-kit': 2.7.0(magicast@0.5.5)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
@@ -12749,15 +12749,15 @@ snapshots:
       tinyexec: 1.2.4
       ufo: 1.6.4
       unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
-      vitest-environment-nuxt: 2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
+      vitest-environment-nuxt: 2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       vue: 3.5.42(typescript@6.0.3)
     optionalDependencies:
       '@playwright/test': 1.61.1
       '@vue/test-utils': 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
-      happy-dom: 20.10.6
+      happy-dom: 21.0.4
       jsdom: 27.4.0(@noble/hashes@2.4.0)
       playwright-core: 1.61.1
-      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -12772,7 +12772,7 @@ snapshots:
       - vite
       - webpack
 
-  '@nuxt/test-utils@4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)':
+  '@nuxt/test-utils@4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)':
     dependencies:
       '@clack/prompts': 1.2.0
       '@nuxt/devtools-kit': 2.7.0(magicast@0.5.5)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
@@ -12801,15 +12801,15 @@ snapshots:
       tinyexec: 1.2.4
       ufo: 1.6.4
       unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
-      vitest-environment-nuxt: 2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+      vitest-environment-nuxt: 2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
       vue: 3.5.42(typescript@6.0.3)
     optionalDependencies:
       '@playwright/test': 1.61.1
       '@vue/test-utils': 2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3))
-      happy-dom: 20.10.6
+      happy-dom: 21.0.4
       jsdom: 27.4.0(@noble/hashes@2.4.0)
       playwright-core: 1.61.1
-      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -14568,7 +14568,7 @@ snapshots:
 
   '@types/whatwg-mimetype@3.0.2': {}
 
-  '@types/ws@8.18.1':
+  '@types/ws@8.18.2':
     dependencies:
       '@types/node': 22.19.19
 
@@ -14919,9 +14919,9 @@ snapshots:
       obug: 2.2.1
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
 
-  '@vitest/eslint-plugin@1.6.25(@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))':
+  '@vitest/eslint-plugin@1.6.25(@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))':
     dependencies:
       '@typescript-eslint/scope-manager': 8.63.0
       '@typescript-eslint/utils': 8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)
@@ -14929,7 +14929,7 @@ snapshots:
     optionalDependencies:
       '@typescript-eslint/eslint-plugin': 8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.8.0(jiti@2.7.0))(typescript@6.0.3)
       typescript: 6.0.3
-      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
+      vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)
     transitivePeerDependencies:
       - supports-color
 
@@ -15986,7 +15986,7 @@ snapshots:
       nostics: 0.2.0(esbuild@0.28.1)(rolldown@1.2.14)(rollup@4.62.2)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
       pathe: 2.0.3
       valibot: 1.4.2(typescript@6.0.3)
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -17092,15 +17092,15 @@ snapshots:
     optionalDependencies:
       crossws: 0.4.9(srvx@0.12.8)
 
-  happy-dom@20.10.6:
+  happy-dom@21.0.4:
     dependencies:
       '@types/node': 22.19.19
       '@types/whatwg-mimetype': 3.0.2
-      '@types/ws': 8.18.1
+      '@types/ws': 8.18.2
       buffer-image-size: 0.6.4
       entities: 7.0.1
       whatwg-mimetype: 3.0.0
-      ws: 8.21.3
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -17467,7 +17467,7 @@ snapshots:
       webidl-conversions: 8.0.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 15.1.0
-      ws: 8.21.3
+      ws: 8.22.0
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -21247,9 +21247,9 @@ snapshots:
       tsx: 4.23.0
       yaml: 2.8.4
 
-  vitest-environment-nuxt@2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)):
+  vitest-environment-nuxt@2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4)):
     dependencies:
-      '@nuxt/test-utils': 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
+      '@nuxt/test-utils': 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
     transitivePeerDependencies:
       - '@cucumber/cucumber'
       - '@farmfe/core'
@@ -21274,9 +21274,9 @@ snapshots:
       - vitest
       - webpack
 
-  vitest-environment-nuxt@2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11):
+  vitest-environment-nuxt@2.0.0(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11):
     dependencies:
-      '@nuxt/test-utils': 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
+      '@nuxt/test-utils': 4.0.3(@playwright/test@1.61.1)(@vue/test-utils@2.4.11(@vue/compiler-dom@3.5.42)(@vue/server-renderer@3.5.42)(vue@3.5.42(typescript@6.0.3)))(crossws@0.4.9(srvx@0.12.8))(esbuild@0.28.1)(happy-dom@21.0.4)(jsdom@27.4.0(@noble/hashes@2.4.0))(magicast@0.5.5)(playwright-core@1.61.1)(rolldown@1.2.14)(rollup@4.62.2)(typescript@6.0.3)(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))(vitest@4.1.11)
     transitivePeerDependencies:
       - '@cucumber/cucumber'
       - '@farmfe/core'
@@ -21301,7 +21301,7 @@ snapshots:
       - vitest
       - webpack
 
-  vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4):
+  vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.6)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@7.3.7(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
@@ -21327,7 +21327,7 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@types/node': 22.19.19
       '@vitest/coverage-v8': 4.1.6(vitest@4.1.11)
-      happy-dom: 20.10.6
+      happy-dom: 21.0.4
       jsdom: 27.4.0(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - jiti
@@ -21342,7 +21342,7 @@ snapshots:
       - tsx
       - yaml
 
-  vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4):
+  vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(happy-dom@21.0.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@7.3.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.8.4))
@@ -21367,7 +21367,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 24.13.4
-      happy-dom: 20.10.6
+      happy-dom: 21.0.4
       jsdom: 27.4.0(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - jiti
@@ -21591,7 +21591,7 @@ snapshots:
 
   ws@8.21.0: {}
 
-  ws@8.21.3: {}
+  ws@8.22.0: {}
 
   wsl-utils@0.3.1:
     dependencies:
