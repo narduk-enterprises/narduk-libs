@@ -36,6 +36,14 @@ export function unmercatorX(x: number): number {
   return x * 360 - 180
 }
 
+/** The east edge's mercator x; a box that crosses longitude 180 runs on past 1. */
+function eastX(bounds: Bounds, x0: number): number {
+  const x1 = mercatorX(bounds[2])
+  return x1 < x0 ? x1 + 1 : x1
+}
+
+const wrapX = (x: number) => (x > 1 ? x - 1 : x)
+
 export function unmercatorY(y: number): number {
   const y2 = ((180 - y * 360) * Math.PI) / 180
   return (360 / Math.PI) * Math.atan(Math.exp(y2)) - 90
@@ -70,7 +78,7 @@ export function fitBounds(
 ): FitResult {
   const pad = normalizePadding(padding)
   const x0 = mercatorX(bounds[0])
-  const x1 = mercatorX(bounds[2])
+  const x1 = eastX(bounds, x0)
   const yTop = mercatorY(bounds[3])
   const yBottom = mercatorY(bounds[1])
   const spanX = x1 - x0
@@ -85,7 +93,7 @@ export function fitBounds(
   const worldSize = TILE_SIZE * 2 ** zoom
   const centerX = (x0 + x1) / 2 - (pad.left - pad.right) / 2 / worldSize
   const centerY = (yTop + yBottom) / 2 - (pad.top - pad.bottom) / 2 / worldSize
-  return { center: [unmercatorX(centerX), unmercatorY(centerY)], zoom }
+  return { center: [unmercatorX(wrapX(centerX)), unmercatorY(centerY)], zoom }
 }
 
 const MIN_SPAN = 0.004
@@ -127,7 +135,7 @@ export function createMapView(options: ViewOptions): MapView {
 
   const width = options.width
   const x0 = mercatorX(bounds[0])
-  const x1 = mercatorX(bounds[2])
+  const x1 = eastX(bounds, x0)
   const yTop = mercatorY(bounds[3])
   const yBottom = mercatorY(bounds[1])
   const spanX = x1 - x0
@@ -148,14 +156,15 @@ export function createMapView(options: ViewOptions): MapView {
     center: fit.center,
     zoom: fit.zoom,
     project(lon, lat) {
+      const mx = mercatorX(lon)
       return [
-        round2((mercatorX(lon) - centerX) * scale + width / 2),
+        round2(((x1 > 1 && mx < x0 ? mx + 1 : mx) - centerX) * scale + width / 2),
         round2((mercatorY(lat) - centerY) * scale + height / 2),
       ]
     },
     unproject(x, y) {
       return [
-        unmercatorX((x - width / 2) / scale + centerX),
+        unmercatorX(wrapX((x - width / 2) / scale + centerX)),
         unmercatorY((y - height / 2) / scale + centerY),
       ]
     },
@@ -314,5 +323,6 @@ export function resolveBounds(
   if (bounds) return bounds
   const list: Bounds[] = (shapes?.features ?? []).map(f => geometryBounds(f.geometry))
   for (const p of points ?? []) list.push([p.lon, p.lat, p.lon, p.lat])
-  return mergeBounds(list) ?? [-1, -1, 1, 1]
+  // A NaN point or an empty geometry would poison the whole frame; frame what is usable.
+  return mergeBounds(list.filter(b => b.every(Number.isFinite))) ?? [-1, -1, 1, 1]
 }

@@ -364,8 +364,14 @@ a.narduk-geomap__point {
   transition: visibility 0s linear 0.4s;
 }
 
-.narduk-map.is-ready .narduk-map__poster {
+.narduk-map.is-ready:not(.narduk-map--interactive) .narduk-map__poster {
   visibility: hidden;
+}
+
+/* Interactive: keep the shape buttons in the tab order; the canvas takes the pointer. */
+.narduk-map.is-ready.narduk-map--interactive .narduk-map__poster {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .narduk-map__canvas {
