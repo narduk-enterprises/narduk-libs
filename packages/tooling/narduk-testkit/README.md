@@ -503,6 +503,9 @@ const consoleTracker = createConsoleTracker(page, [
 ])
 ```
 
+`levels: ['error']` records console errors only (the default is errors and
+warnings); `pageerror`s are always recorded.
+
 `telemetry: 'stub'` is for the suite that has to pass on a machine whose network
 is not the internet's:
 
@@ -549,6 +552,179 @@ from here. The Narduk fleet proxies PostHog under a per-app `POSTHOG_HOST`
 on the app or on `@narduk-enterprises/narduk-analytics` to read it from. Entries
 accept a bare hostname or the configured URL, and match that host and its
 subdomains.
+
+## Web-app audit checks
+
+Four subpaths turn the findings of a "perfect web app" audit into checks every
+app can run. Each returns findings (or throws once with all of them) so one run
+names every broken contract.
+
+### Security headers and the status contract (`http-contracts`)
+
+`http-contracts` has no Playwright import: it uses global `fetch` and `Headers`,
+so a deploy smoke runs it under plain Node.
+
+```ts
+import {
+  assertStatusContract,
+  checkSecurityHeaders,
+  formatContractFindings,
+} from '@narduk-enterprises/narduk-testkit/http-contracts'
+
+const base = process.env.SMOKE_URL ?? 'https://staging.example.com'
+
+const findings = await checkSecurityHeaders(base, {
+  production: false, // never inferred from the hostname
+})
+if (findings.length > 0) {
+  throw new Error(formatContractFindings(base, findings))
+}
+
+await assertStatusContract(base, { protectedApiPath: '/api/orders' })
+```
+
+`securityHeaderFindings(headers, options)` is the pure judgement and
+`assertSecurityHeaders` throws on it; `checkSecurityHeaders(url, options)`
+fetches with `redirect: 'manual'` and judges that response, so point it at a URL
+that answers directly. It checks:
+
+- `Strict-Transport-Security` with `max-age >= 15552000` (`minHstsMaxAge`).
+  Skipped when the URL is `http:`; a call without a `url` assumes https.
+- A CSP: `Content-Security-Policy`, or `Content-Security-Policy-Report-Only`
+  unless `allowReportOnlyCsp: false`.
+- Clickjacking protection: `frame-ancestors` in the ENFORCED CSP or
+  `X-Frame-Options: DENY|SAMEORIGIN`. `frame-ancestors` in a Report-Only policy
+  does not count; browsers ignore it there.
+- `X-Content-Type-Options: nosniff`, and a `Referrer-Policy` that is not
+  `unsafe-url` or `no-referrer-when-downgrade`.
+- `X-Robots-Tag: noindex` when `production` is `false`.
+
+`checkStatusContract(baseUrl, { protectedApiPath })` requests with
+`redirect: 'manual'`; following the redirect would show the sign-in page's 200
+and hide the defect. An unauthenticated `protectedApiPath` (must start with
+`/api/`) has to answer 401 with a JSON content type, and an unknown path
+(`unknownPath`, default a random `/__narduk-status-contract-<id>`) has to answer
+404, never a 3xx to sign-in. `fetch` is injectable.
+
+### Console guard (`playwright/console-guard`)
+
+`test` fails any test whose page logged `console.error` or threw an uncaught
+exception. It is `createConsoleTracker` underneath, so the allowlist and the
+telemetry stub behave as described under "Console tracking" above. The fixture
+is `auto`: a spec cannot forget to ask for it.
+
+```ts
+import {
+  test,
+  expect,
+} from '@narduk-enterprises/narduk-testkit/playwright/console-guard'
+
+test.use({
+  consoleAllowlist: [
+    { text: /Failed to load resource/, url: /\/api\/mapkit-token/ },
+  ],
+  consoleTelemetry: 'stub',
+})
+
+test('home renders quietly', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('main')).toBeVisible()
+})
+```
+
+Options: `consoleAllowlist`, `consoleTelemetry` (`'live'` or `'stub'`),
+`consoleTelemetryHosts` and `consoleLevels` (default `['error']`; add
+`'warning'` to fail on warnings too). It adds a fixture beside `page` instead of
+overriding it, so it composes with the `e2e/fixtures` test:
+`mergeTests(guardTest, e2eTest)`. To put it on your own base, use
+`base.extend<ConsoleGuardTestFixtures>(consoleGuardFixtures)`.
+
+### Layout (`playwright/layout`)
+
+Sideways overflow at 320 CSS px and touch-target size, with the judgement in
+pure functions (`overflowFindings`, `touchTargetFindings`) and one small
+`page.evaluate` per measurement.
+
+```ts
+import {
+  assertAgainstLayoutBaseline,
+  collectLayoutFindings,
+} from '@narduk-enterprises/narduk-testkit/playwright/layout'
+
+import baseline from './layout-baseline.json' with { type: 'json' }
+
+test('/orders layout', async ({ page }) => {
+  await page.goto('/orders')
+  const findings = await collectLayoutFindings(page, {
+    overflowWidth: 320,
+    touchTargetSizes: [24, 44],
+  })
+  assertAgainstLayoutBaseline(test.info(), findings, baseline, {
+    baselinePath: 'tests/e2e/layout-baseline.json',
+    key: '/orders',
+  })
+})
+```
+
+The overflow check resizes the viewport to `overflowWidth`, restores it, and
+names the deepest elements whose right edge passes the viewport (not fixed
+elements, and not ones clipped by an `overflow` ancestor). The touch-target scan
+runs at the page's current viewport over links, buttons, form controls, ARIA
+widgets and focusable elements. It skips hidden, zero-size, `aria-hidden`,
+`inert` and disabled elements and inline links inside a sentence (SC 2.5.8's
+inline exception). A control's `<label>` counts as part of its target. The
+spacing exception is not implemented, so a small but well-spaced target is
+reported at 24. Use `[24]` for WCAG 2.2 AA and add `44` for the AAA and Apple
+bar.
+
+The baseline is `{ [surface]: LayoutCheckId[] }` with ids `horizontal-overflow`,
+`touch-target-24` and `touch-target-44`. Like the axe ledger it fails in both
+directions, so new debt cannot land and paid-down debt must be removed.
+
+### D1 migration lint (`d1-migration-lint`)
+
+Pure and fs-only. Two rules over a directory of numbered `.sql` files:
+
+- `money-real-column`: a `REAL`, `FLOAT`, `DOUBLE`, `NUMERIC` or `DECIMAL`
+  column whose name, or whose final `_` token, is `price`, `amount`, `cost`,
+  `total`, `fee`, `balance`, `subtotal`, `tax`, `discount`, `usd`, `eur` or
+  `gbp`. `amount_kg`, `total_count` and `price_per_kg` do not match; `_cents`
+  columns are the correct integer form. Override with `moneyNames`.
+- `destructive-statement`: `DROP TABLE`, `ALTER TABLE ... DROP COLUMN` and
+  `ALTER TABLE ... RENAME`. Indexes, triggers and views are not flagged.
+
+```ts
+import {
+  assertMigrationsClean,
+  hashMigrationStatement,
+} from '@narduk-enterprises/narduk-testkit/d1-migration-lint'
+
+it('migrations are clean', () => {
+  assertMigrationsClean('packages/db/migrations', {
+    allow: [
+      {
+        file: '0005_notification_events.sql',
+        id: 'destructive-statement',
+        // hashMigrationStatement('DROP TABLE email_log') produces the pin
+        statementHash: '…',
+        reason: 'Table rebuild; rows copied into email_log_next first.',
+      },
+    ],
+  })
+})
+```
+
+An allowance is a file basename plus a rule id, optionally pinned to the sha256
+of the whitespace-normalised statement so an edited statement fails again. An
+allowance that matches nothing is itself reported as `stale-allowance`, so the
+list only shrinks. Every finding in the thrown message carries its
+`statementHash`. `lintMigrationsDir` and `lintMigrationSql` return the findings
+instead of throwing.
+
+Statements come from `splitSqlStatements`, which strips comments and splits on
+`;` without parsing SQL: a trigger body is cut into fragments that no rule
+matches, and a `--` or `;` inside a string literal can truncate or split a
+statement. Neither produces a false finding; both can hide one.
 
 ## Fixture server
 

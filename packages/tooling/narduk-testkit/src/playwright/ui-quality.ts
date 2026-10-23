@@ -402,6 +402,11 @@ export interface ConsoleTrackerOptions {
    */
   ignoredPatterns?: ConsoleIgnorePattern[]
   /**
+   * Which console message levels are recorded. Defaults to both, as it always has been.
+   * `pageerror`s are recorded regardless: an uncaught exception is never a warning.
+   */
+  levels?: Array<'error' | 'warning'>
+  /**
    * `'live'` (the default) lets optional telemetry reach the network, which is what a suite
    * running against a real browser on a normal network has always done.
    *
@@ -447,6 +452,7 @@ export function createConsoleTracker(
   const ignoredPatterns = resolved.ignoredPatterns ?? []
   const extraTelemetryHosts = resolved.extraTelemetryHosts ?? []
   const stubTelemetry = resolved.telemetry === 'stub'
+  const levels: string[] = resolved.levels ?? ['error', 'warning']
 
   const isTelemetryUrl = (value: string | null | undefined) => {
     const hostname = hostnameOf(value)
@@ -467,7 +473,7 @@ export function createConsoleTracker(
     const type = message.type()
     const text = message.text()
 
-    if (type !== 'error' && type !== 'warning') return
+    if (!levels.includes(type)) return
     const ignored = ignoredPatterns.some((pattern) =>
       matchesIgnoredPattern(text, pattern, failedResponseUrls),
     )
