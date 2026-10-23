@@ -264,9 +264,10 @@ describe('defineValidatedHandler', () => {
         handler: () => ({ ok: true }),
       })
 
-      const none = await request(handler, GREET, json({ c: SECRET }))
+      const none = await request(handler, GREET, json({ 'hunter2-key': SECRET }))
       expect(none.status).toBe(400)
       expect(none.body).not.toContain(SECRET)
+      expect(none.body).not.toContain('hunter2-key')
       expect(issuesOf(none)).toEqual([{ message: 'Invalid input', path: 'body' }])
 
       const near = await request(handler, GREET, json({ a: 'x', 'hunter2-key': SECRET }))
