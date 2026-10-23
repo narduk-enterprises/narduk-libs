@@ -80,6 +80,15 @@ vue.run('require-safe-redirect-query (vue)', rule, {
       code: sfc('watch(() => route.query.next, (next) => log(next))'),
     },
     { filename: PAGE, code: sfc("const ok = route.query.next?.startsWith('/') ?? false") },
+    // Template tests and text are not uses.
+    {
+      filename: PAGE,
+      code: '<template><p v-if="$route.query.next">{{ $route.query.next }}</p></template>',
+    },
+    {
+      filename: PAGE,
+      code: '<template><NuxtLink :to="sanitizeSameOriginPath($route.query.next, \'/\')" /></template>',
+    },
     // Not a redirect parameter, and not a query object.
     { filename: PAGE, code: sfc('const tab = route.query.tab') },
     { filename: PAGE, code: sfc('const n = props.next') },
@@ -113,6 +122,16 @@ vue.run('require-safe-redirect-query (vue)', rule, {
       code: sfc(code),
       errors: [{ messageId: 'unguarded' as const }],
     })),
+    {
+      filename: PAGE,
+      code: '<template><NuxtLink :to="$route.query.next">Continue</NuxtLink></template>',
+      errors: [{ messageId: 'unguarded', data: { param: 'next' } }],
+    },
+    {
+      filename: PAGE,
+      code: '<template><UButton @click="navigateTo(route.query.redirect)" /></template>',
+      errors: [{ messageId: 'unguarded', data: { param: 'redirect' } }],
+    },
     {
       filename: 'app/pages/terms/index.vue',
       code: sfc(

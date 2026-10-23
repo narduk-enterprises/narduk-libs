@@ -27,6 +27,7 @@
 
 import type { Rule } from 'eslint'
 
+import { templateBodyVisitor } from '../hydration/_internal'
 import { getIdentifierName, unwrapTsWrappers } from '../utils/mutation-route'
 import { isTestOrFixturePath } from '../utils/path-scope'
 
@@ -170,7 +171,12 @@ export default {
     }
 
     function variableOf(identifier: any): any {
-      let scope: any = sourceCode.getScope(identifier)
+      let scope: any
+      try {
+        scope = sourceCode.getScope(identifier)
+      } catch {
+        return null
+      }
       while (scope) {
         const found = scope.set?.get(identifier.name)
         if (found) return found
@@ -242,6 +248,12 @@ export default {
           return bindingFlowsOnlyToGuards(parent.id, hops + 1)
         }
         if (parent.type === 'ExpressionStatement') return true
+        if (parent.type === 'VExpressionContainer') {
+          // `:to="…"` and `@click="…"` use it; `v-if`, `v-show` and `{{ … }}` do not.
+          const directive =
+            parent.parent?.type === 'VAttribute' ? parent.parent.key?.name?.name : null
+          return directive !== 'bind' && directive !== 'on'
+        }
         return false
       }
     }
@@ -260,7 +272,7 @@ export default {
     const report = (node: any, param: string) =>
       context.report({ node, messageId: 'unguarded', data: { param } })
 
-    return {
+    const listeners = {
       MemberExpression(node: any) {
         const param = propertyName(node)
         if (!param || !params.has(param) || !isQueryObject(node.object)) return
@@ -289,5 +301,11 @@ export default {
         }
       },
     }
+    // `<NuxtLink :to="$route.query.next">` is a use too.
+    return templateBodyVisitor(
+      context,
+      { MemberExpression: listeners.MemberExpression, CallExpression: listeners.CallExpression },
+      listeners,
+    )
   },
 } satisfies Rule.RuleModule
