@@ -13,7 +13,7 @@ describe('narduk-app package shape', () => {
       peerDependenciesMeta?: Record<string, { optional?: boolean }>
     }
 
-    expect(manifest.peerDependencies?.zod).toBe('^4.4.3')
+    expect(manifest.peerDependencies?.zod).toBe('^4.6.6')
     expect(manifest.peerDependenciesMeta?.zod).toEqual({ optional: true })
   })
 })

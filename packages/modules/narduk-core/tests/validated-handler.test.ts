@@ -250,20 +250,28 @@ describe('defineValidatedHandler', () => {
       ])
     })
 
-    it('reports a union at the union path without leaking a rejected key', async () => {
-      // zod reports a failed `z.union` as one issue and buries the branch
-      // errors — which carry caller key names in their prose — in `errors`.
-      // Those are deliberately not flattened: see the wrapper's note on unions.
+    it('reports a union at the union path, and a near-match like its branch', async () => {
+      // zod reports a failed `z.union` as one issue at the union's own path and
+      // buries the branch errors in `errors`, which are deliberately not
+      // flattened: see the wrapper's note on unions. Since zod 4.6, a union
+      // with exactly one branch that fails only on unrecognized keys reports
+      // that branch's issue instead, which comes out like a strict object's:
+      // the key as a path segment with a constant message, never its value.
       const handler = defineValidatedHandler({
         body: z.union([z.strictObject({ a: z.string() }), z.strictObject({ b: z.string() })]),
         handler: () => ({ ok: true }),
       })
 
-      const result = await request(handler, GREET, json({ a: 'x', 'hunter2-key': 1 }))
+      const none = await request(handler, GREET, json({ c: 'hunter2-secret' }))
+      expect(none.status).toBe(400)
+      expect(none.body).not.toContain('hunter2-secret')
+      expect(issuesOf(none)).toEqual([{ message: 'Invalid input', path: 'body' }])
 
-      expect(result.status).toBe(400)
-      expect(result.body).not.toContain('hunter2-key')
-      expect(issuesOf(result)).toEqual([{ message: 'Invalid input', path: 'body' }])
+      const near = await request(handler, GREET, json({ a: 'x', 'hunter2-key': 'hunter2-secret' }))
+      expect(near.status).toBe(400)
+      expect(near.body).not.toContain('hunter2-secret')
+      expect(near.body).not.toContain('Unrecognized key: ')
+      expect(issuesOf(near)).toEqual([{ message: 'Unrecognized key', path: 'body.hunter2-key' }])
     })
 
     it('strips a __proto__ key instead of letting it reach Object.prototype', async () => {
