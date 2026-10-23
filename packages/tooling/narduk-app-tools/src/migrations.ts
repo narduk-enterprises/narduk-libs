@@ -588,7 +588,7 @@ export function discoverMigrations(config: MigrationConfig, baseDir: string): Mi
     }
     const names = readdirSync(directory)
       .filter((name) => MIGRATION_FILENAME.test(name))
-      .sort((left, right) => left.localeCompare(right))
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
     for (const filename of names) {
       const path = join(directory, filename)
       if (!statSync(path).isFile()) continue
@@ -605,14 +605,17 @@ export function discoverMigrations(config: MigrationConfig, baseDir: string): Mi
   return files
 }
 
-function isStableLedgerRow(row: MigrationLedgerRow): boolean {
-  const source = row.source?.trim() ?? ''
+function isStableSourceName(source: string): boolean {
   return (
     source === 'app' ||
     source.startsWith('app:') ||
     source.startsWith('package:') ||
     source.startsWith('@')
   )
+}
+
+function isStableLedgerRow(row: MigrationLedgerRow): boolean {
+  return isStableSourceName(row.source?.trim() ?? '')
 }
 
 function legacyRowKey(row: MigrationLedgerRow): string {
@@ -668,6 +671,13 @@ export function planMigrations(input: MigrationPlanningInput): MigrationPlan {
   const migrations = [...input.migrations]
   const seenIds = new Set<string>()
   for (const migration of migrations) {
+    // A source the ledger reader would not keep is applied once, then wedges
+    // every later run as an ambiguous legacy row.
+    if (!isStableSourceName(migration.source))
+      throw new Error(
+        `Migration source must be app, app:<name>, package:<name> or @scope/name, so its ` +
+          `ledger rows stay stable: ${migration.source}`,
+      )
     const id = `${migration.source}\0${migration.filename}`
     if (seenIds.has(id))
       throw new Error(`Duplicate migration identity: ${migration.source}:${migration.filename}`)

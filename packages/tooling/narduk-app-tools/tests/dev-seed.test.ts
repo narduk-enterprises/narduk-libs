@@ -132,11 +132,18 @@ describe('runDevSeed', () => {
     const executor: DevSeedExecutor = (args, _cwd, env) => {
       calls.push({ args, env })
     }
+    // ponytail-5 apptools-tests #10: every name, spelled out, so dropping one
+    // from DEV_SEED_STRIPPED_ENV leaks it into the child and fails here.
     runDevSeed(parseDevSeedArgs([], root), executor, {
       PATH: '/bin',
       CLOUDFLARE_API_TOKEN: 'secret',
+      CLOUDFLARE_API_KEY: 'secret',
+      CLOUDFLARE_EMAIL: 'secret',
       CLOUDFLARE_ACCOUNT_ID: 'acct',
       CF_API_TOKEN: 'secret',
+      CF_API_KEY: 'secret',
+      CF_EMAIL: 'secret',
+      CF_ACCOUNT_ID: 'acct',
     })
     expect(calls).toHaveLength(5)
     for (const { env } of calls) {

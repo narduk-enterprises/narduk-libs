@@ -393,6 +393,12 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     expect(h.git('log', '-1', '--format=%s')).toBe('wip')
   })
 
+  it('ponytail-5 apptools-tests #3: a dry run fetches the production branch', async () => {
+    const h = harness()
+    h.git('remote', 'set-url', 'origin', join(h.app, 'no-such-remote'))
+    await expect(runShip(parseShipArgs(['--dry-run']), h.context)).rejects.toThrow(/fetch/u)
+  })
+
   it('refuses to ship from the production branch', async () => {
     const h = harness()
     h.git('checkout', '-q', 'main')
@@ -596,6 +602,33 @@ describe('narduk-app ship', { timeout: GIT_TIMEOUT }, () => {
     ).toBe('https://riverstat.us')
     expect(productionOrigin({}, 'https://x.example/')).toBe('https://x.example')
     expect(() => productionOrigin({})).toThrow('--base-url')
+  })
+})
+
+describe('ponytail-5 apptools-tests #7: exits 4 and 5', { timeout: GIT_TIMEOUT }, () => {
+  it('exits 5 and prints the --to id when the rollback deploy throws', async () => {
+    const h = harness()
+    h.proof.result = 'FAIL'
+    h.proof.exitCode = 1
+    const deploy = vi.mocked(h.client.deployVersion)
+    const real = deploy.getMockImplementation()!
+    deploy.mockImplementation(async (id, ...rest) => {
+      if (id === OLD) throw new Error('wrangler versions deploy exited 1')
+      await real(id, ...rest)
+    })
+    await expect(runShip(parseShipArgs(['--no-pr']), h.context)).resolves.toBe(
+      SHIP_EXIT.rollbackFailed,
+    )
+    expect(h.logs.join('\n')).toContain(`deploy rollback --to ${OLD}`)
+  })
+
+  it('exits 4 when the PR step fails after a passing proof', async () => {
+    const h = harness()
+    vi.mocked(h.context.gh!).mockImplementation(() => {
+      throw new Error('gh: not logged in')
+    })
+    await expect(runShip(parseShipArgs([]), h.context)).resolves.toBe(SHIP_EXIT.prFailed)
+    expect(h.calls).toContain('upload')
   })
 })
 

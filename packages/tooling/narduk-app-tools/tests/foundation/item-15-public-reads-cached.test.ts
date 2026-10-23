@@ -118,6 +118,17 @@ describe('item 15 public-reads-are-cached (15.1)', () => {
     expect(artefact.findings).toHaveLength(1)
   })
 
+  it('ponytail-5 s9 review: a quote inside a regex literal does not shelter a commented cache call', () => {
+    const artefact = run({
+      'server/api/stations.get.ts': `export default defineEventHandler(async (event) => {
+  const name = String(getQuery(event).name ?? '').replace(/'/g, "''")
+  // withWorkerCache(event, {}, () => null)
+  return useDatabase(event).select().from(stations).all()
+})`,
+    })
+    expect(artefact.findings).toHaveLength(1)
+  })
+
   it('follows one helper hop through an import', () => {
     const artefact = run({
       'server/api/stations.get.ts': `import { listStations } from '../utils/stations'

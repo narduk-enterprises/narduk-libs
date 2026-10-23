@@ -69,6 +69,11 @@ describe('item 14 list-routes-use-contract', () => {
     expect(artefact.item.checks[0]?.detail).toContain('no list routes among 1 handler(s)')
   })
 
+  it('ponytail-5 apptools-src #16: a /* inside a string does not hide the handler', () => {
+    const glob = `const pattern = 'server/*.ts'\nconst url = "a//b"\n${HAND_ROLLED}`
+    expect(isListRoute('server/api/stations.get.ts', glob)).toBe(true)
+  })
+
   it('does not take a fixed { limit: 1 } in a detail route for pagination', () => {
     const detail = `export default defineEventHandler(async (event) => {
   const { id } = getQuery(event)
@@ -103,6 +108,37 @@ export default defineEventHandler((event) => {
     const artefact = runListRoutesCheck({ root, toolVersion: 'test' })
     expect(artefact.result).toBe('FAIL')
     expect(artefact.item.checks[0]?.detail).toContain("parse it with narduk-core's parseListQuery")
+  })
+
+  it('ponytail-5 s9 review: a quote inside a regex literal does not shelter a commented-out call', () => {
+    const escaping = `export default defineEventHandler((event) => {
+  const query = getQuery(event)
+  const name = String(query.name ?? '').replace(/'/g, "''")
+  // TODO: parseListQuery(event) once core is bumped
+  return db.select().from(items).limit(Number(query.limit ?? 50))
+})
+`
+    const sameLine = escaping.replace(
+      `"''")\n  // TODO`,
+      `"''") // parseListQuery(event)\n  // TODO`,
+    )
+    expect(sameLine).not.toBe(escaping)
+    const arrow = escaping.replace(
+      `  // TODO`,
+      `  const hasQuote = (s) => /'/.test(s) // parseListQuery(event)\n  // TODO`,
+    )
+    const keyword = escaping.replace(
+      `  // TODO`,
+      `  if (!name) return /'/.test(name) // don't parseListQuery(event)\n  // TODO`,
+    )
+    const backtick = escaping.replace(`  // TODO`, `  if (!name) return /\`/.test(name)\n  // TODO`)
+    expect(new Set([escaping, arrow, keyword, backtick]).size).toBe(4)
+    for (const handler of [escaping, sameLine, arrow, keyword, backtick]) {
+      const root = app({ 'server/api/items/index.get.ts': handler })
+      const artefact = runListRoutesCheck({ root, toolVersion: 'test' })
+      expect(artefact.item.status).toBe('fail')
+      expect(artefact.item.checks[0]?.detail).toContain('server/api/items/index.get.ts')
+    }
   })
 
   it('ignores mutation routes', () => {

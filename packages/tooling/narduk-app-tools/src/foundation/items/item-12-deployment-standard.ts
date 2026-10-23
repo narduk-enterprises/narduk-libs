@@ -185,8 +185,9 @@ export function bindingsByKindFromToml(text: string): BindingsByKind {
       continue
     }
     if (kind === null) continue
-    const match = /^\s*binding\s*=\s*"([^"]+)"/u.exec(line)
-    if (match && match[1].trim() !== '') out[kind].push(match[1].trim())
+    const match = /^\s*binding\s*=\s*(?:"([^"]+)"|'([^']+)')/u.exec(line)
+    const value = (match?.[1] ?? match?.[2] ?? '').trim()
+    if (value !== '') out[kind].push(value)
   }
   for (const each of PREVIEW_BINDING_KINDS) out[each] = sortedUnique(out[each])
   return out
@@ -213,8 +214,9 @@ export function productionBindings(repo: AppRepo, wranglerRel: string | null): B
 export function accountIdsFromToml(text: string): string[] {
   const ids: string[] = []
   for (const line of text.split(/\r?\n/u)) {
-    const match = /^\s*account_id\s*=\s*"([^"]+)"/u.exec(line)
-    if (match && match[1].trim() !== '') ids.push(match[1].trim())
+    const match = /^\s*account_id\s*=\s*(?:"([^"]+)"|'([^']+)')/u.exec(line)
+    const value = (match?.[1] ?? match?.[2] ?? '').trim()
+    if (value !== '') ids.push(value)
   }
   return sortedUnique(ids)
 }

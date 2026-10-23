@@ -108,6 +108,24 @@ describe('item 2 -- mandatory packages', () => {
     })
     expect(subCheckStatus(await run(root), '2.4')).toBe('fail')
 
+    // ponytail-5 apptools-tests #11: file: and git+ specs fail too.
+    for (const spec of [
+      'file:../vendor/narduk-core',
+      'git+https://github.com/narduk-enterprises/narduk-libs.git',
+    ]) {
+      writeJson(root, 'package.json', {
+        name: 'x',
+        scripts: { 'manifests:validate': 'true' },
+        dependencies: {
+          '@narduk-enterprises/narduk-core': spec,
+          '@narduk-enterprises/narduk-testkit': '0.1.0',
+          '@narduk-enterprises/narduk-app-tools': '0.1.3',
+          '@narduk-enterprises/eslint-config': '2.0.0',
+        },
+      })
+      expect(subCheckStatus(await run(root), '2.4')).toBe('fail')
+    }
+
     writeConformantBaseline(root)
     expect(subCheckStatus(await run(root), '2.4')).toBe('pass')
   })

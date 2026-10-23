@@ -30,7 +30,10 @@ orphaned resources.
 2. **The build consumes it.** `selectDeployConfig` in `src/deploy.ts` runs for
    `versions-upload` only. When `WORKERS_CI_BRANCH` is not
    `deployment.productionBranch`, it writes `.wrangler.deploy.preview.json` and
-   uploads with it.
+   uploads with it. It also writes the redirect `.wrangler/deploy/config.json`
+   pointing at that file, so a later wrangler command in the same checkout run
+   without `--config` (a `wrangler d1 execute --remote`, say) uses the preview
+   resources (`tests/preview-config.test.ts`).
 3. **All or nothing.** `planPreviewConfig` in `src/preview-config.ts` rebinds
    only when every D1/KV/R2 binding has a complete preview entry that is not a
    production resource in any scope. Otherwise the build keeps the production

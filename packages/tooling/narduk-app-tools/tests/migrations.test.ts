@@ -228,6 +228,31 @@ describe('migration config and planning', () => {
     expect(plan).toThrow('_narduk_migrations receipt')
   })
 
+  it('ponytail-5 apptools-src #11: orders a 5-digit prefix after 9999', () => {
+    const root = mkdtempSync(join(tmpdir(), 'narduk-app-migrations-'))
+    tempDirs.push(root)
+    mkdirSync(join(root, 'app'), { recursive: true })
+    for (const name of ['10000_index.sql', '9999_create.sql', '0002_a.sql'])
+      writeFileSync(join(root, 'app', name), name)
+    const config = parseMigrationConfig({
+      sources: [{ source: 'app', path: 'app', sourceVersion: 'app' }],
+    })
+    expect(discoverMigrations(config, root).map((file) => file.filename)).toEqual([
+      '0002_a.sql',
+      '9999_create.sql',
+      '10000_index.sql',
+    ])
+  })
+
+  it('ponytail-5 apptools-src #12: refuses a source name its own ledger would not keep', () => {
+    const file = migration('auth', '0001.sql')
+    // The first run must refuse: applying it writes a row the next run calls ambiguous.
+    expect(() => planMigrations({ migrations: [file] })).toThrow(/ledger rows stay stable/u)
+    expect(() => planMigrations({ migrations: [file], ledgerRows: [file] })).toThrow(
+      /ledger rows stay stable/u,
+    )
+  })
+
   it('discovers files and applies package-before-app ordering', () => {
     const root = mkdtempSync(join(tmpdir(), 'narduk-app-migrations-'))
     tempDirs.push(root)

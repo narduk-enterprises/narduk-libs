@@ -17,11 +17,14 @@ The credential is the app's standard worker-deploy persona (agent-infrastructure
    once the checks below that need no build have passed. `--dry-run` never
    commits.
 2. **Containment.** HEAD must contain `origin/<productionBranch>` _and_ the
-   commit production serves right now: the whole anti-clobber rule. Local git
-   answers first (ancestry, or a squash merge that git merges into HEAD with no
-   change). Otherwise GitHub answers: the served commit is an ancestor, or a
-   merged PR carrying it landed in HEAD's history. Nothing is fetched into your
-   clone.
+   commit production serves right now: the whole anti-clobber rule. Ship first
+   runs `git fetch origin <productionBranch>` with your credentials, `--dry-run`
+   included, so an offline dry run fails at the fetch. Local git then answers
+   (ancestry, or a squash merge that git merges into HEAD with no change).
+   Otherwise GitHub answers: the served commit is an ancestor, or a merged PR
+   carrying it landed in HEAD's history. That GitHub lookup fetches nothing. An
+   app that declares migrations also fetches the served commit, to diff its
+   migration files.
 3. **Checks and build, concurrently.** `ship:check` (fallback `hotfix:check`)
    and `ship:build` (fallback `hotfix:build`). Keep `ship:check` to lint,
    typecheck and fast unit tests; CI runs the full suite on the PR.
