@@ -16,6 +16,13 @@ import narduk from '../dist/index.js'
 
 const APP_SCRIPT_GLOBS = ['app/**/*.{js,cjs,mjs,jsx,ts,cts,mts,tsx}']
 
+const NATIVE_DIALOG_MESSAGE =
+  'Native `{{name}}()` blocks the page, cannot be styled or tested, and is suppressed in some embedded browsers. Use a <UModal> (`useOverlay()`) or a toast.'
+
+const NATIVE_DIALOGS = ['alert', 'confirm', 'prompt']
+
+const DIALOG_HOSTS = ['window', 'globalThis', 'self']
+
 /** @type {import('eslint').Linter.Config[]} */
 const coreConfigs = [
   {
@@ -85,6 +92,44 @@ const coreConfigs = [
       'vue/no-ref-object-reactivity-loss': 'error',
       'vue/no-setup-props-reactivity-loss': 'error',
       'vue/valid-v-memo': 'error',
+      // Also in the community tail; restated here so `communityLayer: false`
+      // keeps it. `trustedHtmlFiles` is composed after the packs and still wins.
+      'vue/no-v-html': 'warn',
+    },
+  },
+
+  {
+    // Scope analysis skips a shadowing local such as `const { confirm } =
+    // useConfirmDialog()`; only the browser global is reported.
+    name: 'narduk/core-native-dialogs',
+    files: ['app/**/*.{vue,js,cjs,mjs,jsx,ts,cts,mts,tsx}', '**/*.vue'],
+    ignores: ['**/*.{test,spec}.*', '**/{test,tests,__tests__,e2e}/**'],
+    rules: {
+      'no-restricted-globals': [
+        'warn',
+        ...NATIVE_DIALOGS.map((name) => ({
+          name,
+          message: NATIVE_DIALOG_MESSAGE.replace('{{name}}', name),
+        })),
+      ],
+      'no-restricted-properties': [
+        'warn',
+        ...DIALOG_HOSTS.flatMap((object) =>
+          NATIVE_DIALOGS.map((property) => ({
+            object,
+            property,
+            message: NATIVE_DIALOG_MESSAGE.replace('{{name}}', `${object}.${property}`),
+          })),
+        ),
+      ],
+    },
+  },
+
+  {
+    name: 'narduk/core-redirect-query',
+    plugins: { narduk },
+    rules: {
+      'narduk/require-safe-redirect-query': 'warn',
     },
   },
 

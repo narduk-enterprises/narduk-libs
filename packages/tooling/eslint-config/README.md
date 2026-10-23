@@ -111,7 +111,7 @@ in its source.
 | `auth`          | CSRF and rate-limit gates on mutation routes                                                                                |
 | `template`      | Starter/layer structure, file-size budgets, layer-source import ban                                                         |
 | `correctness`   | TypeScript hygiene and type-aware checks (warn-only) plus type-aware parser wiring                                          |
-| `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only                                                                              |
+| `a11y`          | `eslint-plugin-vuejs-accessibility`, warn-only, taught Nuxt and Nuxt UI components (below)                                  |
 | `complexity`    | High-signal `sonarjs` rules, warn-only                                                                                      |
 | `formatting`    | `eslint-plugin-perfectionist` import/type ordering                                                                          |
 | `e2e`           | `eslint-plugin-playwright`, scoped to Playwright specs; `narduk/e2e-timeout-ceiling` (below)                                |
@@ -274,6 +274,61 @@ lists them in its ESLint config's `ignores`, because a path or
 
 Exit codes: `0` pass; `1` a lint error, any warning, or a budget file that still
 allows warnings; `2` a usage or configuration error, or ESLint itself crashed.
+
+## Rules added in the web-app audit release
+
+A "perfect web app" audit of pacc-trac found these gaps; each is now a lint
+finding rather than an audit line. Every rule below is `warn`, which
+`narduk-lint` fails.
+
+| Rule                                                 | Pack          | Scope                                          |
+| ---------------------------------------------------- | ------------- | ---------------------------------------------- |
+| `narduk/require-safe-redirect-query`                 | core          | every source file, test trees exempt           |
+| `no-restricted-globals` / `no-restricted-properties` | core          | `app/**` and `.vue`, tests exempt              |
+| `vue/no-v-html`                                      | core          | `.vue` (now kept when `communityLayer: false`) |
+| `narduk/no-viewport-vh-units`                        | design-system | `style` / `:style` in `.vue` templates         |
+| `narduk/no-static-element-interactions`              | a11y          | `.vue` templates                               |
+| `vuejs-accessibility/*` Nuxt UI options              | a11y          | `.vue` templates                               |
+
+- **`narduk/require-safe-redirect-query`** reports a read of `redirect`,
+  `redirectTo`, `redirect_to`, `redirectUrl`, `returnTo`, `return_to`,
+  `returnUrl`, `next` or `callbackUrl` from `route.query`, `getQuery(event)`,
+  `url.searchParams.get()` or `new URLSearchParams().get()` (directly, through a
+  `const` alias, or destructured) that is used before it reaches a same-origin
+  guard: `?next=//evil.example` is an open redirect. Guards are narduk-auth's
+  sanitizers (`sanitizeSameOriginPath`, `sanitizeLocalRedirectPath`,
+  `resolveLocalRedirectRequest`, `sanitizeNextPath`, …) and any callee named
+  `safe*`, `sanitize*`, `isSafe*`, `isSameOrigin*` or `sameOrigin*`. A `typeof`
+  test or comparison is not a use. Options: `params` (replaces the list) and
+  `guards` (adds an app's own helper names):
+
+  ```js
+  { rules: { 'narduk/require-safe-redirect-query': ['warn', { guards: ['facilityLoginNext'] }] } }
+  ```
+
+- **Native dialogs.** `alert()`, `confirm()`, `prompt()` and their `window.`,
+  `globalThis.` and `self.` forms are reported in app code: they block the page
+  and cannot be styled or driven by a browser test. Use a `<UModal>` through
+  `useOverlay()`, or a toast. A local that shadows the name
+  (`const { confirm } = useConfirmDialog()`) is not reported.
+- **`vue/no-v-html`** was only in the community tail. It is now in `core` too,
+  and `trustedHtmlFiles` (content apps) still switches it off per file.
+- **`narduk/no-viewport-vh-units`** reports `vh` in a `style` attribute or a
+  string inside a `:style` binding. The `h-screen`/`min-h-screen` and `[…vh]`
+  classes were already banned, with an autofix to `dvh`, by
+  `better-tailwindcss/no-restricted-classes` in `design-system`. `<style>`
+  blocks and `.css` files belong to stylelint.
+- **`a11y` pack.** All twenty `flat/recommended` rules were already on at
+  `warn`. They now know Nuxt: `NuxtLink`, `ULink` and `RouterLink` are anchors
+  for `anchor-has-content`; a `<label>` wrapping a Nuxt UI control (`UCheckbox`,
+  `UInput`, `USelect`, …) is associated for `label-has-for`, and so is a
+  `<label for>`; `<UInput autofocus>` is reported by `no-autofocus`.
+  `narduk/no-static-element-interactions` replaces upstream's
+  `no-static-element-interactions` and `click-events-have-key-events`: it reads
+  only static elements (`div`, `span`, `p`, …), treats any explicit non-widget
+  role (`dialog`, `toolbar`, …) as a container, ignores `@click.capture`, drag
+  events and value-less handlers, and still requires a key handler on a
+  `role="button"`-style widget. The `a11y` pack is opt-in, as before.
 
 ## Rules added in the budget release
 

@@ -153,6 +153,17 @@ const designSystemConfigs = [
   },
 
   {
+    // The inline-style half of mobile web QA rule 4; the class half is
+    // VIEWPORT_HEIGHT_RESTRICTIONS in `narduk/design-system-tailwind`.
+    name: 'narduk/design-system-viewport-units',
+    files: ['**/*.vue'],
+    plugins: { narduk },
+    rules: {
+      'narduk/no-viewport-vh-units': 'warn',
+    },
+  },
+
+  {
     // v1 scoped `no-native-layout` to pages and `app.vue`. Flat config replaces
     // a rule's options rather than merging them, so this entry — which sorts
     // after the one above and matches a subset of its files — has to restate the
