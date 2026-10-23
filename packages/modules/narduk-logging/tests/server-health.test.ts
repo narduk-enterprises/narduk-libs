@@ -112,6 +112,12 @@ describe('route, message and hash', () => {
     )
     expect(scrubErrorMessage('x'.repeat(500)).length).toBeLessThanOrEqual(200)
   })
+  it('stays fast on text built to backtrack', () => {
+    const started = performance.now()
+    scrubErrorMessage(`${'!'.repeat(200_000)}@`)
+    scrubErrorMessage(`a@${'!'.repeat(200_000)}`)
+    expect(performance.now() - started).toBeLessThan(200)
+  })
   const stack = (line: number) =>
     `Error: boom\n    at save (file:///srv/.output/chunks/a.mjs?v=1:${line}:9)\n    at handler (file:///srv/.output/chunks/b.mjs:12:3)`
   const base = { status: 500, name: 'Error', message: 'order 41 failed', stack: stack(10) }

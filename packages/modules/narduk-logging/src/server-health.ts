@@ -63,8 +63,10 @@ export function collapseRoute(path: string): string {
 
 /** An error message safe to keep: emails and long opaque runs removed, whitespace collapsed, length capped. */
 export function scrubErrorMessage(message: string): string {
+  // Capped input and bounded quantifiers keep every pattern linear on hostile text (CodeQL js/polynomial-redos).
   return message
-    .replaceAll(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]')
+    .slice(0, MESSAGE_MAX * 8)
+    .replaceAll(/[^\s@]{1,64}@[^\s@.]{1,253}(?:\.[^\s@.]{1,63})+/g, '[email]')
     .replaceAll(/[\w-]{24,}/g, '…')
     .replaceAll(/\s+/g, ' ')
     .trim()
