@@ -144,7 +144,7 @@
     "posthog-js": "^1.373.4",
     "tailwindcss": "^4.2.1",
     "undici": "^8.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "//devDependencies": "@vitejs/plugin-vue is pinned to the exact version already resolved in this workspace's lockfile (the narduk-mapkit-nuxt package.json note). A caret range makes pnpm re-resolve the shared entry to the newest satisfying release and re-key or move it for every other package (narduk-libs#124). Widen it in a deliberate workspace-wide bump, not here.",
   "devDependencies": {
