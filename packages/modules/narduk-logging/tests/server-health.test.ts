@@ -191,8 +191,14 @@ describe('storage bounds', () => {
     ])
   })
   it('keeps the newest occurrence when an older write lands last', async () => {
-    await recordServerError(db, { ...entry('aaaa', '2026-10-23T12:05:00.000Z'), requestId: 'ray-new' })
-    await recordServerError(db, { ...entry('aaaa', '2026-10-23T12:00:00.000Z'), requestId: 'ray-old' })
+    await recordServerError(db, {
+      ...entry('aaaa', '2026-10-23T12:05:00.000Z'),
+      requestId: 'ray-new',
+    })
+    await recordServerError(db, {
+      ...entry('aaaa', '2026-10-23T12:00:00.000Z'),
+      requestId: 'ray-old',
+    })
     expect(await listServerErrors(db)).toEqual([
       expect.objectContaining({
         occurrences: 2,
