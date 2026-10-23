@@ -42,17 +42,18 @@ does synchronous work with no `await` in it will time close to zero no matter
 how long it actually took. Don't trust a phase's duration as a CPU profile; it
 measures wall time waiting on something external.
 
-| Runtime                   | Support / entry point                         | Output                                                                    |
-| ------------------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
-| Nuxt 4 + Nitro 2 / H3 1   | `./nuxt`, `./h3`                              | Request-scoped console records and lifecycle summaries                    |
-| Cloudflare Workers        | `./worker`                                    | Console JSON; HTTP, schedules, queues, Durable Objects                    |
-| Node 22+ services and CLI | `./node`                                      | stderr JSON, readable development output, optional official OTLP exporter |
-| Modern browsers           | `./browser`                                   | Console; explicitly installed same-origin diagnostics delivery            |
-| Python 3.11+              | `narduk_logging`, structlog                   | stderr; explicit stdlib/Dagster bridges, optional OTLP extra              |
-| Swift 6.3+                | SwiftPM `NardukLogging`, swift-log            | OSLog or structured streams; optional app endpoint                        |
-| Apple OS minimums         | macOS 15, iOS/tvOS 18, watchOS 11, visionOS 2 | Strict concurrency, typed private metadata                                |
-| Shell tools               | Python distribution's `narduk-log`            | One JSON record on stderr                                                 |
-| Go 1.22+                  | `go/`, `log/slog`                             | One schema JSON record per line; never installs a process default         |
+| Runtime                   | Support / entry point                         | Output                                                                        |
+| ------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------- |
+| Nuxt 4 + Nitro 2 / H3 1   | `./nuxt`, `./h3`                              | Request-scoped console records and lifecycle summaries                        |
+| Nitro + Cloudflare D1     | `./server-health`                             | Durable 5xx rows (stack-hash dedupe) and cron heartbeat with a staleness rule |
+| Cloudflare Workers        | `./worker`                                    | Console JSON; HTTP, schedules, queues, Durable Objects                        |
+| Node 22+ services and CLI | `./node`                                      | stderr JSON, readable development output, optional official OTLP exporter     |
+| Modern browsers           | `./browser`                                   | Console; explicitly installed same-origin diagnostics delivery                |
+| Python 3.11+              | `narduk_logging`, structlog                   | stderr; explicit stdlib/Dagster bridges, optional OTLP extra                  |
+| Swift 6.3+                | SwiftPM `NardukLogging`, swift-log            | OSLog or structured streams; optional app endpoint                            |
+| Apple OS minimums         | macOS 15, iOS/tvOS 18, watchOS 11, visionOS 2 | Strict concurrency, typed private metadata                                    |
+| Shell tools               | Python distribution's `narduk-log`            | One JSON record on stderr                                                     |
+| Go 1.22+                  | `go/`, `log/slog`                             | One schema JSON record per line; never installs a process default             |
 
 The JavaScript root has no Nuxt, H3, Node, or browser-global requirement.
 Optional framework/exporter dependencies stay behind their entry points. Swift's

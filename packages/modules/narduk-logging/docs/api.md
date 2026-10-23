@@ -80,6 +80,44 @@ unless the level suppresses them. `skipPaths` replaces the default noise list:
 Slash-suffixed custom entries are prefixes; other custom entries are exact
 paths. The two core framework prefixes retain their legacy prefix behavior.
 
+### Server errors and cron heartbeat (`./server-health`)
+
+For a Nitro-on-Workers app with a D1 binding that wants unhandled 5xx errors and
+scheduled-job runs kept durably rather than lost in console output. The app owns
+its migrations: copy `SERVER_ERRORS_DDL` and `JOB_RUNS_DDL` into a new
+expand-only migration. Nothing here imports `h3`, `nitropack` or
+`@cloudflare/workers-types`; a real `D1Database` satisfies `D1Like`.
+
+- `installServerErrorCapture(nitroApp, { service, resolveDb })` registers a
+  Nitro `error` hook. It records only 5xx, reads the original error from
+  `cause`, collapses the route (query dropped, ids and capability tokens become
+  `:id`), scrubs the message (emails, long opaque runs, 200 characters) and
+  skips an error with no request or no DB. It never throws.
+- Writes are bounded three ways: one `server_errors` row per `serverErrorHash`
+  (status, error name, message with digits flattened, top three frames), a
+  per-isolate throttle (`createErrorThrottle`: one write per hash per window, a
+  per-window cap, suppressed repeats folded into the next write's
+  `occurrences`), and a prune to the newest `rowCap` (default 200).
+- `runWithHeartbeat(db, job, run)` writes `job_runs` before the run and after
+  it. `run` resolves to the names of steps that failed but were swallowed; a
+  non-empty list or a throw records `ok = 0` (a throw is rethrown), and
+  `last_ok_at` only moves on success. A failed heartbeat write never changes the
+  job's outcome.
+- `jobState(lastOkAt, intervalMinutes, now)` is `stale` once the last success is
+  more than twice the interval old (exactly twice is `ok`), and `never_run` when
+  there is none. `jobReports` applies it to an app-supplied
+  `{ job: { intervalMinutes } }` registry. Report staleness; decide separately
+  whether it should fail anything.
+- `recordServerError`, `listServerErrors`, `beginJobRun`, `finishJobRun` and
+  `listJobRuns` are the storage calls for an app's own list page or health
+  route. Pass the `startedAt` given to `beginJobRun` as `finishJobRun`'s
+  `outcome.startedAt`: overlapping runs of one job share a row, and only the run
+  the row still holds writes its outcome (`runWithHeartbeat` does this itself).
+
+This is a small durable record for operators, not crash reporting or an audit
+trail: rows are deduplicated, counts are best effort, and nothing is sent
+anywhere.
+
 ### Server-Timing and slow-route logging
 
 Every request gets a `Server-Timing` response header with at least
