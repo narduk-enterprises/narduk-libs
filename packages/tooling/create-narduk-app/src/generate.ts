@@ -777,7 +777,7 @@ function filesFor(options: NormalizedCreateOptions): GeneratedFile[] {
         "      timezone: 'America/Chicago'",
         '    labels:',
         "      - 'dependencies'",
-        '    open-pull-requests-limit: 1',
+        '    open-pull-requests-limit: 2',
         '    cooldown:',
         `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
         `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,

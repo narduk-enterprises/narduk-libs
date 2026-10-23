@@ -1899,7 +1899,7 @@ describe('generated app typecheck and lint surfaces', () => {
       >
       expect(workspace.minimumReleaseAgeExclude, label).toContain('@narduk-enterprises/*')
       expect(npmUpdate?.registries, label).toEqual(['npm-nard-uk'])
-      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(1)
+      expect(npmUpdate?.['open-pull-requests-limit'], label).toBe(2)
       expect(npmUpdate?.groups['safe'].patterns, label).toEqual(['*', '@narduk-enterprises/*'])
       expect(npmUpdate?.groups['safe']['update-types'], label).toEqual(['minor', 'patch'])
       expect(npmUpdate?.groups.majors.patterns, label).toEqual(['*', '@narduk-enterprises/*'])
