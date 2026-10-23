@@ -33,6 +33,14 @@ test('messages are validated field by field', () => {
     readFromFrame({ type: 'explorer:state', surface: 'demo', cause: 'x', query: {} }),
     null,
   )
+  assert.deepEqual(
+    readFromFrame({ type: 'explorer:state', surface: 'demo', cause: 'sync', seq: 3, query: {} }),
+    { type: 'explorer:state', surface: 'demo', cause: 'sync', seq: 3, query: {} },
+  )
+  assert.equal(
+    readFromFrame({ type: 'explorer:state', surface: 'demo', cause: 'sync', query: {} }),
+    null,
+  )
   assert.equal(readFromFrame({ type: 'explorer:ready', surface: 'window' }), null)
   assert.equal(readFromFrame('explorer:ready'), null)
   assert.deepEqual(readToFrame({ type: 'explorer:theme', scheme: 'dark' }), {
@@ -40,7 +48,13 @@ test('messages are validated field by field', () => {
     scheme: 'dark',
   })
   assert.equal(readToFrame({ type: 'explorer:theme', scheme: 'system' }), null)
-  assert.equal(readToFrame({ type: 'explorer:query', query: { sort: 1 } }), null)
+  assert.equal(readToFrame({ type: 'explorer:query', seq: 1, query: { sort: 1 } }), null)
+  assert.equal(readToFrame({ type: 'explorer:query', query: {} }), null)
+  assert.deepEqual(readToFrame({ type: 'explorer:query', seq: 2, query: { sort: 'gust:desc' } }), {
+    type: 'explorer:query',
+    seq: 2,
+    query: { sort: 'gust:desc' },
+  })
 })
 
 test('the demo part of a page query drops page parameters and repeats', () => {

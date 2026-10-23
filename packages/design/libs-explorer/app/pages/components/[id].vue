@@ -82,6 +82,13 @@ const heights = ref<Partial<Record<Surface, number>>>({})
 const frames = new Map<Surface, HTMLIFrameElement>()
 /** The demo state the demo frame last reported: what it is showing. */
 let shownState: Record<string, string> | null = null
+let querySeq = 0
+
+function sendQuery(query: Record<string, string>) {
+  querySeq += 1
+  shownState = query
+  send('demo', { type: 'explorer:query', seq: querySeq, query })
+}
 
 function frameUrl(surface: Surface, query: Record<string, string>): string {
   const search = surface === 'demo' ? new URLSearchParams(query).toString() : ''
@@ -129,7 +136,7 @@ function onMessage(event: MessageEvent) {
     case 'explorer:ready':
       send(message.surface, { type: 'explorer:theme', scheme: scheme.value })
       if (message.surface === 'demo') {
-        send('demo', { type: 'explorer:query', query: demoPart(route.query) })
+        sendQuery(demoPart(route.query))
       }
       return
     case 'explorer:height':
@@ -140,6 +147,7 @@ function onMessage(event: MessageEvent) {
       return
     case 'explorer:state': {
       if (message.surface !== 'demo') return
+      if (message.cause === 'sync' && message.seq !== querySeq) return
       shownState = message.query
       // Compare the whole URL, not its first values: `?sort=a&sort=b` or an
       // unknown parameter reads the same to the demo but is not canonical.
@@ -159,7 +167,7 @@ watch(
   (query) => {
     if (!mounted.value || !example.interactive || shownState === null) return
     const demo = demoPart(query)
-    if (!sameQuery(demo, shownState)) send('demo', { type: 'explorer:query', query: demo })
+    if (!sameQuery(demo, shownState)) sendQuery(demo)
   },
 )
 
