@@ -48,9 +48,20 @@ function readPublishedVersion(manifest) {
     { cwd: root, encoding: 'utf8' },
   )
   if (result.error) throw result.error
-  if (result.status !== 0) return undefined
-
   const output = result.stdout.trim()
+  if (result.status !== 0) {
+    // Only a missing version is "not propagated yet"; auth and 5xx errors are not.
+    let code
+    try {
+      code = JSON.parse(output)?.error?.code
+    } catch {}
+    if (code && code !== 'E404') {
+      throw new Error(
+        `pnpm view ${manifest.name}@${manifest.version} failed (${result.status}, ${code})`,
+      )
+    }
+    return undefined
+  }
   if (!output) return undefined
   try {
     const parsed = JSON.parse(output)

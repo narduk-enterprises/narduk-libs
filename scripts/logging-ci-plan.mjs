@@ -9,8 +9,8 @@ const enabled =
     (path) =>
       path.startsWith('packages/modules/narduk-logging/') ||
       /^(Package\.(swift|resolved)|\.swiftlint\.yml|\.swift-format)$/.test(path) ||
-      path.startsWith('.github/workflows/') ||
-      path.startsWith('scripts/'),
+      /^\.github\/workflows\/(ci|logging-languages)\.yml$/.test(path) ||
+      /^scripts\/(install-swift-linux\.py|logging-ci-plan\.mjs)$/.test(path),
   )
 if (process.env.GITHUB_OUTPUT)
   appendFileSync(process.env.GITHUB_OUTPUT, `logging-languages=${enabled}\n`)

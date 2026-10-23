@@ -158,9 +158,9 @@ export function githubDecision({
       }
     return { kind: 'wait' }
   }
-  // A finished, red push CI is final for this run: release.yml only publishes a
-  // commit whose push CI is green, so waiting out the grace period cannot help.
-  if (ci && ci.status === 'completed' && ci.conclusion !== 'success')
+  // A finished, red push CI is final once no Release run is active: an early
+  // `chore: release packages` run can start before CI finishes and still publish.
+  if (ci && ci.status === 'completed' && ci.conclusion !== 'success' && !releaseBusy)
     return {
       kind: 'fail',
       reason: `push CI run ${ci.id} for this commit concluded ${ci.conclusion}, so Release cannot publish it. If a job flaked, re-run that CI (a green re-run triggers Release) and then re-run this proof. If the failure is in the commit's tree, a re-run fails the same way: push a fix to main, then dispatch release.yml with verified-sha set to the fixed commit`,
@@ -195,7 +195,9 @@ export async function proveGithubPackages({
   for (;;) {
     const byState = partition(targets, await readRegistry(targets))
     const elapsed = now() - started
-    const needsActions = byState.missing.length > 0 && elapsed >= graceMs
+    const ci = byState.missing.length > 0 && dispatchedAt === undefined ? await readCi() : undefined
+    const redCi = ci?.status === 'completed' && ci.conclusion !== 'success'
+    const needsActions = byState.missing.length > 0 && (elapsed >= graceMs || redCi)
     const decision = githubDecision({
       byState,
       elapsed,
@@ -203,7 +205,7 @@ export async function proveGithubPackages({
       deadlineMs,
       dispatchedAt,
       settleAfterDispatchMs,
-      ci: byState.missing.length > 0 && dispatchedAt === undefined ? await readCi() : undefined,
+      ci,
       releaseBusy: needsActions ? await readReleaseBusy() : false,
     })
     if (decision.kind === 'done') return { ...byState, dispatched: dispatchedAt !== undefined }

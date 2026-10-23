@@ -249,7 +249,7 @@ test('verify-ci logs are read by numeric job id and in-progress misses are not c
   assert.equal(cache.get(2), null)
 })
 
-test('a successful verify-ci without a parsed SHA is cached so later polls skip the log', () => {
+test('a successful verify-ci without a parsed SHA is not cached, so a transient log failure is retried', () => {
   const cache = new Map()
   const logs = []
   const job = { name: 'verify-ci', id: 99, status: 'completed', conclusion: 'success' }
@@ -259,8 +259,8 @@ test('a successful verify-ci without a parsed SHA is cached so later polls skip 
   }
   assert.equal(resolveVerifiedSha({ runId: 3, jobs: [job], readJobLog, cache }), null)
   assert.equal(resolveVerifiedSha({ runId: 3, jobs: [job], readJobLog, cache }), null)
-  assert.deepEqual(logs, [99])
-  assert.equal(cache.get(3), null)
+  assert.deepEqual(logs, [99, 99])
+  assert.equal(cache.has(3), false)
 })
 
 test('unread mirror targets are an empty list, not iterable null', () => {
@@ -368,6 +368,32 @@ function verifiedRelease() {
     },
   ]
 }
+
+test('a failed mirror read is retried instead of ending the wait', async () => {
+  const time = clock()
+  let reads = 0
+  const result = await waitForRelease({
+    mergeSha,
+    intervalMs: 1_000,
+    deadlineMs: 20_000,
+    ...time,
+    readPushCi: async () => successfulPush(),
+    readReleaseRuns: async () => verifiedRelease(),
+    readReleasePrHead: async () => currentHead,
+    readHeldRuns: async () => [],
+    approveRuns: async () => {},
+    readTargets: async () => [core],
+    readTags: async () => [`${core.name}@${core.version}`],
+    readMirror: async () => {
+      reads += 1
+      if (reads === 1) throw new Error('mirror answered 502')
+      return new Map([[core.name, { versions: { '2.2.2': {} } }]])
+    },
+    log: () => {},
+  })
+  assert.equal(reads, 2)
+  assert.equal(result.releaseRunId, 2)
+})
 
 test('held-run approval retries when action_required appears after the first poll', async () => {
   const time = clock()
