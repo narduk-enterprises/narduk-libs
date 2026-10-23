@@ -177,4 +177,17 @@ describe('useTimeAgo shared ticker', () => {
     expect(late.ago.text.value).toBe('1 hour ago')
     late.wrapper.unmount()
   })
+
+  it('does not rewrite a running clock when a second instance joins it', () => {
+    const first = harness(NOW - 44_000)
+    expect(first.ago.text.value).toBe('44 seconds ago')
+    // Two seconds on, well inside one tick: the clock has not moved.
+    vi.setSystemTime(NOW + 2_000)
+    const second = harness(NOW - 44_000)
+    expect(first.ago.text.value).toBe('44 seconds ago')
+    vi.advanceTimersByTime(NE_TIME_AGO_TICK_MS)
+    expect(first.ago.text.value).toBe('1 minute ago')
+    first.wrapper.unmount()
+    second.wrapper.unmount()
+  })
 })

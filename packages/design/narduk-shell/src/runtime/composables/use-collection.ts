@@ -309,6 +309,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   let settled = 0
   let running = false
   let starting = false
+  let disposed = false
   let runPromise: Promise<void> = Promise.resolve()
   let inFlight: AbortController | null = null
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -378,7 +379,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   async function run(): Promise<void> {
     running = true
     try {
-      while (settled !== intent && isEnabled()) {
+      while (settled !== intent && isEnabled() && !disposed) {
         const token = intent
         const controller = new AbortController()
         inFlight = controller
@@ -502,6 +503,7 @@ export function useCollection<TItem, TRaw = OffsetListResponse<TItem>>(
   )
 
   onScopeDispose(() => {
+    disposed = true
     if (debounceTimer !== undefined) clearTimeout(debounceTimer)
     inFlight?.abort()
   })

@@ -112,7 +112,7 @@ function subscribe(): void {
   // join against a running ticker is at most one period stale, which is within
   // the display's own resolution, so it does not rewrite the clock (and wake
   // every other instance) per mounted row.
-  if (subscribers === 1 || Date.now() - clock.value > 1000) refreshClock()
+  if (subscribers === 1) refreshClock()
   if (subscribers !== 1) return
   timer = setInterval(refreshClock, NE_TIME_AGO_TICK_MS)
   if (typeof document !== 'undefined') {

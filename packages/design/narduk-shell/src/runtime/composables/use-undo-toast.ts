@@ -88,6 +88,8 @@ export function useUndoToast(): NeUndoToast {
         stopWatching?.()
         try {
           await (outcome === 'undone' ? options.onUndo?.() : options.onCommit?.())
+        } catch {
+          // `show` never rejects; the outcome below is what the caller acts on.
         } finally {
           resolve(outcome)
         }
