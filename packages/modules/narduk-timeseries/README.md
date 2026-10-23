@@ -16,12 +16,12 @@ pnpm add @narduk-enterprises/narduk-timeseries
 
 ## Exports
 
-| Subpath          | What it holds                                                                     |
-| ---------------- | --------------------------------------------------------------------------------- |
-| `.`              | `TelemetryHistoryStore`, its types, retention policy validation, `bucketReadings` |
-| `./timescale`    | The adapter, every SQL builder, the migration set                                 |
-| `./influx`       | The read-only dual-run parity adapter                                             |
-| `./migrations/*` | The `.sql` files themselves, for a deploy job                                     |
+| Subpath          | What it holds                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `.`              | `TelemetryHistoryStore`, its types, retention policy validation, `bucketReadings`, `timeWeightedBuckets` |
+| `./timescale`    | The adapter, every SQL builder, the migration set                                                        |
+| `./influx`       | The read-only dual-run parity adapter                                                                    |
+| `./migrations/*` | The `.sql` files themselves, for a deploy job                                                            |
 
 The root entry carries **no SQL**, so a route handler, a test double or a second
 backend can import the interface without pulling in the adapter.
@@ -41,6 +41,21 @@ await store.listSeries({ vesselId, paths }) // read-only: SELECT, creates nothin
 await store.queryRollup({ vesselId, seriesIds, bucket: '1h', range })
 await store.queryTrack({ vesselId, range, maxPoints: 5000 })
 await store.applyRetention(policy)
+
+// Opt-in, migrations 0004-0005 (separate interfaces: TelemetryStateStore,
+// TimeWeightedRollupStore, so an existing TelemetryHistoryStore implementation
+// is not broken by this minor):
+await store.writeState(changes) // strings, bools, JSON values; change-only
+await store.queryStateAt({ vesselId, seriesIds, at, tierWindowMs })
+await store.queryStateTransitions({ vesselId, seriesIds, range, tierWindowMs })
+await store.refreshTimeWeighted({ range, maxHoldMs: 180_000 }) // as ops
+await store.queryTimeWeightedRollup({
+  vesselId,
+  seriesIds,
+  bucket: '15m',
+  range,
+  tierWindowMs,
+})
 ```
 
 Every method returns what it cost: `WriteResult` carries `statements`,
@@ -79,6 +94,95 @@ const { buckets, skipped } = bucketReadings(readings, {
 
 The 30-day "one line per day" view over a long window still wants a server-side
 daily aggregate — this summarizes what the page holds, it does not fetch more.
+
+## State history: `telemetry_state`
+
+Migration 0004, mybo-at-v2 docs/19 § 5.1. Non-number values -- shore power
+source, autopilot state, a `notifications.*` object -- are stored as CHANGES:
+the edge sends a changed value once, plus its heartbeat, and the store keeps
+each row as sent. There are no rollups; the reads are "state at t" and
+"transitions in a range".
+
+| Value                    | Column                      | `series.value_kind` |
+| ------------------------ | --------------------------- | ------------------- |
+| string                   | `value_text`                | `text`              |
+| boolean                  | `value_text` `true`/`false` | `bool`              |
+| object, array, JSON null | `value_json`                | `json`              |
+| number                   | refused: use `writeNumeric` | --                  |
+
+A CHECK enforces exactly one value column. The natural key is
+`(vessel_id, series_id, ts, installation_role)` with `ON CONFLICT DO NOTHING`,
+so a redelivered batch inserts nothing. An object whose leaves are all numbers
+(`navigation.attitude`) is the consumer's to flatten into numeric children
+before it reaches this store.
+
+Both reads take `tierWindowMs` (required, as `RollupQuery`'s) and never return a
+row older than the tier floor -- not even as "the state now". `queryStateAt` is
+one backward index probe per series; `queryStateTransitions` has a row ceiling
+(`maxRows`, default 10,000, raised only by the store's `maxStateRows`) and
+reports truncation. Both default to the primary installation.
+
+## Time-weighted rollups
+
+Migration 0005, owed since mybo-at-v2 D-127. The 0002 ladder averages
+**samples**, which is wrong for a change-only series: a value is written when it
+changes and HOLDS until the next row. A minute that read 10 for 50 s and 20 for
+10 s has a sample mean of 15 and a time-weighted mean of
+`(10 * 50 + 20 * 10) / 60 = 11.67`. `tests/time-weighted.test.ts` carries that
+held-value fixture; the live suite runs the same fixture through the SQL.
+
+`telemetry_numeric_tw` is a plain hypertable, not a continuous aggregate: the
+integral needs each row's next row and each bucket's carried-in value, and a
+continuous aggregate allows neither a window function nor a look at another
+bucket. The library refreshes it:
+
+- `refreshTimeWeighted({ range, maxHoldMs, vesselId? })` (or the pure
+  `planTimeWeightedRefresh`) recomputes 1-minute rows from primary raw with
+  `lead()`, splitting each hold at minute boundaries, then sums 15m, 1h and 1d
+  rows from the 1-minute rows over the UTC days touched. Summing is exact,
+  because each 1-minute row is the integral over exactly that minute.
+- `maxHoldMs` is **required**: it is the product's heartbeat contract. A gap
+  longer than it is no data, not a held value; `heldMs` on a row is the covered
+  time and the mean is over that time only. 1 s to 6 h.
+- The range is widened by `maxHoldMs` both ways, to the minute: forward, because
+  a late row changes how long the row before it held and what the following
+  minutes carry in; back, to finish the minutes an earlier refresh stopped short
+  of when it clamped to the current minute. So refreshes must come within
+  `maxHoldMs` of each other (or a cron must look back further). The range is
+  then clamped to the current minute and split at UTC days. Each statement binds
+  four or three parameters and reads at most one day of raw plus the hold.
+- It is an idempotent upsert, run as `ops` (it reads raw, which `ingest_writer`
+  cannot). **Nothing runs it automatically**: schedule it from Node like
+  retention, with a lookback, and call it after a backfill. Until a consumer
+  does, the table is empty and every existing read is unchanged.
+
+`queryTimeWeightedRollup` takes a `RollupQuery` (same tier clip, series set and
+row ceiling) and returns `avg` (time-weighted), `heldMs`, `n` (rows that started
+in the bucket, 0 for a fully held one), and `min`/`max`/`last` of the values
+held. `timeWeightedBuckets` in the root entry is the same arithmetic in memory;
+the live suite proves the SQL equal to it, bucket by bucket at every level, on
+the held-value fixture, a seeded random series with outages, and after a late
+row refreshed on its own.
+
+## AIS tables
+
+Migration 0006, mybo-at-v2 docs/19 § 4.3 (D-141). The raw AIS streams never
+reach this store; only what an encounter builder derives does. Plain tables,
+`vessel_id` always the observing vessel:
+
+- `ais_contact` -- one row per (vessel, MMSI): first and last seen, latest
+  static data (`name`, `call_sign`, `imo`, `ship_type`, `length_m`, `beam_m`,
+  `destination`, `static_extra` JSONB).
+- `ais_encounter` -- a closed encounter: start and end, closest approach
+  distance and time, the target's track as `GEOGRAPHY(LINESTRINGM, 4326)` (M is
+  epoch seconds), nullable `passage_id` (TEXT, the product's id). Keyed by
+  `(vessel_id, mmsi, start_ts)` so a journal replay lands on the same row.
+- `ais_encounter_open` -- the builder's working table, one row per target in
+  range, deleted when the encounter closes.
+
+"Around me now" (`ais_now`) is not here: it is one D1 row per vessel in the
+product. The builder itself is the consumer's (mybo-at-v2 L6); this release
+ships the schema and grants only.
 
 ## What is bounded, and by what
 
@@ -228,6 +332,18 @@ summarizes, and a window that is not a positive finite number.
 - **track, per tier** — row deletes chunked at `maxVesselsPerStatement`.
 - **raw, per tier** — no sweep. See below.
 
+### Raw never swept: `globalRawWindowMs: 'never'`
+
+The lossless mode (mybo-at-v2 D-140, "roll up, never delete"). The plan carries
+no raw statement at all -- not a drop with a far cutoff -- so
+`droppedRawOlderThan` is `null` and `skipped` starts with
+`raw is never swept (globalRawWindowMs: 'never')`. A tier's `rawWindowMs` stays
+a read depth, with no global ceiling to exceed. Rollup and track windows still
+apply when given; a policy that omits them too plans zero statements, and the
+sweep is the lock and unlock and nothing else. Any other string is refused, so a
+typo is never read as "keep forever". `telemetry_state`, `telemetry_numeric_tw`
+and the AIS tables are never swept in either mode.
+
 ### A tier's raw window is a read depth, not a delete
 
 `tiers.<name>.rawWindowMs` deletes nothing. Raw is kept for `globalRawWindowMs`
@@ -246,7 +362,7 @@ every other tier; the storage is the price of rollups that stay whole.
 
 ## Migrations
 
-Three files, applied through the narduk-postgres runner. The target is
+Seven files, applied through the narduk-postgres runner. The target is
 **TimescaleDB 2.30 on PostgreSQL 17** and the DDL uses that version's APIs:
 `by_range()` for the time dimension (the positional `create_hypertable` form is
 deprecated since 2.13) and the columnstore API (`enable_columnstore`,
@@ -272,6 +388,23 @@ and `add_compression_policy` in 2.18.
 - `0003_history_roles.sql` — the grant matrix, and only the grant matrix. It is
   **generated** from `HISTORY_ROLE_PRIVILEGES` in `src/timescale/roles.ts`, and
   a test asserts the file is byte-identical to `historyRoleGrantStatements()`.
+- `0004_history_state.sql` -- `telemetry_state` (7-day chunks, columnstore after
+  3 days, one-value CHECK). See "State history".
+- `0005_history_time_weighted.sql` -- `telemetry_numeric_tw`, a plain hypertable
+  the library refreshes. Schedules nothing. See "Time-weighted rollups".
+- `0006_history_ais.sql` -- `ais_contact`, `ais_encounter`,
+  `ais_encounter_open`. See "AIS tables".
+- `0007_history_roles_additions.sql` -- grants for those tables, generated from
+  `HISTORY_ROLE_PRIVILEGE_ADDITIONS` and asserted equal to
+  `historyRoleAdditionGrantStatements()`. A second matrix rather than an edit of
+  0003, which is applied and immutable. `ingest_writer` may INSERT
+  `telemetry_state` (no UPDATE, no DELETE), upsert `ais_contact` and
+  `ais_encounter`, and fully mutate `ais_encounter_open`; it gets nothing on
+  `telemetry_numeric_tw`. `history_reader` reads every new table; `ops` reads
+  and mutates them.
+
+0004-0007 are additive: on a database at 0003 they create empty tables and
+grants, schedule no job, and change no existing table, view or policy.
 
 ```ts
 import { loadMigrationsFromDirectory } from '@narduk-enterprises/narduk-postgres/node'
@@ -296,6 +429,12 @@ from a zero database — two hypertables, four continuous aggregates, six policy
 jobs, `segmentby` carrying `installation_role`, replay idempotency, the shadow
 row excluded from the 1m average, and a retention sweep through a session-pinned
 connection.
+
+`tests/live-state-tw-ais.test.ts` covers 0004-0007. Last run 2026-10-23:
+PostgreSQL 17.11 + TimescaleDB 2.30.1 + PostGIS 3.6.0, 9/9 passing, both as an
+upgrade of a database already at 0003 and from an empty database (all seven
+applied, a re-run a no-op); `live-integration.test.ts` 11/11 on the same
+instance. Removing the refresh's forward widening fails two of them.
 
 Also run on 2026-09-25 for narduk-libs#939: PostgreSQL 16.13 + TimescaleDB
 2.30.1 + PostGIS 3.4.2, 9/9 passing, including the densely filled decimated
