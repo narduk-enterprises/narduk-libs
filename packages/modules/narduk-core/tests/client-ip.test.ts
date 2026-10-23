@@ -30,9 +30,7 @@ describe('getClientIp', () => {
   })
 
   it('ignores x-forwarded-for by default', async () => {
-    expect(await resolve({ 'x-forwarded-for': `${SPOOFED_ADDRESS}, 198.51.100.4` })).not.toBe(
-      SPOOFED_ADDRESS,
-    )
+    expect(await resolve({ 'x-forwarded-for': `${SPOOFED_ADDRESS}, 198.51.100.4` })).toBeUndefined()
   })
 
   it('takes the first x-forwarded-for entry only when asked to', async () => {

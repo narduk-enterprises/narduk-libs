@@ -98,7 +98,7 @@ export async function authenticateD1ApiKey(
   }
 
   const currentTime = options.nowSeconds?.() ?? nowSeconds()
-  if (row.expires_at && row.expires_at < currentTime) {
+  if (row.expires_at !== null && row.expires_at < currentTime) {
     return { ok: false, reason: 'expired' }
   }
 

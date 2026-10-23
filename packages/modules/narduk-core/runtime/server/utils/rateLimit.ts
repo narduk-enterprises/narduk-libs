@@ -2,6 +2,7 @@ import { createError, setResponseHeader } from 'h3'
 import { useRuntimeConfig } from 'nitropack/runtime'
 
 import { rateLimitClientBucket } from '../rate-limit/client-bucket'
+import { RATE_LIMIT_MAX_TRACKED_KEYS } from '../rate-limit/window'
 
 import { getClientIp } from './client-ip'
 import { readWorkerRuntimeEnv } from './worker-env'
@@ -220,6 +221,10 @@ export function enforceRateLimit(
 
   let entry = bucket.get(key)
   if (!entry) {
+    // Bounded like the window store: evict the oldest-inserted key when full.
+    if (bucket.size >= RATE_LIMIT_MAX_TRACKED_KEYS) {
+      bucket.delete(bucket.keys().next().value!)
+    }
     entry = { timestamps: [] }
     bucket.set(key, entry)
   }

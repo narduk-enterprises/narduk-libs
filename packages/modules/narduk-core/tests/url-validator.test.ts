@@ -32,4 +32,17 @@ describe('fetchWithValidatedRedirects', () => {
       globalThis.fetch = realFetch
     }
   })
+
+  it('returns RATE_LIMITED on a 429 without retrying under other User-Agents', async () => {
+    const realFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 429 })) as typeof fetch
+    try {
+      const result = await fetchWithValidatedRedirects('http://example.com/')
+      expect(result.ok).toBe(false)
+      expect(result.error?.code).toBe('RATE_LIMITED')
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 })

@@ -229,7 +229,7 @@ export async function authenticateApiKey(event: H3Event): Promise<AuthenticatedA
   if (key.revokedAt) return null
 
   // Check expiration
-  if (key.expiresAt && key.expiresAt < nowSec()) return null
+  if (key.expiresAt !== null && key.expiresAt < nowSec()) return null
 
   // Update last_used_at (fire-and-forget, don't block the response). The age
   // test is in the UPDATE's WHERE, so a key used in the last five minutes

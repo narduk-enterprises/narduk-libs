@@ -98,6 +98,15 @@ describe('shared-cache-headers Nitro plugin', () => {
     expect(headers.get('cdn-cache-control')).toBe('public, max-age=300, stale-while-revalidate=900')
   })
 
+  it('makes a response no-store when Set-Cookie is written after a live profile', async () => {
+    const { headers } = await respond((event) => {
+      setCacheProfile(event, 'live')
+      event.node.res.setHeader('Set-Cookie', 'session=abc; Path=/')
+    })
+    expect(headers.get('cache-control')).toBe('private, no-store')
+    expect(headers.get('cdn-cache-control')).toBeNull()
+  })
+
   it('treats a CDN-only edge directive as shared-cacheable', async () => {
     const { headers } = await respond((event) => {
       event.node.res.setHeader('CDN-Cache-Control', 'max-age=300')

@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { withD1Cache } from '../runtime/server/utils/d1Cache'
+import { cleanExpiredCache, withD1Cache } from '../runtime/server/utils/d1Cache'
 
 import type { H3Event } from 'h3'
 
@@ -12,7 +12,12 @@ vi.mock('nitropack/runtime', () => ({
 const NOW = new Date('2026-09-25T12:00:00.000Z')
 const NOW_SEC = NOW.getTime() / 1000
 
-function createD1(row: { expires_at: number; value: string } | null, onRead?: () => void) {
+function createD1(
+  row: { expires_at: number; value: string } | null,
+  onRead?: () => void,
+  rowKey = 'k',
+) {
+  const deletes: unknown[][] = []
   const writes: Array<{ expiresAt: number; key: string; value: string }> = []
   const db = {
     prepare(sql: string) {
@@ -21,10 +26,15 @@ function createD1(row: { expires_at: number; value: string } | null, onRead?: ()
           return {
             async first() {
               onRead?.()
-              return sql.startsWith('SELECT') ? row : null
+              // The row belongs to one key: any other bound key (or a read with no
+              // key predicate) must miss, as on a real table.
+              const keyed = sql.includes('WHERE key = ?') && args[0] === rowKey
+              return sql.startsWith('SELECT') && keyed ? row : null
             },
             async run() {
+              if (sql.startsWith('DELETE')) deletes.push([sql, ...args])
               const [key, value, expiresAt] = args as [string, string, number]
+              if (sql.startsWith('DELETE')) return { meta: { changes: 1 } }
               writes.push({ expiresAt, key, value })
               return { meta: { changes: 1 } }
             },
@@ -33,7 +43,7 @@ function createD1(row: { expires_at: number; value: string } | null, onRead?: ()
       }
     },
   } as unknown as D1Database
-  return { db, writes }
+  return { db, writes, deletes }
 }
 
 function createEvent(db: D1Database, host: Record<string, unknown> = {}): H3Event {
@@ -57,9 +67,13 @@ describe('withD1Cache (narduk-libs#925)', () => {
   })
 
   it('re-checks freshness after a slow D1 read', async () => {
-    const { db } = createD1({ expires_at: NOW_SEC + 30, value: '"old"' }, () => {
-      vi.setSystemTime(new Date(NOW.getTime() + 40_000))
-    })
+    const { db } = createD1(
+      { expires_at: NOW_SEC + 30, value: '"old"' },
+      () => {
+        vi.setSystemTime(new Date(NOW.getTime() + 40_000))
+      },
+      'slow:read',
+    )
     const fetcher = vi.fn(async () => 'fresh')
     expect(await withD1Cache(createEvent(db), 'slow:read', 30, fetcher)).toBe('fresh')
     expect(fetcher).toHaveBeenCalledTimes(1)
@@ -139,5 +153,20 @@ describe('withD1Cache (narduk-libs#925)', () => {
       returnMeta: true,
     })
     expect(miss._meta).toEqual({ cachedAt: NOW.toISOString(), stale: false })
+  })
+
+  it('reads only the requested key', async () => {
+    const { db } = createD1({ expires_at: NOW_SEC + 200, value: '"cached"' })
+    const fetcher = vi.fn(async () => 'fresh')
+    expect(await withD1Cache(createEvent(db), 'other', 300, fetcher)).toBe('fresh')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('cleanExpiredCache keeps rows still inside their stale window', async () => {
+    const { db, deletes } = createD1(null)
+    await cleanExpiredCache(createEvent(db), { staleWindowSeconds: 3600 })
+    expect(deletes[0]![1]).toBe(NOW_SEC - 3600)
+    await cleanExpiredCache(createEvent(db))
+    expect(deletes[1]![1]).toBe(NOW_SEC)
   })
 })

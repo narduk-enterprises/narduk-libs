@@ -11,6 +11,7 @@ import {
   getSSETotalConnections,
   registerSSE,
   removeSSE,
+  SSE_MAX_CONNECTIONS,
 } from '../runtime/server/utils/sse'
 
 import type { SSEConnection } from '../runtime/server/utils/sse'
@@ -110,5 +111,24 @@ describe('broadcastSSE', () => {
     await settle()
 
     expect(getSSEConnectionCount(CHANNEL)).toBe(1)
+  })
+
+  it('removes the connection when the request signal aborts', () => {
+    const { writable } = new TransformStream<Uint8Array, Uint8Array>()
+    const controller = new AbortController()
+    registerSSE(CHANNEL, writable.getWriter(), controller.signal)
+    expect(getSSEConnectionCount(CHANNEL)).toBe(1)
+    controller.abort()
+    expect(getSSEConnectionCount(CHANNEL)).toBe(0)
+  })
+
+  it('caps total connections by dropping the oldest', () => {
+    const before = getSSETotalConnections()
+    const first = registerSSE('cap-first', new TransformStream().writable.getWriter())
+    registered.push(first)
+    const writer = new TransformStream().writable.getWriter()
+    for (let i = 0; i < SSE_MAX_CONNECTIONS; i++) registered.push(registerSSE('cap-fill', writer))
+    expect(getSSEConnectionCount('cap-first')).toBe(0)
+    expect(getSSETotalConnections()).toBeLessThanOrEqual(Math.max(before, SSE_MAX_CONNECTIONS))
   })
 })

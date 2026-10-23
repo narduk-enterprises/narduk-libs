@@ -17,9 +17,7 @@
  *   const userId = '...'
  *   const { readable, writable } = new TransformStream()
  *   const writer = writable.getWriter()
- *   const conn = registerSSE(userId, writer)
- *
- *   event.node.req.on('close', () => removeSSE(userId, conn))
+ *   registerSSE(userId, writer, toWebRequest(event).signal)
  *
  *   return new Response(readable, {
  *     headers: {
@@ -41,15 +39,30 @@ export interface SSEConnection {
   writer: WritableStreamDefaultWriter
 }
 
+/** Ceiling on live connections per isolate; the oldest is dropped past it. */
+export const SSE_MAX_CONNECTIONS = 5000
+
 const _channels = new Map<string, Set<SSEConnection>>()
 const _encoder = new TextEncoder()
 
 /**
  * Register an SSE connection on a channel.
- * Returns the connection handle needed for `removeSSE`.
+ * Returns the connection handle needed for `removeSSE`. Pass the request's
+ * `AbortSignal` to remove the connection automatically when the client leaves.
  */
-export function registerSSE(channelId: string, writer: WritableStreamDefaultWriter): SSEConnection {
+export function registerSSE(
+  channelId: string,
+  writer: WritableStreamDefaultWriter,
+  signal?: AbortSignal,
+): SSEConnection {
   const conn: SSEConnection = { writer, channelId }
+  while (getSSETotalConnections() >= SSE_MAX_CONNECTIONS) {
+    const [oldestChannel, oldestSet] = _channels.entries().next().value!
+    const oldest = oldestSet.values().next().value!
+    removeSSE(oldestChannel, oldest)
+    oldest.writer.close().catch(() => {})
+  }
+  signal?.addEventListener('abort', () => removeSSE(channelId, conn), { once: true })
   let set = _channels.get(channelId)
   if (!set) {
     set = new Set()

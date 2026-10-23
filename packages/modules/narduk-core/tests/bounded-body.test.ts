@@ -45,6 +45,12 @@ describe('readBoundedBody (narduk-libs#565)', () => {
     expect(sent()).toBe(0)
   })
 
+  it('cancels the stream when the declared length is over the ceiling', async () => {
+    const { response, cancelled } = streamed(['ab'], { 'content-length': '10' })
+    await readBoundedBody(response, 4).catch(() => null)
+    expect(cancelled()).toBe(true)
+  })
+
   it('cancels a stream at the ceiling instead of draining it', async () => {
     const { response, sent, cancelled } = streamed(['abc', 'def', 'ghi', 'jkl'])
     const error = await readBoundedBody(response, 4).catch((caught: unknown) => caught)

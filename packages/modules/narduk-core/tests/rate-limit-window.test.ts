@@ -95,6 +95,16 @@ describe('exempt paths', () => {
     }
   })
 
+  it('does not exempt a path with a dot segment that leaves the exempt prefix', () => {
+    for (const path of [
+      '/sitemap/../api/admin',
+      '/__sitemap__/../api/login',
+      '/sitemap/%2e%2e/api',
+    ]) {
+      expect(isRateLimitExemptPath(path, RATE_LIMIT_DEFAULT_EXEMPT_PATHS)).toBe(false)
+    }
+  })
+
   it('does not exempt an ordinary api route', () => {
     expect(isRateLimitExemptPath('/api/stations', RATE_LIMIT_DEFAULT_EXEMPT_PATHS)).toBe(false)
   })
