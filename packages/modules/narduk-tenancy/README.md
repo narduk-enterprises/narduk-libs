@@ -310,9 +310,21 @@ recording their audit events execute in one transaction. Concurrent presenters
 cannot both win; a failed write rolls back the claim so it can be retried. A
 replayed accepted token never restores a subsequently removed membership.
 
-Accepting promotes an existing membership when the invite role is higher, and
-never demotes. A resource-scoped invite additionally writes a narrowing override
-for that resource.
+An organization-wide invite creates membership or promotes an existing
+membership when the invite role is higher, and never demotes.
+
+A resource-scoped invite only writes a narrowing override for that resource; it
+never creates or promotes organization membership. Acceptance requires an
+existing member whose organization role is at least the invited role, checked
+both before and inside the atomic claim. A nonmember or lower-ranked member
+receives `forbidden`; a removal or demotion racing the claim receives
+`conflict`. Refusal leaves the invitation unconsumed. This model cannot
+represent resource-only access for a nonmember: consumers must not treat a
+scoped invitation as organization onboarding. Previously, scoped acceptance
+could grant the invited role across sibling resources; this security fix refuses
+that privilege expansion. Existing memberships from earlier acceptances require
+consumer review; this fix does not infer which historical organization roles
+should be removed.
 
 ### Database typing
 
