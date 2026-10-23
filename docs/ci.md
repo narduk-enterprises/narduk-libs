@@ -74,9 +74,9 @@ next main run saves a dedicated store with generated-app dependencies. A new
 lockfile starts cold; only main writes caches, so fork PRs cannot seed
 dependencies for later runs. Its separate Turbo build cache still uses content
 hashes to invalidate stale compiled output. The coordinated package build uses
-two Turbo workers and keeps its `^build` dependency ordering; parent and nested
-Node heaps and the charts-specific build remain capped at 2048 MiB. The
-generated app phases continue sequentially.
+four Turbo workers (`--build-concurrency=4`) and keeps its `^build` dependency
+ordering; parent and nested Node heaps and the charts-specific build remain
+capped at 2048 MiB. The generated app phases continue sequentially.
 
 The packed consumer always builds/packs packages, installs every packed package
 outside the workspace, checks testkit exports/CLI, generates a fresh app, and

@@ -53,9 +53,10 @@ Executed: milestone
 2026-09-20 22:56Z and stamped onto all 190 issues open at that instant. Verified
 server-side afterwards: milestone `open_issues=190 closed_issues=0`, the
 milestone's member set diffs empty against the freeze snapshot, and no open
-issue in the repository lacks a milestone. The admission rule is recorded in the
-milestone description and in `AGENTS.md` § Backlog clear-out freeze, so a filing
-agent sees it without reading this plan.
+issue in the repository lacks a milestone. The admission rule is recorded in
+`AGENTS.md` § Backlog clear-out freeze (the amendment governs). The milestone
+description still carries the original P0-only text; where they differ,
+`AGENTS.md` and the amendment win.
 
 The campaign is done when that milestone reaches zero. Raw open-issue count is
 not the measure — with filing left open it will not fall, and that is expected.
@@ -113,7 +114,8 @@ tracker, transferring an `externally-owned` issue, deferring one, anything
 labelled `P0-critical`, and every change to milestone membership. An ambiguous
 probe resolves to `active`, never to a closure.
 
-Known starting points, all verified as still open today:
+Known starting points, all verified as still open on 2026-09-20 (#577, #544,
+#561 and #631 have since closed; read the list as history):
 
 - **#577 closes now.** Its premise was "always-red, Cursor quota exhausted". The
   last 20 `cursor-review` runs are 14 success / 2 cancelled / 4
@@ -129,6 +131,12 @@ Known starting points, all verified as still open today:
   in the active queue.
 
 ## Phase 2 — the two CI items worth doing
+
+> **Done (checked 2026-10-22).** Scoped packed-consumer
+> (`prepare-packed-consumer.mjs --packages`) and local preflight
+> (`scripts/preflight.mjs`) exist, and `narduk-lint` no longer rewrites
+> `lint-budget.json` (#623 fixed; see `AGENTS.md`). The text below is the
+> original order, kept as history.
 
 Everything else from the original Phase 1 is dropped: no merge queue, no
 protected-main ruleset change, and **no change to `verify-release-ci.mjs`**.
@@ -280,8 +288,9 @@ right to keep:
 
 1. Lane runs local preflight before pushing.
 2. One coherent PR per logical batch, not a stream of fixups.
-3. `scripts/verify-pr-gate.py <pr>` prints the verdict; that verdict is the
-   green claim. Merge behind it per the estate default (company-hq D-ORG-1 (g)).
+3. `verify-pr-gate.py <pr>` (in the private agent-infrastructure repo, not
+   `scripts/` here) prints the verdict; that verdict is the green claim. Merge
+   behind it per the estate default (company-hq D-ORG-1 (g)).
 4. Approve any `action_required` run on sight.
 5. One release PR per wave; publication keeps the exact-SHA `verify` proof.
 6. `npm.nard.uk` trails publication until its sync run — a consumer adoption

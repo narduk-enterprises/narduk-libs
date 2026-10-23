@@ -1,5 +1,8 @@
 # MapKit consolidation plan — one canonical `narduk-mapkit` in narduk-libs
 
+> **Update:** `api-2.1.md` was the 2026-09-17 contract; the published
+> `@narduk-enterprises/narduk-mapkit` is now 3.0.0 (with a `./nuxt` export).
+>
 > **SUPERSEDED by
 > [`packages/modules/narduk-mapkit/docs/api-2.1.md`](../../packages/modules/narduk-mapkit/docs/api-2.1.md)
 > on 2026-09-17.** The **design** in this document is void: the two-package

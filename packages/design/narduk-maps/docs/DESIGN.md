@@ -33,10 +33,12 @@ boundaries, and pins covering labels.
 
 ## Look (tokens, light; dark is selected, not inverted)
 
+The shipped values live in `src/tokens.ts` (`LOOKS.harbor`); this table is kept in step with them, and `tokens.ts` wins on any difference.
+
 | Token | Light | Use |
 | --- | --- | --- |
-| `--color-map-water` | `#dfe8ee` | sea and lakes (Aquidneck's sea already) |
-| `--color-map-land` | `#f7f6f2` | land |
+| `--color-map-water` | `#d3e2eb` | sea and lakes (Aquidneck's sea already) |
+| `--color-map-land` | `#f6f5f1` | land |
 | `--color-map-shore` | water mixed 60% toward `#9fb6c6` | 1.5px coastline plus a 6px halo at 35% on the water side |
 | `--color-map-boundary` | `#8a97a3` at 70% | jurisdiction lines, 1px, round joins |
 | `--color-map-boundary-focus` | `--color-map-ink` | selected or hovered shape, 2px |

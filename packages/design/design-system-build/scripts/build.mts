@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, readdir, mkdir, mkdtemp, rename, rm, lstat, writeFile } from 'node:fs/promises'
+import { readFile, readdir, mkdir, mkdtemp, rename, rm, lstat, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -171,6 +171,27 @@ export function shellCardPlan(
 }
 
 /**
+ * Each planned card file must author exactly the one card id its name implies,
+ * and that id must have rendered: a file that lost or renamed its
+ * `data-design-card` would otherwise just drop out of the bundle while the
+ * manifest still listed it.
+ */
+export function assertPlannedCardsRendered(
+  plan: readonly { file: string; id: string }[],
+  cardSources: Record<string, string>,
+  renderedIds: readonly string[],
+) {
+  for (const card of plan) {
+    const source = cardSources[`narduk-shell/src/design-cards/${card.file}`] ?? ''
+    const ids = Object.keys(galleryCoverage(source))
+    if (ids.length !== 1 || ids[0] !== card.id || !renderedIds.includes(card.id))
+      throw new Error(
+        `${card.file} must author exactly one card, data-design-card="${card.id}", and it must render (found: ${ids.join(', ') || 'none'}).`,
+      )
+  }
+}
+
+/**
  * Card coverage across every source that authors a card: this package's
  * gallery, plus one file per narduk-shell component. Card ids are global to the
  * rendered gallery, so a collision between two sources is an error here rather
@@ -192,6 +213,12 @@ export function mergeCoverage(sources: Record<string, string>): Record<string, s
 
 export const NO_SHELL_NOTE = 'narduk-shell is not yet available in the coded library.'
 
+/** Any @import, any non-data url(), and legacy expression(): nothing external or executable in CSS. */
+const EXTERNAL_CSS = /@import|expression\(|url\(\s*(?!['"]?data:)/i
+// Same-origin paths are fine (a card's `<form action="/search">`); a scheme or `//` is not.
+const LOOSE_URL_ATTRS = new Set(['action', 'formaction', 'poster', 'data'])
+const ABSOLUTE_URL = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/)/i
+
 /** Only the controlled, prerendered Vue gallery supplies markup. No canvas input. */
 export function renderBundle(html: string, css: string, note: string = NO_SHELL_NOTE) {
   // The lookahead must run before the optional quote is consumed: with
@@ -203,7 +230,7 @@ export function renderBundle(html: string, css: string, note: string = NO_SHELL_
   // first exercised once NePageHeader/NeSectionHeader's cards render real
   // breadcrumbs with a separator icon, is exactly this shape:
   // self-contained, but quoted (narduk-libs#282 PR review).
-  if (!css.trim() || /@import\s|url\(\s*(?!['"]?data:)/i.test(css)) {
+  if (!css.trim() || EXTERNAL_CSS.test(css)) {
     throw new Error(
       'The compiled stylesheet must be self-contained, with no external assets or imports',
     )
@@ -228,7 +255,12 @@ export function renderBundle(html: string, css: string, note: string = NO_SHELL_
         child.attrs.some(
           ({ name, value }) =>
             name.startsWith('on') ||
-            (['src', 'srcset', 'href'].includes(name) && !value.startsWith('#')),
+            (name === 'style' && EXTERNAL_CSS.test(value)) ||
+            (name === 'srcset'
+              ? value.split(',').some((candidate) => !candidate.trim().startsWith('#'))
+              : name === 'src' || name === 'href'
+                ? !value.startsWith('#')
+                : (LOOSE_URL_ATTRS.has(name) || name.endsWith('href')) && ABSOLUTE_URL.test(value)),
         )
       ) {
         throw new Error(`Card contains executable or external content: ${id}`)
@@ -363,6 +395,7 @@ export async function build() {
   // fails here rather than quietly not reaching NE Base.
   if (json(Object.keys(componentsByCard).sort()) !== json(renderedIds))
     throw new Error('Authored gallery and rendered cards differ')
+  assertPlannedCardsRendered(plan, cardSources, renderedIds)
   const components = [...new Set(Object.values(componentsByCard).flat())].sort()
   const require = createRequire(import.meta.url)
   const uiRoot = dirname(require.resolve('@narduk-enterprises/narduk-ui/tokens.css'))
@@ -385,8 +418,15 @@ export async function build() {
     { root: shellRoot, label: 'narduk-shell' },
     { root: packageRoot, label: 'design-system-build' },
   ]
+  // The prerendered HTML is hashed against today's sources below, so it must not
+  // predate them: refuse a stale `.output` (the `build` script regenerates first).
+  const generatedAt = (await stat(join(publicRoot, 'index.html'))).mtimeMs
   for (const group of groups) {
     const paths = await sourceFiles(group.root)
+    for (const path of paths.filter((entry) => /\.(vue|css)$/.test(entry))) {
+      if ((await stat(join(group.root, path))).mtimeMs > generatedAt)
+        throw new Error(`.output is older than ${group.label}/${path}; run nuxt generate first`)
+    }
     const rows = await Promise.all(
       paths.map(
         async (path) =>
@@ -450,8 +490,20 @@ export async function build() {
         await writeFile(join(temporary, path), data)
       }),
     )
-    await rm(target, { recursive: true, force: true })
-    await rename(temporary, target)
+    // rename cannot replace a non-empty directory, so move the old tree aside
+    // first and restore it if the swap fails: a failed build keeps the last preview.
+    const backup = `${temporary}.old`
+    const hadOld = await rename(target, backup).then(
+      () => true,
+      () => false,
+    )
+    try {
+      await rename(temporary, target)
+    } catch (error) {
+      if (hadOld) await rename(backup, target)
+      throw error
+    }
+    await rm(backup, { recursive: true, force: true })
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

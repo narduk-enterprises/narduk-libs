@@ -18,7 +18,14 @@ export const MISSING = "—";
  */
 const numberFormats = new Map<string, Intl.NumberFormat>();
 
-function formatNumber(value: number, decimals: number, grouping: boolean): string {
+function formatNumber(
+  value: number,
+  decimals: number,
+  grouping: boolean,
+  fallback: number,
+): string {
+  // Intl throws a RangeError outside 0-100; one bad prop must not fail a render.
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) decimals = fallback;
   const key = `${decimals}:${grouping}`;
   let format = numberFormats.get(key);
   if (!format) {
@@ -47,7 +54,7 @@ export function formatValue(
 ): string {
   if (value == null || !Number.isFinite(value)) return MISSING;
   const { decimals = 1, grouping = true, unit } = options;
-  const text = formatNumber(value, decimals, grouping);
+  const text = formatNumber(value, decimals, grouping, 1);
   return unit ? `${text} ${unit}` : text;
 }
 
@@ -62,7 +69,7 @@ export function formatDelta(
 ): string {
   if (value == null || !Number.isFinite(value)) return MISSING;
   const { decimals = 2, grouping = true, unit } = options;
-  const magnitude = formatNumber(Math.abs(value), decimals, grouping);
+  const magnitude = formatNumber(Math.abs(value), decimals, grouping, 2);
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return unit ? `${sign}${magnitude} ${unit}` : `${sign}${magnitude}`;
 }

@@ -188,6 +188,33 @@ describe('upgrade ownership contract', () => {
     expect(e2e).toContain(REGION_MARKERS.e2eFlakePolicy.end)
   })
 
+  it('honours a narduk:unmanaged marker in package.json', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents
+        .replace(/"build:ci": "[^"]*"/u, '"build:ci": "pnpm run build"')
+        .replace('{', '{\n  "//": "narduk:unmanaged",'),
+    )
+    const disowned = await read(targetDir, 'package.json')
+
+    const report = await upgradeNardukApp({ targetDir, write: true })
+    expect(statusOf(report, 'package.json')).toBe('unmanaged')
+    expect(await read(targetDir, 'package.json')).toBe(disowned)
+  })
+
+  it('does not throw on a scoped package name, a low localDevNuxtPort or an uppercase capability', async () => {
+    const targetDir = await scaffold()
+    await edit(targetDir, 'package.json', (contents) =>
+      contents.replace(/"name": "[^"]*"/u, '"name": "@scope/harbor"'),
+    )
+    await edit(targetDir, 'apps/web/package.json', (contents) =>
+      contents.replace(/"localDevNuxtPort": \d+/u, '"localDevNuxtPort": 80'),
+    )
+    await expect(
+      upgradeNardukApp({ targetDir, capabilities: 'SEO', only: ['.github/dependabot.yml'] }),
+    ).resolves.toBeDefined()
+  })
+
   it('is idempotent: a second write run reports no drift', async () => {
     const targetDir = await scaffold()
     await edit(targetDir, '.github/workflows/dependabot-merge.yml', () => 'name: Stale\n')

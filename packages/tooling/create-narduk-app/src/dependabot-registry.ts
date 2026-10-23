@@ -1,4 +1,4 @@
-import { DEPENDABOT_COOLDOWN_DAYS } from './dependency-policy.js'
+import { DEPENDABOT_COOLDOWN_DAYS, dependabotPolicyLines } from './dependency-policy.js'
 import { isDisowned, UNMANAGED_MARKER, unmanagedMarkerFor } from './ownership.js'
 
 /**
@@ -187,9 +187,7 @@ export function githubPackagesDependabot(): string {
     '    labels:',
     "      - 'dependencies'",
     '    open-pull-requests-limit: 2',
-    '    cooldown:',
-    `      default-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
-    `      semver-major-days: ${DEPENDABOT_COOLDOWN_DAYS}`,
+    ...dependabotPolicyLines(),
     '    groups:',
     '      safe:',
     '        patterns:',

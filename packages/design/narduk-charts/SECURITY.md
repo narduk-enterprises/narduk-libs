@@ -2,8 +2,10 @@
 
 ## Dependency audits
 
-Run `npm audit` regularly; CI runs `npm audit --audit-level=high` on pushes and
-PRs.
+CI runs `pnpm audit --audit-level high` at the repository root on pushes and
+PRs; it honors the ignore list in the root `package.json`
+(`pnpm.auditConfig.ignoreGhsas`). Run that command from the root, not `npm audit`
+in this package (it has no `package-lock.json`).
 
 ## Content Security Policy
 

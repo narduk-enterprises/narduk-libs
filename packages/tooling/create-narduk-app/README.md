@@ -222,6 +222,10 @@ in the file's first five lines, in that file's own comment syntax:
 version: 2
 ```
 
+A JSON manifest (`package.json`, `apps/web/package.json`) has no comments; put
+the token in a string value in its first five lines, for example
+`"//": "narduk:unmanaged"`.
+
 `upgrade` then reports it as `unmanaged`, never rewrites it, and does not count
 it as drift. This is the sanctioned home for an app-owned Dependabot rule — a
 security exception's `ignore` entry (agent-infrastructure
