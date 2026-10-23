@@ -36,6 +36,8 @@ import { createMemorySink } from '@narduk-enterprises/narduk-logging/testing'
 import { createBrowserLogger } from '@narduk-enterprises/narduk-logging/browser'
 import { createWorkerLogger } from '@narduk-enterprises/narduk-logging/worker'
 import { createNodeLogger } from '@narduk-enterprises/narduk-logging/node'
+import { jobState } from '@narduk-enterprises/narduk-logging/server-health'
+if (jobState(null, 15, new Date()) !== 'never_run') throw Error('server-health entry changed')
 const sink = createMemorySink()
 for (const create of [createLogger, createBrowserLogger, createWorkerLogger, createNodeLogger]) {
   const log = create({service: 'packed-npm', environment: 'test', sinks: [sink]})
