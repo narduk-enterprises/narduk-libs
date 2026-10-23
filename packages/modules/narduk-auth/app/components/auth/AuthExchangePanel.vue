@@ -33,6 +33,8 @@ onMounted(async () => {
   const tokenHash = typeof route.query.token_hash === 'string' ? route.query.token_hash : ''
   const rawType = typeof route.query.type === 'string' ? route.query.type : ''
   const verificationType = EMAIL_VERIFICATION_TYPES.find((type) => type === rawType)
+  // The exchange route applies sanitizeNextPath() before it redirects anywhere.
+  // eslint-disable-next-line narduk/require-safe-redirect-query -- guarded server-side
   const next = typeof route.query.next === 'string' ? route.query.next : undefined
   const providerError =
     typeof route.query.error_description === 'string'

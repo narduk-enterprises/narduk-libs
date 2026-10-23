@@ -3,11 +3,17 @@
  * `a11y` capability pack.
  *
  * Wraps `eslint-plugin-vuejs-accessibility`'s `flat/recommended` preset and
- * downgrades every enabled rule to `warn`, then widens the `alt-text` heuristic
- * so Nuxt image components count as `<img>`.
+ * downgrades every enabled rule to `warn` (narduk-lint fails any warning), then
+ * teaches the rules that look at element names about Nuxt and Nuxt UI:
+ * `NuxtImg`/`NuxtPicture` are images and `NuxtLink`/`ULink`/`RouterLink` are
+ * anchors. The upstream rules only inspect native elements, so a PascalCase
+ * component such as `<UButton @click>` or `<UCard @click>` is never reported;
+ * `tests/composition/a11y-nuxt-ui.test.ts` pins both directions.
  */
 
 import vuejsAccessibility from 'eslint-plugin-vuejs-accessibility'
+
+import narduk from '../dist/index.js'
 
 const recommended = vuejsAccessibility.configs?.['flat/recommended'] ?? []
 
@@ -35,6 +41,30 @@ function warnify(rulesMap) {
   return result
 }
 
+/** Router links render an `<a>`; an empty one is an unnamed link. */
+const LINK_COMPONENTS = ['NuxtLink', 'ULink', 'RouterLink']
+
+/** Nuxt UI form controls: a `<label>` wrapping one is associated by nesting. */
+const CONTROL_COMPONENTS = [
+  'UCheckbox',
+  'UCheckboxGroup',
+  'UColorPicker',
+  'UFileUpload',
+  'UInput',
+  'UInputDate',
+  'UInputMenu',
+  'UInputNumber',
+  'UInputTags',
+  'UInputTime',
+  'UPinInput',
+  'URadioGroup',
+  'USelect',
+  'USelectMenu',
+  'USlider',
+  'USwitch',
+  'UTextarea',
+]
+
 /** @type {import('eslint').Linter.Config[]} */
 const a11yConfigs = recommended.map((entry, index) => {
   if (index === 0 || !entry?.rules) {
@@ -44,6 +74,7 @@ const a11yConfigs = recommended.map((entry, index) => {
   return {
     ...entry,
     files: entry.files ?? ['**/*.vue'],
+    plugins: { ...entry.plugins, narduk },
     rules: {
       ...warnify(entry.rules),
       'vuejs-accessibility/alt-text': [
@@ -53,6 +84,24 @@ const a11yConfigs = recommended.map((entry, index) => {
           object: ['object'],
         },
       ],
+      'vuejs-accessibility/anchor-has-content': [
+        'warn',
+        { components: LINK_COMPONENTS, accessibleChildren: ['NuxtImg', 'NuxtPicture', 'UAvatar'] },
+      ],
+      // Upstream's default demands nesting AND `for`; either one associates
+      // the label (HTML 4.10.4), so `<label for="x">` beside its input is fine.
+      'vuejs-accessibility/label-has-for': [
+        'warn',
+        { controlComponents: CONTROL_COMPONENTS, required: { some: ['nesting', 'id'] } },
+      ],
+      // Components stay in scope: `<UInput autofocus>` renders a native
+      // autofocus. Nuxt UI overlays already move focus into themselves on open.
+      'vuejs-accessibility/no-autofocus': ['warn', { ignoreNonDOM: false }],
+      // One precise rule in place of these two; see its header for the
+      // findings upstream reported on a dialog, a drop zone and a capture.
+      'vuejs-accessibility/click-events-have-key-events': 'off',
+      'vuejs-accessibility/no-static-element-interactions': 'off',
+      'narduk/no-static-element-interactions': 'warn',
     },
   }
 })

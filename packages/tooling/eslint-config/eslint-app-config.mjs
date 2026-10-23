@@ -683,7 +683,7 @@ export const sharedConfigs = composeSharedConfigs()
  */
 const CONTENT_RELAXED_RULES_OFF = {
   'vue/no-restricted-html-elements': 'off',
-  'better-tailwindcss/no-restricted-classes': 'off',
+  'narduk/no-restricted-utility-classes': 'off',
 }
 
 const ADMIN_PRESET_OVERRIDES = [
@@ -739,7 +739,7 @@ function selectsDesignSystemPack(capabilityPacks) {
  *    default path crashed out of the box — found by the first consumer
  *    migration. (Only an *enabled* rule resolves its plugin; ESLint skips
  *    validation at severity 0, which is why the content preset's
- *    `better-tailwindcss/no-restricted-classes: 'off'` needs no such gate.)
+ *    `narduk/no-restricted-utility-classes: 'off'` needs no such gate.)
  * 2. **The app declared Tailwind** by passing `tailwindEntryPoint` (narduk-libs#665).
  *    Inferring from a conventional `app/assets/css/main.css` — or from whether
  *    `tailwindcss` happens to resolve — is how a stale or transitive install
@@ -1059,6 +1059,31 @@ export function buildNuxtAutoImportComponentOverride(componentNames = []) {
   }
 }
 
+/**
+ * Chart and data-viz components need categorical colours; the `vh` half of the
+ * rule still applies to them.
+ *
+ * @param {string[]} allowedRawPaletteFiles
+ * @param {Array<string | string[]>} capabilityPacks
+ */
+function buildRawPaletteOverrides(allowedRawPaletteFiles, capabilityPacks) {
+  if (!allowedRawPaletteFiles.length) return []
+  const packs = requestedCapabilityPackNames(capabilityPacks).map(resolveCapabilityPackName)
+  if (!packs.includes('design-system')) {
+    throw new Error(
+      "allowedRawPaletteFiles relaxes the design-system capability pack. Add 'design-system' to capabilityPacks, or drop allowedRawPaletteFiles.",
+    )
+  }
+  return [
+    {
+      name: 'narduk/allowed-raw-palette',
+      // Nested arrays AND their patterns: the narduk plugin is registered for Vue files only.
+      files: allowedRawPaletteFiles.map((pattern) => [pattern, '**/*.vue']),
+      rules: { 'narduk/no-restricted-utility-classes': ['error', { allowRawPalette: true }] },
+    },
+  ]
+}
+
 function buildContentPresetOverrides({ trustedHtmlFiles = [] } = {}) {
   const overrides = []
 
@@ -1121,6 +1146,8 @@ function buildUtilityComposableOverrides(utilityComposableFiles) {
  * @param {Array}                                 [options.extraOverrides]
  * @param {'admin'|'content'}                     [options.appType]
  * @param {string[]}                              [options.trustedHtmlFiles]
+ * @param {string[]}                              [options.allowedRawPaletteFiles]  chart
+ *   and data-viz files that may use raw palette classes
  * @param {string[]}                              [options.allowedBrandIconFiles] accepted, inert in v2
  * @param {string[]}                              [options.utilityComposableFiles]
  * @param {string}                                [options.appRootDir]
@@ -1140,6 +1167,7 @@ export function createAppLintConfig({
   extraOverrides = [],
   appType = undefined,
   trustedHtmlFiles = [],
+  allowedRawPaletteFiles = [],
   allowedBrandIconFiles = [],
   utilityComposableFiles = [],
   appRootDir = inferAppRootDirFromStack(),
@@ -1190,6 +1218,8 @@ export function createAppLintConfig({
 
   const composed = withNuxt(
     ...sanitizedSharedConfigs,
+    // Before the content relaxations, so a file in both lists stays relaxed.
+    ...buildRawPaletteOverrides(allowedRawPaletteFiles, capabilityPacks),
     ...buildContentRelaxedOverrides(contentRelaxedFiles),
     // v1's additionalNuxtUiComponents fed narduk/no-unknown-nuxt-ui-component;
     // in v2 they widen the same vue/no-undef-components allowlist as the
