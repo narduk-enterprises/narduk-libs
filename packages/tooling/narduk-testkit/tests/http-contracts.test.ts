@@ -136,6 +136,14 @@ describe('securityHeaderFindings', () => {
       expect(ids(xfoOnly, { production: true })).toEqual([])
     })
 
+    it('judges the first of a repeated directive, as browsers do', () => {
+      const repeated = {
+        ...GOOD,
+        'Content-Security-Policy': "frame-ancestors *; frame-ancestors 'none'",
+      }
+      expect(ids(repeated, { production: true })).toEqual(['clickjacking'])
+    })
+
     it('does not mistake a source value for a directive name', () => {
       const tricky = { ...GOOD, 'Content-Security-Policy': "script-src 'self' frame-ancestors" }
       expect(ids(tricky, { production: true })).toEqual(['clickjacking'])

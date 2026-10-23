@@ -73,7 +73,8 @@ function cspDirectives(policyHeader: string | null): Array<Map<string, string[]>
       const directives = new Map<string, string[]>()
       for (const part of policy.split(';')) {
         const [name, ...sources] = part.trim().split(/\s+/u)
-        if (name) directives.set(name.toLowerCase(), sources)
+        // Browsers ignore a repeated directive, so the first one stands.
+        if (name && !directives.has(name.toLowerCase())) directives.set(name.toLowerCase(), sources)
       }
       return directives
     })
@@ -266,7 +267,8 @@ function describeResponse(response: Response): string {
 
 /** Joins rather than resolves, so a `baseUrl` path prefix (`/app`) is kept. */
 function pathUrl(baseUrl: string, path: string): string {
-  return new URL(baseUrl.replace(/\/+$/u, '') + path).href
+  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
+  return new URL(base + path).href
 }
 
 /**
