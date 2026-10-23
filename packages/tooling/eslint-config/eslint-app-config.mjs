@@ -1077,7 +1077,8 @@ function buildRawPaletteOverrides(allowedRawPaletteFiles, capabilityPacks) {
   return [
     {
       name: 'narduk/allowed-raw-palette',
-      files: allowedRawPaletteFiles,
+      // Nested arrays AND their patterns: the narduk plugin is registered for Vue files only.
+      files: allowedRawPaletteFiles.map((pattern) => [pattern, '**/*.vue']),
       rules: { 'narduk/no-restricted-utility-classes': ['error', { allowRawPalette: true }] },
     },
   ]

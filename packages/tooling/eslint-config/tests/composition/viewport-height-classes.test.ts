@@ -165,7 +165,7 @@ describe('raw palette and arbitrary colour classes', () => {
         withNuxt: withNuxtLike,
         capabilityPacks: ['design-system'],
         appRootDir: appRoot,
-        allowedRawPaletteFiles: ['app/components/charts/**/*.vue'],
+        allowedRawPaletteFiles: ['app/components/charts/**'],
       }) as never,
       cwd: appRoot,
       overrideConfigFile: true,
@@ -180,6 +180,11 @@ describe('raw palette and arbitrary colour classes', () => {
     }
     expect(await lint('app/components/charts/Bars.vue')).toEqual(['h-screen'])
     expect(await lint('app/components/Card.vue')).toEqual(['text-sky-500', 'h-screen'])
+    // A TypeScript helper in the chart folder lints without a missing-plugin error.
+    const [helper] = await chartLint.lintText('export const x = 1\n', {
+      filePath: join(appRoot, 'app/components/charts/scale.ts'),
+    })
+    expect(helper?.messages.filter((message) => message.fatal)).toEqual([])
   })
 
   it('allowedRawPaletteFiles requires the design-system pack', async () => {

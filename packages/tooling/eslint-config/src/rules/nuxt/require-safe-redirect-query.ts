@@ -225,7 +225,12 @@ export default {
           continue
         }
         if (parent.type === 'CallExpression' && parent.arguments.includes(node)) {
-          if (isGuard(parent.callee) || calleeName(parent.callee) === 'isArray') return true
+          if (calleeName(parent.callee) === 'isArray') return true
+          if (isGuard(parent.callee)) {
+            // `sanitizeSameOriginPath(value, fallback)` returns the fallback verbatim.
+            const last = parent.arguments.length - 1
+            return last === 0 || parent.arguments.indexOf(node) < last
+          }
           if (!PASS_THROUGH_CALLS.has(calleeName(parent.callee) ?? '')) return false
           node = parent
           continue
@@ -258,15 +263,36 @@ export default {
       }
     }
 
+    /** Template reads of a `<script setup>` binding, which the script scope does not see. */
+    function templateUses(name: string): any[] {
+      const found: any[] = []
+      const visit = (node: any) => {
+        if (!node || typeof node !== 'object') return
+        if (node.type === 'VExpressionContainer') {
+          for (const reference of node.references ?? [])
+            if (reference.id?.name === name) found.push(reference.id)
+        }
+        for (const key of ['children', 'startTag', 'attributes', 'value']) {
+          const child = node[key]
+          if (Array.isArray(child)) for (const item of child) visit(item)
+          else visit(child)
+        }
+      }
+      visit((sourceCode.ast as any).templateBody)
+      return found
+    }
+
     function bindingFlowsOnlyToGuards(id: any, hops: number): boolean {
       const variable = variableOf(id)
       if (!variable) return false
-      const uses = variable.references.filter((reference: any) => !reference.init)
-      // No script use in an SFC usually means the template reads it (`:to="next"`).
-      return (
-        uses.length > 0 &&
-        uses.every((reference: any) => flowsOnlyToGuards(reference.identifier, hops))
-      )
+      const uses = [
+        // vue-eslint-parser adds a reference on the declaration itself for a template use.
+        ...variable.references
+          .filter((reference: any) => !reference.init && reference.identifier !== id)
+          .map((reference: any) => reference.identifier),
+        ...(variable.scope?.type === 'module' ? templateUses(id.name) : []),
+      ]
+      return uses.length > 0 && uses.every((use: any) => flowsOnlyToGuards(use, hops))
     }
 
     const report = (node: any, param: string) =>

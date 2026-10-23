@@ -26,6 +26,7 @@ vue.run('no-viewport-vh-units', rule, {
     tpl('<div :style="{ minHeight: \'calc(100dvh - 4rem)\' }">x</div>'),
     tpl('<div class="h-dvh" title="100vh">x</div>'),
     tpl('<div :style="`height: ${n}dvh`">x</div>'),
+    tpl(`<div :style="legacy === '100vh' ? { height: '100dvh' } : {}">x</div>`),
     { filename: FILE, code: '<template><div /></template><style>.a { height: 100vh }</style>' },
   ],
   invalid: [

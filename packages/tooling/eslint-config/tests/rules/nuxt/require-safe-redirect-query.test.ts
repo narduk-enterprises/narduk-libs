@@ -89,6 +89,11 @@ vue.run('require-safe-redirect-query (vue)', rule, {
       filename: PAGE,
       code: '<template><NuxtLink :to="sanitizeSameOriginPath($route.query.next, \'/\')" /></template>',
     },
+    // A script binding guarded in the template.
+    {
+      filename: PAGE,
+      code: `<script setup lang="ts">\nconst next = route.query.next\n</script>\n<template><NuxtLink :to="sanitizeSameOriginPath(next, '/')" /></template>`,
+    },
     // Not a redirect parameter, and not a query object.
     { filename: PAGE, code: sfc('const tab = route.query.tab') },
     { filename: PAGE, code: sfc('const n = props.next') },
@@ -97,6 +102,17 @@ vue.run('require-safe-redirect-query (vue)', rule, {
     { filename: 'tests/sign-in.test.ts', code: 'navigateTo(route.query.redirect)' },
   ],
   invalid: [
+    // A sanitizer returns its fallback verbatim.
+    {
+      filename: PAGE,
+      code: sfc('await navigateTo(sanitizeSameOriginPath(null, route.query.next))'),
+      errors: [{ messageId: 'unguarded', data: { param: 'next' } }],
+    },
+    {
+      filename: PAGE,
+      code: `<script setup lang="ts">\nconst next = route.query.next\n</script>\n<template><NuxtLink :to="next" /></template>`,
+      errors: [{ messageId: 'unguarded', data: { param: 'next' } }],
+    },
     {
       filename: PAGE,
       code: sfc('await navigateTo(route.query.redirect as string)'),

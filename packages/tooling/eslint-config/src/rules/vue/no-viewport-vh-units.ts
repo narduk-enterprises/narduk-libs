@@ -25,21 +25,40 @@ import { templateBodyVisitor } from '../hydration/_internal'
 /** A number immediately followed by `vh` and no further letter (`100dvh` has one between). */
 const VH_UNIT = /(?:\d|\})vh\b/i
 
+/** Literals in positions that become style, never in a test or a comparison. */
 function literalTexts(expression: any, out: string[] = []): string[] {
   if (!expression || typeof expression !== 'object') return out
-  if (expression.type === 'Literal' && typeof expression.value === 'string') {
-    out.push(expression.value)
-    return out
-  }
-  if (expression.type === 'TemplateLiteral') {
-    // Join the quasis with a marker that keeps `${n}vh` detectable.
-    out.push(expression.quasis.map((quasi: any) => quasi.value.cooked ?? '').join('}'))
-  }
-  for (const key of Object.keys(expression)) {
-    if (key === 'parent' || key === 'loc' || key === 'range') continue
-    const child = expression[key]
-    if (Array.isArray(child)) for (const item of child) literalTexts(item, out)
-    else if (child && typeof child.type === 'string') literalTexts(child, out)
+  switch (expression.type) {
+    case 'Literal':
+      if (typeof expression.value === 'string') out.push(expression.value)
+      break
+    case 'TemplateLiteral':
+      // Join the quasis with a marker that keeps `${n}vh` detectable.
+      out.push(expression.quasis.map((quasi: any) => quasi.value.cooked ?? '').join('}'))
+      for (const inner of expression.expressions) literalTexts(inner, out)
+      break
+    case 'ConditionalExpression':
+      literalTexts(expression.consequent, out)
+      literalTexts(expression.alternate, out)
+      break
+    case 'LogicalExpression':
+      if (expression.operator !== '&&') literalTexts(expression.left, out)
+      literalTexts(expression.right, out)
+      break
+    case 'ArrayExpression':
+      for (const element of expression.elements) literalTexts(element, out)
+      break
+    case 'ObjectExpression':
+      for (const property of expression.properties)
+        literalTexts(property.type === 'SpreadElement' ? property.argument : property.value, out)
+      break
+    case 'ChainExpression':
+    case 'TSAsExpression':
+    case 'TSNonNullExpression':
+    case 'TSSatisfiesExpression':
+      literalTexts(expression.expression, out)
+      break
+    default:
   }
   return out
 }
