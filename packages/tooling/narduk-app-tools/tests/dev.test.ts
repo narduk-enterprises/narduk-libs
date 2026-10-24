@@ -8,6 +8,7 @@ import {
   buildDevInvocation,
   buildNvaultRunArgs,
   formatDevInvocation,
+  MAPKIT_SIGNING_SELECTOR,
   parseDevArgs,
   resolveChildExitCode,
   runDev,
@@ -132,6 +133,33 @@ describe('narduk-app dev argument parsing', () => {
     expect(() =>
       parseDevArgs(['--credentials', 'none', '--project', 'demo', '--', 'nuxt', 'dev']),
     ).toThrow('--project is only valid with --credentials nvault.')
+  })
+})
+
+describe('the --mapkit shortcut', () => {
+  it('is the nvault route with the shared MapKit signing selector', () => {
+    const flags = parseDevArgs(['--mapkit', '--', 'nuxt', 'dev', '--host', '127.0.0.1'])
+    expect(flags).toMatchObject({ credentials: 'nvault', ...MAPKIT_SIGNING_SELECTOR })
+    expect(formatDevInvocation(buildDevInvocation(flags))).toBe(
+      'nvault run -p apple -e prd -c mapkit-signing -- nuxt dev --host 127.0.0.1',
+    )
+  })
+
+  it('defaults the child to nuxt dev like the bare command', () => {
+    expect(parseDevArgs(['--mapkit']).command).toEqual(['nuxt', 'dev'])
+  })
+
+  it('refuses a second selector instead of silently picking one', () => {
+    expect(() => parseDevArgs(['--mapkit', '--project', 'demo', '--', 'nuxt'])).toThrow(
+      'drop --project',
+    )
+    expect(() => parseDevArgs(['--mapkit', '--credentials', 'none'])).toThrow('drop --credentials')
+  })
+
+  it('is named in the retired-Doppler migration message', () => {
+    expect(() => parseDevArgs(['--project', 'demo', '--config', 'dev'])).toThrow(
+      'narduk-app dev --mapkit',
+    )
   })
 })
 

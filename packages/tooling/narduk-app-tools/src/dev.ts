@@ -32,8 +32,19 @@ export interface DevInvocation {
 }
 
 export const DEV_USAGE =
-  'Usage: narduk-app dev [--credentials <none|nvault>] [--project <name>] ' +
+  'Usage: narduk-app dev [--mapkit | --credentials <none|nvault>] [--project <name>] ' +
   '[--environment <name>] [--config <name>] [--dry-run] -- <command...>'
+
+/**
+ * The shared MapKit JS signing persona every map app signs with
+ * (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`). `--mapkit` is this
+ * selector under the nvault route, so a map app's dev script names no selector.
+ */
+export const MAPKIT_SIGNING_SELECTOR = {
+  config: 'mapkit-signing',
+  environment: 'prd',
+  project: 'apple',
+} as const
 
 const RETIRED_DOPPLER_MESSAGE = [
   'narduk-app dev no longer runs Doppler (narduk-libs#321).',
@@ -43,6 +54,9 @@ const RETIRED_DOPPLER_MESSAGE = [
   '',
   '  no secrets in local development:',
   '    narduk-app dev -- nuxt dev --host 127.0.0.1',
+  '',
+  '  a map that needs the shared MapKit signing persona (apple/prd/mapkit-signing):',
+  '    narduk-app dev --mapkit -- nuxt dev --host 127.0.0.1',
   '',
   '  registered local credential route:',
   '    narduk-app dev --credentials nvault \\',
@@ -65,6 +79,7 @@ export function parseDevArgs(args: string[]): DevFlags {
   let config: string | undefined
   let credentials: DevCredentialRoute | undefined
   let environment: string | undefined
+  let mapkit = false
   let project: string | undefined
   const command: string[] = []
 
@@ -78,6 +93,8 @@ export function parseDevArgs(args: string[]): DevFlags {
       afterSeparator = true
     } else if (arg === '--dry-run') {
       dryRun = true
+    } else if (arg === '--mapkit') {
+      mapkit = true
     } else if (arg === '--credentials') {
       credentials = parseCredentialRoute(args[++index])
     } else if (arg === '--project') {
@@ -97,6 +114,27 @@ export function parseDevArgs(args: string[]): DevFlags {
   }
 
   const selectors = { config, environment, project }
+  if (mapkit) {
+    const named = [
+      ...(credentials ? ['--credentials'] : []),
+      ...(['project', 'environment', 'config'] as const)
+        .filter((name) => selectors[name])
+        .map((name) => `--${name}`),
+    ]
+    if (named.length > 0) {
+      throw new Error(
+        `--mapkit is the nvault route with the MapKit signing selector; drop ${named.join(', ')}. ` +
+          'For app secrets as well, nest the second route in the child: ' +
+          'narduk-app dev --mapkit -- nvault run -p <project> -e <environment> -c <config> -- nuxt dev',
+      )
+    }
+    return {
+      command: command.length > 0 ? command : ['nuxt', 'dev'],
+      credentials: 'nvault',
+      dryRun,
+      ...MAPKIT_SIGNING_SELECTOR,
+    }
+  }
   if (credentials === 'nvault') assertCompleteSelector(selectors)
   else assertNoSelector(selectors, credentials)
 

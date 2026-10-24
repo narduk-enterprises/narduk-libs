@@ -13,7 +13,11 @@
 import { useRuntimeConfig } from '#imports'
 import { defineEventHandler, getRequestHeaders, getRequestURL } from 'h3'
 
-import { mapKitRoutedOrigin, mapKitTokenResponse } from '../../../server/handler.js'
+import {
+  isMapKitHostAllowed,
+  mapKitRoutedOrigin,
+  mapKitTokenResponse,
+} from '../../../server/handler.js'
 
 import { createMapKitFixedWindowRateLimit } from './rate-limit.js'
 
@@ -122,6 +126,67 @@ function resolveRateLimit(
   return fallbackRateLimit
 }
 
+export const MAPKIT_LOCAL_RUNBOOK_URL =
+  'https://github.com/narduk-enterprises/narduk-libs/blob/main/packages/modules/narduk-mapkit/docs/local-development.md'
+
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+/** Each hint prints once per server process: they name a setup, not a request. */
+const printedHints = new Set<string>()
+
+export function resetMapKitLocalSetupHintsForTests(): void {
+  printedHints.clear()
+}
+
+function hintOnce(key: string, lines: string[]): void {
+  if (printedHints.has(key)) return
+  printedHints.add(key)
+  console.warn([...lines, `Runbook: ${MAPKIT_LOCAL_RUNBOOK_URL}`].join('\n'))
+}
+
+/**
+ * Server-console hints for the three ways a local map stays blank. The browser
+ * only ever sees a refusal code, and agents read the dev server's output, so
+ * the fix is named here. Names only, never values. A host refusal is reported
+ * for loopback hosts only: anywhere else it is a forged `Host`, not a setup.
+ */
+function hintLocalSetup(
+  status: number,
+  self: string | null,
+  credentials: { keyId: string; privateKey: string; teamId: string },
+  allowedHosts: string[] | string | undefined,
+): void {
+  if (status === 503) {
+    const missing = [
+      credentials.teamId ? null : 'APPLE_TEAM_ID',
+      credentials.keyId ? null : 'APPLE_KEY_ID',
+      credentials.privateKey ? null : 'APPLE_PRIVATE_KEY',
+    ].filter(Boolean)
+    hintOnce('unconfigured', [
+      `[narduk-mapkit] The MapKit token route answered 503: ${missing.join(', ')} not set for this server.`,
+      'Locally, start the dev server under the shared signing persona:',
+      '  narduk-app dev --mapkit -- nuxt dev --host 127.0.0.1',
+      '  (or: nvault run -p apple -e prd -c mapkit-signing -- pnpm dev)',
+    ])
+  } else if (status === 500) {
+    hintOnce('signing-failed', [
+      '[narduk-mapkit] The MapKit token route could not sign: APPLE_PRIVATE_KEY must be a',
+      'PKCS#8 PEM ("BEGIN PRIVATE KEY"). A stale value in wrangler vars or .dev.vars wins over',
+      'the process environment, so check those first.',
+    ])
+  } else if (status === 403 && self) {
+    const { host, hostname } = new URL(self)
+    if (LOOPBACK_HOSTNAMES.has(hostname) && !isMapKitHostAllowed(self, allowedHosts)) {
+      const listed =
+        typeof allowedHosts === 'string' ? allowedHosts : (allowedHosts ?? []).join(', ')
+      hintOnce(`host:${host}`, [
+        `[narduk-mapkit] The MapKit token route refused ${host}: nardukMapKit.allowedHosts (${listed}) does not list it.`,
+        `Add '${host}' to nardukMapKit.allowedHosts, or browse a host:port that is listed.`,
+      ])
+    }
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   const sources = [readCloudflareEnv(event), readProcessEnv()]
@@ -130,25 +195,31 @@ export default defineEventHandler(async (event) => {
   // comma-separated string, which the handler reads as a list.
   const allowedHosts = (config['nardukMapKit'] as { allowedHosts?: string[] | string } | undefined)
     ?.allowedHosts
+  const credentials = {
+    keyId: readRuntimeString(sources, ['APPLE_KEY_ID'], config['appleKeyId']),
+    privateKey: readRuntimeString(
+      sources,
+      ['APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY'],
+      config['applePrivateKey'] || config['appleSecretKey'],
+    ),
+    teamId: readRuntimeString(sources, ['APPLE_TEAM_ID'], config['appleTeamId']),
+  }
+  // The routed origin, never a forwarded host header nor a request line that
+  // names its own host (§e.1).
+  const self = routedOrigin(event)
 
-  return await mapKitTokenResponse(
+  const response = await mapKitTokenResponse(
     requestFromEvent(event),
     {
       ...(allowedHosts === undefined ? {} : { allowedHosts }),
       doppler: false,
-      keyId: readRuntimeString(sources, ['APPLE_KEY_ID'], config['appleKeyId']),
-      privateKey: readRuntimeString(
-        sources,
-        ['APPLE_PRIVATE_KEY', 'APPLE_SECRET_KEY'],
-        config['applePrivateKey'] || config['appleSecretKey'],
-      ),
-      teamId: readRuntimeString(sources, ['APPLE_TEAM_ID'], config['appleTeamId']),
+      ...credentials,
     },
     {
       ...(rateLimit ? { rateLimit } : {}),
-      // The routed origin, never a forwarded host header nor a request line
-      // that names its own host (§e.1).
-      self: routedOrigin(event),
+      self,
     },
   )
+  hintLocalSetup(response.status, self, credentials, allowedHosts)
+  return response
 })
