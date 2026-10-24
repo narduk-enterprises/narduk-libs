@@ -162,18 +162,27 @@ The app's promote workflow must follow these steps in one serialized job:
    - a successful same-repository `workflow_run` for `$VERIFIED_SHA`, on the
      production branch; or
    - a **`push` or `workflow_dispatch` on the production branch** whose own
-     `GITHUB_SHA` is `$VERIFIED_SHA` (narduk-libs, operator-portal#2791). Pass
-     `--gate-verified "ci / Required@$VERIFIED_SHA"`. The tool does not take
-     that as a claim: it reads the check from GitHub with `GITHUB_TOKEN`
-     (`checks: read`, `pull-requests: read`; the step must pass it into the
-     process that holds the migrate persona) and refuses unless the newest
-     GitHub-Actions run of the check on that commit succeeded, or, when the
-     commit has no run of its own (a squash merge on an app whose CI runs on
-     pull requests), a pull request that merged into the production branch **as
-     that commit**, from a head in the same repository, has the check green on
-     its head. A red newest run on the commit refuses even if a pull request was
-     green. Any API error, missing token or truncated listing refuses. Preview
-     databases never accept this context.
+     `GITHUB_SHA` is `$VERIFIED_SHA` (operator-portal#2791). Pass
+     `--gate-verified "<gateCheck>@$VERIFIED_SHA"` and
+     `--gate-workflow .github/workflows/ci.yml`. The check must be exactly
+     `deployment.promotion.gateCheck`; a different name is refused. The tool
+     does not take the flag as a claim: it reads GitHub with `GITHUB_TOKEN`
+     (`actions: read`, `checks: read`, `pull-requests: read`; the step must pass
+     it into the process that holds the migrate persona), always on the
+     repository the manifest names (a `GH_REPO` that differs is refused). A
+     check run counts only when its check suite is a GitHub Actions run of the
+     named workflow file, in this repository, on `push`, `schedule` or
+     `workflow_dispatch` on the production branch (or `pull_request` for the
+     fallback); a same-named check from any other workflow or app is ignored,
+     and `started_at` is never used. The CI workflow's highest `run_number` on
+     the commit decides, and a tie or re-run suite with any red refuses. A red
+     or still-running newest run refuses and no pull request can overrule it.
+     Only when the commit has no such run does a pull request count: merged into
+     the production branch **as that commit**, from a head in the same
+     repository, whose newest `pull_request` run of the workflow is green and
+     whose head has the **same tree** as the commit. Any API error, missing
+     token or truncated listing refuses. Preview databases never accept this
+     context.
 
    `--check-context` runs only that proof (event, ref, SHA, checkout and the
    check read) with no Cloudflare credential and no write, so a promote run with
@@ -182,7 +191,7 @@ The app's promote workflow must follow these steps in one serialized job:
    (`a write would be refused now`), not failed, since that is an ordinary state
    when nothing is pending; an event, ref, SHA, token or GitHub read that would
    refuse a write fails it:
-   `narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --check-context`.
+   `narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --gate-workflow .github/workflows/ci.yml --check-context`.
 
 5. Only on success, restore the separate promote credential, promote that exact
    SHA, then perform live proof. Keep the app's existing alert. A completed

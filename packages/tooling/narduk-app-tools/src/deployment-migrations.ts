@@ -45,6 +45,8 @@ export interface DeploymentMigrationPlan {
   target: MigrationTarget
   repository: string
   productionBranch: string
+  /** `deployment.promotion.gateCheck`: the only check a push / dispatch write may rely on. */
+  gateCheck: string
   accountId: string
   credential: string | null
   appDir: string
@@ -178,6 +180,7 @@ export function planDeploymentMigrations(
     repository: manifest.product.repository,
     appDir,
     productionBranch: deployment.productionBranch,
+    gateCheck: deployment.promotion.gateCheck,
     credential: deployment.migrations?.credential ?? null,
     config: migrationConfig,
     contractOwned: contractEntries.map((entry) => ({
@@ -216,8 +219,18 @@ interface CheckRunLike {
   name?: unknown
   status?: unknown
   conclusion?: unknown
-  started_at?: unknown
   app?: { slug?: unknown } | null
+  check_suite?: { id?: unknown } | null
+}
+
+interface WorkflowRunLike {
+  run_number?: unknown
+  path?: unknown
+  event?: unknown
+  head_sha?: unknown
+  head_branch?: unknown
+  check_suite_id?: unknown
+  head_repository?: { full_name?: unknown } | null
 }
 
 type CheckVerdict = 'green' | 'red' | 'pending' | 'none'
@@ -225,59 +238,138 @@ type CheckVerdict = 'green' | 'red' | 'pending' | 'none'
 /** GitHub could not answer (no token scope, network, malformed); never a verdict about the check. */
 export class GitHubReadError extends Error {}
 
-/**
- * The newest run of the named check on one commit. Only a run created by
- * GitHub Actions counts: another GitHub App with `checks: write` could
- * otherwise post a green check of the same name. A body GitHub did not
- * answer, or that is truncated by pagination, is an error, never a verdict.
- */
-function checkVerdict(get: GitHubGet, check: string, commit: string): CheckVerdict {
-  const body = get(
-    `commits/${commit}/check-runs?check_name=${encodeURIComponent(check)}&per_page=100`,
-  ) as { total_count?: unknown; check_runs?: unknown } | null
-  if (!body || !Array.isArray(body.check_runs)) {
-    throw new GitHubReadError(
-      `Could not read ${check} on ${commit} from GitHub (is GITHUB_TOKEN set with checks: read?); refusing to migrate`,
-    )
+/** Events of the CI workflow that are evidence about a commit already on the production branch. */
+const BRANCH_CI_EVENTS = new Set(['push', 'schedule', 'workflow_dispatch'])
+/** The event of the CI workflow that is evidence about a pull request head. */
+const PULL_CI_EVENTS = new Set(['pull_request'])
+
+/** What the gate must be: this check, produced by this workflow file, in this repository. */
+export interface CiGate {
+  /** `deployment.promotion.gateCheck`; `--gate-verified` must name exactly this. */
+  check: string
+  sha: string
+  /** The CI workflow file, e.g. `.github/workflows/ci.yml` (`--gate-workflow`). */
+  workflow: string
+  repository: string
+  productionBranch: string
+}
+
+const WORKFLOW_PATH = /^\.github\/workflows\/[\w.-]+\.ya?ml$/u
+
+function listOf(body: unknown, key: string, what: string): unknown[] {
+  const record = body as Record<string, unknown> | null
+  const list = record?.[key]
+  if (!record || !Array.isArray(list)) {
+    throw new GitHubReadError(`Could not read ${what} from GitHub; refusing to migrate`)
   }
-  if (typeof body.total_count === 'number' && body.total_count > body.check_runs.length) {
-    throw new GitHubReadError(
-      `${check} on ${commit} has more runs than one page; refusing to migrate`,
-    )
+  if (typeof record.total_count === 'number' && record.total_count > list.length) {
+    throw new GitHubReadError(`${what} has more entries than one page; refusing to migrate`)
   }
-  const runs = (body.check_runs as CheckRunLike[]).filter(
-    (run) => run.name === check && run.app?.slug === 'github-actions',
-  )
-  if (runs.length === 0) return 'none'
-  const started = (run: CheckRunLike) => Date.parse(String(run.started_at ?? '')) || 0
-  const latest = runs.reduce((a, b) => (started(b) > started(a) ? b : a))
-  if (latest.status !== 'completed') return 'pending'
-  return latest.conclusion === 'success' ? 'green' : 'red'
+  return list
 }
 
 /**
- * Proof that the gate check is green for the commit being migrated, read from
- * GitHub by this tool (never taken from the caller's word).
- *
- * 1. The check on the commit itself. The newest run decides, so a green rerun
- *    replaces an earlier red one; a red newest run refuses outright and no pull
- *    request can overrule it.
- * 2. Otherwise (no run, or one still running) a merged pull request whose merge
- *    commit IS this commit, into the production branch, from a head in this
- *    same repository, with the check green on that head. A squash merge's own
- *    commit carries no pull-request run, and some apps run CI only on pull
- *    requests, so this is the evidence that exists for them.
+ * The verdict of the gate check on one commit, read as evidence of CI and
+ * nothing weaker. A check run counts only when it belongs to a GitHub Actions
+ * check suite that is a run of the declared CI workflow file, in this
+ * repository, on one of the allowed events (a push-to-branch run also on the
+ * production branch). Neither the check name (an unrelated workflow's job can
+ * be called `ci / Required`) nor `started_at` (set by whoever created the run)
+ * is trusted. Among the CI workflow's runs on the commit, the highest GitHub
+ * `run_number` decides; runs that produced no such check run are not evidence.
+ * Check runs of one suite (job re-runs) and runs tied on a number must all
+ * agree, so a tie holding any red refuses.
  */
-export function assertCiGateGreen(
+function ciVerdict(
   get: GitHubGet,
-  gate: GateAttestation,
-  repository: string,
-  productionBranch: string,
-): string {
-  const direct = checkVerdict(get, gate.check, gate.sha)
+  gate: CiGate,
+  commit: string,
+  events: ReadonlySet<string>,
+  branch: string | null,
+): CheckVerdict {
+  const checkRuns = listOf(
+    get(
+      `commits/${commit}/check-runs?check_name=${encodeURIComponent(gate.check)}&filter=latest&per_page=100`,
+    ),
+    'check_runs',
+    `${gate.check} on ${commit}`,
+  ) as CheckRunLike[]
+  const bySuite = new Map<number, CheckRunLike[]>()
+  for (const run of checkRuns) {
+    const suite = run.check_suite?.id
+    if (run.name !== gate.check || run.app?.slug !== 'github-actions' || typeof suite !== 'number')
+      continue
+    bySuite.set(suite, [...(bySuite.get(suite) ?? []), run])
+  }
+  const workflowRuns = listOf(
+    get(`actions/runs?head_sha=${commit}&per_page=100`),
+    'workflow_runs',
+    `the workflow runs of ${commit}`,
+  ) as WorkflowRunLike[]
+  const evidence = workflowRuns.flatMap((run) => {
+    const checks =
+      typeof run.check_suite_id === 'number' ? bySuite.get(run.check_suite_id) : undefined
+    const trustedPath =
+      run.path === gate.workflow ||
+      run.path === `${gate.workflow}@refs/heads/${gate.productionBranch}`
+    if (
+      !checks ||
+      !trustedPath ||
+      typeof run.run_number !== 'number' ||
+      run.head_sha !== commit ||
+      run.head_repository?.full_name !== gate.repository ||
+      typeof run.event !== 'string' ||
+      !events.has(run.event) ||
+      (branch !== null && run.head_branch !== branch)
+    ) {
+      return []
+    }
+    return [{ number: run.run_number, checks }]
+  })
+  if (evidence.length === 0) return 'none'
+  const newest = Math.max(...evidence.map((entry) => entry.number))
+  const verdicts = evidence
+    .filter((entry) => entry.number === newest)
+    .flatMap((entry) => entry.checks)
+    .map((run) =>
+      run.status !== 'completed' ? 'pending' : run.conclusion === 'success' ? 'green' : 'red',
+    )
+  if (verdicts.includes('red')) return 'red'
+  return verdicts.includes('pending') ? 'pending' : 'green'
+}
+
+function treeOf(get: GitHubGet, commit: string): string {
+  const tree = (get(`git/commits/${commit}`) as { tree?: { sha?: unknown } } | null)?.tree?.sha
+  if (typeof tree !== 'string' || !FULL_SHA.test(tree)) {
+    throw new GitHubReadError(
+      `Could not read the tree of ${commit} from GitHub; refusing to migrate`,
+    )
+  }
+  return tree
+}
+
+/**
+ * Proof that the gate is green for the commit being migrated, read from GitHub
+ * by this tool (never taken from the caller's word).
+ *
+ * 1. The CI workflow's newest run on the commit itself (events push, schedule,
+ *    workflow_dispatch, on the production branch). A red or still-running
+ *    newest run refuses outright and no pull request can overrule it.
+ * 2. Only when the commit has no such run: a merged pull request whose merge
+ *    commit IS this commit, into the production branch, from a head in this
+ *    same repository, with the CI workflow's newest pull_request run green on
+ *    that head AND the head's tree identical to the commit's tree. A squash
+ *    merge's own commit carries no pull-request run, and some apps run CI only
+ *    on pull requests; the tree check makes the head's run a run of exactly the
+ *    content being migrated.
+ */
+export function assertCiGateGreen(get: GitHubGet, gate: CiGate): string {
+  const direct = ciVerdict(get, gate, gate.sha, BRANCH_CI_EVENTS, gate.productionBranch)
   if (direct === 'green') return `${gate.check} succeeded on ${gate.sha}`
-  if (direct === 'red') {
-    throw new Error(`${gate.check} did not succeed on ${gate.sha}; refusing to migrate`)
+  if (direct === 'red' || direct === 'pending') {
+    throw new Error(
+      `${gate.check} ${direct === 'red' ? 'did not succeed' : 'is still running'} on ${gate.sha}; refusing to migrate`,
+    )
   }
   const pulls = get(`commits/${gate.sha}/pulls?per_page=30`)
   if (!Array.isArray(pulls)) {
@@ -296,25 +388,27 @@ export function assertCiGateGreen(
     if (
       !pull.merged_at ||
       pull.merge_commit_sha !== gate.sha ||
-      pull.base?.ref !== productionBranch ||
-      pull.head?.repo?.full_name !== repository ||
+      pull.base?.ref !== gate.productionBranch ||
+      pull.head?.repo?.full_name !== gate.repository ||
       typeof headSha !== 'string' ||
       !FULL_SHA.test(headSha)
     ) {
       continue
     }
-    if (checkVerdict(get, gate.check, headSha) === 'green') {
-      return `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha}`
-    }
+    if (ciVerdict(get, gate, headSha, PULL_CI_EVENTS, null) !== 'green') continue
+    if (treeOf(get, headSha) !== treeOf(get, gate.sha)) continue
+    return `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha} with an identical tree`
   }
   throw new Error(
-    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it; refusing to migrate`,
+    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it with an identical tree; refusing to migrate`,
   )
 }
 
 export interface MigrationContextProof {
   /** `--gate-verified "<check>@<sha>"`: which check must be green on which commit. */
   gate?: GateAttestation | null
+  /** `--gate-workflow`: the CI workflow file whose run counts as the gate. */
+  gateWorkflow?: string | null
   /** GitHub reader; defaults to the tool's curl reader over GITHUB_TOKEN. */
   get?: GitHubGet
   /**
@@ -391,20 +485,46 @@ export function assertMigrationContext(
     const gate = proof.gate
     if (!gate) {
       throw new Error(
-        `A ${event} migration needs --gate-verified "<check>@${sha}" so the tool can prove that check green on the commit`,
+        `A ${event} migration needs --gate-verified "${plan.gateCheck}@${sha}" so the tool can prove that check green on the commit`,
       )
     }
     if (gate.sha !== sha) {
       throw new Error(`--gate-verified names ${gate.sha}, not the migrated commit ${sha}`)
     }
-    if (!(env.GH_TOKEN || env.GITHUB_TOKEN)) {
+    if (gate.check !== plan.gateCheck) {
       throw new Error(
-        `A ${event} migration reads ${gate.check} from GitHub and needs GITHUB_TOKEN (checks: read, pull-requests: read)`,
+        `--gate-verified names "${gate.check}", but deployment.promotion.gateCheck is "${plan.gateCheck}"; only the declared gate can authorize a migration`,
       )
     }
-    const get = proof.get ?? githubGet(root, env)
+    if (!proof.gateWorkflow || !WORKFLOW_PATH.test(proof.gateWorkflow)) {
+      throw new Error(
+        `A ${event} migration needs --gate-workflow .github/workflows/<file>.yml, the CI workflow whose run is the gate`,
+      )
+    }
+    if (env.GH_REPO && env.GH_REPO !== plan.repository) {
+      throw new Error(
+        `GH_REPO (${env.GH_REPO}) differs from the migration repository ${plan.repository}; refusing to read another repository's checks`,
+      )
+    }
+    if (!(env.GH_TOKEN || env.GITHUB_TOKEN)) {
+      throw new Error(
+        `A ${event} migration reads ${gate.check} from GitHub and needs GITHUB_TOKEN (actions: read, checks: read, pull-requests: read)`,
+      )
+    }
+    // The reader is built on the repository the manifest names, whatever the
+    // environment says.
+    const get =
+      proof.get ??
+      githubGet(root, { ...env, GH_REPO: plan.repository, GITHUB_REPOSITORY: plan.repository })
+    const ci: CiGate = {
+      check: gate.check,
+      sha,
+      workflow: proof.gateWorkflow,
+      repository: plan.repository,
+      productionBranch: plan.productionBranch,
+    }
     try {
-      verified = assertCiGateGreen(get, gate, plan.repository, plan.productionBranch)
+      verified = assertCiGateGreen(get, ci)
     } catch (error) {
       if (proof.gateMode !== 'observe' || error instanceof GitHubReadError) throw error
       verified = `context accepted; a write would be refused now: ${(error as Error).message}`
@@ -430,6 +550,8 @@ export interface DeploymentMigrationOptions {
   bundle?: string
   /** `--gate-verified "<check>@<sha>"`: the check to prove green on `sha` for a push / dispatch. */
   gate?: GateAttestation
+  /** `--gate-workflow <.github/workflows/file.yml>`: the CI workflow whose run is the gate. */
+  gateWorkflow?: string
   /** `--check-context`: run only the context proof a write would run, and write nothing. */
   checkContext?: boolean
 }
@@ -440,6 +562,7 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
   let sha: string | undefined
   let bundle: string | undefined
   let gate: GateAttestation | undefined
+  let gateWorkflow: string | undefined
   let checkContext = false
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--target')
@@ -451,6 +574,8 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
         .regex(/^[a-f0-9]{40}$/u)
         .parse(args[++i])
     else if (args[i] === '--gate-verified') gate = parseGateAttestation(args[++i] ?? '')
+    else if (args[i] === '--gate-workflow')
+      gateWorkflow = z.string().regex(WORKFLOW_PATH).parse(args[++i])
     else if (args[i] === '--check-context') checkContext = true
     else if (args[i] === '--bundle') bundle = z.string().min(1).parse(args[++i])
     else throw new Error(`Unknown deployment migration option: ${args[i]}`)
@@ -469,6 +594,7 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
     ...(sha ? { sha } : {}),
     ...(bundle ? { bundle } : {}),
     ...(gate ? { gate } : {}),
+    ...(gateWorkflow ? { gateWorkflow } : {}),
     ...(checkContext ? { checkContext } : {}),
   }
 }
@@ -496,6 +622,7 @@ export function checkDeploymentMigrationContext(
     Boolean(options.bundle),
     {
       gate: options.gate ?? null,
+      gateWorkflow: options.gateWorkflow ?? null,
       gateMode: 'observe',
       ...proof,
     },
@@ -517,6 +644,7 @@ export function runDeploymentMigrations(
   if (!options.check)
     assertMigrationContext(plan, options.sha ?? '', root, process.env, Boolean(options.bundle), {
       gate: options.gate ?? null,
+      gateWorkflow: options.gateWorkflow ?? null,
       ...proof,
     })
   const directory = mkdtempSync(join(tmpdir(), 'narduk-d1-target-'))
