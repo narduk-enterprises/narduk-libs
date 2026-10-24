@@ -35,6 +35,11 @@ belongs in narduk-core.
   body as an empty one and refuses with a sentence (an app's own copy for a
   refusal, `RequestBodyRefusals`, is a required argument) rather than a raw Zod
   issue-array dump.
+- `@narduk-enterprises/narduk-app/server/request-id` - `installRequestId(nitroApp)`
+  (from a Nitro plugin) puts `x-request-id` on every response and
+  `event.context.requestId`; `resolveRequestId()` / `stampRequestId()` are the
+  pure parts. `/server/request-id-error-handler` is a Nitro `errorHandler` that
+  adds `requestId` to `/api/` error bodies.
 - `@narduk-enterprises/narduk-app/client/api-error` - `apiErrorMessage()` /
   `apiErrorCode()` / `apiErrorStatus()` / `describeApiError()`, the client-side
   reader for a caught `$fetch` rejection carrying an error built with

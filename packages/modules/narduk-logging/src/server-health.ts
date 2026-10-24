@@ -437,6 +437,7 @@ export async function runWithHeartbeat(
 export interface ErrorEventLike {
   method?: string
   path?: string
+  context?: { requestId?: unknown }
   node?: { req?: { headers?: Record<string, string | string[] | undefined> } }
 }
 
@@ -509,6 +510,11 @@ function headerOf(event: ErrorEventLike, name: string): string | null {
   return text && /^[\w.:-]{1,128}$/.test(text) ? text : null
 }
 
+function contextRequestId(event: ErrorEventLike): string | null {
+  const id = event.context?.requestId
+  return typeof id === 'string' && /^[\w.:-]{1,128}$/.test(id) ? id : null
+}
+
 /**
  * Registers a Nitro `error` hook that records unhandled 5xx errors. Writes are bounded three ways:
  * one row per stack hash, a per-isolate throttle (suppressed repeats fold into the next write's
@@ -536,7 +542,8 @@ export function installServerErrorCapture<Event extends ErrorEventLike = ErrorEv
         {
           method: event.method ?? 'GET',
           path: event.path ?? '/',
-          requestId: headerOf(event, 'cf-ray') ?? headerOf(event, 'x-request-id'),
+          requestId:
+            contextRequestId(event) ?? headerOf(event, 'cf-ray') ?? headerOf(event, 'x-request-id'),
         },
         options.service,
       )
