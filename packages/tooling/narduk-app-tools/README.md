@@ -533,7 +533,11 @@ persona, read-only drift checks, database locks, expand/contract review and
 recovery steps are in [D1 deployment migrations](docs/deployment-migrations.md).
 
 `db migrate-deployment --target production --sha <verified-sha>` migrates before
-promotion; `--check` is read-only and fails on pending or divergent history.
+promotion; `--check` is read-only and fails on pending or divergent history. A
+write runs under a successful `workflow_run`, or under a `push` /
+`workflow_dispatch` on the production branch with
+`--gate-verified "ci / Required@<sha>"`, where the tool reads the check from
+GitHub itself; `--check-context` proves that context without writing.
 `db bundle --output <file>` packages SQL/data for trusted preview tooling
 without giving D1 credentials to PR code. Existing apps must adopt the workflow
 steps; installing the package alone does not activate migration writes.

@@ -128,11 +128,12 @@ fallback.
 The app's promote workflow must follow these steps in one serialized job:
 
 1. Require a successful same-repository CI `workflow_run` for the production
-   branch, or a dispatch the `gate` job in the app's `docs/workers-builds.md`
-   admits: it promotes main's head only once that commit's `ci / Required`
-   passed. Check out that verified SHA (`needs.gate.outputs.sha`, the
-   `workflow_run.head_sha` under a `workflow_run`) and install its frozen
-   toolchain.
+   branch, or a push / dispatch on the production branch (see step 4: the tool
+   itself then proves `ci / Required` on the commit), or a dispatch the `gate`
+   job in the app's `docs/workers-builds.md` admits: it promotes main's head
+   only once that commit's `ci / Required` passed. Check out that verified SHA
+   (`needs.gate.outputs.sha`, the `workflow_run.head_sha` under a
+   `workflow_run`) and install its frozen toolchain.
 2. With no credential, run
    `narduk-app foundation:check:deployment --json <path>` on that checkout and
    refuse unless sub-check **12.9** is `pass`. That means no app-owned migration
@@ -149,10 +150,36 @@ The app's promote workflow must follow these steps in one serialized job:
    `--version-id "$VERSION_ID"` here as well (narduk-libs#1233); otherwise the
    duplicate stops the run at this step.
 4. Inject the **separate D1-only migrate persona** for this step only, then run:
+
    ```sh
    narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA"
    narduk-app db migrate-deployment --target production --check
    ```
+
+   A write is accepted in exactly two contexts (anything else is refused before
+   the first provider call):
+
+   - a successful same-repository `workflow_run` for `$VERIFIED_SHA`, on the
+     production branch; or
+   - a **`push` or `workflow_dispatch` on the production branch** whose own
+     `GITHUB_SHA` is `$VERIFIED_SHA` (narduk-libs, operator-portal#2791). Pass
+     `--gate-verified "ci / Required@$VERIFIED_SHA"`. The tool does not take
+     that as a claim: it reads the check from GitHub with `GITHUB_TOKEN`
+     (`checks: read`, `pull-requests: read`; the step must pass it into the
+     process that holds the migrate persona) and refuses unless the newest
+     GitHub-Actions run of the check on that commit succeeded, or, when the
+     commit has no run of its own (a squash merge on an app whose CI runs on
+     pull requests), a pull request that merged into the production branch **as
+     that commit**, from a head in the same repository, has the check green on
+     its head. A red newest run on the commit refuses even if a pull request was
+     green. Any API error, missing token or truncated listing refuses. Preview
+     databases never accept this context.
+
+   `--check-context` runs only that proof (event, ref, SHA, checkout and the
+   check read) with no Cloudflare credential and no write, so a promote run with
+   nothing pending can still exercise the apply path:
+   `narduk-app db migrate-deployment --target production --sha "$VERIFIED_SHA" --gate-verified "ci / Required@$VERIFIED_SHA" --check-context`.
+
 5. Only on success, restore the separate promote credential, promote that exact
    SHA, then perform live proof. Keep the app's existing alert. A completed
    promotion whose live proof fails leaves the run red and prints the version

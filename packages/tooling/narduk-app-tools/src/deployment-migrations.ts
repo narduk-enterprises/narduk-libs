@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
 import { readAppConfigText } from './app-config/resolve.js'
+import { githubGet, type GitHubGet } from './commit-containment.js'
 import {
   contractEvidenceIssuesOnDisk,
   contractOwnedEntries,
@@ -14,6 +15,7 @@ import {
 import { readJsonc } from './deploy.js'
 import { readDeploymentBlock } from './deployment-config.js'
 import { describePreviewPlan, planPreviewConfig } from './preview-config.js'
+import { parseGateAttestation, type GateAttestation } from './promote.js'
 import {
   inspectMigrations,
   runMigrations,
@@ -203,43 +205,200 @@ const eventSchema = z.object({
   }),
 })
 
-/** Environment checks are defense in depth; workflow permissions/checkout are the boundary. */
+const WORKFLOW_RUN_REFUSAL =
+  'Deployment migration writes require a successful, same-repository workflow_run, or a push / workflow_dispatch on the production branch with --gate-verified "<check>@<sha>" and a green check on that exact commit; use db migrate for explicit operator recovery'
+
+/** The events whose own ref and SHA the tool can check without a `workflow_run` payload. */
+const BRANCH_EVENTS = new Set(['push', 'workflow_dispatch'])
+const FULL_SHA = /^[a-f0-9]{40}$/u
+
+interface CheckRunLike {
+  name?: unknown
+  status?: unknown
+  conclusion?: unknown
+  started_at?: unknown
+  app?: { slug?: unknown } | null
+}
+
+type CheckVerdict = 'green' | 'red' | 'pending' | 'none'
+
+/**
+ * The newest run of the named check on one commit. Only a run created by
+ * GitHub Actions counts: another GitHub App with `checks: write` could
+ * otherwise post a green check of the same name. A body GitHub did not
+ * answer, or that is truncated by pagination, is an error, never a verdict.
+ */
+function checkVerdict(get: GitHubGet, check: string, commit: string): CheckVerdict {
+  const body = get(
+    `commits/${commit}/check-runs?check_name=${encodeURIComponent(check)}&per_page=100`,
+  ) as { total_count?: unknown; check_runs?: unknown } | null
+  if (!body || !Array.isArray(body.check_runs)) {
+    throw new Error(
+      `Could not read ${check} on ${commit} from GitHub (is GITHUB_TOKEN set with checks: read?); refusing to migrate`,
+    )
+  }
+  if (typeof body.total_count === 'number' && body.total_count > body.check_runs.length) {
+    throw new Error(`${check} on ${commit} has more runs than one page; refusing to migrate`)
+  }
+  const runs = (body.check_runs as CheckRunLike[]).filter(
+    (run) => run.name === check && run.app?.slug === 'github-actions',
+  )
+  if (runs.length === 0) return 'none'
+  const started = (run: CheckRunLike) => Date.parse(String(run.started_at ?? '')) || 0
+  const latest = runs.reduce((a, b) => (started(b) > started(a) ? b : a))
+  if (latest.status !== 'completed') return 'pending'
+  return latest.conclusion === 'success' ? 'green' : 'red'
+}
+
+/**
+ * Proof that the gate check is green for the commit being migrated, read from
+ * GitHub by this tool (never taken from the caller's word).
+ *
+ * 1. The check on the commit itself. The newest run decides, so a green rerun
+ *    replaces an earlier red one; a red newest run refuses outright and no pull
+ *    request can overrule it.
+ * 2. Otherwise (no run, or one still running) a merged pull request whose merge
+ *    commit IS this commit, into the production branch, from a head in this
+ *    same repository, with the check green on that head. A squash merge's own
+ *    commit carries no pull-request run, and some apps run CI only on pull
+ *    requests, so this is the evidence that exists for them.
+ */
+export function assertCiGateGreen(
+  get: GitHubGet,
+  gate: GateAttestation,
+  repository: string,
+  productionBranch: string,
+): string {
+  const direct = checkVerdict(get, gate.check, gate.sha)
+  if (direct === 'green') return `${gate.check} succeeded on ${gate.sha}`
+  if (direct === 'red') {
+    throw new Error(`${gate.check} did not succeed on ${gate.sha}; refusing to migrate`)
+  }
+  const pulls = get(`commits/${gate.sha}/pulls?per_page=30`)
+  if (!Array.isArray(pulls)) {
+    throw new Error(
+      `Could not list the pull requests of ${gate.sha} from GitHub; refusing to migrate`,
+    )
+  }
+  for (const pull of pulls as Array<{
+    number?: unknown
+    merged_at?: unknown
+    merge_commit_sha?: unknown
+    base?: { ref?: unknown } | null
+    head?: { sha?: unknown; repo?: { full_name?: unknown } | null } | null
+  }>) {
+    const headSha = pull.head?.sha
+    if (
+      !pull.merged_at ||
+      pull.merge_commit_sha !== gate.sha ||
+      pull.base?.ref !== productionBranch ||
+      pull.head?.repo?.full_name !== repository ||
+      typeof headSha !== 'string' ||
+      !FULL_SHA.test(headSha)
+    ) {
+      continue
+    }
+    if (checkVerdict(get, gate.check, headSha) === 'green') {
+      return `${gate.check} succeeded on #${String(pull.number)} head ${headSha}, merged as ${gate.sha}`
+    }
+  }
+  throw new Error(
+    `${gate.check} is not green on ${gate.sha} or on a merged pull request that landed as it; refusing to migrate`,
+  )
+}
+
+export interface MigrationContextProof {
+  /** `--gate-verified "<check>@<sha>"`: which check must be green on which commit. */
+  gate?: GateAttestation | null
+  /** GitHub reader; defaults to the tool's curl reader over GITHUB_TOKEN. */
+  get?: GitHubGet
+}
+
+/**
+ * Environment checks are defense in depth; workflow permissions/checkout are the
+ * boundary. Two contexts may write to production or staging:
+ *
+ * - a successful same-repository `workflow_run` for the exact SHA (the original
+ *   path, unchanged), or
+ * - a `push` or `workflow_dispatch` on the production branch whose own
+ *   `GITHUB_SHA` is the SHA being migrated, with the gate check proven green on
+ *   that commit by `assertCiGateGreen`. A `push` carries no CI verdict of its
+ *   own, so the tool reads it; a workflow's say-so is not enough.
+ *
+ * Preview databases keep the `workflow_run` / SQL-bundle rules only.
+ */
 export function assertMigrationContext(
   plan: DeploymentMigrationPlan,
   sha: string,
   root: string,
   env = process.env,
   bundled = false,
-): void {
-  if (
-    env.GITHUB_ACTIONS !== 'true' ||
-    env.GITHUB_EVENT_NAME !== 'workflow_run' ||
-    !env.GITHUB_EVENT_PATH
-  ) {
-    throw new Error(
-      'Deployment migration writes require a successful, same-repository workflow_run; use db migrate for explicit operator recovery',
+  proof: MigrationContextProof = {},
+): string {
+  const event = env.GITHUB_EVENT_NAME ?? ''
+  if (env.GITHUB_ACTIONS !== 'true') throw new Error(WORKFLOW_RUN_REFUSAL)
+  let verified: string
+  if (event === 'workflow_run') {
+    if (!env.GITHUB_EVENT_PATH) throw new Error(WORKFLOW_RUN_REFUSAL)
+    const { workflow_run: run } = eventSchema.parse(
+      JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')),
     )
-  }
-  const { workflow_run: run } = eventSchema.parse(
-    JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')),
-  )
-  if (
-    env.GITHUB_REPOSITORY !== plan.repository ||
-    run.head_repository.full_name !== plan.repository ||
-    run.head_sha !== sha
-  ) {
-    throw new Error('Migration source must be the exact CI-verified SHA in this repository')
-  }
-  if (
-    (plan.target === 'production' || plan.target === 'staging') &&
-    run.head_branch !== plan.productionBranch
-  ) {
-    throw new Error('Production/staging migrations require the production branch')
-  }
-  if (plan.target === 'preview' && run.head_branch !== plan.productionBranch && !bundled) {
-    throw new Error(
-      'PR preview migrations require a SQL-only bundle and trusted tooling; never execute a PR checkout with D1 credentials',
+    if (
+      env.GITHUB_REPOSITORY !== plan.repository ||
+      run.head_repository.full_name !== plan.repository ||
+      run.head_sha !== sha
+    ) {
+      throw new Error('Migration source must be the exact CI-verified SHA in this repository')
+    }
+    if (
+      (plan.target === 'production' || plan.target === 'staging') &&
+      run.head_branch !== plan.productionBranch
+    ) {
+      throw new Error('Production/staging migrations require the production branch')
+    }
+    if (plan.target === 'preview' && run.head_branch !== plan.productionBranch && !bundled) {
+      throw new Error(
+        'PR preview migrations require a SQL-only bundle and trusted tooling; never execute a PR checkout with D1 credentials',
+      )
+    }
+    verified = `workflow_run of ${sha} succeeded`
+  } else if (BRANCH_EVENTS.has(event)) {
+    if (plan.target === 'preview' || bundled) {
+      throw new Error(
+        `A ${event} event cannot migrate preview databases; they follow a successful workflow_run and a SQL-only bundle`,
+      )
+    }
+    if (env.GITHUB_REPOSITORY !== plan.repository) {
+      throw new Error('Migration source must be the exact CI-verified SHA in this repository')
+    }
+    if (env.GITHUB_REF !== `refs/heads/${plan.productionBranch}`) {
+      throw new Error('Production/staging migrations require the production branch')
+    }
+    if (!FULL_SHA.test(sha) || env.GITHUB_SHA !== sha) {
+      throw new Error(`A ${event} migrates only the commit it runs on (GITHUB_SHA)`)
+    }
+    const gate = proof.gate
+    if (!gate) {
+      throw new Error(
+        `A ${event} migration needs --gate-verified "<check>@${sha}" so the tool can prove that check green on the commit`,
+      )
+    }
+    if (gate.sha !== sha) {
+      throw new Error(`--gate-verified names ${gate.sha}, not the migrated commit ${sha}`)
+    }
+    if (!(env.GH_TOKEN || env.GITHUB_TOKEN)) {
+      throw new Error(
+        `A ${event} migration reads ${gate.check} from GitHub and needs GITHUB_TOKEN (checks: read, pull-requests: read)`,
+      )
+    }
+    verified = assertCiGateGreen(
+      proof.get ?? githubGet(root, env),
+      gate,
+      plan.repository,
+      plan.productionBranch,
     )
+  } else {
+    throw new Error(WORKFLOW_RUN_REFUSAL)
   }
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
   if (!bundled && head !== sha)
@@ -248,6 +407,7 @@ export function assertMigrationContext(
     throw new Error('Preview bundles require a trusted default-branch workflow')
   if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ACCOUNT_ID !== plan.accountId)
     throw new Error('Injected Cloudflare account differs from the migration target')
+  return verified
 }
 
 export interface DeploymentMigrationOptions {
@@ -256,6 +416,10 @@ export interface DeploymentMigrationOptions {
   sha?: string
   cwd?: string
   bundle?: string
+  /** `--gate-verified "<check>@<sha>"`: the check to prove green on `sha` for a push / dispatch. */
+  gate?: GateAttestation
+  /** `--check-context`: run only the context proof a write would run, and write nothing. */
+  checkContext?: boolean
 }
 
 export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigrationOptions {
@@ -263,6 +427,8 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
   let check = false
   let sha: string | undefined
   let bundle: string | undefined
+  let gate: GateAttestation | undefined
+  let checkContext = false
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--target')
       target = z.enum(['production', 'preview', 'staging']).parse(args[++i])
@@ -272,20 +438,58 @@ export function parseDeploymentMigrationArgs(args: string[]): DeploymentMigratio
         .string()
         .regex(/^[a-f0-9]{40}$/u)
         .parse(args[++i])
+    else if (args[i] === '--gate-verified') gate = parseGateAttestation(args[++i] ?? '')
+    else if (args[i] === '--check-context') checkContext = true
     else if (args[i] === '--bundle') bundle = z.string().min(1).parse(args[++i])
     else throw new Error(`Unknown deployment migration option: ${args[i]}`)
   }
   if (!target) throw new Error('--target production|preview|staging is required')
-  if (!check && !sha)
+  if (!check && !sha && !checkContext)
     throw new Error('--sha <verified commit> is required for deployment migration writes')
+  if (checkContext && (check || !sha))
+    throw new Error('--check-context takes --sha <commit> and is exclusive with --check')
+  if (gate && gate.sha !== sha) throw new Error('--gate-verified must name the --sha commit')
   if (bundle && (target !== 'preview' || !sha))
     throw new Error('--bundle requires --target preview and --sha')
-  return { target, check, ...(sha ? { sha } : {}), ...(bundle ? { bundle } : {}) }
+  return {
+    target,
+    check,
+    ...(sha ? { sha } : {}),
+    ...(bundle ? { bundle } : {}),
+    ...(gate ? { gate } : {}),
+    ...(checkContext ? { checkContext } : {}),
+  }
+}
+
+/**
+ * Runs only the context proof a write would run (event, ref, SHA, checkout, and
+ * the gate check read from GitHub) and writes nothing. It needs no Cloudflare
+ * credential, so a promote workflow can run it on a run with nothing pending
+ * and find a broken apply path before a migration needs it.
+ */
+export function checkDeploymentMigrationContext(
+  options: DeploymentMigrationOptions,
+  proof: Pick<MigrationContextProof, 'get'> = {},
+): string {
+  const root = findMigrationCheckout(options.cwd ?? process.cwd())
+  const plan = planDeploymentMigrations(root, options.target)
+  return assertMigrationContext(
+    plan,
+    options.sha ?? '',
+    root,
+    process.env,
+    Boolean(options.bundle),
+    {
+      gate: options.gate ?? null,
+      ...proof,
+    },
+  )
 }
 
 export function runDeploymentMigrations(
   options: DeploymentMigrationOptions,
   executor?: MigrationExecutor,
+  proof: Pick<MigrationContextProof, 'get'> = {},
 ): MigrationPlan[] {
   const root = findMigrationCheckout(options.cwd ?? process.cwd())
   const plan = planDeploymentMigrations(root, options.target)
@@ -295,7 +499,10 @@ export function runDeploymentMigrations(
       'An explicit scoped CLOUDFLARE_API_TOKEN is required; ambient Wrangler authentication is not used',
     )
   if (!options.check)
-    assertMigrationContext(plan, options.sha ?? '', root, process.env, Boolean(options.bundle))
+    assertMigrationContext(plan, options.sha ?? '', root, process.env, Boolean(options.bundle), {
+      gate: options.gate ?? null,
+      ...proof,
+    })
   const directory = mkdtempSync(join(tmpdir(), 'narduk-d1-target-'))
   const wranglerConfig = join(directory, 'wrangler.json')
   writeFileSync(wranglerConfig, JSON.stringify(plan.config), { mode: 0o600 })

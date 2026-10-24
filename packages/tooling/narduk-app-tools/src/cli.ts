@@ -51,6 +51,7 @@ import {
 import { formatD1CreateResult, parseD1CreateArgs, runD1Create } from './d1-create.js'
 import {
   parseDeploymentMigrationArgs,
+  checkDeploymentMigrationContext,
   runDeploymentMigrations,
   writeDeploymentMigrationBundle,
 } from './deployment-migrations.js'
@@ -135,6 +136,14 @@ function usage(): string {
     '                                       or 600s-old holder fails at once, as before.',
     '  db status --config <file> --database <name> --local|--remote [--wrangler-config <file>]',
     '  db migrate-deployment --target production|preview|staging [--check | --sha <verified commit>]',
+    '                                       [--gate-verified "<check>@<sha>"] [--check-context]',
+    '                                       A write runs under a successful same-repository workflow_run,',
+    '                                       or under a push / workflow_dispatch on the production branch',
+    '                                       whose GITHUB_SHA is --sha and with --gate-verified: the tool',
+    '                                       reads the check from GitHub (GITHUB_TOKEN, checks: read,',
+    '                                       pull-requests: read) and refuses unless it is green on the',
+    '                                       commit or on the merged pull request that landed as it.',
+    '                                       --check-context runs that proof only: no credential, no write.',
     '  db baseline capture|sql|check|register|prove ...  Reviewed schema cutover process',
     '  db bundle --output <file>          Package SQL/data for the trusted preview migration job',
     '  db create [--checkout <dir>] [--binding <NAME>] [--dry-run] [--json]',
@@ -414,6 +423,13 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       }
       if (subcommand === 'migrate-deployment') {
         const options = parseDeploymentMigrationArgs(migrateArgs)
+        if (options.checkContext) {
+          const verified = checkDeploymentMigrationContext(options)
+          console.log(
+            JSON.stringify({ target: options.target, context: 'verified', verified }, null, 2),
+          )
+          return 0
+        }
         const plans = runDeploymentMigrations(options)
         console.log(
           JSON.stringify(
