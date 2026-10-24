@@ -162,18 +162,22 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
     app?: string
     name?: string
     startedAt?: string
+    /** The workflow run is in progress and has produced no gate check run yet. */
+    noCheckYet?: boolean
   }
   const ci = (commit: string, evs: Ev[]): Record<string, unknown> => ({
     [checkPath(commit)]: {
-      total_count: evs.length,
-      check_runs: evs.map((e) => ({
-        name: e.name ?? check,
-        status: e.conclusion === null ? 'in_progress' : 'completed',
-        conclusion: e.conclusion === undefined ? 'success' : e.conclusion,
-        started_at: e.startedAt ?? '2026-10-24T00:00:00Z',
-        app: { slug: e.app ?? 'github-actions' },
-        check_suite: { id: e.suite },
-      })),
+      total_count: evs.filter((e) => !e.noCheckYet).length,
+      check_runs: evs
+        .filter((e) => !e.noCheckYet)
+        .map((e) => ({
+          name: e.name ?? check,
+          status: e.conclusion === null ? 'in_progress' : 'completed',
+          conclusion: e.conclusion === undefined ? 'success' : e.conclusion,
+          started_at: e.startedAt ?? '2026-10-24T00:00:00Z',
+          app: { slug: e.app ?? 'github-actions' },
+          check_suite: { id: e.suite },
+        })),
     },
     [runsPath(commit)]: {
       total_count: evs.length,
@@ -184,6 +188,10 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         head_sha: commit,
         head_branch: e.branch ?? 'main',
         check_suite_id: e.suite,
+        status:
+          e.conclusion === null || (e.noCheckYet && e.conclusion === undefined)
+            ? 'in_progress'
+            : 'completed',
         head_repository: { full_name: e.repo ?? 'example/app' },
       })),
     },
@@ -469,6 +477,36 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
       )
       expect(refusal(withPull)).toThrow('still running')
+    })
+
+    it('treats a newer CI run that has produced no gate check run yet as pending, not as nothing and not as a reason to try the pull request', () => {
+      for (const older of ['failure', 'success']) {
+        expect(
+          refusal(
+            direct(
+              { suite: 1, number: 1, conclusion: older },
+              { suite: 2, number: 2, noCheckYet: true },
+            ),
+          ),
+        ).toThrow('still running')
+      }
+      const withPull = github(
+        ci(sha, [{ suite: 2, number: 2, noCheckYet: true }]),
+        { [pullsPath]: [pull(sha)] },
+        ci(headSha, [prEv]),
+        { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
+      )
+      expect(refusal(withPull)).toThrow('still running')
+      // A finished run that never produced the gate check is not evidence either way.
+      expect(
+        assertCiGateGreen(
+          direct(
+            { suite: 1, number: 1 },
+            { suite: 2, number: 2, noCheckYet: true, conclusion: 'skipped' },
+          ),
+          gate,
+        ),
+      ).toContain('succeeded')
     })
 
     it('refuses a tie that holds any red, and accepts only a tie that agrees', () => {

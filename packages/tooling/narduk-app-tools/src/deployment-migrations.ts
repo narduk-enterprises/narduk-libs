@@ -230,6 +230,7 @@ interface WorkflowRunLike {
   head_sha?: unknown
   head_branch?: unknown
   check_suite_id?: unknown
+  status?: unknown
   head_repository?: { full_name?: unknown } | null
 }
 
@@ -313,7 +314,6 @@ function ciVerdict(
       run.path === gate.workflow ||
       run.path === `${gate.workflow}@refs/heads/${gate.productionBranch}`
     if (
-      !checks ||
       !trustedPath ||
       typeof run.run_number !== 'number' ||
       run.head_sha !== commit ||
@@ -324,16 +324,29 @@ function ciVerdict(
     ) {
       return []
     }
-    return [{ number: run.run_number, checks }]
+    // A CI run that has not produced the gate check run yet but has not
+    // finished is the newest word on the commit and says "wait", not nothing.
+    if (!checks) {
+      return run.status === 'completed' ? [] : [{ number: run.run_number, verdicts: ['pending'] }]
+    }
+    return [
+      {
+        number: run.run_number,
+        verdicts: checks.map((check) =>
+          check.status !== 'completed'
+            ? 'pending'
+            : check.conclusion === 'success'
+              ? 'green'
+              : 'red',
+        ),
+      },
+    ]
   })
   if (evidence.length === 0) return 'none'
   const newest = Math.max(...evidence.map((entry) => entry.number))
   const verdicts = evidence
     .filter((entry) => entry.number === newest)
-    .flatMap((entry) => entry.checks)
-    .map((run) =>
-      run.status !== 'completed' ? 'pending' : run.conclusion === 'success' ? 'green' : 'red',
-    )
+    .flatMap((entry) => entry.verdicts)
   if (verdicts.includes('red')) return 'red'
   return verdicts.includes('pending') ? 'pending' : 'green'
 }
