@@ -130,6 +130,25 @@ published version commit still repeats registry verification on retry, so a
 previous verification failure cannot turn green merely because publication is
 now a no-op.
 
+**New public packages and the `npm.nard.uk` allowlist.** The mirror serves only
+the names in `ALLOWLISTED_PACKAGE_NAMES` in
+`narduk-enterprises/package-delivery` `src/registry-contract.ts`; the sync skips
+any other package, and `mirror-confirm` then times out about 20 minutes into
+release proof (`@narduk-enterprises/narduk-notify@0.1.0`, 2026-10-24). The
+`contracts` job therefore runs `node scripts/check-npm-mirror-allowlist.mjs` on
+every pull request, the release PR included (it sits ahead of the
+`IS_CHANGESET_RELEASE` skip). It fails, naming the package, when a non-private
+workspace package is missing from `scripts/npm-mirror-allowlist.json`. The order
+for a new public package is: merge the name into package-delivery's
+`registry-contract.ts` first, then add it to the checked-in mirror here and
+prove the two agree with
+`node scripts/check-npm-mirror-allowlist.mjs --upstream` (needs `gh` access to
+package-delivery; exits 2, never 0, when the read fails). CI cannot do that last
+comparison itself: package-delivery is private, this repository is public, and
+the `contracts` token is `contents: read` on this repository only. So CI proves
+"every public package is in the mirror", and the `--upstream` run proves "the
+mirror is package-delivery's list".
+
 Publishing uses this repository's job-scoped `GITHUB_TOKEN` with
 `packages: write`, after `verify-ci` pins the run to a CI-verified commit on
 main. After installation, the job builds `narduk-app-tools` before configuring

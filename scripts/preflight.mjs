@@ -337,6 +337,7 @@ async function main() {
   // --- Contracts, in the contracts job's own order ------------------------
   phase('versions:check', 'pnpm', ['run', 'versions:check'])
   phase('scripts:test', 'pnpm', ['run', 'scripts:test'])
+  phase('npm-mirror-allowlist', 'node', ['scripts/check-npm-mirror-allowlist.mjs'])
   if (releaseIdentity?.proven) {
     // ci.yml's IS_CHANGESET_RELEASE skip, on the same commit CI checks.
     console.log(

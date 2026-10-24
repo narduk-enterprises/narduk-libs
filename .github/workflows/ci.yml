@@ -227,6 +227,10 @@ jobs:
           set -euo pipefail
           pnpm run versions:check
           pnpm run scripts:test
+          # Not behind the release-PR skip below: a new public package that is
+          # missing from npm.nard.uk's allowlist must fail the release PR, not
+          # release-proof's mirror-confirm 20 minutes after the merge.
+          node scripts/check-npm-mirror-allowlist.mjs
           if [ "${IS_CHANGESET_RELEASE}" != "true" ]; then
             pnpm run release-plan:check
           fi
