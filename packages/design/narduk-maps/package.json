@@ -60,7 +60,7 @@
     "@vitejs/plugin-vue": "^5.2.0",
     "@vue/server-renderer": "^3.5.0",
     "@vue/test-utils": "^2.4.6",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "maplibre-gl": "6.11.2",
     "typescript": "~6.0.3",
     "vite": "^6.0.0",

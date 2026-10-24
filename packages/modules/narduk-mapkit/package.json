@@ -126,7 +126,7 @@
     "@types/apple-mapkit": "^6.0.0",
     "@types/node": "^22.19.19",
     "@vue/test-utils": "2.4.11",
-    "happy-dom": "20.10.6",
+    "happy-dom": "21.0.4",
     "publint": "^0.3.21",
     "typescript": "~6.0.3",
     "unhead": "3.4.1",
