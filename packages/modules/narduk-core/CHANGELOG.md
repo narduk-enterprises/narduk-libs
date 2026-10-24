@@ -1,5 +1,13 @@
 # @narduk-enterprises/narduk-core
 
+## 2.37.4
+
+### Patch Changes
+
+- d18d969: Raise the `undici` dependency to `^8.12.2`, the first release without
+  the unhandled-error denial of service on excessive content-encodings
+  (GHSA-xjj6-f33q-929c).
+
 ## 2.37.3
 
 ### Patch Changes
