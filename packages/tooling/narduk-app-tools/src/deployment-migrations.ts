@@ -324,10 +324,13 @@ function ciVerdict(
     ) {
       return []
     }
-    // A CI run that has not produced the gate check run yet but has not
-    // finished is the newest word on the commit and says "wait", not nothing.
+    // The newest CI run decides even before it has produced the gate check run:
+    // unfinished is "wait", and finished without the gate check is a run that
+    // did not prove the gate (never a licence to fall back to an older one).
     if (!checks) {
-      return run.status === 'completed' ? [] : [{ number: run.run_number, verdicts: ['pending'] }]
+      return [
+        { number: run.run_number, verdicts: [run.status === 'completed' ? 'red' : 'pending'] },
+      ]
     }
     return [
       {

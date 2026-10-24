@@ -175,14 +175,14 @@ The app's promote workflow must follow these steps in one serialized job:
      `workflow_dispatch` on the production branch (or `pull_request` for the
      fallback); a same-named check from any other workflow or app is ignored,
      and `started_at` is never used. The CI workflow's highest `run_number` on
-     the commit decides, and a tie or re-run suite with any red refuses. A red
-     or still-running newest run refuses and no pull request can overrule it.
-     Only when the commit has no such run does a pull request count: merged into
-     the production branch **as that commit**, from a head in the same
-     repository, whose newest `pull_request` run of the workflow is green and
-     whose head has the **same tree** as the commit. Any API error, missing
-     token or truncated listing refuses. Preview databases never accept this
-     context.
+     the commit decides, and a tie or re-run suite with any red refuses. A red,
+     still-running or gate-less newest run refuses and no pull request can
+     overrule it. Only when the commit has no such run does a pull request
+     count: merged into the production branch **as that commit**, from a head in
+     the same repository, whose newest `pull_request` run of the workflow is
+     green and whose head has the **same tree** as the commit. Any API error,
+     missing token or truncated listing refuses. Preview databases never accept
+     this context.
 
    `--check-context` runs only that proof (event, ref, SHA, checkout and the
    check read) with no Cloudflare credential and no write, so a promote run with

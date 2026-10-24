@@ -497,16 +497,16 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         { [treePath(sha)]: { tree: { sha: tree } }, [treePath(headSha)]: { tree: { sha: tree } } },
       )
       expect(refusal(withPull)).toThrow('still running')
-      // A finished run that never produced the gate check is not evidence either way.
+      // A finished newest run that never produced the gate check proves nothing
+      // and does not hand authority back to an older green one.
       expect(
-        assertCiGateGreen(
+        refusal(
           direct(
             { suite: 1, number: 1 },
             { suite: 2, number: 2, noCheckYet: true, conclusion: 'skipped' },
           ),
-          gate,
         ),
-      ).toContain('succeeded')
+      ).toThrow('did not succeed')
     })
 
     it('refuses a tie that holds any red, and accepts only a tie that agrees', () => {
@@ -541,7 +541,9 @@ describe('push / workflow_dispatch migration context (operator-portal#2791)', ()
         { suite: 6, number: 5, branch: 'feature' },
         { suite: 7, number: 5, repo: 'fork/app' },
       ]
-      for (const ev of foreign) expect(refusal(direct(ev))).toThrow('not green')
+      for (const ev of foreign) expect(refusal(direct(ev))).toThrow('refusing to migrate')
+      // A CI run whose only gate check came from another App has no gate at all.
+      expect(refusal(direct({ suite: 3, number: 5, app: 'other-app' }))).toThrow('did not succeed')
     })
 
     it('is not fooled by a green non-CI workflow next to a red CI run', () => {
