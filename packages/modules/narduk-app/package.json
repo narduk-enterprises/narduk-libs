@@ -26,6 +26,12 @@
     "./server/security-headers": {
       "import": "./src/server/security-headers.ts"
     },
+    "./server/request-id": {
+      "import": "./src/server/request-id.ts"
+    },
+    "./server/request-id-error-handler": {
+      "import": "./src/server/request-id-error-handler.ts"
+    },
     "./server/request-body": {
       "import": "./src/server/request-body.ts"
     },

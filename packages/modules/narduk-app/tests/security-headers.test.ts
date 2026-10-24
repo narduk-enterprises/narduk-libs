@@ -23,6 +23,19 @@ describe('serializers', () => {
 })
 
 describe('buildSecurityHeaders', () => {
+  it('serves an enforced CSP only when asked, beside the report-only one', () => {
+    expect(buildSecurityHeaders({}, { https: true })).not.toHaveProperty('content-security-policy')
+    const headers = buildSecurityHeaders(
+      {
+        csp: { 'object-src': ["'none'"], 'base-uri': ["'self'"] },
+        reportOnlyCsp: { 'default-src': ["'self'"] },
+      },
+      { https: false },
+    )
+    expect(headers['content-security-policy']).toBe("object-src 'none'; base-uri 'self'")
+    expect(headers['content-security-policy-report-only']).toBe("default-src 'self'")
+  })
+
   it('sends the baseline with no CSP, policy or robots unless asked', () => {
     expect(buildSecurityHeaders({}, { https: false })).toEqual({
       'x-content-type-options': 'nosniff',

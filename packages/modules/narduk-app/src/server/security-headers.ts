@@ -9,6 +9,8 @@ export type CspDirectives = Readonly<Record<string, readonly string[]>>
 export type PermissionsPolicy = Readonly<Record<string, readonly string[]>>
 
 export interface SecurityHeadersConfig {
+  /** Served as an enforced `Content-Security-Policy`. Opt-in: omitted when absent. */
+  csp?: CspDirectives
   /**
    * Served as `Content-Security-Policy-Report-Only`, never enforced. The app
    * supplies every allowlist; nothing is granted by default.
@@ -60,6 +62,7 @@ export function buildSecurityHeaders(
   if (config.permissionsPolicy) {
     headers['permissions-policy'] = serializePermissionsPolicy(config.permissionsPolicy)
   }
+  if (config.csp) headers['content-security-policy'] = serializeCsp(config.csp)
   if (config.reportOnlyCsp) {
     headers['content-security-policy-report-only'] = serializeCsp(config.reportOnlyCsp)
   }

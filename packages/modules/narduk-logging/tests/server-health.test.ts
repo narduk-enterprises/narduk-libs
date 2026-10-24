@@ -306,6 +306,17 @@ describe('Nitro error hook', () => {
       message: 'Error: D1 failed for [email]',
     })
   })
+  it('reads event.context.requestId before cf-ray and x-request-id', async () => {
+    const hook = install()
+    const e = {
+      ...event('/api/x', { 'cf-ray': 'ray-9', 'x-request-id': 'caller-1' }),
+      context: { requestId: 'ctx-1' },
+    }
+    await hook(failure('first'), { event: e })
+    await hook(failure('second'), { event: { ...e, context: {} } })
+    const rows = await listServerErrors(db)
+    expect(rows.map((r) => r.requestId).sort()).toEqual(['ctx-1', 'ray-9'])
+  })
   it('does nothing without a request or DB, and never throws when the write fails', async () => {
     const write = vi.fn(async () => {
       throw new Error('d1 down')
